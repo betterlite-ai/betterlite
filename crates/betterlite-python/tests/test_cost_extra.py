@@ -769,6 +769,32 @@ def test_processor_ws_collects() -> None:
     )
 
 
+def test_processor_chat_details() -> None:
+    characters = 123
+    accepted = 4
+    events: list[dict[str, JsonValue]] = [{
+        "type": "response.completed",
+        "response": {"usage": {
+            "prompt_tokens": 10,
+            "completion_tokens": accepted,
+            "total_tokens": 14,
+            "prompt_tokens_details": {"character_count": characters},
+            "completion_tokens_details": {"accepted_prediction_tokens": accepted},
+        }},
+    }]
+    ours = WsUsageProcessor.collect_usage_from_responses_ws_results(events)
+    reference = (
+        REFERENCE_PROCESSORS.ResponsesWebSocketTokenUsageProcessor
+        .collect_usage_from_responses_ws_results(events)
+    )
+    expected = TypeAdapter(Usage).validate_json(reference[0].model_dump_json())
+    assert ours[0].model_dump() == expected.model_dump()
+    assert ours[0].prompt_tokens_details is not None
+    assert ours[0].prompt_tokens_details.character_count == characters
+    assert ours[0].completion_tokens_details is not None
+    assert ours[0].completion_tokens_details.accepted_prediction_tokens == accepted
+
+
 def test_processor_ws_combines() -> None:
     ours = WsUsageProcessor.collect_and_combine_usage_from_responses_ws_results(WS_EVENTS)
     compare_usages([ours], [REFERENCE_WS_COMBINED])

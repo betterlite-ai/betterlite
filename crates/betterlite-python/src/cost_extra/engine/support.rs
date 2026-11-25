@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::convert::Infallible;
 
 use betterlite_core::api::responses_usage::{
-    ResponsesUsageError, UsageInput, normalize_and_project,
+    ResponsesUsageError, UsageInput, is_response_api_usage, normalize_and_project,
 };
 use betterlite_core::cost::realtime::{Event, error::RealtimeCostError, responses_ws};
 use betterlite_logging::cost_breakdown::{CostBreakdownInput, CostBreakdownTarget};
@@ -111,6 +111,9 @@ pub(crate) fn collect_usage(
 
 fn usage_record(mapping: &IndexMap<String, Json>) -> Result<LoggingUsage, CollectFailure> {
     let source = serde_json::to_value(Json::Object(mapping.clone()))?;
+    if !source.as_object().is_some_and(is_response_api_usage) {
+        return usage_from_mapping(mapping).map_err(CollectFailure::from);
+    }
     let projected = normalize_and_project(UsageInput::Mapping(&source))?;
     let projected_mapping: IndexMap<String, Json> = serde_json::from_value(projected)?;
     usage_from_mapping(&projected_mapping).map_err(CollectFailure::from)

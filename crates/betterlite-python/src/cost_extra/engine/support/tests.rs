@@ -4,10 +4,43 @@ use std::collections::BTreeMap;
 use std::str::FromStr as _;
 
 use betterlite_logging::cost_breakdown::{CostBreakdownInput, CostBreakdownTarget as _};
+use betterlite_models::decisions::Json;
 use betterlite_models::usage_sum::{CachedTokensDetails, PromptTokensDetails};
+use indexmap::IndexMap;
+use rstest::rstest;
 use rust_decimal::Decimal;
+use serde_json::Number;
 
-use super::{Capture, prompt_extras};
+use super::{Capture, prompt_extras, usage_record};
+
+#[rstest]
+#[case::plain(None)]
+#[case::input_only(Some("input_tokens"))]
+#[case::output_only(Some("output_tokens"))]
+fn cost_extra_support_preserves_chat_usage(#[case] response_key: Option<&str>) {
+    let mut mapping: IndexMap<String, Json> = serde_json::from_str(
+        r#"{"prompt_tokens":10,"completion_tokens":4,"total_tokens":14,
+            "prompt_tokens_details":{"character_count":123,"cached_tokens":2},
+            "completion_tokens_details":{"accepted_prediction_tokens":4,
+                "rejected_prediction_tokens":1}}"#,
+    )
+    .unwrap();
+    if let Some(key) = response_key {
+        mapping.insert(key.to_owned(), Json::Number(Number::from(99_i64)));
+    }
+    let collected = usage_record(&mapping).unwrap();
+    assert_eq!(collected.prompt_tokens, 10);
+    assert_eq!(collected.completion_tokens, 4);
+    assert_eq!(collected.total_tokens, 14);
+    assert_eq!(
+        collected.prompt_tokens_details.map(Json::Object),
+        mapping.get("prompt_tokens_details").cloned()
+    );
+    assert_eq!(
+        collected.completion_tokens_details.map(Json::Object),
+        mapping.get("completion_tokens_details").cloned()
+    );
+}
 
 fn dec(text: &str) -> Decimal {
     Decimal::from_str(text).expect("the fixture decimal parses")
