@@ -1,11 +1,15 @@
 use betterlite_db::database_availability::chain::Chain;
-use betterlite_db::database_availability::classification::is_service_unavailable;
+use betterlite_db::database_availability::classification::{
+    STALE_PLAN_MARKER, is_service_unavailable,
+};
 use betterlite_db::database_failures::deadline::DbLookupError;
 use betterlite_db::database_faults::native::is_native_transport_error;
 use betterlite_db::database_faults::{DbError as DatabaseFault, ErrorType};
 use betterlite_db::postgres_store::errors::DbError as NativeDbError;
 use betterlite_error::proxy_exception::model_access_denied::ModelAccessDeniedProxyException; // ast-grep-ignore: no-long-names
+use deadpool_postgres::PoolError;
 use thiserror::Error;
+use tokio_postgres::error::DbError as DriverDbError;
 
 use crate::auth_end_users::defaults::MemberBudgetError;
 use crate::auth_errors::conversion::AuthFailure;
@@ -86,10 +90,41 @@ fn outage_first(fault: &DatabaseFault) -> bool {
 }
 
 fn native_outage<Failure>(fault: &NativeDbError<Failure>) -> Option<DatabaseFault> {
-    if !is_native_transport_error(fault) {
+    if is_native_transport_error(fault) {
+        return Some(database_fault(ErrorType::Connect, fault.to_string()));
+    }
+    // Postgres raises this when a prepared statement's result type changed; the connection is healthy, so the fault stays a data error
+    let database = driver_database_error(fault)?;
+    if !database
+        .message()
+        .to_ascii_lowercase()
+        .contains(STALE_PLAN_MARKER)
+    {
         return None;
     }
-    Some(database_fault(ErrorType::Connect, fault.to_string()))
+    Some(database_fault(
+        ErrorType::Data,
+        database.message().to_owned(),
+    ))
+}
+
+// the driver keeps the server's message off its own Display, so the database error is read directly
+fn driver_database_error<Failure>(fault: &NativeDbError<Failure>) -> Option<&DriverDbError> {
+    match fault {
+        NativeDbError::Backend { source }
+        | NativeDbError::SqlState { source, .. }
+        | NativeDbError::UniqueViolation { source, .. } => source.driver.as_db_error(),
+        NativeDbError::Pool { source } => match &source.driver {
+            PoolError::Backend(driver) => driver.as_db_error(),
+            PoolError::Timeout(_)
+            | PoolError::Closed
+            | PoolError::NoRuntimeSpecified
+            | PoolError::PostCreateHook(_) => None,
+        },
+        NativeDbError::NoDbConnected
+        | NativeDbError::InvalidRecord { .. }
+        | NativeDbError::CreateNull => None,
+    }
 }
 
 // the projection reads only the error type and the message, since a membership failure carries no chain
