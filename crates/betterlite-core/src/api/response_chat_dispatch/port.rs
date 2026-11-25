@@ -11,7 +11,7 @@ use betterlite_openai::api::responses_objects::ResponsesApiResponse;
 use betterlite_openai::api::responses_objects::request_params::ResponsesApiRequestParams;
 use betterlite_openai::chat_choices::wire::{ChoiceLogprobs, DeltaAudio, DeltaFunction};
 use betterlite_streaming::stream_chunk_shaping::records::{JsonObject, Usage};
-use betterlite_streaming::stream_tool_assembly::records::ToolOutput;
+use betterlite_streaming::stream_tool_assembly::records::CustomOutput;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -65,10 +65,13 @@ pub struct ChatMessage {
     pub content: Option<String>,
     pub role: Option<String>,
     pub function_call: Option<DeltaFunction>,
-    pub tool_calls: Option<Vec<ToolOutput>>,
+    pub tool_calls: Option<Vec<ChatToolCall>>,
     pub audio: Option<DeltaAudio>,
     pub reasoning_content: Option<String>,
     pub thinking_blocks: Option<Vec<ChatThinkingBlock>>,
+    pub images: Option<Vec<ChatImage>>,
+    pub reasoning_items: Option<Vec<ChatReasoningItem>>,
+    pub annotations: Option<Vec<ChatAnnotation>>,
     pub provider_specific_fields: Option<JsonObject>,
     #[serde(flatten)]
     pub extra: JsonObject,
@@ -78,12 +81,60 @@ pub struct ChatMessage {
 #[skip_serializing_none]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatThinkingBlock {
-    #[serde(rename = "type")]
-    pub kind: String,
+    pub r#type: String,
     pub thinking: Option<String>,
     pub signature: Option<String>,
     pub data: Option<String>,
     pub cache_control: Option<JsonObject>,
+    #[serde(flatten)]
+    pub extra: JsonObject,
+}
+
+// LiteLLM's Message declares these payloads, so they stay typed here and only keys no type names reach extra
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatImage {
+    pub image_url: ChatImageUrl,
+    pub index: i64,
+    pub r#type: String,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatImageUrl {
+    pub url: String,
+    pub detail: Option<String>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatAnnotation {
+    #[serde(default)]
+    pub r#type: String,
+    pub url_citation: Option<ChatUrlCitation>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatUrlCitation {
+    pub start_index: Option<i64>,
+    pub end_index: Option<i64>,
+    pub url: Option<String>,
+    pub title: Option<String>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatReasoningItem {
+    pub r#type: String,
+    pub id: Option<String>,
+    pub encrypted_content: Option<String>,
+    pub summary: Vec<ChatReasoningSummary>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatReasoningSummary {
+    pub r#type: String,
+    pub text: Option<String>,
+}
+// ChatCompletionMessageToolCall keeps the keys its constructor does not name, such as index
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ChatToolCall {
+    pub id: String,
+    pub r#type: String,
+    pub function: Option<DeltaFunction>,
+    pub custom: Option<CustomOutput>,
     #[serde(flatten)]
     pub extra: JsonObject,
 }

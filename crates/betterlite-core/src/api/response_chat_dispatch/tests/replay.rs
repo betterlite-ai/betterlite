@@ -1,5 +1,5 @@
 use betterlite_models::decisions::Json;
-use betterlite_streaming::stream_chunk_shaping::records::Usage;
+use betterlite_streaming::stream_chunk_shaping::records::{JsonValue, Usage};
 
 use super::fixtures::support::{
     FIXED_CLOCK, FakeExecution, chat_json, chat_response, delta_member_of, hidden_member_of,
@@ -33,6 +33,66 @@ async fn a_passed_through_chat_answer_keeps_its_choice_logprobs() {
     let execution = FakeExecution::new(Answer::Chat(body.clone()));
     let output = expect_ok(completion(&execution, call(&kwargs("gpt-4o-mini", "openai"))).await);
     assert_eq!(chat_json(&expect_chat(output)), chat_json(&body));
+}
+
+#[tokio::test]
+async fn a_passed_through_chat_answer_keeps_its_images_annotations_and_reasoning_items() {
+    let raw = r#"{"id":"chatcmpl-x","object":"chat.completion","created":1,"model":"gpt-4o-mini","choices":[{"index":0,"message":{"role":"assistant","content":"hi","images":[{"image_url":{"url":"https://img.test/a.png","detail":"high"},"index":3,"type":"image_url"}],"reasoning_items":[{"type":"reasoning","id":"rs_1","encrypted_content":"cipher","summary":[{"type":"summary_text","text":"thought"}]}],"annotations":[{"type":"url_citation","url_citation":{"start_index":0,"end_index":2,"title":"A","url":"https://a.test"}}]},"finish_reason":"stop"}]}"#;
+    let body: super::ChatResponse = serde_json::from_str(raw).unwrap();
+    let execution = FakeExecution::new(Answer::Chat(Box::new(body)));
+    let output = expect_chat(expect_ok(
+        completion(&execution, call(&kwargs("gpt-4o-mini", "openai"))).await,
+    ));
+    let message = &output.choices[0].message;
+    let image = &message.images.as_ref().expect("the image stays typed")[0];
+    assert_eq!(image.index, 3);
+    assert_eq!(image.image_url.url, "https://img.test/a.png");
+    assert_eq!(image.image_url.detail.as_deref(), Some("high"));
+    let citation = message
+        .annotations
+        .as_ref()
+        .expect("the annotation stays typed")[0]
+        .url_citation
+        .as_ref()
+        .expect("the annotation carries its citation");
+    assert_eq!(citation.url.as_deref(), Some("https://a.test"));
+    assert_eq!(citation.start_index, Some(0));
+    assert_eq!(citation.end_index, Some(2));
+    let reasoning = &message
+        .reasoning_items
+        .as_ref()
+        .expect("the reasoning item stays typed")[0];
+    assert_eq!(reasoning.id.as_deref(), Some("rs_1"));
+    assert_eq!(reasoning.encrypted_content.as_deref(), Some("cipher"));
+    assert_eq!(reasoning.summary[0].text.as_deref(), Some("thought"));
+    assert!(message.extra.is_empty());
+}
+
+#[tokio::test]
+async fn a_passed_through_chat_answer_keeps_an_unknown_tool_call_field() {
+    let mut body = chat_response();
+    body.choices[0].message.content = None;
+    body.choices[0].finish_reason = Some(String::from("tool_calls"));
+    body.choices[0].message.tool_calls = Some(
+        serde_json::from_str(
+            r#"[{"id":"call_1","type":"function","index":2,"function":{"name":"get_weather","arguments":"{}"}}]"#,
+        )
+        .unwrap(),
+    );
+    let execution = FakeExecution::new(Answer::Chat(body.clone()));
+    let output = expect_chat(expect_ok(
+        completion(&execution, call(&kwargs("gpt-4o-mini", "openai"))).await,
+    ));
+    assert_eq!(chat_json(&output), chat_json(&body));
+    let carried = output.choices[0]
+        .message
+        .tool_calls
+        .as_ref()
+        .expect("the tool call stays")[0]
+        .extra
+        .get("index")
+        .and_then(JsonValue::as_i64);
+    assert_eq!(carried, Some(2));
 }
 
 #[tokio::test]
