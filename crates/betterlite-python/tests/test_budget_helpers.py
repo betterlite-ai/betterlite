@@ -4,13 +4,12 @@ import json
 import logging
 import threading
 import time
-from collections.abc import Callable
 from datetime import UTC, datetime
 from enum import IntEnum
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from types import ModuleType, TracebackType
-from typing import ClassVar, Final, Protocol, Self
+from typing import ClassVar, Final, Protocol, Self, TypeAlias, TypeVar
 
 import httpx
 import httpx2
@@ -52,7 +51,7 @@ from betterlite._core_helpers import (
     set_provider_response_headers_in_hidden_params,
     set_response_cost_in_hidden_params,
 )
-from betterlite._core_helpers.values import PythonValue, object_fields, text_of as values_text_of
+from betterlite._core_helpers.values import PythonValue, object_fields, text_of
 from betterlite._cost import completion_cost, cost_per_token, response_cost_calculator
 from betterlite._model_info import get_max_tokens, get_model_info, get_provider_info
 from betterlite._provider import get_llm_provider
@@ -199,29 +198,31 @@ class ReferenceResponse(PrivateBag, Protocol):
     def model_dump(self, **kwargs: PythonValue) -> PythonValue: ...
 
 
-class ReferenceCall(Protocol):
-    def __call__(
-        self,
-        *args: PythonValue | ReferenceResponse | logging.Logger | httpx2.Headers | set[str],
-        **kwargs: PythonValue | ReferenceResponse | logging.Logger | httpx2.Headers | set[str],
-    ) -> PythonValue: ...
+_T_co = TypeVar("_T_co", covariant=True)
+
+
+CallArg: TypeAlias = PythonValue | ReferenceResponse | logging.Logger | httpx2.Headers | set[str]
+
+
+class CallFactory(Protocol[_T_co]):
+    def __call__(self, *args: CallArg, **kwargs: CallArg) -> _T_co: ...
 
 
 class CallModule(Protocol):
-    def __getattr__(self, name: str) -> ReferenceCall: ...
+    def __getattr__(self, name: str) -> CallFactory[PythonValue]: ...
 
 
 class ResponseModule(Protocol):
-    def __getattr__(self, name: str) -> Callable[..., ReferenceResponse]: ...
+    def __getattr__(self, name: str) -> CallFactory[ReferenceResponse]: ...
 
 
 class BudgetShape(Protocol):
     user_dict: dict[str, dict[str, JsonValue]]
-    def __getattr__(self, name: str) -> ReferenceCall: ...
+    def __getattr__(self, name: str) -> CallFactory[PythonValue]: ...
 
 
 class BudgetModule(Protocol):
-    def __getattr__(self, name: str) -> Callable[..., BudgetShape]: ...
+    def __getattr__(self, name: str) -> CallFactory[BudgetShape]: ...
 
 
 LITELLM: ModuleType = importlib.import_module("litellm")
@@ -291,8 +292,8 @@ def gated_write_text(path: Path, text: str) -> int:
         return handle.write(text)
 
 
-def text_of(value: JsonValue) -> str:
-    text = values_text_of(value)
+def string_of(value: JsonValue) -> str:
+    text = text_of(value)
     if text is None:
         raise TypeError("expected a string")
     return text
@@ -311,7 +312,7 @@ def fake_token_counter(
     if text is not None:
         return len(model) + len(text)
     if messages is not None:
-        return len(model) + sum(len(text_of(message["content"])) for message in messages)
+        return len(model) + sum(len(string_of(message["content"])) for message in messages)
     return len(model)
 
 
@@ -349,10 +350,6 @@ def fields_of(value: PythonValue) -> dict[str, PythonValue]:
     if fields is None:
         raise TypeError("expected an object")
     return fields
-
-
-def error_text(value: PythonValue) -> str:
-    return str(as_error(value))
 
 
 def hidden_of(response: PrivateBag) -> dict[str, PythonValue]:
@@ -627,8 +624,8 @@ def test_helper_filters() -> None:
     assert filter_exceptions_from_params(shallow, 1) == {"a": shallow["a"]}
     assert filter_exceptions_from_params(shallow, 2) == expected == {"a": {}}
     at_zero = ValueError(BOOM)
-    assert error_text(filter_exceptions_from_params(at_zero, 0)) == BOOM
-    assert error_text(LITELLM_HELPERS.filter_exceptions_from_params(at_zero, 0)) == BOOM
+    assert str(as_error(filter_exceptions_from_params(at_zero, 0))) == BOOM
+    assert str(as_error(LITELLM_HELPERS.filter_exceptions_from_params(at_zero, 0))) == BOOM
     ours_filtered = fields_of(filter_exceptions_from_params(filter_payload()))
     reference_filtered = fields_of(
         LITELLM_HELPERS.filter_exceptions_from_params(filter_payload())
@@ -917,7 +914,7 @@ def test_budget_hosted_transport(monkeypatch: pytest.MonkeyPatch) -> None:
     requests = list(server.requests)
     expected_paths = [GET_BUDGET, MOVED_GET, GET_BUDGET, MOVED_GET, SET_BUDGET, SET_BUDGET]
     assert [request["path"] for request in requests] == expected_paths
-    agents = [text_of(request["agent"]) for request in requests]
+    agents = [string_of(request["agent"]) for request in requests]
     ours_agent = module_level_client.client.headers["user-agent"]
     assert agents == [agents[0], agents[0], ours_agent, ours_agent, agents[0], ours_agent]
     for request in requests:

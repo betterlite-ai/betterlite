@@ -11,6 +11,7 @@ from betterlite.types.utils.base import Dumpable
 _SKIPPED_NAMES: Final = frozenset({"Logging", "LiteLLMLoggingObj", "Router"})
 
 
+# ast-grep-ignore: no-one-line-functions
 def filter_exceptions_from_params(data: PythonValue, max_depth: int = 20) -> PythonValue:
     return _filtered_value(data, max_depth, frozenset())
 
