@@ -1,0 +1,9 @@
+task: B168
+deviations:
+  - what: 'A2AClient takes and returns the package''s dict-backed ResponseObject models rather than a2a.types models, and its private _a2a_client holds a NativeA2aClient rather than an a2a.client.A2AClient.'
+    why: 'The wheel carries no a2a package, so the request and the response cross to Rust as the package''s own types and the client handle is the native one. B8083 lists the same reason with the function-level A2A deviations.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/client.py#L50-L106
+  - what: 'betterlite.experimental_mcp_client imports call_openai_tool and load_mcp_tools directly and never raises LiteLLM''s "MCP client dependencies are missing" ImportError when the mcp package is absent.'
+    why: 'The wheel carries the MCP client in Rust and needs no optional package, as the task says; a missing mcp package only matters to code that imports mcp itself.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/__init__.py#L1-L8
+kept_bugs: []
