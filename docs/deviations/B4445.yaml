@@ -1,0 +1,24 @@
+task: B4445
+deviations:
+  - what: The database write after a live /health probe is handed to a tracker the server owns and drains at shutdown, not a detached asyncio task.
+    why: Repository rules forbid detached tasks, because a detached write outlives shutdown and loses its error. The response still does not wait for the write, as in LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L1065-L1080
+  - what: The background result cache arrives through the HealthResultsSource trait instead of LiteLLM's module-level health_check_results global.
+    why: Dependencies come in through constructors, so the server owns one cache value and hands the route a snapshot; the filtering, the 503 rule and the response bodies are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L1230-L1274
+  - what: 'The error bodies reuse the proxy''s existing HTTPException rendering, {"detail": ...} with a text or an {"error": ...} detail.'
+    why: LiteLLM relies on FastAPI's default exception handler; betterlite has one renderer for the same envelope, and the status and detail text match.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1913-L1919
+  - what: An offset past i64 saturates to i64::MAX and the page echoes it back, where LiteLLM echoes Python's unbounded int.
+    why: The route parses the query the way FastAPI validates it, into an i64, and the rows read is that i64. Both answers are an empty page, since Prisma rejects the huge skip and get_health_check_history catches it, and no working setup sends an offset past i64.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L1297-L1335
+kept_bugs:
+  - what: A live /health probe that names no model, with no CLI model, writes no history row even though it probed every deployment.
+    why: _perform_health_check_and_save saves only when cli_model or target_model names one model, so an untargeted monitoring call does not grow the table; a setup that polls /health relies on that.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L1065-L1080
+  - what: A failed /health/history read answers 200 with an empty page instead of the route's 500.
+    why: 'PrismaClient.get_health_check_history catches the driver error, logs "Error getting health check history: %s" and returns [], so the route''s except can never fire; B7640''s history() ports that, and a setup that polls history relies on the empty page.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L6980-L6982
+  - what: A failed /health/latest read answers 200 with an empty object instead of the route's 500.
+    why: 'fetch_latest_health_checks catches the query error, logs "Error getting all latest health checks: %s" and returns (), so the route''s except can never fire; B7640''s fetch_latest() ports that.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/health_check_latest.py#L82-L87
