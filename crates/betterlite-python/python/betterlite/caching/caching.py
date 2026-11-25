@@ -7,7 +7,6 @@ from pydantic import JsonValue
 
 import betterlite
 from betterlite._cache_ops import CacheOperations
-from betterlite._native import NativeCache
 from betterlite._settings.callbacks import Callback
 from betterlite.caching._backend import cluster_nodes_are_set
 from betterlite.caching.base_cache import BaseCache
@@ -188,8 +187,6 @@ class Cache(CacheOperations):
                     backend.namespace = self.namespace
                 case BaseCache():
                     ...
-        if _backend is None and self.type == LiteLLMCacheType.LOCAL:
-            self._native_cache = NativeCache(self._settings_text())
 
 
 def _selected_type(cache_type: LiteLLMCacheType | str | None) -> LiteLLMCacheType:

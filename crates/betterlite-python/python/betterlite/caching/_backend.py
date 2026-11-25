@@ -20,20 +20,10 @@ def cluster_nodes_are_set() -> bool:
     return raw is not None and raw.strip() != ""
 
 
-# ast-grep-ignore: no-one-line-functions - a backend write sends its value through this serialise
-def _text(value: JsonValue) -> str:
-    return json.dumps(value)
-
-
-# ast-grep-ignore: no-one-line-functions - a backend read parses its answer through this call
-def _value(text: str) -> JsonValue:
-    return _JSON.validate_json(text)
-
-
 def _value_or_none(text: str | None) -> JsonValue:
     if text is None:
         return None
-    return _value(text)
+    return _JSON.validate_json(text)
 
 
 def _number(text: str) -> int | float:
@@ -60,6 +50,18 @@ def _ttl_of(kwargs: dict[str, JsonValue]) -> float | None:
             raise ValueError(f"ttl must be a number, not {type(raw).__name__}")
 
 
+# LiteLLM reads nx with kwargs.get("nx", False); another type names the field and fails.
+def _nx(kwargs: dict[str, JsonValue]) -> bool:
+    raw = kwargs.get("nx")
+    if raw is None:
+        return False
+    match raw:
+        case bool() as flag:
+            return flag
+        case int() | float() | str() | list() | dict():
+            raise ValueError(f"nx must be a bool, not {type(raw).__name__}")
+
+
 class _BackendCache(BaseCache, Generic[_HandleT]):
     native: _HandleT
 
@@ -69,11 +71,11 @@ class _BackendCache(BaseCache, Generic[_HandleT]):
 
     @override
     def set_cache(self, key: str, value: JsonValue, **kwargs: JsonValue) -> None:
-        self.native.set(key, _text(value), self._write_ttl(kwargs))
+        self.native.set(key, json.dumps(value), self._write_ttl(kwargs))
 
     @override
     async def async_set_cache(self, key: str, value: JsonValue, **kwargs: JsonValue) -> None:
-        await self.native.async_set(key, _text(value), self._write_ttl(kwargs))
+        await self.native.async_set(key, json.dumps(value), self._write_ttl(kwargs))
 
     @override
     def get_cache(self, key: str, **_kwargs: JsonValue) -> JsonValue:

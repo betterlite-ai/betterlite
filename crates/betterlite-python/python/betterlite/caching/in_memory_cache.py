@@ -36,6 +36,9 @@ class InMemoryCache(_BackendCache[NativeMemory]):
             "max_size_in_memory": self.max_size_in_memory,
             "max_size_per_item": self.max_size_per_item,
         }
+        # A composed DualCache reads the tier's own default from the native handle.
+        if resolved_ttl != _DEFAULT_TTL:
+            settings["default_ttl"] = resolved_ttl
         self.native = NativeMemory(json.dumps(settings))
 
     # An unset ttl writes with the tier's default_ttl, as LiteLLM's InMemoryCache does.

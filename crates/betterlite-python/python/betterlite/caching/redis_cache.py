@@ -6,13 +6,21 @@ from typing_extensions import override
 
 import betterlite
 from betterlite._native import NativeRedis
-from betterlite.caching._backend import _BackendCache, _number, _ttl_of, cluster_nodes_are_set
+from betterlite.caching._backend import (
+    _BackendCache,
+    _number,
+    _nx,
+    _ttl_of,
+    cluster_nodes_are_set,
+)
 
 _DEFAULT_TTL: Final = 60
 _DEFAULT_FLUSH_SIZE: Final = 100
 
 
 class RedisCache(_BackendCache[NativeRedis]):
+    _native_ready: bool = False
+
     def __init__(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L607-L617
         self,
         host: str | None = None,
@@ -29,7 +37,7 @@ class RedisCache(_BackendCache[NativeRedis]):
         configured: float | None = betterlite.default_redis_ttl
         resolved_ttl = _DEFAULT_TTL if configured is None else int(configured)
         super().__init__(default_ttl=resolved_ttl)
-        self.namespace = namespace
+        self._namespace = namespace
         self.redis_flush_size = (
             _DEFAULT_FLUSH_SIZE if redis_flush_size is None else redis_flush_size
         )
@@ -50,6 +58,25 @@ class RedisCache(_BackendCache[NativeRedis]):
         if namespace is not None:
             settings["namespace"] = namespace
         self.native = NativeRedis(json.dumps(settings))
+        self._native_ready = True
+
+    # LiteLLM's Cache assigns a RedisCache's namespace and later keys carry the new prefix.
+    @property
+    def namespace(self) -> str | None:
+        return self._namespace
+
+    @namespace.setter
+    def namespace(self, value: str | None) -> None:
+        self._namespace = value
+        if self._native_ready:
+            self.native.set_namespace(value)
+
+    # LiteLLM passes nx to the Redis SET; another type names the field and fails.
+    @override
+    async def async_set_cache(self, key: str, value: JsonValue, **kwargs: JsonValue) -> None:
+        await self.native.async_set(
+            key, json.dumps(value), self._write_ttl(kwargs), _nx(kwargs)
+        )
 
     # LiteLLM's increment is typed int and uses INCR; a missing ttl takes the cache's own default.
     def increment_cache(

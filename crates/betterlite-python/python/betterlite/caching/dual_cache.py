@@ -7,7 +7,7 @@ from typing_extensions import override
 
 import betterlite
 from betterlite._native import NativeDual
-from betterlite.caching._backend import _number, _text, _ttl_of, _value_or_none
+from betterlite.caching._backend import _number, _ttl_of, _value_or_none
 from betterlite.caching.base_cache import BaseCache
 from betterlite.caching.in_memory_cache import InMemoryCache
 from betterlite.caching.redis_cache import RedisCache
@@ -88,7 +88,7 @@ class DualCache(BaseCache):
         if _local_only(local_only):
             self.in_memory_cache.set_cache(key, value, **self._memory_kwargs(kwargs))
             return
-        self.native.set(key, _text(value), _ttl_of(kwargs))
+        self.native.set(key, json.dumps(value), _ttl_of(kwargs))
 
     @override
     async def async_set_cache(
@@ -103,7 +103,7 @@ class DualCache(BaseCache):
                 key, value, **self._memory_kwargs(kwargs)
             )
             return
-        await self.native.async_set(key, _text(value), _ttl_of(kwargs))
+        await self.native.async_set(key, json.dumps(value), _ttl_of(kwargs))
 
     @override
     def get_cache(
