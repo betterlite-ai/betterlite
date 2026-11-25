@@ -18,9 +18,9 @@ fn replays_the_model_info_datetime_corpus(
         .expect("the seed has a UTF-8 name");
     let decoded = decode_model_info_datetime(text);
     if stem.starts_with("valid") {
-        assert!(decoded.is_some(), "{} should decode", stem);
+        assert!(decoded.is_some(), "{stem} should decode");
     }
     if stem.starts_with("invalid") {
-        assert!(decoded.is_none(), "{} should not decode", stem);
+        assert!(decoded.is_none(), "{stem} should not decode");
     }
 }

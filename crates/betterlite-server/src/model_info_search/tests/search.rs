@@ -24,20 +24,25 @@ enum Call {
     Find(ModelFilter, i64),
 }
 
+#[derive(Clone, Copy)]
+enum Failing {
+    Nothing,
+    Count,
+    Find,
+}
+
 struct FakeDatabase {
     rows: Vec<ProxyModelTable>,
     calls: Mutex<Vec<Call>>,
-    fail_count: bool,
-    fail_find: bool,
+    failing: Failing,
 }
 
 impl FakeDatabase {
-    fn new(rows: Vec<ProxyModelTable>, fail_count: bool, fail_find: bool) -> Self {
+    fn new(rows: Vec<ProxyModelTable>, failing: Failing) -> Self {
         Self {
             rows,
             calls: Mutex::new(Vec::new()),
-            fail_count,
-            fail_find,
+            failing,
         }
     }
 
@@ -77,7 +82,7 @@ fn database_failure() -> SearchDatabaseError {
 impl SearchDatabase for FakeDatabase {
     async fn count(&self, filter: &ModelFilter) -> Result<i64, SearchDatabaseError> {
         self.record(Call::Count(filter.clone()));
-        if self.fail_count {
+        if matches!(self.failing, Failing::Count) {
             return Err(database_failure());
         }
         Ok(i64::try_from(self.matching(filter).len()).unwrap_or(i64::MAX))
@@ -89,7 +94,7 @@ impl SearchDatabase for FakeDatabase {
         take: i64,
     ) -> Result<Vec<ProxyModelTable>, SearchDatabaseError> {
         self.record(Call::Find(filter.clone(), take));
-        if self.fail_find {
+        if matches!(self.failing, Failing::Find) {
             return Err(database_failure());
         }
         let limit = usize::try_from(take).unwrap_or(0);
@@ -174,7 +179,7 @@ fn unowned_sources<'source>(
 
 #[tokio::test]
 async fn model_name_search() {
-    let db = FakeDatabase::new(Vec::new(), false, false);
+    let db = FakeDatabase::new(Vec::new(), Failing::Nothing);
     let decrypt = decryption();
     let models = vec![
         named("GPT-4O"),
@@ -211,7 +216,7 @@ async fn model_name_search() {
 
 #[tokio::test]
 async fn byok_scope_retained() {
-    let db = FakeDatabase::new(Vec::new(), false, false);
+    let db = FakeDatabase::new(Vec::new(), Failing::Nothing);
     let decrypt = decryption();
     let reads = FakeReads {
         teams: vec![String::from("team-b")],
@@ -238,7 +243,7 @@ async fn byok_scope_retained() {
 
 #[tokio::test]
 async fn a_config_id_is_not_excluded_from_the_db() {
-    let db = FakeDatabase::new(vec![searchable_row("d1", "gpt-4o-db")], false, false);
+    let db = FakeDatabase::new(vec![searchable_row("d1", "gpt-4o-db")], Failing::Nothing);
     let decrypt = decryption();
     let sources = unowned_sources(&db, &decrypt, None, None);
     let models = vec![model("gpt-4o-shadow", vec![("id", text("d1"))])];
@@ -250,7 +255,7 @@ async fn a_config_id_is_not_excluded_from_the_db() {
 
 #[tokio::test]
 async fn a_count_error_keeps_router_models() {
-    let db = FakeDatabase::new(vec![searchable_row("d1", "gpt-4o-db")], true, false);
+    let db = FakeDatabase::new(vec![searchable_row("d1", "gpt-4o-db")], Failing::Count);
     let decrypt = decryption();
     let sources = unowned_sources(&db, &decrypt, None, None);
     let models = vec![named("gpt-4o")];
@@ -263,7 +268,7 @@ async fn a_count_error_keeps_router_models() {
 
 #[tokio::test]
 async fn a_fetch_error_keeps_router_models() {
-    let db = FakeDatabase::new(vec![searchable_row("d1", "gpt-4o-db")], false, true);
+    let db = FakeDatabase::new(vec![searchable_row("d1", "gpt-4o-db")], Failing::Find);
     let decrypt = decryption();
     let sources = unowned_sources(&db, &decrypt, None, None);
     let models = vec![named("gpt-4o")];
@@ -293,8 +298,7 @@ async fn a_decrypt_error_keeps_router_models() {
                 "{}",
             ),
         ],
-        false,
-        false,
+        Failing::Nothing,
     );
     let decrypt = decryption();
     let sources = unowned_sources(&db, &decrypt, None, None);
