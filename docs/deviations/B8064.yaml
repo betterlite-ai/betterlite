@@ -9,7 +9,7 @@ deviations:
   - what: "ocr_cost on a per-page model whose usage reports no pages_processed raises ValueError naming the model and provider, where LiteLLM's message is the fixed 'OCR response pages_processed is None'."
     why: The Rust OCR calculator's error carries the model it read, so the failure names what was priced.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2233
-  - what: "A realtime result with no type key, or a response.done event with no response object, raises a native Exception naming the missing field or shape; LiteLLM indexes result['type'] and result['response'] directly and lets Python's KeyError escape."
+  - what: "A realtime result with no type key, a response.done event with no response object, or a usage value that is neither an object nor null, raises a native Exception naming the missing field or shape; LiteLLM indexes result['type'] and result['response'] directly and lets Python's KeyError or AttributeError escape."
     why: The event list arrives as data, so the failure names the field instead of a bare KeyError.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2828
 kept_bugs: []
