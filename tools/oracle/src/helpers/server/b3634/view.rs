@@ -74,8 +74,7 @@ pub(super) fn outcome_view(
     }))
 }
 
-// This module builds the batch result itself, so it is compared field by field; a transform or
-// stream-builder response is another task's, and only the id and model the payload stamps count.
+// The batch result is this module's conversion; other results compare the stamped id and model.
 fn result_view(body: &Value) -> Value {
     if body.is_null() {
         return Value::Null;
