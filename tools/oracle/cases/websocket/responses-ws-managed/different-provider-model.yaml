@@ -30,7 +30,7 @@ call:
                 input_tokens: 0
                 output_tokens: 0
                 total_tokens: 0
-                cost: 0
+                cost: 0.0
           event_type: null
           dump: null
         raise_after: null
