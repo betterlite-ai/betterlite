@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use super::super::super::Op;
+use super::super::Op;
 use super::normalize_warmup;
 use crate::websocket_driver::service::{ServiceInput, ServiceTag};
 use crate::websocket_driver::{TranscriptObservation, compare_transcript};

@@ -3,7 +3,7 @@ use std::io::{self, Read as _};
 use std::path::PathBuf;
 use std::str::{self, Utf8Error};
 
-use crate::websocket_driver::service::managed::InputError;
+use crate::websocket_driver::responses_ws_managed::InputError;
 use betterlite_server::assets::paths::try_safe_join;
 
 use super::{

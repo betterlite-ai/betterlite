@@ -1,4 +1,3 @@
-#[path = "../helpers/core_ops/responses_ws_managed.rs"]
-pub(crate) mod managed;
-#[path = "../helpers/core_ops/responses_ws_managed/fixtures/service.rs"]
-pub(crate) mod service;
+#[path = "../helpers/core_ops/responses_ws_managed/fixtures/input.rs"]
+mod input_schema;
+input_schema::define_input!(pub);

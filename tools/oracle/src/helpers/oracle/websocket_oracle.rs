@@ -1,5 +1,7 @@
-#[path = "../../websocket_driver/responses_ws_managed.rs"]
-mod adapter;
+#[path = "../core_ops/responses_ws_managed.rs"]
+mod managed;
+#[path = "../core_ops/responses_ws_managed/fixtures/service.rs"]
+mod service;
 use crate::websocket_driver::DriverError;
 use crate::websocket_driver::service::{ServiceInput, ServiceTag, Services};
 use betterlite_oracle_helper_api::error::HelperError;
@@ -23,7 +25,7 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         let mut services = Services::default();
-        services.register_service(ServiceTag::ManagedResponsesTurns, adapter::service::run)?;
+        services.register_service(ServiceTag::ManagedResponsesTurns, service::run)?;
         services.run_service(input.service, &input.input)
     }
 }
