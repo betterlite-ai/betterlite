@@ -1,0 +1,60 @@
+kind: websocket
+name: routing-and-metadata
+driver: service
+service: managed_responses_turns
+input:
+  managed:
+  - setup:
+      model: openai/gpt-4o-mini
+      litellm_metadata:
+        model_group: router-model
+      custom_llm_provider: openai
+      api_key: key-1
+      api_base: null
+      timeout: 7.5
+      first_message: null
+      kwargs:
+        stream: false
+    frames:
+    - '{"type": "response.create", "model": "router-model", "input": "hello", "store": true, "tools": [{"type":
+      "function", "name": "lookup"}], "tool_choice": "auto", "instructions": "be brief", "metadata": {"k": "v"}}'
+    disconnect: connection closed
+    scripts:
+    - fail: null
+      chunks:
+      - kind: json
+        value:
+          type: response.completed
+          response:
+            id: r-route
+            output:
+            - type: message
+              content:
+              - type: output_text
+                text: A
+            usage:
+              input_tokens: 0
+              output_tokens: 0
+              total_tokens: 0
+              cost: 0.0
+        event_type: null
+        dump: null
+      raise_after: null
+      raise_message: ''
+    quota: null
+    sink:
+      fails_at: null
+      message: client send failed
+    normalize_warmup: false
+    deadline_millis: 120000
+path: /v1/responses
+headers: {}
+requested_subprotocols: []
+expected_http_status: 101
+negotiated_subprotocol: null
+frames:
+- direction: provider_to_client
+  action: expect
+  text: '{"error":{"message":"''async for'' requires an object with __aiter__ method, got ResponsesAPIResponse","type":"server_error"},"type":"error"}'
+close: null
+env: {}
