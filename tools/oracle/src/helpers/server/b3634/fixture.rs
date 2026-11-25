@@ -111,11 +111,7 @@ pub(super) fn logging_object(
         || Duration::ZERO,
     )
     .or_value_error()?;
-    logging.model_call_details.extend(
-        details
-            .iter()
-            .map(|(name, value)| (name.clone(), value.clone())),
-    );
+    logging.model_call_details.extend(details.clone());
     Ok(StreamLoggingObject {
         slot: Mutex::new(Some(StreamLoggingState {
             logging,
