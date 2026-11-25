@@ -1,7 +1,7 @@
 id: B7870
 milestone: M12 python
 title: Python file_content, afile_content and the streaming file response
-status: todo
+status: done
 depends_on: [B6040, B158, B1030, B1080]
 file: tasks/B7870-python-file-content.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/files/main.py"
 parent: B161
 split_from: B161
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3212
