@@ -83,7 +83,7 @@ fn call_for_dispatch(
 fn dependencies<'deps>(
     outbound: &'deps Outbound,
     ports: &'deps DispatchPorts,
-) -> ResponsesCreateDeps<'deps, Outbound, Configs, Nothing, NoInterception, ()> {
+) -> ResponsesCreateDeps<'deps, Outbound, Configs, Nothing, Nothing, ()> {
     ResponsesCreateDeps {
         resolver: &ports.resolver,
         lookup: &ports.configs,

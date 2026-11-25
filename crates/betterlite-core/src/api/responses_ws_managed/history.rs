@@ -6,7 +6,6 @@ use crate::api::responses_ws_history::history::extract_response_id;
 use crate::api::responses_ws_history::messages::extract_output_messages;
 use crate::api::responses_ws_history::{FrameSink, ManagedResponsesWebSocket};
 
-// _save_turn_history: one map write for a completed turn, keyed by the decoded response id
 pub fn save_turn_history<Sink>(
     handler: &mut ManagedResponsesWebSocket<Sink>,
     completed: Option<&IndexMap<String, Json>>,

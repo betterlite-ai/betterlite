@@ -19,7 +19,6 @@ use crate::api::responses_ws_history::{FrameSink, ManagedResponsesWebSocket};
 
 pub const RATE_LIMIT_EXCEEDED: &str = "rate_limit_exceeded";
 
-// what leaves _process_response_create for run's unexpected-error path
 #[derive(Debug, Error)]
 pub enum ManagedTurnError {
     #[error(transparent)]
@@ -29,7 +28,6 @@ pub enum ManagedTurnError {
     Quota(ErrorClass),
 }
 
-// the provider call one frame builds, with the messages its history save needs
 struct PreparedCall {
     model: String,
     call_kwargs: IndexMap<String, Json>,
@@ -69,7 +67,6 @@ where
     Ok(())
 }
 
-// the message a turn processes: invalid JSON is answered, a warmup is acknowledged, a refused frame is answered
 async fn accepted_message<Sink>(
     handler: &ManagedResponsesWebSocket<Sink>,
     raw_message: &str,
@@ -92,7 +89,6 @@ where
     Ok(Some(message))
 }
 
-// the call kwargs one frame builds: routed model, applied history, credentials and proxy body
 fn prepare_call<Sink>(
     handler: &ManagedResponsesWebSocket<Sink>,
     message: &IndexMap<String, Json>,
@@ -130,7 +126,6 @@ where
     })
 }
 
-// the quota gate runs before any provider preparation, and only a rate limit answers with a frame
 async fn admits_frame<Sink>(
     handler: &ManagedResponsesWebSocket<Sink>,
     raw_message: &str,
@@ -169,7 +164,6 @@ fn optional_string(value: Option<Json>) -> Option<String> {
     }
 }
 
-// a frame repeating the public alias reuses the router-resolved connection model
 fn routed_model<Sink>(
     handler: &ManagedResponsesWebSocket<Sink>,
     requested_model: Option<&str>,

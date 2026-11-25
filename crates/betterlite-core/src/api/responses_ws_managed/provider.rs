@@ -17,7 +17,6 @@ pub enum ProviderChunk {
     },
 }
 
-// The stage a provider failed in; the error frame reports the wrapped cause's own text.
 #[derive(Debug, Error)]
 pub enum ProviderCallError<Source> {
     #[error("{0}")]

@@ -15,7 +15,6 @@ pub trait FrameSource: Send {
     async fn receive_text(&mut self) -> Result<String, FrameReceiveError<Self::Error>>;
 }
 
-// Every receive failure ends the connection quietly, so run only needs the cause to log it.
 #[derive(Debug, Error)]
 pub enum FrameReceiveError<Source> {
     #[error("{0}")]
@@ -38,7 +37,6 @@ pub async fn run<Sink, Provider, Source>(
     }
 }
 
-// first_message precedes the receive loop, and each turn finishes before the next frame is read
 async fn drive<Sink, Provider, Source>(
     handler: &mut ManagedResponsesWebSocket<Sink>,
     provider: &Provider,

@@ -35,7 +35,6 @@ where
     Ok(completed)
 }
 
-// None covers both a None chunk and a chunk the serializer refused
 fn serialized_chunk(
     writer: &ChunkWriter,
     chunk: ProviderChunk,
@@ -68,7 +67,6 @@ fn json_event_type(value: &Json) -> Option<String> {
     }
 }
 
-// _load_json_object with the exception dropped: the serialized completion must be an object to be usable
 fn completed_object(serialized: &str) -> Option<IndexMap<String, Json>> {
     let Ok(parsed) = serde_json::from_str::<Json>(serialized) else {
         return None;
