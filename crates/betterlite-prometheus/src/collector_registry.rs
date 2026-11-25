@@ -20,7 +20,6 @@ pub enum CollectorRegistryError {
     MultiprocessBound { name: String, path: PathBuf },
 }
 
-// CollectorRegistry: a registry writes to files only when multiprocess built it with a writer
 #[derive(Debug, Default)]
 pub struct CollectorRegistry {
     multiprocess: Option<Arc<MultiProcessWriter>>,
@@ -34,7 +33,7 @@ struct RegistryState {
 }
 
 impl CollectorRegistry {
-    // the one registry a worker builds when PROMETHEUS_MULTIPROC_DIR is set, so every metric writes into the folder
+    // the one registry a worker builds when PROMETHEUS_MULTIPROC_DIR is set
     #[must_use]
     pub fn multiprocess(writer: MultiProcessWriter) -> Self {
         Self {
@@ -43,12 +42,11 @@ impl CollectorRegistry {
         }
     }
 
-    // the folder the scrape route reads, when this worker writes files at all
     #[must_use]
     pub fn multiprocess_dir(&self) -> Option<&Path> {
         self.multiprocess
             .as_deref()
-            .map(MultiProcessWriter::directory)
+            .map(|writer| writer.directory.as_path())
     }
 
     // CollectorRegistry.register: every sample name a collector owns is claimed before any of them is stored
@@ -70,7 +68,7 @@ impl CollectorRegistry {
             collector.bind_writer(writer).map_err(|bound| {
                 CollectorRegistryError::MultiprocessBound {
                     name: collector.description.name.clone(),
-                    path: bound.directory().to_path_buf(),
+                    path: bound.directory.clone(),
                 }
             })?;
         }

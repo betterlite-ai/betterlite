@@ -6,7 +6,6 @@ pub mod writer;
 use std::io;
 use std::path::{Path, PathBuf};
 
-// the multiprocess folder, the files in it and the keys they hold, as prometheus_client reports them
 #[derive(Debug, thiserror::Error)]
 pub enum MultiprocessError {
     #[error("env PROMETHEUS_MULTIPROC_DIR is not set or not a directory")]
@@ -63,7 +62,6 @@ pub enum MultiprocessError {
     InvalidBucketBound { bound: String },
 }
 
-// the collector and the writer both refuse a folder prometheus_client could not write into
 pub(crate) fn check_directory(path: &Path) -> Result<(), MultiprocessError> {
     if path.is_dir() {
         Ok(())

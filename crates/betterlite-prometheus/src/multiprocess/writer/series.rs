@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::ops::Add;
 
 use crate::collector_factory::collector::{MetricUpdate, MetricValue};
 use crate::collector_registry::metric::sample::{value_of, within};
@@ -7,9 +6,8 @@ use crate::collector_registry::metric::{Bucket, CollectorDescription, CollectorK
 use crate::multiprocess::MultiprocessError;
 use crate::scrape_endpoint::float::float_to_go_string;
 
-use super::file::FileState;
+use super::file::{FileState, ValueChange};
 
-// the keys one series owns in its file: a counter's or gauge's one sample, or a histogram's sum and its bucket per bound
 pub(crate) enum SeriesKeys {
     Single(String),
     Histogram(HistogramKeys),
@@ -62,7 +60,6 @@ pub(crate) fn keys(
     }
 }
 
-// a histogram's _sum and one _bucket per prepared bound, in bound order
 fn histogram_keys(
     description: &CollectorDescription,
     label_values: &[String],
@@ -109,7 +106,6 @@ fn key_of(
     .map_err(|source| MultiprocessError::Key { source })
 }
 
-// one update against the file: a counter or gauge moves its one sample, a histogram its sum and the bucket the amount lands in
 pub(crate) fn apply(
     file: &mut FileState,
     keys: &SeriesKeys,
@@ -119,8 +115,12 @@ pub(crate) fn apply(
         file.ensure(key)?;
     }
     match (keys, update) {
-        (SeriesKeys::Single(key), MetricUpdate::Inc(amount)) => file.add(key, value_of(amount)),
-        (SeriesKeys::Single(key), MetricUpdate::Set(value)) => file.set(key, value_of(value)),
+        (SeriesKeys::Single(key), MetricUpdate::Inc(amount)) => {
+            file.change(key, ValueChange::Add(value_of(amount)))
+        }
+        (SeriesKeys::Single(key), MetricUpdate::Set(value)) => {
+            file.change(key, ValueChange::Replace(value_of(value)))
+        }
         (SeriesKeys::Histogram(keys), MetricUpdate::Observe(amount)) => observe(file, keys, amount),
         (SeriesKeys::Single(_), MetricUpdate::Observe(_) | MetricUpdate::Remove)
         | (
@@ -136,15 +136,13 @@ fn observe(
     keys: &HistogramKeys,
     amount: MetricValue,
 ) -> Result<(), MultiprocessError> {
-    let total = Add::add(file.value(&keys.sum)?, value_of(amount));
-    file.set(&keys.sum, total)?;
+    file.change(&keys.sum, ValueChange::Add(value_of(amount)))?;
     let landed = keys
         .buckets
         .iter()
         .find(|bucket| within(amount, bucket.bound));
     if let Some(bucket) = landed {
-        let count = Add::add(file.value(&bucket.key)?, 1.0_f64);
-        file.set(&bucket.key, count)?;
+        file.change(&bucket.key, ValueChange::Add(1.0_f64))?;
     }
     Ok(())
 }

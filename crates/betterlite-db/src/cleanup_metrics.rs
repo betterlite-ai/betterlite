@@ -3,9 +3,8 @@ mod tests;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use betterlite_prometheus::collector_factory::collector::{Collector as _, MetricValue};
-use betterlite_prometheus::collector_registry::metric::{
-    Bucket, CollectorKind, GaugeMode, PrometheusMetric,
-};
+use betterlite_prometheus::collector_registry::metric::gauge_mode::GaugeMode;
+use betterlite_prometheus::collector_registry::metric::{Bucket, CollectorKind, PrometheusMetric};
 use betterlite_prometheus::collector_registry::{CollectorRegistry, CollectorRegistryError};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::FromPrimitive as _;

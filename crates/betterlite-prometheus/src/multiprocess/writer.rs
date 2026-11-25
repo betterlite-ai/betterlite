@@ -4,7 +4,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 
 use crate::collector_factory::collector::MetricUpdate;
-use crate::collector_registry::metric::{CollectorDescription, CollectorKind, GaugeMode};
+use crate::collector_registry::metric::gauge_mode::GaugeMode;
+use crate::collector_registry::metric::{CollectorDescription, CollectorKind};
 
 use super::MultiprocessError;
 use super::check_directory;
@@ -14,7 +15,6 @@ mod series;
 mod tests;
 
 use file::FileState;
-use series::SeriesKeys;
 
 // values.py names a gauge's file after its multiprocess mode and every other metric after its type
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -42,10 +42,9 @@ impl FileKind {
     }
 }
 
-// MultiProcessValue: every value of one process lives in the folder's files, and each inc and set writes through at once
 #[derive(Debug)]
 pub struct MultiProcessWriter {
-    directory: PathBuf,
+    pub(crate) directory: PathBuf,
     pid: u32,
     state: Mutex<WriterState>,
 }
@@ -56,7 +55,7 @@ struct WriterState {
 }
 
 // what one locked write does: an update, or the zero entries a new label-less series creates
-enum SeriesWrite {
+pub(crate) enum SeriesWrite {
     Update(MetricUpdate),
     Create,
 }
@@ -72,12 +71,6 @@ impl MultiProcessWriter {
         })
     }
 
-    #[must_use]
-    pub const fn directory(&self) -> &Path {
-        &self.directory
-    }
-
-    // one update: every key the series owns becomes a zero entry first, then the file takes what the update changes
     pub(crate) fn update(
         &self,
         description: &CollectorDescription,
@@ -90,67 +83,44 @@ impl MultiProcessWriter {
         self.write_series(description, label_values, SeriesWrite::Update(update));
     }
 
-    // prometheus_client builds the one series of a label-less metric together with the metric, so it exists before any update
-    pub(crate) fn create_series(
-        &self,
-        description: &CollectorDescription,
-        label_values: &[String],
-    ) {
-        self.write_series(description, label_values, SeriesWrite::Create);
-    }
-
-    // both writes take the one lock and open the kind's file the same way; a failure goes to the log, never to the caller
-    fn write_series(
+    // a failure goes to the log, never to the caller
+    pub(crate) fn write_series(
         &self,
         description: &CollectorDescription,
         label_values: &[String],
         write: SeriesWrite,
     ) {
+        if let Err(error) = self.write_locked(description, label_values, write) {
+            tracing::error!(%error, "writing a metric to the multiprocess folder failed");
+        }
+    }
+
+    fn write_locked(
+        &self,
+        description: &CollectorDescription,
+        label_values: &[String],
+        write: SeriesWrite,
+    ) -> Result<(), MultiprocessError> {
+        let keys = series::keys(description, label_values)?;
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        let opened = open_series(
+        let file = open_file(
             &mut state,
             &self.directory,
+            FileKind::of(description),
             self.pid,
-            description,
-            label_values,
-        );
-        let (file, keys) = match opened {
-            Ok(open) => open,
-            Err(error) => return log_failure(&error),
-        };
+        )?;
         match write {
-            SeriesWrite::Update(update) => {
-                if let Err(error) = series::apply(file, &keys, update) {
-                    log_failure(&error);
-                }
-            }
+            SeriesWrite::Update(update) => series::apply(file, &keys, update),
             SeriesWrite::Create => {
                 for key in keys.created() {
-                    if let Err(error) = file.ensure(key) {
-                        log_failure(&error);
-                        return;
-                    }
+                    file.ensure(key)?;
                 }
+                Ok(())
             }
         }
     }
 }
 
-// the kind's file, open or opened now, together with the keys this series owns in it
-fn open_series<'state>(
-    state: &'state mut WriterState,
-    directory: &Path,
-    pid: u32,
-    description: &CollectorDescription,
-    label_values: &[String],
-) -> Result<(&'state mut FileState, SeriesKeys), MultiprocessError> {
-    let kind = FileKind::of(description);
-    let keys = series::keys(description, label_values)?;
-    let file = open_file(state, directory, kind, pid)?;
-    Ok((file, keys))
-}
-
-// the writer's one lock over the open files: a kind's file opens on its first write and stays open
 fn open_file<'state>(
     state: &'state mut WriterState,
     directory: &Path,
@@ -161,9 +131,4 @@ fn open_file<'state>(
         Entry::Occupied(entry) => Ok(entry.into_mut()),
         Entry::Vacant(entry) => Ok(entry.insert(FileState::open(directory, kind, pid)?)),
     }
-}
-
-// a failed write must not fail the request that moved the metric, so the file path and the error go to the log
-fn log_failure(error: &MultiprocessError) {
-    tracing::error!(%error, "writing a metric to the multiprocess folder failed");
 }

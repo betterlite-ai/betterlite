@@ -4,33 +4,15 @@ use std::time::SystemTime;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 
-use crate::collector_factory::collector::MetricValue;
+use crate::collector_factory::collector::{Collector, MetricUpdate, MetricValue};
 use crate::multiprocess::writer::MultiProcessWriter;
 
-use sample::Sample;
+use gauge_mode::GaugeMode;
+use sample::{Sample, added};
 
 mod binding;
-mod collector;
+pub mod gauge_mode;
 pub mod sample;
-
-// Gauge._MULTIPROC_MODES as the three LiteLLM uses: the gauge file values.py writes, which the collectors combine differently
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub enum GaugeMode {
-    All,
-    LiveSum,
-    LiveMax,
-}
-
-impl GaugeMode {
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::All => "all",
-            Self::LiveSum => "livesum",
-            Self::LiveMax => "livemax",
-        }
-    }
-}
 
 const MISSING_LABEL: &str = "None";
 
@@ -114,7 +96,6 @@ pub struct CollectorDescription {
     pub help: String,
     pub label_names: Vec<String>,
     pub buckets: Vec<Bucket>,
-    // the gauge mode the writer names the file after; every other kind ignores it
     pub multiprocess_mode: GaugeMode,
 }
 
@@ -132,7 +113,6 @@ pub struct PrometheusMetric {
     pub label_values: Vec<String>,
     pub samples: Arc<Mutex<IndexMap<Vec<String>, Sample>>>,
     pub created: SystemTime,
-    // the writer the registry bound the metric to, shared by every clone and handle and empty until register
     pub multiprocess: Arc<Mutex<Option<Arc<MultiProcessWriter>>>>,
 }
 
@@ -146,12 +126,12 @@ impl PrometheusMetric {
         label_names: &[&str],
         buckets: Vec<Bucket>,
     ) -> Self {
-        let created = SystemTime::now();
         let registered_name = match kind {
             CollectorKind::Counter => name.strip_suffix("_total").unwrap_or(name),
             CollectorKind::Gauge | CollectorKind::Histogram => name,
         };
-        let description = Arc::new(CollectorDescription {
+        let created = SystemTime::now();
+        let description = CollectorDescription {
             name: registered_name.to_owned(),
             kind,
             help: help.to_owned(),
@@ -161,10 +141,20 @@ impl PrometheusMetric {
                 .collect(),
             buckets,
             multiprocess_mode: GaugeMode::All,
-        });
-        let samples = initial_samples(&description, created);
+        };
+        let mut samples = IndexMap::new();
+        // prometheus_client builds the one series of a label-less metric in the constructor, so it is written before any update
+        if description.label_names.is_empty() {
+            let sample = Sample {
+                total: MetricValue::Finite(Decimal::ZERO),
+                count: 0,
+                buckets: vec![0; description.buckets.len()],
+                created,
+            };
+            let _inserted = samples.insert(Vec::new(), sample);
+        }
         Self {
-            description,
+            description: Arc::new(description),
             label_values: Vec::new(),
             samples: Arc::new(Mutex::new(samples)),
             created,
@@ -234,27 +224,79 @@ impl PrometheusMetric {
     }
 }
 
-// prometheus_client builds the one series of a label-less metric in the constructor, so it is written before any update
-fn initial_samples(
-    description: &CollectorDescription,
-    created: SystemTime,
-) -> IndexMap<Vec<String>, Sample> {
-    let mut samples = IndexMap::new();
-    if description.label_names.is_empty() {
-        let sample = Sample {
-            total: MetricValue::Finite(Decimal::ZERO),
-            count: 0,
-            buckets: vec![0; description.buckets.len()],
-            created,
-        };
-        let _inserted = samples.insert(Vec::new(), sample);
-    }
-    samples
-}
-
 fn label_key(label_values: &[Option<String>]) -> Vec<String> {
     label_values
         .iter()
         .map(|value| value.clone().unwrap_or_else(|| MISSING_LABEL.to_owned()))
         .collect()
+}
+
+impl Collector for PrometheusMetric {
+    fn labels(&self, labels: &[(&str, &str)]) -> Self {
+        let values: Vec<String> = self
+            .description
+            .label_names
+            .iter()
+            .map(|name| {
+                labels
+                    .iter()
+                    .find(|(label, _)| *label == name.as_str())
+                    .map_or_else(
+                        || MISSING_LABEL.to_owned(),
+                        |(_, value)| (*value).to_owned(),
+                    )
+            })
+            .collect();
+        Self {
+            description: Arc::clone(&self.description),
+            label_values: values,
+            samples: Arc::clone(&self.samples),
+            created: self.created,
+            multiprocess: Arc::clone(&self.multiprocess),
+        }
+    }
+
+    fn update(&self, update: MetricUpdate) {
+        let mut samples = self.samples.lock().unwrap_or_else(PoisonError::into_inner);
+        if update == MetricUpdate::Remove {
+            let _removed = samples.shift_remove(&self.label_values);
+            self.warn_removal();
+            return;
+        }
+        let bounds = self.description.buckets.as_slice();
+        // a label-less metric's series is the constructor's, with the metric's own creation time; a child stamps now
+        let created = if self.description.label_names.is_empty() {
+            self.created
+        } else {
+            SystemTime::now()
+        };
+        let sample = samples
+            .entry(self.label_values.clone())
+            .or_insert_with(|| Sample {
+                total: MetricValue::Finite(Decimal::ZERO),
+                count: 0,
+                buckets: vec![0; bounds.len()],
+                created,
+            });
+        match (self.description.kind, update) {
+            (CollectorKind::Counter | CollectorKind::Gauge, MetricUpdate::Inc(value)) => {
+                sample.total = added(sample.total, value);
+            }
+            (CollectorKind::Counter | CollectorKind::Gauge, MetricUpdate::Set(value)) => {
+                sample.total = value;
+            }
+            (CollectorKind::Histogram, MetricUpdate::Observe(value)) => {
+                sample.observe(value, bounds);
+            }
+            (CollectorKind::Counter | CollectorKind::Gauge, MetricUpdate::Observe(_))
+            | (CollectorKind::Histogram, MetricUpdate::Inc(_) | MetricUpdate::Set(_))
+            | (
+                CollectorKind::Counter | CollectorKind::Gauge | CollectorKind::Histogram,
+                MetricUpdate::Remove,
+            ) => {}
+        }
+        // the bound writer takes the update before the samples lock lets the next one in, so both see the same order
+        self.write_update(update);
+        drop(samples);
+    }
 }

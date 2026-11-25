@@ -63,7 +63,6 @@ pub(crate) fn decode_used(bytes: &[u8]) -> Result<usize, MultiprocessError> {
     }
 }
 
-// one entry: its length, the padded key and the value with its timestamp, with where the value starts and where the next entry does
 fn decode_entry(
     bytes: &[u8],
     position: usize,
@@ -98,7 +97,6 @@ fn decode_entry(
     ))
 }
 
-// the key's padded bytes and where the two doubles after them start
 fn decode_key(
     bytes: &[u8],
     position: usize,
@@ -146,7 +144,6 @@ const fn entry_padding(key_length: usize) -> usize {
     }
 }
 
-// the used length as the four little-endian bytes the header holds
 pub(crate) fn encode_used(used: usize) -> Result<[u8; LENGTH_BYTES], MultiprocessError> {
     match i32::try_from(used) {
         Ok(field) => Ok(field.to_le_bytes()),
@@ -154,7 +151,6 @@ pub(crate) fn encode_used(used: usize) -> Result<[u8; LENGTH_BYTES], Multiproces
     }
 }
 
-// the two doubles mmap_dict's write_value packs at a key's position
 pub(crate) fn encode_value(value: f64, timestamp: f64) -> [u8; TWO_DOUBLES_BYTES] {
     let mut encoded = [0_u8; TWO_DOUBLES_BYTES];
     let (value_bytes, timestamp_bytes) = encoded.split_at_mut(DOUBLE_BYTES);

@@ -6,18 +6,18 @@ use std::io::{Result as IoResult, Write};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError};
 
+use rstest::rstest;
 use rust_decimal::Decimal;
 use tempfile::TempDir;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::MakeWriter;
 
 use crate::collector_factory::collector::{Collector as _, MetricUpdate, MetricValue};
-use crate::collector_registry::metric::{
-    Bucket, CollectorKind, GaugeMode, PrometheusMetric, prepare_buckets,
-};
+use crate::collector_registry::metric::gauge_mode::GaugeMode;
+use crate::collector_registry::metric::{Bucket, CollectorKind, PrometheusMetric, prepare_buckets};
 use crate::multiprocess::collector::MultiProcessCollector;
 use crate::multiprocess::files::{DbEntry, decode_db_file, decode_used, encode_db_file};
-use crate::multiprocess::writer::MultiProcessWriter;
+use crate::multiprocess::writer::{MultiProcessWriter, SeriesWrite};
 use crate::scrape_endpoint::{MetricFamily, MetricKind, MetricSample};
 
 fn writer(directory: &TempDir, pid: u32) -> MultiProcessWriter {
@@ -38,6 +38,17 @@ fn sample_of(entry: &DbEntry) -> (String, BTreeMap<String, String>) {
         serde_json::from_str::<(String, String, BTreeMap<String, String>, String)>(&entry.key)
             .unwrap();
     (sample, labels)
+}
+
+// 800 labelled series is past one 64 KiB page, so the file has to grow before the last of them fits
+fn write_workers(writer: &MultiProcessWriter, metric: &PrometheusMetric) {
+    for index in 0..800_u32 {
+        writer.update(
+            &metric.description,
+            &[format!("worker-{index}")],
+            MetricUpdate::Inc(finite(1)),
+        );
+    }
 }
 
 #[test]
@@ -78,29 +89,26 @@ fn a_first_write_leaves_the_bytes_encode_db_file_builds() {
     assert_eq!(written.len(), 65_536);
 }
 
-#[test]
-fn the_three_gauge_modes_write_three_files() {
+#[rstest]
+#[case::all(GaugeMode::All, "gauge_all_9.db")]
+#[case::livesum(GaugeMode::LiveSum, "gauge_livesum_9.db")]
+#[case::livemax(GaugeMode::LiveMax, "gauge_livemax_9.db")]
+fn the_three_gauge_modes_write_three_files(#[case] mode: GaugeMode, #[case] file: &str) {
     let directory = TempDir::new().unwrap();
     let writer = writer(&directory, 9);
-    for (mode, file) in [
-        (GaugeMode::All, "gauge_all_9.db"),
-        (GaugeMode::LiveSum, "gauge_livesum_9.db"),
-        (GaugeMode::LiveMax, "gauge_livemax_9.db"),
-    ] {
-        let metric = PrometheusMetric::new(
-            CollectorKind::Gauge,
-            "litellm_in_flight",
-            "In flight",
-            &[],
-            Vec::new(),
-        )
-        .with_multiprocess_mode(mode);
-        writer.update(&metric.description, &[], MetricUpdate::Inc(finite(1)));
-        assert_eq!(
-            file_entries(&directory, file)[0].value.to_bits(),
-            1.0_f64.to_bits()
-        );
-    }
+    let metric = PrometheusMetric::new(
+        CollectorKind::Gauge,
+        "litellm_in_flight",
+        "In flight",
+        &[],
+        Vec::new(),
+    )
+    .with_multiprocess_mode(mode);
+    writer.update(&metric.description, &[], MetricUpdate::Inc(finite(1)));
+    assert_eq!(
+        file_entries(&directory, file)[0].value.to_bits(),
+        1.0_f64.to_bits()
+    );
 }
 
 #[test]
@@ -129,13 +137,7 @@ fn a_file_grows_to_128_kib_once_its_entries_pass_64_kib() {
         &["worker"],
         Vec::new(),
     );
-    for index in 0..800_u32 {
-        writer.update(
-            &metric.description,
-            &[format!("worker-{index}")],
-            MetricUpdate::Inc(finite(1)),
-        );
-    }
+    write_workers(&writer, &metric);
     let bytes = fs::read(directory.path().join("counter_11.db")).unwrap();
     assert_eq!(bytes.len(), 131_072);
     assert!(decode_used(&bytes).unwrap() > 65_536);
@@ -219,7 +221,7 @@ fn a_created_series_writes_every_key_at_zero() {
         &[],
         bounds,
     );
-    writer.create_series(&metric.description, &[]);
+    writer.write_series(&metric.description, &[], SeriesWrite::Create);
     let entries = file_entries(&directory, "histogram_15.db");
     let samples: Vec<String> = entries.iter().map(|entry| sample_of(entry).0).collect();
     assert_eq!(
@@ -311,13 +313,7 @@ fn a_writer_continues_a_file_that_already_grew() {
         Vec::new(),
     );
     let first = writer(&directory, 43);
-    for index in 0..800_u32 {
-        first.update(
-            &metric.description,
-            &[format!("worker-{index}")],
-            MetricUpdate::Inc(finite(1)),
-        );
-    }
+    write_workers(&first, &metric);
     drop(first);
     let second = writer(&directory, 43);
     second.update(
@@ -445,10 +441,10 @@ fn the_collector_reads_the_files_back_as_families() {
         .unwrap()
         .collect()
         .unwrap();
-    let mut by_name: BTreeMap<&str, &MetricFamily> = BTreeMap::new();
-    for family in &families {
-        let _replaced = by_name.insert(family.name.as_str(), family);
-    }
+    let by_name: BTreeMap<&str, &MetricFamily> = families
+        .iter()
+        .map(|family| (family.name.as_str(), family))
+        .collect();
     assert_eq!(
         by_name.keys().copied().collect::<Vec<&str>>(),
         ["litellm_in_flight", "litellm_latency", "litellm_requests"]

@@ -12,7 +12,6 @@ use crate::multiprocess::files::{
 
 use super::FileKind;
 
-// one open .db file: its handle, the used length and capacity it holds, and where every key's value lies
 #[derive(Debug)]
 pub(crate) struct FileState {
     path: PathBuf,
@@ -28,8 +27,12 @@ struct StoredValue {
     value: f64,
 }
 
+pub(super) enum ValueChange {
+    Add(f64),
+    Replace(f64),
+}
+
 impl FileState {
-    // MmapedDict.__init__: append to the file, size an empty one to one 64 KiB page, then continue from the used length it holds
     pub(super) fn open(
         directory: &Path,
         kind: FileKind,
@@ -59,7 +62,8 @@ impl FileState {
             return rebuilt(path, file, capacity);
         }
         // a file that did not exist yet starts as one page whose zeroed header reads as no entries
-        let page = offset(INITIAL_CAPACITY)?;
+        let page =
+            u64::try_from(INITIAL_CAPACITY).map_err(|_error| MultiprocessError::Corrupted)?;
         file.set_len(page)
             .map_err(|source| MultiprocessError::Write {
                 path: path.clone(),
@@ -68,7 +72,6 @@ impl FileState {
         rebuilt(path, file, INITIAL_CAPACITY)
     }
 
-    // a key the file does not hold yet becomes one zero entry at the used length, in prometheus_client's creation order
     pub(super) fn ensure(&mut self, key: &str) -> Result<(), MultiprocessError> {
         if self.values.contains_key(key) {
             return Ok(());
@@ -77,7 +80,8 @@ impl FileState {
         let end = self.used.saturating_add(entry.len());
         while end > self.capacity {
             self.capacity = self.capacity.saturating_mul(2);
-            let grown = offset(self.capacity)?;
+            let grown =
+                u64::try_from(self.capacity).map_err(|_error| MultiprocessError::Corrupted)?;
             self.file
                 .set_len(grown)
                 .map_err(|source| MultiprocessError::Write {
@@ -85,11 +89,11 @@ impl FileState {
                     source,
                 })?;
         }
-        write_at(&self.file, offset(self.used)?, &entry, &self.path)?;
+        write_at(&self.file, self.used, &entry, &self.path)?;
         self.used = end;
         // used goes in only after the entry bytes, so a reader never sees a used that covers half an entry
         let used_field = encode_used(self.used)?;
-        write_at(&self.file, offset(USED_OFFSET)?, &used_field, &self.path)?;
+        write_at(&self.file, USED_OFFSET, &used_field, &self.path)?;
         let position = self.used.saturating_sub(TWO_DOUBLES_BYTES);
         let _inserted = self.values.insert(
             key.to_owned(),
@@ -101,34 +105,30 @@ impl FileState {
         Ok(())
     }
 
-    // MmapedValue.inc: the stored value moves by the amount, and the file takes the new value at once
-    pub(super) fn add(&mut self, key: &str, amount: f64) -> Result<(), MultiprocessError> {
-        let total = Add::add(self.value(key)?, amount);
-        self.set(key, total)
-    }
-
-    pub(super) fn set(&mut self, key: &str, value: f64) -> Result<(), MultiprocessError> {
+    pub(super) fn change(
+        &mut self,
+        key: &str,
+        change: ValueChange,
+    ) -> Result<(), MultiprocessError> {
         let Some(stored) = self.values.get_mut(key) else {
             return Err(MultiprocessError::MissingKey {
                 key: key.to_owned(),
             });
         };
-        stored.value = value;
-        let position = offset(stored.position)?;
-        write_at(&self.file, position, &encode_value(value, 0.0), &self.path)
-    }
-
-    pub(super) fn value(&self, key: &str) -> Result<f64, MultiprocessError> {
-        match self.values.get(key) {
-            Some(stored) => Ok(stored.value),
-            None => Err(MultiprocessError::MissingKey {
-                key: key.to_owned(),
-            }),
-        }
+        stored.value = match change {
+            ValueChange::Add(amount) => Add::add(stored.value, amount),
+            ValueChange::Replace(value) => value,
+        };
+        write_at(
+            &self.file,
+            stored.position,
+            &encode_value(stored.value, 0.0),
+            &self.path,
+        )
     }
 }
 
-// a file that holds bytes: continue from the used length it left, or start it at the header when that length is zero
+// continue from the used length a file left, or start it at the header when that length is zero
 fn rebuilt(path: PathBuf, file: fs::File, capacity: usize) -> Result<FileState, MultiprocessError> {
     let bytes = fs::read(&path).map_err(|source| MultiprocessError::Read {
         path: path.clone(),
@@ -138,7 +138,7 @@ fn rebuilt(path: PathBuf, file: fs::File, capacity: usize) -> Result<FileState, 
     if header == 0 {
         // used goes in before any entry, so a file that never grew reads as holding none
         let used_field = encode_used(HEADER_BYTES)?;
-        write_at(&file, offset(USED_OFFSET)?, &used_field, &path)?;
+        write_at(&file, USED_OFFSET, &used_field, &path)?;
         return Ok(FileState {
             path,
             file,
@@ -156,7 +156,6 @@ fn rebuilt(path: PathBuf, file: fs::File, capacity: usize) -> Result<FileState, 
     })
 }
 
-// where every key's value already lies, from the entries the file holds
 fn stored_values(bytes: &[u8]) -> Result<BTreeMap<String, StoredValue>, MultiprocessError> {
     let mut values = BTreeMap::new();
     for (entry, position) in decode_db_values(bytes)? {
@@ -171,21 +170,17 @@ fn stored_values(bytes: &[u8]) -> Result<BTreeMap<String, StoredValue>, Multipro
     Ok(values)
 }
 
-// write_all_at writes at an offset without mapping the file, so nothing here needs unsafe
+// write_all_at writes at an offset without mapping the file, so nothing here needs unsafe; std's calls take a u64 offset
 fn write_at(
     file: &fs::File,
-    position: u64,
+    position: usize,
     bytes: &[u8],
     path: &Path,
 ) -> Result<(), MultiprocessError> {
-    file.write_all_at(bytes, position)
+    let at = u64::try_from(position).map_err(|_error| MultiprocessError::Corrupted)?;
+    file.write_all_at(bytes, at)
         .map_err(|source| MultiprocessError::Write {
             path: path.to_path_buf(),
             source,
         })
-}
-
-// std's file calls take a u64 offset; a position past u64 names no byte any file could hold
-fn offset(position: usize) -> Result<u64, MultiprocessError> {
-    u64::try_from(position).map_err(|_error| MultiprocessError::Corrupted)
 }

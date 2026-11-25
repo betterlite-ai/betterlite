@@ -1,9 +1,10 @@
 use std::sync::{Arc, PoisonError};
 
 use crate::collector_factory::collector::MetricUpdate;
-use crate::multiprocess::writer::MultiProcessWriter;
+use crate::multiprocess::writer::{MultiProcessWriter, SeriesWrite};
 
-use super::{GaugeMode, PrometheusMetric};
+use super::PrometheusMetric;
+use super::gauge_mode::GaugeMode;
 
 impl PrometheusMetric {
     // Gauge.__init__'s multiprocess_mode, which picks the gauge file this metric's values go into
@@ -33,12 +34,11 @@ impl PrometheusMetric {
         *slot = Some(Arc::clone(writer));
         drop(slot);
         if self.description.label_names.is_empty() {
-            writer.create_series(&self.description, &self.label_values);
+            writer.write_series(&self.description, &self.label_values, SeriesWrite::Create);
         }
         Ok(())
     }
 
-    // the file takes the update in the same order the in-process samples did, still under the samples lock
     pub(crate) fn write_update(&self, update: MetricUpdate) {
         let slot = self
             .multiprocess
