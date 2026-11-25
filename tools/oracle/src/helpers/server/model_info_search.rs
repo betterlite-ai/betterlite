@@ -146,29 +146,30 @@ fn answer(input: &Input) -> Result<Value, Failure> {
             input.sort_by.as_deref(),
             input.sort_order.as_deref(),
         ))),
-        Function::IsAutoRouter => Ok(json!(
-            input
-                .models
-                .iter()
-                .map(is_auto_router_model)
-                .collect::<Vec<bool>>()
-        )),
+        Function::IsAutoRouter => Ok(per_model(input, is_auto_router_model)),
         Function::ModelInAccessGroup => access_group_answer(input),
-        Function::MatchesFilters => Ok(json!(
-            input
-                .models
-                .iter()
-                .map(|model| matches_model_info_filters(
-                    model,
-                    input.exclude_auto_routers,
-                    input.access_group.as_deref(),
-                    input.wildcard_only,
-                ))
-                .collect::<Vec<bool>>()
-        )),
+        Function::MatchesFilters => Ok(per_model(input, |model| {
+            matches_model_info_filters(
+                model,
+                input.exclude_auto_routers,
+                input.access_group.as_deref(),
+                input.wildcard_only,
+            )
+        })),
         Function::Paginate => paginate_answer(input),
         Function::Datetime => datetime_answer(input),
     }
+}
+
+fn per_model<Test>(input: &Input, test: Test) -> Value
+where
+    Test: Fn(&JsonObject) -> bool,
+{
+    let mut verdicts = Vec::with_capacity(input.models.len());
+    for model in &input.models {
+        verdicts.push(test(model));
+    }
+    json!(verdicts)
 }
 
 fn access_group_answer(input: &Input) -> Result<Value, Failure> {
@@ -176,13 +177,9 @@ fn access_group_answer(input: &Input) -> Result<Value, Failure> {
         .access_group
         .as_deref()
         .ok_or(Failure::Missing("model_in_access_group"))?;
-    Ok(json!(
-        input
-            .models
-            .iter()
-            .map(|model| model_in_access_group(model, group))
-            .collect::<Vec<bool>>()
-    ))
+    Ok(per_model(input, |model| {
+        model_in_access_group(model, group)
+    }))
 }
 
 fn enrich_answer(input: &Input) -> Result<Value, Failure> {
@@ -191,7 +188,13 @@ fn enrich_answer(input: &Input) -> Result<Value, Failure> {
         .enable_all()
         .build()
         .map_err(Failure::Runtime)?;
-    let registry = model_registry(&input.cost_map);
+    let registry = ModelRegistry {
+        model_cost: input.cost_map.clone(),
+        runtime_registered: ModelCostEntries::default(),
+        provider_sets: ProviderModelSets::default(),
+        keys: ModelCostKeys::default(),
+        live_replay: None,
+    };
     let catalog = CaseCatalog {
         entries: &input.catalog,
     };
@@ -238,15 +241,5 @@ fn isoformat(found: &DateTime<Utc>) -> String {
         found.format("%Y-%m-%dT%H:%M:%S+00:00").to_string()
     } else {
         found.format("%Y-%m-%dT%H:%M:%S%.6f+00:00").to_string()
-    }
-}
-
-fn model_registry(cost_map: &JsonObject) -> ModelRegistry {
-    ModelRegistry {
-        model_cost: cost_map.clone(),
-        runtime_registered: ModelCostEntries::default(),
-        provider_sets: ProviderModelSets::default(),
-        keys: ModelCostKeys::default(),
-        live_replay: None,
     }
 }

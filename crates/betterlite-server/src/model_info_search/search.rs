@@ -28,6 +28,8 @@ pub enum SearchDatabaseError {
     Row(#[source] serde_json::Error),
     #[error("a searched model row is not a deployment row: {0}")]
     Decode(#[source] ResourceRowsError),
+    #[error("the model search count query returned no row")]
+    MissingRow,
 }
 
 #[derive(Debug, thiserror::Error)]
