@@ -349,15 +349,46 @@ def test_stream_matches_litellm() -> None:
         reference_chunks = sync_chunks(reference.stream_iterator)
         made_chunks = sync_chunks(made.stream_iterator)
         wrapper = wrapper_of(made)
+        assert wrapper.file_id == FILE_ID
+        assert wrapper.model is None
+        assert wrapper.custom_llm_provider == "openai"
+        assert wrapper.standard_logging_object is None
         ours_hidden = wrapper._hidden_params  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/streaming.py#L133-L135
         reference_hidden = reference.stream_iterator._hidden_params  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/streaming.py#L133-L135
         wrapper.close()
         after_close = list(wrapper)
     assert made_chunks == reference_chunks == [BODY]
+    assert dict(made.headers)[UPSTREAM_HEADER] == UPSTREAM_VALUE
+    assert reference.headers[UPSTREAM_HEADER] == UPSTREAM_VALUE
     assert after_close == []
     assert ours_hidden["litellm_model_name"] == reference_hidden["litellm_model_name"] is None
     assert ours_hidden["response_cost"] is None
     assert reference_hidden["response_cost"] is None
+
+
+def test_stream_chunks_by_size() -> None:
+    with FileServer() as server:
+        reference = REFERENCE.file_content(
+            file_id=FILE_ID,
+            custom_llm_provider="openai",
+            api_base=server.url,
+            api_key=GOOD_KEY,
+            chunk_size=3,
+            stream=True,
+        )
+        made = made_stream(
+            file_content(
+                file_id=FILE_ID,
+                custom_llm_provider="openai",
+                api_base=server.url,
+                api_key=GOOD_KEY,
+                chunk_size=3,
+                stream=True,
+            )
+        )
+        reference_chunks = sync_chunks(reference.stream_iterator)
+        made_chunks = sync_chunks(made.stream_iterator)
+    assert made_chunks == reference_chunks == [b"fil", b"e b", b"ody"]
 
 
 def test_stream_async_matches() -> None:
