@@ -260,7 +260,7 @@ fn a_rejected_audit_record_warns_once() {
 }
 
 struct RecordingRepository {
-    inserted: Mutex<Vec<AuditLogRecord>>,
+    inserted: Arc<Mutex<Vec<AuditLogRecord>>>,
 }
 
 #[async_trait]
@@ -314,7 +314,7 @@ impl AuditClock for FixedClock {
     }
 }
 
-fn audit_service() -> (AuditService, Arc<RecordingRepository>) {
+fn audit_service() -> (AuditService, Arc<Mutex<Vec<AuditLogRecord>>>) {
     let workers = WorkerSettings {
         max_queue_size: 4,
         concurrency: 1,
@@ -322,8 +322,9 @@ fn audit_service() -> (AuditService, Arc<RecordingRepository>) {
         shutdown_drain: Duration::from_secs(5),
         timeout_summary_window: Duration::from_secs(1),
     };
-    let repository = Arc::new(RecordingRepository {
-        inserted: Mutex::new(Vec::new()),
+    let inserted = Arc::new(Mutex::new(Vec::new()));
+    let repository: Arc<dyn AuditLogRepository> = Arc::new(RecordingRepository {
+        inserted: Arc::clone(&inserted),
     });
     let delivery = Arc::new(AuditDelivery {
         named: NamedAuditCallbacks {
@@ -345,18 +346,18 @@ fn audit_service() -> (AuditService, Arc<RecordingRepository>) {
         },
         callbacks: Vec::new(),
         delivery,
-        repository: Arc::clone(&repository),
+        repository,
         clock: Arc::new(FixedClock),
         new_id: Arc::new(|| "adapter-id".to_owned()),
         worker_settings: workers,
     })
     .expect("the audit service starts");
-    (service, repository)
+    (service, inserted)
 }
 
 #[tokio::test]
 async fn the_audit_service_adapter_uses_the_service_id_and_clock() {
-    let (service, repository) = audit_service();
+    let (service, inserted) = audit_service();
     assert_eq!(service.new_record_id(), "adapter-id");
     assert_eq!(service.record_time(), fixed_time());
     assert_eq!(
@@ -364,11 +365,8 @@ async fn the_audit_service_adapter_uses_the_service_id_and_clock() {
         AuditSubmission::Accepted
     );
     service.shutdown().await;
-    let inserted = repository
-        .inserted
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner);
-    assert_eq!(inserted.len(), 1);
-    assert_eq!(inserted[0].id, "adapter-id");
-    assert_eq!(inserted[0].updated_at, fixed_time());
+    let records = inserted.lock().unwrap_or_else(PoisonError::into_inner);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].id, "adapter-id");
+    assert_eq!(records[0].updated_at, fixed_time());
 }
