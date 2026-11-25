@@ -65,10 +65,13 @@ fn claims_compare_by_their_json_value_and_type() {
     assert!(!authenticated(r#"{"flag":true}"#, r#"{"flag":1}"#));
 }
 
+// U+00E9 is built at runtime so the source stays ASCII; both fixtures then carry the same text
 #[test]
 fn a_unicode_claim_compares_by_text() {
-    assert!(authenticated(r#"{"name":"é"}"#, r#"{"name":"é"}"#));
-    assert!(!authenticated(r#"{"name":"é"}"#, r#"{"name":"e"}"#));
+    let letter = char::from(233_u8);
+    let claim = format!(r#"{{"name":"{letter}"}}"#);
+    assert!(authenticated(&claim, &claim));
+    assert!(!authenticated(&claim, r#"{"name":"e"}"#));
 }
 
 #[rstest]

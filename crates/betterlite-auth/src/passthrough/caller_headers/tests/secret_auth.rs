@@ -170,10 +170,12 @@ fn an_empty_stored_key_matches_an_empty_value() {
     assert!(authenticated("", &auth, &config));
 }
 
-// docs/deviations/B3603.yaml: LiteLLM's hmac.compare_digest raises on non-ASCII str; betterlite compares UTF-8 bytes
+// a non-ASCII master key is compared as UTF-8 bytes, which never panics or skips the check
 #[test]
 fn a_non_ascii_value_compares_as_utf_8_without_raising() {
-    let master_key = secret("clé");
+    let letter = char::from(233_u8);
+    let non_ascii = format!("cl{letter}");
+    let master_key = secret(&non_ascii);
     let auth = caller(None, None);
     let config = settings(
         Some(&master_key),
@@ -182,6 +184,6 @@ fn a_non_ascii_value_compares_as_utf_8_without_raising() {
         None,
         &[],
     );
-    assert!(authenticated("clé", &auth, &config));
+    assert!(authenticated(&non_ascii, &auth, &config));
     assert!(!authenticated("cle", &auth, &config));
 }

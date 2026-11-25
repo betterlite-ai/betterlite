@@ -242,7 +242,7 @@ fn secret_map(pairs: &[HeaderPair]) -> IndexMap<String, SecretString> {
 fn header_object(forwarded: &IndexMap<String, SecretString>) -> Value {
     let mut object = BTreeMap::new();
     for (name, value) in forwarded {
-        object.insert(name.as_str(), value.expose_secret().as_str());
+        object.insert(name.as_str(), value.expose_secret());
     }
     json!(object)
 }

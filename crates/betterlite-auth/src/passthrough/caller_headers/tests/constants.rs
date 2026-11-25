@@ -38,7 +38,7 @@ fn the_upstream_credential_sets_match_litellm() {
 
 #[test]
 fn the_mapped_route_header_matches_litellm() {
-    assert!(MAPPED_ROUTE_CALLER_KEY_HEADER == "litellm_user_api_key");
+    assert_eq!(MAPPED_ROUTE_CALLER_KEY_HEADER, "litellm_user_api_key");
 }
 
 #[test]
@@ -127,26 +127,36 @@ fn the_bedrock_set_is_the_base_names_plus_every_credential() {
 
 #[test]
 fn the_vertex_error_keeps_litellms_message() {
-    assert!(
-        VERTEX_MISSING_CREDENTIAL
-            == "No Vertex AI credential is configured on this proxy and the request carried no upstream Google credential. The LiteLLM virtual key is not forwarded to Google. Configure a Vertex credential (DEFAULT_VERTEXAI_PROJECT / DEFAULT_VERTEXAI_LOCATION / DEFAULT_VERTEXAI_CREDENTIALS, or a model with use_in_pass_through: true), or send your own Google OAuth token in the Authorization header."
+    assert_eq!(
+        VERTEX_MISSING_CREDENTIAL,
+        "No Vertex AI credential is configured on this proxy and the request carried no upstream Google credential. The LiteLLM virtual key is not forwarded to Google. Configure a Vertex credential (DEFAULT_VERTEXAI_PROJECT / DEFAULT_VERTEXAI_LOCATION / DEFAULT_VERTEXAI_CREDENTIALS, or a model with use_in_pass_through: true), or send your own Google OAuth token in the Authorization header."
     );
-    assert!(CallerHeaderError::VertexCredentialMissing.to_string() == VERTEX_MISSING_CREDENTIAL);
+    assert_eq!(
+        CallerHeaderError::VertexCredentialMissing.to_string(),
+        VERTEX_MISSING_CREDENTIAL
+    );
 }
 
 #[test]
 fn the_anthropic_error_keeps_litellms_message() {
-    assert!(
-        ANTHROPIC_MISSING_CREDENTIAL
-            == "No Anthropic credential is configured on this proxy and the request carried no upstream Anthropic credential. The LiteLLM virtual key is not forwarded to Anthropic. Configure an Anthropic credential (ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN, or a model with use_in_pass_through: true), or send your own Anthropic API key in the x-api-key header or your own Anthropic OAuth token in the Authorization header."
+    assert_eq!(
+        ANTHROPIC_MISSING_CREDENTIAL,
+        "No Anthropic credential is configured on this proxy and the request carried no upstream Anthropic credential. The LiteLLM virtual key is not forwarded to Anthropic. Configure an Anthropic credential (ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN, or a model with use_in_pass_through: true), or send your own Anthropic API key in the x-api-key header or your own Anthropic OAuth token in the Authorization header."
     );
-    assert!(
-        CallerHeaderError::AnthropicCredentialMissing.to_string() == ANTHROPIC_MISSING_CREDENTIAL
+    assert_eq!(
+        CallerHeaderError::AnthropicCredentialMissing.to_string(),
+        ANTHROPIC_MISSING_CREDENTIAL
     );
 }
 
 #[test]
 fn both_missing_credential_errors_are_401() {
-    assert!(CallerHeaderError::VertexCredentialMissing.status() == StatusCode::UNAUTHORIZED);
-    assert!(CallerHeaderError::AnthropicCredentialMissing.status() == StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        CallerHeaderError::VertexCredentialMissing.status(),
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        CallerHeaderError::AnthropicCredentialMissing.status(),
+        StatusCode::UNAUTHORIZED
+    );
 }

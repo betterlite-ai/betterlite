@@ -9,7 +9,7 @@ use betterlite_db::identity_rows::Payload;
 use betterlite_models::model_registration::JsonObject;
 use http::header::{HeaderMap, HeaderName, HeaderValue};
 use indexmap::IndexMap;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 
 use crate::dev_auth_mode::AuthModeFlags;
 use crate::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
@@ -20,7 +20,7 @@ pub(super) fn secret(text: &str) -> SecretString {
     SecretString::from(text)
 }
 
-pub(super) fn settings<'settings>(
+pub(super) const fn settings<'settings>(
     master_key: Option<&'settings SecretString>,
     auth_mode: AuthModeFlags,
     custom_auth_configured: bool,
