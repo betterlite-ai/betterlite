@@ -41,7 +41,7 @@ pub(super) fn collected(
     )?;
     let is_responses = is_openai_responses_route(url_route);
     let completed = complete_response(logger, all_chunks, &model, is_responses)?;
-    let Some((response, logged)) = completed else {
+    let Some((response, variant)) = completed else {
         return Ok(None);
     };
     let (cost, provider) = price_stream(logger, &response, &model, is_responses, call_log)?;
@@ -58,7 +58,7 @@ pub(super) fn collected(
         "OpenAI streaming passthrough cost tracking - Model: {model}, Cost: ${cost:.6}"
     );
     Ok(Some(PassthroughOutcome {
-        result: Some(logged(response)),
+        result: Some(variant(response)),
         kwargs,
     }))
 }
