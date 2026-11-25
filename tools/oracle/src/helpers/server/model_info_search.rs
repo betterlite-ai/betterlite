@@ -137,7 +137,7 @@ impl Helper for Op {
 fn answer(input: &Input) -> Result<Value, Failure> {
     match input.function {
         Function::Enrich => enrich_answer(input),
-        Function::Sort => sort_answer(input),
+        Function::Sort => Ok(sort_answer(input)),
         Function::IsAutoRouter => Ok(per_model(input, is_auto_router_model)),
         Function::ModelInAccessGroup => access_group_answer(input),
         Function::MatchesFilters => Ok(per_model(input, |model| {
@@ -177,12 +177,12 @@ fn answer(input: &Input) -> Result<Value, Failure> {
     }
 }
 
-fn sort_answer(input: &Input) -> Result<Value, Failure> {
-    Ok(json!(sort_models(
+fn sort_answer(input: &Input) -> Value {
+    json!(sort_models(
         &input.models,
         input.sort_by.as_deref(),
         input.sort_order.as_deref(),
-    )))
+    ))
 }
 
 fn per_model<Test>(input: &Input, test: Test) -> Value
