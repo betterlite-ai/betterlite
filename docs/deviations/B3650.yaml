@@ -1,0 +1,76 @@
+task: B3650
+deviations:
+  - what: >-
+      LiteLLM's abstract handler and its Cohere subclass become one trait plus two structs, and
+      the handlers take typed input structs instead of **kwargs.
+    why: >-
+      Rust has no keyword spreading; B3606's adapter builds the same struct for every response
+      shape, and the trait is the single extension point B3637 uses.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/base_passthrough_logging_handler.py#L31-L85
+  - what: >-
+      Every failure of the embed branch is caught as a typed error. LiteLLM's blanket
+      `except Exception` also catches Python bugs such as a missing attribute or a wrong type.
+    why: >-
+      Rust has no runtime attribute errors and the no-panics rule leaves typed errors as the
+      only failure, so the same fallback runs for every error the branch can produce.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/cohere_passthrough_logging_handler.py#L153-L170
+  - what: >-
+      The embed branch records `custom_llm_provider` "cohere" in the call log's
+      model_call_details only. B3630's ResponseLoggingKwargs has no such field, so the chat
+      fallback never sees a custom_llm_provider kwarg.
+    why: >-
+      The kwargs type is B3630's and outside this task's scope; the call-log write is the value
+      the spend row reads, and the fallback's own payload step sets what it needs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/cohere_passthrough_logging_handler.py#L119-L123
+  - what: >-
+      The standard logging object is built from the typed call log, which does not yet carry the
+      model, cost or provider values LiteLLM read from kwargs when it built the same object.
+    why: >-
+      B190's builder takes a LoggingState and a response, not a kwargs dict; the object is
+      dropped by the embed branch either way, exactly as LiteLLM never stores it in kwargs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/cohere_passthrough_logging_handler.py#L136-L146
+  - what: >-
+      A pricing failure inside the embedding cost helper logs a warning and bills 0 instead of
+      failing the embed branch into the chat fallback.
+    why: >-
+      B068's embedding_cost owns that swallow for its callers; the embed branch's typed error
+      only fires when the response cannot be projected into the priced shape.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/cohere_passthrough_logging_handler.py#L109-L114
+  - what: >-
+      A texts or input value that is present but not a list is a typed error naming the field,
+      and a list element that is not a string is one too, where Python's truthiness check would
+      hand any truthy value to the transform.
+    why: >-
+      A value of the wrong type is an error that names the field (docs/compatibility.md); a
+      string texts value would otherwise be counted and logged one character at a time, and a
+      non-string element would fail inside the token counter.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/cohere_passthrough_logging_handler.py#L92-L94
+  - what: >-
+      B1418's post_call hook only records the call; the production decode replays it into the
+      logging state right after the decode returns, whether the decode succeeded or not.
+    why: >-
+      EmbeddingHooks is Send and LoggingState is not, so the hook cannot borrow the state;
+      B1418 calls post_call before it fills the response, so the replay keeps LiteLLM's order.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/cohere/embed/v1_transformation.py#L99-L125
+  - what: >-
+      The cost is a Decimal and the three embedding-tool calls take grouped input structs
+      (EmbeddingDecodeInput, StandardObjectInput) instead of positional argument lists.
+    why: >-
+      Decimal is the workspace's money type and standard JSON prints it exactly; the grouped
+      inputs keep each call under the argument limit and name every value at the call site.
+    link: ""
+kept_bugs:
+  - what: >-
+      The log line for a collected stream that builds nothing names the Anthropic passthrough
+      endpoint, whichever provider produced the chunks.
+    why: >-
+      The pinned text is identical in the base handler for every provider, and the task keeps
+      it; a log consumer that watches the message sees the same string.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/base_passthrough_logging_handler.py#L200-L207
+  - what: >-
+      A text chunk that arrives after the finish reason is still shaped and logged: the
+      collection stops only on a chunk with no content, usage or provider fields.
+    why: >-
+      StopIteration fires on that content-less chunk alone, so a provider that repeats text
+      after its finish reason grows the logged response in LiteLLM and here alike.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L1136-L1146
