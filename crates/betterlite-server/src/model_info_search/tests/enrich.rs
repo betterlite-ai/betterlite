@@ -223,7 +223,7 @@ async fn assert_catalog_lookup(
     base_model: Option<Json>,
     catalog_model: &str,
     provider: Option<&str>,
-    max_tokens: u64,
+    max_tokens: i64,
     expected_calls: Vec<(&str, Option<&str>)>,
 ) {
     let registry = registry("{}");
