@@ -222,3 +222,6 @@ pub(crate) fn status_message(body: &[u8]) -> String {
         None => str::from_utf8(body).unwrap_or_default().to_owned(),
     }
 }
+
+#[cfg(test)]
+mod tests;

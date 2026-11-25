@@ -121,3 +121,6 @@ fn failure(
         redactor,
     )
 }
+
+#[cfg(test)]
+mod tests;

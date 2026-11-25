@@ -86,3 +86,6 @@ pub(crate) fn request(
         now_seconds: now_seconds(),
     })
 }
+
+#[cfg(test)]
+mod tests;
