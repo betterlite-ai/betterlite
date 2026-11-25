@@ -93,9 +93,9 @@ pub(super) fn build_leases(
     pod_id: PodId,
 ) -> Arc<PodLockManager<RedisLockCache>> {
     Arc::new(PodLockManager::new(
-        cache.map(|cache| {
+        cache.map(|connected| {
             Arc::new(RedisLockCache {
-                cache: Arc::clone(cache),
+                cache: Arc::clone(connected),
             })
         }),
         settings.queue.default_lock_ttl_seconds,

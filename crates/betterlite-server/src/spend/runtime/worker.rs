@@ -36,7 +36,7 @@ impl AccountingWorker {
         loop {
             let received = tokio::select! {
                 biased;
-                () = self.shutdown.cancelled() => break,
+                _ = self.shutdown.cancelled() => break,
                 work = receiver.recv() => work,
             };
             let Some(work) = received else {

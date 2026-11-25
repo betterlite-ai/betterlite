@@ -125,9 +125,7 @@ impl SpendPayloadSource for StaticPayload {
     }
 }
 
-pub(super) fn request<'call>(
-    view: &'call PricingView<'call>,
-) -> SpendUpdateRequest<'call, PricingView<'call>> {
+pub(super) fn request<'call>() -> SpendUpdateRequest<'call, PricingView<'call>> {
     SpendUpdateRequest {
         response_cost: Some(SpendAmount(Decimal::new(25, 2))),
         token: Some("sk-live-token"),
@@ -164,10 +162,10 @@ pub(super) struct FakeSpendLogs {
 }
 
 impl FakeSpendLogs {
-    async fn clear(&self) -> Result<(), ServiceFailure> {
+    fn clear(&self) -> ServiceFuture<'_, Result<(), ServiceFailure>> {
         self.runs.fetch_add(1, Ordering::SeqCst);
         self.queued.store(0, Ordering::SeqCst);
-        Ok(())
+        Box::pin(ready(Ok(())))
     }
 }
 
@@ -183,11 +181,11 @@ impl SpendLogsService for FakeSpendLogs {
     }
 
     fn update_spend_logs(&self) -> ServiceFuture<'_, Result<(), ServiceFailure>> {
-        Box::pin(self.clear())
+        self.clear()
     }
 
     fn run_spend_logs(&self) -> ServiceFuture<'_, Result<(), ServiceFailure>> {
-        Box::pin(self.clear())
+        self.clear()
     }
 }
 

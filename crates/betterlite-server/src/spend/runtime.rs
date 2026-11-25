@@ -80,13 +80,13 @@ impl SpendRuntimeSettings {
                 max_budget: policy.max_budget,
                 proxy_budget_name: DEFAULT_PROXY_BUDGET_NAME.to_owned(),
             },
+            queue,
             monitor: policy.spend_log_monitor,
             log_queue_bytes: policy.spend_log_queue_max_bytes,
             accounting_capacity: usize::try_from(queue.queue_capacity)
                 .map_err(|_out_of_range| SpendRuntimeError::AccountingCapacity)?,
             use_redis_transaction_buffer: policy.use_redis_transaction_buffer,
             dequeue_count: policy.max_redis_buffer_dequeue_count,
-            queue,
         })
     }
 }

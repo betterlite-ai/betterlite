@@ -18,12 +18,13 @@ use betterlite_db::redis_spend::events::NoRedisBufferEventSink;
 use betterlite_db::redis_spend::log_row::SpendLogRow;
 use betterlite_db::request_usage::queues::UsageQueue;
 use betterlite_db::spend_flush::monitor::SpendMonitorSettings;
+use betterlite_db::spend_flush::shutdown::MonitorStartError;
 use betterlite_db::spend_log_storage::postgres::PostgresSpendLogsWriter;
 use betterlite_db::spend_queues::entity::SpendAmount;
 use betterlite_db::spend_writer::SpendWriterOperation;
 use betterlite_db::spend_writer::accounting::{
-    SpendAccounting, SpendAccountingAdmission, SpendAccountingClosed, SpendAccountingEnvironment,
-    batch_database_updates,
+    SpendAccounting, SpendAccountingAdmission as _, SpendAccountingClosed,
+    SpendAccountingEnvironment, batch_database_updates,
 };
 use betterlite_db::spend_writer::settings::SpendWriterSettings;
 use betterlite_http::proxy::ProxiedClient;
@@ -114,8 +115,7 @@ async fn drains_the_admitted_accounting_before_the_shutdown_returns() {
     };
     parts.failures = Arc::clone(&failures);
     let runtime = SpendRuntime::new(settings(), parts).expect("the runtime");
-    let view = PricingView(pricing.as_ref());
-    let request = support::request(&view);
+    let request = support::request();
     let payload = StaticPayload(PAYLOAD);
     assert!(runtime.writer().update_database(&payload, &request).await);
     assert!(runtime.writer().update_database(&payload, &request).await);
@@ -169,8 +169,7 @@ async fn acknowledges_an_admission_closed_by_the_shutdown_and_reports_it() {
         Err(SpendAccountingClosed)
     ));
 
-    let view = PricingView(pricing.as_ref());
-    let request = support::request(&view);
+    let request = support::request();
     let payload = StaticPayload(PAYLOAD);
     assert!(runtime.writer().update_database(&payload, &request).await);
     assert_eq!(
@@ -194,12 +193,12 @@ async fn starts_one_monitor_and_the_shutdown_stops_it() {
         )
         .expect("the first monitor starts");
     let second = Arc::new(service());
-    assert!(
+    assert!(matches!(
         runtime
             .monitor
-            .start(second, Arc::clone(&runtime.logs), monitor_settings)
-            .is_err()
-    );
+            .start(second, Arc::clone(&runtime.logs), monitor_settings),
+        Err(MonitorStartError::AlreadyRunning)
+    ));
     assert!(runtime.monitor.is_running());
 
     runtime
@@ -218,8 +217,7 @@ async fn keeps_a_claimed_log_row_until_the_shutdown_parks_it() {
         store: PostgresStore { pool: None },
     }));
     let runtime = SpendRuntime::new(settings(), parts).expect("the runtime");
-    let view = PricingView(pricing.as_ref());
-    let request = support::request(&view);
+    let request = support::request();
     let payload = StaticPayload(PAYLOAD);
     assert!(runtime.writer().update_database(&payload, &request).await);
     assert_eq!(runtime.logs.len(), 1);
@@ -253,11 +251,11 @@ async fn installs_the_runtime_once_and_maps_the_spend_policy() {
     }
     .load(CONFIG)
     .expect("the config");
-    let policy =
+    let proxy_policy =
         ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).expect("the proxy policy");
     let shared = Shared {
         bundled_catalog: BundledCatalog::default().get(),
-        client: ProxiedClient::outbound(&Arc::new(policy)).expect("the client"),
+        client: ProxiedClient::outbound(&Arc::new(proxy_policy)).expect("the client"),
     };
     let slot = Slot::new(&config, &shared);
     let pricing = support::pricing();
@@ -360,10 +358,9 @@ async fn writes_the_request_tool_usage_and_discovery_from_the_runtime_queues() {
         model_usage: None,
     };
     let runtime = SpendRuntime::new(settings(), parts).expect("the runtime");
-    let view = PricingView(source.as_ref());
     let kwargs = JsonObject::new();
     let names = vec!["lookup".to_owned()];
-    let mut request = support::request(&view);
+    let mut request = support::request();
     request.kwargs = Some(&kwargs);
     request.response_names = &names;
     assert!(
@@ -388,8 +385,7 @@ async fn charges_every_runtime_daily_queue_and_records_the_endpoint() {
     let source = support::pricing();
     let runtime = SpendRuntime::new(settings(), support::parts_with(Arc::clone(&source)))
         .expect("the runtime");
-    let view = PricingView(source.as_ref());
-    let mut request = support::request(&view);
+    let mut request = support::request();
     request.team_id = Some("team-1");
     request.org_id = Some("org-1");
     assert!(
