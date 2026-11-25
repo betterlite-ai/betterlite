@@ -1,0 +1,23 @@
+kind: helper
+name: prometheus-multiprocess-scrape-openmetrics
+call:
+  b10095:
+    files:
+      - name: counter_1001.db
+        entries:
+          - {metric: requests, sample: requests_total, labels: {model: a}, help: Total requests, value: 3.0, timestamp: 0.0}
+      - name: counter_1002.db
+        entries:
+          - {metric: requests, sample: requests_total, labels: {model: a}, help: Total requests, value: 4.0, timestamp: 0.0}
+      - name: gauge_all_1001.db
+        entries:
+          - {metric: queue_length, sample: queue_length, labels: {model: a}, help: Queue length, value: 5.0, timestamp: 0.0}
+      - name: histogram_1001.db
+        entries:
+          - {metric: request_latency, sample: request_latency_bucket, labels: {le: "1"}, help: Request latency, value: 2.0, timestamp: 0.0}
+          - {metric: request_latency, sample: request_latency_bucket, labels: {le: "+Inf"}, help: Request latency, value: 3.0, timestamp: 0.0}
+          - {metric: request_latency, sample: request_latency_sum, labels: {}, help: Request latency, value: 1.5, timestamp: 0.0}
+    call: scrape
+    accept: application/openmetrics-text
+env: {}
+compare: {ignore: []}

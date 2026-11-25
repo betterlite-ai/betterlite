@@ -573,3 +573,17 @@ path = "fuzz_targets/mcp_tool_grants.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "scoped_report_query"
+path = "fuzz_targets/scoped_report_query.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "autorouter_presets"
+path = "fuzz_targets/autorouter_presets.rs"
+test = false
+doc = false
+bench = false
