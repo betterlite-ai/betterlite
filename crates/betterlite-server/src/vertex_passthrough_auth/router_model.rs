@@ -10,8 +10,7 @@ use tracing::debug;
 
 use super::non_empty_text;
 
-// The two fields _resolve_vertex_model_from_router reads; model_info keeps LiteLLM's untyped read.
-// No Debug: litellm_params carries api_key and vertex_credentials verbatim.
+// The two fields _resolve_vertex_model_from_router reads; no Debug, since litellm_params carries credentials.
 #[derive(Clone, Default, Eq, PartialEq)]
 pub struct Deployment {
     pub litellm_params: JsonObject,
