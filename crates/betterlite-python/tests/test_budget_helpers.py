@@ -4,6 +4,7 @@ import json
 import logging
 import threading
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 from enum import IntEnum
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -14,7 +15,7 @@ from typing import ClassVar, Final, Protocol, Self
 import httpx
 import httpx2
 import pytest
-from pydantic import JsonValue, TypeAdapter, ValidationError
+from pydantic import ConfigDict, JsonValue, TypeAdapter, ValidationError
 from typing_extensions import override
 
 import betterlite
@@ -51,7 +52,7 @@ from betterlite._core_helpers import (
     set_provider_response_headers_in_hidden_params,
     set_response_cost_in_hidden_params,
 )
-from betterlite._core_helpers.values import PythonValue
+from betterlite._core_helpers.values import PythonValue, object_fields, text_of as values_text_of
 from betterlite._cost import completion_cost, cost_per_token, response_cost_calculator
 from betterlite._model_info import get_max_tokens, get_model_info, get_provider_info
 from betterlite._provider import get_llm_provider
@@ -107,8 +108,7 @@ REQUEST_TIMEOUT: Final = 600.0
 CONNECT_TIMEOUT: Final = 5.0
 BLOCK_SECONDS: Final = 10.0
 
-HELPER_NAMES: Final[frozenset[str]] = frozenset(
-    {
+HELPER_NAMES: Final[frozenset[str]] = frozenset({
         "add_missing_spend_metadata_to_litellm_metadata", "coerce_token_limit",
         "drop_params_env_flag", "drop_params_flag", "filter_exceptions_from_params",
         "filter_internal_params", "get_litellm_metadata_from_kwargs",
@@ -121,74 +121,67 @@ HELPER_NAMES: Final[frozenset[str]] = frozenset(
         "remove_index_from_tool_calls", "remove_items_at_indices", "safe_deep_copy",
         "safe_divide", "safe_divide_seconds",
         "set_provider_response_headers_in_hidden_params", "set_response_cost_in_hidden_params",
-    }
-)
-UTILS_NAMES: Final[frozenset[str]] = frozenset(
-    {
+})
+UTILS_NAMES: Final[frozenset[str]] = frozenset({
         "completion_cost", "cost_per_token", "create_pretrained_tokenizer", "create_tokenizer",
         "decode", "encode", "get_llm_provider", "get_max_tokens",
         "get_model_cost_mutation_generation", "get_model_info", "get_provider_info",
         "response_cost_calculator", "token_counter",
-    }
-)
+})
 NORMALIZE_VALUES: Final[tuple[PythonValue, ...]] = (
     None, True, "true", " TRUE ", "on", "1", 1, 0, "banana", 2, {}, "false", "off",
 )
 ENVIRONMENTS: Final[tuple[dict[str, str], ...]] = (
     {}, {"LITELLM_DROP_PARAMS": "true"}, {"LITELLM_DROP_PARAMS": "  "},
     {"LITELLM_DROP_PARAMS": "banana"}, {"LITELLM_DROP_PARAMS": "0"},
-    {"LITELLM_DROP_PARAMS": "off"}, {"LITELLM_DROP_PARAMS": "FALSE"},
-)
+    {"LITELLM_DROP_PARAMS": "off"}, {"LITELLM_DROP_PARAMS": "FALSE"})
 CODEX_AGENTS: Final[tuple[str, ...]] = ("codex-cli/1.0", "Codex_v", "codex /x", "xcodex", "openai")
 FINISH_REASONS: Final[tuple[str, ...]] = (
     "stop", "length", "tool_calls", "content_filtered", "error", "weird",
 )
 HEADER_CASES: Final[tuple[dict[str, str], ...]] = (
     {"content-type": "text/plain", "llm_provider-x": "y", "x-litellm-z": "w", "b": "c"},
-    {"x-ratelimit-remaining-requests": "9"},
-    {},
-)
+    {"x-ratelimit-remaining-requests": "9"}, {})
 DIVIDE_CASES: Final[tuple[tuple[float, float, float], ...]] = (
-    (4.0, 2.0, 0.0), (4.0, 0.0, 0.0), (4.0, 0.0, 7.0), (4.0, -2.0, 0.0),
-)
+    (4.0, 2.0, 0.0), (4.0, 0.0, 0.0), (4.0, 0.0, 7.0), (4.0, -2.0, 0.0))
 SECONDS_CASES: Final[tuple[tuple[float, float, float | None], ...]] = (
-    (10.0, 0.0, None), (10.0, 0.0, 5.0), (10.0, -1.0, None), (10.0, 4.0, None),
-)
+    (10.0, 0.0, None), (10.0, 0.0, 5.0), (10.0, -1.0, None), (10.0, 4.0, None))
 NAME_CASES: Final[tuple[tuple[str, str | None, dict[str, PythonValue]], ...]] = (
     ("claude", "bedrock", {}), ("claude", "anthropic", {}),
     ("bedrock/x", "bedrock", {"deployment": "anthropic/y"}),
-    ("x", "bedrock", {"deployment": "claude"}),
-    ("", "bedrock", {}), ("x", None, {}),
-)
+    ("x", "bedrock", {"deployment": "claude"}), ("", "bedrock", {}), ("x", None, {}))
 META_KWARGS_CASES: Final[tuple[dict[str, PythonValue], ...]] = (
     {}, {"litellm_params": None}, {"litellm_params": {}}, {"litellm_params": {METADATA_KEY: {}}},
     {"litellm_params": {LITELLM_METADATA_KEY: {}}},
     {"litellm_params": {METADATA_KEY: None, LITELLM_METADATA_KEY: {"m": 2}}},
     {"litellm_params": {METADATA_KEY: {"user_api_key": "k"}, LITELLM_METADATA_KEY: {"m": 2}}},
-    {"litellm_params": {METADATA_KEY: {"user_api_key": "k"}}},
-)
+    {"litellm_params": {METADATA_KEY: {"user_api_key": "k"}}})
 TOKEN_LIMITS: Final[tuple[PythonValue, ...]] = (
-    True, False, 128000, 0, -5, 12.9, "128000", "128,000", "", None, [1],
-)
+    True, False, 128000, 0, -5, 12.9, "128000", "128,000", "", None, [1])
+
+
+class RetryCount(IntEnum):
+    TWO = 2
+
+
 RETRY_KWARGS: Final[tuple[dict[str, PythonValue], ...]] = (
     {}, {METADATA_KEY: {}}, {METADATA_KEY: {"request_retry_count": 2}},
     {METADATA_KEY: {"request_retry_count": True}}, {METADATA_KEY: {"request_retry_count": "2"}},
     {METADATA_KEY: {"request_retry_count": 2}, LITELLM_METADATA_KEY: {"request_retry_count": 5}},
-    {METADATA_KEY: {"request_retry_count": RetryCount.TWO}},
-)
+    {METADATA_KEY: {"request_retry_count": RetryCount.TWO}})
 ERROR_CASES: Final[tuple[tuple[PythonValue, PythonValue, PythonValue], ...]] = (
     (None, None, None), (None, 400, None), (None, 499, None), (None, 500, None),
     (None, True, None), (None, "429", None), (None, "nope", None), (None, 404.5, None),
     (None, 429, "openai"), ("401", 200, None), ("500", 200, None), (503, 200, None),
-    (None, None, "openai"),
-)
+    (None, None, "openai"))
 PROJECTED_MESSAGES: Final[list[dict[str, JsonValue]]] = [
-    {"role": "user", "content": "ab"}, {"role": "user", "content": "c"},
-]
+    {"role": "user", "content": "ab"}, {"role": "user", "content": "c"}]
 USAGE_DATA: Final[dict[str, JsonValue]] = {
-    "prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2,
-}
+    "prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
 JSON_ADAPTER: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
+EXCEPTION_ADAPTER: Final[TypeAdapter[BaseException]] = TypeAdapter(
+    BaseException, config=ConfigDict(arbitrary_types_allowed=True)
+)
 HOSTED_USERS: Final[dict[str, dict[str, JsonValue]]] = {ALICE: {"total_budget": BUDGET}}
 HOSTED_DATA: Final[JsonValue] = JSON_ADAPTER.validate_python(HOSTED_USERS)
 HOSTED_REPLY: Final[dict[str, JsonValue]] = {"status": "ok", "data": HOSTED_DATA}
@@ -218,14 +211,8 @@ class CallModule(Protocol):
     def __getattr__(self, name: str) -> ReferenceCall: ...
 
 
-class ResponseFactory(Protocol):
-    def __call__(
-        self, **kwargs: PythonValue | ReferenceResponse | logging.Logger | httpx2.Headers
-    ) -> ReferenceResponse: ...
-
-
 class ResponseModule(Protocol):
-    def __getattr__(self, name: str) -> ResponseFactory: ...
+    def __getattr__(self, name: str) -> Callable[..., ReferenceResponse]: ...
 
 
 class BudgetShape(Protocol):
@@ -233,18 +220,8 @@ class BudgetShape(Protocol):
     def __getattr__(self, name: str) -> ReferenceCall: ...
 
 
-class BudgetFactory(Protocol):
-    def __call__(
-        self,
-        project_name: str,
-        client_type: str = ...,
-        api_base: str | None = ...,
-        headers: dict[str, str] | None = ...,
-    ) -> BudgetShape: ...
-
-
 class BudgetModule(Protocol):
-    def __getattr__(self, name: str) -> BudgetFactory: ...
+    def __getattr__(self, name: str) -> Callable[..., BudgetShape]: ...
 
 
 LITELLM: ModuleType = importlib.import_module("litellm")
@@ -262,10 +239,6 @@ class Router(ModelResponse):
 
 def helper_function() -> None:
     ...
-
-
-class RetryCount(IntEnum):
-    TWO = 2
 
 
 class OneSecondClock:
@@ -304,18 +277,32 @@ class GatedSaver:
         return {"status": "success"}
 
 
+class WriteGate:
+    now: ClassVar[int] = 0
+    peak: ClassVar[int] = 0
+
+
+def gated_write_text(path: Path, text: str) -> int:
+    WriteGate.now += 1
+    WriteGate.peak = max(WriteGate.peak, WriteGate.now)
+    time.sleep(0.1)
+    WriteGate.now -= 1
+    with path.open("w") as handle:
+        return handle.write(text)
+
+
 def text_of(value: JsonValue) -> str:
-    match value:
-        case str() as text:
-            return text
-    raise TypeError("expected a string")
+    text = values_text_of(value)
+    if text is None:
+        raise TypeError("expected a string")
+    return text
 
 
 def as_error(value: PythonValue) -> BaseException:
-    match value:
-        case BaseException() as error:
-            return error
-    raise TypeError("expected an exception")
+    try:
+        return EXCEPTION_ADAPTER.validate_python(value)
+    except ValidationError as error:
+        raise TypeError("expected an exception") from error
 
 
 def fake_token_counter(
@@ -358,17 +345,14 @@ def patch_costs(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def fields_of(value: PythonValue) -> dict[str, PythonValue]:
-    match value:
-        case dict() as fields:
-            return fields
-    raise TypeError("expected an object")
+    fields = object_fields(value)
+    if fields is None:
+        raise TypeError("expected an object")
+    return fields
 
 
 def error_text(value: PythonValue) -> str:
-    match value:
-        case BaseException() as error:
-            return str(error)
-    raise TypeError("expected an exception")
+    return str(as_error(value))
 
 
 def hidden_of(response: PrivateBag) -> dict[str, PythonValue]:
@@ -455,21 +439,16 @@ class RecordingHandler(BaseHTTPRequestHandler):
         body = b"" if declared is None else self.rfile.read(int(declared))
         parsed: JsonValue = None if not body else JSON_ADAPTER.validate_json(body)
         recorded: dict[str, JsonValue] = {
-            "path": self.path,
-            "content_type": self.headers.get("Content-Type"),
-            "agent": self.headers.get("User-Agent"),
-            "cookie": self.headers.get("Cookie"),
+            "path": self.path, "content_type": self.headers.get("Content-Type"),
+            "agent": self.headers.get("User-Agent"), "cookie": self.headers.get("Cookie"),
             "body": parsed,
         }
         self.owner.requests.append(recorded)
         location = self.owner.locations.get(self.path)
-        status = 200 if location is None else 307
-        declared_status = self.owner.statuses.get(self.path)
-        if declared_status is not None:
-            status = declared_status
-        payload = b""
-        if location is None:
-            payload = json.dumps(self.owner.replies[self.path]).encode()
+        status = self.owner.statuses.get(self.path)
+        if status is None:
+            status = 200 if location is None else 307
+        payload = json.dumps(self.owner.replies[self.path]).encode() if location is None else b""
         self.send_response(status)
         if location is not None:
             self.send_header("Location", location)
@@ -486,9 +465,9 @@ def test_helper_scalars_and_flags() -> None:
     for numerator, denominator, default in DIVIDE_CASES:
         expected = LITELLM_HELPERS.safe_divide(numerator, denominator, default)
         assert safe_divide(numerator, denominator, default) == expected
-    for seconds, denominator, default in SECONDS_CASES:
-        expected = LITELLM_HELPERS.safe_divide_seconds(seconds, denominator, default)
-        assert safe_divide_seconds(seconds, denominator, default) == expected
+    for seconds, denominator, optional_default in SECONDS_CASES:
+        expected = LITELLM_HELPERS.safe_divide_seconds(seconds, denominator, optional_default)
+        assert safe_divide_seconds(seconds, denominator, optional_default) == expected
     logger = logging.getLogger("b166-drop")
     for value in NORMALIZE_VALUES:
         assert normalize_drop_params(value) == LITELLM_HELPERS.normalize_drop_params(value)
@@ -499,7 +478,7 @@ def test_helper_scalars_and_flags() -> None:
         assert drop_params_env_flag(environ, logger) == expected
 
 
-def test_helper_messages_and_metadata() -> None:
+def test_helper_messages_metadata() -> None:
     for reason in FINISH_REASONS:
         assert map_finish_reason(reason) == LITELLM_HELPERS.map_finish_reason(reason)
     tool_calls: list[JsonValue] = [{"index": 0, "id": "a"}, "s", {"id": "b"}]
@@ -552,18 +531,14 @@ def test_helper_headers() -> None:
         expected = LITELLM_HELPERS.process_response_headers(headers)
         assert process_response_headers(headers) == expected
         preserved = LITELLM_HELPERS.process_response_headers(
-            headers, preserve_litellm_internal_headers=True
-        )
+            headers, preserve_litellm_internal_headers=True)
         assert process_response_headers(
-            headers, preserve_litellm_internal_headers=True
-        ) == preserved
+            headers, preserve_litellm_internal_headers=True) == preserved
     raw_headers = httpx2.Headers({"content-type": "text/plain", "x-litellm-z": "w"})
     raw_expected = LITELLM_HELPERS.process_response_headers(
-        raw_headers, preserve_litellm_internal_headers=True
-    )
+        raw_headers, preserve_litellm_internal_headers=True)
     assert process_response_headers(
-        raw_headers, preserve_litellm_internal_headers=True
-    ) == raw_expected
+        raw_headers, preserve_litellm_internal_headers=True) == raw_expected
     headers = {"A": "b", "llm_provider-x": "y", "x-litellm-z": "w"}
     span = datetime(2024, 1, 1, tzinfo=UTC)
     reference = LITELLM_RESPONSES.ModelResponse()
@@ -607,12 +582,12 @@ def test_helper_copies(monkeypatch: pytest.MonkeyPatch) -> None:
     span = datetime(2024, 1, 1, tzinfo=UTC)
     copies: list[tuple[dict[str, PythonValue], dict[str, PythonValue]]] = []
     snapshots: list[tuple[dict[str, PythonValue], dict[str, PythonValue]]] = []
-    for copier in (LITELLM_HELPERS.safe_deep_copy, safe_deep_copy):
+    for deep_copier in (LITELLM_HELPERS.safe_deep_copy, safe_deep_copy):
         original = copy_payload(span)
-        copies.append((fields_of(copier(original)), original))
-    for copier in (LITELLM_HELPERS.independent_snapshot, independent_snapshot):
+        copies.append((fields_of(deep_copier(original)), original))
+    for snapshotter in (LITELLM_HELPERS.independent_snapshot, independent_snapshot):
         original = copy_payload(span)
-        snapshots.append((fields_of(copier(original)), original))
+        snapshots.append((fields_of(snapshotter(original)), original))
     assert copies[0][0] == copies[1][0]
     assert snapshots[0][0] == snapshots[1][0]
     for copied, original in copies:
@@ -624,12 +599,12 @@ def test_helper_copies(monkeypatch: pytest.MonkeyPatch) -> None:
         assert snapshot[METADATA_KEY] is not original[METADATA_KEY]
         assert fields_of(snapshot[METADATA_KEY])[PARENT_SPAN] is span
         assert fields_of(snapshot[LITELLM_METADATA_KEY])[PARENT_SPAN] is span
-    for copier in (LITELLM_HELPERS.safe_deep_copy, safe_deep_copy, independent_snapshot):
+    for fallback_copier in (LITELLM_HELPERS.safe_deep_copy, safe_deep_copy, independent_snapshot):
         failed = failing_payload(span)
-        fallback = fields_of(copier(failed))
+        fallback = fields_of(fallback_copier(failed))
         assert fallback[METADATA_KEY] is failed[METADATA_KEY]
         assert fields_of(fallback[METADATA_KEY])[PARENT_SPAN] is span
-        cycle = fields_of(copier(cyclic_payload()))
+        cycle = fields_of(fallback_copier(cyclic_payload()))
         assert fields_of(cycle["self"])["self"] is cycle["self"]
     # ast-grep-ignore: no-string-mocking
     monkeypatch.setattr(BETTERLITE, "safe_memory_mode", True)
@@ -665,6 +640,12 @@ def test_helper_filters() -> None:
     assert fields_of(filter_exceptions_from_params(ours_cycle, 1))["self"] is ours_cycle
     reference_cycled = LITELLM_HELPERS.filter_exceptions_from_params(reference_cycle, 1)
     assert fields_of(reference_cycled)["self"] is reference_cycle
+    branching: dict[str, PythonValue] = {}
+    branching["a"] = branching
+    branching["b"] = branching
+    branching["c"] = branching
+    spread = fields_of(filter_exceptions_from_params(branching))
+    assert spread["a"] is spread["b"] is spread["c"] is branching
     data: dict[str, JsonValue] = {
         "a": 1, "skip_mcp_handler": 2, "mcp_handler_context": 3, "_skip_mcp_handler": 4, "x": 5,
     }
@@ -973,6 +954,24 @@ def test_budget_background_save(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     assert saver.finished.is_set()
 
 
+def test_budget_saves_serialized(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    manager = BudgetManager(PROJECT)
+    manager.create_budget(BUDGET, ALICE)
+    # ast-grep-ignore: no-string-mocking
+    monkeypatch.setattr(Path, "write_text", gated_write_text)
+    threads = [threading.Thread(target=manager.save_data) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=BLOCK_SECONDS)
+    assert WriteGate.peak == 1
+    assert not any(thread.is_alive() for thread in threads)
+    assert not Path("user_cost.json.pending").exists()
+    saved = fields_of(JSON_ADAPTER.validate_json(Path("user_cost.json").read_text()))
+    assert saved == {ALICE: {"total_budget": BUDGET}}
+
+
 def test_budget_verbose(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -982,8 +981,8 @@ def test_budget_verbose(
     # ast-grep-ignore: no-string-mocking
     monkeypatch.setattr(LITELLM, "set_verbose", True)
     with caplog.at_level(logging.INFO):
-        ours = BudgetManager(PROJECT)
-        reference = LITELLM_BUDGET.BudgetManager(PROJECT)
+        BudgetManager(PROJECT)
+        LITELLM_BUDGET.BudgetManager(PROJECT)
     messages = [record.getMessage() for record in caplog.records]
     assert messages == ["User Dictionary not found!", "user dict from local: {}"] * 2
 
