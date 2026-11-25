@@ -1,0 +1,11 @@
+kind: helper
+name: vertex-batch-create-non-200-failed
+call:
+  b3641:
+    status_code: 400
+    body: '{"error":{"code":400,"message":"Invalid model","status":"INVALID_ARGUMENT"}}'
+    url_route: /vertex_ai/v1/projects/p1/locations/us-central1/batchPredictionJobs
+    start_time: "2026-01-01T00:00:00+00:00"
+    request_metadata: {}
+env: {}
+compare: {ignore: []}

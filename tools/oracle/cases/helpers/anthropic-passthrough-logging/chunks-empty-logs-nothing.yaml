@@ -1,0 +1,15 @@
+kind: helper
+name: anthropic-passthrough-chunks-empty-logs-nothing
+call:
+  b3634:
+    operation: "chunks"
+    status_code: 200
+    url_route: "/v1/messages"
+    body: ""
+    request_body: {"model": "claude-test"}
+    litellm_params: {}
+    passthrough_logging_payload: {}
+    details: {"stream": true}
+    lines: []
+env: {LITELLM_RUST: 'false'}
+compare: {ignore: []}

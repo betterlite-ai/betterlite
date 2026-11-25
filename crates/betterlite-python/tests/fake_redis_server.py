@@ -1,3 +1,4 @@
+import contextlib
 import socket
 import socketserver
 import threading
@@ -73,6 +74,7 @@ class FakeRedisServer(socketserver.ThreadingTCPServer):
         self._unknown: list[str] = []
         self._connections: list[socket.socket] = []
         self._stopped = threading.Event()
+        self._failing = threading.Event()
         self._thread: threading.Thread | None = None
 
     def start(self) -> None:
@@ -90,6 +92,21 @@ class FakeRedisServer(socketserver.ThreadingTCPServer):
             connection.close()
         if self._thread is not None:
             self._thread.join(timeout=5.0)
+
+    # A failing server drops every open connection, so each call fails as a connection error.
+    def set_failing(self, *, failing: bool) -> None:
+        with self._lock:
+            if failing:
+                self._failing.set()
+                connections = list(self._connections)
+                self._connections.clear()
+            else:
+                self._failing.clear()
+                connections = []
+        for connection in connections:
+            with contextlib.suppress(OSError):
+                connection.shutdown(socket.SHUT_RDWR)
+            connection.close()
 
     @property
     def unknown_commands(self) -> list[str]:
@@ -251,8 +268,10 @@ class FakeRedisServer(socketserver.ThreadingTCPServer):
         reader = connection.makefile("rb")
         with reader:
             while not self._stopped.is_set():
+                if self._failing.is_set():
+                    return
                 args = _read_command(reader)
-                if args is None:
+                if args is None or self._failing.is_set():
                     return
                 try:
                     connection.sendall(self.reply(args))

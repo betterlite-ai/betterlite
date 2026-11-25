@@ -1,0 +1,12 @@
+task: B1646
+deviations:
+  - what: Overrides change the environment view the native gateway components read, while process-level environment reads in custom Python code keep seeing the boot environment.
+    why: Rust forbids safe concurrent process-environment mutation, so RuntimeEnvironment keeps an explicit boot snapshot and overlay instead of writing os.environ.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/config_override_endpoints.py#L242-L252
+  - what: A stored value that is not a string becomes its JSON text in the projected environment, so a boolean becomes true or false in lowercase and a list becomes compact JSON, where LiteLLM's Python str gives True and a spaced repr.
+    why: The request models accept only strings, so this shows only for a hand-edited database row, and docs/compatibility.md stops parity at the declared types instead of porting Python repr and str text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/config_override_endpoints.py#L242-L252
+  - what: Stored JSON text is read as standard JSON, so Python's NaN and Infinity extensions fall back to an empty config instead of failing later at use.
+    why: serde_json rejects the non-standard literals that Python's json.loads accepts, and the malformed-text fallback is the task's rule for anything the parser refuses.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/config_override_endpoints.py#L235-L239
+kept_bugs: []
