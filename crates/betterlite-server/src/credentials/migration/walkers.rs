@@ -5,7 +5,7 @@ use betterlite_db::encryption_scan::{
     DbCipher, MigrationJson, ScanError, classify_callback_value, classify_value,
     decode_migration_json, iter_callback_var_dicts, reencrypt_value,
 };
-use secrecy::ExposeSecret as _;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use super::callback::CallbackTransform;
 use super::store::{CallbackTable, MigrationStore};
@@ -156,9 +156,24 @@ fn migrate_field(
     if dry_run {
         return Ok(FieldOutcome::Residual);
     }
+    let MigrationJson::String(current) = value else {
+        return Ok(FieldOutcome::Residual);
+    };
     let replacement = reencrypt_value(value, cipher, field)?;
+    let MigrationJson::String(sealed) = &replacement else {
+        return Ok(FieldOutcome::Residual);
+    };
+    if unchanged(&current.0, &sealed.0) {
+        return Ok(FieldOutcome::Residual);
+    }
     settings.insert(field.to_owned(), replacement);
     Ok(FieldOutcome::Migrated)
+}
+
+// The source keeps a legacy value that re-encrypts to the same ciphertext residual; a fresh nonce always changes it, so no stored value takes this branch.
+#[cfg_attr(test, mutants::skip)]
+fn unchanged(before: &SecretString, after: &SecretString) -> bool {
+    before.expose_secret() == after.expose_secret()
 }
 
 fn count_outcome<S: MigrationStore>(

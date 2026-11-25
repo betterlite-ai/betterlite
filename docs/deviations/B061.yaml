@@ -9,16 +9,6 @@ deviations:
       and docs/compatibility.md keeps Python repr out of betterlite's output, so the message names
       the setting, the accepted value and the key sources instead of formatting the current object.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/credential_migration.py#L191-L205
-  - what: >-
-      A legacy config or SSO field whose re-encryption returns a value counts as migrated and is
-      written; LiteLLM's defensive "a legacy value that did not re-encrypt is still residual"
-      comparison against the original value is not reproduced.
-    why: >-
-      B1602's reencrypt_value returns its input unchanged only for a nonstring, an empty string, a
-      v2 value and a value that does not decrypt, and none of those classify as legacy, so the
-      branch cannot run for any stored value; the row rule stays the same, a row is written only
-      when at least one of its fields changed.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/credential_migration.py#L251-L259
 kept_bugs:
   - what: >-
       Migrated team and verification-token metadata is stored as a JSON string instead of a JSON
