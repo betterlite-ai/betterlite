@@ -1,6 +1,7 @@
-from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
-from datetime import datetime
-from typing import Final, Protocol, TypeAlias, runtime_checkable
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from datetime import date, datetime
+from decimal import Decimal
+from typing import Final, TypeAlias
 
 from pydantic import TypeAdapter, ValidationError
 
@@ -13,6 +14,8 @@ PythonValue: TypeAlias = (  # type: ignore[explicit-any]  # https://github.com/B
     | str
     | BaseException
     | datetime
+    | date
+    | Decimal
     | Dumpable
     | Iterator["PythonValue"]
     | Sequence["PythonValue"]
@@ -24,19 +27,11 @@ PythonValue: TypeAlias = (  # type: ignore[explicit-any]  # https://github.com/B
 _TEXT: Final[TypeAdapter[str]] = TypeAdapter(str)
 
 
-@runtime_checkable
-class CallableLeaf(Protocol):
-    def __call__(self, *args: PythonValue) -> PythonValue: ...
-
-
 def object_fields(value: PythonValue) -> dict[str, PythonValue] | None:
     match value:
         case dict() as fields:
             return fields
-        case (
-            int() | float() | BaseException() | datetime()
-            | Dumpable() | Iterable() | CallableLeaf() | None
-        ):
+        case object():
             return None
 
 

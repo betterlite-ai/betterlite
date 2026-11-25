@@ -1,12 +1,9 @@
-from collections.abc import Iterable
 from contextlib import suppress
-from datetime import datetime
 from typing import Final
 
 from pydantic import JsonValue
 
-from betterlite._core_helpers.values import CallableLeaf, PythonValue, object_fields
-from betterlite.types.utils.base import Dumpable
+from betterlite._core_helpers.values import PythonValue, object_fields
 
 _SKIPPED_NAMES: Final = frozenset({"Logging", "LiteLLMLoggingObj", "Router"})
 
@@ -32,10 +29,7 @@ def _filtered_value(
     match data:
         case list() as items:
             return _kept_items(items, max_depth, ancestors)
-        case (
-            int() | float() | BaseException() | datetime()
-            | Dumpable() | Iterable() | CallableLeaf() | None
-        ):
+        case object():
             return data
 
 
@@ -45,10 +39,7 @@ def _removed_in_parent(value: PythonValue) -> bool:
             return True
         case type():  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L644
             return False
-        case (
-            int() | float() | str() | BaseException() | datetime()
-            | Dumpable() | Iterable() | CallableLeaf() | None
-        ):
+        case object():
             return callable(value)
 
 

@@ -1,13 +1,11 @@
 import logging
 import re
-from collections.abc import Iterable, Mapping
-from datetime import datetime
+from collections.abc import Mapping
 from typing import Final
 
 from pydantic import TypeAdapter, ValidationError
 
-from betterlite._core_helpers.values import CallableLeaf, PythonValue, text_of
-from betterlite.types.utils.base import Dumpable
+from betterlite._core_helpers.values import PythonValue, text_of
 
 _CODEX_PREFIX: Final = re.compile("^codex[-_ /]", re.IGNORECASE)
 _DROP_PARAMS_BOOL: Final[TypeAdapter[bool]] = TypeAdapter(bool)
@@ -78,5 +76,5 @@ def coerce_token_limit(value: PythonValue) -> int | None:
                 return int(raw)
             except (TypeError, ValueError, OverflowError):
                 return None
-        case BaseException() | datetime() | Dumpable() | Iterable() | CallableLeaf() | None:
+        case object():
             return None

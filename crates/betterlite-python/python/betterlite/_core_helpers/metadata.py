@@ -1,9 +1,7 @@
-from collections.abc import Iterable, Mapping
-from datetime import datetime
+from collections.abc import Mapping
 from typing import Final, Literal, TypeAlias
 
-from betterlite._core_helpers.values import CallableLeaf, PythonValue, object_fields, text_of
-from betterlite.types.utils.base import Dumpable
+from betterlite._core_helpers.values import PythonValue, object_fields, text_of
 
 MetadataName: TypeAlias = Literal["metadata", "litellm_metadata"]
 MetadataBucket: TypeAlias = dict[str, PythonValue]
@@ -85,10 +83,7 @@ def _retry_count_hit(retry_count: PythonValue, limit: int) -> bool:
     match retry_count:
         case int() as count if count.__class__ is int:
             return count > 0 and limit <= count
-        case (
-            int() | float() | BaseException() | datetime()
-            | Dumpable() | Iterable() | CallableLeaf() | None
-        ):
+        case object():
             return False
 
 
