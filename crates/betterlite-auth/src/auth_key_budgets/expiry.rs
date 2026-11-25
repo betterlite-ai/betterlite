@@ -40,7 +40,10 @@ fn normalize_basic_iso8601(text: &str) -> String {
 }
 
 fn normalize_basic_date(date: &str) -> String {
-    if date.len() != 8 || !date.bytes().all(|byte| byte.is_ascii_digit()) {
+    if date.len() != 8 {
+        return date.to_owned();
+    }
+    if !date.bytes().all(|byte| byte.is_ascii_digit()) {
         return date.to_owned();
     }
     let (year, rest) = date.split_at(4);

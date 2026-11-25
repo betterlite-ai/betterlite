@@ -4,7 +4,8 @@ use betterlite_db::budget_permission_rows::JsonData;
 use rstest::rstest;
 
 use crate::auth_key_budgets::email::{
-    alert_recipients, merge_alert_email_configs, normalize_alert_emails, parse_email_list,
+    alert_recipients, is_valid_alert_threshold_pct, merge_alert_email_configs,
+    normalize_alert_emails, parse_email_list,
 };
 use crate::auth_key_budgets::max_alert::max_budget_alert_check;
 use crate::auth_key_budgets::money::Money;
@@ -338,11 +339,24 @@ fn member_invalid_map_silent(#[case] config: &str) {
     assert!(sink.take().is_empty());
 }
 
+#[rstest]
+#[case::single_digit("1", true)]
+#[case::leading_zero("050", true)]
+#[case::hundred("100", true)]
+#[case::four_digit_one("0001", false)]
+#[case::four_digit_hundred("0100", false)]
+#[case::empty("", false)]
+#[case::over_hundred("101", false)]
+#[case::non_digit("1a", false)]
+fn threshold_pct_requires_three_ascii_digits(#[case] pct: &str, #[case] valid: bool) {
+    assert_eq!(is_valid_alert_threshold_pct(pct), valid, "{pct}");
+}
+
 #[test]
 fn member_threshold_bounds_length() {
     let sink = RecordingSink::default();
     let metadata = emails(&format!(
-        r#"{{"{TEAM_MEMBER_ALERT_KEY}":{{"0":["zero@x"],"101":["over@x"],"1000":["long@x"],"50":["half@x"],"100":["max@x"]}}}}"#
+        r#"{{"{TEAM_MEMBER_ALERT_KEY}":{{"0":["zero@x"],"101":["over@x"],"1000":["long@x"],"0001":["leading@x"],"50":["half@x"],"100":["max@x"]}}}}"#
     ));
     team_member_alert_check(
         &TeamMemberAlert {
@@ -365,7 +379,7 @@ fn member_threshold_bounds_length() {
     assert_eq!(config["100"], vec!["max@x"]);
 
     let only_invalid = emails(&format!(
-        r#"{{"{TEAM_MEMBER_ALERT_KEY}":{{"101":["over@x"]}}}}"#
+        r#"{{"{TEAM_MEMBER_ALERT_KEY}":{{"101":["over@x"],"0001":["leading@x"]}}}}"#
     ));
     team_member_alert_check(
         &TeamMemberAlert {
@@ -513,6 +527,31 @@ fn member_positive_spend_threshold(#[case] spend: i64, #[case] expected: bool) {
         Some(&sink),
     );
     assert_eq!(!sink.take().is_empty(), expected);
+}
+
+#[test]
+fn member_zero_spend_zero_budget_silent() {
+    let sink = RecordingSink::default();
+    let metadata = emails(&format!(
+        r#"{{"{TEAM_MEMBER_ALERT_KEY}":{{"50":["a@x"]}}}}"#
+    ));
+    team_member_alert_check(
+        &TeamMemberAlert {
+            team_id: "team-1",
+            team_alias: None,
+            team_metadata: Some(&metadata),
+            organization_id: None,
+            user_id: "user-1",
+            user_email: None,
+            spend: dec(0),
+            max_budget: money(0),
+        },
+        Some(&sink),
+    );
+    assert!(
+        sink.take().is_empty(),
+        "a zero spend never alerts, even when a zero maximum meets the threshold"
+    );
 }
 
 fn json(text: &str) -> JsonData {

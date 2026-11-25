@@ -352,6 +352,18 @@ async fn unverifiable_spend_is_unavailable() {
 }
 
 #[tokio::test]
+async fn budgets_without_reader_are_unverifiable() {
+    let (status, body, reached) = run_request(
+        &config_with_master_key(),
+        Arc::new(rule(r#"{"token":"sk-no-reader","spend":0,"max_budget":5}"#)),
+    )
+    .await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert!(body.contains(BUDGET_UNVERIFIABLE_DETAIL), "{body}");
+    assert!(!reached);
+}
+
+#[tokio::test]
 async fn window_denial_uses_rule_durations() {
     let windowed = Arc::new(KeyBudgetRule {
         reader: Some(ScriptedReader::new(vec![Decimal::from(7_i64)])),

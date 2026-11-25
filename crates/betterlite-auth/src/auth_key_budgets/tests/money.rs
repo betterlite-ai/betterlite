@@ -34,6 +34,16 @@ fn money_text_and_json_semantics() {
 }
 
 #[test]
+fn spelled_nonfinite_forms_are_exact() {
+    assert_eq!(Money::spelled("NaN"), Some(Money::Nan));
+    assert_eq!(Money::spelled("Infinity"), Some(Money::PositiveInfinity));
+    assert_eq!(Money::spelled("-Infinity"), Some(Money::NegativeInfinity));
+    assert_eq!(Money::spelled("inf"), None);
+    assert_eq!(Money::spelled("nan"), None);
+    assert_eq!(Money::spelled("-7"), None);
+}
+
+#[test]
 fn money_percent_and_finite_semantics() {
     assert_eq!(money(100).mul_percent(50), money(50));
     assert_eq!(money(100).mul_decimal_percent(50.0_f64), money(50));

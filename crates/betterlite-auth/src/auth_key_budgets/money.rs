@@ -20,9 +20,10 @@ impl Money {
             return Self::Nan;
         }
         if value.is_infinite() {
-            return Self::infinity(value < 0.0_f64);
+            return Self::infinity(value.is_sign_negative());
         }
-        Decimal::from_f64(value).map_or_else(|| Self::infinity(value < 0.0_f64), Self::Finite)
+        Decimal::from_f64(value)
+            .map_or_else(|| Self::infinity(value.is_sign_negative()), Self::Finite)
     }
 
     // a JSON number or a Python nonfinite spelling; a numeric string is not the declared type
@@ -135,7 +136,7 @@ impl Money {
         )
     }
 
-    fn spelled(text: &str) -> Option<Self> {
+    pub(super) fn spelled(text: &str) -> Option<Self> {
         match text {
             "NaN" => Some(Self::Nan),
             "Infinity" => Some(Self::PositiveInfinity),
