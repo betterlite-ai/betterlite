@@ -34,6 +34,7 @@ use betterlite_cache::dual_cache::{DualCache, DualCacheSettings};
 use betterlite_db::database_failures::gate::{
     DbLookupStallTracker, LoopBoundSemaphore, SystemClock,
 };
+use betterlite_db::migration_ledger::baseline::{PACKAGED_CATALOGS, catalog_statements};
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_db::spend_log_storage::batch_claim::SpendLogAttachment;
 use betterlite_db::spend_log_storage::postgres::PostgresSpendLogsWriter;
@@ -50,7 +51,6 @@ use betterlite_db::spend_writer::{
 use betterlite_db::window_queue::WindowSpendTransaction;
 use betterlite_models::decisions::Json;
 use betterlite_postgres_fixture::connection::PostgresFixture;
-use betterlite_postgres_fixture::sql::BASELINE;
 use betterlite_redis::redis_cache::RedisCache;
 use betterlite_redis::redis_cache::connect::{RedisCacheOptions, connect};
 use betterlite_redis::redis_client_reuse::breaker::{BreakerAdmission, BreakerOpen};
@@ -259,11 +259,12 @@ async fn spend_logs() -> (PostgresFixture, PostgresStore) {
     let url = Environment::parse_from(["spend-settlement"])
         .url
         .map(SecretString::from);
-    let fixture =
-        PostgresFixture::provision_with_statements(url.as_ref(), vec![BASELINE.to_owned()])
-            .resolve()
-            .await
-            .unwrap();
+    // the insert writes the 34 columns after the pinned migrations, so the fixture applies the packaged catalogs like every spend-log test does
+    let statements = catalog_statements(&PACKAGED_CATALOGS).expect("the migration text");
+    let fixture = PostgresFixture::provision_with_statements(url.as_ref(), statements)
+        .resolve()
+        .await
+        .unwrap();
     let manager = Manager::new(fixture.options.config.clone(), NoTls);
     let pool = Pool::builder(manager).max_size(2).build().unwrap();
     (fixture, PostgresStore { pool: Some(pool) })
