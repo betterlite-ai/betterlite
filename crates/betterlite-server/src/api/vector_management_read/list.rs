@@ -171,8 +171,10 @@ fn list_item(
         None => Json::Null,
     };
     item.litellm_params = Some(serde_json::to_value(params)?);
+    // an untyped copy of a declared field lives in extra too, and the redacted params replace theirs
+    item.extra.remove("litellm_params");
     item.extra
-        .retain(|key, _value| key != "litellm_params" && DECLARED_KEYS.contains(&key.as_str()));
+        .retain(|key, _value| DECLARED_KEYS.contains(&key.as_str()));
     Ok(item)
 }
 

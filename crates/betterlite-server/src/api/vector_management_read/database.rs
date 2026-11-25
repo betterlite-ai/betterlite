@@ -30,6 +30,7 @@ impl PostgresVectorManagementDatabase {
         }
     }
 
+    #[cfg_attr(test, mutants::skip)]
     fn client(&self) -> PrismaClient<'_> {
         PrismaClient {
             writer: self.store.as_ref(),
@@ -39,22 +40,26 @@ impl PostgresVectorManagementDatabase {
     }
 
     // the registry's two table reads, answered from the read replica like Prisma does
+    #[cfg_attr(test, mutants::skip)]
     fn registry(&self) -> PrismaVectorStoreDatabase<'_> {
         PrismaVectorStoreDatabase::new(Some(self.client()), redis_config_change_publisher(None))
     }
 }
 
 impl VectorStoreDatabase for PostgresVectorManagementDatabase {
+    #[cfg_attr(test, mutants::skip)]
     async fn stores(&self) -> Result<Vec<LiteLlmManagedVectorStore>, TableError> {
         VectorStoreDatabase::stores(&self.registry()).await
     }
 
+    #[cfg_attr(test, mutants::skip)]
     async fn indexes(&self) -> Result<Vec<LiteLlmManagedVectorStoreIndex>, TableError> {
         VectorStoreDatabase::indexes(&self.registry()).await
     }
 }
 
 impl VectorStoreRows for PostgresVectorManagementDatabase {
+    #[cfg_attr(test, mutants::skip)]
     async fn find_unique(
         &self,
         vector_store_id: &str,

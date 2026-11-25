@@ -109,6 +109,7 @@ async fn list_reconciles_config_and_database() {
         database: Some(database),
         registry: Some(vec![
             memory_store("vs_stale"),
+            memory_store("vs_db"),
             config_store("vs_shared"),
             config_store("vs_config"),
         ]),
@@ -547,6 +548,7 @@ async fn info_denied_cached_record_is_403() {
         registry: Some(vec![team_store("vs_team", "t9")]),
         ..Setup::default()
     });
+    let (logs, _guard) = capture_logs(tracing::Level::ERROR);
     let (status, _headers, body) = post(
         &state,
         r#"{"vector_store_id":"vs_team"}"#,
@@ -559,6 +561,7 @@ async fn info_denied_cached_record_is_403() {
         text(at(&body, "detail"))
     );
     assert!(database.asked().is_empty());
+    assert!(!logs.contents().contains("Error getting vector store info"));
 }
 
 #[tokio::test]
