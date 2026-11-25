@@ -601,3 +601,10 @@ path = "fuzz_targets/sso_refresh_response.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "global_report_query"
+path = "fuzz_targets/global_report_query.rs"
+test = false
+doc = false
+bench = false
