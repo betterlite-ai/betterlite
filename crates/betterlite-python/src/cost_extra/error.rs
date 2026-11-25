@@ -6,6 +6,9 @@ use betterlite_models::image_cost::error::ImageCostError;
 use betterlite_models::model_metadata_resolution::error::model_not_mapped_message;
 use betterlite_models::price_fields::decimal_lexeme::DecimalLexemeError;
 use betterlite_models::resolution::ResolutionError;
+use betterlite_models::resolution::ResolutionError::{
+    DefaultsA, DefaultsB, EndpointWithoutProvider, MissingProvider,
+};
 use pyo3::{PyErr, exceptions::PyValueError, prelude::*};
 
 use crate::cost::error::{native_error, payload};
@@ -68,10 +71,8 @@ fn provider_missing_message(model: &str) -> String {
 // get_llm_provider reports every provider failure as a BadRequestError, so no caller sees the cause shape.
 pub(crate) fn resolution_error(py: Python<'_>, error: &ResolutionError, model: &str) -> PyErr {
     let message = match error {
-        ResolutionError::MissingProvider { .. } => provider_missing_message(model),
-        ResolutionError::EndpointWithoutProvider { .. }
-        | ResolutionError::DefaultsA { .. }
-        | ResolutionError::DefaultsB { .. } => error.to_string(),
+        MissingProvider { .. } => provider_missing_message(model),
+        EndpointWithoutProvider { .. } | DefaultsA { .. } | DefaultsB { .. } => error.to_string(),
     };
     exception_error(py, BAD_REQUEST, message, Some(model))
 }
@@ -88,10 +89,8 @@ pub(crate) fn video_error(py: Python<'_>, error: &DurationCostError) -> PyErr {
     let DurationCostError::UnknownModel { model } = error else {
         return native_error(py, payload(error.to_string()));
     };
-    native_error(
-        py,
-        payload(format!("Model not found in cost map for model={model}")),
-    )
+    let message = format!("Model not found in cost map for model={model}");
+    native_error(py, payload(message))
 }
 
 // openai's cost_per_second reads the model through get_model_info, whose unmapped class is ModelNotMappedError.

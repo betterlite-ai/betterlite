@@ -86,9 +86,7 @@ def vector_store_search_cost(
 
 
 def rerank_cost(
-    model: str,
-    custom_llm_provider: str | None,
-    billed_units: RerankBilledUnits | None = None,
+    model: str, custom_llm_provider: str | None, billed_units: RerankBilledUnits | None = None
 ) -> tuple[float, float]:
     request: RerankRequestWire = {"model": model, "custom_llm_provider": custom_llm_provider}
     if billed_units is not None:
@@ -100,9 +98,7 @@ def transcription_cost(
     model: str, custom_llm_provider: str | None, duration: float
 ) -> tuple[float, float]:
     request: TranscriptionRequestWire = {
-        "model": model,
-        "custom_llm_provider": custom_llm_provider,
-        "duration": duration,
+        "model": model, "custom_llm_provider": custom_llm_provider, "duration": duration
     }
     return pair(ENGINE.transcription_cost, json.dumps(request))
 
