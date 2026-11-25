@@ -36,4 +36,15 @@ deviations:
       LiteLLM call site updates the child it takes, and the file then holds the zeros plus the
       first value as it does there.
     link: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/values.py#L80-L85
+  - what: >-
+      A removal logs prometheus_client's warning only when the metric is bound to a multiprocess
+      writer. prometheus_client warns whenever prometheus_multiproc_dir or
+      PROMETHEUS_MULTIPROC_DIR is in the process environment, even for a metric that no registry
+      binds.
+    why: >-
+      The registry's writer is the only thing that puts a file behind a metric, so binding is the
+      condition under which the warning says something true; reading the process environment
+      would warn in every process that has the variable set, one-off metrics included, and would
+      couple a metric to global state.
+    link: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/metrics.py#L213-L217
 kept_bugs: []
