@@ -80,11 +80,10 @@ def max_retries_per_request_hit(
 
 
 def _retry_count_hit(retry_count: PythonValue, limit: int) -> bool:
-    match retry_count:
-        case int() as count if count.__class__ is int:
-            return count > 0 and limit <= count
-        case object():
-            return False
+    # ast-grep-ignore: no-isinstance
+    if isinstance(retry_count, int) and type(retry_count) is int:
+        return retry_count > 0 and limit <= retry_count
+    return False
 
 
 def proxy_stamped_used_client_oauth_token(  # ast-grep-ignore: no-long-names

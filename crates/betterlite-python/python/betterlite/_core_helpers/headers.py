@@ -21,17 +21,16 @@ def process_response_headers(
     preserve_litellm_internal_headers: bool = False,  # ast-grep-ignore: no-long-names  # noqa: FBT001, FBT002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L453-L456
 ) -> dict[str, JsonValue]:
     raw: dict[str, str] = dict(response_headers)
-    match response_headers:
-        case dict() if preserve_litellm_internal_headers:  # ast-grep-ignore: no-long-names
-            internal = {
-                key: value for key, value in raw.items() if key.startswith(_INTERNAL_PREFIX)
-            }
-            rest = {
-                key: value for key, value in raw.items() if not key.startswith(_INTERNAL_PREFIX)
-            }
-            return {**_common_headers(rest), **internal}
-        case object():
-            return _common_headers(raw)
+    # ast-grep-ignore: no-isinstance
+    if isinstance(response_headers, dict) and preserve_litellm_internal_headers:
+        internal = {
+            key: value for key, value in raw.items() if key.startswith(_INTERNAL_PREFIX)
+        }
+        rest = {
+            key: value for key, value in raw.items() if not key.startswith(_INTERNAL_PREFIX)
+        }
+        return {**_common_headers(rest), **internal}
+    return _common_headers(raw)
 
 
 def set_response_cost_in_hidden_params(  # ast-grep-ignore: no-long-names

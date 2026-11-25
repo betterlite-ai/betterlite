@@ -66,15 +66,16 @@ def safe_divide(numerator: float, denominator: float, default: float = 0) -> int
 
 
 def coerce_token_limit(value: PythonValue) -> int | None:
-    match value:
-        case bool():
+    # ast-grep-ignore: no-isinstance
+    if isinstance(value, bool):
+        return None
+    # ast-grep-ignore: no-isinstance
+    if isinstance(value, int):
+        return value
+    # ast-grep-ignore: no-isinstance
+    if isinstance(value, str | float):
+        try:
+            return int(value)
+        except (TypeError, ValueError, OverflowError):
             return None
-        case int() as limit:
-            return limit
-        case str() | float() as raw:
-            try:
-                return int(raw)
-            except (TypeError, ValueError, OverflowError):
-                return None
-        case object():
-            return None
+    return None

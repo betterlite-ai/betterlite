@@ -26,21 +26,20 @@ def _filtered_value(
     fields = object_fields(data)
     if fields is not None:
         return _kept_fields(fields, max_depth, ancestors)
-    match data:
-        case list() as items:
-            return _kept_items(items, max_depth, ancestors)
-        case object():
-            return data
+    # ast-grep-ignore: no-isinstance
+    if isinstance(data, list):
+        return _kept_items(data, max_depth, ancestors)
+    return data
 
 
 def _removed_in_parent(value: PythonValue) -> bool:
-    match value:
-        case Exception():
-            return True
-        case type():  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L644
-            return False
-        case object():
-            return callable(value)
+    # ast-grep-ignore: no-isinstance
+    if isinstance(value, Exception):
+        return True
+    # ast-grep-ignore: no-isinstance
+    if isinstance(value, type):
+        return False
+    return callable(value)
 
 
 def _filtered_child(

@@ -42,7 +42,7 @@ def is_expected_client_error(exception: BaseException | None) -> bool:
 
 
 # LiteLLM's order: a litellm limiter rejection is the proxy's, whatever provider it names.
-def _is_provider_originated(exception: BaseException) -> bool:
+def _is_provider_originated(exception: object) -> bool:
     # ast-grep-ignore: no-isinstance
     if isinstance(exception, _LimitRejection) and _is_litellm_limit(exception.category):
         return False
@@ -57,21 +57,21 @@ def _is_litellm_limit(category: PythonValue) -> bool:
     return name is not None and name in _LITELLM_LIMIT_CATEGORIES
 
 
-def _status_value(exception: BaseException) -> PythonValue:
+def _status_value(exception: object) -> PythonValue:
     code = _code_of(exception)
     if code is not None:
         return code
     return _status_of(exception)
 
 
-def _code_of(exception: BaseException) -> PythonValue:
+def _code_of(exception: object) -> PythonValue:
     # ast-grep-ignore: no-isinstance
     if isinstance(exception, _CodeError):
         return exception.code
     return None
 
 
-def _status_of(exception: BaseException) -> PythonValue:
+def _status_of(exception: object) -> PythonValue:
     # ast-grep-ignore: no-isinstance
     if isinstance(exception, _StatusError):
         return exception.status_code
@@ -79,15 +79,16 @@ def _status_of(exception: BaseException) -> PythonValue:
 
 
 def _client_status(value: PythonValue) -> bool:
-    match value:
-        case bool():
-            return False
-        case int() as status:
-            return _CLIENT_ERROR_MIN <= status < _CLIENT_ERROR_MAX
-        case str() | float() as raw:
-            return _status_from_text(raw)
-        case object():
-            return False
+    # ast-grep-ignore: no-isinstance
+    if isinstance(value, bool):
+        return False
+    # ast-grep-ignore: no-isinstance
+    if isinstance(value, int):
+        return _CLIENT_ERROR_MIN <= value < _CLIENT_ERROR_MAX
+    # ast-grep-ignore: no-isinstance
+    if isinstance(value, str | float):
+        return _status_from_text(value)
+    return False
 
 
 def _status_from_text(raw: str | float) -> bool:

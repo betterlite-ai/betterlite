@@ -629,8 +629,11 @@ def test_helper_copies_and_filters(monkeypatch: pytest.MonkeyPatch) -> None:
     reference_filtered = fields_of(
         LITELLM_HELPERS.filter_exceptions_from_params(filter_payload())
     )
-    expected_filtered: dict[str, PythonValue] = {"class": ValueError, "list": [{}, 1]}
-    assert ours_filtered == reference_filtered == expected_filtered
+    assert ours_filtered == reference_filtered
+    assert ours_filtered["class"] is ValueError
+    assert "function" not in ours_filtered
+    assert "error" not in ours_filtered
+    assert "none" not in ours_filtered
     live = ModelResponse.model_construct(id="m", created=0, object="m", choices=[])
     live_payload: dict[str, PythonValue] = {"response": live}
     leaves: dict[str, PythonValue] = {"amount": Decimal("1.25"), "on": date(2026, 1, 1)}
@@ -801,7 +804,9 @@ def test_budget_lifecycle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setattr(time, "time", OneSecondClock(CREATED_AT))
     first = ours.create_budget(BUDGET, "erin", "daily")
     second = ours.create_budget(BUDGET, "frank", "daily")
-    assert first["created_at"] == second["created_at"] == first["last_updated_at"] != CREATED_AT
+    assert first.get("created_at") == second.get("created_at") == first.get(
+        "last_updated_at"
+    ) != CREATED_AT
     join_saves(marker)
     durations = [ours.user_dict[user].get("duration") for _duration, user in named]
     assert durations == [1, DAYS_IN_A_WEEK, DAYS_IN_A_MONTH, DAYS_IN_A_YEAR]

@@ -28,11 +28,10 @@ _TEXT: Final[TypeAdapter[str]] = TypeAdapter(str)
 
 
 def object_fields(value: PythonValue) -> dict[str, PythonValue] | None:
-    match value:
-        case dict() as fields:
-            return fields
-        case object():
-            return None
+    # ast-grep-ignore: no-isinstance
+    if isinstance(value, dict):
+        return value
+    return None
 
 
 def text_of(value: PythonValue) -> str | None:
