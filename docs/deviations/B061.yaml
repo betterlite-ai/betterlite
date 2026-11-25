@@ -9,6 +9,15 @@ deviations:
       and docs/compatibility.md keeps Python repr out of betterlite's output, so the message names
       the setting, the accepted value and the key sources instead of formatting the current object.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/credential_migration.py#L191-L208
+  - what: >-
+      A config, SSO or callback row whose stored JSON is larger than B1602's 1 MiB decode cap
+      fails the run with its InputTooLarge error, where LiteLLM's json.loads would parse a row of
+      any size.
+    why: >-
+      The task requires every row to go through B1602's decoder, and that decoder rejects a
+      column above MAX_MIGRATION_JSON_BYTES before parsing it. Raising the cap is B1602's call;
+      the walkers report its error instead of bypassing it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/credential_migration.py#L235-L237
 kept_bugs:
   - what: >-
       Migrated team and verification-token metadata is stored as a JSON string instead of a JSON
