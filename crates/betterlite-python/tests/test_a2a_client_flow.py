@@ -2,10 +2,9 @@ import asyncio
 import importlib
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import aclosing
-from typing import Final, Protocol, TypedDict
+from typing import Final, Protocol, TypeAlias, TypedDict, TypeVar
 
 import litellm.a2a_protocol as their_package
-import pytest
 from a2a.client.card_resolver import parse_agent_card
 from a2a.compat.v0_3.types import (
     Message,
@@ -26,7 +25,7 @@ from a2a_server import (
     Recorder,
 )
 from litellm.a2a_protocol import LiteLLMSendMessageResponse as LiteLLMResponse
-from pydantic import BaseModel, JsonValue, TypeAdapter
+from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 from typing_extensions import override
 
 import betterlite.a2a_protocol as our_package
@@ -158,6 +157,11 @@ class StreamFlows(TypedDict):
 
 SEND_RESPONSE: Final[TypeAdapter[SendResponse]] = TypeAdapter(SendResponse)
 STREAM_RESPONSE: Final[TypeAdapter[StreamResponse]] = TypeAdapter(StreamResponse)
+# every answer main's guarded hands back, named so the spy below can match it exhaustively
+NativeAnswer: TypeAlias = NativeA2aStream | NativeA2aClient | str | None
+NATIVE_ANSWER: Final[TypeAdapter[NativeAnswer]] = TypeAdapter(
+    NativeAnswer, config=ConfigDict(arbitrary_types_allowed=True)
+)
 
 
 class TheirA2AClient(Protocol):
@@ -212,16 +216,17 @@ class SettingsCalls:
         )
 
 
+_Answer = TypeVar("_Answer")
+
+
 class NativeAnswers:
     def __init__(self) -> None:
         self.streams: list[NativeA2aStream] = []
 
-    async def __call__(
-        self, call: Awaitable[NativeA2aStream | NativeA2aClient | str | None]
-    ) -> NativeA2aStream | NativeA2aClient | str | None:
+    # guarded is generic over its answer, so the adapter names the union before the match
+    async def record(self, call: Awaitable[_Answer]) -> _Answer:
         answer = await call
-        # every answer main's guarded hands back is named here, so no arm is a catch-all
-        match answer:
+        match NATIVE_ANSWER.validate_python(answer):
             case NativeA2aStream() as stream:
                 self.streams.append(stream)
             case NativeA2aClient() | str() | None:
@@ -515,16 +520,20 @@ async def close_class_stream_early(server: AgentServer, answers: NativeAnswers) 
     return remaining is None
 
 
-def test_stream_closes_early(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_stream_closes_early() -> None:
     answers = NativeAnswers()
     recorder = Recorder()
     settings_calls = SettingsCalls(forced_streaming=True)
-    # ast-grep-ignore: no-string-mocking
-    monkeypatch.setattr(main_module, "client_settings", settings_calls)
-    # ast-grep-ignore: no-string-mocking
-    monkeypatch.setattr(main_module, "guarded", answers)
-    with V1Server(recorder) as server:
-        closed = asyncio.run(close_class_stream_early(server, answers))
+    original_settings = main_module.client_settings
+    original_guarded = main_module.guarded
+    main_module.client_settings = settings_calls
+    main_module.guarded = answers.record
+    try:
+        with V1Server(recorder) as server:
+            closed = asyncio.run(close_class_stream_early(server, answers))
+    finally:
+        main_module.client_settings = original_settings
+        main_module.guarded = original_guarded
     posts = [entry for entry in recorder.calls if entry["method"] == "POST"]
     assert settings_calls.requested == [False]
     # the forced settings have to put the native client on SSE, or no event is left pending
