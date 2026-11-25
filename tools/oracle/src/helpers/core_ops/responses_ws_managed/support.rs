@@ -8,8 +8,8 @@ use betterlite_core::api::responses_ws_managed::run::{FrameReceiveError, FrameSo
 use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::error::HelperError;
 use indexmap::IndexMap;
-use serde::Deserialize;
-use serde_json::{Map, Value, from_str, json};
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, from_str, json};
 
 use super::fixtures::{ChunkKind, QuotaKind, ScriptedFailure};
 
@@ -50,11 +50,13 @@ pub(super) struct Recorder {
     pub(super) trace: Vec<String>,
 }
 
+#[derive(Serialize)]
 pub(super) struct RecordedCall {
     pub(super) model: String,
     pub(super) kwargs: IndexMap<String, Json>,
 }
 
+#[derive(Serialize)]
 pub(super) struct RecordedQuota {
     pub(super) model: Option<String>,
     pub(super) input_tokens: i64,
@@ -130,27 +132,9 @@ pub(super) fn frames(shared: &Shared) -> Result<Value, Box<HelperError>> {
     Ok(Value::Array(parsed))
 }
 
-// the provider calls first, the quota calls second, each in the order the handler made them
 pub(super) fn recorded(shared: &Shared) -> (Value, Value) {
     let recorder = lock(shared);
-    let calls: Vec<Value> = recorder
-        .calls
-        .iter()
-        .map(|call| json!({"model": call.model, "kwargs": call.kwargs}))
-        .collect();
-    let quotas: Vec<Value> = recorder
-        .quotas
-        .iter()
-        .map(|quota| {
-            json!({
-                "model": quota.model,
-                "input_tokens": quota.input_tokens,
-                "output_tokens": quota.output_tokens,
-            })
-        })
-        .collect();
-    drop(recorder);
-    (Value::Array(calls), Value::Array(quotas))
+    (json!(recorder.calls), json!(recorder.quotas))
 }
 
 pub(super) fn history<Sink>(handler: &ManagedResponsesWebSocket<Sink>) -> Value
@@ -159,11 +143,7 @@ where
 {
     let ordered: BTreeMap<&String, &Vec<IndexMap<String, Json>>> =
         handler.session_history.iter().collect();
-    let mut stored = Map::new();
-    for (response_id, messages) in ordered {
-        stored.insert(response_id.clone(), json!(messages));
-    }
-    Value::Object(stored)
+    json!(ordered)
 }
 
 pub(super) fn helper_error(class: &str, message: String) -> Box<HelperError> {

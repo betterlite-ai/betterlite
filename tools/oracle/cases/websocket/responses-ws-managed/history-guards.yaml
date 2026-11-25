@@ -57,7 +57,7 @@ calls:
         - kind: json
           value:
             type: fixture.completed
-            response:
+            fixture_response:
               output: []
               usage:
                 input_tokens: 0
@@ -73,7 +73,7 @@ calls:
         - kind: json
           value:
             type: fixture.completed
-            response:
+            fixture_response:
               id: 7
               output: []
               usage:
@@ -90,7 +90,7 @@ calls:
         - kind: json
           value:
             type: fixture.completed
-            response:
+            fixture_response:
               id: ''
               output: []
               usage:
@@ -107,7 +107,7 @@ calls:
         - kind: json
           value:
             type: fixture.completed
-            response:
+            fixture_response:
               id: null
               output: []
               usage:

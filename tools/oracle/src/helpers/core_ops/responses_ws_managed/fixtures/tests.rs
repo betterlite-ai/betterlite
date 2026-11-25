@@ -12,7 +12,8 @@ fn dispatch_and_proxy_errors_keep_the_original_cause() {
     let dispatch = DispatchFailure::Fixture(fixture);
     let error = AdapterError::Dispatch(Box::new(dispatch));
     let cause = error.source().unwrap();
-    assert!(cause.downcast_ref::<DispatchFailure>().is_some());
+    let typed_source = cause.downcast_ref::<Box<DispatchFailure>>().unwrap();
+    assert!(matches!(typed_source.as_ref(), DispatchFailure::Fixture(_)));
     let environment = cause.source().unwrap().downcast_ref::<EnvError>().unwrap();
     assert_eq!(
         environment,

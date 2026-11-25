@@ -9,6 +9,7 @@ use betterlite_openai::response_events::event_decode::{
 };
 
 use super::{AdapterError, ScriptedFailure};
+use indexmap::IndexMap;
 
 struct BrokenChunk;
 
@@ -50,10 +51,7 @@ fn adapt_event(mut value: Json) -> Result<Option<ProviderChunk>, AdapterError> {
             }
             Some(Json::Text(kind)) if kind == "fixture.end" => return Ok(None),
             Some(Json::Text(kind)) if kind == "fixture.completed" => {
-                fields.insert(
-                    String::from("type"),
-                    Json::Text(String::from("response.completed")),
-                );
+                restore_completion(fields);
                 return Ok(Some(ProviderChunk::Json(value)));
             }
             Some(
@@ -91,4 +89,14 @@ fn without_nulls(value: Json) -> Json {
         Json::List(items) => Json::List(items.into_iter().map(without_nulls).collect()),
         scalar @ (Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_)) => scalar,
     }
+}
+
+fn restore_completion(fields: &mut IndexMap<String, Json>) {
+    if let Some(response) = fields.shift_remove("fixture_response") {
+        fields.insert(String::from("response"), response);
+    }
+    fields.insert(
+        String::from("type"),
+        Json::Text(String::from("response.completed")),
+    );
 }

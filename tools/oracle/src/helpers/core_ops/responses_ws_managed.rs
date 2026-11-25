@@ -10,9 +10,7 @@ mod support;
 use std::mem::take;
 use std::sync::Arc;
 
-use betterlite_core::api::responses_ws_history::{FrameSink, ManagedResponsesWebSocket};
-use betterlite_core::api::responses_ws_managed::provider::ResponsesStreaming;
-use betterlite_core::api::responses_ws_managed::run::{FrameSource, run};
+use betterlite_core::api::responses_ws_managed::run::run;
 use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_oracle_runner::routing_mock_scripts::ProviderCall;
@@ -98,10 +96,18 @@ async fn run_transcript(
     };
     let mut handler = build_handler(&input.setup, socket, shared, input.quota.as_ref());
     let captured = Captured::default();
-    let subscriber = registry().with(captured.clone());
-    transcript(&mut handler, provider, source, shared, &captured)
-        .with_subscriber(subscriber)
-        .await
+    run(&mut handler, provider, source)
+        .with_subscriber(registry().with(captured.clone()))
+        .await;
+    let (provider_calls, quota_calls) = support::recorded(shared);
+    Ok(json!({
+        "frames": support::frames(shared)?,
+        "provider_calls": provider_calls,
+        "quota_calls": quota_calls,
+        "history": support::history(&handler),
+        "trace": json!(lock(shared).trace),
+        "diagnostics": json!(take(&mut *lock(&captured.0))),
+    }))
 }
 
 fn answer_with_requests(answer: Value, calls: &[ProviderCall]) -> HelperResult {
@@ -113,29 +119,4 @@ fn answer_with_requests(answer: Value, calls: &[ProviderCall]) -> HelperResult {
     };
     fields.insert(String::from("provider_requests"), fixtures::requests(calls));
     Ok(Value::Object(fields))
-}
-
-async fn transcript<Sink, Provider, Source>(
-    handler: &mut ManagedResponsesWebSocket<Sink>,
-    provider: &Provider,
-    source: Source,
-    shared: &Shared,
-    captured: &Captured,
-) -> HelperResult
-where
-    Sink: FrameSink,
-    Provider: ResponsesStreaming,
-    Source: FrameSource,
-{
-    run(handler, provider, source).await;
-    let frame_rows = support::frames(shared)?;
-    let (provider_calls, quota_calls) = support::recorded(shared);
-    Ok(json!({
-        "frames": frame_rows,
-        "provider_calls": provider_calls,
-        "quota_calls": quota_calls,
-        "history": support::history(handler),
-        "trace": json!(lock(shared).trace),
-        "diagnostics": json!(take(&mut *lock(&captured.0))),
-    }))
 }

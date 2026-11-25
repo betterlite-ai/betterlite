@@ -131,7 +131,7 @@ class Answering(BaseHTTPRequestHandler):
 
 
 class CompletedFixture(TypedDict):
-    response: dict[str, JsonValue]
+    fixture_response: dict[str, JsonValue]
 
 
 class EventTag(TypedDict):
@@ -169,7 +169,7 @@ class ObservedStream:
                 return
             if kind == "fixture.completed":
                 completion = TypeAdapter(CompletedFixture).validate_json(serialized)
-                yield {"type": "response.completed", "response": completion["response"]}
+                yield {"type": "response.completed", "response": completion["fixture_response"]}
             elif kind == "fixture.empty":
                 yield None
             elif kind == "fixture.broken":

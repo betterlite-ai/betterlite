@@ -18,9 +18,9 @@ pub enum ServiceTag {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct ServiceInput {
+pub struct ServiceInput<Input = Arguments> {
     pub service: ServiceTag,
-    pub input: Arguments,
+    pub input: Input,
 }
 
 #[derive(Serialize)]
@@ -98,18 +98,26 @@ impl<F> Default for Arguments<F> {
     }
 }
 
-pub type ServiceAdapter = fn(&Arguments) -> Result<TranscriptObservation, DriverError>;
+pub type ServiceAdapter<Args = Arguments, Output = TranscriptObservation, Failure = DriverError> =
+    fn(&Args) -> Result<Output, Failure>;
 
-#[derive(Default)]
-pub struct Services {
-    adapters: BTreeMap<ServiceTag, ServiceAdapter>,
+pub struct Services<Args = Arguments, Output = TranscriptObservation, Failure = DriverError> {
+    adapters: BTreeMap<ServiceTag, ServiceAdapter<Args, Output, Failure>>,
 }
 
-impl Services {
+impl<Args, Output, Failure> Default for Services<Args, Output, Failure> {
+    fn default() -> Self {
+        Self {
+            adapters: BTreeMap::new(),
+        }
+    }
+}
+
+impl<Args, Output, Failure> Services<Args, Output, Failure> {
     pub fn register_service(
         &mut self,
         tag: ServiceTag,
-        adapter: ServiceAdapter,
+        adapter: ServiceAdapter<Args, Output, Failure>,
     ) -> Result<(), DriverError> {
         match self.adapters.entry(tag) {
             Entry::Vacant(entry) => {
@@ -120,11 +128,10 @@ impl Services {
         }
     }
 
-    pub fn run_service(
-        &self,
-        tag: ServiceTag,
-        input: &Arguments,
-    ) -> Result<TranscriptObservation, DriverError> {
+    pub fn run_service(&self, tag: ServiceTag, input: &Args) -> Result<Output, Failure>
+    where
+        Failure: From<DriverError>,
+    {
         let adapter = self
             .adapters
             .get(&tag)
