@@ -102,17 +102,14 @@ where
         }
     };
     if !charged {
-        if let Some(reservation) = input.reservation {
-            ports
-                .reservations
-                .release(reservation)
-                .await
-                .map_err(SpendSettlementError::Release)?;
+        if let Some(reservation) = input.reservation
+            && let Err(error) = ports.reservations.release(reservation).await
+        {
+            return Err(SpendSettlementError::Release(error));
         }
         return Ok(false);
     }
-    count_charged(input, ports).await?;
-    Ok(true)
+    count_charged(input, ports).await.map(|()| true)
 }
 
 // the row is already persisted, so a counter failure only drops the reserved counters and never retries the write
@@ -124,8 +121,9 @@ where
     WriteError: StdError + Send + Sync + 'static,
     Counters: SpendCounterIncrement,
 {
-    arm_cache_read(input.update_cache_read_keys, ports.cache)
-        .map_err(SpendSettlementError::Prefetch)?;
+    if let Err(error) = arm_cache_read(input.update_cache_read_keys, ports.cache) {
+        return Err(SpendSettlementError::Prefetch(error));
+    }
     let increment = SpendIncrementInput {
         token: input.token,
         team_id: input.team_id,
