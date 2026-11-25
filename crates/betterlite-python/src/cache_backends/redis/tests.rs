@@ -224,7 +224,10 @@ fn backends_redis_breaker_opens_and_probes() {
         // the values slice swallows the connection failure after the breaker counted it
         assert_eq!(native.get(py, "key").unwrap(), None);
         let open = native.get(py, "key").unwrap_err();
-        assert!(open.to_string().contains("circuit breaker is open"));
+        assert!(
+            open.to_string()
+                .contains("Redis circuit breaker is open, skipping ")
+        );
         // the async increment reports through the Redis cache error and must answer the same class
         let counted = get_runtime()
             .block_on(count(
