@@ -9,6 +9,30 @@ use super::tools::tool_grants_for_server;
 use crate::auth::object_permission_hydration::reads::ObjectPermission;
 use crate::auth::object_permission_hydration::record::McpAuth;
 
+// the agent's own row: no agent, no key or an unreadable key reads as nothing, and a prefetched row wins over a fresh read
+async fn agent_permission<Reads>(
+    ceilings: &Ceilings<Reads>,
+    auth: Option<&UserAPIKeyAuth>,
+    prefetched: Option<&ObjectPermission>,
+) -> Result<Option<ObjectPermission>, CeilingReadError<Reads::Error>>
+where
+    Reads: CeilingReads,
+{
+    let Some(caller) = auth else {
+        return Ok(None);
+    };
+    let Some(record) = McpAuth::from_auth(caller).ok() else {
+        return Ok(None);
+    };
+    if record.agent_id.is_none() {
+        return Ok(None);
+    }
+    if let Some(permission) = prefetched {
+        return Ok(Some(permission.clone()));
+    }
+    ceilings.reads.agent_object_permission(Some(caller)).await
+}
+
 // get_allowed_mcp_servers_for_agent: a plain agent reads a union fault as no restriction, a managed one or an unloadable row returns it
 pub(super) async fn agent_servers<Reads>(
     ceilings: &Ceilings<Reads>,
@@ -18,28 +42,15 @@ pub(super) async fn agent_servers<Reads>(
 where
     Reads: CeilingReads,
 {
-    let Some(caller) = auth else {
+    let Some(permission) = agent_permission(ceilings, auth, prefetched).await? else {
         return Ok(Vec::new());
     };
-    let Some(record) = McpAuth::from_auth(caller).ok() else {
-        return Ok(Vec::new());
-    };
-    if record.agent_id.is_none() {
-        return Ok(Vec::new());
-    }
-    let mut loaded = prefetched.cloned();
-    if loaded.is_none() {
-        loaded = ceilings.reads.agent_object_permission(Some(caller)).await?;
-    }
-    let Some(permission) = loaded else {
-        return Ok(Vec::new());
-    };
-    let fresh = ceilings.reads.requires_fresh_policy(Some(caller));
-    match servers::permission_servers(&ceilings.reads, &permission, fresh, ToolsetTerm::Counted)
-        .await
-    {
+    let fresh = ceilings.reads.requires_fresh_policy(auth);
+    let listed =
+        servers::permission_servers(&ceilings.reads, &permission, fresh, ToolsetTerm::Counted);
+    match listed.await {
         Ok(server_ids) => Ok(server_ids),
-        Err(error) => agent_fault(ceilings, Some(caller), error, Vec::new()),
+        Err(error) => agent_fault(ceilings, auth, error, Vec::new()),
     }
 }
 
@@ -87,42 +98,38 @@ pub fn agent_capped_servers(
     Some(kept.cloned().collect())
 }
 
+// the server whose agent tool grants are read, and the caller and row the read starts from
+pub(super) struct AgentServer<'a> {
+    pub(super) server_id: &'a str,
+    pub(super) auth: Option<&'a UserAPIKeyAuth>,
+    pub(super) prefetched: Option<&'a ObjectPermission>,
+}
+
 // get_agent_tool_permissions_for_server: direct grants count only when the row lists any, and a plain agent reads a fault as no restriction
 pub(super) async fn agent_server_tools<Reads>(
     ceilings: &Ceilings<Reads>,
-    server_id: &str,
-    auth: Option<&UserAPIKeyAuth>,
-    prefetched: Option<&ObjectPermission>,
+    server: AgentServer<'_>,
 ) -> CeilingsResult<Option<Vec<String>>, Reads>
 where
     Reads: CeilingReads,
 {
-    let Some(caller) = auth else {
-        return Ok(None);
-    };
-    let Some(record) = McpAuth::from_auth(caller).ok() else {
-        return Ok(None);
-    };
-    if record.agent_id.is_none() {
-        return Ok(None);
-    }
-    let mut loaded = prefetched.cloned();
-    if loaded.is_none() {
-        loaded = ceilings.reads.agent_object_permission(Some(caller)).await?;
-    }
-    let Some(permission) = loaded else {
+    let Some(permission) = agent_permission(ceilings, server.auth, server.prefetched).await? else {
         return Ok(None);
     };
     let direct = permission
         .mcp_tool_permissions
         .as_ref()
         .filter(|grants| !grants.is_empty());
-    let fresh = ceilings.reads.requires_fresh_policy(Some(caller));
-    match tool_grants_for_server(&ceilings.reads, Some(&permission), direct, server_id, fresh).await
-    {
-        Ok(tools) => Ok(tools),
-        Err(error) => agent_fault(ceilings, Some(caller), error, None),
-    }
+    let fresh = ceilings.reads.requires_fresh_policy(server.auth);
+    let granted = tool_grants_for_server(
+        &ceilings.reads,
+        Some(&permission),
+        direct,
+        server.server_id,
+        fresh,
+    )
+    .await;
+    granted.or_else(|error| agent_fault(ceilings, server.auth, error, None))
 }
 
 // a plain agent reads a fault as no restriction, while a managed agent or an unloadable row returns the error

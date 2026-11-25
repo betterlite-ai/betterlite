@@ -9,10 +9,7 @@ use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 
 use super::error::CeilingReadError;
 use super::reads::{AdmissionMarks, CeilingReads};
-use crate::auth::object_permission_hydration::error::EntitlementError;
-use crate::auth::object_permission_hydration::grants::{
-    toolset_tool_permissions as toolset_grants, toolset_tools_for_server as toolset_tools_on_server,
-};
+use crate::auth::object_permission_hydration::grants::toolset_tool_permissions as toolset_grants;
 use crate::auth::object_permission_hydration::principal::{
     NamedPrincipal, named_object_permission, team_object_permission as team_permission_of,
     user_object_permission as user_permission_of,
@@ -20,7 +17,6 @@ use crate::auth::object_permission_hydration::principal::{
 use crate::auth::object_permission_hydration::reads::{ObjectPermission, ObjectPermissionReads};
 use crate::auth::object_permission_hydration::record::McpAuth;
 use crate::server_grants::auth::GrantAuth;
-use crate::server_grants::error::ServerGrantsError;
 use crate::server_grants::{GrantReads, ServerGrants, ToolGrants};
 
 // the server manager's registry expansion, sync over the loaded registry
@@ -72,62 +68,35 @@ where
         &self,
         auth: Option<&UserAPIKeyAuth>,
     ) -> Result<Option<ObjectPermission>, CeilingReadError<Self::Error>> {
-        let record = decode(auth)?;
-        named_object_permission(
-            self.grants.reads.permissions(),
-            &record,
-            NamedPrincipal::Org,
-        )
-        .await
-        .map_err(entitlement_fault)
+        read_permission(self.grants.reads.permissions(), auth, Principal::Org).await
     }
 
     async fn end_user_object_permission(
         &self,
         auth: Option<&UserAPIKeyAuth>,
     ) -> Result<Option<ObjectPermission>, CeilingReadError<Self::Error>> {
-        let record = decode(auth)?;
-        named_object_permission(
-            self.grants.reads.permissions(),
-            &record,
-            NamedPrincipal::EndUser,
-        )
-        .await
-        .map_err(entitlement_fault)
+        read_permission(self.grants.reads.permissions(), auth, Principal::EndUser).await
     }
 
     async fn user_object_permission(
         &self,
         auth: Option<&UserAPIKeyAuth>,
     ) -> Result<Option<ObjectPermission>, CeilingReadError<Self::Error>> {
-        let record = decode(auth)?;
-        user_permission_of(self.grants.reads.permissions(), &record)
-            .await
-            .map_err(|source| CeilingReadError::Failed(source.to_string()))
+        read_permission(self.grants.reads.permissions(), auth, Principal::User).await
     }
 
     async fn agent_object_permission(
         &self,
         auth: Option<&UserAPIKeyAuth>,
     ) -> Result<Option<ObjectPermission>, CeilingReadError<Self::Error>> {
-        let record = decode(auth)?;
-        named_object_permission(
-            self.grants.reads.permissions(),
-            &record,
-            NamedPrincipal::Agent,
-        )
-        .await
-        .map_err(entitlement_fault)
+        read_permission(self.grants.reads.permissions(), auth, Principal::Agent).await
     }
 
     async fn team_object_permission(
         &self,
         auth: Option<&UserAPIKeyAuth>,
     ) -> Result<Option<ObjectPermission>, CeilingReadError<Self::Error>> {
-        let record = decode(auth)?;
-        team_permission_of(self.grants.reads.permissions(), &record)
-            .await
-            .map_err(|source| CeilingReadError::Failed(source.to_string()))
+        read_permission(self.grants.reads.permissions(), auth, Principal::Team).await
     }
 
     async fn servers_from_access_groups(
@@ -154,7 +123,7 @@ where
         self.grants
             .team_servers(Some(&grant))
             .await
-            .map_err(grants_fault)
+            .map_err(CeilingReadError::from)
     }
 
     async fn toolset_tool_permissions(
@@ -162,29 +131,23 @@ where
         permission: Option<&ObjectPermission>,
         requires_fresh_policy: bool,
     ) -> Result<ToolGrants, CeilingReadError<Self::Error>> {
-        toolset_grants(
-            self.grants.reads.permissions(),
-            permission,
-            requires_fresh_policy,
-        )
-        .await
-        .map_err(entitlement_fault)
+        let reads = self.grants.reads.permissions();
+        toolset_grants(reads, permission, requires_fresh_policy)
+            .await
+            .map_err(CeilingReadError::from)
     }
 
+    // LiteLLM's get_toolset_tools_for_server is get_toolset_tool_permissions(...)[server_id], so the read happens once here
     async fn toolset_tools_for_server(
         &self,
         permission: Option<&ObjectPermission>,
         server_id: &str,
         requires_fresh_policy: bool,
     ) -> Result<Option<Vec<String>>, CeilingReadError<Self::Error>> {
-        toolset_tools_on_server(
-            self.grants.reads.permissions(),
-            permission,
-            server_id,
-            requires_fresh_policy,
-        )
-        .await
-        .map_err(entitlement_fault)
+        let mut grants = self
+            .toolset_tool_permissions(permission, requires_fresh_policy)
+            .await?;
+        Ok(grants.remove(server_id))
     }
 
     fn expand_permission_list(&self, identifiers: &[String]) -> Vec<String> {
@@ -230,24 +193,39 @@ where
     }
 }
 
-fn entitlement_fault<Source>(error: EntitlementError<Source>) -> CeilingReadError<Source>
-where
-    Source: StdError + 'static,
-{
-    match error {
-        EntitlementError::Unloadable(unloadable) => CeilingReadError::Unloadable(unloadable),
-        EntitlementError::Read { source } => CeilingReadError::Failed(source.to_string()),
-    }
+// which principal a getter reads, so the five getters share one read and one fault mapping
+enum Principal {
+    Org,
+    EndUser,
+    Agent,
+    User,
+    Team,
 }
 
-fn grants_fault<Source>(error: ServerGrantsError<Source>) -> CeilingReadError<Source>
+async fn read_permission<Reads>(
+    reads: &Reads,
+    auth: Option<&UserAPIKeyAuth>,
+    which: Principal,
+) -> Result<Option<ObjectPermission>, CeilingReadError<Reads::Error>>
 where
-    Source: StdError + 'static,
+    Reads: ObjectPermissionReads,
 {
-    match error {
-        ServerGrantsError::Unloadable(unloadable) => CeilingReadError::Unloadable(unloadable),
-        error @ (ServerGrantsError::Permission { .. }
-        | ServerGrantsError::Read { .. }
-        | ServerGrantsError::TeamMissing { .. }) => CeilingReadError::Failed(error.to_string()),
+    let record = decode(auth)?;
+    match which {
+        Principal::Org => named_object_permission(reads, &record, NamedPrincipal::Org)
+            .await
+            .map_err(CeilingReadError::from),
+        Principal::EndUser => named_object_permission(reads, &record, NamedPrincipal::EndUser)
+            .await
+            .map_err(CeilingReadError::from),
+        Principal::Agent => named_object_permission(reads, &record, NamedPrincipal::Agent)
+            .await
+            .map_err(CeilingReadError::from),
+        Principal::User => user_permission_of(reads, &record)
+            .await
+            .map_err(|source| CeilingReadError::Failed(source.to_string())),
+        Principal::Team => team_permission_of(reads, &record)
+            .await
+            .map_err(|source| CeilingReadError::Failed(source.to_string())),
     }
 }

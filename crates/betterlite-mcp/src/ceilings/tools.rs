@@ -3,7 +3,7 @@ use tracing::warn;
 
 use super::CeilingSource;
 use super::Ceilings;
-use super::agent::{agent_fault, agent_server_tools};
+use super::agent::{AgentServer, agent_fault, agent_server_tools};
 use super::error::{CeilingReadError, CeilingsError, CeilingsResult};
 use super::reads::CeilingReads;
 use super::servers;
@@ -42,14 +42,21 @@ fn narrowed(allowed: Option<Vec<String>>, granted: Option<Vec<String>>) -> Optio
     Some(servers::distinct(servers::capped(allowed, &granted)))
 }
 
+// one tool ceiling call: the tools a level narrows, the server they sit on and the caller they are narrowed for
+pub(super) struct ToolCall<'a> {
+    pub(super) allowed: Option<Vec<String>>,
+    pub(super) server_id: &'a str,
+    pub(super) auth: Option<&'a UserAPIKeyAuth>,
+}
+
 // the read, its toolset term and the narrowing every human and org level applies once it holds a permission
 async fn narrow_to_grants<Reads>(
     ceilings: &Ceilings<Reads>,
-    allowed: Option<Vec<String>>,
     server_id: &str,
-    permission: &ObjectPermission,
     auth: Option<&UserAPIKeyAuth>,
-) -> Result<Option<Vec<String>>, CeilingReadError<Reads::Error>>
+    allowed: Option<Vec<String>>,
+    permission: &ObjectPermission,
+) -> CeilingsResult<Option<Vec<String>>, Reads>
 where
     Reads: CeilingReads,
 {
@@ -65,73 +72,73 @@ where
     Ok(narrowed(allowed, granted))
 }
 
-// _apply_user_tool_ceiling: an unreadable human entitlement denies every tool, since key auth would otherwise read a raise as allow-all
-pub(super) async fn apply_user_tool_ceiling<Reads>(
+// the two human tool levels: whose row is read, and whether a keyless source is left alone
+pub(super) enum ToolLevel {
+    User(CeilingSource),
+    EndUser,
+}
+
+// _apply_user_tool_ceiling and _apply_end_user_tool_ceiling: a keyless source or an end user with nothing to read keeps every tool; a user fault denies every tool and an end-user fault is returned
+pub(super) async fn apply_human_tool_ceiling<Reads>(
     ceilings: &Ceilings<Reads>,
-    allowed: Option<Vec<String>>,
-    server_id: &str,
-    auth: Option<&UserAPIKeyAuth>,
-    source_kind: CeilingSource,
+    call: ToolCall<'_>,
+    level: ToolLevel,
 ) -> CeilingsResult<Option<Vec<String>>, Reads>
 where
     Reads: CeilingReads,
 {
-    if matches!(source_kind, CeilingSource::Keyless) {
-        return Ok(allowed);
-    }
-    let loaded = match ceilings.reads.user_object_permission(auth).await {
-        Ok(loaded) => loaded,
-        Err(error) => {
-            warn!("MCP user tool ceiling unresolvable, denying tools on {server_id:?}: {error}");
-            return Ok(Some(Vec::new()));
+    let loaded = match level {
+        ToolLevel::User(source_kind) => {
+            if matches!(source_kind, CeilingSource::Keyless) {
+                return Ok(call.allowed);
+            }
+            match ceilings.reads.user_object_permission(call.auth).await {
+                Ok(loaded) => loaded,
+                Err(error) => {
+                    warn!(
+                        "MCP user tool ceiling unresolvable, denying tools on {:?}: {error}",
+                        call.server_id
+                    );
+                    return Ok(Some(Vec::new()));
+                }
+            }
+        }
+        ToolLevel::EndUser => {
+            let Some(record) = call.auth.and_then(|caller| McpAuth::from_auth(caller).ok()) else {
+                return Ok(call.allowed);
+            };
+            if record.end_user_id.is_none() || !ceilings.reads.has_database() {
+                return Ok(call.allowed);
+            }
+            ceilings.reads.end_user_object_permission(call.auth).await?
         }
     };
     let Some(permission) = loaded else {
-        return Ok(allowed);
+        return Ok(call.allowed);
     };
-    narrow_to_grants(ceilings, allowed, server_id, &permission, auth)
-        .await
-        .map_err(CeilingsError::from)
-}
-
-// _apply_end_user_tool_ceiling: no end user, no database or no permission leaves the tools alone, and errors are returned
-pub(super) async fn apply_end_user_tool_ceiling<Reads>(
-    ceilings: &Ceilings<Reads>,
-    allowed: Option<Vec<String>>,
-    server_id: &str,
-    auth: Option<&UserAPIKeyAuth>,
-) -> CeilingsResult<Option<Vec<String>>, Reads>
-where
-    Reads: CeilingReads,
-{
-    let Some(caller) = auth else {
-        return Ok(allowed);
-    };
-    let Some(record) = McpAuth::from_auth(caller).ok() else {
-        return Ok(allowed);
-    };
-    if record.end_user_id.is_none() || !ceilings.reads.has_database() {
-        return Ok(allowed);
-    }
-    let loaded = ceilings.reads.end_user_object_permission(auth).await?;
-    let Some(permission) = loaded else {
-        return Ok(allowed);
-    };
-    narrow_to_grants(ceilings, allowed, server_id, &permission, auth)
-        .await
-        .map_err(CeilingsError::from)
+    narrow_to_grants(
+        ceilings,
+        call.server_id,
+        call.auth,
+        call.allowed,
+        &permission,
+    )
+    .await
 }
 
 // apply_agent_caller_tool_ceiling: a caller team that cannot be read denies every tool, then the echoed user's own tool ceiling
 pub(super) async fn apply_caller_tools<Reads>(
     ceilings: &Ceilings<Reads>,
-    allowed: Option<Vec<String>>,
-    server_id: &str,
-    auth: Option<&UserAPIKeyAuth>,
+    call: ToolCall<'_>,
 ) -> CeilingsResult<Option<Vec<String>>, Reads>
 where
     Reads: CeilingReads,
 {
+    let ToolCall {
+        allowed,
+        server_id,
+        auth,
+    } = call;
     let Some(source) = auth else {
         return Ok(allowed);
     };
@@ -146,53 +153,53 @@ where
         }
     };
     let team_capped = narrowed(allowed, team);
-    apply_user_tool_ceiling(
-        ceilings,
-        team_capped,
+    let next = ToolCall {
+        allowed: team_capped,
         server_id,
-        Some(&caller),
-        CeilingSource::Key,
-    )
-    .await
+        auth: Some(&caller),
+    };
+    apply_human_tool_ceiling(ceilings, next, ToolLevel::User(CeilingSource::Key)).await
 }
 
 // _apply_agent_and_org_tool_ceilings: the agent's own grants first, then the org's, each only ever narrowing what came before
 pub(super) async fn apply_agent_org_tools<Reads>(
     ceilings: &Ceilings<Reads>,
-    allowed: Option<Vec<String>>,
-    server_id: &str,
-    auth: Option<&UserAPIKeyAuth>,
+    call: ToolCall<'_>,
     source_kind: CeilingSource,
 ) -> CeilingsResult<Option<Vec<String>>, Reads>
 where
     Reads: CeilingReads,
 {
-    let Some(caller) = auth else {
-        return Ok(allowed);
-    };
-    let Some(record) = McpAuth::from_auth(caller).ok() else {
+    let ToolCall {
+        allowed,
+        server_id,
+        auth,
+    } = call;
+    let Some(record) = auth.and_then(|caller| McpAuth::from_auth(caller).ok()) else {
         return Ok(allowed);
     };
     let mut tools = allowed;
     if record.agent_id.is_some() {
-        let prefetched = ceilings.reads.agent_object_permission(Some(caller)).await?;
-        let agent_tools =
-            agent_server_tools(ceilings, server_id, Some(caller), prefetched.as_ref()).await?;
+        let prefetched = ceilings.reads.agent_object_permission(auth).await?;
+        let server = AgentServer {
+            server_id,
+            auth,
+            prefetched: prefetched.as_ref(),
+        };
+        let agent_tools = agent_server_tools(ceilings, server).await?;
         tools = narrowed(tools, agent_tools);
     }
     if record.org_id.is_none() {
         return Ok(tools);
     }
-    let loaded = match ceilings.reads.org_object_permission(Some(caller)).await {
+    let loaded = match ceilings.reads.org_object_permission(auth).await {
         Ok(loaded) => loaded,
         Err(error) => return org_tools_fault(tools, error, source_kind),
     };
     let Some(permission) = loaded else {
         return Ok(tools);
     };
-    narrow_to_grants(ceilings, tools, server_id, &permission, Some(caller))
-        .await
-        .map_err(CeilingsError::from)
+    narrow_to_grants(ceilings, server_id, auth, tools, &permission).await
 }
 
 // the echoed caller team's tool grants on one server; the team read and its toolset read share one fault
