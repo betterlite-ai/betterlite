@@ -220,7 +220,7 @@ fn supplied_async_http<Client>(
     }
 }
 
-struct ContentClock(fn() -> DateTime<FixedOffset>);
+pub(super) struct ContentClock(fn() -> DateTime<FixedOffset>);
 
 impl SuccessClock for ContentClock {
     fn now(&self) -> DateTime<FixedOffset> {

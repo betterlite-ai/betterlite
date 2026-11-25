@@ -1,5 +1,6 @@
 use super::super::streaming::FileContentStreaming as _;
 use super::*;
+use betterlite_logging::logging_success::ports::SuccessClock as _;
 
 fn written_identity(model: &str, provider: &str, api_base: Option<&str>) -> RecordedIdentity {
     RecordedIdentity {
@@ -7,6 +8,12 @@ fn written_identity(model: &str, provider: &str, api_base: Option<&str>) -> Reco
         custom_llm_provider: provider.to_owned(),
         api_base: api_base.map(str::to_owned),
     }
+}
+
+#[test]
+fn streaming_clock_uses_the_injected_value() {
+    let clock = super::super::streaming::ContentClock(started);
+    assert_eq!(clock.now(), started());
 }
 
 const fn content_kwargs(
