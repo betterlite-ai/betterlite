@@ -1,7 +1,27 @@
-use rmcp::transport::Transport as _;
+use std::any::TypeId;
+
+use rmcp::ServiceError;
+use rmcp::transport::{DynamicTransportError, Transport as _};
+
+use crate::client::cleanup::http_client::ResponseHead;
+use crate::client::http_transport::capture::CaptureRecord;
+use crate::client::http_transport::error::McpHttpError;
+use crate::client::sdk_transport::error::SdkError;
+use crate::client::sessions::error::SessionError;
+use crate::client::tools::result::describe_failure;
 
 use super::raw_server::{MISSING_BYTES, RawResponse, RawTestServer};
 use super::*;
+
+fn status_of(error: &SdkError) -> u16 {
+    let SdkError::Http(http) = error else {
+        panic!("expected an HTTP status error, got {error}");
+    };
+    let McpHttpError::Status(head) = http.as_ref() else {
+        panic!("expected an HTTP status error, got {error}");
+    };
+    head.status
+}
 
 fn initializing_server<Reply>(
     reply: Reply,
@@ -144,7 +164,7 @@ async fn a_json_error_body_wins_over_the_status() {
 }
 
 #[tokio::test]
-async fn a_json_error_body_that_is_not_an_error_falls_back() {
+async fn a_json_body_that_is_not_a_json_rpc_error_is_a_status_error() {
     let server = TestServer::start(|_| {
         answer(
             400,
@@ -155,14 +175,12 @@ async fn a_json_error_body_that_is_not_an_error_falls_back() {
     .await;
     let (mut transport, _handler) = streamable(server.url("/mcp"));
     let mut streams = enter(&mut transport).await;
-    send(&mut streams, request(7, "tools/list")).await;
-    let (code, text) = error_of(&receive(&mut streams).await);
-    assert_eq!(code, -32_603_i32);
-    assert_eq!(text, "Server returned an error response");
+    let error = streams.send(request(7, "tools/list")).await.err().unwrap();
+    assert_eq!(status_of(&error), 400);
 }
 
 #[tokio::test]
-async fn a_cut_error_body_falls_back_to_the_status() {
+async fn a_cut_error_body_is_a_status_error() {
     let server = RawTestServer::start(Arc::new(|_: &RecordedRequest| {
         RawResponse::new(
             500,
@@ -174,21 +192,75 @@ async fn a_cut_error_body_falls_back_to_the_status() {
     .await;
     let (mut transport, _handler) = streamable(server.url("/mcp"));
     let mut streams = enter(&mut transport).await;
-    send(&mut streams, request(7, "tools/list")).await;
-    let (code, text) = error_of(&receive(&mut streams).await);
-    assert_eq!(code, -32_603_i32);
-    assert_eq!(text, "Server returned an error response");
+    let error = streams.send(request(7, "tools/list")).await.err().unwrap();
+    assert_eq!(status_of(&error), 500);
 }
 
 #[tokio::test]
-async fn a_500_without_a_json_body_is_internal_error() {
+async fn a_500_without_a_json_body_is_a_status_error() {
     let server = TestServer::start(|_| answer(500, "text/plain", "boom")).await;
     let (mut transport, _handler) = streamable(server.url("/mcp"));
     let mut streams = enter(&mut transport).await;
-    send(&mut streams, request(7, "tools/list")).await;
-    let (code, text) = error_of(&receive(&mut streams).await);
-    assert_eq!(code, -32_603_i32);
-    assert_eq!(text, "Server returned an error response");
+    let error = streams.send(request(7, "tools/list")).await.err().unwrap();
+    assert_eq!(status_of(&error), 500);
+}
+
+#[test]
+fn a_transport_send_status_error_is_described_as_the_http_status_error() {
+    let head = ResponseHead {
+        status: 401,
+        headers: HeaderMap::new(),
+        capture: Some(CaptureRecord {
+            exchange: Exchange {
+                method: Method::POST,
+                url: Url::parse("http://mcp.test/mcp").unwrap(),
+                request_headers: HeaderMap::new(),
+                request_body: Bytes::new(),
+                status: 401,
+                response_headers: HeaderMap::new(),
+            },
+            preview: "denied".to_owned(),
+        }),
+    };
+    let dynamic = DynamicTransportError::from_parts(
+        "streamable-http",
+        TypeId::of::<()>(),
+        Box::new(SdkError::from(McpHttpError::Status(Box::new(head)))),
+    );
+    let error: SessionError<SdkError> = SessionError::Runtime(Arc::new(SdkError::Service(
+        ServiceError::TransportSend(dynamic),
+    )));
+    let failure = describe_failure(&error);
+    assert_eq!(failure.error_type, "HTTPStatusError");
+    assert_eq!(
+        failure.message,
+        "Client error '401 Unauthorized' for url 'http://mcp.test/mcp'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401"
+    );
+}
+
+#[test]
+fn a_direct_status_error_is_described_as_the_http_status_error() {
+    let error: SessionError<SdkError> = SessionError::Runtime(Arc::new(SdkError::from(
+        McpHttpError::Status(Box::new(ResponseHead {
+            status: 401,
+            headers: HeaderMap::new(),
+            capture: None,
+        })),
+    )));
+    let failure = describe_failure(&error);
+    assert_eq!(failure.error_type, "HTTPStatusError");
+    assert_eq!(
+        failure.message,
+        "Client error '401 Unauthorized' for url ''\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401"
+    );
+}
+
+#[test]
+fn a_runtime_error_that_is_not_a_status_error_keeps_its_type_name() {
+    let error: SessionError<SdkError> = SessionError::Runtime(Arc::new(SdkError::SessionClosed));
+    let failure = describe_failure(&error);
+    assert_eq!(failure.error_type, "SdkError");
+    assert_eq!(failure.message, "the MCP session is closed");
 }
 
 #[tokio::test]

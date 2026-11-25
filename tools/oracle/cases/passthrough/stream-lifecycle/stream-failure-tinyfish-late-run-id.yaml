@@ -1,0 +1,18 @@
+kind: helper
+name: stream-failure-tinyfish-late-run-id
+call:
+  b3609:
+    endpoint_type: "tinyfish"
+    status_code: 200
+    cost_injection: false
+    url_route: "https://agent.tinyfish.ai/v1/automation/run-sse"
+    deferred: false
+    tinyfish_poller: true
+    run_id: "run-1"
+    chunks:
+      - [100, 97, 116, 97, 58, 32, 123, 34, 115, 116, 101, 112, 34, 58, 49, 125, 10, 10]
+    failure: {message: "the upstream read failed", traceback: "Traceback (most recent call last):\nScriptedReadError: the upstream read failed"}
+    disconnect_after: null
+    request_body: null
+env: {}
+compare: {ignore: []}
