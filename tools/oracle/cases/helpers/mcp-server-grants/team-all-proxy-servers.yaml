@@ -1,0 +1,37 @@
+# all-proxy-mcpservers on a team grants exactly the registry: the team's own access group servers, tag groups,
+# tool grants and toolsets add nothing beside it.
+kind: helper
+name: mcp-server-grants-team-all-proxy-servers
+call:
+  b4669:
+    function: team
+    servers:
+      - {server_id: srv-a, name: alpha, alias: null, server_name: null, transport: http, access_groups: [grp-1]}
+      - {server_id: srv-b, name: beta, alias: null, server_name: null, transport: http, access_groups: null}
+    access_groups:
+      - {access_group_id: ag-team, access_mcp_server_ids: [srv-outside]}
+    toolset_grants: {srv-toolset: [list]}
+    team_id: team-1
+    blocked: false
+    team_access_group_ids: [ag-team]
+    permission:
+      object_permission_id: op-case
+      mcp_servers: [all-proxy-mcpservers]
+      mcp_access_groups: [grp-1]
+      mcp_tool_permissions: {srv-tools: [read]}
+      mcp_toolsets: [ts-1]
+calls:
+  - b4669:
+      function: team
+      servers:
+        - {server_id: srv-a, name: alpha, alias: null, server_name: null, transport: http, access_groups: null}
+        - {server_id: srv-b, name: beta, alias: null, server_name: null, transport: http, access_groups: null}
+        - {server_id: srv-c, name: gamma, alias: null, server_name: null, transport: http, access_groups: null}
+      access_groups: []
+      toolset_grants: {}
+      team_id: team-1
+      blocked: false
+      team_access_group_ids: []
+      permission: {object_permission_id: op-case, mcp_servers: [srv-a, all-proxy-mcpservers, unknown-name], mcp_access_groups: null, mcp_tool_permissions: null, mcp_toolsets: null}
+env: {}
+compare: {ignore: []}

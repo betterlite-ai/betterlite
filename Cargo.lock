@@ -2391,6 +2391,7 @@ dependencies = [
 name = "betterlite-mcp"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "aws-credential-types",
  "aws-lc-rs",
  "aws-smithy-async",
@@ -2404,6 +2405,7 @@ dependencies = [
  "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
+ "betterlite-redact",
  "betterlite-secrets",
  "bytes",
  "chrono",
