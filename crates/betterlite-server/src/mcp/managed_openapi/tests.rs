@@ -66,7 +66,7 @@ impl ToolHandler for StubHandler {
                     "srv-get_pets",
                     "replacement",
                     Object::new(),
-                    Arc::new(StubHandler(Reply::Text("replaced".to_owned()))),
+                    Arc::new(Self(Reply::Text("replaced".to_owned()))),
                 );
                 Ok(OpenApiToolOutput::Text("written".to_owned()))
             }
@@ -209,7 +209,7 @@ async fn arguments_and_context() {
     .await
     .unwrap();
     assert_eq!(text_of(&result), "recorded");
-    let recorded = seen.lock().unwrap_or_else(PoisonError::into_inner);
+    let recorded = seen.lock().unwrap_or_else(PoisonError::into_inner).clone();
     let (recorded_arguments, recorded_context) = recorded.first().unwrap();
     assert_eq!(recorded_arguments, &arguments);
     assert_eq!(recorded_context.auth_header, context.auth_header);
