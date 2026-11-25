@@ -40,9 +40,9 @@ pub(crate) struct Input {
     #[serde(default)]
     vertex: Option<ProviderCall>,
     #[serde(default)]
-    anthropic: Option<AnthropicCall>,
+    anthropic: Option<ProviderCall>,
     #[serde(default)]
-    bedrock: Option<BedrockCall>,
+    bedrock: Option<ProviderCall>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -72,23 +72,9 @@ struct ProviderCall {
     headers: Vec<HeaderPair>,
     caller: CallerInput,
     settings: SettingsInput,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct AnthropicCall {
-    headers: Vec<HeaderPair>,
-    caller: CallerInput,
-    settings: SettingsInput,
+    #[serde(default)]
     proxy_auth_header: Option<Vec<HeaderPair>>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct BedrockCall {
-    headers: Vec<HeaderPair>,
-    caller: CallerInput,
-    settings: SettingsInput,
+    #[serde(default)]
     signed_headers: Vec<HeaderPair>,
 }
 
@@ -136,13 +122,13 @@ impl Helper for Op {
             return filter_answer(call);
         }
         if let Some(call) = &input.vertex {
-            return vertex_answer(call);
+            return provider_answer(call, ProviderRoute::Vertex);
         }
         if let Some(call) = &input.anthropic {
-            return anthropic_answer(call);
+            return provider_answer(call, ProviderRoute::Anthropic);
         }
         if let Some(call) = &input.bedrock {
-            return bedrock_answer(call);
+            return provider_answer(call, ProviderRoute::Bedrock);
         }
         Err(missing_operation())
     }
@@ -171,39 +157,38 @@ fn filter_answer(call: &FilterCall) -> HelperResult {
     Ok(json!({"headers": header_object(&forwarded)}))
 }
 
-fn vertex_answer(call: &ProviderCall) -> HelperResult {
-    let master_key = call.settings.master_key.as_deref().map(SecretString::from);
-    let endpoints: Vec<&JsonObject> = call.settings.endpoint_headers.iter().collect();
-    let settings = filter_settings(&call.settings, master_key.as_ref(), &endpoints);
-    let headers = header_map(&call.headers)?;
-    let caller = caller_auth(&call.caller)?;
-    headers_or_failure(vertex_credentialless_headers(&headers, &caller, &settings))
+#[derive(Debug, Clone, Copy)]
+enum ProviderRoute {
+    Vertex,
+    Anthropic,
+    Bedrock,
 }
 
-fn anthropic_answer(call: &AnthropicCall) -> HelperResult {
+fn provider_answer(call: &ProviderCall, route: ProviderRoute) -> HelperResult {
     let master_key = call.settings.master_key.as_deref().map(SecretString::from);
     let endpoints: Vec<&JsonObject> = call.settings.endpoint_headers.iter().collect();
     let settings = filter_settings(&call.settings, master_key.as_ref(), &endpoints);
     let headers = header_map(&call.headers)?;
     let caller = caller_auth(&call.caller)?;
-    let proxy = call.proxy_auth_header.as_deref().map(secret_map);
-    headers_or_failure(anthropic_upstream_headers(
-        &headers,
-        &caller,
-        proxy.as_ref(),
-        &settings,
-    ))
-}
-
-fn bedrock_answer(call: &BedrockCall) -> HelperResult {
-    let master_key = call.settings.master_key.as_deref().map(SecretString::from);
-    let endpoints: Vec<&JsonObject> = call.settings.endpoint_headers.iter().collect();
-    let settings = filter_settings(&call.settings, master_key.as_ref(), &endpoints);
-    let headers = header_map(&call.headers)?;
-    let caller = caller_auth(&call.caller)?;
-    let signed = secret_map(&call.signed_headers);
-    let forwarded = bedrock_runtime_headers(&headers, &caller, &signed, &settings);
-    Ok(json!({"headers": header_object(&forwarded)}))
+    match route {
+        ProviderRoute::Vertex => {
+            headers_or_failure(vertex_credentialless_headers(&headers, &caller, &settings))
+        }
+        ProviderRoute::Anthropic => {
+            let proxy = call.proxy_auth_header.as_deref().map(secret_map);
+            headers_or_failure(anthropic_upstream_headers(
+                &headers,
+                &caller,
+                proxy.as_ref(),
+                &settings,
+            ))
+        }
+        ProviderRoute::Bedrock => {
+            let signed = secret_map(&call.signed_headers);
+            let forwarded = bedrock_runtime_headers(&headers, &caller, &signed, &settings);
+            Ok(json!({"headers": header_object(&forwarded)}))
+        }
+    }
 }
 
 fn filter_settings<'settings>(

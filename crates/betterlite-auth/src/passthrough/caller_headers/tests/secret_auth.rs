@@ -34,21 +34,28 @@ fn the_master_key_matches_in_every_scheme(
     assert!(authenticated(value, &auth, &config) == expected);
 }
 
-#[rstest]
-#[case::bare("stored-key", "stored-key", true)]
-#[case::bearer("stored-key", "Bearer stored-key", true)]
-#[case::basic("stored-key", "Basic stored-key", true)]
-#[case::wrong_key("stored-key", "other-key", false)]
-#[case::hashed_sk_key("sk-live-9", "sk-live-9", true)]
-#[case::hashed_sk_key_with_bearer("sk-live-9", "Bearer sk-live-9", true)]
-fn the_stored_api_key_matches_after_normalization(
-    #[case] stored: &str,
-    #[case] value: &str,
-    #[case] expected: bool,
-) {
-    let auth = caller(Some(stored), None);
+#[test]
+fn the_stored_api_key_matches_after_normalization() {
+    let auth = caller(Some("stored-key"), None);
     let config = settings(None, AuthModeFlags::default(), true, None, &[]);
-    assert!(authenticated(value, &auth, &config) == expected);
+    assert!(authenticated("stored-key", &auth, &config));
+    assert!(authenticated("Bearer stored-key", &auth, &config));
+    assert!(authenticated("Basic stored-key", &auth, &config));
+}
+
+#[test]
+fn a_hashed_sk_key_matches_in_bare_and_bearer_form() {
+    let auth = caller(Some("sk-live-9"), None);
+    let config = settings(None, AuthModeFlags::default(), true, None, &[]);
+    assert!(authenticated("sk-live-9", &auth, &config));
+    assert!(authenticated("Bearer sk-live-9", &auth, &config));
+}
+
+#[test]
+fn a_value_that_differs_from_the_stored_key_does_not_match() {
+    let auth = caller(Some("stored-key"), None);
+    let config = settings(None, AuthModeFlags::default(), true, None, &[]);
+    assert!(!authenticated("other-key", &auth, &config));
 }
 
 #[test]
