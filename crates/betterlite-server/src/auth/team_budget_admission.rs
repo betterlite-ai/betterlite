@@ -177,7 +177,7 @@ fn team_budget_exception(error: &TeamBudgetError) -> ProxyException {
         },
         TeamBudgetError::ModelDenied(denial) => return denial.as_proxy_exception().clone(),
         TeamBudgetError::Spend(failure) => return spend_failure_exception(failure),
-        TeamBudgetError::Membership(error) => membership_failure(error),
+        TeamBudgetError::Membership(membership) => membership_failure(membership),
         TeamBudgetError::DefaultBudget(_) | TeamBudgetError::RecurseDepth { .. } => {
             AuthFailure::Other {
                 message: error.to_string(),

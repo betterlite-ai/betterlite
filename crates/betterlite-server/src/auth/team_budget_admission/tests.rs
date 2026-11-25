@@ -16,7 +16,6 @@ use betterlite_auth::auth_read::table::AuthReadError;
 use betterlite_auth::auth_request_models::RequestedModels;
 use betterlite_auth::current_spend::{BUDGET_UNVERIFIABLE_DETAIL, SpendQuery};
 use betterlite_auth::membership_load::error::{MembershipLoadError, MembershipReadFailure};
-use betterlite_auth::membership_load::rows::MembershipRowError;
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_auth::team_budget_admission::alerts::{TeamAlert, TeamAlertKind, TeamAlertSink};
 use betterlite_auth::team_budget_admission::sources::{Membership, MembershipSource};
@@ -77,7 +76,7 @@ impl TeamAlertSink for Recorded {
     }
 }
 
-// the one membership failure the scripted load raises
+// the one membership failure the scripted load raises; later loads find no membership
 struct FailingMembership(Mutex<Option<MembershipLoadError>>);
 
 #[async_trait]
@@ -87,11 +86,7 @@ impl MembershipSource for FailingMembership {
         _user_id: &str,
         _team_id: &str,
     ) -> Result<Option<LiteLLMTeamMembership>, MembershipLoadError> {
-        self.0
-            .lock()
-            .unwrap()
-            .take()
-            .ok_or(MembershipLoadError::LoadLost)
+        self.0.lock().unwrap().take().map_or(Ok(None), Err)
     }
 }
 
