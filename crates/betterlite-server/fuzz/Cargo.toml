@@ -604,6 +604,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "global_report_query"
+path = "fuzz_targets/global_report_query.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "config_override"
 path = "fuzz_targets/config_override.rs"
 test = false
