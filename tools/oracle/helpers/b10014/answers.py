@@ -9,6 +9,7 @@ from litellm.proxy.vector_store_endpoints.utils import (
     assert_user_can_access_vector_store_id,
     get_litellm_managed_vector_store,
 )
+from litellm.types.vector_stores import LiteLLM_ManagedVectorStore
 from pydantic import JsonValue
 from starlette.exceptions import HTTPException
 
@@ -19,6 +20,7 @@ from b10014.case import (
     JSON,
     PROXY_MODULE,
     STORE,
+    UPSTREAM,
     Answer,
     AssertIdCall,
     AssertStoreCall,
@@ -27,6 +29,7 @@ from b10014.case import (
     Lookups,
     ResolveCall,
     StoreAuth,
+    StoreProjection,
 )
 from b10014.fakes import Board, Cache, Prisma, ProxyServer, Registry, Table
 
@@ -61,11 +64,12 @@ def key_auth(auth: StoreAuth) -> UserAPIKeyAuth:
     return AUTH.validate_python(mapping)
 
 
-# the store as it stands: a row carries every column, a registry store the fields it was given
-def store_view(store: JsonValue) -> dict[str, JsonValue] | None:
-    if store is None:
+# a row carries parsed timestamps where a registry store carries their text, so the store is serialized
+# the way LiteLLM's type writes it before the projection that names its fields validates it
+def store_view(store: LiteLLM_ManagedVectorStore | None) -> StoreProjection | None:
+    if store is None:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/vector_stores.py#L25-L49
         return None
-    return STORE.validate_python(store)
+    return STORE.validate_json(UPSTREAM.dump_json(store))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/vector_stores.py#L25-L49
 
 
 def error_view(raised: HTTPException) -> ErrorView:
@@ -131,16 +135,16 @@ def prepare(registry: Registry | None, cache: Cache, table: Table | None, board:
     litellm.vector_store_registry = registry  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L1517
 
 
-async def resolved(call: ResolveCall | AssertIdCall) -> dict[str, JsonValue] | None:
+async def resolved(call: ResolveCall | AssertIdCall) -> StoreProjection | None:
     match call["function"]:
         case "resolve":
-            return store_view(await get_litellm_managed_vector_store(vector_store_id=call["vector_store_id"]))  # type: ignore[misc, arg-type]  # noqa: E501  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/utils.py#L260
+            return store_view(await get_litellm_managed_vector_store(vector_store_id=call["vector_store_id"]))  # type: ignore[misc]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/utils.py#L260
         case "assert_id":
             auth = key_auth(call["auth"])
             detail = call.get("detail")
             if detail is None:
-                return store_view(await assert_user_can_access_vector_store_id(vector_store_id=call["vector_store_id"], user_api_key_dict=auth))  # type: ignore[misc, arg-type]  # noqa: E501  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/utils.py#L334
-            return store_view(await assert_user_can_access_vector_store_id(vector_store_id=call["vector_store_id"], user_api_key_dict=auth, detail=detail))  # type: ignore[misc, arg-type]  # noqa: E501  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/utils.py#L334
+                return store_view(await assert_user_can_access_vector_store_id(vector_store_id=call["vector_store_id"], user_api_key_dict=auth))  # type: ignore[misc]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/utils.py#L334
+            return store_view(await assert_user_can_access_vector_store_id(vector_store_id=call["vector_store_id"], user_api_key_dict=auth, detail=detail))  # type: ignore[misc]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/utils.py#L334
 
 
 def resolution_answer(call: ResolveCall | AssertIdCall, board: Board) -> Answer:
@@ -148,7 +152,7 @@ def resolution_answer(call: ResolveCall | AssertIdCall, board: Board) -> Answer:
     cache = cache_value(call)
     table = table_value(call)
     start = len(board.messages)
-    store: dict[str, JsonValue] | None = None
+    store: StoreProjection | None = None
     error: ErrorView | None = None
     prepare(registry, cache, table, board)
     try:

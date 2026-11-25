@@ -1,6 +1,7 @@
 from typing import Final, Literal, NotRequired, TypeAlias, TypedDict
 
 from litellm.proxy._types import UserAPIKeyAuth
+from litellm.types.vector_stores import LiteLLM_ManagedVectorStore
 from pydantic import JsonValue, TypeAdapter
 
 # the proxy module the resolution imports its shared cache from, and the cache key its lookup builds
@@ -12,8 +13,25 @@ CACHE_TTL_SECONDS: Final = 60.0
 REGISTRY_FAILURE: Final = "the case scripts a registry failure"
 CACHE_FAILURE: Final = "the case scripts a cache failure"
 
+# LiteLLM_ManagedVectorStore's fields with JSON named instead of Any and the timestamps JSON mode writes
+class StoreProjection(TypedDict, total=False):
+    vector_store_id: str
+    custom_llm_provider: str
+    vector_store_name: str | None
+    vector_store_description: str | None
+    vector_store_metadata: dict[str, JsonValue] | str | None
+    created_at: str | None
+    updated_at: str | None
+    litellm_credential_name: str | None
+    litellm_params: dict[str, JsonValue] | None
+    team_id: str | None
+    user_id: str | None
+    is_config: bool
+
+
 JSON: Final = TypeAdapter(JsonValue)
-STORE: Final = TypeAdapter(dict[str, JsonValue])
+STORE: Final = TypeAdapter(StoreProjection)
+UPSTREAM: Final = TypeAdapter(LiteLLM_ManagedVectorStore)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/vector_stores.py#L25-L49
 DETAIL: Final = TypeAdapter(str)
 AUTH: Final = TypeAdapter(UserAPIKeyAuth)
 WHERE: Final = TypeAdapter(dict[str, dict[str, list[str]]])
@@ -93,7 +111,7 @@ class Lookups(TypedDict):
 
 class Answer(TypedDict):
     function: str
-    store: dict[str, JsonValue] | None
+    store: StoreProjection | None
     error: ErrorView | None
     warnings: list[str]
     lookups: Lookups

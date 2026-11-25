@@ -54,6 +54,18 @@ call:
         database: true
         rows: [{model_dump: {vector_store_id: vs_a, custom_llm_provider: openai, team_id: a}}]
         auth: {team_id: a}
+      # the returned store keeps a row's timestamps as the text JSON mode writes
+      - function: assert_id
+        vector_store_id: vs_a
+        database: true
+        rows:
+          - model_dump:
+              vector_store_id: vs_a
+              custom_llm_provider: openai
+              team_id: a
+              created_at: "2024-01-01T00:00:00Z"
+              updated_at: "2024-01-01T00:00:00.123456Z"
+        auth: {team_id: a}
       # an inline grant returns it too
       - function: assert_id
         vector_store_id: vs_a
