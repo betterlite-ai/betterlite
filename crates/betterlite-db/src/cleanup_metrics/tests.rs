@@ -2,6 +2,7 @@
 
 use std::fs;
 use std::io::{Result as IoResult, Write};
+use std::process;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_prometheus::collector_factory::collector::MetricValue;
@@ -335,7 +336,7 @@ fn a_duplicate_name_keeps_the_instruments_registered_before_it() {
 #[test]
 fn rows_remaining_writes_livemax() {
     let directory = TempDir::new().unwrap();
-    let pid = std::process::id();
+    let pid = process::id();
     let writer = MultiProcessWriter::new(directory.path().to_path_buf(), pid).unwrap();
     let registry = CollectorRegistry::multiprocess(writer);
     let metrics = CleanupMetrics::new(&registry);

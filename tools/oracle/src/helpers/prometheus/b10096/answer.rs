@@ -138,8 +138,8 @@ fn blocks(text: &str) -> Vec<String> {
         }
     }
     grouped
-        .into_iter()
-        .map(|(_marker, mut lines)| {
+        .into_values()
+        .map(|mut lines| {
             lines.sort_unstable();
             lines.join("\n")
         })
