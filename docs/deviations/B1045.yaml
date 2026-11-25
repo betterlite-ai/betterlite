@@ -1,0 +1,12 @@
+task: B1045
+deviations:
+  - what: In _check_and_increment_batch_counters a data["model"] that is not a string is treated as no model, where LiteLLM hands the raw value to resolve_llm_provider_for_rate_limit and can return it as the error's model.
+    why: betterlite reads the request model as text through its typed request data, and parity stops at the str | None LiteLLM declares for requested_model elsewhere in the same class.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L770
+  - what: A TPD window start that is not finite or does not fit i64 reads as no window, where LiteLLM's int(float(window_start)) either raises an uncaught OverflowError on an infinite value or keeps an integer beyond i64.
+    why: betterlite stores the start as i64, and a value outside it cannot be carried; an infinite value is a cache corruption LiteLLM answers with a 500.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L802
+  - what: The rejection detail is betterlite's own sentence, where LiteLLM formats its own "Batch rate limit exceeded for ... Limit resets at ..." text and an enqueued counterpart.
+    why: Error messages are betterlite's own under rule errors-match-litellm, while the status, headers, category, rate_limit_type, model and llm_provider match LiteLLM and the helper cases no longer compare detail.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L671
+kept_bugs: []

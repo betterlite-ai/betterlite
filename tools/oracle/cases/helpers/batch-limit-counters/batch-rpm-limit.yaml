@@ -1,0 +1,44 @@
+kind: helper
+name: batch-limit-counters-rpm-limit
+call:
+  batch_limit_counters:
+    principal: {}
+    clock: 1700000000.0
+    window_size: 60
+    cache: {}
+    store:
+      replies: []
+    limiter:
+      base: []
+      project:
+        descriptors: []
+        increments: []
+      responses:
+        - overall_code: OVER_LIMIT
+          statuses:
+            - code: OVER_LIMIT
+              current_limit: 5
+              limit_remaining: 2
+              rate_limit_type: requests
+              descriptor_key: api_key
+              descriptor_value: sk-1
+          reservation_windows: []
+    calls:
+      - function: check_and_increment_batch_counters
+        data:
+          model: gpt-4o-mini
+        batch_usage:
+          total_tokens: 120
+          request_count: 6
+          output_tokens: 0
+          per_model_usage: {}
+        descriptors:
+          - key: api_key
+            value: sk-1
+            rate_limit:
+              requests_per_unit: 5
+              tokens_per_unit: null
+              max_parallel_requests: null
+              window_size: 60
+env: {}
+compare: {ignore: []}
