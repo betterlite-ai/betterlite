@@ -16,42 +16,19 @@ fn utc(text: &str) -> DateTime<Utc> {
 
 #[test]
 fn normalizes_every_named_iso_form() {
-    assert_eq!(
-        decode_model_info_datetime("2026-01-01T00:00:00Z"),
-        Some(utc("2026-01-01T00:00:00Z"))
-    );
-    assert_eq!(
-        decode_model_info_datetime("2026-01-01Z00:00:00"),
-        Some(utc("2026-01-01T00:00:00Z"))
-    );
-    assert_eq!(
-        decode_model_info_datetime("2026-01-01Z"),
-        Some(utc("2026-01-01T00:00:00Z"))
-    );
-    assert_eq!(
-        decode_model_info_datetime("20260101Z000000"),
-        Some(utc("2026-01-01T00:00:00Z"))
-    );
-    assert_eq!(
-        decode_model_info_datetime("2026-01-01T00:00:00+05:30"),
-        Some(utc("2025-12-31T18:30:00Z"))
-    );
-    assert_eq!(
-        decode_model_info_datetime("2026-01-01T00:00:00-05:00"),
-        Some(utc("2026-01-01T05:00:00Z"))
-    );
-    assert_eq!(
-        decode_model_info_datetime("2026-01-01T00:00:00"),
-        Some(utc("2026-01-01T00:00:00Z"))
-    );
-    assert_eq!(
-        decode_model_info_datetime("2026-01-01"),
-        Some(utc("2026-01-01T00:00:00Z"))
-    );
-    assert_eq!(
-        decode_model_info_datetime("2026-W01-1T00:00:00"),
-        Some(utc("2025-12-29T00:00:00Z"))
-    );
+    for (input, expected) in [
+        ("2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"),
+        ("2026-01-01Z00:00:00", "2026-01-01T00:00:00Z"),
+        ("2026-01-01Z", "2026-01-01T00:00:00Z"),
+        ("20260101Z000000", "2026-01-01T00:00:00Z"),
+        ("2026-01-01T00:00:00+05:30", "2025-12-31T18:30:00Z"),
+        ("2026-01-01T00:00:00-05:00", "2026-01-01T05:00:00Z"),
+        ("2026-01-01T00:00:00", "2026-01-01T00:00:00Z"),
+        ("2026-01-01", "2026-01-01T00:00:00Z"),
+        ("2026-W01-1T00:00:00", "2025-12-29T00:00:00Z"),
+    ] {
+        assert_eq!(decode_model_info_datetime(input), Some(utc(expected)));
+    }
     assert_eq!(
         decode_model_info_datetime("2026-01-01T00:00:00.1234567")
             .map(|parsed| parsed.timestamp_subsec_micros()),
@@ -72,7 +49,9 @@ fn normalizes_every_named_iso_form() {
 #[case::year_zero("0000-01-01T00:00:00")]
 #[case::lowercase_z("2026-01-01T00:00:00z")]
 #[case::double_separator("2026-01-01T00:00:00T00:00:00")]
-#[case::unicode_digits("٢٠٢٦-٠١-٠١T٠٠:٠٠:٠٠")]
+#[case::unicode_digits(
+    "\u{662}\u{660}\u{662}\u{666}-\u{660}\u{661}-\u{660}\u{661}T\u{660}\u{660}:\u{660}\u{660}:\u{660}\u{660}"
+)]
 #[case::comma_fraction_end("2026-01-01T00:00:00,")]
 fn rejects_invalid_text(#[case] text: &str) {
     assert_eq!(decode_model_info_datetime(text), None);

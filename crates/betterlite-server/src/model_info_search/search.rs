@@ -117,22 +117,21 @@ where
     let mut matched = router_matches.models;
     let router_count = router_matches.count;
     let mut total_count = router_count;
-    if let Some(found) = sources {
-        if options
+    if let Some(found) = sources
+        && options
             .model_name
             .is_none_or(|name| name.to_lowercase().contains(&search_lower))
-        {
-            let request = FetchRequest {
-                search_lower: &search_lower,
-                db_ids: &router_matches.db_ids,
-                router_count,
-                options,
-                allowed: allowed.as_ref(),
-            };
-            if let Some((decrypted, db_total)) = database_matches(found, &request).await {
-                matched.extend(decrypted);
-                total_count = router_count.saturating_add(db_total);
-            }
+    {
+        let request = FetchRequest {
+            search_lower: &search_lower,
+            db_ids: &router_matches.db_ids,
+            router_count,
+            options,
+            allowed: allowed.as_ref(),
+        };
+        if let Some((decrypted, db_total)) = database_matches(found, &request).await {
+            matched.extend(decrypted);
+            total_count = router_count.saturating_add(db_total);
         }
     }
     SearchOutcome {

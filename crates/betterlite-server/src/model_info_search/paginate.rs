@@ -15,11 +15,11 @@ pub fn paginate_models(
     models: &[JsonObject],
     page: i64,
     size: i64,
-    total_count: Option<i64>,
+    provided_total_count: Option<i64>,
     search: Option<&str>,
 ) -> PaginatedModels {
     let total_count =
-        total_count.unwrap_or_else(|| i64::try_from(models.len()).unwrap_or(i64::MAX));
+        provided_total_count.unwrap_or_else(|| i64::try_from(models.len()).unwrap_or(i64::MAX));
     let skip = page.saturating_sub(1).saturating_mul(size);
     let whole = total_count.saturating_sub(1).checked_div(size).unwrap_or(0);
     let total_pages = if total_count > 0 && size > 0 {
@@ -42,13 +42,15 @@ pub fn paginate_models(
 
 fn slice_page(models: &[JsonObject], skip: i64, size: i64) -> Vec<JsonObject> {
     let length = i64::try_from(models.len()).unwrap_or(i64::MAX);
-    let start = slice_bound(skip, length);
-    let stop = slice_bound(skip.saturating_add(size), length);
-    let (Ok(start), Ok(stop)) = (usize::try_from(start), usize::try_from(stop)) else {
+    let start_bound = slice_bound(skip, length);
+    let stop_bound = slice_bound(skip.saturating_add(size), length);
+    let (Ok(start_index), Ok(stop_index)) =
+        (usize::try_from(start_bound), usize::try_from(stop_bound))
+    else {
         return Vec::new();
     };
     models
-        .get(start..stop)
+        .get(start_index..stop_index)
         .map_or_else(Vec::new, <[JsonObject]>::to_vec)
 }
 

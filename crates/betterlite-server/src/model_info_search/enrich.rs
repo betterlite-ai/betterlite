@@ -86,8 +86,8 @@ fn info_object(model: &JsonObject) -> Result<Option<&JsonObject>, EnrichError> {
     }
 }
 
-fn debug_client_name(model_info: &JsonObject, router: Option<&dyn RouterSource>) -> String {
-    let Some(router) = router else {
+fn debug_client_name(model_info: &JsonObject, router_source: Option<&dyn RouterSource>) -> String {
+    let Some(router) = router_source else {
         return "llm_router_is_None".to_owned();
     };
     router
@@ -121,15 +121,19 @@ async fn first_pass(
     let Some(Json::Text(backend)) = params.get("model") else {
         return JsonObject::new();
     };
-    let target = if backend.contains("azure") || model_info.get("base_model").is_some_and(holds) {
-        text_field(model_info, "base_model")
-    } else {
-        Some(backend.as_str())
-    };
-    let Some(target) = target else {
+    let target_model =
+        if backend.contains("azure") || model_info.get("base_model").is_some_and(holds) {
+            text_field(model_info, "base_model")
+        } else {
+            Some(backend.as_str())
+        };
+    let Some(target_name) = target_model else {
         return JsonObject::new();
     };
-    catalog.model_info(target, None).await.unwrap_or_default()
+    catalog
+        .model_info(target_name, None)
+        .await
+        .unwrap_or_default()
 }
 
 async fn second_pass(params: &JsonObject, catalog: &dyn ModelInfoCatalog) -> JsonObject {
@@ -195,10 +199,10 @@ fn merge_model_info(
     let keys: Vec<&str> = [id, key].into_iter().flatten().collect();
     let unpriced = registry.cost_map_omits_token_price(&keys);
     let mut combined = catalogue.clone();
-    for (name, value) in discovered {
-        combined.insert(name.clone(), value.clone());
+    for (name, discovered_value) in discovered {
+        combined.insert(name.clone(), discovered_value.clone());
     }
-    for (name, value) in combined {
+    for (name, catalog_value) in combined {
         let fill = match stamped.get(&name) {
             None => true,
             Some(Json::Null) => discovered.contains_key(&name),
@@ -209,16 +213,16 @@ fn merge_model_info(
         if !fill {
             continue;
         }
-        let value = if unpriced
+        let overlay_value = if unpriced
             && matches!(
                 name.as_str(),
                 "input_cost_per_token" | "output_cost_per_token"
             ) {
             Json::Null
         } else {
-            value
+            catalog_value
         };
-        stamped.insert(name, value);
+        stamped.insert(name, overlay_value);
     }
     stamped
 }

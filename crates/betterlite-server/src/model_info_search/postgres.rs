@@ -63,10 +63,10 @@ impl PostgresSearchDatabase<'_> {
 }
 
 fn name_value(filter: &ModelFilter) -> String {
-    match &filter.exact_name {
-        Some(name) => name.clone(),
-        None => format!("%{}%", filter.search_lower),
-    }
+    filter
+        .exact_name
+        .as_ref()
+        .map_or_else(|| format!("%{}%", filter.search_lower), Clone::clone)
 }
 
 impl From<tokio_postgres::Error> for SearchDatabaseError {

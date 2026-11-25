@@ -18,14 +18,14 @@ struct FakeCatalog {
 
 impl FakeCatalog {
     fn new(entries: Vec<((&str, Option<&str>), JsonObject)>) -> Self {
-        let entries = entries
+        let normalized_entries = entries
             .into_iter()
             .map(|((model, provider), value)| {
                 ((model.to_owned(), provider.map(str::to_owned)), value)
             })
             .collect();
         Self {
-            entries,
+            entries: normalized_entries,
             calls: Mutex::new(Vec::new()),
         }
     }
@@ -45,6 +45,7 @@ impl ModelInfoCatalog for FakeCatalog {
     async fn model_info(&self, model: &str, provider: Option<&str>) -> Option<JsonObject> {
         let mut calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
         calls.push((model.to_owned(), provider.map(str::to_owned)));
+        drop(calls);
         self.entries
             .iter()
             .find(|((entry_model, entry_provider), _value)| {
@@ -106,6 +107,26 @@ fn params_of(model: &JsonObject) -> &JsonObject {
     params
 }
 
+async fn enrich(
+    model: &JsonObject,
+    debug: bool,
+    registry: &ModelRegistry,
+    catalog: &FakeCatalog,
+    router: Option<&FakeRouter>,
+) -> JsonObject {
+    enrich_model_info(
+        model,
+        debug,
+        &EnrichContext {
+            registry,
+            catalog,
+            router: router.map(|source| source as &dyn RouterSource),
+        },
+    )
+    .await
+    .unwrap()
+}
+
 #[tokio::test]
 async fn debug_client_values() {
     let registry = registry("{}");
@@ -115,92 +136,50 @@ async fn debug_client_values() {
         client: None,
         discovered: JsonObject::new(),
     };
-    let no_router = enrich_model_info(
-        &model,
-        true,
-        &EnrichContext {
-            registry: &registry,
-            catalog: &catalog,
-            router: None,
-        },
-    )
-    .await
-    .unwrap();
+    let no_router = enrich(&model, true, &registry, &catalog, None).await;
     assert_eq!(
         no_router.get("openai_client"),
         Some(&text("llm_router_is_None"))
     );
-    let cold_router = enrich_model_info(
-        &model,
-        true,
-        &EnrichContext {
-            registry: &registry,
-            catalog: &catalog,
-            router: Some(&cold),
-        },
-    )
-    .await
-    .unwrap();
+    let cold_router = enrich(&model, true, &registry, &catalog, Some(&cold)).await;
     assert_eq!(cold_router.get("openai_client"), Some(&text("None")));
+}
+
+#[tokio::test]
+async fn debug_client_uses_router_client_and_honors_debug_flag() {
+    let registry = registry("{}");
+    let catalog = FakeCatalog::empty();
+    let model = deployment("openai/gpt-4o", vec![("id", text("dep-1"))], Vec::new());
     let warm = FakeRouter {
         client: Some(String::from("an-async-client")),
         discovered: JsonObject::new(),
     };
-    let warm_router = enrich_model_info(
-        &model,
-        true,
-        &EnrichContext {
-            registry: &registry,
-            catalog: &catalog,
-            router: Some(&warm),
-        },
-    )
-    .await
-    .unwrap();
+    let warm_router = enrich(&model, true, &registry, &catalog, Some(&warm)).await;
     assert_eq!(
         warm_router.get("openai_client"),
         Some(&text("an-async-client"))
     );
-    let quiet = enrich_model_info(
-        &model,
-        false,
-        &EnrichContext {
-            registry: &registry,
-            catalog: &catalog,
-            router: Some(&warm),
-        },
-    )
-    .await
-    .unwrap();
+    let quiet = enrich(&model, false, &registry, &catalog, Some(&warm)).await;
     assert_eq!(quiet.get("openai_client"), None);
+}
+
+#[tokio::test]
+async fn debug_client_uses_none_for_missing_or_blank_client() {
+    let registry = registry("{}");
+    let catalog = FakeCatalog::empty();
+    let model = deployment("openai/gpt-4o", vec![("id", text("dep-1"))], Vec::new());
+    let cold = FakeRouter {
+        client: None,
+        discovered: JsonObject::new(),
+    };
     let anonymous = deployment("openai/gpt-4o", Vec::new(), Vec::new());
-    let without_id = enrich_model_info(
-        &anonymous,
-        true,
-        &EnrichContext {
-            registry: &registry,
-            catalog: &catalog,
-            router: Some(&cold),
-        },
-    )
-    .await
-    .unwrap();
+    let without_id = enrich(&anonymous, true, &registry, &catalog, Some(&cold)).await;
     assert_eq!(without_id.get("openai_client"), Some(&text("None")));
     let blank = FakeRouter {
         client: Some(String::new()),
         discovered: JsonObject::new(),
     };
-    let blank_client = enrich_model_info(
-        &model,
-        true,
-        &EnrichContext {
-            registry: &registry,
-            catalog: &catalog,
-            router: Some(&blank),
-        },
-    )
-    .await
-    .unwrap();
+    let blank_client = enrich(&model, true, &registry, &catalog, Some(&blank)).await;
     assert_eq!(blank_client.get("openai_client"), Some(&text("None")));
 }
 
@@ -212,7 +191,7 @@ async fn catalog_three_pass() {
         ("openai/gpt-4o", None),
         object(vec![("max_tokens", number(100))]),
     )]);
-    let enriched = enrich_model_info(
+    let first_enriched = enrich_model_info(
         &model,
         false,
         &EnrichContext {
@@ -223,7 +202,10 @@ async fn catalog_three_pass() {
     )
     .await
     .unwrap();
-    assert_eq!(info_of(&enriched).get("max_tokens"), Some(&number(100)));
+    assert_eq!(
+        info_of(&first_enriched).get("max_tokens"),
+        Some(&number(100))
+    );
     assert_eq!(first.calls(), vec![(String::from("openai/gpt-4o"), None)]);
 
     let based = deployment(
@@ -235,7 +217,7 @@ async fn catalog_three_pass() {
         ("openai/gpt-4", None),
         object(vec![("max_tokens", number(200))]),
     )]);
-    let enriched = enrich_model_info(
+    let second_enriched = enrich_model_info(
         &based,
         false,
         &EnrichContext {
@@ -246,7 +228,10 @@ async fn catalog_three_pass() {
     )
     .await
     .unwrap();
-    assert_eq!(info_of(&enriched).get("max_tokens"), Some(&number(200)));
+    assert_eq!(
+        info_of(&second_enriched).get("max_tokens"),
+        Some(&number(200))
+    );
     assert_eq!(
         second.calls(),
         vec![
@@ -259,7 +244,7 @@ async fn catalog_three_pass() {
         ("gpt-4o", Some("openai")),
         object(vec![("max_tokens", number(300))]),
     )]);
-    let enriched = enrich_model_info(
+    let third_enriched = enrich_model_info(
         &model,
         false,
         &EnrichContext {
@@ -270,7 +255,10 @@ async fn catalog_three_pass() {
     )
     .await
     .unwrap();
-    assert_eq!(info_of(&enriched).get("max_tokens"), Some(&number(300)));
+    assert_eq!(
+        info_of(&third_enriched).get("max_tokens"),
+        Some(&number(300))
+    );
     assert_eq!(
         third.calls(),
         vec![
@@ -293,7 +281,7 @@ async fn azure_base_model() {
         ("gpt-4o", None),
         object(vec![("max_tokens", number(50))]),
     )]);
-    let enriched = enrich_model_info(
+    let base_enriched = enrich_model_info(
         &base,
         false,
         &EnrichContext {
@@ -304,7 +292,7 @@ async fn azure_base_model() {
     )
     .await
     .unwrap();
-    assert_eq!(info_of(&enriched).get("max_tokens"), Some(&number(50)));
+    assert_eq!(info_of(&base_enriched).get("max_tokens"), Some(&number(50)));
     assert_eq!(catalog.calls(), vec![(String::from("gpt-4o"), None)]);
 
     let plain_azure = deployment("azure/my-deploy2", Vec::new(), Vec::new());
@@ -312,7 +300,7 @@ async fn azure_base_model() {
         ("azure/my-deploy2", None),
         object(vec![("max_tokens", number(60))]),
     )]);
-    let enriched = enrich_model_info(
+    let plain_enriched = enrich_model_info(
         &plain_azure,
         false,
         &EnrichContext {
@@ -323,7 +311,10 @@ async fn azure_base_model() {
     )
     .await
     .unwrap();
-    assert_eq!(info_of(&enriched).get("max_tokens"), Some(&number(60)));
+    assert_eq!(
+        info_of(&plain_enriched).get("max_tokens"),
+        Some(&number(60))
+    );
     assert_eq!(
         backend_catalog.calls(),
         vec![(String::from("azure/my-deploy2"), None)]
@@ -338,7 +329,7 @@ async fn azure_base_model() {
         ("azure/my-deploy3", None),
         object(vec![("max_tokens", number(70))]),
     )]);
-    let enriched = enrich_model_info(
+    let odd_enriched = enrich_model_info(
         &odd_base,
         false,
         &EnrichContext {
@@ -349,7 +340,7 @@ async fn azure_base_model() {
     )
     .await
     .unwrap();
-    assert_eq!(info_of(&enriched).get("max_tokens"), Some(&number(70)));
+    assert_eq!(info_of(&odd_enriched).get("max_tokens"), Some(&number(70)));
     assert_eq!(
         unnamed.calls(),
         vec![(String::from("azure/my-deploy3"), None)]
@@ -389,10 +380,10 @@ async fn discovery_null_precedence() {
     )
     .await
     .unwrap();
-    let info = info_of(&enriched);
-    assert_eq!(info.get("created_at"), Some(&number(333)));
-    assert_eq!(info.get("max_tokens"), Some(&number(222)));
-    assert_eq!(info.get("owned_by"), Some(&text("team")));
+    let discovered_info = info_of(&enriched);
+    assert_eq!(discovered_info.get("created_at"), Some(&number(333)));
+    assert_eq!(discovered_info.get("max_tokens"), Some(&number(222)));
+    assert_eq!(discovered_info.get("owned_by"), Some(&text("team")));
 
     let fixed_catalog = FakeCatalog::new(vec![(
         ("openai/gpt-4o", None),
@@ -411,7 +402,7 @@ async fn discovery_null_precedence() {
         ],
         Vec::new(),
     );
-    let enriched = enrich_model_info(
+    let fixed_enriched = enrich_model_info(
         &fixed,
         false,
         &EnrichContext {
@@ -422,9 +413,9 @@ async fn discovery_null_precedence() {
     )
     .await
     .unwrap();
-    let info = info_of(&enriched);
-    assert_eq!(info.get("created_at"), Some(&number(5)));
-    assert_eq!(info.get("region"), Some(&Json::Null));
+    let fixed_info = info_of(&fixed_enriched);
+    assert_eq!(fixed_info.get("created_at"), Some(&number(5)));
+    assert_eq!(fixed_info.get("region"), Some(&Json::Null));
 }
 
 #[tokio::test]
@@ -455,13 +446,16 @@ async fn pricing_stamps_unpriced() {
     )
     .await
     .unwrap();
-    let info = info_of(&enriched);
-    assert_eq!(info.get("input_cost_per_token"), Some(&decimal_text("0.5")));
-    assert_eq!(info.get("output_cost_per_token"), Some(&Json::Null));
-    assert_eq!(info.get("max_tokens"), Some(&number(128_000)));
-    assert_eq!(info.get("model"), None);
+    let stamp_info = info_of(&enriched);
     assert_eq!(
-        info.get("pricing_overrides"),
+        stamp_info.get("input_cost_per_token"),
+        Some(&decimal_text("0.5"))
+    );
+    assert_eq!(stamp_info.get("output_cost_per_token"), Some(&Json::Null));
+    assert_eq!(stamp_info.get("max_tokens"), Some(&number(128_000)));
+    assert_eq!(stamp_info.get("model"), None);
+    assert_eq!(
+        stamp_info.get("pricing_overrides"),
         Some(&list(vec![text("input_cost_per_token")]))
     );
 }
@@ -529,10 +523,10 @@ async fn malformed_deployment_is_an_error() {
         ("model_name", text("gpt-4o")),
         ("model_info", Json::Object(object(Vec::new()))),
     ]);
-    let error = enrich_model_info(&no_params, false, &context)
+    let missing_params_error = enrich_model_info(&no_params, false, &context)
         .await
         .unwrap_err();
-    assert!(matches!(error, EnrichError::Redact(_)));
+    assert!(matches!(missing_params_error, EnrichError::Redact(_)));
     let bad_info = object(vec![
         ("model_name", text("gpt-4o")),
         (
@@ -541,10 +535,13 @@ async fn malformed_deployment_is_an_error() {
         ),
         ("model_info", text("not an object")),
     ]);
-    let error = enrich_model_info(&bad_info, false, &context)
+    let malformed_info_error = enrich_model_info(&bad_info, false, &context)
         .await
         .unwrap_err();
-    assert!(matches!(error, EnrichError::ModelInfoNotObject));
+    assert!(matches!(
+        malformed_info_error,
+        EnrichError::ModelInfoNotObject
+    ));
     let bad_backend = object(vec![
         ("model_name", text("gpt-4o")),
         (
@@ -553,10 +550,10 @@ async fn malformed_deployment_is_an_error() {
         ),
         ("model_info", Json::Object(object(Vec::new()))),
     ]);
-    let error = enrich_model_info(&bad_backend, false, &context)
+    let bad_backend_error = enrich_model_info(&bad_backend, false, &context)
         .await
         .unwrap_err();
-    assert!(matches!(error, EnrichError::ModelNotText));
+    assert!(matches!(bad_backend_error, EnrichError::ModelNotText));
 }
 
 #[tokio::test]
