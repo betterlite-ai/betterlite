@@ -882,3 +882,17 @@ fn duplicate_registrations_appear_once() {
     assert_eq!(count_route(&routes, "/sub-pass/*"), 1);
     assert_eq!(count_route(&routes, "/open-pass"), 0);
 }
+
+#[test]
+fn bare_wildcard_grants_every_route() {
+    let auth = key_of(vec![("allowed_routes", strings(&["openai_routes", "*"]))]);
+    let caller = RouteCaller::of_key(&auth);
+    let registry = registry_of(&[(
+        "pass-a",
+        PassThroughRouteType::Exact,
+        "/team-pass",
+        Some(true),
+    )]);
+    // LiteLLM compares an empty prefix for a bare star, so it wins over the remembered pass-through denial
+    is_virtual_key_allowed_to_call_route(called("/team-pass", "POST"), &caller, &registry).unwrap();
+}
