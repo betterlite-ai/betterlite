@@ -223,7 +223,8 @@ fn counter_writes(
         max_redis_batch_cache_size: 1_000,
         redis_delete_chunk_size: 1_000,
     };
-    let batch: Arc<dyn CounterBatch> = Arc::clone(scope);
+    let request_batch: Arc<SpendCounterScope> = Arc::clone(scope);
+    let batch: Arc<dyn CounterBatch> = request_batch;
     SpendCounterWrites {
         layers: Arc::new(DualCache::new(
             Arc::new(memory),
