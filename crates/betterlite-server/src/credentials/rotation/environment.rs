@@ -68,7 +68,7 @@ fn stored_value(value: JsonValue) -> JsonData {
         JsonValue::Object(fields) => JsonData::Object(
             fields
                 .into_iter()
-                .map(|(name, value)| (name, stored_value(value)))
+                .map(|(name, entry)| (name, stored_value(entry)))
                 .collect(),
         ),
     }

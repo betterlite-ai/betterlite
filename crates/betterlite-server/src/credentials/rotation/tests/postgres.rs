@@ -472,7 +472,7 @@ async fn an_expired_model_transaction_writes_nothing() {
     let error = harness.rotation().run(None).await.unwrap_err();
     assert!(matches!(
         error,
-        RotationError::Store(StoreError::ModelTimeout)
+        RotationError::Store(StoreError::ModelTimeout(_))
     ));
     let stored = harness.model("m1").await;
     let JsonData::String(model) = &stored.params["model"] else {

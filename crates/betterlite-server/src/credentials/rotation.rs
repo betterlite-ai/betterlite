@@ -230,7 +230,11 @@ where
 fn stored_credential(stored: JsonData) -> Result<CredentialRow, ResourceRowsError> {
     let mut fields = match stored {
         JsonData::Object(fields) => fields,
-        other => return CredentialRow::try_from(other),
+        other @ (JsonData::Null
+        | JsonData::Bool(_)
+        | JsonData::Number(_)
+        | JsonData::String(_)
+        | JsonData::Array(_)) => return CredentialRow::try_from(other),
     };
     if matches!(fields.get("credential_info"), None | Some(JsonData::Null)) {
         fields.insert(

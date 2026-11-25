@@ -28,9 +28,9 @@ use secrecy::{ExposeSecret as _, SecretString};
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::{MakeWriter, fmt};
 
-use super::Rotation;
-use super::sink::ModelTableInvalidation;
-use super::store::RotationStore;
+use super::super::Rotation;
+use super::super::sink::ModelTableInvalidation;
+use super::super::store::RotationStore;
 use crate::config_override_support::environment::RuntimeEnvironment;
 use crate::db_row_decrypt::warnings::Warnings;
 use crate::mcp_rotation::store::{

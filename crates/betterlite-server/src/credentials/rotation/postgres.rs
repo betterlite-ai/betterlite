@@ -19,6 +19,7 @@ use betterlite_db::resource_rows::model::ProxyModelTable;
 use betterlite_redis::config_sync::publish::redis_config_change_publisher;
 use betterlite_redis::config_sync::table_actions::TableActions as _;
 use thiserror::Error;
+use tokio::time::error::Elapsed;
 use tokio::time::timeout;
 
 use super::ENVIRONMENT_VARIABLES;
@@ -44,7 +45,7 @@ pub enum StoreError {
     #[error("the stored model rows could not be read")]
     ModelRead,
     #[error("the model parameter update did not finish within its limit")]
-    ModelTimeout,
+    ModelTimeout(#[source] Elapsed),
     #[error("the environment_variables row is gone")]
     EnvironmentRowMissing,
 }
@@ -57,7 +58,7 @@ pub struct PostgresRotationStore {
 
 impl PostgresRotationStore {
     #[must_use]
-    pub fn new(store: PostgresStore, availability: Availability) -> Self {
+    pub const fn new(store: PostgresStore, availability: Availability) -> Self {
         Self {
             store,
             availability,
@@ -107,7 +108,7 @@ impl RotationStore for PostgresRotationStore {
         };
         timeout(self.model_timeout, write)
             .await
-            .map_err(|_| StoreError::ModelTimeout)?
+            .map_err(StoreError::ModelTimeout)?
     }
 
     async fn config_rows(&self) -> Result<Vec<ConfigParam>, StoreError> {
