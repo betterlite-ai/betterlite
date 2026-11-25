@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use async_trait::async_trait;
@@ -139,9 +140,9 @@ impl FrameSource for ScriptedSource {
 }
 
 pub(super) fn frames(shared: &Shared) -> Result<Value, Box<HelperError>> {
-    let recorder = lock(shared);
-    let mut parsed = Vec::with_capacity(recorder.frames.len());
-    for frame in &recorder.frames {
+    let recorded_frames = lock(shared).frames.clone();
+    let mut parsed = Vec::with_capacity(recorded_frames.len());
+    for frame in &recorded_frames {
         let value = from_str::<Value>(frame)
             .map_err(|error| helper_error("ValueError", error.to_string()))?;
         parsed.push(value);
@@ -168,12 +169,18 @@ pub(super) fn recorded(shared: &Shared) -> (Value, Value) {
             })
         })
         .collect();
+    drop(recorder);
     (Value::Array(calls), Value::Array(quotas))
 }
 
-pub(super) fn history<Sink: FrameSink>(handler: &ManagedResponsesWebSocket<Sink>) -> Value {
+pub(super) fn history<Sink>(handler: &ManagedResponsesWebSocket<Sink>) -> Value
+where
+    Sink: FrameSink,
+{
+    let ordered: BTreeMap<&String, &Vec<IndexMap<String, Json>>> =
+        handler.session_history.iter().collect();
     let mut stored = Map::new();
-    for (response_id, messages) in &handler.session_history {
+    for (response_id, messages) in ordered {
         stored.insert(response_id.clone(), json!(messages));
     }
     Value::Object(stored)

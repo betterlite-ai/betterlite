@@ -78,7 +78,7 @@ struct Message(String);
 impl Visit for Message {
     fn record_str(&mut self, field: &Field, value: &str) {
         if field.name() == "message" {
-            self.0 = value.to_owned();
+            value.clone_into(&mut self.0);
         }
     }
 

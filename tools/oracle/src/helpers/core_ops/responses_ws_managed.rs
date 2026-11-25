@@ -67,7 +67,7 @@ impl Helper for Op {
 }
 
 async fn transcript<Sink, Provider, Source>(
-    shared: &support::Shared,
+    shared: &Shared,
     captured: &Captured,
     handler: &mut ManagedResponsesWebSocket<Sink>,
     provider: &Provider,
