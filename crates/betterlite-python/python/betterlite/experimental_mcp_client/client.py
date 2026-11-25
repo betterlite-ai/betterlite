@@ -1,6 +1,6 @@
 import json
 from collections.abc import Awaitable, Callable
-from typing import Final, Protocol, Required, TypedDict, TypeVar, runtime_checkable
+from typing import Final, Literal, Protocol, Required, TypedDict, TypeVar, runtime_checkable
 
 from pydantic import AnyUrl, JsonValue, TypeAdapter
 
@@ -32,7 +32,6 @@ from betterlite.experimental_mcp_client.types import (
     ReadResourceResult,
     Resource,
     ResourceTemplate,
-    TextContent,
     Tool,
 )
 from betterlite.types.llms.custom_http import VerifyTypes
@@ -88,6 +87,16 @@ class CallToolWire(TypedDict, total=False):
 class GetPromptWire(TypedDict):
     name: str
     arguments: dict[str, str] | None
+
+
+class TextContentWire(TypedDict):
+    type: Literal["text"]
+    text: str
+
+
+class ErrorResultWire(TypedDict):
+    content: list[TextContentWire]
+    isError: bool
 
 
 SessionResult = TypeVar("SessionResult")
@@ -195,9 +204,11 @@ class MCPClient:
     @staticmethod
     def error_tool_result(exc: Exception) -> CallToolResult:
         message = f"{type(exc).__name__}: {exc}"
-        return CALL_RESULT.validate_python(
-            {"content": [TextContent(text=message)], "isError": True}
-        )
+        result: ErrorResultWire = {
+            "content": [{"type": "text", "text": message}],
+            "isError": True,
+        }
+        return CALL_RESULT.validate_python(result)
 
     async def call_tool(
         self,
@@ -252,8 +263,6 @@ class MCPClient:
         match pending:
             case Pending():
                 pending.close()
-            case _:
-                pass
 
     async def run_with_session(
         self,
