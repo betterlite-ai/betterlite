@@ -47,11 +47,11 @@ where
     Denied(#[from] Denial),
 }
 
-struct ServerScope<'a> {
-    team: Option<&'a TeamGrants>,
-    allow_all: &'a BTreeSet<String>,
-    team_allowed: &'a BTreeSet<String>,
-    existing: Option<&'a ObjectPermissionGrants>,
+struct ServerScope<'grants> {
+    team: Option<&'grants TeamGrants>,
+    allow_all: &'grants BTreeSet<String>,
+    team_allowed: &'grants BTreeSet<String>,
+    existing: Option<&'grants ObjectPermissionGrants>,
     teamless_admin: bool,
 }
 

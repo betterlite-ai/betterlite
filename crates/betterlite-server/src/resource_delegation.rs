@@ -37,11 +37,11 @@ pub struct TeamGrants {
 }
 
 // Everything the team reads need: the optional database, the MCP registry records, the access-group row port and the unified access-group lookup.
-pub struct GrantReads<'a, Rows> {
-    pub client: Option<PrismaClient<'a>>,
-    pub registry: &'a SharedRegistry,
-    pub rows: Option<&'a Rows>,
-    pub unified: Option<&'a dyn AccessGroupLookup>,
+pub struct GrantReads<'reads, Rows> {
+    pub client: Option<PrismaClient<'reads>>,
+    pub registry: &'reads SharedRegistry,
+    pub rows: Option<&'reads Rows>,
+    pub unified: Option<&'reads dyn AccessGroupLookup>,
 }
 
 // Python renders sorted(...) inside the denial detail, so the text keeps its quoted, bracketed list shape.

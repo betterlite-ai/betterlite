@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 
 use betterlite_auth::auth_model_patterns::access_groups::{
     AccessGroupError, AccessGroupLookup, AccessGroupResources,
@@ -86,10 +86,8 @@ impl AccessGroupLookup for FakeGroups {
         &self,
         access_group_id: &str,
     ) -> Result<AccessGroupResources, AccessGroupError> {
-        self.calls
-            .lock()
-            .unwrap()
-            .push(String::from(access_group_id));
+        let mut call_log = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
+        call_log.push(String::from(access_group_id));
         self.groups
             .get(access_group_id)
             .cloned()

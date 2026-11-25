@@ -95,12 +95,12 @@ pub(crate) fn team_grants(
     }
 }
 
-pub(crate) fn reads<'a>(
-    registry: &'a SharedRegistry,
-    client: Option<PrismaClient<'a>>,
-    rows: &'a FakeRows,
-    unified: Option<&'a dyn AccessGroupLookup>,
-) -> GrantReads<'a, FakeRows> {
+pub(crate) fn reads<'reads>(
+    registry: &'reads SharedRegistry,
+    client: Option<PrismaClient<'reads>>,
+    rows: &'reads FakeRows,
+    unified: Option<&'reads dyn AccessGroupLookup>,
+) -> GrantReads<'reads, FakeRows> {
     GrantReads {
         client,
         registry,

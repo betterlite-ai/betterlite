@@ -13,10 +13,10 @@ use super::fixtures::{
     string_set, team_grants,
 };
 
-struct Case<'a> {
-    shared: &'a SharedRegistry,
-    rows: &'a FakeRows,
-    unified: Option<&'a dyn AccessGroupLookup>,
+struct Case<'case> {
+    shared: &'case SharedRegistry,
+    rows: &'case FakeRows,
+    unified: Option<&'case dyn AccessGroupLookup>,
     admin: bool,
 }
 
