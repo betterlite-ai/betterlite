@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::sync::mpsc::sync_channel;
+use std::sync::mpsc::{SyncSender, sync_channel};
 
 use axum::http::StatusCode;
 use betterlite_models::decisions::Json;
@@ -647,8 +647,14 @@ async fn a_blocked_secret_read_leaves_the_async_worker_free() {
     );
 }
 
-#[tokio::test]
-async fn cancelling_lookup_keeps_decryption_tracked_until_shutdown_drain() {
+struct BlockedLookup {
+    lookups: JoinSet<Result<(Vec<JsonObject>, usize), super::error::ScopeError>>,
+    tasks: TaskTracker,
+    release: SyncSender<()>,
+    http: Arc<support::BlockedOidc>,
+}
+
+async fn start_blocked_lookup() -> BlockedLookup {
     let (started, started_rx) = oneshot::channel();
     let (release, release_rx) = sync_channel(1);
     let http = Arc::new(support::BlockedOidc::new(started, release_rx));
@@ -666,6 +672,22 @@ async fn cancelling_lookup_keeps_decryption_tracked_until_shutdown_drain() {
         .await
         .expect("the secret read starts")
         .expect("the OIDC fake announces its read");
+    BlockedLookup {
+        lookups,
+        tasks,
+        release,
+        http,
+    }
+}
+
+#[tokio::test]
+async fn cancelling_lookup_keeps_decryption_tracked_until_shutdown_drain() {
+    let BlockedLookup {
+        mut lookups,
+        tasks,
+        release,
+        http,
+    } = start_blocked_lookup().await;
 
     lookups.abort_all();
     let lookup_result = lookups.join_next().await.expect("lookup task joins");
