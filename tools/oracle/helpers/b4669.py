@@ -67,12 +67,10 @@ CachedValue = BaseModel | dict[str, list[str]]
 
 
 class CacheSeed(Protocol):
-    def set_cache(
-        self, key: str, value: CachedValue, *, model_type: type[BaseModel] | None = None
-    ) -> None: ...
+    def set_cache(self, key: str, value: CachedValue) -> None: ...
 
 
-# The non-fresh reads answer from the cache, so this client only keeps the no-database branches from firing.
+# Non-fresh reads answer from the cache; this client keeps the no-database branches quiet.
 class StubClient(PrismaClient):
     def __init__(self) -> None:
         pass
@@ -108,7 +106,7 @@ async def dispatch(input_value: Input, cache: CacheSeed) -> list[str]:
             return await user_team_ids(input_value, cache)
 
 
-# a caller with no team, org, user, end user or agent, so the resolver answers the key level and its group grants
+# no team, org, user, end user or agent, so the resolver answers the key level plus its group grants
 async def key_servers(call: KeyCall, cache: CacheSeed) -> list[str]:
     seed_fixtures(call, call["permission"], cache)
     auth = UserAPIKeyAuth(
@@ -128,25 +126,21 @@ async def team_servers(call: TeamCall, cache: CacheSeed) -> list[str]:
         access_group_ids=call["team_access_group_ids"],
         object_permission=None if permission is None else permission_row(permission),
     )
-    cache.set_cache(
-        f"team_id:{call['team_id']}", team, model_type=LiteLLM_TeamTableCachedObj
-    )
+    cache.set_cache(f"team_id:{call['team_id']}", team)
     auth = UserAPIKeyAuth(team_id=call["team_id"])
     return sorted(await MCPRequestHandler.get_allowed_mcp_servers(auth))
 
 
-# every listed team keeps the user on its roster, so each team the user's record resolves to becomes a source
+# every listed team keeps the user on its roster, so each resolved team becomes a source
 async def user_team_ids(call: UserTeamsCall, cache: CacheSeed) -> list[str]:
     user_id = call["user_id"]
     user = LiteLLM_UserTable(user_id=user_id, teams=call["teams"])
-    cache.set_cache(user_id, user, model_type=LiteLLM_UserTable)
+    cache.set_cache(user_id, user)
     for team_id in call["teams"]:
         team = LiteLLM_TeamTableCachedObj(
             team_id=team_id, members_with_roles=[Member(user_id=user_id, role="user")]
         )
-        cache.set_cache(
-            f"team_id:{team_id}", team, model_type=LiteLLM_TeamTableCachedObj
-        )
+        cache.set_cache(f"team_id:{team_id}", team)
     sources = await MCPRequestHandler.admitted_subject_sources(
         UserAPIKeyAuth(user_id=user_id)
     )
@@ -168,9 +162,7 @@ def seed_fixtures(
             access_group_name=group_id,
             access_mcp_server_ids=group["access_mcp_server_ids"],
         )
-        cache.set_cache(
-            f"access_group_id:{group_id}", row, model_type=LiteLLM_AccessGroupTable
-        )
+        cache.set_cache(f"access_group_id:{group_id}", row)
     toolset_ids = None if permission is None else permission["mcp_toolsets"]
     if toolset_ids:
         cache.set_cache(
