@@ -263,6 +263,8 @@ class MCPClient:
         match pending:
             case Pending():
                 pending.close()
+            case Awaitable():
+                pass
 
     async def run_with_session(
         self,
