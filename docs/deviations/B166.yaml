@@ -1,20 +1,23 @@
 task: B166
 deviations:
-  - what: "`BudgetManager.create_budget`'s `created_at` default is read once, when the class body runs, so every call without `created_at` uses that same import-time value."
-    why: LiteLLM's signature evaluates `time.time()` at import too, and the task keeps it on purpose so a test that freezes the clock matches the reference.
+  - what: "`BudgetManager.create_budget`'s `created_at` default stays LiteLLM's import-time `time.time()` value (betterlite holds it in a module constant) instead of reading the clock per call."
+    why: LiteLLM's signature evaluates `time.time()` when the class body runs too, and the task keeps it on purpose so a test that freezes the clock matches the reference.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/budget_manager.py#L72-L78
   - what: "A `client_type` that is neither `local` nor `hosted` raises `ValueError(\"client_type must be 'local' or 'hosted', got ...\")` from `__init__`."
     why: LiteLLM's `load_data` sets no `user_dict` at all for another client type, so construction succeeds and the first method call fails with `AttributeError` far from the cause. A working setup never passes another client type, so the error can name the field instead.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/budget_manager.py#L50-L70
-  - what: "A `user_cost.json` that is not an object of user objects, or a hosted reply whose `data` is not one, raises a pydantic `ValidationError` naming the malformed field."
+  - what: "A `user_cost.json` that is not an object of user objects, or a hosted reply whose `data` is not one, raises a pydantic `ValidationError` naming the malformed field, and a hosted reply that is not a JSON object raises `TypeError(\"hosted budget reply must be an object\")`."
     why: LiteLLM assigns whatever `json.load` or the reply's `data` returns, so a corrupt file or reply turns the next cost call into a `KeyError` or `TypeError` far from the read. docs/compatibility.md asks for an error that names the field on a wrong-typed value, and no working setup relies on storing garbage.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/budget_manager.py#L53-L70
   - what: "`update_cost` with a completion object whose `model` is absent or null raises `TypeError(\"model must be a string\")`."
     why: LiteLLM does `model = completion_obj[\"model\"]`, so an absent key raises `KeyError` after the cost was already computed, and a null model would be stored as the `model_cost` key and saved as the JSON text `\"null\"`. betterlite refuses both and names the field.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/budget_manager.py#L133-L135
   - what: "`safe_deep_copy` passes a `metadata` or `litellm_metadata` value that is not a mapping through unchanged, where LiteLLM raises `TypeError` on a null bucket."
-    why: LiteLLM's step 1 runs `\"litellm_parent_otel_span\" in data[\"metadata\"]`, which raises `TypeError: argument of type 'NoneType' is not iterable` for a null bucket and names no field; no working setup sends one. Dict buckets behave exactly as LiteLLM's, and the caller's dict is not mutated (docs/compatibility.md keeps caller-dict changes out of parity).
+    why: "LiteLLM's step 1 runs `\"litellm_parent_otel_span\" in data[\"metadata\"]`, which raises `TypeError: argument of type 'NoneType' is not iterable` for a null bucket and names no field; no working setup sends one. Dict buckets behave exactly as LiteLLM's, and the caller's dict is not mutated (docs/compatibility.md keeps caller-dict changes out of parity)."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L534-L541
+  - what: "`BudgetManager.print_verbose` logs through `logging.getLogger(__name__)` instead of the root logger that LiteLLM's `logging.info` call uses."
+    why: The message text and level are the same, and the module logger propagates to the root handlers, so anything listening on the root still sees it; a named logger keeps LOG015 quiet and lets a caller filter our records.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/budget_manager.py#L41-L48
   - what: "`betterlite.module_level_client` is a small `ModuleClient` whose only operations are `post(url, headers=..., json=...)` and its parsed reply; LiteLLM's module-level client is an `httpx.Client` with every HTTP verb."
     why: The budget manager needs one call, and a typed `post` that returns JSON keeps the parsed reply out of `Any`. Widening the wrapper to the full client belongs to the task that owns the package-level client, if one is needed.
     link: ""

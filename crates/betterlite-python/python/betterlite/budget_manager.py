@@ -8,7 +8,8 @@ from pathlib import Path
 from typing import Final
 
 import httpx2
-from pydantic import JsonValue, TypeAdapter
+from pydantic import JsonValue, TypeAdapter, ValidationError
+from typing_extensions import TypedDict
 
 import betterlite
 from betterlite._cost.objects import dump_object
@@ -40,6 +41,15 @@ _JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 _USERS: Final[TypeAdapter[dict[str, dict[str, JsonValue]]]] = TypeAdapter(
     dict[str, dict[str, JsonValue]]
 )
+_LOGGER: Final = logging.getLogger(__name__)
+
+
+class _HostedReply(TypedDict, total=False):
+    status: JsonValue
+    data: JsonValue
+
+
+_REPLY: Final[TypeAdapter[_HostedReply]] = TypeAdapter(_HostedReply)
 
 __all__ = ["BudgetManager", "module_level_client"]
 
@@ -82,7 +92,7 @@ class BudgetManager:
     def print_verbose(self, print_statement: str) -> None:
         with suppress(Exception):
             if betterlite.set_verbose:
-                logging.info(print_statement)
+                _LOGGER.info(print_statement)
 
     def load_data(self) -> None:
         match self.client_type:
@@ -97,17 +107,17 @@ class BudgetManager:
             case "hosted":
                 url = self.api_base + "/get_budget"
                 request: dict[str, JsonValue] = {"project_name": self.project_name}
-                reply = betterlite.module_level_client.post(
+                parsed = betterlite.module_level_client.post(
                     url, headers=self.headers, json=request
                 )
-                match reply:
-                    case dict() as fields:
-                        if fields["status"] == "error":
-                            self.user_dict = {}
-                        else:
-                            self.user_dict = _USERS.validate_python(fields["data"])
-                    case object():
-                        raise TypeError("hosted budget reply must be an object")
+                try:
+                    reply = _REPLY.validate_python(parsed)
+                except ValidationError as error:
+                    raise TypeError("hosted budget reply must be an object") from error
+                if reply["status"] == "error":
+                    self.user_dict = {}
+                else:
+                    self.user_dict = _USERS.validate_python(reply["data"])
             case object():
                 raise ValueError(
                     f"client_type must be 'local' or 'hosted', got {self.client_type!r}"
