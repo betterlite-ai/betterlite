@@ -11,7 +11,9 @@ use rstest::rstest;
 use secrecy::SecretString;
 use serde_json::Number;
 
-use crate::gateway_dcr::contracts::{GATEWAY_DCR_CLIENT_ID_PREFIX, TOKEN_EXCHANGE_GRANT_TYPE};
+use crate::gateway_dcr::contracts::{
+    GATEWAY_DCR_CLIENT_ID_PREFIX, MAX_CLIENT_ID_LENGTH, TOKEN_EXCHANGE_GRANT_TYPE,
+};
 use crate::gateway_dcr::models::GatewayDcrClient;
 use crate::gateway_dcr::oauth_error::{OauthError, OauthErrorCode};
 use crate::gateway_dcr::registration::{RegisteredClient, Registration, register_aggregate_client};
@@ -56,6 +58,25 @@ fn body(redirect_uris: Vec<JsonValue>) -> BTreeMap<String, JsonValue> {
 
 fn register(body: &BTreeMap<String, JsonValue>) -> Registration {
     register_aggregate_client(body, false, now(), &cipher(), &native_callbacks(""))
+}
+
+fn register_with(cipher: &DbCipher, redirect_uris: Vec<JsonValue>) -> Registration {
+    register_aggregate_client(
+        &body(redirect_uris),
+        false,
+        now(),
+        cipher,
+        &native_callbacks(""),
+    )
+}
+
+fn boundary_uris(third: usize, fourth: usize) -> Vec<JsonValue> {
+    vec![
+        uri(&uri_of_characters(256, '\u{10348}')),
+        uri(&uri_of_characters(256, 'a')),
+        uri(&uri_of_characters(third, 'a')),
+        uri(&uri_of_characters(fourth, 'a')),
+    ]
 }
 
 fn registered(registration: Registration) -> RegisteredClient {
@@ -304,6 +325,24 @@ fn rejects_a_sealed_client_id_over_the_length_cap() {
         uri(&longest),
         uri(&longest),
     ])));
+    assert_eq!(error.status, 400);
+    assert_eq!(error.error, OauthErrorCode::InvalidClientMetadata);
+    assert_eq!(error.description, "registered metadata is too large");
+}
+
+#[test]
+fn accepts_a_sealed_client_id_exactly_at_the_length_cap() {
+    // AES seals to "v2:gcm:" plus a padded base64 of the 12-byte nonce, the payload and the
+    // 16-byte tag, so the sealed id lands on exactly MAX_CLIENT_ID_LENGTH (2048) characters
+    // only at these plaintext byte lengths; the XSalsa20 encoding can never reach it.
+    let mut cipher = cipher();
+    cipher.settings.algorithm = Algorithm::Aes256Gcm;
+    let at_the_cap = registered(register_with(&cipher, boundary_uris(110, 110)));
+    assert_eq!(at_the_cap.client_id.chars().count(), MAX_CLIENT_ID_LENGTH);
+    let opened = open_gateway_dcr_client(&at_the_cap.client_id, &cipher).unwrap();
+    assert_eq!(opened.redirect_uris.len(), 4);
+
+    let error = refusal_of(register_with(&cipher, boundary_uris(111, 112)));
     assert_eq!(error.status, 400);
     assert_eq!(error.error, OauthErrorCode::InvalidClientMetadata);
     assert_eq!(error.description, "registered metadata is too large");
