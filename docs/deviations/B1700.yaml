@@ -30,17 +30,27 @@ deviations:
       row usable without the colliding keys.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7415-L7441
   - what: >-
-      Every store operation of the rotation has a deadline: a connection is acquired within ten
-      seconds, each config and credential scan or write within thirty seconds, and the model
-      transaction within two minutes with a transaction-local statement_timeout so PostgreSQL
-      itself cancels a blocked statement. A connection whose operation timed out is dropped rather
-      than returned to the pool, and a timed-out scan skips only its own stage.
+      Every store operation of the rotation has a deadline, taken from the values the caller builds
+      the store with (betterlite_db::table_ops' defaults): the model transaction acquires its
+      connection within ten seconds, and every config, environment and credential scan or write,
+      acquisition included, within thirty seconds. A drained pool or a blocked query therefore ends
+      the wait with that stage's own boundary: a failed model scan or credential scan skips its
+      stage, while a failed model transaction or environment write still aborts the rotation and a
+      failed credential write still skips that row. The model transaction puts its two-minute limit
+      into the server as a transaction-local statement_timeout, so PostgreSQL cancels a blocked
+      statement itself, and the client waits at most twice the deadline; a model write that times
+      out has its connection dropped instead of returned to the pool. A scan or single-row write
+      that times out only stops the client's wait, because its repository owns the connection, so
+      the abandoned statement can still finish on the server.
     why: >-
       LiteLLM bounds only the model transaction, with prisma's two-minute tx timeout; its scans,
       environment update and per-credential updates wait as long as the server makes them wait, so a
       drained pool or a locked row suspends the rotation and every later stage with it. Abandoning a
-      client-side wait does not cancel the server's statement, and returning that connection would
-      hand the next borrower a session still busy with the old statement.
+      client-side wait does not cancel the server's statement, and returning a model connection
+      would hand the next borrower a session still busy with the old UPDATE, so the transaction
+      carries a server-side deadline and the timed-out connection is discarded. The other call sites
+      keep their existing failure boundaries because cancelling their statements would need a
+      second connection per statement.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5260-L5268
 kept_bugs:
   - what: >-
