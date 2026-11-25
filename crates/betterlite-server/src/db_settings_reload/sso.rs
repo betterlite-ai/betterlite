@@ -77,10 +77,10 @@ where
         Ok(stored) => Ok(stored),
         Err(database) => {
             let recorded = fault.lock().unwrap_or_else(PoisonError::into_inner).take();
-            match recorded {
-                Some(source) => Err(SettingsReloadError::SsoRow(source)),
-                None => Err(SettingsReloadError::Database(database)),
+            if let Some(source) = recorded {
+                return Err(SettingsReloadError::SsoRow(source));
             }
+            Err(SettingsReloadError::Database(database))
         }
     }
 }
