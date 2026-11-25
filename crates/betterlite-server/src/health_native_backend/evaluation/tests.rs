@@ -4,6 +4,8 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
+use betterlite_core::decisions::DecisionsEntryError;
+use betterlite_error::error::ErrorClass;
 use betterlite_models::decisions::Json;
 use betterlite_models::decisions::systemone::DecisionsResponse;
 use betterlite_redact::secret::Redactor;
@@ -19,6 +21,8 @@ use crate::health_probe_modes::error::HealthProbeError;
 use crate::health_probe_modes::evaluation::evaluation_call;
 
 const EVALUATION_ANSWER: &[u8] = br#"{"model":"model-1","answers":{"reachable":{"type":"noul","noul":0.9}},"usage":{"input_tokens":3,"output_tokens":5}}"#;
+const REJECTION: &[u8] =
+    br#"{"error":{"message":"invalid api key","type":"authentication_error"}}"#;
 
 fn request_body(request: &str) -> Json {
     let body = request
@@ -169,4 +173,46 @@ async fn evaluation_probe_posts_the_health_check_through_asystemone() {
         panic!("the provider request carries the questions map");
     };
     assert!(questions.contains_key("reachable"));
+}
+
+#[tokio::test]
+async fn evaluation_probe_keeps_a_rejected_call_in_the_backend_error() {
+    let server = MockServer::start(401, REJECTION).await;
+    let probe = EvaluationProbe {
+        clients: http_clients,
+        setup: EvalSetup::default(),
+        redactor: Arc::new(Redactor::new(16).expect("the test redactor builds")),
+        clock: fixed_time,
+    };
+    let entries = [
+        ("model", text("model-1")),
+        ("api_base", text(&server.base)),
+        ("custom_llm_provider", text("typesafe")),
+        ("api_key", text("test-key")),
+    ];
+    let call =
+        evaluation_call(&params(&entries), None, "typesafe").expect("the evaluation call builds");
+    let error = probe
+        .evaluate(call)
+        .await
+        .expect_err("the provider rejects the call");
+    let HealthProbeError::Backend {
+        class,
+        message,
+        source,
+    } = error
+    else {
+        panic!("a provider rejection is a backend failure");
+    };
+    assert!(matches!(class, ErrorClass::Authentication(_)));
+    assert!(
+        message.starts_with("litellm.AuthenticationError: "),
+        "{message}"
+    );
+    assert!(
+        source
+            .downcast_ref::<DecisionsEntryError>()
+            .is_some_and(|error| error.to_string() == message),
+        "the source is the entrypoint error"
+    );
 }
