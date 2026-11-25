@@ -10,8 +10,6 @@ use secrecy::{ExposeSecret as _, SecretString};
 use super::callback::CallbackTransform;
 use super::store::{CallbackTable, MigrationStore};
 
-const LOGGING: &str = "logging";
-const CALLBACK_SETTINGS: &str = "callback_settings";
 const SSO_CONFIG: &str = "sso_config";
 
 pub(super) struct Walkers<'run, S> {
@@ -90,9 +88,6 @@ impl<S: MigrationStore> Walkers<'_, S> {
             let Some(metadata) = row.metadata.as_ref() else {
                 continue;
             };
-            if !has_callback_slots(metadata) {
-                continue;
-            }
             let counts = classify_row(metadata, self.cipher).map_err(scan_error::<S>)?;
             checked_add(&mut report.scanned, counts.scanned).map_err(scan_error::<S>)?;
             checked_add(&mut report.already_v2, counts.already_v2).map_err(scan_error::<S>)?;
@@ -210,13 +205,6 @@ fn nonempty_string(settings: &BTreeMap<String, MigrationJson>, field: &str) -> b
         )
         | None => false,
     }
-}
-
-fn has_callback_slots(metadata: &MigrationJson) -> bool {
-    let MigrationJson::Object(fields) = metadata else {
-        return false;
-    };
-    fields.contains_key(LOGGING) || fields.contains_key(CALLBACK_SETTINGS)
 }
 
 #[derive(Default)]

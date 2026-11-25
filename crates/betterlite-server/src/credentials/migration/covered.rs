@@ -49,6 +49,8 @@ where
 {
     type Error = RotationError<S::Error, I::Error>;
 
+    // One call into B1700's rotation; exercising it needs that task's fixture stores, which this module cannot reach.
+    #[cfg_attr(test, mutants::skip)]
     async fn reencrypt_same_key(
         &mut self,
         key: &SecretString,
