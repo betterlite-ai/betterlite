@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::future::Future;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -49,7 +49,6 @@ pub(crate) enum DispatchError {
     Reply,
 }
 
-// The shared OpenAI files client, the HTTP client every branch sends through, and the azure settings beside them.
 pub(crate) struct ContentDispatch {
     pub(crate) openai: FilesApi<ProxiedClient>,
     pub(crate) client: ProxiedClient,
@@ -68,7 +67,7 @@ impl FileContentDispatch for ContentDispatch {
     }
 
     fn create_logging(&self, _seed: &NewLogger) -> Arc<Self::Logging> {
-        Arc::new(SilentLogging)
+        Arc::new(SilentLogging::default())
     }
 
     fn content(
@@ -136,11 +135,19 @@ fn compatible_client(content: &CompatibleContent) -> Result<FilesClient, FilesEr
     )
 }
 
-// a structured timeout shapes the client's pool rather than one deadline
-fn deadline(timeout: FineTuningTimeout) -> Option<Duration> {
+// Match the other SDK bridges: read, connect, write, pool, then the SDK default.
+pub(super) fn deadline(timeout: FineTuningTimeout) -> Option<Duration> {
     match timeout {
         FineTuningTimeout::Seconds(seconds) => Duration::try_from_secs_f64(seconds).ok(),
-        FineTuningTimeout::Structured(_) => None,
+        FineTuningTimeout::Structured(phases) => {
+            let seconds = phases
+                .read
+                .or(phases.connect)
+                .or(phases.write)
+                .or(phases.pool)
+                .unwrap_or(600.0_f64);
+            Duration::try_from_secs_f64(seconds).ok()
+        }
     }
 }
 
@@ -215,20 +222,23 @@ impl ClientMaterializer for NoMaterializer {
 }
 
 // The logging B250 and B251 would supply. No production bridge exists in this build, so a stream logs to nothing.
-pub(crate) struct SilentLogging;
+#[derive(Default)]
+pub(crate) struct SilentLogging {
+    pub(crate) provider: OnceLock<String>,
+}
 
 impl ContentLogging for SilentLogging {
-    fn record_identity(&self, _identity: &StreamIdentity<'_>) {}
+    fn record_identity(&self, identity: &StreamIdentity<'_>) {
+        let _previous = self.provider.set(identity.custom_llm_provider.to_owned());
+    }
 
     fn stream_logger(self: Arc<Self>) -> Arc<dyn FileStreamLogger> {
-        Arc::new(SilentStreamLogger)
+        self
     }
 }
 
-struct SilentStreamLogger;
-
 #[async_trait]
-impl FileStreamLogger for SilentStreamLogger {
+impl FileStreamLogger for SilentLogging {
     fn start_time(&self) -> Option<DateTime<FixedOffset>> {
         None
     }

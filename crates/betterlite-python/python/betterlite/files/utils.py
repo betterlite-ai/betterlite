@@ -6,16 +6,10 @@ from typing_extensions import TypedDict
 from betterlite.types.llms.openai.core.files import CreateFileRequest
 
 # Litellm's six plausible labels for a .jsonl batch upload; purpose == "batch" is the real signal
-_BATCH_JSONL_CONTENT_TYPES: Final = frozenset(
-    {
-        "application/jsonl",
-        "application/json",
-        "application/octet-stream",
-        "application/x-ndjson",
-        "application/x-jsonlines",
-        "text/plain",
-    }
-)
+_BATCH_JSONL_CONTENT_TYPES: Final = frozenset({
+    "application/jsonl", "application/json", "application/octet-stream",
+    "application/x-ndjson", "application/x-jsonlines", "text/plain",
+})
 
 
 class ExtractedFileData(TypedDict):

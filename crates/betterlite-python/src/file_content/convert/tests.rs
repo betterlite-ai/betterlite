@@ -1,15 +1,19 @@
 #![cfg(test)]
 
+use std::time::Duration;
+
 use betterlite_azure::azure_files::error::AzureFilesError;
 use betterlite_azure::endpoints::initialize::EndpointError;
 use betterlite_core::api::file_content_stream::error::FileContentError;
 use betterlite_core::api::file_stream_logging::source::StreamError;
 use betterlite_core::api::fine_tuning_read::{ReadTimeout, ReadTimeoutValue};
+use betterlite_core::api::resource_sdk_settings::timeout::{FineTuningTimeout, StructuredTimeout};
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_openai::files::error::{FilesError, StatusError};
 use rstest::rstest;
+use secrecy::ExposeSecret as _;
 
-use super::super::dispatch::DispatchError;
+use super::super::dispatch::{DispatchError, deadline};
 use super::super::error::{Failure, azure_failure, failure_for, files_failure, stream_failure};
 use super::{ConvertError, parse_call};
 
@@ -129,7 +133,7 @@ fn request_request_timeout_refuses_the_phases() {
 #[test]
 fn request_an_unknown_field_is_refused() {
     let error = parse_call(r#"{"file_id":"f","nope":1}"#).unwrap_err();
-    assert!(matches!(error, ConvertError::Json { .. }));
+    assert!(matches!(error, ConvertError::Json(_)));
 }
 
 #[test]
@@ -280,4 +284,33 @@ fn error_stream_unsupported_sync_is_the_litellm_type_error() {
             "File content stream does not support sync iteration"
         ))
     );
+}
+
+#[rstest]
+#[case::read(r#"{"read":0.05,"connect":1,"write":2,"pool":3}"#, 0.05_f64)]
+#[case::connect(r#"{"connect":1,"write":2,"pool":3}"#, 1.0_f64)]
+#[case::write(r#"{"write":2,"pool":3}"#, 2.0_f64)]
+#[case::pool(r#"{"pool":3}"#, 3.0_f64)]
+#[case::empty("{}", 600.0_f64)]
+fn request_phase_deadline(#[case] text: &str, #[case] expected: f64) {
+    let phases: StructuredTimeout = serde_json::from_str(text).unwrap();
+    assert_eq!(
+        deadline(FineTuningTimeout::Structured(phases)),
+        Some(Duration::from_secs_f64(expected))
+    );
+}
+
+#[test]
+fn request_trusted_azure_credentials() {
+    let call = parse_call(r#"{"azure_ad_token":"token","tenant_id":"tenant","client_id":"client","client_secret":"secret","azure_username":"user","azure_password":"password","azure_scope":"scope"}"#).unwrap();
+    let values = call.trusted.values;
+    assert_eq!(values.len(), 7);
+    assert_eq!(values["azure_ad_token"].expose_secret(), "token");
+    assert_eq!(values["tenant_id"].expose_secret(), "tenant");
+    assert_eq!(values["client_id"].expose_secret(), "client");
+    assert_eq!(values["client_secret"].expose_secret(), "secret");
+    assert_eq!(values["azure_username"].expose_secret(), "user");
+    assert_eq!(values["azure_password"].expose_secret(), "password");
+    assert_eq!(values["azure_scope"].expose_secret(), "scope");
+    assert!(parse_call("{}").unwrap().trusted.values.is_empty());
 }

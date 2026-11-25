@@ -18,7 +18,7 @@ const ENVIRONMENT: &str = r#"{"environment": {}}"#;
 
 fn payload(address: &SocketAddr, streaming: bool) -> String {
     format!(
-        r#"{{"file_id":"file-abc","custom_llm_provider":"openai","api_base":"http://{address}/v1","api_key":"sk-test","stream":{streaming}}}"#
+        r#"{{"file_id":"file-abc","model":"gpt-4o","api_base":"http://{address}/v1","api_key":"sk-test","stream":{streaming}}}"#
     )
 }
 
@@ -87,10 +87,9 @@ fn a_deadline_that_expires_fails_the_call() {
             .content(py, &timeout_payload(&socket), Vec::new())
             .err()
             .unwrap();
-        assert!(
-            error.is_instance_of::<NativeFileContentError>(py)
-                || error.is_instance_of::<PyValueError>(py)
-        );
+        assert!(error.is_instance_of::<NativeFileContentError>(py));
+        assert!(error.to_string().contains(r#""type":"APIConnectionError""#));
+        assert!(error.to_string().contains(r#""status_code":500"#));
     });
     serving.finish().unwrap();
 }
@@ -143,6 +142,7 @@ fn a_streaming_call_hands_out_the_chunks_then_stops() {
         let tuple = answer.bind(py).cast::<PyTuple>().unwrap();
         let text: String = tuple.get_item(0).unwrap().extract().unwrap();
         assert!(text.contains("x-upstream"));
+        assert!(text.contains(r#""custom_llm_provider":"openai""#));
         assert!(body_of(&tuple.get_item(1).unwrap()).is_empty());
         let stream_object = tuple.get_item(2).unwrap();
         let class = stream_object.cast::<NativeFileStream>().unwrap();

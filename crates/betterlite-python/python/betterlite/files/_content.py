@@ -5,7 +5,7 @@ from typing import Final, NamedTuple, TypeAlias, TypedDict
 from pydantic import JsonValue, TypeAdapter
 
 from betterlite._completion.arguments import timeout_value
-from betterlite._completion.errors import raise_native_error
+from betterlite._completion.errors import UnsupportedCallArgument, raise_native_error
 from betterlite._endpoints.payload import CallPayload, CallValue, to_call_payload
 from betterlite._endpoints.proxy import proxy_headers
 from betterlite._endpoints.settings import read_settings
@@ -33,8 +33,12 @@ class PlainAnswerText(FileAnswerText):
     status: int
 
 
+class StreamAnswerText(FileAnswerText):
+    custom_llm_provider: str | None
+
+
 PLAIN: Final[TypeAdapter[PlainAnswerText]] = TypeAdapter(PlainAnswerText)
-STREAM: Final[TypeAdapter[FileAnswerText]] = TypeAdapter(FileAnswerText)
+STREAM: Final[TypeAdapter[StreamAnswerText]] = TypeAdapter(StreamAnswerText)
 
 
 class FileCallArguments(NamedTuple):
@@ -87,6 +91,8 @@ def merged_headers(extra_headers: dict[str, str] | None) -> dict[str, str]:
 def call_payload_values(
     arguments: FileCallArguments, options: Mapping[str, CallValue]
 ) -> dict[str, CallValue]:
+    if options.get("azure_ad_token_provider") is not None:
+        raise UnsupportedCallArgument("azure_ad_token_provider")
     return {
         "file_id": arguments.file_id,
         "model": arguments.model,
@@ -96,6 +102,14 @@ def call_payload_values(
         "chunk_size": arguments.chunk_size,
         "stream": arguments.stream,
         "api_key": options.get("api_key"),
+        "azure_ad_token": options.get("azure_ad_token"),
+        "tenant_id": options.get("tenant_id"),
+        "client_id": options.get("client_id"),
+        "client_secret": options.get("client_secret"),
+        "azure_username": options.get("azure_username"),
+        "azure_password": options.get("azure_password"),
+        "azure_scope": options.get("azure_scope"),
+
         "api_base": options.get("api_base"),
         "api_version": options.get("api_version"),
         "organization": options.get("organization"),
@@ -137,7 +151,7 @@ def answer_result(
         stream_iterator=stream,
         file_id=call.file_id,
         model=call.model,
-        custom_llm_provider=call.custom_llm_provider,
+        custom_llm_provider=streamed["custom_llm_provider"],
     )
     return FileContentStreamingResult(stream_iterator=wrapper, headers=dict(streamed["headers"]))
 

@@ -4,6 +4,7 @@ import inspect
 from collections.abc import AsyncIterator, Awaitable, Coroutine, Iterator, Mapping
 from typing import Final, Literal, Protocol, TypeAlias, cast, overload
 
+import httpx
 import openai
 import pytest
 from batch_server import parameter_rows
@@ -27,13 +28,17 @@ from file_server import (
 )
 from pydantic import JsonValue
 
+import betterlite
+from betterlite._completion.errors import ERROR_PAYLOAD, UnsupportedCallArgument
 from betterlite._endpoints.payload import CallValue
 from betterlite._native import NativeFileContentError
-from betterlite.exceptions import NotFoundError
+from betterlite.exceptions import APIConnectionError, NotFoundError
 from betterlite.files._content import (
+    FileCallArguments,
     FileContentOutcome,
     HttpxBinaryResponseContent,
     afile_content,
+    call_payload_values,
     file_content,
 )
 from betterlite.files.streaming import FileContentStreamingResponse
@@ -84,6 +89,7 @@ class ReferencePlain(Protocol):
 # LiteLLM's wrapper answers both iteration paths and refuses the one the provider did not give it
 class ChunkStream(Protocol):
     _hidden_params: dict[str, JsonValue]
+    custom_llm_provider: str | None
 
     def __iter__(self) -> Iterator[bytes]: ...
 
@@ -249,6 +255,8 @@ def test_plain_matches_litellm() -> None:
             custom_llm_provider="openai",
             api_base=server.url,
             api_key=GOOD_KEY,
+            extra_headers={"x-caller": "file-test"},
+            organization="org-test",
         )
         made = made_plain(
             file_content(
@@ -256,6 +264,8 @@ def test_plain_matches_litellm() -> None:
                 custom_llm_provider="openai",
                 api_base=server.url,
                 api_key=GOOD_KEY,
+                extra_headers={"x-caller": "file-test"},
+                organization="org-test",
             )
         )
         assert len(server.calls) == CALLS_PER_COMPARISON
@@ -271,6 +281,11 @@ def test_plain_matches_litellm() -> None:
     assert ours_call["method"] == "GET"
     assert ours_call["path"] == reference_call["path"] == CONTENT_PATH
     assert authorization(ours_call) == authorization(reference_call) == f"Bearer {GOOD_KEY}"
+
+    for name, value in (("x-caller", "file-test"), ("openai-organization", "org-test")):
+        ours_headers = {key.lower(): val for key, val in ours_call["headers"].items()}
+        ref_headers = {key.lower(): val for key, val in reference_call["headers"].items()}
+        assert ours_headers[name] == ref_headers[name] == value
 
 
 def test_plain_json_matches() -> None:
@@ -529,3 +544,102 @@ def test_error_matches_litellm() -> None:
     assert made.value.status_code == reference.value.status_code == NOT_FOUND
     cause = native_cause(made.value)
     assert cause is made.value.__cause__
+
+    expected = {
+        "code": reference.value.code,
+        "type": reference.value.type,
+        "param": reference.value.param,
+    }
+    assert expected == {
+        "code": "file_not_found", "type": "invalid_request_error", "param": "file_id",
+    }
+    assert ERROR_PAYLOAD.validate_json(str(cause))["body"] == expected
+    # B7870 records the shared exception converter's dropped fields as a deviation.
+    assert made.value.code is made.value.type is made.value.param is None
+
+
+def test_plain_azure_token() -> None:
+    with FileServer() as server:
+        reference = REFERENCE.file_content(
+            file_id=FILE_ID, custom_llm_provider="azure", api_base=server.url,
+            api_version="2024-05-01-preview", azure_ad_token=GOOD_KEY,
+        )
+        made = made_plain(file_content(
+            file_id=FILE_ID, custom_llm_provider="azure", api_base=server.url,
+            api_version="2024-05-01-preview", azure_ad_token=GOOD_KEY,
+        ))
+        reference_call, ours_call = server.calls
+    assert made.content == reference.content == BODY
+    assert authorization(ours_call) == authorization(reference_call) == f"Bearer {GOOD_KEY}"
+
+
+def test_stream_model_provider() -> None:
+    with FileServer() as server:
+        reference = REFERENCE.file_content(
+            file_id=FILE_ID, model="gpt-4o", api_base=server.url,
+            api_key=GOOD_KEY, stream=True,
+        )
+        made = made_stream(file_content(
+            file_id=FILE_ID, model="gpt-4o", api_base=server.url,
+            api_key=GOOD_KEY, stream=True,
+        ))
+        assert wrapper_of(made).custom_llm_provider == (
+            reference.stream_iterator.custom_llm_provider
+        ) == "openai"
+        assert sync_chunks(made.stream_iterator) == sync_chunks(reference.stream_iterator)
+
+
+def test_error_token_provider() -> None:
+    with pytest.raises(UnsupportedCallArgument, match="azure_ad_token_provider"):
+        file_content(file_id=FILE_ID, azure_ad_token_provider=GOOD_KEY)
+
+
+def test_error_timeout_phase() -> None:
+    timeout = httpx.Timeout(connect=1, read=0.05, write=1, pool=1)
+    with FileServer(body_delay=0.2) as server:
+        with pytest.raises(openai.APITimeoutError):
+            REFERENCE.file_content(
+                file_id=FILE_ID, custom_llm_provider="openai", api_base=server.url,
+                api_key=GOOD_KEY, timeout=timeout, max_retries=0,
+            )
+        # B7870 records the shared exception converter's timeout class as a deviation.
+        with pytest.raises(APIConnectionError) as made:
+            file_content(
+                file_id=FILE_ID, custom_llm_provider="openai", api_base=server.url,
+                api_key=GOOD_KEY, timeout=timeout, max_retries=0,
+            )
+    assert made.value.status_code == httpx.codes.INTERNAL_SERVER_ERROR
+    assert ERROR_PAYLOAD.validate_json(str(native_cause(made.value)))["type"] == (
+        "APIConnectionError"
+    )
+
+
+class ProxyHeaders:
+    @staticmethod
+    def get_auth_headers() -> Mapping[str, str]:
+        return {"x-proxy": "proxy", "x-conflict": "proxy"}
+
+
+def test_plain_payload_forwarding(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(betterlite, "proxy_auth", ProxyHeaders())
+    options: dict[str, CallValue] = {
+        "api_key": GOOD_KEY, "api_base": "https://example.test", "api_version": "v1",
+        "organization": "org-test", "request_timeout": 4, "max_retries": 0,
+        "litellm_call_id": "call-1", "id": "id-1", "azure_ad_token": GOOD_KEY,
+        "tenant_id": "tenant", "client_id": "client", "client_secret": GOOD_KEY,
+        "azure_username": "user", "azure_password": GOOD_KEY, "azure_scope": "scope",
+    }
+    arguments = FileCallArguments(
+        FILE_ID, None, "azure", {"x-caller": "caller", "x-conflict": "caller"}, None,
+        1024, stream=False,
+    )
+    made = call_payload_values(arguments, {
+        **options, "timeout": httpx.Timeout(connect=1, read=2, write=3, pool=4),
+    })
+    assert made == {
+        **options, "file_id": FILE_ID, "model": None, "custom_llm_provider": "azure",
+        "extra_headers": {"x-caller": "caller", "x-conflict": "proxy", "x-proxy": "proxy"},
+        "extra_body": None, "chunk_size": 1024, "stream": False,
+        "timeout": {"connect": 1, "read": 2, "write": 3, "pool": 4},
+        "client": None, "shared_session": None, "logger_fn": None,
+    }

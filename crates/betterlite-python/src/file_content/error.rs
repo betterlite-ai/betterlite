@@ -34,7 +34,6 @@ pub(crate) struct FileFailurePayload {
     pub(crate) body: Option<JsonValue>,
 }
 
-// The Python error one failure becomes: a builtin class, or an exception named by its payload.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Failure {
     Value(String),
@@ -113,7 +112,7 @@ pub(crate) fn files_failure(error: &FilesError) -> Failure {
     match error {
         FilesError::Status(status) => Failure::Payload(Box::new(status_payload(status))),
         FilesError::Transport { .. } => {
-            payload("APIConnectionError", error.to_string(), None, None)
+            payload("APIConnectionError", error.to_string(), Some(500), None)
         }
         FilesError::Decode { .. } | FilesError::Body { .. } => {
             payload("Exception", error.to_string(), None, None)

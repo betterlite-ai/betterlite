@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_core::api::file_content_stream::{ContentCall, ContentKwargs};
 use betterlite_core::api::fine_tuning_read::{ReadTimeout, ReadTimeoutValue};
+use betterlite_models::controls::call_params::TrustedCredentials;
 use betterlite_models::controls::json_value::JsonValue;
 use pyo3::PyErr;
 use pyo3::exceptions::PyValueError;
@@ -19,7 +20,6 @@ const fn default_chunk_size() -> u64 {
     DEFAULT_CHUNK_SIZE
 }
 
-// Everything one file_content call carries, in the names the Python shim sends them under.
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub(crate) struct RequestWire {
@@ -32,6 +32,14 @@ pub(crate) struct RequestWire {
     pub(crate) chunk_size: u64,
     pub(crate) stream: bool,
     pub(crate) api_key: Option<SecretString>,
+    pub(crate) azure_ad_token: Option<SecretString>,
+    pub(crate) tenant_id: Option<SecretString>,
+    pub(crate) client_id: Option<SecretString>,
+    pub(crate) client_secret: Option<SecretString>,
+    pub(crate) azure_username: Option<SecretString>,
+    pub(crate) azure_password: Option<SecretString>,
+    pub(crate) azure_scope: Option<SecretString>,
+
     pub(crate) api_base: Option<String>,
     pub(crate) api_version: Option<String>,
     pub(crate) organization: Option<String>,
@@ -53,6 +61,7 @@ pub(crate) struct FileCall {
     pub(crate) chunk_size: u64,
     pub(crate) stream: bool,
     pub(crate) kwargs: ContentKwargs,
+    pub(crate) trusted: TrustedCredentials,
 }
 
 impl FileCall {
@@ -70,38 +79,28 @@ impl FileCall {
     }
 }
 
-// The buffered answer: the response status, its headers and the body the caller gets as a blob.
 #[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct PlainAnswer {
     pub(crate) status: u16,
     pub(crate) headers: Vec<(String, String)>,
 }
 
-// The streamed answer: the provider's response headers, with the chunks behind the native stream.
 #[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct StreamAnswer {
+    pub(crate) custom_llm_provider: Option<String>,
     pub(crate) headers: Vec<(String, String)>,
 }
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum ConvertError {
-    #[error("the file content payload is not valid JSON: {source}")]
-    Json {
-        #[source]
-        source: serde_json::Error,
-    },
-    #[error("the file content answer could not be written: {source}")]
-    Write {
-        #[source]
-        source: serde_json::Error,
-    },
+    #[error("the file content payload is not valid JSON: {0}")]
+    Json(#[source] serde_json::Error),
+    #[error("the file content answer could not be written: {0}")]
+    Write(#[source] serde_json::Error),
     #[error("the file content call's timeout is not usable: expected {0}")]
     TimeoutShapes(&'static str),
-    #[error("the file content call's timeout phases are not usable: {source}")]
-    Phases {
-        #[source]
-        source: serde_json::Error,
-    },
+    #[error("the file content call's timeout phases are not usable: {0}")]
+    Phases(#[source] serde_json::Error),
 }
 
 impl From<ConvertError> for PyErr {
@@ -111,12 +110,12 @@ impl From<ConvertError> for PyErr {
 }
 
 pub(crate) fn parse_call(text: &str) -> Result<FileCall, ConvertError> {
-    let wire: RequestWire =
-        serde_json::from_str(text).map_err(|source| ConvertError::Json { source })?;
+    let wire: RequestWire = serde_json::from_str(text).map_err(ConvertError::Json)?;
     build_call(wire)
 }
 
 fn build_call(wire: RequestWire) -> Result<FileCall, ConvertError> {
+    let trusted = trusted_credentials(&wire);
     let timeout = wire.timeout.as_ref().map(read_timeout).transpose()?;
     let request_timeout = wire
         .request_timeout
@@ -145,16 +144,15 @@ fn build_call(wire: RequestWire) -> Result<FileCall, ConvertError> {
         chunk_size: wire.chunk_size,
         stream: wire.stream,
         kwargs,
+        trusted,
     })
 }
 
 // GenericLiteLLMParams.timeout declares float | str | httpx.Timeout
 fn read_timeout(value: &JsonValue) -> Result<ReadTimeout, ConvertError> {
     if let JsonValue::Object(_) = value {
-        let text =
-            serde_json::to_string(value).map_err(|source| ConvertError::Phases { source })?;
-        let phases =
-            serde_json::from_str(&text).map_err(|source| ConvertError::Phases { source })?;
+        let text = serde_json::to_string(value).map_err(ConvertError::Phases)?;
+        let phases = serde_json::from_str(&text).map_err(ConvertError::Phases)?;
         return Ok(ReadTimeout::Structured(phases));
     }
     plain_timeout(value)
@@ -167,5 +165,24 @@ fn plain_timeout(value: &JsonValue) -> Option<ReadTimeoutValue> {
         JsonValue::Number(number) => Some(ReadTimeoutValue::Number(number.clone())),
         JsonValue::Text(text) => Some(ReadTimeoutValue::Text(text.clone())),
         JsonValue::Null | JsonValue::Bool(_) | JsonValue::Array(_) | JsonValue::Object(_) => None,
+    }
+}
+
+// Python SDK keyword credentials are trusted call settings, not gateway request credentials.
+fn trusted_credentials(wire: &RequestWire) -> TrustedCredentials {
+    let fields = [
+        ("azure_ad_token", &wire.azure_ad_token),
+        ("tenant_id", &wire.tenant_id),
+        ("client_id", &wire.client_id),
+        ("client_secret", &wire.client_secret),
+        ("azure_username", &wire.azure_username),
+        ("azure_password", &wire.azure_password),
+        ("azure_scope", &wire.azure_scope),
+    ];
+    TrustedCredentials {
+        values: fields
+            .into_iter()
+            .filter_map(|(key, value)| value.clone().map(|secret| (key.to_owned(), secret)))
+            .collect(),
     }
 }

@@ -31,13 +31,12 @@ use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use super::convert::{ConvertError, FileCall, PlainAnswer, StreamAnswer, parse_call};
-use super::dispatch::ContentDispatch;
+use super::dispatch::{ContentDispatch, SilentLogging};
 use super::error::failure_for;
 use super::stream::NativeFileStream;
 
 mod tests;
 
-// Everything one Python file content session owns: the environment snapshot, the settings and the client.
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub(crate) struct SessionWire {
@@ -47,26 +46,14 @@ pub(crate) struct SessionWire {
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum SessionError {
-    #[error("the file content settings are not valid JSON: {source}")]
-    Json {
-        #[source]
-        source: serde_json::Error,
-    },
-    #[error("the proxy environment could not be read: {source}")]
-    Proxy {
-        #[source]
-        source: EnvError,
-    },
-    #[error("the outbound http client could not be built: {source}")]
-    Client {
-        #[source]
-        source: HttpError,
-    },
-    #[error("the file content settings could not be read: {source}")]
-    Settings {
-        #[source]
-        source: ConfigError,
-    },
+    #[error("the file content settings are not valid JSON: {0}")]
+    Json(#[source] serde_json::Error),
+    #[error("the proxy environment could not be read: {0}")]
+    Proxy(#[source] EnvError),
+    #[error("the outbound http client could not be built: {0}")]
+    Client(#[source] HttpError),
+    #[error("the file content settings could not be read: {0}")]
+    Settings(#[source] ConfigError),
 }
 
 impl From<SessionError> for PyErr {
@@ -90,21 +77,19 @@ pub(crate) struct FileContentCore {
 
 impl FileContentCore {
     pub(crate) fn build(text: &str) -> Result<Self, SessionError> {
-        let wire: SessionWire =
-            serde_json::from_str(text).map_err(|source| SessionError::Json { source })?;
+        let wire: SessionWire = serde_json::from_str(text).map_err(SessionError::Json)?;
         let environment = wire.environment.unwrap_or_else(process_environment);
         let settings = Raw {
             settings: wire.settings,
         }
         .convert(&environment)
-        .map_err(|source| SessionError::Settings { source })?;
+        .map_err(SessionError::Settings)?;
         let endpoints = azure_endpoints::Raw::default()
             .convert(&environment)
-            .map_err(|source| SessionError::Settings { source })?;
+            .map_err(SessionError::Settings)?;
         let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &environment)
-            .map_err(|source| SessionError::Proxy { source })?;
-        let client = ProxiedClient::outbound(&Arc::new(policy))
-            .map_err(|source| SessionError::Client { source })?;
+            .map_err(SessionError::Proxy)?;
+        let client = ProxiedClient::outbound(&Arc::new(policy)).map_err(SessionError::Client)?;
         let globals = GlobalCredentials {
             api_key: settings.api_key.clone(),
             api_base: settings.api_base.clone(),
@@ -154,7 +139,7 @@ impl FileContentCore {
         &self,
         entry: ContentEntry,
         call: &FileCall,
-    ) -> Result<ContentAnswer, PyErr> {
+    ) -> Result<(ContentAnswer, Option<String>), PyErr> {
         let resolution = self.resolution();
         let service = FileContentStream {
             dispatch: self.dispatch(),
@@ -163,21 +148,26 @@ impl FileContentCore {
             clock: || Utc::now().fixed_offset(),
             call_ids: Uuid::new_v4,
         };
+        let logging = Arc::new(SilentLogging::default());
         let context = ContentContext {
-            trusted: None,
+            trusted: Some(&call.trusted),
             client: None,
             logger: None,
-            logging: None,
+            logging: Some(Arc::clone(&logging)),
         };
         service
             .run(entry, &call.call(), context)
             .await
+            .map(|answer| (answer, logging.provider.get().cloned()))
             .map_err(|error| PyErr::from(failure_for(&error)))
     }
 }
 
-// The answer Python reads: the JSON text of the headers, the blobs beside it, and the stream when there is one.
-fn answer_tuple(py: Python<'_>, answer: ContentAnswer, is_async: bool) -> PyResult<Py<PyAny>> {
+fn answer_tuple(
+    py: Python<'_>,
+    (answer, provider): (ContentAnswer, Option<String>),
+    is_async: bool,
+) -> PyResult<Py<PyAny>> {
     let (text, blobs, stream) = match answer {
         ContentAnswer::Buffered(content) => {
             let plain = PlainAnswer {
@@ -185,11 +175,11 @@ fn answer_tuple(py: Python<'_>, answer: ContentAnswer, is_async: bool) -> PyResu
                 headers: content.headers.into_iter().collect(),
             };
             let text = serde_json::to_string(&plain)
-                .map_err(|source| PyErr::from(ConvertError::Write { source }))?;
+                .map_err(|source| PyErr::from(ConvertError::Write(source)))?;
             let blobs = vec![PyBytes::new(py, &content.body).unbind()];
             (text, blobs, None::<Py<PyAny>>)
         }
-        ContentAnswer::Streamed(content) => stream_text(py, *content, is_async)?,
+        ContentAnswer::Streamed(content) => stream_text(py, *content, provider, is_async)?,
     };
     Ok((text, blobs, stream).into_pyobject(py)?.into_any().unbind())
 }
@@ -199,13 +189,15 @@ type StreamField = (String, Vec<Py<PyBytes>>, Option<Py<PyAny>>);
 fn stream_text(
     py: Python<'_>,
     content: StreamedContent,
+    provider: Option<String>,
     is_async: bool,
 ) -> Result<StreamField, PyErr> {
     let plain = StreamAnswer {
+        custom_llm_provider: provider,
         headers: content.headers.into_iter().collect(),
     };
-    let text = serde_json::to_string(&plain)
-        .map_err(|source| PyErr::from(ConvertError::Write { source }))?;
+    let text =
+        serde_json::to_string(&plain).map_err(|source| PyErr::from(ConvertError::Write(source)))?;
     let stream = NativeFileStream {
         stream: Arc::new(Mutex::new(content.response)),
         is_async,
@@ -213,7 +205,6 @@ fn stream_text(
     Ok((text, Vec::new(), Some(Py::new(py, stream)?.into_any())))
 }
 
-// main.py's file_content and afile_content, one session owning the environment snapshot every call reads.
 #[pyclass(module = "betterlite._native")]
 pub(crate) struct NativeFileContentSession {
     core: Arc<FileContentCore>,

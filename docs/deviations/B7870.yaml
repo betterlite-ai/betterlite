@@ -15,3 +15,16 @@ deviations:
   - what: "`FileContentStreamingResponse` runs no success or failure callback from Python and keeps `standard_logging_object` at None, where LiteLLM emits the callbacks when the stream ends or fails and builds that object from the logging object. `_hidden_params` holds `litellm_model_name` and `response_cost` only, without the `api_base` LiteLLM copies out of the logging object's litellm_params."
     why: The stream's callbacks and its start time run in the Rust core (B1080), which owns the logging object; the Python wrapper gets no logging object to call back into.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/streaming.py#L123-L135
+  - what: "Structured httpx.Timeout values become one transport deadline: read, then connect, write, pool, or 600 seconds when all phases are unset."
+    why: The Rust SDK bridge accepts one deadline, following the existing tuning bridge; independent phase timers are unavailable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L880-L901
+  - what: "azure_ad_token_provider raises UnsupportedCallArgument; token strings and Azure credential kwargs are forwarded. Client-secret and username/password token acquisition remain unavailable in this bridge."
+    why: Python callables cannot run inside the Rust transport and the shared Azure NoSources implementation supplies no OAuth token acquisition. Callers can supply azure_ad_token directly.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L611-L744
+  - what: "AuthenticationError, NotFoundError, PermissionDeniedError and UnprocessableEntityError have None for code, type and param, whereas the OpenAI exceptions LiteLLM re-raises retain the provider fields. The native cause retains those fields."
+    why: The shared Python exception converter passes no body for these classes; changing it is outside B7870's scope. test_error_matches_litellm pins the reference fields and the native payload as well as this difference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L1016-L1023
+  - what: "A deadline or connection timeout raises betterlite.APIConnectionError with status_code 500 instead of the openai.APITimeoutError that LiteLLM re-raises."
+    why: The shared native exception bridge uses APIConnectionError for transport failures. test_error_timeout_phase pins the Python class and status, and the native deadline test pins its payload.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L1016-L1023
+kept_bugs: []
