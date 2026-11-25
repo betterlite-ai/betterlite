@@ -28,6 +28,7 @@ use super::port::{
 };
 use super::stream::{StreamConfig, TranslatedStream};
 use crate::api::api_boundaries::ApiLimits;
+use crate::api::chat_response_stream::source::AsyncChunkStream as _;
 use crate::api::messages_stream_split::errors::StreamFailure;
 use crate::api::response_chat_result::records::ModelResponse;
 
@@ -754,6 +755,48 @@ async fn a_translation_failure_reaches_the_bridge_caller_typed() {
             .to_string()
             .contains("Expecting property name enclosed in double quotes"),
         "{error}"
+    );
+}
+
+#[tokio::test]
+async fn the_wire_adapter_delegates_every_translated_step() {
+    let execution = FakeExecution::new(events(frames(), &[]));
+    let mut stream = expect_stream(expect_ok(completion(&execution, call(&streaming())).await));
+    let mut chunks = Vec::new();
+    while let Some(chunk) = stream.next_chunk().await.unwrap() {
+        chunks.push(chunk);
+    }
+    assert_eq!(joined(&chunks), "hello");
+}
+
+#[tokio::test]
+async fn the_wire_adapter_keeps_a_providers_failure_and_texts_a_bridge_one() {
+    let reported = StreamFailure::Reported {
+        status_code: 503,
+        message: String::from("busy"),
+    };
+    let execution = FakeExecution::new(Answer::Events(Box::new(FakeEvents::failing(reported))));
+    let mut stream = expect_stream(expect_ok(completion(&execution, call(&streaming())).await));
+    let failure = stream.next_chunk().await.unwrap_err();
+    let StreamFailure::Reported {
+        status_code,
+        message,
+    } = failure
+    else {
+        panic!("the adapter kept no provider status");
+    };
+    assert_eq!(status_code, 503);
+    assert_eq!(message, "busy");
+
+    let bridge = FakeExecution::new(events(vec![sse("{not json")], &[]));
+    let mut bridge_stream = expect_stream(expect_ok(completion(&bridge, call(&streaming())).await));
+    let bridge_failure = bridge_stream.next_chunk().await.unwrap_err();
+    let StreamFailure::Unclassified { text } = bridge_failure else {
+        panic!("a bridge failure reaches the wire as its text");
+    };
+    assert!(
+        text.contains("Expecting property name enclosed in double quotes"),
+        "{text}"
     );
 }
 

@@ -67,18 +67,19 @@ where
     let Value::Object(mut object) = value else {
         return Err(DispatchError::UnexpectedPayload);
     };
-    loop {
+    // each pass drops a key or fills a default, so the bound only trips a repair that stops making progress
+    for _ in 0..=object.len().saturating_add(missing_defaults().len()) {
         let error = match serde_path_to_error::deserialize::<_, ResponsesApiResponse>(
             Value::Object(object.clone()),
         ) {
             Ok(response) => return Ok(response),
             Err(error) => error,
         };
-        // every pass either drops a key, fills one required default or stops, so the loop always ends
         if !drop_invalid(&mut object, &error) {
             return Err(DispatchError::Completion { source: error });
         }
     }
+    Err(DispatchError::UnexpectedPayload)
 }
 
 fn drop_invalid(

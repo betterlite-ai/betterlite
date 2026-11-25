@@ -147,6 +147,19 @@ async fn a_replay_carries_message_audio_and_thinking_blocks_into_the_delta() {
 }
 
 #[tokio::test]
+async fn a_replayed_chunk_names_the_provider_response_model_in_its_hidden_params() {
+    let execution = FakeExecution::new(Answer::Chat(chat_response()));
+    let chunks = drain(expect_stream(expect_ok(
+        completion(&execution, call(&streaming())).await,
+    )))
+    .await;
+    assert_eq!(
+        hidden_member_of(&chunks[0], "provider_response_model"),
+        Some(Json::Text(String::from("gpt-4o-mini")))
+    );
+}
+
+#[tokio::test]
 async fn a_replay_keeps_an_empty_id_and_takes_the_wrapper_clock() {
     let mut body = chat_response();
     body.id = String::new();

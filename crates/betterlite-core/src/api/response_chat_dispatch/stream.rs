@@ -147,9 +147,9 @@ fn replay_chunk(response: &ChatResponse) -> StreamChunk {
             extra: choice.extra.clone(),
         })
         .collect();
+    // the wrapper rebuilds the chunk's object and clock, so the replay carries only what it reads back
     StreamChunk {
         id: response.id.clone(),
-        created: response.created,
         model: response.model.clone().unwrap_or_default(),
         choices,
         usage: response.usage.clone(),
