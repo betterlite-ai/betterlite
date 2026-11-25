@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::io;
 use std::sync::Arc;
 use std::thread::current;
 
@@ -26,7 +27,7 @@ fn failure() -> StreamFailure {
         "ScriptedReadError".to_owned(),
         "the upstream read failed".to_owned(),
         "Traceback: scripted".to_owned(),
-        Arc::new(std::io::Error::other("the upstream read failed")),
+        Arc::new(io::Error::other("the upstream read failed")),
     )
 }
 

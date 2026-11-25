@@ -3,6 +3,7 @@ mod fakes;
 mod input;
 mod logging;
 
+use std::io;
 use std::mem::take;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -154,7 +155,7 @@ fn scripted_chunks(input: &input::Input) -> Vec<Result<Vec<u8>, StreamFailure>> 
             "ScriptedReadError".to_owned(),
             spec.message.clone(),
             spec.traceback.clone(),
-            Arc::new(std::io::Error::other(spec.message.clone())),
+            Arc::new(io::Error::other(spec.message.clone())),
         )));
     }
     items
