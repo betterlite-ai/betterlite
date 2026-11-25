@@ -25,9 +25,9 @@ pub trait SsoClientSource: Send + Sync {
 // Read on every refresh, the way LiteLLM reads os.environ on every call, so a settings change lands without a restart.
 #[must_use]
 pub fn sso_client_config(env: &BTreeMap<String, String>) -> Option<SsoClientConfig> {
-    let token_endpoint = variable(env, TOKEN_ENDPOINT_VARIABLE)?;
-    let client_id = variable(env, CLIENT_ID_VARIABLE)?;
-    let client_secret = variable(env, CLIENT_SECRET_VARIABLE)?;
+    let token_endpoint = env.get(TOKEN_ENDPOINT_VARIABLE).filter(|v| !v.is_empty())?;
+    let client_id = env.get(CLIENT_ID_VARIABLE).filter(|v| !v.is_empty())?;
+    let client_secret = env.get(CLIENT_SECRET_VARIABLE).filter(|v| !v.is_empty())?;
     let includes_client_id = env
         .get(INCLUDE_CLIENT_ID_VARIABLE)
         .is_some_and(|value| value.to_lowercase() == "true");
@@ -37,13 +37,9 @@ pub fn sso_client_config(env: &BTreeMap<String, String>) -> Option<SsoClientConf
         TokenEndpointAuthMethod::ClientSecretBasic
     };
     Some(SsoClientConfig {
-        token_endpoint,
-        client_id,
-        client_secret: SecretString::from(client_secret),
+        token_endpoint: token_endpoint.clone(),
+        client_id: client_id.clone(),
+        client_secret: SecretString::from(client_secret.clone()),
         auth_method,
     })
-}
-
-fn variable(env: &BTreeMap<String, String>, name: &str) -> Option<String> {
-    env.get(name).filter(|value| !value.is_empty()).cloned()
 }
