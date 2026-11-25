@@ -60,7 +60,7 @@ class ScriptedQuota(ProjectQuotaCallback):
         self.row = row
 
     @override
-    async def enforce_project_io_token_quota_for_frame(  # ast-grep-ignore: no-long-names
+    async def enforce_project_io_token_quota_for_frame(
         self,
         user_api_key_dict: UserAPIKeyAuth | None,
         requested_model: str | None,

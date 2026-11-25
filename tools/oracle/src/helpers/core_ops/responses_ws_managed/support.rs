@@ -1,15 +1,14 @@
-use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use async_trait::async_trait;
+use betterlite_core::api::responses_ws_history::FrameSink;
 use betterlite_core::api::responses_ws_history::error::FrameSinkError;
-use betterlite_core::api::responses_ws_history::{FrameSink, ManagedResponsesWebSocket};
 use betterlite_core::api::responses_ws_managed::run::{FrameReceiveError, FrameSource};
 use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::error::HelperError;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, from_str, json};
+use serde_json::{Value, from_str};
 
 use super::fixtures::{ChunkKind, QuotaKind, ScriptedFailure};
 
@@ -130,20 +129,6 @@ pub(super) fn frames(shared: &Shared) -> Result<Value, Box<HelperError>> {
         parsed.push(value);
     }
     Ok(Value::Array(parsed))
-}
-
-pub(super) fn recorded(shared: &Shared) -> (Value, Value) {
-    let recorder = lock(shared);
-    (json!(recorder.calls), json!(recorder.quotas))
-}
-
-pub(super) fn history<Sink>(handler: &ManagedResponsesWebSocket<Sink>) -> Value
-where
-    Sink: FrameSink,
-{
-    let ordered: BTreeMap<&String, &Vec<IndexMap<String, Json>>> =
-        handler.session_history.iter().collect();
-    json!(ordered)
 }
 
 pub(super) fn helper_error(class: &str, message: String) -> Box<HelperError> {

@@ -7,6 +7,7 @@ mod handler;
 #[path = "responses_ws_managed/support.rs"]
 mod support;
 
+use std::collections::BTreeMap;
 use std::mem::take;
 use std::sync::Arc;
 
@@ -99,12 +100,16 @@ async fn run_transcript(
     run(&mut handler, provider, source)
         .with_subscriber(registry().with(captured.clone()))
         .await;
-    let (provider_calls, quota_calls) = support::recorded(shared);
+    let (provider_calls, quota_calls) = {
+        let recorder = lock(shared);
+        (json!(recorder.calls), json!(recorder.quotas))
+    };
+    let history = handler.session_history.iter().collect::<BTreeMap<_, _>>();
     Ok(json!({
         "frames": support::frames(shared)?,
         "provider_calls": provider_calls,
         "quota_calls": quota_calls,
-        "history": support::history(&handler),
+        "history": history,
         "trace": json!(lock(shared).trace),
         "diagnostics": json!(take(&mut *lock(&captured.0))),
     }))
