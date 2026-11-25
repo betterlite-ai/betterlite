@@ -31,14 +31,14 @@ fn the_litellm_key_header_wins_and_authorization_is_the_fallback(
     #[case] expected: &str,
 ) {
     let key = get_litellm_virtual_key(&headers(pairs));
-    assert!(key.expose_secret() == expected);
+    assert_eq!(key.expose_secret(), expected);
 }
 
 // docs/compatibility.md: an explicit empty value is used as given, where Python truthiness would fall back
 #[test]
 fn an_empty_litellm_key_header_still_gets_the_bearer_prefix() {
     let key = get_litellm_virtual_key(&headers(&[("x-litellm-api-key", "")]));
-    assert!(key.expose_secret() == "Bearer ");
+    assert_eq!(key.expose_secret(), "Bearer ");
 }
 
 #[test]
@@ -47,7 +47,7 @@ fn a_repeated_litellm_key_header_keeps_its_first_value() {
     map.append("x-litellm-api-key", HeaderValue::from_static("first"));
     map.append("x-litellm-api-key", HeaderValue::from_static("second"));
     let key = get_litellm_virtual_key(&map);
-    assert!(key.expose_secret() == "Bearer first");
+    assert_eq!(key.expose_secret(), "Bearer first");
 }
 
 #[test]
@@ -56,5 +56,5 @@ fn an_authorization_value_decodes_from_latin_1_bytes() {
     let value = HeaderValue::from_bytes(b"\xe9").expect("obs-text stays a header value");
     map.insert(AUTHORIZATION, value);
     let key = get_litellm_virtual_key(&map);
-    assert!(key.expose_secret() == "\u{e9}");
+    assert_eq!(key.expose_secret(), "\u{e9}");
 }

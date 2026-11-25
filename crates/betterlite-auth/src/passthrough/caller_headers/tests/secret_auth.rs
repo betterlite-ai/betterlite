@@ -31,7 +31,7 @@ fn the_master_key_matches_in_every_scheme(
         None,
         &[],
     );
-    assert!(authenticated(value, &auth, &config) == expected);
+    assert_eq!(authenticated(value, &auth, &config), expected);
 }
 
 #[test]

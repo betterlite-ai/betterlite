@@ -45,8 +45,8 @@ fn no_google_credential_is_a_401_with_litellms_message() {
     let Err(error) = vertex_credentialless_headers(&map, &caller(None, None), &config) else {
         panic!("a request with no Google credential is refused");
     };
-    assert!(error.status() == StatusCode::UNAUTHORIZED);
-    assert!(error.to_string() == VERTEX_MISSING_CREDENTIAL);
+    assert_eq!(error.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(error.to_string(), VERTEX_MISSING_CREDENTIAL);
 }
 
 #[test]
@@ -57,7 +57,7 @@ fn an_authorization_that_is_the_master_key_is_not_a_google_credential() {
     let Err(error) = vertex_credentialless_headers(&map, &caller(None, None), &config) else {
         panic!("the stripped master key leaves no Google credential");
     };
-    assert!(error.status() == StatusCode::UNAUTHORIZED);
+    assert_eq!(error.status(), StatusCode::UNAUTHORIZED);
 }
 
 #[test]
@@ -68,7 +68,7 @@ fn an_x_goog_api_key_that_is_the_master_key_is_not_a_google_credential() {
     let Err(error) = vertex_credentialless_headers(&map, &caller(None, None), &config) else {
         panic!("the stripped master key leaves no Google credential");
     };
-    assert!(error.status() == StatusCode::UNAUTHORIZED);
+    assert_eq!(error.status(), StatusCode::UNAUTHORIZED);
 }
 
 #[test]
@@ -79,7 +79,7 @@ fn an_authorization_that_is_the_stored_key_is_not_a_google_credential() {
     let Err(error) = vertex_credentialless_headers(&map, &auth, &config) else {
         panic!("the stripped stored key leaves no Google credential");
     };
-    assert!(error.status() == StatusCode::UNAUTHORIZED);
+    assert_eq!(error.status(), StatusCode::UNAUTHORIZED);
 }
 
 #[test]
@@ -89,7 +89,7 @@ fn the_litellm_virtual_key_is_never_a_google_credential() {
     let Err(error) = vertex_credentialless_headers(&map, &caller(None, None), &config) else {
         panic!("the LiteLLM virtual key never reaches Google");
     };
-    assert!(error.status() == StatusCode::UNAUTHORIZED);
+    assert_eq!(error.status(), StatusCode::UNAUTHORIZED);
 }
 
 #[test]
@@ -99,5 +99,8 @@ fn no_auth_dev_mode_keeps_a_stored_key_as_the_google_credential() {
     let map = headers(&[("Authorization", "stored-key")]);
     let forwarded = vertex_credentialless_headers(&map, &auth, &config)
         .expect("dev mode authenticated nothing, so the value stays");
-    assert!(forwarded_value(&forwarded, "authorization") == Some("stored-key"));
+    assert_eq!(
+        forwarded_value(&forwarded, "authorization"),
+        Some("stored-key")
+    );
 }

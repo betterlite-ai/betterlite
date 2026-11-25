@@ -41,8 +41,8 @@ fn no_anthropic_credential_is_a_401_with_litellms_message() {
     let Err(error) = anthropic_upstream_headers(&map, &caller(None, None), None, &config) else {
         panic!("a request with no Anthropic credential is refused");
     };
-    assert!(error.status() == StatusCode::UNAUTHORIZED);
-    assert!(error.to_string() == ANTHROPIC_MISSING_CREDENTIAL);
+    assert_eq!(error.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(error.to_string(), ANTHROPIC_MISSING_CREDENTIAL);
 }
 
 #[test]
@@ -53,7 +53,7 @@ fn a_proxy_credential_supplies_the_missing_credential() {
     let config = settings(None, AuthModeFlags::default(), true, None, &[]);
     let forwarded = anthropic_upstream_headers(&map, &caller(None, None), Some(&proxy), &config)
         .expect("a configured proxy credential never 401s");
-    assert!(forwarded_value(&forwarded, "x-api-key") == Some("proxy-key"));
+    assert_eq!(forwarded_value(&forwarded, "x-api-key"), Some("proxy-key"));
     assert_eq!(sorted_names(&forwarded), vec!["x-api-key", "x-custom"]);
 }
 
@@ -68,8 +68,11 @@ fn a_proxy_credential_overrides_the_callers_credential() {
     let config = settings(None, AuthModeFlags::default(), true, None, &[]);
     let forwarded = anthropic_upstream_headers(&map, &caller(None, None), Some(&proxy), &config)
         .expect("the proxy credential is configured");
-    assert!(forwarded_value(&forwarded, "x-api-key") == Some("proxy-key"));
-    assert!(forwarded_value(&forwarded, "authorization") == Some("Bearer caller-token"));
+    assert_eq!(forwarded_value(&forwarded, "x-api-key"), Some("proxy-key"));
+    assert_eq!(
+        forwarded_value(&forwarded, "authorization"),
+        Some("Bearer caller-token")
+    );
 }
 
 #[test]
@@ -90,7 +93,7 @@ fn an_authorization_that_is_the_master_key_is_not_an_anthropic_credential() {
     let Err(error) = anthropic_upstream_headers(&map, &caller(None, None), None, &config) else {
         panic!("the stripped master key leaves no Anthropic credential");
     };
-    assert!(error.status() == StatusCode::UNAUTHORIZED);
+    assert_eq!(error.status(), StatusCode::UNAUTHORIZED);
 }
 
 #[test]
@@ -101,7 +104,7 @@ fn an_x_api_key_that_is_the_stored_key_is_not_an_anthropic_credential() {
     let Err(error) = anthropic_upstream_headers(&map, &auth, None, &config) else {
         panic!("the stripped stored key leaves no Anthropic credential");
     };
-    assert!(error.status() == StatusCode::UNAUTHORIZED);
+    assert_eq!(error.status(), StatusCode::UNAUTHORIZED);
 }
 
 #[test]
@@ -111,7 +114,7 @@ fn the_litellm_virtual_key_is_never_an_anthropic_credential() {
     let Err(error) = anthropic_upstream_headers(&map, &caller(None, None), None, &config) else {
         panic!("the LiteLLM virtual key never reaches Anthropic");
     };
-    assert!(error.status() == StatusCode::UNAUTHORIZED);
+    assert_eq!(error.status(), StatusCode::UNAUTHORIZED);
 }
 
 #[test]
@@ -123,6 +126,6 @@ fn a_stripped_caller_credential_is_replaced_by_the_proxy_credential() {
     let map = headers(&[("X-Api-Key", "stored-key")]);
     let forwarded = anthropic_upstream_headers(&map, &auth, Some(&proxy), &config)
         .expect("the proxy credential is configured");
-    assert!(forwarded_value(&forwarded, "x-api-key") == Some("proxy-key"));
+    assert_eq!(forwarded_value(&forwarded, "x-api-key"), Some("proxy-key"));
     assert_eq!(sorted_names(&forwarded), vec!["x-api-key"]);
 }

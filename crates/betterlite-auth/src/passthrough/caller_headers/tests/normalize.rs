@@ -35,5 +35,5 @@ fn a_recognized_scheme_is_stripped_and_anything_else_keeps_the_value(
     #[case] expected: &str,
 ) {
     let normalized = normalize_credential_value(&secret(value));
-    assert!(normalized.expose_secret() == expected);
+    assert_eq!(normalized.expose_secret(), expected);
 }

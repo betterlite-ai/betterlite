@@ -20,7 +20,10 @@ fn signed_headers_replace_the_callers_and_keep_their_case() {
     let signed_headers = signed(&[("X-Amz-Date", "signed-date")]);
     let config = settings(None, AuthModeFlags::default(), true, None, &[]);
     let forwarded = bedrock_runtime_headers(&map, &caller(None, None), &signed_headers, &config);
-    assert!(forwarded_value(&forwarded, "X-Amz-Date") == Some("signed-date"));
+    assert_eq!(
+        forwarded_value(&forwarded, "X-Amz-Date"),
+        Some("signed-date")
+    );
     assert!(forwarded_value(&forwarded, "x-amz-date").is_none());
     assert_eq!(sorted_names(&forwarded), vec!["X-Amz-Date", "x-custom"]);
 }
@@ -63,7 +66,10 @@ fn a_header_the_signing_did_not_name_stays() {
     let signed_headers = signed(&[]);
     let config = settings(None, AuthModeFlags::default(), true, None, &[]);
     let forwarded = bedrock_runtime_headers(&map, &caller(None, None), &signed_headers, &config);
-    assert!(forwarded_value(&forwarded, "x-amz-date") == Some("caller-date"));
+    assert_eq!(
+        forwarded_value(&forwarded, "x-amz-date"),
+        Some("caller-date")
+    );
 }
 
 #[test]
@@ -72,7 +78,10 @@ fn a_lowercased_signed_name_drops_the_callers_header() {
     let signed_headers = signed(&[("X-Amz-Content-SHA256", "signed")]);
     let config = settings(None, AuthModeFlags::default(), true, None, &[]);
     let forwarded = bedrock_runtime_headers(&map, &caller(None, None), &signed_headers, &config);
-    assert!(forwarded_value(&forwarded, "X-Amz-Content-SHA256") == Some("signed"));
+    assert_eq!(
+        forwarded_value(&forwarded, "X-Amz-Content-SHA256"),
+        Some("signed")
+    );
     assert!(forwarded_value(&forwarded, "x-amz-content-sha256").is_none());
 }
 
@@ -104,5 +113,5 @@ fn a_signed_header_is_never_treated_as_a_caller_secret() {
     let signed_headers = signed(&[("Authorization", "mk-1")]);
     let forwarded =
         bedrock_runtime_headers(&headers(&[]), &caller(None, None), &signed_headers, &config);
-    assert!(forwarded_value(&forwarded, "Authorization") == Some("mk-1"));
+    assert_eq!(forwarded_value(&forwarded, "Authorization"), Some("mk-1"));
 }

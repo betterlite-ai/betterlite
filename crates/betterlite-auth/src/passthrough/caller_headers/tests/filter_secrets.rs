@@ -123,7 +123,10 @@ fn no_auth_dev_mode_keeps_the_stored_key_value() {
     let auth = caller(Some("stored-key"), None);
     let map = headers(&[("X-Caller-Token", "stored-key")]);
     let forwarded = caller_headers_without_secrets(&map, &auth, &[], &config);
-    assert!(forwarded_value(&forwarded, "x-caller-token") == Some("stored-key"));
+    assert_eq!(
+        forwarded_value(&forwarded, "x-caller-token"),
+        Some("stored-key")
+    );
 }
 
 #[test]
@@ -145,7 +148,10 @@ fn a_repeated_header_keeps_the_first_value_when_it_is_harmless() {
     map.append("x-caller-token", HeaderValue::from_static("harmless"));
     map.append("x-caller-token", HeaderValue::from_static("stored-key"));
     let forwarded = caller_headers_without_secrets(&map, &auth, &[], &config);
-    assert!(forwarded_value(&forwarded, "x-caller-token") == Some("harmless"));
+    assert_eq!(
+        forwarded_value(&forwarded, "x-caller-token"),
+        Some("harmless")
+    );
 }
 
 #[test]
@@ -155,7 +161,7 @@ fn a_header_value_keeps_its_latin_1_text() {
     map.insert("x-note", value);
     let config = settings(None, AuthModeFlags::default(), true, None, &[]);
     let forwarded = caller_headers_without_secrets(&map, &caller(None, None), &[], &config);
-    assert!(forwarded_value(&forwarded, "x-note") == Some("\u{e9}"));
+    assert_eq!(forwarded_value(&forwarded, "x-note"), Some("\u{e9}"));
 }
 
 #[test]
