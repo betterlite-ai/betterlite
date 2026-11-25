@@ -224,6 +224,16 @@ fn backends_redis_breaker_opens_and_probes() {
         assert_eq!(native.get(py, "key").unwrap(), None);
         let open = native.get(py, "key").unwrap_err();
         assert!(open.to_string().contains("circuit breaker is open"));
+        // the async increment reports through the Redis cache error and must answer the same class
+        let counted = get_runtime()
+            .block_on(count(
+                Arc::clone(&native.cache),
+                "key".to_owned(),
+                1.0_f64,
+                None,
+            ))
+            .unwrap_err();
+        assert!(counted.to_string().contains("circuit breaker is open"));
         clock.advance(RECOVERY_TIMEOUT + Duration::from_secs(1));
         // the probe is admitted and fails on the connection, so it answers like the first call
         assert_eq!(native.get(py, "key").unwrap(), None);
