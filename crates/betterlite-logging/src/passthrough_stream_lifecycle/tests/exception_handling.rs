@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use std::error::Error as _;
-use std::sync::Arc;
+use std::sync::{Arc, Barrier};
 
 use futures_util::StreamExt as _;
 use indexmap::IndexMap;
@@ -10,9 +10,26 @@ use crate::passthrough_stream_lifecycle::chunk_processor::chunk_processor;
 use crate::passthrough_stream_lifecycle::ports::StreamJobKind;
 use crate::passthrough_stream_lifecycle::support::{
     Harness, RecordedFailure, failing_chunks, failure, json, object, ok_chunks, processor_call,
-    recorded,
+    recorded, usage_outcome,
 };
-use crate::passthrough_stream_logging::types::EndpointType;
+use crate::passthrough_stream_logging::router::StreamLoggingRouter;
+use crate::passthrough_stream_logging::types::{
+    CollectedChunksCall, CollectedChunksHandler, EndpointType, HandlerError, HandlerOutcome,
+    ProviderChunkHandlers,
+};
+
+struct BlockingUsageHandler {
+    entered: Arc<Barrier>,
+    release: Arc<Barrier>,
+}
+
+impl CollectedChunksHandler for BlockingUsageHandler {
+    fn handle(&self, _call: &CollectedChunksCall<'_>) -> Result<HandlerOutcome, HandlerError> {
+        self.entered.wait();
+        self.release.wait();
+        Ok(usage_outcome(10, 5, 15, "0.25"))
+    }
+}
 
 #[tokio::test]
 async fn an_upstream_error_schedules_the_failure_and_never_logs_success() {
@@ -119,6 +136,64 @@ async fn the_partial_bytes_reach_the_anthropic_usage_recovery() {
         vec![(json("{}"), vec![b"event: message_start\n\n".to_vec()])]
     );
     assert_eq!(harness.queue.kinds(), vec![StreamJobKind::Failure]);
+}
+
+#[tokio::test]
+async fn disconnect_during_usage_recovery_preserves_usage_and_dispatches_one_failure() {
+    let harness = Harness::new(&["2024-01-01T00:00:02+00:00"]);
+    let mut lifecycle = harness.lifecycle(false);
+    let entered = Arc::new(Barrier::new(2));
+    let release = Arc::new(Barrier::new(2));
+    let blocking: Arc<dyn CollectedChunksHandler> = Arc::new(BlockingUsageHandler {
+        entered: Arc::clone(&entered),
+        release: Arc::clone(&release),
+    });
+    let frames: Arc<dyn crate::passthrough_stream_logging::router::AnthropicFrameProbe> =
+        Arc::clone(&harness.probe);
+    let current = Arc::get_mut(&mut lifecycle).expect("the lifecycle is uniquely owned");
+    current.router = Arc::new(StreamLoggingRouter {
+        providers: Arc::new(ProviderChunkHandlers {
+            anthropic: Arc::clone(&harness.providers.anthropic),
+            vertex: Arc::clone(&harness.providers.vertex),
+            gemini: Arc::clone(&harness.providers.gemini),
+            openai: blocking,
+        }),
+        frames,
+        tinyfish: Arc::clone(&harness.tinyfish),
+    });
+    let logging_obj = object(&[], IndexMap::new());
+    let call = processor_call(
+        Arc::clone(&lifecycle),
+        Arc::clone(&logging_obj),
+        EndpointType::OpenAi,
+    );
+    let mut stream = Box::pin(chunk_processor(
+        call,
+        failing_chunks(vec![b"data: partial\n\n".to_vec()], failure()),
+    ));
+    assert_eq!(stream.next().await.unwrap().unwrap(), b"data: partial\n\n");
+
+    let pending_read = Box::pin(stream.next());
+    let waiter = tokio::task::spawn_blocking({
+        let entered = Arc::clone(&entered);
+        move || entered.wait()
+    });
+    tokio::select! {
+        _ = waiter => {}
+        _ = &mut pending_read => panic!("failure delivery completed before usage recovery was released"),
+    }
+    drop(pending_read);
+    drop(stream);
+    release.wait();
+    lifecycle.tasks.close();
+    lifecycle.tasks.wait().await;
+
+    assert_eq!(
+        crate::passthrough_stream_lifecycle::support::recorded_usage(logging_obj.as_ref()),
+        Some((10, 5, 15))
+    );
+    assert_eq!(harness.queue.kinds(), vec![StreamJobKind::Failure]);
+    assert_eq!(harness.failure_dispatch.failures().len(), 1);
 }
 
 #[tokio::test]
