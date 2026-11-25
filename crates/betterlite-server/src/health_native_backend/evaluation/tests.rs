@@ -21,6 +21,8 @@ use crate::health_probe_modes::error::HealthProbeError;
 use crate::health_probe_modes::evaluation::evaluation_call;
 
 const EVALUATION_ANSWER: &[u8] = br#"{"model":"model-1","answers":{"reachable":{"type":"noul","noul":0.9}},"usage":{"input_tokens":3,"output_tokens":5}}"#;
+// the openai provider parses its own decision answer shape, so its probe test needs an OpenAI body
+const OPENAI_ANSWER: &[u8] = br#"{"model":"model-1","answers":[{"type":"predicate","name":"reachable","probability":0.9}],"usage":{"input_tokens":3,"output_tokens":5,"total_tokens":8}}"#;
 const REJECTION: &[u8] =
     br#"{"error":{"message":"invalid api key","type":"authentication_error"}}"#;
 
@@ -207,7 +209,7 @@ async fn evaluation_probe_posts_the_health_check_through_asystemone() {
 
 #[tokio::test]
 async fn evaluation_probe_forwards_the_safety_identifier() {
-    let server = MockServer::start(200, EVALUATION_ANSWER).await;
+    let server = MockServer::start(200, OPENAI_ANSWER).await;
     let probe = EvaluationProbe {
         clients: http_clients,
         setup: EvalSetup::default(),
