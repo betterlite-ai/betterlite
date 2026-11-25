@@ -74,17 +74,15 @@ impl CollectorRegistry {
         for name in names {
             let _replaced = state.samples.insert(name, collector.clone());
         }
-        state.collectors.push(collector.clone());
+        let description = Arc::clone(&collector.description);
+        let label_values = collector.label_values.clone();
+        state.collectors.push(collector);
         drop(state);
         // the zero entries reach the files once the registry lock is free, as registry.py writes them when the metric is built
         if let Some(writer) = self.multiprocess.as_ref()
-            && collector.description.label_names.is_empty()
+            && description.label_names.is_empty()
         {
-            writer.write_series(
-                &collector.description,
-                &collector.label_values,
-                SeriesWrite::Create,
-            );
+            writer.write_series(&description, &label_values, SeriesWrite::Create);
         }
         Ok(())
     }

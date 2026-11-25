@@ -700,22 +700,21 @@ fn concurrent_registrations_of_one_name_leave_one_collector() {
     let barrier = Barrier::new(REGISTRATIONS);
     let outcomes = Mutex::new(Vec::with_capacity(REGISTRATIONS));
     thread::scope(|scope| {
-        let spawned = (0..REGISTRATIONS)
-            .map(|_slot| {
-                scope.spawn(|| {
-                    let metric = PrometheusMetric::new(
-                        CollectorKind::Counter,
-                        "litellm_shared",
-                        "Shared",
-                        &[],
-                        Vec::new(),
-                    );
-                    let _started = barrier.wait();
-                    outcomes.lock().unwrap().push(registry.register(metric));
-                })
-            })
-            .count();
-        assert_eq!(spawned, REGISTRATIONS);
+        let mut spawned = Vec::with_capacity(REGISTRATIONS);
+        while spawned.len() < REGISTRATIONS {
+            spawned.push(scope.spawn(|| {
+                let metric = PrometheusMetric::new(
+                    CollectorKind::Counter,
+                    "litellm_shared",
+                    "Shared",
+                    &[],
+                    Vec::new(),
+                );
+                let _started = barrier.wait();
+                outcomes.lock().unwrap().push(registry.register(metric));
+            }));
+        }
+        assert_eq!(spawned.len(), REGISTRATIONS);
     });
     let results = outcomes.into_inner().unwrap();
     let registered = results.iter().filter(|outcome| outcome.is_ok()).count();

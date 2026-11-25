@@ -23,6 +23,7 @@ pub(crate) fn bind_writer(
         };
     }
     *slot = Some(Arc::clone(writer));
+    drop(slot);
     Ok(())
 }
 
