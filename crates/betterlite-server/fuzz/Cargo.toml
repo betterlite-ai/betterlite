@@ -583,6 +583,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "autorouter_presets"
+path = "fuzz_targets/autorouter_presets.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "config_override"
 path = "fuzz_targets/config_override.rs"
 test = false

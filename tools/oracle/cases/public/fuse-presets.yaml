@@ -1,0 +1,7 @@
+kind: helper
+name: public-complexity-router-fuse-presets
+call:
+  b3192:
+    function: fuse_presets
+env: {}
+compare: {ignore: []}
