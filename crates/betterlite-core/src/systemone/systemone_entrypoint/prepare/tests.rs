@@ -5,10 +5,10 @@ use betterlite_openai::decisions::call::error::PrepareError;
 use betterlite_openai::decisions::call::fields::RequestFormat;
 
 use super::prepare_systemone_call;
-use crate::decisions::DecisionsEntryError;
 use crate::decisions::decisions_entrypoint::test_support::{
     Fixture, json, prepare, systemone_args, text,
 };
+use crate::decisions::{DecisionsEntryError, FieldShapeError};
 
 #[test]
 fn prepare_builds_the_systemone_fields_without_input() {
@@ -69,7 +69,10 @@ fn prepare_rejects_questions_that_are_not_a_map() {
     args.questions = Some(json(r#"[{"type":"noul"}]"#));
     let error = prepare_systemone_call(prepare(&resolution, &fixture.logging), args)
         .expect_err("a list is not a System One question map");
-    assert!(matches!(error, DecisionsEntryError::Fields { .. }));
+    let DecisionsEntryError::Fields { source } = &error else {
+        panic!("a wrong questions value is a field failure");
+    };
+    assert_eq!(source, &FieldShapeError::QuestionsNotAMap);
     assert_eq!(error.class().metadata().status_code, 400);
     assert!(error.to_string().contains("questions"));
 }

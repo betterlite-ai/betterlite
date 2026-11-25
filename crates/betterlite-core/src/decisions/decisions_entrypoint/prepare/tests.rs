@@ -10,10 +10,10 @@ use betterlite_openai::decisions::call::fields::RequestFormat;
 use secrecy::{ExposeSecret, SecretString};
 
 use super::prepare_decisions_call;
-use crate::decisions::DecisionsEntryError;
 use crate::decisions::decisions_entrypoint::test_support::{
     API_BASE, API_KEY, Fixture, decisions_args, json, prepare, systemone_questions, text,
 };
+use crate::decisions::{DecisionsEntryError, FieldShapeError};
 
 #[test]
 fn prepare_filters_state_from_the_litellm_params() {
@@ -91,7 +91,10 @@ fn prepare_reports_a_wrong_shaped_questions_value() {
     args.questions = Some(json(r#"{"first":{"type":"noul"}}"#));
     let error = prepare_decisions_call(prepare(&resolution, &fixture.logging), args)
         .expect_err("a map is not an OpenAI question list");
-    assert!(matches!(error, DecisionsEntryError::Fields { .. }));
+    let DecisionsEntryError::Fields { source } = &error else {
+        panic!("a wrong questions value is a field failure");
+    };
+    assert_eq!(source, &FieldShapeError::QuestionsNotAList);
     assert_eq!(error.class().metadata().status_code, 400);
     assert!(error.to_string().contains("questions"));
 }

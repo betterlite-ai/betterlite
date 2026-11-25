@@ -61,14 +61,28 @@ pub struct DecisionsDeps<'deps, Clients> {
     pub prepare: DecisionsPrepare<'deps>,
 }
 
+// the request-field shapes B3513's prepare_call validates each envelope against
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum FieldShapeError {
+    #[error("questions must be a list of OpenAI decision questions")]
+    QuestionsNotAList,
+    #[error("questions must be a map of System One decision questions")]
+    QuestionsNotAMap,
+    #[error("state must be a string, a map or a list")]
+    StateNotDecisionJson,
+}
+
 #[derive(Debug, Error)]
 pub enum DecisionsEntryError {
     #[error(transparent)]
     Prepare(#[from] PrepareError),
     #[error(transparent)]
     Send(#[from] DecisionsSendError),
-    #[error("Invalid Decisions request: {message}")]
-    Fields { message: String },
+    #[error("Invalid Decisions request: {source}")]
+    Fields {
+        #[from]
+        source: FieldShapeError,
+    },
     #[error("the systemone call returned the {format} response format")]
     ResponseFormat { format: &'static str },
 }
@@ -76,32 +90,28 @@ pub enum DecisionsEntryError {
 impl DecisionsEntryError {
     #[must_use]
     pub fn class(&self) -> ErrorClass {
-        match self {
-            Self::Prepare(error) => error.class(),
-            Self::Send(DecisionsSendError::Mapped { class, .. }) => class.clone(),
-            Self::Send(DecisionsSendError::Format(error)) => {
-                ErrorClass::InternalServer(Box::new(error_context(error.to_string())))
-            }
-            Self::Fields { message } => ErrorClass::BadRequest(Box::new(ResponseDetails::from(
-                error_context(message.clone()),
-            ))),
-            Self::ResponseFormat { .. } => {
-                ErrorClass::InternalServer(Box::new(error_context(self.to_string())))
-            }
+        let (message, bad_request) = match self {
+            Self::Prepare(error) => return error.class(),
+            Self::Send(DecisionsSendError::Mapped { class, .. }) => return class.clone(),
+            Self::Send(DecisionsSendError::Format(error)) => (error.to_string(), false),
+            Self::Fields { source } => (source.to_string(), true),
+            Self::ResponseFormat { .. } => (self.to_string(), false),
+        };
+        let context = ErrorContext {
+            message,
+            model: None,
+            provider: None,
+            max_retries: None,
+            num_retries: None,
+            body_type: None,
+            body_param: None,
+            body_code: None,
+        };
+        if bad_request {
+            ErrorClass::BadRequest(Box::new(ResponseDetails::from(context)))
+        } else {
+            ErrorClass::InternalServer(Box::new(context))
         }
-    }
-}
-
-const fn error_context(message: String) -> ErrorContext {
-    ErrorContext {
-        message,
-        model: None,
-        provider: None,
-        max_retries: None,
-        num_retries: None,
-        body_type: None,
-        body_param: None,
-        body_code: None,
     }
 }
 

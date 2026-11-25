@@ -12,7 +12,8 @@ use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use tracing_subscriber::registry;
 
-use super::{FieldShapeError, request_fields};
+use super::request_fields;
+use crate::decisions::FieldShapeError;
 
 const DEPRECATION_MESSAGE: &str = "litellm.decisions(state=...) is deprecated, call litellm.systemone for the System One request format";
 

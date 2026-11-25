@@ -3,23 +3,14 @@ use betterlite_openai::decisions::call::fields::{
     OpenAiDecisionRequestFields, RequestFields, SystemOneRequestFields,
 };
 use indexmap::IndexMap;
-use thiserror::Error;
+
+use super::super::FieldShapeError;
 
 mod tests;
 
 const STATE_KEY: &str = "state";
 
 const DEPRECATION_MESSAGE: &str = "litellm.decisions(state=...) is deprecated, call litellm.systemone for the System One request format";
-
-#[derive(Debug, Error, PartialEq, Eq)]
-pub(crate) enum FieldShapeError {
-    #[error("questions must be a list of OpenAI decision questions")]
-    QuestionsNotAList,
-    #[error("questions must be a map of System One decision questions")]
-    QuestionsNotAMap,
-    #[error("state must be a string, a map or a list")]
-    StateNotDecisionJson,
-}
 
 // _request_fields: a state keyword selects the System One envelope and warns, everything else is OpenAI's
 pub(crate) fn request_fields(

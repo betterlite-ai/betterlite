@@ -24,10 +24,7 @@ pub(crate) fn prepare_decisions_call(
         extra_headers,
         mut kwargs,
     } = args;
-    let fields =
-        request_fields(input, questions, &kwargs).map_err(|error| DecisionsEntryError::Fields {
-            message: error.to_string(),
-        })?;
+    let fields = request_fields(input, questions, &kwargs)?;
     kwargs.shift_remove(STATE_KEY);
     prepare_call(PrepareCall {
         model: &model,

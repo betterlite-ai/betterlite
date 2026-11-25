@@ -29,10 +29,7 @@ pub(crate) fn prepare_systemone_call(
         kwargs,
     } = args;
     reject_other_format(&model, &kwargs, INPUT_KEY, "decisions")?;
-    let parsed_questions =
-        systemone_questions(questions).map_err(|error| SystemOneEntryError::Fields {
-            message: error.to_string(),
-        })?;
+    let parsed_questions = systemone_questions(questions)?;
     prepare_call(PrepareCall {
         model: &model,
         fields: RequestFields::SystemOne(SystemOneRequestFields {
