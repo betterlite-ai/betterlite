@@ -37,10 +37,8 @@ pub fn matches_model_info_filters(
     if exclude_auto_routers == Some(true) && is_auto_router_model(model) {
         return false;
     }
-    if let Some(group) = access_group {
-        if !model_in_access_group(model, group) {
-            return false;
-        }
+    if access_group.is_some_and(|group| !model_in_access_group(model, group)) {
+        return false;
     }
     if wildcard_only != Some(true) {
         return true;

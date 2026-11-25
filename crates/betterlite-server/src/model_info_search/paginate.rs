@@ -22,18 +22,16 @@ pub fn paginate_models(
         total_count.unwrap_or_else(|| i64::try_from(models.len()).unwrap_or(i64::MAX));
     let skip = page.saturating_sub(1).saturating_mul(size);
     let total_pages = if total_count > 0 && size > 0 {
-        total_count.saturating_add(size - 1) / size
+        total_count
+            .saturating_add(size.saturating_sub(1))
+            .checked_div(size)
+            .unwrap_or(0)
     } else {
         0
     };
-    let search_text = search.unwrap_or("None");
     tracing::debug!(
-        skip,
-        take = size,
-        count = total_count,
-        pages = total_pages,
-        search = search_text,
-        "Pagination: skip={skip}, take={size}, total_count={total_count}, total_pages={total_pages}, search={search_text}"
+        "Pagination: skip={skip}, take={size}, total_count={total_count}, total_pages={total_pages}, search={}",
+        search.unwrap_or("None")
     );
     PaginatedModels {
         data: slice_page(models, skip, size),

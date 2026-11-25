@@ -2,24 +2,21 @@ use std::collections::BTreeSet;
 
 use async_trait::async_trait;
 use betterlite_db::auxiliary_repository::repository::TableError;
-use betterlite_db::budget_permission_rows::JsonData;
-use betterlite_db::identity_rows::Payload;
 use betterlite_db::resource_rows::ResourceRowsError;
 use betterlite_db::resource_rows::model::ProxyModelTable;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_router::deployment_model_info::discovery::holds;
-use tokio::task::{JoinError, JoinSet};
 
-use crate::db_row_decrypt::deployments::decrypt_model_rows;
-use crate::db_row_decrypt::error::DbRowDecryptError;
 use crate::model_info_scope::text_field;
-use crate::model_team_scope::caller_scope::{
-    byok_row_outside_caller_teams, get_caller_byok_team_scope,
-};
+use crate::model_team_scope::caller_scope::get_caller_byok_team_scope;
 use crate::model_team_scope::lookup::Decryption;
 use crate::model_team_scope::reads::TeamScopeReads;
 use crate::team_access::caller::TeamCaller;
+
+use self::rows::{DecryptTaskError, decrypt_batch, row_outside_caller_teams};
+
+mod rows;
 
 const SORTED_SEARCH_DB_FETCH_CAP: i64 = 500;
 
@@ -34,21 +31,9 @@ pub enum SearchDatabaseError {
 }
 
 #[derive(Debug, thiserror::Error)]
-enum DecryptTaskError {
+enum SearchError {
     #[error(transparent)]
-    Decrypt(#[from] DbRowDecryptError),
-    #[error("the decryption task failed: {0}")]
-    Task(#[from] JoinError),
-    #[error("the decryption task never ran")]
-    Missing,
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum SearchError {
-    #[error("counting model search rows failed: {0}")]
-    Count(#[source] SearchDatabaseError),
-    #[error("fetching model search rows failed: {0}")]
-    Fetch(#[source] SearchDatabaseError),
+    Database(#[from] SearchDatabaseError),
     #[error(transparent)]
     Decrypt(#[from] DecryptTaskError),
 }
@@ -84,17 +69,6 @@ pub struct SearchOptions<'a> {
     pub model_name: Option<&'a str>,
 }
 
-impl Default for SearchOptions<'_> {
-    fn default() -> Self {
-        Self {
-            page: 1,
-            size: 50,
-            sort_by: None,
-            model_name: None,
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SearchOutcome {
     pub models: Vec<JsonObject>,
@@ -104,7 +78,7 @@ pub struct SearchOutcome {
 struct RouterMatches {
     models: Vec<JsonObject>,
     db_ids: BTreeSet<String>,
-    config_count: i64,
+    count: i64,
 }
 
 struct FetchRequest<'a, 'options> {
@@ -137,36 +111,49 @@ where
         Some(found) => get_caller_byok_team_scope(found.caller, found.reads).await,
         None => None,
     };
-    let RouterMatches {
-        mut matched,
-        db_ids,
-        config_count,
-    } = filter_router_models(models, &search_lower, allowed.as_ref());
-    let router_count = config_count.saturating_add(i64::try_from(db_ids.len()).unwrap_or(i64::MAX));
+    let router_matches = filter_router_models(models, &search_lower, allowed.as_ref());
+    let mut matched = router_matches.models;
+    let router_count = router_matches.count;
     let mut total_count = router_count;
     if let Some(found) = sources {
-        if exact_name_can_match(options.model_name, &search_lower) {
+        if options
+            .model_name
+            .is_none_or(|name| name.to_lowercase().contains(&search_lower))
+        {
             let request = FetchRequest {
                 search_lower: &search_lower,
-                db_ids: &db_ids,
+                db_ids: &router_matches.db_ids,
                 router_count,
                 options,
                 allowed: allowed.as_ref(),
             };
-            match fetch_database(found, &request).await {
-                Ok((decrypted, db_total)) => {
-                    matched.extend(decrypted);
-                    total_count = router_count.saturating_add(db_total);
-                }
-                Err(error) => {
-                    tracing::error!("Error querying database models with search: {error}");
-                }
+            if let Some((decrypted, db_total)) = database_matches(found, &request).await {
+                matched.extend(decrypted);
+                total_count = router_count.saturating_add(db_total);
             }
         }
     }
     SearchOutcome {
         models: matched,
         total_count: Some(total_count),
+    }
+}
+
+// A count, fetch or decrypt failure keeps the router-side matches and counts, as LiteLLM's one except does.
+async fn database_matches<Database, Reads>(
+    sources: &SearchSources<'_, Database, Reads>,
+    request: &FetchRequest<'_, '_>,
+) -> Option<(Vec<JsonObject>, i64)>
+where
+    Database: SearchDatabase + ?Sized,
+    Reads: TeamScopeReads + ?Sized,
+{
+    match fetch_database(sources, request).await {
+        Ok((decrypted, db_total)) => Some((decrypted, db_total)),
+        Err(error) => {
+            tracing::error!("Error querying database models with search: {error}");
+            None
+        }
     }
 }
 
@@ -205,10 +192,11 @@ fn filter_router_models(
         }
         matched.push(model.clone());
     }
+    let count = config_count.saturating_add(i64::try_from(db_ids.len()).unwrap_or(i64::MAX));
     RouterMatches {
         models: matched,
         db_ids,
-        config_count,
+        count,
     }
 }
 
@@ -222,10 +210,6 @@ fn model_matches_search(model: &JsonObject, search_lower: &str) -> bool {
     };
     let public = text_field(info, "team_public_model_name").unwrap_or_default();
     public.to_lowercase().contains(search_lower)
-}
-
-fn exact_name_can_match(model_name: Option<&str>, search_lower: &str) -> bool {
-    model_name.is_none_or(|name| name.to_lowercase().contains(search_lower))
 }
 
 async fn fetch_database<Database, Reads>(
@@ -255,19 +239,11 @@ where
         exact_name: request.options.model_name.map(str::to_owned),
         excluded_ids: request.db_ids.clone(),
     };
-    let db_total = sources
-        .database
-        .count(&filter)
-        .await
-        .map_err(SearchError::Count)?;
+    let db_total = sources.database.count(&filter).await?;
     if take <= 0 {
         return Ok((Vec::new(), db_total));
     }
-    let rows = sources
-        .database
-        .find(&filter, take)
-        .await
-        .map_err(SearchError::Fetch)?;
+    let rows = sources.database.find(&filter, take).await?;
     let scoped: Vec<ProxyModelTable> = rows
         .into_iter()
         .filter(|row| !row_outside_caller_teams(row, request.allowed))
@@ -277,60 +253,4 @@ where
     }
     let decrypted = decrypt_batch(scoped, sources.decrypt.clone()).await?;
     Ok((decrypted, db_total))
-}
-
-fn row_outside_caller_teams(row: &ProxyModelTable, allowed: Option<&BTreeSet<String>>) -> bool {
-    let Some(payload) = &row.fields.model_info else {
-        return false;
-    };
-    byok_row_outside_caller_teams(&stored_model_info(payload), allowed)
-}
-
-fn stored_model_info(payload: &Payload) -> JsonObject {
-    payload
-        .0
-        .iter()
-        .map(|(key, value)| (key.clone(), stored_json(value)))
-        .collect()
-}
-
-fn stored_json(value: &JsonData) -> Json {
-    match value {
-        JsonData::Null => Json::Null,
-        JsonData::Bool(flag) => Json::Bool(*flag),
-        JsonData::Number(number) => Json::Number(number.clone()),
-        JsonData::String(text) => Json::Text(text.clone()),
-        JsonData::Array(items) => Json::List(items.iter().map(stored_json).collect()),
-        JsonData::Object(fields) => Json::Object(
-            fields
-                .iter()
-                .map(|(key, item)| (key.clone(), stored_json(item)))
-                .collect(),
-        ),
-    }
-}
-
-async fn decrypt_batch(
-    rows: Vec<ProxyModelTable>,
-    request: Decryption,
-) -> Result<Vec<JsonObject>, DecryptTaskError> {
-    let tasks = request.tasks.clone();
-    let task = tasks.spawn(async move {
-        let mut blocking = JoinSet::new();
-        blocking.spawn_blocking(move || {
-            decrypt_model_rows(
-                &rows,
-                &request.cipher,
-                &request.secrets,
-                &request.environment,
-                &request.warnings,
-            )
-        });
-        match blocking.join_next().await {
-            Some(Ok(decrypted)) => decrypted.map_err(DecryptTaskError::from),
-            Some(Err(error)) => Err(DecryptTaskError::from(error)),
-            None => Err(DecryptTaskError::Missing),
-        }
-    });
-    task.await.map_err(DecryptTaskError::from)?
 }

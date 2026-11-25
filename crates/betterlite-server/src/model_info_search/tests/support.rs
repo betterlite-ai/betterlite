@@ -75,7 +75,10 @@ pub(super) fn names(models: &[JsonObject]) -> Vec<String> {
         .iter()
         .map(|model| match model.get("model_name") {
             Some(Json::Text(name)) => name.clone(),
-            _ => String::new(),
+            None
+            | Some(
+                Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_),
+            ) => String::new(),
         })
         .collect()
 }

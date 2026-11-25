@@ -74,42 +74,14 @@ fn sort_field(field: &str) -> Option<SortField> {
     }
 }
 
-// A date or cost the source cannot read sorts after every readable value in both orders, as LiteLLM's max and inf sentinels do.
-#[derive(Debug, PartialEq, Eq)]
+// One field's keys all share a variant, so deriving compares the payloads; Last is declared after them to sort last, as LiteLLM's max and inf sentinels do.
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum SortKey {
-    Last,
     Name(String),
     Time(DateTime<Utc>),
     Cost(Decimal),
     Status(bool),
-}
-
-impl Ord for SortKey {
-    fn cmp(&self, other: &Self) -> Ordering {
-        match (self, other) {
-            (Self::Name(left), Self::Name(right)) => left.cmp(right),
-            (Self::Time(left), Self::Time(right)) => left.cmp(right),
-            (Self::Cost(left), Self::Cost(right)) => left.cmp(right),
-            (Self::Status(left), Self::Status(right)) => left.cmp(right),
-            (Self::Last, Self::Last) => Ordering::Equal,
-            (Self::Last, Self::Name(_) | Self::Time(_) | Self::Cost(_) | Self::Status(_)) => {
-                Ordering::Greater
-            }
-            (Self::Name(_) | Self::Time(_) | Self::Cost(_) | Self::Status(_), Self::Last) => {
-                Ordering::Less
-            }
-            (Self::Name(_), Self::Time(_) | Self::Cost(_) | Self::Status(_))
-            | (Self::Time(_), Self::Name(_) | Self::Cost(_) | Self::Status(_))
-            | (Self::Cost(_), Self::Name(_) | Self::Time(_) | Self::Status(_))
-            | (Self::Status(_), Self::Name(_) | Self::Time(_) | Self::Cost(_)) => Ordering::Equal,
-        }
-    }
-}
-
-impl PartialOrd for SortKey {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
+    Last,
 }
 
 fn compare_sort_keys(left: &SortKey, right: &SortKey, reverse: bool) -> Ordering {

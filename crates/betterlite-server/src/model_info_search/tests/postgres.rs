@@ -478,10 +478,8 @@ async fn search_db_readthrough() {
         panic!("a read-through counts before fetching");
     };
     assert_eq!(filter.search_lower, "gpt-4o");
-    assert_eq!(
-        filter.excluded_ids.iter().cloned().collect::<Vec<String>>(),
-        ["d1"]
-    );
+    assert_eq!(filter.excluded_ids.len(), 1);
+    assert!(filter.excluded_ids.contains("d1"));
     database.close().await;
 }
 

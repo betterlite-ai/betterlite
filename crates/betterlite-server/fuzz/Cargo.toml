@@ -615,3 +615,10 @@ path = "fuzz_targets/shadow_q.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "model_info_datetime"
+path = "fuzz_targets/model_info_datetime.rs"
+test = false
+doc = false
+bench = false

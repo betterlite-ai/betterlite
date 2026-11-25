@@ -141,6 +141,15 @@ fn team_model(name: &str, team_id: &str) -> JsonObject {
     )
 }
 
+fn default_options() -> SearchOptions<'static> {
+    SearchOptions {
+        page: 1,
+        size: 50,
+        sort_by: None,
+        model_name: None,
+    }
+}
+
 fn expected_filter(search_lower: &str, exact_name: Option<&str>) -> ModelFilter {
     ModelFilter {
         search_lower: search_lower.to_owned(),
@@ -176,7 +185,7 @@ async fn model_name_search() {
         ),
         named("other-model"),
     ];
-    let options = SearchOptions::default();
+    let options = default_options();
     let no_sources: Option<&SearchSources<'_, FakeDatabase, FakeReads>> = None;
     let matched = apply_search_filter(&models, "gpt-4o", no_sources, &options).await;
     assert_eq!(names(&matched.models), ["GPT-4O", "gpt-4o-mini"]);
@@ -215,7 +224,7 @@ async fn byok_scope_retained() {
         named("plain-model"),
     ];
     let sources = unowned_sources(&db, &decrypt, Some(&reads), Some(&who));
-    let options = SearchOptions::default();
+    let options = default_options();
     let outcome = apply_search_filter(&models, "model", Some(&sources), &options).await;
     assert_eq!(
         names(&outcome.models),
@@ -233,7 +242,7 @@ async fn a_count_error_keeps_router_models() {
     let decrypt = decryption();
     let sources = unowned_sources(&db, &decrypt, None, None);
     let models = vec![named("gpt-4o")];
-    let options = SearchOptions::default();
+    let options = default_options();
     let outcome = apply_search_filter(&models, "gpt", Some(&sources), &options).await;
     assert_eq!(names(&outcome.models), ["gpt-4o"]);
     assert_eq!(outcome.total_count, Some(1));
@@ -246,7 +255,7 @@ async fn a_fetch_error_keeps_router_models() {
     let decrypt = decryption();
     let sources = unowned_sources(&db, &decrypt, None, None);
     let models = vec![named("gpt-4o")];
-    let options = SearchOptions::default();
+    let options = default_options();
     let outcome = apply_search_filter(&models, "gpt", Some(&sources), &options).await;
     assert_eq!(names(&outcome.models), ["gpt-4o"]);
     assert_eq!(outcome.total_count, Some(1));
@@ -278,7 +287,7 @@ async fn a_decrypt_error_keeps_router_models() {
     let decrypt = decryption();
     let sources = unowned_sources(&db, &decrypt, None, None);
     let models = vec![named("gpt-4o")];
-    let options = SearchOptions::default();
+    let options = default_options();
     let outcome = apply_search_filter(&models, "gpt", Some(&sources), &options).await;
     assert_eq!(names(&outcome.models), ["gpt-4o"]);
     assert_eq!(outcome.total_count, Some(1));

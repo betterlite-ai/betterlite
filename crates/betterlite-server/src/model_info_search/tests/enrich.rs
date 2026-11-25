@@ -420,7 +420,7 @@ async fn pricing_stamps_unpriced() {
             ("key", text("gpt-4o")),
             ("input_cost_per_token", decimal_text("0.0001")),
             ("output_cost_per_token", decimal_text("0.0002")),
-            ("max_tokens", number(128000)),
+            ("max_tokens", number(128_000)),
         ]),
     )]);
     let model = deployment(
@@ -442,7 +442,7 @@ async fn pricing_stamps_unpriced() {
     let info = info_of(&enriched);
     assert_eq!(info.get("input_cost_per_token"), Some(&decimal_text("0.5")));
     assert_eq!(info.get("output_cost_per_token"), Some(&Json::Null));
-    assert_eq!(info.get("max_tokens"), Some(&number(128000)));
+    assert_eq!(info.get("max_tokens"), Some(&number(128_000)));
     assert_eq!(
         info.get("pricing_overrides"),
         Some(&list(vec![text("input_cost_per_token")]))

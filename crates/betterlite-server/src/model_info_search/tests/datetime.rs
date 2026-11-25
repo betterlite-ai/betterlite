@@ -1,6 +1,6 @@
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
-use chrono::{DateTime, TimeZone as _, Utc};
+use chrono::{DateTime, Utc};
 use rstest::rstest;
 use serde_json::Number;
 
@@ -8,48 +8,49 @@ use crate::model_info_search::datetime::{
     decode_model_info_datetime, normalize_model_info_datetime,
 };
 
-fn utc(year: i32, month: u32, day: u32, hour: u32, minute: u32, second: u32) -> DateTime<Utc> {
-    Utc.with_ymd_and_hms(year, month, day, hour, minute, second)
-        .unwrap()
+fn utc(text: &str) -> DateTime<Utc> {
+    DateTime::parse_from_rfc3339(text)
+        .expect("an RFC 3339 instant")
+        .with_timezone(&Utc)
 }
 
 #[test]
 fn normalizes_every_named_iso_form() {
     assert_eq!(
         decode_model_info_datetime("2026-01-01T00:00:00Z"),
-        Some(utc(2026, 1, 1, 0, 0, 0))
+        Some(utc("2026-01-01T00:00:00Z"))
     );
     assert_eq!(
         decode_model_info_datetime("2026-01-01Z00:00:00"),
-        Some(utc(2026, 1, 1, 0, 0, 0))
+        Some(utc("2026-01-01T00:00:00Z"))
     );
     assert_eq!(
         decode_model_info_datetime("2026-01-01Z"),
-        Some(utc(2026, 1, 1, 0, 0, 0))
+        Some(utc("2026-01-01T00:00:00Z"))
     );
     assert_eq!(
         decode_model_info_datetime("20260101Z000000"),
-        Some(utc(2026, 1, 1, 0, 0, 0))
+        Some(utc("2026-01-01T00:00:00Z"))
     );
     assert_eq!(
         decode_model_info_datetime("2026-01-01T00:00:00+05:30"),
-        Some(utc(2025, 12, 31, 18, 30, 0))
+        Some(utc("2025-12-31T18:30:00Z"))
     );
     assert_eq!(
         decode_model_info_datetime("2026-01-01T00:00:00-05:00"),
-        Some(utc(2026, 1, 1, 5, 0, 0))
+        Some(utc("2026-01-01T05:00:00Z"))
     );
     assert_eq!(
         decode_model_info_datetime("2026-01-01T00:00:00"),
-        Some(utc(2026, 1, 1, 0, 0, 0))
+        Some(utc("2026-01-01T00:00:00Z"))
     );
     assert_eq!(
         decode_model_info_datetime("2026-01-01"),
-        Some(utc(2026, 1, 1, 0, 0, 0))
+        Some(utc("2026-01-01T00:00:00Z"))
     );
     assert_eq!(
         decode_model_info_datetime("2026-W01-1T00:00:00"),
-        Some(utc(2025, 12, 29, 0, 0, 0))
+        Some(utc("2025-12-29T00:00:00Z"))
     );
     assert_eq!(
         decode_model_info_datetime("2026-01-01T00:00:00.1234567")
@@ -92,6 +93,6 @@ fn normalizes_a_text_field_through_the_string_decoder() {
     let value = Json::Text("2026-01-01T00:00:00Z".to_owned());
     assert_eq!(
         normalize_model_info_datetime(&value),
-        Some(utc(2026, 1, 1, 0, 0, 0))
+        Some(utc("2026-01-01T00:00:00Z"))
     );
 }
