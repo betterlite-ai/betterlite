@@ -1,4 +1,4 @@
-use betterlite_auth::auth_team_lookup::error::Detail;
+use betterlite_auth::auth_team_lookup::error::{Detail, TeamLookupError};
 use betterlite_core::api::vector_store_access::error::VectorStoreAccessError;
 use betterlite_db::auxiliary_repository::repository::TableError;
 use serde::Serialize;
@@ -70,18 +70,7 @@ impl VectorManagementError {
             Self::AccessDenied => {
                 Some((403, VectorManagementDetail::Text(ACCESS_DENIED.to_owned())))
             }
-            Self::Access(VectorStoreAccessError::Team(error)) => {
-                error.http().map(|(status, kind)| {
-                    let message = error.to_string();
-                    let rendered = match kind {
-                        Detail::Error => {
-                            VectorManagementDetail::Error(ErrorDetail { error: message })
-                        }
-                        Detail::Text => VectorManagementDetail::Text(message),
-                    };
-                    (status, rendered)
-                })
-            }
+            Self::Access(VectorStoreAccessError::Team(error)) => render_team_failure(error),
             Self::Access(
                 VectorStoreAccessError::Fields(_)
                 | VectorStoreAccessError::Params(_)
@@ -91,4 +80,15 @@ impl VectorManagementError {
             | Self::Json(_) => None,
         }
     }
+}
+
+// a team lookup failure as the HTTPException utils.py raises for it
+fn render_team_failure(error: &TeamLookupError) -> Option<(u16, VectorManagementDetail)> {
+    let (status, kind) = error.http()?;
+    let message = error.to_string();
+    let rendered = match kind {
+        Detail::Error => VectorManagementDetail::Error(ErrorDetail { error: message }),
+        Detail::Text => VectorManagementDetail::Text(message),
+    };
+    Some((status, rendered))
 }

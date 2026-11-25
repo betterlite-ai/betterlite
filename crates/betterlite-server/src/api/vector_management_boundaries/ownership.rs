@@ -18,10 +18,10 @@ pub fn raise_if_config_owned(
     vector_store_id: &str,
     registry: Option<&VectorStoreRegistry>,
 ) -> Result<(), VectorManagementError> {
-    let Some(registry) = registry else {
+    let Some(stores) = registry else {
         return Ok(());
     };
-    if registry.is_config(vector_store_id) {
+    if stores.is_config(vector_store_id) {
         return Err(VectorManagementError::ConfigOwned {
             vector_store_id: vector_store_id.to_owned(),
         });

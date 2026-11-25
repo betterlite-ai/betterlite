@@ -50,16 +50,19 @@ fn no_publish() -> PublishChange<TableError> {
     })
 }
 
-#[tokio::test]
-async fn find_unique_reads_one_managed_vector_store_row() {
+async fn provision() -> PostgresFixture {
     let url = Environment::parse_from(["vector-management-boundaries"])
         .url
         .map(SecretString::from);
-    let fixture =
-        PostgresFixture::provision_with_statements(url.as_ref(), vec![STORAGE.to_owned()])
-            .resolve()
-            .await
-            .unwrap();
+    PostgresFixture::provision_with_statements(url.as_ref(), vec![STORAGE.to_owned()])
+        .resolve()
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn find_unique_reads_one_managed_vector_store_row() {
+    let fixture = provision().await;
     let config: Config = fixture.options.url.expose_secret().parse().unwrap();
     let pool = Pool::builder(Manager::new(config, NoTls))
         .max_size(2)

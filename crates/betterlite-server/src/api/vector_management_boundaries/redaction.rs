@@ -4,6 +4,7 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::api::vector_store_records::records::vector::LiteLlmManagedVectorStore;
 use betterlite_redact::structured::SensitiveDataMasker;
 use indexmap::IndexMap;
+use std::iter;
 
 use super::error::VectorManagementError;
 use super::json::decode_management_json;
@@ -23,7 +24,7 @@ impl LitellmParamsRedactor {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            masker: SensitiveDataMasker::with_patterns(MASKER_PATTERNS, std::iter::empty::<&str>()),
+            masker: SensitiveDataMasker::with_patterns(MASKER_PATTERNS, iter::empty::<&str>()),
         }
     }
 
@@ -39,11 +40,7 @@ impl LitellmParamsRedactor {
             Json::Object(fields) => {
                 let mut redacted = IndexMap::with_capacity(fields.len());
                 for (key, value) in fields {
-                    let masked = if self.masker.is_sensitive_key(key, &[]) {
-                        Json::Text(REDACTED_BY_LITELM.to_owned())
-                    } else {
-                        self.nested(value, depth, limits)
-                    };
+                    let masked = self.masked_entry(key, value, depth, limits);
                     redacted.insert(key.clone(), masked);
                 }
                 Json::Object(redacted)
@@ -57,6 +54,14 @@ impl LitellmParamsRedactor {
             Json::Bool(flag) => Json::Bool(*flag),
             Json::Number(number) => Json::Number(number.clone()),
         }
+    }
+
+    // a sensitive key's value becomes the sentinel; any other value is walked at most one level deeper
+    fn masked_entry(&self, key: &str, value: &Json, depth: usize, limits: ApiLimits) -> Json {
+        if self.masker.is_sensitive_key(key, &[]) {
+            return Json::Text(REDACTED_BY_LITELM.to_owned());
+        }
+        self.nested(value, depth, limits)
     }
 
     // a buried object or array is one level deeper; every other value comes back as it is, never parsed
