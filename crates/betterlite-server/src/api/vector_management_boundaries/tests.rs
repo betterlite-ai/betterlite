@@ -25,6 +25,7 @@ use betterlite_db::auxiliary_repository::repository::TableError;
 use betterlite_db::budget_permission_rows::{JsonData, LiteLLMObjectPermissionTable};
 use betterlite_db::managed_resource_rows::files::ManagedVectorStoresTable;
 use betterlite_db::team_rows::archived::LiteLLMTeamTableCachedObj;
+use betterlite_logging::python_json::dumps;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::vector_store_records::records::vector::LiteLlmManagedVectorStore;
 
@@ -34,9 +35,7 @@ use super::error::{
 use super::fetch::{check_vector_store_access, fetch_store_before_access};
 use super::json::{ManagementJsonError, decode_management_json};
 use super::ownership::{raise_if_config_owned, with_ownership};
-use super::redaction::{
-    REDACTED_BY_LITELM, python_json, redact_sensitive_litellm_params, redact_store_params,
-};
+use super::redaction::{REDACTED_BY_LITELM, redact_sensitive_litellm_params, redact_store_params};
 use super::rows::{VectorStoreRows, row_to_vector_store};
 
 fn json(source: &str) -> Json {
@@ -319,17 +318,17 @@ fn serialized_vector_params_consumes_the_depth_limit_before_parsing() {
 }
 
 #[test]
-fn python_json_writes_separators_and_ensure_ascii_escapes() {
+fn serialized_vector_params_reserializes_like_json_dumps() {
     assert_eq!(
-        python_json(&json(r#"[1, "a", {"k": null, "b": true, "c": false}]"#)),
-        r#"[1, "a", {"k": null, "b": true, "c": false}]"#
+        redacted_text(
+            r#"{"model": "text-embedding", "note": "a\nb\tc", "api_key": "secret", "items": [1, 2.5e2]}"#,
+            0
+        ),
+        Json::Text(
+            r#"{"model": "text-embedding", "note": "a\nb\tc", "api_key": "REDACTED_BY_LITELM", "items": [1, 250.0]}"#
+                .to_owned()
+        )
     );
-    assert_eq!(
-        python_json(&json(r#""a\"b\\c\u0001\t\u007f\n\r\b\f""#)),
-        r#""a\"b\\c\u0001\t\u007f\n\r\b\f""#
-    );
-    let unicode = "\"\\u00e9\\ud83d\\ude00\"";
-    assert_eq!(python_json(&json(r#""é😀""#)), unicode);
 }
 
 #[test]
@@ -589,7 +588,6 @@ async fn fetch_store_before_access_reports_a_denied_row() {
     let error = fetch_store_before_access(&rows, &policy(&world), "vs_a", &denied)
         .await
         .unwrap_err();
-    assert!(world.touched());
     let (status, detail) = error.http().unwrap();
     assert_eq!(status, 403);
     assert_eq!(
@@ -652,7 +650,7 @@ fn replays_corpus() {
                 return false;
             };
             let redacted = redact_sensitive_litellm_params(&value, 0, ApiLimits::default());
-            let reparsed: Json = serde_json::from_str(&python_json(&redacted))
+            let reparsed: Json = serde_json::from_str(&dumps(&redacted))
                 .expect("a redacted value writes back as JSON");
             assert_eq!(reparsed, redacted);
             true

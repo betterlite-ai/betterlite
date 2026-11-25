@@ -1,4 +1,5 @@
 use betterlite_core::api::api_boundaries::ApiLimits;
+use betterlite_logging::python_json::dumps;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::vector_store_records::records::vector::LiteLlmManagedVectorStore;
 use betterlite_redact::structured::SensitiveDataMasker;
@@ -97,75 +98,5 @@ fn redact_encoded(
         return Json::Text(REDACTED_BY_LITELM.to_owned());
     };
     let nested = redact_at(masker, &parsed, depth.saturating_add(1), limits);
-    Json::Text(python_json(&nested))
-}
-
-// json.dumps at its defaults: ", " and ": " separators and ensure_ascii, as LiteLLM re-serializes params
-#[must_use]
-pub(super) fn python_json(value: &Json) -> String {
-    let mut out = String::new();
-    write_value(&mut out, value);
-    out
-}
-
-fn write_value(out: &mut String, value: &Json) {
-    match value {
-        Json::Null => out.push_str("null"),
-        Json::Bool(true) => out.push_str("true"),
-        Json::Bool(false) => out.push_str("false"),
-        Json::Number(number) => out.push_str(&number.to_string()),
-        Json::Text(text) => write_text(out, text),
-        Json::List(items) => {
-            out.push('[');
-            for (index, item) in items.iter().enumerate() {
-                if index > 0 {
-                    out.push_str(", ");
-                }
-                write_value(out, item);
-            }
-            out.push(']');
-        }
-        Json::Object(fields) => {
-            out.push('{');
-            for (index, (key, item)) in fields.iter().enumerate() {
-                if index > 0 {
-                    out.push_str(", ");
-                }
-                write_text(out, key);
-                out.push_str(": ");
-                write_value(out, item);
-            }
-            out.push('}');
-        }
-    }
-}
-
-fn write_text(out: &mut String, text: &str) {
-    out.push('"');
-    for character in text.chars() {
-        match character {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            '\u{08}' => out.push_str("\\b"),
-            '\u{0c}' => out.push_str("\\f"),
-            ' '..='~' => out.push(character),
-            other => write_escaped(out, other),
-        }
-    }
-    out.push('"');
-}
-
-// ensure_ascii: the control range, DEL and every non-ASCII code point as lowercase UTF-16 \u units
-fn write_escaped(out: &mut String, character: char) {
-    let mut units = [0_u16; 2];
-    for unit in character.encode_utf16(&mut units) {
-        out.push_str("\\u");
-        for shift in [12_u32, 8, 4, 0] {
-            let digit = (*unit >> shift) & 0xf;
-            out.push(char::from_digit(u32::from(digit), 16).unwrap_or('0'));
-        }
-    }
+    Json::Text(dumps(&nested))
 }
