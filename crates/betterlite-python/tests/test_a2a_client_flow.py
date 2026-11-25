@@ -262,15 +262,11 @@ async def our_send_flow(server: AgentServer, recorder: Recorder) -> SendFlow:
 async def their_send_flow(server: AgentServer, recorder: Recorder) -> SendFlow:
     client = THEIR_CLIENT.A2AClient(server.url, extra_headers=EXTRA_HEADERS)
     built = len(recorder.calls)
-    answered: list[BaseModel] = [
-        await client.send_message(their_request(request_id))
+    results: list[dict[str, JsonValue]] = [
+        dumped(await client.send_message(their_request(request_id)))
         for request_id in (REQUEST_ID, SECOND_ID)
     ]
-    return SendFlow(
-        built=built,
-        methods=methods_of(recorder),
-        results=[dumped(model) for model in answered],
-    )
+    return SendFlow(built=built, methods=methods_of(recorder), results=results)
 
 
 async def both_sends() -> SendFlows:
