@@ -9,8 +9,8 @@ deviations:
   - what: "The startup probe dials the port the listener actually bound, so --prometheus_metrics_port 0 starts on a free port instead of timing out after 30 seconds."
     why: "LiteLLM probes port 0, which never answers, so no working setup relies on the timeout."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prometheus_metrics_server.py#L119-L121
-  - what: "The sidecar command run_metrics_server stops serving gracefully once its parent pid changes, where LiteLLM's watchdog thread calls os._exit(0). The in-process listener needs no watchdog, since it dies with the proxy."
-    why: "Clippy denies process exit outside main; graceful shutdown finishes the scrape in flight and then returns."
+  - what: "A listener stop, from the proxy's shutdown token, the startup timeout or the sidecar's parent watchdog, drains the scrapes in flight for 5 seconds and then closes every connection still open. LiteLLM's watchdog calls os._exit(0) at once, and uvicorn's shutdown waits for connections with no deadline. The in-process listener needs no watchdog, since it dies with the proxy."
+    why: "Clippy denies process exit outside main; a graceful drain finishes the scrape in flight, and the 5-second bound keeps a client that stops reading a large scrape from holding the listener or its process open."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prometheus_metrics_server.py#L88-L101
   - what: "GET /metrics answers the scrape directly, where Starlette's mount first answers 307 to /metrics/. /health/ is a 404 instead of a 307 to /health."
     why: "Scrapers and LiteLLM's own probe follow the redirect, so the answer they end up with is the same, one round trip sooner."
@@ -24,7 +24,10 @@ deviations:
   - what: "The metrics server CLI reads --port as 0 to 65535 and refuses an out-of-range or non-numeric port at parse time with exit code 2. Its error messages are clap's, not argparse's."
     why: "argparse accepts any integer and uvicorn fails later on the bind; a port is a u16."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prometheus_metrics_server.py#L158-L168
-  - what: "No standalone binary or subcommand ships for the metrics server CLI. MetricsServerArgs declares --host, --port and --multiproc_dir for whichever caller hosts them, and that caller is B8375's proxy CLI, which starts B4177's metrics process when --prometheus_metrics_port is set."
-    why: "LiteLLM's CLI exists to be spawned with python -m; betterlite starts the listener inside the proxy, so these arguments have no process of their own in this task."
+  - what: "The CLI ships as the betterlite-metrics-server binary over run_metrics_server, parsing --host, --port and --multiproc_dir. The proxy itself starts the listener in process through start_metrics_listener, and B8375's proxy CLI is what wires that to --prometheus_metrics_port."
+    why: "LiteLLM's CLI exists to be spawned with python -m; rule no-subprocess keeps the proxy from spawning it, so the binary serves a deployment that runs the metrics process itself, as LiteLLM's sidecar documentation describes."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prometheus_metrics_server.py#L158-L168
+  - what: "The startup probe asks through an HTTP client with proxies turned off, where LiteLLM's HTTPHandler follows HTTP_PROXY and the other proxy variables of the environment."
+    why: "The probe is a loopback request the metrics listener itself answers; sending it through an environment proxy turns a healthy listener into a startup timeout."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prometheus_metrics_server.py#L110-L116
 kept_bugs: []
