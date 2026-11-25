@@ -4,11 +4,12 @@ mod partition_switch;
 mod queue;
 pub mod retention;
 mod tests;
+mod writer;
 use self::cold_storage::custom_logger;
 use self::queue::{logs_url, max_bytes};
+use self::writer::{SpendLogSwitch, disable_spend_logs, max_budget};
 use crate::loader::{ConfigError, EnvironmentLookup, parse_view};
 use crate::raw::RawNumber;
-use crate::resolve::{parse_money, resolve_number};
 use crate::sections::Section;
 use crate::sections::settings::JsonValue;
 use betterlite_db::spend_flush::monitor::SpendMonitorSettings;
@@ -28,6 +29,7 @@ pub const ENV_PRECREATE_AHEAD: &str = "SPEND_LOG_PARTITION_PRECREATE_AHEAD";
 pub const DEFAULT_PRECREATE_AHEAD: i64 = 7;
 const MISSING_SESSION_ID_PATH: &str = "general_settings.missing_session_id";
 const USE_REDIS_BUFFER_PATH: &str = "general_settings.use_redis_transaction_buffer";
+const DISABLE_SPEND_LOGS_PATH: &str = "general_settings.disable_spend_logs";
 const MAX_BUDGET_PATH: &str = "litellm_settings.max_budget";
 const DISABLE_END_USER_PATH: &str = "litellm_settings.disable_end_user_cost_tracking";
 const ENABLE_PROMETHEUS_PATH: &str =
@@ -53,6 +55,8 @@ pub struct GeneralSettings {
     store_prompts_in_spend_logs: JsonValue,
     missing_session_id: JsonValue,
     disable_spend_updates: JsonValue,
+    // absent keeps the proxy's False, an explicit null stays "not exactly false"
+    disable_spend_logs: SpendLogSwitch,
     use_redis_transaction_buffer: JsonValue,
     #[serde(flatten)]
     retention: CleanupGeneralSettings,
@@ -75,6 +79,7 @@ pub struct Settings {
     pub max_string_length_prompt_in_db: i64,
     pub missing_session_id: Option<MissingSessionId>,
     pub spend_updates: SpendUpdates,
+    pub disable_spend_logs: Option<bool>,
     pub max_budget: Decimal,
     pub disable_end_user_cost_tracking: Option<bool>,
     pub enable_prometheus_only: Option<bool>,
@@ -98,12 +103,7 @@ impl Section for Raw {
     {
         let general = self.general_settings;
         let litellm = self.litellm_settings;
-        let use_redis = redis_transaction_buffer(&general.use_redis_transaction_buffer)?;
-        let dequeue_count =
-            initial_environment_integer(lookup, ENV_DEQUEUE_COUNT, DEFAULT_DEQUEUE_COUNT)?;
-        let interval = partition_interval(lookup.lookup(ENV_PARTITION_INTERVAL).as_deref());
-        let ahead =
-            initial_environment_integer(lookup, ENV_PRECREATE_AHEAD, DEFAULT_PRECREATE_AHEAD)?;
+        let (use_redis, dequeue_count, interval, ahead) = runtime_reads(&general, lookup)?;
         Ok(Settings {
             store_prompts_in_spend_logs: store_prompts(
                 &general.store_prompts_in_spend_logs,
@@ -116,6 +116,7 @@ impl Section for Raw {
             )?,
             missing_session_id: missing_session_id(&general.missing_session_id)?,
             spend_updates: spend_updates(&general.disable_spend_updates),
+            disable_spend_logs: disable_spend_logs(&general.disable_spend_logs)?,
             max_budget: max_budget(litellm.max_budget, lookup)?,
             disable_end_user_cost_tracking: optional_flag(
                 &litellm.disable_end_user_cost_tracking,
@@ -137,19 +138,21 @@ impl Section for Raw {
         })
     }
 }
-// litellm takes max_budget as a number or an os.environ reference; an absent one leaves zero
-fn max_budget<L>(configured: Option<JsonValue>, lookup: &L) -> Result<Decimal, ConfigError>
+fn runtime_reads<L>(
+    general: &GeneralSettings,
+    lookup: &L,
+) -> Result<(bool, i64, PartitionInterval, i64), ConfigError>
 where
     L: EnvironmentLookup,
 {
-    let amount = resolve_number(
-        configured.map(budget_number).transpose()?,
-        MAX_BUDGET_PATH,
-        lookup,
-        parse_money,
-    )?;
-    Ok(amount.unwrap_or(Decimal::ZERO))
+    let use_redis = redis_transaction_buffer(&general.use_redis_transaction_buffer)?;
+    let dequeue_count =
+        initial_environment_integer(lookup, ENV_DEQUEUE_COUNT, DEFAULT_DEQUEUE_COUNT)?;
+    let interval = partition_interval(lookup.lookup(ENV_PARTITION_INTERVAL).as_deref());
+    let ahead = initial_environment_integer(lookup, ENV_PRECREATE_AHEAD, DEFAULT_PRECREATE_AHEAD)?;
+    Ok((use_redis, dequeue_count, interval, ahead))
 }
+
 pub fn load_spend_storage_policy<L>(source: &str, lookup: &L) -> Result<Settings, ConfigError>
 where
     L: EnvironmentLookup,

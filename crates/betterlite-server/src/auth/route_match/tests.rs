@@ -14,7 +14,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use tower::ServiceExt as _;
 
-use super::RouteMatchAdmitted;
+use super::{RouteMatchAdmitted, admit};
 
 async fn downstream(
     State(calls): State<Arc<AtomicUsize>>,
@@ -81,6 +81,39 @@ async fn encoded_separator_is_decoded_before_template_admission(#[case] path: &s
         .unwrap();
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
     assert_eq!(calls.load(Ordering::Relaxed), 0);
+}
+
+#[rstest]
+#[case::list("/auto_router/shadow_eval", "GET", true)]
+#[case::start("/auto_router/shadow_eval/start", "POST", true)]
+#[case::start_get("/auto_router/shadow_eval/start", "GET", true)]
+#[case::start_head("/auto_router/shadow_eval/start", "HEAD", true)]
+#[case::detail(
+    "/auto_router/shadow_eval/8f0e1d2c-0000-4000-8000-000000000000",
+    "GET",
+    true
+)]
+#[case::stop(
+    "/auto_router/shadow_eval/8f0e1d2c-0000-4000-8000-000000000000/stop",
+    "POST",
+    true
+)]
+#[case::start_extra("/auto_router/shadow_eval/start/extra", "POST", false)]
+#[case::two_segments("/auto_router/shadow_eval/one/two", "GET", false)]
+#[case::longer_name("/auto_router/shadow_eval_extra", "GET", false)]
+#[case::trailing_slash("/auto_router/shadow_eval/", "GET", false)]
+fn shadow_eval_route_admission(#[case] path: &str, #[case] method: &str, #[case] expected: bool) {
+    assert_eq!(admit(path, method).is_ok(), expected);
+}
+
+#[tokio::test]
+async fn shadow_eval_list_passes_the_route_match_stage() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let response = production_router(Arc::clone(&calls))
+        .oneshot(request_to("/auto_router/shadow_eval"))
+        .await
+        .unwrap();
+    assert_ne!(response.status(), StatusCode::NOT_FOUND);
 }
 
 #[rstest]

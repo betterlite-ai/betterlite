@@ -608,3 +608,10 @@ path = "fuzz_targets/global_report_query.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "shadow_q"
+path = "fuzz_targets/shadow_q.rs"
+test = false
+doc = false
+bench = false

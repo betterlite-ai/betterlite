@@ -50,18 +50,31 @@ pub(super) fn inject_frames(parts: &mut GuardParts, chunk: &[u8]) -> Option<Vec<
     parts.pending.extend_from_slice(chunk);
     let (complete, tail) = split_complete_sse_frames(&parts.pending);
     let frames = complete.to_vec();
-    let remaining = tail.to_vec();
-    parts.pending = remaining;
-    if frames.is_empty() {
-        return None;
-    }
-    let model = parts.injection_model.as_deref()?;
-    Some(
+    let rest = tail.to_vec();
+    let mut output = if frames.is_empty() {
+        Vec::new()
+    } else {
+        let model = parts.injection_model.as_deref()?;
         parts
             .lifecycle
             .cost_injection
-            .inject(&frames, model, &parts.logging_obj),
-    )
+            .inject(&frames, model, &parts.logging_obj)
+    };
+    if rest.len() > parts.max_frame_bytes {
+        tracing::warn!(
+            "The cost-injection frame is past {} bytes, so its bytes are forwarded unchanged and no further frame is injected",
+            parts.max_frame_bytes
+        );
+        output.extend_from_slice(&rest);
+        parts.pending.clear();
+        parts.injection_model = None;
+    } else {
+        parts.pending = rest;
+    }
+    if output.is_empty() {
+        return None;
+    }
+    Some(output)
 }
 
 pub(super) fn scan_tinyfish(parts: &mut GuardParts, chunk: &[u8]) {
@@ -84,6 +97,17 @@ pub(super) fn scan_tinyfish(parts: &mut GuardParts, chunk: &[u8]) {
             parts.start_time,
         );
         parts.scan_active = false;
+    }
+    if !parts.scan_active {
+        return;
+    }
+    if tail.len() > parts.max_frame_bytes {
+        tracing::warn!(
+            "The TinyFish run_id scan is past {} bytes, so it stops scanning the rest of this stream",
+            parts.max_frame_bytes
+        );
+        parts.scan_active = false;
+        return;
     }
     parts.scan_pending = tail.to_vec();
 }
