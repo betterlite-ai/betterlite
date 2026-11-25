@@ -52,3 +52,18 @@ fn a_field_the_function_does_not_read_is_not_a_b8190_input() {
     let input = json!({ "function": "wire_compat_for", "protocol_version": "x", "extra": "y" });
     assert!(Op::check(&input).is_err());
 }
+
+#[rstest]
+fn replays_b4668_object_permission_cases(
+    #[base_dir = "../../.."]
+    #[files("cases/helpers/object-permissions/*.yaml")]
+    path: PathBuf,
+) {
+    let case = parse_case(&path);
+    if case.call.operation != "b4668" {
+        return;
+    }
+    validate_helper(&path, &case).expect("case should validate");
+    let run = run_case(&[crate::GROUP], &case, false).expect("case should run");
+    assert!(matches!(run, HelperRun::Match), "{}", path.display());
+}
