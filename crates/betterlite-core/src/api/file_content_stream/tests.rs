@@ -484,15 +484,6 @@ const fn bare() -> ContentContext<'static, (), RecordingLogging> {
     }
 }
 
-const fn trusted_context(trusted: &TrustedCredentials) -> ContentContext<'_, (), RecordingLogging> {
-    ContentContext {
-        trusted: Some(trusted),
-        client: None,
-        logger: None,
-        logging: None,
-    }
-}
-
 const fn sdk_context(kind: SuppliedSdk) -> ContentContext<'static, (), RecordingLogging> {
     ContentContext {
         trusted: None,

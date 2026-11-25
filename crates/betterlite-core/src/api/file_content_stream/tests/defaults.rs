@@ -128,9 +128,19 @@ async fn file_content_defaults_trusted_credentials_precede_key_and_base() {
     };
     let mut call = content_call(&kwargs);
     call.custom_llm_provider = Some(String::from("anthropic"));
-    run(&read, ContentEntry::Sync, &call, trusted_context(&trusted))
-        .await
-        .unwrap();
+    run(
+        &read,
+        ContentEntry::Sync,
+        &call,
+        ContentContext {
+            trusted: Some(&trusted),
+            client: None,
+            logger: None,
+            logging: None,
+        },
+    )
+    .await
+    .unwrap();
     let generic = sent(&read).pop().unwrap().target.generic();
     assert_eq!(generic.trusted, Some(vec![String::from("bucket")]));
     assert_eq!(generic.api_key.as_deref(), Some("sk-call"));
@@ -152,7 +162,12 @@ async fn file_content_defaults_trusted_credentials_replace_null_key_and_base() {
         &read,
         ContentEntry::Sync,
         &null_call,
-        trusted_context(&trusted),
+        ContentContext {
+            trusted: Some(&trusted),
+            client: None,
+            logger: None,
+            logging: None,
+        },
     )
     .await
     .unwrap();
