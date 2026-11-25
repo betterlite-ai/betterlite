@@ -37,9 +37,7 @@ pub(super) const RESET_AT: &str = "2023-11-14 22:14:20 UTC";
 const ENQUEUED_DETAIL: &str =
     "batch enqueued token limit reached for api_key: sk-1: 30 tokens requested, 5 of 15 remaining";
 
-// one atomic limiter call: the descriptors charged and the increments each one gets
 pub(super) type LimiterCall = (Vec<BatchLimitDescriptor>, Vec<BatchDescriptorIncrements>);
-// one enqueued-store call: the batch's tokens and the scopes reserved
 pub(super) type StoreCall = (i64, Vec<BatchEnqueuedTokenScope>);
 
 #[derive(Debug, thiserror::Error)]
@@ -429,7 +427,6 @@ pub(super) fn ok_response(
     response(BatchCounterCode::Ok, statuses, windows)
 }
 
-// the one window a successful daily-counter charge leaves behind for the refund operations
 const DAILY_REFUND_WINDOW: (&str, &str, BatchReservationBackend) = (
     "{api_key_tpd:sk-1}:tokens",
     "1699990000",
@@ -693,7 +690,6 @@ pub(super) fn expected_operations(increment_value: i64) -> Vec<BatchTpdRefundOpe
     .collect()
 }
 
-// one row of the partial-failure answer: the counter, its descriptor and the limits the limiter reports
 #[derive(Clone, Copy)]
 struct PartialFailureRow {
     code: BatchCounterCode,

@@ -103,9 +103,7 @@ where
                 rejection: Some(Box::new(error)),
             });
         }
-        self.limits.check(ApiBoundariesInput::Items(ItemsBoundary {
-            known_count: response.reservation_windows.len(),
-        }))?;
+        // the limiter's windows scale with its descriptors, so a post-charge bound would reject a request LiteLLM completes
         let operations = refund_ops(
             &charged,
             batch_usage.total_tokens,

@@ -24,7 +24,6 @@ pub const PROJECT_OTPM_DESCRIPTOR_KEY: &str = "model_per_project_otpm";
 const FIRST_PYTHON_SECOND: i64 = -62_135_596_800;
 const LAST_PYTHON_SECOND: i64 = 253_402_300_799;
 
-// Why a rejection cannot be built: a value outside i64, a reset outside datetime's range, or a header HTTP refuses
 #[derive(Debug, thiserror::Error)]
 pub enum BatchCounterValueError {
     #[error("a batch counter value is outside the i64 range")]

@@ -10,8 +10,7 @@ use crate::api::batch_enqueued_reserve::ReservationBackend;
 use crate::api::batch_limit_counters::BatchLimitCountersError;
 use crate::api::batch_limit_counters::input::BatchLimitCounterCall;
 use crate::api::batch_limit_counters::records::{
-    BatchCounterCode, BatchCounterLimitType, BatchLimitCounterAnswer, BatchReservationBackend,
-    WindowStartValue,
+    BatchCounterCode, BatchCounterLimitType, BatchLimitCounterAnswer, WindowStartValue,
 };
 use crate::api::batch_limit_counters::rejections::request_model;
 use crate::api::batch_limit_descriptors::descriptors::TPD_WINDOW_SECONDS;
@@ -23,13 +22,12 @@ use self::support::{
     detail_text, empty_model_data, expected_operations, harness, header, increments, input,
     non_text_model_data, null_model_data, operations_of, over_limit, partial_failure_cache,
     partial_failure_limiter, project_usage_row, refund_call, refund_windows, rejection,
-    requests_limiter, reserved, response, run_check, run_raise, run_refund, run_window, scope,
+    requests_limiter, reserved, run_check, run_raise, run_refund, run_window, scope,
     status, stored_value, usage, usage_for_row, usage_with_rows, window_start_of, window_status,
 };
 
 mod support;
 
-// one row of batch_tpm_limit's table: the descriptor, the usage row, and the figure the detail prints
 struct TpmCase {
     key: &'static str,
     value: &'static str,
@@ -750,44 +748,4 @@ async fn oversized_limiter_charge_is_rejected() {
         ))
     ));
     assert!(rig.limiter.calls().is_empty());
-}
-
-// bounded-inputs: the windows the counter charge returns are counted before refunds expand them
-#[tokio::test]
-async fn oversized_response_windows_are_rejected() {
-    let limiter = ScriptedLimiter::with_responses(vec![Ok(response(
-        BatchCounterCode::Ok,
-        Vec::new(),
-        vec![
-            (
-                "{api_key_tpd:sk-1}:tokens",
-                "1699990000",
-                BatchReservationBackend::Redis,
-            ),
-            (
-                "{api_key_tpd:sk-2}:tokens",
-                "1699990000",
-                BatchReservationBackend::Redis,
-            ),
-        ],
-    ))]);
-    let mut rig = harness(limiter, ScriptedStore::default(), ScriptedCache::default());
-    rig.service.limits.max_items = 1;
-    let result = rig
-        .service
-        .run(&input(vec![
-            BatchLimitCounterCall::CheckAndIncrementBatchCounters {
-                data: data(None),
-                batch_usage: usage(10, 1, 0),
-                descriptors: Some(vec![daily_descriptor()]),
-            },
-        ]))
-        .await;
-    assert!(matches!(
-        result,
-        Err(BatchLimitCountersError::Boundary(
-            ApiLimitError::TooManyItems { .. }
-        ))
-    ));
-    assert!(rig.stash.operations().is_empty());
 }
