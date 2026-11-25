@@ -1,4 +1,5 @@
 use std::error::Error as StdError;
+use std::future::{Future, ready};
 
 use betterlite_auth::agent_access_groups::ceiling::AgentAccessGroups;
 use betterlite_auth::agent_access_groups::reads::AccessGroupReads;
@@ -168,11 +169,14 @@ where
             .map_err(|source| CeilingReadError::Failed(source.to_string()))
     }
 
-    async fn agent_caller_auth(
+    fn agent_caller_auth(
         &self,
         auth: &UserAPIKeyAuth,
-    ) -> Result<Option<UserAPIKeyAuth>, CeilingReadError<Self::Error>> {
-        caller_auth_record(auth).map_err(|source| CeilingReadError::Failed(source.to_string()))
+    ) -> impl Future<Output = Result<Option<UserAPIKeyAuth>, CeilingReadError<Self::Error>>> + Send
+    {
+        ready(
+            caller_auth_record(auth).map_err(|source| CeilingReadError::Failed(source.to_string())),
+        )
     }
 
     fn is_managed_agent(&self, auth: Option<&UserAPIKeyAuth>) -> bool {
@@ -185,12 +189,12 @@ fn decode<Source>(auth: Option<&UserAPIKeyAuth>) -> Result<McpAuth, CeilingReadE
 where
     Source: StdError + 'static,
 {
-    match auth {
-        Some(caller) => {
+    auth.map_or_else(
+        || Ok(McpAuth::default()),
+        |caller| {
             McpAuth::from_auth(caller).map_err(|error| CeilingReadError::Failed(error.to_string()))
-        }
-        None => Ok(McpAuth::default()),
-    }
+        },
+    )
 }
 
 // which principal a getter reads, so the five getters share one read and one fault mapping

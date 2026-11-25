@@ -11,7 +11,7 @@ use thiserror::Error;
 use super::agent::agent_capped_servers;
 use super::error::{CeilingReadError, CeilingsError};
 use super::reads::{AdmissionMarks, CeilingReads};
-use super::{Capped, CeilingLevels, CeilingServers, CeilingSource, Ceilings};
+use super::{Capped, CeilingLevels as _, CeilingServers, CeilingSource, Ceilings};
 use crate::auth::object_permission_hydration::error::UnloadableEntitlementError;
 use crate::auth::object_permission_hydration::reads::ObjectPermission;
 use crate::auth::object_permission_hydration::record::McpAuth;

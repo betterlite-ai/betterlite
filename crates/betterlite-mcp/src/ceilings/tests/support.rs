@@ -199,9 +199,11 @@ impl CeilingReads for FakeReads {
     fn expand_permission_list(&self, identifiers: &[String]) -> Vec<String> {
         identifiers
             .iter()
-            .flat_map(|identifier| match self.aliases.get(identifier) {
-                Some(server_ids) => server_ids.clone(),
-                None => vec![identifier.clone()],
+            .flat_map(|identifier| {
+                self.aliases
+                    .get(identifier)
+                    .cloned()
+                    .unwrap_or_else(|| vec![identifier.clone()])
             })
             .collect()
     }
@@ -227,10 +229,10 @@ impl CeilingReads for FakeReads {
 }
 
 fn user_id_of(auth: Option<&UserAPIKeyAuth>) -> String {
-    let Some(auth) = auth else {
+    let Some(caller) = auth else {
         return String::from("none");
     };
-    McpAuth::from_auth(auth)
+    McpAuth::from_auth(caller)
         .ok()
         .and_then(|record| record.user_id)
         .unwrap_or_default()

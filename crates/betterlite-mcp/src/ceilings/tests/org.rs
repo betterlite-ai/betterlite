@@ -80,8 +80,8 @@ async fn org_servers_returns_the_unloadable_errors() {
         toolset: Scripted::Unloadable,
         ..FakeReads::standard()
     });
-    let error = toolsets.org_servers(Some(&org_auth())).await.unwrap_err();
-    assert!(matches!(error, CeilingsError::Unloadable(_)));
+    let refused = toolsets.org_servers(Some(&org_auth())).await.unwrap_err();
+    assert!(matches!(refused, CeilingsError::Unloadable(_)));
 }
 
 #[tokio::test]

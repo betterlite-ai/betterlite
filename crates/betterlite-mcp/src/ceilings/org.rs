@@ -6,7 +6,7 @@ use tracing::{debug, warn};
 use super::error::{CeilingReadError, CeilingsError, CeilingsResult};
 use super::reads::CeilingReads;
 use super::servers::{self, ToolsetTerm};
-use super::{Capped, CeilingLevels, CeilingServers, CeilingSource, Ceilings};
+use super::{Capped, CeilingLevels as _, CeilingServers, CeilingSource, Ceilings};
 use crate::auth::object_permission_hydration::reads::ObjectPermission;
 use crate::auth::object_permission_hydration::record::McpAuth;
 
@@ -45,7 +45,7 @@ where
 }
 
 // a level that doesn't restrict answers the list it was handed
-fn unchanged(allowed: Vec<String>) -> Capped {
+const fn unchanged(allowed: Vec<String>) -> Capped {
     Capped {
         servers: allowed,
         restricts: false,

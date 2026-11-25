@@ -58,9 +58,9 @@ where
     fn from(error: ServerGrantsError<Source>) -> Self {
         match error {
             ServerGrantsError::Unloadable(unloadable) => Self::Unloadable(unloadable),
-            error @ (ServerGrantsError::Permission { .. }
+            ServerGrantsError::Permission { .. }
             | ServerGrantsError::Read { .. }
-            | ServerGrantsError::TeamMissing { .. }) => Self::Failed(error.to_string()),
+            | ServerGrantsError::TeamMissing { .. } => Self::Failed(error.to_string()),
         }
     }
 }

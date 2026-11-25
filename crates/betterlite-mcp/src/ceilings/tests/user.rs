@@ -87,12 +87,12 @@ async fn user_ceiling_errors_on_an_unresolved_entitlement() {
         user: Scripted::Unloadable,
         ..FakeReads::standard()
     });
-    let error = unloadable
+    let refused = unloadable
         .apply_user_server_ceiling(names(&["srv-a"]), Some(&user_auth()), CeilingSource::Key)
         .await
         .unwrap_err();
     assert!(matches!(
-        error,
+        refused,
         CeilingsError::UserCeilingUnresolvable { .. }
     ));
 }

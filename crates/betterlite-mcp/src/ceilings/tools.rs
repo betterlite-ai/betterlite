@@ -33,13 +33,16 @@ where
 
 // LiteLLM's set intersection: a level that grants tools keeps only those the incoming list already allows
 fn narrowed(allowed: Option<Vec<String>>, granted: Option<Vec<String>>) -> Option<Vec<String>> {
-    let Some(granted) = granted else {
+    let Some(granted_tools) = granted else {
         return allowed;
     };
-    let Some(allowed) = allowed else {
-        return Some(granted);
+    let Some(allowed_tools) = allowed else {
+        return Some(granted_tools);
     };
-    Some(servers::distinct(servers::capped(allowed, &granted)))
+    Some(servers::distinct(servers::capped(
+        allowed_tools,
+        &granted_tools,
+    )))
 }
 
 // one tool ceiling call: the tools a level narrows, the server they sit on and the caller they are narrowed for

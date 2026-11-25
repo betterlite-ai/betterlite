@@ -105,11 +105,11 @@ async fn agent_servers_reads_a_fault_by_agent_shape() {
         toolset: Scripted::Unloadable,
         ..FakeReads::standard()
     });
-    let error = unloadable
+    let refused = unloadable
         .agent_servers(Some(&agent_auth()), None)
         .await
         .unwrap_err();
-    assert!(matches!(error, CeilingsError::Unloadable(_)));
+    assert!(matches!(refused, CeilingsError::Unloadable(_)));
 }
 
 #[tokio::test]
@@ -386,11 +386,11 @@ async fn agent_server_tools_reads_a_fault_by_agent_shape() {
         toolset_server: Scripted::Unloadable,
         ..FakeReads::standard()
     });
-    let error = unloadable
+    let refused = unloadable
         .agent_tool_permissions_for_server("srv-a", Some(&agent_auth()), None)
         .await
         .unwrap_err();
-    assert!(matches!(error, CeilingsError::Unloadable(_)));
+    assert!(matches!(refused, CeilingsError::Unloadable(_)));
 }
 
 #[tokio::test]

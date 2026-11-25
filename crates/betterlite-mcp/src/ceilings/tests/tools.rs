@@ -406,34 +406,32 @@ async fn tool_agent_org_ceiling_reads_an_org_fault_by_source_kind() {
     .await
     .unwrap();
     assert_eq!(key, Some(names(&["tool-a"])));
-    let keyless = over(FakeReads {
+    let error = over(FakeReads {
         org: Scripted::Fault,
         ..FakeReads::standard()
-    });
-    let error = keyless
-        .apply_agent_and_org_tool_ceilings(
-            Some(names(&["tool-a"])),
-            "srv-a",
-            Some(&org_auth()),
-            CeilingSource::Keyless,
-        )
-        .await
-        .unwrap_err();
+    })
+    .apply_agent_and_org_tool_ceilings(
+        Some(names(&["tool-a"])),
+        "srv-a",
+        Some(&org_auth()),
+        CeilingSource::Keyless,
+    )
+    .await
+    .unwrap_err();
     assert!(matches!(error, CeilingsError::Failed(_)));
-    let unloadable = over(FakeReads {
+    let refused = over(FakeReads {
         org: Scripted::Unloadable,
         ..FakeReads::standard()
-    });
-    let error = unloadable
-        .apply_agent_and_org_tool_ceilings(
-            Some(names(&["tool-a"])),
-            "srv-a",
-            Some(&org_auth()),
-            CeilingSource::Key,
-        )
-        .await
-        .unwrap_err();
-    assert!(matches!(error, CeilingsError::Unloadable(_)));
+    })
+    .apply_agent_and_org_tool_ceilings(
+        Some(names(&["tool-a"])),
+        "srv-a",
+        Some(&org_auth()),
+        CeilingSource::Key,
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(refused, CeilingsError::Unloadable(_)));
 }
 
 #[tokio::test]
