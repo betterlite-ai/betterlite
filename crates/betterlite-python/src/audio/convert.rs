@@ -23,7 +23,6 @@ pub(crate) const UNNAMED_FILE: &str = "file";
 pub(crate) const DEFAULT_TRANSCRIPTION_TIMEOUT: Duration = Duration::from_secs(600);
 pub(crate) const DEFAULT_MAX_RETRIES: u32 = 2;
 
-// The five transcription params LiteLLM maps from its named arguments, in its own order.
 const TRANSCRIPTION_FIELDS: [&str; 5] = [
     "language",
     "prompt",
@@ -123,7 +122,6 @@ pub(crate) fn parse_speech(text: &str) -> Result<SpeechCallWire, ConvertError> {
     Ok(wire)
 }
 
-// process_audio_file rejects a bare str file, which reaches here as a JSON string.
 pub(crate) fn bare_string_file(arguments: &RequestMap) -> Result<(), ConvertError> {
     match arguments.get("file") {
         Some(Json::Text(_)) => Err(ConvertError::Audio(AudioFileError::BareString)),
@@ -132,7 +130,6 @@ pub(crate) fn bare_string_file(arguments: &RequestMap) -> Result<(), ConvertErro
     }
 }
 
-// process_audio_file: a name's extension picks the type, and a file without a name becomes audio.wav.
 pub(crate) fn audio_file(file: &CallFile) -> Result<(ProcessedAudioFile, String), AudioFileError> {
     let unnamed = file.name.is_empty() || file.name == UNNAMED_FILE;
     let audio = if unnamed {
@@ -162,7 +159,6 @@ pub(crate) fn first_file(files: &[(String, CallFile)]) -> Option<&CallFile> {
         .map(|(_name, file)| file)
 }
 
-// get_llm_provider's openai config: gpt-4o transcribes with its own family, everything else with whisper's.
 pub(crate) fn family_for(model: &str) -> TranscriptionFamily {
     if model.contains("gpt-4o") {
         TranscriptionFamily::Gpt
@@ -171,7 +167,6 @@ pub(crate) fn family_for(model: &str) -> TranscriptionFamily {
     }
 }
 
-// get_llm_provider over openai only: the prefix names the provider unless a different provider argument is given; neither means openai.
 pub(crate) fn resolve_target(model: &str, provider: Option<&str>) -> (String, String) {
     let Some((prefix, rest)) = model.split_once('/') else {
         return (
@@ -206,7 +201,6 @@ pub(crate) fn text(arguments: &RequestMap, name: &str) -> Result<Option<String>,
     }
 }
 
-// The argument's number; absent and null read as None, and any other value is a field error.
 fn number<'arguments>(
     arguments: &'arguments RequestMap,
     name: &str,
@@ -246,7 +240,6 @@ pub(crate) fn field(name: &str, expected: &'static str) -> ConvertError {
     }
 }
 
-// A file reaches Rust as bytes, so the audio path never opens a path itself.
 pub(crate) struct NoFiles;
 
 impl AuthorizedAudioFiles for NoFiles {
