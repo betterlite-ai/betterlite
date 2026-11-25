@@ -49,13 +49,8 @@ class StreamChoice(BaseModel):
 # Only callbacks read the logging object; the transform gets the response model itself
 def logging_object() -> Logging:
     return Logging(
-        model="",
-        messages=None,
-        stream=False,
-        call_type=CallTypes.completion,
-        start_time=datetime.now(UTC),
-        litellm_call_id="call-1",
-        function_id="fn-1",
+        model="", messages=None, stream=False, call_type=CallTypes.completion,
+        start_time=datetime.now(UTC), litellm_call_id="call-1", function_id="fn-1",
         litellm_trace_id="trace-1",
     )
 
@@ -103,9 +98,7 @@ def chat_view(response: ModelResponse) -> dict[str, JsonValue]:
     choice = response.choices[0] if response.choices else None
     message = choice.message if choice is not None else None
     return {
-        "id": response.id,
-        "model": response.model,
-        "object": response.object,
+        "id": response.id, "model": response.model, "object": response.object,
         "role": message.role if message is not None else None,
         "content": message.content if message is not None else None,
         "finish_reason": choice.finish_reason if choice is not None else None,
@@ -162,12 +155,8 @@ def status_code(error: Exception) -> int:
 # litellm builds its exceptions without a body, so the SDK reads no type, param or code
 def failure(error: Exception) -> dict[str, JsonValue]:
     return {
-        "class": type(error).__name__,
-        "status": status_code(error),
-        "type": None,
-        "param": None,
-        "code": None,
-        "message": str(error),
+        "class": type(error).__name__, "status": status_code(error),
+        "type": None, "param": None, "code": None, "message": str(error),
     }
 
 

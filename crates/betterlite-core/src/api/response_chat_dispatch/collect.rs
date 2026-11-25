@@ -32,10 +32,9 @@ where
         return Err(DispatchError::MissingCompletedResponse);
     };
     let payload = serde_json::from_value::<Json>(found)?;
-    let existing_hidden = existing_hidden(&payload);
     Ok(BridgeResponse {
+        existing_hidden: existing_hidden(&payload),
         payload: ResponsePayload::Dict(payload),
-        existing_hidden,
         stream_hidden,
     })
 }

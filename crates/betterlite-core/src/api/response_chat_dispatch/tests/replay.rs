@@ -35,55 +35,89 @@ async fn a_passed_through_chat_answer_keeps_its_choice_logprobs() {
     assert_eq!(chat_json(&expect_chat(output)), chat_json(&body));
 }
 
+// LiteLLM's Message always dumps content, role, function_call, tool_calls and provider_specific_fields, null when unset
+fn body_with(raw_message: &str) -> Box<super::ChatResponse> {
+    let raw = format!(
+        r#"{{"id":"chatcmpl-x","object":"chat.completion","created":1,"model":"gpt-4o-mini","choices":[{{"index":0,"message":{raw_message},"finish_reason":"stop"}}]}}"#
+    );
+    Box::new(serde_json::from_str(&raw).unwrap())
+}
+
+fn message_of(output: &super::ChatResponse) -> serde_json::Value {
+    serde_json::to_value(&output.choices[0].message).unwrap()
+}
+
 #[tokio::test]
 async fn a_passed_through_chat_answer_keeps_its_images_annotations_and_reasoning_items() {
-    let raw = r#"{"id":"chatcmpl-x","object":"chat.completion","created":1,"model":"gpt-4o-mini","choices":[{"index":0,"message":{"role":"assistant","content":"hi","images":[{"image_url":{"url":"https://img.test/a.png","detail":"high"},"index":3,"type":"image_url"}],"reasoning_items":[{"type":"reasoning","id":"rs_1","encrypted_content":"cipher","summary":[{"type":"summary_text","text":"thought"}]}],"annotations":[{"type":"url_citation","url_citation":{"start_index":0,"end_index":2,"title":"A","url":"https://a.test"}}]},"finish_reason":"stop"}]}"#;
-    let body: super::ChatResponse = serde_json::from_str(raw).unwrap();
-    let execution = FakeExecution::new(Answer::Chat(Box::new(body)));
+    let raw = r#"{"content":"hi","role":"assistant","tool_calls":null,"function_call":null,"images":[{"image_url":{"url":"https://img.test/a.png","detail":"high"},"index":3,"type":"image_url"},{"image_url":{"url":"https://img.test/b.png"},"index":4,"type":"image_url"}],"reasoning_items":[{"type":"reasoning","id":"rs_1","encrypted_content":"cipher","summary":[{"type":"summary_text","text":"thought"}]},{"type":"reasoning","id":"rs_2","summary":[{"type":"summary_text"}]}],"provider_specific_fields":null,"annotations":[{"type":"url_citation","url_citation":{"start_index":0,"end_index":2,"title":"A","url":"https://a.test"}},{"type":"url_citation","url_citation":{"url":"https://b.test"}}]}"#;
+    let execution = FakeExecution::new(Answer::Chat(body_with(raw)));
     let output = expect_chat(expect_ok(
         completion(&execution, call(&kwargs("gpt-4o-mini", "openai"))).await,
     ));
     let message = &output.choices[0].message;
-    let image = &message.images.as_ref().expect("the image stays typed")[0];
-    assert_eq!(image.index, 3);
-    assert_eq!(image.image_url.url, "https://img.test/a.png");
-    assert_eq!(image.image_url.detail.as_deref(), Some("high"));
-    let citation = message
+    let images = message.images.as_ref().expect("the image stays typed");
+    assert_eq!(images[0].index, 3);
+    assert_eq!(images[0].image_url.url, "https://img.test/a.png");
+    assert_eq!(images[0].image_url.detail.as_deref(), Some("high"));
+    assert_eq!(images[1].image_url.detail, None);
+    let annotations = message
         .annotations
         .as_ref()
-        .expect("the annotation stays typed")[0]
+        .expect("the annotation stays typed");
+    let citation = annotations[0]
         .url_citation
         .as_ref()
         .expect("the annotation carries its citation");
     assert_eq!(citation.url.as_deref(), Some("https://a.test"));
     assert_eq!(citation.start_index, Some(0));
     assert_eq!(citation.end_index, Some(2));
-    let reasoning = &message
+    assert_eq!(annotations[1].url_citation.as_ref().unwrap().title, None);
+    let reasoning = message
+        .reasoning_items
+        .as_ref()
+        .expect("the reasoning item stays typed");
+    assert_eq!(reasoning[0].id.as_deref(), Some("rs_1"));
+    assert_eq!(reasoning[0].encrypted_content.as_deref(), Some("cipher"));
+    assert_eq!(
+        reasoning[0].summary.as_ref().expect("the summary stays")[0]
+            .text
+            .as_deref(),
+        Some("thought")
+    );
+    assert_eq!(reasoning[1].summary.as_ref().unwrap()[0].text, None);
+    assert!(message.extra.is_empty());
+    assert_eq!(
+        message_of(&output),
+        serde_json::from_str::<serde_json::Value>(raw).unwrap()
+    );
+}
+
+#[tokio::test]
+async fn a_passed_through_chat_answer_keeps_a_reasoning_item_without_a_summary() {
+    let raw = r#"{"content":"hi","role":"assistant","tool_calls":null,"function_call":null,"reasoning_items":[{"type":"reasoning","id":"rs_1","encrypted_content":"cipher"}],"provider_specific_fields":null}"#;
+    let execution = FakeExecution::new(Answer::Chat(body_with(raw)));
+    let output = expect_chat(expect_ok(
+        completion(&execution, call(&kwargs("gpt-4o-mini", "openai"))).await,
+    ));
+    let reasoning = &output.choices[0]
+        .message
         .reasoning_items
         .as_ref()
         .expect("the reasoning item stays typed")[0];
-    assert_eq!(reasoning.id.as_deref(), Some("rs_1"));
-    assert_eq!(reasoning.encrypted_content.as_deref(), Some("cipher"));
-    assert_eq!(reasoning.summary[0].text.as_deref(), Some("thought"));
-    assert!(message.extra.is_empty());
+    assert!(reasoning.summary.is_none());
+    assert_eq!(
+        message_of(&output),
+        serde_json::from_str::<serde_json::Value>(raw).unwrap()
+    );
 }
 
 #[tokio::test]
 async fn a_passed_through_chat_answer_keeps_an_unknown_tool_call_field() {
-    let mut body = chat_response();
-    body.choices[0].message.content = None;
-    body.choices[0].finish_reason = Some(String::from("tool_calls"));
-    body.choices[0].message.tool_calls = Some(
-        serde_json::from_str(
-            r#"[{"id":"call_1","type":"function","index":2,"function":{"name":"get_weather","arguments":"{}"}}]"#,
-        )
-        .unwrap(),
-    );
-    let execution = FakeExecution::new(Answer::Chat(body.clone()));
+    let raw = r#"{"content":null,"role":"assistant","tool_calls":[{"id":"call_1","type":"function","index":2,"function":{"name":"get_weather","arguments":"{}"}}],"function_call":null,"provider_specific_fields":null}"#;
+    let execution = FakeExecution::new(Answer::Chat(body_with(raw)));
     let output = expect_chat(expect_ok(
         completion(&execution, call(&kwargs("gpt-4o-mini", "openai"))).await,
     ));
-    assert_eq!(chat_json(&output), chat_json(&body));
     let carried = output.choices[0]
         .message
         .tool_calls
@@ -93,6 +127,10 @@ async fn a_passed_through_chat_answer_keeps_an_unknown_tool_call_field() {
         .get("index")
         .and_then(JsonValue::as_i64);
     assert_eq!(carried, Some(2));
+    assert_eq!(
+        message_of(&output),
+        serde_json::from_str::<serde_json::Value>(raw).unwrap()
+    );
 }
 
 #[tokio::test]

@@ -58,19 +58,25 @@ pub struct ChatChoice {
     pub extra: JsonObject,
 }
 
-// Message: the payloads a replayed delta carries stay typed, and every other provider key round-trips through extra
+// Message: the payloads a replayed delta carries stay typed, absent ones stay out of the dump, and other keys round-trip
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(default)]
 pub struct ChatMessage {
     pub content: Option<String>,
     pub role: Option<String>,
     pub function_call: Option<DeltaFunction>,
     pub tool_calls: Option<Vec<ChatToolCall>>,
+    // absent payloads stay out of the dump, while the fields above keep the null LiteLLM's constructor sets
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub audio: Option<DeltaAudio>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning_content: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub thinking_blocks: Option<Vec<ChatThinkingBlock>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub images: Option<Vec<ChatImage>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning_items: Option<Vec<ChatReasoningItem>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub annotations: Option<Vec<ChatAnnotation>>,
     pub provider_specific_fields: Option<JsonObject>,
     #[serde(flatten)]
@@ -97,17 +103,20 @@ pub struct ChatImage {
     pub index: i64,
     pub r#type: String,
 }
+#[skip_serializing_none]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatImageUrl {
     pub url: String,
     pub detail: Option<String>,
 }
+#[skip_serializing_none]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatAnnotation {
     #[serde(default)]
     pub r#type: String,
     pub url_citation: Option<ChatUrlCitation>,
 }
+#[skip_serializing_none]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatUrlCitation {
     pub start_index: Option<i64>,
@@ -115,19 +124,22 @@ pub struct ChatUrlCitation {
     pub url: Option<String>,
     pub title: Option<String>,
 }
+#[skip_serializing_none]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatReasoningItem {
     pub r#type: String,
     pub id: Option<String>,
     pub encrypted_content: Option<String>,
-    pub summary: Vec<ChatReasoningSummary>,
+    pub summary: Option<Vec<ChatReasoningSummary>>,
 }
+#[skip_serializing_none]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatReasoningSummary {
     pub r#type: String,
     pub text: Option<String>,
 }
 // ChatCompletionMessageToolCall keeps the keys its constructor does not name, such as index
+#[skip_serializing_none]
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ChatToolCall {
