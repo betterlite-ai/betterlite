@@ -105,8 +105,8 @@ pub(crate) fn resolve_target(model: &str, provider: Option<&str>) -> (String, St
             found = Some(prefix);
         }
     }
-    let provider = found.map_or_else(|| OPENAI_PROVIDER.to_owned(), str::to_owned);
-    (name.to_owned(), provider)
+    let resolved_provider = found.map_or_else(|| OPENAI_PROVIDER.to_owned(), str::to_owned);
+    (name.to_owned(), resolved_provider)
 }
 
 pub(crate) fn field(name: &str, expected: &'static str) -> ConvertError {

@@ -60,7 +60,7 @@ pub(crate) fn edit_options(
             unsupported.push(name.clone());
         }
     }
-    if !unsupported.is_empty() && !(global_drop_params || call_drop) {
+    if !unsupported.is_empty() && !global_drop_params && !call_drop {
         return Err(ConvertError::UnsupportedParams {
             model: model.to_owned(),
             params: unsupported.join(", "),
