@@ -33,7 +33,6 @@ pub(crate) struct NativeDeclaredBatchRead {
 #[pymethods]
 impl NativeRedisBatch {
     #[new]
-    // ast-grep-ignore: no-one-line-functions - Python calls this constructor, so there is no Rust caller to inline into
     fn new(redis: PyRef<'_, NativeRedis>) -> Self {
         let tracker = TaskTracker::new();
         let batch = RedisBatch::new(Arc::clone(&redis.cache), "request_redis_batch", tracker);

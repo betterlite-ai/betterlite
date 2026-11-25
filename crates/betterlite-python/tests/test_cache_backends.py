@@ -131,6 +131,12 @@ LITELLM_WITH_BACKEND: CacheWithBackendModule = importlib.import_module("litellm.
 redis_server = fake_redis_server.redis_server
 
 
+@pytest.fixture
+def dual_with_redis(redis_server: FakeRedisServer) -> DualCache:
+    redis_cache = RedisCache(host=redis_server.host, port=redis_server.port)
+    return DualCache(in_memory_cache=InMemoryCache(), redis_cache=redis_cache)
+
+
 class NativeWrites(Protocol):
     def async_set(self, key: str, value: str, ttl: float | None) -> Awaitable[bool | None]: ...
 
@@ -506,13 +512,16 @@ async def _declared_values(
     return [None if value is None else decoder.validate_json(value) for value in answers]
 
 
-def test_dual_declares_batch(redis_server: FakeRedisServer) -> None:
-    redis_cache = RedisCache(host=redis_server.host, port=redis_server.port)
-    cache = DualCache(in_memory_cache=InMemoryCache(), redis_cache=redis_cache)
-    cache.in_memory_cache.set_cache("declared:memory", CHAT_RESPONSE)
-    redis_cache.set_cache("declared:redis", CACHED)
+def test_dual_declares_batch(dual_with_redis: DualCache) -> None:
+    assert dual_with_redis.redis_cache is not None
+    dual_with_redis.in_memory_cache.set_cache("declared:memory", CHAT_RESPONSE)
+    dual_with_redis.redis_cache.set_cache("declared:redis", CACHED)
     values = asyncio.run(
-        _declared_values(cache, redis_cache, ["declared:memory", "declared:redis", "declared:none"])
+        _declared_values(
+            dual_with_redis,
+            dual_with_redis.redis_cache,
+            ["declared:memory", "declared:redis", "declared:none"],
+        )
     )
     assert values == [CHAT_RESPONSE, CACHED, None]
 
@@ -537,14 +546,11 @@ async def _post_call_counts(cache: DualCache) -> None:
     )
 
 
-def test_dual_post_call_counts(redis_server: FakeRedisServer) -> None:
-    redis_cache = RedisCache(host=redis_server.host, port=redis_server.port)
-    cache = DualCache(in_memory_cache=InMemoryCache(), redis_cache=redis_cache)
-
-    asyncio.run(_post_call_counts(cache))
-    assert cache.get_cache("post:single", local_only=True) == POST_SINGLE_TOTAL
-    assert cache.get_cache("post:first", local_only=True) == POST_FIRST_TOTAL
-    assert cache.get_cache("post:second", local_only=True) == POST_SECOND_TOTAL
+def test_dual_post_call_counts(dual_with_redis: DualCache) -> None:
+    asyncio.run(_post_call_counts(dual_with_redis))
+    assert dual_with_redis.get_cache("post:single", local_only=True) == POST_SINGLE_TOTAL
+    assert dual_with_redis.get_cache("post:first", local_only=True) == POST_FIRST_TOTAL
+    assert dual_with_redis.get_cache("post:second", local_only=True) == POST_SECOND_TOTAL
 
 
 def test_dual_rejects_backfill_ttl(redis_server: FakeRedisServer) -> None:
