@@ -18,7 +18,7 @@ use super::{
 };
 
 // The HTTP call LiteLLM makes for the turn, through the production aresponses path, with the answer discarded
-pub(super) async fn dispatch(
+pub(in crate::helpers::core_ops::responses_ws_managed) async fn dispatch(
     outbound: &Outbound,
     base_url: &str,
     model: &str,
@@ -27,7 +27,7 @@ pub(super) async fn dispatch(
     let call: ResponsesCreateCall =
         transcode(&Json::Object(dispatched(base_url, model, call_kwargs)))
             .map_err(FixtureError::Call)?;
-    let probe = LoggingProbe::new()?;
+    let mut probe = LoggingProbe::new()?;
     let environment = PrePostEnv {
         debug: DebugSettings::default(),
         globals: GlobalFlags::default(),

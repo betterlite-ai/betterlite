@@ -10,7 +10,9 @@ const CREATED: &str = r#"{"type":"response.created","response":{"id":"resp_manag
 const COMPLETED: &str = r#"{"type":"response.completed","response":{"id":"resp_managed","object":"response","created_at":1741476542,"model":"gpt-4o-mini","status":"completed","output":[]}}"#;
 
 // the fixture dispatch always asks for streamed events, so every call is answered with one stream
-pub(super) fn start_mock(slots: usize) -> Result<MockProvider, HelperRunError> {
+pub(in crate::helpers::core_ops::responses_ws_managed) fn start_mock(
+    slots: usize,
+) -> Result<MockProvider, HelperRunError> {
     let answers = vec![answer(); slots];
     let script = MockScript::try_from(answers.as_slice())?;
     MockProvider::start(script)
@@ -30,7 +32,9 @@ fn answer() -> UpstreamAnswer {
     }
 }
 
-pub(super) fn requests(calls: &[ProviderCall]) -> Value {
+pub(in crate::helpers::core_ops::responses_ws_managed) fn requests(
+    calls: &[ProviderCall],
+) -> Value {
     let rows: Vec<Value> = calls
         .iter()
         .map(|call| {

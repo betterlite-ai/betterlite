@@ -91,18 +91,18 @@ async fn an_empty_model_or_group_names_the_resolved_model_in_the_proxy_body() {
     ];
     let provider = support::ScriptedProvider::new(&shared, scripts);
     let empty_model = r#"{"type": "response.create", "model": "", "input": "hello"}"#;
-    let (outcome, _logs) = support::capture(process_response_create(
+    let (empty_model_outcome, _empty_model_logs) = support::capture(process_response_create(
         &mut handler,
         &provider,
         empty_model,
     ))
     .await;
-    outcome.unwrap();
+    empty_model_outcome.unwrap();
     handler.model_group = Some(String::new());
     let frame = r#"{"type": "response.create", "input": "hello"}"#;
-    let (outcome, _logs) =
+    let (group_outcome, _group_logs) =
         support::capture(process_response_create(&mut handler, &provider, frame)).await;
-    outcome.unwrap();
+    group_outcome.unwrap();
     let recorded = support::calls(&shared);
     assert_eq!(recorded.len(), 2);
     assert!(recorded[0].model.is_empty());

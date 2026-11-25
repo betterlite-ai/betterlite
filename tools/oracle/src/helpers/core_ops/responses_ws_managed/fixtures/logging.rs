@@ -14,21 +14,21 @@ use super::FixtureError;
 // 2026-01-01T00:00:05Z, the instant every dispatch records at
 const NOW_SECONDS: i64 = 1_767_225_605;
 
-pub(super) struct Sink;
+pub(in crate::helpers::core_ops::responses_ws_managed) struct Sink;
 
 impl LogSink for Sink {
     fn emit(&self, _record: LogRecord) {}
 }
 
-pub(super) struct LoggingProbe {
-    pub(super) redactor: Redactor,
-    pub(super) sink: Sink,
-    pub(super) state: LoggingState,
-    pub(super) now: DateTime<FixedOffset>,
+pub(in crate::helpers::core_ops::responses_ws_managed) struct LoggingProbe {
+    pub(in crate::helpers::core_ops::responses_ws_managed) redactor: Redactor,
+    pub(in crate::helpers::core_ops::responses_ws_managed) sink: Sink,
+    pub(in crate::helpers::core_ops::responses_ws_managed) state: LoggingState,
+    pub(in crate::helpers::core_ops::responses_ws_managed) now: DateTime<FixedOffset>,
 }
 
 impl LoggingProbe {
-    pub(super) fn new() -> Result<Self, FixtureError> {
+    pub(in crate::helpers::core_ops::responses_ws_managed) fn new() -> Result<Self, FixtureError> {
         let Some(instant) = DateTime::<Utc>::from_timestamp(NOW_SECONDS, 0) else {
             return Err(FixtureError::Clock);
         };
