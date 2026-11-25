@@ -42,7 +42,7 @@ enum StoredProviders {
 #[derive(Debug, Deserialize)]
 #[serde(transparent)]
 struct WrongProviderItems {
-    _items: Vec<IgnoredAny>,
+    items: Vec<IgnoredAny>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -69,7 +69,7 @@ pub(crate) fn handler_params(stored: &JsonMap) -> Result<WebsearchParams, Websea
     let enabled_providers = match parsed.enabled_providers {
         Some(StoredProviders::Names(names)) if !names.is_empty() => names,
         Some(StoredProviders::WrongItems(items)) => {
-            drop(items._items);
+            drop(items.items);
             return Err(WebsearchParamError::EnabledProvider);
         }
         Some(StoredProviders::Names(_) | StoredProviders::NotAList(_)) | None => {
