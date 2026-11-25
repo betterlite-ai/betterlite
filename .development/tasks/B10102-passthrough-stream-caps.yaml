@@ -20,8 +20,7 @@ scope:
   - crates/betterlite-logging/src/passthrough_stream_lifecycle.rs
   - crates/betterlite-logging/src/passthrough_stream_lifecycle/chunk_processor.rs
   - crates/betterlite-logging/src/passthrough_stream_lifecycle/chunk_processor/frames.rs
-  - crates/betterlite-logging/src/passthrough_stream_lifecycle/tests/stream_caps.rs
-  - crates/betterlite-logging/src/passthrough_stream_lifecycle/tests/support.rs
+  - crates/betterlite-logging/src/passthrough_stream_lifecycle/tests/**
   - docs/deviations/B10102.yaml
   lint_tables: false
 references:
