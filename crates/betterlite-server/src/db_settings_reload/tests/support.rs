@@ -127,18 +127,18 @@ impl FakeRows {
 #[async_trait]
 impl SettingsRows for FakeRows {
     async fn litellm_settings(&self) -> Result<Option<JsonValue>, DbError> {
-        match &self.fail {
-            Some(error) => Err(error.clone()),
-            None => Ok(self.litellm_settings.clone()),
-        }
+        self.fail.as_ref().map_or_else(
+            || Ok(self.litellm_settings.clone()),
+            |error| Err(error.clone()),
+        )
     }
 
     async fn config_override(&self, kind: OverrideKind) -> Result<Option<JsonValue>, DbError> {
         let call = self.calls.fetch_add(1, Ordering::SeqCst);
-        if let Some(error) = &self.fail {
-            if !self.fail_once || call == 0 {
-                return Err(error.clone());
-            }
+        if let Some(error) = &self.fail
+            && (!self.fail_once || call == 0)
+        {
+            return Err(error.clone());
         }
         Ok(match kind {
             OverrideKind::HashicorpVault => self.vault.clone(),
@@ -207,7 +207,7 @@ impl FakeReconnect {
         (
             Self {
                 result,
-                reasons: reasons.clone(),
+                reasons: Arc::clone(&reasons),
             },
             reasons,
         )
@@ -418,9 +418,7 @@ impl<Router: ?Sized + Sync> SemanticFilterReload<Router> for FakeFilter {
     }
 }
 
-pub(crate) struct TestRouter {
-    pub name: &'static str,
-}
+pub(crate) struct TestRouter;
 
 #[derive(Clone, Default)]
 pub(crate) struct Captured(Arc<Mutex<Vec<u8>>>);

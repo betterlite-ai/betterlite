@@ -11,8 +11,8 @@ fn rows_with(config: &str) -> FakeRows {
     FakeRows::litellm(json(&format!("{{\"mcp_semantic_tool_filter\":{config}}}")))
 }
 
-fn port(filter: &FakeFilter) -> Option<&dyn SemanticFilterReload<TestRouter>> {
-    Some(filter)
+fn port(filter: &FakeFilter) -> &dyn SemanticFilterReload<TestRouter> {
+    filter
 }
 
 #[tokio::test]
@@ -22,7 +22,7 @@ async fn an_absent_row_does_nothing() {
     let filter = FakeFilter::default();
     let (logs, _guard) = capture_logs();
     reloader
-        .reload_semantic_filter(&FakeRows::default(), port(&filter), None)
+        .reload_semantic_filter(&FakeRows::default(), Some(port(&filter)), None)
         .await;
     assert!(filter.rebuilds().is_empty());
     assert_eq!(logs.contents(), "");
@@ -36,7 +36,7 @@ async fn an_absent_key_does_nothing() {
     let rows = FakeRows::litellm(json("{\"websearch_interception_params\":{}}"));
     let (logs, _guard) = capture_logs();
     reloader
-        .reload_semantic_filter(&rows, port(&filter), None)
+        .reload_semantic_filter(&rows, Some(port(&filter)), None)
         .await;
     assert!(filter.rebuilds().is_empty());
     assert_eq!(logs.contents(), "");
@@ -49,7 +49,7 @@ async fn a_null_value_does_nothing() {
     let filter = FakeFilter::default();
     let (logs, _guard) = capture_logs();
     reloader
-        .reload_semantic_filter(&rows_with("null"), port(&filter), None)
+        .reload_semantic_filter(&rows_with("null"), Some(port(&filter)), None)
         .await;
     assert!(filter.rebuilds().is_empty());
     assert_eq!(logs.contents(), "");
@@ -62,7 +62,7 @@ async fn a_value_that_is_not_a_mapping_is_logged() {
     let filter = FakeFilter::default();
     let (logs, _guard) = capture_logs();
     reloader
-        .reload_semantic_filter(&rows_with("5"), port(&filter), None)
+        .reload_semantic_filter(&rows_with("5"), Some(port(&filter)), None)
         .await;
     assert!(filter.rebuilds().is_empty());
     assert!(logs.contents().contains(
@@ -107,12 +107,12 @@ async fn a_disabled_config_rebuilds_and_is_remembered() {
     let control = ControlLog::default();
     let mut reloader = reloader(&control);
     let filter = FakeFilter::default();
-    let router = TestRouter { name: "router" };
+    let router = TestRouter;
     let (logs, _guard) = capture_logs();
     reloader
         .reload_semantic_filter(
             &rows_with("{\"enabled\":false}"),
-            port(&filter),
+            Some(port(&filter)),
             Some(&router),
         )
         .await;
@@ -137,7 +137,7 @@ async fn a_config_without_enabled_is_rebuilt_as_disabled() {
     let filter = FakeFilter::default();
     let (_logs, _guard) = capture_logs();
     reloader
-        .reload_semantic_filter(&rows_with("{}"), port(&filter), None)
+        .reload_semantic_filter(&rows_with("{}"), Some(port(&filter)), None)
         .await;
     assert_eq!(
         filter.rebuilds(),
@@ -155,7 +155,7 @@ async fn a_null_enabled_is_rebuilt_as_disabled() {
     let filter = FakeFilter::default();
     let (_logs, _guard) = capture_logs();
     reloader
-        .reload_semantic_filter(&rows_with("{\"enabled\":null}"), port(&filter), None)
+        .reload_semantic_filter(&rows_with("{\"enabled\":null}"), Some(port(&filter)), None)
         .await;
     assert_eq!(
         filter.rebuilds(),
@@ -172,12 +172,12 @@ async fn an_enabled_config_that_registers_a_hook_says_so() {
     let mut reloader = reloader(&control);
     let filter = FakeFilter::default();
     filter.registers.store(true, Ordering::SeqCst);
-    let router = TestRouter { name: "router" };
+    let router = TestRouter;
     let (logs, _guard) = capture_logs();
     reloader
         .reload_semantic_filter(
             &rows_with("{\"enabled\":true}"),
-            port(&filter),
+            Some(port(&filter)),
             Some(&router),
         )
         .await;
@@ -203,12 +203,12 @@ async fn an_enabled_config_that_registers_no_hook_says_nothing() {
     let control = ControlLog::default();
     let mut reloader = reloader(&control);
     let filter = FakeFilter::default();
-    let router = TestRouter { name: "router" };
+    let router = TestRouter;
     let (logs, _guard) = capture_logs();
     reloader
         .reload_semantic_filter(
             &rows_with("{\"enabled\":true}"),
-            port(&filter),
+            Some(port(&filter)),
             Some(&router),
         )
         .await;
@@ -235,7 +235,7 @@ async fn an_unchanged_config_with_a_ready_hook_is_skipped() {
     filter.ready.store(true, Ordering::SeqCst);
     let (logs, _guard) = capture_logs();
     reloader
-        .reload_semantic_filter(&rows_with("{\"enabled\":false}"), port(&filter), None)
+        .reload_semantic_filter(&rows_with("{\"enabled\":false}"), Some(port(&filter)), None)
         .await;
     assert!(filter.rebuilds().is_empty());
     assert!(
@@ -252,7 +252,7 @@ async fn an_unchanged_config_without_a_ready_hook_rebuilds() {
     let filter = FakeFilter::default();
     let (logs, _guard) = capture_logs();
     reloader
-        .reload_semantic_filter(&rows_with("{\"enabled\":false}"), port(&filter), None)
+        .reload_semantic_filter(&rows_with("{\"enabled\":false}"), Some(port(&filter)), None)
         .await;
     assert_eq!(
         filter.rebuilds(),
@@ -275,7 +275,7 @@ async fn a_changed_config_rebuilds_even_with_a_ready_hook() {
     filter.ready.store(true, Ordering::SeqCst);
     let (logs, _guard) = capture_logs();
     reloader
-        .reload_semantic_filter(&rows_with("{\"enabled\":false}"), port(&filter), None)
+        .reload_semantic_filter(&rows_with("{\"enabled\":false}"), Some(port(&filter)), None)
         .await;
     assert_eq!(filter.rebuilds().len(), 1);
     assert!(!logs.contents().contains("unchanged"));
@@ -288,7 +288,11 @@ async fn an_enabled_that_is_not_a_bool_is_an_error() {
     let filter = FakeFilter::default();
     let (logs, _guard) = capture_logs();
     reloader
-        .reload_semantic_filter(&rows_with("{\"enabled\":\"true\"}"), port(&filter), None)
+        .reload_semantic_filter(
+            &rows_with("{\"enabled\":\"true\"}"),
+            Some(port(&filter)),
+            None,
+        )
         .await;
     assert!(filter.rebuilds().is_empty());
     assert!(logs.contents().contains(
@@ -305,7 +309,7 @@ async fn a_litellm_settings_that_is_not_an_object_is_logged() {
     let rows = FakeRows::litellm(JsonValue::String("[]".to_owned()));
     let (logs, _guard) = capture_logs();
     reloader
-        .reload_semantic_filter(&rows, port(&filter), None)
+        .reload_semantic_filter(&rows, Some(port(&filter)), None)
         .await;
     assert!(filter.rebuilds().is_empty());
     assert!(logs.contents().contains(
