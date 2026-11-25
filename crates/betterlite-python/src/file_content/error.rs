@@ -18,7 +18,6 @@ use super::dispatch::DispatchError;
 
 create_exception!(betterlite_native, NativeFileContentError, PyException);
 
-// What _completion/errors.py builds a LiteLLM exception from: its class, its message and its attributes.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct FileFailurePayload {
     #[serde(rename = "type")]
@@ -57,7 +56,6 @@ impl From<Failure> for PyErr {
     }
 }
 
-// the payload Python rebuilds LiteLLM's exception from, or a plain runtime error when it cannot be written
 fn encoded_error(payload: &FileFailurePayload) -> PyErr {
     match serde_json::to_string(payload) {
         Ok(text) => NativeFileContentError::new_err(text),
@@ -183,7 +181,6 @@ const fn class_for_status(status: u16) -> &'static str {
     }
 }
 
-// the azure endpoints layer names the class a resolved endpoint raises
 fn azure_endpoint_failure(source: &EndpointError) -> Failure {
     match source.class() {
         "KeyError" => Failure::Key(source.to_string()),

@@ -408,33 +408,33 @@ def test_stream_chunks_by_size() -> None:
     assert made_chunks == reference_chunks == [BODY[:3], BODY[3:6], BODY[6:]]
 
 
+async def async_stream_comparison(server: FileServer) -> tuple[list[bytes], list[bytes]]:
+    reference = await REFERENCE.afile_content(
+        file_id=FILE_ID,
+        custom_llm_provider="openai",
+        api_base=server.url,
+        api_key=GOOD_KEY,
+        stream=True,
+    )
+    made = made_stream(await afile_content(
+        file_id=FILE_ID,
+        custom_llm_provider="openai",
+        api_base=server.url,
+        api_key=GOOD_KEY,
+        stream=True,
+    ))
+    reference_chunks = await async_chunks(reference.stream_iterator)
+    made_chunks = await async_chunks(made.stream_iterator)
+    wrapper = wrapper_of(made)
+    await wrapper.aclose()
+    await wrapper.aclose()
+    await reference.stream_iterator.aclose()
+    return reference_chunks, made_chunks
+
+
 def test_stream_async_matches() -> None:
     with FileServer() as server:
-        reference = asyncio.run(
-            REFERENCE.afile_content(
-                file_id=FILE_ID,
-                custom_llm_provider="openai",
-                api_base=server.url,
-                api_key=GOOD_KEY,
-                stream=True,
-            )
-        )
-        made = made_stream(
-            asyncio.run(
-                afile_content(
-                    file_id=FILE_ID,
-                    custom_llm_provider="openai",
-                    api_base=server.url,
-                    api_key=GOOD_KEY,
-                    stream=True,
-                )
-            )
-        )
-        reference_chunks = asyncio.run(async_chunks(reference.stream_iterator))
-        made_chunks = asyncio.run(async_chunks(made.stream_iterator))
-        wrapper = wrapper_of(made)
-        asyncio.run(wrapper.aclose())
-        asyncio.run(wrapper.aclose())
+        reference_chunks, made_chunks = asyncio.run(async_stream_comparison(server))
     assert made_chunks == reference_chunks == [BODY]
 
 

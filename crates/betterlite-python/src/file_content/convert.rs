@@ -50,7 +50,6 @@ pub(crate) struct RequestWire {
     pub(crate) id: Option<String>,
 }
 
-// The call's own values, owned so one ContentCall can borrow them for the whole call.
 #[derive(Debug)]
 pub(crate) struct FileCall {
     pub(crate) file_id: String,

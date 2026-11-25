@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::future::Future;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -224,12 +224,13 @@ impl ClientMaterializer for NoMaterializer {
 // The logging B250 and B251 would supply. No production bridge exists in this build, so a stream logs to nothing.
 #[derive(Default)]
 pub(crate) struct SilentLogging {
-    pub(crate) provider: OnceLock<String>,
+    pub(crate) provider: Mutex<Option<String>>,
 }
 
 impl ContentLogging for SilentLogging {
     fn record_identity(&self, identity: &StreamIdentity<'_>) {
-        let _previous = self.provider.set(identity.custom_llm_provider.to_owned());
+        *self.provider.lock().unwrap_or_else(PoisonError::into_inner) =
+            Some(identity.custom_llm_provider.to_owned());
     }
 
     fn stream_logger(self: Arc<Self>) -> Arc<dyn FileStreamLogger> {

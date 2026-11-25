@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
+use std::sync::{Arc, PoisonError};
 
 use betterlite_config::loader::ConfigError;
 use betterlite_config::loader::startup::process_environment;
@@ -158,7 +158,14 @@ impl FileContentCore {
         service
             .run(entry, &call.call(), context)
             .await
-            .map(|answer| (answer, logging.provider.get().cloned()))
+            .map(|answer| {
+                let provider = logging
+                    .provider
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .clone();
+                (answer, provider)
+            })
             .map_err(|error| PyErr::from(failure_for(&error)))
     }
 }

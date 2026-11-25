@@ -296,7 +296,7 @@ fn request_phase_deadline(#[case] text: &str, #[case] expected: f64) {
     let phases: StructuredTimeout = serde_json::from_str(text).unwrap();
     assert_eq!(
         deadline(FineTuningTimeout::Structured(phases)),
-        Some(Duration::from_secs_f64(expected))
+        Some(Duration::try_from_secs_f64(expected).unwrap())
     );
 }
 
