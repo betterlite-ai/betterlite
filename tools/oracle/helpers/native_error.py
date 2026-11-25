@@ -13,27 +13,6 @@ litellm.suppress_debug_info = True
 JsonValue: TypeAlias = None | bool | int | float | str | list["JsonValue"] | dict[str, "JsonValue"]
 
 
-class RawErrorInnerErrorInput(TypedDict):
-    code: NotRequired[str | None]
-
-
-class RawErrorDetailInput(TypedDict):
-    type: NotRequired[str | None]
-    param: NotRequired[str | None]
-    code: NotRequired[str | None]
-    message: NotRequired[str | None]
-    inner_error: NotRequired[RawErrorInnerErrorInput | None]
-    innererror: NotRequired[RawErrorInnerErrorInput | None]
-
-
-class RawErrorBodyInput(TypedDict):
-    type: NotRequired[str | None]
-    param: NotRequired[str | None]
-    code: NotRequired[str | None]
-    message: NotRequired[str | None]
-    error: NotRequired[RawErrorDetailInput | None]
-
-
 class RawInput(TypedDict):
     kind: Literal["raw"]
     model: str
@@ -42,7 +21,7 @@ class RawInput(TypedDict):
     status_code: NotRequired[int | None]
     status_code_is_synthesized: NotRequired[bool]
     message: NotRequired[str | None]
-    body: NotRequired[RawErrorBodyInput | None]
+    body: NotRequired[dict[str, JsonValue] | None]
     exception_type: NotRequired[str]
 
 
@@ -65,7 +44,7 @@ class _OriginalError(Exception):
         error_str: str,
         *,
         message: str | None = None,
-        body: JsonValue = None,
+        body: dict[str, JsonValue] | None = None,
     ) -> None:
         super().__init__(error_str)
         # a real SDK exception always carries .message; the native elif chain reads it unguarded
@@ -150,13 +129,13 @@ def _raw_exception(input_value: RawInput) -> Exception:
         return _exception_class(name)(
             input_value["error_str"],
             message=message,
-            body=cast(JsonValue, input_value.get("body")),
+            body=input_value.get("body"),
         )
     return _status_exception_class(name)(
         status_code=status_code,
         message=message,
         status_code_is_synthesized=input_value.get("status_code_is_synthesized", False),
-        body=cast(dict[str, JsonValue] | None, input_value.get("body")),
+        body=input_value.get("body"),
     )
 
 
