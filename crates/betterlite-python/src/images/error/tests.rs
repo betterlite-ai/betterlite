@@ -32,8 +32,8 @@ fn connection_failure_serializes_class_metadata() {
             Some(String::from("openai")),
         );
         let error = class_error(&failure);
-        let text = error.value(py).str().unwrap().to_str().unwrap();
-        let payload: serde_json::Value = serde_json::from_str(text).unwrap();
+        let text = error.value(py).str().unwrap();
+        let payload: serde_json::Value = serde_json::from_str(text.to_str().unwrap()).unwrap();
         assert_eq!(payload["message"], "connection refused");
         assert_eq!(payload["model"], "dall-e-2");
         assert_eq!(payload["llm_provider"], "openai");

@@ -532,7 +532,7 @@ fn request_session_present_drops_an_empty_secret() {
     )
     .unwrap();
     assert!(setup.credentials.api_key.is_none());
-    assert_eq!(setup.timeout, super::super::DEFAULT_TIMEOUT);
+    assert_eq!(setup.timeout, super::DEFAULT_TIMEOUT);
     let fallback = SettingsWire {
         api_base: None,
         api_key: Some(SecretString::from("")),
