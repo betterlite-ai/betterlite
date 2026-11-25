@@ -795,7 +795,8 @@ def test_budget_lifecycle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     assert ours.get_current_cost(ALICE) == reference.get_current_cost(ALICE) == ZERO_COST
     assert ours.get_model_cost(ALICE) == reference.get_model_cost(ALICE) == {}
     alice = ours.user_dict[ALICE]
-    assert alice.get("last_updated_at") == clock.now
+    assert "last_updated_at" in alice
+    assert alice["last_updated_at"] == clock.now
     assert "duration" not in ours.user_dict[BOB]
     assert ours.get_current_cost(BOB) == reference.get_current_cost(BOB) != ZERO_COST
     join_saves(marker)
