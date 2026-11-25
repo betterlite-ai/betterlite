@@ -8,7 +8,7 @@ deviations:
       betterlite returns typed errors and the HTTP route owner maps them onto its 500 envelope,
       and docs/compatibility.md keeps Python repr out of betterlite's output, so the message names
       the setting, the accepted value and the key sources instead of formatting the current object.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/credential_migration.py#L191-L205
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/credential_migration.py#L191-L208
 kept_bugs:
   - what: >-
       Migrated team and verification-token metadata is stored as a JSON string instead of a JSON
@@ -20,4 +20,4 @@ kept_bugs:
       migration already has these rows in that shape, so betterlite writes the string and reads a
       string back exactly as LiteLLM does instead of inventing an object form no LiteLLM run
       produces.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/credential_migration.py#L396-L399
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/credential_migration.py#L398-L401
