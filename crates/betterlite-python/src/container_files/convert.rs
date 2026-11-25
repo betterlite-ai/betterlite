@@ -129,11 +129,10 @@ impl Arguments {
 
 // LiteLLM accepts a timeout and never sends it: zero, negative and unrepresentable values read as absent
 pub(crate) fn requested_timeout(given: Option<f64>) -> Option<Duration> {
-    given.and_then(|seconds| {
-        Duration::try_from_secs_f64(seconds)
-            .ok()
-            .filter(|duration| !duration.is_zero())
-    })
+    let seconds = given?;
+    Duration::try_from_secs_f64(seconds)
+        .ok()
+        .filter(|duration| !duration.is_zero())
 }
 
 // extra_query crosses as a JSON map; LiteLLM sends a string or a number, and a name says which value failed

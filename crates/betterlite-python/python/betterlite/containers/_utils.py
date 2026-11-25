@@ -98,13 +98,13 @@ def decode_managed_container_id_for_request(  # ast-grep-ignore: no-long-names
 ) -> tuple[str, str, GenericLiteLLMParams]:
     decoded = decode_container_id(container_id)
     provider = custom_llm_provider
-    discovered = decoded["custom_llm_provider"]
+    discovered = decoded.get("custom_llm_provider")
     if discovered is not None and custom_llm_provider == OPENAI:
         provider = discovered
-    model_id = decoded["model_id"]
+    model_id = decoded.get("model_id")
     if model_id is not None and litellm_params.get("model_id") is None:
         litellm_params["model_id"] = model_id
-    return decoded["response_id"], provider, litellm_params
+    return decoded.get("response_id", container_id), provider, litellm_params
 
 
 # a creation or list call keeps only the keywords LiteLLM reads, and only when the caller gave them

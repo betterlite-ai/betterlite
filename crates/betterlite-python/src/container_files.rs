@@ -53,7 +53,7 @@ where
 }
 
 // a content answer is the provider's bytes, or the catalog's parsed mock value
-fn answer_object<'py>(py: Python<'py>, answer: Answer) -> PyResult<Bound<'py, PyAny>> {
+fn answer_object(py: Python<'_>, answer: Answer) -> PyResult<Bound<'_, PyAny>> {
     match answer {
         Answer::Bytes(bytes) => Ok(PyBytes::new(py, &bytes).into_any()),
         Answer::Json(text) => py.import("json")?.call_method1("loads", (text,)),
