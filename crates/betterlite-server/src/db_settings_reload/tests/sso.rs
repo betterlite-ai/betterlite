@@ -1,6 +1,7 @@
 use std::error::Error as _;
 
 use betterlite_db::auxiliary_repository::repository::TableError;
+use betterlite_db::postgres_store::errors::DbError as NativeDbError;
 use betterlite_db::stored_cipher::DbCipher;
 
 use super::support::{
@@ -182,10 +183,36 @@ async fn a_row_read_failure_keeps_the_table_error_as_its_source() {
     let error = read_sso_row(reconnect.as_mut(), &db).await.unwrap_err();
     assert!(matches!(
         &error,
-        SettingsReloadError::SsoRow(TableError::MissingRow)
+        SettingsReloadError::SsoRow {
+            source: TableError::MissingRow,
+            ..
+        }
     ));
     let source = error.source().unwrap();
     assert_eq!(source.to_string(), "statement returned no row");
+}
+
+#[tokio::test]
+async fn a_reconnect_failure_keeps_the_table_and_reconnect_errors() {
+    let (reconnect, _reasons) = FakeReconnect::new(ReconnectResult::Failed);
+    let mut reconnect = Some(reconnect);
+    let db = FakeSso::new(SsoReply::Transport);
+    let error = read_sso_row(reconnect.as_mut(), &db).await.unwrap_err();
+
+    let SettingsReloadError::SsoRow { source, database } = &error else {
+        panic!("a failed SSO retry keeps its table error");
+    };
+    assert!(matches!(
+        source,
+        TableError::Database(NativeDbError::NoDbConnected)
+    ));
+    assert_eq!(
+        database
+            .cause
+            .as_deref()
+            .map(|cause| cause.message.as_str()),
+        Some("the reconnect failed")
+    );
 }
 
 #[tokio::test]

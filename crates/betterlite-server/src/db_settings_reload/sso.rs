@@ -39,7 +39,7 @@ where
     Ok(())
 }
 
-// The retried read reports the row's own TableError, so the surfaced error keeps the repository and PostgreSQL chain.
+// Keep the typed table failure and the retry helper's database error, which carries any reconnect failure.
 pub(super) async fn read_sso_row<Db, Client>(
     reconnect: Option<&mut Client>,
     db: &Db,
@@ -78,7 +78,7 @@ where
         Err(database) => {
             let recorded = fault.lock().unwrap_or_else(PoisonError::into_inner).take();
             if let Some(source) = recorded {
-                return Err(SettingsReloadError::SsoRow(source));
+                return Err(SettingsReloadError::SsoRow { source, database });
             }
             Err(SettingsReloadError::Database(database))
         }

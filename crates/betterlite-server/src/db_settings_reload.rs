@@ -56,8 +56,12 @@ pub enum SettingsReloadError {
     LitellmSettingsNotAnObject,
     #[error(transparent)]
     WebsearchParams(#[from] WebsearchParamError),
-    #[error("could not read the sso_settings row: {0}")]
-    SsoRow(#[source] TableError),
+    #[error("could not read the sso_settings row: {source}")]
+    SsoRow {
+        #[source]
+        source: TableError,
+        database: DbError,
+    },
     #[error("sso_settings is not a JSON object")]
     SsoNotAnObject,
     #[error("mcp_semantic_tool_filter is not a JSON object")]
