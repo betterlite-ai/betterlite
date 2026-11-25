@@ -11,7 +11,7 @@ use betterlite_prometheus::collector_registry::metric::{
 use rust_decimal::Decimal;
 use rust_decimal::prelude::FromPrimitive as _;
 
-use super::{Action, MetricSpec, UpdateSpec};
+use super::{Action, Kind, MetricSpec, UpdateSpec};
 
 pub(super) fn build(
     registry: &CollectorRegistry,
@@ -33,12 +33,17 @@ fn build_one(
         bounds.push(Bucket::Seconds(*seconds));
     }
     let label_names: Vec<&str> = spec.labels.iter().map(String::as_str).collect();
+    // Counter._metric_init and Gauge._metric_init take no buckets; only Histogram validates them and adds the infinite bound
+    let prepared = match spec.kind {
+        Kind::Histogram => prepare_buckets(&bounds).or_value_error()?,
+        Kind::Counter | Kind::Gauge => Vec::new(),
+    };
     let metric = PrometheusMetric::new(
         spec.kind.collector_kind(),
         &spec.name,
         &spec.help,
         &label_names,
-        prepare_buckets(&bounds).or_value_error()?,
+        prepared,
     )
     .with_multiprocess_mode(spec.mode.gauge_mode());
     registry.register(metric.clone()).or_value_error()?;
