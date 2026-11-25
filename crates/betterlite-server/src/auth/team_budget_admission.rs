@@ -10,14 +10,17 @@ use betterlite_auth::auth_errors::conversion::{AuthFailure, as_proxy_exception};
 use betterlite_auth::auth_key_budgets::alerts::BudgetAlertSink;
 use betterlite_auth::auth_key_budgets::spend::{SpendReadError, SpendReader};
 use betterlite_auth::auth_model_patterns::decision::ModelAccessContext;
-use betterlite_auth::auth_model_patterns::pattern::UnresolvedProviderInference;
+use betterlite_auth::auth_model_patterns::pattern::{
+    ProviderInference, UnresolvedProviderInference,
+};
+use betterlite_auth::auth_model_patterns::view::ModelAccessView;
 use betterlite_auth::auth_request_models::RequestedModels;
 use betterlite_auth::budget_primitives::window_start::DurationParser;
 use betterlite_auth::current_spend::SpendQuery;
 use betterlite_auth::membership_load::error::MembershipLoadError;
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 use betterlite_auth::team_budget_admission::alerts::TeamAlertSink;
-use betterlite_auth::team_budget_admission::error::TeamBudgetError;
+use betterlite_auth::team_budget_admission::error::{TeamBudgetError, membership_failure};
 use betterlite_auth::team_budget_admission::sources::{
     DefaultBudgetSource, Membership, MembershipSource,
 };
@@ -36,6 +39,8 @@ use crate::error_body::AuthenticationFailure;
 
 mod tests;
 
+static UNRESOLVED_PROVIDER: UnresolvedProviderInference = UnresolvedProviderInference;
+
 // what the auth service resolved before this stage: the team row, the key, the request model and the collaborators
 pub struct TeamBudgetRule {
     pub team: Option<LiteLLMTeamTable>,
@@ -43,6 +48,9 @@ pub struct TeamBudgetRule {
     pub user_email: Option<String>,
     pub model: RequestedModels,
     pub membership: Membership,
+    pub view: Option<Arc<dyn ModelAccessView>>,
+    pub provider: Option<Arc<dyn ProviderInference>>,
+    pub global_model_aliases: BTreeMap<String, String>,
     pub reader: Option<Arc<dyn SpendReader>>,
     pub memberships: Option<Arc<dyn MembershipSource>>,
     pub defaults: Option<Arc<dyn DefaultBudgetSource>>,
@@ -60,6 +68,9 @@ impl Default for TeamBudgetRule {
             user_email: None,
             model: RequestedModels::None,
             membership: Membership::Unloaded,
+            view: None,
+            provider: None,
+            global_model_aliases: BTreeMap::new(),
             reader: None,
             memberships: None,
             defaults: None,
@@ -125,13 +136,12 @@ pub(crate) async fn prefetched(
 // the member scope, then every team budget check; a denial or a failed read is the stage's failure
 pub(crate) async fn prefetch(stage: &TeamBudgetStageInput) -> Result<(), Box<ProxyException>> {
     let rule = &stage.rule;
-    let aliases = BTreeMap::new();
-    let provider = UnresolvedProviderInference;
+    let provider: &dyn ProviderInference = rule.provider.as_deref().unwrap_or(&UNRESOLVED_PROVIDER);
     let models = ModelAccessContext {
-        view: None,
-        global_model_aliases: &aliases,
+        view: rule.view.as_deref(),
+        global_model_aliases: &rule.global_model_aliases,
         compaction: None,
-        provider: &provider,
+        provider,
         max_recurse_depth: stage.max_recurse_depth,
     };
     let admission = TeamAdmission {
@@ -157,7 +167,7 @@ pub(crate) async fn prefetch(stage: &TeamBudgetStageInput) -> Result<(), Box<Pro
         .map_err(|error| Box::new(team_budget_exception(&error)))
 }
 
-// _as_proxy_exception: a budget denial keeps its status, the member denial is already a ProxyException, the rest are 401s
+// _as_proxy_exception: a budget denial keeps its status, the member denial is already a ProxyException, a membership outage is B1217's 503 and the rest are 401s
 fn team_budget_exception(error: &TeamBudgetError) -> ProxyException {
     let failure = match error {
         TeamBudgetError::Denied(denial) => AuthFailure::BudgetExceeded {
@@ -167,12 +177,13 @@ fn team_budget_exception(error: &TeamBudgetError) -> ProxyException {
         },
         TeamBudgetError::ModelDenied(denial) => return denial.as_proxy_exception().clone(),
         TeamBudgetError::Spend(failure) => return spend_failure_exception(failure),
-        TeamBudgetError::Membership(_)
-        | TeamBudgetError::DefaultBudget(_)
-        | TeamBudgetError::RecurseDepth { .. } => AuthFailure::Other {
-            message: error.to_string(),
-            param: None,
-        },
+        TeamBudgetError::Membership(error) => membership_failure(error),
+        TeamBudgetError::DefaultBudget(_) | TeamBudgetError::RecurseDepth { .. } => {
+            AuthFailure::Other {
+                message: error.to_string(),
+                param: None,
+            }
+        }
     };
     as_proxy_exception(&failure).exception().clone()
 }

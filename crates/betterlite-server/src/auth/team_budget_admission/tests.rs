@@ -11,14 +11,24 @@ use axum::extract::Extension;
 use axum::http::{Request, StatusCode, header};
 use axum::routing::post;
 use betterlite_auth::auth_key_budgets::spend::{SpendReadError, SpendReader};
+use betterlite_auth::auth_model_patterns::view::{Deployment, DeploymentView};
+use betterlite_auth::auth_read::table::AuthReadError;
 use betterlite_auth::auth_request_models::RequestedModels;
 use betterlite_auth::current_spend::{BUDGET_UNVERIFIABLE_DETAIL, SpendQuery};
+use betterlite_auth::membership_load::error::{MembershipLoadError, MembershipReadFailure};
+use betterlite_auth::membership_load::rows::MembershipRowError;
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_auth::team_budget_admission::alerts::{TeamAlert, TeamAlertKind, TeamAlertSink};
-use betterlite_auth::team_budget_admission::sources::Membership;
+use betterlite_auth::team_budget_admission::sources::{Membership, MembershipSource};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_db::budget_permission_rows::{JsonData, Timestamp};
+use betterlite_db::database_availability::message::TRANSIENT_MESSAGE;
+use betterlite_db::database_failures::deadline::{DbLookupDeadlineExceeded, DbLookupError};
+use betterlite_db::database_faults::{DbError, ErrorType};
+use betterlite_db::postgres_store::errors::DbError as NativeDbError;
+use betterlite_db::team_rows::membership::LiteLLMTeamMembership;
 use chrono::{DateTime, TimeZone as _, Utc};
+use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use secrecy::SecretString;
 use tower::ServiceExt as _;
@@ -67,6 +77,24 @@ impl TeamAlertSink for Recorded {
     }
 }
 
+// the one membership failure the scripted load raises
+struct FailingMembership(Mutex<Option<MembershipLoadError>>);
+
+#[async_trait]
+impl MembershipSource for FailingMembership {
+    async fn team_membership(
+        &self,
+        _user_id: &str,
+        _team_id: &str,
+    ) -> Result<Option<LiteLLMTeamMembership>, MembershipLoadError> {
+        self.0
+            .lock()
+            .unwrap()
+            .take()
+            .ok_or(MembershipLoadError::LoadLost)
+    }
+}
+
 fn rule(team: &str, membership: &str, model: &str, recorded: &Arc<Recorded>) -> TeamBudgetRule {
     let reader: Arc<dyn SpendReader> = Arc::<Recorded>::clone(recorded);
     let team_alerts: Arc<dyn TeamAlertSink> = Arc::<Recorded>::clone(recorded);
@@ -76,6 +104,9 @@ fn rule(team: &str, membership: &str, model: &str, recorded: &Arc<Recorded>) -> 
         user_email: None,
         model: RequestedModels::One(model.to_owned()),
         membership: Membership::Loaded(serde_json::from_str(membership).unwrap()),
+        view: None,
+        provider: None,
+        global_model_aliases: BTreeMap::new(),
         reader: Some(reader),
         memberships: None,
         defaults: None,
@@ -132,6 +163,84 @@ async fn run_request(rule: TeamBudgetRule) -> (StatusCode, String, bool) {
         String::from_utf8(body.to_vec()).unwrap(),
         reached.load(Ordering::Acquire),
     )
+}
+
+fn lookup_failure(lookup: DbLookupError) -> MembershipLoadError {
+    MembershipLoadError::Read(MembershipReadFailure::Table {
+        source: Box::new(AuthReadError::Lookup(lookup)),
+    })
+}
+
+fn deadline_failure() -> MembershipLoadError {
+    lookup_failure(DbLookupError::Deadline(DbLookupDeadlineExceeded {
+        lookup: "team_membership".to_owned(),
+        deadline_seconds: 5.0,
+        cause: None,
+    }))
+}
+
+fn database_fault(error_type: ErrorType) -> DbError {
+    DbError {
+        error_type,
+        message: "the database refused the membership read".to_owned(),
+        code: None,
+        meta_code: None,
+        traceback_modules: Vec::new(),
+        cause: None,
+    }
+}
+
+async fn run_membership_failure(failure: MembershipLoadError) -> (StatusCode, String, bool) {
+    let recorded = Arc::new(Recorded::default());
+    let mut failing = rule(r#"{"team_id":"team-1"}"#, "null", "gpt-4o", &recorded);
+    failing.membership = Membership::Unloaded;
+    failing.memberships = Some(Arc::new(FailingMembership(Mutex::new(Some(failure)))));
+    run_request(failing).await
+}
+
+fn assert_outage((status, body, reached): (StatusCode, String, bool)) {
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{body}");
+    assert!(body.contains("\"type\":\"no_db_connection\""), "{body}");
+    assert!(body.contains("\"param\":\"None\""), "{body}");
+    assert!(body.contains("\"code\":\"503\""), "{body}");
+    assert!(body.contains(TRANSIENT_MESSAGE), "{body}");
+    assert!(!reached);
+}
+
+#[tokio::test]
+async fn membership_database_outages_are_service_unavailable() {
+    assert_outage(run_membership_failure(deadline_failure()).await);
+    assert_outage(
+        run_membership_failure(lookup_failure(DbLookupError::Database(database_fault(
+            ErrorType::Connect,
+        ))))
+        .await,
+    );
+    assert_outage(
+        run_membership_failure(MembershipLoadError::Read(MembershipReadFailure::Access(
+            Box::new(NativeDbError::NoDbConnected),
+        )))
+        .await,
+    );
+    assert_outage(
+        run_membership_failure(MembershipLoadError::Shared(Arc::new(deadline_failure()))).await,
+    );
+}
+
+#[tokio::test]
+async fn membership_ordinary_failures_stay_unauthorized() {
+    let (data_status, data_body, data_reached) = run_membership_failure(lookup_failure(
+        DbLookupError::Database(database_fault(ErrorType::Data)),
+    ))
+    .await;
+    assert_eq!(data_status, StatusCode::UNAUTHORIZED, "{data_body}");
+    assert!(data_body.contains("\"type\":\"auth_error\""), "{data_body}");
+    assert!(!data_reached);
+    let (lost_status, lost_body, lost_reached) =
+        run_membership_failure(MembershipLoadError::LoadLost).await;
+    assert_eq!(lost_status, StatusCode::UNAUTHORIZED, "{lost_body}");
+    assert!(lost_body.contains("\"type\":\"auth_error\""), "{lost_body}");
+    assert!(!lost_reached);
 }
 
 #[test]
@@ -201,6 +310,36 @@ async fn team_equality_reaches_the_handler() {
     assert_eq!(status, StatusCode::OK, "{body}");
     assert!(reached);
     assert!(recorded.alerts.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn router_view_and_global_alias_admit_the_member_scope() {
+    let recorded = Arc::new(Recorded::default());
+    let grouped = r#"{"user_id":"user-1","team_id":"team-1","litellm_budget_table":{"allowed_models":["group-a"]}}"#;
+    let mut viewed = rule(r#"{"team_id":"team-1"}"#, grouped, "gpt-4o", &recorded);
+    viewed.view = Some(Arc::new(DeploymentView {
+        deployments: vec![Deployment {
+            model_name: "gpt-4o".to_owned(),
+            access_groups: vec!["group-a".to_owned()],
+            team_id: None,
+            team_public_model_name: None,
+        }],
+        model_group_alias: IndexMap::new(),
+    }));
+    let (status, body, reached) = run_request(viewed).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(reached);
+    // without the router view the access-group name is not a model, so B747 denies it
+    let unviewed = rule(r#"{"team_id":"team-1"}"#, grouped, "gpt-4o", &recorded);
+    let (denied, denied_body, _reached) = run_request(unviewed).await;
+    assert_eq!(denied, StatusCode::FORBIDDEN, "{denied_body}");
+    // the router's global alias target is what the allowlist names
+    let aliased = r#"{"user_id":"user-1","team_id":"team-1","litellm_budget_table":{"allowed_models":["gpt-4o"]}}"#;
+    let mut alias_rule = rule(r#"{"team_id":"team-1"}"#, aliased, "fast", &recorded);
+    alias_rule.global_model_aliases = BTreeMap::from([("fast".to_owned(), "gpt-4o".to_owned())]);
+    let (alias_status, alias_body, alias_reached) = run_request(alias_rule).await;
+    assert_eq!(alias_status, StatusCode::OK, "{alias_body}");
+    assert!(alias_reached);
 }
 
 #[tokio::test]
