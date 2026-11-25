@@ -13,9 +13,6 @@ from litellm.proxy._types import UserAPIKeyAuth
 from litellm.responses.streaming_iterator import (
     ManagedResponsesWebSocketHandler as Handler,
 )
-from litellm.responses.streaming_iterator import (
-    ProjectQuotaCallback,
-)
 from pydantic import JsonValue
 from typing_extensions import override
 
@@ -54,13 +51,13 @@ class Socket:
         raise RuntimeError(self.recorder.disconnect)
 
 
-class ScriptedQuota(ProjectQuotaCallback):
+class ScriptedQuota:
     def __init__(self, recorder: Recorder, row: QuotaRow) -> None:
         self.recorder = recorder
         self.row = row
+        self.enforce_project_io_token_quota_for_frame = self.enforce
 
-    @override
-    async def enforce_project_io_token_quota_for_frame(
+    async def enforce(
         self,
         user_api_key_dict: UserAPIKeyAuth | None,
         requested_model: str | None,
