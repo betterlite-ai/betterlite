@@ -49,6 +49,10 @@ description: >-
   `ttl` rules, an unsupported type, then set/get/increment/delete/ttl on each backend class. The Redis tests run against `tests/fake_redis_server.py`, an in-process RESP server on a thread that this task writes. It answers the commands the backends send (HELLO, CLIENT, SELECT, PING, SET with EX, GET, MGET, INCRBY, EXPIRE, TTL, DEL, FLUSHALL and the pipeline forms) and replies with a RESP error to any other command, so a missing command fails the test. LiteLLM and betterlite connect to the same fake. This is the same idea as the in-process `FakeClient` that the Rust Redis tests use for `AsyncRedisCommands` (crates/betterlite-redis/src/cache_primitives/protocol/tests.rs). No test needs `redis-server` or Docker, and none skips.
 scope:
   paths:
+  - crates/betterlite-python/python/betterlite/_cache_ops/types.py
+  - crates/betterlite-python/python/betterlite/_settings/params.py
+  - crates/betterlite-cache/src/batch_reads.rs
+  - crates/betterlite-cache/src/dual_cache/operations.rs
   - crates/betterlite-python/src/cache_backends.rs
   - crates/betterlite-python/src/cache_backends/**
   - crates/betterlite-python/python/betterlite/_native_cache_backends.pyi
@@ -123,11 +127,14 @@ deviations:
 - what: This task has no helper oracle cases.
   why: The pytest files compare both packages, and the backend cases belong to B4290 to B4295.
 out_of_scope:
+- "The Redis circuit breaker for the native Redis handles is B10099. It moves betterlite-server's breaker gate into betterlite-redis after this task merges, so keep QuietGate here."
 - "Key, lookup and write methods of `Cache` are B8065."
 - "`Cache.test_connection` style health checks and the cache settings routes are B4306 to B4309."
 - "`DualCache` batch reads and deferred writes (B4294, B4295) are exposed through the same methods LiteLLM has, but their queue rules stay in Rust."
 - "`_internal_lru_cache.py` has no caller at the pin and B8502 lists it as not built; `Readme.md` of litellm/caching is prose."
 pitfalls:
+- "Write the DualCache batch-read and deferred-result bindings in crates/betterlite-python. Touch batch_reads.rs or dual_cache/operations.rs in betterlite-cache only to make public a type or method the bindings need."
+- "async_set_cache answers bool or None like LiteLLM, so _cache_ops/types.py and caching/base_cache.py declare that return. B8065 is merged, and its caches that answer None still fit."
 - "`enable_cache` does nothing to an existing `betterlite.cache`, and tests must start from `None`."
 - "`Cache.__init__` appends to `input_callback` only when `\"cache\"` is missing, and the success lists use the callback manager, so a plain list append is wrong."
 - "`ttl` for `local` is overwritten only when `default_in_memory_ttl` is given, and for `redis` only when `default_in_redis_ttl` is given."
@@ -136,6 +143,6 @@ pitfalls:
 - "A Redis test that skips when `redis-server` is missing checks nothing in CI. Keep every Redis case on the fake server, and have the fake fail the test on a command it does not know."
 - "Ruff flags LiteLLM's own signatures here (PLR0913, PLR0917, FBT001, FBT002, A002, B006, ARG002). Put the noqa on the flagged line with the pinned LiteLLM link on the same line, one expect per line; don't add per-file-ignores to ruff.toml."
 budget:
-  max_changed_lines: 2250
+  max_changed_lines: 2750
   max_new_expects: 27
 review_level: standard
