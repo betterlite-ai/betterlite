@@ -1,3 +1,5 @@
+#![expect(clippy::pub_use, reason = "litellm.decisions exports adecisions")]
+
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -24,7 +26,6 @@ use crate::api::decisions_send::send::DecisionsSender;
 mod adecisions;
 pub(crate) mod decisions_entrypoint;
 
-#[expect(clippy::pub_use, reason = "litellm.decisions exports adecisions")]
 pub use adecisions::adecisions;
 pub type OpenAiDecisionResponse = DecisionResponse;
 pub type SystemOneResponse = SystemOneDecisionsResponse;
