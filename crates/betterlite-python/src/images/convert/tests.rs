@@ -12,6 +12,7 @@ use super::{
     ConvertError, DEFAULT_CONTENT_TYPE, DEFAULT_MASK_NAME, SettingsWire, image_file, images, parse,
 };
 use crate::completion::setup::outbound_client;
+use betterlite_config::loader::startup::process_environment;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::image_contracts::records::ImageFile;
@@ -546,6 +547,7 @@ fn request_session_present_drops_an_empty_secret() {
     )
     .unwrap();
     assert!(setup.credentials.api_key.is_none());
+    assert_eq!(setup.timeout, super::super::DEFAULT_TIMEOUT);
     let fallback = SettingsWire {
         api_base: None,
         api_key: Some(SecretString::from("")),
@@ -554,6 +556,12 @@ fn request_session_present_drops_an_empty_secret() {
     };
     let kept = call_setup(&session(), &wire.arguments, &fallback, "dall-e-2", "openai").unwrap();
     assert_eq!(kept.credentials.api_key.unwrap().expose_secret(), "sk-x");
+}
+
+#[test]
+fn request_image_session_build_reads_process_environment() {
+    let image_session = ImageSession::build("{}").unwrap();
+    assert_eq!(image_session.environment, process_environment());
 }
 
 #[test]

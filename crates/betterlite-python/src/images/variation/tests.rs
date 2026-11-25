@@ -36,3 +36,32 @@ async fn variation_sends_file_and_decodes_response() {
     assert!(sent.head.contains("content-type: multipart/form-data"));
     assert!(sent.body.contains("filename=\"cat.png\""));
 }
+
+#[tokio::test]
+async fn variation_maps_provider_status_and_message() {
+    let serving = serve(
+        reply(
+            "401 Unauthorized",
+            &[],
+            r#"{"error":{"message":"bad key"}}"#,
+        ),
+        Duration::ZERO,
+    )
+    .unwrap();
+    let mut blobs = vec![vec![3_u8]];
+    let payload = format!(
+        r#"{{"arguments":{{"model":"dall-e-2","api_key":"sk-123456789012345678901234567890","api_base":"http://{}/v1","image":{{"$file":{{"name":"cat.png","blob":0}}}}}}}}"#,
+        serving.address
+    );
+    let (call, files) = parse(&payload, &mut blobs).unwrap();
+    let environment = BTreeMap::new();
+    let session = ImageSession {
+        client: outbound_client(&environment).unwrap(),
+        environment,
+        redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap(),
+    };
+    let failure = variation(&session, call, files, false).await.unwrap_err();
+    assert!(failure.message.contains("bad key"));
+    assert_eq!(failure.model.as_deref(), Some("dall-e-2"));
+    let _request = serving.finish().unwrap();
+}
