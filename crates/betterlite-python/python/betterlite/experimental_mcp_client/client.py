@@ -60,7 +60,7 @@ class RefusedArgument(Protocol):
 
 # The native applies the value before it answers, so only the returned coroutine needs closing
 @runtime_checkable
-class Pending(Protocol):
+class Pending(Awaitable[None], Protocol):
     def close(self) -> None:
         ...
 
@@ -195,7 +195,9 @@ class MCPClient:
     @staticmethod
     def error_tool_result(exc: Exception) -> CallToolResult:
         message = f"{type(exc).__name__}: {exc}"
-        return CallToolResult(content=[TextContent(text=message)], isError=True)
+        return CALL_RESULT.validate_python(
+            {"content": [TextContent(text=message)], "isError": True}
+        )
 
     async def call_tool(
         self,
@@ -243,11 +245,15 @@ class MCPClient:
         return READ_RESULT.validate_json(text)
 
     def update_auth_value(self, mcp_auth_value: str | dict[str, str]) -> None:
-        pending: object = self._client.update_auth_value(json.dumps(mcp_auth_value))
+        pending: Awaitable[None] = self._client.update_auth_value(
+            json.dumps(mcp_auth_value)
+        )
         self._mcp_auth_value = mcp_auth_value
         match pending:
             case Pending():
                 pending.close()
+            case _:
+                pass
 
     async def run_with_session(
         self,
