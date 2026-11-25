@@ -1,23 +1,16 @@
 pub mod agent;
+pub mod caller;
+pub mod end_user;
 pub mod error;
 pub mod live;
+pub mod org;
 pub mod reads;
-
-mod caller;
-mod end_user;
-mod org;
 mod servers;
 mod tests;
 mod tools;
-mod user;
+pub mod user;
 
 // The workspace denies multiple_inherent_impl, so every level's methods live on the trait beside its reads.
-pub use agent::AgentCeilings;
-pub use caller::AgentCallerCeilings;
-pub use end_user::EndUserCeilings;
-pub use org::OrgCeilings;
-pub use user::UserCeilings;
-
 use reads::CeilingReads;
 
 // _get_allowed_mcp_servers_for_org and _get_allowed_mcp_servers_for_user answer both [] and None, which mean different things

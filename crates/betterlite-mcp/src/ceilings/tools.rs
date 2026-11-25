@@ -57,14 +57,14 @@ pub(super) async fn narrow_to_grants<Reads>(
 where
     Reads: CeilingReads,
 {
-    let Some(permission) = permission else {
+    let Some(row) = permission else {
         return Ok(allowed);
     };
     let fresh = ceilings.reads.requires_fresh_policy(auth);
     let granted = tool_grants_for_server(
         &ceilings.reads,
-        Some(&permission),
-        permission.mcp_tool_permissions.as_ref(),
+        Some(&row),
+        row.mcp_tool_permissions.as_ref(),
         server_id,
         fresh,
     )
