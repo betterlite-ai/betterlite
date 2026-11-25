@@ -21,7 +21,7 @@ pub(crate) struct Op;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct TeamInput {
+pub(crate) struct TeamInput {
     team_id: String,
     #[serde(default)]
     mcp_toolsets: Option<Vec<String>>,
@@ -31,7 +31,7 @@ struct TeamInput {
 
 #[derive(Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
-enum Input {
+pub(crate) enum Input {
     ExtractMcpServers {
         #[serde(default)]
         permission: Option<JsonData>,
@@ -59,7 +59,7 @@ enum Input {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct GateInput {
+pub(crate) struct GateInput {
     #[serde(default)]
     permission: Option<JsonData>,
     #[serde(default)]
@@ -69,7 +69,7 @@ struct GateInput {
 }
 
 impl GateInput {
-    fn evaluate(&self, op: GateOp) -> HelperResult {
+    fn evaluate(&self, op: &GateOp) -> HelperResult {
         run_gate(
             self.permission.as_ref(),
             self.team.as_ref(),
@@ -142,7 +142,7 @@ fn run_gate(
     permission: Option<&JsonData>,
     team: Option<&TeamInput>,
     is_proxy_admin: bool,
-    op: GateOp,
+    op: &GateOp,
 ) -> HelperResult {
     let grants = team.map(team_of);
     match op {
@@ -187,9 +187,9 @@ impl Helper for Op {
             Input::ExtractSearchTools { permission } => {
                 extract_list::<Vec<String>>("search_tools", permission.as_ref(), true)
             }
-            Input::ValidateToolsets(gate) => gate.evaluate(GateOp::Toolsets),
-            Input::ValidateVectorStores(gate) => gate.evaluate(GateOp::VectorStores),
-            Input::ValidateSearchTools(gate) => gate.evaluate(GateOp::SearchTools),
+            Input::ValidateToolsets(gate) => gate.evaluate(&GateOp::Toolsets),
+            Input::ValidateVectorStores(gate) => gate.evaluate(&GateOp::VectorStores),
+            Input::ValidateSearchTools(gate) => gate.evaluate(&GateOp::SearchTools),
         }
     }
 }
