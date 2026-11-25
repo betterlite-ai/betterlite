@@ -1,7 +1,5 @@
-use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
-use pyo3_async_runtimes::tokio::future_into_py;
-use tokio::task::JoinSet;
+use pyo3_async_runtimes::tokio::{future_into_py, get_runtime};
 
 use super::error::{self, BackendHandleError};
 
@@ -21,13 +19,10 @@ where
     Failure: Send + 'static,
     BackendHandleError: From<Failure>,
 {
+    let task = get_runtime().spawn_blocking(move || work().map_err(BackendHandleError::from));
     none_future(py, async move {
-        let mut tasks = JoinSet::new();
-        tasks.spawn_blocking(work);
-        let outcome = tasks
-            .join_next()
+        let outcome = task
             .await
-            .ok_or_else(|| PyRuntimeError::new_err("flush task was not started"))?
             .map_err(|source| BackendHandleError::Join { source })?;
         error::backend_err(outcome)
     })
