@@ -6,6 +6,7 @@ use betterlite_cache::backend::memory::local::LocalMemoryOps;
 use betterlite_cache::dual_cache::{DualCache, DualCacheSettings, MAX_REDIS_BATCH_CACHE_SIZE};
 use betterlite_db::database_availability::message::TRANSIENT_MESSAGE;
 use betterlite_db::database_failures::gate::{DbLookupStallTracker, SystemClock};
+use betterlite_db::database_faults::ErrorType;
 use betterlite_db::database_replica::availability::Availability;
 use betterlite_db::migration_ledger::baseline::{PACKAGED_CATALOGS, catalog_statements};
 use betterlite_db::postgres_store::session::PostgresStore;
@@ -20,7 +21,7 @@ use tokio_util::task::TaskTracker;
 use crate::auth_cache::{AuthCache, gateway_cache};
 use crate::auth_end_users::defaults::DefaultBudgetLookup;
 use crate::auth_end_users::postgres::DatabaseEndUsers;
-use crate::auth_errors::conversion::as_proxy_exception;
+use crate::auth_errors::conversion::{AuthFailure, as_proxy_exception};
 use crate::auth_invalidation::registry::MembershipInflight;
 use crate::auth_request_models::RequestedModels;
 use crate::membership_load::MembershipLookup;
@@ -225,7 +226,14 @@ async fn read_failure(rows: &DatabaseTeamMembership) -> MembershipReadFailure {
 }
 
 fn assert_service_unavailable(error: &MembershipLoadError) {
-    let projected = as_proxy_exception(&membership_failure(error));
+    let failure = membership_failure(error);
+    // the connection is healthy, so the stale plan is a data error and the retry wording applies
+    let AuthFailure::Database(fault) = &failure else {
+        panic!("a stale plan is a database failure");
+    };
+    assert_eq!(fault.error_type, ErrorType::Data);
+    assert_eq!(fault.message, "cached plan must not change result type");
+    let projected = as_proxy_exception(&failure);
     let exception = projected.exception();
     assert_eq!(exception.error_type, "no_db_connection");
     assert_eq!(exception.param.as_deref(), Some("None"));
