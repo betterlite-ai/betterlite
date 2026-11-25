@@ -306,27 +306,27 @@ def test_session_refuses_foreign() -> None:
 @pytest.mark.parametrize("fields", [DESCRIBED_TOOL, BARE_TOOL], ids=["described", "bare"])
 def test_transform_openai_tool(fields: ToolFields) -> None:
     ours = Tool.model_validate(fields)
-    theirs = TheirTool.model_validate(fields)
+    theirs = TheirTool(**fields)
     assert transform_mcp_tool_to_openai_tool(ours) == their_openai_tool(theirs)
 
 
 @pytest.mark.parametrize("fields", [DESCRIBED_TOOL, BARE_TOOL], ids=["described", "bare"])
 def test_transform_responses_tool(fields: ToolFields) -> None:
     ours = Tool.model_validate(fields)
-    theirs = TheirTool.model_validate(fields)
+    theirs = TheirTool(**fields)
     assert transform_mcp_tool_to_openai_responses_api_tool(ours) == their_responses_tool(theirs)
 
 
 def test_transform_anthropic_tool() -> None:
     ours = Tool.model_validate(RICH_TOOL)
-    theirs = TheirTool.model_validate(RICH_TOOL)
+    theirs = TheirTool(**RICH_TOOL)
     reference: AnthropicMessagesTool = their_anthropic_tool(theirs)
     assert transform_mcp_tool_to_anthropic_tool(ours) == reference
 
 
 def test_transform_bare_tool() -> None:
     ours = Tool.model_validate(BARE_TOOL)
-    theirs = TheirTool.model_validate(BARE_TOOL)
+    theirs = TheirTool(**BARE_TOOL)
     reference: AnthropicMessagesTool = their_anthropic_tool(theirs)
     assert transform_mcp_tool_to_anthropic_tool(ours) == reference
 
