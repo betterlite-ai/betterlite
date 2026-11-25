@@ -191,6 +191,8 @@ async fn a_turn_naming_a_dropped_id_gets_no_history() {
     handler.store_history("r1".to_owned(), messages("a"));
     handler.store_history("r2".to_owned(), messages("a"));
     handler.store_history("r3".to_owned(), messages("a"));
+    assert_eq!(keys(&handler), ["r2", "r3"]);
+    assert_eq!(handler.session_history_bytes, 28);
     let provider = support::ScriptedProvider::new(
         &shared,
         vec![support::script(vec![support::event(SECOND)])],
@@ -218,6 +220,8 @@ async fn a_turn_naming_a_dropped_id_gets_no_history() {
         "ManagedResponsesWS: no in-memory history for previous_response_id=r1; falling back to DB-based session reconstruction"
     );
     assert!(get_history_messages(&handler, "r1").is_empty());
+    assert_eq!(keys(&handler), ["r2", "r3"]);
+    assert_eq!(handler.session_history_bytes, 28);
 }
 
 #[tokio::test]
