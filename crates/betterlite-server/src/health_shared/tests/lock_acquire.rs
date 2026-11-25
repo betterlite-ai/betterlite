@@ -34,8 +34,9 @@ async fn a_lock_held_by_another_pod_cannot_be_taken() {
     let world = World::new(instant(SHARED_AT));
     let manager = world.manager();
     assert!(manager.acquire_health_check_lock().await);
+    let cache = Arc::clone(&world.cache);
     let later = SharedHealthCheckManager::new(
-        Some(Arc::clone(&world.cache)),
+        Some(cache),
         DEFAULT_SETTINGS,
         Arc::new(FixedClock(instant("2024-01-01T00:00:01Z"))),
     );

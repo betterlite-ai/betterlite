@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use axum::Json;
+use axum::Json as AxumJson;
 use axum::Router;
 use axum::extract::{Extension, State};
 use axum::http::StatusCode;
@@ -47,13 +47,13 @@ async fn shared_status(
         return unauthenticated();
     }
     if state.checks == SharedHealthSwitch::Disabled {
-        return Json(not_served_body(NotServed::Disabled)).into_response();
+        return AxumJson(not_served_body(NotServed::Disabled)).into_response();
     }
     let Some(source) = state.status.as_deref() else {
-        return Json(not_served_body(NotServed::RedisUnavailable)).into_response();
+        return AxumJson(not_served_body(NotServed::RedisUnavailable)).into_response();
     };
     match source.status().await {
-        Ok(status) => Json(enabled_body(status)).into_response(),
+        Ok(status) => AxumJson(enabled_body(status)).into_response(),
         Err(error) => status_failure(&error),
     }
 }

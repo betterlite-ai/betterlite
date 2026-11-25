@@ -35,7 +35,7 @@ pub struct SharedHealthCheckManager {
     pub health_check_ttl: i64,
     pub lock_ttl: i64,
     pub pod_id: String,
-    clock: Arc<dyn UtcClock + Send + Sync>,
+    pub clock: Arc<dyn UtcClock + Send + Sync>,
 }
 
 impl SharedHealthCheckManager {

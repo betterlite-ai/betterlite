@@ -842,8 +842,9 @@ impl World {
         &self,
         settings: SharedHealthSettings,
     ) -> Arc<SharedHealthCheckManager> {
+        let cache = Arc::clone(&self.cache);
         Arc::new(SharedHealthCheckManager::new(
-            Some(Arc::clone(&self.cache)),
+            Some(cache),
             settings,
             self.clock(),
         ))
@@ -877,17 +878,19 @@ impl World {
         manager: Option<Arc<SharedHealthCheckManager>>,
         deployments: Vec<DeploymentSpec>,
     ) -> BackgroundHealthLoop<FakeStore, FakeLock> {
+        let probe = Arc::clone(&self.probe);
+        let health_state = Arc::clone(&self.writer);
         BackgroundHealthLoop {
             interval_seconds: 300,
             details: true,
             max_concurrency: None,
             manager,
-            probe: Arc::clone(&self.probe),
+            probe,
             deployments: Some(Arc::new(deployments)),
             results: Arc::clone(&self.results),
             store: Some(Arc::clone(&self.store)),
             lock: Some(self.pod_manager(POD_A, Some(Arc::clone(&self.lock)))),
-            health_state: Some(Arc::clone(&self.writer)),
+            health_state: Some(health_state),
             clock: self.clock(),
             tasks: self.tasks.clone(),
         }
