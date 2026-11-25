@@ -74,9 +74,14 @@ pub(super) fn outcome_view(
     }))
 }
 
+// This module builds the batch result itself, so it is compared field by field; a transform or
+// stream-builder response is another task's, and only the id and model the payload stamps count.
 fn result_view(body: &Value) -> Value {
     if body.is_null() {
         return Value::Null;
+    }
+    if body.get("object").and_then(Value::as_str) != Some("batch") {
+        return json!({ "id": body.get("id"), "model": body.get("model") });
     }
     let choices: Vec<Value> = body
         .get("choices")

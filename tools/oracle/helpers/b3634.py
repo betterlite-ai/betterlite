@@ -142,11 +142,9 @@ def result_value(response: ModelResponse | TextCompletionResponse | None) -> Jso
     if response is None:
         return None
     dump = RESULT.validate_json(response.model_dump_json())
-    batch = dump.get("object") == "batch"
-    usage: JsonValue = None
-    raw_usage = dump.get("usage")
-    if raw_usage is not None and not batch:
-        usage = JSON.validate_python(raw_usage)
+    # The payload step stamps the id and model; a transform or builder response is another task's.
+    if dump.get("object") != "batch":
+        return {"id": dump.get("id"), "model": dump.get("model")}
     choices: list[JsonValue] = []
     raw_choices = dump.get("choices")
     if raw_choices is not None:
@@ -160,11 +158,11 @@ def result_value(response: ModelResponse | TextCompletionResponse | None) -> Jso
                 }
             )
     return {
-        "id": BATCH_RESPONSE_ID if batch else dump.get("id"),
+        "id": BATCH_RESPONSE_ID,
         "object": dump.get("object"),
         "model": dump.get("model"),
         "choices": choices,
-        "usage": usage,
+        "usage": None,
     }
 
 
