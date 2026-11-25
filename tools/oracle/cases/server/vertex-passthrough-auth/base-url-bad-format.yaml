@@ -1,0 +1,8 @@
+kind: helper
+name: base-url-bad-format
+call:
+  b3622:
+    function: base_url
+    location: US-Central1
+env: {}
+compare: {ignore: []}
