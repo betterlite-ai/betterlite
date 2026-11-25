@@ -9,7 +9,7 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_secret_managers::secret_lookup::ports::OidcHttp;
 use tokio::sync::oneshot;
-use tokio::task::{JoinSet, yield_now};
+use tokio::task::JoinSet;
 use tokio::time::timeout;
 use tokio_util::task::TaskTracker;
 
