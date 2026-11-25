@@ -64,8 +64,8 @@ struct LockOwner {
 }
 
 impl LockReleaser for LockOwner {
-    async fn release(&self, key: &str) {
-        release_lock(self.redis.as_ref(), &self.pod_id, key).await;
+    async fn release(&self, cronjob_id: &str) {
+        release_lock(self.redis.as_ref(), &self.pod_id, cronjob_id).await;
     }
 }
 

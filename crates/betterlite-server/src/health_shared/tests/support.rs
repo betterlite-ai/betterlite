@@ -847,7 +847,8 @@ impl World {
         &self,
         settings: SharedHealthSettings,
     ) -> Arc<SharedHealthCheckManager> {
-        self.manager_over(Some(Arc::clone(&self.cache)), settings)
+        let redis: Arc<dyn SharedHealthCache> = Arc::<FakeCache>::clone(&self.cache);
+        self.manager_over(Some(redis), settings)
     }
 
     pub(crate) fn local_manager(&self) -> Arc<SharedHealthCheckManager> {

@@ -2,9 +2,11 @@ use std::ops::Sub as _;
 
 use async_trait::async_trait;
 use betterlite_models::decisions::Json;
+use betterlite_redis::cache_primitives::decode::CachedValue;
+use chrono::{DateTime, Utc};
 use serde::Serialize;
 
-use super::cached::{epoch_seconds, json_from_cached};
+use super::cached::{CachedHealthCheck, epoch_seconds, json_from_cached};
 use super::manager::SharedHealthCheckManager;
 
 // get_health_check_status' dict: the four fixed keys, then whatever the configured Redis answers.
@@ -56,46 +58,25 @@ impl SharedHealthStatusSource for SharedHealthCheckManager {
     }
 }
 
-impl SharedHealthCheckManager {
-    // get_health_check_status: the four fixed keys, then the lock and cache facts when Redis is configured.
-    pub async fn get_health_check_status(&self) -> SharedHealthStatus {
-        let mut status = SharedHealthStatus {
-            pod_id: self.pod_id.clone(),
-            redis_available: self.redis.is_some(),
-            lock_ttl: self.lock_ttl,
-            cache_ttl: self.health_check_ttl,
-            redis: None,
-        };
-        let Some(redis) = self.redis.as_deref() else {
-            return status;
-        };
-        let owner = match redis.get(Self::LOCK_KEY).await {
-            Ok(owner) => owner,
-            Err(error) => {
-                status.redis = Some(RedisStatus::Failed {
-                    error: error.to_string(),
-                });
-                return status;
-            }
-        };
-        let lock_in_progress = owner.is_some();
-        let lock_owner = owner.map_or(Json::Null, json_from_cached);
-        let cached = self.cached_health_check_results().await;
-        let cache_available = cached.is_some();
-        let (cache_age_seconds, last_checked_by) = match cached {
-            Some(payload) => (
-                Some(epoch_seconds(self.clock.now()).sub(payload.timestamp)),
-                payload.checked_by,
-            ),
-            None => (None, None),
-        };
-        status.redis = Some(RedisStatus::Available {
-            lock_owner,
-            lock_in_progress,
-            cache_available,
-            cache_age_seconds,
-            last_checked_by,
-        });
-        status
+// The lock facts get_health_check_status adds: the stored owner as JSON and whether a lock is held.
+#[must_use]
+pub(crate) fn lock_fields(owner: Option<CachedValue>) -> (Json, bool) {
+    let lock_in_progress = owner.is_some();
+    (owner.map_or(Json::Null, json_from_cached), lock_in_progress)
+}
+
+// The cache facts get_health_check_status adds: availability, age from the payload's timestamp, and the checker.
+#[must_use]
+pub(crate) fn cache_fields(
+    cached: Option<CachedHealthCheck>,
+    now: DateTime<Utc>,
+) -> (bool, Option<f64>, Option<String>) {
+    match cached {
+        Some(payload) => (
+            true,
+            Some(epoch_seconds(now).sub(payload.timestamp)),
+            payload.checked_by,
+        ),
+        None => (false, None, None),
     }
 }

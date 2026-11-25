@@ -17,6 +17,7 @@ use super::error::SharedHealthError;
 use super::lease::{release_lock, shared_lock_lease};
 use super::probe::{SharedHealthProbe, SharedProbeCall};
 use super::settings::SharedHealthSettings;
+use super::status_view::{RedisStatus, SharedHealthStatus, cache_fields, lock_fields};
 
 pub const POLL_INTERVAL_SECONDS: u64 = 5;
 
@@ -246,5 +247,39 @@ impl SharedHealthCheckManager {
                 false
             }
         }
+    }
+
+    // get_health_check_status: the four fixed keys, then the lock and cache facts when Redis is configured.
+    pub async fn get_health_check_status(&self) -> SharedHealthStatus {
+        let mut status = SharedHealthStatus {
+            pod_id: self.pod_id.clone(),
+            redis_available: self.redis.is_some(),
+            lock_ttl: self.lock_ttl,
+            cache_ttl: self.health_check_ttl,
+            redis: None,
+        };
+        let Some(redis) = self.redis.as_deref() else {
+            return status;
+        };
+        let owner = match redis.get(Self::LOCK_KEY).await {
+            Ok(owner) => owner,
+            Err(error) => {
+                status.redis = Some(RedisStatus::Failed {
+                    error: error.to_string(),
+                });
+                return status;
+            }
+        };
+        let (lock_owner, lock_in_progress) = lock_fields(owner);
+        let (cache_available, cache_age_seconds, last_checked_by) =
+            cache_fields(self.cached_health_check_results().await, self.clock.now());
+        status.redis = Some(RedisStatus::Available {
+            lock_owner,
+            lock_in_progress,
+            cache_available,
+            cache_age_seconds,
+            last_checked_by,
+        });
+        status
     }
 }
