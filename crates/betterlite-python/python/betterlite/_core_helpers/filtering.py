@@ -21,8 +21,7 @@ def filter_exceptions_from_params(data: PythonValue, max_depth: int = 20) -> Pyt
             return _kept_fields(fields, max_depth)
         case list() as items:
             return _kept_items(items, max_depth)
-        case object():
-            return data
+    return data
 
 
 def _removed_in_parent(value: PythonValue) -> bool:
@@ -31,8 +30,7 @@ def _removed_in_parent(value: PythonValue) -> bool:
             return True
         case type():  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L644
             return False
-        case object():
-            return callable(value)
+    return callable(value)
 
 
 def _filtered_child(value: PythonValue, max_depth: int) -> PythonValue:

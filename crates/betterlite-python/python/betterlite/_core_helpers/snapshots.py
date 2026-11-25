@@ -21,8 +21,7 @@ def safe_deep_copy(data: PythonValue) -> PythonValue:
                 copied_value = _copied_or_original(sanitized)
                 copied[key] = value if copied_value is sanitized else copied_value
             return copied
-        case object():
-            return _copied_or_original(data)
+    return _copied_or_original(data)
 
 
 def independent_snapshot(data: dict[str, PythonValue]) -> dict[str, PythonValue]:

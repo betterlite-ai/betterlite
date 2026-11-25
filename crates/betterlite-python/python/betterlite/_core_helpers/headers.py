@@ -5,7 +5,8 @@ import httpx2
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
 from betterlite._cost.helpers import COST_HEADER
-from betterlite._cost.objects import PrivateCarrier, private_fields
+from betterlite._cost.objects import PrivateCarrier, hidden_params, private_fields
+from betterlite._cost.wire import JsonSource
 from betterlite.types.utils.response import process_response_headers as _common_headers
 
 _INTERNAL_PREFIX: Final = "x-litellm-"
@@ -27,8 +28,7 @@ def process_response_headers(
                 key: value for key, value in raw.items() if not key.startswith(_INTERNAL_PREFIX)
             }
             return {**_common_headers(rest), **internal}
-        case object():
-            return _common_headers(raw)
+    return _common_headers(raw)
 
 
 def set_response_cost_in_hidden_params(  # ast-grep-ignore: no-long-names
@@ -36,44 +36,45 @@ def set_response_cost_in_hidden_params(  # ast-grep-ignore: no-long-names
 ) -> None:
     if cost is None:
         return
-    hidden = private_fields(response).get("_hidden_params")
-    match hidden:
+    match private_fields(response).get("_hidden_params"):
         case dict() as params:
             additional = _existing_additional(params)
             additional[COST_HEADER] = cost
             params["additional_headers"] = additional
-        case object():
-            raise TypeError("_hidden_params must be an object")
+            return
+    raise TypeError("_hidden_params must be an object")
 
 
 def _existing_additional(params: dict[str, JsonValue]) -> dict[str, JsonValue]:
     match params.get("additional_headers"):
         case Mapping() as headers:
             return dict(headers)
-        case object():
-            return {}
+    return {}
 
 
 def set_provider_response_headers_in_hidden_params(  # ast-grep-ignore: no-long-names
     response: PrivateCarrier, headers: httpx2.Headers | Mapping[str, str]
 ) -> None:
-    hidden = private_fields(response).get("_hidden_params")
-    match hidden:
+    match private_fields(response).get("_hidden_params"):
         case dict() as params:
             raw = dict(headers)
             additional = process_response_headers(raw)
             additional.update(_existing_additional(params))
             params["headers"] = _JSON_OBJECT.validate_python(raw)
             params["additional_headers"] = additional
-        case object():
-            raise TypeError("_hidden_params must be an object")
+            return
+    raise TypeError("_hidden_params must be an object")
 
 
 def get_provider_response_headers_from_hidden_params(  # ast-grep-ignore: no-long-names
-    response: PrivateCarrier,
+    response: JsonSource | None,
 ) -> dict[str, str] | None:
+    if response is None:
+        return None
+    hidden = hidden_params(response)
+    if hidden is None:
+        return None
     try:
-        hidden = _JSON_OBJECT.validate_python(private_fields(response).get("_hidden_params"))
         return _PROVIDER_HEADERS.validate_python(hidden.get("headers"))
     except ValidationError:
         return None

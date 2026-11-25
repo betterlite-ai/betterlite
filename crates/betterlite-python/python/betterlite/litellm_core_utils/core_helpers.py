@@ -1,4 +1,6 @@
 from betterlite._core_helpers import (
+    add_missing_spend_metadata_to_litellm_metadata,
+    coerce_token_limit,
     drop_params_env_flag,
     drop_params_flag,
     filter_exceptions_from_params,
@@ -9,10 +11,13 @@ from betterlite._core_helpers import (
     get_provider_response_headers_from_hidden_params,
     independent_snapshot,
     is_codex_user_agent,
+    is_expected_client_error,
     map_finish_reason,
+    max_retries_per_request_hit,
     normalize_drop_params,
     preserve_upstream_non_openai_attributes,
     process_response_headers,
+    proxy_stamped_used_client_oauth_token,
     reconstruct_model_name,
     remove_index_from_tool_calls,
     remove_items_at_indices,
@@ -24,6 +29,8 @@ from betterlite._core_helpers import (
 )
 
 __all__ = [
+    "add_missing_spend_metadata_to_litellm_metadata",
+    "coerce_token_limit",
     "drop_params_env_flag",
     "drop_params_flag",
     "filter_exceptions_from_params",
@@ -34,10 +41,13 @@ __all__ = [
     "get_provider_response_headers_from_hidden_params",
     "independent_snapshot",
     "is_codex_user_agent",
+    "is_expected_client_error",
     "map_finish_reason",
+    "max_retries_per_request_hit",
     "normalize_drop_params",
     "preserve_upstream_non_openai_attributes",
     "process_response_headers",
+    "proxy_stamped_used_client_oauth_token",
     "reconstruct_model_name",
     "remove_index_from_tool_calls",
     "remove_items_at_indices",

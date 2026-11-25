@@ -32,8 +32,6 @@ def normalize_drop_params(value: PythonValue) -> bool | None:
     match value:
         case str() as text:
             candidate = text.strip()
-        case object():
-            pass
     try:
         return _DROP_PARAMS_BOOL.validate_python(candidate)
     except ValidationError:
@@ -67,3 +65,17 @@ def safe_divide(numerator: float, denominator: float, default: float = 0) -> int
     if denominator == 0:
         return default
     return numerator / denominator
+
+
+def coerce_token_limit(value: PythonValue) -> int | None:
+    match value:
+        case bool():
+            return None
+        case int() as limit:
+            return limit
+        case str() | float() as raw:
+            try:
+                return int(raw)
+            except (TypeError, ValueError, OverflowError):
+                return None
+    return None

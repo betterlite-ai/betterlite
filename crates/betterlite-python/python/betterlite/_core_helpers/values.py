@@ -25,5 +25,4 @@ def object_fields(value: PythonValue) -> dict[str, PythonValue] | None:
     match value:
         case dict() as fields:
             return fields
-        case object():
-            return None
+    return None
