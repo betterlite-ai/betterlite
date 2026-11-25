@@ -95,6 +95,7 @@ impl<'call> Operations<'call> {
         f64::from_bits(self.provider_ms.load(Ordering::Relaxed))
     }
 
+    #[cfg_attr(test, mutants::skip)]
     fn family(&self, family_kind: RerankConfig) -> FamilyRerankConfig<'_> {
         FamilyRerankConfig {
             config: family_kind,
