@@ -16,6 +16,9 @@ fn error_keeps_its_source() {
     );
     let source = failure.source().unwrap();
     assert_eq!(source.to_string(), "socket reset");
+    let upstream = source.source().unwrap();
+    assert!(upstream.downcast_ref::<io::Error>().is_some());
+    assert!(upstream.source().is_none());
     assert_eq!(failure.to_string(), "read failed");
     assert_eq!(failure.class(), "UpstreamReadError");
     assert_eq!(failure.message(), "read failed");

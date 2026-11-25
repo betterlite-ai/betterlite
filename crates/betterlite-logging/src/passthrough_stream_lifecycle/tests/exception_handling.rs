@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::error::Error as _;
 use std::sync::Arc;
 
 use futures_util::StreamExt as _;
@@ -28,10 +29,16 @@ async fn an_upstream_error_schedules_the_failure_and_never_logs_success() {
             .await;
     assert_eq!(collected.len(), 2);
     assert_eq!(collected[0].as_ref().unwrap(), b"alpha");
-    assert_eq!(
-        recorded(collected[1].as_ref().unwrap_err()),
-        recorded(&failure())
+    let delivered = collected[1].as_ref().unwrap_err();
+    assert!(
+        delivered
+            .source()
+            .unwrap()
+            .source()
+            .unwrap()
+            .is::<std::io::Error>()
     );
+    assert_eq!(recorded(delivered), recorded(&failure()));
     assert_eq!(
         harness.failure_dispatch.failures(),
         vec![RecordedFailure {

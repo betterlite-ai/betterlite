@@ -99,6 +99,8 @@ def answer(logging_obj: StubLogging, driven: Driven) -> JsonValue:
 async def execute(input_value: Input) -> JsonValue:
     litellm.include_cost_in_streaming_usage = input_value["cost_injection"]
     logging_obj = StubLogging(RECORDER.params)
+    if input_value["tinyfish_poller"]:
+        logging_obj.model_call_details["tinyfish_sse_poller_spawned"] = True
     if input_value["deferred"]:
         logging_obj._on_deferred_stream_complete = DeferredMarker()  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L235-L242
     install_fakes()
