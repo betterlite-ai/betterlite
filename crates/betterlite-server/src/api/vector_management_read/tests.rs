@@ -726,6 +726,34 @@ async fn info_database_row_keeps_blank_fields() {
     assert_eq!("", text(at(table, "user_id")));
 }
 
+// the deviation: a database row's non-object metadata is served as stored, not refused by the response model
+#[tokio::test]
+async fn info_database_metadata_that_is_not_an_object_is_served_as_stored() {
+    let odd = parsed(
+        r#"{"vector_store_id":"vs_odd","custom_llm_provider":"openai","vector_store_metadata":[1]}"#,
+    );
+    let state = build(Setup {
+        database: Some(FakeDatabase::new(vec![odd])),
+        registry: None,
+        world: World::default(),
+        privileges: false,
+        settings: FeatureSettings::default(),
+    });
+    let (status, _headers, body) = call(
+        &state,
+        &admin(),
+        Method::POST,
+        INFO_PATH,
+        r#"{"vector_store_id":"vs_odd"}"#,
+    )
+    .await;
+    assert_eq!(StatusCode::OK, status);
+    let table = at(&body, "vector_store");
+    let metadata = list(at(table, "vector_store_metadata"));
+    assert_eq!(1, metadata.len());
+    assert_eq!(1, number(metadata.first().expect("one item")));
+}
+
 #[tokio::test]
 async fn info_denied_cached_record_is_403() {
     let database = FakeDatabase::new(vec![db_store("vs_team")]);
