@@ -82,11 +82,8 @@ pub fn validate_search_tools(
     is_proxy_admin: bool,
 ) -> Result<(), GateError> {
     let requested: Vec<String> = requested_entries("search_tools", permission, true)?;
-    if requested.is_empty() {
-        return Ok(());
-    }
     let Some(team_fields) = team else {
-        if is_proxy_admin {
+        if requested.is_empty() || is_proxy_admin {
             return Ok(());
         }
         let disallowed_text = quoted_list(&requested);
@@ -101,24 +98,20 @@ pub fn validate_search_tools(
         .as_ref()
         .and_then(|stored| stored.search_tools.0.as_deref())
         .unwrap_or_default();
-    if team_tools.is_empty() {
-        return Ok(());
-    }
-    let allowed: BTreeSet<String> = team_tools.iter().cloned().collect();
+    let permitted: BTreeSet<String> = team_tools.iter().cloned().collect();
     let disallowed: BTreeSet<String> = requested
         .iter()
-        .filter(|tool| !allowed.contains(*tool))
+        .filter(|tool| !permitted.contains(*tool))
         .cloned()
         .collect();
-    if disallowed.is_empty() {
+    if requested.is_empty() || team_tools.is_empty() || disallowed.is_empty() {
         return Ok(());
     }
     let team_id = team_fields.base.team_id.as_str();
-    let disallowed_text = quoted_list(&disallowed);
-    let allowed_text = quoted_list(team_tools);
-    Err(GateError::Denied(Denial {
-        detail: format!(
-            "Key requests search tools not allowed by team '{team_id}': {disallowed_text}. Team allows: {allowed_text}."
-        ),
-    }))
+    let detail = format!(
+        "Key requests search tools not allowed by team '{team_id}': {}. Team allows: {}.",
+        quoted_list(&disallowed),
+        quoted_list(team_tools)
+    );
+    Err(GateError::Denied(Denial { detail }))
 }
