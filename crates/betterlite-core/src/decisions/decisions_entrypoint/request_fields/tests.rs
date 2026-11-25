@@ -87,9 +87,9 @@ fn with_state(state: Json) -> Extra {
 #[test]
 fn openai_fields_keep_the_input_and_questions() {
     let questions = json(r#"[{"type":"predicate","name":"first","instructions":"Is it true?"}]"#);
-    let fields = request_fields(Some(text("state")), Some(questions.clone()), &Extra::new())
+    let parsed_fields = request_fields(Some(text("state")), Some(questions), &Extra::new())
         .expect("the fields build");
-    let RequestFields::OpenAi(fields) = fields else {
+    let RequestFields::OpenAi(fields) = parsed_fields else {
         panic!("no state keyword means the OpenAI format");
     };
     assert_eq!(fields.input, Some(text("state")));
@@ -103,8 +103,9 @@ fn openai_fields_keep_the_input_and_questions() {
 
 #[test]
 fn openai_fields_treat_a_null_questions_value_as_absent() {
-    let fields = request_fields(None, Some(Json::Null), &Extra::new()).expect("the fields build");
-    let RequestFields::OpenAi(fields) = fields else {
+    let parsed_fields =
+        request_fields(None, Some(Json::Null), &Extra::new()).expect("the fields build");
+    let RequestFields::OpenAi(fields) = parsed_fields else {
         panic!("no state keyword means the OpenAI format");
     };
     assert_eq!(fields.questions, None);
@@ -112,9 +113,9 @@ fn openai_fields_treat_a_null_questions_value_as_absent() {
 
 #[test]
 fn openai_fields_treat_a_missing_questions_value_as_absent() {
-    let fields =
+    let parsed_fields =
         request_fields(Some(text("state")), None, &Extra::new()).expect("the fields build");
-    let RequestFields::OpenAi(fields) = fields else {
+    let RequestFields::OpenAi(fields) = parsed_fields else {
         panic!("no state keyword means the OpenAI format");
     };
     assert_eq!(fields.input, Some(text("state")));
@@ -139,9 +140,9 @@ fn openai_fields_reject_a_scalar_questions_value() {
 fn systemone_fields_warn_and_keep_the_state() {
     let (warnings, _guard) = capture_warnings();
     let questions = json(r#"{"first":{"type":"noul","instructions":"Is it true?"}}"#);
-    let fields = request_fields(None, Some(questions), &with_state(text("state")))
+    let parsed_fields = request_fields(None, Some(questions), &with_state(text("state")))
         .expect("the fields build");
-    let RequestFields::SystemOne(fields) = fields else {
+    let RequestFields::SystemOne(fields) = parsed_fields else {
         panic!("a state keyword means the System One format");
     };
     assert_eq!(fields.state, Some(text("state")));
@@ -162,8 +163,9 @@ fn systemone_fields_warn_and_keep_the_state() {
 fn systemone_fields_keep_a_map_state() {
     let (warnings, _guard) = capture_warnings();
     let state = json(r#"{"step":"one"}"#);
-    let fields = request_fields(None, None, &with_state(state.clone())).expect("the fields build");
-    let RequestFields::SystemOne(fields) = fields else {
+    let parsed_fields =
+        request_fields(None, None, &with_state(state.clone())).expect("the fields build");
+    let RequestFields::SystemOne(fields) = parsed_fields else {
         panic!("a state keyword means the System One format");
     };
     assert_eq!(fields.state, Some(state));
@@ -175,8 +177,9 @@ fn systemone_fields_keep_a_map_state() {
 fn systemone_fields_keep_a_list_state() {
     let (warnings, _guard) = capture_warnings();
     let state = json(r#"["one","two"]"#);
-    let fields = request_fields(None, None, &with_state(state.clone())).expect("the fields build");
-    let RequestFields::SystemOne(fields) = fields else {
+    let parsed_fields =
+        request_fields(None, None, &with_state(state.clone())).expect("the fields build");
+    let RequestFields::SystemOne(fields) = parsed_fields else {
         panic!("a state keyword means the System One format");
     };
     assert_eq!(fields.state, Some(state));
@@ -187,8 +190,9 @@ fn systemone_fields_keep_a_list_state() {
 #[test]
 fn systemone_fields_keep_a_null_state_out() {
     let (warnings, _guard) = capture_warnings();
-    let fields = request_fields(None, None, &with_state(Json::Null)).expect("the fields build");
-    let RequestFields::SystemOne(fields) = fields else {
+    let parsed_fields =
+        request_fields(None, None, &with_state(Json::Null)).expect("the fields build");
+    let RequestFields::SystemOne(fields) = parsed_fields else {
         panic!("a null state still takes the deprecated path");
     };
     assert_eq!(fields.state, None);
@@ -199,9 +203,9 @@ fn systemone_fields_keep_a_null_state_out() {
 #[test]
 fn systemone_fields_treat_a_null_questions_map_as_absent() {
     let (warnings, _guard) = capture_warnings();
-    let fields = request_fields(None, Some(Json::Null), &with_state(text("state")))
+    let parsed_fields = request_fields(None, Some(Json::Null), &with_state(text("state")))
         .expect("the fields build");
-    let RequestFields::SystemOne(fields) = fields else {
+    let RequestFields::SystemOne(fields) = parsed_fields else {
         panic!("a state keyword means the System One format");
     };
     assert_eq!(fields.state, Some(text("state")));

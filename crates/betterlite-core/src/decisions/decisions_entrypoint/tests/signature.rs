@@ -7,11 +7,12 @@ use betterlite_models::decisions::Json;
 use http::header::HeaderValue;
 
 use crate::api::decisions_send::format::DecisionsOutput;
+use crate::decisions::DecisionsArgs;
 use crate::decisions::decisions_entrypoint::test_support::{
     API_BASE, Fixture, Mode, OPENAI_ANSWER, body, decisions_args, text,
 };
 
-fn full_args() -> crate::decisions::DecisionsArgs {
+fn full_args() -> DecisionsArgs {
     let mut args = decisions_args("openai");
     args.safety_identifier = Some(String::from("user-7"));
     args.extra_headers = Some(BTreeMap::from([(
@@ -46,6 +47,7 @@ fn decisions_takes_every_documented_parameter() {
     let Json::Object(fields) = body(&sent[0].request) else {
         panic!("the sent body is an object");
     };
+    drop(sent);
     assert_eq!(fields.get("safety_identifier"), Some(&text("user-7")));
 }
 

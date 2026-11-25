@@ -92,17 +92,17 @@ impl FakeClients {
         self.calls.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    fn delivered(&self, mode: Mode, request: DecisionsRequest) -> Answer {
+    fn delivered(&self, mode: Mode, request: DecisionsRequest) -> UpstreamResponse {
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(SentCall { mode, request });
         let reply = self.answer.lock().unwrap_or_else(PoisonError::into_inner);
-        Ok(UpstreamResponse {
+        UpstreamResponse {
             status: reply.status,
             headers: HeaderMap::new(),
             body: reply.body.clone(),
-        })
+        }
     }
 }
 
@@ -112,7 +112,7 @@ impl DecisionsSyncTransport for FakeClients {
         _params: &Params,
         request: DecisionsRequest,
     ) -> Result<Answer, ClientError> {
-        Ok(self.delivered(Mode::Sync, request))
+        Ok(Ok(self.delivered(Mode::Sync, request)))
     }
 }
 
@@ -122,7 +122,7 @@ impl DecisionsAsyncTransport for FakeClients {
         _params: &Params,
         request: DecisionsRequest,
     ) -> Result<impl Future<Output = Answer> + Send, ClientError> {
-        Ok(ready(self.delivered(Mode::Async, request)))
+        Ok(ready(Ok(self.delivered(Mode::Async, request))))
     }
 }
 

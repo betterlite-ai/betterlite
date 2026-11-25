@@ -30,6 +30,7 @@ async fn asystemone_sends_the_systemone_request_and_returns_the_answer() {
     let Json::Object(fields) = body(&sent[0].request) else {
         panic!("the sent body is an object");
     };
+    drop(sent);
     assert_eq!(fields.get("model"), Some(&text("model-1")));
     assert_eq!(fields.get("state"), Some(&text("state")));
     let Some(Json::Object(questions)) = fields.get("questions") else {

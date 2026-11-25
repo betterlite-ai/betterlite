@@ -34,6 +34,7 @@ async fn adecisions_sends_the_openai_request_and_returns_the_openai_response() {
     let Json::Object(fields) = body(&sent[0].request) else {
         panic!("the sent body is an object");
     };
+    drop(sent);
     assert_eq!(fields.get("model"), Some(&text("model-1")));
     assert_eq!(fields.get("state"), Some(&text("state")));
     assert_eq!(fields.get("input"), None);

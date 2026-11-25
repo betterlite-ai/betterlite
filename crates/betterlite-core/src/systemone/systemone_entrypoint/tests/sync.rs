@@ -24,6 +24,7 @@ fn systemone_sends_through_the_blocking_client() {
     let Json::Object(fields) = body(&sent[0].request) else {
         panic!("the sent body is an object");
     };
+    drop(sent);
     assert_eq!(fields.get("state"), Some(&text("state")));
 }
 
