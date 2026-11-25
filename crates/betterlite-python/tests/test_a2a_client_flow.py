@@ -113,27 +113,25 @@ class MessageView(TypedDict):
     kind: str
     messageId: str
     parts: list[TextPartView]
-
-
-class MessageStub(TypedDict):
-    kind: str
-    messageId: str
+    role: str
 
 
 class SendResponse(TypedDict):
     id: str
+    jsonrpc: str
     result: MessageView
 
 
 class StreamResponse(TypedDict):
     id: str
-    result: MessageStub
+    jsonrpc: str
+    result: MessageView
 
 
 class SendFlow(TypedDict):
     built: int
     methods: list[str]
-    results: list[SendResponse]
+    results: list[dict[str, JsonValue]]
 
 
 class SendFlows(TypedDict):
@@ -145,7 +143,7 @@ class SendFlows(TypedDict):
 
 class StreamFlow(TypedDict):
     methods: list[str]
-    results: list[StreamResponse]
+    results: list[dict[str, JsonValue]]
 
 
 class StreamFlows(TypedDict):
@@ -304,8 +302,8 @@ async def both_cards(server: AgentServer, recorder: Recorder) -> CardFlow:
 def collect_send_flow(
     answers: Sequence[BaseModel], recorder: Recorder, built: int
 ) -> SendFlow:
-    results: list[SendResponse] = [
-        SEND_RESPONSE.validate_json(answer.model_dump_json(exclude_none=True))
+    results: list[dict[str, JsonValue]] = [
+        JSON_OBJECT.validate_json(answer.model_dump_json(exclude_none=True))
         for answer in answers
     ]
     methods: list[str] = [entry["method"] for entry in recorder.calls]
@@ -360,8 +358,8 @@ async def both_sends() -> SendFlows:
 
 async def our_stream_flow(server: AgentServer, recorder: Recorder) -> StreamFlow:
     client = A2AClient(server.url, extra_headers=EXTRA_HEADERS)
-    chunks = [
-        STREAM_RESPONSE.validate_json(chunk.model_dump_json(exclude_none=True))
+    chunks: list[dict[str, JsonValue]] = [
+        JSON_OBJECT.validate_json(chunk.model_dump_json(exclude_none=True))
         async for chunk in client.send_message_streaming(our_stream_request(STREAM_ID))
     ]
     return StreamFlow(methods=[entry["method"] for entry in recorder.calls], results=chunks)
@@ -369,8 +367,8 @@ async def our_stream_flow(server: AgentServer, recorder: Recorder) -> StreamFlow
 
 async def their_stream_flow(server: AgentServer, recorder: Recorder) -> StreamFlow:
     client = THEIR_CLIENT.A2AClient(server.url, extra_headers=EXTRA_HEADERS)
-    chunks = [
-        STREAM_RESPONSE.validate_json(chunk.model_dump_json(exclude_none=True))
+    chunks: list[dict[str, JsonValue]] = [
+        JSON_OBJECT.validate_json(chunk.model_dump_json(exclude_none=True))
         async for chunk in client.send_message_streaming(their_stream_request(STREAM_ID))
     ]
     return StreamFlow(methods=[entry["method"] for entry in recorder.calls], results=chunks)
@@ -402,6 +400,17 @@ async def both_streams() -> StreamFlows:
         if entry["method"] == "POST"
     ]
     return StreamFlows(ours=ours, theirs=theirs, our_posts=our_posts, their_posts=their_posts)
+
+
+# the typed view of the one reply both sides must return, checked field by field
+def check_reply_message(message: MessageView) -> None:
+    assert message["kind"] == "message"
+    assert message["role"] == "agent"
+    assert message["messageId"] == MESSAGE_ID
+    assert len(message["parts"]) == SINGLE
+    part = message["parts"][0]
+    assert part["kind"] == "text"
+    assert part["text"] == REPLY_TEXT
 
 
 def test_exports_match_litellm() -> None:
@@ -473,15 +482,12 @@ def test_send_matches_litellm() -> None:
     theirs = flow["theirs"]
     assert ours["built"] == theirs["built"] == 0
     assert tuple(ours["methods"]) == tuple(theirs["methods"]) == SEND_METHODS
+    # the complete dumps must match, so every field LiteLLM's client returns is compared
     assert ours["results"] == theirs["results"]
-    assert [result["id"] for result in ours["results"]] == [REQUEST_ID, SECOND_ID]
-    message = ours["results"][0]["result"]
-    assert message["kind"] == "message"
-    assert message["messageId"] == MESSAGE_ID
-    assert len(message["parts"]) == SINGLE
-    part = message["parts"][0]
-    assert part["kind"] == "text"
-    assert part["text"] == REPLY_TEXT
+    responses = [SEND_RESPONSE.validate_python(result) for result in ours["results"]]
+    assert [response["id"] for response in responses] == [REQUEST_ID, SECOND_ID]
+    assert [response["jsonrpc"] for response in responses] == ["2.0", "2.0"]
+    check_reply_message(responses[0]["result"])
     assert flow["our_posts"] == flow["their_posts"] == [
         EXPECTED_POST_HEADERS,
         EXPECTED_POST_HEADERS,
@@ -493,12 +499,13 @@ def test_stream_matches_litellm() -> None:
     ours = flow["ours"]
     theirs = flow["theirs"]
     assert tuple(ours["methods"]) == tuple(theirs["methods"]) == STREAM_METHODS
+    # the complete dumps must match, so every field LiteLLM's client yields is compared
     assert ours["results"] == theirs["results"]
     assert len(ours["results"]) == SINGLE
-    chunk = ours["results"][0]
+    chunk = STREAM_RESPONSE.validate_python(ours["results"][0])
     assert chunk["id"] == STREAM_ID
-    assert chunk["result"]["kind"] == "message"
-    assert chunk["result"]["messageId"] == MESSAGE_ID
+    assert chunk["jsonrpc"] == "2.0"
+    check_reply_message(chunk["result"])
     assert flow["our_posts"] == flow["their_posts"] == [EXPECTED_POST_HEADERS]
 
 
