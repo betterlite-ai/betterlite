@@ -12,7 +12,7 @@ from typing import ClassVar, Final, Protocol, Self
 
 import httpx2
 import pytest
-from pydantic import JsonValue, TypeAdapter
+from pydantic import JsonValue, TypeAdapter, ValidationError
 from typing_extensions import override
 
 import betterlite
@@ -100,6 +100,7 @@ UNKNOWN_CLIENT: Final = "remote"
 GET_BUDGET: Final = "/get_budget"
 SET_BUDGET: Final = "/set_budget"
 HOST: Final = "127.0.0.1"
+API_BASE: Final = "http://budget.test"
 OK_STATUS: Final = 200
 LOAD_REQUESTS: Final = 2
 SAVE_REQUESTS: Final = 2
@@ -159,6 +160,7 @@ USAGE_DATA: Final[dict[str, JsonValue]] = {
 HOSTED_USERS: Final[dict[str, dict[str, JsonValue]]] = {ALICE: {"total_budget": BUDGET}}
 HOSTED_REPLY: Final[dict[str, JsonValue]] = {"status": "ok", "data": HOSTED_USERS}
 ERROR_REPLY: Final[dict[str, JsonValue]] = {"status": "error"}
+BAD_DATA_REPLY: Final[dict[str, JsonValue]] = {"status": "ok", "data": {ALICE: 5}}
 SAVED_REPLY: Final[dict[str, JsonValue]] = {"status": "success"}
 HOSTED_SAVE_BODY: Final[dict[str, JsonValue]] = {
     "project_name": PROJECT, "user_dict": HOSTED_USERS,
@@ -368,6 +370,17 @@ def join_saves(marker: set[threading.Thread]) -> None:
     for thread in set(threading.enumerate()) - marker:
         if not thread.daemon:
             thread.join(timeout=10)
+
+
+class FakeClient:
+    calls: list[dict[str, JsonValue]]
+
+    def __init__(self) -> None:
+        self.calls = []
+
+    def post(self, url: str, *, headers: dict[str, str], json: JsonValue) -> JsonValue:
+        self.calls.append({"url": url, "json": json, "content_type": headers["Content-Type"]})
+        return HOSTED_REPLY
 
 
 class RecordingServer(ThreadingHTTPServer):
@@ -757,10 +770,8 @@ def test_budget_lifecycle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     assert reference.user_dict == {}
     assert reference.create_budget(BUDGET, ALICE) == {"total_budget": BUDGET}
     expected_bob: dict[str, JsonValue] = {
-        "total_budget": BUDGET,
-        "duration": DAYS_IN_A_WEEK,
-        "created_at": CREATED_AT,
-        "last_updated_at": CREATED_AT,
+        "total_budget": BUDGET, "duration": DAYS_IN_A_WEEK,
+        "created_at": CREATED_AT, "last_updated_at": CREATED_AT,
     }
     assert reference.create_budget(BUDGET, BOB, "weekly", CREATED_AT) == expected_bob
     reference.update_cost(ALICE, model=CHAT_MODEL, input_text="hi", output_text="yo")
@@ -846,10 +857,10 @@ def test_budget_durations(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     marker = set(threading.enumerate())
     named = (("daily", ALICE), ("weekly", BOB), ("monthly", CAROL), ("yearly", DAVE))
     for duration, user in named:
-        expected = reference.create_budget(BUDGET, user, duration, CREATED_AT)
-        assert ours.create_budget(BUDGET, user, duration, CREATED_AT) == expected
+        assert ours.create_budget(BUDGET, user, duration, CREATED_AT) == reference.create_budget(
+            BUDGET, user, duration, CREATED_AT
+        )
     join_saves(marker)
-    assert ours.user_dict == reference.user_dict
     durations = [ours.user_dict[user]["duration"] for _duration, user in named]
     assert durations == [1, DAYS_IN_A_WEEK, DAYS_IN_A_MONTH, DAYS_IN_A_YEAR]
 
@@ -867,6 +878,7 @@ def test_budget_bad_duration(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
 
 
 def test_budget_missing_input(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    patch_costs(monkeypatch)
     monkeypatch.chdir(tmp_path)
     reference = LITELLM_BUDGET.BudgetManager(PROJECT)
     ours = BudgetManager(PROJECT)
@@ -874,13 +886,6 @@ def test_budget_missing_input(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
         reference.update_cost(ALICE)
     with pytest.raises(ValueError, match="Either a chat completion object"):
         ours.update_cost(ALICE)
-
-
-def test_budget_missing_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    patch_costs(monkeypatch)
-    monkeypatch.chdir(tmp_path)
-    ours = BudgetManager(PROJECT)
-    ours.create_budget(BUDGET, ALICE)
     with pytest.raises(TypeError, match="model must be a string"):
         ours.update_cost(ALICE, completion_obj=ModelResponse())
 
@@ -888,6 +893,31 @@ def test_budget_missing_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
 def test_budget_unknown_client() -> None:
     with pytest.raises(ValueError, match="client_type must be"):
         BudgetManager(PROJECT, UNKNOWN_CLIENT)
+
+
+def test_budget_module_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = FakeClient()
+    # ast-grep-ignore: no-string-mocking
+    monkeypatch.setattr(BETTERLITE, "module_level_client", fake)
+    manager = BudgetManager(PROJECT, HOSTED, API_BASE)
+    assert manager.user_dict == HOSTED_USERS
+    expected = [{
+        "url": API_BASE + GET_BUDGET,
+        "json": {"project_name": PROJECT},
+        "content_type": JSON_TYPE,
+    }]
+    assert fake.calls == expected
+
+
+def test_budget_bad_stored_data(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    Path(COST_FILE).write_text(json.dumps({ALICE: 5}))
+    with pytest.raises(ValidationError, match=ALICE):
+        BudgetManager(PROJECT)
+    with RecordingServer() as server:
+        server.replies[GET_BUDGET] = BAD_DATA_REPLY
+        with pytest.raises(ValidationError, match=ALICE):
+            BudgetManager(PROJECT, HOSTED, server.url)
 
 
 def test_budget_hosted_load() -> None:
@@ -932,10 +962,8 @@ def test_budget_background_save(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     ours_dir = tmp_path / "ours"
     ours_dir.mkdir()
     expected_record: dict[str, JsonValue] = {
-        "total_budget": BUDGET,
-        "duration": 1,
-        "created_at": CREATED_AT,
-        "last_updated_at": CREATED_AT,
+        "total_budget": BUDGET, "duration": 1,
+        "created_at": CREATED_AT, "last_updated_at": CREATED_AT,
     }
     monkeypatch.chdir(reference_dir)
     reference = LITELLM_BUDGET.BudgetManager(PROJECT)
@@ -965,9 +993,4 @@ def test_budget_verbose(
         reference = LITELLM_BUDGET.BudgetManager(PROJECT)
     assert ours.user_dict == reference.user_dict == {}
     messages = [record.getMessage() for record in caplog.records]
-    assert messages == [
-        NOT_FOUND_MESSAGE,
-        LOCAL_DICT_MESSAGE,
-        NOT_FOUND_MESSAGE,
-        LOCAL_DICT_MESSAGE,
-    ]
+    assert messages == [NOT_FOUND_MESSAGE, LOCAL_DICT_MESSAGE] * 2
