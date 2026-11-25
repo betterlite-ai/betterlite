@@ -213,6 +213,41 @@ fn raw_status_synthesized_cohere_498_keeps_the_class_default() {
     );
 }
 
+// every response-reading branch gets the same facts, so the other providers answer the provider's status too
+#[test]
+fn raw_status_huggingface_context_window() {
+    let input = raw("huggingface", "length limit exceeded", Some(413));
+    let class = dispatch_native(&input, &input.error_str)
+        .expect("huggingface classifies its context window branch");
+    let ErrorClass::ContextWindowExceeded(details) = class else {
+        panic!("expected ContextWindowExceeded, got {class:?}");
+    };
+    assert_eq!(details.status.0, 413);
+}
+
+#[test]
+fn raw_status_ai21_context_window() {
+    let mut input = raw("ai21", "boom", Some(429));
+    input.message = Some("Prompt has too many tokens".to_owned());
+    let class = dispatch_native(&input, &input.error_str)
+        .expect("ai21 classifies its context window branch");
+    let ErrorClass::ContextWindowExceeded(details) = class else {
+        panic!("expected ContextWindowExceeded, got {class:?}");
+    };
+    assert_eq!(details.status.0, 429);
+}
+
+#[test]
+fn raw_status_openai_like_authorization_denied() {
+    let input = raw("predibase", "authorization denied for", Some(429));
+    let class = dispatch_native(&input, &input.error_str)
+        .expect("openai-like classifies its authorization branch");
+    let ErrorClass::Authentication(details) = class else {
+        panic!("expected Authentication, got {class:?}");
+    };
+    assert_eq!(details.status.0, 429);
+}
+
 #[test]
 fn ai21_elif_arm_still_classifies_when_called_directly_even_though_dispatch_never_reaches_it() {
     let mut input = raw("ai21", "boom", Some(401));
