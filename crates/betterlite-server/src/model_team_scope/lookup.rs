@@ -5,7 +5,7 @@ use betterlite_db::resource_rows::model::ProxyModelTable;
 use betterlite_db::stored_cipher::DbCipher;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_secret_managers::secret_lookup::SecretLookup;
-use tokio::task::JoinError;
+use tokio::task::{JoinError, JoinSet};
 use tokio_util::task::TaskTracker;
 
 use crate::db_row_decrypt::deployments::decrypt_model_rows;
@@ -34,6 +34,8 @@ enum DecryptTaskError {
     Decrypt(#[from] DbRowDecryptError),
     #[error("the decryption task failed: {0}")]
     Task(#[from] JoinError),
+    #[error("the decryption task never ran")]
+    Missing,
 }
 
 pub async fn find_model_by_id<Reads>(
@@ -102,7 +104,8 @@ async fn decrypted_row(
     let rows = [row];
     let tasks = request.tasks.clone();
     let task = tasks.spawn(async move {
-        tokio::task::spawn_blocking(move || {
+        let mut blocking = JoinSet::new();
+        blocking.spawn_blocking(move || {
             decrypt_model_rows(
                 &rows,
                 &request.cipher,
@@ -110,11 +113,14 @@ async fn decrypted_row(
                 &request.environment,
                 &request.warnings,
             )
-        })
-        .await
+        });
+        match blocking.join_next().await {
+            Some(Ok(decrypt_result)) => decrypt_result.map_err(DecryptTaskError::from),
+            Some(Err(error)) => Err(DecryptTaskError::from(error)),
+            None => Err(DecryptTaskError::Missing),
+        }
     });
-    let decrypt_result = task.await??;
-    decrypt_result.map_err(DecryptTaskError::from)
+    task.await.map_err(DecryptTaskError::from)?
 }
 
 fn search_keeps(model: JsonObject, search: Option<&str>) -> Option<JsonObject> {

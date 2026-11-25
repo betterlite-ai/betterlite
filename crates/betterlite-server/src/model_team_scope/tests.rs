@@ -9,7 +9,7 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_secret_managers::secret_lookup::ports::OidcHttp;
 use tokio::sync::oneshot;
-use tokio::task::JoinSet;
+use tokio::task::{JoinSet, yield_now};
 use tokio::time::timeout;
 use tokio_util::task::TaskTracker;
 
@@ -668,23 +668,26 @@ async fn cancelling_lookup_keeps_decryption_tracked_until_shutdown_drain() {
         .expect("the OIDC fake announces its read");
 
     lookups.abort_all();
-    let cancelled = lookups.join_next().await.expect("lookup task joins");
-    let Err(cancelled) = cancelled else {
+    let lookup_result = lookups.join_next().await.expect("lookup task joins");
+    let Err(cancelled_error) = lookup_result else {
         panic!("the request lookup was cancelled");
     };
-    assert!(cancelled.is_cancelled());
+    assert!(cancelled_error.is_cancelled());
     assert!(!tasks.is_empty());
 
     tasks.close();
-    let draining = tokio::spawn({
-        let tasks = tasks.clone();
-        async move { tasks.wait().await }
-    });
-    tokio::task::yield_now().await;
-    assert!(!draining.is_finished());
+    let shutdown_tracker = tasks.clone();
+    let mut drainers = JoinSet::new();
+    drainers.spawn(async move { shutdown_tracker.wait().await });
+    yield_now().await;
+    assert!(!drainers.is_empty());
 
     let _released = release.try_send(());
-    draining.await.expect("the shutdown drain completes");
+    drainers
+        .join_next()
+        .await
+        .expect("the shutdown drain runs")
+        .expect("the shutdown drain completes");
     assert!(tasks.is_empty());
     assert!(http.released_while_waiting());
 }
