@@ -42,6 +42,20 @@ macro_rules! scalar {
     };
 }
 
+macro_rules! variants {
+    ($($method:ident $(<$value:ident>)?
+        ($receiver:ident, $variant:ident $(, $argument:ident: $kind:ty)?)
+        -> $output:ty $body:block)*) => {
+        $(fn $method $(<$value: Serialize + ?Sized>)?(
+            $receiver,
+            _name: &'static str,
+            _index: u32,
+            $variant: &'static str,
+            $($argument: $kind,)?
+        ) -> Result<$output, ShapeError> $body)*
+    };
+}
+
 impl Serializer for Probe {
     type Ok = Shape;
     type Error = ShapeError;
@@ -76,34 +90,12 @@ impl Serializer for Probe {
         Ok(Shape::Null)
     }
 
-    fn serialize_unit_variant(
-        self,
-        _name: &'static str,
-        _index: u32,
-        _variant: &'static str,
-    ) -> Result<Shape, ShapeError> {
-        Ok(Shape::Value)
-    }
-
     fn serialize_newtype_struct<T: Serialize + ?Sized>(
         self,
         _name: &'static str,
         value: &T,
     ) -> Result<Shape, ShapeError> {
         value.serialize(self)
-    }
-
-    fn serialize_newtype_variant<T: Serialize + ?Sized>(
-        self,
-        _name: &'static str,
-        _index: u32,
-        variant: &'static str,
-        value: &T,
-    ) -> Result<Shape, ShapeError> {
-        Ok(Shape::Dictionary(BTreeMap::from([(
-            variant.to_owned(),
-            value.serialize(self)?,
-        )])))
     }
 
     fn serialize_seq(self, _len: Option<usize>) -> Result<Sequence, ShapeError> {
@@ -125,19 +117,6 @@ impl Serializer for Probe {
         self.serialize_seq(Some(len))
     }
 
-    fn serialize_tuple_variant(
-        self,
-        _name: &'static str,
-        _index: u32,
-        variant: &'static str,
-        _len: usize,
-    ) -> Result<Sequence, ShapeError> {
-        Ok(Sequence {
-            items: Vec::new(),
-            variant: Some(variant),
-        })
-    }
-
     fn serialize_map(self, len: Option<usize>) -> Result<Mapping, ShapeError> {
         // Serde's flattened records use an unknown map length; our JSON dictionaries supply their length.
         Ok(Mapping {
@@ -149,26 +128,27 @@ impl Serializer for Probe {
     }
 
     fn serialize_struct(self, _name: &'static str, _len: usize) -> Result<Mapping, ShapeError> {
-        Ok(Mapping {
-            fields: BTreeMap::new(),
-            key: None,
-            model: true,
-            variant: None,
-        })
+        self.serialize_map(None)
     }
 
-    fn serialize_struct_variant(
-        self,
-        _name: &'static str,
-        _index: u32,
-        variant: &'static str,
-        _len: usize,
-    ) -> Result<Mapping, ShapeError> {
-        Ok(Mapping {
-            fields: BTreeMap::new(),
-            key: None,
-            model: true,
-            variant: Some(variant),
-        })
+    variants! {
+        serialize_unit_variant(self, _variant) -> Shape {
+            Ok(Shape::Value)
+        }
+        serialize_newtype_variant<T>(self, variant, value: &T) -> Shape {
+            Ok(Shape::Dictionary(BTreeMap::from([(
+                variant.to_owned(), value.serialize(self)?,
+            )])))
+        }
+        serialize_tuple_variant(self, variant, len: usize) -> Sequence {
+            let mut sequence = self.serialize_seq(Some(len))?;
+            sequence.variant = Some(variant);
+            Ok(sequence)
+        }
+        serialize_struct_variant(self, variant, _len: usize) -> Mapping {
+            let mut fields = self.serialize_map(None)?;
+            fields.variant = Some(variant);
+            Ok(fields)
+        }
     }
 }
