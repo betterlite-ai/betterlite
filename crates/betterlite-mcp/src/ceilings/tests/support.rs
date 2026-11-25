@@ -232,7 +232,7 @@ fn user_id_of(auth: Option<&UserAPIKeyAuth>) -> String {
     let Some(caller) = auth else {
         return String::from("none");
     };
-    McpAuth::from_auth(caller)
+    decode::<StoreDown>(Some(caller))
         .ok()
         .and_then(|record| record.user_id)
         .unwrap_or_default()
@@ -261,6 +261,14 @@ fn agent_auth() -> UserAPIKeyAuth {
 
 fn admin_auth() -> UserAPIKeyAuth {
     auth_from_json(r#"{"user_id":"admin-1","user_role":"proxy_admin"}"#)
+}
+
+fn opaque_span_auth() -> UserAPIKeyAuth {
+    let caller = AgentCaller {
+        user_id: Some(String::from("user-1")),
+        team_id: Some(String::from("team-1")),
+    };
+    caller_record(&caller, false, Some(ParentOtelSpan::Opaque)).unwrap()
 }
 
 fn names(items: &[&str]) -> Vec<String> {

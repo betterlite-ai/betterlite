@@ -4,17 +4,22 @@ use std::collections::BTreeMap;
 use std::future::{Ready, ready};
 use std::sync::Mutex;
 
-use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
+use betterlite_auth::agent_caller::caller_auth::caller_record;
+use betterlite_auth::agent_policy::caller::AgentCaller;
+use betterlite_auth::resolved_key::auth::{AuthInput, ParentOtelSpan, UserAPIKeyAuth};
 use betterlite_db::budget_permission_rows::{JsonData, PermissionList};
 use thiserror::Error;
 
 use super::agent::agent_capped_servers;
 use super::error::{CeilingReadError, CeilingsError};
+use super::live::decode;
 use super::reads::{AdmissionMarks, CeilingReads};
-use super::{Capped, CeilingLevels as _, CeilingServers, CeilingSource, Ceilings};
+use super::{
+    AgentCallerCeilings as _, AgentCeilings as _, Capped, CeilingServers, CeilingSource, Ceilings,
+    EndUserCeilings as _, OrgCeilings as _, UserCeilings as _,
+};
 use crate::auth::object_permission_hydration::error::UnloadableEntitlementError;
 use crate::auth::object_permission_hydration::reads::ObjectPermission;
-use crate::auth::object_permission_hydration::record::McpAuth;
 use crate::server_grants::ToolGrants;
 
 include!("tests/support.rs");
@@ -22,3 +27,4 @@ include!("tests/org.rs");
 include!("tests/user.rs");
 include!("tests/agent.rs");
 include!("tests/tools.rs");
+include!("tests/identity.rs");

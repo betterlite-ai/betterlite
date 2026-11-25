@@ -5,6 +5,7 @@ use betterlite_auth::agent_access_groups::ceiling::AgentAccessGroups;
 use betterlite_auth::agent_access_groups::reads::AccessGroupReads;
 use betterlite_auth::agent_caller::caller_auth::agent_caller_auth as caller_auth_record;
 use betterlite_auth::agent_policy::admission::managed_agent_policy;
+use betterlite_auth::auth_cache::copy::copy_for_cache;
 use betterlite_auth::managed_admission::managed_marks;
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 
@@ -119,7 +120,7 @@ where
         let Some(caller) = auth else {
             return Ok(Vec::new());
         };
-        let grant = GrantAuth::from_auth(caller)
+        let grant = GrantAuth::from_auth(&copy_for_cache(caller))
             .map_err(|source| CeilingReadError::Failed(source.to_string()))?;
         self.grants
             .team_servers(Some(&grant))
@@ -184,15 +185,18 @@ where
     }
 }
 
-// the caller's wire form decides the ids the getters read, and no auth reads as a record naming nothing
-fn decode<Source>(auth: Option<&UserAPIKeyAuth>) -> Result<McpAuth, CeilingReadError<Source>>
+// the caller's wire form decides the ids the getters read; request tracing data is no part of it, and no auth reads as a record naming nothing
+pub(super) fn decode<Source>(
+    auth: Option<&UserAPIKeyAuth>,
+) -> Result<McpAuth, CeilingReadError<Source>>
 where
     Source: StdError + 'static,
 {
     auth.map_or_else(
         || Ok(McpAuth::default()),
         |caller| {
-            McpAuth::from_auth(caller).map_err(|error| CeilingReadError::Failed(error.to_string()))
+            McpAuth::from_auth(&copy_for_cache(caller))
+                .map_err(|error| CeilingReadError::Failed(error.to_string()))
         },
     )
 }
