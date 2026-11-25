@@ -53,7 +53,7 @@ where
 {
     // Only rejected-provider branches carry the synthesized 400; a bad timeout or name is a ValueError
     #[must_use]
-    pub fn bad_request(&self) -> Option<BadRequest<'_>> {
+    pub const fn bad_request(&self) -> Option<BadRequest<'_>> {
         let (llm_provider, method) = match self {
             Self::Unsupported { provider } | Self::UnsupportedStreaming { provider } => {
                 (provider.as_str(), "CREATE_THREAD")

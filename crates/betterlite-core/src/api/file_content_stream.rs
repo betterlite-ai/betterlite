@@ -1,12 +1,11 @@
 use std::collections::BTreeMap;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use betterlite_config::sections::resource_sdk_settings::Settings;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::controls::call_params::TrustedCredentials;
 use betterlite_models::resolution::ResolutionContext;
 use betterlite_openai::files::records::BinaryContent;
-use betterlite_openai::files::stream::StreamExit;
 use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
 use secrecy::SecretString;
@@ -79,7 +78,6 @@ pub struct FileContentStream<'deps, Dispatch> {
 pub struct StreamedContent {
     pub response: FileContentStreamingResponse,
     pub headers: IndexMap<String, String>,
-    pub exit: Arc<OnceLock<StreamExit>>,
 }
 
 // HttpxBinaryResponseContent's status, headers and bytes, or the wrapped stream

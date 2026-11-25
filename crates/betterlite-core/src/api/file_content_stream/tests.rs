@@ -26,7 +26,7 @@ use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
 use betterlite_openai::files::error::FilesError;
 use betterlite_openai::files::records::{BinaryContent, FileContentRequest};
-use betterlite_openai::files::stream::{FileContentStreamingResult, StreamExit};
+use betterlite_openai::files::stream::FileContentStreamingResult;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
 use futures_util::StreamExt as _;

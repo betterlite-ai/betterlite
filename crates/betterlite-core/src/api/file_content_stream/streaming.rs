@@ -153,7 +153,7 @@ where
         let FileContentStreamingResult {
             stream,
             headers,
-            exit,
+            exit: _,
         } = result;
         let response = FileContentStreamingResponse::new(
             FileStreamSetup {
@@ -165,11 +165,7 @@ where
             },
             Arc::new(ContentClock(self.clock)),
         );
-        ContentAnswer::Streamed(Box::new(StreamedContent {
-            response,
-            headers,
-            exit,
-        }))
+        ContentAnswer::Streamed(Box::new(StreamedContent { response, headers }))
     }
 }
 
