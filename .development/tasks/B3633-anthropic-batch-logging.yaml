@@ -36,11 +36,6 @@ description: >-
   No route reaches this code until B3606 wires the dispatcher, so the oracle cases are helper cases: the Python adapter calls the pinned AnthropicPassthroughLoggingHandler.batch_creation_handler with an httpx.Response, a stub logging object and an id-scoped or collection route, and replaces the random result id before comparing. B3606 and the Anthropic route tasks add the HTTP cases.
 scope:
   paths:
-    - "tools/oracle/src/helpers/server/object_permissions/tests.rs"
-    - "tools/oracle/src/helpers/server/lib.rs"
-    - "tools/oracle/src/helpers/mcp/lib.rs"
-    - "tools/oracle/src/helpers/mcp/b8190/tests.rs"
-    - "tools/oracle/src/helpers/mcp/b4668/tests.rs"
     - crates/betterlite-server/src/pass_through_logging/anthropic_batch.rs
     - crates/betterlite-server/src/pass_through_logging/anthropic_batch/**
     - tools/oracle/cases/helpers/anthropic-batch-logging/**
