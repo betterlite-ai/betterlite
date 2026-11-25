@@ -4,10 +4,11 @@ use betterlite_openai::api::vector_store_records::records::vector::LiteLlmManage
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_server::api::vector_management_boundaries::ownership::with_ownership;
 use betterlite_server::api::vector_management_boundaries::redaction::redact_sensitive_litellm_params;
+use serde::Deserialize;
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
-enum Input {
+pub(crate) enum Input {
     OwnershipProjection {
         vector_store: serde_json::Value,
     },
