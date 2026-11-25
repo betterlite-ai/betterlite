@@ -27,6 +27,8 @@ pub(crate) enum RerankFailure {
     Rate(#[from] DecimalLexemeError),
     #[error("the rerank cost arithmetic overflowed")]
     Overflow,
+    #[error("'{provider}' is not a valid LlmProviders")]
+    UnknownProvider { provider: String },
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -119,6 +121,7 @@ pub(crate) fn rerank_error(py: Python<'_>, error: &RerankFailure, model: &str) -
         RerankFailure::Resolution { source } => resolution_error(py, source, model),
         RerankFailure::Rate(source) => native_error(py, payload(source.to_string())),
         RerankFailure::Overflow => native_error(py, payload(error.to_string())),
+        RerankFailure::UnknownProvider { .. } => PyValueError::new_err(error.to_string()),
     }
 }
 

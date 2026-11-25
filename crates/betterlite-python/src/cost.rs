@@ -1,7 +1,7 @@
 mod billing;
 mod breakdown;
 pub(crate) mod convert;
-mod engine;
+pub(crate) mod engine;
 pub(crate) mod error;
 mod native;
 pub(crate) mod settings;

@@ -1,20 +1,25 @@
 use std::collections::BTreeMap;
 use std::convert::Infallible;
 
-use betterlite_core::cost::realtime::{
-    Event, error::RealtimeCostError, realtime_stream, responses_ws,
-};
+use betterlite_core::cost::realtime::{Event, error::RealtimeCostError, responses_ws};
+use betterlite_core::cost::usage::ResponseKind;
 use betterlite_logging::cost_breakdown::{CostBreakdownInput, CostBreakdownTarget};
+use betterlite_logging::fields::usage::Usage as LoggingUsage;
 use betterlite_models::cost_breakdown::CostBreakdown;
 use betterlite_models::cost_usage::modality_projection::CachedTokenCounters;
+use betterlite_models::decisions::Json;
 use betterlite_models::price_fields::decimal_lexeme::parse_decimal_lexeme;
 use betterlite_models::price_lookup::PriceRecord;
 use betterlite_models::tiered_pricing::Scalar;
 use betterlite_models::token_cost::prompt_overlap::PromptExtras;
 use betterlite_models::usage_sum::{PromptTokensDetails, Usage, UsageSumError, usage_sum};
 use betterlite_openai::api::rerank_contracts::records::RerankBilledUnits;
+use indexmap::IndexMap;
 use rust_decimal::Decimal;
 
+use crate::cost::convert::UsageRequest;
+use crate::cost::engine::usage_object;
+use crate::cost::error::EngineError;
 use crate::cost_extra::convert::UsageSource;
 use crate::cost_extra::convert::{CollectUsageRequest, CombineUsageRequest, PartitionUsageRequest};
 use crate::cost_extra::error::RerankFailure;
@@ -75,14 +80,72 @@ pub(crate) fn combine_usage(request: &CombineUsageRequest) -> Result<Usage, Usag
     )
 }
 
-// The two collect_usage methods differ only in the event types they bill.
+// A collected event fails either in the session filter or in the full usage transformer after it.
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum CollectFailure {
+    #[error(transparent)]
+    Realtime(#[from] RealtimeCostError),
+    #[error(transparent)]
+    Usage(#[from] EngineError),
+}
+
+// The two collect_usage methods differ only in the events they bill; each usage keeps every extension.
 pub(crate) fn collect_usage(
     request: &CollectUsageRequest,
-) -> Result<Vec<Usage>, RealtimeCostError> {
-    match request.source {
-        UsageSource::Realtime => realtime_stream::collect_usage(&request.results),
-        UsageSource::ResponsesWs => responses_ws::collect_usage(&request.results),
+) -> Result<Vec<LoggingUsage>, CollectFailure> {
+    let mappings: Vec<IndexMap<String, Json>> = match request.source {
+        UsageSource::Realtime => realtime_usages(&request.results)?,
+        UsageSource::ResponsesWs => responses_ws::billable_events(&request.results)?
+            .into_iter()
+            .map(|billable| billable.usage.clone())
+            .collect(),
+    };
+    mappings.iter().map(usage_record).collect()
+}
+
+fn usage_record(mapping: &IndexMap<String, Json>) -> Result<LoggingUsage, CollectFailure> {
+    let request = UsageRequest {
+        kind: Some(ResponseKind::Other),
+        usage: Some(mapping.clone()),
+    };
+    let mut usage = usage_object(&request)?.unwrap_or_default();
+    if let Some(Json::Object(tool_use)) = usage.extras.shift_remove("server_tool_use") {
+        usage.server_tool_use = Some(tool_use);
     }
+    Ok(usage)
+}
+
+// collect_usage_from_realtime_stream_results: response.done events, each with its response object.
+fn realtime_usages(results: &[Event]) -> Result<Vec<IndexMap<String, Json>>, RealtimeCostError> {
+    let mut usages = Vec::new();
+    for event in results {
+        let Some(kind) = event.get("type") else {
+            return Err(RealtimeCostError::MissingField { field: "type" });
+        };
+        if !matches!(kind, Json::Text(event_type) if event_type == "response.done") {
+            continue;
+        }
+        let Some(response) = event.get("response") else {
+            return Err(RealtimeCostError::MissingField { field: "response" });
+        };
+        let Json::Object(response) = response else {
+            return Err(RealtimeCostError::Shape {
+                field: "response",
+                expected: "an object",
+            });
+        };
+        match response.get("usage") {
+            None | Some(Json::Null) => usages.push(IndexMap::new()),
+            Some(Json::Object(usage)) => usages.push(usage.clone()),
+            Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
+                return Err(RealtimeCostError::Shape {
+                    field: "usage",
+                    expected: "an object or null",
+                });
+            }
+        }
+    }
+    Ok(usages)
 }
 
 pub(crate) type ServiceTiers = Vec<(Option<String>, Vec<Event>)>;

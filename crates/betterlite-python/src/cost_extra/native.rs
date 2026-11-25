@@ -1,7 +1,9 @@
+use std::time::SystemTime;
+
 use pyo3::{exceptions::PyValueError, prelude::*};
 use serde::{Serialize, de::DeserializeOwned};
 
-use crate::cost::convert::{encode, parse};
+use crate::cost::convert::{UsageRecord, encode, parse};
 use crate::cost::error::{native_error, payload};
 use crate::cost::settings::Settings;
 use crate::cost_extra::convert::usage::UsageWire;
@@ -119,7 +121,7 @@ impl NativeCostExtra {
         let wire: CollectUsageRequest = parse(request)?;
         let usages =
             collect_usage(&wire).map_err(|error| native_error(py, payload(error.to_string())))?;
-        let views: Vec<UsageWire> = usages.iter().map(UsageWire::from).collect();
+        let views: Vec<UsageRecord<'_>> = usages.iter().map(UsageRecord::from).collect();
         encode(&views).map_err(PyErr::from)
     }
 
@@ -132,9 +134,10 @@ impl NativeCostExtra {
     }
 
     fn realtime_cost(&self, py: Python<'_>, request: &str) -> PyResult<String> {
+        let mut clock = SystemTime::now;
         answer(
             request,
-            |wire| self.engine.realtime_cost(wire),
+            |wire| self.engine.realtime_cost(wire, &mut clock),
             |_, error| realtime_error(py, error),
         )
     }

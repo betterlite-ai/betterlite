@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::str::FromStr as _;
+use std::time::{Duration, SystemTime};
 
 use betterlite_config::cost_adjustments::CostAdjustmentMap;
 use betterlite_core::cost::realtime::Event;
@@ -18,7 +19,7 @@ use crate::cost_extra::convert::{
 };
 use crate::cost_extra::engine::Engine;
 use crate::cost_extra::engine::support::{collect_usage, combine_usage, partition_usage};
-use crate::cost_extra::error::RerankFailure;
+use crate::cost_extra::error::{RealtimeFailure, RerankFailure};
 
 const CATALOG: &str = r#"{
     "ocr-test": {
@@ -220,6 +221,26 @@ fn cost_extra_engine_prices_only_the_vertex_search_api() {
             .vector_store_cost(&defaulted)
             .expect("openai declares no vector price"),
         (Amount(Decimal::ZERO), Amount(Decimal::ZERO))
+    );
+
+    let unknown: VectorStoreRequest =
+        request(r#"{"model": null, "custom_llm_provider": "typo-provider", "response": {}}"#);
+    assert_eq!(
+        engine()
+            .vector_store_cost(&unknown)
+            .expect_err("an unknown provider is refused")
+            .to_string(),
+        "'typo-provider' is not a valid LlmProviders"
+    );
+
+    let registry_only: VectorStoreRequest =
+        request(r#"{"model": null, "custom_llm_provider": "sarvam", "response": {}}"#);
+    assert_eq!(
+        engine()
+            .vector_store_cost(&registry_only)
+            .expect_err("a registry-only provider is refused")
+            .to_string(),
+        "'sarvam' is not a valid LlmProviders"
     );
 }
 
@@ -430,7 +451,8 @@ fn cost_extra_engine_collects_and_partitions_realtime_usage() {
         r#"{"source": "realtime", "results": [
             {"type": "session.created", "session": {"model": "realtime-test"}},
             {"type": "response.done", "response": {"usage": {
-                "input_tokens": 100, "output_tokens": 20, "total_tokens": 120}}},
+                "input_tokens": 100, "output_tokens": 20, "total_tokens": 120,
+                "server_tool_use": {"web_search_requests": 2}}}},
             {"type": "response.audio.delta", "delta": "x"}
         ]}"#,
     );
@@ -439,11 +461,20 @@ fn cost_extra_engine_collects_and_partitions_realtime_usage() {
     assert_eq!(collected[0].prompt_tokens, 100);
     assert_eq!(collected[0].completion_tokens, 20);
     assert_eq!(collected[0].total_tokens, 120);
+    let tool_use = collected[0]
+        .server_tool_use
+        .as_ref()
+        .expect("the tool use survives the transform");
+    assert_eq!(
+        tool_use.get("web_search_requests"),
+        Some(&Json::Number(serde_json::Number::from(2_i64)))
+    );
 
     let websocket: CollectUsageRequest = request(
         r#"{"source": "responses_ws", "results": [
             {"type": "response.completed", "response": {"usage": {
-                "input_tokens": 10, "output_tokens": 2, "total_tokens": 12}}},
+                "input_tokens": 10, "output_tokens": 2, "total_tokens": 12,
+                "server_tool_use": {"web_search_requests": 2}}}},
             {"type": "response.completed", "response": {"service_tier": "flex"}},
             {"type": "response.incomplete", "response": {"usage": {
                 "input_tokens": 3, "output_tokens": 1, "total_tokens": 4}}}
@@ -451,6 +482,14 @@ fn cost_extra_engine_collects_and_partitions_realtime_usage() {
     );
     let websocket_usage = collect_usage(&websocket).expect("the websocket events are read");
     assert_eq!(websocket_usage.len(), 2);
+    assert_eq!(
+        websocket_usage[0]
+            .server_tool_use
+            .as_ref()
+            .expect("the websocket tool use survives")
+            .get("web_search_requests"),
+        Some(&Json::Number(serde_json::Number::from(2_i64)))
+    );
 
     let partition: PartitionUsageRequest = request(
         r#"{"results": [
@@ -466,20 +505,38 @@ fn cost_extra_engine_collects_and_partitions_realtime_usage() {
     assert_eq!(tiers[0].1.len(), 2);
 }
 
+const REALTIME_TOKENS_REQUEST: &str = r#"{"results": [],
+    "combined_usage": {"prompt_tokens": 100, "completion_tokens": 20,
+        "total_tokens": 120, "prompt_tokens_details": null,
+        "completion_tokens_details": null},
+    "custom_llm_provider": "openai", "litellm_model_name": "realtime-test",
+    "data_residency": null, "custom_pricing_model": null, "base_pricing_model": null}"#;
+
 #[test]
 fn cost_extra_engine_prices_a_realtime_session() {
-    let tokens: RealtimeCostWire = request(
-        r#"{"results": [], "combined_usage": {"prompt_tokens": 100, "completion_tokens": 20,
-            "total_tokens": 120, "prompt_tokens_details": null,
-            "completion_tokens_details": null},
-            "custom_llm_provider": "openai", "litellm_model_name": "realtime-test",
-            "data_residency": null, "custom_pricing_model": null, "base_pricing_model": null}"#,
-    );
+    let tokens: RealtimeCostWire = request(REALTIME_TOKENS_REQUEST);
+    let mut clock = SystemTime::now;
     let (cost, breakdown) = engine()
-        .realtime_cost(&tokens)
+        .realtime_cost(&tokens, &mut clock)
         .expect("the session is priced");
     assert_eq!(cost.0, dec("0.0014"));
     assert!(breakdown.is_some());
+}
+
+#[test]
+fn cost_extra_engine_prices_from_the_clock_it_is_given() {
+    let tokens: RealtimeCostWire = request(REALTIME_TOKENS_REQUEST);
+    let mut fixed = || SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let (cost, _breakdown) = engine()
+        .realtime_cost(&tokens, &mut fixed)
+        .expect("the fixed clock prices the session");
+    assert_eq!(cost.0, dec("0.0014"));
+
+    let mut before_epoch = || SystemTime::UNIX_EPOCH - Duration::from_secs(1);
+    let error = engine()
+        .realtime_cost(&tokens, &mut before_epoch)
+        .expect_err("a clock before the epoch is unreadable");
+    assert!(matches!(error, RealtimeFailure::Clock(_)));
 }
 
 #[test]
@@ -496,8 +553,9 @@ fn cost_extra_engine_adds_the_realtime_transcription_charge() {
             "custom_llm_provider": "openai", "litellm_model_name": "realtime-test",
             "data_residency": null, "custom_pricing_model": null, "base_pricing_model": null}"#,
     );
+    let mut clock = SystemTime::now;
     let (charge, _breakdown) = engine()
-        .realtime_cost(&transcribed)
+        .realtime_cost(&transcribed, &mut clock)
         .expect("the session and its transcription are priced");
     assert_eq!(charge.0, dec("0.00165"));
 }

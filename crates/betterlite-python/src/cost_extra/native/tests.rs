@@ -68,6 +68,18 @@ struct BreakdownWire {
     total_cost: Option<Amount>,
 }
 
+// A collected usage comes back with the logging Usage's own fields, which the request wire does not carry.
+#[derive(Debug, Deserialize)]
+struct CollectedUsage {
+    prompt_tokens: i64,
+    server_tool_use: Option<CollectedToolUse>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CollectedToolUse {
+    web_search_requests: Option<i64>,
+}
+
 fn dec(text: &str) -> Decimal {
     Decimal::from_str(text).expect("the fixture decimal parses")
 }
@@ -158,6 +170,23 @@ fn cost_extra_native_prices_the_search_and_rerank_calls() {
         assert_eq!(
             pair(&rerank),
             vec![Amount(dec("0.004")), Amount(Decimal::ZERO)]
+        );
+    });
+}
+
+#[test]
+fn cost_extra_native_refuses_a_vector_provider_outside_llm_providers() {
+    Python::initialize();
+    Python::attach(|py| {
+        let error = native()
+            .vector_store_cost(
+                py,
+                r#"{"model": null, "custom_llm_provider": "typo-provider", "response": {}}"#,
+            )
+            .expect_err("a provider LlmProviders does not name is refused");
+        assert_eq!(
+            error.to_string(),
+            "ValueError: 'typo-provider' is not a valid LlmProviders"
         );
     });
 }
@@ -291,13 +320,22 @@ fn cost_extra_native_collects_and_partitions_usage() {
             r#"{"source": "realtime", "results": [
                 {"type": "session.created", "session": {"model": "realtime-test"}},
                 {"type": "response.done", "response": {"usage": {
-                    "input_tokens": 100, "output_tokens": 20, "total_tokens": 120}}}
+                    "input_tokens": 100, "output_tokens": 20, "total_tokens": 120,
+                    "server_tool_use": {"web_search_requests": 2}}}}
             ]}"#,
         )
         .expect("the events collect");
-        let usages: Vec<UsageWire> = serde_json::from_str(&collected).expect("the usages are JSON");
+        let usages: Vec<CollectedUsage> =
+            serde_json::from_str(&collected).expect("the usages are JSON");
         assert_eq!(usages.len(), 1);
         assert_eq!(usages[0].prompt_tokens, 100);
+        assert_eq!(
+            usages[0]
+                .server_tool_use
+                .as_ref()
+                .and_then(|tool_use| tool_use.web_search_requests),
+            Some(2)
+        );
 
         let partitioned = NativeCostExtra::partition_usage(
             py,

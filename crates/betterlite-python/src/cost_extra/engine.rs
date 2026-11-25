@@ -1,3 +1,4 @@
+use std::str::FromStr as _;
 use std::time::SystemTime;
 
 use betterlite_core::cost::batch::{BatchCostRequest, batch_cost_per_token, error::BatchCostError};
@@ -10,6 +11,7 @@ use betterlite_models::cost_usage::CostUsage;
 use betterlite_models::duration_cost::error::DurationCostError;
 use betterlite_models::duration_cost::openai_seconds::cost_per_second;
 use betterlite_models::duration_cost::video::default_video_cost_calculator;
+use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_models::image_cost::default_calculator::default_image_cost_calculator;
 use betterlite_models::image_cost::error::ImageCostError;
 use betterlite_models::ocr_pricing::{OcrCostError, ocr_batch_cost, ocr_cost};
@@ -32,10 +34,28 @@ pub(crate) mod support;
 mod tests;
 
 const DEFAULT_VECTOR_PROVIDER: &str = "openai";
-const VERTEX_PROVIDER: &str = "vertex_ai";
 const VERTEX_SEARCH_API: &str = "search_api";
 const VERTEX_SEARCH_MODEL: &str = "vertex_ai/search_api";
 const QUERY_RATE: &str = "input_cost_per_query";
+
+// providers.json registers these slugs, but litellm.types.utils.LlmProviders does not, and LlmProviders() rejects them.
+#[rustfmt::skip]
+const REGISTRY_ONLY_PROVIDERS: [ProviderId; 8] = [
+    ProviderId::Abliteration, ProviderId::Aihubmix, ProviderId::Crusoe, ProviderId::Empiriolabs,
+    ProviderId::Gmi, ProviderId::Llamagate, ProviderId::Sarvam, ProviderId::Veniceai,
+];
+
+// LlmProviders(custom_llm_provider): an unknown or registry-only name is the ValueError Python's enum raises.
+fn litellm_provider(provider: &str) -> Result<ProviderId, RerankFailure> {
+    let unknown = || RerankFailure::UnknownProvider {
+        provider: provider.to_owned(),
+    };
+    let known = ProviderId::from_str(provider).map_err(|_unparsed| unknown())?;
+    if REGISTRY_ONLY_PROVIDERS.contains(&known) {
+        return Err(unknown());
+    }
+    Ok(known)
+}
 
 // One extra-cost resource: the price map and the zone database every specialised calculator reads.
 pub(crate) struct Engine {
@@ -94,7 +114,8 @@ impl Engine {
             .as_ref()
             .map_or_else(|| fallback, |found| found.provider.slug());
         let api_type = resolved.as_ref().map(|found| found.model.as_str());
-        if provider != VERTEX_PROVIDER || api_type != Some(VERTEX_SEARCH_API) {
+        let known = litellm_provider(provider)?;
+        if known != ProviderId::VertexAi || api_type != Some(VERTEX_SEARCH_API) {
             return Ok((Amount(Decimal::ZERO), Amount(Decimal::ZERO)));
         }
         let record = lookup.effective_model_info(VERTEX_SEARCH_MODEL, None);
@@ -162,10 +183,14 @@ impl Engine {
         Ok((Amount(priced.prompt_cost), Amount(priced.completion_cost)))
     }
 
-    pub(crate) fn realtime_cost(
+    pub(crate) fn realtime_cost<Clock>(
         &self,
         request: &RealtimeCostWire,
-    ) -> Result<(Amount, Option<CostBreakdown>), RealtimeFailure> {
+        clock: &mut Clock,
+    ) -> Result<(Amount, Option<CostBreakdown>), RealtimeFailure>
+    where
+        Clock: FnMut() -> SystemTime,
+    {
         let usage = Usage::from(&request.combined_usage);
         let mut capture = Capture::default();
         let cost = stream_cost(
@@ -177,7 +202,7 @@ impl Engine {
                 data_residency: request.data_residency.as_deref(),
                 custom_pricing_model: request.custom_pricing_model.as_deref(),
                 base_pricing_model: request.base_pricing_model.as_deref(),
-                moment: reading(&mut SystemTime::now)?,
+                moment: reading(clock)?,
             },
             &self.settings.lookup,
             &self.settings.database,
