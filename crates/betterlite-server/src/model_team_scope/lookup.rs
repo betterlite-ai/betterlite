@@ -5,7 +5,8 @@ use betterlite_db::resource_rows::model::ProxyModelTable;
 use betterlite_db::stored_cipher::DbCipher;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_secret_managers::secret_lookup::SecretLookup;
-use tokio::task::{JoinError, JoinSet};
+use tokio::task::JoinError;
+use tokio_util::task::TaskTracker;
 
 use crate::db_row_decrypt::deployments::decrypt_model_rows;
 use crate::db_row_decrypt::error::DbRowDecryptError;
@@ -23,6 +24,8 @@ pub struct Decryption {
     pub secrets: Arc<SecretLookup>,
     pub environment: Arc<BTreeMap<String, String>>,
     pub warnings: Arc<Warnings>,
+    // Inject the server's shared tracker so shutdown drains secret reads after request cancellation.
+    pub tasks: TaskTracker,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -31,8 +34,6 @@ enum DecryptTaskError {
     Decrypt(#[from] DbRowDecryptError),
     #[error("the decryption task failed: {0}")]
     Task(#[from] JoinError),
-    #[error("the decryption task never ran")]
-    Missing,
 }
 
 pub async fn find_model_by_id<Reads>(
@@ -99,21 +100,21 @@ async fn decrypted_row(
     request: Decryption,
 ) -> Result<Vec<JsonObject>, DecryptTaskError> {
     let rows = [row];
-    let mut tasks = JoinSet::new();
-    tasks.spawn_blocking(move || {
-        decrypt_model_rows(
-            &rows,
-            &request.cipher,
-            &request.secrets,
-            &request.environment,
-            &request.warnings,
-        )
+    let tasks = request.tasks.clone();
+    let task = tasks.spawn(async move {
+        tokio::task::spawn_blocking(move || {
+            decrypt_model_rows(
+                &rows,
+                &request.cipher,
+                &request.secrets,
+                &request.environment,
+                &request.warnings,
+            )
+        })
+        .await
     });
-    match tasks.join_next().await {
-        Some(Ok(deployments)) => deployments.map_err(DecryptTaskError::from),
-        Some(Err(source)) => Err(DecryptTaskError::Task(source)),
-        None => Err(DecryptTaskError::Missing),
-    }
+    let decrypt_result = task.await??;
+    decrypt_result.map_err(DecryptTaskError::from)
 }
 
 fn search_keeps(model: JsonObject, search: Option<&str>) -> Option<JsonObject> {

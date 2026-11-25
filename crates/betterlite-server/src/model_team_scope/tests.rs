@@ -11,6 +11,7 @@ use betterlite_secret_managers::secret_lookup::ports::OidcHttp;
 use tokio::sync::oneshot;
 use tokio::task::JoinSet;
 use tokio::time::timeout;
+use tokio_util::task::TaskTracker;
 
 use super::caller_scope::{byok_row_outside_caller_teams, get_caller_byok_team_scope};
 use super::error::{NOT_AUTHORIZED, ScopeDetail};
@@ -644,6 +645,48 @@ async fn a_blocked_secret_read_leaves_the_async_worker_free() {
         http.released_while_waiting(),
         "an async task ran while the secret read blocked"
     );
+}
+
+#[tokio::test]
+async fn cancelling_lookup_keeps_decryption_tracked_until_shutdown_drain() {
+    let (started, started_rx) = oneshot::channel();
+    let (release, release_rx) = sync_channel(1);
+    let http = Arc::new(support::BlockedOidc::new(started, release_rx));
+    let concrete = Arc::clone(&http);
+    let oidc: Arc<dyn OidcHttp> = concrete;
+    let fixture = support::DecryptFixture::with_oidc_http(oidc);
+    let tasks = TaskTracker::new();
+    let context = fixture.context_with_tasks(tasks.clone());
+    let reads = support::StubReads::default().with_rows(vec![support::model_row(
+        r#"{"model_id":"d1","model_name":"gpt-4o","litellm_params":{"model":"openai/gpt-4o","api_key":"os.environ/oidc/google/audience"}}"#,
+    )]);
+    let mut lookups = JoinSet::new();
+    lookups.spawn(async move { find_model_by_id("d1", None, None, &reads, &context).await });
+    timeout(support::OIDC_WAIT, started_rx)
+        .await
+        .expect("the secret read starts")
+        .expect("the OIDC fake announces its read");
+
+    lookups.abort_all();
+    let cancelled = lookups.join_next().await.expect("lookup task joins");
+    let Err(cancelled) = cancelled else {
+        panic!("the request lookup was cancelled");
+    };
+    assert!(cancelled.is_cancelled());
+    assert!(!tasks.is_empty());
+
+    tasks.close();
+    let draining = tokio::spawn({
+        let tasks = tasks.clone();
+        async move { tasks.wait().await }
+    });
+    tokio::task::yield_now().await;
+    assert!(!draining.is_finished());
+
+    let _released = release.try_send(());
+    draining.await.expect("the shutdown drain completes");
+    assert!(tasks.is_empty());
+    assert!(http.released_while_waiting());
 }
 
 #[tokio::test]

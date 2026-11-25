@@ -31,6 +31,7 @@ use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
 use betterlite_secrets::secret_codec::{Algorithm, CipherSettings, OsNonces};
 use secrecy::SecretString;
 use tokio::sync::oneshot;
+use tokio_util::task::TaskTracker;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt;
 use tracing_subscriber::fmt::MakeWriter;
@@ -418,7 +419,9 @@ impl OidcHttp for BlockedOidc {
         }
         let released = {
             let release = self.release.lock().unwrap_or_else(PoisonError::into_inner);
-            release.recv_timeout(OIDC_WAIT).is_ok()
+            let received = release.recv_timeout(OIDC_WAIT).is_ok();
+            drop(release);
+            received
         };
         self.released.store(released, Ordering::SeqCst);
         Err(OidcHttpError::Request {
@@ -493,11 +496,16 @@ impl DecryptFixture {
     }
 
     pub(crate) fn context(&self) -> Decryption {
+        self.context_with_tasks(TaskTracker::new())
+    }
+
+    pub(crate) fn context_with_tasks(&self, tasks: TaskTracker) -> Decryption {
         Decryption {
             cipher: Arc::clone(&self.cipher),
             secrets: Arc::clone(&self.secrets),
             environment: Arc::clone(&self.environment),
             warnings: Arc::clone(&self.warnings),
+            tasks,
         }
     }
 }
