@@ -19,10 +19,7 @@ from litellm.experimental_mcp_client.tools import (
 from litellm.experimental_mcp_client.tools import (
     transform_mcp_tool_to_openai_tool as their_openai_tool,
 )
-from litellm.types.utils import (  # pyright: ignore[reportMissingTypeStubs]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py
-    ChatCompletionMessageToolCall as TheirToolCall,
-    Function as TheirFunction,
-)
+from litellm.types import utils as litellm_utils  # pyright: ignore[reportMissingTypeStubs]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py
 from mcp import ClientSession
 from mcp.types import CallToolResult as TheirCallToolResult
 from mcp.types import Tool as TheirTool
@@ -133,8 +130,10 @@ async def our_call_flow(session: MCPSession) -> CallToolResult:
 
 
 async def their_call_flow(session: ClientSession) -> TheirCallToolResult:
-    function = TheirFunction(name=OTHER_TOOL_NAME, arguments=json.dumps(ARGUMENTS))
-    call = TheirToolCall(id="call-1", type="function", function=function)
+    function = litellm_utils.Function(name=OTHER_TOOL_NAME, arguments=json.dumps(ARGUMENTS))
+    call = litellm_utils.ChatCompletionMessageToolCall(
+        id="call-1", type="function", function=function
+    )
     return await their_call_openai_tool(session, call)
 
 
@@ -285,35 +284,35 @@ def test_session_refuses_foreign() -> None:
 
 
 def test_transform_openai_tool() -> None:
-    ours = Tool(name=TOOL_NAME, description=TOOL_DESCRIPTION, input_schema=SCHEMA)
-    theirs = TheirTool(name=TOOL_NAME, description=TOOL_DESCRIPTION, inputSchema=SCHEMA)
+    ours = Tool(name=TOOL_NAME, description=TOOL_DESCRIPTION, inputSchema=SCHEMA)
+    theirs = TheirTool(name=TOOL_NAME, description=TOOL_DESCRIPTION, input_schema=SCHEMA)
     assert transform_mcp_tool_to_openai_tool(ours) == their_openai_tool(theirs)
-    bare = Tool(name=OTHER_TOOL_NAME, input_schema=BARE_SCHEMA)
-    their_bare = TheirTool(name=OTHER_TOOL_NAME, inputSchema=BARE_SCHEMA)
+    bare = Tool(name=OTHER_TOOL_NAME, inputSchema=BARE_SCHEMA)
+    their_bare = TheirTool(name=OTHER_TOOL_NAME, input_schema=BARE_SCHEMA)
     assert transform_mcp_tool_to_openai_tool(bare) == their_openai_tool(their_bare)
 
 
 def test_transform_responses_tool() -> None:
-    ours = Tool(name=TOOL_NAME, description=TOOL_DESCRIPTION, input_schema=SCHEMA)
-    theirs = TheirTool(name=TOOL_NAME, description=TOOL_DESCRIPTION, inputSchema=SCHEMA)
+    ours = Tool(name=TOOL_NAME, description=TOOL_DESCRIPTION, inputSchema=SCHEMA)
+    theirs = TheirTool(name=TOOL_NAME, description=TOOL_DESCRIPTION, input_schema=SCHEMA)
     assert transform_mcp_tool_to_openai_responses_api_tool(ours) == their_responses_tool(theirs)
-    bare = Tool(name=OTHER_TOOL_NAME, input_schema=BARE_SCHEMA)
-    their_bare = TheirTool(name=OTHER_TOOL_NAME, inputSchema=BARE_SCHEMA)
+    bare = Tool(name=OTHER_TOOL_NAME, inputSchema=BARE_SCHEMA)
+    their_bare = TheirTool(name=OTHER_TOOL_NAME, input_schema=BARE_SCHEMA)
     assert transform_mcp_tool_to_openai_responses_api_tool(bare) == their_responses_tool(
         their_bare
     )
 
 
 def test_transform_anthropic_tool() -> None:
-    ours = Tool(name=TOOL_NAME, description=TOOL_DESCRIPTION, input_schema=RICH_SCHEMA)
-    theirs = TheirTool(name=TOOL_NAME, description=TOOL_DESCRIPTION, inputSchema=RICH_SCHEMA)
+    ours = Tool(name=TOOL_NAME, description=TOOL_DESCRIPTION, inputSchema=RICH_SCHEMA)
+    theirs = TheirTool(name=TOOL_NAME, description=TOOL_DESCRIPTION, input_schema=RICH_SCHEMA)
     reference: AnthropicMessagesTool = their_anthropic_tool(theirs)
     assert transform_mcp_tool_to_anthropic_tool(ours) == reference
 
 
 def test_transform_bare_tool() -> None:
-    ours = Tool(name=OTHER_TOOL_NAME, input_schema=BARE_SCHEMA)
-    theirs = TheirTool(name=OTHER_TOOL_NAME, inputSchema=BARE_SCHEMA)
+    ours = Tool(name=OTHER_TOOL_NAME, inputSchema=BARE_SCHEMA)
+    theirs = TheirTool(name=OTHER_TOOL_NAME, input_schema=BARE_SCHEMA)
     reference: AnthropicMessagesTool = their_anthropic_tool(theirs)
     assert transform_mcp_tool_to_anthropic_tool(ours) == reference
 

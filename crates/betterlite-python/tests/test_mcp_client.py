@@ -124,7 +124,7 @@ class ClientClass(Protocol):
         auth_value: str | dict[str, str] | None = None,
     ) -> AuthClient: ...
     async def call_tool(
-        self, call_tool_request_params: TheirCallToolRequestParams
+        self, client: LiteLLMClient, call_tool_request_params: TheirCallToolRequestParams
     ) -> Dumpable: ...
     def __getattr__(self, name: str) -> MemberMethod: ...
 
@@ -269,7 +269,9 @@ async def both_calls(
     ours = await MCPClient(server_url=server.url, timeout=client_timeout).call_tool(
         CallToolRequestParams(name=TOOL_NAME, arguments=TOOL_ARGUMENTS)
     )
-    theirs = await LiteLLMClient(server_url=server.url, timeout=client_timeout).call_tool(
+    their_client = LiteLLMClient(server_url=server.url, timeout=client_timeout)
+    theirs = await LITELLM_CLIENT.MCPClient.call_tool(
+        their_client,
         TheirCallToolRequestParams(name=TOOL_NAME, arguments=TOOL_ARGUMENTS)
     )
     return dumped(ours), dumped(theirs)
@@ -295,10 +297,14 @@ def our_auth_clients(server: Server) -> tuple[AuthClient, AuthClient, AuthClient
 
 def their_auth_clients(server: Server) -> tuple[AuthClient, AuthClient, AuthClient, AuthClient]:
     return (
-        LiteLLMClient(server_url=server.url, auth_type="bearer_token", auth_value=BEARER),
-        LiteLLMClient(server_url=server.url, auth_type="basic", auth_value=BASIC_VALUE),
-        LiteLLMClient(server_url=server.url, auth_type="api_key", auth_value=HEADER_MAP),
-        LiteLLMClient(server_url=server.url, auth_type="bearer_token", auth_value=BEARER),
+        LITELLM_CLIENT.MCPClient(
+            server_url=server.url, auth_type="bearer_token", auth_value=BEARER
+        ),
+        LITELLM_CLIENT.MCPClient(server_url=server.url, auth_type="basic", auth_value=BASIC_VALUE),
+        LITELLM_CLIENT.MCPClient(server_url=server.url, auth_type="api_key", auth_value=HEADER_MAP),
+        LITELLM_CLIENT.MCPClient(
+            server_url=server.url, auth_type="bearer_token", auth_value=BEARER
+        ),
     )
 
 
