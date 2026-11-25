@@ -32,33 +32,29 @@ class Input(TypedDict):
     lines: list[str]
 
 
-class UsageRow(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    prompt_tokens: int | None = None
-    completion_tokens: int | None = None
-    total_tokens: int | None = None
-    speed: str | None = None
+class UsageRow(TypedDict, total=False):
+    prompt_tokens: int | None
+    completion_tokens: int | None
+    total_tokens: int | None
+    speed: str | None
 
 
-class MessageRow(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    role: str | None = None
-    content: str | None = None
+class MessageRow(TypedDict, total=False):
+    role: str | None
+    content: str | None
 
 
-class ChoiceRow(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    finish_reason: str | None = None
-    message: MessageRow | None = None
+class ChoiceRow(TypedDict, total=False):
+    finish_reason: str | None
+    message: MessageRow | None
 
 
-class ResultDump(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    id: str | None = None
-    object: str | None = None
-    model: str | None = None
-    choices: list[ChoiceRow] = []
-    usage: UsageRow | None = None
+class ResultDump(TypedDict, total=False):
+    id: str | None
+    object: str | None
+    model: str | None
+    choices: list[ChoiceRow]
+    usage: UsageRow | None
 
 
 class StoredResponse(BaseModel):
@@ -105,6 +101,7 @@ class PricedCall(BaseModel):
 
 BODY: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
+RESULT: TypeAdapter[ResultDump] = TypeAdapter(ResultDump)
 OUTCOME: TypeAdapter[OutcomeView] = TypeAdapter(OutcomeView)
 LOGGING: TypeAdapter[LoggingView] = TypeAdapter(LoggingView)
 
@@ -122,14 +119,14 @@ class Recorder:
         custom_pricing: bool | None = None,
         router_model_id: str | None = None,
     ) -> float:
-        usage = ResultDump.model_validate(completion_response).usage
+        usage = RESULT.validate_json(completion_response.model_dump_json()).get("usage")
         self.calls.append(
             PricedCall(
                 model=model,
                 custom_llm_provider=custom_llm_provider,
                 custom_pricing=custom_pricing,
                 router_model_id=router_model_id,
-                speed=usage.speed if usage is not None else None,
+                speed=usage.get("speed") if usage is not None else None,
             )
         )
         return 1.25
@@ -144,23 +141,26 @@ def cost_text(cost: float | None) -> JsonValue:
 def result_value(response: ModelResponse | TextCompletionResponse | None) -> JsonValue:
     if response is None:
         return None
-    dump = ResultDump.model_validate(response)
-    batch = dump.object == "batch"
+    dump = RESULT.validate_json(response.model_dump_json())
+    batch = dump.get("object") == "batch"
     usage: JsonValue = None
-    if dump.usage is not None and not batch:
-        usage = JSON.validate_json(dump.usage.model_dump_json())
-    choices: list[JsonValue] = [
-        {
-            "finish_reason": row.finish_reason,
-            "role": row.message.role if row.message is not None else None,
-            "content": row.message.content if row.message is not None else None,
-        }
-        for row in dump.choices
-    ]
+    raw_usage = dump.get("usage")
+    if raw_usage is not None and not batch:
+        usage = JSON.validate_python(raw_usage)
+    choices: list[JsonValue] = []
+    for row in dump.get("choices", []):
+        message = row.get("message")
+        choices.append(
+            {
+                "finish_reason": row.get("finish_reason"),
+                "role": None if message is None else message.get("role"),
+                "content": None if message is None else message.get("content"),
+            }
+        )
     return {
-        "id": BATCH_RESPONSE_ID if batch else dump.id,
-        "object": dump.object,
-        "model": dump.model,
+        "id": BATCH_RESPONSE_ID if batch else dump.get("id"),
+        "object": dump.get("object"),
+        "model": dump.get("model"),
         "choices": choices,
         "usage": usage,
     }
