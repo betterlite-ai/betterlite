@@ -110,7 +110,7 @@ impl ResponsesStreaming for ScriptedProvider {
             recorder.calls.push(RecordedCall {
                 model: model.to_owned(),
                 kwargs: call_kwargs.clone(),
-            })
+            });
         };
         dispatch(&self.outbound, &self.base_url, model, call_kwargs)
             .await
