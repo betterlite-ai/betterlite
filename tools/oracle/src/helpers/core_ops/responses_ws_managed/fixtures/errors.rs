@@ -51,4 +51,6 @@ pub(crate) enum AdapterError {
     Event(#[from] ResponseEventDecodeError),
     #[error("the provider response id cannot be rewritten")]
     Rewrite(#[from] ResponseRewriteError),
+    #[error("the provider event fields cannot be inspected")]
+    Shape(#[from] serde_value::SerializerError),
 }

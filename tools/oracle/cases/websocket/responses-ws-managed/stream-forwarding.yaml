@@ -40,6 +40,16 @@ call:
           dump: null
         - kind: json
           value:
+            type: response.custom
+            absent: null
+            payload:
+              present: null
+              items: [null, {present: null}]
+              number: 1.25
+          event_type: null
+          dump: null
+        - kind: json
+          value:
             type: response.completed
             response:
               id: r1

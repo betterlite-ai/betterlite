@@ -28,6 +28,37 @@ use betterlite_oracle_helper_api::helper::Helper as _;
 use serde_json::json;
 
 #[test]
+fn provider_events_keep_dictionary_nulls() {
+    use super::provider_chunk;
+    use betterlite_core::api::responses_ws_managed::provider::ProviderChunk;
+
+    for event in [
+        json!({"type":"response.custom", "absent":null,
+            "payload":{"present":null,"items":[null,{"present":null}],"number":1.25_f64}}),
+        json!({"type":"response.created", "response":{
+            "id":"wire-id","created_at":0,"output":[],
+            "metadata":{"present":null,"items":[null,{"present":null}],"number":1.25_f64}}}),
+    ] {
+        let encoded = serde_json::to_vec(&event).unwrap();
+        let Some(ProviderChunk::Json(forwarded)) = provider_chunk(&encoded).unwrap() else {
+            panic!("expected a forwarded JSON event");
+        };
+        let observed = serde_json::to_value(forwarded).unwrap();
+        let dictionary = if event["type"] == "response.custom" {
+            assert!(observed.get("absent").is_none());
+            &observed["payload"]
+        } else {
+            assert!(observed["response"].get("instructions").is_none());
+            &observed["response"]["metadata"]
+        };
+        assert_eq!(
+            dictionary,
+            &json!({"present":null,"items":[null,{"present":null}],"number":1.25_f64})
+        );
+    }
+}
+
+#[test]
 fn actual_http_completion_reaches_frames_and_history() {
     let input: Input = serde_json::from_value(json!({
         "setup": {"model":"openai/gpt-4o-mini", "litellm_metadata":null,

@@ -68,6 +68,7 @@ rust_decimal.workspace = true
 secrecy = { version = "0.10.3", features = ["serde"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde-saphyr = "2.0.0"
+serde-value = "0.7.0"
 serde_json = { version = "1.0.145", features = ["arbitrary_precision", "raw_value"] }
 serde_with = { version = "3.24.0", default-features = false, features = ["alloc", "indexmap_2", "macros"] }
 sha2.workspace = true

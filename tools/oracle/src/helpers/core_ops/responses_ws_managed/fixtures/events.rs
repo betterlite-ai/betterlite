@@ -10,6 +10,7 @@ use betterlite_openai::response_events::event_decode::{
 
 use super::{AdapterError, ScriptedFailure};
 use indexmap::IndexMap;
+use serde_value::Value;
 
 struct BrokenChunk;
 
@@ -21,15 +22,19 @@ impl HasModelDumpJson for BrokenChunk {
 
 pub(crate) fn provider_chunk(bytes: &[u8]) -> Result<Option<ProviderChunk>, AdapterError> {
     let value = match decode_response_event(bytes)? {
-        DecodedStreamResponse::Known { record, .. } => transcode(&record)?,
+        DecodedStreamResponse::Known { record, .. } => {
+            let shape = serde_value::to_value(&record)?;
+            let mut encoded = transcode(&record)?;
+            omit_absent(&mut encoded, &shape);
+            encoded
+        }
         DecodedStreamResponse::Generic(generic) => transcode(&generic)?,
         DecodedStreamResponse::Lax { fields, .. } => Json::Object(fields),
     };
     adapt_event(value)
 }
 
-// Fault markers keep B945 boundary failures testable after B927 validates provider events.
-// They travel in the HTTP body, so the adapter cannot pass without consuming it.
+// HTTP fault markers keep boundary failures testable without bypassing B927's event validation.
 fn adapt_event(mut value: Json) -> Result<Option<ProviderChunk>, AdapterError> {
     if let Json::Object(fields) = &mut value {
         match fields.get("type") {
@@ -69,25 +74,56 @@ fn adapt_event(mut value: Json) -> Result<Option<ProviderChunk>, AdapterError> {
 }
 
 fn rewrite_event(mut value: Json) -> Result<Option<ProviderChunk>, AdapterError> {
-    if let Json::Object(fields) = &mut value
-        && let Some(response) = fields.get_mut("response")
-    {
-        rewrite_value(response, Some("openai"), &AffinityMetadata::default())?;
+    if let Json::Object(fields) = &mut value {
+        fields.retain(|_, child| !matches!(child, Json::Null));
+        if let Some(response) = fields.get_mut("response") {
+            rewrite_value(response, Some("openai"), &AffinityMetadata::default())?;
+        }
     }
-    Ok(Some(ProviderChunk::Json(without_nulls(value))))
+    Ok(Some(ProviderChunk::Json(value)))
 }
 
-fn without_nulls(value: Json) -> Json {
-    match value {
-        Json::Object(fields) => Json::Object(
-            fields
-                .into_iter()
-                .filter(|(_, child)| !matches!(child, Json::Null))
-                .map(|(name, child)| (name, without_nulls(child)))
-                .collect(),
-        ),
-        Json::List(items) => Json::List(items.into_iter().map(without_nulls).collect()),
-        scalar @ (Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_)) => scalar,
+// Keep the JSON projection for arbitrary-precision numbers; the serde shape distinguishes None from dictionary null.
+fn omit_absent(value: &mut Json, shape: &Value) {
+    match shape {
+        Value::Option(Some(inner)) | Value::Newtype(inner) => omit_absent(value, inner),
+        Value::Map(fields) => {
+            if let Json::Object(object) = value {
+                object.retain(|name, child| {
+                    let Some(field) = fields.get(&Value::String(name.clone())) else {
+                        return true;
+                    };
+                    if matches!(field, Value::Option(None)) {
+                        return false;
+                    }
+                    omit_absent(child, field);
+                    true
+                });
+            }
+        }
+        Value::Seq(fields) => {
+            if let Json::List(items) = value {
+                for (child, field) in items.iter_mut().zip(fields) {
+                    omit_absent(child, field);
+                }
+            }
+        }
+        Value::Bool(_)
+        | Value::U8(_)
+        | Value::U16(_)
+        | Value::U32(_)
+        | Value::U64(_)
+        | Value::I8(_)
+        | Value::I16(_)
+        | Value::I32(_)
+        | Value::I64(_)
+        | Value::F32(_)
+        | Value::F64(_)
+        | Value::Char(_)
+        | Value::String(_)
+        | Value::Unit
+        | Value::Option(None)
+        | Value::Bytes(_) => {}
     }
 }
 
