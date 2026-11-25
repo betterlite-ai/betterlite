@@ -16,20 +16,26 @@ impl BackgroundTasks {
         Work: Future<Output = ()> + Send + 'static,
     {
         // Armed before the task exists, so a cancellation before its first poll still names the consequence.
-        let mut cancelled = CancellationWarning {
+        let cancelled = CancellationWarning {
             warning,
             armed: true,
         };
-        self.tasks.spawn(async move {
-            work.await;
-            cancelled.armed = false;
-        })
+        self.tasks.spawn(run_and_disarm(work, cancelled))
     }
 
     pub async fn shutdown(&self) {
         self.tasks.close();
         self.tasks.wait().await;
     }
+}
+
+// The work and its guard travel into the task together, so an abort before the first poll still drops the guard.
+async fn run_and_disarm<Work>(work: Work, mut cancelled: CancellationWarning)
+where
+    Work: Future<Output = ()>,
+{
+    work.await;
+    cancelled.armed = false;
 }
 
 // A cancelled task skips its own finish, so the consequence it never reached is named here.
