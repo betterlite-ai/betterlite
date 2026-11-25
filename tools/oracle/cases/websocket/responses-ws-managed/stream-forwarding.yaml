@@ -28,6 +28,11 @@ input:
           type: response.created
           response:
             id: r-part
+            created_at: 0
+            output: []
+            extra_field: null
+            metadata:
+              present: null
         event_type: null
         dump: null
       - kind: object
@@ -100,7 +105,7 @@ negotiated_subprotocol: null
 frames:
 - direction: provider_to_client
   action: expect
-  text: '{"response":{"id":"resp_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpOb25lO3Jlc3BvbnNlX2lkOnItcGFydA=="},"type":"response.created"}'
+  text: '{"response":{"created_at":0,"id":"resp_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpOb25lO3Jlc3BvbnNlX2lkOnItcGFydA==","metadata":{"present":null},"output":[]},"type":"response.created"}'
 - direction: provider_to_client
   action: expect
   text: '{"response":{"id":"resp_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpOb25lO3Jlc3BvbnNlX2lkOnItcHJvZ3Jlc3M="},"type":"response.progress"}'

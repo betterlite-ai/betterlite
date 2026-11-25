@@ -1,3 +1,4 @@
+use super::null_shape::ShapeError;
 use betterlite_core::api::response_id_traversal::response_id::ResponseRewriteError;
 use betterlite_core::api::responses_create_call::error::AsyncCreateError;
 use betterlite_core::api::responses_stream_driver::errors::TransportFailure;
@@ -51,7 +52,7 @@ pub(crate) enum AdapterError {
     #[error("the provider response id cannot be rewritten")]
     Rewrite(#[from] ResponseRewriteError),
     #[error("the provider event fields cannot be inspected")]
-    Shape(#[from] serde_value::SerializerError),
+    Shape(#[from] ShapeError),
 }
 
 // A scripted provider, stream or socket failure carries only the text the case scripts for it.

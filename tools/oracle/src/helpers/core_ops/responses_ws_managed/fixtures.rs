@@ -8,6 +8,8 @@ mod dispatch;
 mod events;
 #[path = "fixtures/logging.rs"]
 mod logging;
+#[path = "fixtures/null_shape.rs"]
+mod null_shape;
 #[path = "fixtures/ports.rs"]
 mod ports;
 #[path = "fixtures/tests.rs"]

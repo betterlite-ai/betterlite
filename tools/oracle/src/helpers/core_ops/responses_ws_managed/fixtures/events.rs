@@ -8,9 +8,10 @@ use betterlite_openai::response_events::event_decode::{
     DecodedStreamResponse, decode_response_event,
 };
 
+use super::null_shape::{Probe, Shape};
 use super::{AdapterError, ScriptedFailure};
 use indexmap::IndexMap;
-use serde_value::Value;
+use serde::Serialize as _;
 
 struct BrokenChunk;
 
@@ -23,7 +24,7 @@ impl HasModelDumpJson for BrokenChunk {
 pub(crate) fn provider_chunk(bytes: &[u8]) -> Result<Option<ProviderChunk>, AdapterError> {
     let value = match decode_response_event(bytes)? {
         DecodedStreamResponse::Known { record, .. } => {
-            let shape = serde_value::to_value(&record)?;
+            let shape = record.serialize(Probe)?;
             let mut encoded = transcode(&record)?;
             omit_absent(&mut encoded, &shape);
             encoded
@@ -83,17 +84,16 @@ fn rewrite_event(mut value: Json) -> Result<Option<ProviderChunk>, AdapterError>
     Ok(Some(ProviderChunk::Json(value)))
 }
 
-// Keep the JSON projection for arbitrary-precision numbers; the serde shape distinguishes None from dictionary null.
-fn omit_absent(value: &mut Json, shape: &Value) {
+// Keep original JSON numbers and dictionary entries; only typed model fields follow exclude_none.
+fn omit_absent(value: &mut Json, shape: &Shape) {
     match shape {
-        Value::Option(Some(inner)) | Value::Newtype(inner) => omit_absent(value, inner),
-        Value::Map(fields) => {
+        Shape::Model(fields) | Shape::Dictionary(fields) => {
             if let Json::Object(object) = value {
                 object.retain(|name, child| {
-                    let Some(field) = fields.get(&Value::String(name.clone())) else {
+                    let Some(field) = fields.get(name) else {
                         return true;
                     };
-                    if matches!(field, Value::Option(None)) {
+                    if matches!(shape, Shape::Model(_)) && matches!(field, Shape::Null) {
                         return false;
                     }
                     omit_absent(child, field);
@@ -101,29 +101,14 @@ fn omit_absent(value: &mut Json, shape: &Value) {
                 });
             }
         }
-        Value::Seq(fields) => {
+        Shape::Sequence(fields) => {
             if let Json::List(items) = value {
                 for (child, field) in items.iter_mut().zip(fields) {
                     omit_absent(child, field);
                 }
             }
         }
-        Value::Bool(_)
-        | Value::U8(_)
-        | Value::U16(_)
-        | Value::U32(_)
-        | Value::U64(_)
-        | Value::I8(_)
-        | Value::I16(_)
-        | Value::I32(_)
-        | Value::I64(_)
-        | Value::F32(_)
-        | Value::F64(_)
-        | Value::Char(_)
-        | Value::String(_)
-        | Value::Unit
-        | Value::Option(None)
-        | Value::Bytes(_) => {}
+        Shape::Null | Shape::Value => {}
     }
 }
 

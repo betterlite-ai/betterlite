@@ -39,6 +39,21 @@ use serde_json::{Value, json};
     "/response/metadata",
     "/response/instructions"
 )]
+#[case::typed_response_extra(
+    r#"{"type":"response.created","response":{"id":"wire-id","created_at":0,"output":[],"extra_field":null,"metadata":{"present":null,"items":[null,{"present":null}],"number":1.25}}}"#,
+    "/response/metadata",
+    "/response/extra_field"
+)]
+#[case::typed_response_usage(
+    r#"{"type":"response.created","response":{"id":"wire-id","created_at":0,"output":[],"usage":{"input_tokens":0,"output_tokens":0,"total_tokens":0,"extra_field":null},"metadata":{"present":null,"items":[null,{"present":null}],"number":1.25}}}"#,
+    "/response/metadata",
+    "/response/usage/extra_field"
+)]
+#[case::required_model_fields(
+    r#"{"type":"response.content_part.done","item_id":"item","output_index":0,"content_index":0,"part":{"type":"refusal","refusal":"no","extra_field":null,"payload":{"present":null,"items":[null,{"present":null}],"number":1.25}}}"#,
+    "/part/payload",
+    "/part/extra_field"
+)]
 fn provider_events_keep_dictionary_nulls(
     #[case] event: &str,
     #[case] dictionary: &str,
