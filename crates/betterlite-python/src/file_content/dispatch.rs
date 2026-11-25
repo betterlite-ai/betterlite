@@ -66,6 +66,8 @@ impl FileContentDispatch for ContentDispatch {
         file_config_selection("", provider)
     }
 
+    // The generated constructor mutant is identical to this required trait default.
+    #[cfg_attr(test, mutants::skip)]
     fn create_logging(&self, _seed: &NewLogger) -> Arc<Self::Logging> {
         Arc::new(SilentLogging::default())
     }

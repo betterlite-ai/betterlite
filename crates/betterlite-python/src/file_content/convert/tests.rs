@@ -1,19 +1,23 @@
 #![cfg(test)]
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_azure::azure_files::error::AzureFilesError;
 use betterlite_azure::endpoints::initialize::EndpointError;
 use betterlite_core::api::file_content_stream::error::FileContentError;
+use betterlite_core::api::file_content_stream::target::ContentLogging as _;
 use betterlite_core::api::file_stream_logging::source::StreamError;
 use betterlite_core::api::fine_tuning_read::{ReadTimeout, ReadTimeoutValue};
 use betterlite_core::api::resource_sdk_settings::timeout::{FineTuningTimeout, StructuredTimeout};
 use betterlite_models::controls::json_value::JsonValue;
+use betterlite_models::decisions::Json;
 use betterlite_openai::files::error::{FilesError, StatusError};
+use chrono::DateTime;
 use rstest::rstest;
 use secrecy::ExposeSecret as _;
 
-use super::super::dispatch::{DispatchError, deadline};
+use super::super::dispatch::{DispatchError, SilentLogging, deadline};
 use super::super::error::{Failure, azure_failure, failure_for, files_failure, stream_failure};
 use super::{ConvertError, parse_call};
 
@@ -313,4 +317,12 @@ fn request_trusted_azure_credentials() {
     assert_eq!(values["azure_password"].expose_secret(), "password");
     assert_eq!(values["azure_scope"].expose_secret(), "scope");
     assert!(parse_call("{}").unwrap().trusted.values.is_empty());
+}
+
+#[test]
+fn request_logger_defaults() {
+    let logger = Arc::new(SilentLogging::default()).stream_logger();
+    let time = DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z").unwrap();
+    assert!(logger.start_time().is_none());
+    assert!(logger.build_payload(&Json::Null, time, time).is_none());
 }
