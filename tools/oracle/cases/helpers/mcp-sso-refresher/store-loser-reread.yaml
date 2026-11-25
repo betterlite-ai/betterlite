@@ -1,0 +1,38 @@
+kind: helper
+name: store-loser-reread
+call:
+  b4664:
+    function: store
+    user_id: user-1
+    now_ms: 2000000000000
+    rows:
+      user-1:
+        claims: {iss: https://idp.example, sub: user-1, exp: 1999999990}
+        refresh_token: carried-token
+    vars:
+      GENERIC_TOKEN_ENDPOINT: https://idp.example/token
+      GENERIC_CLIENT_ID: client-id
+      GENERIC_CLIENT_SECRET: client-secret
+    outcome: {kind: ok}
+    loser: true
+calls:
+  - b4664:
+      function: store
+      user_id: user-1
+      now_ms: 2000000000000
+      rows:
+        user-1:
+          claims: {iss: https://idp.example, sub: user-1, exp: 1999999990}
+          refresh_token: carried-token
+      fresh:
+        user-1:
+          claims: {iss: https://idp.example, sub: user-1, exp: 2000003600}
+          refresh_token: rotated-token
+      vars:
+        GENERIC_TOKEN_ENDPOINT: https://idp.example/token
+        GENERIC_CLIENT_ID: client-id
+        GENERIC_CLIENT_SECRET: client-secret
+      outcome: {kind: ok}
+      loser: true
+env: {}
+compare: {ignore: []}

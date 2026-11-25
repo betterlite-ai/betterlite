@@ -1,0 +1,13 @@
+kind: helper
+name: anthropic-batch-create-200-without-id-failed
+call:
+  b3633:
+    status_code: 200
+    body: '{"object":"batch"}'
+    url_route: /v1/messages/batches/msgbatch_1
+    start_time: "2026-01-01T00:00:00+00:00"
+    request_body:
+      model: claude-sonnet-4-5
+    request_metadata: {}
+env: {}
+compare: {ignore: []}

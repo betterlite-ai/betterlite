@@ -1,0 +1,27 @@
+task: B1060
+deviations:
+  - what: >-
+      Stored litellm_params text that only Python's json module accepts (a NaN or Infinity token, an
+      unpaired surrogate escape) normalizes to {} instead of the parsed object.
+    why: >-
+      serde_json implements standard JSON, and LiteLLM's own response serializer rejects both values
+      (Starlette's JSONResponse passes allow_nan=False and encodes UTF-8), so a setup can only read such a
+      record back as a 500; betterlite answers {} instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/utils.py#L32
+  - what: >-
+      Stored litellm_params text nested more than 128 levels deep normalizes to {} instead of the parsed
+      object.
+    why: >-
+      serde_json refuses to parse past 128 levels of nesting and the workspace does not lift that limit,
+      so a deeper object fails to parse; no provider request can carry such a parameter tree, and
+      betterlite answers {} as it does for every other text it cannot read as an object.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/utils.py#L32
+  - what: >-
+      The team row loads behind a dashboard session's team contexts do not carry the caller's
+      parent_otel_span.
+    why: >-
+      betterlite's shared team lookup request has no span field, so the load is not parented under the
+      request's span; the grant result and the propagated 404 are unchanged, and each context still keeps
+      the credential's parent_otel_span for later layers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/utils.py#L207-L213
+kept_bugs: []
