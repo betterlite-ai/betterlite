@@ -151,7 +151,7 @@ pub(crate) fn encode_used(used: usize) -> Result<[u8; LENGTH_BYTES], Multiproces
     }
 }
 
-pub(crate) fn encode_value(value: f64, timestamp: f64) -> [u8; TWO_DOUBLES_BYTES] {
+pub(crate) const fn encode_value(value: f64, timestamp: f64) -> [u8; TWO_DOUBLES_BYTES] {
     let mut encoded = [0_u8; TWO_DOUBLES_BYTES];
     let (value_bytes, timestamp_bytes) = encoded.split_at_mut(DOUBLE_BYTES);
     value_bytes.copy_from_slice(&value.to_le_bytes());

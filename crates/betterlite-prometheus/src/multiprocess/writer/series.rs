@@ -94,8 +94,8 @@ fn key_of(
     for (name, value) in description.label_names.iter().zip(label_values) {
         let _inserted = labels.insert(name.as_str(), value.as_str());
     }
-    if let Some(le) = le {
-        let _inserted = labels.insert("le", le);
+    if let Some(bound) = le {
+        let _inserted = labels.insert("le", bound);
     }
     serde_json::to_string(&(
         description.name.as_str(),
@@ -121,7 +121,9 @@ pub(crate) fn apply(
         (SeriesKeys::Single(key), MetricUpdate::Set(value)) => {
             file.change(key, ValueChange::Replace(value_of(value)))
         }
-        (SeriesKeys::Histogram(keys), MetricUpdate::Observe(amount)) => observe(file, keys, amount),
+        (SeriesKeys::Histogram(histogram), MetricUpdate::Observe(amount)) => {
+            observe(file, histogram, amount)
+        }
         (SeriesKeys::Single(_), MetricUpdate::Observe(_) | MetricUpdate::Remove)
         | (
             SeriesKeys::Histogram(_),

@@ -10,7 +10,7 @@ use crate::multiprocess::writer::MultiProcessWriter;
 use gauge_mode::GaugeMode;
 use sample::{Sample, added};
 
-mod binding;
+pub(crate) mod binding;
 pub mod gauge_mode;
 pub mod sample;
 
@@ -186,7 +186,7 @@ impl PrometheusMetric {
     // MetricWrapperBase.remove: no label names or the wrong count raises ValueError; an absent child is gone
     #[must_use]
     pub fn remove_series(&self, label_values: &[Option<String>]) -> SeriesRemoval {
-        self.warn_removal();
+        binding::warn_removal(self);
         if label_values.is_empty() || self.description.label_names.len() != label_values.len() {
             return SeriesRemoval::Unsupported;
         }
@@ -221,6 +221,13 @@ impl PrometheusMetric {
         }
         drop(samples);
         series
+    }
+
+    // Gauge.__init__'s multiprocess_mode, which picks the gauge file this metric's values go into
+    #[must_use]
+    pub fn with_multiprocess_mode(mut self, mode: GaugeMode) -> Self {
+        Arc::make_mut(&mut self.description).multiprocess_mode = mode;
+        self
     }
 }
 
@@ -260,7 +267,7 @@ impl Collector for PrometheusMetric {
         let mut samples = self.samples.lock().unwrap_or_else(PoisonError::into_inner);
         if update == MetricUpdate::Remove {
             let _removed = samples.shift_remove(&self.label_values);
-            self.warn_removal();
+            binding::warn_removal(self);
             return;
         }
         let bounds = self.description.buckets.as_slice();
@@ -296,7 +303,7 @@ impl Collector for PrometheusMetric {
             ) => {}
         }
         // the bound writer takes the update before the samples lock lets the next one in, so both see the same order
-        self.write_update(update);
+        binding::write_update(self, update);
         drop(samples);
     }
 }

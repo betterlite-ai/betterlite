@@ -29,7 +29,7 @@ enum Kind {
 }
 
 impl Kind {
-    fn collector_kind(self) -> CollectorKind {
+    const fn collector_kind(self) -> CollectorKind {
         match self {
             Self::Counter => CollectorKind::Counter,
             Self::Gauge => CollectorKind::Gauge,
@@ -48,7 +48,7 @@ enum Mode {
 }
 
 impl Mode {
-    fn gauge_mode(self) -> GaugeMode {
+    const fn gauge_mode(self) -> GaugeMode {
         match self {
             Self::All => GaugeMode::All,
             Self::LiveSum => GaugeMode::LiveSum,

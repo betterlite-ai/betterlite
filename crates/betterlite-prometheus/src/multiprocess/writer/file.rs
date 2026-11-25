@@ -27,6 +27,7 @@ struct StoredValue {
     value: f64,
 }
 
+#[derive(Clone, Copy)]
 pub(super) enum ValueChange {
     Add(f64),
     Replace(f64),
@@ -43,6 +44,7 @@ impl FileState {
             .read(true)
             .write(true)
             .create(true)
+            .truncate(false)
             .open(&path)
             .map_err(|source| MultiprocessError::Write {
                 path: path.clone(),

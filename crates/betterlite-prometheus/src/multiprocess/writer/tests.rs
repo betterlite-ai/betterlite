@@ -13,6 +13,7 @@ use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::MakeWriter;
 
 use crate::collector_factory::collector::{Collector as _, MetricUpdate, MetricValue};
+use crate::collector_registry::metric::binding;
 use crate::collector_registry::metric::gauge_mode::GaugeMode;
 use crate::collector_registry::metric::{Bucket, CollectorKind, PrometheusMetric, prepare_buckets};
 use crate::multiprocess::collector::MultiProcessCollector;
@@ -38,6 +39,11 @@ fn sample_of(entry: &DbEntry) -> (String, BTreeMap<String, String>) {
         serde_json::from_str::<(String, String, BTreeMap<String, String>, String)>(&entry.key)
             .unwrap();
     (sample, labels)
+}
+
+fn bucket_sample(bound: &str) -> (String, BTreeMap<String, String>) {
+    let labels = BTreeMap::from([("le".to_owned(), bound.to_owned())]);
+    ("litellm_latency_bucket".to_owned(), labels)
 }
 
 // 800 labelled series is past one 64 KiB page, so the file has to grow before the last of them fits
@@ -86,7 +92,7 @@ fn a_first_write_leaves_the_bytes_encode_db_file_builds() {
     }]);
     let written = fs::read(directory.path().join("counter_7.db")).unwrap();
     assert_eq!(written, expected);
-    assert_eq!(written.len(), 65_536);
+    assert_eq!(written.len(), 0x0001_0000);
 }
 
 #[rstest]
@@ -139,8 +145,8 @@ fn a_file_grows_to_128_kib_once_its_entries_pass_64_kib() {
     );
     write_workers(&writer, &metric);
     let bytes = fs::read(directory.path().join("counter_11.db")).unwrap();
-    assert_eq!(bytes.len(), 131_072);
-    assert!(decode_used(&bytes).unwrap() > 65_536);
+    assert_eq!(bytes.len(), 0x0002_0000);
+    assert!(decode_used(&bytes).unwrap() > 0x0001_0000);
     assert_eq!(decode_db_file(&bytes).unwrap().len(), 800);
 }
 
@@ -151,8 +157,8 @@ fn an_entry_that_fills_the_page_exactly_does_not_grow_it() {
         super::file::FileState::open(directory.path(), super::FileKind::Counter, 41).unwrap();
     file.ensure(&"k".repeat(65_500)).unwrap();
     let bytes = fs::read(directory.path().join("counter_41.db")).unwrap();
-    assert_eq!(bytes.len(), 65_536);
-    assert_eq!(decode_used(&bytes).unwrap(), 65_536);
+    assert_eq!(bytes.len(), 0x0001_0000);
+    assert_eq!(decode_used(&bytes).unwrap(), 0x0001_0000);
 }
 
 #[test]
@@ -167,11 +173,8 @@ fn a_histogram_writes_its_sum_and_one_count_per_bucket() {
         &[],
         bounds,
     );
-    writer.update(
-        &metric.description,
-        &[],
-        MetricUpdate::Observe(MetricValue::Finite(Decimal::new(5, 1))),
-    );
+    let half = MetricValue::Finite(Decimal::new(5, 1));
+    writer.update(&metric.description, &[], MetricUpdate::Observe(half));
     writer.update(&metric.description, &[], MetricUpdate::Observe(finite(3)));
     writer.update(
         &metric.description,
@@ -184,18 +187,9 @@ fn a_histogram_writes_its_sum_and_one_count_per_bucket() {
         samples,
         [
             ("litellm_latency_sum".to_owned(), BTreeMap::new()),
-            (
-                "litellm_latency_bucket".to_owned(),
-                BTreeMap::from([("le".to_owned(), "0.5".to_owned())])
-            ),
-            (
-                "litellm_latency_bucket".to_owned(),
-                BTreeMap::from([("le".to_owned(), "1.0".to_owned())])
-            ),
-            (
-                "litellm_latency_bucket".to_owned(),
-                BTreeMap::from([("le".to_owned(), "+Inf".to_owned())])
-            ),
+            bucket_sample("0.5"),
+            bucket_sample("1.0"),
+            bucket_sample("+Inf"),
         ]
     );
     assert!(entries[0].value.is_nan());
@@ -265,7 +259,7 @@ fn a_removal_of_a_bound_series_logs_prometheus_clients_warning() {
         Vec::new(),
     );
     let writer = Arc::new(writer(&directory, 23));
-    metric.bind_writer(&writer).unwrap();
+    binding::bind_writer(&metric, &writer).unwrap();
     let (logs, _guard) = install_logs();
     metric.labels(&[("model", "a")]).remove();
     let logged = logs.contents();
@@ -295,7 +289,7 @@ fn a_file_an_earlier_writer_left_is_continued_not_rewritten() {
     );
     writer.update(&metric.description, &[], MetricUpdate::Inc(finite(2)));
     let bytes = fs::read(directory.path().join("counter_17.db")).unwrap();
-    assert_eq!(bytes.len(), 65_536);
+    assert_eq!(bytes.len(), 0x0001_0000);
     assert_eq!(bytes.get(..4), before.get(..4));
     let entries = decode_db_file(&bytes).unwrap();
     assert_eq!(entries.len(), 1);
@@ -322,7 +316,7 @@ fn a_writer_continues_a_file_that_already_grew() {
         MetricUpdate::Inc(finite(1)),
     );
     let bytes = fs::read(directory.path().join("counter_43.db")).unwrap();
-    assert_eq!(bytes.len(), 131_072);
+    assert_eq!(bytes.len(), 0x0002_0000);
     let entries = decode_db_file(&bytes).unwrap();
     assert_eq!(entries.len(), 800);
     let worker = entries
@@ -403,10 +397,8 @@ fn a_write_into_a_folder_removed_after_new_logs_an_error() {
     assert!(logged.contains("counter_19.db"));
 }
 
-#[test]
-fn the_collector_reads_the_files_back_as_families() {
-    let directory = TempDir::new().unwrap();
-    let writer = writer(&directory, 21);
+// a counter, a gauge and a histogram in one folder, so the collector merges one family of each kind
+fn write_three_families(writer: &MultiProcessWriter) {
     let requests = PrometheusMetric::new(
         CollectorKind::Counter,
         "litellm_requests",
@@ -428,15 +420,21 @@ fn the_collector_reads_the_files_back_as_families() {
     )
     .with_multiprocess_mode(GaugeMode::LiveSum);
     writer.update(&in_flight.description, &[], MetricUpdate::Inc(finite(3)));
-    let bounds = prepare_buckets(&[Bucket::Seconds(0.5), Bucket::Seconds(1.0)]).unwrap();
     let latency = PrometheusMetric::new(
         CollectorKind::Histogram,
         "litellm_latency",
         "Latency",
         &[],
-        bounds,
+        prepare_buckets(&[Bucket::Seconds(0.5), Bucket::Seconds(1.0)]).unwrap(),
     );
     writer.update(&latency.description, &[], MetricUpdate::Observe(finite(1)));
+}
+
+#[test]
+fn the_collector_reads_the_files_back_as_families() {
+    let directory = TempDir::new().unwrap();
+    let writer = writer(&directory, 21);
+    write_three_families(&writer);
     let families = MultiProcessCollector::new(directory.path())
         .unwrap()
         .collect()
@@ -449,23 +447,23 @@ fn the_collector_reads_the_files_back_as_families() {
         by_name.keys().copied().collect::<Vec<&str>>(),
         ["litellm_in_flight", "litellm_latency", "litellm_requests"]
     );
-    let requests_family = by_name.get("litellm_requests").unwrap();
-    assert_eq!(requests_family.kind, MetricKind::Counter);
-    assert_eq!(requests_family.help, "Requests served");
+    let requests = by_name["litellm_requests"];
+    assert_eq!(requests.kind, MetricKind::Counter);
+    assert_eq!(requests.help, "Requests served");
     assert_eq!(
-        requests_family.samples,
+        requests.samples,
         [MetricSample {
             name: "litellm_requests_total".to_owned(),
             labels: vec![("model".to_owned(), "gpt-4o".to_owned())],
             value: 2.0,
         }]
     );
-    let gauge_family = by_name.get("litellm_in_flight").unwrap();
-    assert_eq!(gauge_family.kind, MetricKind::Gauge);
-    assert_eq!(gauge_family.samples[0].value.to_bits(), 3.0_f64.to_bits());
-    let latency_family = by_name.get("litellm_latency").unwrap();
-    assert_eq!(latency_family.kind, MetricKind::Histogram);
-    let sum = latency_family
+    let gauge = by_name["litellm_in_flight"];
+    assert_eq!(gauge.kind, MetricKind::Gauge);
+    assert_eq!(gauge.samples[0].value.to_bits(), 3.0_f64.to_bits());
+    let latency = by_name["litellm_latency"];
+    assert_eq!(latency.kind, MetricKind::Histogram);
+    let sum = latency
         .samples
         .iter()
         .find(|sample| sample.name == "litellm_latency_sum")

@@ -8,6 +8,7 @@ use rust_decimal::Decimal;
 use tempfile::TempDir;
 
 use crate::collector_factory::collector::{Collector as _, MetricValue};
+use crate::collector_registry::metric::binding;
 use crate::collector_registry::metric::sample::added;
 use crate::collector_registry::metric::{
     Bucket, BucketError, CollectorKind, PrometheusMetric, SeriesRemoval, prepare_buckets,
@@ -653,8 +654,8 @@ fn multiprocess_binding_the_same_writer_again_is_fine() {
         &[],
         Vec::new(),
     );
-    metric.bind_writer(&writer).unwrap();
-    metric.bind_writer(&writer).unwrap();
+    binding::bind_writer(&metric, &writer).unwrap();
+    binding::bind_writer(&metric, &writer).unwrap();
     assert_eq!(written_entries(&directory, "counter_36.db").len(), 1);
 }
 

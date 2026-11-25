@@ -25,7 +25,7 @@ pub(crate) enum FileKind {
 }
 
 impl FileKind {
-    fn of(description: &CollectorDescription) -> Self {
+    const fn of(description: &CollectorDescription) -> Self {
         match description.kind {
             CollectorKind::Counter => Self::Counter,
             CollectorKind::Gauge => Self::Gauge(description.multiprocess_mode),
@@ -55,6 +55,7 @@ struct WriterState {
 }
 
 // what one locked write does: an update, or the zero entries a new label-less series creates
+#[derive(Clone, Copy)]
 pub(crate) enum SeriesWrite {
     Update(MetricUpdate),
     Create,
@@ -109,7 +110,7 @@ impl MultiProcessWriter {
             FileKind::of(description),
             self.pid,
         )?;
-        match write {
+        let result = match write {
             SeriesWrite::Update(update) => series::apply(file, &keys, update),
             SeriesWrite::Create => {
                 for key in keys.created() {
@@ -117,7 +118,9 @@ impl MultiProcessWriter {
                 }
                 Ok(())
             }
-        }
+        };
+        drop(state);
+        result
     }
 }
 

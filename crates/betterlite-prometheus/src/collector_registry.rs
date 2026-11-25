@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 pub mod metric;
 
 use crate::multiprocess::writer::MultiProcessWriter;
+use metric::binding;
 use metric::{CollectorDescription, PrometheusMetric};
 
 mod tests;
@@ -65,7 +66,7 @@ impl CollectorRegistry {
         }
         // the writer's lock is taken without the registry lock, which the duplicate check released at once
         if let Some(writer) = &self.multiprocess {
-            collector.bind_writer(writer).map_err(|bound| {
+            binding::bind_writer(&collector, writer).map_err(|bound| {
                 CollectorRegistryError::MultiprocessBound {
                     name: collector.description.name.clone(),
                     path: bound.directory.clone(),
@@ -77,6 +78,7 @@ impl CollectorRegistry {
             let _replaced = state.samples.insert(name, collector.clone());
         }
         state.collectors.push(collector);
+        drop(state);
         Ok(())
     }
 
