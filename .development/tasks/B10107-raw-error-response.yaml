@@ -1,0 +1,96 @@
+id: B10107
+title: A raw provider error keeps the provider's status, as LiteLLM's provider exceptions do
+description: >-
+  betterlite_error::dispatch builds the facts for a DispatchInput::Raw error in crates/betterlite-error/src/native.rs
+  facts() with response None. The Cohere, AI21, Hugging Face, openai-like and status-mapping branches forward the
+  provider's status only when facts.response carries a request (native_errors_a/cohere.rs response_has_request,
+  status.rs build_error_class), so every raw error through them answers its class default. A Cohere 498 becomes a
+  400 BadRequestError, and a Cohere 400 "invalid api token" becomes a 401 AuthenticationError. LiteLLM passes
+  response=getattr(original_exception, "response", None) to the class
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1430-L1438),
+  and its provider HTTP errors always have one: BaseLLMException builds httpx.Response(status_code,
+  request=httpx.Request("POST", "https://docs.litellm.ai/docs")) when none is given
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L41-L63).
+  B6044's review found it on the rerank path, since crates/betterlite-core/src/api/rerank_provider_plan/plan.rs
+  raises provider errors through dispatch(&DispatchInput::Raw(..)).
+
+
+  The oracle missed it. tools/oracle/src/helpers/error/native_errors_a.rs and openai_like_errors.rs each build that
+  response themselves (two copies of stub_response) before they call the classifiers, so the classifier cases pass
+  while dispatch never builds one. On the LiteLLM side, tools/oracle/helpers/native_error.py's _OriginalError carries
+  no response, so the raw cases model an exception LiteLLM's providers never raise.
+
+
+  A RawException with a real status (status_code set, status_code_is_synthesized false) stands for a provider HTTP
+  error, so its facts carry BaseLLMException's response. Move stub_response into betterlite-error next to
+  ResponseFacts as the one function, build the raw facts with it in native.rs and in each other place that builds
+  facts from a RawException for a branch that reads the response, and call it from both oracle helpers instead of
+  their copies. native_error.py's _OriginalError gets the same response for a real status. A synthesized status
+  keeps no response, as now.
+scope:
+  paths:
+  - crates/betterlite-error/src/facts.rs
+  - crates/betterlite-error/src/facts/**
+  - crates/betterlite-error/src/native.rs
+  - crates/betterlite-error/src/native/**
+  - crates/betterlite-error/src/dispatch.rs
+  - crates/betterlite-error/src/dispatch/**
+  - tools/oracle/src/helpers/error/native_errors_a.rs
+  - tools/oracle/src/helpers/error/openai_like_errors.rs
+  - tools/oracle/helpers/native_error.py
+  - tools/oracle/cases/helpers/native-errors/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1430-L1438
+  why: The Cohere branch hands the original exception's response to the class, so the class answers its status.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L41-L63
+  why: Every provider exception built on BaseLLMException has a response with a request.
+dod:
+- text: >-
+    A raw Cohere 498 dispatches to a BadRequestError with status 498, and a raw Cohere 400 "invalid api token" to an
+    AuthenticationError with status 400, in tests named raw_status_<case> in native's tests.
+  proof: [raw-status]
+- text: >-
+    tools/oracle/cases/helpers/native-errors/raw-provider-status.yaml runs those two raw Cohere errors against
+    LiteLLM and passes.
+  proof: [raw-status-case, native-oracle]
+- text: >-
+    stub_response exists once, in betterlite-error, and both oracle helpers call it.
+  proof: [one-stub-response]
+- text: >-
+    The native, dispatch, classifier and openai-like oracle cases and tests still pass.
+  proof: [native-dispatch, native-oracle, classifier-oracle]
+checks:
+  optional: []
+  commands:
+  - id: raw-status
+    why: A raw provider error still answers its class default instead of the provider's status.
+    run: cargo nextest run --locked -p betterlite-error --no-tests=fail -E 'test(/^native::tests::raw_status_/)'
+  - id: raw-status-case
+    why: The oracle case for the two Cohere statuses is missing.
+    run: grep -q 'status_code. 498' tools/oracle/cases/helpers/native-errors/raw-provider-status.yaml && grep -q 'invalid api token' tools/oracle/cases/helpers/native-errors/raw-provider-status.yaml
+  - id: one-stub-response
+    why: The oracle keeps its own copy of the stub response.
+    run: "! grep -rn 'fn stub_response' tools/oracle/src"
+  - id: native-dispatch
+    why: The response changed how another raw error dispatches.
+    run: cargo nextest run --locked -p betterlite-error --no-tests=fail -E '(test(/^native::tests::/) | test(/^dispatch::tests::/)) - test(/::raw_status_/)'
+  - id: native-oracle
+    why: Raw dispatch no longer answers like LiteLLM.
+    run: cargo run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-error -- tools/oracle/cases/helpers/native-errors
+  - id: classifier-oracle
+    why: Moving the stub response changed what the classifier cases send.
+    run: cargo run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-error -- tools/oracle/cases/helpers/native-errors-a tools/oracle/cases/helpers/native-errors-b tools/oracle/cases/helpers/openai-like-errors
+oracle_cases: []
+deviations: []
+out_of_scope:
+- The rerank plan and its Python layer (B6044). They raise through dispatch and get the fix from it.
+- Openai-family errors. openai.rs builds its own facts from the openai SDK fields.
+pitfalls:
+- Read why status_code_is_synthesized exists (git log -S status_code_is_synthesized) before you decide which statuses get the response. LiteLLM builds it from whatever status_code the exception has, and a synthesized one stands for an exception that has none.
+- Existing raw cases with a status get a new LiteLLM answer once native_error.py attaches the response. Both sides change together, so read any case whose answer moves and say which in the report.
+- The moved function is public API of betterlite-error. Name it for what it models, for example ResponseFacts::base_llm_exception.
+review_level: standard
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0

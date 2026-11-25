@@ -47,6 +47,11 @@ REDIS_SECOND_INCREMENT: Final = 3
 REDIS_COUNT: Final = 5
 REDIS_TTL: Final = 90
 REDIS_TTL_ALLOWANCE: Final = 20
+BREAKER_OPEN_MESSAGE: Final = "circuit breaker is open"
+BREAKER_ERROR_NAME: Final = "RedisCircuitBreakerOpenError"
+# The breaker's recovery timeout is one second, so a wait past it makes the next call the probe.
+BREAKER_RECOVERY_WAIT: Final = 1.2
+BREAKER_ATTEMPTS: Final = 3
 DUAL_INCREMENT: Final = 2
 DUAL_COUNT: Final = 4
 DISK_INCREMENT: Final = 2
@@ -405,6 +410,58 @@ def test_namespace_reaches_redis(redis_server: FakeRedisServer) -> None:
     assert redis_server.stored("old:ours:key") is None
     assert redis_server.stored("new:litellm:key") is not None
     assert redis_server.stored("old:litellm:key") is None
+
+
+# LiteLLM's breaker opens on the failures a get swallows and raises RedisCircuitBreakerOpenError.
+def test_redis_breaker_recovers(
+    redis_server: FakeRedisServer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("REDIS_CIRCUIT_BREAKER_FAILURE_THRESHOLD", "1")
+    monkeypatch.setenv("REDIS_CIRCUIT_BREAKER_RECOVERY_TIMEOUT", "1")
+    cache = RedisCache(host=redis_server.host, port=redis_server.port)
+    redis_server.set_failing(failing=True)
+    assert cache.get_cache("breaker:key") is None
+    with pytest.raises(Exception, match=BREAKER_OPEN_MESSAGE) as open_error:
+        cache.get_cache("breaker:key")
+    assert type(open_error.value).__name__ == BREAKER_ERROR_NAME
+    redis_server.set_failing(failing=False)
+    time.sleep(BREAKER_RECOVERY_WAIT)
+    cache.set_cache("breaker:key", CACHED)
+    assert cache.get_cache("breaker:key") == CACHED
+
+
+# With REDIS_CIRCUIT_BREAKER_ENABLED=false every call still reaches the failing Redis.
+def test_redis_breaker_disabled(
+    redis_server: FakeRedisServer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("REDIS_CIRCUIT_BREAKER_ENABLED", "false")
+    monkeypatch.setenv("REDIS_CIRCUIT_BREAKER_FAILURE_THRESHOLD", "1")
+    cache = RedisCache(host=redis_server.host, port=redis_server.port)
+    redis_server.set_failing(failing=True)
+    for _attempt in range(BREAKER_ATTEMPTS):
+        with pytest.raises(RuntimeError) as failed:
+            asyncio.run(cache.async_increment("breaker:count", 1))
+        assert BREAKER_OPEN_MESSAGE not in str(failed.value)
+
+
+# The dual cache over an open breaker raises the same class as the Redis handle it wraps.
+def test_dual_redis_breaker_open(
+    redis_server: FakeRedisServer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("REDIS_CIRCUIT_BREAKER_FAILURE_THRESHOLD", "1")
+    dual = DualCache(redis_cache=RedisCache(host=redis_server.host, port=redis_server.port))
+    redis_server.set_failing(failing=True)
+    # the dual read swallows the connection failure after the breaker counted it
+    assert dual.get_cache("breaker:key") is None
+    with pytest.raises(Exception, match=BREAKER_OPEN_MESSAGE) as deleted:
+        asyncio.run(dual.async_delete_cache("breaker:key"))
+    assert type(deleted.value).__name__ == BREAKER_ERROR_NAME
+    with pytest.raises(Exception, match=BREAKER_OPEN_MESSAGE) as deleted_keys:
+        asyncio.run(dual.async_delete_cache_keys(["breaker:key"]))
+    assert type(deleted_keys.value).__name__ == BREAKER_ERROR_NAME
+    with pytest.raises(Exception, match=BREAKER_OPEN_MESSAGE) as remaining:
+        asyncio.run(dual.async_get_ttl("breaker:key"))
+    assert type(remaining.value).__name__ == BREAKER_ERROR_NAME
 
 
 def test_dual_matches_litellm() -> None:

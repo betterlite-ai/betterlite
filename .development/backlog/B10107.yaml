@@ -1,0 +1,13 @@
+id: B10107
+milestone: R2 bug fixes
+title: A raw provider error keeps the provider's status, as LiteLLM's provider exceptions do
+status: todo
+depends_on: []
+file: tasks/B10107-raw-error-response.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

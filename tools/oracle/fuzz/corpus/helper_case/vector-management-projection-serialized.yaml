@@ -1,0 +1,22 @@
+kind: helper
+name: vector-management-projection-serialized-seed
+call:
+  vector_management_projection:
+    op: serialized_vector_params
+    litellm_params: '{"api_key":"secret","region":"us"}'
+    depth: 0
+calls:
+  - vector_management_projection:
+      op: serialized_vector_params
+      litellm_params: '"{\"api_key\": \"secret\"}"'
+      depth: 0
+  - vector_management_projection:
+      op: serialized_vector_params
+      litellm_params: bad
+      depth: 0
+  - vector_management_projection:
+      op: serialized_vector_params
+      litellm_params: '{"a": "b"}'
+      depth: 10
+env: {}
+compare: {ignore: []}

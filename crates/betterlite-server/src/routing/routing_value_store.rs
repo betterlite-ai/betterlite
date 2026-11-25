@@ -3,12 +3,11 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use betterlite_config::sections::local_ttl_cache as local_ttl;
 use betterlite_config::types::Config;
+use betterlite_router::redis_failure_policy::Settings as BreakerSettings;
 use betterlite_router::routing_state_store::Settings as SharedSettings;
 use betterlite_router::routing_state_store::error::StateStoreError;
 use betterlite_router::routing_state_store::{RedisSettings, RoutingStateStore};
 use betterlite_router::routing_value_store::{Clock, RoutingValueStore, StoreError, StoreSettings};
-
-use crate::routing::redis_failure_policy::policy_settings;
 
 mod tests;
 
@@ -32,7 +31,7 @@ pub fn shared_settings(config: &Config, unreadable_message: &str) -> Option<Shar
     match RedisSettings::try_from(&config.sections.routing_state_store) {
         Ok(redis) => Some(SharedSettings {
             redis,
-            breaker: policy_settings(&config.sections.redis_failure_policy),
+            breaker: BreakerSettings::from(&config.sections.redis_failure_policy),
         }),
         Err(StateStoreError::NotConfigured) => None,
         Err(error) => {

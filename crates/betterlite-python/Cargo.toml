@@ -36,6 +36,7 @@ betterlite-prompts = { path = "../betterlite-prompts" }
 betterlite-provider = { path = "../betterlite-provider" }
 betterlite-redact = { path = "../betterlite-redact" }
 betterlite-redis = { path = "../betterlite-redis" }
+betterlite-router = { path = "../betterlite-router" }
 betterlite-sdk = { path = "../betterlite-sdk" }
 betterlite-secrets = { path = "../betterlite-secrets" }
 betterlite-streaming = { path = "../betterlite-streaming" }

@@ -147,9 +147,7 @@ pub(super) fn messages_view(case: &Case) -> Result<Value, Box<HelperError>> {
 
 pub(super) fn history_view(handler: &mut ManagedResponsesWebSocket<Socket>, case: &Case) -> Value {
     for stored in &case.store {
-        handler
-            .session_history
-            .insert(stored.id.clone(), stored.messages.clone());
+        handler.store_history(stored.id.clone(), stored.messages.clone());
     }
     let mut first = get_history_messages(handler, &case.first);
     first.push(case.append.clone());

@@ -549,7 +549,7 @@ def test_calls_module_globals(server: RunServer) -> None:
     their_key = litellm.api_key
     their_base = litellm.api_base
     try:
-        betterlite.api_key, betterlite.api_base = GOOD_KEY, server.url  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L276
+        betterlite.api_key, betterlite.api_base = GOOD_KEY, server.url
         litellm.api_key = GOOD_KEY
         litellm.api_base = server.url
         compare_add_message(server, {})
