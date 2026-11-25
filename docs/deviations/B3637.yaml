@@ -1,0 +1,71 @@
+task: B3637
+deviations:
+  - what: >-
+      LiteLLM's static method and **kwargs become struct methods that take B3650's typed input,
+      and the streaming entry takes B3650's CollectedChunksInput plus url_route.
+    why: >-
+      Rust has no keyword spreading; B3606's adapter and B3608 build the structs from the same
+      values. result, cache_hit, the unused model argument and the endpoint_type and success
+      handler arguments are never read, so they are not parameters.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L326-L371
+  - what: >-
+      A failed non-streaming branch is caught as a typed error. LiteLLM's blanket
+      `except Exception` also catches Python bugs such as a missing key or attribute.
+    why: >-
+      Rust has no runtime attribute errors and the no-panics rule leaves typed errors as the
+      only case, so the same error log and chat-only fallback run for every error a branch can
+      produce.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L529-L550
+  - what: >-
+      The kwargs carry no custom_llm_provider, and the streaming kwargs carry no call_type or
+      messages entry. The provider is written to the call log only.
+    why: >-
+      B3630's ResponseLoggingKwargs has no such fields and is outside this task's scope. The
+      non-streaming provider is always "openai" either way, since the pass-through kwargs never
+      carry one, and the spend row reads the call log's model_call_details.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L674-L682
+  - what: >-
+      The call log's model, custom_llm_provider and response_cost are written before the
+      standard logging object is built, not after.
+    why: >-
+      B190's builder reads those values from the call log, where LiteLLM's
+      get_standard_logging_object_payload read them from the kwargs; writing them first gives
+      the object the same cost and provider LiteLLM's had.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L492-L507
+  - what: >-
+      A missing litellm_params never raises. LiteLLM's kwargs["litellm_params"] lookup raises
+      KeyError when the key is absent; MissingLitellmParams exists but no path builds it.
+    why: >-
+      ResponseLoggingKwargs always holds a litellm_params map (empty when the request had
+      none), so the user is written into that map.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L487-L490
+  - what: >-
+      The production chat transform decodes the relayed reply with the OpenAI-compatible wire
+      decoder and skips the logging object's post_call, so original_response is not written to
+      the call log.
+    why: >-
+      OpenAIConfig.transform_response reads only the raw reply and passes it to
+      convert_to_model_response_object; B3650's PassthroughProvider hands the transform no call
+      log, so the post_call write has nowhere to go.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L272-L300
+  - what: >-
+      The Responses transform sees an empty header map, and a relayed body that is not UTF-8 is
+      an error instead of text decoded with replacement characters.
+    why: >-
+      B3650's UpstreamChatReply carries the status and the body bytes only, and B3635's
+      RawResponse takes text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L290-L325
+  - what: >-
+      The rebuilt ImageResponse takes created from the call's end time instead of reading the
+      wall clock.
+    why: >-
+      The handler reads no clock of its own; the end time is the moment LiteLLM's handler runs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L430-L433
+kept_bugs:
+  - what: >-
+      Image editing marks the call log's call_type "passthrough-image-generation", the image
+      generation value.
+    why: >-
+      Spend rows and callbacks of a working setup see this value for both image endpoints; there
+      is no editing value to switch to.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L448
