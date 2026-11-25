@@ -34,15 +34,12 @@ impl AccountingWorker {
     // The worker stops taking requests when the runtime closes its admission, then finishes what is already queued.
     pub(super) async fn run(self, mut receiver: Receiver<SpendAccounting>) {
         loop {
-            let incoming = tokio::select! {
-                biased;
-                _ = self.shutdown.cancelled() => break,
-                work = receiver.recv() => work,
-            };
-            let Some(work) = incoming else {
-                return;
-            };
-            self.account(work).await;
+            let incoming = self.shutdown.run_until_cancelled(receiver.recv()).await;
+            match incoming {
+                None => break,
+                Some(None) => return,
+                Some(Some(work)) => self.account(work).await,
+            }
         }
         while let Some(work) = receiver.recv().await {
             self.account(work).await;
