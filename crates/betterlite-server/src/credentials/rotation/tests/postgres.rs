@@ -712,10 +712,12 @@ async fn a_blocked_credential_write_skips_only_that_row() {
 async fn a_drained_pool_bounds_connection_acquisition() {
     let mut harness = Harness::start().await;
     harness.acquire_timeout = Duration::from_millis(300);
-    let mut held = Vec::new();
-    for _ in 0..4 {
-        held.push(harness.pool.get().await.expect("a held connection"));
-    }
+    let held = [
+        harness.pool.get().await.expect("a held connection"),
+        harness.pool.get().await.expect("a held connection"),
+        harness.pool.get().await.expect("a held connection"),
+        harness.pool.get().await.expect("a held connection"),
+    ];
     let store = PostgresRotationStore {
         client: PrismaClient {
             writer: &harness.store,
