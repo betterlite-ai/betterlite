@@ -16,7 +16,7 @@ use betterlite_redis::redis_connection_settings::model::scalars::IntOrText;
 use betterlite_redis::redis_connection_settings::model::settings::RedisOverrides;
 use betterlite_redis::redis_live_client::LiveClientFactory;
 
-use super::super::sink::{ModelTableInvalidation, RedisModelTableInvalidation};
+use super::super::sink::{ModelTableInvalidation as _, RedisModelTableInvalidation};
 use super::support::capture_logs;
 
 struct SilentHooks;

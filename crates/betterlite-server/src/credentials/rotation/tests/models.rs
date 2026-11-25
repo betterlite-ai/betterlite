@@ -159,7 +159,7 @@ async fn an_all_invalid_model_scan_still_publishes() {
     )];
     fixture.rotation().run(None).await.unwrap();
     let writes = fixture.store.writes();
-    assert!(matches!(writes[0], Write::Models(ref models) if models.is_empty()));
+    assert!(matches!(&writes[0], Write::Models(models) if models.is_empty()));
     assert!(published(&writes));
 }
 

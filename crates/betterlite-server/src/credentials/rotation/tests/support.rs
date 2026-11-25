@@ -252,50 +252,64 @@ impl FakeStore {
 impl RotationStore for FakeStore {
     type Error = FakeStoreError;
 
-    async fn model_rows(&self) -> Result<Vec<ProxyModelTable>, FakeStoreError> {
-        self.fail(Failure::ModelScan)?;
-        Ok(self.models.clone())
+    fn model_rows(
+        &self,
+    ) -> impl Future<Output = Result<Vec<ProxyModelTable>, FakeStoreError>> + Send {
+        ready(self.fail(Failure::ModelScan).map(|()| self.models.clone()))
     }
 
-    async fn save_model_params(&self, models: &[PreparedModel]) -> Result<(), FakeStoreError> {
-        self.fail(Failure::SaveModels)?;
+    fn save_model_params(
+        &self,
+        models: &[PreparedModel],
+    ) -> impl Future<Output = Result<(), FakeStoreError>> + Send {
+        if let Err(error) = self.fail(Failure::SaveModels) {
+            return ready(Err(error));
+        }
         self.record(Write::Models(models.to_vec()));
-        Ok(())
+        ready(Ok(()))
     }
 
-    async fn config_rows(&self) -> Result<Vec<ConfigParam>, FakeStoreError> {
-        self.fail(Failure::ConfigScan)?;
-        Ok(self.config.clone())
+    fn config_rows(&self) -> impl Future<Output = Result<Vec<ConfigParam>, FakeStoreError>> + Send {
+        ready(self.fail(Failure::ConfigScan).map(|()| self.config.clone()))
     }
 
-    async fn save_environment_variables(&self, values: JsonData) -> Result<(), FakeStoreError> {
-        self.fail(Failure::SaveEnvironment)?;
+    fn save_environment_variables(
+        &self,
+        values: JsonData,
+    ) -> impl Future<Output = Result<(), FakeStoreError>> + Send {
+        if let Err(error) = self.fail(Failure::SaveEnvironment) {
+            return ready(Err(error));
+        }
         self.record(Write::Environment(values));
-        Ok(())
+        ready(Ok(()))
     }
 
-    async fn credential_rows(&self) -> Result<Vec<JsonData>, FakeStoreError> {
-        self.fail(Failure::CredentialScan)?;
-        Ok(self.credentials.clone())
+    fn credential_rows(
+        &self,
+    ) -> impl Future<Output = Result<Vec<JsonData>, FakeStoreError>> + Send {
+        ready(
+            self.fail(Failure::CredentialScan)
+                .map(|()| self.credentials.clone()),
+        )
     }
 
-    async fn update_credential(
+    fn update_credential(
         &self,
         name: &str,
         row: &CredentialRow,
         actor: Option<&str>,
-    ) -> Result<(), FakeStoreError> {
+    ) -> impl Future<Output = Result<(), FakeStoreError>> + Send {
         if self.rejected.iter().any(|rejected| rejected == name) {
-            return Err(FakeStoreError {
+            return ready(Err(FakeStoreError {
                 failure: Failure::CredentialUpdate,
-            });
+            }));
         }
         self.record(Write::Credential {
             name: name.to_owned(),
             row: row.clone(),
             actor: actor.map(str::to_owned),
         });
-        Ok(())
+        ready(Ok(()))
     }
 }
 
@@ -320,15 +334,15 @@ impl RecordingSink {
 impl ModelTableInvalidation for RecordingSink {
     type Error = SinkError;
 
-    async fn model_table_changed(&self) -> Result<(), SinkError> {
+    fn model_table_changed(&self) -> impl Future<Output = Result<(), SinkError>> + Send {
         self.log
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(Write::Publish);
         if self.failed {
-            return Err(SinkError);
+            return ready(Err(SinkError));
         }
-        Ok(())
+        ready(Ok(()))
     }
 }
 
@@ -387,21 +401,25 @@ macro_rules! ignored_user_write {
 impl McpRotationStore for FakeMcpStore {
     type Error = FakeMcpError;
 
-    async fn server_rows(&self) -> Result<Vec<StoredServerRow>, FakeMcpError> {
-        self.fail(McpFailure::Servers)?;
-        Ok(self.servers.clone())
+    fn server_rows(
+        &self,
+    ) -> impl Future<Output = Result<Vec<StoredServerRow>, FakeMcpError>> + Send {
+        ready(
+            self.fail(McpFailure::Servers)
+                .map(|()| self.servers.clone()),
+        )
     }
 
-    async fn update_server(
+    fn update_server(
         &self,
         _server_id: &str,
         update: &ServerUpdate,
-    ) -> Result<(), FakeMcpError> {
+    ) -> impl Future<Output = Result<(), FakeMcpError>> + Send {
         self.updates
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(update.clone());
-        Ok(())
+        ready(Ok(()))
     }
 
     fn oauth_client_rows(
@@ -418,16 +436,24 @@ impl McpRotationStore for FakeMcpStore {
         ready(Ok(()))
     }
 
-    async fn user_credential_rows(&self) -> Result<Vec<StoredUserCredentialRow>, FakeMcpError> {
-        self.fail(McpFailure::UserCredentials)?;
-        Ok(self.user_credentials.clone())
+    fn user_credential_rows(
+        &self,
+    ) -> impl Future<Output = Result<Vec<StoredUserCredentialRow>, FakeMcpError>> + Send {
+        ready(
+            self.fail(McpFailure::UserCredentials)
+                .map(|()| self.user_credentials.clone()),
+        )
     }
 
     ignored_user_write!(update_user_credential, _credential_b64);
 
-    async fn user_env_var_rows(&self) -> Result<Vec<StoredUserEnvVarRow>, FakeMcpError> {
-        self.fail(McpFailure::UserEnvVars)?;
-        Ok(self.user_env_vars.clone())
+    fn user_env_var_rows(
+        &self,
+    ) -> impl Future<Output = Result<Vec<StoredUserEnvVarRow>, FakeMcpError>> + Send {
+        ready(
+            self.fail(McpFailure::UserEnvVars)
+                .map(|()| self.user_env_vars.clone()),
+        )
     }
 
     ignored_user_write!(update_user_env_var, _values_b64);
