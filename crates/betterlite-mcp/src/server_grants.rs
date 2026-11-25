@@ -119,7 +119,7 @@ where
         key_level(self, record, KeyLevel::AccessGroups).await
     }
 
-    // _get_allowed_mcp_servers_for_team
+    // only a team pinned to the auth counts; the dashboard session team has no row to read
     pub async fn team_servers(
         &self,
         auth: Option<&GrantAuth>,
