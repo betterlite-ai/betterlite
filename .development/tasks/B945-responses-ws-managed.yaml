@@ -80,6 +80,8 @@ description: >-
 
 scope:
   paths:
+  - "tools/oracle/src/websocket_oracle/fixture.rs"
+  - "tools/oracle/src/websocket_oracle/decode.rs"
   - "tools/oracle/src/websocket_driver/service.rs"
   - "tools/oracle/src/helpers/oracle/websocket_oracle.rs"
   - "tools/oracle/helpers/websocket_oracle.py"
