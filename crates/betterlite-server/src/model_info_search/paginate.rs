@@ -47,9 +47,6 @@ fn slice_page(models: &[JsonObject], skip: i64, size: i64) -> Vec<JsonObject> {
     let (Ok(start), Ok(stop)) = (usize::try_from(start), usize::try_from(stop)) else {
         return Vec::new();
     };
-    if stop <= start {
-        return Vec::new();
-    }
     models
         .get(start..stop)
         .map_or_else(Vec::new, <[JsonObject]>::to_vec)
