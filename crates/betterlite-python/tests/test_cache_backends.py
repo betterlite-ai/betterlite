@@ -445,7 +445,7 @@ def test_redis_breaker_disabled(
 
 
 # The dual cache over an open breaker raises the same class as the Redis handle it wraps.
-def test_redis_breaker_dual_delete_and_ttl(
+def test_dual_redis_breaker_open(
     redis_server: FakeRedisServer, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("REDIS_CIRCUIT_BREAKER_FAILURE_THRESHOLD", "1")
