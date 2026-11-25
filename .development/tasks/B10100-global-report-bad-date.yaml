@@ -1,0 +1,64 @@
+id: B10100
+title: The global spend report answers 400 for a malformed date
+description: >-
+  Fix a LiteLLM bug that B1727 copied. LiteLLM's global spend report route parses start_date and end_date with
+  datetime.strptime outside the handler's try, so a date that isn't %Y-%m-%d, such as start_date=2024-13-01, raises
+  ValueError and the client gets a bare 500 Internal Server Error. B1727 (https://github.com/betterlite-ai/betterlite/pull/3167)
+  kept that: GlobalReportError::DateFormat in crates/betterlite-server/src/spend/global_report/error.rs answers 500 with
+  the unhandled error body, and docs/deviations/B1727.yaml lists it under kept_bugs. Its review flagged it, since an
+  unhandled 500 on invalid client input is a bug no working setup relies on.
+
+
+  The fix answers 400 with detail.error naming the field that failed, in the same shape the route already uses for a
+  missing date. The order of the checks stays: the group_by 422 comes first, then the missing-date 400, then the date
+  format, then the database check. The kept_bugs row in B1727.yaml goes, and this task's own deviations file records
+  the difference.
+scope:
+  paths:
+  - crates/betterlite-server/src/spend/global_report/error.rs
+  - crates/betterlite-server/src/spend/global_report/handler.rs
+  - crates/betterlite-server/src/spend/global_report/tests/handlers.rs
+  - crates/betterlite-server/src/spend/global_report/tests/units.rs
+  - docs/deviations/B1727.yaml
+  - docs/deviations/B10100.yaml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L1482-L1483
+  why: LiteLLM parses both dates with strptime before its try.
+dod:
+- text: >-
+    A start_date that isn't %Y-%m-%d answers 400 with detail.error "start_date must be in YYYY-MM-DD format", and an
+    end_date that isn't answers 400 with "end_date must be in YYYY-MM-DD format". start_date is checked first.
+  proof: [global-report]
+- text: >-
+    An unknown group_by still answers its 422 and a missing date its 400 before any date is parsed, and a malformed
+    date answers its 400 before the database check, so a server with no database still answers 400 for it.
+  proof: [global-report]
+- text: >-
+    docs/deviations/B10100.yaml has a row that says LiteLLM answers 500 and betterlite answers 400, with the pinned
+    LiteLLM link, and docs/deviations/B1727.yaml no longer lists the malformed date under kept_bugs.
+  proof: [deviation-row, kept-bug-gone]
+checks:
+  optional: []
+  commands:
+  - id: global-report
+    why: The global spend report answers a status or body the DoD doesn't list.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^spend::global_report::/) - test(replays_the_global_report_query_corpus)'
+  - id: deviation-row
+    why: The fix needs its deviations row with the pinned LiteLLM link.
+    run: grep -q 'spend_management_endpoints.py#L1482-L1483' docs/deviations/B10100.yaml
+  - id: kept-bug-gone
+    why: B1727's kept_bugs row would still say betterlite answers 500.
+    run: test -z "$(grep -n 'does not match %Y-%m-%d' docs/deviations/B1727.yaml)"
+oracle_cases: []
+deviations: []
+out_of_scope:
+- The 400 that a missing database or a failed report query answers. B1727 keeps it as a kept bug, and the review didn't flag it.
+- Other spend report routes. Their date handling belongs to their own tasks.
+pitfalls:
+- a_malformed_date_answers_500_before_the_database_check in tests/handlers.rs asserts the old 500. Rename it for the 400 and keep its cases.
+- B8662 later compares these routes with LiteLLM over HTTP, so a malformed-date case there has to expect this 400 and cite this deviation.
+review_level: standard
+budget:
+  max_changed_lines: 150
+  max_new_expects: 0

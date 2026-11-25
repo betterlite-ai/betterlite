@@ -1,0 +1,9 @@
+{
+  "custom": {
+    "label": "Custom",
+    "description": "A tier spelled as one model name.",
+    "complexity_router_config": {
+      "tiers": {"SIMPLE": "a", "MEDIUM": ["b"], "COMPLEX": ["c"], "REASONING": ["d"]}
+    }
+  }
+}

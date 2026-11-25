@@ -1,0 +1,13 @@
+kind: helper
+name: auth-key-budgets-auth-email-merge
+call:
+  auth_key_budgets:
+    calls:
+      - function: email_merge
+        per_key_cfg:
+          "50": "a@x, b@x"
+          "75": ["c@x", ""]
+          "100": null
+env: {}
+compare:
+  ignore: []

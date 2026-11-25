@@ -1,0 +1,15 @@
+task: B1727
+deviations:
+  - what: The global spend report works for an authorized caller without a license; stock LiteLLM's false premium flag makes this handler return 400.
+    why: MIT reporting follows the README's no-paid-tier decision, retaining the surrounding global-route authorization.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L1494-L1504
+  - what: The customer and team-customer groupings render group_by_day as the RFC3339 millisecond UTC string the Prisma engine hands the Python client, rather than a datetime value.
+    why: B1726's lower query service returns one JSON text per row, so these queries render the day with the same to_char text its day-by-team query uses.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L1002-L1076
+kept_bugs:
+  - what: A start_date or end_date that does not match %Y-%m-%d answers a bare 500 Internal Server Error, not a 4xx, because LiteLLM parses the dates outside the handler's try.
+    why: The task keeps this source boundary, and B8662 compares the status over HTTP; the missing-date 400 and the 422 for an unknown group_by still come first.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L1482-L1483
+  - what: A missing database or a failing report query answers 400 with detail.error, a client status for a server fault.
+    why: The handler's catch turns every exception into this 400, and a client that checks the status of this route today sees 400 for both.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L1694-L1698

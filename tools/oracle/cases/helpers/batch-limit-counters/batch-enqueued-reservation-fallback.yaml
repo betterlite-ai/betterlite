@@ -1,0 +1,31 @@
+kind: helper
+name: batch-limit-counters-enqueued-reservation-fallback
+call:
+  batch_limit_counters:
+    principal: {}
+    clock: 1700000000.0
+    window_size: 60
+    cache: {}
+    store:
+      replies: []
+    limiter:
+      base: []
+      project:
+        descriptors: []
+        increments: []
+      responses: []
+    calls:
+      - function: reserve_batch_enqueued_tokens
+        data:
+          model: gpt-4o-mini
+        batch_usage:
+          total_tokens: 30
+          request_count: 2
+          output_tokens: 0
+          per_model_usage: {}
+        scopes:
+          - key: api_key
+            value: sk-1
+            limit: 15
+env: {}
+compare: {ignore: []}

@@ -2443,7 +2443,9 @@ version = "0.0.0"
 dependencies = [
  "betterlite-auth",
  "betterlite-config",
+ "betterlite-db",
  "betterlite-mcp",
+ "betterlite-secrets",
  "chrono",
  "libfuzzer-sys",
  "secrecy",
