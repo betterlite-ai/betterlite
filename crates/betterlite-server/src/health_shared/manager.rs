@@ -6,19 +6,17 @@ use betterlite_db::ptu::store::sleeper::Sleeper;
 use betterlite_models::model_registration::JsonObject;
 use chrono::{DateTime, Utc};
 use num_traits::ToPrimitive as _;
+use tokio_util::task::TaskTracker;
 
 use crate::health_cycle::endpoints::HealthCheckResult;
 use crate::model_deprecation::clock::UtcClock;
 
 use super::cache::SharedHealthCache;
-use super::cached::{
-    CachedHealthCheck, cached_owner, cached_payload, encode_cached, epoch_seconds, from_cached,
-    json_from_cached,
-};
+use super::cached::{CachedHealthCheck, cached_payload, encode_cached, epoch_seconds, from_cached};
 use super::error::SharedHealthError;
+use super::lease::{release_lock, shared_lock_lease};
 use super::probe::{SharedHealthProbe, SharedProbeCall};
 use super::settings::SharedHealthSettings;
-use super::status_view::SharedHealthStatus;
 
 pub const POLL_INTERVAL_SECONDS: u64 = 5;
 
@@ -36,6 +34,7 @@ pub struct SharedHealthCheckManager {
     pub lock_ttl: i64,
     pub pod_id: String,
     pub clock: Arc<dyn UtcClock + Send + Sync>,
+    pub tasks: TaskTracker,
 }
 
 impl SharedHealthCheckManager {
@@ -47,6 +46,7 @@ impl SharedHealthCheckManager {
         redis: Option<Arc<dyn SharedHealthCache>>,
         settings: SharedHealthSettings,
         clock: Arc<dyn UtcClock + Send + Sync>,
+        tasks: TaskTracker,
     ) -> Self {
         Self {
             redis,
@@ -54,6 +54,7 @@ impl SharedHealthCheckManager {
             lock_ttl: settings.lock_ttl,
             pod_id: pod_id(clock.now()),
             clock,
+            tasks,
         }
     }
 
@@ -82,30 +83,12 @@ impl SharedHealthCheckManager {
         }
     }
 
-    // A read-then-delete, never an atomic compare-delete: a lock another pod reacquired in between stays.
+    // The direct release a caller can await; the check itself holds the same release in a lease.
     pub async fn release_health_check_lock(&self) {
         let Some(redis) = self.redis.as_deref() else {
             return;
         };
-        let owner = match redis.get(Self::LOCK_KEY).await {
-            Ok(owner) => owner,
-            Err(error) => {
-                tracing::error!("Error releasing health check lock: {error}");
-                return;
-            }
-        };
-        let ours = owner
-            .and_then(cached_owner)
-            .is_some_and(|stored| stored == self.pod_id);
-        if !ours {
-            return;
-        }
-        match redis.delete(Self::LOCK_KEY).await {
-            Ok(_deleted) => {
-                tracing::info!(pod = %self.pod_id, "pod released the health check lock");
-            }
-            Err(error) => tracing::error!("Error releasing health check lock: {error}"),
-        }
+        release_lock(redis, &self.pod_id, Self::LOCK_KEY).await;
     }
 
     pub async fn cached_health_check_results(&self) -> Option<CachedHealthCheck> {
@@ -192,6 +175,10 @@ impl SharedHealthCheckManager {
         call: SharedProbeCall<'_>,
         probe: &dyn SharedHealthProbe,
     ) -> Result<HealthCheckResult, SharedHealthError> {
+        let Some(redis) = self.redis.as_ref() else {
+            return probe.probe(call).await;
+        };
+        let lease = shared_lock_lease(redis, &self.pod_id, Self::LOCK_KEY, &self.tasks);
         tracing::info!(
             pod = %self.pod_id,
             model_count = call.models.len(),
@@ -202,7 +189,7 @@ impl SharedHealthCheckManager {
             self.cache_health_check_results(&result.healthy_endpoints, &result.unhealthy_endpoints)
                 .await;
         }
-        self.release_health_check_lock().await;
+        lease.release().await;
         outcome
     }
 
@@ -259,40 +246,5 @@ impl SharedHealthCheckManager {
                 false
             }
         }
-    }
-
-    // get_health_check_status: the four fixed keys, then the lock and cache facts when Redis is configured.
-    pub async fn get_health_check_status(&self) -> SharedHealthStatus {
-        let mut status = SharedHealthStatus {
-            pod_id: self.pod_id.clone(),
-            redis_available: self.redis.is_some(),
-            lock_ttl: self.lock_ttl,
-            cache_ttl: self.health_check_ttl,
-            lock_owner: None,
-            lock_in_progress: None,
-            cache_available: None,
-            cache_age_seconds: None,
-            last_checked_by: None,
-            error: None,
-        };
-        let Some(redis) = self.redis.as_deref() else {
-            return status;
-        };
-        let owner = match redis.get(Self::LOCK_KEY).await {
-            Ok(owner) => owner,
-            Err(error) => {
-                status.error = Some(error.to_string());
-                return status;
-            }
-        };
-        status.lock_in_progress = Some(owner.is_some());
-        status.lock_owner = owner.map(json_from_cached);
-        let cached = self.cached_health_check_results().await;
-        status.cache_available = Some(cached.is_some());
-        if let Some(payload) = cached {
-            status.cache_age_seconds = Some(epoch_seconds(self.clock.now()).sub(payload.timestamp));
-            status.last_checked_by = payload.checked_by;
-        }
-        status
     }
 }

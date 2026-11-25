@@ -36,9 +36,9 @@ impl SharedHealthCache for RedisHealthCache {
         self.cache
             .async_get_cache(key)
             .await
-            .map_err(|source| SharedHealthCacheError {
+            .map_err(|source| SharedHealthCacheError::Read {
                 operation: "async_get_cache",
-                source: Box::new(source),
+                source,
             })
     }
 
@@ -57,9 +57,9 @@ impl SharedHealthCache for RedisHealthCache {
             .values
             .async_set_cache(Some(key), value, Some(ttl), only_if_absent)
             .await
-            .map_err(|source| SharedHealthCacheError {
+            .map_err(|source| SharedHealthCacheError::Write {
                 operation: "async_set_cache",
-                source: Box::new(source),
+                source,
             })?;
         Ok(stored == Some(true))
     }
@@ -71,9 +71,9 @@ impl SharedHealthCache for RedisHealthCache {
             .admin
             .async_delete_cache(key)
             .await
-            .map_err(|source| SharedHealthCacheError {
+            .map_err(|source| SharedHealthCacheError::Delete {
                 operation: "async_delete_cache",
-                source: Box::new(source),
+                source,
             })
     }
 }

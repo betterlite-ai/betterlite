@@ -5,6 +5,7 @@ use std::time::Duration;
 use betterlite_db::ptu::store::sleeper::Sleeper;
 use betterlite_db::queues::pod_lock::{LockCache, PodLockManager};
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
+use tokio::time::timeout;
 use tokio_util::task::TaskTracker;
 
 use crate::health_cycle::endpoints::HealthCheckResult;
@@ -13,6 +14,7 @@ use crate::health_persistence::{HealthCheckStore, HealthCycle, SaveRequest, save
 use crate::health_probe_settings::targeting::health_check_eligible;
 use crate::model_deprecation::clock::UtcClock;
 
+use super::error::SharedHealthError;
 use super::health_state::HealthStateWriter;
 use super::lease::WindowLease;
 use super::manager::SharedHealthCheckManager;
@@ -21,7 +23,13 @@ use super::results::HealthResultsCache;
 
 pub const SAVE_JOB_ID: &str = "background_health_check_db_save";
 pub const BACKGROUND_CHECKED_BY: &str = "background_health_check";
+pub const SAVE_DEADLINE: Duration = Duration::from_secs(60);
 const SOURCE: &str = "proxy_background_loop";
+
+// llm_model_list as the loop reads it: LiteLLM deep-copies the current list at the top of every cycle, so a deployment added, removed or disabled after startup reaches the next probe.
+pub trait DeploymentSource: Send + Sync {
+    fn snapshot(&self) -> Option<Vec<DeploymentSpec>>;
+}
 
 // _run_background_health_check's inputs: the loop's settings, the shared manager when Redis is configured, and the devices the save and the router's health state need.
 pub struct BackgroundHealthLoop<Store: HealthCheckStore, L: LockCache> {
@@ -30,12 +38,13 @@ pub struct BackgroundHealthLoop<Store: HealthCheckStore, L: LockCache> {
     pub max_concurrency: Option<i64>,
     pub manager: Option<Arc<SharedHealthCheckManager>>,
     pub probe: Arc<dyn SharedHealthProbe>,
-    pub deployments: Option<Arc<Vec<DeploymentSpec>>>,
+    pub deployments: Option<Arc<dyn DeploymentSource>>,
     pub results: Arc<HealthResultsCache>,
     pub store: Option<Arc<Store>>,
     pub lock: Option<Arc<PodLockManager<L>>>,
     pub health_state: Option<Arc<dyn HealthStateWriter>>,
     pub clock: Arc<dyn UtcClock + Send + Sync>,
+    pub save_deadline: Duration,
     pub tasks: TaskTracker,
 }
 
@@ -72,10 +81,22 @@ pub(crate) async fn run_cycle<Store, L, S>(
         cycle_id: format!("bg-{cycle}"),
         source: SOURCE.to_owned(),
     };
-    let models = deps.deployments.as_deref().map_or_else(Vec::new, |list| {
-        health_check_eligible(list.as_slice(), true)
-    });
-    let result = cycle_result(deps, models.as_slice(), &context, sleeper).await;
+    let deployment_list = deps
+        .deployments
+        .as_ref()
+        .and_then(|source| source.snapshot());
+    let models = deployment_list
+        .as_deref()
+        .map_or_else(Vec::new, |list| health_check_eligible(list, true));
+    let result = match cycle_result(deps, models.as_slice(), &context, sleeper).await {
+        Ok(result) => result,
+        Err(error) => {
+            tracing::error!(
+                "the background health check cycle failed, keeping the previous results: {error}"
+            );
+            return;
+        }
+    };
     deps.results.publish(&result);
     persist_cycle(deps, models.as_slice(), &result).await;
     if let Some(writer) = &deps.health_state {
@@ -93,7 +114,7 @@ async fn cycle_result<Store, L, S>(
     models: &[DeploymentSpec],
     context: &InstrumentationContext,
     sleeper: &mut S,
-) -> HealthCheckResult
+) -> Result<HealthCheckResult, SharedHealthError>
 where
     Store: HealthCheckStore,
     L: LockCache + 'static,
@@ -106,35 +127,22 @@ where
         skip_disabled: true,
         instrumentation: Some(context),
     };
-    let outcome = match &deps.manager {
+    match &deps.manager {
         Some(manager) => {
-            manager
+            match manager
                 .perform_shared_health_check(call, deps.probe.as_ref(), sleeper)
                 .await
+            {
+                Ok(result) => Ok(result),
+                Err(error) => {
+                    tracing::error!(
+                        "Error in shared health check, falling back to direct health check: {error}"
+                    );
+                    deps.probe.probe(call).await
+                }
+            }
         }
         None => deps.probe.probe(call).await,
-    };
-    match outcome {
-        Ok(result) => result,
-        Err(error) => {
-            tracing::error!(
-                "Error in shared health check, falling back to direct health check: {error}"
-            );
-            direct_result(deps.probe.as_ref(), call).await
-        }
-    }
-}
-
-async fn direct_result(
-    probe: &dyn SharedHealthProbe,
-    call: SharedProbeCall<'_>,
-) -> HealthCheckResult {
-    match probe.probe(call).await {
-        Ok(result) => result,
-        Err(error) => {
-            tracing::error!("the direct health check failed: {error}");
-            HealthCheckResult::default()
-        }
     }
 }
 
@@ -171,27 +179,29 @@ async fn persist_cycle<Store, L>(
         &deps.tasks,
         Some(deps.interval_seconds),
         save,
+        deps.save_deadline,
     )
     .await;
     tracing::debug!(saved, "the background health check cycle saved or skipped");
 }
 
-// _window_gated_health_check_db_save: one save per window, kept by the completed save and released on failure or cancellation.
+// _window_gated_health_check_db_save: one save per window, kept by the completed save and released on failure, timeout or cancellation.
 pub(crate) async fn window_gated_save<L, F>(
     lock: Option<&Arc<PodLockManager<L>>>,
     tasks: &TaskTracker,
     ttl: Option<i64>,
     save: F,
+    deadline: Duration,
 ) -> bool
 where
     L: LockCache + 'static,
     F: Future<Output = bool>,
 {
     let Some(manager) = lock else {
-        return save.await;
+        return saved_within_deadline(save, deadline).await;
     };
     if manager.cache.is_none() {
-        return save.await;
+        return saved_within_deadline(save, deadline).await;
     }
     let acquired = manager.acquire_lock(SAVE_JOB_ID, ttl, false).await;
     if acquired != Some(true) {
@@ -201,7 +211,7 @@ where
         return false;
     }
     let lease = WindowLease::start(Arc::clone(manager), SAVE_JOB_ID, tasks);
-    let persisted = save.await;
+    let persisted = saved_within_deadline(save, deadline).await;
     if !persisted {
         tracing::warn!(
             "background_health_check_db_save_incomplete released the window lock so another pod can retry"
@@ -211,4 +221,15 @@ where
     }
     lease.keep();
     true
+}
+
+// A save that never returns is cut at the deadline, as a failed save: the caller releases the window lock and the next cycle tries again.
+async fn saved_within_deadline<F>(save: F, deadline: Duration) -> bool
+where
+    F: Future<Output = bool>,
+{
+    timeout(deadline, save).await.unwrap_or_else(|_elapsed| {
+        tracing::error!("background_health_check_db_save exceeded its {deadline:?} deadline");
+        false
+    })
 }

@@ -6,14 +6,13 @@ use axum::extract::{Extension, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse as _, Response};
 use axum::routing::get;
-use betterlite_models::decisions::Json;
-use betterlite_models::model_registration::JsonObject;
+use serde::Serialize;
 
 use crate::auth::auth_identity::AuthContext;
 use crate::health_access_and_connections::connection_error::{Rejection, RejectionDetail};
 use crate::tracing_routes::router::unauthenticated;
 
-use super::status_view::{SharedHealthStatusError, SharedHealthStatusSource};
+use super::status_view::{SharedHealthStatus, SharedHealthStatusError, SharedHealthStatusSource};
 
 pub const SHARED_STATUS_PATH: &str = "/health/shared-status";
 
@@ -31,6 +30,22 @@ pub struct SharedStatusState {
     pub status: Option<Arc<dyn SharedHealthStatusSource>>,
 }
 
+// The two answers that stop before the status source: a disabled switch and a proxy without Redis.
+#[derive(Serialize)]
+struct NotServedStatus {
+    shared_health_check_enabled: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    redis_available: Option<bool>,
+    message: &'static str,
+}
+
+// The enabled answer: LiteLLM's flag around get_health_check_status' dict.
+#[derive(Serialize)]
+struct ServedStatus {
+    shared_health_check_enabled: bool,
+    status: SharedHealthStatus,
+}
+
 // The one route B8540 mounts inside the proxy's authenticated stage.
 pub fn shared_status_router(state: SharedStatusState) -> Router {
     Router::new()
@@ -46,52 +61,29 @@ async fn shared_status(
         return unauthenticated();
     }
     if state.checks == SharedHealthSwitch::Disabled {
-        return AxumJson(not_served_body(&NotServed::Disabled)).into_response();
+        return AxumJson(NotServedStatus {
+            shared_health_check_enabled: false,
+            redis_available: None,
+            message: "Shared health check is not enabled",
+        })
+        .into_response();
     }
     let Some(source) = state.status.as_deref() else {
-        return AxumJson(not_served_body(&NotServed::RedisUnavailable)).into_response();
+        return AxumJson(NotServedStatus {
+            shared_health_check_enabled: true,
+            redis_available: Some(false),
+            message: "Redis is not configured",
+        })
+        .into_response();
     };
     match source.status().await {
-        Ok(status) => AxumJson(enabled_body(status)).into_response(),
+        Ok(status) => AxumJson(ServedStatus {
+            shared_health_check_enabled: true,
+            status,
+        })
+        .into_response(),
         Err(error) => status_failure(&error),
     }
-}
-
-// The two answers that stop before the status source: a disabled switch and a proxy without Redis.
-enum NotServed {
-    Disabled,
-    RedisUnavailable,
-}
-
-fn not_served_body(answer: &NotServed) -> JsonObject {
-    match answer {
-        NotServed::Disabled => {
-            let mut body = JsonObject::new();
-            body.insert("shared_health_check_enabled".to_owned(), Json::Bool(false));
-            body.insert(
-                "message".to_owned(),
-                Json::Text("Shared health check is not enabled".to_owned()),
-            );
-            body
-        }
-        NotServed::RedisUnavailable => {
-            let mut body = JsonObject::new();
-            body.insert("shared_health_check_enabled".to_owned(), Json::Bool(true));
-            body.insert("redis_available".to_owned(), Json::Bool(false));
-            body.insert(
-                "message".to_owned(),
-                Json::Text("Redis is not configured".to_owned()),
-            );
-            body
-        }
-    }
-}
-
-fn enabled_body(status: JsonObject) -> JsonObject {
-    let mut body = JsonObject::new();
-    body.insert("shared_health_check_enabled".to_owned(), Json::Bool(true));
-    body.insert("status".to_owned(), Json::Object(status));
-    body
 }
 
 fn status_failure(error: &SharedHealthStatusError) -> Response {

@@ -23,6 +23,8 @@ mod cache_set;
 mod endpoint_auth;
 #[path = "health_shared/tests/error_handling.rs"]
 mod error_handling;
+#[path = "health_shared/tests/fixtures.rs"]
+mod fixtures;
 #[path = "health_shared/tests/key_builders.rs"]
 mod key_builders;
 #[path = "health_shared/tests/lock_acquire.rs"]
