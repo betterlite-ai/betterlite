@@ -131,7 +131,7 @@ LITELLM_WITH_BACKEND: CacheWithBackendModule = importlib.import_module("litellm.
 redis_server = fake_redis_server.redis_server
 
 
-@pytest.fixture
+@pytest.fixture(autouse=False)
 def dual_with_redis(redis_server: FakeRedisServer) -> DualCache:
     redis_cache = RedisCache(host=redis_server.host, port=redis_server.port)
     return DualCache(in_memory_cache=InMemoryCache(), redis_cache=redis_cache)
