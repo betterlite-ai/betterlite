@@ -4736,6 +4736,7 @@ dependencies = [
  "betterlite-reporting",
  "betterlite-roi",
  "betterlite-router",
+ "betterlite-sdk",
  "betterlite-secret-managers",
  "betterlite-secrets",
  "betterlite-semantic",

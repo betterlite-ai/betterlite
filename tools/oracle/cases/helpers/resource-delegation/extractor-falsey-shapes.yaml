@@ -1,0 +1,30 @@
+kind: helper
+name: extractor_falsey_shapes
+call:
+  resource_delegation:
+    function: extract_mcp_servers
+    permission: null
+calls:
+  - resource_delegation:
+      function: extract_mcp_servers
+      permission: {}
+  - resource_delegation:
+      function: extract_mcp_access_groups
+      permission: {mcp_access_groups: null}
+  - resource_delegation:
+      function: extract_mcp_access_groups
+      permission: {mcp_access_groups: [], mcp_servers: []}
+  - resource_delegation:
+      function: extract_mcp_toolsets
+      permission: {mcp_toolsets: [], mcp_access_groups: "group-a"}
+  - resource_delegation:
+      function: extract_mcp_servers
+      permission: {mcp_servers: ["no-mcp-servers", "srv-a", "srv-a"], mcp_tool_permissions: {"no-mcp-servers": [], "srv-b": ["t"]}}
+  - resource_delegation:
+      function: extract_vector_stores
+      permission: {vector_stores: ["b", "", "a", "b"]}
+  - resource_delegation:
+      function: extract_search_tools
+      permission: {search_tools: ["b", "", "a", "b"]}
+env: {}
+compare: {ignore: []}

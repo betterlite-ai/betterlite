@@ -1,11 +1,187 @@
+use std::collections::BTreeSet;
+
+use betterlite_db::budget_permission_rows::JsonData;
+use betterlite_db::team_rows::team::TeamFields;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use betterlite_server::resource_delegation::denial::Denial;
+use betterlite_server::resource_delegation::gates::GateError;
+use betterlite_server::resource_delegation::gates::validate_requested_toolsets;
+use betterlite_server::resource_delegation::gates::validate_search_tools;
+use betterlite_server::resource_delegation::gates::validate_vector_stores;
+use betterlite_server::resource_delegation::requested::requested_entries;
+use betterlite_server::resource_delegation::requested::requested_server_ids;
+use serde::Deserialize;
+use serde::Serialize;
+use serde_json::Value;
 
 pub(crate) struct Op;
 
-impl Helper for Op {
-    type Input = serde_json::Value;
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct TeamInput {
+    team_id: String,
+    #[serde(default)]
+    mcp_toolsets: Option<Vec<String>>,
+    #[serde(default)]
+    search_tools: Option<Vec<String>>,
+}
 
-    fn run(_input: &Self::Input) -> HelperResult {
-        Self::not_built("resource_delegation")
+#[derive(Deserialize)]
+#[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
+pub(crate) enum Input {
+    ExtractMcpServers {
+        #[serde(default)]
+        permission: Option<JsonData>,
+    },
+    ExtractMcpAccessGroups {
+        #[serde(default)]
+        permission: Option<JsonData>,
+    },
+    ExtractMcpToolsets {
+        #[serde(default)]
+        permission: Option<JsonData>,
+    },
+    ExtractVectorStores {
+        #[serde(default)]
+        permission: Option<JsonData>,
+    },
+    ExtractSearchTools {
+        #[serde(default)]
+        permission: Option<JsonData>,
+    },
+    ValidateToolsets(GateInput),
+    ValidateVectorStores(GateInput),
+    ValidateSearchTools(GateInput),
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct GateInput {
+    #[serde(default)]
+    permission: Option<JsonData>,
+    #[serde(default)]
+    team: Option<TeamInput>,
+    #[serde(default)]
+    is_proxy_admin: bool,
+}
+
+#[derive(Serialize)]
+struct TeamRowFixture {
+    team_id: String,
+    object_permission: PermissionFixture,
+}
+
+#[derive(Serialize)]
+struct PermissionFixture {
+    object_permission_id: String,
+    mcp_toolsets: Option<Vec<String>>,
+    search_tools: Option<Vec<String>>,
+}
+
+fn team_fields(input: &TeamInput) -> Result<TeamFields, serde_json::Error> {
+    let row = TeamRowFixture {
+        team_id: input.team_id.clone(),
+        object_permission: PermissionFixture {
+            object_permission_id: String::from("team-permission"),
+            mcp_toolsets: input.mcp_toolsets.clone(),
+            search_tools: input.search_tools.clone(),
+        },
+    };
+    let text = serde_json::to_string(&row)?;
+    serde_json::from_str(&text)
+}
+
+fn gate_result(result: Result<(), GateError>) -> HelperResult {
+    match result {
+        Ok(()) => Ok(Value::Null),
+        Err(GateError::Denied(denial)) => Err(Box::new(HelperError {
+            class: "HTTPException".to_owned(),
+            status: Some(Denial::STATUS_CODE),
+            error_type: Some(None),
+            param: Some(None),
+            code: Some(None),
+            message: denial.detail,
+        })),
+        Err(GateError::Requested(error)) => Err(Box::new(HelperError {
+            class: "ValueError".to_owned(),
+            status: None,
+            error_type: Some(None),
+            param: Some(None),
+            code: Some(None),
+            message: error.to_string(),
+        })),
+    }
+}
+
+fn extract_list<Collection>(
+    field: &'static str,
+    permission: Option<&JsonData>,
+    drop_empty: bool,
+) -> HelperResult
+where
+    Collection: FromIterator<String> + Serialize,
+{
+    Ok(serde_json::to_value(
+        requested_entries::<Collection>(field, permission, drop_empty).or_value_error()?,
+    )?)
+}
+
+enum GateOp {
+    Toolsets,
+    VectorStores,
+    SearchTools,
+}
+
+fn run_gate(input: &GateInput, op: &GateOp) -> HelperResult {
+    let team = input.team.as_ref().map(team_fields).transpose()?;
+    match op {
+        GateOp::Toolsets => {
+            let requested: BTreeSet<String> =
+                requested_entries("mcp_toolsets", input.permission.as_ref(), false)
+                    .or_value_error()?;
+            gate_result(
+                validate_requested_toolsets(&requested, team.as_ref(), input.is_proxy_admin)
+                    .map_err(GateError::from),
+            )
+        }
+        GateOp::VectorStores => gate_result(validate_vector_stores(
+            input.permission.as_ref(),
+            team.as_ref(),
+            input.is_proxy_admin,
+        )),
+        GateOp::SearchTools => gate_result(validate_search_tools(
+            input.permission.as_ref(),
+            team.as_ref(),
+            input.is_proxy_admin,
+        )),
+    }
+}
+
+impl Helper for Op {
+    type Input = Input;
+
+    fn run(input: &Self::Input) -> HelperResult {
+        match input {
+            Input::ExtractMcpServers { permission } => Ok(serde_json::to_value(
+                requested_server_ids(permission.as_ref()).or_value_error()?,
+            )?),
+            Input::ExtractMcpAccessGroups { permission } => {
+                extract_list::<BTreeSet<String>>("mcp_access_groups", permission.as_ref(), false)
+            }
+            Input::ExtractMcpToolsets { permission } => {
+                extract_list::<BTreeSet<String>>("mcp_toolsets", permission.as_ref(), false)
+            }
+            Input::ExtractVectorStores { permission } => {
+                extract_list::<BTreeSet<String>>("vector_stores", permission.as_ref(), true)
+            }
+            Input::ExtractSearchTools { permission } => {
+                extract_list::<Vec<String>>("search_tools", permission.as_ref(), true)
+            }
+            Input::ValidateToolsets(gate) => run_gate(gate, &GateOp::Toolsets),
+            Input::ValidateVectorStores(gate) => run_gate(gate, &GateOp::VectorStores),
+            Input::ValidateSearchTools(gate) => run_gate(gate, &GateOp::SearchTools),
+        }
     }
 }
