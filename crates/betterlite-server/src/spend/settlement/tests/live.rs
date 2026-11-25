@@ -276,6 +276,23 @@ fn reserved_user() -> ReservationHandle {
     ReservationHandle::new(Decimal::from(5_i32), vec![entry], Decimal::ZERO)
 }
 
+fn spend_request() -> SpendUpdateRequest<'static, Context<'static>> {
+    SpendUpdateRequest {
+        response_cost: Some(SpendAmount(Decimal::from(2_i32))),
+        token: None,
+        user_id: Some("u1"),
+        end_user_id: None,
+        team_id: None,
+        org_id: None,
+        project_id: None,
+        kwargs: None,
+        response_names: &[],
+        realtime_names: &[],
+        model_access_groups: &[],
+        turn_environment: None,
+    }
+}
+
 #[tokio::test]
 async fn a_charged_spend_is_persisted_and_settles_the_reserved_redis_counter() {
     let redis_fixture = RedisFixture::start().await.unwrap();
@@ -302,20 +319,7 @@ async fn a_charged_spend_is_persisted_and_settles_the_reserved_redis_counter() {
         failures: &NoSpendWriterFailureSink,
         admission: &Admitted,
     };
-    let request: SpendUpdateRequest<'_, Context<'_>> = SpendUpdateRequest {
-        response_cost: Some(SpendAmount(Decimal::from(2_i32))),
-        token: None,
-        user_id: Some("u1"),
-        end_user_id: None,
-        team_id: None,
-        org_id: None,
-        project_id: None,
-        kwargs: None,
-        response_names: &[],
-        realtime_names: &[],
-        model_access_groups: &[],
-        turn_environment: None,
-    };
+    let request = spend_request();
     let write = DatabaseSpendWrite {
         writer: &writer,
         payloads: &BatchRow,
@@ -379,7 +383,7 @@ async fn a_charged_spend_is_persisted_and_settles_the_reserved_redis_counter() {
         )
         .await
         .unwrap();
-    assert_eq!(row.get::<_, Decimal>(0), Decimal::from(2_i32));
+    assert_eq!(row.get::<_, Decimal>(0_usize), Decimal::from(2_i32));
     drop(client);
     if let Some(pool) = store.pool {
         pool.close();

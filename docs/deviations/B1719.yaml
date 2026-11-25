@@ -1,0 +1,9 @@
+task: B1719
+deviations: []
+kept_bugs:
+  - what: When arming the update_cache read fails after the spend row is committed, the error propagates without incrementing the counters, invalidating the reserved counters or stamping the reservation finalized, so the reserved estimate stays on the counters until their TTL.
+    why: LiteLLM awaits arm_update_cache_read outside both try blocks, and a setup that sees this error today sees the same result; B8376's arm_cache_read only fails when declaring the batch read fails.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/proxy_track_cost_callback.py#L824-L829
+  - what: When update_database answers not charged and releasing the reservation then fails, the release error propagates with no invalidation and no finalized stamp.
+    why: LiteLLM calls _release_budget_reservation there without the try and invalidation fallback its write-failure path has, and the caller sees that error today.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/proxy_track_cost_callback.py#L824-L826

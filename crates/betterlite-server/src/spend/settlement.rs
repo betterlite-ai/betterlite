@@ -111,14 +111,15 @@ where
         }
         return Ok(false);
     }
-    count_charged(input, ports).await
+    count_charged(input, ports).await?;
+    Ok(true)
 }
 
 // the row is already persisted, so a counter failure only drops the reserved counters and never retries the write
 async fn count_charged<WriteError, Counters>(
     input: &SettlementInput<'_>,
     ports: &SettlementPorts<'_, Counters>,
-) -> Result<bool, SpendSettlementError<WriteError>>
+) -> Result<(), SpendSettlementError<WriteError>>
 where
     WriteError: StdError + Send + Sync + 'static,
     Counters: SpendCounterIncrement,
@@ -139,7 +140,7 @@ where
         project_id: input.project_id,
     };
     let Err(error) = ports.counters.increment(&increment).await else {
-        return Ok(true);
+        return Ok(());
     };
     if let Some(reservation) = input.reservation {
         drop_reserved_counters(
