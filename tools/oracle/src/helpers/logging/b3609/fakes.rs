@@ -40,7 +40,9 @@ impl CollectedChunksHandler for Handler {
         }))
         .map_err(HandlerError::leaf)?;
         let mut kwargs = PassThroughLoggingKwargs::default();
-        let number = "0.25".parse::<serde_json::Number>().expect("decimal cost");
+        let number = "0.25"
+            .parse::<serde_json::Number>()
+            .map_err(HandlerError::leaf)?;
         kwargs
             .entries
             .insert("response_cost".to_owned(), Json::Number(number));

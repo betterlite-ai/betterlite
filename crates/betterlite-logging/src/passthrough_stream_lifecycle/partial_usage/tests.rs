@@ -7,6 +7,7 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
 use crate::logging_success::ports::SuccessClock;
+use crate::passthrough_logging_state::dispatch::PassThroughLoggingKwargs;
 use crate::passthrough_stream_lifecycle::context::PassThroughStreamContext;
 use crate::passthrough_stream_lifecycle::partial_usage::AnthropicPartialUsage;
 use crate::passthrough_stream_lifecycle::support::{
@@ -32,12 +33,24 @@ fn context() -> PassThroughStreamContext {
 #[test]
 fn response_cost_conversion_rejects_values_outside_decimal_range() {
     let number = "1e999".parse::<serde_json::Number>().unwrap();
-    let mut kwargs =
-        crate::passthrough_logging_state::dispatch::PassThroughLoggingKwargs::default();
+    let mut kwargs = PassThroughLoggingKwargs::default();
     kwargs
         .entries
         .insert("response_cost".to_owned(), Json::Number(number));
-    assert!(super::super::response_cost(&kwargs).is_err());
+    super::response_cost(&kwargs).unwrap_err();
+}
+
+#[test]
+fn a_response_cost_in_exponent_form_is_converted() {
+    let number = "2.5e-6".parse::<serde_json::Number>().unwrap();
+    let mut kwargs = PassThroughLoggingKwargs::default();
+    kwargs
+        .entries
+        .insert("response_cost".to_owned(), Json::Number(number));
+    assert_eq!(
+        super::response_cost(&kwargs).unwrap().to_string(),
+        "0.0000025"
+    );
 }
 
 struct Case {

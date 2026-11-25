@@ -534,12 +534,16 @@ impl StreamFailureDispatch for RecordingFailureDispatch {
         self.failures
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(RecordedFailure {
-                class: failure.class().to_owned(),
-                message: failure.message().to_owned(),
-                traceback: failure.traceback().to_owned(),
-            });
+            .push(recorded(failure));
         Box::pin(async {})
+    }
+}
+
+pub(super) fn recorded(failure: &StreamFailure) -> RecordedFailure {
+    RecordedFailure {
+        class: failure.class().to_owned(),
+        message: failure.message().to_owned(),
+        traceback: failure.traceback().to_owned(),
     }
 }
 

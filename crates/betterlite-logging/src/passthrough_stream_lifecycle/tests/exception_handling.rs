@@ -9,6 +9,7 @@ use crate::passthrough_stream_lifecycle::chunk_processor::chunk_processor;
 use crate::passthrough_stream_lifecycle::ports::StreamJobKind;
 use crate::passthrough_stream_lifecycle::support::{
     Harness, RecordedFailure, failing_chunks, failure, json, object, ok_chunks, processor_call,
+    recorded,
 };
 use crate::passthrough_stream_logging::types::EndpointType;
 
@@ -27,7 +28,10 @@ async fn an_upstream_error_schedules_the_failure_and_never_logs_success() {
             .await;
     assert_eq!(collected.len(), 2);
     assert_eq!(collected[0].as_ref().unwrap(), b"alpha");
-    assert_eq!(collected[1].as_ref().unwrap_err(), &failure());
+    assert_eq!(
+        recorded(collected[1].as_ref().unwrap_err()),
+        recorded(&failure())
+    );
     assert_eq!(
         harness.failure_dispatch.failures(),
         vec![RecordedFailure {
@@ -55,7 +59,10 @@ async fn the_failure_is_scheduled_before_the_error_reaches_the_caller() {
         failing_chunks(vec![b"alpha".to_vec()], failure()),
     ));
     assert_eq!(stream.next().await.unwrap().unwrap(), b"alpha");
-    assert_eq!(stream.next().await.unwrap().unwrap_err(), failure());
+    assert_eq!(
+        recorded(&stream.next().await.unwrap().unwrap_err()),
+        recorded(&failure())
+    );
     assert_eq!(harness.failure_dispatch.failures().len(), 1);
 }
 
@@ -74,7 +81,10 @@ async fn an_upstream_error_after_status_400_is_not_scheduled() {
             .collect()
             .await;
     assert_eq!(collected.len(), 2);
-    assert_eq!(collected[1].as_ref().unwrap_err(), &failure());
+    assert_eq!(
+        recorded(collected[1].as_ref().unwrap_err()),
+        recorded(&failure())
+    );
     assert!(harness.failure_dispatch.failures().is_empty());
     assert!(harness.queue.kinds().is_empty());
     assert_eq!(harness.binder.calls(), 0);
@@ -161,7 +171,10 @@ async fn an_error_before_any_chunk_logs_no_success() {
         .collect()
         .await;
     assert_eq!(collected.len(), 1);
-    assert_eq!(collected[0].as_ref().unwrap_err(), &failure());
+    assert_eq!(
+        recorded(collected[0].as_ref().unwrap_err()),
+        recorded(&failure())
+    );
     assert_eq!(harness.queue.kinds(), vec![StreamJobKind::Failure]);
     assert_eq!(harness.binder.calls(), 0);
     assert!(harness.route.calls().is_empty());

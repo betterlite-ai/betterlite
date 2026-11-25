@@ -134,7 +134,8 @@ fn response_cost(kwargs: &PassThroughLoggingKwargs) -> Result<Decimal, rust_deci
     let Some(Json::Number(number)) = kwargs.entries.get(RESPONSE_COST_KEY) else {
         return Ok(Decimal::ZERO);
     };
-    Decimal::from_str(&number.to_string())
+    let text = number.to_string();
+    Decimal::from_str(&text).or_else(|_plain| Decimal::from_scientific(&text))
 }
 
 const fn endpoint_value(endpoint_type: EndpointType) -> &'static str {
