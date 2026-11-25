@@ -8,7 +8,9 @@ use betterlite_config::sections::settings::{DbRow, JsonValue, Section, SettingsS
 use betterlite_secret_managers::secret_lookup::SecretLookup;
 use betterlite_server::proxy_config_state::snapshot::ConfigWithBaseline;
 
-use super::environ::{Resolver, owned_secret_lookup};
+use super::environ::{
+    ResolvedConfig, Resolver, Workers, off_runtime, owned_secret_lookup, restore_oidc_tokens,
+};
 use super::error::OverlayError;
 use super::pass_through::endpoints_beside_db;
 use super::rows::apply_db_rows;
@@ -79,24 +81,31 @@ pub fn begin_reload(
     })
 }
 
-// _check_for_os_environ_vars, off the runtime since a manager read blocks
+// _check_for_os_environ_vars, off the runtime since a manager read blocks and the lookup is already owned
 pub async fn resolve_reload(
     PendingReload {
         config,
         lookup,
         env,
     }: PendingReload,
-) -> Result<ConfigMap, OverlayError> {
-    Resolver {
-        lookup: &lookup,
-        env: &env,
-    }
-    .resolve_config(config)
-    .await
+    workers: &Workers,
+) -> Result<ResolvedConfig, OverlayError> {
+    off_runtime(workers, move || {
+        let mut values = config;
+        let outcome = Resolver {
+            lookup: &lookup,
+            env: &env,
+        }
+        .resolve_entries(values.values_mut(), 0);
+        outcome.map(|()| (values, lookup.oidc_cache))
+    })
+    .await?
 }
 
 // _apply_resolved_runtime_settings and update_config_state
-pub fn finish_reload(state: &mut OverlayState, config: ConfigMap) -> ConfigWithBaseline {
+pub fn finish_reload(state: &mut OverlayState, resolved: ResolvedConfig) -> ConfigWithBaseline {
+    let (config, oidc_cache) = resolved;
+    restore_oidc_tokens(&state.secrets.lookup, oidc_cache);
     for section in STORE_SECTIONS {
         let Some(values) = config.get(section.name()).filter(|value| value.is_object()) else {
             continue;

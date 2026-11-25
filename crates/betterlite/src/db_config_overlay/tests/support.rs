@@ -3,7 +3,8 @@ use std::fs;
 use std::io::{Read as _, Write as _};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -14,6 +15,9 @@ use betterlite_config::sections::settings::JsonValue;
 use betterlite_db::postgres_store::errors::DbError;
 use betterlite_db::stored_cipher::DbCipher;
 use betterlite_db::table_ops::rows::RowError;
+use betterlite_secret_managers::secret_lookup::ports::{
+    OidcHttp, OidcHttpError, OidcRequest, OidcResponse,
+};
 use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
 use betterlite_secrets::secret_codec::{Algorithm, CipherSettings, OsNonces, StoredValue};
 use betterlite_server::bucket_config::object::BucketObjectReader;
@@ -24,19 +28,21 @@ use betterlite_server::proxy_config_state::state::ProxyConfigState;
 use chrono::DateTime;
 use jiff::tz::TimeZoneDatabase;
 use secrecy::{ExposeSecret as _, SecretString};
+use tokio::sync::oneshot;
 
 use crate::cleanup_schedule::changes::CleanupScheduleState;
 use crate::cleanup_schedule::ports::{CacheMaxSize, CleanupScheduler};
 use crate::cleanup_schedule::trigger::ScheduleContext;
 use crate::config_boot::raw_secret_manager::RawSecretManager;
 use crate::config_boot::test_support::secret_lookup;
+use crate::db_config_overlay::environ::{WORKER_LIMIT, Workers};
 use crate::db_config_overlay::error::{EndpointInstallError, OverlayError};
 use crate::db_config_overlay::general::{CleanupInputs, EffectPorts, apply_general_settings_row};
 use crate::db_config_overlay::pass_through::PassThroughInstaller;
 use crate::db_config_overlay::reload::{
     begin_reload, finish_reload, reload_stores, resolve_reload,
 };
-use crate::db_config_overlay::rows::fetch_db_rows;
+use crate::db_config_overlay::rows::{apply_db_rows, fetch_db_rows};
 use crate::db_config_overlay::source::{ConfigSource, read_config};
 use crate::db_config_overlay::state::{
     ConfigRowReader, OverlayDatabase, OverlayState, RuntimeEffect, RuntimeSink,
@@ -296,6 +302,17 @@ pub(super) fn file_source(path: &Path) -> ConfigSource {
     }
 }
 
+// _update_config_from_db: the stored rows are read, then applied to their stores
+pub(super) async fn overlay_db_rows(
+    overlay: &mut OverlayState,
+    database: &OverlayDatabase,
+    env: &mut BTreeMap<String, String>,
+) -> Result<(), OverlayError> {
+    let stored = fetch_db_rows(database).await?;
+    apply_db_rows(overlay, stored, database, env);
+    Ok(())
+}
+
 // get_config's phases against a state the test owns; the port drives the same steps around its own locks
 pub(super) async fn reload_config(
     overlay: &mut OverlayState,
@@ -303,14 +320,15 @@ pub(super) async fn reload_config(
     db: Option<&OverlayDatabase>,
     env: &mut BTreeMap<String, String>,
 ) -> Result<ConfigWithBaseline, OverlayError> {
-    let file_config = read_config(source, env).await?;
+    let workers = Workers::new(WORKER_LIMIT);
+    let file_config = read_config(source, env, &workers).await?;
     reload_stores(overlay, &file_config)?;
     let stored = match db.filter(|_| overlay.config.store_model_in_db) {
         Some(backed) => Some((backed, fetch_db_rows(backed).await?)),
         None => None,
     };
     let pending = begin_reload(overlay, &file_config, stored, source, env)?;
-    let resolved = resolve_reload(pending).await?;
+    let resolved = resolve_reload(pending, &workers).await?;
     Ok(finish_reload(overlay, resolved))
 }
 
@@ -344,6 +362,66 @@ pub(super) fn environment(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
         .iter()
         .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
         .collect()
+}
+
+// a Google OIDC endpoint that answers once and is unreachable after that
+pub(super) struct OnceOidc {
+    pub(super) calls: AtomicUsize,
+}
+
+impl OidcHttp for OnceOidc {
+    fn get(&self, _request: OidcRequest) -> Result<OidcResponse, OidcHttpError> {
+        if self.calls.fetch_add(1, Ordering::Relaxed) > 0 {
+            return Err(OidcHttpError::Request {
+                message: "the token endpoint is down".to_owned(),
+            });
+        }
+        Ok(OidcResponse {
+            status: 200,
+            body: b"google-token".to_vec(),
+        })
+    }
+}
+
+// a Google OIDC endpoint that reports its first lookup and waits for the test to release it
+pub(super) struct BlockingOidc {
+    started: Mutex<Option<oneshot::Sender<()>>>,
+    release: Mutex<Option<Receiver<()>>>,
+}
+
+impl OidcHttp for BlockingOidc {
+    fn get(&self, _request: OidcRequest) -> Result<OidcResponse, OidcHttpError> {
+        let started = self
+            .started
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
+        if let Some(started) = started {
+            drop(started.send(()));
+        }
+        let release = self
+            .release
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
+        if let Some(release) = release {
+            drop(release.recv());
+        }
+        Ok(OidcResponse {
+            status: 200,
+            body: b"google-token".to_vec(),
+        })
+    }
+}
+
+pub(super) fn blocking_oidc() -> (Arc<BlockingOidc>, oneshot::Receiver<()>, SyncSender<()>) {
+    let (started, started_rx) = oneshot::channel();
+    let (release, released) = mpsc::sync_channel(1);
+    let oidc = Arc::new(BlockingOidc {
+        started: Mutex::new(Some(started)),
+        release: Mutex::new(Some(released)),
+    });
+    (oidc, started_rx, release)
 }
 
 const VAULT_BODY: &str = "{\"data\":{\"data\":{\"key\":\"sk-vault-secret\"}}}";

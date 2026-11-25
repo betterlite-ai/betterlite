@@ -9,6 +9,7 @@ use betterlite_server::config_overlay_port::{ConfigOverlayPort, ConfigOverlayPor
 use betterlite_server::proxy_config_state::snapshot::ConfigWithBaseline;
 use tokio::sync::Mutex;
 
+use super::environ::Workers;
 use super::error::OverlayError;
 use super::pass_through::{
     PassThroughInstaller, install_pass_through_endpoints, publish_pass_through,
@@ -19,21 +20,24 @@ use super::rows::fetch_db_rows;
 use super::source::{ConfigSource, read_config};
 use super::state::{OverlayDatabase, OverlayState};
 
-// One field per argument of reload_config and serve_pass_through_endpoints
+// The two functions' arguments, the off-runtime thread owner, and the lock that keeps a reload and a serve from interleaving.
 pub struct OverlayPortAdapter {
     pub state: Arc<Mutex<OverlayState>>,
     pub source: ConfigSource,
     pub database: Option<OverlayDatabase>,
     pub environment: Arc<Mutex<BTreeMap<String, String>>>,
     pub installer: Arc<dyn PassThroughInstaller>,
+    pub workers: Arc<Workers>,
+    pub mutations: Mutex<()>,
 }
 
-// The methods drive the phases of their functions themselves, so each guard covers a synchronous step and no awaited I/O.
+// The mutation lock makes a reload and a serve run one after the other, as LiteLLM's event loop does; no other guard spans an await.
 #[async_trait]
 impl ConfigOverlayPort for OverlayPortAdapter {
     async fn reload_config(&self) -> Result<ConfigWithBaseline, ConfigOverlayPortError> {
-        let environment = self.environment.lock().await.clone();
-        let file_config = read_config(&self.source, &environment)
+        let _mutations = self.mutations.lock().await;
+        let mut environment = self.environment.lock().await.clone();
+        let file_config = read_config(&self.source, &environment, &self.workers)
             .await
             .map_err(|error| port_error(&error, ConfigOverlayPortError::Reload))?;
         let store_model_in_db = {
@@ -52,27 +56,24 @@ impl ConfigOverlayPort for OverlayPortAdapter {
         };
         let pending = {
             let mut state = self.state.lock().await;
-            let mut environment_guard = self.environment.lock().await;
-            begin_reload(
-                &mut state,
-                &file_config,
-                stored,
-                &self.source,
-                &mut environment_guard,
-            )
-            .map_err(|error| port_error(&error, ConfigOverlayPortError::Reload))?
+            let source = &self.source;
+            let env = &mut environment;
+            begin_reload(&mut state, &file_config, stored, source, env)
+                .map_err(|error| port_error(&error, ConfigOverlayPortError::Reload))?
         };
-        let config = resolve_reload(pending)
+        self.environment.lock().await.extend(environment);
+        let resolved = resolve_reload(pending, &self.workers)
             .await
             .map_err(|error| port_error(&error, ConfigOverlayPortError::Reload))?;
         let mut state = self.state.lock().await;
-        Ok(finish_reload(&mut state, config))
+        Ok(finish_reload(&mut state, resolved))
     }
 
     async fn serve_pass_through_endpoints(
         &self,
         db_endpoints: &[JsonValue],
     ) -> Result<(), ConfigOverlayPortError> {
+        let _mutations = self.mutations.lock().await;
         let mut state = self.state.lock().await;
         publish_pass_through(&mut state, db_endpoints)
             .map_err(|error| port_error(&error, ConfigOverlayPortError::PassThrough))?;
@@ -97,26 +98,7 @@ fn port_error(error: &OverlayError, step: ConfigOverlayPortError) -> ConfigOverl
                 source.without_snippet()
             )
         }
-        other @ (OverlayError::Bucket(_)
-        | OverlayError::NoBucketReader
-        | OverlayError::NothingLoaded
-        | OverlayError::ConfigFileMissing { .. }
-        | OverlayError::ReadConfigFile { .. }
-        | OverlayError::ConfigEmpty
-        | OverlayError::ConfigNotMapping { .. }
-        | OverlayError::Includes(_)
-        | OverlayError::Database { .. }
-        | OverlayError::ConfigOwned(_)
-        | OverlayError::SecretSettings { .. }
-        | OverlayError::SecretProjection { .. }
-        | OverlayError::SecretManager(_)
-        | OverlayError::SecretLookup(_)
-        | OverlayError::WorkerStart { .. }
-        | OverlayError::WorkerUnavailable
-        | OverlayError::CleanupSchedule(_)
-        | OverlayError::Plugins(_)
-        | OverlayError::PassThroughEntry { .. }
-        | OverlayError::PassThroughInstall { .. }) => other.to_string(),
+        other => other.to_string(),
     };
     tracing::error!(error = %message, "the config overlay failed");
     if let OverlayError::Database { source } = error

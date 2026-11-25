@@ -1,46 +1,66 @@
 use std::collections::BTreeMap;
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use betterlite_db::postgres_store::errors::DbError;
 use betterlite_db::table_ops::rows::RowError;
+use betterlite_secret_managers::secret_lookup::ports::OidcHttp;
 use betterlite_server::config_overlay_port::{ConfigOverlayPort, ConfigOverlayPortError};
 use tempfile::TempDir;
 use tokio::sync::Mutex as AsyncMutex;
+use tokio::task::{JoinSet, yield_now};
 
 use super::support::{
-    Journal, RecordingInstaller, RecordingRuntime, database, failing_database, file_source, json,
-    reload_config, state, write_config,
+    Journal, OnceOidc, RecordingInstaller, RecordingRuntime, blocking_oidc, database,
+    failing_database, file_source, json, reload_config, state, write_config,
 };
 use crate::config_boot::test_support::capture_logs;
+use crate::db_config_overlay::environ::{WORKER_LIMIT, Workers};
 use crate::db_config_overlay::port::OverlayPortAdapter;
-use crate::db_config_overlay::state::OverlayDatabase;
+use crate::db_config_overlay::state::{OverlayDatabase, OverlayState, PASS_THROUGH_ENDPOINTS};
 
 const CONFIG: &str =
     "model_list:\n  - model_name: gpt\ngeneral_settings:\n  master_key: os.environ/MASTER\n";
+const OIDC_CONFIG: &str = "general_settings:\n  master_key: os.environ/oidc/google/audience\n";
 
-// the port and the recording installer behind it, so a test reads what was installed
+// the port, the recording installer behind it and the state it mutates, so a test reads the committed stores
 struct Port {
     port: Arc<dyn ConfigOverlayPort>,
     installer: Arc<RecordingInstaller>,
+    state: Arc<AsyncMutex<OverlayState>>,
 }
 
 fn port(path: &Path, database: Option<OverlayDatabase>, recording: RecordingInstaller) -> Port {
+    port_with_oidc(path, database, recording, None)
+}
+
+fn port_with_oidc(
+    path: &Path,
+    database: Option<OverlayDatabase>,
+    recording: RecordingInstaller,
+    oidc: Option<Arc<dyn OidcHttp>>,
+) -> Port {
     let installer = Arc::new(recording);
     let environment = BTreeMap::from([("MASTER".to_owned(), "sk-env".to_owned())]);
+    let mut overlay = state(true, &Arc::new(RecordingRuntime::default()));
+    if let Some(endpoint) = oidc {
+        overlay.secrets.lookup.oidc_http = endpoint;
+    }
+    let state = Arc::new(AsyncMutex::new(overlay));
     let adapter = OverlayPortAdapter {
-        state: Arc::new(AsyncMutex::new(state(
-            true,
-            &Arc::new(RecordingRuntime::default()),
-        ))),
+        state: Arc::clone(&state),
         source: file_source(path),
         database,
         environment: Arc::new(AsyncMutex::new(environment)),
         installer: Arc::<RecordingInstaller>::clone(&installer),
+        workers: Arc::new(Workers::new(WORKER_LIMIT)),
+        mutations: AsyncMutex::new(()),
     };
     Port {
         port: Arc::new(adapter),
         installer,
+        state,
     }
 }
 
@@ -187,4 +207,59 @@ async fn port_database_unavailable_not_for_create_null() {
     .await
     .unwrap_err();
     assert_eq!(error, ConfigOverlayPortError::Reload);
+}
+
+// The token an earlier reload fetched is in the lookup the next reload copies, so its resolution needs no endpoint.
+#[tokio::test]
+async fn port_reuses_the_oidc_token_an_earlier_reload_fetched() {
+    let directory = TempDir::new().unwrap();
+    let path = write_config(directory.path(), OIDC_CONFIG);
+    let oidc = Arc::new(OnceOidc {
+        calls: AtomicUsize::new(0),
+    });
+    let served = port_with_oidc(
+        &path,
+        None,
+        RecordingInstaller::default(),
+        Some(Arc::<OnceOidc>::clone(&oidc)),
+    );
+    let first = served.port.reload_config().await.unwrap();
+    let second = served.port.reload_config().await.unwrap();
+    let master_key = json!({"master_key": "google-token"});
+    assert_eq!(first.values["general_settings"], master_key);
+    assert_eq!(second.values["general_settings"], master_key);
+    assert_eq!(oidc.calls.load(Ordering::Relaxed), 1);
+}
+
+// A serve that arrives while a reload resolves must survive that reload's older pending config.
+#[tokio::test]
+async fn port_keeps_endpoints_served_while_a_reload_resolves() {
+    let directory = TempDir::new().unwrap();
+    let path = write_config(directory.path(), OIDC_CONFIG);
+    let (oidc, started, release) = blocking_oidc();
+    let served = port_with_oidc(&path, None, RecordingInstaller::default(), Some(oidc));
+    let mut tasks = JoinSet::new();
+    tasks.spawn({
+        let port = Arc::clone(&served.port);
+        async move { port.reload_config().await.map(|_config| ()) }
+    });
+    started.await.unwrap();
+    tasks.spawn({
+        let port = Arc::clone(&served.port);
+        async move {
+            port.serve_pass_through_endpoints(&[json!({"path": "/served"})])
+                .await
+        }
+    });
+    yield_now().await;
+    release.send(()).unwrap();
+    for _ in 0..2 {
+        tasks.join_next().await.unwrap().unwrap().unwrap();
+    }
+    let expected = json!([{"path": "/served"}]);
+    let state = served.state.lock().await;
+    assert_eq!(
+        state.config.general_settings.get(PASS_THROUGH_ENDPOINTS),
+        Some(&expected)
+    );
 }

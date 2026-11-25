@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
-use std::sync::Arc;
-use std::thread;
+use std::mem::take;
+use std::sync::{Arc, Mutex, PoisonError};
+use std::thread::{self, JoinHandle};
 
 use betterlite_config::sections::includes::ConfigMap;
 use betterlite_config::sections::settings::JsonValue;
@@ -10,24 +11,63 @@ use betterlite_secret_managers::secret_lookup::{manager::ManagerState, ports::Oi
 use betterlite_secret_managers::secret_read_dispatch::SecretManagerClient as Client;
 use betterlite_secret_managers::secret_read_dispatch::settings::SecretManagerSettings;
 use secrecy::ExposeSecret as _;
-use tokio::sync::oneshot;
+use tokio::sync::{Semaphore, oneshot};
 
 use super::error::OverlayError;
 
 const ENVIRONMENT_PREFIX: &str = "os.environ/";
+pub const WORKER_LIMIT: usize = 4;
+
+// What one resolution returns: the config, and the OIDC tokens its lookups fetched, which outlive the worker.
+pub type ResolvedConfig = (ConfigMap, OidcTokenCache);
+
+// The off-runtime threads belong to the adapter: a canceled reload leaves its thread here, the semaphore bounds the live ones, and the drop joins them all.
+pub struct Workers {
+    slots: Arc<Semaphore>,
+    live: Mutex<Vec<JoinHandle<()>>>,
+}
+
+impl Workers {
+    #[must_use]
+    pub fn new(limit: usize) -> Self {
+        Self {
+            slots: Arc::new(Semaphore::new(limit)),
+            live: Mutex::new(Vec::new()),
+        }
+    }
+}
+
+impl Drop for Workers {
+    fn drop(&mut self) {
+        let live = take(self.live.get_mut().unwrap_or_else(PoisonError::into_inner));
+        for thread in live {
+            drop(thread.join());
+        }
+    }
+}
 
 // A std thread carries no runtime handle, so a manager transport takes its blocking path; a panic drops the sender, which reads as unavailable.
-pub(super) async fn off_runtime<Work, Output>(work: Work) -> Result<Output, OverlayError>
+pub(super) async fn off_runtime<Work, Output>(
+    workers: &Workers,
+    work: Work,
+) -> Result<Output, OverlayError>
 where
     Work: FnOnce() -> Output + Send + 'static,
     Output: Send + 'static,
 {
+    let slot = Arc::clone(&workers.slots)
+        .acquire_owned()
+        .await
+        .map_err(|_closed| OverlayError::WorkerUnavailable)?;
     let (sender, answer) = oneshot::channel();
-    let worker_thread = thread::Builder::new()
+    let thread = thread::Builder::new()
         .name("config-overlay-worker".to_owned())
-        .spawn(move || drop(sender.send(work())))
+        .spawn(move || drop((slot, sender.send(work()))))
         .map_err(|source| OverlayError::WorkerStart { source })?;
-    drop(worker_thread);
+    let mut live = workers.live.lock().unwrap_or_else(PoisonError::into_inner);
+    live.retain(|thread| !thread.is_finished());
+    live.push(thread);
+    drop(live);
     answer
         .await
         .map_err(|_closed| OverlayError::WorkerUnavailable)
@@ -39,23 +79,6 @@ pub struct Resolver<'resolve> {
 }
 
 impl Resolver<'_> {
-    // The whole-file resolution off the runtime: the manager transports refuse a blocking call made on the runtime.
-    pub async fn resolve_config(&self, config: ConfigMap) -> Result<ConfigMap, OverlayError> {
-        let lookup = owned_secret_lookup(self.lookup);
-        let env = self.env.clone();
-        off_runtime(move || {
-            let resolver = Resolver {
-                lookup: &lookup,
-                env: &env,
-            };
-            let mut values = config;
-            resolver
-                .resolve_entries(values.values_mut(), 0)
-                .map(|()| values)
-        })
-        .await?
-    }
-
     // _check_for_os_environ_vars: a mapping past the depth limit keeps its references, and a missing value becomes null
     pub fn resolve_entries<'value, Values>(
         &self,
@@ -114,8 +137,23 @@ pub(super) fn owned_secret_lookup(lookup: &SecretLookup) -> SecretLookup {
         oidc_http: Arc::clone(&lookup.oidc_http),
         azure_tokens: Arc::clone(&lookup.azure_tokens),
         clock: Arc::clone(&lookup.clock),
-        oidc_cache: OidcTokenCache::default(),
+        oidc_cache: Mutex::new(
+            lookup
+                .oidc_cache
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone(),
+        ),
     }
+}
+
+// The tokens a resolution fetched outlive its worker, so they go back into the lookup the state keeps.
+pub(super) fn restore_oidc_tokens(lookup: &SecretLookup, fetched: OidcTokenCache) {
+    let mut cache = lookup
+        .oidc_cache
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    cache.extend(fetched.into_inner().unwrap_or_else(PoisonError::into_inner));
 }
 
 fn owned_manager(manager: &ManagerState) -> ManagerState {

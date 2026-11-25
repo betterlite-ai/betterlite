@@ -5,10 +5,11 @@ use betterlite_config::sections::settings::settings_store::config_ownership_mess
 use betterlite_config::sections::settings::{DbRow, JsonValue, Section};
 use betterlite_db::postgres_store::errors::DbError;
 
-use super::support::{RecordingRuntime, database, failing_database, json, sealed, state, values};
+use super::support::{
+    RecordingRuntime, database, failing_database, json, overlay_db_rows, sealed, state, values,
+};
 use crate::config_boot::test_support::capture_logs;
 use crate::db_config_overlay::error::OverlayError;
-use crate::db_config_overlay::rows::overlay_db_rows;
 use crate::db_config_overlay::state::RuntimeEffect;
 
 #[tokio::test]

@@ -11,7 +11,7 @@ use betterlite_server::bucket_config::object::BucketObjectReader;
 use betterlite_server::bucket_config::source::BucketConfigSource;
 use tokio::fs;
 
-use super::environ::off_runtime;
+use super::environ::{Workers, off_runtime};
 use super::error::OverlayError;
 
 // The bucket reader matches LITELLM_CONFIG_BUCKET_TYPE and is built where the cloud clients are
@@ -24,6 +24,7 @@ pub struct ConfigSource {
 pub async fn read_config(
     source: &ConfigSource,
     env: &BTreeMap<String, String>,
+    workers: &Workers,
 ) -> Result<ConfigMap, OverlayError> {
     if let Some(bucket) = BucketConfigSource::from_environment(env)? {
         let Some(reader) = &source.bucket_reader else {
@@ -55,7 +56,7 @@ pub async fn read_config(
     let config = parse_config_file(path, &text)?;
     // resolve_includes reads every included file synchronously, so it runs on a thread with no runtime
     let root = path.clone();
-    Ok(off_runtime(move || resolve_includes(config, &root)).await??)
+    Ok(off_runtime(workers, move || resolve_includes(config, &root)).await??)
 }
 
 // The YAML step on its own: the fuzz target and the corpus replay parse exactly what a reload parses.

@@ -83,17 +83,6 @@ pub fn apply_db_rows(
     warn_shadowed_keys(state);
 }
 
-// _update_config_from_db
-pub async fn overlay_db_rows(
-    state: &mut OverlayState,
-    database: &OverlayDatabase,
-    env: &mut BTreeMap<String, String>,
-) -> Result<(), OverlayError> {
-    let stored = fetch_db_rows(database).await?;
-    apply_db_rows(state, stored, database, env);
-    Ok(())
-}
-
 // _prepared_db_settings_values: environment values are decrypted and exported under both names, the rest scrubbed
 fn prepare_row(
     section: Section,
