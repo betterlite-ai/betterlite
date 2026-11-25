@@ -42,13 +42,14 @@ impl ConfigOverlayPort for OverlayPortAdapter {
                 .map_err(|error| port_error(&error, ConfigOverlayPortError::Reload))?;
             state.config.store_model_in_db
         };
-        let mut stored = None;
-        if let Some(backed) = self.database.as_ref().filter(|_| store_model_in_db) {
+        let stored = if let Some(backed) = self.database.as_ref().filter(|_| store_model_in_db) {
             let rows = fetch_db_rows(backed)
                 .await
                 .map_err(|error| port_error(&error, ConfigOverlayPortError::Reload))?;
-            stored = Some((backed, rows));
-        }
+            Some((backed, rows))
+        } else {
+            None
+        };
         let pending = {
             let mut state = self.state.lock().await;
             let mut environment_guard = self.environment.lock().await;
@@ -72,11 +73,10 @@ impl ConfigOverlayPort for OverlayPortAdapter {
         &self,
         db_endpoints: &[JsonValue],
     ) -> Result<(), ConfigOverlayPortError> {
-        {
-            let mut state = self.state.lock().await;
-            publish_pass_through(&mut state, db_endpoints)
-                .map_err(|error| port_error(&error, ConfigOverlayPortError::PassThrough))?;
-        }
+        let mut state = self.state.lock().await;
+        publish_pass_through(&mut state, db_endpoints)
+            .map_err(|error| port_error(&error, ConfigOverlayPortError::PassThrough))?;
+        drop(state);
         validate_db_endpoints(db_endpoints)
             .map_err(|error| port_error(&error, ConfigOverlayPortError::PassThrough))?;
         install_pass_through_endpoints(db_endpoints, self.installer.as_ref())
@@ -97,7 +97,26 @@ fn port_error(error: &OverlayError, step: ConfigOverlayPortError) -> ConfigOverl
                 source.without_snippet()
             )
         }
-        other => other.to_string(),
+        other @ OverlayError::Bucket(_)
+        | other @ OverlayError::NoBucketReader
+        | other @ OverlayError::NothingLoaded
+        | other @ OverlayError::ConfigFileMissing { .. }
+        | other @ OverlayError::ReadConfigFile { .. }
+        | other @ OverlayError::ConfigEmpty
+        | other @ OverlayError::ConfigNotMapping { .. }
+        | other @ OverlayError::Includes(_)
+        | other @ OverlayError::Database { .. }
+        | other @ OverlayError::ConfigOwned(_)
+        | other @ OverlayError::SecretSettings { .. }
+        | other @ OverlayError::SecretProjection { .. }
+        | other @ OverlayError::SecretManager(_)
+        | other @ OverlayError::SecretLookup(_)
+        | other @ OverlayError::WorkerStart { .. }
+        | other @ OverlayError::WorkerUnavailable
+        | other @ OverlayError::CleanupSchedule(_)
+        | other @ OverlayError::Plugins(_)
+        | other @ OverlayError::PassThroughEntry { .. }
+        | other @ OverlayError::PassThroughInstall { .. } => other.to_string(),
     };
     tracing::error!(error = %message, "the config overlay failed");
     if let OverlayError::Database { source } = error

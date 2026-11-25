@@ -44,19 +44,17 @@ pub async fn read_config(
     };
     let text = fs::read_to_string(path).await.map_err(|error| {
         if error.kind() == ErrorKind::NotFound {
-            OverlayError::ConfigFileMissing {
-                path: path.to_path_buf(),
-            }
+            OverlayError::ConfigFileMissing { path: path.clone() }
         } else {
             OverlayError::ReadConfigFile {
-                path: path.to_path_buf(),
+                path: path.clone(),
                 source: error,
             }
         }
     })?;
     let config = parse_config_file(path, &text)?;
     // resolve_includes reads every included file synchronously, so it runs on a thread with no runtime
-    let root = path.to_path_buf();
+    let root = path.clone();
     Ok(off_runtime(move || resolve_includes(config, &root)).await??)
 }
 

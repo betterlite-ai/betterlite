@@ -74,7 +74,9 @@ pub fn apply_db_rows(
         let prepared = prepare_row(section, &value, database, env);
         if section == Section::LitellmSettings {
             apply_litellm_settings(state, prepared);
-        } else if let Some(store) = store_mut(&mut state.config, section) {
+            continue;
+        }
+        if let Some(store) = store_mut(&mut state.config, section) {
             store.apply_db_row(DbRow::from(section), prepared);
         }
     }

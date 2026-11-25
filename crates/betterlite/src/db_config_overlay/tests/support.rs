@@ -367,34 +367,7 @@ impl MockVault {
             let stop_signal = Arc::clone(&stopping);
             thread::Builder::new()
                 .name("b8379-mock-vault".to_owned())
-                .spawn(move || {
-                    while !stop_signal.load(Ordering::Relaxed) {
-                        let Ok((mut stream, _peer)) = listener.accept() else {
-                            break;
-                        };
-                        stream
-                            .set_read_timeout(Some(Duration::from_secs(5)))
-                            .unwrap();
-                        let mut head = Vec::new();
-                        let mut chunk = [0_u8; 512];
-                        while !head.windows(4).any(|window| window == b"\r\n\r\n") {
-                            let read = stream.read(&mut chunk).unwrap_or_default();
-                            if read == 0 {
-                                break;
-                            }
-                            head.extend_from_slice(&chunk[..read]);
-                        }
-                        request_log
-                            .lock()
-                            .unwrap_or_else(PoisonError::into_inner)
-                            .push(String::from_utf8(head).unwrap());
-                        let response = format!(
-                            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{VAULT_BODY}",
-                            VAULT_BODY.len()
-                        );
-                        drop(stream.write_all(response.as_bytes()));
-                    }
-                })
+                .spawn(move || serve_vault(&listener, &request_log, &stop_signal))
                 .unwrap()
         };
         Self {
@@ -411,6 +384,47 @@ impl MockVault {
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
     }
+}
+
+// the accept loop runs until Drop sets the flag and connects once more to wake it
+fn serve_vault(listener: &TcpListener, requests: &Mutex<Vec<String>>, stopping: &AtomicBool) {
+    while !stopping.load(Ordering::Relaxed) {
+        let Ok((mut stream, _peer)) = listener.accept() else {
+            break;
+        };
+        answer_vault(&mut stream, requests);
+    }
+}
+
+// one Vault read: record the request head and answer with the fixed secret
+fn answer_vault(stream: &mut TcpStream, requests: &Mutex<Vec<String>>) {
+    stream
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
+    let head = read_vault_request(stream);
+    requests
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .push(String::from_utf8(head).unwrap());
+    let response = format!(
+        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{VAULT_BODY}",
+        VAULT_BODY.len()
+    );
+    drop(stream.write_all(response.as_bytes()));
+}
+
+// the request head up to the blank line that ends it
+fn read_vault_request(stream: &mut TcpStream) -> Vec<u8> {
+    let mut head = Vec::new();
+    let mut chunk = [0_u8; 512];
+    while !head.windows(4).any(|window| window == b"\r\n\r\n") {
+        let read = stream.read(&mut chunk).unwrap_or_default();
+        if read == 0 {
+            break;
+        }
+        head.extend_from_slice(&chunk[..read]);
+    }
+    head
 }
 
 impl Drop for MockVault {
