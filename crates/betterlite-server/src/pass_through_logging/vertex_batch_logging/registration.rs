@@ -22,10 +22,10 @@ pub(super) fn request(
     is_batch_create: bool,
 ) -> BatchRegistration {
     let text = |name: &str| request_metadata.get(name).and_then(optional_str);
-    let user_id = match request_metadata.get("user_api_key_user_id") {
-        Some(value) => optional_str(value).map(str::to_owned),
-        None => Some("default-user".to_owned()),
-    };
+    let user_id = request_metadata.get("user_api_key_user_id").map_or_else(
+        || Some("default-user".to_owned()),
+        |value| optional_str(value).map(str::to_owned),
+    );
     BatchRegistration {
         unified_object_id: unified_object_id.to_owned(),
         model_object_id: batch_object.id.clone(),

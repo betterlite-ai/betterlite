@@ -65,8 +65,10 @@ impl Logs {
 
 impl io::Write for Logs {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let mut bytes = self.0.lock().unwrap_or_else(PoisonError::into_inner);
-        bytes.extend_from_slice(buf);
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend_from_slice(buf);
         Ok(buf.len())
     }
 
@@ -110,8 +112,10 @@ pub(crate) struct Router {
 
 impl RouterModelIds for Router {
     fn model_ids(&self, model_name: &str) -> Vec<String> {
-        let mut asked = self.asked.lock().unwrap_or_else(PoisonError::into_inner);
-        asked.push(model_name.to_owned());
+        self.asked
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(model_name.to_owned());
         self.ids.clone()
     }
 }

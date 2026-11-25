@@ -40,34 +40,35 @@ impl VertexBatchState {
     }
 }
 
+fn pending_parts(pending: Pending) -> Parts {
+    let state = VertexBatchState::JobStatePending;
+    let content = format!(
+        "Batch prediction job {} created and is pending. Status will be updated when the batch completes.",
+        pending.batch_id
+    );
+    let mut fields = IndexMap::new();
+    fields.insert(
+        "batch_job_id".to_owned(),
+        Json::Text(pending.batch_id.clone()),
+    );
+    fields.insert(
+        "batch_job_state".to_owned(),
+        Json::Text(state.word().to_owned()),
+    );
+    let unified = Json::Text(pending.unified_object_id.clone());
+    fields.insert("unified_object_id".to_owned(), unified);
+    Parts {
+        model: pending.model,
+        content,
+        state,
+        fields,
+        ids: Some((pending.batch_id, pending.unified_object_id)),
+    }
+}
+
 fn parts(outcome: Outcome) -> Parts {
     match outcome {
-        Outcome::Pending(pending) => {
-            let state = VertexBatchState::JobStatePending;
-            let content = format!(
-                "Batch prediction job {} created and is pending. Status will be updated when the batch completes.",
-                pending.batch_id
-            );
-            let mut fields = IndexMap::new();
-            fields.insert(
-                "batch_job_id".to_owned(),
-                Json::Text(pending.batch_id.clone()),
-            );
-            fields.insert(
-                "batch_job_state".to_owned(),
-                Json::Text(state.word().to_owned()),
-            );
-            let unified = Json::Text(pending.unified_object_id.clone());
-            fields.insert("unified_object_id".to_owned(), unified);
-            let ids = Some((pending.batch_id, pending.unified_object_id));
-            Parts {
-                model: pending.model,
-                content,
-                state,
-                fields,
-                ids,
-            }
-        }
+        Outcome::Pending(pending) => pending_parts(pending),
         Outcome::Rejected(status_code) => failed(
             format!("Batch prediction job creation failed. Status: {status_code}"),
             "status_code",

@@ -126,16 +126,12 @@ impl VertexBatchLogging {
             tracing::warn!("Router not available, using constructed model name: {extracted}");
             return extracted;
         };
-        match router.model_ids(&extracted).into_iter().next() {
-            Some(model_id) => {
-                tracing::info!("Found model ID in router: {model_id}");
-                model_id
-            }
-            None => {
-                tracing::warn!("Model not found in router, using constructed name: {extracted}");
-                extracted
-            }
+        if let Some(model_id) = router.model_ids(&extracted).into_iter().next() {
+            tracing::info!("Found model ID in router: {model_id}");
+            return model_id;
         }
+        tracing::warn!("Model not found in router, using constructed name: {extracted}");
+        extracted
     }
 }
 
@@ -144,8 +140,8 @@ impl VertexBatchLogging {
 pub fn extract_model_name_from_vertex_path(vertex_model_path: &str) -> String {
     let named_path =
         vertex_model_path.contains("publishers/") || vertex_model_path.contains("projects/");
-    match vertex_model_path.rsplit_once("models/") {
-        Some((_, model)) if named_path => model.to_owned(),
-        Some(_) | None => vertex_model_path.to_owned(),
+    if named_path && let Some((_, model)) = vertex_model_path.rsplit_once("models/") {
+        return model.to_owned();
     }
+    vertex_model_path.to_owned()
 }
