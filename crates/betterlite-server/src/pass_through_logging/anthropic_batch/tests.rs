@@ -499,7 +499,7 @@ async fn batch_collection_route_registers_managed_object() {
 }
 
 #[tokio::test]
-async fn batch_registration_defaults_user_id_and_reads_null() {
+async fn batch_collection_route_registrant_defaults_user_id_and_preserves_null() {
     let (port, mut received) = registry_port(Ok(()));
     let collection = Creation::new(200, batch_body(BATCH_ID), COLLECTION_ROUTE);
     drop(run(&handler(None, port), &collection));
