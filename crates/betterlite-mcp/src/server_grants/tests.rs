@@ -148,6 +148,21 @@ impl RegistryGrantReads for FakeReads {
     }
 }
 
+// the four scripted reads differ only in their name, input type and stored answer, so one arm writes them
+macro_rules! scripted_reads {
+    ($($name:ident($input:ident: $input_type:ty) -> $answer:ty, $script:ident, $label:literal;)+) => {
+        $(
+            fn $name(
+                &self,
+                $input: $input_type,
+                requires_fresh_policy: bool,
+            ) -> impl Future<Output = Result<$answer, GrantReadError>> + Send {
+                self.grant_read($label, $input, requires_fresh_policy, &self.$script)
+            }
+        )+
+    };
+}
+
 impl GrantReads for FakeReads {
     type Permissions = Self;
     type Registry = Self;
@@ -160,51 +175,11 @@ impl GrantReads for FakeReads {
         self
     }
 
-    fn team(
-        &self,
-        team_id: &str,
-        requires_fresh_policy: bool,
-    ) -> impl Future<Output = Result<Option<TeamRecord>, GrantReadError>> + Send {
-        self.grant_read("team", team_id, requires_fresh_policy, &self.team)
-    }
-
-    fn user_team_ids(
-        &self,
-        user_id: &str,
-        requires_fresh_policy: bool,
-    ) -> impl Future<Output = Result<Option<Vec<String>>, GrantReadError>> + Send {
-        self.grant_read(
-            "user_team_ids",
-            user_id,
-            requires_fresh_policy,
-            &self.user_teams,
-        )
-    }
-
-    fn access_group_server_ids(
-        &self,
-        access_group_ids: &[String],
-        requires_fresh_policy: bool,
-    ) -> impl Future<Output = Result<Vec<String>, GrantReadError>> + Send {
-        self.grant_read(
-            "access_group_server_ids",
-            access_group_ids,
-            requires_fresh_policy,
-            &self.unified,
-        )
-    }
-
-    fn servers_from_access_groups(
-        &self,
-        access_groups: &[String],
-        requires_fresh_policy: bool,
-    ) -> impl Future<Output = Result<Vec<String>, GrantReadError>> + Send {
-        self.grant_read(
-            "servers_from_access_groups",
-            access_groups,
-            requires_fresh_policy,
-            &self.legacy,
-        )
+    scripted_reads! {
+        team(team_id: &str) -> Option<TeamRecord>, team, "team";
+        user_team_ids(user_id: &str) -> Option<Vec<String>>, user_teams, "user_team_ids";
+        access_group_server_ids(access_group_ids: &[String]) -> Vec<String>, unified, "access_group_server_ids";
+        servers_from_access_groups(access_groups: &[String]) -> Vec<String>, legacy, "servers_from_access_groups";
     }
 }
 
