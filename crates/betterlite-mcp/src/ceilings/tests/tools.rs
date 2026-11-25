@@ -156,6 +156,25 @@ async fn tool_end_user_ceiling_needs_an_end_user_and_a_database() {
 }
 
 #[tokio::test]
+async fn tool_end_user_ceiling_skips_the_read_offline() {
+    let ceilings = over(FakeReads {
+        store: StoreState {
+            database: false,
+            fresh: false,
+        },
+        end_user: Scripted::Value(Some(with_tools(row("perm-eu"), "srv-a", &["tool-b"]))),
+        ..FakeReads::standard()
+    });
+    assert_eq!(
+        ceilings
+            .apply_end_user_tool_ceiling(Some(names(&["tool-a"])), "srv-a", Some(&end_user_auth()))
+            .await
+            .unwrap(),
+        Some(names(&["tool-a"]))
+    );
+}
+
+#[tokio::test]
 async fn tool_end_user_ceiling_leaves_the_tools_without_a_permission() {
     let ceilings = over(FakeReads::standard());
     assert_eq!(

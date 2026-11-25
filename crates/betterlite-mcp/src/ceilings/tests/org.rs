@@ -189,6 +189,34 @@ async fn org_ceiling_caps_a_lower_restriction_and_a_keyless_source() {
 }
 
 #[tokio::test]
+async fn org_ceiling_caps_by_membership_rather_than_replacing() {
+    let ceilings = over(FakeReads {
+        org: Scripted::Value(Some(with_servers(row("perm-org"), &["srv-a"]))),
+        ..FakeReads::standard()
+    });
+    let lowered = ceilings
+        .apply_primary_org_ceiling(
+            names(&["srv-b"]),
+            Some(&org_auth()),
+            true,
+            CeilingSource::Key,
+        )
+        .await
+        .unwrap();
+    assert_eq!(lowered, capped(&[], true));
+    let keyless = ceilings
+        .apply_primary_org_ceiling(
+            names(&["srv-b"]),
+            Some(&org_auth()),
+            false,
+            CeilingSource::Keyless,
+        )
+        .await
+        .unwrap();
+    assert_eq!(keyless, capped(&[], true));
+}
+
+#[tokio::test]
 async fn org_ceiling_replaces_a_key_list_without_a_lower_restriction() {
     let ceilings = over(FakeReads {
         org: Scripted::Value(Some(with_servers(row("perm-org"), &["srv-a"]))),
