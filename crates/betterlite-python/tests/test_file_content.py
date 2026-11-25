@@ -2,7 +2,7 @@ import asyncio
 import importlib
 import inspect
 from collections.abc import AsyncIterator, Awaitable, Coroutine, Iterator, Mapping
-from typing import Final, Literal, Protocol, TypeAlias, overload
+from typing import Final, Literal, Protocol, TypeAlias, cast, overload
 
 import openai
 import pytest
@@ -164,8 +164,8 @@ class FileUtilsModule(Protocol):
     FilesAPIUtils: ReferenceFileUtils
 
 
-REFERENCE: LiteLLMFiles = importlib.import_module("litellm")
-UTILS_MODULE: FileUtilsModule = importlib.import_module("litellm.files.utils")
+REFERENCE = cast("LiteLLMFiles", importlib.import_module("litellm"))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L806-L860
+UTILS_MODULE = cast("FileUtilsModule", importlib.import_module("litellm.files.utils"))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/utils.py#L23-L45
 
 
 def made_plain(outcome: Outcome) -> HttpxBinaryResponseContent:
@@ -497,6 +497,16 @@ def test_plain_utils_match_litellm() -> None:
     assert reference.is_batch_jsonl_file(BATCH_FILE, EXTRACTED)
     assert not FilesAPIUtils.is_batch_jsonl_file(TUNED_FILE, EXTRACTED)
     assert not reference.is_batch_jsonl_file(TUNED_FILE, EXTRACTED)
+
+
+def test_plain_empty_batch_files() -> None:
+    empty: CreateFileRequest = {"file": b"", "purpose": "batch"}
+    extracted: ExtractedFileData = {**EXTRACTED, "content": b""}
+    reference = UTILS_MODULE.FilesAPIUtils
+    assert FilesAPIUtils.is_batch_jsonl_request(empty, "application/json")
+    assert reference.is_batch_jsonl_request(empty, "application/json")
+    assert FilesAPIUtils.is_batch_jsonl_file(empty, extracted)
+    assert reference.is_batch_jsonl_file(empty, extracted)
 
 
 def test_error_matches_litellm() -> None:
