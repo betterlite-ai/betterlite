@@ -107,6 +107,7 @@ THEIR_CALLER: Final[TheirCallerModule] = importlib.import_module(
 )
 
 
+# ast-grep-ignore: no-one-line-functions
 def dumped(value: Dumpable) -> dict[str, JsonValue]:
     return value.model_dump(by_alias=True, exclude_none=True)
 

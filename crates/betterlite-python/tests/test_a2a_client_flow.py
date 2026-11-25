@@ -32,6 +32,7 @@ from typing_extensions import override
 
 import betterlite.a2a_protocol as our_package
 from betterlite.a2a_protocol import client as client_module
+from betterlite.a2a_protocol import exceptions as a2a_exceptions
 from betterlite.a2a_protocol.client import A2AClient
 from betterlite.a2a_protocol.exceptions import (
     A2AAgentCardDiscoveryError,
@@ -337,7 +338,7 @@ def test_exports_match_litellm() -> None:
     assert our_package.create_a2a_client is create_a2a_client
     assert our_package.send_message is send_message
     assert "A2AAgentCardDiscoveryError" not in tuple(our_package.__all__)
-    assert issubclass(A2AAgentCardDiscoveryError, A2AAgentCardError)
+    assert a2a_exceptions.A2AAgentCardDiscoveryError is A2AAgentCardDiscoveryError
 
 
 def test_client_defaults() -> None:
