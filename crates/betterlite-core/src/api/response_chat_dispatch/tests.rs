@@ -15,7 +15,7 @@ use serde_json::{Map, Value};
 use self::fixtures::support::{
     Entry, FIXED_CLOCK, FIXED_TIMESTAMP, FIXED_UUID, FakeChunks, FakeError, FakeEvents,
     FakeExecution, RecordingProcessing, StreamParam, call, caller_with_identity_extras,
-    chat_response, created_at_of, finish_of, hidden, id_of, kwargs, post_stream,
+    chat_response, created_at_of, finish_of, hidden, hidden_usage_of, id_of, kwargs, post_stream,
     post_stream_missing_record, post_stream_named, responses_body, sse, stamps, terminal_event,
     text_of, tool_calls_of,
 };
@@ -650,6 +650,29 @@ async fn a_replayed_response_keeps_its_length_finish_reason() {
     )))
     .await;
     assert_eq!(finishes(&chunks), vec![String::from("length")]);
+}
+
+#[tokio::test]
+async fn a_replayed_response_carries_its_usage_into_the_stream_totals() {
+    let mut body = chat_response();
+    body.usage = Some(
+        serde_json::from_str(r#"{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}"#)
+            .unwrap(),
+    );
+    let execution = FakeExecution::new(Answer::Chat(body));
+    let chunks = drain(expect_stream(expect_ok(
+        completion(&execution, call(&streaming())).await,
+    )))
+    .await;
+    let closing = chunks.last().expect("the wrapper closes the stream");
+    let usage = hidden_usage_of(closing).expect("the closing chunk carries the usage total");
+    let Json::Object(fields) = usage else {
+        panic!("the usage total is an object");
+    };
+    assert_eq!(
+        fields.get("total_tokens"),
+        Some(&Json::Number(serde_json::Number::from(3_i64)))
+    );
 }
 
 #[tokio::test]

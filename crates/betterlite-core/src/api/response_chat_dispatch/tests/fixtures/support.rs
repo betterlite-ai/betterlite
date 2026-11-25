@@ -541,6 +541,17 @@ pub(crate) fn tool_calls_of(chunk: &Json) -> Option<Json> {
     delta.get("tool_calls").cloned()
 }
 
+// The wrapper's running usage total, folded into the same private map
+pub(crate) fn hidden_usage_of(chunk: &Json) -> Option<Json> {
+    let Json::Object(fields) = chunk else {
+        return None;
+    };
+    let Json::Object(hidden) = fields.get("_hidden_params")? else {
+        return None;
+    };
+    hidden.get("usage").cloned()
+}
+
 // The wrapper's created_at, folded under the private name ModelResponseStream uses
 pub(crate) fn created_at_of(chunk: &Json) -> Option<Json> {
     let Json::Object(fields) = chunk else {
