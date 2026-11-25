@@ -52,8 +52,8 @@ pub enum VectorManagementError {
 
 // TableError::Row and serde_json::Error quote the stored text they refused, so Debug prints the Display text and never the causes
 impl fmt::Debug for VectorManagementError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Display::fmt(self, formatter)
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self, f)
     }
 }
 

@@ -37,8 +37,8 @@ fn walk(masker: &SensitiveDataMasker, params: &Json, depth: usize, limits: ApiLi
         Json::Object(fields) => {
             let mut redacted = IndexMap::with_capacity(fields.len());
             for (key, value) in fields {
-                let masked = masked_entry(masker, key, value, depth, limits);
-                redacted.insert(key.clone(), masked);
+                let outcome = masked_entry(masker, key, value, depth, limits);
+                redacted.insert(key.clone(), outcome);
             }
             Json::Object(redacted)
         }
