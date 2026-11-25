@@ -148,11 +148,12 @@ fn scripted_chunks(input: &input::Input) -> Vec<Result<Vec<u8>, StreamFailure>> 
     let mut items: Vec<Result<Vec<u8>, StreamFailure>> =
         input.chunks.iter().cloned().map(Ok).collect();
     if let Some(spec) = &input.failure {
-        items.push(Err(StreamFailure {
-            class: "ScriptedReadError".to_owned(),
-            message: spec.message.clone(),
-            traceback: spec.traceback.clone(),
-        }));
+        items.push(Err(StreamFailure::upstream(
+            "ScriptedReadError".to_owned(),
+            spec.message.clone(),
+            spec.traceback.clone(),
+            Arc::new(std::io::Error::other(spec.message.clone())),
+        )));
     }
     items
 }

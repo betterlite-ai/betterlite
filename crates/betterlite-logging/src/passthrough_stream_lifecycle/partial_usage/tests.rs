@@ -106,7 +106,7 @@ fn an_anthropic_stream_delegates_before_the_empty_bytes_check() {
 #[test]
 fn no_stream_context_records_nothing() {
     let harness = Harness::new(&["2024-01-01T00:00:02+00:00"])
-        .with_handler_reply(Ok(usage_outcome(10, 5, 15, 0.25)));
+        .with_handler_reply(Ok(usage_outcome(10, 5, 15, "0.25")));
     let logging_obj = object(&[], IndexMap::new());
     record_partial_usage_failure(&call(
         &harness,
@@ -127,7 +127,7 @@ fn no_stream_context_records_nothing() {
 #[test]
 fn empty_raw_bytes_record_nothing() {
     let harness = Harness::new(&["2024-01-01T00:00:02+00:00"])
-        .with_handler_reply(Ok(usage_outcome(10, 5, 15, 0.25)));
+        .with_handler_reply(Ok(usage_outcome(10, 5, 15, "0.25")));
     let logging_obj = object(&[], IndexMap::new());
     record_partial_usage_failure(&call(
         &harness,
@@ -147,7 +147,7 @@ fn empty_raw_bytes_record_nothing() {
 #[test]
 fn the_recovered_usage_and_cost_are_recorded() {
     let harness = Harness::new(&["2024-01-01T00:00:02+00:00"])
-        .with_handler_reply(Ok(usage_outcome(10, 5, 15, 0.25)));
+        .with_handler_reply(Ok(usage_outcome(10, 5, 15, "0.25")));
     let logging_obj = object(&[], IndexMap::new());
     record_partial_usage_failure(&call(
         &harness,

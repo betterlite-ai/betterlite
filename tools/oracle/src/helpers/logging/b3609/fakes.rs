@@ -40,11 +40,10 @@ impl CollectedChunksHandler for Handler {
         }))
         .map_err(HandlerError::leaf)?;
         let mut kwargs = PassThroughLoggingKwargs::default();
-        if let Some(number) = serde_json::Number::from_f64(0.25) {
-            kwargs
-                .entries
-                .insert("response_cost".to_owned(), Json::Number(number));
-        }
+        let number = "0.25".parse::<serde_json::Number>().expect("decimal cost");
+        kwargs
+            .entries
+            .insert("response_cost".to_owned(), Json::Number(number));
         Ok(HandlerOutcome {
             result: Some(PassThroughResponse::ModelResponse(body)),
             kwargs,

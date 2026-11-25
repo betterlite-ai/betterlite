@@ -22,11 +22,12 @@ use crate::passthrough_stream_logging::types::{EndpointType, HandlerError};
 struct ReconstructionFailed;
 
 fn failure() -> StreamFailure {
-    StreamFailure {
-        class: "ScriptedReadError".to_owned(),
-        message: "the upstream read failed".to_owned(),
-        traceback: "Traceback: scripted".to_owned(),
-    }
+    StreamFailure::upstream(
+        "ScriptedReadError".to_owned(),
+        "the upstream read failed".to_owned(),
+        "Traceback: scripted".to_owned(),
+        Arc::new(std::io::Error::other("the upstream read failed")),
+    )
 }
 
 fn stream_context(lifecycle: &StreamLifecycle) -> PassThroughStreamContext {
@@ -121,7 +122,7 @@ async fn a_rejected_failure_job_is_logged_instead_of_raised() {
 #[tokio::test]
 async fn a_recovered_partial_usage_is_recorded_with_the_response_cost() {
     let harness = Harness::new(&["2024-01-01T00:00:02+00:00"])
-        .with_handler_reply(Ok(usage_outcome(2, 3, 5, 0.25)));
+        .with_handler_reply(Ok(usage_outcome(2, 3, 5, "0.25")));
     let lifecycle = harness.lifecycle(false);
     let logging_obj = object(&[], IndexMap::new());
     let context = stream_context(lifecycle.as_ref());
@@ -157,7 +158,7 @@ async fn a_recovered_partial_usage_is_recorded_with_the_response_cost() {
 #[tokio::test]
 async fn the_recovered_usage_handler_runs_off_the_reactor_thread() {
     let harness = Harness::new(&["2024-01-01T00:00:02+00:00"])
-        .with_handler_reply(Ok(usage_outcome(2, 3, 5, 0.25)));
+        .with_handler_reply(Ok(usage_outcome(2, 3, 5, "0.25")));
     let lifecycle = harness.lifecycle(false);
     let logging_obj = object(&[], IndexMap::new());
     let context = stream_context(lifecycle.as_ref());
@@ -241,7 +242,7 @@ async fn without_a_stream_context_nothing_is_reconstructed() {
 #[tokio::test]
 async fn empty_raw_bytes_are_not_reconstructed() {
     let harness = Harness::new(&["2024-01-01T00:00:02+00:00"])
-        .with_handler_reply(Ok(usage_outcome(2, 3, 5, 0.25)));
+        .with_handler_reply(Ok(usage_outcome(2, 3, 5, "0.25")));
     let lifecycle = harness.lifecycle(false);
     let logging_obj = object(&[], IndexMap::new());
     let context = stream_context(lifecycle.as_ref());
@@ -317,7 +318,7 @@ async fn a_reconstructed_response_without_usage_records_nothing() {
 
 #[tokio::test]
 async fn a_missing_response_cost_records_zero() {
-    let mut outcome = usage_outcome(1, 2, 3, 0.0);
+    let mut outcome = usage_outcome(1, 2, 3, "0.0");
     outcome.kwargs = PassThroughLoggingKwargs::default();
     let harness = Harness::new(&["2024-01-01T00:00:02+00:00"]).with_handler_reply(Ok(outcome));
     let lifecycle = harness.lifecycle(false);

@@ -168,7 +168,7 @@ impl CompletionGuard {
     }
 
     async fn read_failure(&mut self, failure: &StreamFailure) {
-        tracing::error!("Error in chunk_processor: {}", failure.message);
+        tracing::error!("Error in chunk_processor: {}", failure.message());
         let Some(parts) = self.parts.as_mut() else {
             return;
         };
@@ -186,7 +186,7 @@ impl CompletionGuard {
         let request_body = parts.request_body.clone();
         let raw_bytes = parts.raw_bytes.clone();
         let failure = failure.clone();
-        let _task = tokio::spawn(async move {
+        let task = tokio::spawn(async move {
             schedule_failure_logging(FailureSchedulingCall {
                 lifecycle: lifecycle.as_ref(),
                 logging_obj,
@@ -199,6 +199,7 @@ impl CompletionGuard {
             .await;
         });
         parts.logging_scheduled = true;
+        let _ = task.await;
     }
 }
 

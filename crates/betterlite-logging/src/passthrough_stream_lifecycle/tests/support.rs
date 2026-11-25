@@ -191,11 +191,13 @@ fn usage_handler_outcome(
     prompt: i64,
     completion: i64,
     total: i64,
-    cost: Option<f64>,
+    cost: Option<&str>,
 ) -> HandlerOutcome {
     let mut kwargs = PassThroughLoggingKwargs::default();
     if let Some(amount) = cost {
-        let number = serde_json::Number::from_f64(amount).expect("a finite response cost");
+        let number = amount
+            .parse::<serde_json::Number>()
+            .expect("a decimal response cost");
         kwargs
             .entries
             .insert("response_cost".to_owned(), Json::Number(number));
@@ -208,7 +210,12 @@ fn usage_handler_outcome(
     }
 }
 
-pub(super) fn usage_outcome(prompt: i64, completion: i64, total: i64, cost: f64) -> HandlerOutcome {
+pub(super) fn usage_outcome(
+    prompt: i64,
+    completion: i64,
+    total: i64,
+    cost: &str,
+) -> HandlerOutcome {
     usage_handler_outcome(prompt, completion, total, Some(cost))
 }
 
@@ -527,9 +534,9 @@ impl StreamFailureDispatch for RecordingFailureDispatch {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(RecordedFailure {
-                class: failure.class.clone(),
-                message: failure.message.clone(),
-                traceback: failure.traceback.clone(),
+                class: failure.class().to_owned(),
+                message: failure.message().to_owned(),
+                traceback: failure.traceback().to_owned(),
             });
         Box::pin(async {})
     }
@@ -772,11 +779,12 @@ pub(super) fn failing_chunks(
 }
 
 pub(super) fn failure() -> StreamFailure {
-    StreamFailure {
-        class: "ScriptedReadError".to_owned(),
-        message: "the upstream read failed".to_owned(),
-        traceback: "Traceback: scripted".to_owned(),
-    }
+    StreamFailure::upstream(
+        "ScriptedReadError".to_owned(),
+        "the upstream read failed".to_owned(),
+        "Traceback: scripted".to_owned(),
+        Arc::new(std::io::Error::other("the upstream read failed")),
+    )
 }
 
 #[derive(Clone, Default)]
