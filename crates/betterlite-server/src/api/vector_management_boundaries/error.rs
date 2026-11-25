@@ -2,6 +2,7 @@ use betterlite_auth::auth_team_lookup::error::{Detail, TeamLookupError};
 use betterlite_core::api::vector_store_access::error::VectorStoreAccessError;
 use betterlite_db::auxiliary_repository::repository::TableError;
 use serde::Serialize;
+use std::fmt;
 use thiserror::Error;
 
 // the 403 detail of _fetch_and_authorize_vector_store, shared with the info route's registry branch
@@ -33,7 +34,7 @@ pub enum VectorManagementDetail {
     ConfigOwned(ConfigOwnedDetail),
 }
 
-#[derive(Debug, Error)]
+#[derive(Error)]
 pub enum VectorManagementError {
     #[error("vector store {vector_store_id} is owned by the config file")]
     ConfigOwned { vector_store_id: String },
@@ -43,10 +44,17 @@ pub enum VectorManagementError {
     AccessDenied,
     #[error(transparent)]
     Access(#[from] VectorStoreAccessError),
-    #[error(transparent)]
+    #[error("the vector store row could not be read")]
     Rows(#[from] TableError),
     #[error("the stored JSON could not be projected")]
     Json(#[from] serde_json::Error),
+}
+
+// TableError::Row and serde_json::Error quote the stored text they refused, so Debug prints the Display text and never the causes
+impl fmt::Debug for VectorManagementError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self, formatter)
+    }
 }
 
 impl VectorManagementError {

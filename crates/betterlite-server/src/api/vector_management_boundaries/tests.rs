@@ -3,6 +3,7 @@
 mod postgres;
 
 use std::collections::BTreeMap;
+use std::error::Error as _;
 use std::fs;
 use std::future::{Future, ready};
 use std::sync::Mutex;
@@ -23,7 +24,6 @@ use betterlite_core::api::vector_store_access::error::VectorStoreAccessError;
 use betterlite_core::api::vector_store_registry::store::VectorStoreRegistry;
 use betterlite_db::auxiliary_repository::repository::TableError;
 use betterlite_db::budget_permission_rows::{JsonData, LiteLLMObjectPermissionTable};
-use betterlite_db::managed_resource_rows::files::ManagedVectorStoresTable;
 use betterlite_db::team_rows::archived::LiteLLMTeamTableCachedObj;
 use betterlite_logging::python_json::dumps;
 use betterlite_models::decisions::Json;
@@ -36,8 +36,8 @@ use super::error::{
 use super::fetch::{check_vector_store_access, fetch_store_before_access};
 use super::json::{ManagementJsonError, decode_management_json};
 use super::ownership::{raise_if_config_owned, with_ownership};
-use super::redaction::{LitellmParamsRedactor, REDACTED_BY_LITELM, redact_store_params};
-use super::rows::{VectorStoreRows, row_to_vector_store};
+use super::redaction::{REDACTED_BY_LITELM, redact_litellm_params, redact_store_params};
+use super::rows::VectorStoreRows;
 
 fn json(source: &str) -> Json {
     serde_json::from_str(source).unwrap()
@@ -64,7 +64,7 @@ fn registry(stored: Vec<LiteLlmManagedVectorStore>) -> VectorStoreRegistry {
 }
 
 fn redacted_text(params: &str, depth: usize) -> Json {
-    LitellmParamsRedactor::new().redact(&Json::Text(params.to_owned()), depth, ApiLimits::default())
+    redact_litellm_params(&Json::Text(params.to_owned()), depth, ApiLimits::default())
 }
 
 const REDACT_CASE: &str = r#"{
@@ -208,9 +208,27 @@ fn http_details_cover_only_the_helpers_http_exceptions() {
 }
 
 #[test]
+fn formatted_errors_never_print_the_stored_credentials() {
+    let rejected = serde_json::from_str::<BTreeMap<String, JsonData>>(
+        r#""{\"api_key\": \"sk-live-secret\"}""#,
+    )
+    .unwrap_err();
+    let row_failure = VectorManagementError::Rows(TableError::Row(rejected));
+    assert!(!format!("{row_failure:?}").contains("sk-live-secret"));
+    assert!(!format!("{row_failure}").contains("sk-live-secret"));
+    assert_eq!(format!("{row_failure:?}"), format!("{row_failure}"));
+    assert!(row_failure.source().is_some());
+    let syntax = serde_json::from_str::<Json>(r#"{"api_key": sk-live-secret}"#).unwrap_err();
+    let json_failure = VectorManagementError::Json(syntax);
+    assert!(!format!("{json_failure:?}").contains("sk-live-secret"));
+    assert!(!format!("{json_failure}").contains("sk-live-secret"));
+    assert!(json_failure.source().is_some());
+}
+
+#[test]
 fn redact_vector_credentials_marks_sensitive_values() {
     assert_eq!(
-        LitellmParamsRedactor::new().redact(&json(REDACT_CASE), 0, ApiLimits::default()),
+        redact_litellm_params(&json(REDACT_CASE), 0, ApiLimits::default()),
         json(REDACTED_CASE)
     );
 }
@@ -219,15 +237,15 @@ fn redact_vector_credentials_marks_sensitive_values() {
 fn redact_vector_credentials_consumes_depth_per_nested_dict() {
     let nested = json(r#"{"outer": {"inner": "kept"}}"#);
     assert_eq!(
-        LitellmParamsRedactor::new().redact(&nested, 8, ApiLimits::default()),
+        redact_litellm_params(&nested, 8, ApiLimits::default()),
         json(r#"{"outer": {"inner": "kept"}}"#)
     );
     assert_eq!(
-        LitellmParamsRedactor::new().redact(&nested, 9, ApiLimits::default()),
+        redact_litellm_params(&nested, 9, ApiLimits::default()),
         json(r#"{"outer": "REDACTED_BY_LITELM"}"#)
     );
     assert_eq!(
-        LitellmParamsRedactor::new().redact(&nested, 10, ApiLimits::default()),
+        redact_litellm_params(&nested, 10, ApiLimits::default()),
         json(r#""REDACTED_BY_LITELM""#)
     );
 }
@@ -243,7 +261,7 @@ fn redact_vector_credentials_passes_top_level_scalars_and_plain_lists_through(
     #[case] source: &str,
 ) {
     assert_eq!(
-        LitellmParamsRedactor::new().redact(&json(source), 0, ApiLimits::default()),
+        redact_litellm_params(&json(source), 0, ApiLimits::default()),
         json(source)
     );
 }
@@ -252,7 +270,7 @@ fn redact_vector_credentials_passes_top_level_scalars_and_plain_lists_through(
 fn redact_vector_credentials_redacts_credential_maps_inside_lists() {
     let params = json(r#"{"configs": [{"api_key": "secret", "region": "us"}, "plain"]}"#);
     assert_eq!(
-        LitellmParamsRedactor::new().redact(&params, 0, ApiLimits::default()),
+        redact_litellm_params(&params, 0, ApiLimits::default()),
         json(r#"{"configs": [{"api_key": "REDACTED_BY_LITELM", "region": "us"}, "plain"]}"#)
     );
 }
@@ -261,7 +279,7 @@ fn redact_vector_credentials_redacts_credential_maps_inside_lists() {
 fn redact_vector_credentials_does_not_parse_a_string_inside_a_dict() {
     let params = json(r#"{"litellm_embedding_config": "{\"api_key\": \"secret\"}"}"#);
     assert_eq!(
-        LitellmParamsRedactor::new().redact(&params, 0, ApiLimits::default()),
+        redact_litellm_params(&params, 0, ApiLimits::default()),
         params
     );
 }
@@ -307,11 +325,7 @@ fn serialized_vector_params_marks_text_beyond_serde_json() {
         Json::Text(REDACTED_BY_LITELM.to_owned())
     );
     assert_eq!(
-        LitellmParamsRedactor::new().redact(
-            &Json::Text("{\"a\": 1}".to_owned()),
-            0,
-            TIGHT_JSON_LIMITS,
-        ),
+        redact_litellm_params(&Json::Text("{\"a\": 1}".to_owned()), 0, TIGHT_JSON_LIMITS),
         Json::Text(REDACTED_BY_LITELM.to_owned())
     );
 }
@@ -426,49 +440,20 @@ fn redact_store_params_leaves_absent_params_absent() {
     );
 }
 
-fn stored_row(id: &str) -> ManagedVectorStoresTable {
-    ManagedVectorStoresTable {
-        vector_store_id: id.to_owned(),
-        custom_llm_provider: "openai".to_owned(),
-        vector_store_name: Some("Store".to_owned()),
-        vector_store_description: None,
-        vector_store_metadata: Some(BTreeMap::from([(
-            "env".to_owned(),
-            JsonData::String("prod".to_owned()),
-        )])),
-        created_at: None,
-        updated_at: None,
-        litellm_credential_name: Some("cred".to_owned()),
-        litellm_params: Some(BTreeMap::from([
-            ("api_key".to_owned(), JsonData::String("secret".to_owned())),
-            ("region".to_owned(), JsonData::String("us".to_owned())),
-        ])),
-        team_id: None,
-        user_id: Some("u1".to_owned()),
-        is_config: false,
-    }
-}
-
-#[test]
-fn row_to_vector_store_projects_every_column() {
-    let projected = row_to_vector_store(stored_row("vs_a")).unwrap();
-    assert!(projected.is_config.is_none());
-    assert!(!projected.extra.contains_key("is_config"));
-    assert_eq!(
-        rendered(&projected),
-        json(
-            r#"{"vector_store_id":"vs_a","custom_llm_provider":"openai","vector_store_name":"Store","vector_store_description":null,"vector_store_metadata":{"env":"prod"},"created_at":null,"updated_at":null,"litellm_credential_name":"cred","litellm_params":{"api_key":"secret","region":"us"},"team_id":null,"user_id":"u1"}"#
-        )
+fn stored_row(id: &str) -> LiteLlmManagedVectorStore {
+    let source = format!(
+        r#"{{"vector_store_id":"{id}","custom_llm_provider":"openai","vector_store_name":"Store","vector_store_description":null,"vector_store_metadata":{{"env":"prod"}},"created_at":null,"updated_at":null,"litellm_credential_name":"cred","litellm_params":{{"api_key":"secret","region":"us"}},"team_id":null,"user_id":"u1"}}"#
     );
+    parsed_record(&source)
 }
 
 struct Rows {
-    row: Option<ManagedVectorStoresTable>,
+    row: Option<LiteLlmManagedVectorStore>,
     asked: Mutex<Vec<String>>,
 }
 
 impl Rows {
-    fn with_row(row: Option<ManagedVectorStoresTable>) -> Self {
+    fn with_row(row: Option<LiteLlmManagedVectorStore>) -> Self {
         Self {
             row,
             asked: Mutex::new(Vec::new()),
@@ -484,7 +469,7 @@ impl VectorStoreRows for Rows {
     fn find_unique(
         &self,
         vector_store_id: &str,
-    ) -> impl Future<Output = Result<Option<ManagedVectorStoresTable>, TableError>> + Send {
+    ) -> impl Future<Output = Result<Option<LiteLlmManagedVectorStore>, TableError>> + Send {
         self.asked.lock().unwrap().push(vector_store_id.to_owned());
         ready(Ok(self.row.clone()))
     }
@@ -567,7 +552,7 @@ fn caller(fields: &[(&str, JsonData)]) -> UserAPIKeyAuth {
 
 #[tokio::test]
 async fn check_vector_store_access_forwards_the_record_and_identity() {
-    let mut record = row_to_vector_store(stored_row("vs_a")).unwrap();
+    let mut record = stored_row("vs_a");
     record.team_id = Some("t1".to_owned());
     let world = World::default();
     let access = policy(&world);
@@ -629,7 +614,7 @@ async fn fetch_store_before_access_returns_the_whole_row_for_an_allowed_call() {
         .await
         .unwrap();
     assert_eq!(rows.asked(), vec!["vs_a".to_owned()]);
-    assert_eq!(store, row_to_vector_store(stored_row("vs_a")).unwrap());
+    assert_eq!(store, stored_row("vs_a"));
     assert!(!world.touched());
 }
 
@@ -674,7 +659,7 @@ fn replays_corpus() {
             let Ok(value) = decode_management_json(&bytes, ApiLimits::default()) else {
                 return false;
             };
-            let redacted = LitellmParamsRedactor::new().redact(&value, 0, ApiLimits::default());
+            let redacted = redact_litellm_params(&value, 0, ApiLimits::default());
             let reparsed: Json = serde_json::from_str(&dumps(&redacted))
                 .expect("a redacted value writes back as JSON");
             assert_eq!(dumps(&reparsed), dumps(&redacted));

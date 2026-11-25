@@ -8,7 +8,7 @@ use betterlite_core::api::vector_store_access::store::ManagedVectorStore;
 use betterlite_openai::api::vector_store_records::records::vector::LiteLlmManagedVectorStore;
 
 use super::error::VectorManagementError;
-use super::rows::{VectorStoreRows, row_to_vector_store};
+use super::rows::VectorStoreRows;
 
 // _check_vector_store_access: the record and the caller, handed to B1060's grant as they came
 pub async fn check_vector_store_access<Permissions, Teams, SessionTeams>(
@@ -39,12 +39,11 @@ where
     Teams: TeamLoader + ?Sized,
     SessionTeams: UiSessionTeams + ?Sized,
 {
-    let Some(row) = rows.find_unique(vector_store_id).await? else {
+    let Some(store) = rows.find_unique(vector_store_id).await? else {
         return Err(VectorManagementError::NotFound {
             vector_store_id: vector_store_id.to_owned(),
         });
     };
-    let store = row_to_vector_store(row)?;
     if !check_vector_store_access(access, &store, auth).await? {
         return Err(VectorManagementError::AccessDenied);
     }
