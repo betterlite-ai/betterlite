@@ -623,3 +623,10 @@ path = "fuzz_targets/config_override.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "vertex_batch_response"
+path = "fuzz_targets/vertex_batch_response.rs"
+test = false
+doc = false
+bench = false

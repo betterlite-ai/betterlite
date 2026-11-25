@@ -1,0 +1,1 @@
+{"name":"projects/p1/locations/us-central1/batchPredictionJobs/3814889423749775360","state":"JOB_STATE_PENDING","createTime":"2024-01-01T00:00:00.000000Z","inputConfig":{"gcsSource":{"uris":["gs://bucket/in.jsonl"]}},"model":"publishers/google/models/gemini-2.5-flash"}
