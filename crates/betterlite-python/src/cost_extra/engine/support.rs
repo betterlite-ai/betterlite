@@ -18,6 +18,7 @@ use betterlite_models::usage_sum::{PromptTokensDetails, Usage, UsageSumError, us
 use betterlite_openai::api::rerank_contracts::records::RerankBilledUnits;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
+use thiserror::Error;
 
 use crate::cost_extra::convert::UsageSource;
 use crate::cost_extra::convert::{CollectUsageRequest, CombineUsageRequest, PartitionUsageRequest};
@@ -80,7 +81,7 @@ pub(crate) fn combine_usage(request: &CombineUsageRequest) -> Result<Usage, Usag
 }
 
 // A collected event fails either in the session filter or in the full usage transformer after it.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Error)]
 pub(crate) enum CollectFailure {
     #[error(transparent)]
     Realtime(#[from] RealtimeCostError),
