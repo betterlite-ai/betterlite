@@ -1,0 +1,34 @@
+# A fresh policy makes a failed or absent named row read raise, and the loader carries that error
+# as the UnloadableEntitlementError's cause; a non-fresh read answers None and raises without one.
+kind: helper
+name: unloadable_entitlement_db_failure
+call:
+  b4668:
+    function: load_named
+    principal: end user 'u-1'
+    object_permission_id: perm-unreadable
+    requires_fresh_policy: true
+    read: unreadable
+    row: null
+calls:
+  - b4668:
+      function: load_named
+      principal: end user 'u-1'
+      object_permission_id: perm-unreadable
+      requires_fresh_policy: false
+      read: unreadable
+      row: null
+  - b4668:
+      function: load_named
+      principal: agent 'a-1'
+      object_permission_id: perm-absent
+      requires_fresh_policy: true
+      read: missing
+      row: null
+  - b4668:
+      function: toolset
+      row: {object_permission_id: perm-toolsets, mcp_toolsets: [ts-a, ts-b]}
+      requires_fresh_policy: true
+      server_id: srv-a
+env: {}
+compare: {ignore: []}
