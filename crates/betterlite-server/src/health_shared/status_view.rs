@@ -2,7 +2,7 @@ use std::ops::Sub as _;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use serde::Serialize;
+use serde::{Serialize, Serializer};
 
 use super::cached::{CachedHealthCheck, epoch_seconds};
 use super::manager::SharedHealthCheckManager;
@@ -31,9 +31,36 @@ pub enum RedisStatus {
         cache_available: bool,
         #[serde(skip_serializing_if = "Option::is_none")]
         cache_age_seconds: Option<f64>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        last_checked_by: Option<Option<String>>,
+        #[serde(skip_serializing_if = "LastCheckedBy::is_unavailable")]
+        last_checked_by: LastCheckedBy,
     },
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum LastCheckedBy {
+    CacheUnavailable,
+    CacheAvailable(Option<String>),
+}
+
+impl LastCheckedBy {
+    fn is_unavailable(&self) -> bool {
+        match self {
+            Self::CacheUnavailable => true,
+            Self::CacheAvailable(_) => false,
+        }
+    }
+}
+
+impl Serialize for LastCheckedBy {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            Self::CacheUnavailable | Self::CacheAvailable(None) => serializer.serialize_none(),
+            Self::CacheAvailable(Some(pod_id)) => serializer.serialize_some(pod_id),
+        }
+    }
 }
 
 // The route's status provider: whoever can answer get_health_check_status behind the auth stage.
@@ -61,13 +88,13 @@ impl SharedHealthStatusSource for SharedHealthCheckManager {
 pub(crate) fn cache_fields(
     cached: Option<CachedHealthCheck>,
     now: DateTime<Utc>,
-) -> (bool, Option<f64>, Option<Option<String>>) {
+) -> (bool, Option<f64>, LastCheckedBy) {
     match cached {
         Some(payload) => (
             true,
             Some(epoch_seconds(now).sub(payload.timestamp.as_f64().unwrap_or_default())),
-            Some(payload.checked_by),
+            LastCheckedBy::CacheAvailable(payload.checked_by),
         ),
-        None => (false, None, None),
+        None => (false, None, LastCheckedBy::CacheUnavailable),
     }
 }
