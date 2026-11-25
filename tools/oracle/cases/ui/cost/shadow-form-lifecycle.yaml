@@ -1,0 +1,207 @@
+name: ui-cost-shadow-form-lifecycle
+config: |-
+  model_list:
+    - model_name: ui-router
+      litellm_params:
+        model: auto_router/complexity_router
+        # LiteLLM derives the default from the MEDIUM tier; betterlite refuses complexity_router_default_model
+        complexity_router_config:
+          tiers:
+            SIMPLE: ui-model
+            MEDIUM: ui-model
+            COMPLEX: ui-model
+            REASONING: ui-model
+    - model_name: ui-model
+      litellm_params:
+        model: openai/ui-model
+        api_base: "{{upstream}}/v1"
+        api_key: dummy-ui-key
+    - model_name: ui-judge
+      litellm_params:
+        model: openai/ui-judge
+        api_base: "{{upstream}}/v1"
+        api_key: dummy-ui-judge-key
+  general_settings:
+    master_key: oracle-master
+env: {}
+upstream: []
+database:
+  seed:
+    dashboard: {logs: []}
+    users:
+      - {user_id: ui-user, user_email: ui-user@example.com}
+      - {user_id: ui-viewer, user_email: ui-viewer@example.com}
+    teams:
+      - {team_id: ui-team, team_alias: Team UI}
+    keys:
+      # sk-ui-target hashes to 558afd921eebd1b98493d668ae872c4a66b8df5f218a337403a953ce0c2b8a83
+      - {token: sk-ui-target, user_id: ui-user, team_id: ui-team}
+      - {token: sk-ui-viewer, user_id: ui-viewer, role: proxy_admin_viewer}
+steps:
+  - request:
+      method: GET
+      path: /auto_router/shadow_eval
+      headers: {authorization: Bearer oracle-master}
+      body: null
+    compare: {headers: [content-type], headers_present: [], upstream_headers: [], ignore: []}
+  - request:
+      method: POST
+      path: /auto_router/shadow_eval/start
+      headers: {content-type: application/json, authorization: Bearer oracle-master}
+      body:
+        router_names: [ui-router]
+        api_key_ids: [558afd921eebd1b98493d668ae872c4a66b8df5f218a337403a953ce0c2b8a83]
+        team_ids: [ui-team]
+        user_ids: [ui-user]
+        models: [ui-model]
+        direction: forward
+        shadow_percentage: 10
+        duration_days: 7
+        max_budget: 10
+        judge_model: ui-judge
+    captures:
+      - name: forward-job
+        source: {body: {pointer: /job_id}}
+    compare:
+      headers: [content-type]
+      headers_present: []
+      upstream_headers: []
+      ignore:
+        - {pointer: /job_id, why: each proxy mints its own job id}
+        - {pointer: /created_at, why: each proxy stamps its own creation time}
+        - {pointer: /ends_at, why: ends_at follows each proxy's creation time}
+  - request:
+      method: GET
+      path: /auto_router/shadow_eval/{{capture:forward-job:query}}
+      headers: {authorization: Bearer oracle-master}
+      body: null
+    compare:
+      headers: [content-type]
+      headers_present: []
+      upstream_headers: []
+      ignore:
+        - {pointer: /job_id, why: each proxy mints its own job id}
+        - {pointer: /created_at, why: each proxy stamps its own creation time}
+        - {pointer: /ends_at, why: ends_at follows each proxy's creation time}
+  - request:
+      method: POST
+      path: /auto_router/shadow_eval/{{capture:forward-job:query}}/stop
+      headers: {authorization: Bearer oracle-master}
+      body: null
+    compare:
+      headers: [content-type]
+      headers_present: []
+      upstream_headers: []
+      ignore:
+        - {pointer: /job_id, why: each proxy mints its own job id}
+        - {pointer: /created_at, why: each proxy stamps its own creation time}
+        - {pointer: /ends_at, why: ends_at follows each proxy's creation time}
+        - {pointer: /targets/0/stopped_at, why: each proxy stamps its own stop time}
+        - {pointer: /targets/1/stopped_at, why: each proxy stamps its own stop time}
+        - {pointer: /targets/2/stopped_at, why: each proxy stamps its own stop time}
+  - request:
+      method: GET
+      path: /auto_router/shadow_eval
+      headers: {authorization: Bearer oracle-master}
+      body: null
+    compare:
+      headers: [content-type]
+      headers_present: []
+      upstream_headers: []
+      ignore:
+        - {pointer: /0/job_id, why: each proxy mints its own job id}
+        - {pointer: /0/created_at, why: each proxy stamps its own creation time}
+        - {pointer: /0/ends_at, why: ends_at follows each proxy's creation time}
+        - {pointer: /0/targets/0/stopped_at, why: each proxy stamps its own stop time}
+        - {pointer: /0/targets/1/stopped_at, why: each proxy stamps its own stop time}
+        - {pointer: /0/targets/2/stopped_at, why: each proxy stamps its own stop time}
+  - request:
+      method: GET
+      path: /auto_router/shadow_eval/{{capture:forward-job:query}}
+      headers: {authorization: Bearer oracle-master}
+      body: null
+    compare:
+      headers: [content-type]
+      headers_present: []
+      upstream_headers: []
+      ignore:
+        - {pointer: /job_id, why: each proxy mints its own job id}
+        - {pointer: /created_at, why: each proxy stamps its own creation time}
+        - {pointer: /ends_at, why: ends_at follows each proxy's creation time}
+        - {pointer: /targets/0/stopped_at, why: each proxy stamps its own stop time}
+        - {pointer: /targets/1/stopped_at, why: each proxy stamps its own stop time}
+        - {pointer: /targets/2/stopped_at, why: each proxy stamps its own stop time}
+  - request:
+      method: POST
+      path: /auto_router/shadow_eval/start
+      headers: {content-type: application/json, authorization: Bearer oracle-master}
+      body:
+        router_names: [ui-router]
+        api_key_ids: [558afd921eebd1b98493d668ae872c4a66b8df5f218a337403a953ce0c2b8a83]
+        team_ids: [ui-team]
+        user_ids: [ui-user]
+        models: []
+        direction: reverse
+        baseline_model: ui-model
+        shadow_percentage: 10
+        duration_days: 7
+        max_budget: 10
+        judge_model: ui-judge
+    captures:
+      - name: reverse-job
+        source: {body: {pointer: /job_id}}
+    compare:
+      headers: [content-type]
+      headers_present: []
+      upstream_headers: []
+      ignore:
+        - {pointer: /job_id, why: each proxy mints its own job id}
+        - {pointer: /created_at, why: each proxy stamps its own creation time}
+        - {pointer: /ends_at, why: ends_at follows each proxy's creation time}
+  - request:
+      method: GET
+      path: /auto_router/shadow_eval/{{capture:reverse-job:query}}
+      headers: {authorization: Bearer oracle-master}
+      body: null
+    compare:
+      headers: [content-type]
+      headers_present: []
+      upstream_headers: []
+      ignore:
+        - {pointer: /job_id, why: each proxy mints its own job id}
+        - {pointer: /created_at, why: each proxy stamps its own creation time}
+        - {pointer: /ends_at, why: ends_at follows each proxy's creation time}
+  - request:
+      method: GET
+      path: /auto_router/shadow_eval
+      headers: {authorization: Bearer oracle-master}
+      body: null
+    compare:
+      headers: [content-type]
+      headers_present: []
+      upstream_headers: []
+      ignore:
+        - {pointer: /0/job_id, why: each proxy mints its own job id}
+        - {pointer: /0/created_at, why: each proxy stamps its own creation time}
+        - {pointer: /0/ends_at, why: ends_at follows each proxy's creation time}
+        - {pointer: /0/targets/0/stopped_at, why: each proxy stamps its own stop time}
+        - {pointer: /0/targets/1/stopped_at, why: each proxy stamps its own stop time}
+        - {pointer: /0/targets/2/stopped_at, why: each proxy stamps its own stop time}
+        - {pointer: /1/job_id, why: each proxy mints its own job id}
+        - {pointer: /1/created_at, why: each proxy stamps its own creation time}
+        - {pointer: /1/ends_at, why: ends_at follows each proxy's creation time}
+        - {pointer: /1/targets/0/stopped_at, why: each proxy stamps its own stop time}
+        - {pointer: /1/targets/1/stopped_at, why: each proxy stamps its own stop time}
+        - {pointer: /1/targets/2/stopped_at, why: each proxy stamps its own stop time}
+  # The view-only start waits for B052's virtual key authentication; until then
+  # docs/deviations/B357.yaml records the gap and the start-admin-only probe proves the 403.
+  - request:
+      method: GET
+      path: /auto_router/shadow_eval/start
+      headers: {authorization: Bearer oracle-master}
+      body: null
+    compare:
+      headers: [content-type]
+      headers_present: []
+      upstream_headers: []
+      ignore: []

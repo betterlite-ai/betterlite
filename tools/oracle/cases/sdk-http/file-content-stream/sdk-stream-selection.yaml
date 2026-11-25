@@ -1,0 +1,68 @@
+kind: sdk_http
+name: sdk-stream-selection
+call:
+  file_content_stream:
+    steps:
+      - function: file_content
+        file_id: file-openai
+        custom_llm_provider: openai
+        api_key: sk-stream
+        stream: true
+        chunk_size: 3
+      - function: afile_content
+        file_id: file-vllm
+        custom_llm_provider: hosted_vllm
+        api_key: sk-vllm
+        stream: true
+      - function: afile_content
+        file_id: file-proxy
+        custom_llm_provider: litellm_proxy
+        api_key: sk-proxy
+        stream: true
+        chunk_size: 4
+      - function: afile_content
+        file_id: file-azure
+        custom_llm_provider: azure
+        api_key: az-key
+        api_version: "2024-10-21"
+        stream: true
+      - function: afile_content
+        file_id: file_ant
+        custom_llm_provider: anthropic
+        api_key: sk-ant
+        stream: true
+      - function: file_content
+        file_id: file-vertex
+        custom_llm_provider: vertex_ai
+        stream: true
+upstream:
+  - status: 200
+    headers: {}
+    body: {body_kind: bytes, fixture: binary-response.bin, content_type: application/octet-stream}
+  - status: 200
+    headers: {}
+    body: {body_kind: bytes, fixture: binary-response.bin, content_type: application/octet-stream}
+  - status: 200
+    headers: {}
+    body: {body_kind: bytes, fixture: binary-response.bin, content_type: application/octet-stream}
+  - status: 200
+    headers: {}
+    body: {body_kind: bytes, fixture: binary-response.bin, content_type: application/octet-stream}
+  - status: 200
+    headers: {}
+    body: {body_kind: bytes, fixture: binary-response.bin, content_type: application/octet-stream}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, api-key, x-api-key, anthropic-version, anthropic-beta]
+  ignore:
+    - pointer: /file_content_stream/value/steps/0/streamed/headers/date
+      why: each mock answer is stamped when it is served, so the date differs while answering nothing
+    - pointer: /file_content_stream/value/steps/1/streamed/headers/date
+      why: each mock answer is stamped when it is served, so the date differs while answering nothing
+    - pointer: /file_content_stream/value/steps/2/streamed/headers/date
+      why: each mock answer is stamped when it is served, so the date differs while answering nothing
+    - pointer: /file_content_stream/value/steps/3/buffered/headers/date
+      why: each mock answer is stamped when it is served, so the date differs while answering nothing
+    - pointer: /file_content_stream/value/steps/4/buffered/headers/date
+      why: each mock answer is stamped when it is served, so the date differs while answering nothing

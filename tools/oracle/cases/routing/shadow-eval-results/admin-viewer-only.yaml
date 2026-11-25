@@ -1,0 +1,74 @@
+kind: probe
+name: shadow-eval-results-admin-viewer-only
+probes:
+- clock:
+    unix_millis: 1700000000000
+    monotonic_millis: 0
+  samples: []
+  operation:
+    shadow_eval_results:
+      now_millis: 1700000000000
+      jobs:
+      - id: see-1
+        group_id: see
+        target_type: team
+        target_id: team-see
+        router_name: router-a
+        router_names:
+        - router-a
+        direction: forward
+        judge_model: judge-model
+        shadow_percentage: 10.0
+        max_turns: 5
+        created_at: '2023-11-14T22:11:40Z'
+        ends_at: '2023-11-15T22:13:20Z'
+      rows:
+        teams:
+        - target_id: team-see
+          target_alias: Team See
+        keys: []
+        users: []
+      steps:
+      - list:
+          role: absent
+          store: true
+          query: ''
+      - list:
+          role: proxy_admin_viewer
+          store: true
+          query: ''
+      - list:
+          role: proxy_admin
+          store: false
+          query: ''
+      - list:
+          role: internal_user
+          store: true
+          query: ''
+      - list:
+          role: customer
+          store: true
+          query: ''
+      - detail:
+          role: proxy_admin_viewer
+          store: true
+          job_id: see
+      - detail:
+          role: internal_user
+          store: true
+          job_id: see
+      - detail:
+          role: proxy_admin_viewer
+          store: false
+          job_id: see
+      - detail:
+          role: absent
+          store: true
+          job_id: see
+      errors: []
+      by_tier: []
+      by_model: []
+      by_leg: []
+      by_router: []
+compare:
+  ignore: []

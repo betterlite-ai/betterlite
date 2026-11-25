@@ -1,0 +1,80 @@
+kind: probe
+name: shadow-eval-results-newest-first-limited
+probes:
+- clock:
+    unix_millis: 1700000000000
+    monotonic_millis: 0
+  samples: []
+  operation:
+    shadow_eval_results:
+      now_millis: 1700000000000
+      jobs:
+      - id: old-1
+        group_id: old
+        target_type: key
+        target_id: key-old
+        router_name: router-a
+        router_names:
+        - router-a
+        models:
+        - model-a
+        direction: forward
+        judge_model: judge-model
+        shadow_percentage: 25.0
+        max_turns: 5
+        created_at: '2023-11-14T22:11:40Z'
+        ends_at: '2023-11-15T22:13:20Z'
+      - id: mid-1
+        group_id: mid
+        target_type: team
+        target_id: team-mid
+        router_name: router-a
+        router_names:
+        - router-a
+        models:
+        - model-a
+        direction: forward
+        judge_model: judge-model
+        shadow_percentage: 25.0
+        max_turns: 5
+        created_at: '2023-11-14T22:12:30Z'
+        ends_at: '2023-11-15T22:13:20Z'
+      - id: new-1
+        group_id: new
+        target_type: user
+        target_id: user-new
+        router_name: router-a
+        router_names:
+        - router-a
+        models:
+        - model-a
+        direction: forward
+        judge_model: judge-model
+        shadow_percentage: 25.0
+        max_turns: 5
+        created_at: '2023-11-14T22:13:20Z'
+        ends_at: '2023-11-15T22:13:20Z'
+      steps:
+      - list:
+          role: proxy_admin
+          store: true
+          query: limit=2
+      - list:
+          role: proxy_admin
+          store: true
+          query: limit=1
+      - list:
+          role: proxy_admin
+          store: true
+          query: ''
+      errors: []
+      by_tier: []
+      by_model: []
+      by_leg: []
+      by_router: []
+      rows:
+        keys: []
+        teams: []
+        users: []
+compare:
+  ignore: []

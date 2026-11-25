@@ -29,6 +29,9 @@ mod exactly_once_logging;
 #[path = "passthrough_stream_lifecycle/tests/exception_handling.rs"]
 mod exception_handling;
 
+#[path = "passthrough_stream_lifecycle/tests/stream_caps.rs"]
+mod stream_caps;
+
 #[path = "passthrough_stream_lifecycle/tests/stream_jobs.rs"]
 mod stream_jobs;
 

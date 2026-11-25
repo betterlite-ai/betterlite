@@ -1,0 +1,160 @@
+kind: probe
+name: shadow-eval-results-budget-and-time-derived-status
+probes:
+- clock:
+    unix_millis: 1700000000000
+    monotonic_millis: 0
+  samples: []
+  operation:
+    shadow_eval_results:
+      now_millis: 1700000000000
+      jobs:
+      - id: time-1
+        group_id: time
+        target_type: key
+        target_id: key-time
+        router_name: router-a
+        direction: forward
+        judge_model: judge-model
+        shadow_percentage: 10.0
+        max_turns: 5
+        created_at: '2023-11-14T21:56:40Z'
+        ends_at: '2023-11-14T22:13:19Z'
+      - id: stop-1
+        group_id: stop
+        target_type: key
+        target_id: key-stop
+        router_name: router-a
+        direction: forward
+        judge_model: judge-model
+        shadow_percentage: 10.0
+        max_turns: 5
+        stopped_by: alice
+        created_at: '2023-11-14T21:56:40Z'
+        ends_at: '2023-11-15T22:13:20Z'
+        stopped_at: '2023-11-14T22:12:30Z'
+      - id: stamp-1
+        group_id: stamp
+        target_type: key
+        target_id: key-stamp-a
+        router_name: router-a
+        direction: forward
+        judge_model: judge-model
+        shadow_percentage: 10.0
+        max_turns: 5
+        created_at: '2023-11-14T21:56:40Z'
+        ends_at: '2023-11-15T22:13:20Z'
+        stopped_at: '2023-11-14T22:12:30Z'
+      - id: stamp-2
+        group_id: stamp
+        target_type: team
+        target_id: team-stamp
+        router_name: router-a
+        direction: forward
+        judge_model: judge-model
+        shadow_percentage: 10.0
+        max_turns: 5
+        created_at: '2023-11-14T21:56:40Z'
+        ends_at: '2023-11-15T22:13:20Z'
+        stopped_at: '2023-11-14T22:12:30Z'
+      - id: spent-1
+        group_id: spent
+        target_type: key
+        target_id: key-spent
+        router_name: router-a
+        direction: forward
+        judge_model: judge-model
+        shadow_percentage: 10.0
+        max_turns: 2
+        max_budget: 1.0
+        created_at: '2023-11-14T21:56:40Z'
+        ends_at: '2023-11-15T22:13:20Z'
+      - id: budget-1
+        group_id: budget
+        target_type: key
+        target_id: key-budget
+        router_name: router-a
+        direction: forward
+        judge_model: judge-model
+        shadow_percentage: 10.0
+        max_turns: 5
+        max_budget: 1.0
+        created_at: '2023-11-14T21:56:40Z'
+        ends_at: '2023-11-15T22:13:20Z'
+      - id: running-1
+        group_id: running
+        target_type: key
+        target_id: key-running
+        router_name: router-a
+        direction: forward
+        judge_model: judge-model
+        shadow_percentage: 10.0
+        max_turns: 5
+        max_budget: 1.0
+        created_at: '2023-11-14T21:56:40Z'
+        ends_at: '2023-11-15T22:13:20Z'
+      - id: partial-1
+        group_id: partial
+        target_type: key
+        target_id: key-partial-a
+        router_name: router-a
+        direction: forward
+        judge_model: judge-model
+        shadow_percentage: 10.0
+        max_turns: 1
+        created_at: '2023-11-14T21:56:40Z'
+        ends_at: '2023-11-15T22:13:20Z'
+      - id: partial-2
+        group_id: partial
+        target_type: team
+        target_id: team-partial
+        router_name: router-a
+        direction: forward
+        judge_model: judge-model
+        shadow_percentage: 10.0
+        max_turns: 5
+        created_at: '2023-11-14T21:56:40Z'
+        ends_at: '2023-11-15T22:13:20Z'
+      - id: nullbudget-1
+        group_id: nullbudget
+        target_type: key
+        target_id: key-nullbudget
+        router_name: router-a
+        direction: forward
+        judge_model: judge-model
+        shadow_percentage: 10.0
+        max_turns: 5
+        created_at: '2023-11-14T21:56:40Z'
+        ends_at: '2023-11-15T22:13:20Z'
+      counts:
+      - job_id: spent-1
+        attempt_count: 2
+        spend: '0.4'
+      - job_id: budget-1
+        attempt_count: 1
+        spend: '1'
+      - job_id: running-1
+        attempt_count: 1
+        spend: '0.5'
+      - job_id: partial-1
+        attempt_count: 1
+        spend: '0.9'
+      - job_id: nullbudget-1
+        attempt_count: 5
+        spend: '2'
+      steps:
+      - list:
+          role: proxy_admin
+          store: true
+          query: ''
+      errors: []
+      by_tier: []
+      by_model: []
+      by_leg: []
+      by_router: []
+      rows:
+        keys: []
+        teams: []
+        users: []
+compare:
+  ignore: []
