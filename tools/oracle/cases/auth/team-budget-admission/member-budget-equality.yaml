@@ -1,0 +1,26 @@
+kind: helper
+name: team-budget-admission-auth-member-budget-equality
+call:
+  team_budget_admission:
+    calls:
+      # the team passes at its own equality while the member is denied at theirs
+      - function: admit
+        team:
+          team_id: team-eq
+          spend: 4.0
+          max_budget: 20.0
+        token:
+          token: sk-eq-member
+          user_id: user-eq
+          team_id: team-eq
+        membership:
+          user_id: user-eq
+          team_id: team-eq
+          spend: 4.0
+          litellm_budget_table:
+            max_budget: 8.0
+        spends: [20.0, 8.0]
+        now: "2026-06-01T12:00:00Z"
+env: {}
+compare:
+  ignore: []
