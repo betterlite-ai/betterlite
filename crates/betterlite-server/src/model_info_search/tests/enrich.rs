@@ -185,6 +185,12 @@ async fn debug_client_uses_none_for_missing_or_blank_client() {
 
 #[tokio::test]
 async fn catalog_three_pass() {
+    catalog_backend_pass().await;
+    catalog_base_pass().await;
+    catalog_provider_pass().await;
+}
+
+async fn catalog_backend_pass() {
     let registry = registry("{}");
     let model = deployment("openai/gpt-4o", Vec::new(), Vec::new());
     let first = FakeCatalog::new(vec![(
@@ -207,7 +213,10 @@ async fn catalog_three_pass() {
         Some(&number(100))
     );
     assert_eq!(first.calls(), vec![(String::from("openai/gpt-4o"), None)]);
+}
 
+async fn catalog_base_pass() {
+    let registry = registry("{}");
     let based = deployment(
         "openai/gpt-4",
         vec![("base_model", text("gpt-4o"))],
@@ -239,7 +248,11 @@ async fn catalog_three_pass() {
             (String::from("openai/gpt-4"), None),
         ]
     );
+}
 
+async fn catalog_provider_pass() {
+    let registry = registry("{}");
+    let model = deployment("openai/gpt-4o", Vec::new(), Vec::new());
     let third = FakeCatalog::new(vec![(
         ("gpt-4o", Some("openai")),
         object(vec![("max_tokens", number(300))]),
@@ -271,6 +284,12 @@ async fn catalog_three_pass() {
 
 #[tokio::test]
 async fn azure_base_model() {
+    azure_named_base_model().await;
+    azure_backend_fallback().await;
+    azure_non_text_base_model().await;
+}
+
+async fn azure_named_base_model() {
     let registry = registry("{}");
     let base = deployment(
         "azure/my-deploy",
@@ -294,7 +313,10 @@ async fn azure_base_model() {
     .unwrap();
     assert_eq!(info_of(&base_enriched).get("max_tokens"), Some(&number(50)));
     assert_eq!(catalog.calls(), vec![(String::from("gpt-4o"), None)]);
+}
 
+async fn azure_backend_fallback() {
+    let registry = registry("{}");
     let plain_azure = deployment("azure/my-deploy2", Vec::new(), Vec::new());
     let backend_catalog = FakeCatalog::new(vec![(
         ("azure/my-deploy2", None),
@@ -319,7 +341,10 @@ async fn azure_base_model() {
         backend_catalog.calls(),
         vec![(String::from("azure/my-deploy2"), None)]
     );
+}
 
+async fn azure_non_text_base_model() {
+    let registry = registry("{}");
     let odd_base = deployment(
         "azure/my-deploy3",
         vec![("base_model", number(5))],
@@ -349,6 +374,11 @@ async fn azure_base_model() {
 
 #[tokio::test]
 async fn discovery_null_precedence() {
+    discovery_fills_null_and_missing_fields().await;
+    discovery_preserves_non_null_fields().await;
+}
+
+async fn discovery_fills_null_and_missing_fields() {
     let registry = registry("{}");
     let catalog = FakeCatalog::new(vec![(
         ("openai/gpt-4o", None),
@@ -384,7 +414,10 @@ async fn discovery_null_precedence() {
     assert_eq!(discovered_info.get("created_at"), Some(&number(333)));
     assert_eq!(discovered_info.get("max_tokens"), Some(&number(222)));
     assert_eq!(discovered_info.get("owned_by"), Some(&text("team")));
+}
 
+async fn discovery_preserves_non_null_fields() {
+    let registry = registry("{}");
     let fixed_catalog = FakeCatalog::new(vec![(
         ("openai/gpt-4o", None),
         object(vec![("region", text("us"))]),
@@ -435,17 +468,7 @@ async fn pricing_stamps_unpriced() {
         vec![("id", text("dep-1"))],
         vec![("input_cost_per_token", decimal_text("0.5"))],
     );
-    let enriched = enrich_model_info(
-        &model,
-        false,
-        &EnrichContext {
-            registry: &registry,
-            catalog: &catalog,
-            router: None,
-        },
-    )
-    .await
-    .unwrap();
+    let enriched = enrich(&model, false, &registry, &catalog, None).await;
     let stamp_info = info_of(&enriched);
     assert_eq!(
         stamp_info.get("input_cost_per_token"),
@@ -483,17 +506,7 @@ async fn credentials_redacted_name_retained() {
             ("default_api_key_rpm_limit", number(20)),
         ],
     );
-    let enriched = enrich_model_info(
-        &model,
-        false,
-        &EnrichContext {
-            registry: &registry,
-            catalog: &catalog,
-            router: None,
-        },
-    )
-    .await
-    .unwrap();
+    let enriched = enrich(&model, false, &registry, &catalog, None).await;
     let params = params_of(&enriched);
     assert_eq!(params.get("api_key"), None);
     assert_eq!(params.get("client_secret"), None);
@@ -512,6 +525,12 @@ async fn credentials_redacted_name_retained() {
 
 #[tokio::test]
 async fn malformed_deployment_is_an_error() {
+    missing_params_is_a_redaction_error().await;
+    malformed_model_info_is_rejected().await;
+    non_text_backend_is_rejected().await;
+}
+
+async fn missing_params_is_a_redaction_error() {
     let registry = registry("{}");
     let catalog = FakeCatalog::empty();
     let context = EnrichContext {
@@ -527,6 +546,16 @@ async fn malformed_deployment_is_an_error() {
         .await
         .unwrap_err();
     assert!(matches!(missing_params_error, EnrichError::Redact(_)));
+}
+
+async fn malformed_model_info_is_rejected() {
+    let registry = registry("{}");
+    let catalog = FakeCatalog::empty();
+    let context = EnrichContext {
+        registry: &registry,
+        catalog: &catalog,
+        router: None,
+    };
     let bad_info = object(vec![
         ("model_name", text("gpt-4o")),
         (
@@ -542,6 +571,16 @@ async fn malformed_deployment_is_an_error() {
         malformed_info_error,
         EnrichError::ModelInfoNotObject
     ));
+}
+
+async fn non_text_backend_is_rejected() {
+    let registry = registry("{}");
+    let catalog = FakeCatalog::empty();
+    let context = EnrichContext {
+        registry: &registry,
+        catalog: &catalog,
+        router: None,
+    };
     let bad_backend = object(vec![
         ("model_name", text("gpt-4o")),
         (
