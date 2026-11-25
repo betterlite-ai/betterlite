@@ -1,0 +1,51 @@
+kind: helper
+name: messages-response-call-stream-responses-adapter
+call:
+  messages_response_call:
+    call:
+      request:
+        model: gpt-4o
+        messages:
+        - role: user
+          content: hi
+        max_tokens: 64
+      stream: true
+      settings: {}
+      forwarded:
+        custom_llm_provider: openai
+    include_supported: true
+    provider: openai
+    model_info: null
+    answer:
+      shape: stream
+      events:
+      - type: response.created
+      - type: response.output_item.added
+        item:
+          type: message
+          id: item_b985
+        item_id: item_b985
+      - type: response.output_text.delta
+        item_id: item_b985
+        delta: hello
+      - type: response.output_item.done
+        item:
+          type: message
+          id: item_b985
+          status: completed
+          content:
+          - type: output_text
+            text: hello
+            annotations: []
+        item_id: item_b985
+      - type: response.completed
+        response:
+          status: completed
+          usage:
+            input_tokens: 4
+            output_tokens: 2
+            total_tokens: 6
+env: {}
+compare:
+  ignore:
+  - {pointer: /value/frames/0/data/message/id, why: the wrapper mints a fresh msg_ uuid on each side}

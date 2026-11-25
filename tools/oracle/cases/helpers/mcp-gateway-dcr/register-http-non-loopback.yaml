@@ -1,0 +1,54 @@
+kind: helper
+name: mcp-gateway-dcr-register-http-non-loopback
+call:
+  b4674:
+    register:
+      - now: 1700000000
+        body: {redirect_uris: ['http://evil.example/callback']}
+        token_exchange_available: false
+        native_redirect_uris: null
+    open: null
+    claims: null
+calls:
+  - b4674:
+      register:
+        - now: 1700000000
+          body: {redirect_uris: ['http://localhost.evil.example/callback']}
+          token_exchange_available: false
+          native_redirect_uris: null
+      open: null
+      claims: null
+  - b4674:
+      register:
+        - now: 1700000000
+          body: {redirect_uris: ['http://127.0.0.1.evil.example/callback']}
+          token_exchange_available: false
+          native_redirect_uris: null
+      open: null
+      claims: null
+  - b4674:
+      register:
+        - now: 1700000000
+          body: {redirect_uris: ['http://localhost/callback']}
+          token_exchange_available: false
+          native_redirect_uris: null
+      open: null
+      claims: null
+  - b4674:
+      register:
+        - now: 1700000000
+          body: {redirect_uris: ['http://127.0.0.1/callback']}
+          token_exchange_available: false
+          native_redirect_uris: null
+      open: null
+      claims: null
+  - b4674:
+      register:
+        - now: 1700000000
+          body: {redirect_uris: ['http://[::1]:9000/callback']}
+          token_exchange_available: false
+          native_redirect_uris: null
+      open: null
+      claims: null
+env: {}
+compare: {ignore: []}

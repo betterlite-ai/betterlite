@@ -1,0 +1,30 @@
+kind: helper
+name: prometheus-multiprocess-scrape-text
+call:
+  b10095:
+    files:
+      - name: counter_1001.db
+        entries:
+          - {metric: requests, sample: requests_total, labels: {model: a}, help: Total requests, value: 3.0, timestamp: 0.0}
+      - name: counter_1002.db
+        entries:
+          - {metric: requests, sample: requests_total, labels: {model: a}, help: Total requests, value: 4.0, timestamp: 0.0}
+      - name: gauge_livesum_1001.db
+        entries:
+          - {metric: in_flight, sample: in_flight, labels: {}, help: In flight, value: 2.0, timestamp: 0.0}
+      - name: gauge_livesum_1002.db
+        entries:
+          - {metric: in_flight, sample: in_flight, labels: {}, help: In flight, value: 4.0, timestamp: 0.0}
+      - name: histogram_1001.db
+        entries:
+          - {metric: request_latency, sample: request_latency_bucket, labels: {le: "0.5"}, help: Request latency, value: 1.0, timestamp: 0.0}
+          - {metric: request_latency, sample: request_latency_bucket, labels: {le: "+Inf"}, help: Request latency, value: 2.0, timestamp: 0.0}
+          - {metric: request_latency, sample: request_latency_sum, labels: {}, help: Request latency, value: 0.75, timestamp: 0.0}
+      - name: summary_1001.db
+        entries:
+          - {metric: queue, sample: queue_count, labels: {}, help: Queue size, value: 2.0, timestamp: 0.0}
+          - {metric: queue, sample: queue_sum, labels: {}, help: Queue size, value: 9.0, timestamp: 0.0}
+    call: scrape
+    accept: ""
+env: {}
+compare: {ignore: []}

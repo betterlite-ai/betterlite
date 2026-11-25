@@ -1,14 +1,14 @@
 id: B4445
 milestone: M8 platform
 title: Health, history and latest health routes
-status: todo
+status: done
 depends_on: [B003, B7640, B844, B4441, B4443, B4446]
 file: tasks/B4445-health-status-routes.yaml
 covers:
   - "litellm/proxy/health_endpoints/_health_endpoints.py"
 parent: B130
 split_from: B130
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3148

@@ -1,0 +1,60 @@
+id: B10101
+title: The module settings carry LiteLLM's declared types
+description: >-
+  LiteLLM declares its module settings with types, for example api_key: Optional[str] = None in litellm/__init__.py.
+  B157 wrote crates/betterlite-python/python/betterlite/_settings/params.py with 116 settings declared as a bare
+  "name = None", and LiteLLM annotates 112 of them. A type checker then reads each of those settings as always None,
+  so "betterlite.api_key = key" is a type error in a user's code where "litellm.api_key = key" is not.
+
+
+  B7879's review found this through test_assistants_runs.py, which sets betterlite.api_key and betterlite.api_base
+  behind a type: ignore[assignment]. The fix belongs in params.py, not in each caller, and B8066 holds params.py
+  while it types the cache setting. So this task runs after B8066 and B7879, gives every bare-None setting that LiteLLM
+  annotates the annotation LiteLLM declares, and drops the ignore in test_assistants_runs.py.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/_settings/params.py
+  - crates/betterlite-python/tests/test_module_settings.py
+  - crates/betterlite-python/tests/test_assistants_runs.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L1-L1400
+  why: LiteLLM's module settings and their declared types.
+dod:
+- text: >-
+    Every setting in params.py whose value is None and that litellm/__init__.py annotates carries an annotation that
+    admits the same values, so Optional[str] becomes str | None and Optional[List[str]] becomes list[str] | None.
+    Settings LiteLLM leaves unannotated stay as they are.
+  proof: [settings-annotations, python-lint]
+- text: >-
+    test_module_settings.py checks that each such setting in betterlite._settings.params has an annotation, reading both
+    modules' __annotations__, and fails on a bare None that LiteLLM annotates.
+  proof: [settings-annotations]
+- text: >-
+    test_assistants_runs.py sets betterlite.api_key and betterlite.api_base with no type: ignore, and basedpyright
+    passes.
+  proof: [assistants-ignore-gone, python-lint]
+checks:
+  optional: []
+  commands:
+  - id: settings-annotations
+    why: A setting LiteLLM types is still declared as a bare None.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_module_settings.py -k annotation
+  - id: assistants-ignore-gone
+    why: The assistants test still hides a wrong declaration.
+    run: test -z "$(grep -n 'betterlite.api_base = .*type. ignore' crates/betterlite-python/tests/test_assistants_runs.py)"
+  - id: python-lint
+    why: A strict type error in the package or its tests.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations: []
+out_of_scope:
+- Settings with a value other than None. Their type comes from the value.
+- Changing any setting's default value.
+pitfalls:
+- A LiteLLM annotation can name a LiteLLM class. Use betterlite's own type of the same name where one exists, and object where none does yet.
+- The test name has annotation in it, since the settings-annotations check selects it with -k annotation.
+review_level: standard
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0

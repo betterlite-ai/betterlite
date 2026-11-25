@@ -1,0 +1,27 @@
+task: B8083
+deviations:
+  - what: 'Requests and responses are plain dicts or the package''s own ResponseObject classes, and aget_agent_card returns the card JSON in a ResponseObject rather than the a2a SDK AgentCard.'
+    why: 'The wheel depends only on python-dotenv and carries no a2a-sdk dependency, so the call and its answer cross to Rust as JSON text.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L404-L417
+  - what: 'An object that is not a NativeA2aClient raises UnsupportedA2AArgument naming the parameter, where LiteLLM accepts an a2a.client.Client.'
+    why: 'A Python SDK client cannot drive the Rust transport.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L470-L500
+  - what: 'Success and failure callbacks from betterlite.callbacks do not run for A2A sends, and the success and logging hooks of LiteLLM''s @client wrapper have no Python face here.'
+    why: 'Logging and cost accounting run in Rust (B4810, B4814), and no Python callback bridge exists for A2A.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L403
+  - what: 'LiteLLMSendMessageResponse._hidden_params is always the empty dict, and the native bridge''s _hidden_params bag is dropped before from_dict so it never shows up as an extra key in model_dump.'
+    why: 'LiteLLM fills that bag from the Logging object it builds for the request, which the wheel does not have, and dropping the bridge copy keeps the dump equal to LiteLLM''s.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/agents.py#L463-L466
+  - what: 'LiteLLMA2ACardResolver is not exposed as a class; the same three-path probe runs in Rust behind create_a2a_client and aget_agent_card.'
+    why: 'The class subclasses the a2a-sdk resolver, and this package carries no a2a-sdk.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/card_resolver.py#L161-L209
+  - what: 'The card helpers take the card as a plain dict, and get_agent_card_url reads a top-level url first; on LiteLLM''s parsed v1 proto that field does not exist, so its helper always returns the first interface url.'
+    why: 'The card crosses the boundary as JSON and keeps the top-level url the server served. fix_agent_card_url and set_agent_card_url write both the top-level url and the first interface, as LiteLLM does on cards that carry both.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/card_resolver.py#L107-L116
+  - what: 'Every error raised from the native bridge carries the NativeA2aError as its __cause__, so the cause is always set; LiteLLM leaves it to whatever it raised from.'
+    why: 'The mapping from the native type to the LiteLLM class needs the payload, and keeping the native error as the cause keeps that payload reachable, as the task asks.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/exceptions.py#L12-L160
+kept_bugs:
+  - what: 'A JSON-RPC id of true or false comes back as the strings "True" or "False", never as the JSON boolean.'
+    why: 'LiteLLM stringifies a bool id on purpose so it never collides with the integers 1 and 0, and the response model accepts only str or int; a setup that sends bool ids relies on this.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/agents.py#L437-L442
