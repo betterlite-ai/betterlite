@@ -94,7 +94,6 @@ async fn ready_loader(
             source: Box::new(source),
         })?;
     // get_instance_fn returns the attribute as it is, so a None one is the handler the registry skips
-    // The visit is tracked blocking work, so another Python thread holding the GIL cannot park this task
     let tracker = Arc::clone(&hook.tracker);
     let host = hook.host.clone();
     let (skipping, checked) = tracker
