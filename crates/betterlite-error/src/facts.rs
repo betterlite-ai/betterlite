@@ -51,6 +51,33 @@ pub struct ResponseFacts {
     pub request: Option<RequestFacts>,
 }
 
+impl ResponseFacts {
+    // BaseLLMException builds this response for every provider exception that carries none of its own
+    #[must_use]
+    pub fn base_llm_exception(status_code: u16) -> Self {
+        Self {
+            status_code,
+            headers: BTreeMap::new(),
+            request: Some(RequestFacts {
+                method: "POST".to_owned(),
+                url: "https://docs.litellm.ai/docs".to_owned(),
+            }),
+        }
+    }
+}
+
+// a synthesized status stands for an exception with no response of its own; a real one is BaseLLMException's, which always has one
+#[must_use]
+pub fn provider_response_status(
+    status_code: Option<u16>,
+    status_code_is_synthesized: bool,
+) -> Option<u16> {
+    if status_code_is_synthesized {
+        return None;
+    }
+    status_code
+}
+
 pub struct ExceptionCheckers;
 
 impl ExceptionCheckers {

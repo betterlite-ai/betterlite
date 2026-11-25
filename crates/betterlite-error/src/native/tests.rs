@@ -174,6 +174,45 @@ fn native_errors_native_error_tests_behavior(
     );
 }
 
+// a provider HTTP error carries BaseLLMException's response, so Cohere's 498 branch answers 498 and not BadRequest's 400 default
+#[test]
+fn raw_status_cohere_498() {
+    let input = raw("cohere", "unrecognized failure", Some(498));
+    let class =
+        dispatch_native(&input, &input.error_str).expect("cohere classifies its 498 branch");
+    let ErrorClass::BadRequest(details) = class else {
+        panic!("expected BadRequest, got {class:?}");
+    };
+    assert_eq!(details.status.0, 498);
+}
+
+// the "invalid api token" branch passes the same response, so AuthenticationError answers 400 and not its 401 default
+#[test]
+fn raw_status_cohere_400_invalid_api_token() {
+    let input = raw("cohere", "invalid api token", Some(400));
+    let class = dispatch_native(&input, &input.error_str)
+        .expect("cohere classifies its invalid token branch");
+    let ErrorClass::Authentication(details) = class else {
+        panic!("expected Authentication, got {class:?}");
+    };
+    assert_eq!(details.status.0, 400);
+}
+
+#[test]
+fn raw_status_synthesized_cohere_498_keeps_the_class_default() {
+    let mut input = raw("cohere", "unrecognized failure", Some(498));
+    input.status_code_is_synthesized = true;
+    let class =
+        dispatch_native(&input, &input.error_str).expect("cohere classifies its 498 branch");
+    let ErrorClass::BadRequest(details) = class else {
+        panic!("expected BadRequest, got {class:?}");
+    };
+    assert_eq!(
+        details.status.0, 400,
+        "a synthesized status carries no response, so the class keeps its own default"
+    );
+}
+
 #[test]
 fn ai21_elif_arm_still_classifies_when_called_directly_even_though_dispatch_never_reaches_it() {
     let mut input = raw("ai21", "boom", Some(401));
