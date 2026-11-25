@@ -129,6 +129,13 @@ fn openai_fields_reject_a_questions_map() {
 }
 
 #[test]
+fn openai_fields_reject_a_scalar_questions_value() {
+    let error = request_fields(None, Some(json("5")), &Extra::new())
+        .expect_err("a number is not an OpenAI question list");
+    assert_eq!(error, FieldShapeError::QuestionsNotAList);
+}
+
+#[test]
 fn systemone_fields_warn_and_keep_the_state() {
     let (warnings, _guard) = capture_warnings();
     let questions = json(r#"{"first":{"type":"noul","instructions":"Is it true?"}}"#);
@@ -149,6 +156,21 @@ fn systemone_fields_warn_and_keep_the_state() {
             category: String::from("DeprecationWarning"),
         }]
     );
+}
+
+#[test]
+fn systemone_fields_keep_a_map_or_list_state() {
+    let (warnings, _guard) = capture_warnings();
+    for state in [json(r#"{"step":"one"}"#), json(r#"["one","two"]"#)] {
+        let fields =
+            request_fields(None, None, &with_state(state.clone())).expect("the fields build");
+        let RequestFields::SystemOne(fields) = fields else {
+            panic!("a state keyword means the System One format");
+        };
+        assert_eq!(fields.state, Some(state));
+        assert_eq!(fields.questions, None);
+    }
+    assert_eq!(warnings.captured().len(), 2);
 }
 
 #[test]
@@ -185,6 +207,15 @@ fn systemone_fields_reject_a_questions_list() {
         &with_state(text("s")),
     )
     .expect_err("a list is not a System One question map");
+    assert_eq!(error, FieldShapeError::QuestionsNotAMap);
+    assert_eq!(warnings.captured().len(), 1);
+}
+
+#[test]
+fn systemone_fields_reject_a_scalar_questions_value() {
+    let (warnings, _guard) = capture_warnings();
+    let error = request_fields(None, Some(text("questions")), &with_state(text("s")))
+        .expect_err("text is not a System One question map");
     assert_eq!(error, FieldShapeError::QuestionsNotAMap);
     assert_eq!(warnings.captured().len(), 1);
 }
