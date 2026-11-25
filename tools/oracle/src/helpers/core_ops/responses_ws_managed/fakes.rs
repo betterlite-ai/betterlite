@@ -104,13 +104,14 @@ impl ResponsesStreaming for ScriptedProvider {
         model: &str,
         call_kwargs: &IndexMap<String, Json>,
     ) -> Result<ScriptedStream, ProviderCallError<ScriptedFailure>> {
-        let mut recorder = lock(&self.shared);
-        recorder.trace.push("provider".to_owned());
-        recorder.calls.push(RecordedCall {
-            model: model.to_owned(),
-            kwargs: call_kwargs.clone(),
-        });
-        drop(recorder);
+        {
+            let mut recorder = lock(&self.shared);
+            recorder.trace.push("provider".to_owned());
+            recorder.calls.push(RecordedCall {
+                model: model.to_owned(),
+                kwargs: call_kwargs.clone(),
+            });
+        }
         dispatch(&self.outbound, &self.base_url, model, call_kwargs)
             .await
             .map_err(|error| {
