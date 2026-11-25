@@ -15,6 +15,7 @@ use futures_util::FutureExt as _;
 use futures_util::future::BoxFuture;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
+use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::{Notify, mpsc};
 use tokio::task::JoinSet;
 use tokio::time::timeout;
@@ -476,7 +477,7 @@ async fn batch_registration_drain_warns_when_the_registry_panics() {
 #[tokio::test]
 async fn batch_registration_drain_warns_about_an_unpolled_create() {
     let (log, _guard) = capture_logs(tracing::Level::INFO);
-    let registry: Arc<dyn ManagedBatchRegistry> = Arc::new(StalledRegistry);
+    let (registry, mut started, _release) = gated_registry();
     let background = BackgroundTasks::default();
     let handle = spawn_batch_registration(&background, &registry, "Anthropic", registration(true))
         .expect("a Tokio runtime runs the test");
@@ -485,6 +486,7 @@ async fn batch_registration_drain_warns_about_an_unpolled_create() {
         .await
         .expect_err("the registration task was cancelled");
     assert!(error.is_cancelled());
+    assert_eq!(started.try_recv(), Err(TryRecvError::Empty));
     assert!(log.contents().contains(
         "Anthropic batch registration cancelled at shutdown; its cost will not be tracked"
     ));
@@ -493,7 +495,7 @@ async fn batch_registration_drain_warns_about_an_unpolled_create() {
 #[tokio::test]
 async fn batch_registration_drain_warns_about_an_unpolled_read() {
     let (log, _guard) = capture_logs(tracing::Level::INFO);
-    let registry: Arc<dyn ManagedBatchRegistry> = Arc::new(StalledRegistry);
+    let (registry, mut started, _release) = gated_registry();
     let background = BackgroundTasks::default();
     let handle = spawn_batch_registration(&background, &registry, "Vertex AI", registration(false))
         .expect("a Tokio runtime runs the test");
@@ -502,6 +504,7 @@ async fn batch_registration_drain_warns_about_an_unpolled_read() {
         .await
         .expect_err("the registration task was cancelled");
     assert!(error.is_cancelled());
+    assert_eq!(started.try_recv(), Err(TryRecvError::Empty));
     assert!(log.contents().contains(
         "Vertex AI batch registration cancelled at shutdown; its status and output file may be stale"
     ));
