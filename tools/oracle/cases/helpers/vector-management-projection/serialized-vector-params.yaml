@@ -1,0 +1,66 @@
+kind: helper
+name: vector-management-projection-serialized-vector-params
+call:
+  vector_management_projection:
+    op: serialized_vector_params
+    litellm_params: '{"api_key":"secret","region":"us"}'
+    depth: 0
+calls:
+  - vector_management_projection:
+      op: serialized_vector_params
+      litellm_params: bad
+      depth: 0
+  - vector_management_projection:
+      op: serialized_vector_params
+      litellm_params: "null"
+      depth: 0
+  - vector_management_projection:
+      op: serialized_vector_params
+      litellm_params: "7"
+      depth: 0
+  - vector_management_projection:
+      op: serialized_vector_params
+      litellm_params: "true"
+      depth: 0
+  - vector_management_projection:
+      op: serialized_vector_params
+      litellm_params: '"text"'
+      depth: 0
+  - vector_management_projection:
+      op: serialized_vector_params
+      litellm_params: '"{\"api_key\": \"secret\"}"'
+      depth: 0
+  - vector_management_projection:
+      op: serialized_vector_params
+      litellm_params: '{"model": "münchen", "api_key": "secret"}'
+      depth: 0
+  - vector_management_projection:
+      op: serialized_vector_params
+      litellm_params: '{"note": "a\nb", "connection": "secret"}'
+      depth: 0
+  - vector_management_projection:
+      op: serialized_vector_params
+      litellm_params: "{"
+      depth: 0
+  - vector_management_projection:
+      op: serialized_vector_params
+      litellm_params: ""
+      depth: 0
+  - vector_management_projection:
+      op: serialized_vector_params
+      litellm_params: "{}"
+      depth: 0
+  - vector_management_projection:
+      op: serialized_vector_params
+      litellm_params: "[]"
+      depth: 0
+  - vector_management_projection:
+      op: serialized_vector_params
+      litellm_params: '{"a": "b"}'
+      depth: 9
+  - vector_management_projection:
+      op: serialized_vector_params
+      litellm_params: '{"a": "b"}'
+      depth: 10
+env: {}
+compare: {ignore: []}

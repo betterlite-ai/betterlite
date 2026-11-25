@@ -1,0 +1,22 @@
+kind: helper
+name: caller-headers-normalize-bearer
+call:
+  b3603:
+    normalize:
+      value: "Bearer sk-123"
+calls:
+  - b3603:
+      normalize:
+        value: "bearer sk-lower"
+  - b3603:
+      normalize:
+        value: "Bearer Bearer sk-twice"
+  - b3603:
+      normalize:
+        value: "Bearer "
+  - b3603:
+      normalize:
+        value: "plain-token"
+env: {}
+compare:
+  ignore: []

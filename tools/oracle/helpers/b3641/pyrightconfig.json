@@ -1,0 +1,7 @@
+{
+  "include": ["../b3641.py"],
+  "extraPaths": [".."],
+  "typeCheckingMode": "strict",
+  "reportAny": "error",
+  "reportMissingTypeStubs": "none"
+}

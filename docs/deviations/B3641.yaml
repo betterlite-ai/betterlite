@@ -1,0 +1,42 @@
+task: B3641
+deviations:
+  - what: >-
+      The managed-object write goes through an injected ManagedBatchRegistry that is None in
+      every betterlite deployment for now, so a Vertex batch call logs the "Managed files hook not
+      available" warning and registers nothing.
+    why: >-
+      LiteLLM's managed_files hook lives in the enterprise package, so open-source LiteLLM does
+      the same; the trait keeps the registration code and its tests ready for a later MIT store.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L981-L1037
+  - what: >-
+      The text after "Error in batch_prediction_jobs_handler:" and in the failed record's content
+      and error field is the Rust error text (a serde_json or B1371 transform error), not Python's
+      exception text.
+    why: >-
+      Exception strings are runtime wording (docs/compatibility.md); the record shape and the
+      failed state are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L928-L962
+  - what: >-
+      A task panic or a missing Tokio runtime is reported through the same error log lines as a
+      Python exception or a missing event loop.
+    why: Rust has no asyncio task, and the join result carries the same facts.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L1016-L1040
+  - what: >-
+      A "model" field that is a number, boolean, list or object goes to the error record, a null
+      model takes the "unknown" default that docs/compatibility.md gives every null key, and a
+      JSON body that is an array or a scalar goes to the failed status record, without a Python
+      TypeError or AttributeError.
+    why: >-
+      What Python's duck typing does beyond the declared types is not part of the contract; the
+      declared response is an object with string fields.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L813-L828
+  - what: >-
+      The batch object handed to the registry reads createTime as UTC, so its created_at is the
+      instant the "Z" timestamp names. LiteLLM parses it as a naive time in the process's local
+      zone, which shifts created_at by that zone's offset on any host not set to UTC.
+    why: >-
+      The constructor B3642 calls has no time zone, the trailing "Z" means UTC, and the value
+      reaches only the registration, which no deployment has yet; the logged record's created
+      comes from start_time on both sides.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/common_utils.py#L972-L984
+kept_bugs: []
