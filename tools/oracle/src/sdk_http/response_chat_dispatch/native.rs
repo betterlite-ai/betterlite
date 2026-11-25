@@ -5,14 +5,14 @@ use betterlite_core::api::chat_response_stream::source::AsyncChunkStream;
 use betterlite_core::api::messages_stream_split::errors::StreamFailure;
 use betterlite_core::api::response_chat_dispatch::error::DispatchError;
 use betterlite_core::api::response_chat_dispatch::handler::completion;
-use betterlite_core::api::response_chat_dispatch::input::{BridgeCall, ModelResponseSeed};
+use betterlite_core::api::response_chat_dispatch::input::{BridgeCall, StreamStamps};
 use betterlite_core::api::response_chat_dispatch::port::BridgeOutput;
 use betterlite_models::decisions::Json;
 use betterlite_redact::secret::Redactor;
 use indexmap::IndexMap;
 
 use super::execution::{ExecutionFailure, RealExecution, env_flags};
-use super::fixtures::Fixture;
+use super::fixtures::{Fixture, caller_response};
 use super::projection::{StreamViews, response_view};
 use super::{Call, Outcome, RunOutcome};
 use crate::sdk_http::error::SdkHttpError;
@@ -78,12 +78,13 @@ async fn run_once(
     let execution = RealExecution::new(api_base, env)?;
     let call = BridgeCall {
         kwargs: &spec.kwargs,
-        model_response: ModelResponseSeed::default(),
+        model_response: caller_response(),
         logging: fixture.state,
         client: Some(&()),
         limits: ApiLimits::default(),
         reasoning_auto_summary: env_flags(env).1,
         post_stream: None,
+        stamps: StreamStamps::default(),
     };
     match completion(&execution, call).await {
         Ok(output) => project(output).await,
@@ -141,7 +142,6 @@ fn failure_of(error: &DispatchError<ExecutionFailure>, redactor: &Redactor) -> F
         | DispatchError::Transform(_)
         | DispatchError::Translate(_)
         | DispatchError::Json(_)
-        | DispatchError::Mock { .. }
         | DispatchError::Completion { .. }
         | DispatchError::UnexpectedPayload
         | DispatchError::MissingCompletedResponse

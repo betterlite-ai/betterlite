@@ -17,18 +17,18 @@ use crate::sdk_http::error::SdkHttpError;
 // The bridge's four answers over B1078's create result, with the hidden maps the bridge merges
 pub(crate) fn answer(created: Created<()>) -> Result<Answer, ExecutionFailure> {
     match created {
-        Created::Responses(stamped) => Ok(Answer::Response(BridgeResponse {
+        Created::Responses(stamped) => Ok(Answer::Response(Box::new(BridgeResponse {
             payload: ResponsePayload::Typed(Box::new(stamped.response)),
             existing_hidden: hidden_map(&stamped.hidden)?,
             stream_hidden: Map::new(),
-        })),
-        Created::Raw(raw) => Ok(Answer::Response(BridgeResponse {
+        }))),
+        Created::Raw(raw) => Ok(Answer::Response(Box::new(BridgeResponse {
             payload: ResponsePayload::Dict(
                 serde_json::from_str(raw.get()).map_err(|error| invalid(&error.to_string()))?,
             ),
             existing_hidden: Map::new(),
             stream_hidden: Map::new(),
-        })),
+        }))),
         Created::Live(live) => Ok(Answer::Events(Box::new(LiveEvents {
             source: live.source,
             hidden: Map::new(),

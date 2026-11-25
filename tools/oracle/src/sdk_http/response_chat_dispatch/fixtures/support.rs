@@ -1,6 +1,7 @@
 use super::super::error::SdkHttpError;
 use super::config::OpenAiCreateConfig;
 use async_trait::async_trait;
+use betterlite_core::api::response_chat_result::records::ModelResponse;
 use betterlite_core::api::responses_agentic_execution::executor::{
     AnthropicContinuation, ContinuationExecutor, ResponsesContinuation,
 };
@@ -34,9 +35,24 @@ use betterlite_models::resolution::{
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
 use secrecy::SecretString;
+use serde_json::Map;
 use serde_json::value::RawValue;
 use std::collections::BTreeMap;
 use std::time::Duration;
+// The SDK boundary builds the caller's record, and the Python case sends the same empty ModelResponse
+pub(super) fn caller_response() -> ModelResponse {
+    ModelResponse {
+        id: String::new(),
+        created: 0,
+        model: None,
+        object: String::from("chat.completion"),
+        system_fingerprint: None,
+        choices: Vec::new(),
+        usage: None,
+        extra: Map::new(),
+        hidden_params: Map::new(),
+    }
+}
 pub(super) struct Sink;
 impl LogSink for Sink {
     fn emit(&self, _record: LogRecord) {}
