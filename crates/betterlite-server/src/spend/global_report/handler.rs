@@ -2,6 +2,7 @@ use axum::Json;
 use axum::extract::{Extension, RawQuery, State};
 use axum::response::{IntoResponse as _, Response};
 use betterlite_models::key_digest::hashing::hash_token;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::auth::auth_identity::AuthContext;
 use crate::cache_activity_routes::date::parse_date;
@@ -42,13 +43,7 @@ async fn global_report(
     let start = parse_date(start_text).ok_or(GlobalReportError::DateFormat)?;
     let end = parse_date(end_text).ok_or(GlobalReportError::DateFormat)?;
     let reports = store.ok_or(GlobalReportError::DbNotConnected)?;
-    let hashed_key = query.api_key.as_deref().map(|key| {
-        if key.starts_with("sk-") {
-            hash_token(key)
-        } else {
-            key.to_owned()
-        }
-    });
+    let hashed_key = query.api_key.as_ref().map(hashed_api_key);
     let branch = report_branch(&query, hashed_key.as_deref());
     let window = ReportWindow {
         start: &start,
@@ -90,4 +85,13 @@ fn report_branch<'query>(
         GroupBy::Customer => ReportBranch::Customers,
         GroupBy::ApiKey => ReportBranch::Keys,
     }
+}
+
+// an sk- api_key is hashed; any other value is the key's hash, which the caller passes as documented
+fn hashed_api_key(key: &SecretString) -> String {
+    let exposed = key.expose_secret();
+    if exposed.starts_with("sk-") {
+        return hash_token(exposed);
+    }
+    exposed.to_owned()
 }

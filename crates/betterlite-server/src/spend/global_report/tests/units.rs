@@ -1,4 +1,5 @@
 use rstest::rstest;
+use secrecy::ExposeSecret;
 
 use crate::spend::global_report::query::{
     GlobalReportQuery, GroupBy, InvalidGroupBy, decode_global_report_query,
@@ -33,7 +34,10 @@ fn every_parameter_lands_in_its_own_field() {
     );
     assert_eq!(query.start_date.as_deref(), Some("2024-01-01"));
     assert_eq!(query.end_date.as_deref(), Some("2024-01-31"));
-    assert_eq!(query.api_key.as_deref(), Some("k"));
+    assert_eq!(
+        query.api_key.as_ref().map(ExposeSecret::expose_secret),
+        Some("k")
+    );
     assert_eq!(query.internal_user_id.as_deref(), Some("u"));
     assert_eq!(query.team_id.as_deref(), Some("t"));
     assert_eq!(query.customer_id.as_deref(), Some("c"));
@@ -53,7 +57,10 @@ fn absent_parameters_stay_absent() {
 #[test]
 fn empty_parameters_are_present() {
     let query = decoded("api_key=&internal_user_id&team_id=&customer_id=");
-    assert_eq!(query.api_key.as_deref(), Some(""));
+    assert_eq!(
+        query.api_key.as_ref().map(ExposeSecret::expose_secret),
+        Some("")
+    );
     assert_eq!(query.internal_user_id.as_deref(), Some(""));
     assert_eq!(query.team_id.as_deref(), Some(""));
     assert_eq!(query.customer_id.as_deref(), Some(""));
@@ -70,6 +77,9 @@ fn a_repeated_parameter_keeps_its_last_value() {
 #[test]
 fn values_are_percent_decoded() {
     let query = decoded("api_key=sk%2Dkey+one&customer_id=c%26d");
-    assert_eq!(query.api_key.as_deref(), Some("sk-key one"));
+    assert_eq!(
+        query.api_key.as_ref().map(ExposeSecret::expose_secret),
+        Some("sk-key one")
+    );
     assert_eq!(query.customer_id.as_deref(), Some("c&d"));
 }

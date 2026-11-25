@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use secrecy::SecretString;
 use thiserror::Error;
 
 const START_DATE_PARAM: &str = "start_date";
@@ -17,12 +18,12 @@ pub enum GroupBy {
     ApiKey,
 }
 
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone)]
 pub struct GlobalReportQuery {
     pub start_date: Option<String>,
     pub end_date: Option<String>,
     pub group_by: GroupBy,
-    pub api_key: Option<String>,
+    pub api_key: Option<SecretString>,
     pub internal_user_id: Option<String>,
     pub team_id: Option<String>,
     pub customer_id: Option<String>,
@@ -45,7 +46,7 @@ pub fn decode_global_report_query(raw: &[u8]) -> Result<GlobalReportQuery, Inval
         start_date: values.remove(START_DATE_PARAM),
         end_date: values.remove(END_DATE_PARAM),
         group_by,
-        api_key: values.remove(API_KEY_PARAM),
+        api_key: values.remove(API_KEY_PARAM).map(SecretString::from),
         internal_user_id: values.remove(INTERNAL_USER_ID_PARAM),
         team_id: values.remove(TEAM_ID_PARAM),
         customer_id: values.remove(CUSTOMER_ID_PARAM),
