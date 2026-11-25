@@ -122,5 +122,4 @@ fn failure(
     )
 }
 
-#[cfg(test)]
 mod tests;

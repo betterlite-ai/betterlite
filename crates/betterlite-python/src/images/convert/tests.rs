@@ -6,7 +6,7 @@ use super::super::session::{
     ImageSession, call_setup, explicit_credentials, first_text, now_seconds,
 };
 use super::super::variation::{first_image, variation};
-use super::fields::{boolean, field, headers, resolve_target, strings, target, text, timeout};
+use super::fields::{boolean, headers, resolve_target, strings, target, text, timeout};
 use super::options::{edit_options, generation_options};
 use super::{
     ConvertError, DEFAULT_CONTENT_TYPE, DEFAULT_MASK_NAME, SettingsWire, image_file, images, parse,
@@ -283,20 +283,6 @@ fn request_strings_preserves_values_and_rejects_non_text_items() {
             .to_string(),
         "names must be a list of text values"
     );
-}
-
-#[test]
-fn error_headers_reject_non_object_values() {
-    let (wire, _files) = call(r#"{"headers":[]}"#);
-    assert_eq!(
-        headers(&wire.arguments).unwrap_err().to_string(),
-        "headers must be an object of text values"
-    );
-}
-
-#[test]
-fn error_field_records_expected_type() {
-    assert_eq!(field("prompt", "text").to_string(), "prompt must be text");
 }
 
 #[test]

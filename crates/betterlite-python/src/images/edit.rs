@@ -223,5 +223,4 @@ pub(crate) fn status_message(body: &[u8]) -> String {
     }
 }
 
-#[cfg(test)]
 mod tests;

@@ -80,5 +80,4 @@ fn encoded(outcome: Result<ImageAnswer, CallFailure>) -> PyResult<String> {
     }
 }
 
-#[cfg(test)]
 mod tests;

@@ -87,5 +87,4 @@ pub(crate) fn request(
     })
 }
 
-#[cfg(test)]
 mod tests;

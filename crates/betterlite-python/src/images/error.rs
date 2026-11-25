@@ -197,5 +197,4 @@ pub(crate) fn convert_failure(
     connection_failure(message, model, provider)
 }
 
-#[cfg(test)]
 mod tests;
