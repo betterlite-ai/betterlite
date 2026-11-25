@@ -18,6 +18,7 @@ mod encode;
 pub mod gateway;
 mod payload;
 pub(crate) mod provider;
+pub mod responses_ws_managed;
 pub mod service;
 mod socket;
 

@@ -1,0 +1,6 @@
+task: B945
+deviations:
+  - what: A response.completed whose serialized chunk text is not a JSON object keeps no completion and writes no history, where LiteLLM stores the parsed value in completed_event anyway and lets _save_turn_history call .get on a list or string, which raises AttributeError and makes run send Internal server error.
+    why: The completion is only usable as an object, and a list or string completion is not something a working setup produces; failing the whole run's error path over it turns a harmless provider quirk into a dropped connection.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L2880-L2884
+kept_bugs: []

@@ -1,0 +1,33 @@
+kind: websocket
+name: warmup-send-failure
+driver: service
+service: managed_responses_turns
+input:
+  managed:
+  - setup:
+      model: openai/gpt-4o-mini
+      litellm_metadata: null
+      custom_llm_provider: null
+      api_key: null
+      api_base: null
+      timeout: null
+      first_message: null
+      kwargs: {}
+    frames:
+    - '{"type": "response.create", "generate": false}'
+    disconnect: connection closed
+    scripts: []
+    quota: null
+    sink:
+      fails_at: 1
+      message: warmup send failed
+    normalize_warmup: true
+    deadline_millis: 120000
+path: /v1/responses
+headers: {}
+requested_subprotocols: []
+expected_http_status: 101
+negotiated_subprotocol: null
+frames: []
+close: null
+env: {}

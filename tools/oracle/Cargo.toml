@@ -29,6 +29,7 @@ betterlite-http = { path = "../../crates/betterlite-http" }
 betterlite-logging = { path = "../../crates/betterlite-logging" }
 betterlite-models = { path = "../../crates/betterlite-models" }
 betterlite-openai = { path = "../../crates/betterlite-openai" }
+betterlite-oracle-core-ops = { path = "src/helpers/core_ops" }
 betterlite-oracle-groups = { path = "groups", features = ["all"] }
 betterlite-oracle-helper-api = { path = "helper-api" }
 betterlite-oracle-runner = { path = "runner" }

@@ -1,0 +1,122 @@
+kind: websocket
+name: stream-forwarding
+driver: service
+service: managed_responses_turns
+input:
+  managed:
+  - setup:
+      model: openai/gpt-4o-mini
+      litellm_metadata: null
+      custom_llm_provider: null
+      api_key: null
+      api_base: null
+      timeout: null
+      first_message: null
+      kwargs: {}
+    frames:
+    - '{"type": "response.create", "input": "hello"}'
+    disconnect: connection closed
+    scripts:
+    - fail: null
+      chunks:
+      - kind: none
+        value: null
+        event_type: null
+        dump: null
+      - kind: json
+        value:
+          type: response.created
+          response:
+            id: r-part
+            created_at: 0
+            output: []
+            extra_field: null
+            metadata:
+              present: null
+        event_type: null
+        dump: null
+      - kind: object
+        value: null
+        event_type: null
+        dump: '{"type": "response.progress", "response": {"id": "r-progress"}}'
+      - kind: broken
+        value: null
+        event_type: null
+        dump: null
+      - kind: json
+        value:
+          type: response.custom
+          absent: null
+          payload:
+            present: null
+            items:
+            - null
+            - present: null
+            number: 1.25
+        event_type: null
+        dump: null
+      - kind: json
+        value:
+          type: response.completed
+          response:
+            id: r1
+            output:
+            - type: message
+              content:
+              - type: output_text
+                text: A
+            usage:
+              input_tokens: 0
+              output_tokens: 0
+              total_tokens: 0
+              cost: 0.0
+        event_type: null
+        dump: null
+      - kind: json
+        value:
+          type: response.completed
+          response:
+            id: r2
+            output:
+            - type: message
+              content:
+              - type: output_text
+                text: B
+            usage:
+              input_tokens: 0
+              output_tokens: 0
+              total_tokens: 0
+              cost: 0.0
+        event_type: null
+        dump: null
+      raise_after: null
+      raise_message: ''
+    quota: null
+    sink:
+      fails_at: null
+      message: client send failed
+    normalize_warmup: false
+    deadline_millis: 120000
+path: /v1/responses
+headers: {}
+requested_subprotocols: []
+expected_http_status: 101
+negotiated_subprotocol: null
+frames:
+- direction: provider_to_client
+  action: expect
+  text: '{"response":{"created_at":0,"id":"resp_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpOb25lO3Jlc3BvbnNlX2lkOnItcGFydA==","metadata":{"present":null},"output":[]},"type":"response.created"}'
+- direction: provider_to_client
+  action: expect
+  text: '{"response":{"id":"resp_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpOb25lO3Jlc3BvbnNlX2lkOnItcHJvZ3Jlc3M="},"type":"response.progress"}'
+- direction: provider_to_client
+  action: expect
+  text: '{"payload":{"items":[null,{"present":null}],"number":1.25,"present":null},"type":"response.custom"}'
+- direction: provider_to_client
+  action: expect
+  text: '{"response":{"id":"resp_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpOb25lO3Jlc3BvbnNlX2lkOnIx","output":[{"content":[{"text":"A","type":"output_text"}],"type":"message"}],"usage":{"cost":0.0,"input_tokens":0,"output_tokens":0,"total_tokens":0}},"type":"response.completed"}'
+- direction: provider_to_client
+  action: expect
+  text: '{"response":{"id":"resp_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpOb25lO3Jlc3BvbnNlX2lkOnIy","output":[{"content":[{"text":"B","type":"output_text"}],"type":"message"}],"usage":{"cost":0.0,"input_tokens":0,"output_tokens":0,"total_tokens":0}},"type":"response.completed"}'
+close: null
+env: {}
