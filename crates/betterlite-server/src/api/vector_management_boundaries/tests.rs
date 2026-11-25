@@ -281,6 +281,31 @@ fn serialized_vector_params_marks_invalid_json() {
 }
 
 #[test]
+fn serialized_vector_params_marks_text_beyond_serde_json() {
+    // NaN and Infinity parse in Python's json but not in serde_json
+    for source in ["NaN", "Infinity", "-Infinity"] {
+        assert_eq!(
+            redacted_text(source, 0),
+            Json::Text(REDACTED_BY_LITELM.to_owned()),
+            "for {source}"
+        );
+    }
+    let deep = format!("{}{}", "[".repeat(200), "]".repeat(200));
+    assert_eq!(
+        redacted_text(&deep, 0),
+        Json::Text(REDACTED_BY_LITELM.to_owned())
+    );
+    let limits = ApiLimits {
+        max_json_bytes: 4,
+        ..ApiLimits::default()
+    };
+    assert_eq!(
+        redact_sensitive_litellm_params(&Json::Text("{\"a\": 1}".to_owned()), 0, limits),
+        Json::Text(REDACTED_BY_LITELM.to_owned())
+    );
+}
+
+#[test]
 fn serialized_vector_params_keeps_parsed_scalars() {
     for (source, expected) in [
         ("null", "null"),
@@ -652,7 +677,7 @@ fn replays_corpus() {
             let redacted = redact_sensitive_litellm_params(&value, 0, ApiLimits::default());
             let reparsed: Json = serde_json::from_str(&dumps(&redacted))
                 .expect("a redacted value writes back as JSON");
-            assert_eq!(reparsed, redacted);
+            assert_eq!(dumps(&reparsed), dumps(&redacted));
             true
         })
         .collect();
