@@ -1,7 +1,13 @@
 import asyncio
+import json
 import logging
+import socket
+import socketserver
+import threading
 from datetime import datetime
-from typing import Final, TypedDict
+from functools import partial
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Final, Literal, TypedDict
 
 import litellm
 from litellm.exceptions import RateLimitError
@@ -16,12 +22,15 @@ from typing_extensions import override
 litellm.suppress_debug_info = True
 
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
-# the handler takes object-valued maps, so a case's JSON map crosses the boundary here
-OBJECTS: Final = TypeAdapter(dict[str, object])
 LOG_NAME: Final = "LiteLLM"
 DIAGNOSTIC_PREFIX: Final = "ManagedResponsesWS: "
 SERIALIZE_MESSAGE: Final = "chunk must be a JSON object"
 SCRIPT_EXHAUSTED: Final = "the case scripts no further provider call"
+DISPATCH_KEY: Final = "sk-fixture"
+SSE_BODY: Final = b"".join(
+    b"data: " + json.dumps({"type": kind}).encode() + b"\n\n"
+    for kind in ("response.created", "response.completed")
+)
 
 
 class Setup(TypedDict):
@@ -36,7 +45,7 @@ class Setup(TypedDict):
 
 
 class ChunkRow(TypedDict):
-    kind: str
+    kind: Literal["none", "json", "object", "broken"]
     value: JsonValue
     event_type: str | None
     dump: str | None
@@ -50,7 +59,7 @@ class ScriptRow(TypedDict):
 
 
 class QuotaRow(TypedDict):
-    kind: str
+    kind: Literal["rate_limit", "internal"]
     message: str
 
 
@@ -87,6 +96,7 @@ class Recorder:
         self.calls: list[JsonValue] = []
         self.quotas: list[JsonValue] = []
         self.trace: list[JsonValue] = []
+        self.requests: list[JsonValue] = []
         self.incoming = list(input_value["frames"])
         self.incoming_index = 0
         self.disconnect = input_value["disconnect"]
@@ -112,6 +122,32 @@ class Socket:
             self.recorder.incoming_index += 1
             return frame
         raise ClientDisconnectedError(self.recorder.disconnect)
+
+
+# the provider HTTP request LiteLLM makes for a turn, answered with one scripted event
+class Answering(BaseHTTPRequestHandler):
+    recorder: Recorder
+
+    def __init__(
+        self,
+        recorder: Recorder,
+        request: socket.socket,
+        client_address: tuple[str, int],
+        server: socketserver.BaseServer,
+    ) -> None:
+        self.recorder = recorder
+        super().__init__(request, client_address, server)
+
+    def do_POST(self) -> None:
+        length = int(self.headers.get("content-length") or "0")
+        body = JSON.validate_json(self.rfile.read(length))
+        row: JsonValue = {"method": self.command, "path": self.path, "body": body}
+        self.recorder.requests.append(row)
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Content-Length", str(len(SSE_BODY)))
+        self.end_headers()
+        _written = self.wfile.write(SSE_BODY)
 
 
 class FakeChunk:
@@ -163,9 +199,10 @@ class FakeStream:
 
 
 class ScriptedResponses:
-    def __init__(self, recorder: Recorder, scripts: list[ScriptRow]) -> None:
+    def __init__(self, recorder: Recorder, scripts: list[ScriptRow], base_url: str) -> None:
         self.recorder = recorder
         self.scripts = scripts
+        self.base_url = base_url
         self.index = 0
 
     async def __call__(self, **kwargs: JsonValue) -> FakeStream:
@@ -173,6 +210,9 @@ class ScriptedResponses:
         model = call.pop("model", None)
         self.recorder.trace.append("provider")
         self.recorder.calls.append({"model": model, "kwargs": call})
+        dispatch = dict(call)
+        dispatch.update(model=model, api_base=self.base_url, api_key=DISPATCH_KEY, stream=True)
+        _answered = await real_aresponses(**dispatch)
         if self.index >= len(self.scripts):
             raise ScriptedError(SCRIPT_EXHAUSTED)
         script = self.scripts[self.index]
@@ -235,7 +275,6 @@ class Probe(Handler):
 def build_handler(
     setup: Setup, socket: Socket, recorder: Recorder, quota: QuotaRow | None
 ) -> Probe:
-    extra = OBJECTS.validate_python(setup["kwargs"])
     callbacks: list[ProjectQuotaCallback] | None = None
     if quota is not None:
         callbacks = [ScriptedQuota(recorder, quota)]
@@ -260,14 +299,20 @@ def build_handler(
         first_message=setup["first_message"],
         user_api_key_dict=None,
         quota_callbacks=callbacks,
-        **extra,
+        **setup["kwargs"],
     )
 
 
 def run(input_value: Input) -> dict[str, JsonValue]:
     recorder = Recorder(input_value)
     socket = Socket(recorder)
-    provider = ScriptedResponses(recorder, input_value["scripts"])
+    server = ThreadingHTTPServer(("127.0.0.1", 0), partial(Answering, recorder))
+    base_url = f"http://127.0.0.1:{server.server_address[1]}/v1"
+    thread = threading.Thread(
+        target=partial(server.serve_forever, poll_interval=0.01), daemon=True
+    )
+    thread.start()
+    provider = ScriptedResponses(recorder, input_value["scripts"], base_url)
     handler = build_handler(input_value["setup"], socket, recorder, input_value["quota"])
     capture = Capture()
     logger = logging.getLogger(LOG_NAME)
@@ -277,11 +322,14 @@ def run(input_value: Input) -> dict[str, JsonValue]:
         logger.removeHandler(existing)
     logger.addHandler(capture)
     logger.setLevel(logging.DEBUG)
+    previous_aresponses = litellm.aresponses
     object.__setattr__(litellm, "aresponses", provider)
     try:
         asyncio.run(handler.run())
     finally:
-        object.__setattr__(litellm, "aresponses", real_aresponses)
+        object.__setattr__(litellm, "aresponses", previous_aresponses)
+        server.shutdown()
+        server.server_close()
         logger.removeHandler(capture)
         for existing in previous_handlers:
             logger.addHandler(existing)
@@ -289,6 +337,7 @@ def run(input_value: Input) -> dict[str, JsonValue]:
     return {
         "frames": [JSON.validate_json(text) for text in recorder.frames],
         "provider_calls": recorder.calls,
+        "provider_requests": recorder.requests,
         "quota_calls": recorder.quotas,
         "history": handler.history_view(),
         "trace": recorder.trace,
