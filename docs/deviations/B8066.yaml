@@ -42,6 +42,9 @@ deviations:
   - what: DualCache.increment_cache and async_increment_cache carry the amount through f64, so an integer past 2^53 loses its low bits; LiteLLM adds Python ints in the memory tier and sends INCR with a whole number to Redis.
     why: The Rust dual cache's increment takes f64 and B4293 to B4295 own that contract; the InMemoryCache, DiskCache and stand-alone RedisCache paths keep whole numbers where their Rust APIs take i64.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L164-L201
+  - what: A DualCache async write ignores nx, so it replaces an existing Redis key where LiteLLM's async_set_cache hands nx to the Redis tier; the memory tier takes the new value in both.
+    why: The native dual cache's async_set has no nx argument, and routing a dual write around the native handle would drop the crate's tier and batch rules (B4293 to B4295); the stand-alone RedisCache does forward and validate nx.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L505-L519
   - what: This task has no helper oracle cases.
     why: The pytest files compare both packages in one process, and the backend cases belong to B4290 to B4295.
     link: ""
