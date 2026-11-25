@@ -28,6 +28,7 @@ use tracing::subscriber::{DefaultGuard, set_default};
 use crate::api::vector_store_access::VectorStoreAccess;
 use crate::api::vector_store_access::auth::ObjectPermissionLookup;
 use crate::api::vector_store_access::store::ManagedVectorStore;
+use crate::api::vector_store_registry::store::VectorStoreRegistry;
 
 use super::assertion::{assert_can_access_store_id, assert_can_access_vector_store};
 use super::error::{
@@ -419,6 +420,18 @@ async fn registry_non_object_params_normalized() {
         outcome.unwrap(),
         Some(store(r#"{"vector_store_id":"vs_a","litellm_params":{}}"#))
     );
+}
+
+#[test]
+fn real_registry_lookup_reads_loaded_stores() {
+    let registry = VectorStoreRegistry {
+        stores: vec![record(VS_A_TEAM_A)],
+        ..VectorStoreRegistry::default()
+    };
+    let found = <VectorStoreRegistry as ManagedStoreRegistry>::lookup(&registry, "vs_a");
+    assert_eq!(found.unwrap(), Some(record(VS_A_TEAM_A)));
+    let missing = <VectorStoreRegistry as ManagedStoreRegistry>::lookup(&registry, "vs_missing");
+    assert_eq!(missing.unwrap(), None);
 }
 
 #[tokio::test]
