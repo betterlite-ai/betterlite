@@ -28,11 +28,12 @@ def safe_divide_seconds(
 def normalize_drop_params(value: PythonValue) -> bool | None:
     if value is None:
         return None
+    candidate: PythonValue = value
     match value:
         case str() as text:
-            candidate: PythonValue = text.strip()
+            candidate = text.strip()
         case object():
-            candidate = value
+            pass
     try:
         return _DROP_PARAMS_BOOL.validate_python(candidate)
     except ValidationError:
@@ -47,8 +48,8 @@ def drop_params_flag(value: PythonValue, source: str, logger: logging.Logger) ->
 
 
 def drop_params_env_flag(environ: Mapping[str, str], logger: logging.Logger) -> bool:
-    raw = "" if DROP_PARAMS_ENV_VAR not in environ else environ[DROP_PARAMS_ENV_VAR]
-    configured = raw.strip()
+    raw = environ.get(DROP_PARAMS_ENV_VAR)
+    configured = "" if raw is None else raw.strip()
     if len(configured) == 0:
         return False
     normalized = normalize_drop_params(configured)

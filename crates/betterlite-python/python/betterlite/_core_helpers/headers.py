@@ -72,16 +72,8 @@ def set_provider_response_headers_in_hidden_params(  # ast-grep-ignore: no-long-
 def get_provider_response_headers_from_hidden_params(  # ast-grep-ignore: no-long-names
     response: PrivateCarrier,
 ) -> dict[str, str] | None:
-    hidden = private_fields(response).get("_hidden_params")
-    match hidden:
-        case Mapping() as params:
-            match params.get("headers"):
-                case Mapping() as given:
-                    try:
-                        return _PROVIDER_HEADERS.validate_python(given)
-                    except ValidationError:
-                        return None
-                case object():
-                    return None
-        case object():
-            return None
+    try:
+        hidden = _JSON_OBJECT.validate_python(private_fields(response).get("_hidden_params"))
+        return _PROVIDER_HEADERS.validate_python(hidden.get("headers"))
+    except ValidationError:
+        return None

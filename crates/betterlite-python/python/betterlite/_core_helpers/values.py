@@ -15,7 +15,7 @@ PythonValue: TypeAlias = (
     | Iterator["PythonValue"]
     | Sequence["PythonValue"]
     | Mapping[str, "PythonValue"]
-    | type["PythonValue"]
+    | type[BaseException]
     | Callable[..., "PythonValue"]
     | None
 )

@@ -11,9 +11,7 @@ _SKIPPED_NAMES: Final = frozenset({"Logging", "LiteLLMLoggingObj", "Router"})
 def filter_exceptions_from_params(data: PythonValue, max_depth: int = 20) -> PythonValue:
     if max_depth <= 0:
         return data
-    if isinstance(data, Exception):  # ast-grep-ignore: no-isinstance
-        return None
-    if callable(data) and not isinstance(data, type):  # ast-grep-ignore: no-isinstance
+    if _removed_in_parent(data):
         return None
     name = type(data).__name__
     if name in _SKIPPED_NAMES:
@@ -22,8 +20,6 @@ def filter_exceptions_from_params(data: PythonValue, max_depth: int = 20) -> Pyt
         case dict() as fields:
             kept: dict[str, PythonValue] = {}
             for key, value in fields.items():
-                if _removed_in_parent(value):
-                    continue
                 filtered = _filtered_child(value, max_depth)
                 if filtered is not None:
                     kept[key] = filtered
@@ -31,8 +27,6 @@ def filter_exceptions_from_params(data: PythonValue, max_depth: int = 20) -> Pyt
         case list() as items:
             kept_items: list[PythonValue] = []
             for item in items:
-                if _removed_in_parent(item):
-                    continue
                 filtered = _filtered_child(item, max_depth)
                 if filtered is not None:
                     kept_items.append(filtered)
@@ -42,12 +36,18 @@ def filter_exceptions_from_params(data: PythonValue, max_depth: int = 20) -> Pyt
 
 
 def _removed_in_parent(value: PythonValue) -> bool:
-    if isinstance(value, Exception):  # ast-grep-ignore: no-isinstance
-        return True
-    return callable(value) and not isinstance(value, type)  # ast-grep-ignore: no-isinstance
+    match value:
+        case Exception():
+            return True
+        case type():
+            return False
+        case object():
+            return callable(value)
 
 
 def _filtered_child(value: PythonValue, max_depth: int) -> PythonValue:
+    if _removed_in_parent(value):
+        return None
     with suppress(Exception):
         return filter_exceptions_from_params(value, max_depth - 1)
     return None
