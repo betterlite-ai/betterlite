@@ -30,7 +30,7 @@ use crate::spend_writes::warm::is_spend_counter_cache_warm;
 
 use super::counters::{AdmissionCounters, WindowSeed};
 
-// the writes' dyn batch implements ActiveSpendBatch only for the 'static object, which rustc cannot generalize in the reservation's Send future (rust-lang/rust#130113); an owned newtype covers every batch
+// the writes' dyn batch as an owned adapter for the reservation's seeding reads; the blanket impl in spend_writes::batch spans every batch region
 pub(super) struct SeedBatch(pub(super) Arc<dyn CounterBatch>);
 
 impl ActiveSpendBatch for SeedBatch {

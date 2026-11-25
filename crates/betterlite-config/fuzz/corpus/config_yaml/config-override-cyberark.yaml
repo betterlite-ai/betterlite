@@ -1,0 +1,6 @@
+general_settings:
+  key_management_system: cyberark
+  key_management_settings:
+    api_base: https://conjur.example.com
+    refresh_interval: "300"
+model_list: []
