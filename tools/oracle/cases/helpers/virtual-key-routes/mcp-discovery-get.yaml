@@ -1,0 +1,30 @@
+kind: helper
+name: virtual-key-routes-mcp-discovery-get
+call:
+  virtual_key_routes:
+    function: should_call_route
+    route: /v1/mcp/server
+    method: GET
+    key:
+      allowed_routes: [llm_api_routes]
+calls:
+  - virtual_key_routes:
+      function: should_call_route
+      route: /v1/mcp/server/server-a
+      method: GET
+      key:
+        allowed_routes: [llm_api_routes]
+  - virtual_key_routes:
+      function: should_call_route
+      route: /v1/mcp/server
+      method: POST
+      key:
+        allowed_routes: [llm_api_routes]
+  - virtual_key_routes:
+      function: should_call_route
+      route: /v1/mcp/server/server-a
+      method: PUT
+      key:
+        allowed_routes: [llm_api_routes]
+env: {}
+compare: {ignore: []}
