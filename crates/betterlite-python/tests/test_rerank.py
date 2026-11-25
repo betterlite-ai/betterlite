@@ -297,41 +297,41 @@ def test_request_body() -> None:
     assert response_of(outcome).id == "rerank-1"
 
 
-def test_request_return_false() -> None:
+@pytest.mark.parametrize("return_documents", [False, None])
+def test_request_return_documents(*, return_documents: bool | None) -> None:
     with closing(RerankServer()) as server:
         outcome = rerank(
             model=MODEL, query=QUERY, documents=DOCUMENTS_TEXT,
-            custom_llm_provider=PROVIDER, return_documents=False,
+            custom_llm_provider=PROVIDER, return_documents=return_documents,
             api_base=server.url, api_key=GOOD_KEY,
         )
         body = body_of(server.calls[-1])
-    assert body["return_documents"] is False
+    if return_documents is None:
+        assert "return_documents" not in body
+    else:
+        assert body["return_documents"] is return_documents
     assert response_of(outcome).id == "rerank-1"
 
 
-def test_request_return_none() -> None:
+def test_request_unknown_kwargs() -> None:
     with closing(RerankServer()) as server:
-        outcome = rerank(
-            model=MODEL, query=QUERY, documents=DOCUMENTS_TEXT,
-            custom_llm_provider=PROVIDER, return_documents=None,
-            api_base=server.url, api_key=GOOD_KEY,
-        )
-        body = body_of(server.calls[-1])
-    assert "return_documents" not in body
-    assert response_of(outcome).id == "rerank-1"
-
-
-def test_request_extra_kwargs() -> None:
-    with closing(RerankServer()) as server:
-        outcome = rerank(
+        first = rerank(
             model=MODEL, query=QUERY, documents=DOCUMENTS_TEXT,
             custom_llm_provider=PROVIDER, api_base=server.url, api_key=GOOD_KEY,
             truncate=True, instruction="pick one",
         )
-        body = body_of(server.calls[-1])
-    assert "truncate" not in body
-    assert "instruction" not in body
-    assert response_of(outcome).id == "rerank-1"
+        second = rerank(
+            model=MODEL, query=QUERY, documents=DOCUMENTS_TEXT,
+            custom_llm_provider=PROVIDER, api_base=server.url, api_key=GOOD_KEY,
+            litellm_logging_obj=object(),
+        )
+        extras = body_of(server.calls[0])
+        logged = body_of(server.calls[1])
+    assert "truncate" not in extras
+    assert "instruction" not in extras
+    assert logged["query"] == QUERY
+    assert response_of(first).id == "rerank-1"
+    assert response_of(second).id == "rerank-1"
 
 
 def test_request_headers() -> None:
@@ -339,11 +339,15 @@ def test_request_headers() -> None:
         outcome = rerank(
             model=MODEL, query=QUERY, documents=DOCUMENTS_TEXT,
             custom_llm_provider=PROVIDER, api_base=server.url, api_key=GOOD_KEY,
-            headers={"x-one": "1"},
+            headers={"x-one": "1", "x-two": "2"},
         )
         call = server.calls[-1]
+        body = body_of(call)
     assert header_of(call, "x-one") == "1"
+    assert header_of(call, "x-two") == "2"
     assert header_of(call, "authorization") == f"Bearer {GOOD_KEY}"
+    assert "headers" not in body
+    assert body["query"] == QUERY
     assert response_of(outcome).id == "rerank-1"
 
 
@@ -389,26 +393,19 @@ def test_error_model_none() -> None:
     assert async_caught.value.status_code == BAD_REQUEST_STATUS
 
 
-def test_error_unsupported() -> None:
+@pytest.mark.parametrize(
+    ("provider", "message"),
+    [("openai", UNSUPPORTED_TEXT), ("together_ai", NOT_WIRED_TEXT)],
+)
+def test_error_provider_refused(provider: str, message: str) -> None:
     with closing(RerankServer()) as server, pytest.raises(APIConnectionError) as caught:
         _ = rerank(
             model="x", query=QUERY, documents=DOCUMENTS_TEXT,
-            custom_llm_provider="openai", api_base=server.url, api_key=GOOD_KEY,
+            custom_llm_provider=provider, api_base=server.url, api_key=GOOD_KEY,
         )
     assert server.calls == []
     assert caught.value.status_code == SERVER_ERROR_STATUS
-    assert UNSUPPORTED_TEXT in caught.value.message
-
-
-def test_error_not_wired() -> None:
-    with closing(RerankServer()) as server, pytest.raises(APIConnectionError) as caught:
-        _ = rerank(
-            model="rerank", query=QUERY, documents=DOCUMENTS_TEXT,
-            custom_llm_provider="together_ai", api_base=server.url, api_key=GOOD_KEY,
-        )
-    assert server.calls == []
-    assert caught.value.status_code == SERVER_ERROR_STATUS
-    assert NOT_WIRED_TEXT in caught.value.message
+    assert message in caught.value.message
 
 
 def test_error_client_refused() -> None:
@@ -436,15 +433,3 @@ def test_error_azure_refused() -> None:
             custom_llm_provider=PROVIDER, azure_ad_token_provider=object(),
         )
     assert refused.value.argument == "azure_ad_token_provider"
-
-
-def test_request_logger_ignored() -> None:
-    with closing(RerankServer()) as server:
-        outcome = rerank(
-            model=MODEL, query=QUERY, documents=DOCUMENTS_TEXT,
-            custom_llm_provider=PROVIDER, api_base=server.url, api_key=GOOD_KEY,
-            litellm_logging_obj=object(),
-        )
-        body = body_of(server.calls[-1])
-    assert body["query"] == QUERY
-    assert response_of(outcome).id == "rerank-1"

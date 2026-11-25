@@ -73,13 +73,12 @@ def rerank(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob
     max_tokens_per_doc: int | None = None,
     **kwargs: CallValue,
 ) -> RerankResponse | Awaitable[RerankResponse]:
-    named: dict[str, CallValue] = {
-        "model": model, "query": query, "documents": JSON.validate_python(documents),
-        "custom_llm_provider": custom_llm_provider, "top_n": top_n,
-        "rank_fields": JSON.validate_python(rank_fields), "return_documents": return_documents,
-        "max_chunks_per_doc": max_chunks_per_doc, "max_tokens_per_doc": max_tokens_per_doc,
-    }
-    values: dict[str, CallValue] = {**kwargs, **named}
+    values: dict[str, CallValue] = dict(kwargs)
+    values |= request_arguments(
+        model, query, documents, custom_llm_provider, top_n, rank_fields,
+        max_chunks_per_doc, return_documents=return_documents,
+    )
+    values["max_tokens_per_doc"] = max_tokens_per_doc
     check_model(values)
     if values.get("arerank") is True or values.get("_is_async") is True:
         return rerank_async(values, ASYNC_NAMED_ARGUMENTS)
@@ -97,13 +96,10 @@ async def arerank(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litel
     max_chunks_per_doc: int | None = None,
     **kwargs: CallValue,
 ) -> RerankResponse:
-    named: dict[str, CallValue] = {
-        "model": model, "query": query, "documents": JSON.validate_python(documents),
-        "custom_llm_provider": custom_llm_provider, "top_n": top_n,
-        "rank_fields": JSON.validate_python(rank_fields), "return_documents": return_documents,
-        "max_chunks_per_doc": max_chunks_per_doc,
-    }
-    values: dict[str, CallValue] = {**kwargs, **named}
+    values: dict[str, CallValue] = kwargs | request_arguments(
+        model, query, documents, custom_llm_provider, top_n, rank_fields,
+        max_chunks_per_doc, return_documents=return_documents,
+    )
     check_model(values)
     return await rerank_async(values, ASYNC_NAMED_ARGUMENTS)
 
@@ -113,6 +109,29 @@ def check_model(values: Mapping[str, CallValue]) -> None:
         raise exceptions.BadRequestError(
             f"GetLLMProvider Exception - {MISSING_MODEL}\n\noriginal model: None", None, ""
         )
+
+
+def request_arguments(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L164-L178
+    model: str | None,
+    query: str,
+    documents: list[str | dict[str, JsonValue]],
+    custom_llm_provider: str | None,
+    top_n: int | None,
+    rank_fields: list[str] | None,
+    max_chunks_per_doc: int | None,
+    *,
+    return_documents: bool | None,
+) -> dict[str, CallValue]:
+    return {
+        "model": model,
+        "query": query,
+        "documents": JSON.validate_python(documents),
+        "custom_llm_provider": custom_llm_provider,
+        "top_n": top_n,
+        "rank_fields": JSON.validate_python(rank_fields),
+        "return_documents": return_documents,
+        "max_chunks_per_doc": max_chunks_per_doc,
+    }
 
 
 def rerank_sync(values: Mapping[str, CallValue], named: tuple[str, ...]) -> RerankResponse:
