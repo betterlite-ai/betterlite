@@ -17,11 +17,18 @@ pub enum StreamFailure {
     },
 }
 
-#[derive(Debug, Clone, thiserror::Error)]
-#[error("{cause}")]
-pub struct FailureCause {
-    #[source]
-    cause: Arc<dyn Error + Send + Sync>,
+#[derive(Debug, Clone, strum::Display)]
+pub enum FailureCause {
+    #[strum(to_string = "{0}")]
+    Upstream(Arc<dyn Error + Send + Sync>),
+}
+
+impl Error for FailureCause {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Upstream(cause) => Some(cause.as_ref()),
+        }
+    }
 }
 
 impl StreamFailure {
@@ -36,7 +43,7 @@ impl StreamFailure {
             class,
             message,
             traceback,
-            cause: FailureCause { cause },
+            cause: FailureCause::Upstream(cause),
         }
     }
 
