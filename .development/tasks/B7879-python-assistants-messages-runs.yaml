@@ -89,6 +89,7 @@ deviations:
 out_of_scope:
 - "Assistant and thread calls are B7878."
 - "Run and run-stream provider execution belongs to B2488, message I/O to B1057."
+- "The settings `api_key` and `api_base` are declared as a bare None in betterlite/_settings/params.py, so test_assistants_runs.py sets them behind `type: ignore[assignment]` with the pinned LiteLLM link. Declaring the settings with their types and dropping that ignore is B10101, after this task. Keep the ignore here."
 pitfalls:
 - "`a_add_message` has the underscore after `a`, unlike every other async name, and `aget_messages` does not."
 - "`arun_thread_stream` is a plain function (not `async def`) that returns the manager, so `inspect.iscoroutinefunction` is false for it."
