@@ -1,0 +1,120 @@
+id: B10105
+title: Pass-through batch registrations finish before the server shuts down
+description: >-
+  Fix a LiteLLM bug that B3633 and B3641 copied. When a client creates or reads a batch through the Anthropic or
+  Vertex AI pass-through route, LiteLLM stores the batch's managed object for cost tracking with asyncio.create_task
+  and keeps no reference to the task, so nothing waits for it at shutdown. A batch accepted just before the server
+  stops can lose that write, and its cost is never attributed. B3633 built the same thing in
+  crates/betterlite-server/src/pass_through_logging/anthropic_batch/registration.rs and B3641
+  (https://github.com/betterlite-ai/betterlite/pull/3190) in vertex_batch_logging/registration.rs: each calls
+  runtime.spawn for the registry write and again for the task that logs its result, and drops both handles. B3641's
+  review flagged it under the async-hygiene rule.
+
+
+  betterlite already has the fix in one place. B3649 holds every TinyFish billing poller in BillingTasks
+  (crates/betterlite-server/src/pass_through_logging/tinyfish/tasks.rs), a TaskTracker the server owns for its
+  lifetime, with a shutdown that closes it and waits, and a drop guard that warns when a poller is cancelled. Move
+  that type up to crates/betterlite-server/src/pass_through_logging/background_tasks.rs as BackgroundTasks, the one
+  tracker every pass-through handler spawns its background work on, and delete tinyfish/tasks.rs. Its spawn takes
+  the warning a cancelled task logs, so TinyFish keeps its warning word for word: "TinyFish passthrough: billing
+  poller cancelled mid-poll; the run may go unbilled".
+
+
+  Then put one helper in batch_attribution.rs that spawns a registry write and the logging of its result
+  (log_batch_registration_result, as now) as one task on a BackgroundTasks. Anthropic and Vertex AI both call it and
+  lose their own runtime.spawn calls. A registration cancelled at shutdown warns "<provider> batch registration
+  cancelled at shutdown; its cost will not be tracked" for a create, or "...; its status and output file may be
+  stale" for a read, the same two consequences log_batch_registration_result already names.
+  AnthropicBatchLogging::new and VertexBatchLogging::new take the BackgroundTasks, so every caller passes the tracker
+  the server will drain. B8931 builds both loggers into the server and calls shutdown on that tracker.
+scope:
+  paths:
+  - crates/betterlite-server/src/pass_through_logging.rs
+  - crates/betterlite-server/src/pass_through_logging/background_tasks.rs
+  - crates/betterlite-server/src/pass_through_logging/background_tasks/**
+  - crates/betterlite-server/src/pass_through_logging/batch_attribution.rs
+  - crates/betterlite-server/src/pass_through_logging/batch_attribution/**
+  - crates/betterlite-server/src/pass_through_logging/anthropic_batch.rs
+  - crates/betterlite-server/src/pass_through_logging/anthropic_batch/**
+  - crates/betterlite-server/src/pass_through_logging/anthropic_passthrough_logging/tests/**
+  - crates/betterlite-server/src/pass_through_logging/vertex_batch_logging.rs
+  - crates/betterlite-server/src/pass_through_logging/vertex_batch_logging/**
+  - crates/betterlite-server/src/pass_through_logging/tinyfish.rs
+  - crates/betterlite-server/src/pass_through_logging/tinyfish/**
+  - crates/betterlite-server/fuzz/fuzz_targets/vertex_batch_response.rs
+  - tools/oracle/src/helpers/server/b3633.rs
+  - tools/oracle/src/helpers/server/b3641.rs
+  - tools/oracle/src/helpers/server/b3649/**
+  - docs/deviations/B10105.yaml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L1016-L1033
+  why: The Vertex AI batch registration runs in a create_task nobody keeps or waits for.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L1148-L1164
+  why: The Anthropic batch registration does the same.
+dod:
+- text: >-
+    A registry write that is still pending when shutdown is called on the BackgroundTasks finishes, and its result is
+    logged, before shutdown returns, for both Anthropic and Vertex AI.
+  proof: [registration-drain]
+- text: >-
+    A registration task that is cancelled before it finishes logs the cancellation warning for its provider with the
+    create or read consequence.
+  proof: [registration-drain]
+- text: >-
+    Anthropic and Vertex AI spawn their registration through the one helper in batch_attribution.rs, no
+    pass_through_logging module calls runtime.spawn or tokio::spawn for a registry write, and tinyfish/tasks.rs is
+    gone.
+  proof: [registration-drain, one-spawn-site, tinyfish-tasks-gone]
+- text: >-
+    The batch logging, batch attribution and TinyFish tests and both batch oracle case folders pass unchanged apart
+    from passing the tracker.
+  proof: [anthropic-batch, vertex-batch, batch-attribution, tinyfish, batch-oracle]
+- text: >-
+    docs/deviations/B10105.yaml has a row that says LiteLLM never waits for the registration, with the pinned Vertex AI
+    and Anthropic LiteLLM links.
+  proof: [deviation-row]
+checks:
+  optional: []
+  commands:
+  - id: registration-drain
+    why: A pending registration is lost at shutdown, or a cancelled one is silent.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::batch_attribution::tests::batch_registration_drain/)'
+  - id: one-spawn-site
+    why: A batch logger still spawns its registry write on its own.
+    run: "! grep -rn -E 'runtime\\.spawn|tokio::spawn|Handle::try_current' crates/betterlite-server/src/pass_through_logging/anthropic_batch/registration.rs crates/betterlite-server/src/pass_through_logging/vertex_batch_logging/registration.rs"
+  - id: tinyfish-tasks-gone
+    why: The tracker was copied instead of moved.
+    run: test ! -e crates/betterlite-server/src/pass_through_logging/tinyfish/tasks.rs
+  - id: anthropic-batch
+    why: Passing the tracker changed the Anthropic batch logging.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::anthropic_batch::tests::batch_/)'
+  - id: vertex-batch
+    why: Passing the tracker changed the Vertex AI batch logging.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::vertex_batch_logging::tests::batch_/)'
+  - id: batch-attribution
+    why: The shared helper changed the existing attribution helpers.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::batch_attribution::tests::batch_/) - test(/::batch_registration_drain/)'
+  - id: tinyfish
+    why: The moved tracker changed how TinyFish billing pollers run or warn.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::tinyfish::/)'
+  - id: batch-oracle
+    why: The batch helpers no longer answer their oracle cases the way LiteLLM does.
+    run: cargo run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-server -- tools/oracle/cases/helpers/anthropic-batch-logging tools/oracle/cases/helpers/vertex-batch-logging
+  - id: deviation-row
+    why: The fix needs its deviations row with both pinned LiteLLM links.
+    run: grep -q 'vertex_passthrough_logging_handler.py#L1016-L1033' docs/deviations/B10105.yaml && grep -q 'anthropic_passthrough_logging_handler.py#L1148-L1164' docs/deviations/B10105.yaml
+oracle_cases: []
+deviations: []
+out_of_scope:
+- Building the loggers into the server and calling shutdown from the server's shutdown sequence. That is B8931, after this task.
+- The other pass-through modules that call Handle::try_current (cohere, gemini, interrupted stream usage). They run work in place and spawn nothing that outlives the call.
+pitfalls:
+- Move BillingTasks and don't copy it. One type lives in background_tasks.rs, nothing stays in tinyfish, and B3649's fixture and tests import it from its new path.
+- The drain tests use a registry stub whose write waits on a oneshot the test releases after calling shutdown, so the test proves shutdown waited. Use tokio's paused clock or a oneshot, never a real sleep.
+- Name the new tests batch_registration_drain_<case> in batch_attribution's tests so the registration-drain filter finds them and batch-attribution skips them.
+- TaskTracker is cheap to clone, so the loggers can hold a BackgroundTasks clone; all clones share one tracker.
+review_level: standard
+budget:
+  max_changed_lines: 500
+  max_new_expects: 0

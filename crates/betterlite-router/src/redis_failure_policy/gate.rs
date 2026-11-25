@@ -1,5 +1,7 @@
 pub(crate) mod failure_class;
 
+mod tests;
+
 use std::collections::BTreeSet;
 use std::error::Error as StdError;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -7,13 +9,12 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_redis::redis_client_reuse::breaker::{BreakerAdmission, BreakerOpen};
 use betterlite_redis::redis_client_reuse::breaker_gate::BreakerGate;
-use betterlite_router::redis_failure_policy::State;
-use betterlite_router::redis_failure_policy::classify::{Failure, FailureClass, is_health_failure};
-use betterlite_router::redis_failure_policy::{Admission, RedisFailurePolicy};
-use betterlite_router::routing_state_store::BreakerClock;
 
 use self::failure_class::classify;
-use crate::routing::redis_failure_policy::{FailureLogLevel, log_breaker_event, log_redis_failure};
+use super::classify::{Failure, FailureClass, is_health_failure};
+use super::log::{FailureLogLevel, log_breaker_event, log_redis_failure};
+use super::{Admission, RedisFailurePolicy, State};
+use crate::routing_state_store::BreakerClock;
 
 // An admission is the generation times 2^32 plus the call number, and neither reaches 2^32 in a process.
 const CALL_SPACE: u64 = 0x1_0000_0000;
