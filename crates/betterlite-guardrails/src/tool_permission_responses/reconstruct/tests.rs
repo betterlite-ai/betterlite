@@ -46,6 +46,37 @@ fn reconstruct_chunk_builds_one_streaming_chunk_from_a_response() {
 }
 
 #[test]
+fn reconstruct_chunk_keeps_a_choice_logprobs() {
+    let response = object(
+        r#"{"choices":[{"index":0,"message":{"content":"hi"},"finish_reason":"stop","logprobs":{"content":[{"token":"hi","logprob":-0.1}]}}]}"#,
+    );
+    let chunk = reconstruct_chunk(&response);
+    let choice = chunk
+        .get("choices")
+        .and_then(object_list)
+        .and_then(|choices| choices.first())
+        .expect("choice");
+    assert_eq!(
+        mapping_value(choice, "logprobs"),
+        Some(&GuardrailValue::Object(object(
+            r#"{"content":[{"token":"hi","logprob":-0.1}]}"#
+        )))
+    );
+}
+
+#[test]
+fn reconstruct_chunk_leaves_a_null_choice_logprobs_out() {
+    let response = object(r#"{"choices":[{"message":{"content":"hi"},"logprobs":null}]}"#);
+    let chunk = reconstruct_chunk(&response);
+    let choice = chunk
+        .get("choices")
+        .and_then(object_list)
+        .and_then(|choices| choices.first())
+        .expect("choice");
+    assert!(mapping_value(choice, "logprobs").is_none());
+}
+
+#[test]
 fn reconstruct_chunk_defaults_missing_choice_fields_to_null() {
     let response = object(r#"{"choices":[{"message":{"content":"hi"}}]}"#);
     let chunk = reconstruct_chunk(&response);

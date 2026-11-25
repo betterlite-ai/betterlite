@@ -18,6 +18,19 @@ fn contains_text(value: &Json, needle: &str) -> bool {
     }
 }
 
+fn choice_member(chunk: &Json, index: usize, name: &str) -> Option<Json> {
+    let Json::Object(fields) = chunk else {
+        return None;
+    };
+    let Json::List(choices) = fields.get("choices")? else {
+        return None;
+    };
+    let Json::Object(choice) = choices.get(index)? else {
+        return None;
+    };
+    choice.get(name).cloned()
+}
+
 #[tokio::test]
 async fn a_direct_model_response_passes_through_when_not_streaming() {
     let execution = FakeExecution::new(Answer::Chat(chat_response()));
@@ -195,6 +208,53 @@ async fn a_replayed_response_keeps_its_tool_calls_and_finish_reason() {
     assert!(contains_text(&calls, "call_1"));
     assert!(contains_text(&calls, "get_weather"));
     assert!(contains_text(&calls, "Paris"));
+}
+
+#[tokio::test]
+async fn a_replayed_response_keeps_each_choices_logprobs() {
+    let mut body = chat_response();
+    body.choices[0].logprobs =
+        Some(serde_json::from_str(r#"{"content":[{"token":"hello","logprob":-0.25}]}"#).unwrap());
+    let mut second_choice = body.choices[0].clone();
+    second_choice.index = 1;
+    second_choice.logprobs =
+        Some(serde_json::from_str(r#"{"content":[{"token":"bye","logprob":-0.5}]}"#).unwrap());
+    body.choices.push(second_choice);
+    let execution = FakeExecution::new(Answer::Chat(body.clone()));
+    let chunks = drain(expect_stream(expect_ok(
+        completion(&execution, call(&streaming())).await,
+    )))
+    .await;
+    let first_logprobs: Json =
+        serde_json::from_value(serde_json::to_value(&body.choices[0].logprobs).unwrap()).unwrap();
+    let second_logprobs: Json =
+        serde_json::from_value(serde_json::to_value(&body.choices[1].logprobs).unwrap()).unwrap();
+    assert_eq!(
+        choice_member(&chunks[0], 0, "index"),
+        Some(Json::Number(serde_json::Number::from(0_i64)))
+    );
+    assert_eq!(
+        choice_member(&chunks[0], 1, "index"),
+        Some(Json::Number(serde_json::Number::from(1_i64)))
+    );
+    assert_eq!(
+        choice_member(&chunks[0], 0, "logprobs"),
+        Some(first_logprobs)
+    );
+    assert_eq!(
+        choice_member(&chunks[0], 1, "logprobs"),
+        Some(second_logprobs)
+    );
+}
+
+#[tokio::test]
+async fn a_replayed_choice_without_logprobs_stays_null() {
+    let execution = FakeExecution::new(Answer::Chat(chat_response()));
+    let chunks = drain(expect_stream(expect_ok(
+        completion(&execution, call(&streaming())).await,
+    )))
+    .await;
+    assert_eq!(choice_member(&chunks[0], 0, "logprobs"), Some(Json::Null));
 }
 
 #[tokio::test]

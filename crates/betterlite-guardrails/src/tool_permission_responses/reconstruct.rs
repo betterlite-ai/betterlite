@@ -46,6 +46,11 @@ fn stream_choice(choice: &GuardrailValue) -> GuardrailValue {
     fields.insert("index".to_owned(), index);
     fields.insert("delta".to_owned(), delta);
     fields.insert("finish_reason".to_owned(), finish_reason);
+    if let Some(logprobs) =
+        mapping_value(choice, "logprobs").filter(|value| !matches!(value, GuardrailValue::Null))
+    {
+        fields.insert("logprobs".to_owned(), logprobs.clone());
+    }
     GuardrailValue::Object(fields)
 }
 
