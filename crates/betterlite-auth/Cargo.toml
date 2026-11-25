@@ -41,6 +41,7 @@ serde_with = { version = "3.24.0", default-features = false, features = ["alloc"
 sha2.workspace = true
 speedate = "0.18.0"
 strum = { version = "0.28.0", features = ["derive"] }
+subtle.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["time"] }
 tokio-postgres = { workspace = true, features = ["with-chrono-0_4"] }

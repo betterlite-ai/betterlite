@@ -16,6 +16,7 @@ use super::super::redis::open;
 use super::*;
 use crate::cache_backends::convert;
 use crate::cache_backends::settings::RedisSettings;
+use crate::cache_backends::tests::test_gate;
 
 const ITEM_KIB: i64 = 1024;
 const DEAD_TIER: &str = r#"{"overrides": {"host": "127.0.0.1", "port": "1", "socket_timeout": "0.1", "socket_connect_timeout": "0.1"}}"#;
@@ -43,7 +44,9 @@ pub(super) fn native_dual(redis: Option<Arc<RedisCache>>) -> NativeDual {
 // Nothing listens on port 1, so the tier is only there to make the dual cache defer its writes.
 pub(super) fn dead_tier() -> Arc<RedisCache> {
     let parsed: RedisSettings = convert::parse_settings(DEAD_TIER).unwrap();
-    Python::attach(|py| open(py, parsed)).unwrap().cache
+    Python::attach(|py| open(py, parsed, test_gate()))
+        .unwrap()
+        .cache
 }
 
 #[test]

@@ -30,10 +30,6 @@ where
     messages.extend_from_slice(prior_history);
     messages.extend_from_slice(current_messages);
     messages.extend(output_messages);
-    let stored = messages.len();
-    handler
-        .session_history
-        .insert(response_id.clone(), messages);
-    tracing::debug!("ManagedResponsesWS: stored {stored} messages for response_id={response_id}");
+    handler.store_history(response_id, messages);
     Ok(())
 }

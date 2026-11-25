@@ -1,0 +1,13 @@
+id: B10106
+milestone: R2 bug fixes
+title: Closing an A2A client stream closes the agent stream before it returns
+status: todo
+depends_on: [B168]
+file: tasks/B10106-a2a-stream-close.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
