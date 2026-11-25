@@ -15,7 +15,6 @@ from betterlite._cost_extra import (
     batch_cost_calculator,
     default_image_cost_calculator,
     default_video_cost_calculator,
-    handle_realtime_transcription_cost_calculation,
     ocr_batch_cost,
     ocr_cost,
     rerank_cost,
@@ -27,6 +26,9 @@ from betterlite._cost_extra import (
 )
 from betterlite._cost_extra import (
     handle_realtime_stream_cost_calculation as realtime_stream_cost,
+)
+from betterlite._cost_extra import (
+    handle_realtime_transcription_cost_calculation as realtime_transcription_cost,
 )
 from betterlite.cost_calculator import (
     batch_cost_calculator as module_batch_cost_calculator,
@@ -559,7 +561,7 @@ def test_cost_extra_signatures() -> None:
         inspect.signature(REFERENCE.handle_realtime_stream_cost_calculation)
     )
     assert signature_rows(
-        inspect.signature(handle_realtime_transcription_cost_calculation)
+        inspect.signature(realtime_transcription_cost)
     ) == signature_rows(
         inspect.signature(REFERENCE.handle_realtime_transcription_cost_calculation)
     )
@@ -788,7 +790,7 @@ def test_realtime_cost_audio() -> None:
 
 
 def test_realtime_transcription() -> None:
-    ours = handle_realtime_transcription_cost_calculation(
+    ours = realtime_transcription_cost(
         TRANSCRIPTION_EVENTS, OPENAI, TRANSCRIPTION_MODEL
     )
     compare_float(ours, REFERENCE_TRANSCRIPTION_COST)
