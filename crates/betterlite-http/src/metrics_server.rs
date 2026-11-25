@@ -19,7 +19,7 @@ use betterlite_prometheus::scrape_endpoint::app::make_metrics_app;
 use clap::Args;
 use serde::Serialize;
 use tokio::net::TcpListener;
-use tokio::task::{JoinError, JoinHandle};
+use tokio::task::{JoinError, JoinHandle, spawn_blocking};
 use tokio::time;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
@@ -98,6 +98,8 @@ pub enum MetricsServerError {
     Timeout { url: String, seconds: u64 },
     #[error("Prometheus metrics server failed")]
     Serve(#[source] io::Error),
+    #[error("a Prometheus metrics server task failed")]
+    Task(#[from] JoinError),
 }
 
 #[derive(Serialize)]
@@ -249,7 +251,10 @@ pub async fn start_metrics_listener(
     client: &reqwest::Client,
 ) -> Result<MetricsListener, MetricsServerError> {
     let pid = process::id();
-    let app = build_metrics_app(&settings.multiproc_dir, pid)?;
+    let folder = settings.multiproc_dir.clone();
+    let app = tasks
+        .spawn_blocking(move || build_metrics_app(&folder, pid))
+        .await??;
     let listener = bind(&settings.host, settings.port).await?;
     let address = listener
         .local_addr()
@@ -272,7 +277,8 @@ pub async fn start_metrics_listener(
 // run_metrics_server for the sidecar command: it serves until the process that started it is gone
 pub async fn run_metrics_server(settings: &MetricsServerArgs) -> Result<(), MetricsServerError> {
     let parent = parent_id();
-    let app = build_metrics_app(&settings.multiproc_dir, process::id())?;
+    let folder = settings.multiproc_dir.clone();
+    let app = spawn_blocking(move || build_metrics_app(&folder, process::id())).await??;
     let listener = bind(&settings.host, settings.port).await?;
     axum::serve(listener, app)
         .with_graceful_shutdown(parent_exited(parent, parent_id, PARENT_POLL_INTERVAL))

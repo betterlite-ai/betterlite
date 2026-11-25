@@ -24,4 +24,7 @@ deviations:
   - what: "The metrics server CLI reads --port as 0 to 65535 and refuses an out-of-range or non-numeric port at parse time with exit code 2. Its error messages are clap's, not argparse's."
     why: "argparse accepts any integer and uvicorn fails later on the bind; a port is a u16."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prometheus_metrics_server.py#L158-L168
+  - what: "No standalone binary or subcommand ships for the metrics server CLI. MetricsServerArgs declares --host, --port and --multiproc_dir for whichever caller hosts them, and that caller is B8375's proxy CLI, which starts B4177's metrics process when --prometheus_metrics_port is set."
+    why: "LiteLLM's CLI exists to be spawned with python -m; betterlite starts the listener inside the proxy, so these arguments have no process of their own in this task."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prometheus_metrics_server.py#L158-L168
 kept_bugs: []
