@@ -508,12 +508,11 @@ def test_cancel_passes_the_model() -> None:
 
 
 def test_cancel_infers_provider() -> None:
-    # LiteLLM sends azure/command-r to the openai branch, so the failure names openai
+    # the declared openai provider wins over the azure model prefix, so openai names the failure
     with pytest.raises(APIConnectionError) as caught:
         cancel_batch(
             batch_id=BATCH_ID,
             model="azure/command-r",
-            custom_llm_provider="azure",
             api_base="http://127.0.0.1:1/v1",
             api_key=GOOD_KEY,
         )
