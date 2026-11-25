@@ -1,7 +1,6 @@
 use axum::Json;
 use axum::extract::{Extension, RawQuery, State};
 use axum::response::{IntoResponse as _, Response};
-use betterlite_db::health_check_rows::HealthCheckRow;
 use betterlite_models::model_registration::JsonObject;
 use serde::Serialize;
 
@@ -52,14 +51,10 @@ async fn history_page(
             query.offset,
         )
         .await;
-    Ok(history_body(&records, query))
-}
-
-fn history_body(records: &[HealthCheckRow], query: &HistoryQuery) -> HistoryPage {
-    HistoryPage {
+    Ok(HistoryPage {
         health_checks: records.iter().map(convert_health_check).collect(),
         total_records: records.len(),
         limit: query.limit,
         offset: query.offset,
-    }
+    })
 }
