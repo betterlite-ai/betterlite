@@ -1,14 +1,14 @@
 id: B945
 milestone: M5 api families
 title: Responses ws managed
-status: todo
+status: done
 depends_on: [B932, B942, B944, B1087, B925, B901]
 file: tasks/B945-responses-ws-managed.yaml
 covers:
   - "litellm/responses/streaming_iterator.py"
 parent: B080
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3166
