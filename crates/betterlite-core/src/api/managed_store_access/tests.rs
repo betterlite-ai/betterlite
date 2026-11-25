@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use betterlite_auth::auth_cache::AuthCacheError;
 use betterlite_auth::auth_cache::payload::PayloadError;
+use betterlite_auth::auth_model_lists::credential::CredentialSnapshot;
 use betterlite_auth::auth_prefetch::permission::lookup::PermissionError;
 use betterlite_auth::auth_resource_grants::managed_rows::{
     ManagedRowsQuery, ManagedVectorStoreCache, ManagedVectorStoreRows, VECTOR_STORE_CACHE_PREFIX,
@@ -22,6 +23,7 @@ use betterlite_db::budget_permission_rows::{JsonData, LiteLLMObjectPermissionTab
 use betterlite_db::managed_resource_rows::files::ManagedVectorStoresTable;
 use betterlite_db::team_rows::archived::LiteLLMTeamTableCachedObj;
 use betterlite_openai::api::vector_store_records::records::vector::LiteLlmManagedVectorStore;
+use chrono::Utc;
 use tracing::Level;
 use tracing::subscriber::{DefaultGuard, set_default};
 
@@ -88,8 +90,9 @@ impl ScriptedRegistry {
 
     fn failing(message: &str) -> Self {
         Self {
+            stores: BTreeMap::new(),
             failure: Some(message.to_owned()),
-            ..Self::default()
+            looks: Mutex::new(Vec::new()),
         }
     }
 
@@ -426,7 +429,8 @@ async fn registry_non_object_params_normalized() {
 fn real_registry_lookup_reads_loaded_stores() {
     let registry = VectorStoreRegistry {
         stores: vec![record(VS_A_TEAM_A)],
-        ..VectorStoreRegistry::default()
+        clock: Arc::new(Utc::now),
+        credentials: Arc::new(CredentialSnapshot::default()),
     };
     let found = <VectorStoreRegistry as ManagedStoreRegistry>::lookup(&registry, "vs_a");
     assert_eq!(found.unwrap(), Some(record(VS_A_TEAM_A)));
@@ -534,8 +538,11 @@ async fn registry_failure_fails_closed() {
 #[tokio::test]
 async fn cache_read_failure_fails_closed() {
     let cache = ScriptedCache {
+        hits: BTreeMap::new(),
         fail_read: true,
-        ..ScriptedCache::default()
+        fail_write: false,
+        reads: Mutex::new(Vec::new()),
+        writes: Mutex::new(Vec::new()),
     };
     let rows = ScriptedRows::default();
     let (outcome, logged) = resolved(None, &cache, &rows, true, "vs_a").await;
@@ -554,8 +561,11 @@ async fn cache_read_failure_fails_closed() {
 #[tokio::test]
 async fn cache_write_failure_fails_closed() {
     let cache = ScriptedCache {
+        hits: BTreeMap::new(),
+        fail_read: false,
         fail_write: true,
-        ..ScriptedCache::default()
+        reads: Mutex::new(Vec::new()),
+        writes: Mutex::new(Vec::new()),
     };
     let mut rows = ScriptedRows::default();
     rows.rows.push(modelled(VS_A));
@@ -665,7 +675,7 @@ async fn assert_policy_failure_passes_through() {
     let world = World {
         database: true,
         user_teams: vec!["a".to_owned()],
-        ..World::default()
+        team_reads: Mutex::new(Vec::new()),
     };
     let session = auth(&[
         ("team_id", data_text(UI_SESSION_TOKEN_TEAM_ID)),
