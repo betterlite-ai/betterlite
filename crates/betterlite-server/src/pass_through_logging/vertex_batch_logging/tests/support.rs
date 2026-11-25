@@ -5,19 +5,11 @@ use std::str::from_utf8;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use betterlite_logging::logging_state::correlation::{
-    CorrelationContext, CorrelationSettings, CorrelationSetup,
-};
-use betterlite_logging::logging_state::types::{
-    CallbackPolicy, DynamicCallbacks, RequestLoggingFlags,
-};
-use betterlite_logging::logging_state::{LoggingInit, LoggingState};
+use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
-use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, Utc};
 use futures_util::future::BoxFuture;
-use indexmap::IndexMap;
 use tokio::sync::mpsc;
 use tokio::task::yield_now;
 use tokio::time::timeout;
@@ -25,14 +17,13 @@ use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::MakeWriter;
 
 use crate::pass_through_logging::anthropic_batch::{
-    BatchLoggingMessage, BatchRegistration, ManagedBatchRegistry, RegistryError, ResponseIds,
-    RouterModelIds,
+    BatchLoggingMessage, BatchRegistration, ManagedBatchRegistry, RegistryError, RouterModelIds,
 };
+use crate::pass_through_logging::vertex_batch_logging::testing::{FixedResponseId, logging_state};
 use crate::pass_through_logging::vertex_batch_logging::{
     VertexBatchInput, VertexBatchLogged, VertexBatchLogging,
 };
 
-pub(crate) const RESPONSE_ID: &str = "resp-1";
 pub(crate) const BATCH_ID: &str = "3814889423749775360";
 pub(crate) const MODEL_PATH: &str = "publishers/google/models/gemini-2.5-flash";
 pub(crate) const MODEL: &str = "gemini-2.5-flash";
@@ -95,14 +86,6 @@ pub(crate) fn capture_logs() -> (Logs, DefaultGuard) {
         .with_writer(logs.clone())
         .finish();
     (logs, set_default(subscriber))
-}
-
-struct FixedIds;
-
-impl ResponseIds for FixedIds {
-    fn new_response_id(&self) -> String {
-        RESPONSE_ID.to_owned()
-    }
 }
 
 pub(crate) struct Router {
@@ -169,7 +152,7 @@ pub(crate) fn logging(
     router_port: Option<Arc<dyn RouterModelIds>>,
     registry_port: Option<Arc<dyn ManagedBatchRegistry>>,
 ) -> VertexBatchLogging {
-    VertexBatchLogging::new(router_port, registry_port, Arc::new(FixedIds))
+    VertexBatchLogging::new(router_port, registry_port, Arc::new(FixedResponseId))
 }
 
 pub(crate) struct Call {
@@ -192,7 +175,7 @@ impl Call {
     }
 
     pub(crate) fn run(&self, handler: &VertexBatchLogging) -> (VertexBatchLogged, LoggingState) {
-        let mut call_log = logging_state();
+        let mut call_log = logging_state().expect("a valid logging state");
         let input = VertexBatchInput {
             status_code: self.status_code,
             body: self.body.as_bytes(),
@@ -233,42 +216,4 @@ pub(crate) fn fields(logged: &VertexBatchLogged) -> Vec<(&str, &Json)> {
 
 pub(crate) fn metadata(text: &str) -> JsonObject {
     serde_json::from_str(text).expect("a JSON object")
-}
-
-pub(crate) fn logging_state() -> LoggingState {
-    let init = LoggingInit {
-        model: String::new(),
-        call_type: "pass_through_endpoint".to_owned(),
-        start_time: DateTime::from_timestamp(START, 0)
-            .expect("a valid start")
-            .fixed_offset(),
-        litellm_call_id: "call-1".to_owned(),
-        function_id: "function-1".to_owned(),
-        messages: None,
-        stream: Some(false),
-        litellm_trace_id: Some("trace-1".to_owned()),
-        kwargs: IndexMap::new(),
-        litellm_params: IndexMap::new(),
-        callback_dynamic_params: IndexMap::new(),
-        trusted_callback_vars: Vec::new(),
-        standard_built_in_tools_params: IndexMap::new(),
-        dynamic_callbacks: DynamicCallbacks::default(),
-        applied_guardrails: None,
-        request_logging: RequestLoggingFlags::default(),
-        callback_policy: CallbackPolicy::default(),
-    };
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("a valid redactor");
-    let mut context = CorrelationContext::default();
-    let setup = CorrelationSetup {
-        context: &mut context,
-        settings: CorrelationSettings::default(),
-    };
-    LoggingState::new(
-        init,
-        setup,
-        &redactor,
-        || "generated".to_owned(),
-        || Duration::ZERO,
-    )
-    .expect("a valid logging state")
 }

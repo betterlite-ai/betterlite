@@ -2,6 +2,8 @@
 
 mod support;
 
+use std::fs;
+use std::path::PathBuf;
 use std::sync::{Arc, PoisonError};
 
 use betterlite_auth::user_roles::UserRole;
@@ -16,10 +18,11 @@ use tokio::sync::mpsc::error::TryRecvError;
 use tokio::task::yield_now;
 
 use self::support::{
-    BATCH_ID, COLLECTION_ROUTE, Call, ID_SCOPED_ROUTE, MODEL, MODEL_PATH, RESPONSE_ID, Router,
-    START, capture_logs, fields, job_body, logging, message, metadata, next_registration, registry,
+    BATCH_ID, COLLECTION_ROUTE, Call, ID_SCOPED_ROUTE, MODEL, MODEL_PATH, Router, START,
+    capture_logs, fields, job_body, logging, message, metadata, next_registration, registry,
     router, success_body,
 };
+use super::testing::{RESPONSE_ID, handle_batch_response};
 use super::{VertexBatchState, extract_model_name_from_vertex_path};
 use crate::pass_through_logging::anthropic_batch::{RegistryError, unified_object_id};
 
@@ -83,6 +86,20 @@ fn batch_success_record_is_pending_with_zero_cost() {
     assert_eq!(kwargs.batch_id.as_deref(), Some(BATCH_ID));
     assert_eq!(kwargs.unified_object_id.as_deref(), Some(GEMINI_UNIFIED));
     assert_eq!(kwargs.batch_job_state, VertexBatchState::JobStatePending);
+}
+
+#[test]
+fn batch_debug_redacts_metadata_values() {
+    let mut call = Call::new(200, &success_body(), COLLECTION_ROUTE);
+    call.request_metadata =
+        metadata(r#"{"user_api_key":"sk-secret-key","user_api_key_user_id":"user-1"}"#);
+    let (logged, _) = call.run(&logging(None, None));
+    let printed = format!("{logged:?}");
+    assert!(!printed.contains("sk-secret-key"));
+    assert!(!printed.contains("user-1"));
+    assert!(printed.contains("request_metadata_keys"));
+    assert!(printed.contains("user_api_key_user_id"));
+    assert!(printed.contains("response_cost"));
 }
 
 #[test]
@@ -536,4 +553,12 @@ fn batch_state_serializes_as_vertex_job_states() {
     ])
     .expect("serialized");
     assert_eq!(words, r#"["JOB_STATE_PENDING","JOB_STATE_FAILED"]"#);
+}
+
+#[rstest]
+fn batch_replays_the_vertex_batch_response_corpus(
+    #[files("fuzz/corpus/vertex_batch_response/*")] path: PathBuf,
+) {
+    let body = fs::read(path).expect("a corpus seed");
+    drop(handle_batch_response(&body).expect("a handled response"));
 }

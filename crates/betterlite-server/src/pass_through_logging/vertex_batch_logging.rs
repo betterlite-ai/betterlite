@@ -1,3 +1,4 @@
+use std::fmt;
 use std::sync::Arc;
 
 use betterlite_core::api::media_relay_logging::spend::decimal_json;
@@ -17,6 +18,8 @@ mod error;
 mod job;
 mod record;
 mod registration;
+#[cfg(any(test, feature = "testing"))]
+pub mod testing;
 mod tests;
 
 const BATCH_PREDICTION_JOBS_ROUTE: &str = "batchPredictionJobs";
@@ -44,7 +47,7 @@ pub struct VertexBatchLogged {
     pub kwargs: VertexBatchKwargs,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct VertexBatchKwargs {
     pub response_cost: Decimal,
     pub model: String,
@@ -52,6 +55,22 @@ pub struct VertexBatchKwargs {
     pub unified_object_id: Option<String>,
     pub batch_job_state: VertexBatchState,
     pub request_metadata: JsonObject,
+}
+
+// the request metadata carries the caller's API key, so Debug names its keys without their values
+impl fmt::Debug for VertexBatchKwargs {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let metadata_keys: Vec<&str> = self.request_metadata.keys().map(String::as_str).collect();
+        formatter
+            .debug_struct("VertexBatchKwargs")
+            .field("response_cost", &self.response_cost)
+            .field("model", &self.model)
+            .field("batch_id", &self.batch_id)
+            .field("unified_object_id", &self.unified_object_id)
+            .field("batch_job_state", &self.batch_job_state)
+            .field("request_metadata_keys", &metadata_keys)
+            .finish()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
