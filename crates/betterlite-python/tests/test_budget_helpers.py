@@ -5,7 +5,8 @@ import logging
 import ssl
 import threading
 import time
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
+from decimal import Decimal
 from enum import IntEnum
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -15,7 +16,10 @@ from typing import ClassVar, Final, Protocol, Self, TypeAlias, TypeVar
 import httpx
 import httpx2
 import pytest
-from litellm.constants import DEFAULT_SSL_CIPHERS as REFERENCE_SSL_CIPHERS
+from litellm.constants import (
+    DEFAULT_SSL_CIPHERS as REFERENCE_SSL_CIPHERS,
+    request_timeout as REFERENCE_REQUEST_TIMEOUT,
+)
 from pydantic import ConfigDict, JsonValue, TypeAdapter, ValidationError
 from typing_extensions import override
 
@@ -85,7 +89,6 @@ LITELLM_METADATA_KEY: Final = "litellm_metadata"
 PARENT_SPAN: Final = "litellm_parent_otel_span"
 MARKER_KEY: Final = "k"
 MARKER_VALUE: Final = "marker-value"
-PLACEHOLDER: Final = "placeholder"
 CUSTOM_ATTR: Final = "custom_attr"
 CUSTOM_VALUE: Final = "v"
 BOOM: Final = "boom"
@@ -103,11 +106,8 @@ HOSTED: Final = "hosted"
 GET_BUDGET: Final = "/get_budget"
 SET_BUDGET: Final = "/set_budget"
 MOVED_GET: Final = "/moved"
-AGENT_VALUE: Final = "b166-agent/1"
 STAMPED: Final = "stamped-token"
 METADATA_STAMPED: Final = "metadata-token"
-REQUEST_TIMEOUT: Final = 600.0
-CONNECT_TIMEOUT: Final = 5.0
 BLOCK_SECONDS: Final = 10.0
 INVALID_CURVE: Final = "not-a-curve"
 
@@ -126,9 +126,8 @@ HELPER_NAMES: Final[frozenset[str]] = frozenset({
 })
 UTILS_NAMES: Final[frozenset[str]] = frozenset({
     "completion_cost", "cost_per_token", "create_pretrained_tokenizer", "create_tokenizer",
-    "decode", "encode", "get_llm_provider", "get_max_tokens",
-    "get_model_cost_mutation_generation", "get_model_info", "get_provider_info",
-    "response_cost_calculator", "token_counter",
+    "decode", "encode", "get_llm_provider", "get_max_tokens", "get_model_cost_mutation_generation",
+    "get_provider_info", "response_cost_calculator", "token_counter",
 })
 NORMALIZE_VALUES: Final[tuple[PythonValue, ...]] = (
     None, True, "true", " TRUE ", "on", "1", 1, 0, "banana", 2, {}, "false", "off",
@@ -184,11 +183,9 @@ JSON_ADAPTER: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 EXCEPTION_ADAPTER: Final[TypeAdapter[BaseException]] = TypeAdapter(
     BaseException, config=ConfigDict(arbitrary_types_allowed=True)
 )
-HOSTED_USERS: Final[dict[str, dict[str, JsonValue]]] = {ALICE: {"total_budget": BUDGET}}
-HOSTED_DATA: Final[JsonValue] = JSON_ADAPTER.validate_python(HOSTED_USERS)
+HOSTED_DATA: Final[JsonValue] = JSON_ADAPTER.validate_python({ALICE: {"total_budget": BUDGET}})
 HOSTED_REPLY: Final[dict[str, JsonValue]] = {"status": "ok", "data": HOSTED_DATA}
 ERROR_REPLY: Final[dict[str, JsonValue]] = {"status": "error"}
-BAD_DATA_REPLY: Final[dict[str, JsonValue]] = {"status": "ok", "data": {ALICE: 5}}
 SAVED_REPLY: Final[dict[str, JsonValue]] = {"status": "success"}
 SAVE_BODY: Final[dict[str, JsonValue]] = {"project_name": PROJECT, "user_dict": HOSTED_DATA}
 
@@ -340,6 +337,14 @@ class CurveRecorder:
             raise ValueError(curve)
 
 
+class TransportLog:
+    calls: ClassVar[list[dict[str, PythonValue]]] = []
+
+    def __init__(self, **options: PythonValue) -> None:
+        if "local_address" in options:
+            TransportLog.calls.append(options)
+
+
 def patch_costs(monkeypatch: pytest.MonkeyPatch) -> None:
     for module in (BETTERLITE, LITELLM):
         # ast-grep-ignore: no-string-mocking
@@ -348,6 +353,10 @@ def patch_costs(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(module, "cost_per_token", fake_cost_per_token)
         # ast-grep-ignore: no-string-mocking
         monkeypatch.setattr(module, "completion_cost", fake_completion_cost)
+
+
+def timeout_phases(timeout: httpx2.Timeout) -> tuple[float | None, ...]:
+    return (timeout.connect, timeout.read, timeout.write, timeout.pool)
 
 
 def fields_of(value: PythonValue) -> dict[str, PythonValue]:
@@ -382,17 +391,17 @@ def cyclic_payload() -> dict[str, PythonValue]:
     return payload
 
 
+class Router(ModelResponse): ...
+
+
+class Logging(ModelResponse): ...
+
+
 def filter_payload() -> dict[str, PythonValue]:
-    router = ModelResponse.model_construct(id="r", created=0, object="r", choices=[])
-    logging_object = ModelResponse.model_construct(id="l", created=0, object="l", choices=[])
     return {
-        "class": ValueError,
-        "function": gated_write_text,
-        "error": ValueError(BOOM),
-        "none": None,
-        "router": router,
-        "logging": logging_object,
-        "list": [ValueError(BOOM), {"router": router}, 1],
+        "class": ValueError, "function": gated_write_text, "error": ValueError(BOOM),
+        "none": None, "router": Router.model_construct(), "logging": Logging.model_construct(),
+        "list": [ValueError(BOOM), {"router": Router.model_construct()}, 1],
     }
 
 
@@ -461,7 +470,7 @@ class RecordingHandler(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
 
-def test_helper_scalars_and_flags() -> None:
+def test_helper_scalars_and_messages() -> None:
     for agent in CODEX_AGENTS:
         assert is_codex_user_agent(agent) == LITELLM_HELPERS.is_codex_user_agent(agent)
     for numerator, denominator, default in DIVIDE_CASES:
@@ -478,9 +487,6 @@ def test_helper_scalars_and_flags() -> None:
     for environ in ENVIRONMENTS:
         expected = LITELLM_HELPERS.drop_params_env_flag(environ, logger)
         assert drop_params_env_flag(environ, logger) == expected
-
-
-def test_helper_messages_metadata() -> None:
     for reason in FINISH_REASONS:
         assert map_finish_reason(reason) == LITELLM_HELPERS.map_finish_reason(reason)
     tool_calls: list[JsonValue] = [{"index": 0, "id": "a"}, "s", {"id": "b"}]
@@ -560,9 +566,6 @@ def test_helper_headers() -> None:
     set_response_cost_in_hidden_params(fresh, None)
     assert "additional_headers" not in hidden_of(fresh)
     assert get_provider_response_headers_from_hidden_params(fresh) is None
-
-
-def test_helper_preserve_attrs() -> None:
     reference_original = LITELLM_RESPONSES.ModelResponseStream(
         custom_attr=CUSTOM_VALUE, usage=USAGE_DATA
     )
@@ -580,7 +583,7 @@ def test_helper_preserve_attrs() -> None:
     assert "usage" not in ours_target.model_dump()
 
 
-def test_helper_copies(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_helper_copies_and_filters(monkeypatch: pytest.MonkeyPatch) -> None:
     span = datetime(2024, 1, 1, tzinfo=UTC)
     copies: list[tuple[dict[str, PythonValue], dict[str, PythonValue]]] = []
     snapshots: list[tuple[dict[str, PythonValue], dict[str, PythonValue]]] = []
@@ -593,9 +596,9 @@ def test_helper_copies(monkeypatch: pytest.MonkeyPatch) -> None:
     assert copies[0][0] == copies[1][0]
     assert snapshots[0][0] == snapshots[1][0]
     for copied, original in copies:
-        assert fields_of(copied[METADATA_KEY])[PARENT_SPAN] == PLACEHOLDER
+        assert fields_of(copied[METADATA_KEY])[PARENT_SPAN] == "placeholder"
         assert fields_of(copied[METADATA_KEY])[MARKER_KEY] == MARKER_VALUE
-        assert fields_of(copied[LITELLM_METADATA_KEY])[PARENT_SPAN] == PLACEHOLDER
+        assert fields_of(copied[LITELLM_METADATA_KEY])[PARENT_SPAN] == "placeholder"
         assert fields_of(original[METADATA_KEY])[PARENT_SPAN] is span
     for snapshot, original in snapshots:
         assert snapshot[METADATA_KEY] is not original[METADATA_KEY]
@@ -615,9 +618,6 @@ def test_helper_copies(monkeypatch: pytest.MonkeyPatch) -> None:
     payload: dict[str, PythonValue] = {"a": {"b": 1}}
     assert safe_deep_copy(payload) is payload
     assert LITELLM_HELPERS.safe_deep_copy(payload) is payload
-
-
-def test_helper_filters() -> None:
     deep: dict[str, PythonValue] = {"a": {"b": {"c": ValueError(BOOM)}}}
     assert fields_of(filter_exceptions_from_params(copy.deepcopy(deep))) == fields_of(
         LITELLM_HELPERS.filter_exceptions_from_params(copy.deepcopy(deep))
@@ -635,6 +635,12 @@ def test_helper_filters() -> None:
     )
     expected_filtered: dict[str, PythonValue] = {"class": ValueError, "list": [{}, 1]}
     assert ours_filtered == reference_filtered == expected_filtered
+    live = ModelResponse.model_construct(id="m", created=0, object="m", choices=[])
+    live_payload: dict[str, PythonValue] = {"response": live}
+    leaves: dict[str, PythonValue] = {"amount": Decimal("1.25"), "on": date(2026, 1, 1)}
+    for payload in (live_payload, leaves):
+        reference_payload = LITELLM_HELPERS.filter_exceptions_from_params(dict(payload))
+        assert filter_exceptions_from_params(dict(payload)) == reference_payload == payload
     ours_cycle = cyclic_payload()
     reference_cycle = cyclic_payload()
     assert fields_of(filter_exceptions_from_params(ours_cycle, 1))["self"] is ours_cycle
@@ -655,7 +661,7 @@ def test_helper_filters() -> None:
     assert LITELLM_HELPERS.filter_internal_params(dict(data), {"x"}) == expected_internal
 
 
-def test_helper_expected_error() -> None:
+def test_helper_error_and_request_guards() -> None:
     for code, status_code, llm_provider in ERROR_CASES:
         ours = StatusError(code, status_code, llm_provider)
         reference = StatusError(code, status_code, llm_provider)
@@ -670,9 +676,6 @@ def test_helper_expected_error() -> None:
         expected = LITELLM_HELPERS.is_expected_client_error(as_error(error))
         assert is_expected_client_error(as_error(error)) == expected
     assert is_expected_client_error(None) is False
-
-
-def test_helper_request_guards() -> None:
     for value in TOKEN_LIMITS:
         assert coerce_token_limit(value) == LITELLM_HELPERS.coerce_token_limit(value)
     for kwargs in RETRY_KWARGS:
@@ -740,6 +743,8 @@ def test_budget_lifecycle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     reference.update_cost(ALICE, model=CHAT_MODEL, input_text=INPUT_TEXT, output_text=OUTPUT_TEXT)
     reference.update_cost(ALICE, completion_obj=LITELLM_RESPONSES.ModelResponse(model=CHAT_MODEL))
     reference_projected = reference.projected_cost(CHAT_MODEL, PROJECTED_MESSAGES, ALICE)
+    reference_current = reference.get_current_cost(ALICE)
+    reference_models = reference.get_model_cost(ALICE)
     reference_reset = reference.reset_cost(ALICE)
     join_saves(reference_marker)
     assert reference.save_data() == {"status": "success"}
@@ -753,8 +758,8 @@ def test_budget_lifecycle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     ours.update_cost(ALICE, model=CHAT_MODEL, input_text=INPUT_TEXT, output_text=OUTPUT_TEXT)
     ours.update_cost(ALICE, completion_obj=ModelResponse(model=CHAT_MODEL))
     assert ours.projected_cost(CHAT_MODEL, PROJECTED_MESSAGES, ALICE) == reference_projected
-    assert ours.get_current_cost(ALICE) == reference.get_current_cost(ALICE)
-    assert ours.get_model_cost(ALICE) == reference.get_model_cost(ALICE)
+    assert ours.get_current_cost(ALICE) == reference_current
+    assert ours.get_model_cost(ALICE) == reference_models
     assert ours.get_total_budget(ALICE) == reference.get_total_budget(ALICE)
     for user in (ALICE, BOB, "zoe"):
         assert ours.is_valid_user(user) == reference.is_valid_user(user)
@@ -764,10 +769,6 @@ def test_budget_lifecycle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     assert Path("user_cost.json").read_text() == reference_text
     reloaded = BudgetManager(PROJECT)
     assert reloaded.user_dict == ours.user_dict
-
-
-def test_budget_duration_reset(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    patch_costs(monkeypatch)
     monkeypatch.chdir(tmp_path)
     reference = LITELLM_BUDGET.BudgetManager(PROJECT)
     ours = BudgetManager(PROJECT)
@@ -789,15 +790,10 @@ def test_budget_duration_reset(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     assert ours.get_current_cost(ALICE) == reference.get_current_cost(ALICE) == ZERO_COST
     assert ours.get_model_cost(ALICE) == reference.get_model_cost(ALICE) == {}
     alice = ours.user_dict[ALICE]
-    assert alice["last_updated_at"] == clock.now
+    assert alice.get("last_updated_at") == clock.now
     assert "duration" not in ours.user_dict[BOB]
     assert ours.get_current_cost(BOB) == reference.get_current_cost(BOB) != ZERO_COST
     join_saves(marker)
-
-
-def test_budget_durations(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    patch_costs(monkeypatch)
-    monkeypatch.chdir(tmp_path)
     reference = LITELLM_BUDGET.BudgetManager(PROJECT)
     ours = BudgetManager(PROJECT)
     marker = set(threading.enumerate())
@@ -811,7 +807,7 @@ def test_budget_durations(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     second = ours.create_budget(BUDGET, "frank", "daily")
     assert first["created_at"] == second["created_at"] == first["last_updated_at"] != CREATED_AT
     join_saves(marker)
-    durations = [ours.user_dict[user]["duration"] for _duration, user in named]
+    durations = [ours.user_dict[user].get("duration") for _duration, user in named]
     assert durations == [1, DAYS_IN_A_WEEK, DAYS_IN_A_MONTH, DAYS_IN_A_YEAR]
     for manager in (reference, ours):
         with pytest.raises(ValueError, match="duration needs to be one of"):
@@ -826,19 +822,16 @@ def test_budget_durations(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
         BudgetManager(PROJECT, "remote")
 
 
-def test_budget_bad_stored_data(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_budget_stored_data(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
     corrupt: dict[str, JsonValue] = {ALICE: 5}
     Path("user_cost.json").write_text(json.dumps(corrupt))
     with pytest.raises(ValidationError, match=ALICE):
         BudgetManager(PROJECT)
     with RecordingServer() as server:
-        server.replies[GET_BUDGET] = BAD_DATA_REPLY
+        server.replies[GET_BUDGET] = {"status": "ok", "data": {ALICE: 5}}
         with pytest.raises(ValidationError, match=ALICE):
             BudgetManager(PROJECT, HOSTED, server.url)
-
-
-def test_budget_decimal_costs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
     stored: dict[str, JsonValue] = {ALICE: {"total_budget": BUDGET, "current_cost": TENTH_COST}}
     Path("user_cost.json").write_text(json.dumps(stored))
@@ -860,7 +853,7 @@ def test_budget_decimal_costs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     join_saves(marker)
 
 
-def test_budget_hosted_load() -> None:
+def test_budget_hosted_calls() -> None:
     with RecordingServer() as server:
         server.replies[GET_BUDGET] = HOSTED_REPLY
         reference = LITELLM_BUDGET.BudgetManager(PROJECT, HOSTED, server.url)
@@ -878,9 +871,6 @@ def test_budget_hosted_load() -> None:
         ours = BudgetManager(PROJECT, HOSTED, server.url)
         assert ours.get_users() == reference.get_users() == []
         assert server.requests
-
-
-def test_budget_hosted_http_errors() -> None:
     for status in (401, 500):
         with RecordingServer() as server:
             server.replies[GET_BUDGET] = ERROR_REPLY
@@ -894,16 +884,17 @@ def test_budget_hosted_http_errors() -> None:
 
 
 def test_budget_hosted_transport(monkeypatch: pytest.MonkeyPatch) -> None:
-    assert module_level_client.timeout.read == REQUEST_TIMEOUT
-    assert module_level_client.timeout.connect == CONNECT_TIMEOUT
+    assert timeout_phases(module_level_client.timeout) == (REFERENCE_REQUEST_TIMEOUT,) * 4
+    monkeypatch.setenv("REQUEST_TIMEOUT", "1234")
+    assert timeout_phases(ModuleClient().timeout) == (1234.0,) * 4
     assert module_level_client.client.follow_redirects
     assert module_level_client.ssl_options
     # ast-grep-ignore: no-string-mocking
     monkeypatch.setattr(BETTERLITE, "ssl_verify", False)
-    monkeypatch.setenv("LITELLM_USER_AGENT", AGENT_VALUE)
+    monkeypatch.setenv("LITELLM_USER_AGENT", "b166-agent/1")
     configured = ModuleClient()
     assert configured.ssl_options is False
-    assert configured.client.headers["user-agent"] == AGENT_VALUE
+    assert configured.client.headers["user-agent"] == "b166-agent/1"
     configured.client.close()
     with RecordingServer() as server:
         server.replies[GET_BUDGET] = HOSTED_REPLY
@@ -924,11 +915,7 @@ def test_budget_hosted_transport(monkeypatch: pytest.MonkeyPatch) -> None:
     agents = [string_of(request["agent"]) for request in requests]
     ours_agent = module_level_client.client.headers["user-agent"]
     assert agents == [agents[0], agents[0], ours_agent, ours_agent, agents[0], ours_agent]
-    for request in requests:
-        assert request["cookie"] is None
-
-
-def test_budget_tls_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert [request["cookie"] for request in requests] == [None] * 6
     assert DEFAULT_SSL_CIPHERS == REFERENCE_SSL_CIPHERS
     monkeypatch.setenv("SSL_VERIFY", "false")
     assert LITELLM_HTTP.get_ssl_configuration() is False
@@ -947,10 +934,41 @@ def test_budget_tls_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SSL_ECDH_CURVE", INVALID_CURVE)
     assert ModuleClient().ssl_options is not False
     assert recorder.curves == [INVALID_CURVE]
+    # ast-grep-ignore: no-string-mocking
+    monkeypatch.setattr(BETTERLITE, "force_ipv4", True)
+    # ast-grep-ignore: no-string-mocking
+    monkeypatch.setattr(LITELLM, "force_ipv4", True)
+    # ast-grep-ignore: no-string-mocking
+    monkeypatch.setattr("httpx2.HTTPTransport", TransportLog)
+    # ast-grep-ignore: no-string-mocking
+    monkeypatch.setattr("litellm.llms.custom_httpx.http_handler.HTTPTransport", TransportLog)
+    cases = (("true", False, True), ("yes", False, False), ("no", True, True))
+    for flag, module_flag, enabled in cases:
+        monkeypatch.setenv("LITELLM_HTTP2", flag)
+        # ast-grep-ignore: no-string-mocking
+        monkeypatch.setattr(BETTERLITE, "http2", module_flag)
+        # ast-grep-ignore: no-string-mocking
+        monkeypatch.setattr(LITELLM, "http2", module_flag)
+        TransportLog.calls.clear()
+        ModuleClient()
+        LITELLM_HTTP.HTTPHandler(timeout=REFERENCE_REQUEST_TIMEOUT)
+        wanted: list[dict[str, PythonValue]] = [{"local_address": "0.0.0.0", "http2": enabled}]
+        assert TransportLog.calls == wanted * 2
 
 
-def test_budget_background_save(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_budget_local_saves(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
     monkeypatch.chdir(tmp_path)
+    # ast-grep-ignore: no-string-mocking
+    monkeypatch.setattr(BETTERLITE, "set_verbose", True)
+    # ast-grep-ignore: no-string-mocking
+    monkeypatch.setattr(LITELLM, "set_verbose", True)
+    with caplog.at_level(logging.INFO):
+        BudgetManager(PROJECT)
+        LITELLM_BUDGET.BudgetManager(PROJECT)
+    messages = [record.getMessage() for record in caplog.records]
+    assert messages == ["User Dictionary not found!", "user dict from local: {}"] * 2
     manager = BudgetManager(PROJECT)
     marker = set(threading.enumerate())
     saver = GatedSaver()
@@ -964,12 +982,9 @@ def test_budget_background_save(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     saver.release.set()
     join_saves(marker)
     assert saver.finished.is_set()
-
-
-def test_budget_saves_serialized(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.chdir(tmp_path)
     manager = BudgetManager(PROJECT)
     manager.create_budget(BUDGET, ALICE)
+    join_saves(marker)
     # ast-grep-ignore: no-string-mocking
     monkeypatch.setattr(Path, "write_text", gated_write_text)
     threads = [threading.Thread(target=manager.save_data) for _ in range(2)]
@@ -982,18 +997,3 @@ def test_budget_saves_serialized(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     assert not Path("user_cost.json.pending").exists()
     saved = fields_of(JSON_ADAPTER.validate_json(Path("user_cost.json").read_text()))
     assert saved == {ALICE: {"total_budget": BUDGET}}
-
-
-def test_budget_verbose(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
-) -> None:
-    monkeypatch.chdir(tmp_path)
-    # ast-grep-ignore: no-string-mocking
-    monkeypatch.setattr(BETTERLITE, "set_verbose", True)
-    # ast-grep-ignore: no-string-mocking
-    monkeypatch.setattr(LITELLM, "set_verbose", True)
-    with caplog.at_level(logging.INFO):
-        BudgetManager(PROJECT)
-        LITELLM_BUDGET.BudgetManager(PROJECT)
-    messages = [record.getMessage() for record in caplog.records]
-    assert messages == ["User Dictionary not found!", "user dict from local: {}"] * 2
