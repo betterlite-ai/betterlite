@@ -284,6 +284,17 @@ impl ManagedBatchRegistry for GatedRegistry {
     }
 }
 
+struct PanickingRegistry;
+
+impl ManagedBatchRegistry for PanickingRegistry {
+    fn store_unified_object_id(
+        &self,
+        _request: BatchRegistration,
+    ) -> BoxFuture<'static, Result<(), RegistryError>> {
+        Box::pin(async { panic!("the registry write panicked") })
+    }
+}
+
 fn gated_registry() -> (
     Arc<dyn ManagedBatchRegistry>,
     mpsc::Receiver<()>,
@@ -433,4 +444,20 @@ async fn batch_registration_drain_warns_about_a_cancelled_read() {
     assert!(log.contents().contains(
         "Vertex AI batch registration cancelled at shutdown; its status and output file may be stale"
     ));
+}
+
+#[tokio::test]
+async fn batch_registration_drain_warns_when_the_registry_panics() {
+    let (log, _guard) = capture_logs(tracing::Level::INFO);
+    let registry: Arc<dyn ManagedBatchRegistry> = Arc::new(PanickingRegistry);
+    let background = BackgroundTasks::default();
+    let handle = spawn_batch_registration(&background, &registry, "Anthropic", registration(true))
+        .expect("a Tokio runtime runs the test");
+    let error = handle.await.expect_err("the registration task panicked");
+    assert!(error.is_panic());
+    let text = log.contents();
+    assert!(text.contains(
+        "Anthropic batch registration cancelled at shutdown; its cost will not be tracked"
+    ));
+    assert!(!text.contains("Failed to store Anthropic"));
 }
