@@ -28,7 +28,10 @@ where
             completed = completed_object(&serialized);
         }
         if let Err(error) = handler.websocket.send_text(&serialized).await {
-            tracing::debug!("ManagedResponsesWS: error sending chunk to client: {error}");
+            tracing::debug!(
+                "ManagedResponsesWS: error sending chunk to client: {}",
+                error.message
+            );
             return Ok(completed);
         }
     }

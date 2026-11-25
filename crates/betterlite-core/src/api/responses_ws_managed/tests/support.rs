@@ -37,8 +37,7 @@ pub(super) const MODEL: &str = "openai/gpt-4o-mini";
 pub(super) const GROUP: &str = "router-model";
 pub(super) const NOW: i64 = 1_765_000_000;
 pub(super) const WARMUP_ID: &str = "0123456789abcdef0123456789abcdef";
-pub(super) const SEND_FAILED: &str =
-    "the websocket text frame could not be sent: client send failed";
+pub(super) const SEND_FAILED: &str = "client send failed";
 
 const DIAGNOSTIC_TARGET: &str = "betterlite_core::api::responses_ws_";
 const DIAGNOSTIC_PREFIX: &str = "ManagedResponsesWS: ";

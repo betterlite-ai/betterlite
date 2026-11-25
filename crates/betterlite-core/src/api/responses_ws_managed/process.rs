@@ -79,7 +79,11 @@ where
     };
     if is_warmup_frame(&message) {
         if let Err(error) = send_warmup_ack(handler, &message).await {
-            tracing::debug!("ManagedResponsesWS: error sending warmup ack: {error}");
+            let reason = match error {
+                ResponsesWsHistoryError::Send(failure) => failure.message,
+                invalid @ ResponsesWsHistoryError::Shape { .. } => invalid.to_string(),
+            };
+            tracing::debug!("ManagedResponsesWS: error sending warmup ack: {reason}");
         }
         return Ok(None);
     }
