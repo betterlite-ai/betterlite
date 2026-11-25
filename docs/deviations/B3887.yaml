@@ -1,0 +1,27 @@
+task: B3887
+deviations:
+  - what: "The dedicated metrics listener runs inside the proxy as a task on the server's TaskTracker instead of a child started with sys.executable -m litellm.proxy.prometheus_metrics_server. It stops with the server's shutdown token instead of an atexit terminate, and x-litellm-metrics-pid carries the proxy's own pid."
+    why: "Rule no-subprocess forbids gateway code from spawning processes. Rendering already runs off the async workers in B10090's coalesced renderer, so a scrape does not stall inference the way it would on a Python worker."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prometheus_metrics_server.py#L138-L155
+  - what: "A port that can't be bound fails start_metrics_listener at once with \"cannot listen on host:port; is the port already in use?\", instead of waiting for a child to exit with its code. A listener task that ends before it answers fails with the serve error as the cause."
+    why: "With no child process there is no exit code; the bind error is the cause LiteLLM's message guesses at."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prometheus_metrics_server.py#L119-L135
+  - what: "The startup probe dials the port the listener actually bound, so --prometheus_metrics_port 0 starts on a free port instead of timing out after 30 seconds."
+    why: "LiteLLM probes port 0, which never answers, so no working setup relies on the timeout."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prometheus_metrics_server.py#L119-L121
+  - what: "The sidecar command run_metrics_server stops serving gracefully once its parent pid changes, where LiteLLM's watchdog thread calls os._exit(0). The in-process listener needs no watchdog, since it dies with the proxy."
+    why: "Clippy denies process exit outside main; graceful shutdown finishes the scrape in flight and then returns."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prometheus_metrics_server.py#L88-L101
+  - what: "GET /metrics answers the scrape directly, where Starlette's mount first answers 307 to /metrics/. /health/ is a 404 instead of a 307 to /health."
+    why: "Scrapers and LiteLLM's own probe follow the redirect, so the answer they end up with is the same, one round trip sooner."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prometheus_metrics_server.py#L79
+  - what: "wipe_directory and mark_dead_workers fail with CleanupError::List when the multiprocess folder is missing or can't be listed, where glob.glob returns an empty list and the cleanup does nothing."
+    why: "The task asks for a folder that can't be read to be a loud startup error, since a silent skip loses or duplicates samples with no sign of why."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prometheus_cleanup.py#L19-L30
+  - what: "A live gauge file whose pid doesn't fit in u32 is left alone, and one whose pid fits u32 but not pid_t counts as dead and is removed. LiteLLM's os.kill raises OverflowError for both and aborts the whole cleanup."
+    why: "No process can hold such a pid, and an unhandled exception at worker startup is a crash no setup relies on."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prometheus_cleanup.py#L46-L53
+  - what: "The metrics server CLI reads --port as 0 to 65535 and refuses an out-of-range or non-numeric port at parse time with exit code 2. Its error messages are clap's, not argparse's."
+    why: "argparse accepts any integer and uvicorn fails later on the bind; a port is a u16."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prometheus_metrics_server.py#L158-L168
+kept_bugs: []
