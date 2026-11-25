@@ -163,7 +163,6 @@ class ReservationView(TypedDict):
 
 class ErrorView(TypedDict):
     status: int
-    detail: JsonValue
     headers: dict[str, str]
     category: str
     rate_limit_type: str | None
@@ -183,7 +182,6 @@ class Effects(TypedDict):
 
 class ErrorFields(Protocol):
     status_code: int
-    detail: JsonValue
     headers: dict[str, str] | None
     category: str
     rate_limit_type: str | None
@@ -267,7 +265,6 @@ def error_view(error: ProxyRateLimitError) -> ErrorView:
     held = fields.headers
     return {
         "status": fields.status_code,
-        "detail": fields.detail,
         "headers": {} if held is None else held,
         "category": fields.category,
         "rate_limit_type": fields.rate_limit_type,

@@ -13,7 +13,6 @@ use betterlite_core::api::batch_limit_counters::records::BatchTpdRefundOperation
 use betterlite_core::api::batch_limit_descriptors::input::BatchLimitPrincipal;
 use betterlite_models::resolution::{ProviderIdentity, ResolutionError, ResolvedModel};
 use serde::Deserialize;
-use serde_json::{Value, json};
 use tokio::runtime::Builder;
 
 use betterlite_oracle_helper_api::error::OrHelperError as _;
@@ -77,7 +76,6 @@ impl BatchCounterStash for RecordingStash {
     }
 }
 
-// rate_limiter_utils.resolve_llm_provider_for_rate_limit's native lookup, pinned to the model the cases use
 struct FixedProviders;
 
 impl ProviderResolution for FixedProviders {
@@ -123,32 +121,30 @@ impl Helper for Op {
             .build()
             .or_value_error()?;
         let result = runtime.block_on(service.run(&calls)).or_value_error()?;
-        let answers = result
-            .answers
-            .iter()
-            .map(views::answer_view)
-            .collect::<Vec<_>>();
-        let effects = scripted_effects(&store, &limiter, &cache, &stash);
-        Ok(json!({"answers": answers, "effects": effects}))
+        let output = views::HelperOutput {
+            answers: result.answers.iter().map(views::AnswerView::from).collect(),
+            effects: scripted_effects(&store, &limiter, &cache, &stash),
+        };
+        serde_json::to_value(output).or_value_error()
     }
 }
 
-// what the scripted store, limiter, cache and stash saw after the run
 fn scripted_effects(
     store: &ScriptedStore,
     limiter: &ScriptedLimiter,
     cache: &ScriptedCache,
     stash: &RecordingStash,
-) -> Value {
-    let held = stash.reservation();
-    let operations = stash.operations();
-    json!({
-        "store_calls": store.calls(),
-        "limiter_calls": limiter.calls(),
-        "base_calls": limiter.base_calls(),
-        "project_calls": limiter.project_calls(),
-        "cache_reads": cache.reads(),
-        "reservation": held.as_ref().map(views::reservation_view),
-        "refund_ops": operations.iter().map(views::operation_view).collect::<Vec<_>>(),
-    })
+) -> views::EffectsView {
+    views::EffectsView {
+        store_calls: store.calls(),
+        limiter_calls: limiter.calls(),
+        base_calls: limiter.base_calls(),
+        project_calls: limiter.project_calls(),
+        cache_reads: cache.reads(),
+        reservation: stash
+            .reservation()
+            .as_ref()
+            .map(views::ReservationView::from),
+        refund_ops: stash.operations(),
+    }
 }

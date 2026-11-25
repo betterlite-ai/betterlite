@@ -5,7 +5,6 @@ use betterlite_core::api::batch_limit_descriptors::descriptors::{
 };
 use serde::Deserialize;
 
-// one value internal_usage_cache.async_get_cache hands _read_tpd_window_start, as JSON carries it
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub(super) enum CachedWindow {
@@ -40,7 +39,6 @@ impl BackendName {
     }
 }
 
-// one reply BatchEnqueuedTokenStore.reserve hands back, in order
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub(super) enum StoreReply {

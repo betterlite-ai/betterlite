@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_core::api::batch_enqueued_reserve::{
-    BatchEnqueuedTokenReservation, BatchEnqueuedTokenScope,
+    BatchEnqueuedTokenReservation, BatchEnqueuedTokenScope, ReservationBackend,
 };
 use betterlite_core::api::batch_limit_counters::records::{
     BatchLimitCounterAnswer, BatchTpdRefundOperation,
@@ -9,147 +9,145 @@ use betterlite_core::api::batch_limit_counters::records::{
 use betterlite_core::api::batch_limit_descriptors::descriptors::{
     BatchDescriptorIncrements, BatchLimitDescriptor,
 };
-use betterlite_error::rate_limit::ProxyRateLimitError;
+use betterlite_error::rate_limit::{ProxyRateLimitError, RateLimitCategory, RateLimitDimension};
 use serde::Serialize;
-use serde_json::{Value, json};
 
-#[derive(Serialize)]
-struct ScopeView<'scope> {
-    key: &'scope str,
-    value: &'scope str,
-    limit: i64,
+#[derive(Debug, Clone, Serialize)]
+pub(super) struct StoreCallView {
+    pub(super) tokens: i64,
+    pub(super) scopes: Vec<BatchEnqueuedTokenScope>,
 }
 
-impl<'scope> From<&'scope BatchEnqueuedTokenScope> for ScopeView<'scope> {
-    fn from(scope: &'scope BatchEnqueuedTokenScope) -> Self {
+#[derive(Debug, Clone, Serialize)]
+pub(super) struct LimiterCallView {
+    pub(super) descriptors: Vec<BatchLimitDescriptor>,
+    pub(super) increments: Vec<BatchDescriptorIncrements>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub(super) struct ReservationView {
+    tokens: i64,
+    scopes: Vec<BatchEnqueuedTokenScope>,
+    backend: ReservationBackend,
+    owner: String,
+}
+
+impl From<&BatchEnqueuedTokenReservation> for ReservationView {
+    fn from(reservation: &BatchEnqueuedTokenReservation) -> Self {
         Self {
-            key: scope.key.as_str(),
-            value: scope.value.as_str(),
-            limit: scope.limit,
+            tokens: reservation.tokens,
+            scopes: reservation.scopes.clone(),
+            backend: reservation.backend,
+            owner: reservation.owner.clone(),
         }
     }
 }
 
-pub(super) fn store_call(tokens: i64, scopes: &[BatchEnqueuedTokenScope]) -> Value {
-    json!({
-        "tokens": tokens,
-        "scopes": scopes.iter().map(ScopeView::from).collect::<Vec<_>>(),
-    })
+#[derive(Debug, Clone, Serialize)]
+pub(super) struct ErrorView {
+    status: u16,
+    headers: BTreeMap<String, String>,
+    category: RateLimitCategory,
+    rate_limit_type: Option<RateLimitDimension>,
+    model: String,
+    llm_provider: String,
 }
 
-fn descriptor_view(descriptor: &BatchLimitDescriptor) -> Value {
-    let rate_limit = descriptor.rate_limit.as_ref().map(|limits| {
-        json!({
-            "requests_per_unit": limits.requests_per_unit,
-            "tokens_per_unit": limits.tokens_per_unit,
-            "max_parallel_requests": limits.max_parallel_requests,
-            "window_size": limits.window_size,
-        })
-    });
-    json!({
-        "key": descriptor.key,
-        "value": descriptor.value,
-        "rate_limit": rate_limit,
-    })
-}
-
-pub(super) fn limiter_call(
-    descriptors: &[BatchLimitDescriptor],
-    increments: &[BatchDescriptorIncrements],
-) -> Value {
-    json!({
-        "descriptors": descriptors.iter().map(descriptor_view).collect::<Vec<_>>(),
-        "increments": increments
-            .iter()
-            .map(|increment| json!({"requests": increment.requests, "tokens": increment.tokens}))
-            .collect::<Vec<_>>(),
-    })
-}
-
-pub(super) fn operation_view(operation: &BatchTpdRefundOperation) -> Value {
-    json!({
-        "key": operation.key,
-        "increment_value": operation.increment_value,
-        "ttl": operation.ttl,
-        "window_key": operation.window_key,
-        "expected_window_start": operation.expected_window_start,
-        "reservation_backend": operation.reservation_backend,
-    })
-}
-
-pub(super) fn reservation_view(reservation: &BatchEnqueuedTokenReservation) -> Value {
-    let scopes: Vec<ScopeView<'_>> = reservation.scopes.iter().map(ScopeView::from).collect();
-    json!({
-        "tokens": reservation.tokens,
-        "scopes": scopes,
-        "backend": reservation.backend,
-        "owner": reservation.owner,
-    })
-}
-
-pub(super) fn error_view(error: &ProxyRateLimitError) -> Value {
-    let headers: BTreeMap<&str, String> = error
-        .headers
-        .as_ref()
-        .map(|present| {
-            present
-                .iter()
-                .map(|(name, value)| {
-                    let text = String::from_utf8_lossy(value.as_bytes()).into_owned();
-                    (name.as_str(), text)
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    json!({
-        "status": 429,
-        "detail": error.detail,
-        "headers": headers,
-        "category": error.category,
-        "rate_limit_type": error.rate_limit_type,
-        "model": error.model,
-        "llm_provider": error.llm_provider,
-    })
-}
-
-pub(super) fn answer_view(answer: &BatchLimitCounterAnswer) -> Value {
-    let fields = answer_fields(answer);
-    Value::Object(
-        fields
-            .into_iter()
-            .map(|(name, value)| (name.to_owned(), value))
-            .collect(),
-    )
-}
-
-fn answer_fields(answer: &BatchLimitCounterAnswer) -> BTreeMap<&'static str, Value> {
-    let (function, payload_name, payload) = match answer {
-        BatchLimitCounterAnswer::ReserveBatchEnqueuedTokens { rejection } => (
-            "reserve_batch_enqueued_tokens",
-            "rejection",
-            json!(rejection.as_deref().map(error_view)),
-        ),
-        BatchLimitCounterAnswer::RaiseEnqueuedLimitError { error } => (
-            "raise_enqueued_limit_error",
-            "error",
-            json!(error_view(error)),
-        ),
-        BatchLimitCounterAnswer::RaiseRateLimitError { error } => {
-            ("raise_rate_limit_error", "error", json!(error_view(error)))
+impl From<&ProxyRateLimitError> for ErrorView {
+    fn from(error: &ProxyRateLimitError) -> Self {
+        Self {
+            status: 429,
+            headers: error
+                .headers
+                .as_ref()
+                .map_or_else(BTreeMap::new, |present| {
+                    present
+                        .iter()
+                        .map(|(name, value)| {
+                            (
+                                name.as_str().to_owned(),
+                                String::from_utf8_lossy(value.as_bytes()).into_owned(),
+                            )
+                        })
+                        .collect()
+                }),
+            category: error.category,
+            rate_limit_type: error.rate_limit_type,
+            model: error.model.clone(),
+            llm_provider: error.llm_provider.clone(),
         }
-        BatchLimitCounterAnswer::CheckAndIncrementBatchCounters { rejection } => (
-            "check_and_increment_batch_counters",
-            "rejection",
-            json!(rejection.as_deref().map(error_view)),
-        ),
-        BatchLimitCounterAnswer::ReadTpdWindowStart { window_start } => {
-            ("read_tpd_window_start", "window_start", json!(window_start))
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "function", rename_all = "snake_case")]
+pub(super) enum AnswerView {
+    ReserveBatchEnqueuedTokens {
+        rejection: Option<ErrorView>,
+    },
+    RaiseEnqueuedLimitError {
+        error: ErrorView,
+    },
+    RaiseRateLimitError {
+        error: ErrorView,
+    },
+    CheckAndIncrementBatchCounters {
+        rejection: Option<ErrorView>,
+    },
+    ReadTpdWindowStart {
+        window_start: Option<i64>,
+    },
+    BuildTpdRefundOps {
+        operations: Vec<BatchTpdRefundOperation>,
+    },
+}
+
+impl From<&BatchLimitCounterAnswer> for AnswerView {
+    fn from(answer: &BatchLimitCounterAnswer) -> Self {
+        match answer {
+            BatchLimitCounterAnswer::ReserveBatchEnqueuedTokens { rejection } => {
+                Self::ReserveBatchEnqueuedTokens {
+                    rejection: rejection.as_deref().map(ErrorView::from),
+                }
+            }
+            BatchLimitCounterAnswer::RaiseEnqueuedLimitError { error } => {
+                Self::RaiseEnqueuedLimitError {
+                    error: ErrorView::from(error.as_ref()),
+                }
+            }
+            BatchLimitCounterAnswer::RaiseRateLimitError { error } => Self::RaiseRateLimitError {
+                error: ErrorView::from(error.as_ref()),
+            },
+            BatchLimitCounterAnswer::CheckAndIncrementBatchCounters { rejection } => {
+                Self::CheckAndIncrementBatchCounters {
+                    rejection: rejection.as_deref().map(ErrorView::from),
+                }
+            }
+            BatchLimitCounterAnswer::ReadTpdWindowStart { window_start } => {
+                Self::ReadTpdWindowStart {
+                    window_start: *window_start,
+                }
+            }
+            BatchLimitCounterAnswer::BuildTpdRefundOps { operations } => Self::BuildTpdRefundOps {
+                operations: operations.clone(),
+            },
         }
-        BatchLimitCounterAnswer::BuildTpdRefundOps { operations } => (
-            "build_tpd_refund_ops",
-            "operations",
-            json!(operations.iter().map(operation_view).collect::<Vec<_>>()),
-        ),
-    };
-    BTreeMap::from([("function", json!(function)), (payload_name, payload)])
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub(super) struct EffectsView {
+    pub(super) store_calls: Vec<StoreCallView>,
+    pub(super) limiter_calls: Vec<LimiterCallView>,
+    pub(super) base_calls: usize,
+    pub(super) project_calls: usize,
+    pub(super) cache_reads: Vec<String>,
+    pub(super) reservation: Option<ReservationView>,
+    pub(super) refund_ops: Vec<BatchTpdRefundOperation>,
+}
+
+#[derive(Debug, Serialize)]
+pub(super) struct HelperOutput {
+    pub(super) answers: Vec<AnswerView>,
+    pub(super) effects: EffectsView,
 }

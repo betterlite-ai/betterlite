@@ -20,7 +20,6 @@ use betterlite_core::api::batch_limit_descriptors::descriptors::{
 use betterlite_core::api::batch_limit_descriptors::input::BatchModelUsage;
 use betterlite_core::api::request_destination::RequestData;
 use indexmap::IndexMap;
-use serde_json::Value;
 
 use super::scripts::{BackendName, CachedWindow, LimiterScript, StoreReply, StoreScript};
 use super::views;
@@ -28,7 +27,7 @@ use super::views;
 #[derive(Clone)]
 pub(super) struct ScriptedStore {
     replies: Arc<Mutex<VecDeque<StoreReply>>>,
-    calls: Arc<Mutex<Vec<Value>>>,
+    calls: Arc<Mutex<Vec<views::StoreCallView>>>,
 }
 
 impl ScriptedStore {
@@ -39,26 +38,11 @@ impl ScriptedStore {
         }
     }
 
-    pub(super) fn calls(&self) -> Vec<Value> {
+    pub(super) fn calls(&self) -> Vec<views::StoreCallView> {
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
-    }
-}
-
-fn reserved(
-    tokens: i64,
-    scopes: &[BatchEnqueuedTokenScope],
-    backend: ReservationBackend,
-    owner: String,
-) -> BatchEnqueuedTokenReservation {
-    BatchEnqueuedTokenReservation {
-        tokens,
-        scopes: scopes.to_vec(),
-        backend,
-        owner,
-        reserved_at_monotonic: 0.0_f64,
     }
 }
 
@@ -73,27 +57,36 @@ impl BatchEnqueuedSource for ScriptedStore {
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(views::store_call(tokens, scopes));
+            .push(views::StoreCallView {
+                tokens,
+                scopes: scopes.to_vec(),
+            });
         let next = self
             .replies
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .pop_front();
         let outcome = match next {
-            None => Ok(BatchEnqueuedReserveResult::Reservation(reserved(
-                tokens,
-                scopes,
-                ReservationBackend::Redis,
-                String::new(),
-            ))),
+            None => Ok(BatchEnqueuedReserveResult::Reservation(
+                BatchEnqueuedTokenReservation {
+                    tokens,
+                    scopes: scopes.to_vec(),
+                    backend: ReservationBackend::Redis,
+                    owner: String::new(),
+                    reserved_at_monotonic: 0.0_f64,
+                },
+            )),
             Some(StoreReply::Reservation { backend, owner }) => {
                 let chosen = backend.map_or(ReservationBackend::Memory, BackendName::reserved);
-                Ok(BatchEnqueuedReserveResult::Reservation(reserved(
-                    tokens,
-                    scopes,
-                    chosen,
-                    owner.unwrap_or_default(),
-                )))
+                Ok(BatchEnqueuedReserveResult::Reservation(
+                    BatchEnqueuedTokenReservation {
+                        tokens,
+                        scopes: scopes.to_vec(),
+                        backend: chosen,
+                        owner: owner.unwrap_or_default(),
+                        reserved_at_monotonic: 0.0_f64,
+                    },
+                ))
             }
             Some(StoreReply::OverLimit { scope, enqueued }) => {
                 Ok(BatchEnqueuedReserveResult::OverLimit(
@@ -155,7 +148,7 @@ pub(super) struct ScriptedLimiter {
     responses: Arc<Mutex<VecDeque<BatchCounterResponse>>>,
     base_calls: Arc<Mutex<usize>>,
     project_calls: Arc<Mutex<usize>>,
-    calls: Arc<Mutex<Vec<Value>>>,
+    calls: Arc<Mutex<Vec<views::LimiterCallView>>>,
 }
 
 impl ScriptedLimiter {
@@ -179,7 +172,7 @@ impl ScriptedLimiter {
         }
     }
 
-    pub(super) fn calls(&self) -> Vec<Value> {
+    pub(super) fn calls(&self) -> Vec<views::LimiterCallView> {
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -241,7 +234,10 @@ impl BatchCounterLimiter for ScriptedLimiter {
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(views::limiter_call(descriptors, increments));
+            .push(views::LimiterCallView {
+                descriptors: descriptors.to_vec(),
+                increments: increments.to_vec(),
+            });
         let answer = self
             .responses
             .lock()
