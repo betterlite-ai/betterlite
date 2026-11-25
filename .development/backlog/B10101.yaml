@@ -1,13 +1,13 @@
 id: B10101
 milestone: R2 bug fixes
 title: The module settings carry LiteLLM's declared types
-status: todo
+status: done
 depends_on: [B8066, B7879]
 file: tasks/B10101-settings-annotations.yaml
 covers: []
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3187
