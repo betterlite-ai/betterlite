@@ -30,7 +30,8 @@ def process_response_headers(
                 key: value for key, value in raw.items() if not key.startswith(_INTERNAL_PREFIX)
             }
             return {**_common_headers(rest), **internal}
-    return _common_headers(raw)
+        case object():
+            return _common_headers(raw)
 
 
 def set_response_cost_in_hidden_params(  # ast-grep-ignore: no-long-names
