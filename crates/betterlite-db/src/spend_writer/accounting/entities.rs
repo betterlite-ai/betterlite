@@ -3,7 +3,7 @@ use std::error::Error as StdError;
 use betterlite_models::savings_pricing::context::SavingsPricingContext;
 use rust_decimal::Decimal;
 
-use super::isolation::isolated;
+use super::isolation::isolate;
 use super::request_tags;
 use super::{SpendAccounting, SpendAccountingEnvironment};
 use crate::daily_records::projection::DailyPayload;
@@ -60,21 +60,21 @@ pub(super) async fn owner_row_updates<Table>(
     let cost = work.response_cost;
     let user = work.user_id.as_deref();
     let org = work.org_id.as_deref();
-    isolated!(
+    isolate(
         "team",
-        update_owner_db(queue, cost, work.team_id.as_deref(), user, OwnerKind::Team).await
+        update_owner_db(queue, cost, work.team_id.as_deref(), user, OwnerKind::Team).await,
     );
-    isolated!(
+    isolate(
         "organization",
-        update_owner_db(queue, cost, org, user, OwnerKind::Organization).await
+        update_owner_db(queue, cost, org, user, OwnerKind::Organization).await,
     );
-    isolated!(
+    isolate(
         "project",
-        update_row_db(queue, cost, work.project_id.as_deref(), RowKind::Project).await
+        update_row_db(queue, cost, work.project_id.as_deref(), RowKind::Project).await,
     );
-    isolated!(
+    isolate(
         "tag",
-        update_tag_db(queue, cost, daily.and_then(request_tags)).await
+        update_tag_db(queue, cost, daily.and_then(request_tags)).await,
     );
 }
 
@@ -96,7 +96,7 @@ pub(super) async fn attribute_updates<Table, C>(
         environment.deployments,
     )
     .await;
-    isolated!(
+    isolate(
         "agent",
         update_row_db(
             writer.queues.entity,
@@ -104,7 +104,7 @@ pub(super) async fn attribute_updates<Table, C>(
             daily.and_then(|payload| payload.agent_id.as_deref()),
             RowKind::Agent,
         )
-        .await
+        .await,
     );
 }
 

@@ -18,7 +18,7 @@ use crate::spend_log_storage::batch_claim::BatchClaimTable;
 use crate::spend_queues::entity::SpendAmount;
 
 use self::entities::{attribute_updates, identity_updates, owner_row_updates};
-use self::isolation::isolated;
+use self::isolation::isolate;
 
 mod entities;
 mod isolation;
@@ -117,33 +117,38 @@ async fn daily_updates<Table, C>(
     Table: BatchClaimTable + ?Sized,
     C: SavingsPricingContext,
 {
-    let queues = &writer.queues;
+    let user_queue = writer.queues.daily_user;
+    let end_user_queue = writer.queues.daily_end_user;
+    let agent_queue = writer.queues.daily_agent;
+    let team_queue = writer.queues.daily_team;
+    let org_queue = writer.queues.daily_org;
+    let tag_queue = writer.queues.daily_tag;
     let pricing = environment.pricing;
     let endpoints = environment.endpoints;
     let org = work.org_id.as_deref();
-    isolated!(
+    isolate(
         "daily user",
-        add_daily_user_transaction(queues.daily_user, payload, pricing, endpoints).await
+        add_daily_user_transaction(user_queue, payload, pricing, endpoints).await,
     );
-    isolated!(
+    isolate(
         "daily end user",
-        add_daily_end_user_transaction(queues.daily_end_user, payload, pricing, endpoints).await
+        add_daily_end_user_transaction(end_user_queue, payload, pricing, endpoints).await,
     );
-    isolated!(
+    isolate(
         "daily agent",
-        add_daily_agent_transaction(queues.daily_agent, payload, pricing, endpoints).await
+        add_daily_agent_transaction(agent_queue, payload, pricing, endpoints).await,
     );
-    isolated!(
+    isolate(
         "daily team",
-        add_daily_team_transaction(queues.daily_team, payload, pricing, endpoints).await
+        add_daily_team_transaction(team_queue, payload, pricing, endpoints).await,
     );
-    isolated!(
+    isolate(
         "daily organization",
-        add_daily_org_transaction(queues.daily_org, payload, org, pricing, endpoints).await
+        add_daily_org_transaction(org_queue, payload, org, pricing, endpoints).await,
     );
-    isolated!(
+    isolate(
         "daily tag",
-        add_daily_tag_transaction(queues.daily_tag, payload, pricing, endpoints).await
+        add_daily_tag_transaction(tag_queue, payload, pricing, endpoints).await,
     );
 }
 
