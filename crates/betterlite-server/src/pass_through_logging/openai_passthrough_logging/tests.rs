@@ -338,17 +338,6 @@ fn openai_chat_toolbox_decodes_the_upstream_reply() {
     };
     let reply = tools.chat_response(&request).unwrap();
     assert_eq!(key(&reply, "id"), &text("chatcmpl-9"));
-    let refusal_body = br#"{"id": "chatcmpl-9", "object": "chat.completion", "created": 1, "model": "gpt-4o", "choices": [{"index": 0, "message": {"role": "assistant", "content": null, "refusal": "I cannot help with that"}, "finish_reason": "stop"}]}"#;
-    request.upstream = &UpstreamChatReply {
-        status_code: 200,
-        body: refusal_body,
-    };
-    let decoded = tools.chat_response(&request).unwrap();
-    let Json::List(choices) = key(&decoded, "choices") else {
-        panic!("the reply has a choices list");
-    };
-    let fields = key(key(&choices[0], "message"), "provider_specific_fields");
-    assert_eq!(key(fields, "refusal"), &text("I cannot help with that"));
     let broken = UpstreamChatReply {
         status_code: 200,
         body: b"not json",
@@ -358,6 +347,34 @@ fn openai_chat_toolbox_decodes_the_upstream_reply() {
         tools.chat_response(&request),
         Err(OpenAiToolsError::Chat(_))
     ));
+}
+
+// convert_to_model_response_object moves the provider's refusal into provider_specific_fields.
+#[test]
+fn openai_chat_toolbox_moves_the_refusal_into_the_provider_fields() {
+    let tools = toolbox(&Arc::new(RecordingPricing::new(Decimal::ONE)), chat_price());
+    let body = br#"{"id": "chatcmpl-9", "object": "chat.completion", "created": 1, "model": "gpt-4o", "choices": [{"index": 0, "message": {"role": "assistant", "content": null, "refusal": "I cannot help with that"}, "finish_reason": "stop"}]}"#;
+    let messages = Json::List(Vec::new());
+    let params = Json::Object(JsonObject::new());
+    let empty = JsonObject::new();
+    let request = ChatTransformRequest {
+        upstream: &UpstreamChatReply {
+            status_code: 200,
+            body,
+        },
+        model: "gpt-4o",
+        messages: &messages,
+        optional_params: &params,
+        request_data: &empty,
+        json_mode: false,
+        litellm_params: &empty,
+    };
+    let decoded = tools.chat_response(&request).unwrap();
+    let Json::List(choices) = key(&decoded, "choices") else {
+        panic!("the reply has a choices list");
+    };
+    let fields = key(key(&choices[0], "message"), "provider_specific_fields");
+    assert_eq!(key(fields, "refusal"), &text("I cannot help with that"));
 }
 
 #[test]
@@ -461,10 +478,10 @@ fn openai_embed_absent_usage_still_logs_the_response() {
         panic!("the embedding reply is logged");
     };
     assert_eq!(
-        response.get("usage"),
-        Some(&object_json(
+        key(&response, "usage"),
+        &object_json(
             r#"{"prompt_tokens": 0, "completion_tokens": 0, "completion_tokens_details": null, "prompt_tokens_details": null, "total_tokens": 0}"#
-        ))
+        )
     );
     assert_eq!(outcome.kwargs.response_cost, Some(Decimal::new(3, 1)));
     assert_eq!(
