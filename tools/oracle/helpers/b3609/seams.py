@@ -13,11 +13,16 @@ from litellm.proxy.pass_through_endpoints.llm_provider_handlers import (
 )
 from litellm.proxy.pass_through_endpoints.streaming_handler import PassThroughStreamingHandler
 from litellm.types.passthrough_endpoints.pass_through_endpoints import EndpointType
-from litellm.types.utils import ModelResponse, Usage
+from litellm.types.utils import ModelResponse, StandardPassThroughResponseObject, Usage
 from pydantic import JsonValue
 
 from .model import COMPLETION_TOKENS, PROMPT_TOKENS, RESPONSE_COST, TOTAL_TOKENS
 from .recorder import RECORDER
+
+# the endpoints LiteLLM's reconstruction has a provider handler for; the rest fall back to a standard object
+RECONSTRUCTED_ENDPOINTS = frozenset(
+    {EndpointType.ANTHROPIC, EndpointType.VERTEX_AI, EndpointType.GEMINI, EndpointType.OPENAI}
+)
 
 
 def start_billing(
@@ -68,6 +73,8 @@ def build_result(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d6
         model,
         kwargs,
     )
+    if endpoint_type not in RECONSTRUCTED_ENDPOINTS:
+        return StandardPassThroughResponseObject(response="cannot parse chunks"), {}
     usage = Usage(
         prompt_tokens=PROMPT_TOKENS,
         completion_tokens=COMPLETION_TOKENS,
