@@ -544,6 +544,26 @@ fn error_status_without_a_capture_says_so() {
 
 #[test]
 fn error_transport_send_status_becomes_an_http_status_error() {
+    let failure = captured_status_payload();
+    assert_eq!(failure.kind, McpErrorKind::HttpStatus);
+    assert_eq!(failure.message, UNAUTHORIZED_MESSAGE);
+    let Json::Object(object) = failure.data.unwrap() else {
+        panic!("expected an object");
+    };
+    assert_eq!(
+        object.get("headers"),
+        Some(&Json::List(vec![Json::List(vec![
+            Json::Text("www-authenticate".to_owned()),
+            Json::Text("Bearer realm=\"mcp\"".to_owned()),
+        ])]))
+    );
+    assert_eq!(
+        object.get("url"),
+        Some(&Json::Text("http://mcp.test/mcp".to_owned()))
+    );
+}
+
+fn captured_status_payload() -> NativeMcpErrorPayload {
     let mut response_headers = HeaderMap::new();
     response_headers.insert("www-authenticate", "Bearer realm=\"mcp\"".parse().unwrap());
     let exchange = Exchange {
@@ -568,25 +588,9 @@ fn error_transport_send_status_becomes_an_http_status_error() {
             },
         )))),
     );
-    let failure = session_payload(&SessionError::Runtime(Arc::new(SdkError::Service(
+    session_payload(&SessionError::Runtime(Arc::new(SdkError::Service(
         ServiceError::TransportSend(dynamic),
-    ))));
-    assert_eq!(failure.kind, McpErrorKind::HttpStatus);
-    assert_eq!(failure.message, UNAUTHORIZED_MESSAGE);
-    let Json::Object(object) = failure.data.unwrap() else {
-        panic!("expected an object");
-    };
-    assert_eq!(
-        object.get("headers"),
-        Some(&Json::List(vec![Json::List(vec![
-            Json::Text("www-authenticate".to_owned()),
-            Json::Text("Bearer realm=\"mcp\"".to_owned()),
-        ])]))
-    );
-    assert_eq!(
-        object.get("url"),
-        Some(&Json::Text("http://mcp.test/mcp".to_owned()))
-    );
+    ))))
 }
 
 #[tokio::test]
