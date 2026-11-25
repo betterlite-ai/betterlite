@@ -615,3 +615,10 @@ path = "fuzz_targets/shadow_q.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "management_json"
+path = "fuzz_targets/management_json.rs"
+test = false
+doc = false
+bench = false
