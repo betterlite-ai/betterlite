@@ -159,18 +159,29 @@ fn systemone_fields_warn_and_keep_the_state() {
 }
 
 #[test]
-fn systemone_fields_keep_a_map_or_list_state() {
+fn systemone_fields_keep_a_map_state() {
     let (warnings, _guard) = capture_warnings();
-    for state in [json(r#"{"step":"one"}"#), json(r#"["one","two"]"#)] {
-        let fields =
-            request_fields(None, None, &with_state(state.clone())).expect("the fields build");
-        let RequestFields::SystemOne(fields) = fields else {
-            panic!("a state keyword means the System One format");
-        };
-        assert_eq!(fields.state, Some(state));
-        assert_eq!(fields.questions, None);
-    }
-    assert_eq!(warnings.captured().len(), 2);
+    let state = json(r#"{"step":"one"}"#);
+    let fields = request_fields(None, None, &with_state(state.clone())).expect("the fields build");
+    let RequestFields::SystemOne(fields) = fields else {
+        panic!("a state keyword means the System One format");
+    };
+    assert_eq!(fields.state, Some(state));
+    assert_eq!(fields.questions, None);
+    assert_eq!(warnings.captured().len(), 1);
+}
+
+#[test]
+fn systemone_fields_keep_a_list_state() {
+    let (warnings, _guard) = capture_warnings();
+    let state = json(r#"["one","two"]"#);
+    let fields = request_fields(None, None, &with_state(state.clone())).expect("the fields build");
+    let RequestFields::SystemOne(fields) = fields else {
+        panic!("a state keyword means the System One format");
+    };
+    assert_eq!(fields.state, Some(state));
+    assert_eq!(fields.questions, None);
+    assert_eq!(warnings.captured().len(), 1);
 }
 
 #[test]
