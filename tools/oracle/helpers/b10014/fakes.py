@@ -3,8 +3,6 @@ from types import ModuleType
 from typing import Final
 
 from litellm.models.managed_files import LiteLLM_ManagedVectorStoresTable as StoreRow
-from litellm.types.vector_stores import LiteLLM_ManagedVectorStore
-from litellm.vector_stores.vector_store_registry import VectorStoreRegistry
 from pydantic import JsonValue
 from typing_extensions import override
 
@@ -27,7 +25,7 @@ class Table:
     async def find_many(self, where: dict[str, JsonValue], take: int) -> list[StoreRow]:
         uuids = WHERE.validate_python(where)["vector_store_id"]["in"]
         self.queries.append({"uuids": uuids, "take": take})
-        return [StoreRow.model_validate(row) for row in self.rows]
+        return [StoreRow.model_validate(row) for row in self.rows]  # type: ignore[misc]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/managed_files.py#L52
 
 
 class Database:
@@ -62,20 +60,23 @@ class Cache:
         self.hits[key] = value
 
 
-class Registry(VectorStoreRegistry):
-    def __init__(self, stores: list[LiteLLM_ManagedVectorStore], *, failing: bool) -> None:
-        super().__init__(vector_stores=stores)
+# the registry LiteLLM asks for a store by id, answering with the first store it holds
+class Registry:
+    def __init__(self, stores: list[dict[str, JsonValue]], *, failing: bool) -> None:
+        self.stores = stores
         self.failing = failing
         self.looks: list[str] = []
 
-    @override
     def get_litellm_managed_vector_store_from_registry(  # ast-grep-ignore: no-long-names
         self, vector_store_id: str
-    ) -> LiteLLM_ManagedVectorStore | None:
+    ) -> dict[str, JsonValue] | None:
         self.looks.append(vector_store_id)
         if self.failing:
             raise RuntimeError(REGISTRY_FAILURE)
-        return super().get_litellm_managed_vector_store_from_registry(vector_store_id)
+        for store in self.stores:
+            if store.get("vector_store_id") == vector_store_id:
+                return store
+        return None
 
 
 # the log board the case reads warnings from, and the proxy logging object the metrics hook reaches

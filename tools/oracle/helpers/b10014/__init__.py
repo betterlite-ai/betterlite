@@ -1,5 +1,6 @@
 from logging import DEBUG, getLogger
 
+import litellm
 from pydantic import JsonValue
 
 from b10014.answers import answer
@@ -8,6 +9,7 @@ from b10014.fakes import Board
 
 
 def run(input_value: Input) -> JsonValue:
+    litellm.vector_store_registry = None
     board = Board()
     logger = getLogger("LiteLLM Proxy")
     logger.setLevel(DEBUG)

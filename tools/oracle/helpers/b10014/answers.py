@@ -9,7 +9,6 @@ from litellm.proxy.vector_store_endpoints.utils import (
     assert_user_can_access_vector_store_id,
     get_litellm_managed_vector_store,
 )
-from litellm.types.vector_stores import LiteLLM_ManagedVectorStore
 from pydantic import JsonValue
 from starlette.exceptions import HTTPException
 
@@ -63,7 +62,7 @@ def key_auth(auth: StoreAuth) -> UserAPIKeyAuth:
 
 
 # the store as it stands: a row carries every column, a registry store the fields it was given
-def store_view(store: LiteLLM_ManagedVectorStore | None) -> dict[str, JsonValue] | None:
+def store_view(store: JsonValue) -> dict[str, JsonValue] | None:
     if store is None:
         return None
     return STORE.validate_python(store)
@@ -111,7 +110,7 @@ def cache_value(call: ResolveCall | AssertIdCall) -> Cache:
     cached = call.get("cached")
     hits: dict[str, StoreRow] = {}
     for row in [] if cached is None else cached:
-        table = StoreRow.model_validate(row["model_dump"])
+        table = StoreRow.model_validate(row["model_dump"])  # type: ignore[misc]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/managed_files.py#L52
         hits[f"{CACHE_KEY_PREFIX}{table.vector_store_id}"] = table
     return Cache(hits, call.get("fail"))
 
@@ -129,32 +128,22 @@ def prepare(registry: Registry | None, cache: Cache, table: Table | None, board:
     proxy_server.user_api_key_cache = cache
     proxy_server.proxy_logging_obj = board
     sys.modules[PROXY_MODULE] = proxy_server
-    litellm.vector_store_registry = registry
+    litellm.vector_store_registry = registry  # type: ignore[assignment]  # noqa: E501  # pyright: ignore[reportAssignmentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L1517
 
 
-async def asserted(
-    store: LiteLLM_ManagedVectorStore, auth: UserAPIKeyAuth, detail: str | None
-) -> None:
-    if detail is None:
-        await assert_user_can_access_vector_store(vector_store=store, user_api_key_dict=auth)
-    else:
-        await assert_user_can_access_vector_store(
-            vector_store=store, user_api_key_dict=auth, detail=detail
-        )
+async def resolved(call: ResolveCall | AssertIdCall) -> dict[str, JsonValue] | None:
+    match call["function"]:
+        case "resolve":
+            return store_view(await get_litellm_managed_vector_store(vector_store_id=call["vector_store_id"]))  # type: ignore[misc, arg-type]  # noqa: E501  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/utils.py#L260
+        case "assert_id":
+            auth = key_auth(call["auth"])
+            detail = call.get("detail")
+            if detail is None:
+                return store_view(await assert_user_can_access_vector_store_id(vector_store_id=call["vector_store_id"], user_api_key_dict=auth))  # type: ignore[misc, arg-type]  # noqa: E501  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/utils.py#L334
+            return store_view(await assert_user_can_access_vector_store_id(vector_store_id=call["vector_store_id"], user_api_key_dict=auth, detail=detail))  # type: ignore[misc, arg-type]  # noqa: E501  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/utils.py#L334
 
 
-async def looked_up(call: AssertIdCall, auth: UserAPIKeyAuth) -> LiteLLM_ManagedVectorStore | None:
-    detail = call.get("detail")
-    if detail is None:
-        return await assert_user_can_access_vector_store_id(
-            vector_store_id=call["vector_store_id"], user_api_key_dict=auth
-        )
-    return await assert_user_can_access_vector_store_id(
-        vector_store_id=call["vector_store_id"], user_api_key_dict=auth, detail=detail
-    )
-
-
-def resolve_answer(call: ResolveCall, board: Board) -> Answer:
+def resolution_answer(call: ResolveCall | AssertIdCall, board: Board) -> Answer:
     registry = registry_value(call)
     cache = cache_value(call)
     table = table_value(call)
@@ -163,13 +152,11 @@ def resolve_answer(call: ResolveCall, board: Board) -> Answer:
     error: ErrorView | None = None
     prepare(registry, cache, table, board)
     try:
-        store = store_view(
-            asyncio.run(get_litellm_managed_vector_store(vector_store_id=call["vector_store_id"]))
-        )
+        store = asyncio.run(resolved(call))
     except HTTPException as raised:
         error = error_view(raised)
     return {
-        "function": "resolve",
+        "function": call["function"],
         "store": store,
         "error": error,
         "warnings": warning_labels(board.messages[start:], call["vector_store_id"]),
@@ -183,7 +170,11 @@ def assert_store_answer(call: AssertStoreCall, board: Board) -> Answer:
     error: ErrorView | None = None
     prepare(None, cache, None, board)
     try:
-        asyncio.run(asserted(call["store"], auth, call.get("detail")))
+        detail = call.get("detail")
+        if detail is None:
+            asyncio.run(assert_user_can_access_vector_store(vector_store=call["store"], user_api_key_dict=auth))  # type: ignore[arg-type]  # noqa: E501  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/utils.py#L324
+        else:
+            asyncio.run(assert_user_can_access_vector_store(vector_store=call["store"], user_api_key_dict=auth, detail=detail))  # type: ignore[arg-type]  # noqa: E501  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/utils.py#L324
     except HTTPException as raised:
         error = error_view(raised)
     # the store was handed to the assertion, so this call never resolves one and logs no warning
@@ -196,33 +187,11 @@ def assert_store_answer(call: AssertStoreCall, board: Board) -> Answer:
     }
 
 
-def assert_id_answer(call: AssertIdCall, board: Board) -> Answer:
-    registry = registry_value(call)
-    cache = cache_value(call)
-    table = table_value(call)
-    auth = key_auth(call["auth"])
-    start = len(board.messages)
-    store: dict[str, JsonValue] | None = None
-    error: ErrorView | None = None
-    prepare(registry, cache, table, board)
-    try:
-        store = store_view(asyncio.run(looked_up(call, auth)))
-    except HTTPException as raised:
-        error = error_view(raised)
-    return {
-        "function": "assert_id",
-        "store": store,
-        "error": error,
-        "warnings": warning_labels(board.messages[start:], call["vector_store_id"]),
-        "lookups": lookups_view(registry, cache, table),
-    }
-
-
 def answer(call: Call, board: Board) -> Answer:
     match call["function"]:
         case "resolve":
-            return resolve_answer(call, board)
+            return resolution_answer(call, board)
         case "assert_store":
             return assert_store_answer(call, board)
         case "assert_id":
-            return assert_id_answer(call, board)
+            return resolution_answer(call, board)

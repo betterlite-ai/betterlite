@@ -1,7 +1,6 @@
 from typing import Final, Literal, NotRequired, TypeAlias, TypedDict
 
 from litellm.proxy._types import UserAPIKeyAuth
-from litellm.types.vector_stores import LiteLLM_ManagedVectorStore
 from pydantic import JsonValue, TypeAdapter
 
 # the proxy module the resolution imports its shared cache from, and the cache key its lookup builds
@@ -27,7 +26,7 @@ class RowInput(TypedDict):
 
 
 class RegistryInput(TypedDict):
-    stores: NotRequired[list[LiteLLM_ManagedVectorStore]]
+    stores: NotRequired[list[dict[str, JsonValue]]]
 
 
 # the credential fields the assertions read, the same shape the native helper builds its auth from
@@ -51,7 +50,7 @@ class ResolveCall(TypedDict):
 
 class AssertStoreCall(TypedDict):
     function: Literal["assert_store"]
-    store: LiteLLM_ManagedVectorStore
+    store: dict[str, JsonValue]
     auth: StoreAuth
     detail: NotRequired[str]
 
