@@ -2,6 +2,7 @@ use std::mem::replace;
 use std::mem::take;
 use std::sync::Arc;
 
+use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_models::decisions::Json;
 use chrono::{DateTime, FixedOffset};
 use futures_util::{Stream, StreamExt as _};
@@ -21,6 +22,25 @@ use super::first_token::stamp_first_chunk_if_needed;
 use super::lifecycle::{StreamLifecycle, SuccessJobCall};
 
 mod frames;
+
+// LiteLLM keeps every upstream chunk; the log copy is about twice the largest stream a working setup sends
+pub(super) const MAX_LOGGED_STREAM_BYTES: usize = 0x0400_0000;
+// the pooled transport's reply cap, the same ceiling B1315 puts on an unterminated fragment
+pub(super) const MAX_PENDING_FRAME_BYTES: usize = TransportLimits::DEFAULT.body_bytes;
+
+// LiteLLM grows all three stream buffers without limit; each cap stops one of them growing with the stream
+#[derive(Clone, Copy)]
+pub(super) struct StreamBufferCaps {
+    pub(super) logged_bytes: usize,
+    pub(super) frame_bytes: usize,
+}
+
+impl StreamBufferCaps {
+    pub(super) const DEFAULT: Self = Self {
+        logged_bytes: MAX_LOGGED_STREAM_BYTES,
+        frame_bytes: MAX_PENDING_FRAME_BYTES,
+    };
+}
 
 // LiteLLM's chunk_processor arguments plus the status its completion and failure gates read
 pub struct ChunkProcessorCall {
@@ -42,7 +62,7 @@ where
     S: Stream<Item = Result<Vec<u8>, StreamFailure>> + Send + 'static,
 {
     async_stream::stream! {
-        let mut run = CompletionGuard::new(call);
+        let mut run = CompletionGuard::new(call, StreamBufferCaps::DEFAULT);
         let mut stream = Box::pin(chunks);
         while let Some(item) = stream.next().await {
             let chunk = match item {
@@ -64,7 +84,7 @@ where
     }
 }
 
-struct CompletionGuard {
+pub(super) struct CompletionGuard {
     parts: Option<GuardParts>,
 }
 
@@ -77,15 +97,19 @@ struct GuardParts {
     request_body: Json,
     status_code: u16,
     raw_bytes: Vec<Vec<u8>>,
+    logged_bytes: usize,
+    // None once the copy stopped at the cap, so the warning and the stop happen once
+    logged_limit: Option<usize>,
     logging_scheduled: bool,
     injection_model: Option<String>,
     pending: Vec<u8>,
+    max_frame_bytes: usize,
     scan_active: bool,
     scan_pending: Vec<u8>,
 }
 
 impl CompletionGuard {
-    fn new(call: ChunkProcessorCall) -> Self {
+    pub(super) fn new(call: ChunkProcessorCall, caps: StreamBufferCaps) -> Self {
         let resolved_request_body = call
             .request_body
             .unwrap_or_else(|| Json::Object(IndexMap::new()));
@@ -107,9 +131,12 @@ impl CompletionGuard {
                 request_body: resolved_request_body,
                 status_code: call.status_code,
                 raw_bytes: Vec::new(),
+                logged_bytes: 0,
+                logged_limit: Some(caps.logged_bytes),
                 logging_scheduled: false,
                 injection_model,
                 pending: Vec::new(),
+                max_frame_bytes: caps.frame_bytes,
                 scan_active,
                 scan_pending: Vec::new(),
             }),
@@ -117,12 +144,25 @@ impl CompletionGuard {
     }
 
     fn record(&mut self, chunk: &[u8]) {
-        if let Some(parts) = self.parts.as_mut() {
-            parts.raw_bytes.push(chunk.to_vec());
+        let Some(parts) = self.parts.as_mut() else {
+            return;
+        };
+        let Some(limit) = parts.logged_limit else {
+            return;
+        };
+        let kept = parts.logged_bytes.saturating_add(chunk.len());
+        if kept > limit {
+            parts.logged_limit = None;
+            tracing::warn!(
+                "The pass-through stream is past {limit} bytes, so its log copy stops here and the rest is forwarded without being logged"
+            );
+            return;
         }
+        parts.logged_bytes = kept;
+        parts.raw_bytes.push(chunk.to_vec());
     }
 
-    fn accept(&mut self, chunk: Vec<u8>) -> Option<Vec<u8>> {
+    pub(super) fn accept(&mut self, chunk: Vec<u8>) -> Option<Vec<u8>> {
         self.record(&chunk);
         let parts = self.parts.as_mut()?;
         stamp_first_chunk_if_needed(&parts.logging_obj, parts.lifecycle.clock.as_ref());
