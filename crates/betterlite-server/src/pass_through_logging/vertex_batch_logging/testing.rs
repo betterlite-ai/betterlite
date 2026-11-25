@@ -15,6 +15,7 @@ use indexmap::IndexMap;
 
 use super::{VertexBatchInput, VertexBatchLogged, VertexBatchLogging};
 use crate::pass_through_logging::anthropic_batch::ResponseIds;
+use crate::pass_through_logging::background_tasks::BackgroundTasks;
 
 pub const RESPONSE_ID: &str = "resp-1";
 
@@ -66,7 +67,12 @@ pub fn logging_state() -> Option<LoggingState> {
 #[must_use]
 pub fn handle_batch_response(body: &[u8]) -> Option<VertexBatchLogged> {
     let mut call_log = logging_state()?;
-    let logging = VertexBatchLogging::new(None, None, Arc::new(FixedResponseId));
+    let logging = VertexBatchLogging::new(
+        None,
+        None,
+        Arc::new(FixedResponseId),
+        BackgroundTasks::default(),
+    );
     let request_metadata = JsonObject::new();
     let input = VertexBatchInput {
         status_code: 200,

@@ -29,6 +29,8 @@ description: >-
   the server will drain. B8931 builds both loggers into the server and calls shutdown on that tracker.
 scope:
   paths:
+  - "tools/oracle/src/helpers/server/lib.rs"
+  - "tools/oracle/src/helpers/server/b3634.rs"
   - crates/betterlite-server/src/pass_through_logging.rs
   - crates/betterlite-server/src/pass_through_logging/background_tasks.rs
   - crates/betterlite-server/src/pass_through_logging/background_tasks/**

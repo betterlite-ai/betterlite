@@ -19,6 +19,7 @@ use tracing_subscriber::fmt::MakeWriter;
 use crate::pass_through_logging::anthropic_batch::{
     BatchLoggingMessage, BatchRegistration, ManagedBatchRegistry, RegistryError, RouterModelIds,
 };
+use crate::pass_through_logging::background_tasks::BackgroundTasks;
 use crate::pass_through_logging::vertex_batch_logging::testing::{FixedResponseId, logging_state};
 use crate::pass_through_logging::vertex_batch_logging::{
     VertexBatchInput, VertexBatchLogged, VertexBatchLogging,
@@ -152,7 +153,12 @@ pub(crate) fn logging(
     router_port: Option<Arc<dyn RouterModelIds>>,
     registry_port: Option<Arc<dyn ManagedBatchRegistry>>,
 ) -> VertexBatchLogging {
-    VertexBatchLogging::new(router_port, registry_port, Arc::new(FixedResponseId))
+    VertexBatchLogging::new(
+        router_port,
+        registry_port,
+        Arc::new(FixedResponseId),
+        BackgroundTasks::default(),
+    )
 }
 
 pub(crate) struct Call {

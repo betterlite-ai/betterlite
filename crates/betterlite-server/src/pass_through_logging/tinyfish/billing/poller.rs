@@ -9,6 +9,7 @@ use betterlite_models::decisions::Json;
 use chrono::{DateTime, FixedOffset};
 use tokio::task::JoinHandle;
 
+use super::super::BILLING_CANCELLED_WARNING;
 use super::super::poll::Poller;
 use super::super::records::TinyfishRun;
 use super::{BillingDeps, PayloadInput, PollRun, RunSettings};
@@ -29,8 +30,10 @@ pub(super) fn spawn_poll(
 ) -> JoinHandle<()> {
     let polled = Arc::clone(deps);
     let run_settings = settings.clone();
-    deps.tasks
-        .spawn(async move { poll_and_log(&polled, &run_settings, poll).await })
+    deps.tasks.spawn(
+        async move { poll_and_log(&polled, &run_settings, poll).await },
+        BILLING_CANCELLED_WARNING.to_owned(),
+    )
 }
 
 // Billing must never break the relayed response, so every failure here ends in a log line and no spend row.
