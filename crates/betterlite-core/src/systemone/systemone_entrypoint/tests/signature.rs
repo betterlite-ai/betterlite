@@ -58,3 +58,37 @@ async fn asystemone_takes_every_documented_parameter() {
     assert_eq!(response.model.as_deref(), Some("model-1"));
     assert_eq!(fixture.clients.call()[0].mode, Mode::Async);
 }
+
+#[test]
+fn systemone_drops_an_unsupported_safety_identifier_through_drop_params() {
+    let mut fixture = Fixture::new();
+    let mut args = systemone_args("typesafe");
+    args.safety_identifier = Some(String::from("user-7"));
+    args.kwargs
+        .insert(String::from("drop_params"), Json::Bool(true));
+    let response = fixture
+        .systemone(args)
+        .expect("drop_params drops the unsupported identifier");
+    assert_eq!(response.model.as_deref(), Some("model-1"));
+    let sent = fixture.clients.call();
+    let Json::Object(fields) = body(&sent[0].request) else {
+        panic!("the sent body is an object");
+    };
+    drop(sent);
+    assert!(!fields.contains_key("safety_identifier"), "{fields:?}");
+}
+
+#[test]
+fn systemone_rejects_an_unsupported_safety_identifier_without_drop_params() {
+    let mut fixture = Fixture::new();
+    let mut args = systemone_args("typesafe");
+    args.safety_identifier = Some(String::from("user-7"));
+    let error = fixture
+        .systemone(args)
+        .expect_err("typesafe does not take a safety identifier");
+    assert_eq!(
+        error.to_string(),
+        "typesafe does not support parameters: ['safety_identifier'], for model=model-1. To drop these, set `litellm.drop_params=True` or for proxy:\n\n`litellm_settings:\n drop_params: true`\n"
+    );
+    assert_eq!(error.class().metadata().status_code, 400);
+}

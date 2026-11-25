@@ -10,8 +10,8 @@ use betterlite_logging::logging_pre_post::env::{
 };
 use betterlite_logging::logging_privacy::request::Decision;
 use betterlite_models::call_helpers::headers::provider_response_headers;
-use betterlite_models::decisions::Json;
 use betterlite_models::decisions::systemone::DecisionsResponse;
+use betterlite_models::decisions::{Extra, Json};
 use betterlite_models::resolution::ResolutionContext;
 use betterlite_openai::credentials::LiteLlmGlobals;
 use betterlite_openai::decisions::call::azure::AzureAiConfig;
@@ -31,14 +31,17 @@ mod tests;
 const TIMEOUT_KEY: &str = "timeout";
 const STATE_KEY: &str = "state";
 const QUESTIONS_KEY: &str = "questions";
+const SAFETY_IDENTIFIER_KEY: &str = "safety_identifier";
 
 // the evaluation mode's arguments as litellm.asystemone takes them, which is what B4440 already collected
 pub fn evaluation_args(params: &EvaluationCallParams) -> Result<SystemOneArgs, HealthProbeError> {
+    let mut kwargs = params.extra.clone();
+    let identifier = take_safety_identifier(&mut kwargs)?;
     Ok(SystemOneArgs {
         model: params.model.clone(),
         state: Some(decision_json(&params.state, STATE_KEY)?),
         questions: Some(decision_json(&params.questions, QUESTIONS_KEY)?),
-        safety_identifier: None,
+        safety_identifier: identifier,
         api_key: params.api_key.clone(),
         api_base: params.api_base.clone(),
         timeout: timeout(params.timeout)?,
@@ -47,7 +50,7 @@ pub fn evaluation_args(params: &EvaluationCallParams) -> Result<SystemOneArgs, H
             .extra_headers
             .clone()
             .map(|headers| headers.into_iter().collect()),
-        kwargs: params.extra.clone(),
+        kwargs,
     })
 }
 
@@ -90,7 +93,20 @@ where
             .and_then(HealthProbeLogging::logging_state);
         let resolution = self.setup.resolution();
         let sink = TracingSink;
-        let env = logging_environment(self.redactor.as_ref(), &sink, self.clock);
+        let env = PrePostEnv {
+            debug: DebugSettings::default(),
+            globals: GlobalFlags::default(),
+            decision: Decision {
+                content: false,
+                key_info: false,
+            },
+            redactor: self.redactor.as_ref(),
+            log: &sink,
+            input_callbacks: &[],
+            sentry: None,
+            logger_fn: None,
+            now: (self.clock)(),
+        };
         let mut clients = (self.clients)();
         let output = asystemone(
             DecisionsDeps {
@@ -135,6 +151,22 @@ fn timeout(seconds: Option<f64>) -> Result<Option<Duration>, HealthProbeError> {
     Ok(Some(duration))
 }
 
+// litellm.asystemone takes safety_identifier as a named argument, so it leaves the deployment's model params
+fn take_safety_identifier(kwargs: &mut Extra) -> Result<Option<String>, HealthProbeError> {
+    let Some(value) = kwargs.shift_remove(SAFETY_IDENTIFIER_KEY) else {
+        return Ok(None);
+    };
+    let text =
+        serde_json::to_string(&value).map_err(|source| HealthProbeError::EvaluationPayload {
+            field: SAFETY_IDENTIFIER_KEY,
+            source,
+        })?;
+    serde_json::from_str(&text).map_err(|source| HealthProbeError::EvaluationPayload {
+        field: SAFETY_IDENTIFIER_KEY,
+        source,
+    })
+}
+
 fn entry_failure(error: DecisionsEntryError) -> HealthProbeError {
     let message = error.to_string();
     let class = error.class();
@@ -149,25 +181,4 @@ struct TracingSink;
 
 impl LogSink for TracingSink {
     fn emit(&self, _record: LogRecord) {}
-}
-
-fn logging_environment<'env>(
-    redactor: &'env Redactor,
-    sink: &'env TracingSink,
-    clock: fn() -> DateTime<FixedOffset>,
-) -> PrePostEnv<'env> {
-    PrePostEnv {
-        debug: DebugSettings::default(),
-        globals: GlobalFlags::default(),
-        decision: Decision {
-            content: false,
-            key_info: false,
-        },
-        redactor,
-        log: sink,
-        input_callbacks: &[],
-        sentry: None,
-        logger_fn: None,
-        now: clock(),
-    }
 }

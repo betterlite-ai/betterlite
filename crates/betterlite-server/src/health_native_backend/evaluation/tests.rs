@@ -93,6 +93,36 @@ fn evaluation_args_reject_a_negative_timeout() {
 }
 
 #[test]
+fn evaluation_args_take_the_safety_identifier_out_of_the_kwargs() {
+    let entries = [
+        ("model", text("model-1")),
+        ("safety_identifier", text("user-7")),
+    ];
+    let call =
+        evaluation_call(&params(&entries), None, "openai").expect("the evaluation call builds");
+    let args = evaluation_args(&call.params).expect("the evaluation arguments convert");
+    assert_eq!(args.safety_identifier.as_deref(), Some("user-7"));
+    assert!(!args.kwargs.contains_key("safety_identifier"));
+}
+
+#[test]
+fn evaluation_args_reject_a_non_string_safety_identifier() {
+    let entries = [
+        ("model", text("model-1")),
+        ("safety_identifier", Json::Bool(true)),
+    ];
+    let call =
+        evaluation_call(&params(&entries), None, "openai").expect("the evaluation call builds");
+    let Err(error) = evaluation_args(&call.params) else {
+        panic!("a boolean cannot be a safety identifier");
+    };
+    let HealthProbeError::EvaluationPayload { field, .. } = error else {
+        panic!("the safety identifier failure names its field");
+    };
+    assert_eq!(field, "safety_identifier");
+}
+
+#[test]
 fn evaluation_reply_carries_the_hidden_headers() {
     let mut hidden = IndexMap::new();
     hidden.insert(
@@ -173,6 +203,65 @@ async fn evaluation_probe_posts_the_health_check_through_asystemone() {
         panic!("the provider request carries the questions map");
     };
     assert!(questions.contains_key("reachable"));
+}
+
+#[tokio::test]
+async fn evaluation_probe_forwards_the_safety_identifier() {
+    let server = MockServer::start(200, EVALUATION_ANSWER).await;
+    let probe = EvaluationProbe {
+        clients: http_clients,
+        setup: EvalSetup::default(),
+        redactor: Arc::new(Redactor::new(16).expect("the test redactor builds")),
+        clock: fixed_time,
+    };
+    let entries = [
+        ("model", text("model-1")),
+        ("api_base", text(&server.base)),
+        ("custom_llm_provider", text("openai")),
+        ("api_key", text("test-key")),
+        ("safety_identifier", text("user-7")),
+    ];
+    let call =
+        evaluation_call(&params(&entries), None, "openai").expect("the evaluation call builds");
+    let reply = probe.evaluate(call).await.expect("the evaluation answers");
+    assert!(reply.hidden_headers.is_empty());
+    let sent = server.requests().await;
+    let request = sent.first().expect("one provider call was sent");
+    let Json::Object(fields) = request_body(request) else {
+        panic!("the provider request body is an object");
+    };
+    assert_eq!(fields.get("safety_identifier"), Some(&text("user-7")));
+}
+
+#[tokio::test]
+async fn evaluation_probe_rejects_an_unsupported_safety_identifier() {
+    let probe = EvaluationProbe {
+        clients: http_clients,
+        setup: EvalSetup::default(),
+        redactor: Arc::new(Redactor::new(16).expect("the test redactor builds")),
+        clock: fixed_time,
+    };
+    let entries = [
+        ("model", text("model-1")),
+        ("api_base", text("https://api.typesafe.ai/v1")),
+        ("custom_llm_provider", text("typesafe")),
+        ("api_key", text("test-key")),
+        ("safety_identifier", text("user-7")),
+    ];
+    let call =
+        evaluation_call(&params(&entries), None, "typesafe").expect("the evaluation call builds");
+    let error = probe
+        .evaluate(call)
+        .await
+        .expect_err("typesafe does not take a safety identifier");
+    let HealthProbeError::Backend { class, message, .. } = error else {
+        panic!("a provider rejection is a backend failure");
+    };
+    assert!(matches!(class, ErrorClass::UnsupportedParams(_)));
+    assert_eq!(
+        message,
+        "typesafe does not support parameters: ['safety_identifier'], for model=model-1. To drop these, set `litellm.drop_params=True` or for proxy:\n\n`litellm_settings:\n drop_params: true`\n"
+    );
 }
 
 #[tokio::test]
