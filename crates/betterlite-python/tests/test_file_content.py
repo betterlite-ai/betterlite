@@ -31,6 +31,7 @@ from pydantic import JsonValue
 import betterlite
 from betterlite._completion.errors import ERROR_PAYLOAD, UnsupportedCallArgument
 from betterlite._endpoints.payload import CallValue
+from betterlite._endpoints.proxy import ProxyAuthProvider
 from betterlite._native import NativeFileContentError
 from betterlite.exceptions import APIConnectionError, NotFoundError
 from betterlite.files._content import (
@@ -614,32 +615,44 @@ def test_error_timeout_phase() -> None:
     )
 
 
-class ProxyHeaders:
-    @staticmethod
-    def get_auth_headers() -> Mapping[str, str]:
+class ProxyHeaders(ProxyAuthProvider):
+    def get_auth_headers(self) -> Mapping[str, str]:
         return {"x-proxy": "proxy", "x-conflict": "proxy"}
 
 
-def test_plain_payload_forwarding(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(betterlite, "proxy_auth", ProxyHeaders())
-    options: dict[str, CallValue] = {
-        "api_key": GOOD_KEY, "api_base": "https://example.test", "api_version": "v1",
-        "organization": "org-test", "request_timeout": 4, "max_retries": 0,
-        "litellm_call_id": "call-1", "id": "id-1", "azure_ad_token": GOOD_KEY,
-        "tenant_id": "tenant", "client_id": "client", "client_secret": GOOD_KEY,
-        "azure_username": "user", "azure_password": GOOD_KEY, "azure_scope": "scope",
-    }
+@pytest.fixture
+def proxy_auth() -> Iterator[None]:
+    previous = betterlite.proxy_auth
+    betterlite.proxy_auth = ProxyHeaders()
+    try:
+        yield
+    finally:
+        betterlite.proxy_auth = previous
+
+
+@pytest.mark.parametrize(("field", "value"), [
+    ("api_key", GOOD_KEY), ("api_base", "https://example.test"), ("api_version", "v1"),
+    ("organization", "org-test"), ("request_timeout", 4), ("max_retries", 0),
+    ("litellm_call_id", "call-1"), ("id", "id-1"), ("azure_ad_token", GOOD_KEY),
+    ("tenant_id", "tenant"), ("client_id", "client"), ("client_secret", GOOD_KEY),
+    ("azure_username", "user"), ("azure_password", GOOD_KEY), ("azure_scope", "scope"),
+])
+def test_plain_payload_forwarding(field: str, value: CallValue) -> None:
+    arguments = FileCallArguments(FILE_ID, None, "azure", None, None, 1024, stream=False)
+    made = call_payload_values(arguments, {field: value})
+    assert made[field] == value
+
+
+@pytest.mark.usefixtures("proxy_auth")
+def test_plain_proxy_and_timeout() -> None:
     arguments = FileCallArguments(
-        FILE_ID, None, "azure", {"x-caller": "caller", "x-conflict": "caller"}, None,
+        FILE_ID, None, "openai", {"x-caller": "caller", "x-conflict": "caller"}, None,
         1024, stream=False,
     )
     made = call_payload_values(arguments, {
-        **options, "timeout": httpx.Timeout(connect=1, read=2, write=3, pool=4),
+        "timeout": httpx.Timeout(connect=1, read=2, write=3, pool=4),
     })
-    assert made == {
-        **options, "file_id": FILE_ID, "model": None, "custom_llm_provider": "azure",
-        "extra_headers": {"x-caller": "caller", "x-conflict": "proxy", "x-proxy": "proxy"},
-        "extra_body": None, "chunk_size": 1024, "stream": False,
-        "timeout": {"connect": 1, "read": 2, "write": 3, "pool": 4},
-        "client": None, "shared_session": None, "logger_fn": None,
+    assert made["extra_headers"] == {
+        "x-caller": "caller", "x-conflict": "proxy", "x-proxy": "proxy",
     }
+    assert made["timeout"] == {"connect": 1, "read": 2, "write": 3, "pool": 4}

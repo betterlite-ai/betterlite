@@ -23,8 +23,8 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L611-L744
   - what: "AuthenticationError, NotFoundError, PermissionDeniedError and UnprocessableEntityError have None for code, type and param, whereas the OpenAI exceptions LiteLLM re-raises retain the provider fields. The native cause retains those fields."
     why: The shared Python exception converter passes no body for these classes; changing it is outside B7870's scope. test_error_matches_litellm pins the reference fields and the native payload as well as this difference.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L1016-L1023
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L1029-L1031
   - what: "A deadline or connection timeout raises betterlite.APIConnectionError with status_code 500 instead of the openai.APITimeoutError that LiteLLM re-raises."
     why: The shared native exception bridge uses APIConnectionError for transport failures. test_error_timeout_phase pins the Python class and status, and the native deadline test pins its payload.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L1016-L1023
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L1029-L1031
 kept_bugs: []

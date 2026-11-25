@@ -111,10 +111,6 @@ impl From<ConvertError> for PyErr {
 
 pub(crate) fn parse_call(text: &str) -> Result<FileCall, ConvertError> {
     let wire: RequestWire = serde_json::from_str(text).map_err(ConvertError::Json)?;
-    build_call(wire)
-}
-
-fn build_call(wire: RequestWire) -> Result<FileCall, ConvertError> {
     let trusted = trusted_credentials(&wire);
     let timeout = wire.timeout.as_ref().map(read_timeout).transpose()?;
     let request_timeout = wire
