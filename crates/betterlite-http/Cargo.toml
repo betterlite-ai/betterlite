@@ -22,7 +22,6 @@ betterlite-interactions = { path = "../betterlite-interactions" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-prometheus = { path = "../betterlite-prometheus" }
 bytes = "1.12.1"
-clap = { version = "4.6.7", features = ["derive", "env"] }
 futures-util = { version = "0.3.34", default-features = false, features = ["async-await"] }
 hex.workspace = true
 http = "1.5.0"
@@ -59,7 +58,6 @@ crc32fast = "1.5.3"
 h2 = "0.4.20"
 rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "pem"] }
 rstest = "=0.27.0"
-temp-env = "0.3.6"
 tempfile = "3.27.0"
 tokio = { workspace = true, features = ["test-util"] }
 tokio-rustls = { version = "0.26.6", default-features = false, features = ["aws_lc_rs", "tls12"] }

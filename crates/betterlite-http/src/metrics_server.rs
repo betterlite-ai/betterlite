@@ -1,8 +1,5 @@
 use std::io;
-use std::net::SocketAddr;
-use std::os::unix::process::parent_id;
 use std::path::{Path, PathBuf};
-use std::process;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -16,25 +13,27 @@ use betterlite_prometheus::multiprocess::MultiprocessError;
 use betterlite_prometheus::multiprocess::collector::MultiProcessCollector;
 use betterlite_prometheus::scrape_endpoint::ScrapeSource;
 use betterlite_prometheus::scrape_endpoint::app::make_metrics_app;
-use clap::Args;
+use reqwest::Client;
 use serde::Serialize;
-use tokio::net::TcpListener;
-use tokio::task::{JoinError, JoinHandle, spawn_blocking};
+use tokio::task::{JoinError, JoinHandle};
 use tokio::time;
 use tokio_util::sync::CancellationToken;
-use tokio_util::task::TaskTracker;
+
+use crate::proxy::base_builder;
 
 mod tests;
 
 pub const METRICS_PATH: &str = "/metrics";
 pub const HEALTH_PATH: &str = "/health";
 pub const PID_HEADER: &str = "x-litellm-metrics-pid";
-pub const PARENT_POLL_INTERVAL: Duration = Duration::from_secs(1);
 pub const STARTUP_POLLING: StartupPolling = StartupPolling {
     deadline: Duration::from_secs(30),
     interval: Duration::from_millis(100),
     probe_timeout: Duration::from_secs(1),
 };
+
+const CLEANUP_POLL: Duration = Duration::from_millis(10);
+const CLEANUP_MARGIN: Duration = Duration::from_millis(250);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StartupPolling {
@@ -45,28 +44,31 @@ pub struct StartupPolling {
 
 // what the startup wait asks of the metrics port: a 200 that carries this pid
 #[derive(Clone, Debug)]
-pub struct StartupProbe<'client> {
-    pub client: &'client reqwest::Client,
-    pub url: String,
-    pub pid: u32,
-    pub polling: StartupPolling,
+pub struct StartupProbe {
+    client: Client,
+    url: String,
+    pid: u32,
+    polling: StartupPolling,
 }
 
-#[derive(Debug)]
-pub struct MetricsListener {
-    pub address: SocketAddr,
-    pub serving: JoinHandle<io::Result<()>>,
-}
-
-// LiteLLM's prometheus_metrics_server CLI: --port has no default, the folder comes from the flag or the environment
-#[derive(Args, Clone, Debug, Eq, PartialEq)]
-pub struct MetricsServerArgs {
-    #[arg(long, default_value = "0.0.0.0")]
-    pub host: String,
-    #[arg(long)]
-    pub port: u16,
-    #[arg(long = "multiproc_dir", env = "PROMETHEUS_MULTIPROC_DIR")]
-    pub multiproc_dir: PathBuf,
+impl StartupProbe {
+    pub fn new(
+        host: &str,
+        port: u16,
+        pid: u32,
+        polling: StartupPolling,
+    ) -> Result<Self, MetricsServerError> {
+        let client = base_builder()
+            .no_proxy()
+            .build()
+            .map_err(MetricsServerError::Probe)?;
+        Ok(Self {
+            client,
+            url: metrics_url(host, port),
+            pid,
+            polling,
+        })
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -96,6 +98,8 @@ pub enum MetricsServerError {
     },
     #[error("Prometheus metrics server did not answer {url} within {seconds}s")]
     Timeout { url: String, seconds: u64 },
+    #[error("the client the Prometheus metrics server probe asks through cannot be built")]
+    Probe(#[source] reqwest::Error),
     #[error("Prometheus metrics server failed")]
     Serve(#[source] io::Error),
     #[error("a Prometheus metrics server task failed")]
@@ -179,7 +183,7 @@ pub fn metrics_url(host: &str, port: u16) -> String {
 }
 
 // _answered_by: only our own listener counts, not whatever else holds the port, and a failed request is a no
-pub async fn answered_by(probe: &StartupProbe<'_>) -> bool {
+pub async fn answered_by(probe: &StartupProbe) -> bool {
     let request = probe
         .client
         .get(probe.url.as_str())
@@ -198,7 +202,9 @@ pub async fn answered_by(probe: &StartupProbe<'_>) -> bool {
 // _wait_until_serving: a listener that stopped fails at once, one that never answers is stopped at the deadline
 pub async fn wait_until_serving(
     serving: &mut JoinHandle<io::Result<()>>,
-    probe: &StartupProbe<'_>,
+    probe: &StartupProbe,
+    stop: &CancellationToken,
+    grace: Duration,
 ) -> Result<(), MetricsServerError> {
     let polled = time::timeout(probe.polling.deadline, async {
         loop {
@@ -212,12 +218,20 @@ pub async fn wait_until_serving(
         }
     })
     .await;
-    polled.unwrap_or_else(|_elapsed| {
+    if let Ok(served) = polled {
+        return served;
+    }
+    stop.cancel();
+    let deadline = time::Instant::now() + grace.saturating_add(CLEANUP_MARGIN);
+    while !serving.is_finished() && time::Instant::now() < deadline {
+        time::sleep(CLEANUP_POLL).await;
+    }
+    if !serving.is_finished() {
         serving.abort();
-        Err(MetricsServerError::Timeout {
-            url: probe.url.clone(),
-            seconds: probe.polling.deadline.as_secs(),
-        })
+    }
+    Err(MetricsServerError::Timeout {
+        url: probe.url.clone(),
+        seconds: probe.polling.deadline.as_secs(),
     })
 }
 
@@ -230,68 +244,5 @@ fn stopped(url: &str, outcome: Result<io::Result<()>, JoinError>) -> MetricsServ
     MetricsServerError::Stopped {
         url: url.to_owned(),
         source,
-    }
-}
-
-async fn bind(host: &str, port: u16) -> Result<TcpListener, MetricsServerError> {
-    TcpListener::bind((host, port))
-        .await
-        .map_err(|source| MetricsServerError::Bind {
-            host: host.to_owned(),
-            port,
-            source,
-        })
-}
-
-// start_metrics_server_process as a task the server owns: it stops with the shutdown token and answers before this returns
-pub async fn start_metrics_listener(
-    settings: &MetricsServerArgs,
-    tasks: &TaskTracker,
-    shutdown: CancellationToken,
-    client: &reqwest::Client,
-) -> Result<MetricsListener, MetricsServerError> {
-    let pid = process::id();
-    let folder = settings.multiproc_dir.clone();
-    let app = tasks
-        .spawn_blocking(move || build_metrics_app(&folder, pid))
-        .await??;
-    let listener = bind(&settings.host, settings.port).await?;
-    let address = listener
-        .local_addr()
-        .map_err(MetricsServerError::LocalAddress)?;
-    let mut serving = tasks.spawn(async move {
-        axum::serve(listener, app)
-            .with_graceful_shutdown(shutdown.cancelled_owned())
-            .await
-    });
-    let probe = StartupProbe {
-        client,
-        url: metrics_url(&settings.host, address.port()),
-        pid,
-        polling: STARTUP_POLLING,
-    };
-    wait_until_serving(&mut serving, &probe).await?;
-    Ok(MetricsListener { address, serving })
-}
-
-// run_metrics_server for the sidecar command: it serves until the process that started it is gone
-pub async fn run_metrics_server(settings: &MetricsServerArgs) -> Result<(), MetricsServerError> {
-    let parent = parent_id();
-    let folder = settings.multiproc_dir.clone();
-    let app = spawn_blocking(move || build_metrics_app(&folder, process::id())).await??;
-    let listener = bind(&settings.host, settings.port).await?;
-    axum::serve(listener, app)
-        .with_graceful_shutdown(parent_exited(parent, parent_id, PARENT_POLL_INTERVAL))
-        .await
-        .map_err(MetricsServerError::Serve)
-}
-
-// _exit_when_parent_dies asks for the parent again at every poll, since a reparented process reports a new one
-pub async fn parent_exited<F>(parent: u32, mut current_parent: F, interval: Duration)
-where
-    F: FnMut() -> u32,
-{
-    while current_parent() == parent {
-        time::sleep(interval).await;
     }
 }
