@@ -53,8 +53,8 @@ fn a_repeated_litellm_key_header_keeps_its_first_value() {
 #[test]
 fn an_authorization_value_decodes_from_latin_1_bytes() {
     let mut map = HeaderMap::new();
-    let value = HeaderValue::from_bytes(b"caf\xe9").expect("obs-text stays a header value");
+    let value = HeaderValue::from_bytes(b"\xe9").expect("obs-text stays a header value");
     map.insert(AUTHORIZATION, value);
     let key = get_litellm_virtual_key(&map);
-    assert!(key.expose_secret() == "café");
+    assert!(key.expose_secret() == "\u{e9}");
 }

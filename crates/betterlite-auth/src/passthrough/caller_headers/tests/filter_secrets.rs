@@ -150,11 +150,11 @@ fn a_repeated_header_keeps_the_first_value_when_it_is_harmless() {
 #[test]
 fn a_header_value_keeps_its_latin_1_text() {
     let mut map = HeaderMap::new();
-    let value = HeaderValue::from_bytes(b"caf\xe9").expect("obs-text stays a header value");
+    let value = HeaderValue::from_bytes(b"\xe9").expect("obs-text stays a header value");
     map.insert("x-note", value);
     let config = settings(None, AuthModeFlags::default(), true, None, &[]);
     let forwarded = caller_headers_without_secrets(&map, &caller(None, None), &[], &config);
-    assert!(forwarded_value(&forwarded, "x-note") == Some("café"));
+    assert!(forwarded_value(&forwarded, "x-note") == Some("\u{e9}"));
 }
 
 #[test]

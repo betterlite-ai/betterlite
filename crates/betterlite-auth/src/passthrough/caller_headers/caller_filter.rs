@@ -17,7 +17,6 @@ use crate::resolved_key::credential::safe_hash_api_key;
 
 use super::credential_value::normalize_credential_value;
 use super::header_sets::{LITELLM_INTERNAL_CLAIMS, MAPPED_ROUTE_CALLER_KEY_HEADER};
-use super::header_text::header_text;
 
 #[derive(Debug, Clone, Copy)]
 pub struct FilterSettings<'settings> {
@@ -122,7 +121,16 @@ pub fn caller_headers_without_secrets(
     for (name, value) in headers {
         incoming
             .entry(name.as_str().to_lowercase())
-            .or_insert_with(|| SecretString::from(header_text(value)));
+            .or_insert_with(|| {
+                SecretString::from(
+                    value
+                        .as_bytes()
+                        .iter()
+                        .copied()
+                        .map(char::from)
+                        .collect::<String>(),
+                )
+            });
     }
     let mut dropped: BTreeSet<String> = never_forwarded
         .iter()

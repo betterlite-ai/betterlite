@@ -4,20 +4,20 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::bearer_credentials::get_bearer_token;
 
-use super::header_text::header_text;
-
 const LITELLM_API_KEY_HEADER: &str = "x-litellm-api-key";
 
 // LiteLLM's `if litellm_api_key` is Python truthiness; a present header is used as given (docs/compatibility.md)
 #[must_use]
 pub fn get_litellm_virtual_key(headers: &HeaderMap) -> SecretString {
     if let Some(value) = headers.get(LITELLM_API_KEY_HEADER) {
-        let key = header_text(value);
-        return SecretString::from(format!("Bearer {key}"));
+        let text: String = value.as_bytes().iter().copied().map(char::from).collect();
+        return SecretString::from(format!("Bearer {text}"));
     }
     let authorization = headers
         .get(AUTHORIZATION)
-        .map_or_else(String::new, header_text);
+        .map_or_else(String::new, |value| {
+            value.as_bytes().iter().copied().map(char::from).collect()
+        });
     SecretString::from(authorization)
 }
 

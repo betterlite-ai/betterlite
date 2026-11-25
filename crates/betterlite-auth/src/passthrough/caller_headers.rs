@@ -2,7 +2,6 @@ pub mod caller_filter;
 pub mod credential_value;
 pub mod error;
 pub mod header_sets;
-pub mod header_text;
 pub mod upstream;
 
 #[path = "caller_headers/tests/anthropic_credentialless.rs"]

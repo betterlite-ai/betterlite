@@ -5,7 +5,13 @@ from typing import Final, Literal, NotRequired, TypeAlias, TypedDict
 import litellm
 from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.pass_through_endpoints.common_utils import get_litellm_virtual_key
-from litellm.proxy.pass_through_endpoints.llm_passthrough_endpoints import _caller_headers_without_litellm_secrets, _forwarded_headers_for_credentialless_vertex_passthrough, _normalize_credential_value, _upstream_headers_for_anthropic_route, _upstream_headers_for_bedrock_agent_runtime_route  # noqa: E501  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2460-L2600
+from litellm.proxy.pass_through_endpoints.llm_passthrough_endpoints import (
+    _caller_headers_without_litellm_secrets,  # noqa: E501  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2553-L2566
+    _forwarded_headers_for_credentialless_vertex_passthrough,  # noqa: E501  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2569-L2578
+    _normalize_credential_value,  # noqa: E501  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2460-L2472
+    _upstream_headers_for_anthropic_route,  # noqa: E501  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2581-L2589
+    _upstream_headers_for_bedrock_agent_runtime_route,  # noqa: E501  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2592-L2600
+)
 from pydantic import JsonValue, TypeAdapter
 from starlette.requests import Request
 from starlette.types import Scope
@@ -122,68 +128,45 @@ def caller_of(caller: Caller) -> UserAPIKeyAuth:
     )
 
 
-def virtual_key_answer(call: VirtualKeyCall) -> JsonValue:
-    key = get_litellm_virtual_key(request_of(call["headers"]))
-    return {"value": key}
-
-
-def normalize_answer(call: NormalizeCall) -> JsonValue:
-    return {
-        "value": _normalize_credential_value(call["value"]),
-    }
-
-
-def filter_answer(call: FilterCall) -> JsonValue:
-    install_proxy(call["settings"])
-    forwarded = _caller_headers_without_litellm_secrets(
-        request_of(call["headers"]),
-        caller_of(call["caller"]),
-        frozenset(call["never_forwarded"]),
-    )
-    return {"headers": JSON.validate_python(dict(forwarded))}
-
-
-def vertex_answer(call: ProviderCall) -> JsonValue:
-    install_proxy(call["settings"])
-    forwarded = _forwarded_headers_for_credentialless_vertex_passthrough(
-        request_of(call["headers"]),
-        caller_of(call["caller"]),
-    )
-    return {"headers": JSON.validate_python(dict(forwarded))}
-
-
-def anthropic_answer(call: AnthropicCall) -> JsonValue:
-    install_proxy(call["settings"])
-    proxy = call["proxy_auth_header"]
-    forwarded = _upstream_headers_for_anthropic_route(
-        request_of(call["headers"]),
-        caller_of(call["caller"]),
-        None if proxy is None else dict(proxy),
-    )
-    return {"headers": JSON.validate_python(dict(forwarded))}
-
-
-def bedrock_answer(call: BedrockCall) -> JsonValue:
-    install_proxy(call["settings"])
-    forwarded = _upstream_headers_for_bedrock_agent_runtime_route(
-        request_of(call["headers"]),
-        caller_of(call["caller"]),
-        dict(call["signed_headers"]),
-    )
-    return {"headers": JSON.validate_python(dict(forwarded))}
-
-
 def run(input_value: Input) -> JsonValue:
     if "virtual_key" in input_value:
-        return virtual_key_answer(input_value["virtual_key"])
+        key = get_litellm_virtual_key(request_of(input_value["virtual_key"]["headers"]))
+        return {"value": key}
     if "normalize" in input_value:
-        return normalize_answer(input_value["normalize"])
+        return {"value": _normalize_credential_value(input_value["normalize"]["value"])}
     if "filter" in input_value:
-        return filter_answer(input_value["filter"])
+        filter_call = input_value["filter"]
+        install_proxy(filter_call["settings"])
+        filtered = _caller_headers_without_litellm_secrets(
+            request_of(filter_call["headers"]),
+            caller_of(filter_call["caller"]),
+            frozenset(filter_call["never_forwarded"]),
+        )
+        return {"headers": JSON.validate_python(filtered)}
     if "vertex" in input_value:
-        return vertex_answer(input_value["vertex"])
+        vertex_call = input_value["vertex"]
+        install_proxy(vertex_call["settings"])
+        vertex_headers = _forwarded_headers_for_credentialless_vertex_passthrough(
+            request_of(vertex_call["headers"]), caller_of(vertex_call["caller"])
+        )
+        return {"headers": JSON.validate_python(vertex_headers)}
     if "anthropic" in input_value:
-        return anthropic_answer(input_value["anthropic"])
+        anthropic_call = input_value["anthropic"]
+        install_proxy(anthropic_call["settings"])
+        proxy_headers = anthropic_call["proxy_auth_header"]
+        anthropic_headers = _upstream_headers_for_anthropic_route(
+            request_of(anthropic_call["headers"]),
+            caller_of(anthropic_call["caller"]),
+            None if proxy_headers is None else dict(proxy_headers),
+        )
+        return {"headers": JSON.validate_python(anthropic_headers)}
     if "bedrock" in input_value:
-        return bedrock_answer(input_value["bedrock"])
+        bedrock_call = input_value["bedrock"]
+        install_proxy(bedrock_call["settings"])
+        bedrock_headers = _upstream_headers_for_bedrock_agent_runtime_route(
+            request_of(bedrock_call["headers"]),
+            caller_of(bedrock_call["caller"]),
+            dict(bedrock_call["signed_headers"]),
+        )
+        return {"headers": JSON.validate_python(bedrock_headers)}
     raise ValueError("the input names no helper operation")
