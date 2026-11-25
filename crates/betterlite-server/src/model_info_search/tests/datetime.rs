@@ -14,21 +14,22 @@ fn utc(text: &str) -> DateTime<Utc> {
         .with_timezone(&Utc)
 }
 
+#[rstest]
+#[case::rfc3339_z("2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z")]
+#[case::z_separator("2026-01-01Z00:00:00", "2026-01-01T00:00:00Z")]
+#[case::date_z("2026-01-01Z", "2026-01-01T00:00:00Z")]
+#[case::compact("20260101Z000000", "2026-01-01T00:00:00Z")]
+#[case::positive_offset("2026-01-01T00:00:00+05:30", "2025-12-31T18:30:00Z")]
+#[case::negative_offset("2026-01-01T00:00:00-05:00", "2026-01-01T05:00:00Z")]
+#[case::naive_datetime("2026-01-01T00:00:00", "2026-01-01T00:00:00Z")]
+#[case::naive_date("2026-01-01", "2026-01-01T00:00:00Z")]
+#[case::week_date("2026-W01-1T00:00:00", "2025-12-29T00:00:00Z")]
+fn normalizes_every_named_iso_form(#[case] input: &str, #[case] expected: &str) {
+    assert_eq!(decode_model_info_datetime(input), Some(utc(expected)));
+}
+
 #[test]
-fn normalizes_every_named_iso_form() {
-    for (input, expected) in [
-        ("2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"),
-        ("2026-01-01Z00:00:00", "2026-01-01T00:00:00Z"),
-        ("2026-01-01Z", "2026-01-01T00:00:00Z"),
-        ("20260101Z000000", "2026-01-01T00:00:00Z"),
-        ("2026-01-01T00:00:00+05:30", "2025-12-31T18:30:00Z"),
-        ("2026-01-01T00:00:00-05:00", "2026-01-01T05:00:00Z"),
-        ("2026-01-01T00:00:00", "2026-01-01T00:00:00Z"),
-        ("2026-01-01", "2026-01-01T00:00:00Z"),
-        ("2026-W01-1T00:00:00", "2025-12-29T00:00:00Z"),
-    ] {
-        assert_eq!(decode_model_info_datetime(input), Some(utc(expected)));
-    }
+fn preserves_fractional_seconds_and_maximum_date() {
     assert_eq!(
         decode_model_info_datetime("2026-01-01T00:00:00.1234567")
             .map(|parsed| parsed.timestamp_subsec_micros()),
