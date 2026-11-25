@@ -21,9 +21,7 @@ use self::support::{
     router, success_body,
 };
 use super::{VertexBatchState, extract_model_name_from_vertex_path};
-use crate::pass_through_logging::anthropic_batch::{
-    RegistryError, RouterModelIds, unified_object_id,
-};
+use crate::pass_through_logging::anthropic_batch::{RegistryError, unified_object_id};
 
 const GEMINI_UNIFIED: &str = "bGl0ZWxsbV9wcm94eTttb2RlbF9pZDpnZW1pbmktMi41LWZsYXNoO2xsbV9iYXRjaF9pZDozODE0ODg5NDIzNzQ5Nzc1MzYw";
 
@@ -31,18 +29,31 @@ fn text(value: &str) -> Json {
     Json::Text(value.to_owned())
 }
 
-fn router_port(recording: &Arc<Router>) -> Option<Arc<dyn RouterModelIds>> {
-    Some(Arc::<Router>::clone(recording))
-}
-
 #[test]
-fn batch_success_record_is_pending_with_zero_cost() {
+fn batch_success_record_has_litellm_shape() {
     let (logged, _) = Call::new(200, &success_body(), COLLECTION_ROUTE).run(&logging(None, None));
     let result = &logged.result;
     assert_eq!(result.id, RESPONSE_ID);
     assert_eq!(result.model, MODEL_PATH);
     assert_eq!(result.object, "batch_prediction_job");
     assert_eq!(result.created, START);
+    let (batch, state, unified) = (
+        text(BATCH_ID),
+        text("JOB_STATE_PENDING"),
+        text(GEMINI_UNIFIED),
+    );
+    let expected = vec![
+        ("batch_job_id", &batch),
+        ("batch_job_state", &state),
+        ("unified_object_id", &unified),
+    ];
+    assert_eq!(fields(&logged), expected);
+}
+
+#[test]
+fn batch_success_message_is_pending() {
+    let (logged, _) = Call::new(200, &success_body(), COLLECTION_ROUTE).run(&logging(None, None));
+    let result = &logged.result;
     assert_eq!(result.choices.len(), 1);
     let choice = result.choices.first().expect("one choice");
     assert_eq!(
@@ -61,17 +72,11 @@ fn batch_success_record_is_pending_with_zero_cost() {
             "Batch prediction job {BATCH_ID} created and is pending. Status will be updated when the batch completes."
         )
     );
-    let (batch, state, unified) = (
-        text(BATCH_ID),
-        text("JOB_STATE_PENDING"),
-        text(GEMINI_UNIFIED),
-    );
-    let expected = vec![
-        ("batch_job_id", &batch),
-        ("batch_job_state", &state),
-        ("unified_object_id", &unified),
-    ];
-    assert_eq!(fields(&logged), expected);
+}
+
+#[test]
+fn batch_success_record_is_pending_with_zero_cost() {
+    let (logged, _) = Call::new(200, &success_body(), COLLECTION_ROUTE).run(&logging(None, None));
     let kwargs = &logged.kwargs;
     assert_eq!(kwargs.response_cost, Decimal::ZERO);
     assert_eq!(kwargs.model, MODEL_PATH);
@@ -268,7 +273,7 @@ fn batch_router_absent_uses_extracted_name() {
 fn batch_router_empty_uses_extracted_name() {
     let (logs, _guard) = capture_logs();
     let recording = router(&[]);
-    let handler = logging(router_port(&recording), None);
+    let handler = logging(Some(Arc::<Router>::clone(&recording)), None);
     assert_eq!(handler.get_actual_model_id_from_router(MODEL_PATH), MODEL);
     assert!(
         logs.text()
@@ -286,7 +291,7 @@ fn batch_router_empty_uses_extracted_name() {
 fn batch_router_found_uses_first_id() {
     let (logs, _guard) = capture_logs();
     let recording = router(&["deployment-1", "deployment-2"]);
-    let handler = logging(router_port(&recording), None);
+    let handler = logging(Some(Arc::<Router>::clone(&recording)), None);
     let (logged, _) = Call::new(200, &success_body(), ID_SCOPED_ROUTE).run(&handler);
     assert_eq!(
         logged.kwargs.unified_object_id,
@@ -320,13 +325,12 @@ fn batch_extract_model_name_from_vertex_path(#[case] path: &str, #[case] expecte
 
 #[tokio::test]
 async fn batch_collection_route_registers_with_attribution() {
-    let (logs, _guard) = capture_logs();
     let (port, mut received) = registry(Ok(()));
     let mut call = Call::new(200, &success_body(), COLLECTION_ROUTE);
     call.request_metadata = metadata(
         r#"{"user_api_key_user_id":"user-1","user_api_key":"sk-key","user_api_key_team_id":"team-1","tags":["a","b"]}"#,
     );
-    let (logged, _) = call.run(&logging(None, Some(port)));
+    drop(call.run(&logging(None, Some(port))));
     let registration = next_registration(&mut received).await;
     assert_eq!(registration.unified_object_id, GEMINI_UNIFIED);
     assert_eq!(registration.model_object_id, BATCH_ID);
@@ -349,6 +353,30 @@ async fn batch_collection_route_registers_with_attribution() {
         registration.request_tags,
         Some(vec!["a".to_owned(), "b".to_owned()])
     );
+}
+
+#[tokio::test]
+async fn batch_collection_route_logs_what_it_stored() {
+    let (logs, _guard) = capture_logs();
+    let (port, mut received) = registry(Ok(()));
+    drop(Call::new(200, &success_body(), COLLECTION_ROUTE).run(&logging(None, Some(port))));
+    drop(next_registration(&mut received).await);
+    logs.wait_for("Stored Vertex AI batch managed object").await;
+    let stored = format!(
+        "Stored Vertex AI batch managed object with unified_object_id={GEMINI_UNIFIED}, batch_id={BATCH_ID}"
+    );
+    assert!(logs.text().contains(&stored));
+}
+
+#[tokio::test]
+async fn batch_collection_route_registrant_comes_from_metadata() {
+    let (port, mut received) = registry(Ok(()));
+    let mut call = Call::new(200, &success_body(), COLLECTION_ROUTE);
+    call.request_metadata = metadata(
+        r#"{"user_api_key_user_id":"user-1","user_api_key":"sk-key","user_api_key_team_id":"team-1","tags":["a","b"]}"#,
+    );
+    drop(call.run(&logging(None, Some(port))));
+    let registration = next_registration(&mut received).await;
     let registrant = &registration.registrant;
     assert_eq!(registrant.user_id.as_deref(), Some("user-1"));
     assert_eq!(
@@ -363,6 +391,14 @@ async fn batch_collection_route_registers_with_attribution() {
         (registrant.user_role, registrant.spend),
         (UserRole::Customer, Decimal::ZERO)
     );
+}
+
+#[tokio::test]
+async fn batch_collection_route_registrant_defaults_are_empty() {
+    let (port, mut received) = registry(Ok(()));
+    drop(Call::new(200, &success_body(), COLLECTION_ROUTE).run(&logging(None, Some(port))));
+    let registration = next_registration(&mut received).await;
+    let registrant = &registration.registrant;
     let empty = (
         registrant.models.len(),
         registrant.metadata.len(),
@@ -392,12 +428,6 @@ async fn batch_collection_route_registers_with_attribution() {
         registrant.key_alias.as_deref(),
     );
     assert_eq!(rest, (None, None, None, None, None));
-    logs.wait_for("Stored Vertex AI batch managed object").await;
-    assert!(logs.text().contains(&format!("Stored Vertex AI batch managed object with unified_object_id={GEMINI_UNIFIED}, batch_id={BATCH_ID}")));
-    assert_eq!(
-        logged.kwargs.batch_job_state,
-        VertexBatchState::JobStatePending
-    );
 }
 
 #[tokio::test]
