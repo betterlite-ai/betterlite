@@ -86,8 +86,10 @@ impl AccessGroupLookup for FakeGroups {
         &self,
         access_group_id: &str,
     ) -> Result<AccessGroupResources, AccessGroupError> {
-        let mut call_log = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
-        call_log.push(String::from(access_group_id));
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(String::from(access_group_id));
         self.groups
             .get(access_group_id)
             .cloned()
