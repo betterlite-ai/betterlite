@@ -21,23 +21,16 @@ use betterlite_core::api::batch_limit_descriptors::input::BatchModelUsage;
 use betterlite_core::api::request_destination::RequestData;
 use indexmap::IndexMap;
 
-use super::scripts::{BackendName, CachedWindow, LimiterScript, StoreReply, StoreScript};
+use super::scripts::{BackendName, CachedWindow, StoreReply};
 use super::views;
 
 #[derive(Clone)]
 pub(super) struct ScriptedStore {
-    replies: Arc<Mutex<VecDeque<StoreReply>>>,
-    calls: Arc<Mutex<Vec<views::StoreCallView>>>,
+    pub(super) replies: Arc<Mutex<VecDeque<StoreReply>>>,
+    pub(super) calls: Arc<Mutex<Vec<views::StoreCallView>>>,
 }
 
 impl ScriptedStore {
-    pub(super) fn new(script: &StoreScript) -> Self {
-        Self {
-            replies: Arc::new(Mutex::new(script.replies.iter().cloned().collect())),
-            calls: Arc::default(),
-        }
-    }
-
     pub(super) fn calls(&self) -> Vec<views::StoreCallView> {
         self.calls
             .lock()
@@ -65,24 +58,31 @@ impl BatchEnqueuedSource for ScriptedStore {
             .replies
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .pop_front()
-            .unwrap_or(StoreReply::Reservation {
-                backend: None,
-                owner: None,
-            });
+            .pop_front();
         let outcome = match next {
-            StoreReply::Reservation { backend, owner } => Ok(
+            None => Ok(BatchEnqueuedReserveResult::Reservation(
+                BatchEnqueuedTokenReservation {
+                    tokens,
+                    scopes: scopes.to_vec(),
+                    backend: ReservationBackend::Redis,
+                    owner: String::new(),
+                    reserved_at_monotonic: 0.0_f64,
+                },
+            )),
+            Some(StoreReply::Reservation { backend, owner }) => Ok(
                 BatchEnqueuedReserveResult::Reservation(BatchEnqueuedTokenReservation {
                     tokens,
                     scopes: scopes.to_vec(),
-                    backend: backend.map_or(ReservationBackend::Redis, BackendName::reserved),
+                    backend: backend.map_or(ReservationBackend::Memory, BackendName::reserved),
                     owner: owner.unwrap_or_default(),
                     reserved_at_monotonic: 0.0_f64,
                 }),
             ),
-            StoreReply::OverLimit { scope, enqueued } => Ok(BatchEnqueuedReserveResult::OverLimit(
-                BatchEnqueuedTokenOverLimit { scope, enqueued },
-            )),
+            Some(StoreReply::OverLimit { scope, enqueued }) => {
+                Ok(BatchEnqueuedReserveResult::OverLimit(
+                    BatchEnqueuedTokenOverLimit { scope, enqueued },
+                ))
+            }
         };
         ready(outcome)
     }
@@ -90,18 +90,11 @@ impl BatchEnqueuedSource for ScriptedStore {
 
 #[derive(Clone)]
 pub(super) struct ScriptedCache {
-    values: BTreeMap<String, Option<CachedWindow>>,
-    reads: Arc<Mutex<Vec<String>>>,
+    pub(super) values: BTreeMap<String, Option<CachedWindow>>,
+    pub(super) reads: Arc<Mutex<Vec<String>>>,
 }
 
 impl ScriptedCache {
-    pub(super) fn new(values: &BTreeMap<String, Option<CachedWindow>>) -> Self {
-        Self {
-            values: values.clone(),
-            reads: Arc::default(),
-        }
-    }
-
     pub(super) fn reads(&self) -> Vec<String> {
         self.reads
             .lock()
@@ -133,35 +126,15 @@ impl BatchWindowCache for ScriptedCache {
 
 #[derive(Clone)]
 pub(super) struct ScriptedLimiter {
-    base: Vec<BatchLimitDescriptor>,
-    project: (Vec<BatchLimitDescriptor>, Vec<BatchDescriptorIncrements>),
-    responses: Arc<Mutex<VecDeque<BatchCounterResponse>>>,
-    base_calls: Arc<Mutex<usize>>,
-    project_calls: Arc<Mutex<usize>>,
-    calls: Arc<Mutex<Vec<views::LimiterCallView>>>,
+    pub(super) base: Vec<BatchLimitDescriptor>,
+    pub(super) project: (Vec<BatchLimitDescriptor>, Vec<BatchDescriptorIncrements>),
+    pub(super) responses: Arc<Mutex<VecDeque<BatchCounterResponse>>>,
+    pub(super) base_calls: Arc<Mutex<usize>>,
+    pub(super) project_calls: Arc<Mutex<usize>>,
+    pub(super) calls: Arc<Mutex<Vec<views::LimiterCallView>>>,
 }
 
 impl ScriptedLimiter {
-    pub(super) fn new(script: &LimiterScript) -> Self {
-        Self {
-            base: script.base.clone(),
-            project: (
-                script.project.descriptors.clone(),
-                script
-                    .project
-                    .increments
-                    .iter()
-                    .copied()
-                    .map(BatchDescriptorIncrements::from)
-                    .collect(),
-            ),
-            responses: Arc::new(Mutex::new(script.responses.iter().cloned().collect())),
-            base_calls: Arc::default(),
-            project_calls: Arc::default(),
-            calls: Arc::default(),
-        }
-    }
-
     pub(super) fn calls(&self) -> Vec<views::LimiterCallView> {
         self.calls
             .lock()

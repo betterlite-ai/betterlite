@@ -10,6 +10,7 @@ use betterlite_core::api::batch_limit_counters::input::{
 };
 use betterlite_core::api::batch_limit_counters::ports::BatchCounterStash;
 use betterlite_core::api::batch_limit_counters::records::BatchTpdRefundOperation;
+use betterlite_core::api::batch_limit_descriptors::descriptors::BatchDescriptorIncrements;
 use betterlite_core::api::batch_limit_descriptors::input::BatchLimitPrincipal;
 use betterlite_models::resolution::{ProviderIdentity, ResolutionError, ResolvedModel};
 use serde::Deserialize;
@@ -23,6 +24,7 @@ use scripts::{CachedWindow, LimiterScript, StoreScript};
 
 mod fakes;
 mod scripts;
+mod tests;
 mod views;
 
 #[derive(Debug, Deserialize)]
@@ -95,56 +97,79 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let store = ScriptedStore::new(&input.store);
-        let limiter = ScriptedLimiter::new(&input.limiter);
-        let cache = ScriptedCache::new(&input.cache);
-        let stash = Arc::new(RecordingStash::default());
-        let stash_handle: Arc<dyn BatchCounterStash> = Arc::<RecordingStash>::clone(&stash);
-        let clock = input.clock;
-        let service = BatchLimitCounters {
-            clock: Arc::new(move || clock),
-            limiter: limiter.clone(),
-            store: store.clone(),
-            cache: cache.clone(),
-            stash: stash_handle,
-            resolver: Arc::new(FixedProviders),
-            router: None,
-            window_size: input.window_size,
-            limits: ApiLimits::default(),
+        let store = ScriptedStore {
+            replies: Arc::new(Mutex::new(input.store.replies.iter().cloned().collect())),
+            calls: Arc::default(),
         };
-        let calls = BatchLimitCountersInput {
-            principal: input.principal.clone(),
-            calls: input.calls.clone(),
+        let limiter = ScriptedLimiter {
+            base: input.limiter.base.clone(),
+            project: (
+                input.limiter.project.descriptors.clone(),
+                input
+                    .limiter
+                    .project
+                    .increments
+                    .iter()
+                    .copied()
+                    .map(BatchDescriptorIncrements::from)
+                    .collect(),
+            ),
+            responses: Arc::new(Mutex::new(
+                input.limiter.responses.iter().cloned().collect(),
+            )),
+            base_calls: Arc::default(),
+            project_calls: Arc::default(),
+            calls: Arc::default(),
         };
-        let runtime = Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .or_value_error()?;
-        let result = runtime.block_on(service.run(&calls)).or_value_error()?;
-        let output = views::HelperOutput {
-            answers: result.answers.iter().map(views::AnswerView::from).collect(),
-            effects: scripted_effects(&store, &limiter, &cache, &stash),
+        let cache = ScriptedCache {
+            values: input.cache.clone(),
+            reads: Arc::default(),
         };
-        serde_json::to_value(output).or_value_error()
+        execute(input, store, limiter, cache)
     }
 }
 
-fn scripted_effects(
-    store: &ScriptedStore,
-    limiter: &ScriptedLimiter,
-    cache: &ScriptedCache,
-    stash: &RecordingStash,
-) -> views::EffectsView {
-    views::EffectsView {
-        store_calls: store.calls(),
-        limiter_calls: limiter.calls(),
-        base_calls: limiter.base_calls(),
-        project_calls: limiter.project_calls(),
-        cache_reads: cache.reads(),
-        reservation: stash
-            .reservation()
-            .as_ref()
-            .map(views::ReservationView::from),
-        refund_ops: stash.operations(),
-    }
+fn execute(
+    input: &Input,
+    store: ScriptedStore,
+    limiter: ScriptedLimiter,
+    cache: ScriptedCache,
+) -> HelperResult {
+    let stash = Arc::new(RecordingStash::default());
+    let stash_handle: Arc<dyn BatchCounterStash> = Arc::<RecordingStash>::clone(&stash);
+    let clock = input.clock;
+    let service = BatchLimitCounters {
+        clock: Arc::new(move || clock),
+        limiter: limiter.clone(),
+        store: store.clone(),
+        cache: cache.clone(),
+        stash: stash_handle,
+        resolver: Arc::new(FixedProviders),
+        router: None,
+        window_size: input.window_size,
+        limits: ApiLimits::default(),
+    };
+    let calls = BatchLimitCountersInput {
+        principal: input.principal.clone(),
+        calls: input.calls.clone(),
+    };
+    let runtime = Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .or_value_error()?;
+    let result = runtime.block_on(service.run(&calls)).or_value_error()?;
+    let reservation = stash.reservation();
+    let output = views::HelperOutput {
+        answers: result.answers.iter().map(views::AnswerView::from).collect(),
+        effects: views::EffectsView {
+            store_calls: store.calls(),
+            limiter_calls: limiter.calls(),
+            base_calls: limiter.base_calls(),
+            project_calls: limiter.project_calls(),
+            cache_reads: cache.reads(),
+            reservation: reservation.as_ref().map(views::ReservationView::from),
+            refund_ops: stash.operations(),
+        },
+    };
+    serde_json::to_value(output).or_value_error()
 }
