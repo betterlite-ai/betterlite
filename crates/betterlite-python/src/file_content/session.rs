@@ -227,7 +227,6 @@ impl NativeFileContentSession {
         })
     }
 
-    // the synchronous download: the provider call is already awaitable, so the runtime drives it here
     fn content(&self, py: Python<'_>, payload: &str, _blobs: Vec<Vec<u8>>) -> PyResult<Py<PyAny>> {
         let call = parse_call(payload)?;
         let core = Arc::clone(&self.core);
@@ -236,7 +235,6 @@ impl NativeFileContentSession {
         answer_tuple(py, answer, false)
     }
 
-    // the awaitable download, handed back as a coroutine the caller awaits
     fn acontent<'py>(
         &self,
         py: Python<'py>,

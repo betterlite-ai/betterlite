@@ -84,7 +84,6 @@ pub(crate) fn failure_for(error: &FileContentError<DispatchError>) -> Failure {
     }
 }
 
-// the placeholder 400 LiteLLM attaches to every provider it refuses
 fn rejected_provider(error: &FileContentError<DispatchError>) -> Failure {
     let Some(rejected) = error.bad_request() else {
         return Failure::Runtime(error.to_string());
