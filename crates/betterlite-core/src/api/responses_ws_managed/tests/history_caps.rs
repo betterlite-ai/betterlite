@@ -122,8 +122,13 @@ fn storing_an_id_again_replaces_it_and_counts_only_the_new_list() {
 async fn a_turn_over_the_budget_is_not_stored_and_warns_once() {
     let shared = support::shared();
     let mut handler = capped(&shared, 16);
-    let provider =
-        support::ScriptedProvider::new(&shared, vec![support::script(vec![support::event(FIRST)])]);
+    let provider = support::ScriptedProvider::new(
+        &shared,
+        vec![
+            support::script(vec![support::event(FIRST)]),
+            support::script(vec![support::event(SECOND)]),
+        ],
+    );
 
     let (outcome, logs) = support::capture(process_response_create(
         &mut handler,
@@ -131,13 +136,33 @@ async fn a_turn_over_the_budget_is_not_stored_and_warns_once() {
         FIRST_FRAME,
     ))
     .await;
-
     outcome.unwrap();
     assert!(handler.session_history.is_empty());
     assert_eq!(handler.session_history_bytes, 0);
     assert_eq!(logs.len(), 1);
     assert!(logs[0].starts_with("ManagedResponsesWS: not storing "));
     assert!(logs[0].ends_with("; the budget is 16 bytes"));
+
+    let (later, later_logs) = support::capture(process_response_create(
+        &mut handler,
+        &provider,
+        DROPPED_FRAME,
+    ))
+    .await;
+    later.unwrap();
+    let recorded = support::calls(&shared);
+    assert_eq!(
+        recorded[1].kwargs.get("input"),
+        Some(&support::json(r#""again""#))
+    );
+    assert_eq!(
+        recorded[1].kwargs.get("previous_response_id"),
+        Some(&support::json(r#""r1""#))
+    );
+    assert_eq!(
+        later_logs[0],
+        "ManagedResponsesWS: no in-memory history for previous_response_id=r1; falling back to DB-based session reconstruction"
+    );
 }
 
 #[tokio::test]
