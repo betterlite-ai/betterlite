@@ -7,12 +7,24 @@ use crate::images::error::CallFailure;
 use betterlite_openai::image_generation::reply::{ImageGenerationReply, ImageUsage};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+struct EncodedReply {
+    created: i64,
+    hidden_params: HiddenParams,
+}
+
+#[derive(Deserialize)]
+struct HiddenParams {
+    model: String,
+}
 
 fn session() -> NativeImageSession {
     NativeImageSession::new("{}").unwrap()
 }
 
-fn malformed_payload_error(py: Python<'_>, error: PyErr) {
+fn malformed_payload_error(py: Python<'_>, error: &PyErr) {
     assert!(error.is_instance_of::<PyValueError>(py));
     assert!(error.to_string().contains("expected shape"));
 }
@@ -32,7 +44,7 @@ fn register_adds_native_image_types() {
 fn generate_rejects_malformed_payload() {
     Python::initialize();
     Python::attach(|py| {
-        malformed_payload_error(py, session().generate(py, "{", Vec::new()).unwrap_err())
+        malformed_payload_error(py, &session().generate(py, "{", Vec::new()).unwrap_err());
     });
 }
 
@@ -40,7 +52,7 @@ fn generate_rejects_malformed_payload() {
 fn agenerate_rejects_malformed_payload() {
     Python::initialize();
     Python::attach(|py| {
-        malformed_payload_error(py, session().agenerate(py, "{", Vec::new()).unwrap_err())
+        malformed_payload_error(py, &session().agenerate(py, "{", Vec::new()).unwrap_err());
     });
 }
 
@@ -48,7 +60,7 @@ fn agenerate_rejects_malformed_payload() {
 fn variation_rejects_malformed_payload() {
     Python::initialize();
     Python::attach(|py| {
-        malformed_payload_error(py, session().variation(py, "{", Vec::new()).unwrap_err())
+        malformed_payload_error(py, &session().variation(py, "{", Vec::new()).unwrap_err());
     });
 }
 
@@ -56,7 +68,7 @@ fn variation_rejects_malformed_payload() {
 fn avariation_rejects_malformed_payload() {
     Python::initialize();
     Python::attach(|py| {
-        malformed_payload_error(py, session().avariation(py, "{", Vec::new()).unwrap_err())
+        malformed_payload_error(py, &session().avariation(py, "{", Vec::new()).unwrap_err());
     });
 }
 
@@ -64,7 +76,7 @@ fn avariation_rejects_malformed_payload() {
 fn edit_rejects_malformed_payload() {
     Python::initialize();
     Python::attach(|py| {
-        malformed_payload_error(py, session().edit(py, "{", Vec::new()).unwrap_err())
+        malformed_payload_error(py, &session().edit(py, "{", Vec::new()).unwrap_err());
     });
 }
 
@@ -72,7 +84,7 @@ fn edit_rejects_malformed_payload() {
 fn aedit_rejects_malformed_payload() {
     Python::initialize();
     Python::attach(|py| {
-        malformed_payload_error(py, session().aedit(py, "{", Vec::new()).unwrap_err())
+        malformed_payload_error(py, &session().aedit(py, "{", Vec::new()).unwrap_err());
     });
 }
 
@@ -88,9 +100,9 @@ fn encoded_preserves_image_reply_fields() {
         size: None,
     };
     let text = encoded(Ok(ImageAnswer::new(reply, Some("dall-e-2")))).unwrap();
-    let value: serde_json::Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(value["created"], 7);
-    assert_eq!(value["hidden_params"]["model"], "dall-e-2");
+    let value: EncodedReply = serde_json::from_str(&text).unwrap();
+    assert_eq!(value.created, 7);
+    assert_eq!(value.hidden_params.model, "dall-e-2");
 }
 
 #[test]

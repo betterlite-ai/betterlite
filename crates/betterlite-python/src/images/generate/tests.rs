@@ -6,6 +6,7 @@ use crate::images::convert::parse;
 use crate::images::session::ImageSession;
 use betterlite_http_fixture::reply::reply;
 use betterlite_http_fixture::server::serve;
+use betterlite_models::decisions::Json;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use std::collections::BTreeMap;
 use std::time::Duration;
@@ -33,9 +34,7 @@ async fn generate_sends_prompt_and_decodes_response() {
     assert_eq!(answer.reply.created, 11);
     assert_eq!(
         answer.hidden_params.get("model"),
-        Some(&betterlite_models::decisions::Json::Text(String::from(
-            "dall-e-2"
-        )))
+        Some(&Json::Text(String::from("dall-e-2")))
     );
     let sent = serving.finish().unwrap();
     assert_eq!(sent.line, "POST /v1/images/generations HTTP/1.1");

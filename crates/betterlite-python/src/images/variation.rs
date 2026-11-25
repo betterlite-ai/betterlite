@@ -29,7 +29,7 @@ pub(crate) async fn variation(
             format!(
                 "Invalid image variation provider: {provider}. Supported providers are: LITELLM_IMAGE_VARIATION_PROVIDERS"
             ),
-            Some(model.to_owned()),
+            Some(model),
         ));
     }
     let request = request(session, &call, &files, async_call, &model)?;

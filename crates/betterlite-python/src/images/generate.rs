@@ -7,7 +7,6 @@ use betterlite_openai::image_generation::call::ImageGenerationCall;
 use betterlite_openai::image_generation::request::{
     begin_image_generation, finish_image_generation, send_image_generation,
 };
-use betterlite_sdk::call_setup::RequestMap;
 
 pub(crate) async fn generate(
     session: &ImageSession,
@@ -46,13 +45,6 @@ pub(crate) async fn generate(
     Ok(ImageAnswer::new(outcome.reply, Some(&model)))
 }
 
-fn prompt_of(arguments: &RequestMap) -> Option<String> {
-    match text(arguments, "prompt") {
-        Ok(prompt) => prompt,
-        Err(_) => None,
-    }
-}
-
 pub(crate) fn request(
     session: &ImageSession,
     call: &ImageCallWire,
@@ -60,7 +52,7 @@ pub(crate) fn request(
     provider: &str,
 ) -> Result<ImageGenerationCall, CallFailure> {
     let setup = call_setup(session, &call.arguments, &call.settings, model, provider)?;
-    let Some(prompt) = prompt_of(&call.arguments) else {
+    let Some(prompt) = text(&call.arguments, "prompt").unwrap_or_default() else {
         return Err(convert_failure(
             &field("prompt", "text"),
             Some(model.to_owned()),

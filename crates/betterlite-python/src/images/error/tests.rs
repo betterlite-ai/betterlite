@@ -8,6 +8,14 @@ use crate::images::convert::ConvertError;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+struct ErrorPayload {
+    message: String,
+    model: String,
+    llm_provider: String,
+}
 
 #[test]
 fn plain_failure_keeps_kind_message_and_model() {
@@ -33,10 +41,10 @@ fn connection_failure_serializes_class_metadata() {
         );
         let error = class_error(&failure);
         let text = error.value(py).str().unwrap();
-        let payload: serde_json::Value = serde_json::from_str(text.to_str().unwrap()).unwrap();
-        assert_eq!(payload["message"], "connection refused");
-        assert_eq!(payload["model"], "dall-e-2");
-        assert_eq!(payload["llm_provider"], "openai");
+        let payload: ErrorPayload = serde_json::from_str(text.to_str().unwrap()).unwrap();
+        assert_eq!(payload.message, "connection refused");
+        assert_eq!(payload.model, "dall-e-2");
+        assert_eq!(payload.llm_provider, "openai");
         assert!(error.is_instance_of::<NativeImageError>(py));
     });
 }
@@ -80,7 +88,7 @@ fn unsupported_parameter_conversion_uses_unsupported_class() {
 fn invalid_session_json_maps_to_value_error() {
     Python::initialize();
     Python::attach(|py| {
-        let source = serde_json::from_str::<serde_json::Value>("not-json").unwrap_err();
+        let source = serde_json::from_str::<String>("not-json").unwrap_err();
         let error = PyErr::from(SessionError::Json(ConvertError::Json { source }));
         assert!(error.is_instance_of::<PyValueError>(py));
     });

@@ -93,9 +93,8 @@ impl NativeImageErrorPayload {
 }
 
 pub(crate) fn class_error(failure: &CallFailure) -> PyErr {
-    let payload = match &failure.class {
-        Some(class) => NativeImageErrorPayload::from_class(class),
-        None => NativeImageErrorPayload {
+    let payload = failure.class.as_ref().map_or_else(
+        || NativeImageErrorPayload {
             kind: failure.kind.clone(),
             message: failure.message.clone(),
             status_code: None,
@@ -103,7 +102,8 @@ pub(crate) fn class_error(failure: &CallFailure) -> PyErr {
             model: failure.model.clone(),
             headers: BTreeMap::new(),
         },
-    };
+        |class| NativeImageErrorPayload::from_class(class),
+    );
     match serde_json::to_string(&payload) {
         Ok(text) => NativeImageError::new_err(text),
         Err(_encoding) => PyRuntimeError::new_err(payload.message),
@@ -122,7 +122,7 @@ impl From<SessionError> for PyErr {
     }
 }
 
-fn context(message: String, model: Option<String>, provider: Option<String>) -> ErrorContext {
+const fn context(message: String, model: Option<String>, provider: Option<String>) -> ErrorContext {
     ErrorContext {
         message,
         model,
