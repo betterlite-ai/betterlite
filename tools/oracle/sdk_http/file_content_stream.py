@@ -4,7 +4,7 @@ import datetime as dt
 import os
 import sys
 from collections.abc import AsyncIterator, Coroutine, Iterator
-from typing import Literal, Protocol, TypeAlias, TypedDict, Unpack
+from typing import Literal, Protocol, Required, TypeAlias, TypedDict, Unpack
 
 import httpx
 import litellm
@@ -140,7 +140,7 @@ class FileContentStreamRequest(BaseModel):
 
 # LiteLLM's model_call_details as the success callback receives it
 class Details(TypedDict, total=False):
-    model: str
+    model: Required[str]
     custom_llm_provider: str
     litellm_params: dict[str, JsonValue]
 
@@ -183,22 +183,23 @@ def buffered(value: HttpxBinaryResponseContent) -> Buffered:
 
 
 def streamed_sync(result: FileContentStreamingResult) -> Streamed:
+    # LiteLLM's wrapper implements both protocols; the SDK call selects which one to use.
     match result.stream_iterator:
-        case AsyncIterator():
-            raise TypeError("the LiteLLM file stream is not sync")
         case Iterator() as iterator:
             return Streamed(
                 chunks=[list(chunk) for chunk in iterator], headers=dict(result.headers)
             )
+        case AsyncIterator():
+            raise TypeError("the LiteLLM file stream is not sync")
 
 
 async def streamed_async(result: FileContentStreamingResult) -> Streamed:
     match result.stream_iterator:
-        case Iterator():
-            raise TypeError("the LiteLLM file stream is not async")
         case AsyncIterator() as iterator:
             chunks = [list(chunk) async for chunk in iterator]
             return Streamed(chunks=chunks, headers=dict(result.headers))
+        case Iterator():
+            raise TypeError("the LiteLLM file stream is not async")
 
 
 async def settled_async(awaited: Coroutine[None, None, FileValue]) -> Buffered | Streamed:
