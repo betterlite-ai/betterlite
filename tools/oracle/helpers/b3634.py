@@ -216,7 +216,7 @@ def handled(input_value: Input, logging_obj: Logging) -> OutcomeView:
             litellm_params=input_value["litellm_params"],
             passthrough_logging_payload=input_value["passthrough_logging_payload"],
         ))
-    collected = Handler._handle_logging_anthropic_collected_chunks(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L468-L478
+    collected = Handler._handle_logging_anthropic_collected_chunks(  # type: ignore[misc]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L468-L478
         litellm_logging_obj=logging_obj,
         passthrough_success_handler_obj=PassThroughEndpointLogging(),
         url_route=input_value["url_route"],
