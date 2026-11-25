@@ -613,6 +613,25 @@ async fn an_invalid_dict_field_falls_back_to_lenient_construction() {
 }
 
 #[tokio::test]
+async fn a_dict_payload_missing_a_required_field_takes_its_default() {
+    let payload: Json = serde_json::from_str(
+        r#"{"created_at":1700000000,"output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"hi"}]}]}"#,
+    )
+    .unwrap();
+    let response = BridgeResponse {
+        payload: ResponsePayload::Dict(payload),
+        existing_hidden: Map::new(),
+        stream_hidden: Map::new(),
+    };
+    let execution = FakeExecution::new(Answer::Response(Box::new(response)));
+    let record = expect_response(expect_ok(
+        completion(&execution, call(&kwargs("gpt-4o-mini", "openai"))).await,
+    ));
+    assert_eq!(record.id, "");
+    assert_eq!(record.choices[0].message.content.as_deref(), Some("hi"));
+}
+
+#[tokio::test]
 async fn a_dict_payload_that_cannot_be_constructed_names_completion() {
     let payload: Json =
         serde_json::from_str(r#"{"id":"resp_a","created_at":1,"output":[5]}"#).unwrap();
