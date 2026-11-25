@@ -1,6 +1,6 @@
 #![expect(
     clippy::disallowed_types,
-    reason = "the bridge carries the caller's raw chat kwargs and B919's hidden params, whose values are provider JSON with no closed schema"
+    reason = "provider JSON carries no closed schema here"
 )]
 
 pub mod collect;

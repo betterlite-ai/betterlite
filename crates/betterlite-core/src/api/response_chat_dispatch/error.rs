@@ -28,9 +28,9 @@ pub struct PostStreamError {
     pub message: String,
 }
 
-// One stream step's own failure, kept typed with its source until the AsyncChunkStream boundary, which carries text
+// One stream step's failure, kept typed with its source until the AsyncChunkStream adapter turns it into text
 #[derive(Debug, Error)]
-pub enum StreamStepError {
+pub enum BridgeStreamError {
     #[error(transparent)]
     Translate(#[from] ResponsesChatStreamError),
     #[error(transparent)]
@@ -39,12 +39,18 @@ pub enum StreamStepError {
     Wrapper(#[from] WrapperError),
     #[error(transparent)]
     View(#[from] ChatResponseStreamError),
+    #[error("the upstream stream failed: {failure:?}")]
+    Upstream { failure: StreamFailure },
 }
 
-impl From<StreamStepError> for StreamFailure {
-    fn from(error: StreamStepError) -> Self {
-        Self::Unclassified {
-            text: error.to_string(),
+// The outward wire adapter keeps a provider's reported status and turns a bridge step into its text
+impl From<BridgeStreamError> for StreamFailure {
+    fn from(error: BridgeStreamError) -> Self {
+        match error {
+            BridgeStreamError::Upstream { failure } => failure,
+            other => Self::Unclassified {
+                text: other.to_string(),
+            },
         }
     }
 }

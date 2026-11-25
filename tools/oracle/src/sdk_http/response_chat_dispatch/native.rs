@@ -108,7 +108,7 @@ async fn project(output: BridgeOutput) -> Result<RunOutcome, SdkHttpError> {
         ))),
         BridgeOutput::Stream(stream) => Ok(RunOutcome {
             result: None,
-            stream: Some(drain(stream).await?),
+            stream: Some(drain(Box::new(stream)).await?),
             failure: None,
         }),
     }

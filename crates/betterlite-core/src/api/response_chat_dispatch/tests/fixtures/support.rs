@@ -23,6 +23,7 @@ use betterlite_models::decisions::Json;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_streaming::stream_chunk_shaping::creation::StreamInstant;
+use betterlite_streaming::stream_chunk_shaping::records::{JsonObject, StreamDelta};
 use chrono::DateTime;
 use indexmap::IndexMap;
 use serde_json::{Map, Value};
@@ -35,10 +36,10 @@ use crate::api::messages_stream_split::errors::StreamFailure;
 use crate::api::response_chat_dispatch::error::PostStreamError;
 use crate::api::response_chat_dispatch::input::{BridgeCall, StreamStamps};
 use crate::api::response_chat_dispatch::port::{
-    Answer, PostStreamDeps, PostStreamProcessing, ResponsesCall, ResponsesEventStream,
-    ResponsesExecution,
+    Answer, ChatChoice, ChatMessage, ChatResponse, PostStreamDeps, PostStreamProcessing,
+    ResponsesCall, ResponsesEventStream, ResponsesExecution,
 };
-use crate::api::response_chat_result::records::{ChatChoice, ChatMessage, ChatRole, ModelResponse};
+use crate::api::response_chat_result::records::ModelResponse;
 
 #[derive(Debug, Error)]
 #[error("the fake execution failed")]
@@ -411,21 +412,31 @@ pub(crate) fn caller_with_identity_extras() -> ModelResponse {
 }
 
 // A whole chat answer, as a provider without native streaming returns one
-pub(crate) fn chat_response() -> Box<ModelResponse> {
-    let mut response = caller_response();
-    response.id = String::from("chatcmpl-x");
-    response.created = 1_700_000_000;
-    response.model = Some(String::from("gpt-4o-mini"));
-    response.choices = vec![ChatChoice {
-        finish_reason: String::from("stop"),
-        index: 0,
-        message: ChatMessage {
-            content: Some(String::from("hello")),
-            role: ChatRole::Assistant,
-            ..ChatMessage::default()
-        },
-    }];
-    Box::new(response)
+pub(crate) fn chat_response() -> Box<ChatResponse> {
+    Box::new(ChatResponse {
+        id: String::from("chatcmpl-x"),
+        object: String::from("chat.completion"),
+        created: 1_700_000_000,
+        model: Some(String::from("gpt-4o-mini")),
+        system_fingerprint: None,
+        choices: vec![ChatChoice {
+            index: 0,
+            message: ChatMessage {
+                parts: StreamDelta {
+                    role: Some(String::from("assistant")),
+                    content: Some(String::from("hello")),
+                    ..StreamDelta::default()
+                },
+            },
+            finish_reason: Some(String::from("stop")),
+            logprobs: None,
+            provider_specific_fields: None,
+            extra: JsonObject::new(),
+        }],
+        usage: None,
+        extra: JsonObject::new(),
+        hidden_params: JsonObject::new(),
+    })
 }
 
 pub(crate) const FIXED_UUID: &str = "00000000-0000-4000-8000-000000000001";
@@ -520,7 +531,8 @@ pub(crate) fn id_of(chunk: &Json) -> Option<String> {
     text_member(fields, "id")
 }
 
-pub(crate) fn tool_calls_of(chunk: &Json) -> Option<Json> {
+// A member of the first choice's delta, such as its tool calls or the thinking blocks a replay carried
+pub(crate) fn delta_member_of(chunk: &Json, name: &str) -> Option<Json> {
     let Json::Object(fields) = chunk else {
         return None;
     };
@@ -533,7 +545,7 @@ pub(crate) fn tool_calls_of(chunk: &Json) -> Option<Json> {
     let Json::Object(delta) = item.get("delta")? else {
         return None;
     };
-    delta.get("tool_calls").cloned()
+    delta.get(name).cloned()
 }
 
 // A member the wrapper folded into the private map, such as its running usage or its created_at

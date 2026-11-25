@@ -10,7 +10,7 @@ use super::input::{
     BridgeCall, Input, StreamStamps, inject_stream, json_mode, resolve_stream_flag,
 };
 use super::port::{
-    Answer, BridgeOutput, BridgeResponse, PostStreamDeps, ResponsesCall, ResponsesEventStream,
+    Answer, BridgeOutput, BridgeResponse, BridgeStream, PostStreamDeps, ResponsesCall,
     ResponsesExecution,
 };
 use super::stream::{MockStream, StreamConfig, TranslatedStream, post_process};
@@ -21,13 +21,6 @@ use crate::api::response_chat_request::request::build_request;
 use crate::api::response_chat_result::records::ModelResponse;
 use crate::api::response_chat_result::transform::{ResponseSource, transform_response};
 
-// The answer a streaming caller receives: derived from the Responses events, replayed, or already a stream
-enum StreamSource {
-    Events(Box<dyn ResponsesEventStream>),
-    Chat(Box<ModelResponse>),
-    Cached(Box<dyn AsyncChunkStream + Send>),
-}
-
 // litellm.completion() past the router, whose Responses answer is transformed back into a chat response
 pub async fn completion<Execution, Client>(
     execution: &Execution,
@@ -37,10 +30,8 @@ where
     Execution: ResponsesExecution<Client> + Sync,
     Client: ?Sized + Sync,
 {
-    if matches!(call.kwargs.get("acompletion"), Some(Json::Bool(true))) {
-        return run(execution, call, true).await;
-    }
-    run(execution, call, false).await
+    let asynchronous = matches!(call.kwargs.get("acompletion"), Some(Json::Bool(true)));
+    run(execution, call, asynchronous).await
 }
 
 // The delivery stream flag is read after build_request, because the builder promotes extra_body keys into the optional params
@@ -146,39 +137,39 @@ async fn deliver<Source>(
 where
     Source: Error + 'static,
 {
-    let model = input.model.as_str();
     let provider = input.custom_llm_provider.as_str();
-    let post_stream = delivery.post_stream;
-    let source = match answer {
+    // _apply_post_stream_processing runs on whatever stream the bridge produced
+    let stream = match answer {
         Answer::Response(response) => {
             return response_output(input, model_response, delivery, *response);
         }
         Answer::Chat(chat) if !delivery.stream => return Ok(BridgeOutput::Chat(chat)),
-        Answer::Chat(chat) => StreamSource::Chat(chat),
-        Answer::Events(events) if delivery.stream => StreamSource::Events(events),
+        Answer::Chat(chat) => BridgeStream::Typed(Box::new(MockStream::new(
+            chat,
+            provider,
+            &input.model,
+            stamps,
+        ))),
+        Answer::Events(events) if delivery.stream => {
+            BridgeStream::Typed(Box::new(TranslatedStream::new(
+                events,
+                &StreamConfig {
+                    provider,
+                    model: &input.model,
+                    json_mode: delivery.json_mode,
+                    limits: delivery.limits,
+                    stamps,
+                },
+            )))
+        }
         Answer::Events(events) => {
             let response = super::collect::collect(events, &delivery.limits).await?;
             return response_output(input, model_response, delivery, response);
         }
-        Answer::Cached(cached) if delivery.stream => StreamSource::Cached(cached),
+        Answer::Cached(cached) if delivery.stream => BridgeStream::Wire(cached),
         Answer::Cached(mut cached) => return drain_cached(&mut *cached).await,
     };
-    // _apply_post_stream_processing runs on whatever stream the bridge produced
-    let stream: Box<dyn AsyncChunkStream + Send> = match source {
-        StreamSource::Events(events) => Box::new(TranslatedStream::new(
-            events,
-            &StreamConfig {
-                provider,
-                model,
-                json_mode: delivery.json_mode,
-                limits: delivery.limits,
-                stamps,
-            },
-        )),
-        StreamSource::Chat(chat) => Box::new(MockStream::new(chat, provider, model, stamps)),
-        StreamSource::Cached(cached) => cached,
-    };
-    post_process(stream, model, provider, post_stream)
+    post_process(stream, &input.model, provider, delivery.post_stream)
         .map(BridgeOutput::Stream)
         .map_err(DispatchError::PostStream)
 }

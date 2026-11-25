@@ -1,13 +1,13 @@
 use betterlite_models::decisions::Json;
+use betterlite_streaming::stream_chunk_shaping::records::Usage;
 
 use super::fixtures::support::{
-    FIXED_CLOCK, FakeExecution, chat_response, hidden_member_of, tool_calls_of,
+    FIXED_CLOCK, FakeExecution, chat_response, delta_member_of, hidden_member_of,
 };
 use super::{
     Answer, call, completion, created_of, drain, expect_chat, expect_ok, expect_stream, finishes,
     ids, joined, kwargs, streaming,
 };
-use crate::api::responses_tool_results::records::{FunctionChunk, ToolCallChunk};
 
 fn contains_text(value: &Json, needle: &str) -> bool {
     match value {
@@ -23,6 +23,28 @@ async fn a_direct_model_response_passes_through_when_not_streaming() {
     let execution = FakeExecution::new(Answer::Chat(chat_response()));
     let output = expect_ok(completion(&execution, call(&kwargs("gpt-4o-mini", "openai"))).await);
     assert_eq!(expect_chat(output), chat_response());
+}
+
+#[tokio::test]
+async fn a_passed_through_chat_answer_keeps_its_choice_logprobs() {
+    let mut body = chat_response();
+    body.choices[0].logprobs =
+        Some(serde_json::from_str(r#"{"content":[{"token":"hello","logprob":-0.25}]}"#).unwrap());
+    let execution = FakeExecution::new(Answer::Chat(body.clone()));
+    let output = expect_ok(completion(&execution, call(&kwargs("gpt-4o-mini", "openai"))).await);
+    assert_eq!(expect_chat(output), body);
+}
+
+#[tokio::test]
+async fn a_passed_through_chat_answer_keeps_its_message_audio_and_thinking_blocks() {
+    let mut body = chat_response();
+    body.choices[0].message.parts.audio =
+        Some(serde_json::from_str(r#"{"id":"audio-1","data":"AAA"}"#).unwrap());
+    body.choices[0].message.parts.thinking_blocks =
+        Some(serde_json::from_str(r#"[{"type":"thinking","signature":"sig-1"}]"#).unwrap());
+    let execution = FakeExecution::new(Answer::Chat(body.clone()));
+    let output = expect_ok(completion(&execution, call(&kwargs("gpt-4o-mini", "openai"))).await);
+    assert_eq!(expect_chat(output), body);
 }
 
 #[tokio::test]
@@ -46,26 +68,22 @@ async fn a_direct_model_response_streams_through_the_mock_iterator() {
 #[tokio::test]
 async fn a_replayed_response_keeps_its_tool_calls_and_finish_reason() {
     let mut body = chat_response();
-    body.choices[0].finish_reason = String::from("tool_calls");
-    body.choices[0].message.content = None;
-    body.choices[0].message.tool_calls = Some(vec![ToolCallChunk {
-        id: String::from("call_1"),
-        kind: String::from("function"),
-        function: FunctionChunk {
-            name: String::from("get_weather"),
-            arguments: String::from(r#"{"city":"Paris"}"#),
-            provider_specific_fields: None,
-        },
-        index: 0,
-        provider_specific_fields: None,
-    }]);
+    body.choices[0].finish_reason = Some(String::from("tool_calls"));
+    body.choices[0].message.parts.content = None;
+    body.choices[0].message.parts.tool_calls = Some(
+        serde_json::from_str(
+            r#"[{"id":"call_1","type":"function","function":{"name":"get_weather","arguments":"{\"city\":\"Paris\"}"}}]"#,
+        )
+        .unwrap(),
+    );
     let execution = FakeExecution::new(Answer::Chat(body));
     let chunks = drain(expect_stream(expect_ok(
         completion(&execution, call(&streaming())).await,
     )))
     .await;
     assert_eq!(finishes(&chunks), vec![String::from("tool_calls")]);
-    let calls = tool_calls_of(&chunks[0]).expect("the replayed chunk carries the tool calls");
+    let calls = delta_member_of(&chunks[0], "tool_calls")
+        .expect("the replayed chunk carries the tool calls");
     assert!(contains_text(&calls, "call_1"));
     assert!(contains_text(&calls, "get_weather"));
     assert!(contains_text(&calls, "Paris"));
@@ -74,7 +92,7 @@ async fn a_replayed_response_keeps_its_tool_calls_and_finish_reason() {
 #[tokio::test]
 async fn a_replayed_response_keeps_its_length_finish_reason() {
     let mut body = chat_response();
-    body.choices[0].finish_reason = String::from("length");
+    body.choices[0].finish_reason = Some(String::from("length"));
     let execution = FakeExecution::new(Answer::Chat(body));
     let chunks = drain(expect_stream(expect_ok(
         completion(&execution, call(&streaming())).await,
@@ -87,8 +105,10 @@ async fn a_replayed_response_keeps_its_length_finish_reason() {
 async fn a_replayed_response_carries_its_usage_into_the_stream_totals() {
     let mut body = chat_response();
     body.usage = Some(
-        serde_json::from_str(r#"{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}"#)
-            .unwrap(),
+        serde_json::from_str::<Usage>(
+            r#"{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}"#,
+        )
+        .unwrap(),
     );
     let execution = FakeExecution::new(Answer::Chat(body));
     let chunks = drain(expect_stream(expect_ok(
@@ -108,11 +128,30 @@ async fn a_replayed_response_carries_its_usage_into_the_stream_totals() {
 }
 
 #[tokio::test]
+async fn a_replay_carries_message_audio_and_thinking_blocks_into_the_delta() {
+    let mut body = chat_response();
+    body.choices[0].message.parts.audio =
+        Some(serde_json::from_str(r#"{"id":"audio-1"}"#).unwrap());
+    body.choices[0].message.parts.thinking_blocks =
+        Some(serde_json::from_str(r#"[{"type":"thinking","signature":"sig-1"}]"#).unwrap());
+    let execution = FakeExecution::new(Answer::Chat(body));
+    let chunks = drain(expect_stream(expect_ok(
+        completion(&execution, call(&streaming())).await,
+    )))
+    .await;
+    let audio = delta_member_of(&chunks[0], "audio").expect("the replayed delta carries the audio");
+    let blocks = delta_member_of(&chunks[0], "thinking_blocks")
+        .expect("the replayed delta carries the thinking blocks");
+    assert!(contains_text(&audio, "audio-1"));
+    assert!(contains_text(&blocks, "sig-1"));
+}
+
+#[tokio::test]
 async fn a_replay_keeps_an_empty_id_and_takes_the_wrapper_clock() {
     let mut body = chat_response();
     body.id = String::new();
     body.created = 0;
-    body.choices[0].message.content = Some(String::from("hey"));
+    body.choices[0].message.parts.content = Some(String::from("hey"));
     let execution = FakeExecution::new(Answer::Chat(body));
     let chunks = drain(expect_stream(expect_ok(
         completion(&execution, call(&streaming())).await,

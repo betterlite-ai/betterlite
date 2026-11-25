@@ -20,13 +20,14 @@ use self::fixtures::support::{
     post_stream_missing_record, post_stream_named, responses_body, sse, stamps, terminal_event,
     text_of,
 };
-use super::error::DispatchError;
+use super::error::{BridgeStreamError, DispatchError};
 use super::handler::completion;
 use super::input::{json_mode, resolve_stream_flag};
-use super::port::{Answer, BridgeOutput, BridgeResponse, ResponsePayload};
+use super::port::{
+    Answer, BridgeOutput, BridgeResponse, BridgeStream, ChatResponse, ResponsePayload,
+};
 use super::stream::{StreamConfig, TranslatedStream};
 use crate::api::api_boundaries::ApiLimits;
-use crate::api::chat_response_stream::source::AsyncChunkStream;
 use crate::api::messages_stream_split::errors::StreamFailure;
 use crate::api::response_chat_result::records::ModelResponse;
 
@@ -115,23 +116,23 @@ fn expect_response(output: BridgeOutput) -> Box<ModelResponse> {
     }
 }
 
-fn expect_chat(output: BridgeOutput) -> Box<ModelResponse> {
+fn expect_chat(output: BridgeOutput) -> Box<ChatResponse> {
     match output {
         BridgeOutput::Chat(chat) => chat,
         BridgeOutput::Response(_) | BridgeOutput::Stream(_) => panic!("expected a chat response"),
     }
 }
 
-fn expect_stream(output: BridgeOutput) -> Box<dyn AsyncChunkStream + Send> {
+fn expect_stream(output: BridgeOutput) -> BridgeStream {
     match output {
         BridgeOutput::Stream(stream) => stream,
         BridgeOutput::Response(_) | BridgeOutput::Chat(_) => panic!("expected a stream"),
     }
 }
 
-async fn drain(mut stream: Box<dyn AsyncChunkStream + Send>) -> Vec<Json> {
+async fn drain(mut stream: BridgeStream) -> Vec<Json> {
     let mut chunks = Vec::new();
-    while let Some(chunk) = stream.next_chunk().await.unwrap() {
+    while let Some(chunk) = stream.next().await.unwrap() {
         chunks.push(chunk);
     }
     chunks
@@ -741,16 +742,18 @@ async fn the_translator_and_wrapper_stamp_chunks_from_the_injected_sources() {
 }
 
 #[tokio::test]
-async fn a_translation_failure_keeps_the_translators_message() {
+async fn a_translation_failure_reaches_the_bridge_caller_typed() {
     let execution = FakeExecution::new(events(vec![sse("{not json")], &[]));
     let mut stream = expect_stream(expect_ok(completion(&execution, call(&streaming())).await));
-    let failure = stream.next_chunk().await.unwrap_err();
-    let StreamFailure::Unclassified { text } = failure else {
-        panic!("a translation failure has no provider status");
+    let error = stream.next().await.unwrap_err();
+    let BridgeStreamError::Translate(error) = error else {
+        panic!("a malformed event is a translation failure");
     };
     assert!(
-        text.contains("Expecting property name enclosed in double quotes"),
-        "{text}"
+        error
+            .to_string()
+            .contains("Expecting property name enclosed in double quotes"),
+        "{error}"
     );
 }
 
@@ -870,11 +873,11 @@ async fn identical_chunks_stop_at_the_repeated_chunk_limit() {
     let over_limit = FakeExecution::new(events(past_limit, &[]));
     let mut stream = expect_stream(expect_ok(completion(&over_limit, call(&fields)).await));
     loop {
-        match stream.next_chunk().await {
+        match stream.next().await {
             Ok(Some(_)) => {}
             Ok(None) => panic!("the repetition limit never fired"),
-            Err(failure) => {
-                assert!(matches!(failure, StreamFailure::Unclassified { .. }));
+            Err(error) => {
+                assert!(matches!(error, BridgeStreamError::Wrapper(_)));
                 break;
             }
         }

@@ -19,3 +19,6 @@ kept_bugs:
   - what: "The non-streaming collect path reads only the terminal response and drops every delta it drained before it, so a truncated stream loses the text it already received."
     why: "LiteLLM's _collect_response_from_stream ignores the deltas the iterator yielded, and a working setup may rely on the terminal object's output and usage rather than on partial text."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/handler.py#L92-L106
+  - what: "A supplied ModelResponse replayed as a stream drops each choice's logprobs, because convert_model_response_to_streaming fills the delta from the message and never reads choice.logprobs."
+    why: "LiteLLM's mock iterator drops them too, and no LiteLLM path streams a supplied response's choice logprobs, so a working setup cannot rely on them surviving."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_model_iterator.py#L38-L48

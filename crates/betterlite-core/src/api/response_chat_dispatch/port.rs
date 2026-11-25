@@ -9,10 +9,14 @@ use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::responses_objects::ResponsesApiResponse;
 use betterlite_openai::api::responses_objects::request_params::ResponsesApiRequestParams;
+use betterlite_streaming::stream_chunk_shaping::records::{
+    JsonObject, JsonValue, StreamDelta, Usage,
+};
 use indexmap::IndexMap;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use super::error::PostStreamError;
+use super::error::{BridgeStreamError, PostStreamError};
 use crate::api::chat_response_stream::source::AsyncChunkStream;
 use crate::api::messages_stream_split::errors::StreamFailure;
 use crate::api::response_chat_result::records::ModelResponse;
@@ -26,10 +30,46 @@ pub struct ResponsesCall<'call, Client: ?Sized> {
     pub logging: &'call mut LoggingState,
 }
 
+// LiteLLM's ModelResponse as responses() returns it: every choice, message and usage field its types declare
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ChatResponse {
+    pub id: String,
+    pub object: String,
+    pub created: i64,
+    pub model: Option<String>,
+    pub system_fingerprint: Option<String>,
+    pub choices: Vec<ChatChoice>,
+    pub usage: Option<Usage>,
+    #[serde(flatten)]
+    pub extra: JsonObject,
+    #[serde(skip)]
+    pub hidden_params: JsonObject,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ChatChoice {
+    pub index: i64,
+    pub message: ChatMessage,
+    pub finish_reason: Option<String>,
+    pub logprobs: Option<JsonValue>,
+    pub provider_specific_fields: Option<JsonObject>,
+    #[serde(flatten)]
+    pub extra: JsonObject,
+}
+
+// A message declares the same fields as a streamed delta, which is what LiteLLM dumps it into
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChatMessage {
+    #[serde(flatten)]
+    pub parts: StreamDelta,
+}
+
 // What responses() can hand back: its Responses object, a chat ModelResponse, its event stream or a cached chat stream
 pub enum Answer {
     Response(Box<BridgeResponse>),
-    Chat(Box<ModelResponse>),
+    Chat(Box<ChatResponse>),
     Events(Box<dyn ResponsesEventStream>),
     Cached(Box<dyn AsyncChunkStream + Send>),
 }
@@ -49,8 +89,40 @@ pub enum ResponsePayload {
 
 pub enum BridgeOutput {
     Response(Box<ModelResponse>),
-    Chat(Box<ModelResponse>),
-    Stream(Box<dyn AsyncChunkStream + Send>),
+    Chat(Box<ChatResponse>),
+    Stream(BridgeStream),
+}
+
+// One step of a bridge-built stream, typed until the AsyncChunkStream adapter turns it into the wire's text
+#[async_trait]
+pub trait TypedChunkStream: Send {
+    async fn next_chunk(&mut self) -> Result<Option<Json>, BridgeStreamError>;
+}
+
+// The delivered stream: the bridge's own streams keep their typed failures, a wrapped or cached one only has the wire's
+pub enum BridgeStream {
+    Typed(Box<dyn TypedChunkStream + Send>),
+    Wire(Box<dyn AsyncChunkStream + Send>),
+}
+
+impl BridgeStream {
+    pub async fn next(&mut self) -> Result<Option<Json>, BridgeStreamError> {
+        match self {
+            Self::Typed(stream) => stream.next_chunk().await,
+            Self::Wire(stream) => stream
+                .next_chunk()
+                .await
+                .map_err(|failure| BridgeStreamError::Upstream { failure }),
+        }
+    }
+}
+
+// The outward wire-error adapter: HTTP and provider post-processing read every step as a StreamFailure
+#[async_trait]
+impl AsyncChunkStream for BridgeStream {
+    async fn next_chunk(&mut self) -> Result<Option<Json>, StreamFailure> {
+        self.next().await.map_err(StreamFailure::from)
+    }
 }
 
 // The Responses iterator's next decoded SSE frame, still as the bytes B920 reads

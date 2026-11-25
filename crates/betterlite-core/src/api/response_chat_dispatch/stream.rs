@@ -9,20 +9,17 @@ use betterlite_context::chat_config_selection::table::ProviderConfigTable;
 use betterlite_models::decisions::Json;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_streaming::provider_chunk_decode::chunk::ProviderChunk;
-use betterlite_streaming::provider_chunk_decode::wrapper::{
-    StreamSetup, StreamWrapper, WrapperError,
-};
-use betterlite_streaming::stream_chunk_shaping::records::{JsonObject, JsonValue, StreamChunk};
-use indexmap::IndexMap;
+use betterlite_streaming::provider_chunk_decode::wrapper::{StreamSetup, StreamWrapper};
+use betterlite_streaming::stream_chunk_shaping::records::{JsonObject, StreamChoice, StreamChunk};
+use serde::Serialize;
 
-use super::error::{PostStreamError, StreamStepError};
+use super::error::{BridgeStreamError, PostStreamError};
 use super::input::StreamStamps;
-use super::port::{PostStreamDeps, ResponsesEventStream};
+use super::port::{
+    BridgeStream, ChatResponse, PostStreamDeps, ResponsesEventStream, TypedChunkStream,
+};
 use crate::api::api_boundaries::ApiLimits;
 use crate::api::chat_response_stream::chunk::wrapper_view;
-use crate::api::chat_response_stream::source::AsyncChunkStream;
-use crate::api::messages_stream_split::errors::StreamFailure;
-use crate::api::response_chat_result::records::ModelResponse;
 use crate::api::responses_to_chat_stream::stream::{
     ParsedChatLine, ResponsesChatStream, get_model_response_iterator,
 };
@@ -68,8 +65,8 @@ impl TranslatedStream {
 }
 
 #[async_trait]
-impl AsyncChunkStream for TranslatedStream {
-    async fn next_chunk(&mut self) -> Result<Option<Json>, StreamFailure> {
+impl TypedChunkStream for TranslatedStream {
+    async fn next_chunk(&mut self) -> Result<Option<Json>, BridgeStreamError> {
         loop {
             if let Some(chunk) = self.pending.pop_front() {
                 return Ok(Some(chunk));
@@ -84,18 +81,12 @@ impl AsyncChunkStream for TranslatedStream {
                 }
                 Some(Err(failure)) => {
                     self.finished = true;
-                    return Err(failure);
+                    return Err(BridgeStreamError::Upstream { failure });
                 }
                 Some(Ok(line)) => {
-                    let parsed = self
-                        .parser
-                        .parse_line(&line, &self.limits)
-                        .map_err(StreamStepError::from)?;
+                    let parsed = self.parser.parse_line(&line, &self.limits)?;
                     if let ParsedChatLine::Chunk(chunk) = parsed {
-                        let value = serde_json::to_value(chunk).map_err(StreamStepError::from)?;
-                        let row =
-                            serde_json::from_value::<Json>(value).map_err(StreamStepError::from)?;
-                        push_json(&mut self.wrapper, &mut self.pending, row)?;
+                        push(&mut self.wrapper, &mut self.pending, chunk)?;
                     }
                 }
             }
@@ -105,7 +96,7 @@ impl AsyncChunkStream for TranslatedStream {
 
 // _completed_response_as_stream: MockResponseIterator replays the completed ModelResponse as one converted chunk
 pub struct MockStream {
-    response: Box<ModelResponse>,
+    response: Box<ChatResponse>,
     wrapper: StreamWrapper,
     pending: VecDeque<Json>,
     filled: bool,
@@ -114,7 +105,7 @@ pub struct MockStream {
 impl MockStream {
     #[must_use]
     pub fn new(
-        response: Box<ModelResponse>,
+        response: Box<ChatResponse>,
         provider: &str,
         model: &str,
         stamps: StreamStamps,
@@ -128,12 +119,15 @@ impl MockStream {
     }
 
     // the replay is finite and synchronous, so its one chunk goes through the wrapper once
-    fn fill(&mut self) -> Result<(), StreamFailure> {
+    fn fill(&mut self) -> Result<(), BridgeStreamError> {
         if self.filled {
             return Ok(());
         }
-        let chunk = replay_chunk(&self.response).map_err(StreamStepError::from)?;
-        push_json(&mut self.wrapper, &mut self.pending, chunk)?;
+        push(
+            &mut self.wrapper,
+            &mut self.pending,
+            replay_chunk(&self.response),
+        )?;
         close(&mut self.wrapper, &mut self.pending)?;
         self.filled = true;
         Ok(())
@@ -141,48 +135,31 @@ impl MockStream {
 }
 
 // convert_model_response_to_streaming: the whole message becomes each choice's delta, and its finish reason survives
-fn replay_chunk(response: &ModelResponse) -> Result<Json, serde_json::Error> {
-    let mut choices = Vec::with_capacity(response.choices.len());
-    for choice in &response.choices {
-        let delta = serde_json::from_value(serde_json::to_value(&choice.message)?)?;
-        choices.push(Json::Object(IndexMap::from([
-            (
-                String::from("index"),
-                Json::Number(serde_json::Number::from(choice.index)),
-            ),
-            (String::from("delta"), delta),
-            (
-                String::from("finish_reason"),
-                Json::Text(choice.finish_reason.clone()),
-            ),
-        ])));
+fn replay_chunk(response: &ChatResponse) -> StreamChunk {
+    let choices = response
+        .choices
+        .iter()
+        .map(|choice| StreamChoice {
+            index: choice.index,
+            delta: choice.message.parts.clone(),
+            finish_reason: choice.finish_reason.clone(),
+            logprobs: None,
+            extra: choice.extra.clone(),
+        })
+        .collect();
+    StreamChunk {
+        id: response.id.clone(),
+        created: response.created,
+        model: response.model.clone().unwrap_or_default(),
+        choices,
+        usage: response.usage.clone(),
+        ..StreamChunk::default()
     }
-    let model = response.model.clone().map_or(Json::Null, Json::Text);
-    let mut chunk = IndexMap::from([
-        (String::from("id"), Json::Text(response.id.clone())),
-        (
-            String::from("object"),
-            Json::Text(String::from("chat.completion.chunk")),
-        ),
-        (
-            String::from("created"),
-            Json::Number(serde_json::Number::from(response.created)),
-        ),
-        (String::from("model"), model),
-        (String::from("choices"), Json::List(choices)),
-    ]);
-    if let Some(usage) = &response.usage {
-        chunk.insert(
-            String::from("usage"),
-            serde_json::from_value(usage.clone())?,
-        );
-    }
-    Ok(Json::Object(chunk))
 }
 
 #[async_trait]
-impl AsyncChunkStream for MockStream {
-    async fn next_chunk(&mut self) -> Result<Option<Json>, StreamFailure> {
+impl TypedChunkStream for MockStream {
+    async fn next_chunk(&mut self) -> Result<Option<Json>, BridgeStreamError> {
         self.fill()?;
         Ok(self.pending.pop_front())
     }
@@ -204,28 +181,24 @@ fn wrapper(provider: &str, model: &str, stamps: StreamStamps) -> StreamWrapper {
     )
 }
 
-fn push_json(
+// The wrapper reads one chunk as provider JSON, so the bridge's typed records serialize at this handoff only
+fn push<T: Serialize>(
     wrapper: &mut StreamWrapper,
     pending: &mut VecDeque<Json>,
-    chunk: Json,
-) -> Result<(), StreamStepError> {
-    let value = serde_json::to_value(chunk)?;
-    let json = serde_json::from_value::<JsonValue>(value)?;
-    hold(pending, wrapper.push(&ProviderChunk::Json(Box::new(json))))
-}
-
-fn hold(
-    pending: &mut VecDeque<Json>,
-    shaped: Result<Option<StreamChunk>, WrapperError>,
-) -> Result<(), StreamStepError> {
-    if let Some(chunk) = shaped? {
-        pending.push_back(wrapper_view(&chunk)?);
+    chunk: T,
+) -> Result<(), BridgeStreamError> {
+    let value = serde_json::to_value(chunk).and_then(serde_json::from_value)?;
+    if let Some(shaped) = wrapper.push(&ProviderChunk::Json(Box::new(value)))? {
+        pending.push_back(wrapper_view(&shaped)?);
     }
     Ok(())
 }
 
 // The wrapper's own end-of-stream chunk, for a stream that never sent a finish reason itself
-fn close(wrapper: &mut StreamWrapper, pending: &mut VecDeque<Json>) -> Result<(), StreamStepError> {
+fn close(
+    wrapper: &mut StreamWrapper,
+    pending: &mut VecDeque<Json>,
+) -> Result<(), BridgeStreamError> {
     if let Some(shaped) = wrapper.finish() {
         pending.push_back(wrapper_view(&shaped?)?);
     }
@@ -234,11 +207,11 @@ fn close(wrapper: &mut StreamWrapper, pending: &mut VecDeque<Json>) -> Result<()
 
 // _apply_post_stream_processing: the provider chat config's own stream, or the stream unchanged
 pub fn post_process(
-    stream: Box<dyn AsyncChunkStream + Send>,
+    stream: BridgeStream,
     model: &str,
     provider: &str,
     deps: Option<&PostStreamDeps<'_>>,
-) -> Result<Box<dyn AsyncChunkStream + Send>, PostStreamError> {
+) -> Result<BridgeStream, PostStreamError> {
     let Some(config_deps) = deps else {
         return Ok(stream);
     };
@@ -258,7 +231,8 @@ pub fn post_process(
     match select_chat_config(&request, &mut table) {
         Ok(Some(selected)) => config_deps
             .processing
-            .post_stream_processing(selected.tag, stream),
+            .post_stream_processing(selected.tag, Box::new(stream))
+            .map(BridgeStream::Wire),
         Ok(None) | Err(ChatConfigError::MissingJsonRecord { .. }) => Ok(stream),
     }
 }
