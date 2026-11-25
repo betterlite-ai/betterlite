@@ -15,3 +15,7 @@ betterlite_oracle_helper_api::helper_group! {
     "b8193" => b8193, "b8194" => b8194, "b8195" => b8195, "b8196" => b8196, "b8197" => b8197,
     "b8198" => b8198, "b8199" => b8199, "b8201" => b8201,
 }
+
+#[cfg(test)]
+#[path = "b4668/tests.rs"]
+mod b4668_tests;
