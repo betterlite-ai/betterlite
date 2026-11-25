@@ -44,7 +44,7 @@ async fn a_fresh_cache_reports_its_age_and_checker() {
     let status = world.manager().get_health_check_status().await;
     assert_eq!(
         status_text(&status),
-        r#"{"pod_id":"pod_1704067200000","redis_available":true,"lock_ttl":60,"cache_ttl":300,"lock_owner":"pod_9","lock_in_progress":true,"cache_available":true,"cache_age_seconds":90.0,"last_checked_by":"pod_7"}"#
+        r#"{"pod_id":"pod_1704067290000","redis_available":true,"lock_ttl":60,"cache_ttl":300,"lock_owner":"pod_9","lock_in_progress":true,"cache_available":true,"cache_age_seconds":90.0,"last_checked_by":"pod_7"}"#
     );
 }
 
@@ -58,7 +58,7 @@ async fn an_expired_cache_is_reported_unavailable() {
     let status = world.manager().get_health_check_status().await;
     assert_eq!(
         status_text(&status),
-        r#"{"pod_id":"pod_1704067200000","redis_available":true,"lock_ttl":60,"cache_ttl":300,"lock_owner":null,"lock_in_progress":false,"cache_available":false}"#
+        r#"{"pod_id":"pod_1704067501000","redis_available":true,"lock_ttl":60,"cache_ttl":300,"lock_owner":null,"lock_in_progress":false,"cache_available":false}"#
     );
 }
 

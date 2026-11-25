@@ -11,6 +11,7 @@ use betterlite_redis::cache_primitives::decode::CachedValue;
 use chrono::{DateTime, Utc};
 use num_traits::ToPrimitive as _;
 use serde::{Deserialize, Serialize};
+use serde_json::Number;
 
 use crate::health_cycle::endpoints::HealthCheckResult;
 
@@ -36,10 +37,18 @@ pub struct CachedHealthCheck {
     pub healthy_endpoints: Vec<JsonObject>,
     #[serde(default)]
     pub unhealthy_endpoints: Vec<JsonObject>,
-    #[serde(default)]
-    pub timestamp: f64,
+    pub timestamp: Option<Number>,
     #[serde(default)]
     pub checked_by: Option<String>,
+}
+
+impl CachedHealthCheck {
+    pub fn timestamp_seconds(&self) -> f64 {
+        self.timestamp
+            .as_ref()
+            .and_then(Number::as_f64)
+            .unwrap_or_default()
+    }
 }
 
 // cache_health_check_results' value: safe_dumps over the four fields and the pod that ran the check.

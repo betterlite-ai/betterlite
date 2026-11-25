@@ -25,7 +25,7 @@ async fn a_fresh_entry_comes_back_with_its_rows_and_checker() {
         vec![unhealthy_row("cached-down", 500)]
     );
     assert_eq!(cached.checked_by.as_deref(), Some("pod_7"));
-    assert_eq!(number(cached.timestamp), number(SHARED_SECONDS));
+    assert_eq!(number(cached.timestamp_seconds()), number(SHARED_SECONDS));
 }
 
 #[tokio::test]

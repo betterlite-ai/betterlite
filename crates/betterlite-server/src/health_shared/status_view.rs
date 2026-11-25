@@ -66,7 +66,7 @@ pub(crate) fn cache_fields(
     match cached {
         Some(payload) => (
             true,
-            Some(epoch_seconds(now).sub(payload.timestamp)),
+            Some(epoch_seconds(now).sub(payload.timestamp_seconds())),
             payload.checked_by,
         ),
         None => (false, None, None),

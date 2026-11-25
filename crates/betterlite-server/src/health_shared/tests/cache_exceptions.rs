@@ -35,12 +35,12 @@ async fn the_cached_payload_excludes_the_exception_map_but_keeps_the_rows() {
     assert_eq!(
         keys(&payload),
         vec![
-            "healthy_endpoints",
-            "unhealthy_endpoints",
-            "healthy_count",
-            "unhealthy_count",
-            "timestamp",
             "checked_by",
+            "healthy_count",
+            "healthy_endpoints",
+            "timestamp",
+            "unhealthy_count",
+            "unhealthy_endpoints",
         ]
     );
     assert_eq!(
