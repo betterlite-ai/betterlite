@@ -70,7 +70,7 @@ async fn buffered_azure_preserves_absent_and_empty_auth(#[case] value: Option<&s
         params
             .azure_ad_token
             .as_ref()
-            .map(|secret| secret.expose_secret()),
+            .map(SecretString::expose_secret),
         value
     );
     assert_eq!(params.auth.tenant_id.as_deref(), value);
