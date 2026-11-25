@@ -7,7 +7,7 @@ use super::super::session::{
 };
 use super::super::variation::{first_image, variation};
 use super::fields::{boolean, headers, resolve_target, strings, target, text, timeout};
-use super::options::{edit_options, generation_options};
+use super::options::{Operation, optional_params};
 use super::{
     ConvertError, DEFAULT_CONTENT_TYPE, DEFAULT_MASK_NAME, SettingsWire, image_file, images, parse,
 };
@@ -62,7 +62,7 @@ fn recorded_image(name: Option<&str>, bytes: u8) -> ImageFile {
 
 fn edited(text: &str, drop: bool) -> Result<RequestMap, ConvertError> {
     let (wire, _files) = call(text);
-    edit_options(&wire.arguments, "dall-e-2", drop)
+    optional_params(Operation::Edit, &wire.arguments, "dall-e-2", drop)
 }
 
 #[test]
@@ -84,7 +84,7 @@ fn request_generation_model_prefix_names_the_provider() {
 fn request_generation_options_keep_style_and_skip_control_names() {
     let (wire, _files) =
         call(r#"{"prompt":"a cat","style":"vivid","quality":"hd","timeout":30,"api_key":"sk-x"}"#);
-    let options = generation_options(&wire.arguments, "dall-e-3", false).unwrap();
+    let options = optional_params(Operation::Generate, &wire.arguments, "dall-e-3", false).unwrap();
     assert!(!options.contains_key("prompt"));
     assert!(!options.contains_key("timeout"));
     assert!(!options.contains_key("api_key"));
@@ -101,9 +101,10 @@ fn request_generation_options_keep_style_and_skip_control_names() {
 #[test]
 fn error_generation_unsupported_param_fails_without_drop() {
     let (wire, _files) = call(r#"{"prompt":"a cat","style":"vivid"}"#);
-    let error = generation_options(&wire.arguments, "dall-e-2", false).unwrap_err();
+    let error =
+        optional_params(Operation::Generate, &wire.arguments, "dall-e-2", false).unwrap_err();
     assert!(error.to_string().contains("style"));
-    let options = generation_options(&wire.arguments, "dall-e-2", true).unwrap();
+    let options = optional_params(Operation::Generate, &wire.arguments, "dall-e-2", true).unwrap();
     assert!(!options.contains_key("style"));
 }
 
@@ -343,7 +344,7 @@ fn request_timeout_reads_seconds_and_defaults_to_none() {
 fn request_generation_options_drop_the_additional_names() {
     let (wire, _files) =
         call(r#"{"style":"vivid","quality":"hd","additional_drop_params":["style"]}"#);
-    let options = generation_options(&wire.arguments, "dall-e-3", false).unwrap();
+    let options = optional_params(Operation::Generate, &wire.arguments, "dall-e-3", false).unwrap();
     assert!(!options.contains_key("style"));
     assert_eq!(
         options.get("quality"),
@@ -621,7 +622,7 @@ async fn error_variation_missing_key_class(#[case] asynchronous: bool, #[case] k
 fn request_generation_call_drop_and_extra_body() {
     let (wire, _) =
         call(r#"{"style":"vivid","drop_params":true,"extra_body":{"seed":7},"unknown":"kept"}"#);
-    let options = generation_options(&wire.arguments, "dall-e-2", false).unwrap();
+    let options = optional_params(Operation::Generate, &wire.arguments, "dall-e-2", false).unwrap();
     assert!(!options.contains_key("style"));
     let expected = RequestMap::from_iter([
         (String::from("seed"), Json::Number(Number::from(7_u32))),

@@ -80,15 +80,11 @@ pub(crate) fn call_setup(
     model: &str,
     provider: &str,
 ) -> Result<CallSetup, CallFailure> {
-    let headers = headers(arguments).map_err(|error| {
-        convert_failure(&error, Some(model.to_owned()), Some(provider.to_owned()))
-    })?;
-    let timeout = timeout(arguments).map_err(|error| {
-        convert_failure(&error, Some(model.to_owned()), Some(provider.to_owned()))
-    })?;
-    let explicit = explicit_credentials(arguments).map_err(|error| {
-        convert_failure(&error, Some(model.to_owned()), Some(provider.to_owned()))
-    })?;
+    let failure =
+        |error| convert_failure(&error, Some(model.to_owned()), Some(provider.to_owned()));
+    let headers = headers(arguments).map_err(failure)?;
+    let timeout = timeout(arguments).map_err(failure)?;
+    let explicit = explicit_credentials(arguments).map_err(failure)?;
     Ok(CallSetup {
         headers,
         timeout: timeout.unwrap_or(DEFAULT_TIMEOUT),

@@ -1,5 +1,5 @@
 use super::convert::fields::{target, text, timeout};
-use super::convert::options::edit_options;
+use super::convert::options::{Operation, optional_params};
 use super::convert::{
     ConvertError, DEFAULT_IMAGE_NAME, DEFAULT_MASK_NAME, ImageAnswer, ImageCallWire,
     OPENAI_PROVIDER, content_type_for, images,
@@ -111,7 +111,8 @@ pub(crate) fn form(
     provider: &str,
     redactor: &Redactor,
 ) -> Result<ImageEditForm, CallFailure> {
-    let options = edit_options(
+    let options = optional_params(
+        Operation::Edit,
         &call.arguments,
         model,
         call.settings.drop_params.unwrap_or(false),

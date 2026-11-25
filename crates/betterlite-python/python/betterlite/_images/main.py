@@ -23,10 +23,6 @@ GENERATION_NAMES: Final[tuple[str, ...]] = (
 VARIATION_NAMES: Final[tuple[str, ...]] = (
     "image", "model", "n", "response_format", "size", "user",
 )
-EDIT_NAMES: Final[tuple[str, ...]] = (
-    "image", "prompt", "model", "mask", "n", "quality", "response_format", "size",
-    "user", "extra_headers", "extra_query", "extra_body", "timeout", "custom_llm_provider",
-)
 
 SyncNativeCall: TypeAlias = Callable[[str, list[bytes]], str]
 AsyncNativeCall: TypeAlias = Callable[[str, list[bytes]], Awaitable[str]]
@@ -64,7 +60,10 @@ def image_generation(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/li
 ) -> ImageResponse:
     given = (prompt, model, n, quality, response_format, size, style, user,
              timeout, api_key, api_base, api_version, custom_llm_provider)
-    return call_image(NativeImageSession("{}").generate, GENERATION_NAMES, given, kwargs)
+    return call_image(
+        NativeImageSession("{}").generate,
+        {**kwargs, **dict(zip(GENERATION_NAMES, given, strict=False))},
+    )
 
 
 async def aimage_generation(*args: CallValue, **kwargs: CallValue) -> ImageResponse:
@@ -83,8 +82,9 @@ def image_variation(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/lit
     user: CallValue = None,
     **kwargs: CallValue,
 ) -> ImageResponse:
-    given = (image, model, n, response_format, size, user)
-    return call_image(NativeImageSession("{}").variation, VARIATION_NAMES, given, kwargs)
+    named = dict(kwargs, image=image, model=model, n=n,
+                 response_format=response_format, size=size, user=user)
+    return call_image(NativeImageSession("{}").variation, named)
 
 
 async def aimage_variation(*args: CallValue, **kwargs: CallValue) -> ImageResponse:
@@ -113,9 +113,11 @@ def image_edit(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/
     custom_llm_provider: CallValue = None,
     **kwargs: CallValue,
 ) -> ImageResponse:
-    given = (image, prompt, model, mask, n, quality, response_format, size, user,
-             extra_headers, extra_query, extra_body, timeout, custom_llm_provider)
-    return call_image(NativeImageSession("{}").edit, EDIT_NAMES, given, kwargs)
+    named = dict(kwargs, image=image, prompt=prompt, model=model, mask=mask, n=n,
+                 quality=quality, response_format=response_format, size=size, user=user,
+                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body,
+                 timeout=timeout, custom_llm_provider=custom_llm_provider)
+    return call_image(NativeImageSession("{}").edit, named)
 
 
 async def aimage_edit(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L964
@@ -135,11 +137,12 @@ async def aimage_edit(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/l
     custom_llm_provider: CallValue = None,
     **kwargs: CallValue,
 ) -> ImageResponse:
-    given = (image, prompt, model, mask, n, quality, response_format, size, user,
-             extra_headers, extra_query, extra_body, timeout, custom_llm_provider)
-    named = dict(zip(EDIT_NAMES, given, strict=False))
+    named = dict(kwargs, image=image, prompt=prompt, model=model, mask=mask, n=n,
+                 quality=quality, response_format=response_format, size=size, user=user,
+                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body,
+                 timeout=timeout, custom_llm_provider=custom_llm_provider)
     return image_response(
-        await acall_image(NativeImageSession("{}").aedit, image_payload({**kwargs, **named}))
+        await acall_image(NativeImageSession("{}").aedit, image_payload(named))
     )
 
 
@@ -153,11 +156,8 @@ def image_payload(values: Mapping[str, CallValue]) -> CallPayload:
     return to_call_payload(payload)
 
 
-def call_image(
-    method: SyncNativeCall, names: tuple[str, ...], given: tuple[CallValue, ...],
-    kwargs: Mapping[str, CallValue],
-) -> ImageResponse:
-    payload = image_payload({**kwargs, **dict(zip(names, given, strict=False))})
+def call_image(method: SyncNativeCall, arguments: Mapping[str, CallValue]) -> ImageResponse:
+    payload = image_payload(arguments)
     try:
         return image_response(method(payload.text, payload.blobs))
     except NativeImageError as failure:

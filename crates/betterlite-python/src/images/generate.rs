@@ -1,5 +1,5 @@
 use super::convert::fields::{field, target, text};
-use super::convert::options::generation_options;
+use super::convert::options::{Operation, optional_params};
 use super::convert::{ImageAnswer, ImageCallWire, OPENAI_PROVIDER};
 use super::error::{CallFailure, context, convert_failure, provider_failure};
 use super::session::{ImageSession, SilentImageLogger, call_setup, now_seconds};
@@ -66,7 +66,8 @@ pub(crate) fn request(
             Some(provider.to_owned()),
         ));
     };
-    let options = generation_options(
+    let options = optional_params(
+        Operation::Generate,
         &call.arguments,
         model,
         call.settings.drop_params.unwrap_or(false),
