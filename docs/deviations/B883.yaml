@@ -1,0 +1,40 @@
+task: B883
+deviations:
+  - what: >-
+      A non-string entry in a key's allowed_routes is ignored: it never matches a route and it never
+      appears in the denial message. LiteLLM walks the same list and raises TypeError in
+      _route_matches_allowed_route, so the request ends as an internal server error.
+    why: >-
+      LiteLLM_VerificationToken.allowed_routes is an untyped list, and is_virtual_key_allowed_to_call_route
+      compares every entry as a path. betterlite's row keeps the same arbitrary JSON, and this module
+      treats an entry that is not a path as a non-match. non_string_route_entries_are_ignored proves the
+      skip and the string-only denial message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L586-L610
+  - what: >-
+      A non-string entry inside an allowed_passthrough_routes list is skipped, where LiteLLM raises
+      TypeError while comparing it as a path and the request ends as an internal server error.
+    why: >-
+      metadata is arbitrary JSON, so the list can carry any value. Skipping keeps the grant check total;
+      LiteLLM's failure has no caller-visible answer to copy. string_and_object_grants_iterate_like_python
+      proves a number beside a matching path still grants the route.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L757-L760
+  - what: >-
+      A truthy allowed_passthrough_routes value that is not a list, string or object, such as true or a
+      number, denies the protected pass-through route with the ordinary 403. LiteLLM iterates the value,
+      raises TypeError, and the request ends as an internal server error.
+    why: >-
+      The grant is metadata JSON, not a typed field, and there is no LiteLLM answer to reproduce for a
+      value it cannot iterate. Denying is the fail-closed answer for the same protected route.
+      falsy_grants_fall_back_to_the_team_list and non_iterable_truthy_grants_deny prove the fallback and
+      the denial.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L753-L760
+kept_bugs:
+  - what: >-
+      A bare "*" in a key's allowed_routes, or any trailing-star entry with nothing before the star,
+      grants every route. The wildcard match strips the star and compares an empty prefix, which every
+      path starts with, and the wildcard loop runs before the remembered protected-pass-through denial.
+    why: >-
+      LiteLLM deployments use allowed_routes=[\"*\"] to mean unrestricted, so a working setup can rely on
+      it, and the task requires preserving the wildcard-before-denial ordering. betterlite copies both.
+      The JWT team path deliberately rejects such blanket entries, which shows the two paths disagree.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L558-L584
