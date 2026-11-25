@@ -29,6 +29,17 @@ fn context() -> PassThroughStreamContext {
     }
 }
 
+#[test]
+fn response_cost_conversion_rejects_values_outside_decimal_range() {
+    let number = "1e999".parse::<serde_json::Number>().unwrap();
+    let mut kwargs =
+        crate::passthrough_logging_state::dispatch::PassThroughLoggingKwargs::default();
+    kwargs
+        .entries
+        .insert("response_cost".to_owned(), Json::Number(number));
+    assert!(super::super::response_cost(&kwargs).is_err());
+}
+
 struct Case {
     endpoint_type: EndpointType,
     request_body: Json,

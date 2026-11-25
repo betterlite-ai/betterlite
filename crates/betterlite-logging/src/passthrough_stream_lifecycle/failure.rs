@@ -93,5 +93,9 @@ mod tests {
         );
         let source = failure.source().and_then(|error| error.source()).unwrap();
         assert_eq!(source.to_string(), "socket reset");
+        assert_eq!(failure.to_string(), "read failed");
+        assert_eq!(failure.class(), "UpstreamReadError");
+        assert_eq!(failure.message(), "read failed");
+        assert_eq!(failure.traceback(), "Traceback: upstream");
     }
 }
