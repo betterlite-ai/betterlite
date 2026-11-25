@@ -59,3 +59,27 @@ pub enum BatchLimitCounterCall {
         reservation_windows: BTreeSet<BatchReservationWindow>,
     },
 }
+
+impl BatchLimitCounterCall {
+    // one call's own collections, counted before the service clones or expands them
+    pub(super) fn nested_items(&self) -> usize {
+        match self {
+            Self::ReserveBatchEnqueuedTokens { scopes, .. } => scopes.len(),
+            Self::RaiseEnqueuedLimitError { .. } | Self::ReadTpdWindowStart { .. } => 0,
+            Self::RaiseRateLimitError { descriptors, .. } => descriptors.len(),
+            Self::CheckAndIncrementBatchCounters {
+                descriptors,
+                batch_usage,
+                ..
+            } => descriptors
+                .as_ref()
+                .map_or(0, Vec::len)
+                .max(batch_usage.per_model_usage.len()),
+            Self::BuildTpdRefundOps {
+                descriptors,
+                reservation_windows,
+                ..
+            } => descriptors.len().max(reservation_windows.len()),
+        }
+    }
+}

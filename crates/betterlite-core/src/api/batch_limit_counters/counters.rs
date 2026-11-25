@@ -3,11 +3,10 @@ use betterlite_error::rate_limit::ProxyRateLimitError;
 
 use crate::api::api_boundaries::{ApiBoundariesInput, ItemsBoundary};
 use crate::api::batch_enqueued_reserve::{BatchEnqueuedReserveResult, BatchEnqueuedTokenScope};
-use crate::api::batch_limit_descriptors::descriptors::{
-    BatchDescriptorIncrements, BatchLimitDescriptor, TPD_SUFFIX,
-};
+use crate::api::batch_limit_descriptors::descriptors::{BatchLimitDescriptor, TPD_SUFFIX};
 use crate::api::request_destination::RequestData;
 
+use super::charges::charged_counters;
 use super::input::{BatchLimitCounterCall, BatchLimitCountersInput};
 use super::ports::{BatchCounterLimiter, BatchEnqueuedSource, BatchWindowCache};
 use super::records::{
@@ -84,9 +83,9 @@ where
         batch_usage: &BatchFileUsage,
         descriptors: Option<&[BatchLimitDescriptor]>,
     ) -> Result<BatchLimitCounterAnswer, CountingFailure<Limiter, Store, Cache>> {
-        let (charged, increments) = self
-            .charged_counters(auth, data, batch_usage, descriptors)
-            .map_err(BatchLimitCountersError::Limits)?;
+        let (charged, increments) =
+            charged_counters(&self.limiter, auth, data, batch_usage, descriptors)
+                .map_err(BatchLimitCountersError::Limits)?;
         self.limits.check(ApiBoundariesInput::Items(ItemsBoundary {
             known_count: charged.len(),
         }))?;
@@ -115,32 +114,6 @@ where
         )?;
         self.stash.set_batch_tpd_refund_ops(operations);
         Ok(BatchLimitCounterAnswer::CheckAndIncrementBatchCounters { rejection: None })
-    }
-
-    fn charged_counters(
-        &self,
-        auth: &UserAPIKeyAuth,
-        data: &RequestData,
-        batch_usage: &BatchFileUsage,
-        descriptors: Option<&[BatchLimitDescriptor]>,
-    ) -> Result<(Vec<BatchLimitDescriptor>, Vec<BatchDescriptorIncrements>), Limiter::Error> {
-        let mut charged = descriptors.map_or_else(
-            || self.limiter.base_descriptors(auth, data),
-            |given| Ok(given.to_vec()),
-        )?;
-        let mut increments: Vec<BatchDescriptorIncrements> = charged
-            .iter()
-            .map(|_descriptor| BatchDescriptorIncrements {
-                requests: batch_usage.request_count,
-                tokens: batch_usage.total_tokens,
-            })
-            .collect();
-        let (project, project_increments) = self
-            .limiter
-            .project_io_descriptors(auth, &batch_usage.project_usage());
-        charged.extend(project);
-        increments.extend(project_increments);
-        Ok((charged, increments))
     }
 
     async fn first_rejection(
@@ -211,7 +184,7 @@ where
         let mut answers = Vec::with_capacity(input.calls.len());
         for call in &input.calls {
             self.limits.check(ApiBoundariesInput::Items(ItemsBoundary {
-                known_count: nested_items(call),
+                known_count: call.nested_items(),
             }))?;
             let answer = self.answer(&auth, call).await?;
             let ends_run = answer.is_rejection();
@@ -298,27 +271,5 @@ where
                 Ok(BatchLimitCounterAnswer::BuildTpdRefundOps { operations })
             }
         }
-    }
-}
-
-fn nested_items(call: &BatchLimitCounterCall) -> usize {
-    match call {
-        BatchLimitCounterCall::ReserveBatchEnqueuedTokens { scopes, .. } => scopes.len(),
-        BatchLimitCounterCall::RaiseEnqueuedLimitError { .. }
-        | BatchLimitCounterCall::ReadTpdWindowStart { .. } => 0,
-        BatchLimitCounterCall::RaiseRateLimitError { descriptors, .. } => descriptors.len(),
-        BatchLimitCounterCall::CheckAndIncrementBatchCounters {
-            descriptors,
-            batch_usage,
-            ..
-        } => descriptors
-            .as_ref()
-            .map_or(0, Vec::len)
-            .max(batch_usage.per_model_usage.len()),
-        BatchLimitCounterCall::BuildTpdRefundOps {
-            descriptors,
-            reservation_windows,
-            ..
-        } => descriptors.len().max(reservation_windows.len()),
     }
 }
