@@ -34,14 +34,14 @@ fn schema_reports_the_model_description_and_first_non_null_type() {
         schema.description,
         "Configuration for CyberArk Conjur secret manager integration."
     );
-    let api_base = schema.properties.get("cyberark_api_base").unwrap();
+    let api_base = &schema.properties["cyberark_api_base"];
     assert_eq!(
         api_base.description,
         "The address of the CyberArk Conjur server (e.g., https://conjur.example.com)"
     );
     assert_eq!(api_base.kind, "string");
     let vault = field_schema(OverrideKind::HashicorpVault);
-    assert_eq!(vault.properties.get("vault_token").unwrap().kind, "string");
+    assert_eq!(vault.properties["vault_token"].kind, "string");
 }
 
 #[test]

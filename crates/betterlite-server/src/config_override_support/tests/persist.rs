@@ -237,14 +237,14 @@ async fn the_database_store_creates_and_updates_the_cyberark_row() {
         stored(&pool).await,
         value(r#"{"cyberark_account": "second"}"#)
     );
-    let client = pool.get().await.unwrap();
-    let row = client
+    let reader = pool.get().await.unwrap();
+    let row = reader
         .query_one(SELECT_UPDATED_AT_SQL, &[&"cyberark"])
         .await
         .unwrap();
     let updated_at: String = row.get(0);
     assert_ne!(updated_at, "2000-01-01 00:00:00");
-    drop(client);
+    drop(reader);
     close(fixture, pool).await;
 }
 
