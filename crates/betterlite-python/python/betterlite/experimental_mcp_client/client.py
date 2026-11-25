@@ -195,7 +195,7 @@ class MCPClient:
     @staticmethod
     def error_tool_result(exc: Exception) -> CallToolResult:
         message = f"{type(exc).__name__}: {exc}"
-        return CallToolResult(content=[TextContent(text=message)], is_error=True)
+        return CallToolResult(content=[TextContent(text=message)], isError=True)
 
     async def call_tool(
         self,
@@ -243,13 +243,11 @@ class MCPClient:
         return READ_RESULT.validate_json(text)
 
     def update_auth_value(self, mcp_auth_value: str | dict[str, str]) -> None:
-        pending = self._client.update_auth_value(json.dumps(mcp_auth_value))
+        pending: object = self._client.update_auth_value(json.dumps(mcp_auth_value))
         self._mcp_auth_value = mcp_auth_value
         match pending:
             case Pending():
                 pending.close()
-            case object():
-                pass
 
     async def run_with_session(
         self,
