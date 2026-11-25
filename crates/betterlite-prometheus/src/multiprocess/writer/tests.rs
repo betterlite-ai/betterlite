@@ -11,7 +11,7 @@ use tempfile::TempDir;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::MakeWriter;
 
-use crate::collector_factory::collector::{MetricUpdate, MetricValue};
+use crate::collector_factory::collector::{Collector as _, MetricUpdate, MetricValue};
 use crate::collector_registry::metric::{
     Bucket, CollectorKind, GaugeMode, PrometheusMetric, prepare_buckets,
 };
@@ -143,6 +143,17 @@ fn a_file_grows_to_128_kib_once_its_entries_pass_64_kib() {
 }
 
 #[test]
+fn an_entry_that_fills_the_page_exactly_does_not_grow_it() {
+    let directory = TempDir::new().unwrap();
+    let mut file =
+        super::file::FileState::open(directory.path(), super::FileKind::Counter, 41).unwrap();
+    file.ensure(&"k".repeat(65_500)).unwrap();
+    let bytes = fs::read(directory.path().join("counter_41.db")).unwrap();
+    assert_eq!(bytes.len(), 65_536);
+    assert_eq!(decode_used(&bytes).unwrap(), 65_536);
+}
+
+#[test]
 fn a_histogram_writes_its_sum_and_one_count_per_bucket() {
     let directory = TempDir::new().unwrap();
     let writer = writer(&directory, 13);
@@ -239,6 +250,27 @@ fn a_removal_writes_nothing() {
     );
     writer.update(&metric.description, &[], MetricUpdate::Remove);
     assert!(!directory.path().join("counter_16.db").exists());
+}
+
+#[test]
+fn a_removal_of_a_bound_series_logs_prometheus_clients_warning() {
+    let directory = TempDir::new().unwrap();
+    let metric = PrometheusMetric::new(
+        CollectorKind::Gauge,
+        "litellm_in_flight",
+        "In flight",
+        &["model"],
+        Vec::new(),
+    );
+    let writer = Arc::new(writer(&directory, 23));
+    metric.bind_writer(&writer).unwrap();
+    let (logs, _guard) = install_logs();
+    metric.labels(&[("model", "a")]).remove();
+    let logged = logs.contents();
+    assert!(logged.contains("WARN"));
+    assert!(
+        logged.contains("Removal of labels has not been implemented in  multi-process mode yet.")
+    );
 }
 
 #[test]
