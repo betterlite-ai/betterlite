@@ -33,6 +33,31 @@ pub(super) trait FileContentStreaming<Dispatch: FileContentDispatch> {
         selection: &Selection,
         context: ContentContext<'call, Dispatch::Client, Dispatch::Logging>,
     ) -> Reply<ContentAnswer, Dispatch>;
+
+    fn target<'call>(
+        &self,
+        call: &ContentCall<'call>,
+        selection: &Selection,
+        client: Option<CallerClient<'call, Dispatch::Client>>,
+        credentials: ContentCredentials<'call>,
+    ) -> Reply<ContentTarget<'call, Dispatch::Config, Dispatch::Client>, Dispatch>;
+
+    fn vertex_config(&self, selection: &Selection) -> Reply<Dispatch::Config, Dispatch>;
+
+    async fn dispatch_streamed<'call>(
+        &self,
+        call: &ContentCall<'call>,
+        selection: &Selection,
+        target: ContentTarget<'call, Dispatch::Config, Dispatch::Client>,
+    ) -> Reply<FileContentStreamingResult, Dispatch>;
+
+    fn wrap(
+        &self,
+        call: &ContentCall<'_>,
+        selection: &Selection,
+        logging: Arc<Dispatch::Logging>,
+        result: FileContentStreamingResult,
+    ) -> ContentAnswer;
 }
 
 impl<Dispatch> FileContentStreaming<Dispatch> for FileContentStream<'_, Dispatch>

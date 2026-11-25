@@ -1,3 +1,4 @@
+use super::super::streaming::FileContentStreaming as _;
 use super::*;
 
 fn written_identity(model: &str, provider: &str, api_base: Option<&str>) -> RecordedIdentity {
