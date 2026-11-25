@@ -27,7 +27,7 @@ use betterlite_models::resolution::{
 };
 use serde_json::value::RawValue;
 
-use super::FixtureError;
+use super::{FixtureError, HookFailure};
 
 pub(crate) struct Outbound {
     client: ProxiedClient,
@@ -82,12 +82,6 @@ impl ModelResolver for DispatchResolver {
             api_key: None,
         })
     }
-}
-
-#[derive(Debug, thiserror::Error)]
-#[error("{message}")]
-pub(crate) struct HookFailure {
-    pub(super) message: String,
 }
 
 pub(crate) struct Nothing;
