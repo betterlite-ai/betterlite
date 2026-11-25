@@ -9,8 +9,7 @@ use betterlite_oracle_runner::routing_mock_scripts::ProviderCall;
 use serde_json::{Value, json};
 
 use super::super::Input;
-use super::super::support::ScriptRow;
-use super::rows::ChunkKind;
+use super::super::input::{ScriptRow, rows::ChunkKind};
 
 pub(crate) fn start_mock(input: &Input) -> Result<MockProvider, HelperRunError> {
     let streaming = input.setup.kwargs.get("stream") != Some(&Json::Bool(false));

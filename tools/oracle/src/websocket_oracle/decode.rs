@@ -3,6 +3,7 @@ use std::io::{self, Read as _};
 use std::path::PathBuf;
 use std::str::{self, Utf8Error};
 
+use crate::websocket_driver::service::managed::InputError;
 use betterlite_server::assets::paths::try_safe_join;
 
 use super::{
@@ -14,6 +15,8 @@ use super::{
 pub enum DecodeError {
     #[error("invalid WebSocket UTF-8: {0}")]
     Utf8(#[from] Utf8Error),
+    #[error("invalid managed transcript: {0}")]
+    Managed(#[from] InputError),
     #[error("invalid WebSocket YAML: {0}")]
     Parse(#[source] Box<serde_saphyr::Error>),
     #[error("invalid WebSocket transcript: {0}")]
@@ -76,6 +79,26 @@ pub fn decode_ws_case(
     let mut traffic = 0_usize;
     for frames in [&mut case.frames, &mut case.input.frames] {
         resolve_frames(frames, frame_cap, capture_cap, fixtures, &mut traffic)?;
+    }
+    ensure(
+        case.input.managed.len() <= limits.max_frames.min(MAX_FRAMES),
+        "too many managed sessions",
+    )?;
+    let mut managed_count = 0_usize;
+    for managed in &mut case.input.managed {
+        managed.deadline_millis = managed
+            .deadline_millis
+            .min(case.execution_seconds.saturating_mul(1000));
+        let (count, size) = managed.check_bounds(
+            limits
+                .max_frames
+                .min(MAX_FRAMES)
+                .saturating_sub(managed_count),
+            frame_cap,
+            capture_cap.saturating_sub(traffic),
+        )?;
+        traffic = traffic.saturating_add(size);
+        managed_count = managed_count.saturating_add(count);
     }
     Ok(case)
 }

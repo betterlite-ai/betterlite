@@ -1,99 +1,115 @@
-kind: helper
+kind: websocket
 name: history-fallback-and-failure
-call:
-  websocket_oracle:
-    service: managed_responses_turns
-    input:
-      setup:
-        model: openai/gpt-4o-mini
-        litellm_metadata: null
-        custom_llm_provider: null
-        api_key: null
-        api_base: null
-        timeout: null
-        first_message: null
-        kwargs: {}
-      frames:
-      - '{"type": "response.create", "input": "hello", "previous_response_id": "missing"}'
-      disconnect: connection closed
-      scripts:
-      - fail: null
-        chunks:
-        - kind: json
-          value:
-            type: response.created
-            response:
-              id: r-part
-          event_type: null
-          dump: null
-        raise_after: null
-        raise_message: ''
-      quota: null
-      sink:
-        fails_at: null
-        message: client send failed
-calls:
-- websocket_oracle:
-    service: managed_responses_turns
-    input:
-      setup:
-        model: openai/gpt-4o-mini
-        litellm_metadata: null
-        custom_llm_provider: null
-        api_key: null
-        api_base: null
-        timeout: null
-        first_message: null
-        kwargs: {}
-      frames:
-      - '{"type": "response.create", "input": "hello"}'
-      disconnect: connection closed
-      scripts:
-      - fail: upstream boom
-        chunks: []
-        raise_after: null
-        raise_message: ''
-      quota: null
-      sink:
-        fails_at: null
-        message: client send failed
-- websocket_oracle:
-    service: managed_responses_turns
-    input:
-      setup:
-        model: openai/gpt-4o-mini
-        litellm_metadata: null
-        custom_llm_provider: null
-        api_key: null
-        api_base: null
-        timeout: null
-        first_message: null
-        kwargs: {}
-      frames:
-      - '{"type": "response.create", "input": "hello"}'
-      disconnect: connection closed
-      scripts:
-      - fail: null
-        chunks:
-        - kind: json
-          event_type: null
-          dump: null
-          value:
-            type: response.completed
-            response:
-              id: not-stored
-              output: []
-              usage:
-                input_tokens: 0
-                output_tokens: 0
-                total_tokens: 0
-                cost: 0.0
-        raise_after: 1
-        raise_message: stream boom
-      quota: null
-      sink:
-        fails_at: null
-        message: client send failed
+driver: service
+service: managed_responses_turns
+input:
+  managed:
+  - setup:
+      model: openai/gpt-4o-mini
+      litellm_metadata: null
+      custom_llm_provider: null
+      api_key: null
+      api_base: null
+      timeout: null
+      first_message: null
+      kwargs: {}
+    frames:
+    - '{"type": "response.create", "input": "hello", "previous_response_id": "missing"}'
+    disconnect: connection closed
+    scripts:
+    - fail: null
+      chunks:
+      - kind: json
+        value:
+          type: response.created
+          response:
+            id: r-part
+        event_type: null
+        dump: null
+      raise_after: null
+      raise_message: ''
+    quota: null
+    sink:
+      fails_at: null
+      message: client send failed
+    normalize_warmup: false
+    deadline_millis: 120000
+  - setup:
+      model: openai/gpt-4o-mini
+      litellm_metadata: null
+      custom_llm_provider: null
+      api_key: null
+      api_base: null
+      timeout: null
+      first_message: null
+      kwargs: {}
+    frames:
+    - '{"type": "response.create", "input": "hello"}'
+    disconnect: connection closed
+    scripts:
+    - fail: upstream boom
+      chunks: []
+      raise_after: null
+      raise_message: ''
+    quota: null
+    sink:
+      fails_at: null
+      message: client send failed
+    normalize_warmup: false
+    deadline_millis: 120000
+  - setup:
+      model: openai/gpt-4o-mini
+      litellm_metadata: null
+      custom_llm_provider: null
+      api_key: null
+      api_base: null
+      timeout: null
+      first_message: null
+      kwargs: {}
+    frames:
+    - '{"type": "response.create", "input": "hello"}'
+    disconnect: connection closed
+    scripts:
+    - fail: null
+      chunks:
+      - kind: json
+        event_type: null
+        dump: null
+        value:
+          type: response.completed
+          response:
+            id: not-stored
+            output: []
+            usage:
+              input_tokens: 0
+              output_tokens: 0
+              total_tokens: 0
+              cost: 0.0
+      raise_after: 1
+      raise_message: stream boom
+    quota: null
+    sink:
+      fails_at: null
+      message: client send failed
+    normalize_warmup: false
+    deadline_millis: 120000
+path: /v1/responses
+headers: {}
+requested_subprotocols: []
+expected_http_status: 101
+negotiated_subprotocol: null
+frames:
+- direction: provider_to_client
+  action: expect
+  text: '{"response":{"id":"resp_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpOb25lO3Jlc3BvbnNlX2lkOnItcGFydA=="},"type":"response.created"}'
+- direction: provider_to_client
+  action: expect
+  text: '{"error":{"message":"upstream boom","type":"server_error"},"type":"error"}'
+- direction: provider_to_client
+  action: expect
+  text: '{"response":{"id":"resp_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpOb25lO3Jlc3BvbnNlX2lkOm5vdC1zdG9yZWQ=","output":[],"usage":{"cost":0.0,"input_tokens":0,"output_tokens":0,"total_tokens":0}},"type":"response.completed"}'
+- direction: provider_to_client
+  action: expect
+  text: '{"error":{"message":"stream boom","type":"server_error"},"type":"error"}'
+close: null
 env: {}
-compare:
-  ignore: []

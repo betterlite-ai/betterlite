@@ -7,6 +7,11 @@ use serde_with::{As, PickFirst, Same};
 
 use super::{DriverError, TranscriptObservation};
 use crate::websocket_oracle::Frame;
+#[path = "../helpers/core_ops/responses_ws_managed/fixtures/input.rs"]
+mod input_schema;
+pub mod managed {
+    super::input_schema::define_input!(pub);
+}
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
@@ -43,6 +48,8 @@ impl ServiceInput {
 pub struct Arguments<F = Frame> {
     #[serde(default = "default_model")]
     pub model: String,
+    #[serde(default)]
+    pub managed: Vec<managed::Input>,
     #[serde(default = "default_api_base")]
     pub api_base: String,
     #[serde(default)]
@@ -58,6 +65,7 @@ pub struct Arguments<F = Frame> {
 #[derive(Serialize)]
 pub(crate) struct ArgumentsWire<'wire> {
     model: &'wire str,
+    managed: &'wire [managed::Input],
     api_base: &'wire str,
     api_key: Option<&'wire str>,
     #[serde(with = "As::<Option<PickFirst<(Vec<(Same, Same)>, Same)>>>")]
@@ -70,6 +78,7 @@ impl Arguments {
     pub(crate) fn to_wire(&self) -> ArgumentsWire<'_> {
         ArgumentsWire {
             model: &self.model,
+            managed: &self.managed,
             api_base: &self.api_base,
             api_key: self.api_key.as_ref().map(ExposeSecret::expose_secret),
             query_params: self.query_params.clone(),
@@ -89,6 +98,7 @@ impl<F> Default for Arguments<F> {
     fn default() -> Self {
         Self {
             model: default_model(),
+            managed: Vec::new(),
             api_base: default_api_base(),
             api_key: None,
             query_params: None,

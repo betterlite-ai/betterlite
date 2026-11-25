@@ -1,4 +1,3 @@
-use super::ScriptedFailure;
 use betterlite_core::api::response_id_traversal::response_id::ResponseRewriteError;
 use betterlite_core::api::responses_create_call::error::AsyncCreateError;
 use betterlite_core::api::responses_stream_driver::errors::TransportFailure;
@@ -53,4 +52,11 @@ pub(crate) enum AdapterError {
     Rewrite(#[from] ResponseRewriteError),
     #[error("the provider event fields cannot be inspected")]
     Shape(#[from] serde_value::SerializerError),
+}
+
+// A scripted provider, stream or socket failure carries only the text the case scripts for it.
+#[derive(Debug, Error)]
+#[error("{message}")]
+pub(crate) struct ScriptedFailure {
+    pub(crate) message: String,
 }

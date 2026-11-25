@@ -17,8 +17,9 @@ use betterlite_error::rate_limit::RateLimitCategory;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
-use super::fixtures::{AdapterError, Outbound, QuotaKind, dispatch, provider_chunk};
-use super::support::{QuotaRow, RecordedCall, RecordedQuota, Shared, lock};
+use super::fixtures::{AdapterError, Outbound, dispatch, provider_chunk};
+use super::input::{QuotaRow, rows::QuotaKind};
+use super::support::{RecordedCall, RecordedQuota, Shared, lock};
 
 pub(super) struct HttpStream {
     shared: Shared,

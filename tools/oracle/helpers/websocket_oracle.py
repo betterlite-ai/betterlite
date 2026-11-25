@@ -6,14 +6,14 @@ from typing import Protocol, TypeAlias, cast
 import litellm
 from pydantic import TypeAdapter
 
-from responses_ws_managed import Input
-from responses_ws_managed import run as managed_run
+from responses_ws_managed.fixtures.transcript import Arguments
+from responses_ws_managed.fixtures.transcript import run as managed_run
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
 __path__ = [str(Path(__file__).with_suffix(""))]
 
-MANAGED = TypeAdapter(Input)
+MANAGED = TypeAdapter(Arguments)
 
 SERVICE_MODULES = {
     "realtime_probe": "websocket_oracle.realtime_probe",

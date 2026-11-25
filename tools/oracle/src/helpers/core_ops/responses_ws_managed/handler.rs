@@ -16,7 +16,8 @@ use tracing_subscriber::layer::{Context as LayerContext, Layer};
 
 use super::Setup;
 use super::fakes::{ScriptedQuota, ScriptedResolver};
-use super::support::{QuotaRow, Shared, Socket, lock};
+use super::input::QuotaRow;
+use super::support::{Shared, Socket, lock};
 
 const CLOCK_SECONDS: i64 = 1_765_000_000;
 const WARMUP_ID_HEX: &str = "0123456789abcdef0123456789abcdef";

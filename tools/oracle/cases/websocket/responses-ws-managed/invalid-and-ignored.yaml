@@ -1,30 +1,40 @@
-kind: helper
+kind: websocket
 name: invalid-and-ignored
-call:
-  websocket_oracle:
-    service: managed_responses_turns
-    input:
-      setup:
-        model: openai/gpt-4o-mini
-        litellm_metadata: null
-        custom_llm_provider: null
-        api_key: null
-        api_base: null
-        timeout: null
-        first_message: null
-        kwargs: {}
-      frames:
-      - '{"type": "ping"}'
-      - not-json
-      - '{"type": 7}'
-      disconnect: connection closed
-      scripts: []
-      quota:
-        kind: rate_limit
-        message: quota exceeded
-      sink:
-        fails_at: null
-        message: client send failed
+driver: service
+service: managed_responses_turns
+input:
+  managed:
+  - setup:
+      model: openai/gpt-4o-mini
+      litellm_metadata: null
+      custom_llm_provider: null
+      api_key: null
+      api_base: null
+      timeout: null
+      first_message: null
+      kwargs: {}
+    frames:
+    - '{"type": "ping"}'
+    - not-json
+    - '{"type": 7}'
+    disconnect: connection closed
+    scripts: []
+    quota:
+      kind: rate_limit
+      message: quota exceeded
+    sink:
+      fails_at: null
+      message: client send failed
+    normalize_warmup: false
+    deadline_millis: 120000
+path: /v1/responses
+headers: {}
+requested_subprotocols: []
+expected_http_status: 101
+negotiated_subprotocol: null
+frames:
+- direction: provider_to_client
+  action: expect
+  text: '{"error":{"message":"Invalid JSON in response.create event","type":"invalid_request_error"},"type":"error"}'
+close: null
 env: {}
-compare:
-  ignore: []

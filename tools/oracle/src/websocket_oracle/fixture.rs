@@ -31,6 +31,7 @@ impl From<Arguments<FixtureFrame>> for Arguments {
     fn from(fixture: Arguments<FixtureFrame>) -> Self {
         Self {
             model: fixture.model,
+            managed: fixture.managed,
             api_base: fixture.api_base,
             api_key: fixture.api_key,
             query_params: fixture.query_params,

@@ -1,44 +1,54 @@
-kind: helper
+kind: websocket
 name: different-provider-model
-call:
-  websocket_oracle:
-    service: managed_responses_turns
-    input:
-      setup:
-        model: vertex_ai/gemini-2.0-flash
-        litellm_metadata:
-          model_group: router-model
-        custom_llm_provider: vertex_ai
-        api_key: key-vertex
-        api_base: null
-        timeout: null
-        first_message: null
-        kwargs: {}
-      frames:
-      - '{"type": "response.create", "model": "openai/gpt-4o-mini", "input": "hello"}'
-      disconnect: connection closed
-      scripts:
-      - fail: null
-        chunks:
-        - kind: json
-          value:
-            type: response.completed
-            response:
-              id: r-other
-              output: []
-              usage:
-                input_tokens: 0
-                output_tokens: 0
-                total_tokens: 0
-                cost: 0.0
-          event_type: null
-          dump: null
-        raise_after: null
-        raise_message: ''
-      quota: null
-      sink:
-        fails_at: null
-        message: client send failed
+driver: service
+service: managed_responses_turns
+input:
+  managed:
+  - setup:
+      model: vertex_ai/gemini-2.0-flash
+      litellm_metadata:
+        model_group: router-model
+      custom_llm_provider: vertex_ai
+      api_key: key-vertex
+      api_base: null
+      timeout: null
+      first_message: null
+      kwargs: {}
+    frames:
+    - '{"type": "response.create", "model": "openai/gpt-4o-mini", "input": "hello"}'
+    disconnect: connection closed
+    scripts:
+    - fail: null
+      chunks:
+      - kind: json
+        value:
+          type: response.completed
+          response:
+            id: r-other
+            output: []
+            usage:
+              input_tokens: 0
+              output_tokens: 0
+              total_tokens: 0
+              cost: 0.0
+        event_type: null
+        dump: null
+      raise_after: null
+      raise_message: ''
+    quota: null
+    sink:
+      fails_at: null
+      message: client send failed
+    normalize_warmup: false
+    deadline_millis: 120000
+path: /v1/responses
+headers: {}
+requested_subprotocols: []
+expected_http_status: 101
+negotiated_subprotocol: null
+frames:
+- direction: provider_to_client
+  action: expect
+  text: '{"response":{"id":"resp_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpOb25lO3Jlc3BvbnNlX2lkOnItb3RoZXI=","output":[],"usage":{"cost":0.0,"input_tokens":0,"output_tokens":0,"total_tokens":0}},"type":"response.completed"}'
+close: null
 env: {}
-compare:
-  ignore: []

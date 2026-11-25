@@ -1,56 +1,65 @@
-kind: helper
+kind: websocket
 name: warmup-model-fallback
-call:
-  websocket_oracle:
-    service: managed_responses_turns
-    input:
-      setup:
-        model: openai/gpt-4o-mini
-        litellm_metadata:
-          model_group: router-model
-        custom_llm_provider: null
-        api_key: null
-        api_base: null
-        timeout: null
-        first_message: null
-        kwargs: {}
-      frames:
-      - '{"type": "response.create", "response": {"generate": false}}'
-      disconnect: connection closed
-      scripts: []
-      quota: null
-      sink:
-        fails_at: null
-        message: client send failed
-calls:
-- websocket_oracle:
-    service: managed_responses_turns
-    input:
-      setup:
-        model: openai/gpt-4o-mini
-        litellm_metadata: null
-        custom_llm_provider: null
-        api_key: null
-        api_base: null
-        timeout: null
-        first_message: null
-        kwargs: {}
-      frames:
-      - '{"type": "response.create", "response": {"generate": false}}'
-      disconnect: connection closed
-      scripts: []
-      quota: null
-      sink:
-        fails_at: null
-        message: client send failed
+driver: service
+service: managed_responses_turns
+input:
+  managed:
+  - setup:
+      model: openai/gpt-4o-mini
+      litellm_metadata:
+        model_group: router-model
+      custom_llm_provider: null
+      api_key: null
+      api_base: null
+      timeout: null
+      first_message: null
+      kwargs: {}
+    frames:
+    - '{"type": "response.create", "response": {"generate": false}}'
+    disconnect: connection closed
+    scripts: []
+    quota: null
+    sink:
+      fails_at: null
+      message: client send failed
+    normalize_warmup: true
+    deadline_millis: 120000
+  - setup:
+      model: openai/gpt-4o-mini
+      litellm_metadata: null
+      custom_llm_provider: null
+      api_key: null
+      api_base: null
+      timeout: null
+      first_message: null
+      kwargs: {}
+    frames:
+    - '{"type": "response.create", "response": {"generate": false}}'
+    disconnect: connection closed
+    scripts: []
+    quota: null
+    sink:
+      fails_at: null
+      message: client send failed
+    normalize_warmup: true
+    deadline_millis: 120000
+path: /v1/responses
+headers: {}
+requested_subprotocols: []
+expected_http_status: 101
+negotiated_subprotocol: null
+frames:
+- direction: provider_to_client
+  action: expect
+  text: '{"response":{"created_at":0,"id":"resp_warmup_0123456789abcdef0123456789abcdef","model":"router-model","object":"response","output":[],"status":"in_progress","usage":{"input_tokens":0,"output_tokens":0,"total_tokens":0}},"type":"response.created"}'
+- direction: provider_to_client
+  action: expect
+  text: '{"response":{"created_at":0,"id":"resp_warmup_0123456789abcdef0123456789abcdef","model":"router-model","object":"response","output":[],"status":"completed","usage":{"input_tokens":0,"output_tokens":0,"total_tokens":0}},"type":"response.completed"}'
+- direction: provider_to_client
+  action: expect
+  text: '{"response":{"created_at":0,"id":"resp_warmup_0123456789abcdef0123456789abcdef","model":"openai/gpt-4o-mini","object":"response","output":[],"status":"in_progress","usage":{"input_tokens":0,"output_tokens":0,"total_tokens":0}},"type":"response.created"}'
+- direction: provider_to_client
+  action: expect
+  text: '{"response":{"created_at":0,"id":"resp_warmup_0123456789abcdef0123456789abcdef","model":"openai/gpt-4o-mini","object":"response","output":[],"status":"completed","usage":{"input_tokens":0,"output_tokens":0,"total_tokens":0}},"type":"response.completed"}'
+close: null
 env: {}
-compare:
-  ignore:
-  - pointer: /value/frames/0/response/id
-    why: the warmup response id is generated
-  - pointer: /value/frames/0/response/created_at
-    why: the warmup timestamp is generated
-  - pointer: /value/frames/1/response/id
-    why: the warmup response id is generated
-  - pointer: /value/frames/1/response/created_at
-    why: the warmup timestamp is generated

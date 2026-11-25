@@ -148,7 +148,7 @@ def run(input_value: Input) -> dict[str, JsonValue]:
     previous_aresponses = litellm.aresponses
     object.__setattr__(litellm, "aresponses", provider)
     try:
-        asyncio.run(handler.run())
+        asyncio.run(run_with_deadline(handler, input_value["deadline_millis"]))
     finally:
         object.__setattr__(litellm, "aresponses", previous_aresponses)
         server.shutdown()
@@ -166,3 +166,8 @@ def run(input_value: Input) -> dict[str, JsonValue]:
         "trace": recorder.trace,
         "diagnostics": capture.lines,
     }
+
+
+async def run_with_deadline(handler: Probe, milliseconds: int) -> None:
+    async with asyncio.timeout(milliseconds / 1000):
+        await handler.run()

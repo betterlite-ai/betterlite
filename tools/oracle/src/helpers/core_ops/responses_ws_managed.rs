@@ -10,13 +10,12 @@ mod support;
 use std::collections::BTreeMap;
 use std::mem::take;
 use std::sync::Arc;
+use std::time::Duration;
+use tokio::time::timeout;
 
 use betterlite_core::api::responses_ws_managed::run::run;
-use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_oracle_runner::routing_mock_scripts::ProviderCall;
-use indexmap::IndexMap;
-use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::runtime::Builder;
 use tracing::instrument::WithSubscriber as _;
@@ -25,29 +24,15 @@ use tracing_subscriber::registry;
 
 use self::fakes::ScriptedProvider;
 use self::handler::{Captured, build_handler};
-use self::support::{QuotaRow, ScriptRow, ScriptedSource, Shared, SinkRow, Socket, lock};
-
-#[derive(Deserialize)]
-struct Setup {
-    model: String,
-    litellm_metadata: Option<IndexMap<String, Json>>,
-    custom_llm_provider: Option<String>,
-    api_key: Option<String>,
-    api_base: Option<String>,
-    timeout: Option<f64>,
-    first_message: Option<String>,
-    kwargs: IndexMap<String, Json>,
+use self::support::{ScriptedSource, Shared, Socket, lock};
+#[path = "responses_ws_managed/fixtures/input.rs"]
+mod input_schema;
+pub(crate) mod input {
+    super::input_schema::define_input!(pub(crate));
 }
-
-#[derive(Deserialize)]
-pub(crate) struct Input {
-    setup: Setup,
-    frames: Vec<String>,
-    disconnect: String,
-    scripts: Vec<ScriptRow>,
-    quota: Option<QuotaRow>,
-    sink: SinkRow,
-}
+#[path = "responses_ws_managed/fixtures/input/tests.rs"]
+mod input_tests;
+use self::input::{Input, Setup};
 
 pub(crate) struct Op;
 
@@ -55,6 +40,9 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
+        input
+            .check_bounds(1024, 0x0010_0000, 0x0100_0000)
+            .map_err(|source| support::helper_error("InputError", source.to_string()))?;
         let runtime = Builder::new_current_thread()
             .enable_all()
             .build()
@@ -68,7 +56,15 @@ impl Helper for Op {
                 .map_err(|error| support::helper_error("FixtureError", error.to_string()))?,
             base_url: mock.base_url.clone(),
         };
-        let answer = runtime.block_on(run_transcript(input, &shared, &provider))?;
+        let answer = runtime
+            .block_on(async {
+                timeout(
+                    Duration::from_millis(input.deadline_millis),
+                    run_transcript(input, &shared, &provider),
+                )
+                .await
+            })
+            .map_err(|source| support::helper_error("TimeoutError", source.to_string()))??;
         let (calls, failure) = mock
             .finish_recording()
             .map_err(|error| support::helper_error("MockError", error.to_string()))?;

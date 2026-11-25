@@ -10,8 +10,6 @@ mod events;
 mod logging;
 #[path = "fixtures/ports.rs"]
 mod ports;
-#[path = "fixtures/rows.rs"]
-mod rows;
 #[path = "fixtures/tests.rs"]
 mod tests;
 pub(super) use events::provider_chunk;
@@ -21,8 +19,7 @@ pub(super) use config::Configs;
 pub(super) use dispatch::dispatch;
 pub(super) use logging::LoggingProbe;
 pub(super) use ports::{DispatchResolver, NoBridge, NoInterception, Nothing, Outbound, outbound};
-pub(super) use rows::{ChunkKind, QuotaKind, ScriptedFailure};
 
 #[path = "fixtures/errors.rs"]
 mod errors;
-pub(super) use errors::{AdapterError, DispatchFailure, FixtureError};
+pub(super) use errors::{AdapterError, DispatchFailure, FixtureError, ScriptedFailure};

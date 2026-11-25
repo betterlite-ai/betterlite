@@ -7,38 +7,10 @@ use betterlite_core::api::responses_ws_managed::run::{FrameReceiveError, FrameSo
 use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::error::HelperError;
 use indexmap::IndexMap;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::{Value, from_str};
 
-use super::fixtures::{ChunkKind, QuotaKind, ScriptedFailure};
-
-#[derive(Clone, Deserialize)]
-pub(super) struct ChunkRow {
-    pub(super) kind: ChunkKind,
-    pub(super) value: Option<Json>,
-    pub(super) event_type: Option<String>,
-    pub(super) dump: Option<String>,
-}
-
-#[derive(Clone, Deserialize)]
-pub(super) struct ScriptRow {
-    pub(super) fail: Option<String>,
-    pub(super) chunks: Vec<ChunkRow>,
-    pub(super) raise_after: Option<usize>,
-    pub(super) raise_message: String,
-}
-
-#[derive(Clone, Deserialize)]
-pub(super) struct QuotaRow {
-    pub(super) kind: QuotaKind,
-    pub(super) message: String,
-}
-
-#[derive(Deserialize)]
-pub(super) struct SinkRow {
-    pub(super) fails_at: Option<usize>,
-    pub(super) message: String,
-}
+use super::fixtures::ScriptedFailure;
 
 #[derive(Default)]
 pub(super) struct Recorder {

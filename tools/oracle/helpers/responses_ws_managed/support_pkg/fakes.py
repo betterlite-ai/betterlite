@@ -56,6 +56,8 @@ class SinkRow(TypedDict):
 
 
 class Input(TypedDict):
+    normalize_warmup: bool
+    deadline_millis: int
     setup: Setup
     frames: list[str]
     disconnect: str
