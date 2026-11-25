@@ -1,0 +1,45 @@
+task: B7881
+deviations:
+  - what: "The endpoint factory is an explicit list of three operations (retrieve, delete and content), each written out as its own sync and async function, where LiteLLM reads endpoints.json and generates all ten functions by reflection."
+    why: "The rules ask for explicit lists and no auto-discovery; the public names, parameters and behavior are the same, and list and upload keep main.py's versions in _files.py."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/endpoint_factory.py#L190-L240
+  - what: "betterlite.containers exports upload_container_file and aupload_container_file, so its __all__ has 18 names where LiteLLM's package has 16 and leaves both out of its own __init__.py."
+    why: "The package is documented to export every name of both container parts, and a working setup may import the upload functions from the package even though LiteLLM's __init__ forgets them."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/__init__.py#L1-L42
+  - what: "betterlite.containers.list_container_files and alist_container_files are main.py's functions, with container_id as the first parameter, where LiteLLM's package takes both from the generated factory, whose container_id arrives through kwargs."
+    why: "This task's factory builds the three generated endpoints only, so the package re-exports the list and upload functions of the main part, and a caller that names container_id works on both."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/__init__.py#L3-L13
+  - what: "containers/utils.py is plain functions carrying LiteLLM's names and parameters, not a ContainerRequestUtils class of staticmethods."
+    why: "The task rewrites the helpers as plain functions; every function takes the same parameters and answers the same value as the staticmethod of the same name."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/utils.py#L39-L158
+  - what: "The create and list request-parameter helpers validate the values they keep into the declared TypedDict fields, so a file_ids or extra_headers value of the wrong type raises a pydantic ValidationError that names the field, where LiteLLM copies any value into its dict."
+    why: "docs/compatibility.md makes a wrong-typed value an error that names the field; a working setup sends the declared types."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/utils.py#L41-L58
+  - what: "encode_container_id_in_response takes an object that has an id attribute, typed as a Protocol bound, where LiteLLM checks hasattr at runtime and skips a falsy response object."
+    why: "The Python types carry what the function needs; every response type it is called with has an id, and a response object without one is a type error rather than a silent miss."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/utils.py#L150-L156
+  - what: "All five file calls run through the B3368 generated catalog in Rust, so list and upload answer the catalog's provider errors and the catalog's missing-config text, where LiteLLM's list and upload call container_file_list_handler and the generic handler directly."
+    why: "One catalog path keeps the operation names, paths, multipart body and id decoding in one place; the observable answer for a supported provider is the same and is compared against LiteLLM over one local server."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L1082-L1120
+  - what: "A custom_llm_provider other than openai fails with a RuntimeError whose text is the catalog error, where LiteLLM raises ValueError 'Container provider config not found for provider: <name>' for an unknown provider and serves azure and azure_text with AzureContainerConfig."
+    why: "The catalog holds the openai container config only; B547 owns the AzureContainerConfig port, and B7880 records the same gap for the container CRUD calls."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L1333-L1338
+  - what: "A managed container id is decoded inside the Rust call for all five operations, where LiteLLM decodes it in Python before the handler call."
+    why: "The id wrapper belongs to the provider call and decoding it twice would fork the routing metadata format; the decoded id and provider are the same."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/utils.py#L12-L33
+  - what: "A caller that passes client or shared_session not None gets UnsupportedCallArgument, and azure_ad_token_provider is refused the same way, where LiteLLM lets that client or token provider make the request."
+    why: "A Python httpx client or callable cannot cross into the Rust session, and an azure container call is unsupported here."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/container_handler.py#L248-L268
+  - what: "An extra_query value must be a string or an integer, so a float, boolean, null, list or object fails the call with a RuntimeError that names the parameter, where LiteLLM hands any value to httpx."
+    why: "The Rust query type holds text and integers, which covers what the OpenAI API and a working setup send, and another type is an error that names the field."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/containers/transformation.py#L194-L207
+  - what: "This task has no helper oracle cases; its tests run both packages against one local HTTP server and compare the recorded requests, the answers and the errors."
+    why: "Every function answers through a native session, and the oracle helper runs a LiteLLM function in process, so a local server compares both packages on the same input instead."
+    link: ""
+kept_bugs:
+  - what: "The generated functions and main.py's list and upload accept extra_body and never forward it, so a caller's extra body values are silently dropped."
+    why: "A working setup cannot rely on values that LiteLLM itself never sends, and betterlite keeps the parameter to stay call-compatible."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/endpoint_factory.py#L55-L63
+  - what: "The managed-container-id pattern ends in $, so a container id whose decoded text ends in a newline still decodes, as Python's $ matches before one trailing newline."
+    why: "A working setup never produces such an id, and matching LiteLLM's regex keeps the decoded provider and model identical for every id LiteLLM can produce."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L760
