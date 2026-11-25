@@ -53,7 +53,7 @@ pub(crate) async fn edit(
             &session.redactor,
         ));
     }
-    let outbound = outbound(session, &call, &files, &model, setup)?;
+    let outbound = outbound(session, &call, &files, &model, &setup)?;
     let reply = round(session, outbound, &model, &provider).await?;
     Ok(ImageAnswer::new(reply, None))
 }
@@ -63,7 +63,7 @@ fn outbound(
     call: &ImageCallWire,
     files: &[(String, CallFile)],
     model: &str,
-    setup: CallSetup,
+    setup: &CallSetup,
 ) -> Result<OutboundRequest, CallFailure> {
     let provider = OPENAI_PROVIDER;
     let mut form = form(call, files, model, provider, &session.redactor)?;
@@ -213,14 +213,11 @@ struct StatusError {
 
 pub(crate) fn status_message(body: &[u8]) -> String {
     let parsed = serde_json::from_slice::<StatusBody>(body);
-    match parsed
+    parsed
         .ok()
         .and_then(|found| found.error)
         .and_then(|error| error.message)
-    {
-        Some(message) => message,
-        None => str::from_utf8(body).unwrap_or_default().to_owned(),
-    }
+        .unwrap_or_else(|| str::from_utf8(body).unwrap_or_default().to_owned())
 }
 
 mod tests;
