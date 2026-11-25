@@ -175,6 +175,7 @@ fn raised_exception(failure: &StageFailure) -> Option<ProxyException> {
         | StageFailure::ResourceGrants(exception)
         | StageFailure::TagBudgets(exception)
         | StageFailure::RequestBodySafety(exception)
+        | StageFailure::VirtualKeyRoutes(exception)
         | StageFailure::KeyBudgets(exception)
         | StageFailure::OrgLookup(exception)
         | StageFailure::EndUsers(exception) => Some((**exception).clone()),

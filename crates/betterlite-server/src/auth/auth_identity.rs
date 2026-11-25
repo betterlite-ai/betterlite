@@ -16,6 +16,7 @@ use crate::auth::auth_request_policy::{self, AuthRequestPolicyStageInput};
 use crate::auth::auth_resource_grants::{self, ResourceGrantStageInput};
 use crate::auth::auth_tag_budgets::TagBudgetStageInput;
 use crate::auth::request_body_safety::{self, RequestBodySafetyStageInput};
+use crate::auth::virtual_key_routes::{self, VirtualKeyRouteStageInput};
 use crate::error_body::AuthenticationFailure;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -23,6 +24,7 @@ pub enum AuthBackend {
     MasterKey,
     AuthRequestPolicy,
     RequestBodySafety,
+    AuthVirtualKeyRoutes,
     AuthRequestModels,
     AuthModelPatterns,
     AuthResourceGrants,
@@ -37,6 +39,7 @@ pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
     AuthBackend::MasterKey,
     AuthBackend::AuthRequestPolicy,
     AuthBackend::RequestBodySafety,
+    AuthBackend::AuthVirtualKeyRoutes,
     AuthBackend::AuthRequestModels,
     AuthBackend::AuthModelPatterns,
     AuthBackend::AuthResourceGrants,
@@ -51,6 +54,7 @@ pub enum StageInput {
     MasterKey(Option<SecretString>),
     AuthRequestPolicy(Box<AuthRequestPolicyStageInput>),
     RequestBodySafety(Box<RequestBodySafetyStageInput>),
+    AuthVirtualKeyRoutes(Box<VirtualKeyRouteStageInput>),
     AuthRequestModels(Box<RequestModelStageInput>),
     AuthModelPatterns(Box<ModelPatternStageInput>),
     AuthResourceGrants(Box<ResourceGrantStageInput>),
@@ -88,6 +92,7 @@ pub(crate) enum StageFailure {
     ResourceGrants(Box<ProxyException>),
     TagBudgets(Box<ProxyException>),
     RequestBodySafety(Box<ProxyException>),
+    VirtualKeyRoutes(Box<ProxyException>),
     KeyBudgets(Box<ProxyException>),
     OrgLookup(Box<ProxyException>),
     EndUsers(Box<ProxyException>),
@@ -109,6 +114,7 @@ pub(crate) fn dispatch(
             .map_err(|failure| StageFailure::Authentication(Box::new(failure))),
         AuthBackend::AuthRequestPolicy => auth_request_policy_stage(input),
         AuthBackend::RequestBodySafety => auth_request_body_safety_stage(input),
+        AuthBackend::AuthVirtualKeyRoutes => auth_virtual_key_routes_stage(input),
         AuthBackend::AuthRequestModels => auth_request_models_stage(input)
             .map_err(|failure| StageFailure::Authentication(Box::new(failure))),
         AuthBackend::AuthModelPatterns => auth_model_patterns_stage(input),
@@ -163,6 +169,13 @@ fn auth_resource_grants_stage(input: &StageInput) -> Result<AuthContext, StageFa
         return Err(StageFailure::from(AuthenticationFailure::Missing));
     };
     auth_resource_grants::run_stage(stage).map_err(StageFailure::ResourceGrants)
+}
+
+fn auth_virtual_key_routes_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
+    let StageInput::AuthVirtualKeyRoutes(stage) = input else {
+        return Err(StageFailure::from(AuthenticationFailure::Missing));
+    };
+    virtual_key_routes::run_stage(stage).map_err(StageFailure::VirtualKeyRoutes)
 }
 
 fn auth_model_patterns_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {

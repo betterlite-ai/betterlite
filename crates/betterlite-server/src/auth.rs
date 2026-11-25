@@ -57,6 +57,7 @@ use std::sync::Arc;
 
 use betterlite_auth::auth_request_models::MODEL_ROUTING_HEADER_NAME;
 use betterlite_auth::auth_request_models::catalog::{EmptyCatalog, RequestModelResolver};
+use betterlite_auth::pass_through_registry::PassThroughRegistry;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 
@@ -69,6 +70,10 @@ use crate::auth::auth_resource_grants::{
     ResourceGrantStageInput, database_for_request, rule_for_request as grant_rule_for_request,
 };
 use crate::auth::request_body_safety::RequestBodySafetyStageInput;
+use crate::auth::route_match::decoded_route_path;
+use crate::auth::virtual_key_routes::{
+    VirtualKeyRouteStageInput, rule_for_request as virtual_key_route_rule_for_request,
+};
 use crate::error_body::AuthenticationFailure;
 use crate::state::ServerState;
 use axum::body::{Body, Bytes};
@@ -117,6 +122,7 @@ fn stage_input(
         AuthBackend::RequestBodySafety => Ok(StageInput::RequestBodySafety(Box::new(
             safety_stage_input(request, authenticated, body)?,
         ))),
+        AuthBackend::AuthVirtualKeyRoutes => virtual_key_route_stage_input(request, authenticated),
         AuthBackend::AuthRequestModels | AuthBackend::AuthModelPatterns => {
             model_pattern_input(backend, request, authenticated, resolver)
         }
@@ -230,6 +236,7 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
         other @ (StageInput::MasterKey(_)
         | StageInput::AuthRequestPolicy(_)
         | StageInput::RequestBodySafety(_)
+        | StageInput::AuthVirtualKeyRoutes(_)
         | StageInput::AuthRequestModels(_)
         | StageInput::AuthModelPatterns(_)
         | StageInput::AuthResourceGrants(_)) => Ok(other),
@@ -249,6 +256,39 @@ fn resource_grant_stage_input(
         database: database_for_request(request),
     };
     Ok(StageInput::AuthResourceGrants(Box::new(stage)))
+}
+
+fn virtual_key_route_stage_input(
+    request: &Request<Body>,
+    authenticated: Option<&AuthContext>,
+) -> Result<StageInput, StageFailure> {
+    let context = authenticated
+        .cloned()
+        .ok_or(AuthenticationFailure::Missing)?;
+    let (team_allowed_routes, registry) = match request.extensions().get::<Arc<ServerState>>() {
+        Some(state) => (
+            state.virtual_key_routes.team_allowed_routes.clone(),
+            state.virtual_key_routes.registry_snapshot(),
+        ),
+        None => (
+            Vec::new(),
+            PassThroughRegistry {
+                root_path: String::new(),
+                registrations: Vec::new(),
+            },
+        ),
+    };
+    let route =
+        decoded_route_path(request.uri().path()).unwrap_or_else(|| request.uri().path().to_owned());
+    let stage = VirtualKeyRouteStageInput {
+        context,
+        rule: virtual_key_route_rule_for_request(request),
+        team_allowed_routes,
+        registry,
+        route,
+        method: Some(request.method().as_str().to_uppercase()),
+    };
+    Ok(StageInput::AuthVirtualKeyRoutes(Box::new(stage)))
 }
 fn default_resolver() -> Arc<RequestModelResolver> {
     Arc::new(RequestModelResolver {
