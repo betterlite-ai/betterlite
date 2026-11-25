@@ -8,7 +8,9 @@ from typing_extensions import TypedDict
 from betterlite._cost.engine import SETTINGS, native_call
 from betterlite._cost.wire import COST_PAIR, BreakdownWire
 from betterlite._native import NativeCostExtra
+from betterlite.types.rerank import RerankBilledUnits
 from betterlite.types.utils.usage import Usage
+from betterlite.types.vector_stores import VectorStoreSearchResponse
 
 JsonObject: TypeAlias = dict[str, JsonValue]
 
@@ -24,11 +26,11 @@ class OcrRequestWire(TypedDict, total=False):
 class VectorStoreRequestWire(TypedDict, total=False):
     model: str | None
     custom_llm_provider: str | None
-    response: dict[str, JsonValue]
+    response: VectorStoreSearchResponse
 class RerankRequestWire(TypedDict, total=False):
     model: str
     custom_llm_provider: str | None
-    billed_units: dict[str, JsonValue]
+    billed_units: RerankBilledUnits
 class TranscriptionRequestWire(TypedDict, total=False):
     model: str
     custom_llm_provider: str | None

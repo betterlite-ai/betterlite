@@ -1,10 +1,12 @@
 use std::collections::BTreeMap;
 use std::convert::Infallible;
 
+use betterlite_core::api::responses_usage::{UsageInput, normalize_and_project};
 use betterlite_core::cost::realtime::{Event, error::RealtimeCostError, responses_ws};
-use betterlite_core::cost::usage::ResponseKind;
 use betterlite_logging::cost_breakdown::{CostBreakdownInput, CostBreakdownTarget};
 use betterlite_logging::fields::usage::Usage as LoggingUsage;
+use betterlite_logging::fields::usage::UsageError as LoggingUsageError;
+use betterlite_logging::fields::usage::parse::usage_from_mapping;
 use betterlite_models::cost_breakdown::CostBreakdown;
 use betterlite_models::cost_usage::modality_projection::CachedTokenCounters;
 use betterlite_models::decisions::Json;
@@ -17,9 +19,6 @@ use betterlite_openai::api::rerank_contracts::records::RerankBilledUnits;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 
-use crate::cost::convert::UsageRequest;
-use crate::cost::engine::usage_object;
-use crate::cost::error::EngineError;
 use crate::cost_extra::convert::UsageSource;
 use crate::cost_extra::convert::{CollectUsageRequest, CombineUsageRequest, PartitionUsageRequest};
 use crate::cost_extra::error::RerankFailure;
@@ -86,7 +85,11 @@ pub(crate) enum CollectFailure {
     #[error(transparent)]
     Realtime(#[from] RealtimeCostError),
     #[error(transparent)]
-    Usage(#[from] EngineError),
+    Responses(#[from] betterlite_core::api::responses_usage::ResponsesUsageError),
+    #[error(transparent)]
+    Json(#[from] serde_json::Error),
+    #[error(transparent)]
+    Logging(#[from] LoggingUsageError),
 }
 
 // The two collect_usage methods differ only in the events they bill; each usage keeps every extension.
@@ -104,15 +107,10 @@ pub(crate) fn collect_usage(
 }
 
 fn usage_record(mapping: &IndexMap<String, Json>) -> Result<LoggingUsage, CollectFailure> {
-    let request = UsageRequest {
-        kind: Some(ResponseKind::Other),
-        usage: Some(mapping.clone()),
-    };
-    let mut usage = usage_object(&request)?.unwrap_or_default();
-    if let Some(Json::Object(tool_use)) = usage.extras.shift_remove("server_tool_use") {
-        usage.server_tool_use = Some(tool_use);
-    }
-    Ok(usage)
+    let source = serde_json::to_value(Json::Object(mapping.clone()))?;
+    let projected = normalize_and_project(UsageInput::Mapping(&source))?;
+    let projected_mapping: IndexMap<String, Json> = serde_json::from_value(projected)?;
+    usage_from_mapping(&projected_mapping).map_err(CollectFailure::from)
 }
 
 // collect_usage_from_realtime_stream_results: response.done events, each with its response object.

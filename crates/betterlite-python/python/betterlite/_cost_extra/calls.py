@@ -3,7 +3,6 @@ from typing import Final
 
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
-from betterlite._cost.wire import JSON_OBJECT
 from betterlite._cost_extra.wire import (
     ENGINE,
     FLOAT,
@@ -81,7 +80,7 @@ def vector_store_search_cost(
     response: VectorStoreSearchResponse,
 ) -> tuple[float, float]:
     request: VectorStoreRequestWire = {"model": model, "custom_llm_provider": custom_llm_provider}
-    request["response"] = JSON_OBJECT.validate_python(response)
+    request["response"] = response
     return pair(ENGINE.vector_store_cost, json.dumps(request))
 
 
@@ -90,7 +89,7 @@ def rerank_cost(
 ) -> tuple[float, float]:
     request: RerankRequestWire = {"model": model, "custom_llm_provider": custom_llm_provider}
     if billed_units is not None:
-        request["billed_units"] = JSON_OBJECT.validate_python(billed_units)
+        request["billed_units"] = billed_units
     return pair(ENGINE.rerank_cost, json.dumps(request))
 
 

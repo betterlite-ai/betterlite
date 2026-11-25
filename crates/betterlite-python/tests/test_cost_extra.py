@@ -98,14 +98,20 @@ class CountsView(TypedDict):
     completion_tokens: int
     total_tokens: int
     cached_tokens: int
+    cached_audio_tokens: int
     prompt_audio_tokens: int
     completion_audio_tokens: int
+
+
+class CachedDetailsView(TypedDict, total=False):
+    audio_tokens: int
 
 
 class DetailsView(TypedDict, total=False):
     cached_tokens: int
     audio_tokens: int
     text_tokens: int
+    cached_tokens_details: NotRequired[CachedDetailsView | None]
 
 
 class ImageArgs(TypedDict):
@@ -326,15 +332,16 @@ def our_usage(prompt: int, completion: int, cached: int) -> Usage:
 def reference_usage(
     prompt: int,
     completion: int,
-    cached: int,
+    cached: int | None,
     prompt_details: dict[str, JsonValue] | None = None,
 ) -> ReferenceUsage:
     values: dict[str, JsonValue] = {
         "prompt_tokens": prompt,
         "completion_tokens": completion,
         "total_tokens": prompt + completion,
-        "cache_read_input_tokens": cached,
     }
+    if cached is not None:
+        values["cache_read_input_tokens"] = cached
     if prompt_details is not None:
         values["prompt_tokens_details"] = prompt_details
     return cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1857
@@ -348,6 +355,12 @@ def usage_counts(usage: Usage | ReferenceUsage) -> CountsView:
     prompt = dump.get("prompt_tokens_details")
     completion = dump.get("completion_tokens_details")
     cached = prompt["cached_tokens"] if prompt is not None and "cached_tokens" in prompt else 0
+    cached_details = prompt.get("cached_tokens_details") if prompt is not None else None
+    cached_audio = (
+        cached_details["audio_tokens"]
+        if cached_details is not None and "audio_tokens" in cached_details
+        else 0
+    )
     prompt_audio = prompt["audio_tokens"] if prompt is not None and "audio_tokens" in prompt else 0
     completion_audio = (
         completion["audio_tokens"]
@@ -359,6 +372,7 @@ def usage_counts(usage: Usage | ReferenceUsage) -> CountsView:
         completion_tokens=dump["completion_tokens"],
         total_tokens=dump["total_tokens"],
         cached_tokens=cached,
+        cached_audio_tokens=cached_audio,
         prompt_audio_tokens=prompt_audio,
         completion_audio_tokens=completion_audio,
     )
@@ -424,7 +438,7 @@ MIXED_USAGES: Final[list[Usage]] = [
 ]
 REFERENCE_MIXED_USAGES: Final[list[ReferenceUsage]] = [
     reference_usage(MIXED_ALIAS_TOKENS, 1, MIXED_ALIAS_TOKENS),
-    reference_usage(MIXED_DETAIL_TOKENS, 1, 0, MIXED_DETAILS),
+    reference_usage(MIXED_DETAIL_TOKENS, 1, None, MIXED_DETAILS),
 ]
 SERVER_TOOL_USAGE: Final[dict[str, JsonValue]] = {
     "input_tokens": WS_FIRST_PROMPT,
@@ -644,7 +658,45 @@ def test_processor_mixed_cache() -> None:
         REFERENCE_MIXED_USAGES
     )
     compare_usages([ours], [reference])
-    assert usage_counts(ours)["cached_tokens"] == (MIXED_ALIAS_TOKENS + MIXED_DETAIL_TOKENS)
+    expected_cached_tokens = MIXED_ALIAS_TOKENS + MIXED_DETAIL_TOKENS
+    assert usage_counts(ours)["cached_tokens"] == expected_cached_tokens
+    assert usage_counts(reference)["cached_tokens"] == expected_cached_tokens
+
+
+def test_processors_preserve_nested_cached_audio_details() -> None:
+    usage: dict[str, JsonValue] = {
+        "input_tokens": 30,
+        "output_tokens": 0,
+        "total_tokens": 30,
+        "input_tokens_details": {
+            "cached_tokens": 20,
+            "cached_tokens_details": {"audio_tokens": 10},
+        },
+    }
+    realtime: dict[str, JsonValue] = {"type": "response.done", "response": {"usage": usage}}
+    realtime_ours = RealtimeAPITokenUsageProcessor.collect_usage_from_realtime_stream_results(
+        [realtime]
+    )
+    realtime_reference = (
+        REFERENCE_PROCESSORS.RealtimeAPITokenUsageProcessor
+        .collect_usage_from_realtime_stream_results([realtime])
+    )
+    compare_usages(realtime_ours, realtime_reference)
+    assert usage_counts(realtime_ours[0])["cached_audio_tokens"] == 10
+    assert usage_counts(realtime_reference[0])["cached_audio_tokens"] == 10
+
+    websocket: dict[str, JsonValue] = {
+        "type": "response.completed",
+        "response": {"usage": usage},
+    }
+    websocket_ours = WsUsageProcessor.collect_usage_from_responses_ws_results([websocket])
+    websocket_reference = (
+        REFERENCE_PROCESSORS.ResponsesWebSocketTokenUsageProcessor
+        .collect_usage_from_responses_ws_results([websocket])
+    )
+    compare_usages(websocket_ours, websocket_reference)
+    assert usage_counts(websocket_ours[0])["cached_audio_tokens"] == 10
+    assert usage_counts(websocket_reference[0])["cached_audio_tokens"] == 10
 
 
 def test_processor_empty() -> None:

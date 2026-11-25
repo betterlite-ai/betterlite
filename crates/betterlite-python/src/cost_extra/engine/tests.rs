@@ -5,6 +5,7 @@ use std::time::{Duration, SystemTime};
 
 use betterlite_config::cost_adjustments::CostAdjustmentMap;
 use betterlite_core::cost::realtime::Event;
+use betterlite_logging::fields::usage::Usage as LoggingUsage;
 use betterlite_models::decisions::Json;
 use betterlite_models::ocr_pricing::OcrCostError;
 use indexmap::IndexMap;
@@ -111,6 +112,17 @@ const CATALOG: &str = r#"{
 
 fn dec(text: &str) -> Decimal {
     Decimal::from_str(text).expect("the fixture decimal parses")
+}
+
+fn cached_audio_details(usage: &LoggingUsage) -> Option<&Json> {
+    usage
+        .prompt_tokens_details
+        .as_ref()?
+        .get("cached_tokens_details")
+        .and_then(|value| match value {
+            Json::Object(details) => details.get("audio_tokens"),
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
+        })
 }
 
 fn engine() -> Engine {
@@ -455,6 +467,8 @@ fn cost_extra_engine_collects_and_partitions_realtime_usage() {
             {"type": "session.created", "session": {"model": "realtime-test"}},
             {"type": "response.done", "response": {"usage": {
                 "input_tokens": 100, "output_tokens": 20, "total_tokens": 120,
+                "input_tokens_details": {"cached_tokens": 20,
+                    "cached_tokens_details": {"audio_tokens": 10}},
                 "server_tool_use": {"web_search_requests": 2}}}},
             {"type": "response.audio.delta", "delta": "x"}
         ]}"#,
@@ -464,6 +478,10 @@ fn cost_extra_engine_collects_and_partitions_realtime_usage() {
     assert_eq!(collected[0].prompt_tokens, 100);
     assert_eq!(collected[0].completion_tokens, 20);
     assert_eq!(collected[0].total_tokens, 120);
+    assert_eq!(
+        cached_audio_details(&collected[0]),
+        Some(&Json::Number(serde_json::Number::from(10_i64)))
+    );
     let tool_use = collected[0]
         .server_tool_use
         .as_ref()
@@ -480,6 +498,8 @@ fn cost_extra_engine_collects_websocket_usage() {
         r#"{"source": "responses_ws", "results": [
             {"type": "response.completed", "response": {"usage": {
                 "input_tokens": 10, "output_tokens": 2, "total_tokens": 12,
+                "input_tokens_details": {"cached_tokens": 20,
+                    "cached_tokens_details": {"audio_tokens": 10}},
                 "server_tool_use": {"web_search_requests": 2}}}},
             {"type": "response.completed", "response": {"service_tier": "flex"}},
             {"type": "response.incomplete", "response": {"usage": {
@@ -488,6 +508,10 @@ fn cost_extra_engine_collects_websocket_usage() {
     );
     let websocket_usage = collect_usage(&websocket).expect("the websocket events are read");
     assert_eq!(websocket_usage.len(), 2);
+    assert_eq!(
+        cached_audio_details(&websocket_usage[0]),
+        Some(&Json::Number(serde_json::Number::from(10_i64)))
+    );
     assert_eq!(
         websocket_usage[0]
             .server_tool_use
