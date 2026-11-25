@@ -98,6 +98,15 @@ fn log_row(text: &'static str) -> ScriptedPayload {
     }
 }
 
+async fn database_update(harness: &Harness, request: &SpendUpdateRequest<'_, NoPrices>) {
+    assert!(
+        harness
+            .writer(SpendWriterSettings::default())
+            .update_database(&log_row(PAYLOAD), request)
+            .await
+    );
+}
+
 #[tokio::test]
 async fn disable_spend_updates_answers_true_without_writing() {
     let harness = Harness::new(ScriptedClaim::answering(InsertOutcome::Inserted));
@@ -299,21 +308,11 @@ async fn overwrites_spend_and_only_nonempty_ids() {
     overridden.response_cost = None;
     overridden.org_id = Some("org-9");
     overridden.team_id = Some("team-9");
-    assert!(
-        harness
-            .writer(SpendWriterSettings::default())
-            .update_database(&log_row(PAYLOAD), &overridden)
-            .await
-    );
+    database_update(&harness, &overridden).await;
     let mut empty = sample_request();
     empty.org_id = Some("");
     empty.team_id = Some("");
-    assert!(
-        harness
-            .writer(SpendWriterSettings::default())
-            .update_database(&log_row(PAYLOAD), &empty)
-            .await
-    );
+    database_update(&harness, &empty).await;
     let work = harness.admission.work();
     let first = &work[0].payload;
     assert_eq!(
