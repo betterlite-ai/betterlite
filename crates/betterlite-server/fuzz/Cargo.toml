@@ -582,6 +582,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "autorouter_presets"
+path = "fuzz_targets/autorouter_presets.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "shadow_q"
 path = "fuzz_targets/shadow_q.rs"
 test = false

@@ -564,3 +564,10 @@ path = "fuzz_targets/responses_poll_stream.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "vector_store_access"
+path = "fuzz_targets/vector_store_access.rs"
+test = false
+doc = false
+bench = false
