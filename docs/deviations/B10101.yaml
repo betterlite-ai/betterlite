@@ -1,0 +1,6 @@
+task: B10101
+deviations:
+  - what: betterlite.proxy_auth is declared ProxyAuthReference | None, a Protocol whose only member is get_auth_headers() -> Mapping[str, str], where LiteLLM declares Optional[Any].
+    why: LiteLLM's Any admits any value, and object would too, but betterlite assigns this global to its own ProxyAuthProvider | None in betterlite/_endpoints/proxy.py:18 and betterlite/_completion/arguments.py:47, where object does not type-check; the Protocol admits every proxy auth object betterlite can use, since both readers only call get_auth_headers().
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L354
+kept_bugs: []
