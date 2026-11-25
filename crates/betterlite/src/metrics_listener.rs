@@ -14,6 +14,7 @@ use betterlite_config::loader::startup::process_environment;
 use betterlite_http::metrics_server::{
     MetricsServerError, STARTUP_POLLING, StartupProbe, build_metrics_app, wait_until_serving,
 };
+use betterlite_http::proxy::base_builder;
 use clap::{Args, Command, Error, FromArgMatches as _};
 use futures_util::future::{Either, select};
 use hyper_util::rt::{TokioExecutor, TokioIo};
@@ -58,7 +59,8 @@ async fn serve_connection(
     app: Router,
     stop: CancellationToken,
 ) -> io::Result<()> {
-    let builder = ConnectionBuilder::new(TokioExecutor::new());
+    // HTTP/1 only, as uvicorn serves it: the auto builder's HTTP/2 path spawns request tasks this JoinSet never owns
+    let builder = ConnectionBuilder::new(TokioExecutor::new()).http1_only();
     let service = TowerToHyperService::new(app);
     let mut connection = pin!(builder.serve_connection(TokioIo::new(stream), service));
     match select(connection.as_mut(), pin!(stop.cancelled())).await {
@@ -116,13 +118,17 @@ async fn bind(host: &str, port: u16) -> Result<TcpListener, MetricsServerError> 
         })
 }
 
-// start_metrics_server_process as a task the server owns: it stops with the shutdown token and answers before this returns
+// start_metrics_server_process as a task the server owns: the client, the app and the probe are built before the listener starts, so a failure leaves no listener behind, and it stops with the shutdown token and answers before this returns
 pub async fn start_metrics_listener(
     settings: &MetricsServerArgs,
     tasks: &TaskTracker,
     shutdown: CancellationToken,
 ) -> Result<MetricsListener, MetricsServerError> {
     let pid = process::id();
+    let client = base_builder()
+        .no_proxy()
+        .build()
+        .map_err(MetricsServerError::Probe)?;
     let folder = settings.multiproc_dir.clone();
     let app = tasks
         .spawn_blocking(move || build_metrics_app(&folder, pid))
@@ -131,9 +137,9 @@ pub async fn start_metrics_listener(
     let address = listener
         .local_addr()
         .map_err(MetricsServerError::LocalAddress)?;
+    let probe = StartupProbe::new(client, &settings.host, address.port(), pid, STARTUP_POLLING);
     let stop = shutdown.child_token();
     let mut serving = tasks.spawn(serve_bounded(listener, app, stop.clone(), SHUTDOWN_GRACE));
-    let probe = StartupProbe::new(&settings.host, address.port(), pid, STARTUP_POLLING)?;
     wait_until_serving(&mut serving, &probe, &stop, SHUTDOWN_GRACE).await?;
     Ok(MetricsListener { address, serving })
 }
@@ -180,18 +186,35 @@ where
     outcome
 }
 
-// run_metrics_server for the sidecar command: it serves until the process that started it is gone
-pub async fn run_metrics_server(settings: &MetricsServerArgs) -> Result<(), MetricsServerError> {
+// the sidecar reads its parent before the app is built and the port bound, as LiteLLM reads it before uvicorn builds the app
+async fn run_metrics_server_watched<B, F>(
+    settings: &MetricsServerArgs,
+    build: B,
+    mut current_parent: F,
+) -> Result<(), MetricsServerError>
+where
+    B: FnOnce(PathBuf, u32) -> Result<Router, MetricsServerError> + Send + 'static,
+    F: FnMut() -> u32 + Send + 'static,
+{
+    let parent = current_parent();
     let pid = process::id();
     let folder = settings.multiproc_dir.clone();
     let tasks = TaskTracker::new();
-    let app = tasks
-        .spawn_blocking(move || build_metrics_app(&folder, pid))
-        .await??;
+    let app = tasks.spawn_blocking(move || build(folder, pid)).await??;
     let listener = bind(&settings.host, settings.port).await?;
-    serve_until_parent_exits(listener, app, parent_id(), parent_id, SHUTDOWN_GRACE)
+    serve_until_parent_exits(listener, app, parent, current_parent, SHUTDOWN_GRACE)
         .await
         .map_err(MetricsServerError::Serve)
+}
+
+// run_metrics_server for the sidecar command: it serves until the process that started it is gone
+pub async fn run_metrics_server(settings: &MetricsServerArgs) -> Result<(), MetricsServerError> {
+    run_metrics_server_watched(
+        settings,
+        |folder, pid| build_metrics_app(&folder, pid),
+        parent_id,
+    )
+    .await
 }
 
 // argparse's default=os.environ.get(...): the environment sets a default, and without one the arg stays required

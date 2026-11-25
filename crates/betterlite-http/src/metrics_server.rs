@@ -19,8 +19,6 @@ use tokio::task::{JoinError, JoinHandle};
 use tokio::time;
 use tokio_util::sync::CancellationToken;
 
-use crate::proxy::base_builder;
-
 mod tests;
 
 pub const METRICS_PATH: &str = "/metrics";
@@ -42,7 +40,7 @@ pub struct StartupPolling {
     pub probe_timeout: Duration,
 }
 
-// what the startup wait asks of the metrics port: a 200 that carries this pid
+// what the startup wait asks of the metrics port: a 200 that carries this pid, through the client the caller injects
 #[derive(Clone, Debug)]
 pub struct StartupProbe {
     client: Client,
@@ -52,22 +50,14 @@ pub struct StartupProbe {
 }
 
 impl StartupProbe {
-    pub fn new(
-        host: &str,
-        port: u16,
-        pid: u32,
-        polling: StartupPolling,
-    ) -> Result<Self, MetricsServerError> {
-        let client = base_builder()
-            .no_proxy()
-            .build()
-            .map_err(MetricsServerError::Probe)?;
-        Ok(Self {
+    #[must_use]
+    pub fn new(client: Client, host: &str, port: u16, pid: u32, polling: StartupPolling) -> Self {
+        Self {
             client,
             url: metrics_url(host, port),
             pid,
             polling,
-        })
+        }
     }
 }
 

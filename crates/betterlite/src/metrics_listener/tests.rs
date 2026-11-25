@@ -7,15 +7,16 @@ use std::net::{SocketAddr, TcpListener as StdTcpListener};
 use std::path::{Path, PathBuf};
 use std::process::{self, ExitCode};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::Duration;
 
 use axum::Router;
 use axum::routing::get;
 use betterlite_http::metrics_server::{
     METRICS_PATH, MetricsServerError, STARTUP_POLLING, StartupPolling, StartupProbe,
-    wait_until_serving,
+    build_metrics_app, wait_until_serving,
 };
+use betterlite_http::proxy::base_builder;
 use clap::Error;
 use clap::error::ErrorKind;
 use rstest::rstest;
@@ -29,8 +30,8 @@ use tokio_util::task::TaskTracker;
 
 use super::{
     MULTIPROC_DIR, MetricsServerArgs, PARENT_POLL_INTERVAL, SHUTDOWN_GRACE, metrics_server_args,
-    parent_exited, report, run_metrics_server, serve, serve_bounded, serve_until_parent_exits,
-    start_metrics_listener,
+    parent_exited, report, run_metrics_server, run_metrics_server_watched, serve, serve_bounded,
+    serve_until_parent_exits, start_metrics_listener,
 };
 
 const PROBED_PID: u32 = 4242;
@@ -53,8 +54,9 @@ fn settings(folder: &Path, port: u16) -> MetricsServerArgs {
     }
 }
 
-fn probe(address: SocketAddr, polling: StartupPolling) -> StartupProbe {
-    StartupProbe::new("127.0.0.1", address.port(), PROBED_PID, polling).unwrap()
+fn probe_for(host: &str, port: u16, pid: u32, polling: StartupPolling) -> StartupProbe {
+    let client = base_builder().no_proxy().build().unwrap();
+    StartupProbe::new(client, host, port, pid, polling)
 }
 
 fn free_port() -> u16 {
@@ -158,7 +160,7 @@ async fn the_sidecar_serves_the_folder_on_its_port() {
     let tasks = TaskTracker::new();
     let mut serving =
         tasks.spawn(async move { run_metrics_server(&sidecar).await.map_err(io::Error::other) });
-    let ready = StartupProbe::new("127.0.0.1", port, process::id(), STARTUP_POLLING).unwrap();
+    let ready = probe_for("127.0.0.1", port, process::id(), STARTUP_POLLING);
     wait_until_serving(
         &mut serving,
         &ready,
@@ -221,7 +223,7 @@ async fn the_startup_timeout_stops_the_listener_and_its_connections() {
         QUICK_GRACE,
     ));
     let stalled = stalled_client(address).await;
-    let unanswered = probe(address, QUICK);
+    let unanswered = probe_for("127.0.0.1", address.port(), PROBED_PID, QUICK);
     let error = wait_until_serving(&mut serving, &unanswered, &stop, QUICK_GRACE)
         .await
         .unwrap_err();
@@ -291,6 +293,30 @@ async fn serve_bounded_finishes_the_scrape_in_flight_before_it_closes() {
         .expect("serving failed");
 }
 
+// the parent is read before the app build, so an exit during startup is not missed as a reparenting
+#[tokio::test]
+async fn a_parent_that_exits_while_the_app_builds_still_stops_the_sidecar() {
+    let folder = TempDir::new().unwrap();
+    let sidecar = settings(folder.path(), 0);
+    let parent = Arc::new(AtomicU32::new(77));
+    let reparenting = Arc::clone(&parent);
+    let built = Arc::new(AtomicBool::new(false));
+    let built_flag = Arc::clone(&built);
+    let build = move |folder: PathBuf, pid: u32| {
+        built_flag.store(true, Ordering::SeqCst);
+        reparenting.store(1, Ordering::SeqCst);
+        build_metrics_app(&folder, pid)
+    };
+    let current = Arc::clone(&parent);
+    let served =
+        run_metrics_server_watched(&sidecar, build, move || current.load(Ordering::SeqCst));
+    let outcome = time::timeout(Duration::from_secs(5), served).await;
+    let _served = outcome
+        .expect("the sidecar outlived the parent that exited while the app was built")
+        .expect("the sidecar failed");
+    assert!(built.load(Ordering::SeqCst));
+}
+
 #[tokio::test]
 async fn serve_until_parent_exits_closes_a_stalled_scrape() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -313,6 +339,33 @@ async fn serve_until_parent_exits_closes_a_stalled_scrape() {
         .expect("the sidecar task failed")
         .expect("serving failed");
     expect_closed(stalled).await;
+}
+
+// uvicorn serves HTTP/1.1, so an HTTP/2 preface is refused instead of spawning request tasks the listener never owns
+#[tokio::test]
+async fn serve_bounded_refuses_an_http2_preface() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let stop = CancellationToken::new();
+    let tasks = TaskTracker::new();
+    let mut serving = tasks.spawn(serve_bounded(
+        listener,
+        large_app(),
+        stop.clone(),
+        QUICK_GRACE,
+    ));
+    let mut stream = TcpStream::connect(address).await.unwrap();
+    let preface = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
+    stream.write_all(preface).await.unwrap();
+    let mut received = Vec::new();
+    let closed = time::timeout(Duration::from_secs(5), stream.read_to_end(&mut received)).await;
+    let _read = closed.expect("the listener kept an HTTP/2 connection open");
+    stop.cancel();
+    let outcome = time::timeout(SHUTDOWN_GRACE, &mut serving).await;
+    outcome
+        .expect("the listener did not stop")
+        .expect("the listener task failed")
+        .expect("serving failed");
 }
 
 #[test]

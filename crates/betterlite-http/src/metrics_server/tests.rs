@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use axum::Router;
-use axum::http::{HeaderValue, StatusCode, header};
+use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::IntoResponse as _;
 use axum::routing::get;
 use betterlite_prometheus::multiprocess::files::{DbEntry, encode_db_file};
@@ -41,7 +41,7 @@ const QUICK: StartupPolling = StartupPolling {
 const GRACE: Duration = Duration::from_millis(100);
 
 fn client() -> Client {
-    ClientBuilder::new().build().unwrap()
+    ClientBuilder::new().no_proxy().build().unwrap()
 }
 
 async fn serve(tasks: &TaskTracker, app: Router) -> SocketAddr {
@@ -69,6 +69,21 @@ fn answering(status: StatusCode, pid: Option<&'static str>) -> Router {
     Router::new().route(METRICS_PATH, get(reply))
 }
 
+fn requiring_header(name: &'static str, value: &'static str) -> Router {
+    let reply = move |headers: HeaderMap| async move {
+        let expected = HeaderValue::from_static(value);
+        if headers.get(name) == Some(&expected) {
+            let mut response = StatusCode::OK.into_response();
+            let _previous = response
+                .headers_mut()
+                .insert(PID_HEADER, HeaderValue::from_static("4242"));
+            return response;
+        }
+        StatusCode::NOT_FOUND.into_response()
+    };
+    Router::new().route(METRICS_PATH, get(reply))
+}
+
 fn counting(hits: &Arc<AtomicUsize>) -> Router {
     let counter = Arc::clone(hits);
     let reply = move || {
@@ -79,7 +94,7 @@ fn counting(hits: &Arc<AtomicUsize>) -> Router {
 }
 
 fn probe(address: SocketAddr, polling: StartupPolling) -> StartupProbe {
-    StartupProbe::new("127.0.0.1", address.port(), PROBED_PID, polling).unwrap()
+    StartupProbe::new(client(), "127.0.0.1", address.port(), PROBED_PID, polling)
 }
 
 fn worker_file(folder: &Path, name: &str, value: f64) {
@@ -135,6 +150,21 @@ async fn answered_by_needs_a_200_that_carries_the_pid(
 async fn answered_by_is_false_when_nothing_listens() {
     let refused = RefusedPort::bind().unwrap();
     assert!(!answered_by(&probe(refused.address, QUICK)).await);
+}
+
+#[tokio::test]
+async fn the_probe_asks_through_the_client_the_caller_injects() {
+    let tasks = TaskTracker::new();
+    let address = serve(&tasks, requiring_header("x-probe-test", "yes")).await;
+    let mut headers = HeaderMap::new();
+    let _previous = headers.insert("x-probe-test", HeaderValue::from_static("yes"));
+    let injected = ClientBuilder::new()
+        .no_proxy()
+        .default_headers(headers)
+        .build()
+        .unwrap();
+    let probe = StartupProbe::new(injected, "127.0.0.1", address.port(), PROBED_PID, QUICK);
+    assert!(answered_by(&probe).await);
 }
 
 #[tokio::test]
