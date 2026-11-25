@@ -16,11 +16,11 @@ use rust_decimal::Decimal;
 use serde_json::Number;
 use tracing::Level;
 
-use super::OpenAiPassthroughError;
 use super::tools::{
     ChatTransformRequest, ImageEndpoint, OpenAiLoggingTools as _, OpenAiToolsError, PricedResponse,
 };
 use super::user::{OpenAiPayload, openai_end_user};
+use super::{OpenAiPassthroughError, OpenAiPassthroughLogger};
 use crate::pass_through_logging::base_passthrough_logging::tests::support::{
     END, FixedCost, RecordingBuilder, START, capture_logs, logging_state, object, timestamp,
 };
@@ -338,6 +338,17 @@ fn openai_chat_toolbox_decodes_the_upstream_reply() {
     };
     let reply = tools.chat_response(&request).unwrap();
     assert_eq!(key(&reply, "id"), &text("chatcmpl-9"));
+    let refusal_body = br#"{"id": "chatcmpl-9", "object": "chat.completion", "created": 1, "model": "gpt-4o", "choices": [{"index": 0, "message": {"role": "assistant", "content": null, "refusal": "I cannot help with that"}, "finish_reason": "stop"}]}"#;
+    request.upstream = &UpstreamChatReply {
+        status_code: 200,
+        body: refusal_body,
+    };
+    let decoded = tools.chat_response(&request).unwrap();
+    let Json::List(choices) = key(&decoded, "choices") else {
+        panic!("the reply has a choices list");
+    };
+    let fields = key(key(&choices[0], "message"), "provider_specific_fields");
+    assert_eq!(key(fields, "refusal"), &text("I cannot help with that"));
     let broken = UpstreamChatReply {
         status_code: 200,
         body: b"not json",
@@ -415,11 +426,51 @@ fn openai_embed_toolbox_round_trips_the_embedding_response() {
     let tools = toolbox(&Arc::new(RecordingPricing::new(Decimal::ONE)), chat_price());
     let decoded = tools.embedding_response(&object(EMBEDDING)).unwrap();
     assert_eq!(decoded.get("model"), Some(&text("text-embedding-3-small")));
-    let missing_usage = object(r#"{"object": "list", "data": [], "model": "m"}"#);
-    assert!(matches!(
-        tools.embedding_response(&missing_usage),
-        Err(OpenAiToolsError::Encoding(_))
-    ));
+}
+
+#[rstest]
+#[case::absent(
+    r#"{"object": "list", "data": [], "model": "m"}"#,
+    r#"{"prompt_tokens": 0, "completion_tokens": 0, "completion_tokens_details": null, "prompt_tokens_details": null, "total_tokens": 0}"#
+)]
+#[case::null(
+    r#"{"object": "list", "data": [], "model": "m", "usage": null}"#,
+    r#"{"prompt_tokens": 0, "completion_tokens": 0, "completion_tokens_details": null, "prompt_tokens_details": null, "total_tokens": 0}"#
+)]
+#[case::partial(
+    r#"{"object": "list", "data": [], "model": "m", "usage": {"total_tokens": 4}}"#,
+    r#"{"prompt_tokens": 0, "completion_tokens": 0, "completion_tokens_details": null, "prompt_tokens_details": null, "total_tokens": 4}"#
+)]
+fn openai_embed_toolbox_defaults_the_usage_counts(#[case] body: &str, #[case] usage: &str) {
+    let tools = toolbox(&Arc::new(RecordingPricing::new(Decimal::ONE)), chat_price());
+    let decoded = tools.embedding_response(&object(body)).unwrap();
+    assert_eq!(decoded.get("usage"), Some(&object_json(usage)));
+}
+
+#[test]
+fn openai_embed_absent_usage_still_logs_the_response() {
+    let pricing = Arc::new(RecordingPricing::new(Decimal::new(3, 1)));
+    let tools = Arc::new(toolbox(&pricing, chat_price()));
+    let logger = OpenAiPassthroughLogger::new(tools, fallback_payload());
+    let mut relay = Relay::new(
+        r#"{"model": "text-embedding-3-small"}"#,
+        r#"{"object": "list", "data": [], "model": "m"}"#,
+    );
+    let outcome = relay.run(&logger, EMBEDDINGS).unwrap();
+    let Some(PassThroughResponse::Embedding(response)) = outcome.result else {
+        panic!("the embedding reply is logged");
+    };
+    assert_eq!(
+        response.get("usage"),
+        Some(&object_json(
+            r#"{"prompt_tokens": 0, "completion_tokens": 0, "completion_tokens_details": null, "prompt_tokens_details": null, "total_tokens": 0}"#
+        ))
+    );
+    assert_eq!(outcome.kwargs.response_cost, Some(Decimal::new(3, 1)));
+    assert_eq!(
+        detail(&relay.call_log, "response_cost"),
+        Some(decimal_json(Decimal::new(3, 1)))
+    );
 }
 
 #[test]

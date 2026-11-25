@@ -32,6 +32,7 @@ use betterlite_streaming::streamed_response_assembly::response::Response;
 use futures_util::FutureExt as _;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
+use serde_json::Number;
 use uuid::Uuid;
 
 use super::super::gemini_passthrough_logging::assembly::{NoCosts, SilentConsole, SilentLogger};
@@ -69,14 +70,17 @@ impl OpenAiLoggingTools for OpenAiLoggingToolbox {
         };
         let reply = decode_compatible_chat_reply(request.upstream.body, &options)
             .map_err(OpenAiToolsError::Chat)?;
-        reencode(&reply.response)
+        // convert_to_model_response_object moves the provider's refusal into provider_specific_fields.
+        reencode(&reply.response.for_client(None))
     }
 
     fn embedding_response(
         &self,
         response_body: &JsonObject,
     ) -> Result<JsonObject, OpenAiToolsError> {
-        let embedding: EmbeddingResponse = reencode(response_body)?;
+        let mut normalized = response_body.clone();
+        fill_embedding_usage(&mut normalized);
+        let embedding: EmbeddingResponse = reencode(&normalized)?;
         reencode(&embedding)
     }
 
@@ -251,4 +255,19 @@ impl OpenAiLoggingTools for OpenAiLoggingToolbox {
             }
         }
     }
+}
+
+// convert_to_model_response_object starts from EmbeddingResponse's zero Usage and reads each missing count as 0.
+fn fill_embedding_usage(response_body: &mut JsonObject) {
+    let mut usage = match response_body.get("usage") {
+        None | Some(Json::Null) => JsonObject::new(),
+        Some(Json::Object(given)) => JsonObject::clone(given),
+        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => return,
+    };
+    for name in ["prompt_tokens", "completion_tokens", "total_tokens"] {
+        usage
+            .entry(name.to_owned())
+            .or_insert(Json::Number(Number::from(0_u8)));
+    }
+    response_body.insert("usage".to_owned(), Json::Object(usage));
 }
