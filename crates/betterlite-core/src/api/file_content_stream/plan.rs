@@ -9,8 +9,9 @@ use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_models::resolution::{ResolutionContext, ResolutionRequest, resolve};
 use chrono::{DateTime, FixedOffset};
 use secrecy::ExposeSecret as _;
+use serde_json::Number;
 
-use crate::api::fine_tuning_read::ReadTimeout;
+use crate::api::fine_tuning_read::{ReadTimeout, ReadTimeoutValue};
 use crate::api::resource_sdk_settings::timeout::{
     FineTuningTimeout, StructuredTimeout, TimeoutValue, resolve_fine_tuning_timeout,
 };
@@ -83,9 +84,14 @@ impl Plan<'_> {
                 azure_scope: text("azure_scope"),
             },
             max_retries: self.kwargs.max_retries,
-            timeout: match self.mode.timeout {
-                FineTuningTimeout::Seconds(seconds) => Some(seconds),
-                FineTuningTimeout::Structured(phases) => phases.read,
+            // Azure reads the raw timeout keyword, not the resolved request_timeout fallback.
+            timeout: match self.kwargs.timeout.as_ref() {
+                Some(ReadTimeout::Plain(ReadTimeoutValue::Number(number))) => number.as_f64(),
+                Some(ReadTimeout::Plain(ReadTimeoutValue::Text(raw))) => raw.trim().parse().ok(),
+                Some(ReadTimeout::Structured(phases)) => {
+                    phases.read.as_ref().and_then(Number::as_f64)
+                }
+                None => None,
             },
         }
     }
