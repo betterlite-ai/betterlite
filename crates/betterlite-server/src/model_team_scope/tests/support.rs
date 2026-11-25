@@ -2,8 +2,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex, PoisonError};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use betterlite_auth::user_roles::UserRole;
@@ -28,6 +30,7 @@ use betterlite_secret_managers::secret_lookup::ports::{
 use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
 use betterlite_secrets::secret_codec::{Algorithm, CipherSettings, OsNonces};
 use secrecy::SecretString;
+use tokio::sync::oneshot;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt;
 use tracing_subscriber::fmt::MakeWriter;
@@ -380,6 +383,48 @@ impl OidcHttp for NoOidcHttp {
     }
 }
 
+pub(crate) const OIDC_WAIT: Duration = Duration::from_secs(10);
+
+// A provider that announces the read and then waits to be released, so a read on the async worker would stall the test.
+pub(crate) struct BlockedOidc {
+    started: Mutex<Option<oneshot::Sender<()>>>,
+    release: Mutex<Receiver<()>>,
+    released: AtomicBool,
+}
+
+impl BlockedOidc {
+    pub(crate) fn new(started: oneshot::Sender<()>, release: Receiver<()>) -> Self {
+        Self {
+            started: Mutex::new(Some(started)),
+            release: Mutex::new(release),
+            released: AtomicBool::new(false),
+        }
+    }
+
+    pub(crate) fn released_while_waiting(&self) -> bool {
+        self.released.load(Ordering::SeqCst)
+    }
+}
+
+impl OidcHttp for BlockedOidc {
+    fn get(&self, _request: OidcRequest) -> Result<OidcResponse, OidcHttpError> {
+        let announced = self
+            .started
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
+        if let Some(sender) = announced {
+            let _signalled = sender.send(());
+        }
+        let release = self.release.lock().unwrap_or_else(PoisonError::into_inner);
+        let released = release.recv_timeout(OIDC_WAIT).is_ok();
+        self.released.store(released, Ordering::SeqCst);
+        Err(OidcHttpError::Request {
+            message: "the test released the OIDC read".to_owned(),
+        })
+    }
+}
+
 struct NoAzureTokens;
 
 impl AzureOidcTokens for NoAzureTokens {
@@ -402,10 +447,10 @@ impl OidcClock for FixedClock {
 
 // ProxyConfig's decryption inputs, as the route would build them, with a plaintext fixture key.
 pub(crate) struct DecryptFixture {
-    pub(crate) cipher: DbCipher,
-    pub(crate) secrets: SecretLookup,
-    pub(crate) environment: BTreeMap<String, String>,
-    pub(crate) warnings: Warnings,
+    pub(crate) cipher: Arc<DbCipher>,
+    pub(crate) secrets: Arc<SecretLookup>,
+    pub(crate) environment: Arc<BTreeMap<String, String>>,
+    pub(crate) warnings: Arc<Warnings>,
 }
 
 // The fixture cipher: a plaintext signing key, so stored params decrypt without a secret manager.
@@ -420,11 +465,11 @@ fn fixture_cipher() -> DbCipher {
     }
 }
 
-// The fixture secret lookup: no manager and fixed inputs, so decryption never reaches the network.
-fn fixture_secrets() -> SecretLookup {
+// The fixture secret lookup: no manager and fixed inputs, so decryption only reaches the OIDC fake.
+fn fixture_secrets(oidc_http: Arc<dyn OidcHttp>) -> SecretLookup {
     SecretLookup {
         manager: None,
-        oidc_http: Arc::new(NoOidcHttp),
+        oidc_http,
         azure_tokens: Arc::new(NoAzureTokens),
         clock: Arc::new(FixedClock),
         oidc_cache: OidcTokenCache::default(),
@@ -433,20 +478,24 @@ fn fixture_secrets() -> SecretLookup {
 
 impl DecryptFixture {
     pub(crate) fn new() -> Self {
+        Self::with_oidc_http(Arc::new(NoOidcHttp))
+    }
+
+    pub(crate) fn with_oidc_http(oidc_http: Arc<dyn OidcHttp>) -> Self {
         Self {
-            cipher: fixture_cipher(),
-            secrets: fixture_secrets(),
-            environment: BTreeMap::new(),
-            warnings: Warnings::default(),
+            cipher: Arc::new(fixture_cipher()),
+            secrets: Arc::new(fixture_secrets(oidc_http)),
+            environment: Arc::new(BTreeMap::new()),
+            warnings: Arc::new(Warnings::default()),
         }
     }
 
-    pub(crate) const fn context(&self) -> Decryption<'_> {
+    pub(crate) fn context(&self) -> Decryption {
         Decryption {
-            cipher: &self.cipher,
-            secrets: &self.secrets,
-            environment: &self.environment,
-            warnings: &self.warnings,
+            cipher: Arc::clone(&self.cipher),
+            secrets: Arc::clone(&self.secrets),
+            environment: Arc::clone(&self.environment),
+            warnings: Arc::clone(&self.warnings),
         }
     }
 }

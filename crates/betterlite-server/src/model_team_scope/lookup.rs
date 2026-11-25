@@ -1,10 +1,14 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
+use betterlite_db::resource_rows::model::ProxyModelTable;
 use betterlite_db::stored_cipher::DbCipher;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_secret_managers::secret_lookup::SecretLookup;
+use tokio::task::{JoinError, JoinSet};
 
 use crate::db_row_decrypt::deployments::decrypt_model_rows;
+use crate::db_row_decrypt::error::DbRowDecryptError;
 use crate::db_row_decrypt::warnings::Warnings;
 use crate::health_access_and_connections::visibility::HealthRouter;
 use crate::model_info_scope::text_field;
@@ -12,21 +16,31 @@ use crate::model_info_scope::text_field;
 use super::error::ScopeError;
 use super::reads::TeamScopeReads;
 
-// ProxyConfig.decrypt_model_list_from_db's inputs: the cipher, the secret manager, the request's environment and the once-only warnings.
-pub struct Decryption<'request> {
-    pub cipher: &'request DbCipher,
-    pub secrets: &'request SecretLookup,
-    pub environment: &'request BTreeMap<String, String>,
-    pub warnings: &'request Warnings,
+// A secret read opens token files and waits on OIDC providers, so the inputs are shared and outlive the blocking task that decrypts.
+#[derive(Clone)]
+pub struct Decryption {
+    pub cipher: Arc<DbCipher>,
+    pub secrets: Arc<SecretLookup>,
+    pub environment: Arc<BTreeMap<String, String>>,
+    pub warnings: Arc<Warnings>,
 }
 
-// _find_model_by_id: the configured deployment, else the stored row decrypted; a search term then keeps only a name that contains it.
+#[derive(Debug, thiserror::Error)]
+enum DecryptTaskError {
+    #[error(transparent)]
+    Decrypt(#[from] DbRowDecryptError),
+    #[error("the decryption task failed: {0}")]
+    Task(#[from] JoinError),
+    #[error("the decryption task never ran")]
+    Missing,
+}
+
 pub async fn find_model_by_id<Reads>(
     model_id: &str,
     search: Option<&str>,
     router: Option<&dyn HealthRouter>,
     reads: &Reads,
-    decrypt: &Decryption<'_>,
+    decrypt: &Decryption,
 ) -> Result<(Vec<JsonObject>, usize), ScopeError>
 where
     Reads: TeamScopeReads + ?Sized,
@@ -43,7 +57,6 @@ where
     Ok((models, count))
 }
 
-// get_model_info(id=model_id): the router's copy of the deployment, absent when the id names no configured model.
 fn configured_model(
     model_id: &str,
     router: Option<&dyn HealthRouter>,
@@ -56,11 +69,10 @@ fn configured_model(
         .map(|deployment| deployment.to_json()))
 }
 
-// The database fallback: ProxyConfig.decrypt_model_list_from_db's first decrypted row, none when the read or the decryption fails.
 async fn stored_model<Reads>(
     model_id: &str,
     reads: &Reads,
-    decrypt: &Decryption<'_>,
+    decrypt: &Decryption,
 ) -> Option<JsonObject>
 where
     Reads: TeamScopeReads + ?Sized,
@@ -72,14 +84,7 @@ where
             return None;
         }
     };
-    let rows = [row];
-    match decrypt_model_rows(
-        &rows,
-        decrypt.cipher,
-        decrypt.secrets,
-        decrypt.environment,
-        decrypt.warnings,
-    ) {
+    match decrypted_row(row, Decryption::clone(decrypt)).await {
         Ok(deployments) => deployments.into_iter().next(),
         Err(error) => {
             tracing::error!("Error querying database for modelId {model_id}: {error}");
@@ -88,7 +93,29 @@ where
     }
 }
 
-// The search arm: a blank term keeps the model, and any other term must appear in the model's lowercased name.
+// The blocking pool, so a token file or an OIDC provider never holds an async worker.
+async fn decrypted_row(
+    row: ProxyModelTable,
+    request: Decryption,
+) -> Result<Vec<JsonObject>, DecryptTaskError> {
+    let rows = [row];
+    let mut tasks = JoinSet::new();
+    tasks.spawn_blocking(move || {
+        decrypt_model_rows(
+            &rows,
+            &request.cipher,
+            &request.secrets,
+            &request.environment,
+            &request.warnings,
+        )
+    });
+    match tasks.join_next().await {
+        Some(Ok(deployments)) => Ok(deployments?),
+        Some(Err(source)) => Err(DecryptTaskError::Task(source)),
+        None => Err(DecryptTaskError::Missing),
+    }
+}
+
 fn search_keeps(model: JsonObject, search: Option<&str>) -> Option<JsonObject> {
     let Some(term) = search else {
         return Some(model);

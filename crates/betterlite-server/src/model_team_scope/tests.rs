@@ -1,10 +1,14 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
+use std::sync::mpsc::sync_channel;
 
 use axum::http::StatusCode;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
+use tokio::sync::oneshot;
+use tokio::task::JoinSet;
 
 use super::caller_scope::{byok_row_outside_caller_teams, get_caller_byok_team_scope};
 use super::error::{NOT_AUTHORIZED, ScopeDetail};
@@ -605,6 +609,37 @@ async fn decryption_error_logs_empty() {
     let text = logs.contents();
     assert!(text.contains("ERROR"));
     assert!(text.contains("Error querying database for modelId d1"));
+}
+
+#[tokio::test]
+async fn a_blocked_secret_read_leaves_the_async_worker_free() {
+    let (started, started_rx) = oneshot::channel();
+    let (release, release_rx) = sync_channel(1);
+    let http = Arc::new(support::BlockedOidc::new(started, release_rx));
+    let reads = support::StubReads::default().with_rows(vec![support::model_row(
+        r#"{"model_id":"d1","model_name":"gpt-4o","litellm_params":{"model":"openai/gpt-4o","api_key":"os.environ/oidc/google/audience"}}"#,
+    )]);
+    let fixture = support::DecryptFixture::with_oidc_http(http.clone());
+    let context = fixture.context();
+    let mut lookups = JoinSet::new();
+    lookups.spawn(async move { find_model_by_id("d1", None, None, &reads, &context).await });
+    tokio::time::timeout(support::OIDC_WAIT, started_rx)
+        .await
+        .expect("the secret read starts")
+        .expect("the OIDC fake announces its read");
+    let _released = release.try_send(());
+    let (models, count) = lookups
+        .join_next()
+        .await
+        .expect("the lookup task runs")
+        .expect("the lookup task joins")
+        .expect("the lookup answers");
+    assert!(models.is_empty());
+    assert_eq!(count, 0);
+    assert!(
+        http.released_while_waiting(),
+        "an async task ran while the secret read blocked"
+    );
 }
 
 #[tokio::test]
