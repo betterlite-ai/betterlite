@@ -9,6 +9,8 @@ pub mod query;
 pub mod save;
 pub mod state;
 pub mod target;
+#[cfg(any(test, feature = "testing"))]
+pub mod testing;
 
 use axum::Router;
 use axum::routing::get;

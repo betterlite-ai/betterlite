@@ -3,14 +3,11 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
-use betterlite_router::deployment_identity::spec::DeploymentSpec;
-use betterlite_router::model_catalog_lookup::error::LookupError;
-use betterlite_router::model_group_lookups::access_groups::AccessGroupMap;
 use betterlite_server::health_access_and_connections::connection_error::RejectionDetail;
-use betterlite_server::health_access_and_connections::visibility::{HealthRouter, LookupFailure};
 use betterlite_server::health_status_routes::convert::convert_health_check;
 use betterlite_server::health_status_routes::error::HealthRouteError;
 use betterlite_server::health_status_routes::target::resolve_target_model_name;
+use betterlite_server::health_status_routes::testing::fake_health_router;
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -80,60 +77,6 @@ pub(crate) struct DeploymentInput {
     model_id: String,
 }
 
-struct FakeRouter {
-    deployments: Vec<DeploymentInput>,
-    fail: bool,
-}
-
-impl From<&RouterInput> for FakeRouter {
-    fn from(input: &RouterInput) -> Self {
-        Self {
-            deployments: input.deployments.clone(),
-            fail: input.fail,
-        }
-    }
-}
-
-impl HealthRouter for FakeRouter {
-    fn get_deployment(&self, model_id: &str) -> Result<Option<DeploymentSpec>, LookupFailure> {
-        if self.fail {
-            return Err(LookupFailure::Lookup(LookupError::InvalidRow { index: 0 }));
-        }
-        Ok(self
-            .deployments
-            .iter()
-            .find(|deployment| deployment.model_id == model_id)
-            .map(spec))
-    }
-
-    fn get_model_list(
-        &self,
-        _model_name: Option<&str>,
-        _team_id: Option<&str>,
-    ) -> Result<Vec<DeploymentSpec>, LookupFailure> {
-        Ok(Vec::new())
-    }
-
-    fn get_model_names(&self, _team_id: Option<&str>) -> Result<Vec<String>, LookupFailure> {
-        Ok(Vec::new())
-    }
-
-    fn get_model_access_groups(&self) -> Result<AccessGroupMap, LookupFailure> {
-        Ok(AccessGroupMap::new())
-    }
-}
-
-fn spec(deployment: &DeploymentInput) -> DeploymentSpec {
-    let mut model_info = JsonObject::new();
-    model_info.insert("id".to_owned(), Json::Text(deployment.model_id.clone()));
-    DeploymentSpec {
-        model_name: deployment.model_name.clone(),
-        litellm_params: JsonObject::new(),
-        model_info,
-        extra: JsonObject::new(),
-    }
-}
-
 fn convert_rows(rows: &[RowInput]) -> HelperResult {
     let mut converted = Vec::new();
     for row in rows {
@@ -179,10 +122,15 @@ fn resolve_targets(cases: &[CaseInput]) -> HelperResult {
 }
 
 fn target_answer(case: &CaseInput) -> HelperResult {
-    let router = case
-        .router
-        .as_ref()
-        .map(|input| -> Box<dyn HealthRouter> { Box::new(FakeRouter::from(input)) });
+    let router = case.router.as_ref().map(|input| {
+        fake_health_router(
+            input
+                .deployments
+                .iter()
+                .map(|deployment| (deployment.model_name.clone(), deployment.model_id.clone())),
+            input.fail,
+        )
+    });
     match resolve_target_model_name(
         case.model.as_deref(),
         case.model_id.as_deref(),
@@ -192,17 +140,13 @@ fn target_answer(case: &CaseInput) -> HelperResult {
         Err(HealthRouteError::Http(rejection)) => Ok(json!({
             "error": {
                 "status": rejection.status.as_u16(),
-                "detail": detail_json(&rejection.detail),
+                "detail": match &rejection.detail {
+                    RejectionDetail::Message(text) => Value::String(text.clone()),
+                    RejectionDetail::Error(text) => json!({ "error": text }),
+                },
             },
         })),
         Err(error) => Err(invalid(error.to_string())),
-    }
-}
-
-fn detail_json(detail: &RejectionDetail) -> Value {
-    match detail {
-        RejectionDetail::Message(text) => Value::String(text.clone()),
-        RejectionDetail::Error(text) => json!({ "error": text }),
     }
 }
 
