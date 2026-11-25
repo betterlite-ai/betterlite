@@ -38,7 +38,7 @@ use tokio_util::task::TaskTracker;
 
 use self::handles::{build_leases, build_queues, build_redis};
 use self::parts::{DailyQueues, SpendRuntimeParts, SpendUsageQueues};
-use self::worker::AccountingWorker;
+use self::worker::spawn_accounting;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SpendRuntimeError {
@@ -126,25 +126,14 @@ impl SpendRuntime {
             parts.redis.as_ref(),
             Arc::clone(&parts.redis_events),
         );
+        let shutdown_signal = CancellationToken::new();
+        let (sender, tasks) = spawn_accounting(&settings, &parts, &queues, &shutdown_signal);
         let leases = build_leases(
             &settings,
             parts.redis.as_ref(),
             parts.pod_lock_events,
             parts.pod_id,
         );
-        let (sender, receiver) = mpsc::channel(settings.accounting_capacity);
-        let shutdown_signal = CancellationToken::new();
-        let tasks = TaskTracker::new();
-        let worker = AccountingWorker {
-            settings: settings.writer.clone(),
-            entity: Arc::clone(&queues.entity),
-            daily: queues.daily.clone(),
-            usage: parts.usage.clone(),
-            pricing: parts.pricing,
-            failures: Arc::clone(&parts.failures),
-            shutdown: shutdown_signal.clone(),
-        };
-        tasks.spawn(worker.run(receiver));
         Ok(Arc::new(Self {
             entity: queues.entity,
             daily: queues.daily,

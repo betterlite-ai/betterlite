@@ -4,16 +4,19 @@ use betterlite_db::daily_records::projection::{CallTypeEndpoints, DailyPricing};
 use betterlite_db::spend_log_storage::postgres::PostgresSpendLogsWriter;
 use betterlite_db::spend_queues::entity::SpendUpdateQueue;
 use betterlite_db::spend_writer::accounting::{
-    NoSpendAccountingAdmission, SpendAccounting, SpendAccountingEnvironment,
+    NoSpendAccountingAdmission, SpendAccounting, SpendAccountingEnvironment, batch_database_updates,
 };
 use betterlite_db::spend_writer::settings::SpendWriterSettings;
 use betterlite_db::spend_writer::{DbSpendUpdateWriter, SpendWriterFailureSink, SpendWriterQueues};
 use betterlite_error::proxy_model_not_found::route_endpoint;
 use chrono::Utc;
-use tokio::sync::mpsc::Receiver;
+use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio_util::sync::CancellationToken;
+use tokio_util::task::TaskTracker;
 
-use super::parts::{DailyQueues, SpendUsageQueues};
+use super::SpendRuntimeSettings;
+use super::handles::RuntimeQueues;
+use super::parts::{DailyQueues, SpendRuntimeParts, SpendUsageQueues};
 use super::pricing::{PricingView, SpendPricingSource};
 
 // The single owner of admitted accounting work: it writes every sibling in source order and drains what a shutdown leaves behind.
@@ -79,8 +82,30 @@ impl AccountingWorker {
             failures: self.failures.as_ref(),
             admission: &admission,
         };
-        writer.batch_database_updates(&work, &environment).await;
+        batch_database_updates(&writer, &work, &environment).await;
     }
+}
+
+// The worker's handles and the bounded queue that admits its work, built once by SpendRuntime::new.
+pub(super) fn spawn_accounting(
+    settings: &SpendRuntimeSettings,
+    parts: &SpendRuntimeParts,
+    queues: &RuntimeQueues,
+    shutdown: &CancellationToken,
+) -> (Sender<SpendAccounting>, TaskTracker) {
+    let worker = AccountingWorker {
+        settings: settings.writer.clone(),
+        entity: Arc::clone(&queues.entity),
+        daily: queues.daily.clone(),
+        usage: parts.usage.clone(),
+        pricing: Arc::clone(&parts.pricing),
+        failures: Arc::clone(&parts.failures),
+        shutdown: shutdown.clone(),
+    };
+    let (sender, receiver) = mpsc::channel(settings.accounting_capacity);
+    let tasks = TaskTracker::new();
+    tasks.spawn(worker.run(receiver));
+    (sender, tasks)
 }
 
 // ROUTE_ENDPOINT_MAPPING: the endpoint a call type belongs to, which the daily builders record with a row.

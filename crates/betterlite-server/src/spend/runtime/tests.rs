@@ -23,6 +23,7 @@ use betterlite_db::spend_queues::entity::SpendAmount;
 use betterlite_db::spend_writer::SpendWriterOperation;
 use betterlite_db::spend_writer::accounting::{
     SpendAccounting, SpendAccountingAdmission, SpendAccountingClosed, SpendAccountingEnvironment,
+    batch_database_updates,
 };
 use betterlite_db::spend_writer::settings::SpendWriterSettings;
 use betterlite_http::proxy::ProxiedClient;
@@ -289,10 +290,8 @@ async fn charges_every_accounting_queue_the_runtime_writer_was_built_with() {
         endpoints: &endpoints,
         deployments: None,
     };
-    runtime
-        .writer()
-        .batch_database_updates(&accounting_work(), &environment)
-        .await;
+    let writer = runtime.writer();
+    batch_database_updates(&writer, &accounting_work(), &environment).await;
     let charged = runtime
         .entity
         .flush_aggregated_transactions()

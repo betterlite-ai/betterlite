@@ -104,12 +104,7 @@ impl Section for Raw {
     {
         let general = self.general_settings;
         let litellm = self.litellm_settings;
-        let use_redis = redis_transaction_buffer(&general.use_redis_transaction_buffer)?;
-        let dequeue_count =
-            initial_environment_integer(lookup, ENV_DEQUEUE_COUNT, DEFAULT_DEQUEUE_COUNT)?;
-        let interval = partition_interval(lookup.lookup(ENV_PARTITION_INTERVAL).as_deref());
-        let ahead =
-            initial_environment_integer(lookup, ENV_PRECREATE_AHEAD, DEFAULT_PRECREATE_AHEAD)?;
+        let (use_redis, dequeue_count, interval, ahead) = runtime_reads(&general, lookup)?;
         Ok(Settings {
             store_prompts_in_spend_logs: store_prompts(
                 &general.store_prompts_in_spend_logs,
@@ -144,6 +139,21 @@ impl Section for Raw {
         })
     }
 }
+fn runtime_reads<L>(
+    general: &GeneralSettings,
+    lookup: &L,
+) -> Result<(bool, i64, PartitionInterval, i64), ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    let use_redis = redis_transaction_buffer(&general.use_redis_transaction_buffer)?;
+    let dequeue_count =
+        initial_environment_integer(lookup, ENV_DEQUEUE_COUNT, DEFAULT_DEQUEUE_COUNT)?;
+    let interval = partition_interval(lookup.lookup(ENV_PARTITION_INTERVAL).as_deref());
+    let ahead = initial_environment_integer(lookup, ENV_PRECREATE_AHEAD, DEFAULT_PRECREATE_AHEAD)?;
+    Ok((use_redis, dequeue_count, interval, ahead))
+}
+
 pub fn load_spend_storage_policy<L>(source: &str, lookup: &L) -> Result<Settings, ConfigError>
 where
     L: EnvironmentLookup,

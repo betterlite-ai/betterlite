@@ -16,7 +16,7 @@ use crate::spend_writer::support::{
 };
 use crate::spend_writer::{DbSpendUpdateWriter, SpendWriterOperation, SpendWriterQueues};
 
-use super::{SpendAccounting, SpendAccountingEnvironment};
+use super::{SpendAccounting, SpendAccountingEnvironment, batch_database_updates};
 
 const REQUEST: &str = r#"{"user":"u1","api_key":"k1","model":"gpt-4o","custom_llm_provider":"openai","model_group":"gpt-4o","prompt_tokens":3,"completion_tokens":4,"request_id":"req-1","startTime":"2025-01-02T03:04:05Z","endTime":"2025-01-02T03:04:06Z","request_tags":"[\"tag-a\",\"tag-b\"]","metadata":"{}","status":"success","spend":0.25,"team_id":"team-1","organization_id":"org-1","end_user":"eu-1","agent_id":"agent-1"}"#;
 const SUFFIX: &str = "_2025-01-02_k1_gpt-4o_openai_";
@@ -128,9 +128,8 @@ impl Harness {
             endpoints: &case.endpoints,
             deployments: None,
         };
-        self.writer(settings)
-            .batch_database_updates(charge, &environment)
-            .await;
+        let writer = self.writer(settings);
+        batch_database_updates(&writer, charge, &environment).await;
     }
 }
 

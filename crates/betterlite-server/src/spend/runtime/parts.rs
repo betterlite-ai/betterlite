@@ -32,44 +32,26 @@ impl DailyQueues {
         events: &Arc<dyn SpendQueueEventSink>,
     ) -> Result<Self, SpendQueueError> {
         Ok(Self {
-            user: Arc::new(DailySpendUpdateQueue::new(
-                queue.queue_capacity,
-                queue.aggregation_threshold,
-                queue.flush_count,
-                Arc::clone(events),
-            )?),
-            end_user: Arc::new(DailySpendUpdateQueue::new(
-                queue.queue_capacity,
-                queue.aggregation_threshold,
-                queue.flush_count,
-                Arc::clone(events),
-            )?),
-            agent: Arc::new(DailySpendUpdateQueue::new(
-                queue.queue_capacity,
-                queue.aggregation_threshold,
-                queue.flush_count,
-                Arc::clone(events),
-            )?),
-            team: Arc::new(DailySpendUpdateQueue::new(
-                queue.queue_capacity,
-                queue.aggregation_threshold,
-                queue.flush_count,
-                Arc::clone(events),
-            )?),
-            org: Arc::new(DailySpendUpdateQueue::new(
-                queue.queue_capacity,
-                queue.aggregation_threshold,
-                queue.flush_count,
-                Arc::clone(events),
-            )?),
-            tag: Arc::new(DailySpendUpdateQueue::new(
-                queue.queue_capacity,
-                queue.aggregation_threshold,
-                queue.flush_count,
-                Arc::clone(events),
-            )?),
+            user: daily_queue(queue, events)?,
+            end_user: daily_queue(queue, events)?,
+            agent: daily_queue(queue, events)?,
+            team: daily_queue(queue, events)?,
+            org: daily_queue(queue, events)?,
+            tag: daily_queue(queue, events)?,
         })
     }
+}
+
+fn daily_queue(
+    queue: &SpendQueueSettings,
+    events: &Arc<dyn SpendQueueEventSink>,
+) -> Result<Arc<DailySpendUpdateQueue>, SpendQueueError> {
+    Ok(Arc::new(DailySpendUpdateQueue::new(
+        queue.queue_capacity,
+        queue.aggregation_threshold,
+        queue.flush_count,
+        Arc::clone(events),
+    )?))
 }
 
 // B1744 builds the usage buffers and hands them in; the runtime only reads them while it charges a request.

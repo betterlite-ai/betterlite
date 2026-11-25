@@ -87,7 +87,7 @@ where
     ) -> bool
     where
         C: SavingsPricingContext,
-        P: SpendPayloadSource,
+        P: SpendPayloadSource + Sync,
     {
         if self.settings.disable_spend_updates {
             return true;
@@ -126,7 +126,7 @@ where
     ) -> Result<bool, RequestError<P::Error>>
     where
         C: SavingsPricingContext,
-        P: SpendPayloadSource,
+        P: SpendPayloadSource + Sync,
     {
         let built = payloads
             .build()
@@ -199,7 +199,10 @@ where
         &self,
         request: &SpendUpdateRequest<'_, C>,
         hashed_token: Option<&str>,
-    ) -> Result<(), SpendLogBuildError> {
+    ) -> Result<(), SpendLogBuildError>
+    where
+        C: SavingsPricingContext,
+    {
         let Some(queue) = self.queues.discovery else {
             return Ok(());
         };

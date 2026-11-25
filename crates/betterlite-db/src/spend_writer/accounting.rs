@@ -17,6 +17,7 @@ use crate::spend_attribution::tags::RequestTags;
 use crate::spend_log_storage::batch_claim::BatchClaimTable;
 use crate::spend_queues::entity::SpendAmount;
 
+use self::entities::{attribute_updates, identity_updates, owner_updates, row_updates};
 use self::isolation::isolated;
 
 mod entities;
@@ -66,119 +67,130 @@ pub struct SpendAccountingEnvironment<'env, C> {
     pub deployments: Option<&'env dyn ServedDeployments>,
 }
 
-impl<Table> DbSpendUpdateWriter<'_, Table>
-where
+// _batch_database_updates returns to charge the payload in its own task: the payload is read again here, never borrowed from the request.
+pub async fn batch_database_updates<Table, C>(
+    writer: &DbSpendUpdateWriter<'_, Table>,
+    work: &SpendAccounting,
+    environment: &SpendAccountingEnvironment<'_, C>,
+) where
     Table: BatchClaimTable + ?Sized,
+    C: SavingsPricingContext,
 {
-    // _batch_database_updates returns to charge the payload in its own task: the payload is read again here, never borrowed from the request.
-    pub async fn batch_database_updates<C>(
-        &self,
-        work: &SpendAccounting,
-        environment: &SpendAccountingEnvironment<'_, C>,
-    ) where
-        C: SavingsPricingContext,
-    {
-        let payload = match serde_json::to_vec(&work.payload) {
-            Ok(serialized) => serialized,
-            Err(error) => {
-                tracing::debug!(
-                    error = %error,
-                    "_batch_database_updates: the spend log row cannot be written back as JSON"
-                );
-                return;
-            }
-        };
-        let daily: Option<DailyPayload> = match serde_json::from_slice(&payload) {
-            Ok(parsed) => Some(parsed),
-            Err(error) => {
-                tracing::debug!(
-                    error = %error,
-                    "_batch_database_updates: the spend log row has no daily projection"
-                );
-                None
-            }
-        };
-        self.entity_updates(work, daily.as_ref(), environment).await;
-        self.daily_updates(work, daily.as_ref(), environment).await;
-        if let Some(queue) = self.queues.model_usage {
-            enqueue_model_usage(queue, &payload).await;
-        }
-    }
-
-    // The six daily queues in source order, with the organization charged under the request's own id.
-    async fn daily_updates<C>(
-        &self,
-        work: &SpendAccounting,
-        daily: Option<&DailyPayload>,
-        environment: &SpendAccountingEnvironment<'_, C>,
-    ) where
-        C: SavingsPricingContext,
-    {
-        let Some(payload) = daily else {
+    let payload = match serde_json::to_vec(&work.payload) {
+        Ok(serialized) => serialized,
+        Err(error) => {
+            tracing::debug!(
+                error = %error,
+                "_batch_database_updates: the spend log row cannot be written back as JSON"
+            );
             return;
-        };
-        isolated!(
-            "daily user",
-            add_daily_user_transaction(
-                self.queues.daily_user,
-                payload,
-                environment.pricing,
-                environment.endpoints,
-            )
-            .await
-        );
-        isolated!(
-            "daily end user",
-            add_daily_end_user_transaction(
-                self.queues.daily_end_user,
-                payload,
-                environment.pricing,
-                environment.endpoints,
-            )
-            .await
-        );
-        isolated!(
-            "daily agent",
-            add_daily_agent_transaction(
-                self.queues.daily_agent,
-                payload,
-                environment.pricing,
-                environment.endpoints,
-            )
-            .await
-        );
-        isolated!(
-            "daily team",
-            add_daily_team_transaction(
-                self.queues.daily_team,
-                payload,
-                environment.pricing,
-                environment.endpoints,
-            )
-            .await
-        );
-        isolated!(
-            "daily organization",
-            add_daily_org_transaction(
-                self.queues.daily_org,
-                payload,
-                work.org_id.as_deref(),
-                environment.pricing,
-                environment.endpoints,
-            )
-            .await
-        );
-        isolated!(
-            "daily tag",
-            add_daily_tag_transaction(
-                self.queues.daily_tag,
-                payload,
-                environment.pricing,
-                environment.endpoints,
-            )
-            .await
-        );
+        }
+    };
+    let daily: Option<DailyPayload> = match serde_json::from_slice(&payload) {
+        Ok(parsed) => Some(parsed),
+        Err(error) => {
+            tracing::debug!(
+                error = %error,
+                "_batch_database_updates: the spend log row has no daily projection"
+            );
+            None
+        }
+    };
+    identity_updates(writer, work).await;
+    owner_updates(writer, work).await;
+    row_updates(writer, work, daily.as_ref()).await;
+    attribute_updates(writer, work, daily.as_ref(), environment).await;
+    if let Some(projected) = daily.as_ref() {
+        daily_user_updates(writer, projected, environment).await;
+        daily_owner_updates(writer, work, projected, environment).await;
     }
+    if let Some(queue) = writer.queues.model_usage {
+        enqueue_model_usage(queue, &payload).await;
+    }
+}
+
+// The user, end user and agent rows, each isolated from the others.
+async fn daily_user_updates<Table, C>(
+    writer: &DbSpendUpdateWriter<'_, Table>,
+    payload: &DailyPayload,
+    environment: &SpendAccountingEnvironment<'_, C>,
+) where
+    Table: BatchClaimTable + ?Sized,
+    C: SavingsPricingContext,
+{
+    isolated!(
+        "daily user",
+        add_daily_user_transaction(
+            writer.queues.daily_user,
+            payload,
+            environment.pricing,
+            environment.endpoints,
+        )
+        .await
+    );
+    isolated!(
+        "daily end user",
+        add_daily_end_user_transaction(
+            writer.queues.daily_end_user,
+            payload,
+            environment.pricing,
+            environment.endpoints,
+        )
+        .await
+    );
+    isolated!(
+        "daily agent",
+        add_daily_agent_transaction(
+            writer.queues.daily_agent,
+            payload,
+            environment.pricing,
+            environment.endpoints,
+        )
+        .await
+    );
+}
+
+// The team, organization and tag rows, with the organization charged under the request's own id.
+async fn daily_owner_updates<Table, C>(
+    writer: &DbSpendUpdateWriter<'_, Table>,
+    work: &SpendAccounting,
+    payload: &DailyPayload,
+    environment: &SpendAccountingEnvironment<'_, C>,
+) where
+    Table: BatchClaimTable + ?Sized,
+    C: SavingsPricingContext,
+{
+    isolated!(
+        "daily team",
+        add_daily_team_transaction(
+            writer.queues.daily_team,
+            payload,
+            environment.pricing,
+            environment.endpoints,
+        )
+        .await
+    );
+    isolated!(
+        "daily organization",
+        add_daily_org_transaction(
+            writer.queues.daily_org,
+            payload,
+            work.org_id.as_deref(),
+            environment.pricing,
+            environment.endpoints,
+        )
+        .await
+    );
+    isolated!(
+        "daily tag",
+        add_daily_tag_transaction(
+            writer.queues.daily_tag,
+            payload,
+            environment.pricing,
+            environment.endpoints,
+        )
+        .await
+    );
 }
 
 // _update_tag_db reads the serialized column through safe_json_loads and an already parsed list as sent.

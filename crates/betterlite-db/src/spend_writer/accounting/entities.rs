@@ -1,5 +1,6 @@
 use std::error::Error as StdError;
 
+use betterlite_models::savings_pricing::context::SavingsPricingContext;
 use rust_decimal::Decimal;
 
 use super::isolation::isolated;
@@ -15,150 +16,160 @@ use crate::spend_queues::SpendQueueError;
 use crate::spend_queues::entity::{EntityType, SpendAmount, SpendUpdateQueueItem};
 use crate::spend_writer::{DbSpendUpdateWriter, SpendWriterFailure, SpendWriterOperation};
 
-impl<Table> DbSpendUpdateWriter<'_, Table>
+// _update_user_db and _update_key_db: a user failure is logged and swallowed, a key failure goes to the caller's own catch.
+pub(super) async fn identity_updates<Table>(
+    writer: &DbSpendUpdateWriter<'_, Table>,
+    work: &SpendAccounting,
+) where
+    Table: BatchClaimTable + ?Sized,
+{
+    if let Some(queue) = writer.queues.entity {
+        if let Err(source) = enqueue_user_rows(writer, queue, work).await {
+            report_accounting_failure(writer, SpendWriterOperation::UserEnqueue, work, &source);
+        }
+    }
+    let (Some(queue), Some(key)) = (writer.queues.entity, work.hashed_token.as_deref()) else {
+        return;
+    };
+    if let Err(source) = queue
+        .enqueue(SpendUpdateQueueItem {
+            entity_type: Some(EntityType::Key),
+            entity_id: Some(key.to_owned()),
+            response_cost: work.response_cost,
+        })
+        .await
+    {
+        report_accounting_failure(writer, SpendWriterOperation::KeyEnqueue, work, &source);
+        tracing::debug!(
+            error = %source,
+            "_batch_database_updates: the key enqueue failed"
+        );
+    }
+}
+
+// _update_team_db and _update_org_db, each isolated so one owner failure leaves the other running.
+pub(super) async fn owner_updates<Table>(
+    writer: &DbSpendUpdateWriter<'_, Table>,
+    work: &SpendAccounting,
+) where
+    Table: BatchClaimTable + ?Sized,
+{
+    let queue = writer.queues.entity;
+    let cost = work.response_cost;
+    let user = work.user_id.as_deref();
+    isolated!(
+        "team",
+        update_owner_db(queue, cost, work.team_id.as_deref(), user, OwnerKind::Team).await
+    );
+    isolated!(
+        "organization",
+        update_owner_db(
+            queue,
+            cost,
+            work.org_id.as_deref(),
+            user,
+            OwnerKind::Organization
+        )
+        .await
+    );
+}
+
+// The project row and the request's tags, each isolated and read before the access groups.
+pub(super) async fn row_updates<Table>(
+    writer: &DbSpendUpdateWriter<'_, Table>,
+    work: &SpendAccounting,
+    daily: Option<&DailyPayload>,
+) where
+    Table: BatchClaimTable + ?Sized,
+{
+    let queue = writer.queues.entity;
+    let cost = work.response_cost;
+    isolated!(
+        "project",
+        update_row_db(queue, cost, work.project_id.as_deref(), RowKind::Project).await
+    );
+    isolated!(
+        "tag",
+        update_tag_db(queue, cost, daily.and_then(request_tags)).await
+    );
+}
+
+// update_model_access_group_db has no isolation of its own; the agent row after it is isolated.
+pub(super) async fn attribute_updates<Table, C>(
+    writer: &DbSpendUpdateWriter<'_, Table>,
+    work: &SpendAccounting,
+    daily: Option<&DailyPayload>,
+    environment: &SpendAccountingEnvironment<'_, C>,
+) where
+    Table: BatchClaimTable + ?Sized,
+    C: SavingsPricingContext,
+{
+    let queue = writer.queues.entity;
+    let cost = work.response_cost;
+    update_model_access_group_db(
+        queue,
+        cost,
+        &work.model_access_groups,
+        daily.and_then(|payload| payload.model_id.as_deref()),
+        environment.deployments,
+    )
+    .await;
+    let agent = daily.and_then(|payload| payload.agent_id.as_deref());
+    isolated!(
+        "agent",
+        update_row_db(queue, cost, agent, RowKind::Agent).await
+    );
+}
+
+async fn enqueue_user_rows<Table>(
+    writer: &DbSpendUpdateWriter<'_, Table>,
+    queue: &dyn EntitySpendQueue,
+    work: &SpendAccounting,
+) -> Result<(), SpendQueueError>
 where
     Table: BatchClaimTable + ?Sized,
 {
-    // The entity rows in source order: the user block first, then key, team, organization, project, tag, access groups and agent.
-    pub(super) async fn entity_updates<C>(
-        &self,
-        work: &SpendAccounting,
-        daily: Option<&DailyPayload>,
-        environment: &SpendAccountingEnvironment<'_, C>,
-    ) {
-        self.update_user_db(work).await;
-        if let Err(source) = self.update_key_db(work).await {
-            self.report_accounting_failure(SpendWriterOperation::KeyEnqueue, work, &source);
-            tracing::debug!(
-                error = %source,
-                "_batch_database_updates: the key enqueue failed"
-            );
-        }
-        isolated!(
-            "team",
-            update_owner_db(
-                self.queues.entity,
-                work.response_cost,
-                work.team_id.as_deref(),
-                work.user_id.as_deref(),
-                OwnerKind::Team,
-            )
-            .await
-        );
-        isolated!(
-            "organization",
-            update_owner_db(
-                self.queues.entity,
-                work.response_cost,
-                work.org_id.as_deref(),
-                work.user_id.as_deref(),
-                OwnerKind::Organization,
-            )
-            .await
-        );
-        isolated!(
-            "project",
-            update_row_db(
-                self.queues.entity,
-                work.response_cost,
-                work.project_id.as_deref(),
-                RowKind::Project,
-            )
-            .await
-        );
-        isolated!(
-            "tag",
-            update_tag_db(
-                self.queues.entity,
-                work.response_cost,
-                daily.and_then(request_tags),
-            )
-            .await
-        );
-        update_model_access_group_db(
-            self.queues.entity,
+    if let Some(user) = work.user_id.as_deref() {
+        enqueue_user(queue, user, work.response_cost).await?;
+    }
+    if writer.settings.max_budget > Decimal::ZERO {
+        enqueue_user(
+            queue,
+            &writer.settings.proxy_budget_name,
             work.response_cost,
-            &work.model_access_groups,
-            daily.and_then(|payload| payload.model_id.as_deref()),
-            environment.deployments,
         )
-        .await;
-        isolated!(
-            "agent",
-            update_row_db(
-                self.queues.entity,
-                work.response_cost,
-                daily.and_then(|payload| payload.agent_id.as_deref()),
-                RowKind::Agent,
-            )
-            .await
-        );
+        .await?;
     }
-
-    // _update_user_db: the absent ids are skipped, a positive budget adds the proxy identity, and a failure is logged and swallowed.
-    async fn update_user_db(&self, work: &SpendAccounting) {
-        let Some(queue) = self.queues.entity else {
-            return;
-        };
-        if let Err(source) = self.enqueue_user_rows(queue, work).await {
-            self.report_accounting_failure(SpendWriterOperation::UserEnqueue, work, &source);
-        }
-    }
-
-    async fn enqueue_user_rows(
-        &self,
-        queue: &dyn EntitySpendQueue,
-        work: &SpendAccounting,
-    ) -> Result<(), SpendQueueError> {
-        if let Some(user) = work.user_id.as_deref() {
-            enqueue_user(queue, user, work.response_cost).await?;
-        }
-        if self.settings.max_budget > Decimal::ZERO {
-            enqueue_user(queue, &self.settings.proxy_budget_name, work.response_cost).await?;
-        }
-        if let Some(end_user) = work.end_user_id.as_deref() {
-            queue
-                .enqueue(SpendUpdateQueueItem {
-                    entity_type: Some(EntityType::EndUser),
-                    entity_id: Some(end_user.to_owned()),
-                    response_cost: work.response_cost,
-                })
-                .await?;
-        }
-        Ok(())
-    }
-
-    // _update_key_db: a key is charged whenever one was hashed; its failure is logged and raised to the caller's own catch.
-    async fn update_key_db(&self, work: &SpendAccounting) -> Result<(), SpendQueueError> {
-        let (Some(queue), Some(key)) = (self.queues.entity, work.hashed_token.as_deref()) else {
-            return Ok(());
-        };
+    if let Some(end_user) = work.end_user_id.as_deref() {
         queue
             .enqueue(SpendUpdateQueueItem {
-                entity_type: Some(EntityType::Key),
-                entity_id: Some(key.to_owned()),
+                entity_type: Some(EntityType::EndUser),
+                entity_id: Some(end_user.to_owned()),
                 response_cost: work.response_cost,
             })
-            .await
+            .await?;
     }
+    Ok(())
+}
 
-    fn report_accounting_failure(
-        &self,
-        operation: SpendWriterOperation,
-        work: &SpendAccounting,
-        error: &(dyn StdError + Send + Sync),
-    ) {
-        self.failures.report(SpendWriterFailure {
-            operation,
-            response_cost: work.response_cost,
-            token: work.hashed_token.as_deref(),
-            user_id: work.user_id.as_deref(),
-            team_id: work.team_id.as_deref(),
-            org_id: work.org_id.as_deref(),
-            end_user_id: work.end_user_id.as_deref(),
-            error,
-        });
-    }
+fn report_accounting_failure<Table>(
+    writer: &DbSpendUpdateWriter<'_, Table>,
+    operation: SpendWriterOperation,
+    work: &SpendAccounting,
+    error: &(dyn StdError + Send + Sync),
+) where
+    Table: BatchClaimTable + ?Sized,
+{
+    writer.failures.report(SpendWriterFailure {
+        operation,
+        response_cost: work.response_cost,
+        token: work.hashed_token.as_deref(),
+        user_id: work.user_id.as_deref(),
+        team_id: work.team_id.as_deref(),
+        org_id: work.org_id.as_deref(),
+        end_user_id: work.end_user_id.as_deref(),
+        error,
+    });
 }
 
 async fn enqueue_user(
