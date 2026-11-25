@@ -13,7 +13,6 @@ use rust_decimal::prelude::FromPrimitive as _;
 
 use super::{Action, MetricSpec, UpdateSpec};
 
-// one PrometheusMetric per case metric, registered into the multiprocess registry in the case's order
 pub(super) fn build(
     registry: &CollectorRegistry,
     specs: &[MetricSpec],
@@ -46,7 +45,6 @@ fn build_one(
     Ok(metric)
 }
 
-// the case's updates in order, each through the handle its label values name
 pub(super) fn apply_updates(
     metrics: &[PrometheusMetric],
     updates: &[UpdateSpec],
@@ -54,7 +52,12 @@ pub(super) fn apply_updates(
     for update in updates {
         let metric = metrics
             .get(update.metric)
-            .ok_or_else(|| missing_metric(update.metric))
+            .ok_or_else(|| {
+                io::Error::other(format!(
+                    "the case defines no metric at index {}",
+                    update.metric
+                ))
+            })
             .or_value_error()?;
         let pairs = label_pairs(&metric.description.label_names, &update.labels);
         let handle = metric.labels(&pairs);
@@ -80,7 +83,6 @@ fn label_pairs<'names, 'values>(
     pairs
 }
 
-// the case's number as the MetricValue betterlite's API takes: a finite decimal, or the infinity it names
 fn metric_value(value: f64) -> MetricValue {
     match Decimal::from_f64(value) {
         Some(finite) => MetricValue::Finite(finite),
@@ -88,9 +90,4 @@ fn metric_value(value: f64) -> MetricValue {
         None if value.is_sign_negative() => MetricValue::NegativeInfinity,
         None => MetricValue::PositiveInfinity,
     }
-}
-
-fn missing_metric(index: usize) -> io::Error {
-    let message = format!("the case defines no metric at index {index}");
-    io::Error::other(message)
 }

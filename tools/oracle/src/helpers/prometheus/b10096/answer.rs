@@ -41,8 +41,7 @@ struct ScrapeAnswer {
 }
 
 pub(super) fn files_answer(directory: &Path) -> Result<serde_json::Value, Box<HelperError>> {
-    let mut names = metric_file_names(directory)?;
-    names.sort();
+    let names = metric_file_names(directory)?;
     let mut files = Vec::with_capacity(names.len());
     for name in names {
         files.push(file_out(directory, &name)?);
@@ -79,8 +78,7 @@ pub(super) fn scrape_answer(
         .render(&scrape)
         .or_value_error()?;
     let text = String::from_utf8(rendered).or_value_error()?;
-    let mut names = metric_file_names(directory)?;
-    names.sort();
+    let names = metric_file_names(directory)?;
     let mut files = Vec::with_capacity(names.len());
     for name in names {
         let bytes = fs::read(directory.join(&name)).or_value_error()?;
@@ -106,10 +104,10 @@ fn metric_file_names(directory: &Path) -> Result<Vec<String>, Box<HelperError>> 
         };
         names.push(name.to_owned());
     }
+    names.sort();
     Ok(names)
 }
 
-// the used length in the file's first four bytes, which every reader trusts over the file size
 fn used_length(bytes: &[u8]) -> usize {
     match bytes.first_chunk::<4>() {
         Some(field) => usize::try_from(i32::from_le_bytes(*field)).unwrap_or_default(),
@@ -117,7 +115,6 @@ fn used_length(bytes: &[u8]) -> usize {
     }
 }
 
-// the bytes up to the used length, which is what mmap_dict.py's read_all_values_from_file reads
 fn used_hex(bytes: &[u8]) -> String {
     let used = used_length(bytes);
     let mut hex = String::new();
@@ -127,7 +124,6 @@ fn used_hex(bytes: &[u8]) -> String {
     hex
 }
 
-// the render split at each HELP line, grouped by family name and with the lines of every family sorted
 fn blocks(text: &str) -> Vec<String> {
     let mut grouped: BTreeMap<String, Vec<&str>> = BTreeMap::new();
     let mut marker: Option<String> = None;

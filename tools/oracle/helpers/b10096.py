@@ -1,3 +1,4 @@
+import importlib
 import os
 import tempfile
 from collections.abc import Callable, Iterable
@@ -77,14 +78,6 @@ class ProcessCollector(Protocol):
 class PrometheusModule(ModuleType):
     MmapedDict: Callable[[str], Mmap]
     MultiProcessCollector: Callable[[CollectorRegistry, str], ProcessCollector]
-
-
-class FixedPid:
-    def __init__(self, pid: int) -> None:
-        self.pid = pid
-
-    def __call__(self) -> int:
-        return self.pid
 
 
 Metric: TypeAlias = Counter | Gauge | Histogram
@@ -170,9 +163,17 @@ def run_in_folder(input_value: Input, folder: Path) -> FilesAnswer | ScrapeAnswe
     metrics: list[Metric] = [build_metric(spec) for spec in input_value["metrics"]]
     for update in input_value["updates"]:
         apply_update(metrics[update["metric"]], update)
+    rename_to_pid(folder, input_value["pid"])
     if input_value["call"] == "files":
-        return files_answer(folder)
+        return {"files": [file_out(path) for path in sorted(folder.glob("*.db"))]}
     return scrape_answer(folder, input_value["accept"])
+
+
+# the files carry this process's pid; the case's pid names the files both sides compare
+def rename_to_pid(folder: Path, pid: int) -> None:
+    for path in folder.glob("*.db"):
+        stem = path.name.rsplit("_", 1)[0]
+        path.rename(folder / f"{stem}_{pid}.db")
 
 
 def read_entries(path: Path) -> list[tuple[str, float, float]]:
@@ -202,10 +203,6 @@ def file_out(path: Path) -> FileOut:
     }
 
 
-def files_answer(directory: Path) -> FilesAnswer:
-    return {"files": [file_out(path) for path in sorted(directory.glob("*.db"))]}
-
-
 def used_hex(path: Path) -> str:
     data = path.read_bytes()
     return data[: used_length(data)].hex()
@@ -229,23 +226,23 @@ def blocks(text: str) -> list[str]:
             marker = line.split(" ")[2]
         elif line == "# EOF":
             marker = "# EOF"
-        if not marker:
-            continue
-        grouped.setdefault(marker, []).append(line)
+        if marker:
+            grouped.setdefault(marker, []).append(line)
     return ["\n".join(sorted(grouped[name])) for name in sorted(grouped)]
 
 
 def run(input_value: Input) -> FilesAnswer | ScrapeAnswer:
-    previous_directory = os.environ.pop("PROMETHEUS_MULTIPROC_DIR", None)
-    previous_value_class = values.ValueClass
+    previous = os.environ.pop("PROMETHEUS_MULTIPROC_DIR", None)
     try:
-        values.ValueClass = values.MultiProcessValue(FixedPid(input_value["pid"]))
         with tempfile.TemporaryDirectory() as folder:
             os.environ["PROMETHEUS_MULTIPROC_DIR"] = folder
+            # prometheus_client picks its value class at import, so reload values.py with the folder set
+            importlib.reload(values)
             answer = run_in_folder(input_value, Path(folder))
     finally:
-        values.ValueClass = previous_value_class
-        os.environ.pop("PROMETHEUS_MULTIPROC_DIR", None)
-        if previous_directory is not None:
-            os.environ["PROMETHEUS_MULTIPROC_DIR"] = previous_directory
+        if previous is None:
+            os.environ.pop("PROMETHEUS_MULTIPROC_DIR", None)
+        else:
+            os.environ["PROMETHEUS_MULTIPROC_DIR"] = previous
+        importlib.reload(values)
     return answer
