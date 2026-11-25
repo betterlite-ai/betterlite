@@ -711,7 +711,8 @@ fn concurrent_registrations_of_one_name_leave_one_collector() {
                     Vec::new(),
                 );
                 let _started = barrier.wait();
-                outcomes.lock().unwrap().push(registry.register(metric));
+                let outcome = registry.register(metric);
+                outcomes.lock().unwrap().push(outcome);
             }));
         }
         assert_eq!(spawned.len(), REGISTRATIONS);
