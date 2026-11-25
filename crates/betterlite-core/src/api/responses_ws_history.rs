@@ -145,11 +145,11 @@ impl<Sink: FrameSink> ManagedResponsesWebSocket<Sink> {
                 .saturating_sub(payload_bytes(&stale));
         }
         let stored = messages.len();
-        self.session_history.insert(response_id.clone(), messages);
-        self.session_history_bytes = self.session_history_bytes.saturating_add(bytes);
         tracing::debug!(
             "ManagedResponsesWS: stored {stored} messages for response_id={response_id}"
         );
+        self.session_history.insert(response_id, messages);
+        self.session_history_bytes = self.session_history_bytes.saturating_add(bytes);
     }
 
     pub async fn parse_message(

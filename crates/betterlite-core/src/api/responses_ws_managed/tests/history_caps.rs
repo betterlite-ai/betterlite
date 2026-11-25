@@ -122,13 +122,8 @@ fn storing_an_id_again_replaces_it_and_counts_only_the_new_list() {
 async fn a_turn_over_the_budget_is_not_stored_and_warns_once() {
     let shared = support::shared();
     let mut handler = capped(&shared, 16);
-    let provider = support::ScriptedProvider::new(
-        &shared,
-        vec![
-            support::script(vec![support::event(FIRST)]),
-            support::script(vec![support::event(SECOND)]),
-        ],
-    );
+    let provider =
+        support::ScriptedProvider::new(&shared, vec![support::script(vec![support::event(FIRST)])]);
 
     let (outcome, logs) = support::capture(process_response_create(
         &mut handler,
@@ -142,6 +137,29 @@ async fn a_turn_over_the_budget_is_not_stored_and_warns_once() {
     assert_eq!(logs.len(), 1);
     assert!(logs[0].starts_with("ManagedResponsesWS: not storing "));
     assert!(logs[0].ends_with("; the budget is 16 bytes"));
+}
+
+#[tokio::test]
+async fn a_turn_naming_a_refused_id_gets_no_history() {
+    let shared = support::shared();
+    let mut handler = capped(&shared, 16);
+    let provider = support::ScriptedProvider::new(
+        &shared,
+        vec![
+            support::script(vec![support::event(FIRST)]),
+            support::script(vec![support::event(SECOND)]),
+        ],
+    );
+
+    let (refused, refused_logs) = support::capture(process_response_create(
+        &mut handler,
+        &provider,
+        FIRST_FRAME,
+    ))
+    .await;
+    refused.unwrap();
+    assert!(handler.session_history.is_empty());
+    assert_eq!(refused_logs.len(), 1);
 
     let (later, later_logs) = support::capture(process_response_create(
         &mut handler,
@@ -151,6 +169,7 @@ async fn a_turn_over_the_budget_is_not_stored_and_warns_once() {
     .await;
     later.unwrap();
     let recorded = support::calls(&shared);
+    assert_eq!(recorded.len(), 2);
     assert_eq!(
         recorded[1].kwargs.get("input"),
         Some(&support::json(r#""again""#))
@@ -166,7 +185,7 @@ async fn a_turn_over_the_budget_is_not_stored_and_warns_once() {
 }
 
 #[tokio::test]
-async fn a_turn_naming_a_dropped_or_unknown_id_gets_no_history() {
+async fn a_turn_naming_a_dropped_id_gets_no_history() {
     let shared = support::shared();
     let mut handler = capped(&shared, 28);
     handler.store_history("r1".to_owned(), messages("a"));
@@ -174,52 +193,61 @@ async fn a_turn_naming_a_dropped_or_unknown_id_gets_no_history() {
     handler.store_history("r3".to_owned(), messages("a"));
     let provider = support::ScriptedProvider::new(
         &shared,
-        vec![
-            support::script(vec![support::event(SECOND)]),
-            support::script(vec![support::event(SECOND)]),
-        ],
+        vec![support::script(vec![support::event(SECOND)])],
     );
 
-    let (dropped, dropped_logs) = support::capture(process_response_create(
+    let (dropped, logs) = support::capture(process_response_create(
         &mut handler,
         &provider,
         DROPPED_FRAME,
     ))
     .await;
     dropped.unwrap();
-    let (unknown, unknown_logs) = support::capture(process_response_create(
-        &mut handler,
-        &provider,
-        UNKNOWN_FRAME,
-    ))
-    .await;
-    unknown.unwrap();
-
     let recorded = support::calls(&shared);
-    assert_eq!(recorded.len(), 2);
+    assert_eq!(recorded.len(), 1);
     assert_eq!(
         recorded[0].kwargs.get("input"),
         Some(&support::json(r#""again""#))
-    );
-    assert_eq!(
-        recorded[1].kwargs.get("input"),
-        recorded[0].kwargs.get("input")
     );
     assert_eq!(
         recorded[0].kwargs.get("previous_response_id"),
         Some(&support::json(r#""r1""#))
     );
     assert_eq!(
-        recorded[1].kwargs.get("previous_response_id"),
+        logs[0],
+        "ManagedResponsesWS: no in-memory history for previous_response_id=r1; falling back to DB-based session reconstruction"
+    );
+    assert!(get_history_messages(&handler, "r1").is_empty());
+}
+
+#[tokio::test]
+async fn a_turn_naming_an_unknown_id_gets_no_history() {
+    let shared = support::shared();
+    let mut handler = capped(&shared, 28);
+    let provider = support::ScriptedProvider::new(
+        &shared,
+        vec![support::script(vec![support::event(SECOND)])],
+    );
+
+    let (unknown, logs) = support::capture(process_response_create(
+        &mut handler,
+        &provider,
+        UNKNOWN_FRAME,
+    ))
+    .await;
+    unknown.unwrap();
+    let recorded = support::calls(&shared);
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(
+        recorded[0].kwargs.get("input"),
+        Some(&support::json(r#""again""#))
+    );
+    assert_eq!(
+        recorded[0].kwargs.get("previous_response_id"),
         Some(&support::json(r#""resp_nope""#))
     );
     assert_eq!(
-        dropped_logs[0],
-        "ManagedResponsesWS: no in-memory history for previous_response_id=r1; falling back to DB-based session reconstruction"
-    );
-    assert_eq!(
-        unknown_logs[0],
+        logs[0],
         "ManagedResponsesWS: no in-memory history for previous_response_id=resp_nope; falling back to DB-based session reconstruction"
     );
-    assert!(get_history_messages(&handler, "r1").is_empty());
 }
