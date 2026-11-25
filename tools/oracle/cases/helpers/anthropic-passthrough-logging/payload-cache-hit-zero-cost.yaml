@@ -1,0 +1,15 @@
+kind: helper
+name: anthropic-passthrough-payload-cache-hit-zero-cost
+call:
+  b3634:
+    operation: "handler"
+    status_code: 200
+    url_route: "/v1/messages"
+    body: "{\"id\":\"msg_up\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-5\",\"content\":[{\"type\":\"text\",\"text\":\"hello\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":10,\"output_tokens\":5}}"
+    request_body: {"model": "claude-sonnet-4-5"}
+    litellm_params: {}
+    passthrough_logging_payload: {}
+    details: {"cache_hit": true}
+    lines: []
+env: {LITELLM_RUST: 'false'}
+compare: {ignore: []}

@@ -1,0 +1,19 @@
+kind: helper
+name: caller-headers-normalize-aws
+call:
+  b3603:
+    normalize:
+      value: "AWS4-HMAC-SHA256 Credential=Bearer sk-abc/20240101/us-east-1/bedrock/aws4_request, SignedHeaders=host, Signature=sig"
+calls:
+  - b3603:
+      normalize:
+        value: "AWS4-HMAC-SHA256 Credential=AKIAEXAMPLE/20240101/us-east-1/bedrock/aws4_request"
+  - b3603:
+      normalize:
+        value: "AWS4-HMAC-SHA256 Credential=plain, Credential=Bearer sk-9/x"
+  - b3603:
+      normalize:
+        value: "AWS4-HMAC-SHA256 SignedHeaders=host"
+env: {}
+compare:
+  ignore: []

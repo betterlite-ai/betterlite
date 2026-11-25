@@ -74,6 +74,7 @@ deviations: []
 out_of_scope:
 - The `RerankResponse` type and the shared helpers are B6040.
 - Provider rerank request code is in the provider tasks and the SDK rerank entry.
+- A provider status the rerank plan drops because dispatch builds raw error facts with no response (a Cohere 498 or a 400 "invalid api token"). That is B10107, in betterlite-error.
 pitfalls:
 - "A test that compares a private LiteLLM field, such as _hidden_params, carries a noqa for SLF001 with the pinned LiteLLM link on the same line, as crates/betterlite-python/tests/test_chat_response_objects.py does; four of the expects are for those lines."
 - Keep the order of `results` as the provider gave it. Do not sort by index.

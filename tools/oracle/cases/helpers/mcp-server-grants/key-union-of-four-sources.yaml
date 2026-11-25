@@ -1,0 +1,50 @@
+# A key's servers are its expanded mcp_servers (an alias and a server_name become ids, an unknown entry passes),
+# its tag-style group servers, its tool grant servers and its toolset servers, once each; all-proxy-mcpservers is
+# only a name on a key, and the unified access group servers come on top.
+kind: helper
+name: mcp-server-grants-key-union-of-four-sources
+call:
+  b4669:
+    function: key
+    servers:
+      - {server_id: srv-gh, name: github, alias: gh, server_name: null, transport: http, access_groups: null}
+      - {server_id: srv-direct, name: direct, alias: null, server_name: null, transport: http, access_groups: [grp-1]}
+      - {server_id: srv-group, name: group, alias: null, server_name: null, transport: http, access_groups: [grp-1]}
+      - {server_id: srv-tools, name: tools, alias: tool-alias, server_name: null, transport: http, access_groups: null}
+      - {server_id: srv-extra, name: extra, alias: null, server_name: null, transport: http, access_groups: null}
+    access_groups:
+      - {access_group_id: ag-1, access_mcp_server_ids: [srv-extra]}
+    toolset_grants: {srv-toolset: [list]}
+    permission:
+      object_permission_id: op-case
+      mcp_servers: [gh, srv-direct, unknown-name]
+      mcp_access_groups: [grp-1]
+      mcp_tool_permissions: {tool-alias: [read]}
+      mcp_toolsets: [ts-1]
+    access_group_ids: [ag-1]
+calls:
+  - b4669:
+      function: key
+      servers:
+        - {server_id: srv-a, name: alpha, alias: null, server_name: shared, transport: http, access_groups: null}
+        - {server_id: srv-b, name: beta, alias: null, server_name: shared, transport: http, access_groups: [grp-2]}
+      access_groups: []
+      toolset_grants: {}
+      permission:
+        object_permission_id: op-case
+        mcp_servers: [shared, all-proxy-mcpservers]
+        mcp_access_groups: [grp-2]
+        mcp_tool_permissions: {srv-a: [read], beta: [write]}
+        mcp_toolsets: []
+      access_group_ids: [ag-missing]
+  - b4669:
+      function: key
+      servers:
+        - {server_id: srv-a, name: alpha, alias: null, server_name: null, transport: http, access_groups: null}
+      access_groups:
+        - {access_group_id: ag-1, access_mcp_server_ids: [alpha, srv-loose]}
+      toolset_grants: {}
+      permission: {object_permission_id: op-case, mcp_servers: null, mcp_access_groups: null, mcp_tool_permissions: null, mcp_toolsets: null}
+      access_group_ids: [ag-1]
+env: {}
+compare: {ignore: []}

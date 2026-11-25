@@ -1,0 +1,19 @@
+# The teams a user's record lists come back in first-seen order without duplicates, empty ids or the dashboard team.
+kind: helper
+name: mcp-server-grants-user-team-ids-filtered
+call:
+  b4669:
+    function: user_teams
+    user_id: user-1
+    teams: [team-b, "", team-a, litellm-dashboard, team-b, team-c]
+calls:
+  - b4669:
+      function: user_teams
+      user_id: user-1
+      teams: []
+  - b4669:
+      function: user_teams
+      user_id: user-2
+      teams: [litellm-dashboard, ""]
+env: {}
+compare: {ignore: []}
