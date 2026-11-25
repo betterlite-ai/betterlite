@@ -1,0 +1,10 @@
+kind: helper
+name: mcp-tool-registry-list-empty-prefix
+call:
+  b4680:
+    function: list_tools
+    tool_names: [files.read, search.web]
+    prefix: ""
+    mcp_tools: null
+env: {}
+compare: {ignore: []}
