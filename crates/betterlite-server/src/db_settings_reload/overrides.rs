@@ -8,12 +8,13 @@ use betterlite_secret_managers::secret_types::KeyManagementSystem;
 
 use super::SettingsReloadError;
 use super::SettingsReloader;
-use super::ports::SettingsRows;
+use super::ports::{SecretManagerSelection, SettingsRows};
 use crate::config_override_support::decode::decode_stored_override;
-use crate::config_override_support::environment::project_environment;
+use crate::config_override_support::environment::{EnvironmentSnapshot, project_environment};
 use crate::config_override_support::models::OverrideKind;
 use crate::config_override_support::state::{
-    clear_cyberark_state, clear_hashicorp_vault_state, snapshot_cyberark_boot_env,
+    SecretManagerControl, SecretManagerInitError, clear_cyberark_state,
+    clear_hashicorp_vault_state, snapshot_cyberark_boot_env,
 };
 use crate::env_value_codec::decrypt_env;
 
@@ -34,18 +35,7 @@ where
         read_override(reloader.reconnect.as_mut(), db, kind, lookup_reason(kind)).await?
     else {
         if last_override(reloader, kind).is_some() {
-            match kind {
-                OverrideKind::HashicorpVault => clear_hashicorp_vault_state(
-                    &mut reloader.environment,
-                    &mut reloader.state,
-                    reloader.control.as_mut(),
-                ),
-                OverrideKind::CyberArk => clear_cyberark_state(
-                    &mut reloader.environment,
-                    &mut reloader.state,
-                    reloader.control.as_mut(),
-                ),
-            }
+            clear_state(reloader, kind);
         }
         return Ok(());
     };
@@ -84,7 +74,8 @@ where
     reloader
         .environment
         .apply(&project_environment(kind, &decrypted));
-    if let Err(source) = reloader.control.initialize(manager_of(kind)) {
+    let environment = reloader.environment.snapshot();
+    if let Err(source) = reloader.control.initialize(manager_of(kind), &environment) {
         reloader
             .environment
             .apply(&project_environment(kind, &previous));
@@ -96,6 +87,55 @@ where
         OverrideKind::CyberArk => reloader.state.cyberark_last_config = Some(stored),
     }
     Ok(())
+}
+
+// B1646's clear helpers apply their batch themselves, so the reload applies the same batch first to snapshot what they see.
+fn clear_state<Client>(reloader: &mut SettingsReloader<Client>, kind: OverrideKind)
+where
+    Client: Send,
+{
+    let values = match kind {
+        OverrideKind::HashicorpVault => JsonMap::new(),
+        OverrideKind::CyberArk => reloader.state.cyberark_boot_env.clone().unwrap_or_default(),
+    };
+    reloader
+        .environment
+        .apply(&project_environment(kind, &values));
+    let environment = reloader.environment.snapshot();
+    let mut control = EnvironmentAwareControl {
+        selection: reloader.control.as_mut(),
+        environment: &environment,
+    };
+    match kind {
+        OverrideKind::HashicorpVault => clear_hashicorp_vault_state(
+            &mut reloader.environment,
+            &mut reloader.state,
+            &mut control,
+        ),
+        OverrideKind::CyberArk => {
+            clear_cyberark_state(&mut reloader.environment, &mut reloader.state, &mut control)
+        }
+    }
+}
+
+// B1646's helpers hold a &mut dyn SecretManagerControl; the bridge gives every initialize the effective snapshot.
+struct EnvironmentAwareControl<'environment> {
+    selection: &'environment mut (dyn SecretManagerSelection + 'static),
+    environment: &'environment EnvironmentSnapshot,
+}
+
+impl SecretManagerControl for EnvironmentAwareControl<'_> {
+    fn active_manager(&self) -> Option<KeyManagementSystem> {
+        self.selection.active_manager()
+    }
+
+    fn drop_active_manager(&mut self) {
+        self.selection.drop_active_manager();
+    }
+
+    fn initialize(&mut self, kind: KeyManagementSystem) -> Result<(), SecretManagerInitError> {
+        self.selection.initialize(kind, self.environment)
+    }
 }
 
 const fn last_override<Client>(

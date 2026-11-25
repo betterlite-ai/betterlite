@@ -9,6 +9,7 @@ mod tests;
 
 use betterlite_auth::sso_mappings::repository::SsoSettingsRows;
 use betterlite_config::sections::settings::JsonValue;
+use betterlite_db::auxiliary_repository::repository::TableError;
 use betterlite_db::database_faults::DbError;
 use betterlite_db::database_faults::reconnect::DbReconnect;
 use betterlite_db::stored_cipher::DbCipher;
@@ -16,18 +17,18 @@ use betterlite_openai::openai_base_config::Object as JsonMap;
 use thiserror::Error;
 
 use self::overrides::apply_override;
-use self::ports::{NoReconnect, SemanticFilterReload, SettingsRows, WebsearchInterception};
+use self::ports::{
+    NoReconnect, SecretManagerSelection, SemanticFilterReload, SettingsRows, WebsearchInterception,
+};
 use self::settings_value::{
-    enabled_flag, litellm_settings_object, semantic_config, semantic_enabled,
+    enabled_flag, litellm_settings_object, semantic_config, semantic_filter_config,
 };
 use self::sso::apply_sso;
 use self::websearch_params::{WebsearchParamError, handler_params};
 use crate::config_override_support::decode::StoredOverrideError;
 use crate::config_override_support::environment::RuntimeEnvironment;
 use crate::config_override_support::models::OverrideKind;
-use crate::config_override_support::state::{
-    OverrideRuntimeState, SecretManagerControl, SecretManagerInitError,
-};
+use crate::config_override_support::state::{OverrideRuntimeState, SecretManagerInitError};
 use crate::db_row_decrypt::warnings::Warnings;
 
 const WEBSEARCH_KEY: &str = "websearch_interception_params";
@@ -37,7 +38,7 @@ const SEMANTIC_FILTER_KEY: &str = "mcp_semantic_tool_filter";
 pub struct SettingsReloader<Client: Send = NoReconnect> {
     pub cipher: DbCipher,
     pub environment: RuntimeEnvironment,
-    pub control: Box<dyn SecretManagerControl + Send>,
+    pub control: Box<dyn SecretManagerSelection>,
     pub warnings: Warnings,
     pub state: OverrideRuntimeState,
     pub reconnect: Option<Client>,
@@ -55,12 +56,20 @@ pub enum SettingsReloadError {
     LitellmSettingsNotAnObject,
     #[error(transparent)]
     WebsearchParams(#[from] WebsearchParamError),
+    #[error("could not read the sso_settings row: {0}")]
+    SsoRow(#[source] TableError),
     #[error("sso_settings is not a JSON object")]
     SsoNotAnObject,
     #[error("mcp_semantic_tool_filter is not a JSON object")]
     SemanticFilterNotAnObject,
     #[error("mcp_semantic_tool_filter.enabled must be a boolean")]
     SemanticFilterEnabledNotBool,
+    #[error("mcp_semantic_tool_filter.embedding_model must be a string")]
+    SemanticFilterEmbeddingModelNotString,
+    #[error("mcp_semantic_tool_filter.top_k must be an integer")]
+    SemanticFilterTopKNotInteger,
+    #[error("mcp_semantic_tool_filter.similarity_threshold must be a number")]
+    SemanticFilterSimilarityThresholdNotNumber,
     #[error(transparent)]
     Override(#[from] StoredOverrideError),
     #[error(transparent)]
@@ -165,22 +174,22 @@ impl<Client: DbReconnect + Send> SettingsReloader<Client> {
         let Some(stored) = settings.get(SEMANTIC_FILTER_KEY) else {
             return Ok(());
         };
-        let Some(config) = semantic_config(stored)? else {
+        let Some(stored_config) = semantic_config(stored)? else {
             return Ok(());
         };
         let Some(hook) = filter else {
             tracing::error!("no semantic filter is installed for 'mcp_semantic_tool_filter'");
             return Ok(());
         };
-        if self.skip_semantic_rebuild(hook, config) {
+        if self.skip_semantic_rebuild(hook, stored_config) {
             return Ok(());
         }
-        let enabled = semantic_enabled(config)?;
-        let registered = hook.rebuild(enabled, router).await;
-        if enabled && registered {
+        let config = semantic_filter_config(stored_config)?;
+        let registered = hook.rebuild(&config, router).await;
+        if config.enabled && registered {
             tracing::info!("MCP Semantic Filter reinitialized from DB");
         }
-        if !enabled {
+        if !config.enabled {
             tracing::info!("MCP Semantic Filter disabled");
         }
         self.last_semantic_filter = Some(stored.clone());

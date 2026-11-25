@@ -1,9 +1,15 @@
+use std::error::Error as _;
+
+use betterlite_db::auxiliary_repository::repository::TableError;
 use betterlite_db::stored_cipher::DbCipher;
 
 use super::support::{
     ControlLog, FakeReconnect, FakeSso, ReconnectResult, SsoReply, capture_logs, cipher, env_value,
     reloader, reloader_with, sealed,
 };
+use crate::db_settings_reload::SettingsReloadError;
+use crate::db_settings_reload::ports::NoReconnect;
+use crate::db_settings_reload::sso::read_sso_row;
 
 const SSO_ERROR: &str = "litellm.proxy.proxy_server.py::ProxyConfig:_init_sso_settings_in_db - ";
 
@@ -167,6 +173,19 @@ async fn a_reconnect_error_is_logged() {
     reloader.reload_sso(&db).await;
     assert_eq!(db.calls(), 1);
     assert!(logs.contents().contains(SSO_ERROR));
+}
+
+#[tokio::test]
+async fn a_row_read_failure_keeps_the_table_error_as_its_source() {
+    let db = FakeSso::new(SsoReply::Failed);
+    let mut reconnect: Option<NoReconnect> = None;
+    let error = read_sso_row(reconnect.as_mut(), &db).await.unwrap_err();
+    assert!(matches!(
+        &error,
+        SettingsReloadError::SsoRow(TableError::MissingRow)
+    ));
+    let source = error.source().unwrap();
+    assert_eq!(source.to_string(), "statement returned no row");
 }
 
 #[tokio::test]

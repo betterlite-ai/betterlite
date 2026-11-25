@@ -1,12 +1,11 @@
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_config::sections::settings::coerce_bool::coerce_bool;
-use betterlite_db::auxiliary_repository::repository::TableError;
-use betterlite_db::database_faults::native::is_native_transport_error;
-use betterlite_db::database_faults::{DbError, ErrorType};
 use betterlite_openai::openai_base_config::Object as JsonMap;
+use serde::Deserialize;
+use serde::de::IgnoredAny;
 
 use super::SettingsReloadError;
-use super::ports::SettingsRows;
+use super::ports::{SemanticFilterConfig, SettingsRows};
 
 // LiteLLM decodes a JSON string param_value once; every other shape fails at the .get it does next.
 pub(crate) async fn litellm_settings_object<Db>(
@@ -21,17 +20,17 @@ where
     match stored {
         JsonValue::Null => Ok(None),
         JsonValue::Object(settings) => Ok(Some(settings)),
-        JsonValue::String(text) => decode_settings(&text),
+        JsonValue::String(text) => decode_settings(&text).map(Some),
         JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Array(_) => {
             Err(SettingsReloadError::LitellmSettingsNotAnObject)
         }
     }
 }
 
-fn decode_settings(text: &str) -> Result<Option<JsonMap>, SettingsReloadError> {
+fn decode_settings(text: &str) -> Result<JsonMap, SettingsReloadError> {
     let decoded: JsonValue = serde_json::from_str(text)?;
     match decoded {
-        JsonValue::Object(settings) => Ok(Some(settings)),
+        JsonValue::Object(settings) => Ok(settings),
         JsonValue::Null
         | JsonValue::Bool(_)
         | JsonValue::Number(_)
@@ -59,34 +58,80 @@ pub(crate) fn semantic_config(stored: &JsonValue) -> Result<Option<&JsonMap>, Se
     Err(SettingsReloadError::SemanticFilterNotAnObject)
 }
 
-// mcp_semantic_tool_filter is a declared bool, so a value of another type is an error naming the field.
-pub(crate) fn semantic_enabled(config: &JsonMap) -> Result<bool, SettingsReloadError> {
-    match config.get("enabled") {
-        Some(JsonValue::Bool(flag)) => Ok(*flag),
-        None | Some(JsonValue::Null) => Ok(false),
-        Some(
-            JsonValue::Number(_)
-            | JsonValue::String(_)
-            | JsonValue::Array(_)
-            | JsonValue::Object(_),
-        ) => Err(SettingsReloadError::SemanticFilterEnabledNotBool),
-    }
+// SemanticToolFilterConfig: a declared field of another type is an error naming it, a missing one keeps the hook's default.
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct StoredSemanticFilter {
+    enabled: Option<StoredFlag>,
+    embedding_model: Option<StoredText>,
+    top_k: Option<StoredInteger>,
+    similarity_threshold: Option<StoredFloat>,
 }
 
-// The retry helper classifies faults by type, so a native transport error has to arrive as Connect.
-pub(crate) fn database_fault(error: &TableError) -> DbError {
-    let transport =
-        matches!(error, TableError::Database(native) if is_native_transport_error(native));
-    DbError {
-        error_type: if transport {
-            ErrorType::Connect
-        } else {
-            ErrorType::Other
-        },
-        message: error.to_string(),
-        code: None,
-        meta_code: None,
-        traceback_modules: Vec::new(),
-        cause: None,
-    }
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum StoredFlag {
+    Bool(bool),
+    Wrong(IgnoredAny),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum StoredText {
+    Text(String),
+    Wrong(IgnoredAny),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum StoredInteger {
+    Integer(i64),
+    Wrong(IgnoredAny),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum StoredFloat {
+    Float(f64),
+    Wrong(IgnoredAny),
+}
+
+pub(crate) fn semantic_filter_config(
+    config: &JsonMap,
+) -> Result<SemanticFilterConfig, SettingsReloadError> {
+    let stored: StoredSemanticFilter = serde_json::from_value(JsonValue::Object(config.clone()))?;
+    let enabled = match stored.enabled {
+        None => false,
+        Some(StoredFlag::Bool(flag)) => flag,
+        Some(StoredFlag::Wrong(_)) => {
+            return Err(SettingsReloadError::SemanticFilterEnabledNotBool);
+        }
+    };
+    let embedding_model = match stored.embedding_model {
+        None => None,
+        Some(StoredText::Text(model)) => Some(model),
+        Some(StoredText::Wrong(_)) => {
+            return Err(SettingsReloadError::SemanticFilterEmbeddingModelNotString);
+        }
+    };
+    let top_k = match stored.top_k {
+        None => None,
+        Some(StoredInteger::Integer(count)) => Some(count),
+        Some(StoredInteger::Wrong(_)) => {
+            return Err(SettingsReloadError::SemanticFilterTopKNotInteger);
+        }
+    };
+    let similarity_threshold = match stored.similarity_threshold {
+        None => None,
+        Some(StoredFloat::Float(value)) => Some(value),
+        Some(StoredFloat::Wrong(_)) => {
+            return Err(SettingsReloadError::SemanticFilterSimilarityThresholdNotNumber);
+        }
+    };
+    Ok(SemanticFilterConfig {
+        enabled,
+        embedding_model,
+        top_k,
+        similarity_threshold,
+    })
 }

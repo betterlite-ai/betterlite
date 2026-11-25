@@ -4,6 +4,8 @@ use betterlite_config::agentic_loop_ceiling::{
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_config::sections::websearch_request_hooks::Settings as WebsearchParams;
 use betterlite_openai::openai_base_config::Object as JsonMap;
+use serde::Deserialize;
+use serde::de::IgnoredAny;
 use thiserror::Error;
 
 const LOOP_FIELD: &str = "websearch_interception_params.max_agentic_loops";
@@ -14,65 +16,79 @@ pub enum WebsearchParamError {
     EnabledProvider,
     #[error("websearch_interception_params.search_tool_name must be a string")]
     SearchToolName,
+    #[error("websearch_interception_params is not a valid settings mapping")]
+    Shape(#[source] serde_json::Error),
     #[error(transparent)]
     MaxAgenticLoops(#[from] AgenticLoopCeilingError),
 }
 
-// _websearch_handler_params: "enabled" gates the callback, and an enabled_providers that is not a non-empty list is dropped, so the handler's own defaults apply.
+// The declared WebSearchInterceptionConfig: only handler fields are modeled here, "enabled" gates the callback.
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct StoredHandlerParams {
+    enabled_providers: Option<StoredProviders>,
+    search_tool_name: Option<StoredToolName>,
+    max_agentic_loops: Option<StoredLoopNumber>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum StoredProviders {
+    Names(Vec<String>),
+    WrongItems(Vec<IgnoredAny>),
+    NotAList(IgnoredAny),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum StoredToolName {
+    Text(String),
+    Wrong(IgnoredAny),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum StoredLoopNumber {
+    Boolean(bool),
+    Integer(i64),
+    Float(f64),
+    Text(String),
+    Other(IgnoredAny),
+}
+
+// _websearch_handler_params: an enabled_providers that is not a non-empty list is dropped, so the handler's own defaults apply.
 pub(crate) fn handler_params(stored: &JsonMap) -> Result<WebsearchParams, WebsearchParamError> {
-    let defaults = WebsearchParams::default();
-    let enabled_providers = match stored.get("enabled_providers") {
-        Some(JsonValue::Array(items)) if !items.is_empty() => items
-            .iter()
-            .map(provider_name)
-            .collect::<Result<Vec<_>, _>>()?,
-        Some(_) | None => defaults.enabled_providers,
-    };
-    let search_tool_name = match stored.get("search_tool_name") {
-        Some(JsonValue::String(name)) => Some(name.clone()),
-        Some(JsonValue::Null) | None => None,
-        Some(
-            JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Array(_) | JsonValue::Object(_),
-        ) => {
-            return Err(WebsearchParamError::SearchToolName);
+    let parsed: StoredHandlerParams = serde_json::from_value(JsonValue::Object(stored.clone()))
+        .map_err(WebsearchParamError::Shape)?;
+    let enabled_providers = match parsed.enabled_providers {
+        Some(StoredProviders::Names(names)) if !names.is_empty() => names,
+        Some(StoredProviders::WrongItems(_)) => return Err(WebsearchParamError::EnabledProvider),
+        Some(StoredProviders::Names(_)) | Some(StoredProviders::NotAList(_)) | None => {
+            WebsearchParams::default().enabled_providers
         }
     };
-    let ceiling = stored
-        .get("max_agentic_loops")
-        .map_or(AgenticLoopValue::Null, loop_value);
-    let max_agentic_loops = validated_max_agentic_loops(&ceiling, LOOP_FIELD)?;
+    let search_tool_name = match parsed.search_tool_name {
+        Some(StoredToolName::Text(name)) => Some(name),
+        Some(StoredToolName::Wrong(_)) => return Err(WebsearchParamError::SearchToolName),
+        None => None,
+    };
+    let ceiling = match parsed.max_agentic_loops {
+        Some(StoredLoopNumber::Boolean(flag)) => AgenticLoopValue::Boolean(flag),
+        Some(StoredLoopNumber::Integer(number)) => AgenticLoopValue::Integer(number),
+        Some(StoredLoopNumber::Float(number)) => AgenticLoopValue::Float(number),
+        Some(StoredLoopNumber::Text(text)) => AgenticLoopValue::Text(text),
+        Some(StoredLoopNumber::Other(_)) => {
+            return Err(WebsearchParamError::MaxAgenticLoops(
+                AgenticLoopCeilingError::NotWholeNumber {
+                    field: LOOP_FIELD.to_owned(),
+                },
+            ));
+        }
+        None => AgenticLoopValue::Null,
+    };
     Ok(WebsearchParams {
         enabled_providers,
         search_tool_name,
-        max_agentic_loops,
+        max_agentic_loops: validated_max_agentic_loops(&ceiling, LOOP_FIELD)?,
     })
-}
-
-fn provider_name(value: &JsonValue) -> Result<String, WebsearchParamError> {
-    match value {
-        JsonValue::String(name) => Ok(name.clone()),
-        JsonValue::Null
-        | JsonValue::Bool(_)
-        | JsonValue::Number(_)
-        | JsonValue::Array(_)
-        | JsonValue::Object(_) => Err(WebsearchParamError::EnabledProvider),
-    }
-}
-
-// A list or object is no whole number either; it rejects through the same NotWholeNumber error.
-fn loop_value(value: &JsonValue) -> AgenticLoopValue {
-    match value {
-        JsonValue::Null => AgenticLoopValue::Null,
-        JsonValue::Bool(flag) => AgenticLoopValue::Boolean(*flag),
-        JsonValue::Number(number) => number.as_i64().map_or_else(
-            || {
-                number
-                    .as_f64()
-                    .map_or(AgenticLoopValue::Null, AgenticLoopValue::Float)
-            },
-            AgenticLoopValue::Integer,
-        ),
-        JsonValue::String(text) => AgenticLoopValue::Text(text.clone()),
-        JsonValue::Array(_) | JsonValue::Object(_) => AgenticLoopValue::Text(value.to_string()),
-    }
 }

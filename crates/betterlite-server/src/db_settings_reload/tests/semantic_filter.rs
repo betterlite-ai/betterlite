@@ -1,11 +1,12 @@
 use std::sync::atomic::Ordering;
 
 use betterlite_config::sections::settings::JsonValue;
+use rstest::rstest;
 
 use super::support::{
     ControlLog, FakeFilter, FakeRows, RebuildCall, TestRouter, capture_logs, json, reloader,
 };
-use crate::db_settings_reload::ports::SemanticFilterReload;
+use crate::db_settings_reload::ports::{SemanticFilterConfig, SemanticFilterReload};
 
 fn rows_with(config: &str) -> FakeRows {
     FakeRows::litellm(json(&format!("{{\"mcp_semantic_tool_filter\":{config}}}")))
@@ -13,6 +14,15 @@ fn rows_with(config: &str) -> FakeRows {
 
 fn port(filter: &FakeFilter) -> &dyn SemanticFilterReload<TestRouter> {
     filter
+}
+
+fn filter_config(enabled: bool) -> SemanticFilterConfig {
+    SemanticFilterConfig {
+        enabled,
+        embedding_model: None,
+        top_k: None,
+        similarity_threshold: None,
+    }
 }
 
 #[tokio::test]
@@ -119,7 +129,7 @@ async fn a_disabled_config_rebuilds_and_is_remembered() {
     assert_eq!(
         filter.rebuilds(),
         vec![RebuildCall {
-            enabled: false,
+            config: filter_config(false),
             has_router: true,
         }]
     );
@@ -142,7 +152,7 @@ async fn a_config_without_enabled_is_rebuilt_as_disabled() {
     assert_eq!(
         filter.rebuilds(),
         vec![RebuildCall {
-            enabled: false,
+            config: filter_config(false),
             has_router: false,
         }]
     );
@@ -160,7 +170,7 @@ async fn a_null_enabled_is_rebuilt_as_disabled() {
     assert_eq!(
         filter.rebuilds(),
         vec![RebuildCall {
-            enabled: false,
+            config: filter_config(false),
             has_router: false,
         }]
     );
@@ -184,7 +194,7 @@ async fn an_enabled_config_that_registers_a_hook_says_so() {
     assert_eq!(
         filter.rebuilds(),
         vec![RebuildCall {
-            enabled: true,
+            config: filter_config(true),
             has_router: true,
         }]
     );
@@ -215,7 +225,7 @@ async fn an_enabled_config_that_registers_no_hook_says_nothing() {
     assert_eq!(
         filter.rebuilds(),
         vec![RebuildCall {
-            enabled: true,
+            config: filter_config(true),
             has_router: true,
         }]
     );
@@ -257,7 +267,7 @@ async fn an_unchanged_config_without_a_ready_hook_rebuilds() {
     assert_eq!(
         filter.rebuilds(),
         vec![RebuildCall {
-            enabled: false,
+            config: filter_config(false),
             has_router: false,
         }]
     );
@@ -279,6 +289,92 @@ async fn a_changed_config_rebuilds_even_with_a_ready_hook() {
         .await;
     assert_eq!(filter.rebuilds().len(), 1);
     assert!(!logs.contents().contains("unchanged"));
+}
+
+#[tokio::test]
+async fn the_stored_model_and_ranking_settings_reach_the_rebuild() {
+    let control = ControlLog::default();
+    let mut reloader = reloader(&control);
+    let filter = FakeFilter::default();
+    let (_logs, _guard) = capture_logs();
+    reloader
+        .reload_semantic_filter(
+            &rows_with(
+                "{\"enabled\":true,\"embedding_model\":\"custom-embedding\",\"top_k\":3,\"similarity_threshold\":0.75}",
+            ),
+            Some(port(&filter)),
+            None,
+        )
+        .await;
+    assert_eq!(
+        filter.rebuilds(),
+        vec![RebuildCall {
+            config: SemanticFilterConfig {
+                enabled: true,
+                embedding_model: Some("custom-embedding".to_owned()),
+                top_k: Some(3),
+                similarity_threshold: Some(0.75),
+            },
+            has_router: false,
+        }]
+    );
+}
+
+#[tokio::test]
+async fn a_change_to_a_ranking_field_rebuilds_with_the_new_value() {
+    let control = ControlLog::default();
+    let mut reloader = reloader(&control);
+    let filter = FakeFilter::default();
+    filter.ready.store(true, Ordering::SeqCst);
+    let (_logs, _guard) = capture_logs();
+    reloader
+        .reload_semantic_filter(
+            &rows_with("{\"enabled\":true,\"top_k\":5}"),
+            Some(port(&filter)),
+            None,
+        )
+        .await;
+    reloader
+        .reload_semantic_filter(
+            &rows_with("{\"enabled\":true,\"top_k\":3}"),
+            Some(port(&filter)),
+            None,
+        )
+        .await;
+    let rebuilds = filter.rebuilds();
+    assert_eq!(rebuilds.len(), 2);
+    assert_eq!(rebuilds[0].config.top_k, Some(5));
+    assert_eq!(rebuilds[1].config.top_k, Some(3));
+}
+
+#[rstest]
+#[case::embedding_model(
+    "{\"embedding_model\":5}",
+    "mcp_semantic_tool_filter.embedding_model must be a string"
+)]
+#[case::top_k(
+    "{\"top_k\":\"3\"}",
+    "mcp_semantic_tool_filter.top_k must be an integer"
+)]
+#[case::top_k_float("{\"top_k\":3.0}", "mcp_semantic_tool_filter.top_k must be an integer")]
+#[case::similarity_threshold(
+    "{\"similarity_threshold\":\"high\"}",
+    "mcp_semantic_tool_filter.similarity_threshold must be a number"
+)]
+#[tokio::test]
+async fn a_filter_field_of_another_type_is_an_error(#[case] stored: &str, #[case] message: &str) {
+    let control = ControlLog::default();
+    let mut reloader = reloader(&control);
+    let filter = FakeFilter::default();
+    let (logs, _guard) = capture_logs();
+    reloader
+        .reload_semantic_filter(&rows_with(stored), Some(port(&filter)), None)
+        .await;
+    assert!(filter.rebuilds().is_empty());
+    assert!(logs.contents().contains(&format!(
+        "Error initializing semantic filter settings from DB: {message}"
+    )));
+    assert_eq!(reloader.last_semantic_filter, None);
 }
 
 #[tokio::test]

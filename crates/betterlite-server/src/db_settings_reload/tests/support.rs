@@ -23,15 +23,14 @@ use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt;
 use tracing_subscriber::fmt::MakeWriter;
 
-use crate::config_override_support::environment::RuntimeEnvironment;
+use crate::config_override_support::environment::{EnvironmentSnapshot, RuntimeEnvironment};
 use crate::config_override_support::models::OverrideKind;
-use crate::config_override_support::state::{
-    OverrideRuntimeState, SecretManagerControl, SecretManagerInitError,
-};
+use crate::config_override_support::state::{OverrideRuntimeState, SecretManagerInitError};
 use crate::db_row_decrypt::warnings::Warnings;
 use crate::db_settings_reload::SettingsReloader;
 use crate::db_settings_reload::ports::{
-    NoReconnect, SemanticFilterReload, SettingsRows, WebsearchInterception,
+    NoReconnect, SecretManagerSelection, SemanticFilterConfig, SemanticFilterReload, SettingsRows,
+    WebsearchInterception,
 };
 
 const KEY: &str = "b8383-test-key";
@@ -245,6 +244,7 @@ impl DbReconnect for FakeReconnect {
 pub(crate) struct ControlLog {
     pub active: Arc<Mutex<Option<KeyManagementSystem>>>,
     pub initialized: Arc<Mutex<Vec<KeyManagementSystem>>>,
+    pub environments: Arc<Mutex<Vec<EnvironmentSnapshot>>>,
     pub dropped: Arc<AtomicUsize>,
     pub fail: Arc<AtomicBool>,
 }
@@ -252,6 +252,13 @@ pub(crate) struct ControlLog {
 impl ControlLog {
     pub(crate) fn initialized(&self) -> Vec<KeyManagementSystem> {
         self.initialized
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    pub(crate) fn environments(&self) -> Vec<EnvironmentSnapshot> {
+        self.environments
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
@@ -274,6 +281,10 @@ impl ControlLog {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clear();
+        self.environments
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clear();
         self.dropped.store(0, Ordering::SeqCst);
         self.fail.store(false, Ordering::SeqCst);
     }
@@ -283,7 +294,7 @@ struct FakeControl {
     control: ControlLog,
 }
 
-impl SecretManagerControl for FakeControl {
+impl SecretManagerSelection for FakeControl {
     fn active_manager(&self) -> Option<KeyManagementSystem> {
         self.control.active()
     }
@@ -297,12 +308,21 @@ impl SecretManagerControl for FakeControl {
             .unwrap_or_else(PoisonError::into_inner) = None;
     }
 
-    fn initialize(&mut self, kind: KeyManagementSystem) -> Result<(), SecretManagerInitError> {
+    fn initialize(
+        &mut self,
+        kind: KeyManagementSystem,
+        environment: &EnvironmentSnapshot,
+    ) -> Result<(), SecretManagerInitError> {
         self.control
             .initialized
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(kind);
+        self.control
+            .environments
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(environment.clone());
         if self.control.fail.load(Ordering::SeqCst) {
             return Err(SecretManagerInitError {
                 message: "the fake secret manager is down".to_owned(),
@@ -378,9 +398,9 @@ impl WebsearchInterception for FakeCallbacks {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct RebuildCall {
-    pub enabled: bool,
+    pub config: SemanticFilterConfig,
     pub has_router: bool,
 }
 
@@ -406,12 +426,12 @@ impl<Router: ?Sized + Sync> SemanticFilterReload<Router> for FakeFilter {
         self.ready.load(Ordering::SeqCst)
     }
 
-    async fn rebuild(&self, enabled: bool, router: Option<&Router>) -> bool {
+    async fn rebuild(&self, config: &SemanticFilterConfig, router: Option<&Router>) -> bool {
         self.rebuilds
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(RebuildCall {
-                enabled,
+                config: config.clone(),
                 has_router: router.is_some(),
             });
         self.registers.load(Ordering::SeqCst)

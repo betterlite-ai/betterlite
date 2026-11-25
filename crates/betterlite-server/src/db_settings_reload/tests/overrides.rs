@@ -54,6 +54,15 @@ async fn a_vault_row_sets_the_mapped_environment_and_initializes_the_manager() {
         control.initialized(),
         vec![KeyManagementSystem::HashicorpVault]
     );
+    let seen = control.environments();
+    assert_eq!(
+        seen[0].values.get("HCP_VAULT_ADDR").map(String::as_str),
+        Some("addr")
+    );
+    assert_eq!(
+        seen[0].values.get("HCP_VAULT_TOKEN").map(String::as_str),
+        Some("token")
+    );
     assert_eq!(reloader.state.vault_last_config, Some(json(&config)));
     assert_eq!(reloader.state.cyberark_boot_env, None);
     assert!(
@@ -136,6 +145,28 @@ async fn a_reencrypted_value_counts_as_a_change() {
         .reload_vault(&FakeRows::vault(json(&format!("{{{second}}}"))))
         .await;
     assert_eq!(control.initialized().len(), 2);
+}
+
+#[tokio::test]
+async fn a_reinitialization_sees_the_credentials_just_written() {
+    let control = ControlLog::default();
+    let mut reloader = reloader(&control);
+    let cipher = cipher();
+    let first = vault_config(&cipher, "addr1", "token1");
+    let second = vault_config(&cipher, "addr2", "token2");
+    let (_logs, _guard) = capture_logs();
+    reloader.reload_vault(&FakeRows::vault(json(&first))).await;
+    reloader.reload_vault(&FakeRows::vault(json(&second))).await;
+    let seen = control.environments();
+    assert_eq!(seen.len(), 2);
+    assert_eq!(
+        seen[1].values.get("HCP_VAULT_ADDR").map(String::as_str),
+        Some("addr2")
+    );
+    assert_eq!(
+        seen[1].values.get("HCP_VAULT_TOKEN").map(String::as_str),
+        Some("token2")
+    );
 }
 
 #[tokio::test]
@@ -374,6 +405,17 @@ async fn a_missing_cyberark_row_restores_the_boot_environment() {
     );
     assert_eq!(env_value(&reloader, "CYBERARK_USERNAME"), None);
     assert_eq!(reloader.state.cyberark_last_config, None);
+    let seen = control.environments();
+    let restored = seen.last().unwrap();
+    assert_eq!(
+        restored.values.get("CYBERARK_API_BASE").map(String::as_str),
+        Some("boot-base")
+    );
+    assert_eq!(
+        restored.values.get("CYBERARK_ACCOUNT").map(String::as_str),
+        Some("boot-account")
+    );
+    assert_eq!(restored.values.get("CYBERARK_USERNAME"), None);
 }
 
 #[tokio::test]

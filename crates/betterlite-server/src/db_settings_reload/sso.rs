@@ -1,16 +1,19 @@
 use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_auth::sso_mappings::repository::SsoSettingsRows;
 use betterlite_config::sections::settings::JsonValue;
+use betterlite_db::auxiliary_repository::repository::TableError;
+use betterlite_db::database_faults::native::is_native_transport_error;
 use betterlite_db::database_faults::reconnect::{
     DbReconnect, RetryPolicy, call_with_db_reconnect_retry,
 };
+use betterlite_db::database_faults::{DbError, ErrorType};
 use betterlite_db::stored_cipher::DbCipher;
 use betterlite_openai::openai_base_config::Object as JsonMap;
 
 use super::SettingsReloadError;
 use super::SettingsReloader;
-use super::settings_value::database_fault;
 use crate::db_row_decrypt::env::decrypt_and_export_env;
 use crate::db_row_decrypt::warnings::Warnings;
 
@@ -26,12 +29,41 @@ where
     Db: SsoSettingsRows + ?Sized,
     Client: DbReconnect + Send,
 {
-    let stored = call_with_db_reconnect_retry(
-        reloader.reconnect.as_mut(),
-        move || async move {
-            db.stored_sso_settings()
-                .await
-                .map_err(|error| database_fault(&error))
+    let Some(text) = read_sso_row(reloader.reconnect.as_mut(), db).await? else {
+        return Ok(());
+    };
+    let exported = export_sso_settings(&reloader.cipher, &reloader.warnings, &text)?;
+    for (name, value) in exported {
+        reloader.environment.overlay.insert(name, Some(value));
+    }
+    Ok(())
+}
+
+// The retried read reports the row's own TableError, so the surfaced error keeps the repository and PostgreSQL chain.
+pub(super) async fn read_sso_row<Db, Client>(
+    reconnect: Option<&mut Client>,
+    db: &Db,
+) -> Result<Option<String>, SettingsReloadError>
+where
+    Db: SsoSettingsRows + ?Sized,
+    Client: DbReconnect + Send,
+{
+    let fault: Arc<Mutex<Option<TableError>>> = Arc::new(Mutex::new(None));
+    let slot = Arc::clone(&fault);
+    let read = call_with_db_reconnect_retry(
+        reconnect,
+        move || {
+            let attempt = Arc::clone(&slot);
+            async move {
+                match db.stored_sso_settings().await {
+                    Ok(stored) => Ok(stored),
+                    Err(error) => {
+                        let classification = database_fault(&error);
+                        *attempt.lock().unwrap_or_else(PoisonError::into_inner) = Some(error);
+                        Err(classification)
+                    }
+                }
+            }
         },
         RetryPolicy {
             reason: LOOKUP_REASON,
@@ -40,15 +72,35 @@ where
             lock_timeout_seconds: None,
         },
     )
-    .await?;
-    let Some(text) = stored else {
-        return Ok(());
-    };
-    let exported = export_sso_settings(&reloader.cipher, &reloader.warnings, &text)?;
-    for (name, value) in exported {
-        reloader.environment.overlay.insert(name, Some(value));
+    .await;
+    match read {
+        Ok(stored) => Ok(stored),
+        Err(database) => {
+            let recorded = fault.lock().unwrap_or_else(PoisonError::into_inner).take();
+            match recorded {
+                Some(source) => Err(SettingsReloadError::SsoRow(source)),
+                None => Err(SettingsReloadError::Database(database)),
+            }
+        }
     }
-    Ok(())
+}
+
+// The retry helper classifies faults by type, so a native transport error has to arrive as Connect.
+fn database_fault(error: &TableError) -> DbError {
+    let transport =
+        matches!(error, TableError::Database(native) if is_native_transport_error(native));
+    DbError {
+        error_type: if transport {
+            ErrorType::Connect
+        } else {
+            ErrorType::Other
+        },
+        message: error.to_string(),
+        code: None,
+        meta_code: None,
+        traceback_modules: Vec::new(),
+        cause: None,
+    }
 }
 
 fn export_sso_settings(
