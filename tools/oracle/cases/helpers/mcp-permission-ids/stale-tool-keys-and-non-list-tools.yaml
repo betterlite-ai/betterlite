@@ -1,0 +1,37 @@
+kind: helper
+name: stale_tool_keys_and_non_list_tools
+call:
+  mcp_permission_ids:
+    function: cleanup
+    object_permission:
+      mcp_tool_permissions:
+        srv-a: ["t2", "t1", "t2"]
+        srv-b: "not-a-list"
+        srv-c: null
+        stale: ["x"]
+    identifiers:
+      srv-a: ["id-a"]
+      srv-b: ["id-b"]
+      srv-c: ["id-c"]
+      stale: []
+calls:
+  - mcp_permission_ids:
+      function: cleanup
+      object_permission:
+        mcp_tool_permissions:
+          stale: ["t1"]
+          gone: null
+      identifiers:
+        stale: []
+        gone: []
+  - mcp_permission_ids:
+      function: cleanup
+      object_permission:
+        mcp_tool_permissions:
+          srv-a: []
+          srv-b: ["t1", "t1"]
+      identifiers:
+        srv-a: ["id-a"]
+        srv-b: ["id-b"]
+env: {}
+compare: {ignore: []}
