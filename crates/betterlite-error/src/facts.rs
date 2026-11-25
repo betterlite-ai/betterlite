@@ -68,7 +68,7 @@ impl ResponseFacts {
 
 // a synthesized status stands for an exception with no response of its own; a real one is BaseLLMException's, which always has one
 #[must_use]
-pub fn provider_response_status(
+pub const fn provider_response_status(
     status_code: Option<u16>,
     status_code_is_synthesized: bool,
 ) -> Option<u16> {
