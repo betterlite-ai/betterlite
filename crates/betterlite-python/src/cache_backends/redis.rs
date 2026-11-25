@@ -1,22 +1,30 @@
+use std::collections::BTreeMap;
 use std::error::Error as StdError;
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use betterlite_cache::configuration::settings::{
     DEFAULT_REDIS_MAJOR_VERSION, DEFAULT_REDIS_TTL_SECONDS,
 };
 use betterlite_config::loader::startup::process_environment;
+use betterlite_config::sections::Section as _;
+use betterlite_config::sections::redis_failure_policy as breaker_section;
 use betterlite_models::decisions::Json;
+use betterlite_redis::breaker_metrics::BreakerMetrics;
 use betterlite_redis::cache_primitives::decode::CachedValue;
 use betterlite_redis::redis_cache::RedisCache;
 use betterlite_redis::redis_cache::connect::RedisCacheOptions;
 use betterlite_redis::redis_cache::connect::connect;
-use betterlite_redis::redis_client_reuse::breaker::{BreakerAdmission, BreakerOpen};
 use betterlite_redis::redis_client_reuse::breaker_gate::BreakerGate;
 use betterlite_redis::redis_client_reuse::service_event::ServiceEvent;
 use betterlite_redis::redis_client_reuse::service_hooks::ServiceHooks;
 use betterlite_redis::redis_client_reuse::store::RedisClientStore;
 use betterlite_redis::redis_client_reuse::transport::RedisCacheFamily;
 use betterlite_redis::redis_live_client::LiveClientFactory;
+use betterlite_router::redis_failure_policy::RedisFailurePolicy;
+use betterlite_router::redis_failure_policy::Settings as BreakerSettings;
+use betterlite_router::redis_failure_policy::gate::PolicyGate;
+use betterlite_router::routing_state_store::BreakerClock;
 use pyo3::prelude::*;
 use pyo3_async_runtimes::tokio::{future_into_py, get_runtime};
 use tokio_util::task::TaskTracker;
@@ -32,11 +40,18 @@ type AsyncAnswer<'py> = PyResult<Bound<'py, PyAny>>;
 pub(crate) struct NativeRedis {
     pub(crate) cache: Arc<RedisCache>,
     settings: RedisSettings,
+    // one breaker for the handle's life, as LiteLLM's RedisCache keeps one across a namespace change
+    gate: Arc<PolicyGate>,
     // the blocking flushes still running, drained by close
     tasks: TaskTracker,
 }
 
-pub(super) fn open(py: Python<'_>, parsed: RedisSettings) -> PyResult<NativeRedis> {
+pub(super) fn open(
+    py: Python<'_>,
+    parsed: RedisSettings,
+    gate: Arc<PolicyGate>,
+) -> PyResult<NativeRedis> {
+    let shared_gate: Arc<dyn BreakerGate> = Arc::<PolicyGate>::clone(&gate);
     let options = RedisCacheOptions {
         overrides: parsed.overrides.clone(),
         family: RedisCacheFamily::Standalone,
@@ -47,23 +62,41 @@ pub(super) fn open(py: Python<'_>, parsed: RedisSettings) -> PyResult<NativeRedi
         factory: Arc::new(LiveClientFactory::new(None)),
         store: Arc::new(RedisClientStore::new()),
         hooks: Arc::new(QuietHooks),
-        gate: Arc::new(QuietGate),
+        gate: shared_gate,
     };
     let environment = process_environment();
     let opened = py.detach(|| get_runtime().block_on(connect(options, &environment)));
     Ok(NativeRedis {
         cache: Arc::new(error::backend_err(opened)?),
         settings: parsed,
+        gate,
         tasks: TaskTracker::new(),
     })
+}
+
+// LiteLLM's RedisCache builds its breaker from the REDIS_CIRCUIT_BREAKER_* constants, so the handle reads the same settings.
+fn breaker_gate(environment: &BTreeMap<String, String>) -> PyResult<PolicyGate> {
+    let section = breaker_section::Raw::default()
+        .convert(environment)
+        .map_err(error::BackendHandleError::from)?;
+    let clock: BreakerClock = Arc::new(|| {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+    });
+    Ok(PolicyGate::new(
+        RedisFailurePolicy::new(BreakerSettings::from(&section), BreakerMetrics::new(None)),
+        clock,
+    ))
 }
 
 #[pymethods]
 impl NativeRedis {
     #[new]
-    // ast-grep-ignore: no-one-line-functions - Python calls this constructor, so there is no Rust caller to inline into
     fn new(py: Python<'_>, settings: &str) -> PyResult<Self> {
-        open(py, convert::parse_settings(settings)?)
+        let parsed = convert::parse_settings(settings)?;
+        let environment = process_environment();
+        open(py, parsed, Arc::new(breaker_gate(&environment)?))
     }
 
     // LiteLLM's sync set swallows a Redis failure after a debug line; so does the values slice.
@@ -175,7 +208,7 @@ impl NativeRedis {
         let mut settings = self.settings.clone();
         settings.namespace = namespace.map(str::to_owned);
         let tasks = self.tasks.clone();
-        *self = open(py, settings)?;
+        *self = open(py, settings, Arc::clone(&self.gate))?;
         self.tasks = tasks;
         Ok(())
     }
@@ -242,20 +275,6 @@ impl ServiceHooks for QuietHooks {
     fn success(&self, _event: &ServiceEvent) {}
 
     fn failure(&self, _event: &ServiceEvent, _error: &(dyn StdError + Send + Sync)) {}
-}
-
-struct QuietGate;
-
-impl BreakerGate for QuietGate {
-    fn enter(&self, _name: &'static str) -> Result<BreakerAdmission, BreakerOpen> {
-        Ok(BreakerAdmission::from(0_u64))
-    }
-
-    fn exit(&self, _admission: BreakerAdmission) {}
-
-    fn record_failure(&self, _error: &(dyn StdError + Send + Sync)) {}
-
-    fn swallowed(&self, _admission: &BreakerAdmission, _error: &(dyn StdError + Send + Sync)) {}
 }
 
 mod tests;

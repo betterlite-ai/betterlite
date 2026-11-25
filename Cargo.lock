@@ -4274,6 +4274,7 @@ dependencies = [
  "betterlite-provider",
  "betterlite-redact",
  "betterlite-redis",
+ "betterlite-router",
  "betterlite-sdk",
  "betterlite-secrets",
  "betterlite-streaming",
@@ -4738,6 +4739,7 @@ dependencies = [
  "betterlite-rate-limit",
  "betterlite-redact",
  "betterlite-redis",
+ "betterlite-redis-fixture",
  "betterlite-reporting",
  "betterlite-roi",
  "betterlite-router",
@@ -4830,6 +4832,7 @@ name = "betterlite-server-fuzz"
 version = "0.0.0"
 dependencies = [
  "betterlite-auth",
+ "betterlite-config",
  "betterlite-core",
  "betterlite-db",
  "betterlite-models",
