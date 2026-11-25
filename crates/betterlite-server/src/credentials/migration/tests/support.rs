@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, VecDeque};
+use std::future::{Future, Ready, ready};
 use std::sync::{Mutex, PoisonError};
 
 use betterlite_db::encryption_scan::report::{LocationReport, MigrationReport};
@@ -243,66 +244,77 @@ impl FakeStore {
             .collect()
     }
 
-    fn record(&self, write: Write) {
+    fn saved(&self, write: Write) -> Ready<Result<(), FakeError>> {
         self.writes
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(write);
+        ready(Ok(()))
     }
 }
 
 impl MigrationStore for FakeStore {
     type Error = FakeError;
 
-    async fn scan_covered(&self, _cipher: &DbCipher) -> Result<MigrationReport, FakeError> {
-        self.scans
+    fn scan_covered(
+        &self,
+        _cipher: &DbCipher,
+    ) -> impl Future<Output = Result<MigrationReport, FakeError>> + Send {
+        let report = self
+            .scans
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .pop_front()
-            .ok_or(FakeError::NoScan)
+            .pop_front();
+        ready(report.ok_or(FakeError::NoScan))
     }
 
-    async fn settings_row(&self, row: SettingsRow<'_>) -> Result<Option<MigrationJson>, FakeError> {
+    fn settings_row(
+        &self,
+        row: SettingsRow<'_>,
+    ) -> impl Future<Output = Result<Option<MigrationJson>, FakeError>> + Send {
         let settings = self.settings.lock().unwrap_or_else(PoisonError::into_inner);
-        Ok(settings.get(row.location()).cloned())
+        ready(Ok(settings.get(row.location()).cloned()))
     }
 
-    async fn save_settings_row(
+    fn save_settings_row(
         &self,
         row: SettingsRow<'_>,
         value: &MigrationJson,
-    ) -> Result<(), FakeError> {
-        let write = match row {
+    ) -> impl Future<Output = Result<(), FakeError>> + Send {
+        self.saved(match row {
             SettingsRow::Config { param_name, .. } => Write::Config {
                 param_name: param_name.to_owned(),
                 value: value.clone(),
             },
             SettingsRow::Sso => Write::Sso(value.clone()),
-        };
-        self.record(write);
-        Ok(())
+        })
     }
 
-    async fn callback_rows(&self, table: CallbackTable) -> Result<Vec<CallbackRow>, FakeError> {
+    fn callback_rows(
+        &self,
+        table: CallbackTable,
+    ) -> impl Future<Output = Result<Vec<CallbackRow>, FakeError>> + Send {
         let rows = match table {
             CallbackTable::Team => &self.teams,
             CallbackTable::VerificationToken => &self.tokens,
         };
-        Ok(rows.lock().unwrap_or_else(PoisonError::into_inner).clone())
+        ready(Ok(rows
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()))
     }
 
-    async fn save_callback_metadata(
+    fn save_callback_metadata(
         &self,
         table: CallbackTable,
         key: &str,
         metadata: &MigrationJson,
-    ) -> Result<(), FakeError> {
-        self.record(Write::Callback {
+    ) -> impl Future<Output = Result<(), FakeError>> + Send {
+        self.saved(Write::Callback {
             table,
             key: key.to_owned(),
             metadata: metadata.clone(),
-        });
-        Ok(())
+        })
     }
 }
 
@@ -334,11 +346,11 @@ impl FakeRotation {
 impl SameKeyRotation for FakeRotation {
     type Error = RotationFailure;
 
-    async fn reencrypt_same_key(
+    fn reencrypt_same_key(
         &mut self,
         key: &SecretString,
         actor: Option<&str>,
-    ) -> Result<(), RotationFailure> {
+    ) -> impl Future<Output = Result<(), RotationFailure>> + Send {
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -347,9 +359,9 @@ impl SameKeyRotation for FakeRotation {
                 actor: actor.map(str::to_owned),
             });
         if self.failure {
-            return Err(RotationFailure);
+            return ready(Err(RotationFailure));
         }
-        Ok(())
+        ready(Ok(()))
     }
 }
 
