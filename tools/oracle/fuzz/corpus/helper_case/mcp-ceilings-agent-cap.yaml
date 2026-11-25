@@ -1,0 +1,5 @@
+kind: helper
+name: mcp-ceilings-agent-cap-seed
+call: {b4670: {allowed: [srv-a, srv-b, srv-c], agent_servers: [srv-a, srv-b], access_group_servers: [srv-b, srv-c]}}
+env: {}
+compare: {ignore: []}
