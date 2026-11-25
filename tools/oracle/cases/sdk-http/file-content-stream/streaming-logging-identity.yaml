@@ -47,6 +47,10 @@ compare:
   headers_present: []
   upstream_headers: [authorization, api-key]
   ignore:
+    - pointer: /file_content_stream/value/steps/0/identity/api_base
+      why: each side logs its own mock server's generated port; streaming_logging_identity_writes_only_a_non_null_api_base checks exact values in native tests
+    - pointer: /file_content_stream/value/steps/1/identity/api_base
+      why: each side logs its own mock server's generated port; streaming_logging_identity_writes_only_a_non_null_api_base checks exact values in native tests
     - pointer: /file_content_stream/value/steps/0/streamed/headers/date
       why: each mock answer is stamped when it is served, so the date differs while answering nothing
     - pointer: /file_content_stream/value/steps/1/streamed/headers/date
