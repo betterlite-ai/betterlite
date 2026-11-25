@@ -16,7 +16,11 @@ JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 # main.py hands a chat call whose model is served by the Responses API to this singleton: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5790-L5814
 BRIDGE: Final = responses_api_bridge
 
-Outcome: TypeAlias = ModelResponse | CustomStreamWrapper | Coroutine[None, None, ModelResponse | CustomStreamWrapper]
+Outcome: TypeAlias = (
+    ModelResponse
+    | CustomStreamWrapper
+    | Coroutine[None, None, ModelResponse | CustomStreamWrapper]
+)
 
 
 class BridgeRun(BaseModel):
