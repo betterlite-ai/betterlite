@@ -191,7 +191,7 @@ fn answer_tuple(py: Python<'_>, answer: ContentAnswer, is_async: bool) -> PyResu
         }
         ContentAnswer::Streamed(content) => stream_text(py, *content, is_async)?,
     };
-    (text, blobs, stream).into_pyobject(py)?.into_any().unbind()
+    Ok((text, blobs, stream).into_pyobject(py)?.into_any().unbind())
 }
 
 type StreamField = (String, Vec<Py<PyBytes>>, Option<Py<PyAny>>);
