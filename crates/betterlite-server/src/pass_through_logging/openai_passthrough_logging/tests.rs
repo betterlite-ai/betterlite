@@ -477,7 +477,7 @@ fn openai_image_both_endpoints_build_an_image_reply(
         })
     );
     let mut expected = object(
-        r#"{"data": [{"url": "https://images.example/a.png"}], "usage": {"input_tokens": 0, "input_tokens_details": {"image_tokens": 0, "text_tokens": 0}, "output_tokens": 0, "total_tokens": 0}}"#,
+        r#"{"data": [{"url": "https://images.example/a.png"}], "model": "dall-e-3", "usage": {"input_tokens": 0, "input_tokens_details": {"image_tokens": 0, "text_tokens": 0}, "output_tokens": 0, "total_tokens": 0}}"#,
     );
     expected.insert(
         "created".to_owned(),

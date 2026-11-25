@@ -197,13 +197,14 @@ fn image_branch(
     IMAGE_CALL_TYPE.clone_into(&mut input.call_log.call_type);
     let no_images = Json::List(Vec::new());
     let data: Vec<ImageData> = reencode(value_or(input.response_body, "data", &no_images))?;
-    // ImageResponse stamps created with the logging time and fills a zero usage; it keeps no model.
+    // ImageResponse stamps created with the logging time and fills a zero usage; the model it cannot hold goes into the JSON.
     let image = ImageResponse {
         created: input.end_time.timestamp(),
         data: Some(data),
         usage: Some(ImageUsage::default()),
     };
     let mut response: JsonObject = reencode(&image)?;
+    response.insert("model".to_owned(), Json::Text(model.to_owned()));
     insert_hidden_cost(&mut response, cost);
     Ok((Json::Object(response), cost))
 }

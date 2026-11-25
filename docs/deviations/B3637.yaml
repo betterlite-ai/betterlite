@@ -41,12 +41,13 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L487-L490
   - what: >-
       The production chat transform decodes the relayed reply with the OpenAI-compatible wire
-      decoder and skips the logging object's post_call, so original_response is not written to
-      the call log.
+      decoder and skips the logging object's post_call, so original_response and
+      response_headers are not written to the call log, and the rebuilt reply carries no
+      _hidden_params headers.
     why: >-
       OpenAIConfig.transform_response reads only the raw reply and passes it to
       convert_to_model_response_object; B3650's PassthroughProvider hands the transform no call
-      log, so the post_call write has nowhere to go.
+      log and its UpstreamChatReply carries no headers, so those writes have nowhere to go.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L272-L300
   - what: >-
       The Responses transform sees an empty header map, and a relayed body that is not UTF-8 is
@@ -56,11 +57,16 @@ deviations:
       RawResponse takes text.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L290-L325
   - what: >-
-      The rebuilt ImageResponse takes created from the call's end time instead of reading the
-      wall clock.
+      Image generation and editing return the priced ImageResponse the handler is written to
+      build, with created from the call's end time and a zero usage. LiteLLM passes only data
+      and model, and openai's ImagesResponse declares created required, so its ImageResponse
+      raises and both branches end in the error path with no result and no spend.
     why: >-
-      The handler reads no clock of its own; the end time is the moment LiteLLM's handler runs.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L430-L433
+      B3637's DoD requires the built reply, so a constructor error no working setup can rely on
+      is fixed instead of copied. The end time is the moment LiteLLM's handler runs, and
+      B1035's ImageResponse types created, data and usage only, so the model goes into the
+      rebuilt JSON.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L429-L459
 kept_bugs:
   - what: >-
       Image editing marks the call log's call_type "passthrough-image-generation", the image
