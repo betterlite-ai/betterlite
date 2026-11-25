@@ -26,7 +26,10 @@ impl NativeFileStream {
             get_runtime().block_on(async move {
                 let mut guard = stream.lock().await;
                 let mut iter = guard.async_iter()?;
-                iter.next_chunk().await.transpose()
+                let chunk = iter.next_chunk().await.transpose();
+                drop(iter);
+                drop(guard);
+                chunk
             })
         });
         let chunk = next.map_err(|error| PyErr::from(stream_failure(&error)))?;
@@ -47,6 +50,8 @@ impl NativeFileStream {
                 .await
                 .transpose()
                 .map_err(|error| PyErr::from(stream_failure(&error)))?;
+            drop(iter);
+            drop(guard);
             Python::attach(
                 |attached| Ok(chunk.map(|bytes| PyBytes::new(attached, &bytes).unbind())),
             )

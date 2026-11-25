@@ -78,8 +78,8 @@ pub(crate) fn failure_for(error: &FileContentError<DispatchError>) -> Failure {
         FileContentError::Reply => return Failure::Runtime(error.to_string()),
     };
     match source {
-        DispatchError::Files(source) => files_failure(source),
-        DispatchError::Azure(source) => azure_failure(source),
+        DispatchError::Files(files_error) => files_failure(files_error),
+        DispatchError::Azure(azure_error) => azure_failure(azure_error),
         DispatchError::Reply => Failure::Runtime(error.to_string()),
         DispatchError::Unbuilt { config } => Failure::Unsupported(format!(
             "the {config} file content call is not implemented in this build"
