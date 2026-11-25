@@ -6,6 +6,7 @@ use self::dual::batch::{NativeDeclaredBatchRead, NativeDeferred};
 use self::memory::NativeMemory;
 use self::redis::NativeRedis;
 
+mod blocking;
 mod convert;
 mod disk;
 mod dual;

@@ -1,7 +1,5 @@
 use std::sync::{Arc, Mutex};
 
-use tokio::task::JoinSet;
-
 use betterlite_cache::backend::memory::local::LocalMemoryOps;
 use betterlite_cache::batch_reads::BatchReadOptions;
 use betterlite_cache::batch_reads::BatchReads;
@@ -14,11 +12,11 @@ use pyo3_async_runtimes::tokio::{future_into_py, get_runtime};
 
 use self::batch::{NativeDeclaredBatchRead, NativeDeferred};
 use self::values::{answer_json, close_tier, count, options, store, text_of_ttl};
-use super::convert;
 use super::error::{self, BackendHandleError};
 use super::memory::NativeMemory;
 use super::redis::NativeRedis;
 use super::settings::DualSettings;
+use super::{blocking, convert};
 
 type AsyncAnswer<'py> = PyResult<Bound<'py, PyAny>>;
 type MemoryDual = DualCache<LocalMemoryOps>;
@@ -239,16 +237,9 @@ impl NativeDual {
     }
 
     fn async_flush<'py>(&self, py: Python<'py>) -> AsyncAnswer<'py> {
-        let cache = Arc::clone(&self.cache);
-        future_into_py(py, async move {
-            let mut tasks = JoinSet::new();
-            tasks.spawn_blocking(move || cache.flush_cache());
-            let flushed = tasks
-                .join_next()
-                .await
-                .ok_or_else(|| PyRuntimeError::new_err("flush task was not started"))?;
-            let outcome = flushed.map_err(BackendHandleError::from)?;
-            error::backend_err(outcome)
+        blocking::into_py(py, {
+            let cache = Arc::clone(&self.cache);
+            move || cache.flush_cache()
         })
     }
 
