@@ -10,7 +10,7 @@ use secrecy::ExposeSecret as _;
 use crate::auth_request_models::RequestedModels;
 use crate::budget_counter::CounterEntityType;
 
-use super::super::alerts::TeamAlertKind;
+use super::super::alerts::{TeamAlert, TeamAlertKind};
 use super::super::error::TeamBudgetError;
 use super::super::soft::{SoftOutcome, soft_budget_recipients, team_soft_budget_check};
 use super::super::sources::Membership;
@@ -20,6 +20,20 @@ const TEAM_KEY: &str = r#"{"token":"sk-team","user_id":"user-1","team_id":"token
 
 fn metadata(fields: &str) -> BTreeMap<String, JsonData> {
     serde_json::from_str(fields).unwrap()
+}
+
+// the team budget alert's CallInfo, whose identity comes from the token
+fn assert_team_alert(alert: &TeamAlert) {
+    assert_eq!(alert.spend, money("10.01"));
+    assert_eq!(alert.max_budget, Some(money("10")));
+    assert_eq!(alert.soft_budget, None);
+    assert_eq!(alert.token.as_ref().unwrap().expose_secret(), "sk-team");
+    assert_eq!(alert.user_id.as_deref(), Some("user-1"));
+    assert_eq!(alert.team_id.as_deref(), Some("token-team"));
+    assert_eq!(alert.team_alias.as_deref(), Some("Token alias"));
+    assert_eq!(alert.organization_id.as_deref(), Some("token-org"));
+    assert_eq!(alert.key_alias, None);
+    assert_eq!(alert.alert_emails, None);
 }
 
 #[rstest]
@@ -89,16 +103,7 @@ async fn hard_overage_alert_before_denial() {
     let [alert] = alerts.as_slice() else {
         panic!("one team alert, got {alerts:?}");
     };
-    assert_eq!(alert.spend, money("10.01"));
-    assert_eq!(alert.max_budget, Some(money("10")));
-    assert_eq!(alert.soft_budget, None);
-    assert_eq!(alert.token.as_ref().unwrap().expose_secret(), "sk-team");
-    assert_eq!(alert.user_id.as_deref(), Some("user-1"));
-    assert_eq!(alert.team_id.as_deref(), Some("token-team"));
-    assert_eq!(alert.team_alias.as_deref(), Some("Token alias"));
-    assert_eq!(alert.organization_id.as_deref(), Some("token-org"));
-    assert_eq!(alert.key_alias, None);
-    assert_eq!(alert.alert_emails, None);
+    assert_team_alert(alert);
 }
 
 #[tokio::test]

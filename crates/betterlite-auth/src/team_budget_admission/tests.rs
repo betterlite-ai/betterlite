@@ -395,7 +395,10 @@ async fn temporary_increase_expiry_boundary(
     let row = team(r#"{"team_id":"team-1","metadata":{"team_member_budget_id":"default-1"}}"#);
     let token = key(MEMBER_KEY);
     let model = RequestedModels::None;
-    let expiry = (now() + TimeDelta::seconds(seconds_after_now)).to_rfc3339();
+    let expiry = now()
+        .checked_add_signed(TimeDelta::seconds(seconds_after_now))
+        .unwrap()
+        .to_rfc3339();
     let membership = loaded(&format!(
         r#"{{"user_id":"user-1","team_id":"team-1","litellm_budget_table":{{"max_budget":{member_max},"temp_budget_increase":5,"temp_budget_expiry":"{expiry}"}}}}"#
     ));
@@ -603,8 +606,10 @@ async fn nonproxy_model_error_propagates() {
         matches!(&depth, Err(TeamBudgetError::RecurseDepth { model: named }) if named == "gpt-4o"),
         "{depth:?}"
     );
-    let mut failing = Harness::default();
-    failing.membership_fails = true;
+    let failing = Harness {
+        membership_fails: true,
+        ..Harness::default()
+    };
     let lookup = run(
         &failing,
         &request(Some(&row), Some(&token), &model, Membership::Unloaded),
