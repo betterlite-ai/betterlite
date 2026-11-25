@@ -1,0 +1,57 @@
+kind: helper
+name: model-info-search-debug-client-values
+call:
+  model_info_search:
+    function: enrich
+    debug: true
+    model:
+      model_name: debug-model
+      litellm_params:
+        model: openai/gpt-4o
+      model_info:
+        id: dep-1
+calls:
+  - model_info_search:
+      function: enrich
+      debug: true
+      router:
+        async_client: null
+      model:
+        model_name: debug-model
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: dep-1
+  - model_info_search:
+      function: enrich
+      debug: true
+      router:
+        async_client: an-async-client
+      model:
+        model_name: debug-model
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: dep-1
+  - model_info_search:
+      function: enrich
+      debug: false
+      router:
+        async_client: an-async-client
+      model:
+        model_name: debug-model
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: dep-1
+  - model_info_search:
+      function: enrich
+      debug: true
+      router:
+        async_client: null
+      model:
+        model_name: debug-model
+        litellm_params:
+          model: openai/gpt-4o
+env: {}
+compare: {ignore: []}

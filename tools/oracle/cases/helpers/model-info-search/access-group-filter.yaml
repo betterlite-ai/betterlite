@@ -1,0 +1,24 @@
+kind: helper
+name: model-info-search-access-group-filter
+call:
+  model_info_search:
+    function: model_in_access_group
+    access_group: team-g2
+    models:
+      - model_name: both
+        model_info:
+          access_groups: [team-g1, team-g2]
+      - model_name: second
+        model_info:
+          access_groups: [team-g2]
+      - model_name: other
+        model_info:
+          access_groups: [team-g1]
+      - model_name: text-groups
+        model_info:
+          access_groups: team-g2
+      - model_name: empty-info
+        model_info: {}
+      - model_name: no-info
+env: {}
+compare: {ignore: []}
