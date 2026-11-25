@@ -6,12 +6,14 @@ use std::path::Path;
 use std::process::{self, Command};
 use std::sync::{Arc, Mutex, PoisonError};
 
+use nix::errno::Errno;
 use rstest::rstest;
 use tempfile::TempDir;
 use tracing::subscriber::with_default;
 
 use super::{
-    CleanupError, is_running, live_gauge_pid, mark_dead_workers, mark_worker_exit, wipe_directory,
+    CleanupError, is_running, kill_says_running, live_gauge_pid, mark_dead_workers,
+    mark_worker_exit, wipe_directory,
 };
 
 struct Captured(Arc<Mutex<Vec<u8>>>);
@@ -184,9 +186,20 @@ fn is_running_is_true_for_this_process() {
     assert!(is_running(process::id()));
 }
 
+// a process another user owns refuses the signal with EPERM, which means it is alive
 #[test]
-fn is_running_is_true_for_a_process_another_user_may_own() {
-    assert!(is_running(1));
+fn is_running_is_true_for_a_process_that_refuses_the_signal() {
+    assert!(kill_says_running(Err(Errno::EPERM)));
+}
+
+#[test]
+fn is_running_is_true_for_a_delivered_signal() {
+    assert!(kill_says_running(Ok(())));
+}
+
+#[test]
+fn is_running_is_false_for_a_process_that_is_gone() {
+    assert!(!kill_says_running(Err(Errno::ESRCH)));
 }
 
 #[test]

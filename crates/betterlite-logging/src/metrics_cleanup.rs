@@ -75,7 +75,14 @@ pub fn is_running(pid: u32) -> bool {
     let Ok(raw) = i32::try_from(pid) else {
         return false;
     };
-    !matches!(kill(Pid::from_raw(raw), None::<Signal>), Err(Errno::ESRCH))
+    kill_says_running(kill(Pid::from_raw(raw), None::<Signal>))
+}
+
+fn kill_says_running(outcome: Result<(), Errno>) -> bool {
+    if let Err(errno) = outcome {
+        return errno != Errno::ESRCH;
+    }
+    true
 }
 
 // a replacement worker's startup: uvicorn has no exit hook, so the live gauges of crashed workers go here
