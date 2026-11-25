@@ -129,7 +129,7 @@ pub fn build_metrics_app(multiproc_dir: &Path, pid: u32) -> Result<Router, Metri
             });
             (StatusCode::NOT_FOUND, body).into_response()
         })
-        .with_state(Arc::new(multiproc_dir.to_path_buf()));
+        .with_state(Arc::<Path>::from(multiproc_dir));
     Ok(app)
 }
 
@@ -142,7 +142,7 @@ async fn add_pid(State(pid): State<HeaderValue>, mut response: Response) -> Resp
 }
 
 // FastAPI's @app.get answers only GET: HEAD and the rest are a 405 that names GET
-async fn health(State(multiproc_dir): State<Arc<PathBuf>>, method: Method) -> Response {
+async fn health(State(multiproc_dir): State<Arc<Path>>, method: Method) -> Response {
     if method != Method::GET {
         let body = Json(Detail {
             detail: "Method Not Allowed",

@@ -350,8 +350,8 @@ async fn unknown_paths_are_a_json_404() {
 #[tokio::test]
 async fn start_fails_when_the_port_is_already_taken() {
     let folder = TempDir::new().unwrap();
-    let taken = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = taken.local_addr().unwrap().port();
+    let reserved = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = reserved.local_addr().unwrap().port();
     let tasks = TaskTracker::new();
     let token = CancellationToken::new();
     let error = start_metrics_listener(&settings(folder.path(), port), &tasks, token, &client())
@@ -483,8 +483,8 @@ fn cli_prefers_the_folder_flag_over_the_environment() {
 
 #[rstest]
 #[case::no_folder(&["metrics", "--port", "4001"], None, ErrorKind::MissingRequiredArgument)]
-#[case::empty_folder_flag(&["metrics", "--port", "4001", "--multiproc_dir", ""], None, ErrorKind::EmptyValue)]
-#[case::empty_folder_env(&["metrics", "--port", "4001"], Some(""), ErrorKind::EmptyValue)]
+#[case::empty_folder_flag(&["metrics", "--port", "4001", "--multiproc_dir", ""], None, ErrorKind::InvalidValue)]
+#[case::empty_folder_env(&["metrics", "--port", "4001"], Some(""), ErrorKind::InvalidValue)]
 #[case::no_port(&["metrics", "--multiproc_dir", "/samples"], None, ErrorKind::MissingRequiredArgument)]
 #[case::port_not_a_number(&["metrics", "--port", "x", "--multiproc_dir", "/samples"], None, ErrorKind::ValueValidation)]
 fn cli_refuses_a_missing_or_empty_value(
