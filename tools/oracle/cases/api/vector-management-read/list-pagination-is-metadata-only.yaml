@@ -7,6 +7,7 @@ call:
       - route: list
         page: 1
         page_size: 100
+        alias: false
         database: &three
           - {vector_store_id: vs_1, custom_llm_provider: openai}
           - {vector_store_id: vs_2, custom_llm_provider: openai}
@@ -18,6 +19,7 @@ call:
       - route: list
         page: 2
         page_size: 2
+        alias: false
         database: *three
         registry: null
         caller: *admin
@@ -26,6 +28,7 @@ call:
       - route: list
         page: 0
         page_size: 100
+        alias: false
         database: *three
         registry: null
         caller: *admin
@@ -34,6 +37,7 @@ call:
       - route: list
         page: 1
         page_size: -2
+        alias: false
         database: *three
         registry: null
         caller: *admin
@@ -41,6 +45,7 @@ call:
       - route: list
         page: 1
         page_size: -1
+        alias: false
         database: *three
         registry: null
         caller: *admin
@@ -49,6 +54,7 @@ call:
       - route: list
         page: 1
         page_size: -3
+        alias: false
         database: &five
           - {vector_store_id: vs_1, custom_llm_provider: openai}
           - {vector_store_id: vs_2, custom_llm_provider: openai}
@@ -62,6 +68,7 @@ call:
       - route: list
         page: 1
         page_size: 0
+        alias: false
         database: *three
         registry: null
         caller: *admin

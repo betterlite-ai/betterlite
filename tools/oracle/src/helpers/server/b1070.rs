@@ -4,14 +4,15 @@ use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::sync::{Arc, Mutex};
 
-use self::input::{Call, Caller, InfoCall, Input, ListCall, Setup};
+use self::input::{Call, Caller, Input, Setup};
 use async_trait::async_trait;
-use axum::body::Body;
+use axum::body::{Body, to_bytes};
 use axum::http::Request;
 use betterlite_auth::auth_identity::records::{
     CredentialRef, NetworkContext, Principal, SourceKey,
 };
 use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType};
+use betterlite_auth::auth_model_lists::credential::CredentialSnapshot;
 use betterlite_auth::auth_prefetch::permission::lookup::PermissionError;
 use betterlite_auth::auth_team_lookup::error::TeamLookupError;
 use betterlite_auth::auth_team_lookup::lookup::TeamRequest;
@@ -37,6 +38,7 @@ use betterlite_server::api::vector_management_read::{INFO_PATH, LIST_PATH, V1_LI
 use betterlite_server::auth::auth_identity::AuthContext;
 use betterlite_server::management_admins::scope::AdminCaller;
 use betterlite_server::management_rbac::guard::AdminPrivileges;
+use chrono::Utc;
 use serde_json::{Value, json};
 use tokio::runtime::Builder;
 use tower::ServiceExt as _;
@@ -53,44 +55,45 @@ impl Helper for Op {
         runtime.block_on(async {
             let mut answers: Vec<Value> = Vec::with_capacity(input.calls.len());
             for call in &input.calls {
-                let answer = match call {
-                    Call::List(call) => run_list(call).await,
-                    Call::Info(call) => run_info(call).await,
-                };
-                answers.push(answer?);
+                let (request, setup) = request_for(call)?;
+                answers.push(answer(build_state(setup), request).await?);
             }
             Ok(json!(answers))
         })
     }
 }
 
-async fn run_list(call: &ListCall) -> HelperResult {
+// the request a call names: the list's page query or the info body, both carrying the caller's context
+fn request_for(call: &Call) -> Result<(Request<Body>, &Setup), Box<HelperError>> {
+    let (setup, method, uri, body) = match call {
+        Call::List(list) => (
+            &list.setup,
+            "GET",
+            format!(
+                "{}?page={}&page_size={}",
+                list_path(list.alias),
+                list.page,
+                list.page_size
+            ),
+            Body::empty(),
+        ),
+        Call::Info(info) => (
+            &info.setup,
+            "POST",
+            INFO_PATH.to_owned(),
+            Body::from(json!({"vector_store_id": info.vector_store_id}).to_string()),
+        ),
+    };
     let request = Request::builder()
-        .method("GET")
-        .uri(format!(
-            "{}?page={}&page_size={}",
-            list_path(call.alias),
-            call.page,
-            call.page_size
-        ))
-        .extension(auth_context(&call.setup.caller)?)
-        .body(Body::empty())
+        .method(method)
+        .uri(uri)
+        .extension(auth_context(&setup.caller)?)
+        .body(body)
         .map_err(|error| failure(error.to_string()))?;
-    answer(build_state(&call.setup), request).await
+    Ok((request, setup))
 }
 
-async fn run_info(call: &InfoCall) -> HelperResult {
-    let body = json!({"vector_store_id": call.vector_store_id});
-    let request = Request::builder()
-        .method("POST")
-        .uri(INFO_PATH)
-        .extension(auth_context(&call.setup.caller)?)
-        .body(Body::from(body.to_string()))
-        .map_err(|error| failure(error.to_string()))?;
-    answer(build_state(&call.setup), request).await
-}
-
-fn list_path(alias: bool) -> &'static str {
+const fn list_path(alias: bool) -> &'static str {
     if alias { V1_LIST_PATH } else { LIST_PATH }
 }
 
@@ -104,7 +107,7 @@ async fn answer(
         .await
         .map_err(|error| failure(error.to_string()))?;
     let status = response.status().as_u16();
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+    let bytes = to_bytes(response.into_body(), usize::MAX)
         .await
         .map_err(|error| failure(error.to_string()))?;
     let body: Value = serde_json::from_slice(&bytes).map_err(|error| failure(error.to_string()))?;
@@ -118,7 +121,8 @@ fn build_state(setup: &Setup) -> Arc<VectorManagementReadState<FakeDatabase>> {
         registry: setup.registry.clone().map(|stores| {
             Arc::new(Mutex::new(VectorStoreRegistry {
                 stores,
-                ..VectorStoreRegistry::default()
+                clock: Arc::new(Utc::now),
+                credentials: Arc::new(CredentialSnapshot::default()),
             }))
         }),
         permissions: Arc::clone(&world),
@@ -172,14 +176,14 @@ fn auth_context(caller: &Caller) -> Result<AuthContext, Box<HelperError>> {
     })
 }
 
-fn failure(message: impl Into<String>) -> Box<HelperError> {
+fn failure(message: String) -> Box<HelperError> {
     Box::new(HelperError {
         class: "Internal".to_owned(),
         status: None,
         error_type: None,
         param: None,
         code: None,
-        message: message.into(),
+        message,
     })
 }
 

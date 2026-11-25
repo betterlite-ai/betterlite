@@ -7,6 +7,7 @@ call:
       - route: list
         page: 1
         page_size: 100
+        alias: false
         database: []
         registry: null
         caller: &internal {user_id: u2, user_role: internal_user, team_id: null}
@@ -22,6 +23,7 @@ call:
       - route: list
         page: 1
         page_size: 100
+        alias: false
         database:
           - {vector_store_id: vs_a, custom_llm_provider: openai}
         registry: null
@@ -31,6 +33,7 @@ call:
       - route: list
         page: 1
         page_size: 100
+        alias: false
         database:
           - {vector_store_id: vs_a, custom_llm_provider: openai}
         registry: null
@@ -47,6 +50,7 @@ call:
       - route: list
         page: 1
         page_size: 100
+        alias: false
         database:
           - {vector_store_id: vs_team1, custom_llm_provider: openai, team_id: t1}
           - {vector_store_id: vs_team2, custom_llm_provider: openai, team_id: t2}

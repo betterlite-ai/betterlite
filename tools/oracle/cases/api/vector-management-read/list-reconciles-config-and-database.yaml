@@ -34,6 +34,7 @@ call:
       - route: list
         page: 1
         page_size: 100
+        alias: false
         database:
           - {vector_store_id: vs_db, custom_llm_provider: openai, vector_store_name: db-only}
         registry: null
@@ -43,6 +44,7 @@ call:
       - route: list
         page: 1
         page_size: 100
+        alias: false
         database: null
         registry:
           - {vector_store_id: vs_stale, custom_llm_provider: openai, vector_store_name: stale}
@@ -53,6 +55,7 @@ call:
       - route: list
         page: 1
         page_size: 100
+        alias: false
         database:
           - {vector_store_id: '', custom_llm_provider: openai}
           - {custom_llm_provider: openai, vector_store_name: no-id-row}
