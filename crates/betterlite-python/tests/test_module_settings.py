@@ -9,7 +9,6 @@ from pathlib import Path
 from types import ModuleType, NoneType
 from typing import Final, TypeAlias, get_args, get_type_hints
 
-import httpx2
 import litellm
 import pytest
 from pydantic import JsonValue, TypeAdapter
@@ -18,6 +17,7 @@ import betterlite
 import betterlite._settings.callbacks as settings_callbacks
 import betterlite._settings.params as settings_params
 from betterlite import _native
+from betterlite._custom_llm.interfaces import AsyncClientSession, SyncHTTPClient
 from betterlite._router_types_routing import ModelGroupSettings
 from betterlite._settings.callbacks import Callback
 from betterlite._settings.params import CacheReference, ProxyAuthReference
@@ -226,23 +226,23 @@ DECLARED_ARGUMENTS: Final[dict[str, tuple[type, ...]]] = {
 
 SPECIAL_ARGUMENTS: Final[dict[str, tuple[type, ...]]] = {
     "_key_management_system": (KeyManagementSystem, NoneType),
-    "aclient_session": (httpx2.AsyncClient, NoneType),
+    "aclient_session": (AsyncClientSession, NoneType),
     "cache": (CacheReference, NoneType),
-    "client_session": (httpx2.Client, NoneType),
+    "client_session": (SyncHTTPClient, NoneType),
     "datadog_llm_observability_params": (DatadogLLMObsInitParams, dict[str, JsonValue], NoneType),
     "datadog_params": (datadog.DatadogInitParams, dict[str, JsonValue], NoneType),
     "default_team_params": (ui_sso.DefaultTeamSSOParams, dict[str, JsonValue], NoneType),
     "key_generation_settings": (object, NoneType),
-    "mcp_tool_search": (Mapping[str, JsonValue], NoneType),
+    "mcp_tool_search": (Mapping[str, object], NoneType),
     "model_group_settings": (ModelGroupSettings, NoneType),
     "newrelic_params": (newrelic.NewRelicInitParams, dict[str, JsonValue], NoneType),
-    "pointfive_params": (pointfive.PointFiveInitParams, Mapping[str, JsonValue], NoneType),
+    "pointfive_params": (pointfive.PointFiveInitParams, Mapping[str, object], NoneType),
     "priority_reservation": (dict[str, object], NoneType),
     "proxy_auth": (ProxyAuthReference, NoneType),
     "secret_manager_client": (object, NoneType),
     "tag_budget_config": (dict[str, BudgetConfig], NoneType),
     "upperbound_key_generate_params": (ui_sso.UpperboundKeyGenerateParams, NoneType),
-    "zerobus_params": (zerobus.ZerobusInitParams, Mapping[str, JsonValue], NoneType),
+    "zerobus_params": (zerobus.ZerobusInitParams, Mapping[str, object], NoneType),
 }
 
 # in_memory_llm_clients_cache carries JsonValue, a type alias rather than a class

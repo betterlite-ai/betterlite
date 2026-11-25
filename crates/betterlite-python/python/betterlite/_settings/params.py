@@ -1,10 +1,10 @@
 from collections.abc import Mapping
 from typing import Protocol
 
-import httpx2
 from pydantic import JsonValue
 from typing_extensions import override
 
+from betterlite._custom_llm.interfaces import AsyncClientSession, SyncHTTPClient
 from betterlite._router_types_routing import ModelGroupSettings
 from betterlite.types.guardrails.core import GuardrailItem
 from betterlite.types.integrations import datadog, newrelic, pointfive, zerobus
@@ -13,14 +13,6 @@ from betterlite.types.prompts.init_prompts import PromptSpec
 from betterlite.types.proxy.management_endpoints import ui_sso
 from betterlite.types.secret_managers.main import KeyManagementSystem
 from betterlite.types.utils import BudgetConfig
-
-
-class CacheReference(Protocol):
-    @override
-    def __str__(self) -> str: ...
-
-class ProxyAuthReference(Protocol):
-    def get_auth_headers(self) -> Mapping[str, str]: ...
 
 email: str | None = None
 token: str | None = None
@@ -99,6 +91,8 @@ extra_spend_tag_headers: list[str] | None = None
 in_memory_llm_clients_cache: JsonValue = None
 safe_memory_mode = False
 enable_azure_ad_token_refresh = False
+class ProxyAuthReference(Protocol):
+    def get_auth_headers(self) -> Mapping[str, str]: ...
 proxy_auth: ProxyAuthReference | None = None
 AZURE_DEFAULT_API_VERSION = "2025-02-01-preview"
 WATSONX_DEFAULT_API_VERSION = "2024-03-13"
@@ -128,6 +122,10 @@ enable_loadbalancing_on_batch_endpoints: bool | None = None  # ast-grep-ignore: 
 require_managed_files = False
 enable_caching_on_provider_specific_optional_params = False  # ast-grep-ignore: no-long-names
 caching_with_models = False
+class CacheReference(Protocol):
+    @override
+    def __str__(self) -> str: ...
+
 cache: CacheReference | None = None
 default_in_memory_ttl: float | None = None
 default_redis_ttl: float | None = None
@@ -142,8 +140,8 @@ forward_traceparent_to_llm_provider = False  # ast-grep-ignore: no-long-names
 _current_cost = 0.0
 error_logs: dict[str, JsonValue] = {}
 add_function_to_prompt = False
-client_session: httpx2.Client | None = None
-aclient_session: httpx2.AsyncClient | None = None
+client_session: SyncHTTPClient | None = None
+aclient_session: AsyncClientSession | None = None
 model_fallbacks: list[JsonValue] | None = None
 suppress_debug_info = False
 dynamodb_table_name: str | None = None
@@ -153,8 +151,10 @@ s3_audit_callback_params: dict[str, JsonValue] | None = None
 datadog_llm_observability_params: DatadogLLMObsInitParams | dict[str, JsonValue] | None = None
 datadog_params: datadog.DatadogInitParams | dict[str, JsonValue] | None = None
 newrelic_params: newrelic.NewRelicInitParams | dict[str, JsonValue] | None = None
-pointfive_params: pointfive.PointFiveInitParams | Mapping[str, JsonValue] | None = None
-zerobus_params: zerobus.ZerobusInitParams | Mapping[str, JsonValue] | None = None
+# ast-grep-ignore: no-loose-types
+pointfive_params: pointfive.PointFiveInitParams | Mapping[str, object] | None = None
+# ast-grep-ignore: no-loose-types
+zerobus_params: zerobus.ZerobusInitParams | Mapping[str, object] | None = None
 aws_sqs_callback_params: dict[str, JsonValue] | None = None
 generic_logger_headers: dict[str, JsonValue] | None = None
 default_key_generate_params: dict[str, JsonValue] | None = None
@@ -201,7 +201,7 @@ public_model_groups: list[str] | None = None
 public_skills_index = False
 public_agent_groups: list[str] | None = None
 agent_search_embedding_model: str | None = None
-mcp_tool_search: Mapping[str, JsonValue] | None = None
+mcp_tool_search: Mapping[str, object] | None = None  # ast-grep-ignore: no-loose-types
 skill_search_embedding_model: str | None = None
 public_model_groups_links: dict[str, JsonValue] = {}
 priority_reservation: dict[str, object] | None = None  # ast-grep-ignore: no-loose-types

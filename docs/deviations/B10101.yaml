@@ -3,4 +3,7 @@ deviations:
   - what: betterlite.proxy_auth is declared ProxyAuthReference | None, a Protocol whose only member is get_auth_headers() -> Mapping[str, str], where LiteLLM declares Optional[Any].
     why: LiteLLM's Any admits any value, and object would too, but betterlite assigns this global to its own ProxyAuthProvider | None in betterlite/_endpoints/proxy.py:18 and betterlite/_completion/arguments.py:47, where object does not type-check; the Protocol admits every proxy auth object betterlite can use, since both readers only call get_auth_headers().
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L354
+  - what: betterlite.client_session and betterlite.aclient_session are declared SyncHTTPClient | None and AsyncClientSession | None, protocols whose only members are close() and aclose(), where LiteLLM declares Optional[httpx.Client] and Optional[httpx.AsyncClient].
+    why: The wheel depends on httpx2 and not httpx (B164), so httpx.Client is not a class it can name. httpx.Client and httpx2.Client both satisfy SyncHTTPClient, and httpx.AsyncClient and httpx2.AsyncClient both satisfy AsyncClientSession, so assigning any of them type-checks; reading the global back as an httpx client does not, since the protocol carries only the close or aclose method betterlite's own session handling uses.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L423-L424
 kept_bugs: []
