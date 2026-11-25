@@ -236,7 +236,7 @@ def run(input_value: Input) -> FilesAnswer | ScrapeAnswer:
     try:
         with tempfile.TemporaryDirectory() as folder:
             os.environ["PROMETHEUS_MULTIPROC_DIR"] = folder
-            # prometheus_client picks its value class at import, so reload values.py with the folder set
+            # values.py picks its value class at import, so reload it with the folder set
             importlib.reload(values)
             answer = run_in_folder(input_value, Path(folder))
     finally:

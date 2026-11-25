@@ -1,6 +1,6 @@
 task: B10096
 deviations:
-  - what: Keys in the .db files are compact serde_json (no spaces, UTF-8) where prometheus_client writes json.dumps with sort_keys and ", " / ": " separators.
+  - what: Keys in the .db files are compact serde_json (no spaces, UTF-8) where prometheus_client writes json.dumps with sort_keys and its default comma and colon separators.
     why: Both readers parse the key before merging, so a scrape comes out the same; matching json.dumps byte for byte would need another Python JSON formatter in this crate.
     link: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/mmap_dict.py#L141-L145
   - what: A failed file write logs an error naming the file and leaves the in-process value changed; prometheus_client raises the OSError from the metric call.
