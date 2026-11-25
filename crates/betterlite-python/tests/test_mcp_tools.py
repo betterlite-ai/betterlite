@@ -1,8 +1,9 @@
 import asyncio
 import importlib
 import json
-from typing import Final, Protocol, cast
+from typing import Final, NotRequired, Protocol, TypedDict, cast
 
+import pytest
 from litellm.experimental_mcp_client.client import MCPClient as LiteLLMClient
 from litellm.experimental_mcp_client.tools import (
     call_openai_tool as their_call_openai_tool,
@@ -59,6 +60,25 @@ RICH_SCHEMA: Final[dict[str, JsonValue]] = {
     "required": ["q"],
     "title": "Search",
     "additionalProperties": True,
+}
+
+
+class ToolFields(TypedDict):
+    name: str
+    description: NotRequired[str]
+    input_schema: dict[str, JsonValue]
+
+
+DESCRIBED_TOOL: Final[ToolFields] = {
+    "name": TOOL_NAME,
+    "description": TOOL_DESCRIPTION,
+    "input_schema": SCHEMA,
+}
+BARE_TOOL: Final[ToolFields] = {"name": OTHER_TOOL_NAME, "input_schema": BARE_SCHEMA}
+RICH_TOOL: Final[ToolFields] = {
+    "name": TOOL_NAME,
+    "description": TOOL_DESCRIPTION,
+    "input_schema": RICH_SCHEMA,
 }
 
 
@@ -283,42 +303,30 @@ def test_session_refuses_foreign() -> None:
     assert asyncio.run(foreign_refused()) == "session"
 
 
-def test_transform_openai_tool() -> None:
-    ours = Tool.model_validate(
-        {"name": TOOL_NAME, "description": TOOL_DESCRIPTION, "input_schema": SCHEMA}
-    )
-    theirs = TheirTool(name=TOOL_NAME, description=TOOL_DESCRIPTION, input_schema=SCHEMA)
+@pytest.mark.parametrize("fields", [DESCRIBED_TOOL, BARE_TOOL], ids=["described", "bare"])
+def test_transform_openai_tool(fields: ToolFields) -> None:
+    ours = Tool.model_validate(fields)
+    theirs = TheirTool.model_validate(fields)
     assert transform_mcp_tool_to_openai_tool(ours) == their_openai_tool(theirs)
-    bare = Tool.model_validate({"name": OTHER_TOOL_NAME, "input_schema": BARE_SCHEMA})
-    their_bare = TheirTool(name=OTHER_TOOL_NAME, input_schema=BARE_SCHEMA)
-    assert transform_mcp_tool_to_openai_tool(bare) == their_openai_tool(their_bare)
 
 
-def test_transform_responses_tool() -> None:
-    ours = Tool.model_validate(
-        {"name": TOOL_NAME, "description": TOOL_DESCRIPTION, "input_schema": SCHEMA}
-    )
-    theirs = TheirTool(name=TOOL_NAME, description=TOOL_DESCRIPTION, input_schema=SCHEMA)
+@pytest.mark.parametrize("fields", [DESCRIBED_TOOL, BARE_TOOL], ids=["described", "bare"])
+def test_transform_responses_tool(fields: ToolFields) -> None:
+    ours = Tool.model_validate(fields)
+    theirs = TheirTool.model_validate(fields)
     assert transform_mcp_tool_to_openai_responses_api_tool(ours) == their_responses_tool(theirs)
-    bare = Tool.model_validate({"name": OTHER_TOOL_NAME, "input_schema": BARE_SCHEMA})
-    their_bare = TheirTool(name=OTHER_TOOL_NAME, input_schema=BARE_SCHEMA)
-    assert transform_mcp_tool_to_openai_responses_api_tool(bare) == their_responses_tool(
-        their_bare
-    )
 
 
 def test_transform_anthropic_tool() -> None:
-    ours = Tool.model_validate(
-        {"name": TOOL_NAME, "description": TOOL_DESCRIPTION, "input_schema": RICH_SCHEMA}
-    )
-    theirs = TheirTool(name=TOOL_NAME, description=TOOL_DESCRIPTION, input_schema=RICH_SCHEMA)
+    ours = Tool.model_validate(RICH_TOOL)
+    theirs = TheirTool.model_validate(RICH_TOOL)
     reference: AnthropicMessagesTool = their_anthropic_tool(theirs)
     assert transform_mcp_tool_to_anthropic_tool(ours) == reference
 
 
 def test_transform_bare_tool() -> None:
-    ours = Tool.model_validate({"name": OTHER_TOOL_NAME, "input_schema": BARE_SCHEMA})
-    theirs = TheirTool(name=OTHER_TOOL_NAME, input_schema=BARE_SCHEMA)
+    ours = Tool.model_validate(BARE_TOOL)
+    theirs = TheirTool.model_validate(BARE_TOOL)
     reference: AnthropicMessagesTool = their_anthropic_tool(theirs)
     assert transform_mcp_tool_to_anthropic_tool(ours) == reference
 
