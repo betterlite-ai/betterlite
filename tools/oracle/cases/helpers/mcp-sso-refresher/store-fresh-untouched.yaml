@@ -1,0 +1,44 @@
+kind: helper
+name: store-fresh-untouched
+call:
+  b4664:
+    function: store
+    user_id: user-1
+    now_ms: 2000000000000
+    rows:
+      user-1: {claims: {iss: https://idp.example, sub: user-1, exp: 2000000061}}
+    vars:
+      GENERIC_TOKEN_ENDPOINT: https://idp.example/token
+      GENERIC_CLIENT_ID: client-id
+      GENERIC_CLIENT_SECRET: client-secret
+    outcome: {kind: ok}
+calls:
+  - b4664:
+      function: store
+      user_id: user-1
+      now_ms: 2000000000000
+      rows: {}
+      vars:
+        GENERIC_TOKEN_ENDPOINT: https://idp.example/token
+        GENERIC_CLIENT_ID: client-id
+        GENERIC_CLIENT_SECRET: client-secret
+      outcome: {kind: ok}
+  - b4664:
+      function: store
+      user_id: user-1
+      now_ms: 2000000000000
+      rows:
+        user-1:
+          claims: {iss: https://idp.example, sub: user-1, exp: 2000000060}
+          refresh_token: carried-token
+      vars:
+        GENERIC_TOKEN_ENDPOINT: https://idp.example/token
+        GENERIC_CLIENT_ID: client-id
+        GENERIC_CLIENT_SECRET: client-secret
+      outcome:
+        kind: ok
+        body:
+          claims: {iss: https://idp.example, sub: user-1, exp: 2000003600}
+          refresh_token: rotated-token
+env: {}
+compare: {ignore: []}
