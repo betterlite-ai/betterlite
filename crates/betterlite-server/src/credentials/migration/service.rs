@@ -5,7 +5,7 @@ use betterlite_secrets::secret_codec::Algorithm;
 use super::callback::{CallbackTransform, CallbackVars};
 use super::covered::SameKeyRotation;
 use super::error::MigrationError;
-use super::store::{CallbackTable, MigrationStore};
+use super::store::{CallbackTable, MigrationStore, SettingsRow};
 use super::walkers::Walkers;
 
 const VANTAGE_SETTINGS: &str = "vantage_settings";
@@ -94,12 +94,24 @@ where
             )
             .await?;
         let vantage = walkers
-            .config_settings(VANTAGE_SETTINGS, VANTAGE_FIELDS, self.dry_run)
+            .settings(
+                SettingsRow::Config {
+                    param_name: VANTAGE_SETTINGS,
+                    fields: VANTAGE_FIELDS,
+                },
+                self.dry_run,
+            )
             .await?;
         let cloudzero = walkers
-            .config_settings(CLOUDZERO_SETTINGS, CLOUDZERO_FIELDS, self.dry_run)
+            .settings(
+                SettingsRow::Config {
+                    param_name: CLOUDZERO_SETTINGS,
+                    fields: CLOUDZERO_FIELDS,
+                },
+                self.dry_run,
+            )
             .await?;
-        let sso = walkers.sso_config(self.dry_run).await?;
+        let sso = walkers.settings(SettingsRow::Sso, self.dry_run).await?;
         Ok(vec![team, tokens, vantage, cloudzero, sso])
     }
 }
@@ -118,12 +130,24 @@ pub async fn check_encryption<S: MigrationStore>(
         .callback_vars(CallbackTable::VerificationToken, &CallbackVars, true)
         .await?;
     let vantage = walkers
-        .config_settings(VANTAGE_SETTINGS, VANTAGE_FIELDS, true)
+        .settings(
+            SettingsRow::Config {
+                param_name: VANTAGE_SETTINGS,
+                fields: VANTAGE_FIELDS,
+            },
+            true,
+        )
         .await?;
     let cloudzero = walkers
-        .config_settings(CLOUDZERO_SETTINGS, CLOUDZERO_FIELDS, true)
+        .settings(
+            SettingsRow::Config {
+                param_name: CLOUDZERO_SETTINGS,
+                fields: CLOUDZERO_FIELDS,
+            },
+            true,
+        )
         .await?;
-    let sso = walkers.sso_config(true).await?;
+    let sso = walkers.settings(SettingsRow::Sso, true).await?;
     report
         .locations
         .extend([team, tokens, vantage, cloudzero, sso]);

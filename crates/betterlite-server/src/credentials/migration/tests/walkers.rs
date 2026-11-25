@@ -37,7 +37,7 @@ async fn dry_run_scans_every_location_in_source_order_without_rotating_or_writin
         .lock()
         .unwrap()
         .push_back(covered_report([2, 1, 0, 0, 0, 0]));
-    store.configs.lock().unwrap().insert(
+    store.settings.lock().unwrap().insert(
         "vantage_settings".to_owned(),
         object(vec![
             ("api_key", secret(&legacy(SALT_KEY, "sk-vantage"))),
@@ -51,7 +51,7 @@ async fn dry_run_scans_every_location_in_source_order_without_rotating_or_writin
     )]))
     .expect("the cloudzero fixture is JSON");
     store
-        .configs
+        .settings
         .lock()
         .unwrap()
         .insert("cloudzero_settings".to_owned(), secret(&cloudzero));
@@ -312,7 +312,7 @@ async fn a_config_row_stored_as_json_text_is_decoded_and_rewritten() {
     ]))
     .expect("the vantage fixture is JSON");
     store
-        .configs
+        .settings
         .lock()
         .unwrap()
         .insert("vantage_settings".to_owned(), secret(&inner));
@@ -350,7 +350,7 @@ async fn invalid_json_inside_a_config_row_propagates() {
         covered_report([0, 0, 0, 0, 0, 0]),
     ]);
     store
-        .configs
+        .settings
         .lock()
         .unwrap()
         .insert("vantage_settings".to_owned(), secret("{not-json"));
@@ -374,13 +374,16 @@ async fn sso_visits_every_nonempty_string_field_and_skips_the_rest() {
         covered_report([0, 0, 0, 0, 0, 0]),
         covered_report([0, 0, 0, 0, 0, 0]),
     ]);
-    *store.sso.lock().unwrap() = Some(object(vec![
-        ("client_secret", secret(&legacy(SALT_KEY, "sso-secret"))),
-        ("client_id", secret("plain-client")),
-        ("already", secret(&v2(SALT_KEY, "sso-done"))),
-        ("empty", secret("")),
-        ("count", MigrationJson::Bool(true)),
-    ]));
+    store.settings.lock().unwrap().insert(
+        "sso_config".to_owned(),
+        object(vec![
+            ("client_secret", secret(&legacy(SALT_KEY, "sso-secret"))),
+            ("client_id", secret("plain-client")),
+            ("already", secret(&v2(SALT_KEY, "sso-done"))),
+            ("empty", secret("")),
+            ("count", MigrationJson::Bool(true)),
+        ]),
+    );
     let mut rotation = FakeRotation::default();
     let cipher = cipher(Algorithm::Aes256Gcm, Some(SALT_KEY));
     let report = migration(&store, &mut rotation, &cipher, false)
@@ -492,14 +495,18 @@ async fn a_config_or_sso_row_that_is_not_a_mapping_is_ignored() {
         .lock()
         .unwrap()
         .push_back(covered_report([0, 0, 0, 0, 0, 0]));
-    store.configs.lock().unwrap().extend([
+    store.settings.lock().unwrap().extend([
         (
             "vantage_settings".to_owned(),
             MigrationJson::Array(vec![secret("value")]),
         ),
         ("cloudzero_settings".to_owned(), MigrationJson::Bool(true)),
     ]);
-    *store.sso.lock().unwrap() = Some(secret("[]"));
+    store
+        .settings
+        .lock()
+        .unwrap()
+        .insert("sso_config".to_owned(), secret("[]"));
     let cipher = cipher(Algorithm::XSalsa20Poly1305, Some(SALT_KEY));
     let report = check_encryption(&store, &cipher)
         .await
@@ -518,7 +525,7 @@ async fn selected_config_values_that_are_absent_or_null_are_not_counted() {
         .lock()
         .unwrap()
         .push_back(covered_report([0, 0, 0, 0, 0, 0]));
-    store.configs.lock().unwrap().extend([
+    store.settings.lock().unwrap().extend([
         (
             "vantage_settings".to_owned(),
             object(vec![
@@ -580,7 +587,7 @@ async fn a_stored_row_larger_than_the_decoder_cap_fails_instead_of_parsing() {
         "a".repeat(MAX_MIGRATION_JSON_BYTES)
     );
     store
-        .configs
+        .settings
         .lock()
         .unwrap()
         .insert("vantage_settings".to_owned(), secret(&oversized));

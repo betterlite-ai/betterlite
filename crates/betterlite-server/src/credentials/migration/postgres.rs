@@ -6,7 +6,7 @@ use betterlite_db::postgres_store::errors::{DbError, backend};
 use thiserror::Error;
 use tokio_postgres::types::ToSql;
 
-use super::store::{CallbackRow, CallbackTable, MigrationStore};
+use super::store::{CallbackRow, CallbackTable, MigrationStore, SettingsRow};
 
 const CONFIG_ROW_SQL: &str =
     "SELECT \"param_value\"::text FROM \"LiteLLM_Config\" WHERE \"param_name\" = $1";
@@ -42,11 +42,11 @@ pub struct PostgresMigrationStore<'db> {
 }
 
 impl PostgresMigrationStore<'_> {
-    async fn read_text(
+    async fn read_json(
         &self,
         sql: &str,
         params: &[&(dyn ToSql + Sync)],
-    ) -> Result<Option<String>, MigrationStoreError> {
+    ) -> Result<Option<MigrationJson>, MigrationStoreError> {
         let client = self.client.writer.session().await?;
         let row = client
             .query_opt(sql, params)
@@ -55,32 +55,19 @@ impl PostgresMigrationStore<'_> {
         let Some(row) = row else {
             return Ok(None);
         };
-        row.try_get::<_, Option<String>>(0)
-            .map_err(|source| MigrationStoreError::Database(backend(source)))
-    }
-
-    async fn read_json(
-        &self,
-        sql: &str,
-        params: &[&(dyn ToSql + Sync)],
-    ) -> Result<Option<MigrationJson>, MigrationStoreError> {
-        let Some(text) = self.read_text(sql, params).await? else {
+        let column = row
+            .try_get::<_, Option<String>>(0)
+            .map_err(|source| MigrationStoreError::Database(backend(source)))?;
+        let Some(text) = column else {
             return Ok(None);
         };
         let value = decode_migration_json(text.as_bytes())?;
         Ok(Some(value))
     }
 
-    async fn write(
-        &self,
-        sql: &str,
-        params: &[&(dyn ToSql + Sync)],
-    ) -> Result<(), MigrationStoreError> {
+    async fn write(&self, sql: &str, params: &[&(dyn ToSql + Sync)]) -> Result<(), DbError> {
         let client = self.client.writer.session().await?;
-        client
-            .execute(sql, params)
-            .await
-            .map_err(|source| MigrationStoreError::Database(backend(source)))?;
+        client.execute(sql, params).await.map_err(backend)?;
         Ok(())
     }
 }
@@ -98,29 +85,30 @@ impl MigrationStore for PostgresMigrationStore<'_> {
             .map_err(MigrationStoreError::Scan)
     }
 
-    async fn config_row(
+    async fn settings_row(
         &self,
-        param_name: &str,
+        row: SettingsRow<'_>,
     ) -> Result<Option<MigrationJson>, MigrationStoreError> {
-        self.read_json(CONFIG_ROW_SQL, &[param_name]).await
+        match row {
+            SettingsRow::Config { param_name, .. } => {
+                self.read_json(CONFIG_ROW_SQL, &[&param_name]).await
+            }
+            SettingsRow::Sso => self.read_json(SSO_ROW_SQL, &[]).await,
+        }
     }
 
-    async fn save_config_row(
+    async fn save_settings_row(
         &self,
-        param_name: &str,
+        row: SettingsRow<'_>,
         value: &MigrationJson,
     ) -> Result<(), MigrationStoreError> {
         let text = serde_json::to_string(value).map_err(ScanError::from)?;
-        self.write(SAVE_CONFIG_ROW_SQL, &[&param_name, &text]).await
-    }
-
-    async fn sso_row(&self) -> Result<Option<MigrationJson>, MigrationStoreError> {
-        self.read_json(SSO_ROW_SQL, &[]).await
-    }
-
-    async fn save_sso_row(&self, value: &MigrationJson) -> Result<(), MigrationStoreError> {
-        let text = serde_json::to_string(value).map_err(ScanError::from)?;
-        self.write(SAVE_SSO_ROW_SQL, &[&text]).await
+        let params: Vec<&(dyn ToSql + Sync)> = match row {
+            SettingsRow::Config { param_name, .. } => vec![&param_name, &text],
+            SettingsRow::Sso => vec![&text],
+        };
+        self.write(save_settings_sql(row), &params).await?;
+        Ok(())
     }
 
     async fn callback_rows(
@@ -156,7 +144,8 @@ impl MigrationStore for PostgresMigrationStore<'_> {
     ) -> Result<(), MigrationStoreError> {
         let (_read_sql, save_sql) = callback_sql(table);
         let text = serde_json::to_string(metadata).map_err(ScanError::from)?;
-        self.write(save_sql, &[&key, &text]).await
+        self.write(save_sql, &[&key, &text]).await?;
+        Ok(())
     }
 }
 
@@ -164,5 +153,12 @@ const fn callback_sql(table: CallbackTable) -> (&'static str, &'static str) {
     match table {
         CallbackTable::Team => (TEAM_ROWS_SQL, SAVE_TEAM_METADATA_SQL),
         CallbackTable::VerificationToken => (TOKEN_ROWS_SQL, SAVE_TOKEN_METADATA_SQL),
+    }
+}
+
+const fn save_settings_sql(row: SettingsRow<'_>) -> &'static str {
+    match row {
+        SettingsRow::Config { .. } => SAVE_CONFIG_ROW_SQL,
+        SettingsRow::Sso => SAVE_SSO_ROW_SQL,
     }
 }

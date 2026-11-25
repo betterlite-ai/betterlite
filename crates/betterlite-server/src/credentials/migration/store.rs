@@ -21,6 +21,26 @@ impl CallbackTable {
     }
 }
 
+// A settings row the walkers read as a mapping: a named LiteLLM_Config value with the fields the source visits, or the SSO row.
+#[derive(Debug, Clone, Copy)]
+pub enum SettingsRow<'a> {
+    Config {
+        param_name: &'a str,
+        fields: &'a [&'a str],
+    },
+    Sso,
+}
+
+impl<'a> SettingsRow<'a> {
+    #[must_use]
+    pub const fn location(self) -> &'a str {
+        match self {
+            Self::Config { param_name, .. } => param_name,
+            Self::Sso => "sso_config",
+        }
+    }
+}
+
 // metadata stays undecoded as Option so a NULL column and a stored JSON string are told apart.
 #[derive(Debug, Clone)]
 pub struct CallbackRow {
@@ -37,21 +57,14 @@ pub trait MigrationStore: Sync {
         cipher: &DbCipher,
     ) -> impl Future<Output = Result<MigrationReport, Self::Error>> + Send;
 
-    fn config_row(
+    fn settings_row(
         &self,
-        param_name: &str,
+        row: SettingsRow<'_>,
     ) -> impl Future<Output = Result<Option<MigrationJson>, Self::Error>> + Send;
 
-    fn save_config_row(
+    fn save_settings_row(
         &self,
-        param_name: &str,
-        value: &MigrationJson,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send;
-
-    fn sso_row(&self) -> impl Future<Output = Result<Option<MigrationJson>, Self::Error>> + Send;
-
-    fn save_sso_row(
-        &self,
+        row: SettingsRow<'_>,
         value: &MigrationJson,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 

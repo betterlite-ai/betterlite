@@ -1,7 +1,6 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, VecDeque};
-use std::future::{Future, ready};
 use std::sync::{Mutex, PoisonError};
 
 use betterlite_db::encryption_scan::report::{LocationReport, MigrationReport};
@@ -17,7 +16,7 @@ use serde::de::Error as _;
 use super::super::callback::{CallbackTransform, CallbackVars};
 use super::super::covered::SameKeyRotation;
 use super::super::service::Migration;
-use super::super::store::{CallbackRow, CallbackTable, MigrationStore};
+use super::super::store::{CallbackRow, CallbackTable, MigrationStore, SettingsRow};
 
 pub(super) const SALT_KEY: &str = "configured-salt-key";
 pub(super) const COVERED: [&str; 6] = [
@@ -40,15 +39,15 @@ pub(super) fn cipher(algorithm: Algorithm, key: Option<&str>) -> DbCipher {
     }
 }
 
+fn text_value(text: &str) -> StoredValue<()> {
+    StoredValue::Text(SecretString::from(text.to_owned()))
+}
+
 pub(super) fn sealed(algorithm: Algorithm, key: &str, text: &str) -> String {
-    let stored = StoredValue::<()>::Text(SecretString::from(text.to_owned()));
-    let StoredValue::Text(ciphertext) = cipher(algorithm, Some(key))
-        .encrypt_value(stored, None)
-        .expect("the fixture value seals")
-    else {
-        panic!("a string seals as text");
-    };
-    ciphertext.expose_secret().to_owned()
+    match cipher(algorithm, Some(key)).encrypt_value(text_value(text), None) {
+        Ok(StoredValue::Text(ciphertext)) => ciphertext.expose_secret().to_owned(),
+        Ok(StoredValue::Other(())) | Err(error) => panic!("the fixture seals a string: {error}"),
+    }
 }
 
 pub(super) fn legacy(key: &str, text: &str) -> String {
@@ -63,13 +62,14 @@ pub(super) fn marked(value: &str) -> String {
     format!("litellm_enc::{value}")
 }
 
+const DEBUG_POLICY: DecryptPolicy = DecryptPolicy {
+    log: FailureLog::Debug,
+    value: FailureValue::Nothing,
+};
+
 pub(super) fn open(key: &str, text: &str) -> Option<String> {
-    let stored = StoredValue::<()>::Text(SecretString::from(text.to_owned()));
-    let policy = DecryptPolicy {
-        log: FailureLog::Debug,
-        value: FailureValue::Nothing,
-    };
-    match cipher(Algorithm::XSalsa20Poly1305, Some(key)).decrypt_value(stored, "test", policy) {
+    let codec = cipher(Algorithm::XSalsa20Poly1305, Some(key));
+    match codec.decrypt_value(text_value(text), "test", DEBUG_POLICY) {
         Some(StoredValue::Text(plain)) => Some(plain.expose_secret().to_owned()),
         Some(StoredValue::Other(())) | None => None,
     }
@@ -195,20 +195,8 @@ pub(super) fn covered_report(legacy: [u64; 6]) -> MigrationReport {
     )
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Failure {
-    ReadConfig,
-    SaveConfig,
-    ReadSso,
-    SaveSso,
-    ReadCallbacks,
-    SaveCallback,
-}
-
 #[derive(Debug, thiserror::Error)]
 pub(super) enum FakeError {
-    #[error("the fake store failed on {0:?}")]
-    Failed(Failure),
     #[error("the fake store has no queued scan")]
     NoScan,
     #[error(transparent)]
@@ -232,11 +220,9 @@ pub(super) enum Write {
 #[derive(Default)]
 pub(super) struct FakeStore {
     pub scans: Mutex<VecDeque<MigrationReport>>,
-    pub configs: Mutex<BTreeMap<String, MigrationJson>>,
-    pub sso: Mutex<Option<MigrationJson>>,
+    pub settings: Mutex<BTreeMap<String, MigrationJson>>,
     pub teams: Mutex<Vec<CallbackRow>>,
     pub tokens: Mutex<Vec<CallbackRow>>,
-    pub failures: Mutex<Vec<Failure>>,
     pub writes: Mutex<Vec<Write>>,
 }
 
@@ -257,124 +243,66 @@ impl FakeStore {
             .collect()
     }
 
-    fn fail(&self, failure: Failure) -> Result<(), FakeError> {
-        let failures = self.failures.lock().unwrap_or_else(PoisonError::into_inner);
-        if failures.contains(&failure) {
-            return Err(FakeError::Failed(failure));
-        }
-        Ok(())
-    }
-
     fn record(&self, write: Write) {
         self.writes
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(write);
     }
-
-    fn callback_rows_for(&self, table: CallbackTable) -> Vec<CallbackRow> {
-        let rows = match table {
-            CallbackTable::Team => &self.teams,
-            CallbackTable::VerificationToken => &self.tokens,
-        };
-        rows.lock().unwrap_or_else(PoisonError::into_inner).clone()
-    }
 }
 
 impl MigrationStore for FakeStore {
     type Error = FakeError;
 
-    fn scan_covered(
-        &self,
-        _cipher: &DbCipher,
-    ) -> impl Future<Output = Result<MigrationReport, FakeError>> + Send {
-        let report = self
-            .scans
+    async fn scan_covered(&self, _cipher: &DbCipher) -> Result<MigrationReport, FakeError> {
+        self.scans
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .pop_front();
-        ready(report.ok_or(FakeError::NoScan))
+            .pop_front()
+            .ok_or(FakeError::NoScan)
     }
 
-    fn config_row(
-        &self,
-        param_name: &str,
-    ) -> impl Future<Output = Result<Option<MigrationJson>, FakeError>> + Send {
-        let found = self.fail(Failure::ReadConfig).map(|()| {
-            self.configs
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .get(param_name)
-                .cloned()
-        });
-        ready(found)
+    async fn settings_row(&self, row: SettingsRow<'_>) -> Result<Option<MigrationJson>, FakeError> {
+        let settings = self.settings.lock().unwrap_or_else(PoisonError::into_inner);
+        Ok(settings.get(row.location()).cloned())
     }
 
-    fn save_config_row(
+    async fn save_settings_row(
         &self,
-        param_name: &str,
+        row: SettingsRow<'_>,
         value: &MigrationJson,
-    ) -> impl Future<Output = Result<(), FakeError>> + Send {
-        match self.fail(Failure::SaveConfig) {
-            Ok(()) => {
-                self.record(Write::Config {
-                    param_name: param_name.to_owned(),
-                    value: value.clone(),
-                });
-                ready(Ok(()))
-            }
-            Err(error) => ready(Err(error)),
-        }
+    ) -> Result<(), FakeError> {
+        let write = match row {
+            SettingsRow::Config { param_name, .. } => Write::Config {
+                param_name: param_name.to_owned(),
+                value: value.clone(),
+            },
+            SettingsRow::Sso => Write::Sso(value.clone()),
+        };
+        self.record(write);
+        Ok(())
     }
 
-    fn sso_row(&self) -> impl Future<Output = Result<Option<MigrationJson>, FakeError>> + Send {
-        let found = self.fail(Failure::ReadSso).map(|()| {
-            self.sso
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .clone()
-        });
-        ready(found)
+    async fn callback_rows(&self, table: CallbackTable) -> Result<Vec<CallbackRow>, FakeError> {
+        let rows = match table {
+            CallbackTable::Team => &self.teams,
+            CallbackTable::VerificationToken => &self.tokens,
+        };
+        Ok(rows.lock().unwrap_or_else(PoisonError::into_inner).clone())
     }
 
-    fn save_sso_row(
-        &self,
-        value: &MigrationJson,
-    ) -> impl Future<Output = Result<(), FakeError>> + Send {
-        match self.fail(Failure::SaveSso) {
-            Ok(()) => {
-                self.record(Write::Sso(value.clone()));
-                ready(Ok(()))
-            }
-            Err(error) => ready(Err(error)),
-        }
-    }
-
-    fn callback_rows(
-        &self,
-        table: CallbackTable,
-    ) -> impl Future<Output = Result<Vec<CallbackRow>, FakeError>> + Send {
-        let checked = self.fail(Failure::ReadCallbacks);
-        ready(checked.map(|()| self.callback_rows_for(table)))
-    }
-
-    fn save_callback_metadata(
+    async fn save_callback_metadata(
         &self,
         table: CallbackTable,
         key: &str,
         metadata: &MigrationJson,
-    ) -> impl Future<Output = Result<(), FakeError>> + Send {
-        match self.fail(Failure::SaveCallback) {
-            Ok(()) => {
-                self.record(Write::Callback {
-                    table,
-                    key: key.to_owned(),
-                    metadata: metadata.clone(),
-                });
-                ready(Ok(()))
-            }
-            Err(error) => ready(Err(error)),
-        }
+    ) -> Result<(), FakeError> {
+        self.record(Write::Callback {
+            table,
+            key: key.to_owned(),
+            metadata: metadata.clone(),
+        });
+        Ok(())
     }
 }
 
@@ -406,11 +334,11 @@ impl FakeRotation {
 impl SameKeyRotation for FakeRotation {
     type Error = RotationFailure;
 
-    fn reencrypt_same_key(
+    async fn reencrypt_same_key(
         &mut self,
         key: &SecretString,
         actor: Option<&str>,
-    ) -> impl Future<Output = Result<(), RotationFailure>> + Send {
+    ) -> Result<(), RotationFailure> {
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -419,9 +347,9 @@ impl SameKeyRotation for FakeRotation {
                 actor: actor.map(str::to_owned),
             });
         if self.failure {
-            return ready(Err(RotationFailure));
+            return Err(RotationFailure);
         }
-        ready(Ok(()))
+        Ok(())
     }
 }
 

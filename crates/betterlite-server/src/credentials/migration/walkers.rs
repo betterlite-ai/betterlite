@@ -8,9 +8,7 @@ use betterlite_db::encryption_scan::{
 use secrecy::ExposeSecret as _;
 
 use super::callback::CallbackTransform;
-use super::store::{CallbackTable, MigrationStore};
-
-const SSO_CONFIG: &str = "sso_config";
+use super::store::{CallbackTable, MigrationStore, SettingsRow};
 
 pub(super) struct Walkers<'run, S> {
     pub(super) store: &'run S,
@@ -18,50 +16,30 @@ pub(super) struct Walkers<'run, S> {
 }
 
 impl<S: MigrationStore> Walkers<'_, S> {
-    pub(super) async fn config_settings(
+    pub(super) async fn settings(
         &self,
-        param_name: &str,
-        fields: &[&str],
+        row: SettingsRow<'_>,
         dry_run: bool,
     ) -> Result<LocationReport, S::Error> {
-        let mut report = empty_report(param_name);
-        let Some(stored) = self.store.config_row(param_name).await? else {
+        let mut report = empty_report(row.location());
+        let Some(stored) = self.store.settings_row(row).await? else {
             return Ok(report);
         };
         let Some(mut settings) = mapping::<S>(stored)? else {
             return Ok(report);
         };
+        let fields: Vec<String> = match row {
+            SettingsRow::Config { fields, .. } => {
+                fields.iter().map(|field| (*field).to_owned()).collect()
+            }
+            SettingsRow::Sso => settings
+                .keys()
+                .filter(|field| nonempty_string(&settings, (*field).as_str()))
+                .cloned()
+                .collect(),
+        };
         let mut changed = false;
         for field in fields {
-            let outcome = migrate_field(&mut settings, field, self.cipher, dry_run)
-                .map_err(S::Error::from)?;
-            if matches!(outcome, FieldOutcome::Migrated) {
-                changed = true;
-            }
-            count_outcome::<S>(&mut report, outcome)?;
-        }
-        if changed {
-            self.store
-                .save_config_row(param_name, &MigrationJson::Object(settings))
-                .await?;
-        }
-        Ok(report)
-    }
-
-    pub(super) async fn sso_config(&self, dry_run: bool) -> Result<LocationReport, S::Error> {
-        let mut report = empty_report(SSO_CONFIG);
-        let Some(stored) = self.store.sso_row().await? else {
-            return Ok(report);
-        };
-        let Some(mut settings) = mapping::<S>(stored)? else {
-            return Ok(report);
-        };
-        let fields = settings.keys().cloned().collect::<Vec<_>>();
-        let mut changed = false;
-        for field in fields {
-            if !nonempty_string(&settings, &field) {
-                continue;
-            }
             let outcome = migrate_field(&mut settings, &field, self.cipher, dry_run)
                 .map_err(S::Error::from)?;
             if matches!(outcome, FieldOutcome::Migrated) {
@@ -71,7 +49,7 @@ impl<S: MigrationStore> Walkers<'_, S> {
         }
         if changed {
             self.store
-                .save_sso_row(&MigrationJson::Object(settings))
+                .save_settings_row(row, &MigrationJson::Object(settings))
                 .await?;
         }
         Ok(report)
