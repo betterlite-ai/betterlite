@@ -22,6 +22,7 @@ pub enum StreamFailure {
 pub struct FailureCause(Arc<dyn Error + Send + Sync>);
 
 impl StreamFailure {
+    #[must_use]
     pub fn upstream(
         class: String,
         message: String,
@@ -36,18 +37,21 @@ impl StreamFailure {
         }
     }
 
+    #[must_use]
     pub fn class(&self) -> &str {
         match self {
             Self::Upstream { class, .. } => class,
         }
     }
 
+    #[must_use]
     pub fn message(&self) -> &str {
         match self {
             Self::Upstream { message, .. } => message,
         }
     }
 
+    #[must_use]
     pub fn traceback(&self) -> &str {
         match self {
             Self::Upstream { traceback, .. } => traceback,

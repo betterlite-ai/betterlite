@@ -12,6 +12,7 @@ use betterlite_redact::secret::Redactor;
 use chrono::{DateTime, FixedOffset};
 use futures_util::stream::{self, Stream};
 use indexmap::IndexMap;
+use tokio_util::task::TaskTracker;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt;
 use tracing_subscriber::fmt::MakeWriter;
@@ -723,6 +724,7 @@ impl Harness {
                 Arc::<RecordingCostInjection>::clone(&self.cost_injection)
             };
         let mut lifecycle = StreamLifecycle {
+            tasks: TaskTracker::new(),
             router: Arc::new(StreamLoggingRouter {
                 providers: Arc::clone(&self.providers),
                 frames: Arc::<FakeProbe>::clone(&self.probe),

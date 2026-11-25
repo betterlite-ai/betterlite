@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use betterlite_models::decisions::Json;
 use chrono::{DateTime, FixedOffset};
+use tokio_util::task::TaskTracker;
 
 use crate::logging_success::ports::SuccessClock;
 use crate::passthrough_logging_state::logger::PassThroughEndpointLogging;
@@ -20,6 +21,7 @@ use super::ports::{
 
 // The ports one pass-through stream needs; B8931 wires them and the stream owns the values it reads
 pub struct StreamLifecycle {
+    pub tasks: TaskTracker,
     pub router: Arc<StreamLoggingRouter>,
     pub passthrough: Arc<PassThroughEndpointLogging>,
     pub route: Arc<dyn StreamRoute>,

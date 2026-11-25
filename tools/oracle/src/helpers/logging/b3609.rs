@@ -29,6 +29,7 @@ use futures_util::stream;
 use futures_util::{Stream, StreamExt as _};
 use serde_json::Value;
 use tokio::runtime::Builder;
+use tokio_util::task::TaskTracker;
 
 pub(crate) struct Op;
 
@@ -84,6 +85,7 @@ fn build_wiring(input: &input::Input) -> Result<Wiring, Box<HelperError>> {
     let deferred_job: Arc<dyn DeferredStreamLogging> = Arc::<fakes::Recorder>::clone(&recorder);
     let deferred = input.deferred.then_some(deferred_job);
     let lifecycle = Arc::new(StreamLifecycle {
+        tasks: TaskTracker::new(),
         router: router(&recorder, &shared),
         passthrough: Arc::new(PassThroughEndpointLogging {
             injected_log_dispatch: None,

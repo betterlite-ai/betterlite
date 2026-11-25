@@ -1,3 +1,4 @@
+use std::mem::replace;
 use std::mem::take;
 use std::sync::Arc;
 
@@ -5,6 +6,7 @@ use betterlite_models::decisions::Json;
 use chrono::{DateTime, FixedOffset};
 use futures_util::{Stream, StreamExt as _};
 use indexmap::IndexMap;
+use tokio::sync::oneshot;
 
 use crate::passthrough_stream_logging::object::StreamLoggingObject;
 use crate::passthrough_stream_logging::types::EndpointType;
@@ -167,8 +169,8 @@ impl CompletionGuard {
         deferred.park(job);
     }
 
-    async fn read_failure(&mut self, failure: &StreamFailure) {
-        tracing::error!("Error in chunk_processor: {}", failure.message());
+    async fn read_failure(&mut self, stream_failure: &StreamFailure) {
+        tracing::error!("Error in chunk_processor: {}", stream_failure.message());
         let Some(parts) = self.parts.as_mut() else {
             return;
         };
@@ -185,8 +187,8 @@ impl CompletionGuard {
         let endpoint_type = parts.endpoint_type;
         let request_body = parts.request_body.clone();
         let raw_bytes = parts.raw_bytes.clone();
-        let failure = failure.clone();
-        let task = tokio::spawn(async move {
+        let failure = stream_failure.clone();
+        let task = parts.lifecycle.tasks.spawn(async move {
             schedule_failure_logging(FailureSchedulingCall {
                 lifecycle: lifecycle.as_ref(),
                 logging_obj,
@@ -199,7 +201,9 @@ impl CompletionGuard {
             .await;
         });
         parts.logging_scheduled = true;
-        let _ = task.await;
+        if let Err(error) = task.await {
+            tracing::error!("Error recovering a failed pass-through stream: {error}");
+        }
     }
 }
 
@@ -221,15 +225,15 @@ impl Drop for CompletionGuard {
             request_body: Some(parts.request_body.clone()),
             raw_bytes: take(&mut parts.raw_bytes),
         });
-        let (release, wait) = tokio::sync::oneshot::channel();
-        let mut job = job;
-        let work = std::mem::replace(&mut job.work, Box::pin(async {}));
-        job.work = Box::pin(async move {
+        let (release, wait) = oneshot::channel();
+        let mut queued_job = job;
+        let work = replace(&mut queued_job.work, Box::pin(async {}));
+        queued_job.work = Box::pin(async move {
             if wait.await.is_ok() {
                 work.await;
             }
         });
-        let admission = parts.lifecycle.queue.submit(job);
+        let admission = parts.lifecycle.queue.submit(queued_job);
         if let Admission::Rejected(reason) = admission {
             tracing::error!("Error scheduling chunk_processor logging: {reason:?}");
             return;
@@ -238,6 +242,8 @@ impl Drop for CompletionGuard {
         parts
             .logging_obj
             .edit(&mut |state| binder.bind(&mut state.litellm_params));
-        let _ = release.send(());
+        if release.send(()).is_err() {
+            tracing::error!("The queued stream logging job stopped before reservation binding");
+        }
     }
 }
