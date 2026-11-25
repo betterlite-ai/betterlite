@@ -1,12 +1,20 @@
 use std::sync::Arc;
 
 use betterlite_core::api::file_stream_logging::FileContentStreamingResponse;
+use betterlite_core::api::file_stream_logging::source::StreamError;
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 use pyo3_async_runtimes::tokio::{future_into_py, get_runtime};
 use tokio::sync::Mutex;
 
 use super::error::stream_failure;
+
+fn blocking_close(stream: Arc<Mutex<FileContentStreamingResponse>>) -> Result<(), StreamError> {
+    get_runtime().block_on(async move {
+        let mut guard = stream.lock().await;
+        guard.close()
+    })
+}
 
 // One streamed file body: the B1080 wrapper's chunks, handed out as the bytes Python iterates.
 #[pyclass(module = "betterlite._native")]
@@ -61,13 +69,8 @@ impl NativeFileStream {
     // close runs on either stream: an async source's close has no method to await
     pub(crate) fn close(&self, py: Python<'_>) -> PyResult<()> {
         let stream = Arc::clone(&self.stream);
-        py.detach(move || {
-            get_runtime().block_on(async move {
-                let mut guard = stream.lock().await;
-                guard.close()
-            })
-        })
-        .map_err(|error| PyErr::from(stream_failure(&error)))
+        let result = py.detach(move || blocking_close(stream));
+        result.map_err(|error| PyErr::from(stream_failure(&error)))
     }
 
     #[cfg_attr(test, mutants::skip)]
