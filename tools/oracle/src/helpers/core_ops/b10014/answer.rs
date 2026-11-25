@@ -19,7 +19,7 @@ use betterlite_core::api::vector_store_access::store::ManagedVectorStore;
 use betterlite_db::budget_permission_rows::{JsonData, LiteLLMObjectPermissionTable};
 use betterlite_db::team_rows::archived::LiteLLMTeamTableCachedObj;
 use betterlite_openai::api::vector_store_records::records::vector::LiteLlmManagedVectorStore;
-use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use serde_json::{Value, json};
 use tokio::runtime::Runtime;
 
@@ -69,8 +69,8 @@ impl UiSessionTeams for NoLookups {
 }
 
 fn insert_text(map: &mut BTreeMap<String, JsonData>, name: &str, value: Option<&str>) {
-    if let Some(value) = value {
-        map.insert(String::from(name), JsonData::String(String::from(value)));
+    if let Some(text) = value {
+        map.insert(String::from(name), JsonData::String(String::from(text)));
     }
 }
 
@@ -104,10 +104,9 @@ fn key_auth(fields: &StoreAuth) -> Result<UserAPIKeyAuth, Box<HelperError>> {
 }
 
 fn store_view(store: Option<&ManagedVectorStore>) -> Result<Value, Box<HelperError>> {
-    match store {
-        Some(found) => serde_json::to_value(&found.0).or_value_error(),
-        None => Ok(Value::Null),
-    }
+    store.map_or(Ok(Value::Null), |found| {
+        serde_json::to_value(&found.0).or_value_error()
+    })
 }
 
 // which warning line the failure emitted, named by the arm the way the case names it
@@ -121,10 +120,10 @@ fn warning_labels(failure: &ManagedStoreAccessError<RegistryBroke>) -> Vec<&'sta
 
 fn answer_view(
     function: &str,
-    store: Value,
-    error: Option<Value>,
-    warnings: Vec<&str>,
-    lookups: Value,
+    store: &Value,
+    error: Option<&Value>,
+    warnings: &[&str],
+    lookups: &Value,
 ) -> Value {
     json!({
         "function": function,
@@ -139,23 +138,23 @@ fn answer_view(
 fn outcome_answer(
     function: &str,
     outcome: Result<Option<ManagedVectorStore>, ManagedStoreAccessError<RegistryBroke>>,
-    lookups: Value,
+    lookups: &Value,
 ) -> Result<Value, Box<HelperError>> {
     match outcome {
-        Ok(found) => Ok(answer_view(
-            function,
-            store_view(found.as_ref())?,
-            None,
-            Vec::new(),
-            lookups,
-        )),
-        Err(failure) => Ok(answer_view(
-            function,
-            Value::Null,
-            Some(json!({"status": failure.status(), "detail": failure.detail()})),
-            warning_labels(&failure),
-            lookups,
-        )),
+        Ok(found) => {
+            let store = store_view(found.as_ref())?;
+            Ok(answer_view(function, &store, None, &[], lookups))
+        }
+        Err(failure) => {
+            let error = json!({"status": failure.status(), "detail": failure.detail()});
+            Ok(answer_view(
+                function,
+                &Value::Null,
+                Some(&error),
+                &warning_labels(&failure),
+                lookups,
+            ))
+        }
     }
 }
 
@@ -166,7 +165,17 @@ fn resolution_answer(
 ) -> Result<Value, Box<HelperError>> {
     let lookup = world.lookup();
     let outcome = runtime.block_on(get_managed_vector_store(&lookup, vector_store_id));
-    outcome_answer("resolve", outcome, world.lookups())
+    outcome_answer("resolve", outcome, &world.lookups())
+}
+
+// a store the case holds is asserted without a world, so no library lookup can run
+fn no_library_lookups() -> Value {
+    json!({
+        "registry": [],
+        "cache_reads": [],
+        "cache_writes": [],
+        "row_queries": [],
+    })
 }
 
 // which assertion an answer runs: the store the case holds, or the store an id resolves to
@@ -181,7 +190,7 @@ enum Assertion<'assertion> {
 // both assertions answer the same shape, so one function runs whichever the case asked for
 fn assertion_answer(
     runtime: &Runtime,
-    subject: Assertion<'_>,
+    subject: &Assertion<'_>,
     auth: &StoreAuth,
     detail: Option<&str>,
 ) -> Result<Value, Box<HelperError>> {
@@ -194,23 +203,14 @@ fn assertion_answer(
     };
     let (function, outcome, lookups) = match subject {
         Assertion::Store(store) => {
-            let managed = ManagedVectorStore(store.clone());
+            let managed = ManagedVectorStore((*store).clone());
             let outcome = runtime
                 .block_on(assert_can_access_vector_store(
                     &access, &managed, &key, detail,
                 ))
                 .map(|()| None)
                 .map_err(ManagedStoreAccessError::from);
-            (
-                "assert_store",
-                outcome,
-                json!({
-                    "registry": [],
-                    "cache_reads": [],
-                    "cache_writes": [],
-                    "row_queries": [],
-                }),
-            )
+            ("assert_store", outcome, no_library_lookups())
         }
         Assertion::Id {
             world,
@@ -227,7 +227,7 @@ fn assertion_answer(
             ("assert_id", outcome, world.lookups())
         }
     };
-    outcome_answer(function, outcome, lookups)
+    outcome_answer(function, outcome, &lookups)
 }
 
 pub(super) fn answer(runtime: &Runtime, call: &Call) -> Result<Value, Box<HelperError>> {
@@ -247,7 +247,10 @@ pub(super) fn answer(runtime: &Runtime, call: &Call) -> Result<Value, Box<Helper
             store,
             auth,
             detail,
-        } => assertion_answer(runtime, Assertion::Store(store), auth, detail.as_deref()),
+        } => {
+            let subject = Assertion::Store(store.as_ref());
+            assertion_answer(runtime, &subject, auth, detail.as_deref())
+        }
         Call::AssertId {
             vector_store_id,
             registry,
@@ -261,7 +264,7 @@ pub(super) fn answer(runtime: &Runtime, call: &Call) -> Result<Value, Box<Helper
             let world = World::build(registry.as_ref(), *database, cached, rows, *fail)?;
             assertion_answer(
                 runtime,
-                Assertion::Id {
+                &Assertion::Id {
                     world: &world,
                     vector_store_id: vector_store_id.as_str(),
                 },

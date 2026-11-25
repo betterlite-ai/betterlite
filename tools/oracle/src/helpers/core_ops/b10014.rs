@@ -65,7 +65,7 @@ pub(super) enum Call {
         fail: Option<Failure>,
     },
     AssertStore {
-        store: LiteLlmManagedVectorStore,
+        store: Box<LiteLlmManagedVectorStore>,
         auth: StoreAuth,
         #[serde(default)]
         detail: Option<String>,

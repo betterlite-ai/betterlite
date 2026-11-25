@@ -14,7 +14,7 @@ use betterlite_core::api::managed_store_access::lookup::{
 };
 use betterlite_db::managed_resource_rows::files::ManagedVectorStoresTable;
 use betterlite_openai::api::vector_store_records::records::vector::LiteLlmManagedVectorStore;
-use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use serde_json::{Value, json};
 
 use super::{Failure, RegistryInput};
@@ -139,13 +139,13 @@ impl World {
             let key = format!("{VECTOR_STORE_CACHE_PREFIX}{}", table.vector_store_id);
             hits.insert(key, table);
         }
-        let registry = registry.map(|scripted| ScriptedRegistry {
+        let loaded_registry = registry.map(|scripted| ScriptedRegistry {
             stores: scripted.stores.clone(),
             failing: failure == Some(Failure::Registry),
             looks: Mutex::new(Vec::new()),
         });
         Ok(Self {
-            registry,
+            registry: loaded_registry,
             cache: ScriptedCache {
                 hits,
                 failure,
@@ -171,10 +171,10 @@ impl World {
 
     // every library lookup the call reached, in the order it ran
     pub(super) fn lookups(&self) -> Value {
-        let registry = match &self.registry {
-            Some(scripted) => lock(&scripted.looks).clone(),
-            None => Vec::new(),
-        };
+        let registry = self
+            .registry
+            .as_ref()
+            .map_or_else(Vec::new, |scripted| lock(&scripted.looks).clone());
         let queries = lock(&self.rows.queries).clone();
         json!({
             "registry": registry,
