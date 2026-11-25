@@ -456,6 +456,9 @@ def test_redis_breaker_dual_delete_and_ttl(
     with pytest.raises(Exception, match=BREAKER_OPEN_MESSAGE) as deleted:
         asyncio.run(dual.async_delete_cache("breaker:key"))
     assert type(deleted.value).__name__ == BREAKER_ERROR_NAME
+    with pytest.raises(Exception, match=BREAKER_OPEN_MESSAGE) as deleted_keys:
+        asyncio.run(dual.async_delete_cache_keys(["breaker:key"]))
+    assert type(deleted_keys.value).__name__ == BREAKER_ERROR_NAME
     with pytest.raises(Exception, match=BREAKER_OPEN_MESSAGE) as remaining:
         asyncio.run(dual.async_get_ttl("breaker:key"))
     assert type(remaining.value).__name__ == BREAKER_ERROR_NAME
