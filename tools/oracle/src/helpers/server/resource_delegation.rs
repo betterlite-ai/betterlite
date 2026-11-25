@@ -67,15 +67,30 @@ pub(crate) struct GateInput {
     is_proxy_admin: bool,
 }
 
+#[derive(Serialize)]
+struct TeamRowFixture {
+    team_id: String,
+    object_permission: PermissionFixture,
+}
+
+#[derive(Serialize)]
+struct PermissionFixture {
+    object_permission_id: String,
+    mcp_toolsets: Option<Vec<String>>,
+    search_tools: Option<Vec<String>>,
+}
+
 fn team_fields(input: &TeamInput) -> Result<TeamFields, serde_json::Error> {
-    serde_json::from_value(serde_json::json!({
-        "team_id": input.team_id,
-        "object_permission": {
-            "object_permission_id": "team-permission",
-            "mcp_toolsets": input.mcp_toolsets,
-            "search_tools": input.search_tools,
+    let row = TeamRowFixture {
+        team_id: input.team_id.clone(),
+        object_permission: PermissionFixture {
+            object_permission_id: String::from("team-permission"),
+            mcp_toolsets: input.mcp_toolsets.clone(),
+            search_tools: input.search_tools.clone(),
         },
-    }))
+    };
+    let text = serde_json::to_string(&row)?;
+    serde_json::from_str(&text)
 }
 
 fn gate_result(result: Result<(), GateError>) -> HelperResult {
