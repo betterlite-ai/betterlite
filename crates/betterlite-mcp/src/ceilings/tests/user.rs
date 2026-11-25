@@ -2,7 +2,7 @@
 async fn user_servers_without_a_permission_is_no_restriction() {
     let ceilings = over(FakeReads::standard());
     assert_eq!(
-        ceilings.user_servers(Some(&user_auth())).await.unwrap(),
+        ceilings.user_servers(Some(&user_auth())).await,
         CeilingServers::NoRestriction
     );
 }
@@ -19,7 +19,7 @@ async fn user_servers_includes_toolset_servers() {
         ..FakeReads::standard()
     });
     assert_eq!(
-        ceilings.user_servers(Some(&user_auth())).await.unwrap(),
+        ceilings.user_servers(Some(&user_auth())).await,
         CeilingServers::Servers(names(&["srv-a", "srv-set"]))
     );
     assert!(ceilings.reads.saw("toolsets:true"));
@@ -33,7 +33,7 @@ async fn user_servers_turns_every_fault_into_unresolved() {
         ..FakeReads::standard()
     });
     assert_eq!(
-        resolved.user_servers(Some(&user_auth())).await.unwrap(),
+        resolved.user_servers(Some(&user_auth())).await,
         CeilingServers::Unresolved
     );
     let failed = over(FakeReads {
@@ -41,7 +41,7 @@ async fn user_servers_turns_every_fault_into_unresolved() {
         ..FakeReads::standard()
     });
     assert_eq!(
-        failed.user_servers(Some(&user_auth())).await.unwrap(),
+        failed.user_servers(Some(&user_auth())).await,
         CeilingServers::Unresolved
     );
     let unloadable = over(FakeReads {
@@ -49,7 +49,7 @@ async fn user_servers_turns_every_fault_into_unresolved() {
         ..FakeReads::standard()
     });
     assert_eq!(
-        unloadable.user_servers(Some(&user_auth())).await.unwrap(),
+        unloadable.user_servers(Some(&user_auth())).await,
         CeilingServers::Unresolved
     );
 }

@@ -6,7 +6,7 @@ use tracing::{debug, warn};
 use super::error::{CeilingReadError, CeilingsError, CeilingsResult};
 use super::reads::CeilingReads;
 use super::servers::{self, ToolsetTerm};
-use super::{Capped, CeilingServers, CeilingSource, Ceilings};
+use super::{Capped, CeilingLevels, CeilingServers, CeilingSource, Ceilings};
 use crate::auth::object_permission_hydration::reads::ObjectPermission;
 use crate::auth::object_permission_hydration::record::McpAuth;
 

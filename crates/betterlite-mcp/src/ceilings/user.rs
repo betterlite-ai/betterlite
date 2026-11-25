@@ -5,7 +5,7 @@ use super::Ceilings;
 use super::error::{CeilingsError, CeilingsResult};
 use super::reads::CeilingReads;
 use super::servers::{self, ToolsetTerm};
-use super::{Capped, CeilingServers, CeilingSource};
+use super::{Capped, CeilingLevels, CeilingServers, CeilingSource};
 use crate::auth::object_permission_hydration::record::McpAuth;
 
 // _get_allowed_mcp_servers_for_user: every fault is an unresolved ceiling, never "no restriction"

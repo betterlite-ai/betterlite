@@ -99,10 +99,10 @@ pub fn agent_capped_servers(
 }
 
 // the server whose agent tool grants are read, and the caller and row the read starts from
-pub(super) struct AgentServer<'a> {
-    pub(super) server_id: &'a str,
-    pub(super) auth: Option<&'a UserAPIKeyAuth>,
-    pub(super) prefetched: Option<&'a ObjectPermission>,
+pub(super) struct AgentServer<'caller> {
+    pub(super) server_id: &'caller str,
+    pub(super) auth: Option<&'caller UserAPIKeyAuth>,
+    pub(super) prefetched: Option<&'caller ObjectPermission>,
 }
 
 // get_agent_tool_permissions_for_server: direct grants count only when the row lists any, and a plain agent reads a fault as no restriction

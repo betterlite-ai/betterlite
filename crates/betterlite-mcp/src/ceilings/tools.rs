@@ -3,7 +3,7 @@ use tracing::warn;
 
 use super::CeilingSource;
 use super::Ceilings;
-use super::agent::{AgentServer, agent_fault, agent_server_tools};
+use super::agent::{AgentServer, agent_server_tools};
 use super::error::{CeilingReadError, CeilingsError, CeilingsResult};
 use super::reads::CeilingReads;
 use super::servers;
@@ -43,10 +43,10 @@ fn narrowed(allowed: Option<Vec<String>>, granted: Option<Vec<String>>) -> Optio
 }
 
 // one tool ceiling call: the tools a level narrows, the server they sit on and the caller they are narrowed for
-pub(super) struct ToolCall<'a> {
+pub(super) struct ToolCall<'caller> {
     pub(super) allowed: Option<Vec<String>>,
-    pub(super) server_id: &'a str,
-    pub(super) auth: Option<&'a UserAPIKeyAuth>,
+    pub(super) server_id: &'caller str,
+    pub(super) auth: Option<&'caller UserAPIKeyAuth>,
 }
 
 // the read, its toolset term and the narrowing every human and org level applies once it holds a permission
@@ -194,7 +194,7 @@ where
     }
     let loaded = match ceilings.reads.org_object_permission(auth).await {
         Ok(loaded) => loaded,
-        Err(error) => return org_tools_fault(tools, error, source_kind),
+        Err(error) => return org_tools_fault::<Reads>(tools, error, source_kind),
     };
     let Some(permission) = loaded else {
         return Ok(tools);
