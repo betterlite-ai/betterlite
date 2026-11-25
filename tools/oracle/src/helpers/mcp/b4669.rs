@@ -4,6 +4,7 @@ mod tests;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
+use betterlite_db::budget_permission_rows::PermissionList;
 use betterlite_mcp::auth::object_permission_hydration::reads::ObjectPermission;
 use betterlite_mcp::auth::object_permission_hydration::record::McpAuth;
 use betterlite_mcp::registry::servers::{RegistrySettings, ServerRegistry};
@@ -25,6 +26,41 @@ pub(crate) struct AccessGroupRecord {
     access_mcp_server_ids: Vec<String>,
 }
 
+// the deployed row accepts keys no grant reads, so cases decode through a shadow that rejects them
+#[derive(Deserialize)]
+#[serde(remote = "ObjectPermission", deny_unknown_fields)]
+struct PermissionRecord {
+    object_permission_id: String,
+    #[serde(default)]
+    mcp_servers: PermissionList,
+    #[serde(default)]
+    mcp_access_groups: PermissionList,
+    #[serde(default)]
+    mcp_tool_permissions: Option<ToolGrants>,
+    #[serde(default)]
+    mcp_toolsets: Option<Vec<String>>,
+    #[serde(skip)]
+    vector_stores: PermissionList,
+    #[serde(skip)]
+    agents: PermissionList,
+    #[serde(skip)]
+    agent_access_groups: PermissionList,
+    #[serde(skip)]
+    models: PermissionList,
+    #[serde(skip)]
+    blocked_tools: PermissionList,
+    #[serde(skip)]
+    search_tools: PermissionList,
+    #[serde(skip)]
+    mcp_tool_search_enabled: Option<bool>,
+    #[serde(skip)]
+    skills: Option<Vec<String>>,
+}
+
+// an Option field cannot carry the shadow attribute itself, so the team's row decodes through this newtype
+#[derive(Clone, Debug, Deserialize)]
+pub(crate) struct PermissionInput(#[serde(with = "PermissionRecord")] ObjectPermission);
+
 // config servers, unified access group rows, and the grants every declared toolset resolves to
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -32,6 +68,7 @@ pub(crate) struct KeyCall {
     servers: Vec<MCPServer>,
     access_groups: Vec<AccessGroupRecord>,
     toolset_grants: ToolGrants,
+    #[serde(with = "PermissionRecord")]
     permission: ObjectPermission,
     access_group_ids: Vec<String>,
 }
@@ -45,7 +82,7 @@ pub(crate) struct TeamCall {
     team_id: String,
     blocked: bool,
     team_access_group_ids: Vec<String>,
-    permission: Option<ObjectPermission>,
+    permission: Option<PermissionInput>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -127,10 +164,11 @@ async fn key_servers_and_groups(call: &KeyCall, auth: &GrantAuth) -> Vec<String>
 
 // a keyless caller pinned to one team: the resolver's base is the team list
 async fn team_answer(call: &TeamCall) -> Vec<String> {
+    let permission = call.permission.as_ref().map(|row| row.0.clone());
     let team = TeamRecord {
         blocked: call.blocked,
         access_group_ids: call.team_access_group_ids.clone(),
-        object_permission: call.permission.clone(),
+        object_permission: permission,
     };
     let reads = case_reads(
         &call.servers,
