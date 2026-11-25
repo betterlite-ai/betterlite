@@ -166,13 +166,13 @@ async fn run_step(
     let logging = step
         .supplied_logging
         .then(|| Arc::new(RecordingLogging::default()));
-    let context = ContentContext {
+    let invocation = ContentContext {
         trusted: None,
         client: caller(step, handler),
         logger: None,
         logging: logging.clone(),
     };
-    let answer = content.run(entry, &call, context).await;
+    let answer = content.run(entry, &call, invocation).await;
     let recorded = logging
         .as_deref()
         .map_or_else(Vec::new, RecordingLogging::identities);

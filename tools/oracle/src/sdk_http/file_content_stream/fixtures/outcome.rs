@@ -91,7 +91,6 @@ impl StepOutcome {
         let StreamedContent {
             mut response,
             headers,
-            exit: _exit,
         } = content;
         let mut chunks = Vec::new();
         let mut iterator = response
