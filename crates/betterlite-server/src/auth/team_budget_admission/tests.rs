@@ -105,7 +105,7 @@ async fn mark_called(Extension(reached): Extension<Arc<AtomicBool>>) -> &'static
 // the real router with its auth chain, a handler that records whether it ran, and the rule the auth service would insert
 async fn run_request(rule: TeamBudgetRule) -> (StatusCode, String, bool) {
     let config = ConfigLoader {
-        lookup: BTreeMap::new(),
+        lookup: BTreeMap::<String, String>::new(),
     }
     .load("general_settings:\n  master_key: secret-master-key\n")
     .unwrap();
