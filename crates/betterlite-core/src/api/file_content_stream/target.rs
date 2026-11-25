@@ -23,7 +23,6 @@ pub struct ContentMode {
     pub timeout: FineTuningTimeout,
 }
 
-// The OpenAI SDK client classes; only the OpenAI one reaches compatible streaming
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SuppliedSdk {
     OpenAi,
@@ -37,7 +36,6 @@ pub enum CallerClient<'call, Client> {
     Http(SuppliedClient<'call, Client>),
 }
 
-// OpenAIFilesAPI's arguments for openai, hosted_vllm and litellm_proxy, after get_openai_credentials
 #[derive(Debug, Clone)]
 pub struct CompatibleContent {
     pub api_base: String,
@@ -60,7 +58,6 @@ pub struct AzureContent {
     pub client: Option<SuppliedSdk>,
 }
 
-// The logging object LiteLLM builds when the caller passed none, always with model "", messages [] and stream false
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewLogger {
     pub call_type: &'static str,
@@ -74,7 +71,6 @@ pub enum ContentLogger<'call> {
     Created(Box<NewLogger>),
 }
 
-// base_llm_http_handler's arguments: the selected config, litellm_params' key and base, the headers and the HTTP client
 pub struct GenericContent<'call, Config, Client> {
     pub config: Config,
     pub params: ContentParams,
@@ -85,7 +81,6 @@ pub struct GenericContent<'call, Config, Client> {
     pub mode: ContentMode,
 }
 
-// xai_batch_results_instance.batch_results_content's arguments
 pub struct XaiBatchContent<'call> {
     pub batch_id: &'call str,
     pub api_base: Option<&'call str>,
@@ -100,7 +95,6 @@ pub enum ContentTarget<'call, Config, Client> {
     XaiBatch(XaiBatchContent<'call>),
 }
 
-// The request object file_content builds once; extra_body never reaches a GET on the wire
 pub enum ContentOperation<'call> {
     Buffered {
         request: &'call FileContentRequest,
@@ -127,7 +121,6 @@ pub struct StreamIdentity<'call> {
     pub api_base: Option<&'call str>,
 }
 
-// The logging object file_content_streaming annotates and the wrapper logs through
 pub trait ContentLogging: Send + Sync {
     fn record_identity(&self, identity: &StreamIdentity<'_>);
 

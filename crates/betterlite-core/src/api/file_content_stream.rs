@@ -24,14 +24,12 @@ pub mod target;
 
 mod tests;
 
-// afile_content declares provider openai by default and is the only entry with afile_content=true
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContentEntry {
     Sync,
     Async,
 }
 
-// The arguments both entry points declare; model and custom_llm_provider are the two the body reads
 pub struct ContentCall<'call> {
     pub file_id: &'call str,
     pub model: Option<&'call str>,
@@ -44,7 +42,6 @@ pub struct ContentCall<'call> {
     pub kwargs: &'call ContentKwargs,
 }
 
-// The kwargs GenericLiteLLMParams and get_litellm_params read beside the declared arguments
 #[derive(Debug, Clone, Default)]
 pub struct ContentKwargs {
     pub api_key: Option<SecretString>,
@@ -58,7 +55,6 @@ pub struct ContentKwargs {
     pub id: Option<String>,
 }
 
-// Server-only inputs: trusted credentials, the caller's client, the handler's logging state and object
 pub struct ContentContext<'call, Client, Logging> {
     pub trusted: Option<&'call TrustedCredentials>,
     pub client: Option<CallerClient<'call, Client>>,
@@ -80,7 +76,6 @@ pub struct StreamedContent {
     pub headers: IndexMap<String, String>,
 }
 
-// HttpxBinaryResponseContent's status, headers and bytes, or the wrapped stream
 pub enum ContentAnswer {
     Buffered(Box<BinaryContent>),
     Streamed(Box<StreamedContent>),
