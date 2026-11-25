@@ -9,9 +9,10 @@ use betterlite_redis::redis_cache::RedisCache;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3_async_runtimes::tokio::{future_into_py, get_runtime};
+use tokio_util::task::TaskTracker;
 
 use self::batch::{NativeDeclaredBatchRead, NativeDeferred, NativeRedisBatch};
-use self::values::{answer_json, close_tier, count, options, store, text_of_ttl};
+use self::values::{answer_json, count, options, store, text_of_ttl};
 use super::error::{self, BackendHandleError};
 use super::memory::NativeMemory;
 use super::redis::NativeRedis;
@@ -28,6 +29,8 @@ pub(crate) struct NativeDual {
     redis: Option<Arc<RedisCache>>,
     // the memory tier's configured default, only when it differs from the tier's own 600 seconds
     memory_ttl: Option<f64>,
+    // the blocking flushes still running, drained by close
+    tasks: TaskTracker,
 }
 
 #[pymethods]
@@ -57,6 +60,7 @@ impl NativeDual {
             cache: Arc::new(cache),
             redis: redis_tier,
             memory_ttl,
+            tasks: TaskTracker::new(),
         })
     }
 
@@ -247,7 +251,7 @@ impl NativeDual {
     }
 
     fn async_flush<'py>(&self, py: Python<'py>) -> AsyncAnswer<'py> {
-        blocking::awaitable(py, {
+        blocking::awaitable(py, self.tasks.clone(), {
             let cache = Arc::clone(&self.cache);
             move || cache.flush_cache()
         })
@@ -273,17 +277,19 @@ impl NativeDual {
     }
 
     fn close(&self, py: Python<'_>) -> PyResult<()> {
-        let Some(tier) = self.redis.as_ref().map(Arc::clone) else {
-            return Ok(());
-        };
-        py.detach(|| get_runtime().block_on(close_tier(tier)))
+        py.detach(|| {
+            get_runtime().block_on(blocking::close(
+                self.tasks.clone(),
+                self.redis.as_ref().map(Arc::clone),
+            ))
+        })
     }
 
     fn async_close<'py>(&self, py: Python<'py>) -> AsyncAnswer<'py> {
-        let Some(tier) = self.redis.as_ref().map(Arc::clone) else {
-            return blocking::none_future(py, async move { Ok(()) });
-        };
-        blocking::none_future(py, close_tier(tier))
+        blocking::none_future(
+            py,
+            blocking::close(self.tasks.clone(), self.redis.as_ref().map(Arc::clone)),
+        )
     }
 }
 

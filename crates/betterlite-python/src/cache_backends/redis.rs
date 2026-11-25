@@ -19,6 +19,7 @@ use betterlite_redis::redis_client_reuse::transport::RedisCacheFamily;
 use betterlite_redis::redis_live_client::LiveClientFactory;
 use pyo3::prelude::*;
 use pyo3_async_runtimes::tokio::{future_into_py, get_runtime};
+use tokio_util::task::TaskTracker;
 
 use super::error;
 use super::settings::RedisSettings;
@@ -31,6 +32,8 @@ type AsyncAnswer<'py> = PyResult<Bound<'py, PyAny>>;
 pub(crate) struct NativeRedis {
     pub(crate) cache: Arc<RedisCache>,
     settings: RedisSettings,
+    // the blocking flushes still running, drained by close
+    tasks: TaskTracker,
 }
 
 pub(super) fn open(py: Python<'_>, parsed: RedisSettings) -> PyResult<NativeRedis> {
@@ -51,6 +54,7 @@ pub(super) fn open(py: Python<'_>, parsed: RedisSettings) -> PyResult<NativeRedi
     Ok(NativeRedis {
         cache: Arc::new(error::backend_err(opened)?),
         settings: parsed,
+        tasks: TaskTracker::new(),
     })
 }
 
@@ -151,7 +155,7 @@ impl NativeRedis {
     }
 
     fn async_flush<'py>(&self, py: Python<'py>) -> AsyncAnswer<'py> {
-        blocking::awaitable(py, {
+        blocking::awaitable(py, self.tasks.clone(), {
             let cache = Arc::clone(&self.cache);
             move || cache.admin.flush_cache()
         })
@@ -170,7 +174,9 @@ impl NativeRedis {
         }
         let mut settings = self.settings.clone();
         settings.namespace = namespace.map(str::to_owned);
+        let tasks = self.tasks.clone();
         *self = open(py, settings)?;
+        self.tasks = tasks;
         Ok(())
     }
 
@@ -181,18 +187,20 @@ impl NativeRedis {
             Ok(alive)
         })
     }
-    // ast-grep-ignore: no-padded-one-line-functions - the disconnect future is the whole call
-    fn close(&self, py: Python<'_>) {
-        let cache = Arc::clone(&self.cache);
-        py.detach(|| get_runtime().block_on(cache.admin.disconnect()));
+    fn close(&self, py: Python<'_>) -> PyResult<()> {
+        py.detach(|| {
+            get_runtime().block_on(blocking::close(
+                self.tasks.clone(),
+                Some(Arc::clone(&self.cache)),
+            ))
+        })
     }
 
     fn async_close<'py>(&self, py: Python<'py>) -> AsyncAnswer<'py> {
-        let cache = Arc::clone(&self.cache);
-        blocking::none_future(py, async move {
-            cache.admin.disconnect().await;
-            Ok(())
-        })
+        blocking::none_future(
+            py,
+            blocking::close(self.tasks.clone(), Some(Arc::clone(&self.cache))),
+        )
     }
 }
 

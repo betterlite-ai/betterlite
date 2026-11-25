@@ -26,6 +26,8 @@ pub(crate) enum BackendHandleError {
         #[source]
         source: serde_json::Error,
     },
+    #[error("the cache value nests deeper than {limit} levels")]
+    TooDeep { limit: usize },
     #[error("the number {value} has no JSON form")]
     UnrepresentableNumber { value: f64 },
     #[error("the increment of {value} is not a whole number")]
@@ -78,7 +80,10 @@ impl BackendHandleError {
     pub(crate) const fn is_value_error(&self) -> bool {
         matches!(
             self,
-            Self::Settings { .. } | Self::Value { .. } | Self::NotWhole { .. }
+            Self::Settings { .. }
+                | Self::Value { .. }
+                | Self::TooDeep { .. }
+                | Self::NotWhole { .. }
         )
     }
 }

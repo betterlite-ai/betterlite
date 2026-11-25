@@ -48,6 +48,9 @@ deviations:
   - what: DualCache.declare_batch_get is async and takes the request batch as a NativeRedisBatch built from the Redis tier's native handle, and it returns the declared read to resolve; LiteLLM's takes a Python RedisBatch.
     why: The request batch lives in the Rust redis crate, so a Python caller has to hold a native handle to it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L385-L399
+  - what: A cache value nested more than 128 lists or objects deep is refused with ValueError("the cache value nests deeper than 128 levels") on every backend write; LiteLLM keeps the Python object as given and only Python's recursion limit stops it.
+    why: The native handle reads each value from JSON text one level at a time, so without a limit a deep value recursed until the process stack overflowed. 128 is serde_json's own nesting limit for a single parse.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L158-L180
   - what: This task has no helper oracle cases.
     why: The pytest files compare both packages in one process, and the backend cases belong to B4290 to B4295.
     link: ""

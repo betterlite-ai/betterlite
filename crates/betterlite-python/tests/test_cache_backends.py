@@ -1,6 +1,5 @@
 import asyncio
 import importlib
-import json
 import time
 from collections.abc import Awaitable
 from pathlib import Path
@@ -499,10 +498,12 @@ def test_dual_without_batch() -> None:
 
 async def _declared_values(
     cache: DualCache, redis_cache: RedisCache, keys: list[str]
-) -> list[str | None]:
+) -> list[JsonValue]:
     batch = NativeRedisBatch(redis_cache.native)
     declared = await cache.declare_batch_get(keys, batch)
-    return await asyncio.wait_for(declared.async_resolve(), timeout=DECLARED_TIMEOUT)
+    answers = await asyncio.wait_for(declared.async_resolve(), timeout=DECLARED_TIMEOUT)
+    decoder = TypeAdapter(JsonValue)
+    return [None if value is None else decoder.validate_json(value) for value in answers]
 
 
 def test_dual_declares_batch(redis_server: FakeRedisServer) -> None:
@@ -513,12 +514,7 @@ def test_dual_declares_batch(redis_server: FakeRedisServer) -> None:
     values = asyncio.run(
         _declared_values(cache, redis_cache, ["declared:memory", "declared:redis", "declared:none"])
     )
-    decoder = TypeAdapter(JsonValue)
-    assert [None if value is None else decoder.validate_json(value) for value in values] == [
-        CHAT_RESPONSE,
-        CACHED,
-        None,
-    ]
+    assert values == [CHAT_RESPONSE, CACHED, None]
 
 
 def test_dual_declares_memory(redis_server: FakeRedisServer) -> None:
@@ -526,7 +522,7 @@ def test_dual_declares_memory(redis_server: FakeRedisServer) -> None:
     cache = DualCache(in_memory_cache=InMemoryCache())
     cache.in_memory_cache.set_cache("declared:local", CACHED)
     values = asyncio.run(_declared_values(cache, redis_cache, ["declared:local", "declared:gone"]))
-    assert values == [json.dumps(CACHED), None]
+    assert values == [CACHED, None]
 
 
 async def _post_call_counts(cache: DualCache) -> None:
@@ -592,7 +588,10 @@ def test_redis_override_schema() -> None:
     invalid: dict[str, JsonValue] = {"socket_timeout": "slow"}
     default_timeout = 5.0
     assert REDIS_OVERRIDES.validate_python(supplied) == supplied
-    assert REDIS_OVERRIDES.validate_python(nodes)["startup_nodes"] is None
+    assert REDIS_OVERRIDES.validate_python(nodes) == {
+        "startup_nodes": None,
+        "socket_timeout": default_timeout,
+    }
     assert REDIS_OVERRIDES.validate_python(absent)["socket_timeout"] == default_timeout
     assert REDIS_OVERRIDES.validate_python(null) == null
     with pytest.raises(ValidationError, match="socket_timeout"):

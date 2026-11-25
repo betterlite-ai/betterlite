@@ -88,6 +88,29 @@ fn backends_request_malformed_value_is_an_error() {
     cache_value("{").unwrap_err();
 }
 
+// serde_json's 128 levels still parse; one more, or a hundred thousand, is a value error and no deeper recursion.
+#[test]
+fn backends_request_nesting_past_the_limit_is_an_error() {
+    let lists = format!("{}{}", "[".repeat(MAX_DEPTH), "]".repeat(MAX_DEPTH));
+    json_value(&lists).unwrap();
+    let objects = format!("{}1{}", r#"{"a":"#.repeat(MAX_DEPTH), "}".repeat(MAX_DEPTH));
+    json_value(&objects).unwrap();
+    let deep = 100_000_usize;
+    let refused = [
+        format!("[{lists}]"),
+        format!(r#"{{"a":{objects}}}"#),
+        format!("{}{}", "[".repeat(deep), "]".repeat(deep)),
+    ];
+    for text in refused {
+        let error = json_value(&text).unwrap_err();
+        assert!(matches!(
+            error,
+            BackendHandleError::TooDeep { limit: MAX_DEPTH }
+        ));
+        assert!(error.is_value_error());
+    }
+}
+
 #[test]
 fn backends_result_value_text_is_json() {
     let mut fields = BTreeMap::new();

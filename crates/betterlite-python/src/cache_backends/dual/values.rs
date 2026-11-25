@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use betterlite_cache::dual_cache::{CacheOptions, Ttl};
 use betterlite_models::decisions::Json;
-use betterlite_redis::redis_cache::RedisCache;
 use pyo3::prelude::*;
 
 use super::MemoryDual;
@@ -56,9 +55,4 @@ pub(super) async fn count(
         return Err(PyErr::from(BackendHandleError::IncrementUnavailable));
     };
     convert::number_text(counted).map_err(PyErr::from)
-}
-
-pub(super) async fn close_tier(tier: Arc<RedisCache>) -> PyResult<()> {
-    tier.admin.disconnect().await;
-    Ok(())
 }

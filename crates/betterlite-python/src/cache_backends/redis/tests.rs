@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::future::pending;
 use std::io::{BufRead as _, BufReader, Read as _, Write as _};
 use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
@@ -49,6 +50,7 @@ fn dead_redis() -> NativeRedis {
     NativeRedis {
         cache: Arc::new(cache),
         settings: RedisSettings::default(),
+        tasks: TaskTracker::new(),
     }
 }
 
@@ -90,7 +92,7 @@ fn backends_redis_close_is_ok() {
                 .block_on(native.cache.transport.async_client())
                 .unwrap(),
         );
-        Python::attach(|py| native.close(py));
+        Python::attach(|py| native.close(py)).unwrap();
         assert!(server.join().unwrap());
     });
 }
@@ -150,6 +152,27 @@ fn backends_redis_namespace_keeps_the_cache() {
     let before = Arc::clone(&native.cache);
     Python::attach(|py| native.set_namespace(py, None).unwrap());
     assert!(Arc::ptr_eq(&before, &native.cache));
+}
+
+// A new namespace opens a new client, and the flushes the old one still runs stay in the tracker close drains.
+#[test]
+fn backends_redis_namespace_change_keeps_the_tasks() {
+    Python::initialize();
+    let overrides: RedisOverrides = serde_json::from_str(DEAD_REDIS).unwrap();
+    let settings = RedisSettings {
+        overrides,
+        namespace: None,
+        default_ttl: None,
+        redis_flush_size: None,
+    };
+    let mut native = Python::attach(|py| open(py, settings).unwrap());
+    let before = Arc::clone(&native.cache);
+    let running = native.tasks.track_future(pending::<()>());
+    Python::attach(|py| native.set_namespace(py, Some("other")).unwrap());
+    assert!(!Arc::ptr_eq(&before, &native.cache));
+    assert_eq!(native.tasks.len(), 1_usize);
+    drop(running);
+    assert!(native.tasks.is_empty());
 }
 
 // The constructor helper builds the same lazy client the other tests assemble by hand.

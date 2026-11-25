@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use betterlite_cache::backend::memory::local::LocalMemoryOps;
@@ -9,6 +10,7 @@ use betterlite_models::decisions::Json;
 use betterlite_redis::request_batch::scope::request_redis_batch_scope;
 use pyo3_async_runtimes::tokio::{get_runtime, into_future, run};
 use serde_json::Number;
+use tokio::time::sleep;
 
 use super::super::redis::open;
 use super::*;
@@ -34,6 +36,7 @@ pub(super) fn native_dual(redis: Option<Arc<RedisCache>>) -> NativeDual {
         cache: Arc::new(cache),
         redis,
         memory_ttl: None,
+        tasks: TaskTracker::new(),
     }
 }
 
@@ -93,6 +96,24 @@ fn backends_dual_ping_without_redis() {
         assert!(native.ping(py).unwrap());
         native.close(py).unwrap();
     });
+}
+
+// Close returns only after the flush the tracker still holds has finished.
+#[test]
+fn backends_dual_close_drains_running_flushes() {
+    let native = native_dual(None);
+    let finished = Arc::new(AtomicBool::new(false));
+    let marker = Arc::clone(&finished);
+    let running = native.tasks.spawn_on(
+        async move {
+            sleep(Duration::from_millis(200)).await;
+            marker.store(true, Ordering::SeqCst);
+        },
+        get_runtime().handle(),
+    );
+    Python::attach(|py| native.close(py)).unwrap();
+    assert!(finished.load(Ordering::SeqCst));
+    assert!(running.is_finished());
 }
 
 #[test]
