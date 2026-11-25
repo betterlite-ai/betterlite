@@ -10,8 +10,8 @@ use betterlite_models::model_registration::JsonObject;
 use betterlite_streaming::streamed_response_assembly::response::Response;
 use rust_decimal::Decimal;
 
-// ast-grep-ignore: no-long-names
 use super::super::interrupted_stream_usage::InterruptedStreamServices;
+// ast-grep-ignore: no-long-names - B3632 owns this name and the stream seam calls it here
 use super::super::interrupted_stream_usage::build_streaming_response_for_logging;
 use super::super::response_costing::{ResponseCostRequest, ResponseCostService};
 use super::super::stream_fields::{Chunk, extract_message_start_field, resolve_logged_model};

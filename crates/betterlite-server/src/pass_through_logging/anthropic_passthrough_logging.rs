@@ -101,7 +101,6 @@ pub struct AnthropicPassthroughLogger {
 
 impl AnthropicPassthroughLogger {
     #[must_use]
-    // ast-grep-ignore: no-one-line-functions - B3606 and B8931 build the Anthropic logger through this fixed constructor
     pub fn new(batch_logging: AnthropicBatchLogging, cost: Arc<dyn ResponseCostService>) -> Self {
         Self {
             batch_logging,
