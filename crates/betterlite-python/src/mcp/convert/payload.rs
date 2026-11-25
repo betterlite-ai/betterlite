@@ -117,7 +117,7 @@ fn http_payload(error: &McpHttpError) -> NativeMcpErrorPayload {
         let capture = head.capture.as_ref();
         let preview = capture.map(|record| record.preview.as_str());
         let url = capture.map(|record| record.exchange.url.as_str());
-        return status_payload(head.status, preview, url, Some(&head.headers));
+        return status_payload(head.status, preview, url, &head.headers);
     }
     let timed_out = matches!(
         error,
@@ -135,14 +135,13 @@ pub(crate) fn status_payload(
     status: u16,
     preview: Option<&str>,
     url: Option<&str>,
-    headers: Option<&HeaderMap>,
+    headers: &HeaderMap,
 ) -> NativeMcpErrorPayload {
     let number = Json::Number(serde_json::Number::from(status));
     let body = Json::Text(preview.unwrap_or("(no body captured)").to_owned());
     let link = Json::Text(url.unwrap_or_default().to_owned());
     let response_headers = headers
-        .into_iter()
-        .flat_map(HeaderMap::iter)
+        .iter()
         .filter_map(|(name, value)| {
             value.to_str().ok().map(|text| {
                 Json::List(vec![

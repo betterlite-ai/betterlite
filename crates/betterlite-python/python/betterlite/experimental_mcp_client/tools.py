@@ -64,8 +64,11 @@ def _normalize_mcp_input_schema(input_schema: dict[str, JsonValue]) -> dict[str,
     return JSON_OBJECT.validate_json(text)
 
 
+normalize_mcp_input_schema = _normalize_mcp_input_schema
+
+
 # A session from another package has no Rust session behind it, so pagination and calls refuse it
-def checked_session(session: MCPSession) -> None:
+def checked_session(session: object) -> None:
     match session:
         case MCPSession():
             return
@@ -121,6 +124,9 @@ def _get_function_arguments(function: Function) -> dict[str, JsonValue]:
     except ValidationError:
         return {}
     return arguments
+
+
+get_function_arguments = _get_function_arguments
 
 
 # ast-grep-ignore: no-long-names

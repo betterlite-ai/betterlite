@@ -10,7 +10,6 @@ from typing import Final, Protocol, TypedDict
 import httpx2
 import pytest
 from litellm.experimental_mcp_client.client import MCPClient as LiteLLMClient
-from litellm.types.mcp import MCPAuth as TheirAuth
 from mcp import MCPError as TheirProtocolError
 from mcp.types import CallToolRequestParams as TheirCallToolRequestParams
 from mcp.types import GetPromptRequestParams as TheirGetPromptRequestParams
@@ -124,6 +123,9 @@ class ClientClass(Protocol):
         auth_type: str | None = None,
         auth_value: str | dict[str, str] | None = None,
     ) -> AuthClient: ...
+    async def call_tool(
+        self, call_tool_request_params: TheirCallToolRequestParams
+    ) -> Dumpable: ...
     def __getattr__(self, name: str) -> MemberMethod: ...
 
 
@@ -293,10 +295,10 @@ def our_auth_clients(server: Server) -> tuple[AuthClient, AuthClient, AuthClient
 
 def their_auth_clients(server: Server) -> tuple[AuthClient, AuthClient, AuthClient, AuthClient]:
     return (
-        LiteLLMClient(server_url=server.url, auth_type=TheirAuth.bearer_token, auth_value=BEARER),
-        LiteLLMClient(server_url=server.url, auth_type=TheirAuth.basic, auth_value=BASIC_VALUE),
-        LiteLLMClient(server_url=server.url, auth_type=TheirAuth.api_key, auth_value=HEADER_MAP),
-        LiteLLMClient(server_url=server.url, auth_type=TheirAuth.bearer_token, auth_value=BEARER),
+        LiteLLMClient(server_url=server.url, auth_type="bearer_token", auth_value=BEARER),
+        LiteLLMClient(server_url=server.url, auth_type="basic", auth_value=BASIC_VALUE),
+        LiteLLMClient(server_url=server.url, auth_type="api_key", auth_value=HEADER_MAP),
+        LiteLLMClient(server_url=server.url, auth_type="bearer_token", auth_value=BEARER),
     )
 
 

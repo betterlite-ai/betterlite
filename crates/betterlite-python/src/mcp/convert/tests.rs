@@ -490,7 +490,7 @@ fn error_status_keeps_the_status_the_body_and_the_url() {
         401,
         Some("denied"),
         Some("http://mcp.test/mcp"),
-        Some(&response_headers),
+        &response_headers,
     );
     assert_eq!(failure.kind, McpErrorKind::HttpStatus);
     assert_eq!(failure.message, UNAUTHORIZED_MESSAGE);
@@ -528,7 +528,7 @@ fn http_status_message_names_each_status_family(#[case] status: u16, #[case] pre
 
 #[test]
 fn error_status_without_a_capture_says_so() {
-    let failure = status_payload(500, None, None, None);
+    let failure = status_payload(500, None, None, &HeaderMap::new());
     assert_eq!(failure.kind, McpErrorKind::HttpStatus);
     assert!(failure.message.starts_with("Server error '500 "));
     let Json::Object(object) = failure.data.unwrap() else {
