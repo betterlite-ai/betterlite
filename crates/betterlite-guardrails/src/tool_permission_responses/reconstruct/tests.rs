@@ -58,7 +58,9 @@ fn reconstruct_chunk_keeps_a_choice_logprobs() {
         .expect("choice");
     assert_eq!(
         mapping_value(choice, "logprobs"),
-        Some(&object(r#"{"content":[{"token":"hi","logprob":-0.1}]}"#))
+        Some(&GuardrailValue::Object(object(
+            r#"{"content":[{"token":"hi","logprob":-0.1}]}"#
+        )))
     );
 }
 
