@@ -110,10 +110,6 @@ fn store_view(store: Option<&ManagedVectorStore>) -> Result<Value, Box<HelperErr
     }
 }
 
-fn error_view(status: u16, detail: String) -> Value {
-    json!({"status": status, "detail": detail})
-}
-
 // which warning line the failure emitted, named by the arm the way the case names it
 fn warning_labels(failure: &ManagedStoreAccessError<RegistryBroke>) -> Vec<&'static str> {
     match failure {
@@ -150,7 +146,7 @@ fn resolution_answer(
         Ok(found) => (store_view(found.as_ref())?, None, Vec::new()),
         Err(failure) => (
             Value::Null,
-            Some(error_view(failure.status(), failure.detail())),
+            Some(json!({"status": failure.status(), "detail": failure.detail()})),
             warning_labels(failure),
         ),
     };
@@ -182,7 +178,7 @@ fn assert_store_answer(
     ));
     let error = match &outcome {
         Ok(()) => None,
-        Err(failure) => Some(error_view(failure.status(), failure.detail())),
+        Err(failure) => Some(json!({"status": failure.status(), "detail": failure.detail()})),
     };
     let lookups = json!({
         "registry": [],
@@ -225,7 +221,7 @@ fn assert_id_answer(
         Ok(found) => (store_view(found.as_ref())?, None, Vec::new()),
         Err(failure) => (
             Value::Null,
-            Some(error_view(failure.status(), failure.detail())),
+            Some(json!({"status": failure.status(), "detail": failure.detail()})),
             warning_labels(failure),
         ),
     };

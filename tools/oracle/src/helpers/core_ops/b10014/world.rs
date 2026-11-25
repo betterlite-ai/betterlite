@@ -67,17 +67,14 @@ pub(super) struct ScriptedCache {
     writes: Mutex<Vec<String>>,
 }
 
-fn payload_error() -> PayloadError {
-    let source = serde_json::Error::io(io::Error::other(CACHE_FAILURE));
-    PayloadError::Json(source)
-}
-
 #[async_trait]
 impl ManagedVectorStoreCache for ScriptedCache {
     async fn read(&self, key: &str) -> Result<Option<ManagedVectorStoresTable>, PayloadError> {
         lock(&self.reads).push(key.to_owned());
         if self.failure == Some(Failure::CacheRead) {
-            return Err(payload_error());
+            return Err(PayloadError::Json(serde_json::Error::io(io::Error::other(
+                CACHE_FAILURE,
+            ))));
         }
         Ok(self.hits.get(key).cloned())
     }
@@ -93,7 +90,9 @@ impl ManagedVectorStoreCache for ScriptedCache {
         _ttl: f64,
     ) -> Result<(), AuthCacheError> {
         if self.failure == Some(Failure::CacheWrite) {
-            return Err(AuthCacheError::from(payload_error()));
+            return Err(AuthCacheError::from(PayloadError::Json(
+                serde_json::Error::io(io::Error::other(CACHE_FAILURE)),
+            )));
         }
         lock(&self.writes).push(key.to_owned());
         Ok(())
