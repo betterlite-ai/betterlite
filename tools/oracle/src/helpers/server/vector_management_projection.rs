@@ -10,7 +10,8 @@ use serde::Deserialize;
 #[serde(tag = "op", rename_all = "snake_case")]
 pub(crate) enum Input {
     OwnershipProjection {
-        vector_store: LiteLlmManagedVectorStore,
+        // the box keeps the input enum's largest variant small enough for clippy large_enum_variant
+        vector_store: Box<LiteLlmManagedVectorStore>,
     },
     RedactVectorCredentials {
         litellm_params: serde_json::Value,
