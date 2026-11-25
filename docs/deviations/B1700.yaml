@@ -37,13 +37,11 @@ deviations:
       transaction-local statement_timeout to the time the transaction has left, so PostgreSQL
       cancels any statement that would outlive the deadline; once that time is gone it sends no
       further statement, and the client stops waiting at that same deadline. A model write that
-      times out has its connection dropped instead of returned to the pool. Every config, environment and credential scan or write, acquisition included, ends
-      the client's wait within thirty seconds, and each keeps its stage's own failure boundary: a
-      failed model scan or credential scan skips its stage, while a failed environment write still
-      aborts the rotation and a failed credential write still skips that row. Those scan and
-      single-row write calls only bound the client's wait: their repositories own the pooled
-      connection, so the rotation cannot cancel or discard it, and a statement abandoned by the
-      client can still finish on the server.
+      times out has its connection dropped instead of returned to the pool. Every config,
+      environment and credential scan or write, acquisition included, ends the client's wait within
+      thirty seconds, and each keeps its stage's own failure boundary: a failed model scan or
+      credential scan skips its stage, while a failed environment write still aborts the rotation
+      and a failed credential write still skips that row.
     why: >-
       LiteLLM bounds only the model transaction, with prisma's two-minute tx timeout; its scans,
       environment update and per-credential updates wait as long as the server makes them wait, so a
@@ -51,11 +49,20 @@ deviations:
       per-statement statement_timeout alone would let several statements each use the whole limit,
       so the model transaction hands every statement only the time it has left and the client waits
       for the same absolute deadline; returning a timed-out model connection would hand the next
-      borrower a session still busy with the old UPDATE, so it is discarded. The scan and
-      single-row write calls keep their existing failure boundaries because their connection comes
-      from the repository's own pool: cancelling those statements needs a bounded repository
-      access, not a rotation that never holds the connection.
+      borrower a session still busy with the old UPDATE, so it is discarded.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5260-L5268
+  - what: >-
+      A config, environment or credential scan or write that runs past the rotation's client-side
+      deadline reports that timeout, while its statement can still finish on the server and a later
+      write can still commit: those calls go through betterlite-db repositories that take their own
+      pooled connection, so the rotation cannot cancel the statement or discard the connection.
+      LiteLLM waits for those scans and writes with no timeout at all.
+    why: >-
+      Cancelling or discarding those statements needs a bounded repository access in betterlite-db,
+      which the task leaves out of scope; the client-side deadline still stops a drained pool or a
+      locked row from suspending the rotation and every later stage, and each call keeps its stage's
+      failure boundary.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5234-L5365
 kept_bugs:
   - what: >-
       An environment variable that does not decrypt is dropped from the stored mapping, so the row
