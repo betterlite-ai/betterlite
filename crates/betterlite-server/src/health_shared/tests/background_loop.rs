@@ -82,6 +82,7 @@ async fn a_cycle_probes_saves_and_keeps_the_window_lock() {
     assert_eq!(rows[1].error_message.as_deref(), Some("probe-down is down"));
     assert!(world.lock.holds(SAVE_JOB_ID));
     assert!(!world.lock.released(SAVE_JOB_ID));
+    assert_eq!(world.lock.acquire_ttls(), vec![300_i64]);
     let snapshot = world.results.snapshot();
     assert_eq!(snapshot.healthy_count, 1);
     assert_eq!(snapshot.unhealthy_count, 1);

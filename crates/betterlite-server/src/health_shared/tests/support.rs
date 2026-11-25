@@ -690,9 +690,17 @@ impl SharedHealthStatusSource for FakeStatus {
 pub(crate) struct FakeLock {
     values: Mutex<BTreeMap<String, String>>,
     deletes: Mutex<Vec<String>>,
+    ttls: Mutex<Vec<i64>>,
 }
 
 impl FakeLock {
+    pub(crate) fn acquire_ttls(&self) -> Vec<i64> {
+        self.ttls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
     pub(crate) fn holds(&self, job: &str) -> bool {
         let key = lease_key(job);
         self.values
@@ -729,7 +737,7 @@ impl LockCache for FakeLock {
         &self,
         key: &str,
         owner: &str,
-        _ttl_seconds: i64,
+        ttl_seconds: i64,
     ) -> impl Future<Output = Result<bool, LockCacheError>> + Send {
         let mut values = self.values.lock().unwrap_or_else(PoisonError::into_inner);
         if values.contains_key(key) {
@@ -737,6 +745,10 @@ impl LockCache for FakeLock {
         }
         values.insert(key.to_owned(), owner.to_owned());
         drop(values);
+        self.ttls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(ttl_seconds);
         ready(Ok(true))
     }
 
