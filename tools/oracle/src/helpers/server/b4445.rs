@@ -1,6 +1,5 @@
 use betterlite_db::health_check_rows::HealthCheckRow;
 use betterlite_models::decisions::Json;
-use betterlite_models::model_registration::JsonObject;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_server::health_access_and_connections::connection_error::RejectionDetail;
