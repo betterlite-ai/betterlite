@@ -1,0 +1,17 @@
+kind: helper
+name: proxy-config-state-owned-two-keys
+call:
+  b8380:
+    operation: owned_writes
+    section: general_settings
+    yaml_values:
+      alpha: 1
+      beta: 2
+    database_row: null
+    changed_keys:
+      beta: 3
+      alpha: 4
+    config_file_path: /etc/betterlite/config.yaml
+env: {}
+compare:
+  ignore: []
