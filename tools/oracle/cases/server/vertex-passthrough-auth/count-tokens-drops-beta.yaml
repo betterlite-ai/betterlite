@@ -3,7 +3,7 @@ name: count-tokens-drops-beta
 call:
   b3622:
     function: upstream_headers
-    endpoint: "v1/projects/p/locations/us-central1/publishers/anthropic/models/claude:count-tokens:rawPredict"
+    endpoint: "v1/projects/p/locations/us-central1/publishers/anthropic/models/count-tokens:rawPredict"
     headers:
       anthropic-beta: beta-1
       content-type: application/json

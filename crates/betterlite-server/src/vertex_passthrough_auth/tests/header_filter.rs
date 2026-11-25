@@ -49,7 +49,7 @@ fn a_repeated_allowed_header_keeps_its_first_value() {
 #[test]
 fn the_segment_before_the_first_colon_decides_the_count_tokens_route() {
     assert!(is_vertex_count_tokens_route(
-        "v1/projects/p/locations/l/publishers/anthropic/models/claude:count-tokens:rawPredict"
+        "v1/projects/p/locations/l/publishers/anthropic/models/count-tokens:rawPredict"
     ));
     assert!(is_vertex_count_tokens_route("count-tokens"));
     assert!(is_vertex_count_tokens_route("a/count-tokens:rawPredict"));
@@ -62,6 +62,9 @@ fn the_segment_before_the_first_colon_decides_the_count_tokens_route() {
 fn another_last_segment_is_not_the_count_tokens_route() {
     assert!(!is_vertex_count_tokens_route(
         "v1/projects/p/locations/l/publishers/anthropic/models/claude:rawPredict"
+    ));
+    assert!(!is_vertex_count_tokens_route(
+        "v1/projects/p/locations/l/publishers/anthropic/models/claude:count-tokens:rawPredict"
     ));
     assert!(!is_vertex_count_tokens_route(
         "v1/count-tokens/models/claude:rawPredict"
@@ -79,7 +82,7 @@ fn a_count_tokens_route_drops_anthropic_beta_and_keeps_the_rest() {
         ("Authorization", "Bearer proxy-token"),
     ]);
     let filtered = vertex_upstream_headers(
-        "v1/projects/p/locations/l/publishers/anthropic/models/claude:count-tokens:rawPredict",
+        "v1/projects/p/locations/l/publishers/anthropic/models/count-tokens:rawPredict",
         &map,
     );
     assert_eq!(texts(&filtered), vec!["content-type", "Authorization"]);
@@ -98,6 +101,20 @@ fn another_route_keeps_anthropic_beta() {
     ]);
     let kept = vertex_upstream_headers(
         "v1/projects/p/locations/l/publishers/anthropic/models/claude:rawPredict",
+        &map,
+    );
+    assert_eq!(texts(&kept), vec!["Anthropic-Beta", "content-type"]);
+    assert_eq!(prepared_text(&kept, "Anthropic-Beta"), Some("beta-1"));
+}
+
+#[test]
+fn a_model_colon_count_tokens_route_keeps_anthropic_beta() {
+    let map = upstream(&[
+        ("Anthropic-Beta", "beta-1"),
+        ("content-type", "application/json"),
+    ]);
+    let kept = vertex_upstream_headers(
+        "v1/projects/p/locations/l/publishers/anthropic/models/claude:count-tokens:rawPredict",
         &map,
     );
     assert_eq!(texts(&kept), vec!["Anthropic-Beta", "content-type"]);
