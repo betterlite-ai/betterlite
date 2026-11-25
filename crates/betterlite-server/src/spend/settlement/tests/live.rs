@@ -73,7 +73,9 @@ use secrecy::SecretString;
 use tokio_postgres::NoTls;
 use tokio_util::task::TaskTracker;
 
-use super::super::ports::{DatabaseSpendWrite, RequestCounterBatch, ReservationSettlement};
+use super::super::ports::{
+    DatabaseSpendWrite, RequestCounterBatch, ReservationSettlement, SpendWrite,
+};
 use super::super::{SettlementInput, SettlementPorts, settle_spend_write};
 use super::journal::Recorder;
 use crate::savings::Context;
@@ -293,17 +295,100 @@ fn spend_request() -> SpendUpdateRequest<'static, Context<'static>> {
     }
 }
 
-#[tokio::test]
-async fn a_charged_spend_is_persisted_and_settles_the_reserved_redis_counter() {
-    let redis_fixture = RedisFixture::start().await.unwrap();
-    let redis = redis_cache(&redis_fixture).await;
-    let mut connection = raw_redis(&redis_fixture).await;
+fn user_input(reservation: &ReservationHandle) -> SettlementInput<'_> {
+    SettlementInput {
+        reservation: Some(reservation),
+        response_cost: Decimal::from(2_i32),
+        token: None,
+        user_id: Some("u1"),
+        end_user_id: None,
+        team_id: None,
+        org_id: None,
+        project_id: None,
+        start_time: None,
+        tags: None,
+        model_access_groups: None,
+        update_cache_read_keys: &[],
+    }
+}
+
+async fn seeded_redis() -> (RedisFixture, Arc<RedisCache>, MultiplexedConnection) {
+    let fixture = RedisFixture::start().await.unwrap();
+    let redis = redis_cache(&fixture).await;
+    let mut connection = raw_redis(&fixture).await;
     cmd("SET")
         .arg(COUNTER)
         .arg("5")
         .query_async::<()>(&mut connection)
         .await
         .unwrap();
+    (fixture, redis, connection)
+}
+
+async fn counter_value(connection: &mut MultiplexedConnection) -> Decimal {
+    let counter: String = cmd("GET")
+        .arg(COUNTER)
+        .query_async(connection)
+        .await
+        .unwrap();
+    counter.parse().unwrap()
+}
+
+async fn persisted_spend(store: &PostgresStore) -> Decimal {
+    let client = store.pool.as_ref().unwrap().get().await.unwrap();
+    let row = client
+        .query_one(
+            r#"SELECT spend::numeric FROM "LiteLLM_SpendLogs" WHERE request_id = $1"#,
+            &[&REQUEST_ID],
+        )
+        .await
+        .unwrap();
+    row.get(0_usize)
+}
+
+// the real B3003 settlement and B8593 increment over one request scope, the way B069 wires the coordinator
+async fn settle_reserved<Write>(
+    redis: &Arc<RedisCache>,
+    write: &Write,
+    reservation: &ReservationHandle,
+) -> bool
+where
+    Write: SpendWrite,
+{
+    let scope = Arc::new(SpendCounterScope::default());
+    let writes = counter_writes(redis, &scope);
+    let settlement = CounterSettlement {
+        backend: SpendCounterBackend {
+            writes: &writes,
+            scope: scope.as_ref(),
+            redis: Some(redis),
+        },
+    };
+    let services = SpendIncrementServices {
+        writes: &writes,
+        scope: scope.as_ref(),
+        redis: Some(redis),
+        window_queue: &NoWindows,
+        counters: &settlement.backend,
+    };
+    let batch = RequestCounterBatch {
+        scope: scope.as_ref(),
+        redis: Some(redis),
+    };
+    let cache = Recorder::failing(&[]);
+    let ports = SettlementPorts {
+        reservations: &settlement,
+        batch: &batch,
+        cache: &cache,
+        counters: &services,
+    };
+    let input = user_input(reservation);
+    settle_spend_write(&input, write, &ports).await.unwrap()
+}
+
+#[tokio::test]
+async fn a_charged_spend_is_persisted_and_settles_the_reserved_redis_counter() {
+    let (_redis_fixture, redis, mut connection) = seeded_redis().await;
     let (postgres, store) = spend_logs().await;
     let table = PostgresSpendLogsWriter {
         store: store.clone(),
@@ -325,66 +410,11 @@ async fn a_charged_spend_is_persisted_and_settles_the_reserved_redis_counter() {
         payloads: &BatchRow,
         request: &request,
     };
-    let scope = Arc::new(SpendCounterScope::default());
-    let writes = counter_writes(&redis, &scope);
-    let settlement = CounterSettlement {
-        backend: SpendCounterBackend {
-            writes: &writes,
-            scope: scope.as_ref(),
-            redis: Some(&redis),
-        },
-    };
-    let services = SpendIncrementServices {
-        writes: &writes,
-        scope: scope.as_ref(),
-        redis: Some(&redis),
-        window_queue: &NoWindows,
-        counters: &settlement.backend,
-    };
-    let batch = RequestCounterBatch {
-        scope: scope.as_ref(),
-        redis: Some(&redis),
-    };
-    let cache = Recorder::failing(&[]);
-    let ports = SettlementPorts {
-        reservations: &settlement,
-        batch: &batch,
-        cache: &cache,
-        counters: &services,
-    };
     let reservation = reserved_user();
-    let input = SettlementInput {
-        reservation: Some(&reservation),
-        response_cost: Decimal::from(2_i32),
-        token: None,
-        user_id: Some("u1"),
-        end_user_id: None,
-        team_id: None,
-        org_id: None,
-        project_id: None,
-        start_time: None,
-        tags: None,
-        model_access_groups: None,
-        update_cache_read_keys: &[],
-    };
-    assert!(settle_spend_write(&input, &write, &ports).await.unwrap());
-    let counter: String = cmd("GET")
-        .arg(COUNTER)
-        .query_async(&mut connection)
-        .await
-        .unwrap();
-    assert_eq!(counter.parse::<Decimal>().unwrap(), Decimal::from(2_i32));
+    assert!(settle_reserved(&redis, &write, &reservation).await);
+    assert_eq!(counter_value(&mut connection).await, Decimal::from(2_i32));
     assert!(lock(&reservation.0).finalized);
-    let client = store.pool.as_ref().unwrap().get().await.unwrap();
-    let row = client
-        .query_one(
-            r#"SELECT spend::numeric FROM "LiteLLM_SpendLogs" WHERE request_id = $1"#,
-            &[&REQUEST_ID],
-        )
-        .await
-        .unwrap();
-    assert_eq!(row.get::<_, Decimal>(0_usize), Decimal::from(2_i32));
-    drop(client);
+    assert_eq!(persisted_spend(&store).await, Decimal::from(2_i32));
     if let Some(pool) = store.pool {
         pool.close();
     }
