@@ -1,0 +1,24 @@
+task: B8970
+deviations:
+  - what: The tool registry, the prefix policy and WireCompat arrive as arguments, where LiteLLM reads the global tool registry, joins the prefix with the import-time MCP_TOOL_PREFIX_SEPARATOR environment variable, reads the short-prefix mode from LITELLM_USE_SHORT_MCP_TOOL_PREFIX, and defaults wire_compat to LEGACY at the signature.
+    why: Library code in betterlite holds no proxy globals and reads no environment at import; B4680 owns the registry, B8620 reads the separator once from config, and every caller states the wire form, so the key and the conversion stay the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L5762-L5763
+  - what: The parsed arguments and the OpenApiCallContext reach the handler as two arguments of the typed ToolHandler call, where LiteLLM expands the arguments dict into keyword arguments of an untyped registered callable that reads the per-request credential values from ContextVars.
+    why: B4680's handler interface takes the arguments object, and B4683 carries the per-request values as a typed context because betterlite keeps no ContextVars for per-run data; the merge precedence over those values stays in B4683's merge_request_headers, so the headers the handler sends are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L5776-L5777
+  - what: The separator probe runs from check_separator(separator) when an MCP area is constructed, with B8620 passing its config value, where LiteLLM builds and validates the probe at module import from MCP_TOOL_PREFIX_SEPARATOR.
+    why: betterlite reads no environment in library code; checking once per MCP area construction gives the same warn-and-continue outcome for one configured separator and takes effect on the next construction.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L243-L251
+  - what: The warning names MCP_TOOL_PREFIX_SEPARATOR and quotes the separator, where LiteLLM's message calls it "MCP tool prefix separator" and passes the value to a %s placeholder.
+    why: Naming the variable the operator has to change makes the diagnostic actionable, and betterlite's log text does not mirror Python's format-string wording; the level, the single warning and the warn-and-continue behavior match.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L246-L251
+  - what: The ImportError fallback that installs a validator accepting every name and the GitHub proposal URL is not built; the probe always runs the compiled-in SEP-986 validator and always cites the mcp SDK's specification URL.
+    why: The SDK validator is ported into betterlite_mcp, so the branch where the optional package is missing cannot occur; the URL is the one SEP_986_URL holds whenever the SDK is present, which LiteLLM requires for MCP.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L225-L241
+  - what: handler_outcome's fallback that wraps any other return value in TextResult(str(value)) is not built; the handler's OpenApiToolOutput is converted straight to TextResult or JsonResult.
+    why: ToolHandler::call returns the typed OpenApiToolOutput, which is exactly LiteLLM's tagged TextResult or JsonResult that handler_outcome passes through, so the untagged-value branch and the CallToolResult, InputRequiredResult and Exception arms cannot occur on this path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_outcome.py#L52-L56
+  - what: 'The generic failure message keeps the LiteLLM prefix "Error calling OpenAPI tool <tool>" and then appends the Display text of the typed ToolHandlerError, where LiteLLM appends str(exception).'
+    why: 'The task sets the betterlite wording and forbids copying Python repr and exception class names; the prefix, the error log and the isError result match, and a betterlite failure still names the operation and the upstream status.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L5785-L5791
+kept_bugs: []

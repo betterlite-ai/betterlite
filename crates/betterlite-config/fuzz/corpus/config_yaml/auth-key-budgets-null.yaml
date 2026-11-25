@@ -1,0 +1,2 @@
+litellm_settings:
+  default_key_max_budget_alert_emails:
