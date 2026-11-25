@@ -42,4 +42,17 @@ deviations:
       The Python package registers no callbacks, so betterlite builds its own LoggingState inside the native
       call; a logging object built for LiteLLM's Python pipeline cannot drive the Rust one.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L128
+  - what: >-
+      A caller-supplied client or shared_session in kwargs raises UnsupportedCallArgument. LiteLLM reads client
+      from kwargs and hands it to the provider handler, and passes shared_session through the same call.
+    why: >-
+      The request runs in Rust on the session's own outbound client, so a Python httpx client cannot be used.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L133
+  - what: >-
+      A non-None azure_ad_token_provider raises UnsupportedCallArgument for every provider. LiteLLM takes it into
+      GenericLiteLLMParams, whose model_config allows extra fields, and rerank never reads it again.
+    why: >-
+      The azure_ai rerank handler is not wired into betterlite, so no provider here could spend the token; the
+      refusal names the argument instead of silently dropping it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L137
 kept_bugs: []

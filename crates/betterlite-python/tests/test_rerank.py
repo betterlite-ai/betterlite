@@ -59,6 +59,11 @@ RERANK_BODY: Final[dict[str, JsonValue]] = {
     "results": RESULTS,
     "meta": {"billed_units": {"search_units": SEARCH_UNITS}},
 }
+NO_DOCUMENT_BODY: Final[dict[str, JsonValue]] = {
+    "id": "rerank-2",
+    "results": [{"index": FIRST_INDEX, "relevance_score": FIRST_SCORE}],
+    "meta": {"billed_units": {"search_units": SEARCH_UNITS}},
+}
 AUTH_BODY: Final[dict[str, JsonValue]] = {"message": AUTH_TEXT}
 
 DUMP: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
@@ -256,6 +261,19 @@ def test_call_async_flag() -> None:
     with closing(RerankServer()) as server:
         response = asyncio.run(flagged_rerank(server.url))
     assert indexes_of(response) == [SECOND_INDEX, FIRST_INDEX]
+
+
+def test_call_no_document() -> None:
+    with closing(RerankServer(body=NO_DOCUMENT_BODY)) as server:
+        outcome = rerank(
+            model=MODEL, query=QUERY, documents=DOCUMENTS_TEXT,
+            custom_llm_provider=PROVIDER, return_documents=True,
+            api_base=server.url, api_key=GOOD_KEY,
+        )
+        records = results_of(response_of(outcome))
+    assert len(records) == 1
+    assert records[0]["index"] == FIRST_INDEX
+    assert "document" not in records[0]
 
 
 def test_request_body() -> None:
