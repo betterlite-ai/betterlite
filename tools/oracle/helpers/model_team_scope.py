@@ -40,11 +40,11 @@ class ByokAnswer(TypedDict):
 
 
 class NamesAnswer(TypedDict):
-    names: list[JsonValue]
+    names: list[str]
 
 
 class ScopeAnswer(TypedDict):
-    allowed_team_ids: list[JsonValue] | None
+    allowed_team_ids: list[str] | None
 
 
 Answer: TypeAlias = ByokAnswer | NamesAnswer | ScopeAnswer
@@ -109,7 +109,7 @@ def resolve_answer(input_value: Input) -> NamesAnswer:
         team_models=input_value["team_models"],
         access_groups=input_value["access_groups"],
     )
-    names: list[JsonValue] = []
+    names: list[str] = []
     names.extend(resolved)
     return {"names": names}
 
@@ -125,7 +125,7 @@ async def caller_scope_answer(input_value: Input) -> ScopeAnswer:
     )
     if scope is None:
         return {"allowed_team_ids": None}
-    allowed: list[JsonValue] = []
+    allowed: list[str] = []
     allowed.extend(sorted(scope))
     return {"allowed_team_ids": allowed}
 
