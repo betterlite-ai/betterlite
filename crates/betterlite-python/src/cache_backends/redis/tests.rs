@@ -1,7 +1,11 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::io::{BufRead as _, BufReader, Read as _, Write as _};
+use std::net::TcpListener;
 use std::sync::Arc;
+use std::thread;
+use std::time::Duration;
 
 use betterlite_cache::configuration::settings::{
     DEFAULT_REDIS_MAJOR_VERSION, DEFAULT_REDIS_TTL_SECONDS,
@@ -64,8 +68,65 @@ fn backends_redis_errors_surface() {
 
 #[test]
 fn backends_redis_close_is_ok() {
-    let native = dead_redis();
-    Python::attach(|py| native.close(py));
+    Python::initialize();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    thread::scope(|scope| {
+        let server = scope.spawn(move || serves_until_closed(listener));
+        let overrides: RedisOverrides = serde_json::from_str(&format!(
+            r#"{{"host":"127.0.0.1","port":"{}"}}"#,
+            address.port()
+        ))
+        .unwrap();
+        let settings = RedisSettings {
+            overrides,
+            ..RedisSettings::default()
+        };
+        let native = Python::attach(|py| open(py, settings).unwrap());
+        drop(
+            get_runtime()
+                .block_on(native.cache.transport.async_client())
+                .unwrap(),
+        );
+        Python::attach(|py| native.close(py));
+        assert!(server.join().unwrap());
+    });
+}
+
+fn serves_until_closed(listener: TcpListener) -> bool {
+    let (mut stream, _peer) = listener.accept().unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
+    let mut reader = BufReader::new(stream.try_clone().unwrap());
+    loop {
+        let mut line = String::new();
+        match reader.read_line(&mut line) {
+            Ok(0) => return true,
+            Err(_timeout) => return false,
+            Ok(_read) => {}
+        }
+        let count: usize = line.trim().strip_prefix('*').unwrap().parse().unwrap();
+        let mut command = Vec::new();
+        for _field in 0..count {
+            line.clear();
+            reader.read_line(&mut line).unwrap();
+            let size: usize = line.trim().strip_prefix('$').unwrap().parse().unwrap();
+            let mut field = vec![0_u8; size];
+            reader.read_exact(&mut field).unwrap();
+            let mut terminator = [0_u8; 2];
+            reader.read_exact(&mut terminator).unwrap();
+            assert_eq!(terminator, *b"\r\n");
+            command.push(field);
+        }
+        let reply: &[u8] = match command.first().map(Vec::as_slice) {
+            Some(b"HELLO") => b"%1\r\n+proto\r\n:3\r\n",
+            Some(b"CLIENT") => b"+OK\r\n",
+            Some(b"PING") => b"+PONG\r\n",
+            other => panic!("unexpected Redis command {other:?}"),
+        };
+        stream.write_all(reply).unwrap();
+    }
 }
 
 // An equal namespace keeps the open client; a rebuilt one would swap the Arc the cache lives in.
