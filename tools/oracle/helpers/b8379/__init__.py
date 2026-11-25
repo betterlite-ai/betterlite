@@ -57,8 +57,9 @@ class Reloader(Protocol):
 async def reload(input_value: Input, reloader: Reloader) -> dict[str, JsonValue]:
     for name in SECTIONS:
         await evict_config_param(name)
-    row = {input_value["section"]: input_value["row"]}
-    proxy_server.prisma_client = CaseClient(ConfigTable(row))
+    proxy_server.prisma_client = CaseClient(
+        ConfigTable({input_value["section"]: input_value["row"]})
+    )
     proxy_server.store_model_in_db = True
     proxy_server.user_config_file_path = None
     return CONFIG.validate_python(await reloader.get_config())
