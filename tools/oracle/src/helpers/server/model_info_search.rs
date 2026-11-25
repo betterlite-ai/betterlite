@@ -217,8 +217,9 @@ fn enrich_answer(input: &Input) -> Result<Value, Failure> {
 }
 
 fn paginate_answer(input: &Input) -> Result<Value, Failure> {
-    let page = input.page.ok_or(Failure::Missing("paginate"))?;
-    let size = input.size.ok_or(Failure::Missing("paginate"))?;
+    let (Some(page), Some(size)) = (input.page, input.size) else {
+        return Err(Failure::Missing("paginate"));
+    };
     let paginated = paginate_models(
         &input.models,
         page,
