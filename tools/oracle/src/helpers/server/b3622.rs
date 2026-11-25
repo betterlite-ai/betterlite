@@ -53,8 +53,8 @@ impl Helper for Op {
                 location,
             } => Ok(json!(override_answer(
                 router_credentials.as_ref(),
-                project,
-                location,
+                project.as_deref(),
+                location.as_deref(),
             ))),
             Input::UpstreamHeaders { endpoint, headers } => {
                 Ok(json!(headers_answer(endpoint, headers)))
@@ -65,13 +65,17 @@ impl Helper for Op {
 
 fn override_answer(
     router: Option<&InputRouter>,
-    project: &Option<String>,
-    location: &Option<String>,
+    project: Option<&str>,
+    location: Option<&str>,
 ) -> (Option<String>, Option<String>) {
     let record = router.map(|found| RouterCredentials {
         litellm_params: found.litellm_params.clone(),
     });
-    override_vertex_params(record.as_ref(), project.clone(), location.clone())
+    override_vertex_params(
+        record.as_ref(),
+        project.map(str::to_owned),
+        location.map(str::to_owned),
+    )
 }
 
 fn headers_answer(endpoint: &str, headers: &BTreeMap<String, String>) -> BTreeMap<String, String> {

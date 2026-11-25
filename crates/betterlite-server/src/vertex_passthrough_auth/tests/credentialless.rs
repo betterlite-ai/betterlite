@@ -107,10 +107,10 @@ async fn a_caller_without_a_google_credential_gets_the_401() {
         .unwrap_err();
     let caller_error = match error {
         VertexAuthError::CallerHeaders(caller_error) => caller_error,
-        other @ VertexAuthError::Credentials(_)
-        | other @ VertexAuthError::CredentialsType
-        | other @ VertexAuthError::Token(_)
-        | other @ VertexAuthError::Target(_) => {
+        other @ (VertexAuthError::Credentials(_)
+        | VertexAuthError::CredentialsType
+        | VertexAuthError::Token(_)
+        | VertexAuthError::Target(_)) => {
             panic!("the caller-header error passes through unchanged: {other:?}")
         }
     };
