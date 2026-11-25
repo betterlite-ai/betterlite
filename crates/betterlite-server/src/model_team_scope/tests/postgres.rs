@@ -12,7 +12,7 @@ use tokio_postgres::NoTls;
 use tokio_postgres::types::ToSql;
 
 use crate::model_team_scope::postgres::PostgresScopeReads;
-use crate::model_team_scope::reads::TeamScopeReads;
+use crate::model_team_scope::reads::TeamScopeReads as _;
 
 // The columns these reads touch, as LiteLLM's migrations declare them; the lists may be stored null.
 const SCHEMA: &str = r#"

@@ -264,7 +264,7 @@ async fn team_read_error_empty() {
 
 #[tokio::test]
 async fn all_models_excludes_foreign_byok() {
-    let router = support::FixtureRouter::new(&[
+    let specs = [
         support::spec("gpt-4o", &[("id", support::text("g1"))]),
         support::spec(
             "team-gpt",
@@ -280,31 +280,17 @@ async fn all_models_excludes_foreign_byok() {
                 ("team_id", support::text("team-b")),
             ],
         ),
-    ]);
+    ];
+    let router = support::FixtureRouter::new(&specs);
     // A stored row named like the team's entry: the all-proxy branch never asks the database for it.
     let reads = support::StubReads::default()
         .with_teams(team_models(&[("team-a", &["all-proxy-models"])]))
-        .with_rows(vec![support::model_row(
-            r#"{"model_id":"g2","model_name":"all-proxy-models","litellm_params":{"model":"openai/gpt-4o"}}"#,
-        )]);
-    let models = vec![
-        support::deployment_json("gpt-4o", &[("id", support::text("g1"))]),
-        support::deployment_json(
-            "team-gpt",
-            &[
-                ("id", support::text("t1")),
-                ("team_id", support::text("team-a")),
-            ],
-        ),
-        support::deployment_json(
-            "foreign-gpt",
-            &[
-                ("id", support::text("t2")),
-                ("team_id", support::text("team-b")),
-            ],
-        ),
-        support::deployment_json("hidden-gpt", &[("id", support::text("g2"))]),
-    ];
+        .with_rows(support::stored_rows(&[("g2", "all-proxy-models")]));
+    let mut models = support::dumped(&specs);
+    models.push(support::deployment_json(
+        "hidden-gpt",
+        &[("id", support::text("g2"))],
+    ));
     let kept = filter_models_by_team_id(&models, "team-a", &reads, Some(&router), None)
         .await
         .unwrap();
@@ -345,10 +331,10 @@ async fn named_access_group_expansion() {
     assert_eq!(reads.names_seen(), expected);
 }
 
-#[tokio::test]
-async fn db_names_only() {
+// Two catalog rows that share one name, and the stored rows the name query answers.
+fn db_names_fixture() -> (support::FixtureRouter, support::StubReads) {
     let grouped = support::listed(&["group-a"]);
-    let router = support::FixtureRouter::new(&[
+    let specs = [
         support::spec(
             "c",
             &[
@@ -360,20 +346,17 @@ async fn db_names_only() {
             "c",
             &[("id", support::text("r2")), ("access_groups", grouped)],
         ),
-    ]);
+    ];
+    let stored = [("d3", "b"), ("d1", "c"), ("d4", "zzz")];
     let reads = support::StubReads::default()
         .with_teams(team_models(&[("team-a", &["b", "group-a"])]))
-        .with_rows(vec![
-            support::model_row(
-                r#"{"model_id":"d3","model_name":"b","litellm_params":{"model":"openai/gpt-4o"}}"#,
-            ),
-            support::model_row(
-                r#"{"model_id":"d1","model_name":"c","litellm_params":{"model":"openai/gpt-4o"}}"#,
-            ),
-            support::model_row(
-                r#"{"model_id":"d4","model_name":"zzz","litellm_params":{"model":"openai/gpt-4o"}}"#,
-            ),
-        ]);
+        .with_rows(support::stored_rows(&stored));
+    (support::FixtureRouter::new(&specs), reads)
+}
+
+#[tokio::test]
+async fn db_names_only() {
+    let (router, reads) = db_names_fixture();
     let models = vec![
         support::deployment_json("c", &[("id", support::text("r1"))]),
         support::deployment_json("c", &[("id", support::text("d1"))]),

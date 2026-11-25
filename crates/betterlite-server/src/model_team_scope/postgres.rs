@@ -15,7 +15,7 @@ use betterlite_redis::config_sync::table_actions::ConfigSyncTableActions;
 
 use super::reads::{ModelRowReadError, TeamScopeReadError, TeamScopeReads, UserReadError};
 use crate::model_group_data::errors::GroupDataError;
-use crate::model_group_data::ports::GroupDatabase;
+use crate::model_group_data::ports::GroupDatabase as _;
 use crate::model_group_data::store::PostgresGroupData;
 use crate::team_fields::tables::{team_table, user_table};
 

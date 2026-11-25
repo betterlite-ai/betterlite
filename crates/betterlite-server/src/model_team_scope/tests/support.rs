@@ -91,6 +91,18 @@ pub(crate) fn model_row(json: &str) -> ProxyModelTable {
     serde_json::from_str(json).expect("a stored model row")
 }
 
+// Stored rows by (model_id, model_name), on the fixture provider every deployment uses.
+pub(crate) fn stored_rows(entries: &[(&str, &str)]) -> Vec<ProxyModelTable> {
+    entries
+        .iter()
+        .map(|(model_id, model_name)| {
+            model_row(&format!(
+                r#"{{"model_id":"{model_id}","model_name":"{model_name}","litellm_params":{{"model":"openai/gpt-4o"}}}}"#
+            ))
+        })
+        .collect()
+}
+
 pub(crate) fn json_id(row: &JsonObject) -> Option<&str> {
     let info = match row.get("model_info") {
         Some(Json::Object(info)) => info,
@@ -110,6 +122,15 @@ pub(crate) fn name_of(row: &JsonObject) -> &str {
         Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
         | None => "",
     }
+}
+
+// The filter's input: each catalog row as get_model_list dumps it.
+pub(crate) fn dumped(rows: &[DeploymentSpec]) -> Vec<JsonObject> {
+    let mut model_rows = Vec::with_capacity(rows.len());
+    for row in rows {
+        model_rows.push(row.to_json());
+    }
+    model_rows
 }
 
 pub(crate) fn spec(name: &str, info: &[(&str, Json)]) -> DeploymentSpec {
