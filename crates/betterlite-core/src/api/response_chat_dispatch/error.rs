@@ -60,10 +60,7 @@ impl From<BridgeStreamError> for StreamFailure {
 
 // Every way the bridge stops short of an answer, with the provider's own failure kept as the cause
 #[derive(Debug, Error)]
-pub enum DispatchError<Source>
-where
-    Source: Error + 'static,
-{
+pub enum DispatchError<Source: Error + 'static> {
     #[error(transparent)]
     Input(#[from] InputError),
     #[error(transparent)]
@@ -76,7 +73,6 @@ where
     Json(#[from] serde_json::Error),
     #[error("the completed responses payload could not be read: {source}")]
     Completion {
-        #[source]
         source: serde_path_to_error::Error<serde_json::Error>,
     },
     #[error("Unexpected responses stream payload")]

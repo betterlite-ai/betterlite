@@ -57,9 +57,19 @@ where
     )?;
     let stream = resolve_stream_flag(&input.optional_params, &input.litellm_params);
     route(&mut request, &input);
-    let answer = execute(execution, &mut request, asynchronous)
-        .await
-        .map_err(DispatchError::Provider)?;
+    let call = ResponsesCall {
+        params: &request.params,
+        litellm_params: &request.litellm_params,
+        extra_headers: request.extra_headers.as_ref(),
+        client: request.client,
+        logging: &mut *request.logging,
+    };
+    let answer = if asynchronous {
+        execution.aresponses(call).await
+    } else {
+        execution.responses(call).await
+    }
+    .map_err(DispatchError::Provider)?;
     let delivery = Delivery {
         logging: request.logging,
         limits,
@@ -68,30 +78,6 @@ where
         json_mode: json_mode(kwargs),
     };
     deliver(&input, model_response, &delivery, stamps, answer).await
-}
-
-// The bridge's sync and async entries take the same request, and only the execution differs
-async fn execute<Execution, Client>(
-    execution: &Execution,
-    request: &mut ResponsesChatRequest<'_, Client>,
-    asynchronous: bool,
-) -> Result<Answer, Execution::Error>
-where
-    Execution: ResponsesExecution<Client> + Sync,
-    Client: ?Sized + Sync,
-{
-    let call = ResponsesCall {
-        params: &request.params,
-        litellm_params: &request.litellm_params,
-        extra_headers: request.extra_headers.as_ref(),
-        client: request.client,
-        logging: &mut *request.logging,
-    };
-    if asynchronous {
-        execution.aresponses(call).await
-    } else {
-        execution.responses(call).await
-    }
 }
 
 // The bridge sets both on request_data rather than as arguments, so the spread never repeats a keyword
@@ -114,16 +100,13 @@ struct Delivery<'delivery> {
     json_mode: Option<bool>,
 }
 
-async fn deliver<Source>(
+async fn deliver<Source: Error + 'static>(
     input: &Input,
     model_response: ModelResponse,
     delivery: &Delivery<'_>,
     stamps: StreamStamps,
     answer: Answer,
-) -> Result<BridgeOutput, DispatchError<Source>>
-where
-    Source: Error + 'static,
-{
+) -> Result<BridgeOutput, DispatchError<Source>> {
     let provider = input.custom_llm_provider.as_str();
     // _apply_post_stream_processing runs on whatever stream the bridge produced
     let stream = match answer {
@@ -162,15 +145,12 @@ where
 }
 
 // A collected stream keeps its response's own hidden keys over the iterator's, and B919 reads the merged map
-fn response_output<Source>(
+fn response_output<Source: Error + 'static>(
     input: &Input,
     result: ModelResponse,
     delivery: &Delivery<'_>,
     response: BridgeResponse,
-) -> Result<BridgeOutput, DispatchError<Source>>
-where
-    Source: Error + 'static,
-{
+) -> Result<BridgeOutput, DispatchError<Source>> {
     let hidden = merged_hidden(&response.existing_hidden, &response.stream_hidden);
     let mut payload = coerce(response.payload)?;
     let transformed = transform_response(
@@ -187,12 +167,9 @@ where
 }
 
 // A cached chat stream carries no completed Responses object, so a non-streaming caller gets the empty-stream error
-async fn drain_cached<Source>(
+async fn drain_cached<Source: Error + 'static>(
     cached: &mut (dyn AsyncChunkStream + Send),
-) -> Result<BridgeOutput, DispatchError<Source>>
-where
-    Source: Error + 'static,
-{
+) -> Result<BridgeOutput, DispatchError<Source>> {
     while cached
         .next_chunk()
         .await

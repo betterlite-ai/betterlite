@@ -16,13 +16,7 @@ JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 # main.py hands a chat call whose model is served by the Responses API to this singleton: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5790-L5814
 BRIDGE: Final = responses_api_bridge
 
-Outcome: TypeAlias = (
-    ModelResponse
-    | CustomStreamWrapper
-    | Coroutine[None, None, ModelResponse | CustomStreamWrapper]
-)
-
-BridgeValue: TypeAlias = JsonValue | ModelResponse | Logging
+Outcome: TypeAlias = ModelResponse | CustomStreamWrapper | Coroutine[None, None, ModelResponse | CustomStreamWrapper]
 
 
 class BridgeRun(BaseModel):
@@ -67,8 +61,8 @@ def logging_object() -> Logging:
 
 
 # A run's empty placeholders become the two SDK objects, and the mock origin joins the SDK params
-def call_kwargs(run: BridgeRun, api_base: str) -> dict[str, BridgeValue]:
-    values: dict[str, BridgeValue] = {**run.kwargs}
+def call_kwargs(run: BridgeRun, api_base: str) -> dict[str, JsonValue | ModelResponse | Logging]:
+    values: dict[str, JsonValue | ModelResponse | Logging] = {**run.kwargs}
     if values.get("model_response") == {}:
         values["model_response"] = ModelResponse()
     if values.get("logging_obj") == {}:

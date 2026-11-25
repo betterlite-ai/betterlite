@@ -11,13 +11,10 @@ use crate::api::api_boundaries::ApiLimits;
 use crate::api::responses_to_chat_stream::{DecodedEventLine, decode_event_line};
 
 // _collect_response_from_stream: the drain, then the completed event's response beside the iterator's hidden params
-pub async fn collect<Source>(
+pub async fn collect<Source: Error + 'static>(
     mut events: Box<dyn ResponsesEventStream>,
     limits: &ApiLimits,
-) -> Result<BridgeResponse, DispatchError<Source>>
-where
-    Source: Error + 'static,
-{
+) -> Result<BridgeResponse, DispatchError<Source>> {
     let mut completed = Terminal::Pending;
     while let Some(event_line) = events.next_event().await {
         let line = event_line.map_err(|failure| DispatchError::Stream { failure })?;
@@ -41,12 +38,9 @@ where
 }
 
 // _coerce_response_object: a Responses object stays, a dict is constructed, and anything else is the payload error
-pub fn coerce<Source>(
+pub fn coerce<Source: Error + 'static>(
     payload: ResponsePayload,
-) -> Result<ResponsesApiResponse, DispatchError<Source>>
-where
-    Source: Error + 'static,
-{
+) -> Result<ResponsesApiResponse, DispatchError<Source>> {
     match payload {
         ResponsePayload::Typed(response) => Ok(*response),
         ResponsePayload::Dict(Json::Object(fields)) => construct(fields),
@@ -57,12 +51,9 @@ where
 }
 
 // ResponsesAPIResponse(**dict) with model_construct's tolerance: whatever fails validation is left out
-fn construct<Source>(
+fn construct<Source: Error + 'static>(
     fields: IndexMap<String, Json>,
-) -> Result<ResponsesApiResponse, DispatchError<Source>>
-where
-    Source: Error + 'static,
-{
+) -> Result<ResponsesApiResponse, DispatchError<Source>> {
     let value = serde_json::to_value(Json::Object(fields))?;
     let Value::Object(mut object) = value else {
         return Err(DispatchError::UnexpectedPayload);
@@ -110,9 +101,7 @@ fn missing_defaults() -> [(&'static str, Value); 3] {
 }
 
 // The last terminal event decides the collected response, even when it carries none
-#[derive(Default)]
 enum Terminal {
-    #[default]
     Pending,
     WithoutResponse,
     Response(Value),
@@ -146,11 +135,7 @@ fn existing_hidden(payload: &Json) -> Map<String, Value> {
     };
     hidden
         .iter()
-        .filter_map(|(key, value)| {
-            serde_json::to_value(value)
-                .ok()
-                .map(|converted| (key.clone(), converted))
-        })
+        .filter_map(|(key, value)| Some((key.clone(), serde_json::to_value(value).ok()?)))
         .collect()
 }
 

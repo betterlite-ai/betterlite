@@ -93,12 +93,8 @@ fn object<'call>(
 }
 
 fn messages(kwargs: &IndexMap<String, Json>) -> Result<Vec<HistoryMessage>, InputError> {
-    let items = match kwargs.get("messages") {
-        Some(Json::List(items)) => items,
-        None
-        | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
-            return Err(InputError::Required { field: "messages" });
-        }
+    let Some(Json::List(items)) = kwargs.get("messages") else {
+        return Err(InputError::Required { field: "messages" });
     };
     let value = serde_json::to_value(Json::List(items.clone()))
         .map_err(|source| RequestError::Json { source })?;
