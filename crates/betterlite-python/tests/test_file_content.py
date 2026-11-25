@@ -27,6 +27,7 @@ from file_server import (
     RecordedCall,
 )
 from pydantic import JsonValue
+from typing_extensions import override
 
 import betterlite
 from betterlite._completion.errors import ERROR_PAYLOAD, UnsupportedCallArgument
@@ -616,11 +617,12 @@ def test_error_timeout_phase() -> None:
 
 
 class ProxyHeaders(ProxyAuthProvider):
+    @override
     def get_auth_headers(self) -> Mapping[str, str]:
         return {"x-proxy": "proxy", "x-conflict": "proxy"}
 
 
-@pytest.fixture
+@pytest.fixture(autouse=False)
 def proxy_auth() -> Iterator[None]:
     previous = betterlite.proxy_auth
     betterlite.proxy_auth = ProxyHeaders()
