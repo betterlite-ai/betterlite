@@ -20,6 +20,7 @@ use betterlite_db::request_usage::queues::UsageQueue;
 use betterlite_db::spend_flush::monitor::SpendMonitorSettings;
 use betterlite_db::spend_flush::shutdown::MonitorStartError;
 use betterlite_db::spend_log_storage::postgres::PostgresSpendLogsWriter;
+use betterlite_db::spend_queues::daily::DailySpendUpdateQueue;
 use betterlite_db::spend_queues::entity::SpendAmount;
 use betterlite_db::spend_writer::SpendWriterOperation;
 use betterlite_db::spend_writer::accounting::{
@@ -79,6 +80,14 @@ fn service() -> FakeSpendLogs {
         queued: AtomicI64::new(0),
         runs: AtomicUsize::new(0),
     }
+}
+
+async fn daily_len(queue: &DailySpendUpdateQueue) -> usize {
+    queue
+        .flush_aggregated_daily_rows()
+        .await
+        .expect("the daily queue flushes")
+        .len()
 }
 
 fn accounting_row() -> SpendLogRow {
@@ -295,51 +304,12 @@ async fn charges_every_accounting_queue_the_runtime_writer_was_built_with() {
         Some(&SpendAmount(Decimal::new(25, 2)))
     );
     assert_eq!(charged.key_list_transactions.len(), 1);
-    let flushed = [
-        runtime
-            .daily
-            .user
-            .flush_aggregated_daily_rows()
-            .await
-            .expect("the daily user queue flushes")
-            .len(),
-        runtime
-            .daily
-            .end_user
-            .flush_aggregated_daily_rows()
-            .await
-            .expect("the daily end user queue flushes")
-            .len(),
-        runtime
-            .daily
-            .agent
-            .flush_aggregated_daily_rows()
-            .await
-            .expect("the daily agent queue flushes")
-            .len(),
-        runtime
-            .daily
-            .team
-            .flush_aggregated_daily_rows()
-            .await
-            .expect("the daily team queue flushes")
-            .len(),
-        runtime
-            .daily
-            .org
-            .flush_aggregated_daily_rows()
-            .await
-            .expect("the daily organization queue flushes")
-            .len(),
-        runtime
-            .daily
-            .tag
-            .flush_aggregated_daily_rows()
-            .await
-            .expect("the daily tag queue flushes")
-            .len(),
-    ];
-    assert_eq!(flushed, [1, 1, 1, 1, 1, 2]);
+    assert_eq!(daily_len(&runtime.daily.user).await, 1);
+    assert_eq!(daily_len(&runtime.daily.end_user).await, 1);
+    assert_eq!(daily_len(&runtime.daily.agent).await, 1);
+    assert_eq!(daily_len(&runtime.daily.team).await, 1);
+    assert_eq!(daily_len(&runtime.daily.org).await, 1);
+    assert_eq!(daily_len(&runtime.daily.tag).await, 2);
     assert_eq!(model_usage.len(), 1);
     runtime.shutdown(&service()).await.expect("the shutdown");
 }
@@ -404,56 +374,11 @@ async fn charges_every_runtime_daily_queue_and_records_the_endpoint() {
         row.get("endpoint"),
         Some(&SpendColumnValue::Text("/chat/completions".to_owned()))
     );
-    assert_eq!(
-        runtime
-            .daily
-            .end_user
-            .flush_aggregated_daily_rows()
-            .await
-            .expect("the daily end user queue flushes")
-            .len(),
-        1
-    );
-    assert_eq!(
-        runtime
-            .daily
-            .agent
-            .flush_aggregated_daily_rows()
-            .await
-            .expect("the daily agent queue flushes")
-            .len(),
-        1
-    );
-    assert_eq!(
-        runtime
-            .daily
-            .team
-            .flush_aggregated_daily_rows()
-            .await
-            .expect("the daily team queue flushes")
-            .len(),
-        1
-    );
-    assert_eq!(
-        runtime
-            .daily
-            .org
-            .flush_aggregated_daily_rows()
-            .await
-            .expect("the daily organization queue flushes")
-            .len(),
-        1
-    );
-    assert_eq!(
-        runtime
-            .daily
-            .tag
-            .flush_aggregated_daily_rows()
-            .await
-            .expect("the daily tag queue flushes")
-            .len(),
-        2
-    );
+    assert_eq!(daily_len(&runtime.daily.end_user).await, 1);
+    assert_eq!(daily_len(&runtime.daily.agent).await, 1);
+    assert_eq!(daily_len(&runtime.daily.team).await, 1);
+    assert_eq!(daily_len(&runtime.daily.org).await, 1);
+    assert_eq!(daily_len(&runtime.daily.tag).await, 2);
 }
 
 #[tokio::test]
@@ -480,7 +405,10 @@ fn resolves_the_model_through_the_real_cost_service() {
             provider: "openai".to_owned(),
         })
     );
-    assert!(eq(SpendPricingSource::zone(&service), &service.database));
+    assert!(eq(
+        SpendPricingSource::zone(&service),
+        &raw const service.database
+    ));
 }
 
 #[test]
