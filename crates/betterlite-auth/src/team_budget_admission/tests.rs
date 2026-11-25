@@ -78,6 +78,11 @@ impl Harness {
         self
     }
 
+    fn failing(mut self) -> Self {
+        self.membership_fails = true;
+        self
+    }
+
     pub(super) fn reads(&self) -> Vec<Read> {
         self.reads.lock().unwrap().clone()
     }
@@ -606,10 +611,7 @@ async fn nonproxy_model_error_propagates() {
         matches!(&depth, Err(TeamBudgetError::RecurseDepth { model: named }) if named == "gpt-4o"),
         "{depth:?}"
     );
-    let failing = Harness {
-        membership_fails: true,
-        ..Harness::default()
-    };
+    let failing = Harness::default().failing();
     let lookup = run(
         &failing,
         &request(Some(&row), Some(&token), &model, Membership::Unloaded),
