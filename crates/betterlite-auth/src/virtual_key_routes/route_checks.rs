@@ -81,10 +81,10 @@ fn scan_groups(
     caller: &RouteCaller<'_>,
     registry: &PassThroughRegistry,
 ) -> GroupScan {
-    let mut scan = GroupScan::default();
-    if !text_routes(routes).any(is_named_group) {
-        return scan;
-    }
+    let mut scan = GroupScan {
+        granted: false,
+        pass_through_denied: false,
+    };
     for name in text_routes(routes).filter(|name| is_named_group(name)) {
         if apply_group(called, name, caller, registry, &mut scan) {
             return scan;
