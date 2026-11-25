@@ -1,6 +1,6 @@
 task: B8970
 deviations:
-  - what: The tool registry, the prefix policy and WireCompat arrive as arguments, where LiteLLM reads the global tool registry, derives the prefix with get_server_prefix reading the import-time MCP_TOOL_PREFIX_SEPARATOR environment variable, and defaults wire_compat to LEGACY at the signature.
+  - what: The tool registry, the prefix policy and WireCompat arrive as arguments, where LiteLLM reads the global tool registry, joins the prefix with the import-time MCP_TOOL_PREFIX_SEPARATOR environment variable, reads the short-prefix mode from LITELLM_USE_SHORT_MCP_TOOL_PREFIX, and defaults wire_compat to LEGACY at the signature.
     why: Library code in betterlite holds no proxy globals and reads no environment at import; B4680 owns the registry, B8620 reads the separator once from config, and every caller states the wire form, so the key and the conversion stay the same.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L5762-L5763
   - what: The parsed arguments and the OpenApiCallContext reach the handler as two arguments of the typed ToolHandler call, where LiteLLM expands the arguments dict into keyword arguments of an untyped registered callable that reads the per-request credential values from ContextVars.
