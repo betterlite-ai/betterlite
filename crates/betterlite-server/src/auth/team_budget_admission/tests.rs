@@ -68,8 +68,8 @@ impl TeamAlertSink for Recorded {
 }
 
 fn rule(team: &str, membership: &str, model: &str, recorded: &Arc<Recorded>) -> TeamBudgetRule {
-    let reader: Arc<dyn SpendReader> = Arc::clone(recorded);
-    let team_alerts: Arc<dyn TeamAlertSink> = Arc::clone(recorded);
+    let reader: Arc<dyn SpendReader> = Arc::<Recorded>::clone(recorded);
+    let team_alerts: Arc<dyn TeamAlertSink> = Arc::<Recorded>::clone(recorded);
     TeamBudgetRule {
         team: Some(serde_json::from_str(team).unwrap()),
         auth: Some(key()),
@@ -142,7 +142,7 @@ fn stage_is_registered() {
     let after_keys = INSTALLED_STAGES
         .iter()
         .position(|stage| *stage == AuthBackend::AuthKeyBudgets)
-        .map(|index| index + 1);
+        .map(|index| index.saturating_add(1));
     assert_eq!(position, after_keys);
     let master_key = SecretString::from(MASTER_KEY.to_owned());
     let input = StageInput::TeamBudgetAdmission(Box::new(TeamBudgetStageInput {
