@@ -1,9 +1,12 @@
 #![cfg(test)]
 
-use std::sync::{Arc, Mutex};
+use std::mem::take;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::task::Context;
 
+use betterlite_models::decisions::Json;
 use futures_util::StreamExt as _;
+use futures_util::task::noop_waker;
 
 use crate::passthrough_stream_lifecycle::chunk_processor::chunk_processor;
 use crate::passthrough_stream_lifecycle::ports::{
@@ -25,16 +28,16 @@ struct PollingQueue {
 
 impl StreamLoggingQueue for PollingQueue {
     fn submit(&self, mut job: StreamLoggingJob) -> Admission {
-        let waker = futures_util::task::noop_waker();
+        let waker = noop_waker();
         let mut context = Context::from_waker(&waker);
         let pending = job.work.as_mut().poll(&mut context).is_pending();
         *self
             .first_poll_pending
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(pending);
+            .unwrap_or_else(PoisonError::into_inner) = Some(pending);
         self.jobs
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .unwrap_or_else(PoisonError::into_inner)
             .push(job);
         Admission::Accepted
     }
@@ -42,12 +45,7 @@ impl StreamLoggingQueue for PollingQueue {
 
 impl PollingQueue {
     async fn drain(&self) {
-        let jobs = std::mem::take(
-            &mut *self
-                .jobs
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner),
-        );
+        let jobs = take(&mut *self.jobs.lock().unwrap_or_else(PoisonError::into_inner));
         for job in jobs {
             job.work.await;
         }
@@ -56,7 +54,7 @@ impl PollingQueue {
 
 #[derive(Default)]
 struct ObservingRoute {
-    bound_on_dispatch: Mutex<Vec<Option<betterlite_models::decisions::Json>>>,
+    bound_on_dispatch: Mutex<Vec<Option<Json>>>,
 }
 
 impl StreamRoute for ObservingRoute {
@@ -64,7 +62,7 @@ impl StreamRoute for ObservingRoute {
         Box::pin(async move {
             self.bound_on_dispatch
                 .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .unwrap_or_else(PoisonError::into_inner)
                 .push(callback_bound(input.logging_obj.as_ref()));
         })
     }
@@ -181,8 +179,8 @@ async fn an_accepted_job_polled_concurrently_waits_for_reservation_binding() {
     let queue = Arc::new(PollingQueue::default());
     let route = Arc::new(ObservingRoute::default());
     let current = Arc::get_mut(&mut lifecycle).expect("the lifecycle is uniquely owned");
-    let queue_port: Arc<dyn StreamLoggingQueue> = queue.clone();
-    let route_port: Arc<dyn StreamRoute> = route.clone();
+    let queue_port: Arc<dyn StreamLoggingQueue> = Arc::<PollingQueue>::clone(&queue);
+    let route_port: Arc<dyn StreamRoute> = Arc::<ObservingRoute>::clone(&route);
     current.queue = queue_port;
     current.route = route_port;
     let logging_obj = object(&[], reservation_params());
@@ -201,7 +199,7 @@ async fn an_accepted_job_polled_concurrently_waits_for_reservation_binding() {
         *queue
             .first_poll_pending
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner),
+            .unwrap_or_else(PoisonError::into_inner),
         Some(true)
     );
     assert_eq!(harness.binder.calls(), 1);
@@ -211,7 +209,7 @@ async fn an_accepted_job_polled_concurrently_waits_for_reservation_binding() {
         *route
             .bound_on_dispatch
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner),
+            .unwrap_or_else(PoisonError::into_inner),
         vec![Some(json("true"))]
     );
 }

@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use std::error::Error as _;
+use std::error::Error;
 use std::io::{self, Result as IoResult, Write};
 use std::mem::take;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -548,8 +548,8 @@ pub(super) fn recorded(failure: &StreamFailure) -> RecordedFailure {
         traceback: failure.traceback().to_owned(),
         retains_io_source: failure
             .source()
-            .and_then(std::error::Error::source)
-            .is_some_and(|source| source.is::<io::Error>()),
+            .and_then(Error::source)
+            .is_some_and(<dyn Error>::is::<io::Error>),
     }
 }
 

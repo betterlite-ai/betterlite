@@ -1,16 +1,20 @@
 #![cfg(test)]
 
 use std::error::Error as _;
+use std::io;
 use std::sync::{Arc, Barrier};
 
 use futures_util::StreamExt as _;
+use futures_util::future::{Either, select};
 use indexmap::IndexMap;
+use tokio::task::JoinSet;
 
 use crate::passthrough_stream_lifecycle::chunk_processor::chunk_processor;
+use crate::passthrough_stream_lifecycle::lifecycle::StreamLifecycle;
 use crate::passthrough_stream_lifecycle::ports::StreamJobKind;
 use crate::passthrough_stream_lifecycle::support::{
     Harness, RecordedFailure, failing_chunks, failure, json, object, ok_chunks, processor_call,
-    recorded, usage_outcome,
+    recorded, recorded_usage, usage_outcome,
 };
 use crate::passthrough_stream_logging::router::StreamLoggingRouter;
 use crate::passthrough_stream_logging::types::{
@@ -29,6 +33,22 @@ impl CollectedChunksHandler for BlockingUsageHandler {
         self.release.wait();
         Ok(usage_outcome(10, 5, 15, "0.25"))
     }
+}
+
+fn install_blocking_handler(
+    lifecycle: &mut StreamLifecycle,
+    handler: Arc<dyn CollectedChunksHandler>,
+) {
+    lifecycle.router = Arc::new(StreamLoggingRouter {
+        providers: Arc::new(ProviderChunkHandlers {
+            anthropic: Arc::clone(&lifecycle.router.providers.anthropic),
+            vertex: Arc::clone(&lifecycle.router.providers.vertex),
+            gemini: Arc::clone(&lifecycle.router.providers.gemini),
+            openai: handler,
+        }),
+        frames: Arc::clone(&lifecycle.router.frames),
+        tinyfish: Arc::clone(&lifecycle.router.tinyfish),
+    });
 }
 
 #[tokio::test]
@@ -53,7 +73,7 @@ async fn an_upstream_error_schedules_the_failure_and_never_logs_success() {
             .unwrap()
             .source()
             .unwrap()
-            .is::<std::io::Error>()
+            .is::<io::Error>()
     );
     assert_eq!(recorded(delivered), recorded(&failure!()));
     assert_eq!(
@@ -149,21 +169,8 @@ async fn disconnect_during_usage_recovery_preserves_usage_and_dispatches_one_fai
         entered: Arc::clone(&entered),
         release: Arc::clone(&release),
     });
-    let frames: Arc<dyn crate::passthrough_stream_logging::router::AnthropicFrameProbe> =
-        harness.probe.clone();
-    let tinyfish: Arc<dyn crate::passthrough_stream_logging::tinyfish::TinyfishStreamBilling> =
-        harness.tinyfish.clone();
     let current = Arc::get_mut(&mut lifecycle).expect("the lifecycle is uniquely owned");
-    current.router = Arc::new(StreamLoggingRouter {
-        providers: Arc::new(ProviderChunkHandlers {
-            anthropic: Arc::clone(&harness.providers.anthropic),
-            vertex: Arc::clone(&harness.providers.vertex),
-            gemini: Arc::clone(&harness.providers.gemini),
-            openai: blocking,
-        }),
-        frames,
-        tinyfish,
-    });
+    install_blocking_handler(current, blocking);
     let logging_obj = object(&[], IndexMap::new());
     let call = processor_call(
         Arc::clone(&lifecycle),
@@ -177,24 +184,19 @@ async fn disconnect_during_usage_recovery_preserves_usage_and_dispatches_one_fai
     assert_eq!(stream.next().await.unwrap().unwrap(), b"data: partial\n\n");
 
     let mut pending_read = Box::pin(stream.next());
-    let waiter = tokio::task::spawn_blocking({
-        let entered = Arc::clone(&entered);
-        move || entered.wait()
-    });
-    tokio::select! {
-        _ = waiter => {}
-        _ = &mut pending_read => panic!("failure delivery completed before usage recovery was released"),
-    }
+    let mut waiters = JoinSet::new();
+    waiters.spawn_blocking(move || entered.wait());
+    assert!(matches!(
+        select(Box::pin(waiters.join_next()), pending_read.as_mut()).await,
+        Either::Left((Some(Ok(_)), _))
+    ));
     drop(pending_read);
     drop(stream);
     release.wait();
     lifecycle.tasks.close();
     lifecycle.tasks.wait().await;
 
-    assert_eq!(
-        crate::passthrough_stream_lifecycle::support::recorded_usage(logging_obj.as_ref()),
-        Some((10, 5, 15))
-    );
+    assert_eq!(recorded_usage(logging_obj.as_ref()), Some((10, 5, 15)));
     assert_eq!(harness.queue.kinds(), vec![StreamJobKind::Failure]);
     assert_eq!(harness.failure_dispatch.failures().len(), 1);
 }
