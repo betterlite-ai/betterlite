@@ -55,7 +55,7 @@ VALUES
 
 #[derive(Parser)]
 struct Environment {
-    #[arg(long)]
+    #[arg(long, env = "POSTGRES_TEST_URL")]
     url: Option<String>,
 }
 
