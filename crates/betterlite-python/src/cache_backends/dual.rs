@@ -144,11 +144,8 @@ impl NativeDual {
     fn async_flush<'py>(&self, py: Python<'py>) -> AsyncAnswer<'py> {
         let cache = Arc::clone(&self.cache);
         future_into_py(py, async move {
-            let outcome = tokio::task::spawn_blocking(move || cache.flush_cache())
-                .await
-                .map_err(BackendHandleError::from)?;
-            error::backend_err(outcome)?;
-            Ok(())
+            let flushed = tokio::task::spawn_blocking(move || cache.flush_cache());
+            error::backend_err(flushed.await.map_err(BackendHandleError::from)?)
         })
     }
 
