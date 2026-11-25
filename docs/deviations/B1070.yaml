@@ -1,0 +1,13 @@
+task: B1070
+deviations:
+  - what: >-
+      page and page_size are read as signed 64-bit integers in plain decimal, so a value outside that range,
+      or one spelled with surrounding whitespace or underscore separators, answers the FastAPI int-parsing
+      422 at query.page or query.page_size. LiteLLM's FastAPI int parameter accepts those spellings and any
+      magnitude, then computes total_pages in unbounded Python arithmetic.
+    why: >-
+      betterlite parses query integers into the 64-bit type its JSON and its page fields carry, so a page
+      beyond i64 has no response shape it could be echoed in; other betterlite query readers parse the same
+      way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/management_endpoints.py#L356-L360
+kept_bugs: []
