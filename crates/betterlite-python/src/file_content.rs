@@ -1,6 +1,19 @@
+mod convert;
+mod dispatch;
+mod error;
+mod session;
+mod stream;
+
+use self::error::NativeFileContentError;
 use pyo3::prelude::*;
 
-pub const fn register(_module: &Bound<'_, PyModule>) -> PyResult<()> {
-    // The file_content family task adds its native functions here.
+// The session, the native stream and the exception every failure carries.
+pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add_class::<session::NativeFileContentSession>()?;
+    module.add_class::<stream::NativeFileStream>()?;
+    module.add(
+        "NativeFileContentError",
+        module.py().get_type::<NativeFileContentError>(),
+    )?;
     Ok(())
 }
