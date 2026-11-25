@@ -7,6 +7,7 @@ use betterlite_core::api::file_stream_logging::source::StreamError;
 use betterlite_core::api::fine_tuning_read::{ReadTimeout, ReadTimeoutValue};
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_openai::files::error::{FilesError, StatusError};
+use rstest::rstest;
 
 use super::super::dispatch::DispatchError;
 use super::super::error::{Failure, azure_failure, failure_for, files_failure, stream_failure};
@@ -174,32 +175,28 @@ fn error_a_status_without_fields_carries_no_body() {
     assert_eq!(payload.body, None);
 }
 
-#[test]
-fn error_each_status_class_follows_its_code() {
-    let classes = [
-        (400_u16, "BadRequestError"),
-        (401, "AuthenticationError"),
-        (403, "PermissionDeniedError"),
-        (404, "NotFoundError"),
-        (422, "UnprocessableEntityError"),
-        (429, "RateLimitError"),
-        (500, "InternalServerError"),
-        (599, "InternalServerError"),
-        (418, "APIError"),
-    ];
-    for (status_code, class) in classes {
-        let status = StatusError {
-            status: status_code,
-            message: String::new(),
-            error_type: None,
-            param: None,
-            code: None,
-        };
-        let Failure::Payload(payload) = files_failure(&FilesError::Status(Box::new(status))) else {
-            panic!("the status error did not become a payload");
-        };
-        assert_eq!(payload.class, class);
-    }
+#[rstest]
+#[case::bad_request(400_u16, "BadRequestError")]
+#[case::authentication(401_u16, "AuthenticationError")]
+#[case::permission_denied(403_u16, "PermissionDeniedError")]
+#[case::not_found(404_u16, "NotFoundError")]
+#[case::unprocessable_entity(422_u16, "UnprocessableEntityError")]
+#[case::rate_limit(429_u16, "RateLimitError")]
+#[case::internal_server(500_u16, "InternalServerError")]
+#[case::internal_server_at_the_top(599_u16, "InternalServerError")]
+#[case::any_other_code(418_u16, "APIError")]
+fn error_each_status_class_follows_its_code(#[case] status_code: u16, #[case] class: &str) {
+    let status = StatusError {
+        status: status_code,
+        message: String::new(),
+        error_type: None,
+        param: None,
+        code: None,
+    };
+    let Failure::Payload(payload) = files_failure(&FilesError::Status(Box::new(status))) else {
+        panic!("the status error did not become a payload");
+    };
+    assert_eq!(payload.class, class);
 }
 
 #[test]

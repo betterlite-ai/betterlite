@@ -1,13 +1,12 @@
 use std::sync::Arc;
 
 use betterlite_core::api::file_stream_logging::FileContentStreamingResponse;
-use betterlite_core::api::file_stream_logging::source::StreamError;
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 use pyo3_async_runtimes::tokio::{future_into_py, get_runtime};
 use tokio::sync::Mutex;
 
-use super::error::{native_error, stream_failure};
+use super::error::stream_failure;
 
 // One streamed file body: the B1080 wrapper's chunks, handed out as the bytes Python iterates.
 #[pyclass(module = "betterlite._native")]
@@ -30,7 +29,7 @@ impl NativeFileStream {
                 iter.next_chunk().await.transpose()
             })
         });
-        let chunk = next.map_err(|error| native_error(stream_failure(&error)))?;
+        let chunk = next.map_err(|error| PyErr::from(stream_failure(&error)))?;
         Ok(chunk.map(|bytes| PyBytes::new(py, &bytes).unbind()))
     }
 
@@ -42,12 +41,12 @@ impl NativeFileStream {
             let mut guard = stream.lock().await;
             let mut iter = guard
                 .async_iter()
-                .map_err(|error| native_error(stream_failure(&error)))?;
+                .map_err(|error| PyErr::from(stream_failure(&error)))?;
             let chunk = iter
                 .next_chunk()
                 .await
                 .transpose()
-                .map_err(|error| native_error(stream_failure(&error)))?;
+                .map_err(|error| PyErr::from(stream_failure(&error)))?;
             Python::attach(
                 |attached| Ok(chunk.map(|bytes| PyBytes::new(attached, &bytes).unbind())),
             )
@@ -63,7 +62,7 @@ impl NativeFileStream {
                 guard.close()
             })
         })
-        .map_err(|error| native_error(stream_failure(&error)))
+        .map_err(|error| PyErr::from(stream_failure(&error)))
     }
 
     #[cfg_attr(test, mutants::skip)]
@@ -74,7 +73,7 @@ impl NativeFileStream {
             guard
                 .aclose()
                 .await
-                .map_err(|error| native_error(stream_failure(&error)))
+                .map_err(|error| PyErr::from(stream_failure(&error)))
         })
     }
 }

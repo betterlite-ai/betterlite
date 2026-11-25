@@ -1,6 +1,6 @@
 use betterlite_azure::azure_files::error::AzureFilesError;
 use betterlite_azure::endpoints::initialize::EndpointError;
-use betterlite_core::api::file_content_stream::error::FileContentError;
+use betterlite_core::api::file_content_stream::error::{BadRequest, FileContentError};
 use betterlite_core::api::file_stream_logging::source::StreamError;
 use betterlite_error::error::class_message;
 use betterlite_models::controls::json_value::JsonValue;
@@ -45,30 +45,45 @@ pub(crate) enum Failure {
     Payload(Box<FileFailurePayload>),
 }
 
-pub(crate) fn native_error(failure: Failure) -> PyErr {
-    match failure {
-        Failure::Value(message) => PyValueError::new_err(message),
-        Failure::Type(message) => PyTypeError::new_err(message),
-        Failure::Runtime(message) => PyRuntimeError::new_err(message),
-        Failure::Unsupported(message) => PyNotImplementedError::new_err(message),
-        Failure::Key(message) => PyKeyError::new_err(message),
-        Failure::Payload(payload) => match serde_json::to_string(&payload) {
-            Ok(text) => NativeFileContentError::new_err(text),
-            Err(source) => PyRuntimeError::new_err(source.to_string()),
-        },
+impl From<Failure> for PyErr {
+    fn from(failure: Failure) -> Self {
+        match failure {
+            Failure::Payload(payload) => encoded_error(&payload),
+            Failure::Value(message) => PyValueError::new_err(message),
+            Failure::Type(message) => PyTypeError::new_err(message),
+            Failure::Runtime(message) => PyRuntimeError::new_err(message),
+            Failure::Unsupported(message) => PyNotImplementedError::new_err(message),
+            Failure::Key(message) => PyKeyError::new_err(message),
+        }
+    }
+}
+
+// the payload Python rebuilds LiteLLM's exception from, or a plain runtime error when it cannot be written
+fn encoded_error(payload: &FileFailurePayload) -> PyErr {
+    match serde_json::to_string(payload) {
+        Ok(text) => NativeFileContentError::new_err(text),
+        Err(source) => PyRuntimeError::new_err(source.to_string()),
     }
 }
 
 pub(crate) fn failure_for(error: &FileContentError<DispatchError>) -> Failure {
-    match error {
-        FileContentError::Timeout(_) | FileContentError::UnknownProvider { .. } => {
-            Failure::Value(error.to_string())
-        }
+    let source = match error {
+        FileContentError::Dispatch(source) => source,
         FileContentError::Unsupported { .. }
         | FileContentError::UnsupportedStreaming { .. }
-        | FileContentError::SyncVertexStreaming => rejected_provider(error),
-        FileContentError::Reply => Failure::Runtime(error.to_string()),
-        FileContentError::Dispatch(source) => dispatch_failure(source),
+        | FileContentError::SyncVertexStreaming => return rejected_provider(error),
+        FileContentError::Timeout(_) | FileContentError::UnknownProvider { .. } => {
+            return Failure::Value(error.to_string());
+        }
+        FileContentError::Reply => return Failure::Runtime(error.to_string()),
+    };
+    match source {
+        DispatchError::Files(source) => files_failure(source),
+        DispatchError::Azure(source) => azure_failure(source),
+        DispatchError::Reply => Failure::Runtime(error.to_string()),
+        DispatchError::Unbuilt { config } => Failure::Unsupported(format!(
+            "the {config} file content call is not implemented in this build"
+        )),
     }
 }
 
@@ -77,24 +92,20 @@ fn rejected_provider(error: &FileContentError<DispatchError>) -> Failure {
     let Some(rejected) = error.bad_request() else {
         return Failure::Runtime(error.to_string());
     };
-    Failure::Payload(Box::new(FileFailurePayload {
+    Failure::Payload(Box::new(rejected_payload(rejected, error)))
+}
+
+fn rejected_payload(
+    rejected: BadRequest<'_>,
+    error: &FileContentError<DispatchError>,
+) -> FileFailurePayload {
+    FileFailurePayload {
         class: String::from("BadRequestError"),
         message: error.to_string(),
         status_code: Some(400),
         llm_provider: Some(rejected.llm_provider.to_owned()),
         model: Some(String::from(rejected.model)),
         body: Some(JsonValue::Text(rejected.body.to_owned())),
-    }))
-}
-
-fn dispatch_failure(error: &DispatchError) -> Failure {
-    match error {
-        DispatchError::Files(source) => files_failure(source),
-        DispatchError::Azure(source) => azure_failure(source),
-        DispatchError::Reply => Failure::Runtime(error.to_string()),
-        DispatchError::Unbuilt { config } => Failure::Unsupported(format!(
-            "the {config} file content call is not implemented in this build"
-        )),
     }
 }
 
@@ -173,44 +184,38 @@ const fn class_for_status(status: u16) -> &'static str {
     }
 }
 
-pub(crate) fn azure_failure(error: &AzureFilesError) -> Failure {
-    match error {
-        AzureFilesError::Files { source } => files_failure(source),
-        AzureFilesError::Endpoint { source } => endpoint_failure(source),
-        AzureFilesError::TokenProvider { .. } => Failure::Runtime(error.to_string()),
-        AzureFilesError::ClientMissing
-        | AzureFilesError::NotAsyncClient
-        | AzureFilesError::MissingCredentials
-        | AzureFilesError::UnableToHandleAuth
-        | AzureFilesError::TokenNotString { .. }
-        | AzureFilesError::MissingBaseUrl
-        | AzureFilesError::BaseUrl { .. }
-        | AzureFilesError::Header { .. }
-        | AzureFilesError::Timeout { .. } => Failure::Value(error.to_string()),
+// the azure endpoints layer names the class a resolved endpoint raises
+fn azure_endpoint_failure(source: &EndpointError) -> Failure {
+    match source.class() {
+        "KeyError" => Failure::Key(source.to_string()),
+        _ => Failure::Value(source.to_string()),
     }
 }
 
-// the azure endpoints layer names the class a resolved endpoint raises
-fn endpoint_failure(error: &EndpointError) -> Failure {
-    match error.class() {
-        "KeyError" => Failure::Key(error.to_string()),
-        _ => Failure::Value(error.to_string()),
+pub(crate) fn azure_failure(error: &AzureFilesError) -> Failure {
+    if let AzureFilesError::Files { source } = error {
+        return files_failure(source);
     }
+    if let AzureFilesError::Endpoint { source } = error {
+        return azure_endpoint_failure(source);
+    }
+    if let AzureFilesError::TokenProvider { .. } = error {
+        return Failure::Runtime(error.to_string());
+    }
+    Failure::Value(error.to_string())
 }
 
 pub(crate) fn stream_failure(error: &StreamError) -> Failure {
-    match error {
-        StreamError::UnsupportedSync | StreamError::UnsupportedAsync => {
-            Failure::Type(error.to_string())
-        }
-        StreamError::Source { failure } | StreamError::Cleanup { failure } => payload(
+    if let StreamError::Source { failure } | StreamError::Cleanup { failure } = error {
+        return payload(
             class_name(failure),
             class_message(failure),
             class_status(failure),
             None,
-        ),
-        StreamError::Cancelled
-        | StreamError::Callback { .. }
-        | StreamError::CleanupAborted { .. } => Failure::Runtime(error.to_string()),
+        );
     }
+    if let StreamError::UnsupportedSync | StreamError::UnsupportedAsync = error {
+        return Failure::Type(error.to_string());
+    }
+    Failure::Runtime(error.to_string())
 }

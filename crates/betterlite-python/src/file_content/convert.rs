@@ -1,9 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_core::api::file_content_stream::{ContentCall, ContentKwargs};
-use betterlite_core::api::fine_tuning_read::{
-    ReadStructuredTimeout, ReadTimeout, ReadTimeoutValue,
-};
+use betterlite_core::api::fine_tuning_read::{ReadTimeout, ReadTimeoutValue};
 use betterlite_models::controls::json_value::JsonValue;
 use pyo3::PyErr;
 use pyo3::exceptions::PyValueError;
@@ -123,7 +121,9 @@ fn build_call(wire: RequestWire) -> Result<FileCall, ConvertError> {
     let request_timeout = wire
         .request_timeout
         .as_ref()
-        .map(request_timeout_value)
+        .map(|value| {
+            plain_timeout(value).ok_or(ConvertError::TimeoutShapes(REQUEST_TIMEOUT_SHAPES))
+        })
         .transpose()?;
     let kwargs = ContentKwargs {
         api_key: wire.api_key,
@@ -150,30 +150,22 @@ fn build_call(wire: RequestWire) -> Result<FileCall, ConvertError> {
 
 // GenericLiteLLMParams.timeout declares float | str | httpx.Timeout
 fn read_timeout(value: &JsonValue) -> Result<ReadTimeout, ConvertError> {
-    match value {
-        JsonValue::Number(number) => {
-            Ok(ReadTimeout::Plain(ReadTimeoutValue::Number(number.clone())))
-        }
-        JsonValue::Text(text) => Ok(ReadTimeout::Plain(ReadTimeoutValue::Text(text.clone()))),
-        JsonValue::Object(_) => Ok(ReadTimeout::Structured(timeout_phases(value)?)),
-        JsonValue::Null | JsonValue::Bool(_) | JsonValue::Array(_) => {
-            Err(ConvertError::TimeoutShapes(READ_TIMEOUT_SHAPES))
-        }
+    if let JsonValue::Object(_) = value {
+        let text =
+            serde_json::to_string(value).map_err(|source| ConvertError::Phases { source })?;
+        let phases =
+            serde_json::from_str(&text).map_err(|source| ConvertError::Phases { source })?;
+        return Ok(ReadTimeout::Structured(phases));
     }
+    plain_timeout(value)
+        .map(ReadTimeout::Plain)
+        .ok_or(ConvertError::TimeoutShapes(READ_TIMEOUT_SHAPES))
 }
 
-// request_timeout is only read as a plain value here, never as phase names
-fn request_timeout_value(value: &JsonValue) -> Result<ReadTimeoutValue, ConvertError> {
+fn plain_timeout(value: &JsonValue) -> Option<ReadTimeoutValue> {
     match value {
-        JsonValue::Number(number) => Ok(ReadTimeoutValue::Number(number.clone())),
-        JsonValue::Text(text) => Ok(ReadTimeoutValue::Text(text.clone())),
-        JsonValue::Null | JsonValue::Bool(_) | JsonValue::Array(_) | JsonValue::Object(_) => {
-            Err(ConvertError::TimeoutShapes(REQUEST_TIMEOUT_SHAPES))
-        }
+        JsonValue::Number(number) => Some(ReadTimeoutValue::Number(number.clone())),
+        JsonValue::Text(text) => Some(ReadTimeoutValue::Text(text.clone())),
+        JsonValue::Null | JsonValue::Bool(_) | JsonValue::Array(_) | JsonValue::Object(_) => None,
     }
-}
-
-fn timeout_phases(value: &JsonValue) -> Result<ReadStructuredTimeout, ConvertError> {
-    let text = serde_json::to_string(value).map_err(|source| ConvertError::Phases { source })?;
-    serde_json::from_str(&text).map_err(|source| ConvertError::Phases { source })
 }

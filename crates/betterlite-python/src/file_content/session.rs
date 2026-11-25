@@ -31,8 +31,8 @@ use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use super::convert::{ConvertError, FileCall, PlainAnswer, StreamAnswer, parse_call};
-use super::dispatch::{ContentDispatch, DispatchError};
-use super::error::{failure_for, native_error};
+use super::dispatch::ContentDispatch;
+use super::error::failure_for;
 use super::stream::NativeFileStream;
 
 mod tests;
@@ -172,7 +172,7 @@ impl FileContentCore {
         service
             .run(entry, &call.call(), context)
             .await
-            .map_err(|error| native_error(failure_for(&error)))
+            .map_err(|error| PyErr::from(failure_for(&error)))
     }
 }
 
