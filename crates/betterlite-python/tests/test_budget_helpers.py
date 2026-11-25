@@ -2,7 +2,6 @@ import copy
 import importlib
 import json
 import logging
-import ssl
 import threading
 import time
 from datetime import UTC, date, datetime
@@ -16,10 +15,7 @@ from typing import ClassVar, Final, Protocol, Self, TypeAlias, TypeVar
 import httpx
 import httpx2
 import pytest
-from litellm.constants import (
-    DEFAULT_SSL_CIPHERS as REFERENCE_SSL_CIPHERS,
-    request_timeout as REFERENCE_REQUEST_TIMEOUT,
-)
+from litellm.constants import request_timeout as reference_request_timeout
 from pydantic import ConfigDict, JsonValue, TypeAdapter, ValidationError
 from typing_extensions import override
 
@@ -57,7 +53,6 @@ from betterlite._core_helpers import (
     set_provider_response_headers_in_hidden_params,
     set_response_cost_in_hidden_params,
 )
-from betterlite._core_helpers.budget_http import DEFAULT_SSL_CIPHERS
 from betterlite._core_helpers.values import PythonValue, object_fields, text_of
 from betterlite._cost import completion_cost, cost_per_token, response_cost_calculator
 from betterlite._model_info import get_max_tokens, get_model_info, get_provider_info
@@ -109,29 +104,27 @@ MOVED_GET: Final = "/moved"
 STAMPED: Final = "stamped-token"
 METADATA_STAMPED: Final = "metadata-token"
 BLOCK_SECONDS: Final = 10.0
-INVALID_CURVE: Final = "not-a-curve"
 
 HELPER_NAMES: Final[frozenset[str]] = frozenset({
-    "add_missing_spend_metadata_to_litellm_metadata", "coerce_token_limit", "drop_params_env_flag",
-    "drop_params_flag", "filter_exceptions_from_params", "filter_internal_params",
-    "get_litellm_metadata_from_kwargs", "get_metadata_variable_name_from_kwargs",
-    "get_or_create_metadata_bucket", "get_provider_response_headers_from_hidden_params",
-    "independent_snapshot", "is_codex_user_agent", "is_expected_client_error", "map_finish_reason",
+    "add_missing_spend_metadata_to_litellm_metadata", "coerce_token_limit",
+    "drop_params_env_flag", "drop_params_flag", "filter_exceptions_from_params",
+    "filter_internal_params", "get_litellm_metadata_from_kwargs",
+    "get_metadata_variable_name_from_kwargs", "get_or_create_metadata_bucket",
+    "get_provider_response_headers_from_hidden_params", "independent_snapshot",
+    "is_codex_user_agent", "is_expected_client_error", "map_finish_reason",
     "max_retries_per_request_hit", "normalize_drop_params",
     "preserve_upstream_non_openai_attributes", "process_response_headers",
     "proxy_stamped_used_client_oauth_token", "reconstruct_model_name",
-    "remove_index_from_tool_calls", "remove_items_at_indices", "safe_deep_copy", "safe_divide",
-    "safe_divide_seconds", "set_provider_response_headers_in_hidden_params",
+    "remove_index_from_tool_calls", "remove_items_at_indices", "safe_deep_copy",
+    "safe_divide", "safe_divide_seconds", "set_provider_response_headers_in_hidden_params",
     "set_response_cost_in_hidden_params",
 })
 UTILS_NAMES: Final[frozenset[str]] = frozenset({
     "completion_cost", "cost_per_token", "create_pretrained_tokenizer", "create_tokenizer",
     "decode", "encode", "get_llm_provider", "get_max_tokens", "get_model_cost_mutation_generation",
-    "get_provider_info", "response_cost_calculator", "token_counter",
-})
+    "get_provider_info", "response_cost_calculator", "token_counter"})
 NORMALIZE_VALUES: Final[tuple[PythonValue, ...]] = (
-    None, True, "true", " TRUE ", "on", "1", 1, 0, "banana", 2, {}, "false", "off",
-)
+    None, True, "true", " TRUE ", "on", "1", 1, 0, "banana", 2, {}, "false", "off")
 ENVIRONMENTS: Final[tuple[dict[str, str], ...]] = (
     {}, {"LITELLM_DROP_PARAMS": "true"}, {"LITELLM_DROP_PARAMS": "  "},
     {"LITELLM_DROP_PARAMS": "banana"}, {"LITELLM_DROP_PARAMS": "0"},
@@ -152,8 +145,8 @@ NAME_CASES: Final[tuple[tuple[str, str | None, dict[str, PythonValue]], ...]] = 
     ("bedrock/x", "bedrock", {"deployment": "anthropic/y"}),
     ("x", "bedrock", {"deployment": "claude"}), ("", "bedrock", {}), ("x", None, {}))
 META_KWARGS_CASES: Final[tuple[dict[str, PythonValue], ...]] = (
-    {}, {"litellm_params": None}, {"litellm_params": {}}, {"litellm_params": {METADATA_KEY: {}}},
-    {"litellm_params": {LITELLM_METADATA_KEY: {}}},
+    {}, {"litellm_params": None}, {"litellm_params": {}},
+    {"litellm_params": {METADATA_KEY: {}}}, {"litellm_params": {LITELLM_METADATA_KEY: {}}},
     {"litellm_params": {METADATA_KEY: None, LITELLM_METADATA_KEY: {"m": 2}}},
     {"litellm_params": {METADATA_KEY: {"user_api_key": "k"}, LITELLM_METADATA_KEY: {"m": 2}}},
     {"litellm_params": {METADATA_KEY: {"user_api_key": "k"}}})
@@ -177,8 +170,7 @@ ERROR_CASES: Final[tuple[tuple[PythonValue, PythonValue, PythonValue], ...]] = (
     (None, None, "openai"))
 PROJECTED_MESSAGES: Final[list[dict[str, JsonValue]]] = [
     {"role": "user", "content": "ab"}, {"role": "user", "content": "c"}]
-USAGE_DATA: Final[dict[str, JsonValue]] = {
-    "prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+USAGE_DATA: Final[dict[str, JsonValue]] = {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
 EXCEPTION_ADAPTER: Final[TypeAdapter[BaseException]] = TypeAdapter(
     BaseException, config=ConfigDict(arbitrary_types_allowed=True)
 )
@@ -224,7 +216,6 @@ class BudgetShape(Protocol):
 LITELLM: ModuleType = importlib.import_module("litellm")
 BETTERLITE: ModuleType = betterlite
 LITELLM_HELPERS: CallModule = importlib.import_module("litellm.litellm_core_utils.core_helpers")
-LITELLM_HTTP: CallModule = importlib.import_module("litellm.llms.custom_httpx.http_handler")
 LITELLM_ERRORS: CallModule = importlib.import_module("litellm.exceptions")
 LITELLM_RESPONSES: TypedModule[ReferenceResponse] = importlib.import_module("litellm")
 LITELLM_BUDGET: TypedModule[BudgetShape] = importlib.import_module("litellm.budget_manager")
@@ -325,24 +316,6 @@ def fixed_costs(*, model: str, prompt_tokens: int, completion_tokens: int) -> tu
     if prompt_tokens < 0 or completion_tokens < 0:
         raise ValueError(model)
     return (TENTH_COST, UPDATE_COST)
-
-
-class CurveRecorder:
-    def __init__(self) -> None:
-        self.curves: list[str] = []
-
-    def __call__(self, curve: str) -> None:
-        self.curves.append(curve)
-        if curve == INVALID_CURVE:
-            raise ValueError(curve)
-
-
-class TransportLog:
-    calls: ClassVar[list[dict[str, PythonValue]]] = []
-
-    def __init__(self, **options: PythonValue) -> None:
-        if "local_address" in options:
-            TransportLog.calls.append(options)
 
 
 def patch_costs(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -472,25 +445,58 @@ class RecordingHandler(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
 
-def test_helper_scalars_and_messages() -> None:
+def test_helper_scalars() -> None:
     for agent in CODEX_AGENTS:
         assert is_codex_user_agent(agent) == LITELLM_HELPERS.is_codex_user_agent(agent)
     for numerator, denominator, default in DIVIDE_CASES:
-        expected = LITELLM_HELPERS.safe_divide(numerator, denominator, default)
-        assert safe_divide(numerator, denominator, default) == expected
+        assert safe_divide(numerator, denominator, default) == LITELLM_HELPERS.safe_divide(
+            numerator, denominator, default
+        )
     for seconds, denominator, optional_default in SECONDS_CASES:
-        expected = LITELLM_HELPERS.safe_divide_seconds(seconds, denominator, optional_default)
-        assert safe_divide_seconds(seconds, denominator, optional_default) == expected
+        assert safe_divide_seconds(seconds, denominator, optional_default) == (
+            LITELLM_HELPERS.safe_divide_seconds(seconds, denominator, optional_default)
+        )
     logger = logging.getLogger("b166-drop")
     for value in NORMALIZE_VALUES:
         assert normalize_drop_params(value) == LITELLM_HELPERS.normalize_drop_params(value)
-        expected = LITELLM_HELPERS.drop_params_flag(value, "TEST_FLAG", logger)
-        assert drop_params_flag(value, "TEST_FLAG", logger) == expected
+        assert drop_params_flag(value, "TEST_FLAG", logger) == LITELLM_HELPERS.drop_params_flag(
+            value, "TEST_FLAG", logger
+        )
     for environ in ENVIRONMENTS:
-        expected = LITELLM_HELPERS.drop_params_env_flag(environ, logger)
-        assert drop_params_env_flag(environ, logger) == expected
+        assert drop_params_env_flag(environ, logger) == LITELLM_HELPERS.drop_params_env_flag(
+            environ, logger
+        )
     for reason in FINISH_REASONS:
         assert map_finish_reason(reason) == LITELLM_HELPERS.map_finish_reason(reason)
+
+
+def test_helper_metadata_names() -> None:
+    for kwargs in META_KWARGS_CASES:
+        expected = LITELLM_HELPERS.get_litellm_metadata_from_kwargs(copy.deepcopy(kwargs))
+        assert get_litellm_metadata_from_kwargs(copy.deepcopy(kwargs)) == expected
+    for model_name, provider, metadata in NAME_CASES:
+        expected = LITELLM_HELPERS.reconstruct_model_name(model_name, provider, metadata)
+        assert reconstruct_model_name(model_name, provider, metadata) == expected
+    for bad in (5, gated_write_text):
+        with pytest.raises(TypeError, match="deployment must be a string"):
+            reconstruct_model_name("x", "bedrock", {"deployment": bad})
+    cases: tuple[dict[str, PythonValue], ...] = (
+        {}, {METADATA_KEY: {}}, {LITELLM_METADATA_KEY: None}, {LITELLM_METADATA_KEY: {}}
+    )
+    for kwargs in cases:
+        expected = LITELLM_HELPERS.get_metadata_variable_name_from_kwargs(kwargs)
+        assert get_metadata_variable_name_from_kwargs(kwargs) == expected
+    ours: dict[str, PythonValue] = {}
+    reference: dict[str, PythonValue] = {}
+    expected_bucket = LITELLM_HELPERS.get_or_create_metadata_bucket(reference)
+    assert get_or_create_metadata_bucket(ours) == expected_bucket
+    assert ours == reference == {METADATA_KEY: {}}
+    existing: dict[str, PythonValue] = {METADATA_KEY: {}}
+    key, bucket = get_or_create_metadata_bucket(existing)
+    assert key == METADATA_KEY and bucket is existing[METADATA_KEY]
+
+
+def test_helper_messages() -> None:
     tool_calls: list[JsonValue] = [{"index": 0, "id": "a"}, "s", {"id": "b"}]
     reference_messages: list[dict[str, JsonValue]] = [
         {"role": "user", "content": "x", "tool_calls": tool_calls},
@@ -509,30 +515,6 @@ def test_helper_scalars_and_messages() -> None:
     remove_items_at_indices(ours_items, [0, 1, 9, 1, -1])
     assert ours_items == reference_items == ["c", "d"]
     remove_items_at_indices(None, [0])
-    cases: tuple[dict[str, PythonValue], ...] = (
-        {}, {METADATA_KEY: {}}, {LITELLM_METADATA_KEY: None}, {LITELLM_METADATA_KEY: {}},
-    )
-    for kwargs in cases:
-        expected = LITELLM_HELPERS.get_metadata_variable_name_from_kwargs(kwargs)
-        assert get_metadata_variable_name_from_kwargs(kwargs) == expected
-    ours_request: dict[str, PythonValue] = {}
-    reference_request: dict[str, PythonValue] = {}
-    expected = LITELLM_HELPERS.get_or_create_metadata_bucket(reference_request)
-    assert get_or_create_metadata_bucket(ours_request) == expected
-    assert ours_request == reference_request == {METADATA_KEY: {}}
-    existing: dict[str, PythonValue] = {METADATA_KEY: {}}
-    key, bucket = get_or_create_metadata_bucket(existing)
-    assert key == METADATA_KEY
-    assert bucket is existing[METADATA_KEY]
-    for kwargs in META_KWARGS_CASES:
-        expected = LITELLM_HELPERS.get_litellm_metadata_from_kwargs(copy.deepcopy(kwargs))
-        assert get_litellm_metadata_from_kwargs(copy.deepcopy(kwargs)) == expected
-    for model_name, provider, metadata in NAME_CASES:
-        expected = LITELLM_HELPERS.reconstruct_model_name(model_name, provider, metadata)
-        assert reconstruct_model_name(model_name, provider, metadata) == expected
-    for bad in (5, gated_write_text):
-        with pytest.raises(TypeError, match="deployment must be a string"):
-            reconstruct_model_name("x", "bedrock", {"deployment": bad})
 
 
 def test_helper_headers() -> None:
@@ -585,7 +567,7 @@ def test_helper_headers() -> None:
     assert "usage" not in ours_target.model_dump()
 
 
-def test_helper_copies_and_filters(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_helper_copies(monkeypatch: pytest.MonkeyPatch) -> None:
     span = datetime(2024, 1, 1, tzinfo=UTC)
     copies: list[tuple[dict[str, PythonValue], dict[str, PythonValue]]] = []
     snapshots: list[tuple[dict[str, PythonValue], dict[str, PythonValue]]] = []
@@ -620,6 +602,9 @@ def test_helper_copies_and_filters(monkeypatch: pytest.MonkeyPatch) -> None:
     payload: dict[str, PythonValue] = {"a": {"b": 1}}
     assert safe_deep_copy(payload) is payload
     assert LITELLM_HELPERS.safe_deep_copy(payload) is payload
+
+
+def test_helper_filters() -> None:
     deep: dict[str, PythonValue] = {"a": {"b": {"c": ValueError(BOOM)}}}
     assert fields_of(filter_exceptions_from_params(copy.deepcopy(deep))) == fields_of(
         LITELLM_HELPERS.filter_exceptions_from_params(copy.deepcopy(deep))
@@ -666,7 +651,7 @@ def test_helper_copies_and_filters(monkeypatch: pytest.MonkeyPatch) -> None:
     assert LITELLM_HELPERS.filter_internal_params(dict(data), {"x"}) == expected_internal
 
 
-def test_helper_error_and_request_guards() -> None:
+def test_helper_error_guards() -> None:
     for code, status_code, llm_provider in ERROR_CASES:
         ours = StatusError(code, status_code, llm_provider)
         reference = StatusError(code, status_code, llm_provider)
@@ -714,20 +699,24 @@ def test_helper_reexport_and_utils() -> None:
     assert map_finish_reason is parts_map_finish_reason
     assert set(dir(LITELLM_HELPERS)) >= HELPER_NAMES
     assert frozenset(utils_module.__all__) == UTILS_NAMES
-    assert utils_module.completion_cost is completion_cost
-    assert utils_module.cost_per_token is cost_per_token
-    assert utils_module.response_cost_calculator is response_cost_calculator
-    assert utils_module.get_max_tokens is get_max_tokens
-    assert utils_module.get_model_info is get_model_info
-    assert utils_module.get_provider_info is get_provider_info
-    assert utils_module.get_llm_provider is get_llm_provider
+    assert (
+        utils_module.completion_cost,
+        utils_module.cost_per_token,
+        utils_module.response_cost_calculator,
+        utils_module.get_max_tokens,
+        utils_module.get_model_info,
+        utils_module.get_provider_info,
+        utils_module.get_llm_provider,
+    ) == (
+        completion_cost, cost_per_token, response_cost_calculator, get_max_tokens,
+        get_model_info, get_provider_info, get_llm_provider,
+    )
     mutation_generation = model_info.get_model_cost_mutation_generation
     assert utils_module.get_model_cost_mutation_generation is mutation_generation
-    assert utils_module.create_pretrained_tokenizer is create_pretrained_tokenizer
-    assert utils_module.create_tokenizer is create_tokenizer
-    assert utils_module.decode is decode
-    assert utils_module.encode is encode
-    assert utils_module.token_counter is token_counter
+    assert (
+        utils_module.create_pretrained_tokenizer, utils_module.create_tokenizer,
+        utils_module.decode, utils_module.encode, utils_module.token_counter,
+    ) == (create_pretrained_tokenizer, create_tokenizer, decode, encode, token_counter)
 
 
 def test_budget_lifecycle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -774,6 +763,12 @@ def test_budget_lifecycle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     assert Path("user_cost.json").read_text() == reference_text
     reloaded = BudgetManager(PROJECT)
     assert reloaded.user_dict == ours.user_dict
+
+
+def test_budget_duration_lifecycle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    patch_costs(monkeypatch)
     monkeypatch.chdir(tmp_path)
     reference = LITELLM_BUDGET.BudgetManager(PROJECT)
     ours = BudgetManager(PROJECT)
@@ -894,7 +889,7 @@ def test_budget_hosted_calls() -> None:
 def test_budget_hosted_transport(monkeypatch: pytest.MonkeyPatch) -> None:
     timeout = module_level_client.timeout
     phases = (timeout.connect, timeout.read, timeout.write, timeout.pool)
-    assert phases == (REFERENCE_REQUEST_TIMEOUT,) * 4
+    assert phases == (reference_request_timeout,) * 4
     monkeypatch.setenv("REQUEST_TIMEOUT", "1234")
     timeout = ModuleClient().timeout
     phases = (timeout.connect, timeout.read, timeout.write, timeout.pool)
@@ -928,44 +923,6 @@ def test_budget_hosted_transport(monkeypatch: pytest.MonkeyPatch) -> None:
     ours_agent = module_level_client.client.headers["user-agent"]
     assert agents == [agents[0], agents[0], ours_agent, ours_agent, agents[0], ours_agent]
     assert [request["cookie"] for request in requests] == [None] * 6
-    assert DEFAULT_SSL_CIPHERS == REFERENCE_SSL_CIPHERS
-    monkeypatch.setenv("SSL_VERIFY", "false")
-    assert LITELLM_HTTP.get_ssl_configuration() is False
-    assert ModuleClient().ssl_options is False
-    assert ModuleClient(ssl_verify=True).ssl_options is not False
-    monkeypatch.delenv("SSL_VERIFY")
-    monkeypatch.setenv("SSL_SECURITY_LEVEL", "BOGUS")
-    with pytest.raises(ssl.SSLError):
-        LITELLM_HTTP.get_ssl_configuration()
-    with pytest.raises(ssl.SSLError):
-        ModuleClient()
-    monkeypatch.setenv("SSL_SECURITY_LEVEL", "DEFAULT@SECLEVEL=1")
-    recorder = CurveRecorder()
-    # ast-grep-ignore: no-string-mocking
-    monkeypatch.setattr("ssl.SSLContext.set_ecdh_curve", recorder)
-    monkeypatch.setenv("SSL_ECDH_CURVE", INVALID_CURVE)
-    assert ModuleClient().ssl_options is not False
-    assert recorder.curves == [INVALID_CURVE]
-    # ast-grep-ignore: no-string-mocking
-    monkeypatch.setattr(BETTERLITE, "force_ipv4", True)
-    # ast-grep-ignore: no-string-mocking
-    monkeypatch.setattr(LITELLM, "force_ipv4", True)
-    # ast-grep-ignore: no-string-mocking
-    monkeypatch.setattr("httpx2.HTTPTransport", TransportLog)
-    # ast-grep-ignore: no-string-mocking
-    monkeypatch.setattr("litellm.llms.custom_httpx.http_handler.HTTPTransport", TransportLog)
-    cases = (("true", False, True), ("yes", False, False), ("no", True, True))
-    for flag, module_flag, enabled in cases:
-        monkeypatch.setenv("LITELLM_HTTP2", flag)
-        # ast-grep-ignore: no-string-mocking
-        monkeypatch.setattr(BETTERLITE, "http2", module_flag)
-        # ast-grep-ignore: no-string-mocking
-        monkeypatch.setattr(LITELLM, "http2", module_flag)
-        TransportLog.calls.clear()
-        ModuleClient()
-        LITELLM_HTTP.HTTPHandler(timeout=REFERENCE_REQUEST_TIMEOUT)
-        wanted: list[dict[str, PythonValue]] = [{"local_address": "0.0.0.0", "http2": enabled}]
-        assert TransportLog.calls == wanted * 2
 
 
 def test_budget_local_saves(

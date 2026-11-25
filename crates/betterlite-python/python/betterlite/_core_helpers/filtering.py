@@ -1,9 +1,13 @@
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import suppress
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Final
 
 from pydantic import JsonValue
 
 from betterlite._core_helpers.values import PythonValue, object_fields
+from betterlite.types.utils.base import Dumpable
 
 _SKIPPED_NAMES: Final = frozenset({"Logging", "LiteLLMLoggingObj", "Router"})
 
@@ -33,12 +37,17 @@ def _filtered_value(
 
 
 def _removed_in_parent(value: PythonValue) -> bool:
-    # ast-grep-ignore: no-isinstance
-    if isinstance(value, Exception):
-        return True
-    if type(value) is type:
-        return False
-    return callable(value)
+    match value:
+        case Exception():
+            return True
+        case type():  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L644
+            return False
+        case Callable():
+            return True
+        case bool() | int() | float() | str() | datetime() | date() | Decimal():
+            return False
+        case Dumpable() | Iterator() | Sequence() | Mapping() | None:
+            return False
 
 
 def _filtered_child(

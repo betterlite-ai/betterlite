@@ -65,20 +65,9 @@ def _is_litellm_limit(category: PythonValue) -> bool:
 def _status_value(
     exception: BaseException | _CodeError | _StatusError,
 ) -> PythonValue:
-    code = _code_of(exception)
-    if code is not None:
-        return code
-    return _status_of(exception)
-
-
-def _code_of(exception: BaseException | _CodeError) -> PythonValue:
     # ast-grep-ignore: no-isinstance
     if isinstance(exception, _CodeError):
         return exception.code
-    return None
-
-
-def _status_of(exception: BaseException | _StatusError) -> PythonValue:
     # ast-grep-ignore: no-isinstance
     if isinstance(exception, _StatusError):
         return exception.status_code
