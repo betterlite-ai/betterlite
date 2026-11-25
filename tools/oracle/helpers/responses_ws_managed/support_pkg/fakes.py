@@ -1,6 +1,7 @@
 import json
 import socket
 import socketserver
+from collections.abc import AsyncIterator
 from http.server import BaseHTTPRequestHandler
 from typing import Final, Literal, TypedDict
 
@@ -14,60 +15,24 @@ CREATED_EVENT: Final[dict[str, str]] = {"type": "response.created"}
 COMPLETED_EVENT: Final[dict[str, str]] = {"type": "response.completed"}
 SSE_BODY: Final = b"".join(
     b"data: " + json.dumps(event).encode() + b"\n\n"
-    for event in (CREATED_EVENT, COMPLETED_EVENT)
-)
+    for event in (CREATED_EVENT, COMPLETED_EVENT))
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 
 
-class Setup(TypedDict):
-    model: str
-    litellm_metadata: dict[str, JsonValue] | None
-    custom_llm_provider: str | None
-    api_key: str | None
-    api_base: str | None
-    timeout: float | None
-    first_message: str | None
-    kwargs: dict[str, JsonValue]
-
-
-class ChunkRow(TypedDict):
-    kind: Literal["none", "json", "object", "broken"]
-    value: JsonValue
-    event_type: str | None
-    dump: str | None
-
-
-class ScriptRow(TypedDict):
-    fail: str | None
-    chunks: list[ChunkRow]
-    raise_after: int | None
-    raise_message: str
-
-
-class QuotaRow(TypedDict):
-    kind: Literal["rate_limit", "internal"]
-    message: str
-
-
-class SinkRow(TypedDict):
-    fails_at: int | None
-    message: str
-
-
-class Input(TypedDict):
-    setup: Setup
-    frames: list[str]
-    disconnect: str
-    scripts: list[ScriptRow]
-    quota: QuotaRow | None
-    sink: SinkRow
+Setup = TypedDict("Setup", {"model": str, "litellm_metadata": dict[str, JsonValue] | None,
+    "custom_llm_provider": str | None, "api_key": str | None, "api_base": str | None,
+    "timeout": float | None, "first_message": str | None, "kwargs": dict[str, JsonValue]})
+ChunkRow = TypedDict("ChunkRow", {"kind": Literal["none", "json", "object", "broken"],
+    "value": JsonValue, "event_type": str | None, "dump": str | None})
+ScriptRow = TypedDict("ScriptRow", {"fail": str | None, "chunks": list[ChunkRow],
+    "raise_after": int | None, "raise_message": str})
+QuotaRow = TypedDict("QuotaRow", {"kind": Literal["rate_limit", "internal"], "message": str})
+SinkRow = TypedDict("SinkRow", {"fails_at": int | None, "message": str})
+Input = TypedDict("Input", {"setup": Setup, "frames": list[str], "disconnect": str,
+    "scripts": list[ScriptRow], "quota": QuotaRow | None, "sink": SinkRow})
 
 
 class ScriptedError(Exception):
-    pass
-
-
-class SerializerError(Exception):
     pass
 
 
@@ -86,7 +51,6 @@ class Recorder:
         self.fail_message = input_value["sink"]["message"]
 
 
-# the provider HTTP request LiteLLM makes for a turn, answered with one scripted event
 class Answering(BaseHTTPRequestHandler):
     recorder: Recorder
 
@@ -128,7 +92,7 @@ class FakeChunk:
 class BrokenChunk:
     def model_dump_json(self, *, exclude_none: bool = True) -> str:
         del exclude_none
-        raise SerializerError(SERIALIZE_MESSAGE)
+        raise RuntimeError(SERIALIZE_MESSAGE)
 
 
 def chunk_of(row: ChunkRow) -> JsonValue | FakeChunk | BrokenChunk:
@@ -149,18 +113,19 @@ class FakeStream:
         self.script = script
         self.index = 0
 
-    def __aiter__(self) -> "FakeStream":
-        return self
+    def __aiter__(self) -> AsyncIterator[JsonValue | FakeChunk | BrokenChunk]:
+        async def stream() -> AsyncIterator[JsonValue | FakeChunk | BrokenChunk]:
+            while True:
+                if self.script["raise_after"] == self.index:
+                    raise ScriptedError(self.script["raise_message"])
+                if self.index >= len(self.script["chunks"]):
+                    self.recorder.trace.append("provider-end")
+                    return
+                row = self.script["chunks"][self.index]
+                self.index += 1
+                yield chunk_of(row)
 
-    async def __anext__(self) -> JsonValue | FakeChunk | BrokenChunk:
-        if self.script["raise_after"] == self.index:
-            raise ScriptedError(self.script["raise_message"])
-        if self.index < len(self.script["chunks"]):
-            row = self.script["chunks"][self.index]
-            self.index += 1
-            return chunk_of(row)
-        self.recorder.trace.append("provider-end")
-        raise StopAsyncIteration
+        return stream()
 
 
 class ScriptedResponses:

@@ -28,14 +28,8 @@ from .fakes import (
     Setup,
 )
 
-litellm.suppress_debug_info = True
-
 LOG_NAME: Final = "LiteLLM"
 DIAGNOSTIC_PREFIX: Final = "ManagedResponsesWS: "
-
-
-class ClientDisconnectedError(Exception):
-    pass
 
 
 class Socket:
@@ -55,7 +49,7 @@ class Socket:
             frame = self.recorder.incoming[self.recorder.incoming_index]
             self.recorder.incoming_index += 1
             return frame
-        raise ClientDisconnectedError(self.recorder.disconnect)
+        raise RuntimeError(self.recorder.disconnect)
 
 
 class ScriptedQuota(ProjectQuotaCallback):
@@ -101,10 +95,10 @@ class Capture(logging.Handler):
 
 class Probe(Handler):
     def history_view(self) -> dict[str, JsonValue]:
-        history: dict[str, JsonValue] = {}
-        for response_id, messages in self._session_history.items():
-            history[response_id] = JSON.validate_python(messages)
-        return history
+        return {
+            response_id: JSON.validate_python(messages)
+            for response_id, messages in self._session_history.items()
+        }
 
 
 def build_handler(

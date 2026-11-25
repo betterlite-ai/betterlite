@@ -1,7 +1,8 @@
 import importlib.util
 import sys
 from pathlib import Path
-from typing import Protocol, TypedDict, runtime_checkable
+from types import ModuleType
+from typing import TypedDict
 
 import litellm
 from pydantic import JsonValue
@@ -9,17 +10,12 @@ from pydantic import JsonValue
 litellm.suppress_debug_info = True
 
 
-class Input(TypedDict):
-    setup: dict[str, JsonValue]
-    frames: list[str]
-    disconnect: str
-    scripts: list[JsonValue]
-    quota: JsonValue
-    sink: dict[str, JsonValue]
+Input = TypedDict("Input", {"setup": dict[str, JsonValue], "frames": list[str],
+    "disconnect": str, "scripts": list[JsonValue], "quota": JsonValue,
+    "sink": dict[str, JsonValue]})
 
 
-@runtime_checkable
-class Adapter(Protocol):
+class AdapterModule(ModuleType):
     def run(self, input_value: Input) -> JsonValue: ...
 
 
@@ -32,9 +28,10 @@ def run(input_value: Input) -> JsonValue:
     )
     if spec is None or spec.loader is None:
         raise RuntimeError("managed WebSocket adapter module cannot be loaded")
-    module = importlib.util.module_from_spec(spec)
+    module = AdapterModule(spec.name)
+    module.__spec__ = spec
+    module.__package__ = spec.parent
+    module.__dict__["__path__"] = [str(module_path.parent)]
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
-    if not isinstance(module, Adapter):
-        raise RuntimeError("managed WebSocket adapter has an invalid interface")
     return module.run(input_value)
