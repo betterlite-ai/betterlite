@@ -20,6 +20,7 @@ impl Write for Captured {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let mut captured = self.0.lock().unwrap_or_else(PoisonError::into_inner);
         captured.extend_from_slice(buf);
+        drop(captured);
         Ok(buf.len())
     }
 
