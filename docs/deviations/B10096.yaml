@@ -1,0 +1,39 @@
+task: B10096
+deviations:
+  - what: >-
+      Keys in the .db files are compact JSON from serde_json (no spaces after commas and colons,
+      non-ASCII written as UTF-8). prometheus_client writes json.dumps with sort_keys, ", " and
+      ": " separators and \u escapes.
+    why: >-
+      Every reader, prometheus_client's MultiProcessCollector and B10095's, parses the key before
+      it merges, so both spellings give the same scrape; matching json.dumps byte for byte would
+      need yet another copy of a Python JSON formatter in a crate that may depend on no other
+      betterlite crate.
+    link: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/mmap_dict.py#L141-L145
+  - what: >-
+      A file write that fails (the folder was removed or turned read-only) logs an error naming
+      the file and leaves the in-process value changed. prometheus_client raises the OSError from
+      the metric call.
+    why: >-
+      Collector::update has no error channel, and the request that moved the metric must not fail
+      because a metrics file did; LiteLLM's callers mostly catch the exception and log it too.
+    link: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/values.py#L71-L85
+  - what: >-
+      PROMETHEUS_MULTIPROC_DIR set to empty text or to a path that is not a directory stops
+      startup (B8613 builds the writer). LiteLLM starts, writes its files into the working
+      directory for empty text or fails at the first metric it builds, and fails its /metrics
+      mount only when prometheus is a callback.
+    why: >-
+      One check when the registry is built gives one clear error at boot, instead of files in the
+      working directory or metric calls that fail later.
+    link: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/values.py#L71-L80
+  - what: >-
+      A labelled series gets its zero entries from its first update. prometheus_client writes
+      them when the child is built, which its .labels(...) call does before any inc or observe.
+    why: >-
+      betterlite's labels(...) only builds a handle that shares the metric's samples and writer,
+      so it has nowhere to create a series without also changing the in-process samples; every
+      LiteLLM call site updates the child it takes, and the file then holds the zeros plus the
+      first value as it does there.
+    link: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/values.py#L80-L85
+kept_bugs: []
