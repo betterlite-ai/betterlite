@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 mod fixtures;
+mod replay;
 
 use std::iter;
 use std::sync::{Arc, Mutex};
@@ -15,9 +16,9 @@ use serde_json::{Map, Value};
 use self::fixtures::support::{
     Entry, FIXED_CLOCK, FIXED_TIMESTAMP, FIXED_UUID, FakeChunks, FakeError, FakeEvents,
     FakeExecution, RecordingProcessing, StreamParam, call, caller_with_identity_extras,
-    chat_response, created_at_of, finish_of, hidden, hidden_usage_of, id_of, kwargs, post_stream,
+    chat_response, finish_of, hidden, hidden_member_of, id_of, kwargs, post_stream,
     post_stream_missing_record, post_stream_named, responses_body, sse, stamps, terminal_event,
-    text_of, tool_calls_of,
+    text_of,
 };
 use super::error::DispatchError;
 use super::handler::completion;
@@ -28,7 +29,6 @@ use crate::api::api_boundaries::ApiLimits;
 use crate::api::chat_response_stream::source::AsyncChunkStream;
 use crate::api::messages_stream_split::errors::StreamFailure;
 use crate::api::response_chat_result::records::ModelResponse;
-use crate::api::responses_tool_results::records::{FunctionChunk, ToolCallChunk};
 
 fn optional_params(mut fields: IndexMap<String, Json>, params: &str) -> IndexMap<String, Json> {
     let parsed = serde_json::from_str::<Json>(params).unwrap();
@@ -153,15 +153,6 @@ fn created_of(chunk: &Json) -> Option<Json> {
     match chunk {
         Json::Object(fields) => fields.get("created").cloned(),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
-    }
-}
-
-fn contains_text(value: &Json, needle: &str) -> bool {
-    match value {
-        Json::Text(text) => text.contains(needle),
-        Json::List(items) => items.iter().any(|item| contains_text(item, needle)),
-        Json::Object(fields) => fields.values().any(|value| contains_text(value, needle)),
-        Json::Null | Json::Bool(_) | Json::Number(_) => false,
     }
 }
 
@@ -588,126 +579,6 @@ async fn a_typed_responses_object_ignores_the_stream_flag(#[case] stream_request
 }
 
 #[tokio::test]
-async fn a_direct_model_response_passes_through_when_not_streaming() {
-    let execution = FakeExecution::new(Answer::Chat(chat_response()));
-    let output = expect_ok(completion(&execution, call(&kwargs("gpt-4o-mini", "openai"))).await);
-    assert_eq!(expect_chat(output), chat_response());
-}
-
-#[tokio::test]
-async fn a_direct_model_response_streams_through_the_mock_iterator() {
-    let execution = FakeExecution::new(Answer::Chat(chat_response()));
-    let chunks = drain(expect_stream(expect_ok(
-        completion(&execution, call(&streaming())).await,
-    )))
-    .await;
-    assert_eq!(joined(&chunks), "hello");
-    assert_eq!(finishes(&chunks), vec![String::from("stop")]);
-    assert!(ids(&chunks).iter().all(|id| id == "chatcmpl-x"));
-    assert!(!ids(&chunks).is_empty());
-    // the wrapper builds its own chunk, so the replayed created makes way for the wrapper's clock
-    assert_eq!(
-        created_of(&chunks[0]),
-        Some(Json::Number(serde_json::Number::from(FIXED_CLOCK)))
-    );
-}
-
-#[tokio::test]
-async fn a_replayed_response_keeps_its_tool_calls_and_finish_reason() {
-    let mut body = chat_response();
-    body.choices[0].finish_reason = String::from("tool_calls");
-    body.choices[0].message.content = None;
-    body.choices[0].message.tool_calls = Some(vec![ToolCallChunk {
-        id: String::from("call_1"),
-        kind: String::from("function"),
-        function: FunctionChunk {
-            name: String::from("get_weather"),
-            arguments: String::from(r#"{"city":"Paris"}"#),
-            provider_specific_fields: None,
-        },
-        index: 0,
-        provider_specific_fields: None,
-    }]);
-    let execution = FakeExecution::new(Answer::Chat(body));
-    let chunks = drain(expect_stream(expect_ok(
-        completion(&execution, call(&streaming())).await,
-    )))
-    .await;
-    assert_eq!(finishes(&chunks), vec![String::from("tool_calls")]);
-    let calls = tool_calls_of(&chunks[0]).expect("the replayed chunk carries the tool calls");
-    assert!(contains_text(&calls, "call_1"));
-    assert!(contains_text(&calls, "get_weather"));
-    assert!(contains_text(&calls, "Paris"));
-}
-
-#[tokio::test]
-async fn a_replayed_response_keeps_its_length_finish_reason() {
-    let mut body = chat_response();
-    body.choices[0].finish_reason = String::from("length");
-    let execution = FakeExecution::new(Answer::Chat(body));
-    let chunks = drain(expect_stream(expect_ok(
-        completion(&execution, call(&streaming())).await,
-    )))
-    .await;
-    assert_eq!(finishes(&chunks), vec![String::from("length")]);
-}
-
-#[tokio::test]
-async fn a_replayed_response_carries_its_usage_into_the_stream_totals() {
-    let mut body = chat_response();
-    body.usage = Some(
-        serde_json::from_str(r#"{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}"#)
-            .unwrap(),
-    );
-    let execution = FakeExecution::new(Answer::Chat(body));
-    let chunks = drain(expect_stream(expect_ok(
-        completion(&execution, call(&streaming())).await,
-    )))
-    .await;
-    let closing = chunks.last().expect("the wrapper closes the stream");
-    let usage = hidden_usage_of(closing).expect("the closing chunk carries the usage total");
-    let Json::Object(fields) = usage else {
-        panic!("the usage total is an object");
-    };
-    assert_eq!(
-        fields.get("total_tokens"),
-        Some(&Json::Number(serde_json::Number::from(3_i64)))
-    );
-}
-
-#[tokio::test]
-async fn a_replay_keeps_an_empty_id_and_takes_the_wrapper_clock() {
-    let mut body = chat_response();
-    body.id = String::new();
-    body.created = 0;
-    body.choices[0].message.content = Some(String::from("hey"));
-    let execution = FakeExecution::new(Answer::Chat(body));
-    let chunks = drain(expect_stream(expect_ok(
-        completion(&execution, call(&streaming())).await,
-    )))
-    .await;
-    assert_eq!(joined(&chunks), "hey");
-    assert!(ids(&chunks).iter().all(String::is_empty));
-    assert_eq!(
-        created_of(&chunks[0]),
-        Some(Json::Number(serde_json::Number::from(FIXED_CLOCK)))
-    );
-}
-
-#[tokio::test]
-async fn a_replay_without_choices_closes_the_stream_itself() {
-    let mut body = chat_response();
-    body.choices.clear();
-    let execution = FakeExecution::new(Answer::Chat(body));
-    let chunks = drain(expect_stream(expect_ok(
-        completion(&execution, call(&streaming())).await,
-    )))
-    .await;
-    assert!(joined(&chunks).is_empty());
-    assert_eq!(finishes(&chunks), vec![String::from("stop")]);
-}
-
-#[tokio::test]
 async fn a_non_object_payload_is_unexpected() {
     let payload = BridgeResponse {
         payload: ResponsePayload::Dict(Json::Text(String::from("hi"))),
@@ -862,7 +733,7 @@ async fn the_translator_and_wrapper_stamp_chunks_from_the_injected_sources() {
         Some(Json::Number(serde_json::Number::from(FIXED_CLOCK)))
     );
     assert_eq!(
-        created_at_of(&chunks[0]),
+        hidden_member_of(&chunks[0], "created_at"),
         Some(Json::Number(
             serde_json::Number::from_f64(FIXED_TIMESTAMP).unwrap()
         ))

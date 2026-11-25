@@ -146,36 +146,27 @@ async fn deliver<Source>(
 where
     Source: Error + 'static,
 {
-    match answer {
-        Answer::Response(response) => response_output(input, model_response, delivery, *response),
-        Answer::Chat(chat) if !delivery.stream => Ok(BridgeOutput::Chat(chat)),
-        Answer::Chat(chat) => stream_output(
-            &input.model,
-            &input.custom_llm_provider,
-            delivery,
-            stamps,
-            StreamSource::Chat(chat),
-        ),
-        Answer::Events(events) if delivery.stream => stream_output(
-            &input.model,
-            &input.custom_llm_provider,
-            delivery,
-            stamps,
-            StreamSource::Events(events),
-        ),
+    let source = match answer {
+        Answer::Response(response) => {
+            return response_output(input, model_response, delivery, *response);
+        }
+        Answer::Chat(chat) if !delivery.stream => return Ok(BridgeOutput::Chat(chat)),
+        Answer::Chat(chat) => StreamSource::Chat(chat),
+        Answer::Events(events) if delivery.stream => StreamSource::Events(events),
         Answer::Events(events) => {
             let response = super::collect::collect(events, &delivery.limits).await?;
-            response_output(input, model_response, delivery, response)
+            return response_output(input, model_response, delivery, response);
         }
-        Answer::Cached(cached) if delivery.stream => stream_output(
-            &input.model,
-            &input.custom_llm_provider,
-            delivery,
-            stamps,
-            StreamSource::Cached(cached),
-        ),
-        Answer::Cached(mut cached) => drain_cached(&mut *cached).await,
-    }
+        Answer::Cached(cached) if delivery.stream => StreamSource::Cached(cached),
+        Answer::Cached(mut cached) => return drain_cached(&mut *cached).await,
+    };
+    stream_output(
+        &input.model,
+        &input.custom_llm_provider,
+        delivery,
+        stamps,
+        source,
+    )
 }
 
 // A collected stream keeps its response's own hidden keys over the iterator's, and B919 reads the merged map

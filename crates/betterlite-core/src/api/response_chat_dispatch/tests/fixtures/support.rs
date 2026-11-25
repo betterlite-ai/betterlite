@@ -412,25 +412,20 @@ pub(crate) fn caller_with_identity_extras() -> ModelResponse {
 
 // A whole chat answer, as a provider without native streaming returns one
 pub(crate) fn chat_response() -> Box<ModelResponse> {
-    Box::new(ModelResponse {
-        id: String::from("chatcmpl-x"),
-        created: 1_700_000_000,
-        model: Some(String::from("gpt-4o-mini")),
-        object: String::from("chat.completion"),
-        system_fingerprint: None,
-        choices: vec![ChatChoice {
-            finish_reason: String::from("stop"),
-            index: 0,
-            message: ChatMessage {
-                content: Some(String::from("hello")),
-                role: ChatRole::Assistant,
-                ..ChatMessage::default()
-            },
-        }],
-        usage: None,
-        extra: Map::new(),
-        hidden_params: Map::new(),
-    })
+    let mut response = caller_response();
+    response.id = String::from("chatcmpl-x");
+    response.created = 1_700_000_000;
+    response.model = Some(String::from("gpt-4o-mini"));
+    response.choices = vec![ChatChoice {
+        finish_reason: String::from("stop"),
+        index: 0,
+        message: ChatMessage {
+            content: Some(String::from("hello")),
+            role: ChatRole::Assistant,
+            ..ChatMessage::default()
+        },
+    }];
+    Box::new(response)
 }
 
 pub(crate) const FIXED_UUID: &str = "00000000-0000-4000-8000-000000000001";
@@ -541,26 +536,15 @@ pub(crate) fn tool_calls_of(chunk: &Json) -> Option<Json> {
     delta.get("tool_calls").cloned()
 }
 
-// The wrapper's running usage total, folded into the same private map
-pub(crate) fn hidden_usage_of(chunk: &Json) -> Option<Json> {
+// A member the wrapper folded into the private map, such as its running usage or its created_at
+pub(crate) fn hidden_member_of(chunk: &Json, name: &str) -> Option<Json> {
     let Json::Object(fields) = chunk else {
         return None;
     };
     let Json::Object(hidden) = fields.get("_hidden_params")? else {
         return None;
     };
-    hidden.get("usage").cloned()
-}
-
-// The wrapper's created_at, folded under the private name ModelResponseStream uses
-pub(crate) fn created_at_of(chunk: &Json) -> Option<Json> {
-    let Json::Object(fields) = chunk else {
-        return None;
-    };
-    let Json::Object(hidden) = fields.get("_hidden_params")? else {
-        return None;
-    };
-    hidden.get("created_at").cloned()
+    hidden.get(name).cloned()
 }
 
 pub(crate) fn responses_body(text: &str) -> String {
