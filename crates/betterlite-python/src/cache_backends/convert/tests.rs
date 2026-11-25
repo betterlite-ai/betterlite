@@ -7,6 +7,7 @@ use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_models::decisions::Json;
 use betterlite_redis::cache_primitives::decode::CachedValue;
 use indexmap::IndexMap;
+use rstest::rstest;
 use serde_json::Number;
 
 use super::*;
@@ -88,27 +89,31 @@ fn backends_request_malformed_value_is_an_error() {
     cache_value("{").unwrap_err();
 }
 
-// serde_json's 128 levels still parse; one more, or a hundred thousand, is a value error and no deeper recursion.
 #[test]
-fn backends_request_nesting_past_the_limit_is_an_error() {
+fn backends_request_nesting_at_the_limit_parses() {
     let lists = format!("{}{}", "[".repeat(MAX_DEPTH), "]".repeat(MAX_DEPTH));
     json_value(&lists).unwrap();
     let objects = format!("{}1{}", r#"{"a":"#.repeat(MAX_DEPTH), "}".repeat(MAX_DEPTH));
     json_value(&objects).unwrap();
-    let deep = 100_000_usize;
-    let refused = [
-        format!("[{lists}]"),
-        format!(r#"{{"a":{objects}}}"#),
-        format!("{}{}", "[".repeat(deep), "]".repeat(deep)),
-    ];
-    for text in refused {
-        let error = json_value(&text).unwrap_err();
-        assert!(matches!(
-            error,
-            BackendHandleError::TooDeep { limit: MAX_DEPTH }
-        ));
-        assert!(error.is_value_error());
-    }
+}
+
+#[rstest]
+#[case::lists_past_limit("[", "", "]", 129_usize)]
+#[case::objects_past_limit(r#"{"a":"#, "1", "}", 129_usize)]
+#[case::very_deep_lists("[", "", "]", 100_000_usize)]
+fn backends_request_nesting_past_the_limit_is_an_error(
+    #[case] opening: &str,
+    #[case] value: &str,
+    #[case] closing: &str,
+    #[case] depth: usize,
+) {
+    let text = format!("{}{value}{}", opening.repeat(depth), closing.repeat(depth));
+    let error = json_value(&text).unwrap_err();
+    assert!(matches!(
+        error,
+        BackendHandleError::TooDeep { limit: MAX_DEPTH }
+    ));
+    assert!(error.is_value_error());
 }
 
 #[test]
