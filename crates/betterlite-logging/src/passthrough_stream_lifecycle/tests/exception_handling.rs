@@ -176,7 +176,7 @@ async fn disconnect_during_usage_recovery_preserves_usage_and_dispatches_one_fai
     ));
     assert_eq!(stream.next().await.unwrap().unwrap(), b"data: partial\n\n");
 
-    let pending_read = Box::pin(stream.next());
+    let mut pending_read = Box::pin(stream.next());
     let waiter = tokio::task::spawn_blocking({
         let entered = Arc::clone(&entered);
         move || entered.wait()
