@@ -1,7 +1,7 @@
 id: B943
 milestone: M5 api families
 title: Responses ws native
-status: todo
+status: done
 depends_on: [B009, B010, B171, B942, B1087, B508, B905, B931, B925, B904, B901, B002, B247, B249, B250, B251, B254]
 file: tasks/B943-responses-ws-native.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/responses/streaming_iterator.py"
 parent: B080
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3115

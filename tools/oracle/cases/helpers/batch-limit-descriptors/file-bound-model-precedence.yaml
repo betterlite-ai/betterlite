@@ -1,0 +1,56 @@
+kind: helper
+name: batch-limit-descriptors-file-bound-model-precedence
+call:
+  batch_limit_descriptors:
+    settings: {}
+    principal: {}
+    router:
+      models:
+        gpt-4o-ifood:
+          custom_llm_provider: openai
+          api_key: secret-key
+          vertex_project: proj-1
+          unrelated_key: dropped
+    calls:
+      - function: file_bound_model
+        data:
+          input_file_id: "file-bGl0ZWxsbTpmaWxlLWFiYzEyMzttb2RlbCxncHQtNG8taWZvb2Q"
+          model: top-model
+      - function: batch_routing_model
+        data:
+          input_file_id: "file-bGl0ZWxsbTpmaWxlLWFiYzEyMzttb2RlbCxncHQtNG8taWZvb2Q"
+          model: top-model
+      - function: file_bound_model
+        data:
+          input_file_id: "bGl0ZWxsbV9wcm94eTphcHBsaWNhdGlvbi9vY3RldC1zdHJlYW07dW5pZmllZF9pZCx1aWQ7dGFyZ2V0X21vZGVsX25hbWVzLG1vZGVsLWEsbW9kZWwtYg"
+          model: top-model
+      - function: batch_routing_model
+        data:
+          input_file_id: "bGl0ZWxsbV9wcm94eTphcHBsaWNhdGlvbi9vY3RldC1zdHJlYW07dW5pZmllZF9pZCx1aWQ7dGFyZ2V0X21vZGVsX25hbWVzLG1vZGVsLWEsbW9kZWwtYg"
+          model: top-model
+      - function: file_bound_model
+        data:
+          input_file_id: file-original
+          model: top-model
+      - function: batch_routing_model
+        data:
+          input_file_id: file-original
+          model: top-model
+      - function: resolve_batch_provider
+        model: gpt-4o-ifood
+      - function: resolve_batch_provider
+        model: unknown-model
+      - function: resolve_batch_provider
+        model: null
+      - function: resolve_batch_input_file_fetch_params
+        file_id: "file-bGl0ZWxsbTpmaWxlLWFiYzEyMzttb2RlbCxncHQtNG8taWZvb2Q"
+        custom_llm_provider: custom
+        data:
+          model: top-model
+      - function: resolve_batch_input_file_fetch_params
+        file_id: file-original
+        custom_llm_provider: custom
+        data:
+          model: unknown-model
+env: {}
+compare: {ignore: []}

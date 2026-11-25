@@ -2399,6 +2399,7 @@ dependencies = [
  "betterlite-db",
  "betterlite-env",
  "betterlite-http",
+ "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
  "betterlite-secrets",
@@ -3003,6 +3004,7 @@ dependencies = [
  "betterlite-policy",
  "betterlite-prompts",
  "betterlite-provider",
+ "betterlite-rate-limit",
  "betterlite-redact",
  "betterlite-secret-managers",
  "betterlite-secrets",
@@ -3521,6 +3523,7 @@ dependencies = [
  "rust_decimal",
  "serde",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]
@@ -3807,6 +3810,7 @@ dependencies = [
  "betterlite-prometheus",
  "betterlite-redact",
  "betterlite-redis",
+ "betterlite-reporting",
  "betterlite-roi",
  "betterlite-routes",
  "betterlite-secret-managers",
@@ -4029,10 +4033,21 @@ dependencies = [
  "indexmap 2.14.2",
  "rstest",
  "rust_decimal",
+ "serde",
+ "serde_json",
+ "tempfile",
  "thiserror",
  "tokio",
  "tower",
  "tracing",
+]
+
+[[package]]
+name = "betterlite-prometheus-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-prometheus",
+ "libfuzzer-sys",
 ]
 
 [[package]]
@@ -4242,6 +4257,7 @@ dependencies = [
  "betterlite-error",
  "betterlite-guardrails",
  "betterlite-http",
+ "betterlite-http-fixture",
  "betterlite-logging",
  "betterlite-mcp",
  "betterlite-models",
@@ -4253,7 +4269,10 @@ dependencies = [
  "betterlite-redis",
  "betterlite-sdk",
  "betterlite-secrets",
+ "betterlite-streaming",
  "betterlite-tokenizer",
+ "betterlite-vertex",
+ "bytes",
  "chrono",
  "futures-util",
  "http 1.5.0",
@@ -4263,6 +4282,7 @@ dependencies = [
  "mutants",
  "pyo3",
  "pyo3-async-runtimes",
+ "rand 0.10.3",
  "rmcp",
  "rstest",
  "rust_decimal",
@@ -4695,6 +4715,7 @@ dependencies = [
  "betterlite-error",
  "betterlite-guardrails",
  "betterlite-http",
+ "betterlite-lens",
  "betterlite-logging",
  "betterlite-mcp",
  "betterlite-models",
@@ -4710,6 +4731,7 @@ dependencies = [
  "betterlite-rate-limit",
  "betterlite-redact",
  "betterlite-redis",
+ "betterlite-reporting",
  "betterlite-roi",
  "betterlite-router",
  "betterlite-secret-managers",
@@ -4734,6 +4756,7 @@ dependencies = [
  "form_urlencoded",
  "futures-channel",
  "futures-util",
+ "garde",
  "getrandom 0.4.3",
  "hex",
  "hmac 0.13.0",

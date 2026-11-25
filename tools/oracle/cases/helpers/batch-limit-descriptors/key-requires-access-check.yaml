@@ -1,0 +1,17 @@
+kind: helper
+name: batch-limit-descriptors-key-requires-access-check
+call:
+  batch_limit_descriptors:
+    settings: {}
+    principal:
+      api_key: key-batch
+      models:
+        - gpt
+      access_group_ids:
+        - group-1
+    calls:
+      - function: key_requires_access_check
+      - function: should_skip
+        data: {}
+env: {}
+compare: {ignore: []}

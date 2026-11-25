@@ -1,0 +1,17 @@
+kind: helper
+name: provider-hint-sources
+call:
+  b10059:
+    headers:
+      - [custom-llm-provider, bedrock]
+    query: custom_llm_provider=vertex_ai
+    body:
+      custom_llm_provider: openai
+calls:
+  - b10059:
+      headers: []
+      query: null
+      body: {}
+env: {}
+compare:
+  ignore: []

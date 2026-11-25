@@ -1,0 +1,23 @@
+kind: helper
+name: refresh-no-refresh-token
+call:
+  b4660:
+    function: refresh
+    server_id: srv
+    user_id: user
+    server:
+      server_id: srv
+      name: Server
+      transport: http
+      auth_type: oauth2
+      client_id: client
+      client_secret: secret
+      token_url: https://idp.test/token
+    token:
+      access_token: stale
+      scopes: [read]
+    post_answer: {access_token: fresh, expires_in: 3600}
+    now: 1700000000.5
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,34 @@
+kind: helper
+name: request-defaults-and-routing
+call:
+  responses_ws_native:
+    first_message: not-json
+    client_frames:
+      - '{"type":"response.create","input":"routed"}'
+    backend_frames: []
+    request_data: {}
+calls:
+- responses_ws_native:
+    first_message: 'null'
+    client_frames: []
+    backend_frames:
+      - '{"type":"response.completed"}'
+    request_data: {}
+- responses_ws_native:
+    first_message: '{"type":"response.create","response":{"input":"old"},"other":1}'
+    client_frames:
+      - '{"type":"response.create","input":[{"type":"input_text","text":"flat"}]}'
+    backend_frames:
+      - not json
+      - '{"type":"unknown"}'
+      - '{"type":"response.output_text.delta","delta":"x"}'
+    request_data: {}
+- responses_ws_native:
+    first_message: null
+    client_frames:
+      - '{"type":"response.create","input":"keep","other":1}'
+    backend_frames: []
+    request_data: {}
+env: {}
+compare:
+  ignore: []

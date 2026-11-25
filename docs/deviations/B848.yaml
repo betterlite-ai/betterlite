@@ -1,0 +1,18 @@
+task: B848
+deviations:
+  - what: A team row whose stored models, admins or members column is NULL reads as an empty list.
+    why: LiteLLM's LiteLLM_TeamTable declares those fields as non-optional lists, so model_validate refuses a NULL row and the request fails; betterlite's migrations allow NULL and its SQL fills an empty list, because no working setup can rely on a validation crash.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/team.py#L63-L82
+  - what: An access group row whose stored access_model_names, access_mcp_server_ids, access_agent_ids, assigned_team_ids or assigned_key_ids column is NULL reads as an empty list.
+    why: LiteLLM's LiteLLM_AccessGroupTable declares those columns as non-optional lists, so a NULL row fails validation there; betterlite's migrations allow NULL and its SQL fills empty lists, because no working setup can rely on a validation crash.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/access_group.py#L13-L21
+  - what: The user, team and access-group reads of one request all finish before its catalog expansions run.
+    why: betterlite reads through one async trait whose future cannot hold the catalog across an await, so each policy reads first and expands after; the reads keep their relative order and every single failure keeps its status, code and detail, so only a request where both a lookup and a later read fail reports the other failure first.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14386-L14397
+  - what: get_all_team_models returns each model's team ids in the order they were collected.
+    why: LiteLLM builds a set and converts it with list(), so its order is arbitrary; betterlite keeps insertion order, which is a stable refinement of the same mapping.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14399-L14403
+kept_bugs:
+  - what: An unrestricted team reaches a team deployment when its team_id is a substring of the team's id, not only on equality.
+    why: LiteLLM uses Python's in operator on the strings, and production teams rely on ids that embed their team id, so the substring gate is copied on purpose.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14279

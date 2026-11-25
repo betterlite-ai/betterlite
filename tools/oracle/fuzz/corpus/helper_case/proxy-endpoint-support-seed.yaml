@@ -1,0 +1,12 @@
+kind: helper
+name: proxy-endpoint-support-seed
+call:
+  proxy_endpoint_support:
+    calls:
+      - {function: record, exception: {kind: http, status_code: 404, detail: missing}, litellm_call_id: null, notice: false}
+      - {function: record, exception: {kind: proxy, message: original message, error_type: invalid_request_error, param: purpose, code: 400, headers: {x-other: keep}}, litellm_call_id: seed-id, notice: false}
+      - {function: record, exception: {kind: failure, message: boom, status_code: 500, param: null}, litellm_call_id: seed-id, notice: false}
+      - {function: known_model, models: [model_a, model_a], lookups: [model_a, Model_A, null]}
+      - {function: known_model, models: null, lookups: [model_a]}
+env: {}
+compare: {ignore: []}

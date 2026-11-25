@@ -1,0 +1,27 @@
+kind: helper
+name: file-stream-projection-streaming-projection
+call:
+  file_stream_projection:
+    calls:
+      - function: streaming_projection
+        custom_llm_provider: openai
+        file_id: encoded
+        data: {model: m, file_id: encoded, x: 1}
+        should_route: true
+        original_file_id: f
+        credentials: {custom_llm_provider: openai, api_key: k}
+        predicates: [openai, hosted_vllm, litellm_proxy, vertex_ai, azure, bedrock, anthropic, "", null]
+      - function: streaming_projection
+        custom_llm_provider: azure
+        file_id: f
+        data: {model: m, file_id: f, x: 1}
+        should_route: false
+        credentials: {custom_llm_provider: openai, api_key: k}
+      - function: streaming_projection
+        custom_llm_provider: openai
+        file_id: f
+        data: {model: m, file_id: f, y: 2}
+        should_route: true
+        predicates: [openai]
+env: {}
+compare: {ignore: []}

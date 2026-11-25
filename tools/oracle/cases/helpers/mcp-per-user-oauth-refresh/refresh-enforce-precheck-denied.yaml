@@ -1,0 +1,26 @@
+kind: helper
+name: refresh-enforce-precheck-denied
+call:
+  b4660:
+    function: refresh
+    server_id: srv
+    user_id: user
+    server:
+      server_id: srv
+      name: Server
+      transport: http
+      auth_type: oauth2
+      client_id: client
+      client_secret: secret
+      token_url: https://idp.test/token
+      oauth_identity_binding: {mode: enforce, issuer: https://idp.test, audiences: [aud]}
+    token:
+      access_token: stale
+      refresh_token: old-refresh
+      scopes: [read]
+    post_answer: {access_token: fresh, expires_in: 3600}
+    validators: [{outcome: denied}]
+    now: 1700000000.5
+env: {}
+compare:
+  ignore: []

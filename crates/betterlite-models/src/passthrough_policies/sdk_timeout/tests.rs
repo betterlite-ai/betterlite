@@ -1,10 +1,11 @@
 #![cfg(test)]
 
 use rstest::rstest;
+use serde_json::json;
 
 use super::{
     DeploymentTimeouts, RequestTimeouts, RouterTimeouts, TimeoutError, TimeoutValue,
-    resolve_sdk_timeout,
+    resolve_sdk_timeout, timeout_value,
 };
 
 struct Case {
@@ -57,6 +58,44 @@ fn empty_router() -> RouterTimeouts {
         stream_timeout: None,
         timeout: None,
     }
+}
+
+#[test]
+fn an_absent_or_null_timeout_level_is_unset() {
+    let absent = timeout_value(None);
+    let null = timeout_value(Some(&json!(null)));
+    assert_eq!(absent, None);
+    assert_eq!(null, None);
+}
+
+#[test]
+fn a_number_timeout_level_keeps_its_seconds() {
+    let fraction = timeout_value(Some(&json!(12.5_f64)));
+    let whole = timeout_value(Some(&json!(30_i32)));
+    assert_eq!(fraction, Some(number(12.5_f64)));
+    assert_eq!(whole, Some(number(30.0_f64)));
+}
+
+#[test]
+fn a_bool_timeout_level_reads_as_one_or_zero_seconds() {
+    let enabled = timeout_value(Some(&json!(true)));
+    let disabled = timeout_value(Some(&json!(false)));
+    assert_eq!(enabled, Some(number(1.0_f64)));
+    assert_eq!(disabled, Some(number(0.0_f64)));
+}
+
+#[test]
+fn a_text_timeout_level_keeps_its_text() {
+    let written = timeout_value(Some(&json!("30")));
+    assert_eq!(written, Some(text("30")));
+}
+
+#[test]
+fn a_list_or_object_timeout_level_stays_its_json_text() {
+    let list = timeout_value(Some(&json!([1_i32, 2_i32])));
+    let object = timeout_value(Some(&serde_json::from_str(r#"{"a": 1}"#).unwrap()));
+    assert_eq!(list, Some(text("[1,2]")));
+    assert_eq!(object, Some(text(r#"{"a":1}"#)));
 }
 
 #[test]

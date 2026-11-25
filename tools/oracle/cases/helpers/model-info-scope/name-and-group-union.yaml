@@ -1,0 +1,27 @@
+kind: helper
+name: model-info-scope-name-and-group-union
+call:
+  model_info_scope:
+    function: direct_access
+    model_list:
+      - model_name: shared
+        litellm_params: {model: openai/gpt-4o}
+        model_info: {id: s1}
+      - model_name: member
+        litellm_params: {model: openai/gpt-4o}
+        model_info: {id: m1, access_groups: [ag-1]}
+      - model_name: other
+        litellm_params: {model: openai/gpt-4o}
+        model_info: {id: o1}
+    model_group_alias: {}
+    key_models: []
+    user: {user_id: alice, teams: [], models: [shared, ag-1]}
+    all_models: []
+    grant: []
+    creators: {}
+    teams: []
+    user_teams: null
+    access_groups: []
+    caller: null
+env: {}
+compare: {ignore: []}

@@ -1,14 +1,14 @@
 id: B7890
 milestone: M12 python
 title: Python passthrough routes, helpers and timeouts
-status: todo
+status: done
 depends_on: [B6040, B158, B3571, B3572, B8690]
 file: tasks/B7890-python-passthrough.yaml
 covers:
   - "litellm/passthrough/**"
 parent: B161
 split_from: B161
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3057

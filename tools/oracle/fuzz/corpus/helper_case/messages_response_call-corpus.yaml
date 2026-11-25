@@ -1,0 +1,24 @@
+kind: helper
+name: messages_response_call-corpus
+call:
+  messages_response_call:
+    call:
+      request:
+        model: gpt-4o
+        messages:
+        - role: user
+          content: hi
+        max_tokens: 64
+      stream: false
+      settings: {}
+      forwarded: {}
+    include_supported: true
+    provider: openai
+    answer:
+      shape: response
+      body:
+        id: resp_b985_corpus
+        created_at: 1
+        output: []
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,103 @@
+kind: helper
+name: batch-limit-descriptors-max-output-estimate
+call:
+  batch_limit_descriptors:
+    settings: {}
+    principal: {}
+    calls:
+      - function: estimate_output_tokens
+        entry:
+          url: /v1/embeddings
+          body:
+            max_tokens: 99
+        min_configured_otpm_limit: null
+      - function: estimate_output_tokens
+        entry:
+          body:
+            max_tokens: 100
+        min_configured_otpm_limit: null
+      - function: estimate_output_tokens
+        entry:
+          body:
+            max_completion_tokens: 40
+        min_configured_otpm_limit: null
+      - function: estimate_output_tokens
+        entry:
+          body:
+            max_output_tokens: 25
+        min_configured_otpm_limit: null
+      - function: estimate_output_tokens
+        entry:
+          body:
+            max_tokens: null
+            max_completion_tokens: 40
+            max_output_tokens: 25
+        min_configured_otpm_limit: null
+      - function: estimate_output_tokens
+        entry:
+          body: {}
+        min_configured_otpm_limit: null
+      - function: estimate_output_tokens
+        entry: {}
+        min_configured_otpm_limit: null
+      - function: estimate_output_tokens
+        entry:
+          body:
+            max_tokens: -5
+        min_configured_otpm_limit: null
+      - function: estimate_output_tokens
+        entry:
+          body:
+            max_tokens: 12.5
+        min_configured_otpm_limit: null
+      - function: estimate_output_tokens
+        entry:
+          body:
+            max_tokens: -0.5
+        min_configured_otpm_limit: null
+      - function: estimate_output_tokens
+        entry:
+          body:
+            max_tokens: "12"
+        min_configured_otpm_limit: null
+      - function: estimate_output_tokens
+        entry:
+          body:
+            max_tokens: " 12 "
+        min_configured_otpm_limit: null
+      - function: estimate_output_tokens
+        entry:
+          body:
+            max_tokens: "abc"
+        min_configured_otpm_limit: null
+      - function: estimate_output_tokens
+        entry:
+          body:
+            max_tokens: 10
+            n: 3
+        min_configured_otpm_limit: null
+      - function: estimate_output_tokens
+        entry:
+          body:
+            n: 3
+        min_configured_otpm_limit: null
+      - function: estimate_output_tokens
+        entry:
+          body: {}
+        min_configured_otpm_limit: 100
+      - function: estimate_output_tokens
+        entry:
+          body: {}
+        min_configured_otpm_limit: 3
+      - function: estimate_output_tokens
+        entry:
+          body:
+            max_tokens: true
+        min_configured_otpm_limit: null
+      - function: estimate_output_tokens
+        entry:
+          body:
+            max_tokens: false
+        min_configured_otpm_limit: null
+env: {}
+compare: {ignore: []}

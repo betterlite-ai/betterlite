@@ -1,0 +1,24 @@
+task: B4660
+deviations:
+  - what: The server lookup, the database handle, the Redis cache and coordinator, the cipher and the clock are passed in through constructors. LiteLLM reads them from proxy_server globals on each call.
+    why: The repo rules forbid module-level state. The lazy rebuild when Redis appears is kept, so a Redis that connects after startup is still picked up.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/per_user_oauth_store.py#L119-L122
+  - what: Token endpoint requests go through the B173 pooled client behind PooledTokenPost, so its timeouts, redirect rules and body size cap apply.
+    why: Every outbound request in betterlite goes through the pool.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/per_user_oauth_store.py#L96-L117
+  - what: expires_in strings are parsed with ASCII digits only and values outside the i64 range read as absent. Python's int() also takes other Unicode decimal digits and any size.
+    why: An identity provider sends plain ASCII seconds, and the difference shows only for a deliberately odd string.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/authz_code_refresher.py#L53-L63
+  - what: A token endpoint body that is JSON but not an object gives None. LiteLLM calls .get on it and fails with an AttributeError.
+    why: A refresh must be a miss, never a server error; the declared type of the answer is a dict, so no oracle case sends a list.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/per_user_oauth_store.py#L109-L117
+  - what: An expires_in whose resulting instant is outside what chrono can represent leaves expires_at absent; LiteLLM keeps an arbitrary float. An expires_in above the i64 range already reads as absent, as the previous entry says.
+    why: betterlite stores instants as chrono DateTime values, and an unrepresentable instant reads as no expiry rather than a wrapped or clamped time.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/authz_code_refresher.py#L172
+kept_bugs:
+  - what: With no database handle the persist writes nothing and the caller still gets the refreshed token, so a no-database proxy serves a token it never saved. The reader, by contrast, fails with TokenStoreUnavailable.
+    why: A working single-replica setup without a database relies on refreshes still succeeding; the task keeps LiteLLM's asymmetry on purpose.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/per_user_oauth_store.py#L81-L82
+  - what: A float expires_in, such as 3600.0, is ignored and no expiry is recorded, while the string "3600" parses. A JSON number is a valid RFC 6749 expires_in.
+    why: Identity providers send integers or numeric strings, and a setup that sends a float depends on LiteLLM treating the token as having no expiry; the refresher keeps that.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/authz_code_refresher.py#L53-L63

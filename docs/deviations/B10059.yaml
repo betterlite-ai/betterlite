@@ -1,0 +1,12 @@
+task: B10059
+deviations:
+  - what: >-
+      The three accessors take the request's parts instead of the Request: the HeaderMap for the header, Option<&str>
+      from Uri::query for the query string and the already decoded JsonObject for the body, so provider_from_body
+      never reads body bytes.
+    why: >-
+      The route reads the body once through B1100's read_request_body and passes its JsonObject, which keeps the
+      content-type branches, the OTLP and opaque-audio short circuits and the decoding errors in one place; the three
+      values the accessors return are the ones LiteLLM's accessors return for the same request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/openai_endpoint_utils.py#L52-L81
+kept_bugs: []

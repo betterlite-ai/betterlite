@@ -1,0 +1,6 @@
+task: B4503
+deviations:
+  - what: The preview window bounds are whole milliseconds derived from the integer microsecond timestamp, not from a float seconds value multiplied by 1000.
+    why: LiteLLM's int(timestamp() * 1000) can land one millisecond low when the float is just under a whole millisecond; integer arithmetic is exact and no preview answer can rely on the off-by-one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/endpoints.py#L283-L294
+kept_bugs: []
