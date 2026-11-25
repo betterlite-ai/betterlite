@@ -54,7 +54,6 @@ import betterlite
 import betterlite.exceptions as errors
 from betterlite import assistants as package
 from betterlite._completion.errors import UnsupportedCallArgumentError
-from betterlite._endpoints import settings as settings_module
 from betterlite.assistants import _runs, _utils, main
 
 BAD_REQUEST_STATUS: Final = 400
@@ -544,32 +543,17 @@ def test_calls_run_thread(server: RunServer) -> None:
     compare_run_thread(server, args)
 
 
-# betterlite's globals are unannotated, so this stands in for the reader, as test_google_genai does
-class SettingsSnapshot:
-    def __init__(self, values: dict[str, JsonValue]) -> None:
-        self.values = values
-
-    def __call__(self) -> dict[str, JsonValue]:
-        return {
-            "api_key": None, "api_base": None, "api_version": None,
-            "organization": None, "openai_key": None, "azure_key": None, "drop_params": False,
-            **self.values,
-        }
-
-
-def test_calls_module_globals(server: RunServer) -> None:
-    original = settings_module.module_settings
-    settings_module.module_settings = SettingsSnapshot(
-        {"api_key": GOOD_KEY, "api_base": server.url}
-    )
-    litellm.api_key = GOOD_KEY
-    litellm.api_base = server.url
-    try:
-        compare_add_message(server, {})
-        compare_run_thread(server, {})
-    finally:
-        settings_module.module_settings = original
-        litellm.api_key = litellm.api_base = None
+def test_calls_module_globals(server: RunServer, monkeypatch: pytest.MonkeyPatch) -> None:
+    # ast-grep-ignore: no-string-mocking
+    monkeypatch.setattr(betterlite, "api_key", GOOD_KEY)
+    # ast-grep-ignore: no-string-mocking
+    monkeypatch.setattr(betterlite, "api_base", server.url)
+    # ast-grep-ignore: no-string-mocking
+    monkeypatch.setattr(litellm, "api_key", GOOD_KEY)
+    # ast-grep-ignore: no-string-mocking
+    monkeypatch.setattr(litellm, "api_base", server.url)
+    compare_add_message(server, {})
+    compare_run_thread(server, {})
 
 
 def test_calls_handler_no_stream(server: RunServer) -> None:
@@ -765,7 +749,7 @@ def test_stream_failure_first_read(server: RunServer) -> None:
         asyncio.run(our_async_first(main.arun_thread_stream(**bad)))
 
 
-def error_text(failure: Exception) -> str:
+def error_text(failure: Exception | MessageCarrier) -> str:
     match failure:
         case MessageCarrier() as carrier:
             return carrier.message
