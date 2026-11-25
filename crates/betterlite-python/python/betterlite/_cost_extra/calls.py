@@ -112,15 +112,20 @@ def default_image_cost_calculator(  # noqa: PLR0913, PLR0917  # https://github.c
     model_info: dict[str, JsonValue] | None = None,
 ) -> float:
     _ = optional_params
-    request: ImageRequestWire = {
-        "model": model,
-        "custom_llm_provider": custom_llm_provider,
-        "quality": quality,
-        "n": n,
-        "size": size,
-        "model_info": model_info,
-    }
-    return native_answer(FLOAT, ENGINE.image_cost, json.dumps(request))
+    return native_answer(
+        FLOAT,
+        ENGINE.image_cost,
+        json.dumps(
+            ImageRequestWire(
+                model=model,
+                custom_llm_provider=custom_llm_provider,
+                quality=quality,
+                n=n,
+                size=size,
+                model_info=model_info,
+            )
+        ),
+    )
 
 
 def default_video_cost_calculator(
