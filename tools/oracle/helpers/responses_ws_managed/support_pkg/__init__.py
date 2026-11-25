@@ -139,11 +139,9 @@ def run(input_value: Input) -> dict[str, JsonValue]:
     socket = Socket(recorder)
     server = ThreadingHTTPServer(("127.0.0.1", 0), partial(Answering, recorder))
     base_url = f"http://127.0.0.1:{server.server_address[1]}/v1"
-    thread = threading.Thread(
-        target=partial(server.serve_forever, poll_interval=0.01), daemon=True
-    )
+    thread = threading.Thread(target=partial(server.serve_forever, poll_interval=0.01), daemon=True)
     thread.start()
-    provider = ScriptedResponses(recorder, input_value["scripts"], base_url)
+    provider = ScriptedResponses(recorder, base_url)
     handler = build_handler(input_value["setup"], socket, recorder, input_value["quota"])
     capture = Capture()
     logger = logging.getLogger(LOG_NAME)

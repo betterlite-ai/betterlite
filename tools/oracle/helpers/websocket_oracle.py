@@ -4,10 +4,16 @@ from pathlib import Path
 from typing import Protocol, TypeAlias, cast
 
 import litellm
+from pydantic import TypeAdapter
+
+from responses_ws_managed import Input
+from responses_ws_managed import run as managed_run
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
 __path__ = [str(Path(__file__).with_suffix(""))]
+
+MANAGED = TypeAdapter(Input)
 
 SERVICE_MODULES = {
     "realtime_probe": "websocket_oracle.realtime_probe",
@@ -36,6 +42,8 @@ def run(input_value: dict[str, Json]) -> Json:
     if set(input_value) != {"service", "input"}:
         raise ValueError("websocket input must contain service and input")
     service = string_value(input_value["service"], "service")
+    if service == "managed_responses_turns":
+        return managed_run(MANAGED.validate_python(input_value["input"]))
     module_name = SERVICE_MODULES.get(service)
     if module_name is None:
         raise ValueError(f"unknown websocket service: {service}")

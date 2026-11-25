@@ -1,32 +1,44 @@
 kind: helper
 name: different-provider-model
 call:
-  responses_ws_managed:
-    setup:
-      model: vertex_ai/gemini-2.0-flash
-      litellm_metadata:
-        model_group: router-model
-      custom_llm_provider: vertex_ai
-      api_key: key-vertex
-      api_base: null
-      timeout: null
-      first_message: null
-      kwargs: {}
-    frames:
-    - '{"type": "response.create", "model": "openai/gpt-4o-mini", "input": "hello"}'
-    disconnect: connection closed
-    scripts:
-    - fail: null
-      chunks:
-      - kind: json
-        value: {type: response.completed, response: {id: r-other, output: []}}
-        event_type: null
-        dump: null
-      raise_after: null
-      raise_message: ''
-    quota: null
-    sink:
-      fails_at: null
-      message: client send failed
+  websocket_oracle:
+    service: managed_responses_turns
+    input:
+      setup:
+        model: vertex_ai/gemini-2.0-flash
+        litellm_metadata:
+          model_group: router-model
+        custom_llm_provider: vertex_ai
+        api_key: key-vertex
+        api_base: null
+        timeout: null
+        first_message: null
+        kwargs: {}
+      frames:
+      - '{"type": "response.create", "model": "openai/gpt-4o-mini", "input": "hello"}'
+      disconnect: connection closed
+      scripts:
+      - fail: null
+        chunks:
+        - kind: json
+          value:
+            type: response.completed
+            response:
+              id: r-other
+              output: []
+              usage:
+                input_tokens: 0
+                output_tokens: 0
+                total_tokens: 0
+                cost: 0
+          event_type: null
+          dump: null
+        raise_after: null
+        raise_message: ''
+      quota: null
+      sink:
+        fails_at: null
+        message: client send failed
 env: {}
-compare: {ignore: []}
+compare:
+  ignore: []

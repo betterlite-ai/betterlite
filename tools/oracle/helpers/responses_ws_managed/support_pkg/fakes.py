@@ -6,17 +6,17 @@ from copy import deepcopy
 from http.server import BaseHTTPRequestHandler
 from typing import Final, Literal, TypedDict
 
+from litellm.responses.dispatch import ResponsesResult
 from litellm.responses.dispatch import aresponses as real_aresponses
-from pydantic import JsonValue, TypeAdapter
+from litellm.responses.streaming_iterator import ResponsesAPIStreamingIterator
+from litellm.types.llms.openai import ResponsesAPIStreamingResponse
+from pydantic import ConfigDict, JsonValue, TypeAdapter
+
+STREAM = TypeAdapter(ResponsesAPIStreamingIterator, config=ConfigDict(arbitrary_types_allowed=True))
 
 DISPATCH_KEY: Final = "sk-fixture"
 SCRIPT_EXHAUSTED: Final = "the case scripts no further provider call"
 SERIALIZE_MESSAGE: Final = "chunk must be a JSON object"
-CREATED_EVENT: Final[dict[str, str]] = {"type": "response.created"}
-COMPLETED_EVENT: Final[dict[str, str]] = {"type": "response.completed"}
-SSE_BODY: Final = b"".join(
-    b"data: " + json.dumps(event).encode() + b"\n\n"
-    for event in (CREATED_EVENT, COMPLETED_EVENT))
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 
 
@@ -70,6 +70,9 @@ class ScriptedError(Exception):
 
 class Recorder:
     def __init__(self, input_value: Input) -> None:
+        self.scripts = list(input_value["scripts"])
+        self.script_index = 0
+        self.stream = input_value["setup"]["kwargs"].get("stream") is not False
         self.frames: list[str] = []
         self.sends = 0
         self.calls: list[JsonValue] = []
@@ -104,79 +107,116 @@ class Answering(BaseHTTPRequestHandler):
         body = JSON.validate_json(self.rfile.read(int(length)))
         row: JsonValue = {"method": self.command, "path": self.path, "body": body}
         self.recorder.requests.append(row)
+        if self.recorder.script_index >= len(self.recorder.scripts):
+            self.send_error(500, SCRIPT_EXHAUSTED)
+            return
+        script = self.recorder.scripts[self.recorder.script_index]
+        self.recorder.script_index += 1
+        events = script_events(script)
         self.send_response(200)
-        self.send_header("Content-Type", "text/event-stream")
-        self.send_header("Content-Length", str(len(SSE_BODY)))
+        if self.recorder.stream:
+            self.send_header("Content-Type", "text/event-stream")
+            payload = b"".join(b"data: " + json.dumps(event).encode() + b"\n\n" for event in events)
+        else:
+            self.send_header("Content-Type", "application/json")
+            buffered: JsonValue = {
+                "id": "buffered",
+                "created_at": 0,
+                "output": [],
+                "model": "gpt-4o-mini",
+                "object": "response",
+            }
+            payload = json.dumps(buffered).encode()
+        self.send_header("Content-Length", str(len(payload)))
         self.end_headers()
-        _written = self.wfile.write(SSE_BODY)
+        _written = self.wfile.write(payload)
 
 
-class FakeChunk:
-    def __init__(self, *, event_type: str | None, text: str) -> None:
-        self.type = event_type
-        self.text = text
+class CompletedFixture(TypedDict):
+    response: dict[str, JsonValue]
 
-    def model_dump_json(self, *, exclude_none: bool = True) -> str:
-        del exclude_none
-        return self.text
+
+class EventTag(TypedDict):
+    type: str
+
+
+class FailureEvent(TypedDict):
+    message: str
 
 
 class BrokenChunk:
     def model_dump_json(self, *, exclude_none: bool = True) -> str:
         del exclude_none
-        raise RuntimeError(SERIALIZE_MESSAGE)
+        raise ScriptedError(SERIALIZE_MESSAGE)
 
 
-def chunk_of(row: ChunkRow) -> JsonValue | FakeChunk | BrokenChunk:
-    kind = row["kind"]
-    if kind == "none":
-        return None
-    if kind == "json":
-        return row["value"]
-    dump = row["dump"]
-    if kind == "broken" or dump is None:
-        return BrokenChunk()
-    return FakeChunk(event_type=row["event_type"], text=dump)
-
-
-class FakeStream:
-    def __init__(self, recorder: Recorder, script: ScriptRow) -> None:
+class ObservedStream:
+    def __init__(self, source: ResponsesAPIStreamingIterator, recorder: Recorder) -> None:
+        self.source = source
         self.recorder = recorder
-        self.script = script
-        self.index = 0
 
-    async def __aiter__(self) -> AsyncIterator[JsonValue | FakeChunk | BrokenChunk]:
+    async def __aiter__(
+        self,
+    ) -> AsyncIterator[ResponsesAPIStreamingResponse | BrokenChunk | dict[str, JsonValue] | None]:
         while True:
-            if self.script["raise_after"] == self.index:
-                raise ScriptedError(self.script["raise_message"])
-            if self.index >= len(self.script["chunks"]):
+            try:
+                event = await self.source.__anext__()
+            except StopAsyncIteration:
                 self.recorder.trace.append("provider-end")
                 return
-            row = self.script["chunks"][self.index]
-            self.index += 1
-            yield chunk_of(row)
+            serialized = event.model_dump_json(exclude_none=True)
+            kind = TypeAdapter(EventTag).validate_json(serialized)["type"]
+            if kind == "fixture.end":
+                self.recorder.trace.append("provider-end")
+                return
+            if kind == "fixture.completed":
+                completion = TypeAdapter(CompletedFixture).validate_json(serialized)
+                yield {"type": "response.completed", "response": completion["response"]}
+            elif kind == "fixture.empty":
+                yield None
+            elif kind == "fixture.broken":
+                yield BrokenChunk()
+            elif kind == "fixture.error":
+                failure = TypeAdapter(FailureEvent).validate_json(serialized)
+                raise ScriptedError(failure["message"])
+            else:
+                yield event
 
 
 class ScriptedResponses:
-    def __init__(self, recorder: Recorder, scripts: list[ScriptRow], base_url: str) -> None:
+    def __init__(self, recorder: Recorder, base_url: str) -> None:
         self.recorder = recorder
-        self.scripts = scripts
         self.base_url = base_url
-        self.index = 0
 
-    async def __call__(self, **kwargs: JsonValue) -> FakeStream:
+    async def __call__(self, **kwargs: JsonValue) -> ResponsesResult | ObservedStream:
         call: dict[str, JsonValue] = dict(kwargs)
         model = call.pop("model", None)
         self.recorder.trace.append("provider")
         self.recorder.calls.append({"model": model, "kwargs": call})
         dispatch = deepcopy(call)
-        dispatch.update(model=model, api_base=self.base_url, api_key=DISPATCH_KEY, stream=True)
-        _answered = await real_aresponses(**dispatch)
-        if self.index >= len(self.scripts):
-            raise ScriptedError(SCRIPT_EXHAUSTED)
-        script = self.scripts[self.index]
-        self.index += 1
-        failure = script["fail"]
-        if failure is not None:
-            raise ScriptedError(failure)
-        return FakeStream(self.recorder, script)
+        dispatch.update(model=model, api_base=self.base_url, api_key=DISPATCH_KEY)
+        result = await real_aresponses(**dispatch)
+        if dispatch.get("stream") is False:
+            return result
+        return ObservedStream(STREAM.validate_python(result), self.recorder)
+
+
+def script_events(script: ScriptRow) -> list[JsonValue]:
+    if script["fail"] is not None:
+        return [{"type": "fixture.error", "message": script["fail"]}]
+    events: list[JsonValue] = []
+    for index, row in enumerate(script["chunks"]):
+        if script["raise_after"] == index:
+            events.append({"type": "fixture.error", "message": script["raise_message"]})
+            return events
+        if row["kind"] == "none":
+            events.append({"type": "fixture.empty"})
+        elif row["kind"] == "broken":
+            events.append({"type": "fixture.broken"})
+        elif row["kind"] == "object":
+            dump = row["dump"]
+            events.append({"type": row["event_type"]} if dump is None else JSON.validate_json(dump))
+        else:
+            events.append(row["value"])
+    events.append({"type": "fixture.end"})
+    return events

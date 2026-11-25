@@ -1,37 +1,56 @@
 kind: helper
 name: stream-send-failure
 call:
-  responses_ws_managed:
-    setup:
-      model: openai/gpt-4o-mini
-      litellm_metadata: null
-      custom_llm_provider: null
-      api_key: null
-      api_base: null
-      timeout: null
-      first_message: null
-      kwargs: {}
-    frames:
-    - '{"type": "response.create", "input": "hello"}'
-    disconnect: connection closed
-    scripts:
-    - fail: null
-      chunks:
-      - kind: json
-        value: {type: response.created, response: {id: r-part}}
-        event_type: null
-        dump: null
-      - kind: json
-        value: {type: response.completed, response: {id: r-send, output: [{type: message, content: [{type: output_text, text: A}]}]}}
-        event_type: null
-        dump: null
-      raise_after: null
-      raise_message: ''
-    quota: null
-    sink:
-      fails_at: 2
-      message: client send failed
+  websocket_oracle:
+    service: managed_responses_turns
+    input:
+      setup:
+        model: openai/gpt-4o-mini
+        litellm_metadata: null
+        custom_llm_provider: null
+        api_key: null
+        api_base: null
+        timeout: null
+        first_message: null
+        kwargs: {}
+      frames:
+      - '{"type": "response.create", "input": "hello"}'
+      disconnect: connection closed
+      scripts:
+      - fail: null
+        chunks:
+        - kind: json
+          value:
+            type: response.created
+            response:
+              id: r-part
+          event_type: null
+          dump: null
+        - kind: json
+          value:
+            type: response.completed
+            response:
+              id: r-send
+              output:
+              - type: message
+                content:
+                - type: output_text
+                  text: A
+              usage:
+                input_tokens: 0
+                output_tokens: 0
+                total_tokens: 0
+                cost: 0
+          event_type: null
+          dump: null
+        raise_after: null
+        raise_message: ''
+      quota: null
+      sink:
+        fails_at: 2
+        message: client send failed
 env: {}
 compare:
   ignore:
-    - {pointer: /value/diagnostics/0, why: exception text differs between Python and Rust}
+  - pointer: /value/diagnostics/0
+    why: exception text differs between Python and Rust

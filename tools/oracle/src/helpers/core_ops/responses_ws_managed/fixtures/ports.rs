@@ -36,12 +36,7 @@ pub(crate) struct Outbound {
 
 // no environment reaches the fixture, so the policy resolves without a proxy route
 pub(crate) fn outbound() -> Result<Outbound, FixtureError> {
-    let policy =
-        ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).map_err(|error| {
-            FixtureError::Proxy {
-                message: error.to_string(),
-            }
-        })?;
+    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new())?;
     let client = ProxiedClient::outbound(&Arc::new(policy))?;
     Ok(Outbound { client })
 }

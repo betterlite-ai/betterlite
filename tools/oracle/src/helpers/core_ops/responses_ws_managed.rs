@@ -1,10 +1,14 @@
+#[path = "responses_ws_managed/fakes.rs"]
 mod fakes;
+#[path = "responses_ws_managed/fixtures.rs"]
 mod fixtures;
+#[path = "responses_ws_managed/handler.rs"]
 mod handler;
+#[path = "responses_ws_managed/support.rs"]
 mod support;
 
 use std::mem::take;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use betterlite_core::api::responses_ws_history::{FrameSink, ManagedResponsesWebSocket};
 use betterlite_core::api::responses_ws_managed::provider::ResponsesStreaming;
@@ -57,11 +61,10 @@ impl Helper for Op {
             .build()
             .map_err(|source| support::helper_error("RuntimeError", source.to_string()))?;
         let shared = Shared::default();
-        let mock = fixtures::start_mock(input.frames.len().saturating_add(2))
+        let mock = fixtures::start_mock(input)
             .map_err(|error| support::helper_error("MockError", error.to_string()))?;
         let provider = ScriptedProvider {
             shared: Arc::clone(&shared),
-            scripts: Mutex::new(input.scripts.iter().cloned().collect()),
             outbound: fixtures::outbound()
                 .map_err(|error| support::helper_error("FixtureError", error.to_string()))?,
             base_url: mock.base_url.clone(),

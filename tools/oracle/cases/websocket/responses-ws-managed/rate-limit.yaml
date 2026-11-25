@@ -1,25 +1,28 @@
 kind: helper
 name: rate-limit
 call:
-  responses_ws_managed:
-    setup:
-      model: openai/gpt-4o-mini
-      litellm_metadata: null
-      custom_llm_provider: null
-      api_key: null
-      api_base: null
-      timeout: null
-      first_message: null
-      kwargs: {}
-    frames:
-    - '{"type": "response.create", "input": "hello"}'
-    disconnect: connection closed
-    scripts: []
-    quota:
-      kind: rate_limit
-      message: quota exceeded
-    sink:
-      fails_at: null
-      message: client send failed
+  websocket_oracle:
+    service: managed_responses_turns
+    input:
+      setup:
+        model: openai/gpt-4o-mini
+        litellm_metadata: null
+        custom_llm_provider: null
+        api_key: null
+        api_base: null
+        timeout: null
+        first_message: null
+        kwargs: {}
+      frames:
+      - '{"type": "response.create", "input": "hello"}'
+      disconnect: connection closed
+      scripts: []
+      quota:
+        kind: rate_limit
+        message: quota exceeded
+      sink:
+        fails_at: null
+        message: client send failed
 env: {}
-compare: {ignore: []}
+compare:
+  ignore: []

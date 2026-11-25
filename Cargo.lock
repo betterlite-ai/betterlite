@@ -2992,6 +2992,7 @@ dependencies = [
  "betterlite-context",
  "betterlite-core",
  "betterlite-db",
+ "betterlite-env",
  "betterlite-error",
  "betterlite-foundry",
  "betterlite-guardrails",

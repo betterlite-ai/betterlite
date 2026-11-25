@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_core::api::response_id_traversal::response_id::transcode;
+use betterlite_core::api::responses_create::bridge::Created;
 use betterlite_core::api::responses_create::call::ResponsesCreateCall;
 use betterlite_core::api::responses_create::deps::ResponsesCreateDeps;
 use betterlite_core::api::responses_create_call::aresponses;
@@ -26,13 +27,12 @@ struct DispatchPorts {
     variables: BTreeMap<String, String>,
 }
 
-// The HTTP call LiteLLM makes for the turn, through the production aresponses path, with the answer discarded
 pub(crate) async fn dispatch(
     outbound: &Outbound,
     base_url: &str,
     model: &str,
     call_kwargs: &IndexMap<String, Json>,
-) -> Result<(), DispatchFailure> {
+) -> Result<Created<()>, DispatchFailure> {
     let call = call_for_dispatch(base_url, model, call_kwargs)?;
     let mut probe = LoggingProbe::new()?;
     let environment = PrePostEnv {
@@ -68,8 +68,7 @@ pub(crate) async fn dispatch(
         lookup: &ports.configs,
         prompts: None,
     };
-    let _created = aresponses(&create, &execution, &call, (), &mut log).await?;
-    Ok(())
+    Ok(aresponses(&create, &execution, &call, (), &mut log).await?)
 }
 
 fn call_for_dispatch(
@@ -125,7 +124,5 @@ fn dispatched(
         String::from("api_key"),
         Json::Text(String::from("sk-fixture")),
     );
-    // the mock answers only streamed events, so the dispatch asks for a stream whatever the turn does
-    fields.insert(String::from("stream"), Json::Bool(true));
     fields
 }

@@ -1,10 +1,9 @@
-use std::collections::{BTreeMap, VecDeque};
-use std::sync::Mutex;
+use std::collections::BTreeMap;
 
 use async_trait::async_trait;
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
-use betterlite_core::api::response_synthetic_events::error::SyntheticEventsError;
-use betterlite_core::api::response_synthetic_events::model_dump::HasModelDumpJson;
+use betterlite_core::api::responses_create::bridge::Created;
+use betterlite_core::api::responses_stream_driver::source::{PayloadSource, SourceFailure};
 use betterlite_core::api::responses_stream_events::ProjectQuotaCallback;
 use betterlite_core::api::responses_ws_history::provider::{
     ProviderResolution, ProviderResolutionFailure,
@@ -18,92 +17,59 @@ use betterlite_error::rate_limit::RateLimitCategory;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
-use super::fixtures::{ChunkKind, Outbound, QuotaKind, ScriptedFailure, dispatch};
-use super::support::{ChunkRow, QuotaRow, RecordedCall, RecordedQuota, ScriptRow, Shared, lock};
+use super::fixtures::{AdapterError, Outbound, QuotaKind, dispatch, provider_chunk};
+use super::support::{QuotaRow, RecordedCall, RecordedQuota, Shared, lock};
 
-const SCRIPT_EXHAUSTED: &str = "the case scripts no further provider call";
-// the field name the error renders as "<field> must be a JSON object"
-const BROKEN_FIELD: &str = "chunk";
-
-struct TextDump(String);
-
-impl HasModelDumpJson for TextDump {
-    fn model_dump_json(&self) -> Result<String, SyntheticEventsError> {
-        Ok(self.0.clone())
-    }
-}
-
-struct BrokenDump;
-
-impl HasModelDumpJson for BrokenDump {
-    fn model_dump_json(&self) -> Result<String, SyntheticEventsError> {
-        Err(SyntheticEventsError::NotAnObject {
-            field: BROKEN_FIELD,
-        })
-    }
-}
-
-fn chunk_of(row: ChunkRow) -> ProviderChunk {
-    match row.kind {
-        ChunkKind::None => ProviderChunk::Empty,
-        ChunkKind::Json => ProviderChunk::Json(row.value.unwrap_or(Json::Null)),
-        ChunkKind::Object => ProviderChunk::Object {
-            kind: row.event_type,
-            dump: Box::new(TextDump(row.dump.unwrap_or_default())),
-        },
-        ChunkKind::Broken => ProviderChunk::Object {
-            kind: row.event_type,
-            dump: Box::new(BrokenDump),
-        },
-    }
-}
-
-pub(super) struct ScriptedStream {
+pub(super) struct HttpStream {
     shared: Shared,
-    chunks: VecDeque<ProviderChunk>,
-    raise_after: Option<usize>,
-    raise_message: String,
-    consumed: usize,
+    source: Box<dyn PayloadSource>,
 }
 
 #[async_trait]
-impl ResponsesStream for ScriptedStream {
-    type Error = ScriptedFailure;
+impl ResponsesStream for HttpStream {
+    type Error = AdapterError;
 
     async fn next_chunk(
         &mut self,
-    ) -> Result<Option<ProviderChunk>, ProviderCallError<ScriptedFailure>> {
-        if Some(self.consumed) == self.raise_after {
-            return Err(ProviderCallError::Stream(ScriptedFailure {
-                message: self.raise_message.clone(),
-            }));
+    ) -> Result<Option<ProviderChunk>, ProviderCallError<AdapterError>> {
+        match self.source.next_payload().await {
+            Some(Ok(bytes)) => {
+                let chunk = provider_chunk(&bytes).map_err(ProviderCallError::Stream)?;
+                if chunk.is_none() {
+                    lock(&self.shared).trace.push("provider-end".to_owned());
+                }
+                Ok(chunk)
+            }
+            Some(Err(SourceFailure::Transport(source))) => {
+                Err(ProviderCallError::Stream(AdapterError::Transport(source)))
+            }
+            Some(Err(SourceFailure::Decode(message))) => {
+                Err(ProviderCallError::Stream(AdapterError::Decode { message }))
+            }
+            None => {
+                lock(&self.shared).trace.push("provider-end".to_owned());
+                Ok(None)
+            }
         }
-        let Some(chunk) = self.chunks.pop_front() else {
-            lock(&self.shared).trace.push("provider-end".to_owned());
-            return Ok(None);
-        };
-        self.consumed = self.consumed.saturating_add(1);
-        Ok(Some(chunk))
     }
 }
 
 pub(super) struct ScriptedProvider {
     pub(super) shared: Shared,
-    pub(super) scripts: Mutex<VecDeque<ScriptRow>>,
     pub(super) outbound: Outbound,
     pub(super) base_url: String,
 }
 
 #[async_trait]
 impl ResponsesStreaming for ScriptedProvider {
-    type Error = ScriptedFailure;
-    type Stream = ScriptedStream;
+    type Error = AdapterError;
+    type Stream = HttpStream;
 
     async fn stream(
         &self,
         model: &str,
         call_kwargs: &IndexMap<String, Json>,
-    ) -> Result<ScriptedStream, ProviderCallError<ScriptedFailure>> {
+    ) -> Result<HttpStream, ProviderCallError<AdapterError>> {
         {
             let mut recorder = lock(&self.shared);
             recorder.trace.push("provider".to_owned());
@@ -112,29 +78,18 @@ impl ResponsesStreaming for ScriptedProvider {
                 kwargs: call_kwargs.clone(),
             });
         };
-        dispatch(&self.outbound, &self.base_url, model, call_kwargs)
+        let created = dispatch(&self.outbound, &self.base_url, model, call_kwargs)
             .await
-            .map_err(|error| {
-                ProviderCallError::Call(ScriptedFailure {
-                    message: error.to_string(),
-                })
-            })?;
-        let Some(row) = lock(&self.scripts).pop_front() else {
-            return Err(ProviderCallError::Call(ScriptedFailure {
-                message: SCRIPT_EXHAUSTED.to_owned(),
-            }));
-        };
-        if let Some(message) = row.fail {
-            return Err(ProviderCallError::Call(ScriptedFailure { message }));
+            .map_err(|source| ProviderCallError::Call(AdapterError::Dispatch(Box::new(source))))?;
+        match created {
+            Created::Live(live) => Ok(HttpStream {
+                shared: Shared::clone(&self.shared),
+                source: live.source,
+            }),
+            Created::Responses(_) | Created::Raw(_) | Created::Synthetic(_) | Created::Chat(_) => {
+                Err(ProviderCallError::Stream(AdapterError::NotStreaming))
+            }
         }
-        let chunks: VecDeque<ProviderChunk> = row.chunks.into_iter().map(chunk_of).collect();
-        Ok(ScriptedStream {
-            shared: Shared::clone(&self.shared),
-            chunks,
-            raise_after: row.raise_after,
-            raise_message: row.raise_message,
-            consumed: 0,
-        })
     }
 }
 

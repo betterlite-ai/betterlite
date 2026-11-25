@@ -1,28 +1,30 @@
 kind: helper
 name: invalid-and-ignored
 call:
-  responses_ws_managed:
-    setup:
-      model: openai/gpt-4o-mini
-      litellm_metadata: null
-      custom_llm_provider: null
-      api_key: null
-      api_base: null
-      timeout: null
-      first_message: null
-      kwargs: {}
-    frames:
-    - '{"type": "ping"}'
-    - not-json
-    - '{"type": 7}'
-    disconnect: connection closed
-    scripts: []
-    quota:
-      kind: rate_limit
-      message: quota exceeded
-    sink:
-      fails_at: null
-      message: client send failed
+  websocket_oracle:
+    service: managed_responses_turns
+    input:
+      setup:
+        model: openai/gpt-4o-mini
+        litellm_metadata: null
+        custom_llm_provider: null
+        api_key: null
+        api_base: null
+        timeout: null
+        first_message: null
+        kwargs: {}
+      frames:
+      - '{"type": "ping"}'
+      - not-json
+      - '{"type": 7}'
+      disconnect: connection closed
+      scripts: []
+      quota:
+        kind: rate_limit
+        message: quota exceeded
+      sink:
+        fails_at: null
+        message: client send failed
 env: {}
 compare:
   ignore: []
