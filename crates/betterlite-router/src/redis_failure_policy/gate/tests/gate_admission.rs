@@ -3,11 +3,11 @@
 use std::sync::Arc;
 
 use betterlite_redis::redis_client_reuse::breaker_gate::BreakerGate as _;
-use betterlite_router::redis_failure_policy::State;
 
 use super::support::{
     FakeClock, command_error, connection_error, gate_with, settings, status, timeout_error,
 };
+use crate::redis_failure_policy::State;
 
 #[test]
 fn enter_admits_while_the_breaker_is_closed() {

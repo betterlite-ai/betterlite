@@ -2,7 +2,7 @@ use std::error::Error as StdError;
 use std::io;
 use std::sync::Arc;
 
-use betterlite_router::redis_failure_policy::classify::{FailureClass, MAX_CAUSE_DEPTH};
+use crate::redis_failure_policy::classify::{FailureClass, MAX_CAUSE_DEPTH};
 use redis::{ErrorKind, RedisError, ServerError, ServerErrorKind};
 use tokio::time::error::Elapsed;
 

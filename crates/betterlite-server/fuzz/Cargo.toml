@@ -12,6 +12,7 @@ workspace = true
 cargo-fuzz = true
 [dependencies]
 betterlite-auth = { path = "../../betterlite-auth" }
+betterlite-config = { path = "../../betterlite-config" }
 betterlite-core = { path = "../../betterlite-core" }
 betterlite-db = { path = "../../betterlite-db" }
 betterlite-models = { path = "../../betterlite-models" }
@@ -612,6 +613,13 @@ bench = false
 [[bin]]
 name = "shadow_q"
 path = "fuzz_targets/shadow_q.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "config_override"
+path = "fuzz_targets/config_override.rs"
 test = false
 doc = false
 bench = false

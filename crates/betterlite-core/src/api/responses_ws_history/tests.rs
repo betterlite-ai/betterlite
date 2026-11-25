@@ -599,9 +599,7 @@ fn response_id_history() {
     let message_a = object_map(&support::json(
         r#"{"type": "message", "role": "user", "content": []}"#,
     ));
-    handler
-        .session_history
-        .insert("raw-1".to_owned(), vec![message_a.clone()]);
+    handler.store_history("raw-1".to_owned(), vec![message_a.clone()]);
     let mut got = get_history_messages(&handler, ENCODED_RAW_ONE);
     assert_eq!(got, vec![message_a.clone()]);
     let marker = object_map(&support::json(r#"{"probe": true}"#));
@@ -614,9 +612,7 @@ fn response_id_history() {
     let message_b = object_map(&support::json(
         r#"{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "B"}]}"#,
     ));
-    handler
-        .session_history
-        .insert("raw-1".to_owned(), vec![message_b.clone()]);
+    handler.store_history("raw-1".to_owned(), vec![message_b.clone()]);
     assert_eq!(
         get_history_messages(&handler, ENCODED_RAW_ONE),
         vec![message_b]
