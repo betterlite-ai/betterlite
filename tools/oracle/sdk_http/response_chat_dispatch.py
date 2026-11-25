@@ -149,17 +149,21 @@ async def settled_async(run: BridgeRun, api_base: str) -> ModelResponse | dict[s
             return stream_view([chunk async for chunk in stream])
 
 
+def status_code(error: Exception) -> int:
+    match error:
+        case openai.APIStatusError():
+            return error.status_code
+        case openai.APIConnectionError():
+            return 500
+        case object():
+            return 0
+
+
 # litellm builds its exceptions without a body, so the SDK reads no type, param or code
 def failure(error: Exception) -> dict[str, JsonValue]:
-    if isinstance(error, openai.APIStatusError):
-        status = error.status_code
-    elif isinstance(error, openai.APIConnectionError):
-        status = 500
-    else:
-        status = 0
     return {
         "class": type(error).__name__,
-        "status": status,
+        "status": status_code(error),
         "type": None,
         "param": None,
         "code": None,
