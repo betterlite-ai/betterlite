@@ -17,6 +17,7 @@ use betterlite_server::pass_through_logging::anthropic_batch::{
 use betterlite_server::pass_through_logging::anthropic_passthrough_logging::{
     AnthropicPassthroughInput, AnthropicPassthroughLogger,
 };
+use betterlite_server::pass_through_logging::background_tasks::BackgroundTasks;
 use betterlite_server::pass_through_logging::response_costing::{
     ResponseCostRequest, ResponseCostService,
 };
@@ -80,7 +81,7 @@ impl Helper for Op {
         });
         let shared: Arc<dyn ResponseCostService> = Arc::<RecordingCost>::clone(&cost);
         let logger = AnthropicPassthroughLogger::new(
-            AnthropicBatchLogging::new(None, None, Arc::new(FixedIds)),
+            AnthropicBatchLogging::new(None, None, Arc::new(FixedIds), BackgroundTasks::default()),
             shared,
         );
         let logging_obj = fixture::logging_object(&input.details)?;

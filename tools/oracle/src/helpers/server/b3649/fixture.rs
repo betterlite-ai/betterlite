@@ -12,10 +12,10 @@ use betterlite_logging::passthrough_stream_logging::object::{
 use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_redact::secret::Redactor;
+use betterlite_server::pass_through_logging::background_tasks::BackgroundTasks;
 use betterlite_server::pass_through_logging::tinyfish::billing::{
     BillingDeps, ProductionPayload, RunSettings, TinyfishRunBilling,
 };
-use betterlite_server::pass_through_logging::tinyfish::tasks::BillingTasks;
 use chrono::{DateTime, FixedOffset};
 use rust_decimal::Decimal;
 use secrecy::SecretString;
@@ -163,7 +163,7 @@ pub(super) fn fixture(
             sleeper: Arc::new(AdvancingSleeper { clock }),
             clock: Arc::new(FixedSuccessClock { now: end_time }),
             payload: Arc::new(ProductionPayload),
-            tasks: BillingTasks {
+            tasks: BackgroundTasks {
                 tasks: TaskTracker::new(),
             },
         },
