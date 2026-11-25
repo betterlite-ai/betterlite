@@ -12,16 +12,19 @@ use betterlite_logging::passthrough_stream_logging::types::{
     CollectedChunksCall, CollectedChunksHandler as _, HandlerOutcome,
 };
 use betterlite_models::decisions::Json;
+use betterlite_models::identity::provider_id::ProviderId;
 use rstest::rstest;
 use rust_decimal::Decimal;
 use tracing::Level;
 
+use super::super::OpenAiProvider;
 use super::super::stream::passthrough_kwargs;
 use super::super::tools::{OpenAiLoggingTools as _, StandardObjectRequest};
 use super::support::{
     CHAT, Call, FakeTools, RESPONSES, body_user, chat_price, collect, detail, fallback_payload,
     key, object_json, openai_logger, streamed, text, toolbox,
 };
+use crate::pass_through_logging::base_passthrough_logging::PassthroughProvider as _;
 use crate::pass_through_logging::base_passthrough_logging::tests::support::{
     END, START, capture_logs, logging_state, object, timestamp,
 };
@@ -344,6 +347,29 @@ fn openai_stream_toolbox_reads_the_terminal_event() {
     assert_eq!(key(&reply, "id"), &text("resp-9"));
     let unfinished = vec![r#"data: {"type": "response.created", "response": {"id": "r", "created_at": 1, "output": []}}"#.to_owned()];
     assert_eq!(tools.terminal_response(&unfinished).unwrap(), None);
+}
+
+#[test]
+fn openai_stream_provider_forwards_the_assembly_to_the_tools() {
+    let tools = Arc::new(FakeTools::working());
+    let provider = OpenAiProvider {
+        tools: Arc::<FakeTools>::clone(&tools),
+    };
+    assert_eq!(provider.provider_name(), ProviderId::Openai);
+    let lines = vec!["data: chunk".to_owned()];
+    let built = provider
+        .build_complete_streaming_response(&lines, "gpt-4o")
+        .unwrap();
+    assert_eq!(
+        built,
+        Some(StreamedResponse::Model(object_json(r#"{"id": "s-1"}"#)))
+    );
+    assert_eq!(
+        tools.calls(),
+        vec![Call::Stream {
+            model: "gpt-4o".to_owned()
+        }]
+    );
 }
 
 #[test]
