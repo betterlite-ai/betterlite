@@ -106,9 +106,6 @@ class Probe(Handler):
 def build_handler(
     setup: Setup, socket: Socket, recorder: Recorder, quota: QuotaRow | None
 ) -> Probe:
-    callbacks: list[ProjectQuotaCallback] | None = None
-    if quota is not None:
-        callbacks = [ScriptedQuota(recorder, quota)]
     log_obj = Logging(
         model=setup["model"],
         messages=None,
@@ -129,7 +126,7 @@ def build_handler(
         custom_llm_provider=setup["custom_llm_provider"],
         first_message=setup["first_message"],
         user_api_key_dict=None,
-        quota_callbacks=callbacks,
+        quota_callbacks=None if quota is None else [ScriptedQuota(recorder, quota)],
         **setup["kwargs"],
     )
 

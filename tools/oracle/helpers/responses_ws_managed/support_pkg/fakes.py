@@ -1,6 +1,7 @@
 import json
 import socket
 import socketserver
+from collections import deque
 from collections.abc import AsyncIterator
 from copy import deepcopy
 from http.server import BaseHTTPRequestHandler
@@ -15,7 +16,6 @@ from pydantic import ConfigDict, JsonValue, TypeAdapter
 STREAM = TypeAdapter(ResponsesAPIStreamingIterator, config=ConfigDict(arbitrary_types_allowed=True))
 
 DISPATCH_KEY: Final = "sk-fixture"
-SCRIPT_EXHAUSTED: Final = "the case scripts no further provider call"
 SERIALIZE_MESSAGE: Final = "chunk must be a JSON object"
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 
@@ -70,8 +70,7 @@ class ScriptedError(Exception):
 
 class Recorder:
     def __init__(self, input_value: Input) -> None:
-        self.scripts = list(input_value["scripts"])
-        self.script_index = 0
+        self.scripts = deque(input_value["scripts"])
         self.stream = input_value["setup"]["kwargs"].get("stream") is not False
         self.frames: list[str] = []
         self.sends = 0
@@ -107,11 +106,10 @@ class Answering(BaseHTTPRequestHandler):
         body = JSON.validate_json(self.rfile.read(int(length)))
         row: JsonValue = {"method": self.command, "path": self.path, "body": body}
         self.recorder.requests.append(row)
-        if self.recorder.script_index >= len(self.recorder.scripts):
-            self.send_error(500, SCRIPT_EXHAUSTED)
+        if not self.recorder.scripts:
+            self.send_error(500, "the case scripts no further provider call")
             return
-        script = self.recorder.scripts[self.recorder.script_index]
-        self.recorder.script_index += 1
+        script = self.recorder.scripts.popleft()
         events = script_events(script)
         self.send_response(200)
         if self.recorder.stream:
@@ -218,5 +216,9 @@ def script_events(script: ScriptRow) -> list[JsonValue]:
             events.append({"type": row["event_type"]} if dump is None else JSON.validate_json(dump))
         else:
             events.append(row["value"])
-    events.append({"type": "fixture.end"})
+    events.append(
+        {"type": "fixture.error", "message": script["raise_message"]}
+        if script["raise_after"] == len(script["chunks"])
+        else {"type": "fixture.end"}
+    )
     return events

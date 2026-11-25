@@ -60,7 +60,12 @@ fn script_events(script: &ScriptRow) -> Vec<String> {
         };
         events.push(event);
     }
-    events.push(json!({"type":"fixture.end"}).to_string());
+    let end = if script.raise_after == Some(script.chunks.len()) {
+        json!({"type":"fixture.error","message":script.raise_message})
+    } else {
+        json!({"type":"fixture.end"})
+    };
+    events.push(end.to_string());
     events
 }
 

@@ -57,6 +57,43 @@ calls:
       sink:
         fails_at: null
         message: client send failed
+- websocket_oracle:
+    service: managed_responses_turns
+    input:
+      setup:
+        model: openai/gpt-4o-mini
+        litellm_metadata: null
+        custom_llm_provider: null
+        api_key: null
+        api_base: null
+        timeout: null
+        first_message: null
+        kwargs: {}
+      frames:
+      - '{"type": "response.create", "input": "hello"}'
+      disconnect: connection closed
+      scripts:
+      - fail: null
+        chunks:
+        - kind: json
+          event_type: null
+          dump: null
+          value:
+            type: response.completed
+            response:
+              id: not-stored
+              output: []
+              usage:
+                input_tokens: 0
+                output_tokens: 0
+                total_tokens: 0
+                cost: 0.0
+        raise_after: 1
+        raise_message: stream boom
+      quota: null
+      sink:
+        fails_at: null
+        message: client send failed
 env: {}
 compare:
   ignore: []
