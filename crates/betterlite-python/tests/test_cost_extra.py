@@ -2,10 +2,9 @@ import importlib
 import inspect
 from collections.abc import Mapping, Sequence
 from inspect import Signature
-from typing import Final, NotRequired, Protocol, TypeAlias
+from typing import Final, NotRequired, Protocol, TypeAlias, cast
 
 import pytest
-from litellm.types.utils import Usage as ReferenceUsage
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import TypedDict
 
@@ -129,6 +128,10 @@ DUMP: Final[TypeAdapter[DumpView]] = TypeAdapter(DumpView)
 
 
 # LiteLLM's namespace modules carry no stubs, so its calls come back as JSON and are validated here.
+class ReferenceUsage(Protocol):
+    def model_dump_json(self) -> str: ...
+
+
 ReferenceValue: TypeAlias = JsonValue | ReferenceUsage | list[dict[str, JsonValue]]
 
 
@@ -176,7 +179,9 @@ REFERENCE: ReferenceModule = importlib.import_module("litellm.cost_calculator")
 REFERENCE_OCR: ReferenceModule = importlib.import_module(
     "litellm.llms.base_llm.ocr.transformation"
 )
-REFERENCE_PROCESSORS: ReferenceProcessors = importlib.import_module("litellm.cost_calculator")
+REFERENCE_PROCESSORS = cast(
+    ReferenceProcessors, importlib.import_module("litellm.cost_calculator")
+)
 
 RERANK_UNITS: Final[RerankBilledUnits] = {"search_units": RERANK_UNITS_COUNT}
 REFERENCE_RERANK_UNITS: Final[dict[str, JsonValue]] = {"search_units": RERANK_UNITS_COUNT}
@@ -318,12 +323,23 @@ def our_usage(prompt: int, completion: int, cached: int) -> Usage:
     )
 
 
-def reference_usage(prompt: int, completion: int, cached: int) -> ReferenceUsage:
-    return ReferenceUsage(
-        prompt_tokens=prompt,
-        completion_tokens=completion,
-        total_tokens=prompt + completion,
-        cache_read_input_tokens=cached,
+def reference_usage(
+    prompt: int,
+    completion: int,
+    cached: int,
+    prompt_details: dict[str, JsonValue] | None = None,
+) -> ReferenceUsage:
+    values: dict[str, JsonValue] = {
+        "prompt_tokens": prompt,
+        "completion_tokens": completion,
+        "total_tokens": prompt + completion,
+        "cache_read_input_tokens": cached,
+    }
+    if prompt_details is not None:
+        values["prompt_tokens_details"] = prompt_details
+    return cast(
+        ReferenceUsage,
+        getattr(importlib.import_module("litellm.types.utils"), "Usage")(**values),
     )
 
 
@@ -407,18 +423,8 @@ MIXED_USAGES: Final[list[Usage]] = [
     ),
 ]
 REFERENCE_MIXED_USAGES: Final[list[ReferenceUsage]] = [
-    ReferenceUsage(
-        prompt_tokens=MIXED_ALIAS_TOKENS,
-        completion_tokens=1,
-        total_tokens=MIXED_ALIAS_TOKENS + 1,
-        cache_read_input_tokens=MIXED_ALIAS_TOKENS,
-    ),
-    ReferenceUsage(
-        prompt_tokens=MIXED_DETAIL_TOKENS,
-        completion_tokens=1,
-        total_tokens=MIXED_DETAIL_TOKENS + 1,
-        prompt_tokens_details=MIXED_DETAILS,
-    ),
+    reference_usage(MIXED_ALIAS_TOKENS, 1, MIXED_ALIAS_TOKENS),
+    reference_usage(MIXED_DETAIL_TOKENS, 1, 0, MIXED_DETAILS),
 ]
 SERVER_TOOL_USAGE: Final[dict[str, JsonValue]] = {
     "input_tokens": WS_FIRST_PROMPT,
@@ -489,11 +495,7 @@ REFERENCE_VIDEO_RESOLUTION: Final = REFERENCE.default_video_cost_calculator(
     video_resolution=VIDEO_RESOLUTION,
 )
 REFERENCE_BATCH_PAIR: Final = REFERENCE.batch_cost_calculator(
-    usage=ReferenceUsage(
-        prompt_tokens=BATCH_PROMPT_TOKENS,
-        completion_tokens=BATCH_COMPLETION_TOKENS,
-        total_tokens=BATCH_PROMPT_TOKENS + BATCH_COMPLETION_TOKENS,
-    ),
+    usage=reference_usage(BATCH_PROMPT_TOKENS, BATCH_COMPLETION_TOKENS, 0),
     model=BATCH_MODEL,
     custom_llm_provider=OPENAI,
     data_residency=EU_RESIDENCY,
