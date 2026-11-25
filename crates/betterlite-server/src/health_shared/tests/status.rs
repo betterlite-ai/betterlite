@@ -49,6 +49,20 @@ async fn a_fresh_cache_reports_its_age_and_checker() {
 }
 
 #[tokio::test]
+async fn a_fresh_cache_without_a_checker_reports_null() {
+    let world = World::new(instant(SHARED_AT));
+    world.cache.put_json(
+        SharedHealthCheckManager::CACHE_KEY,
+        r#"{"healthy_endpoints":[],"unhealthy_endpoints":[],"timestamp":1704067200.0}"#,
+    );
+    let status = world.manager().get_health_check_status().await;
+    assert_eq!(
+        status_text(&status),
+        r#"{"pod_id":"pod_1704067200000","redis_available":true,"lock_ttl":60,"cache_ttl":300,"lock_owner":null,"lock_in_progress":false,"cache_available":true,"cache_age_seconds":0.0,"last_checked_by":null}"#
+    );
+}
+
+#[tokio::test]
 async fn an_expired_cache_is_reported_unavailable() {
     let world = World::new(instant("2024-01-01T00:05:01Z"));
     world.cache.put_json(

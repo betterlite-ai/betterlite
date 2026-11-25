@@ -1,7 +1,6 @@
 use std::ops::Sub as _;
 
 use async_trait::async_trait;
-use betterlite_models::decisions::Json;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 
@@ -27,13 +26,13 @@ pub enum RedisStatus {
         error: String,
     },
     Available {
-        lock_owner: Json,
+        lock_owner: Option<String>,
         lock_in_progress: bool,
         cache_available: bool,
         #[serde(skip_serializing_if = "Option::is_none")]
         cache_age_seconds: Option<f64>,
         #[serde(skip_serializing_if = "Option::is_none")]
-        last_checked_by: Option<String>,
+        last_checked_by: Option<Option<String>>,
     },
 }
 
@@ -62,12 +61,12 @@ impl SharedHealthStatusSource for SharedHealthCheckManager {
 pub(crate) fn cache_fields(
     cached: Option<CachedHealthCheck>,
     now: DateTime<Utc>,
-) -> (bool, Option<f64>, Option<String>) {
+) -> (bool, Option<f64>, Option<Option<String>>) {
     match cached {
         Some(payload) => (
             true,
             Some(epoch_seconds(now).sub(payload.timestamp_seconds())),
-            payload.checked_by,
+            Some(payload.checked_by),
         ),
         None => (false, None, None),
     }

@@ -674,7 +674,7 @@ pub(crate) fn sample_status() -> SharedHealthStatus {
         lock_ttl: 60,
         cache_ttl: 300,
         redis: Some(RedisStatus::Available {
-            lock_owner: Json::Null,
+            lock_owner: None,
             lock_in_progress: false,
             cache_available: false,
             cache_age_seconds: None,

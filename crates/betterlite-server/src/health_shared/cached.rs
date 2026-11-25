@@ -31,23 +31,29 @@ struct CachedWrite<'write> {
 }
 
 // A cached result as the reader needs it; a missing timestamp reads as 0, so it expires at once.
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
+#[serde(default)]
 pub struct CachedHealthCheck {
-    #[serde(default)]
     pub healthy_endpoints: Vec<JsonObject>,
-    #[serde(default)]
     pub unhealthy_endpoints: Vec<JsonObject>,
-    pub timestamp: Option<Number>,
-    #[serde(default)]
+    pub timestamp: Number,
     pub checked_by: Option<String>,
+}
+
+impl Default for CachedHealthCheck {
+    fn default() -> Self {
+        Self {
+            healthy_endpoints: Vec::new(),
+            unhealthy_endpoints: Vec::new(),
+            timestamp: Number::from(0_u8),
+            checked_by: None,
+        }
+    }
 }
 
 impl CachedHealthCheck {
     pub fn timestamp_seconds(&self) -> f64 {
-        self.timestamp
-            .as_ref()
-            .and_then(Number::as_f64)
-            .unwrap_or_default()
+        self.timestamp.as_f64().unwrap_or_default()
     }
 }
 

@@ -3,7 +3,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_db::ptu::store::sleeper::Sleeper;
-use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use chrono::{DateTime, Utc};
 use num_traits::ToPrimitive as _;
@@ -14,7 +13,7 @@ use crate::model_deprecation::clock::UtcClock;
 
 use super::cache::SharedHealthCache;
 use super::cached::{
-    CachedHealthCheck, cached_payload, encode_cached, epoch_seconds, from_cached, json_from_cached,
+    CachedHealthCheck, cached_owner, cached_payload, encode_cached, epoch_seconds, from_cached,
 };
 use super::error::SharedHealthError;
 use super::lease::{release_lock, shared_lock_lease};
@@ -274,7 +273,7 @@ impl SharedHealthCheckManager {
             }
         };
         let lock_in_progress = owner.is_some();
-        let lock_owner = owner.map_or(Json::Null, json_from_cached);
+        let lock_owner = owner.and_then(cached_owner);
         let (cache_available, cache_age_seconds, last_checked_by) =
             cache_fields(self.cached_health_check_results().await, self.clock.now());
         status.redis = Some(RedisStatus::Available {
