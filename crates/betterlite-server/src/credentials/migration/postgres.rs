@@ -110,7 +110,7 @@ impl MigrationStore for PostgresMigrationStore<'_> {
         param_name: &str,
         value: &MigrationJson,
     ) -> Result<(), MigrationStoreError> {
-        let text = json_text(value)?;
+        let text = serde_json::to_string(value).map_err(ScanError::from)?;
         self.write(SAVE_CONFIG_ROW_SQL, &[&param_name, &text]).await
     }
 
@@ -119,7 +119,7 @@ impl MigrationStore for PostgresMigrationStore<'_> {
     }
 
     async fn save_sso_row(&self, value: &MigrationJson) -> Result<(), MigrationStoreError> {
-        let text = json_text(value)?;
+        let text = serde_json::to_string(value).map_err(ScanError::from)?;
         self.write(SAVE_SSO_ROW_SQL, &[&text]).await
     }
 
@@ -155,7 +155,7 @@ impl MigrationStore for PostgresMigrationStore<'_> {
         metadata: &MigrationJson,
     ) -> Result<(), MigrationStoreError> {
         let (_read_sql, save_sql) = callback_sql(table);
-        let text = json_text(metadata)?;
+        let text = serde_json::to_string(metadata).map_err(ScanError::from)?;
         self.write(save_sql, &[&key, &text]).await
     }
 }
@@ -165,9 +165,4 @@ const fn callback_sql(table: CallbackTable) -> (&'static str, &'static str) {
         CallbackTable::Team => (TEAM_ROWS_SQL, SAVE_TEAM_METADATA_SQL),
         CallbackTable::VerificationToken => (TOKEN_ROWS_SQL, SAVE_TOKEN_METADATA_SQL),
     }
-}
-
-fn json_text(value: &MigrationJson) -> Result<String, MigrationStoreError> {
-    let text = serde_json::to_string(value).map_err(ScanError::from)?;
-    Ok(text)
 }

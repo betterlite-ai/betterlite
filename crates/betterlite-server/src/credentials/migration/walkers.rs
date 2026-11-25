@@ -5,7 +5,7 @@ use betterlite_db::encryption_scan::{
     DbCipher, MigrationJson, ScanError, classify_callback_value, classify_value,
     decode_migration_json, iter_callback_var_dicts, reencrypt_value,
 };
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::ExposeSecret as _;
 
 use super::callback::CallbackTransform;
 use super::store::{CallbackTable, MigrationStore};
@@ -34,7 +34,7 @@ impl<S: MigrationStore> Walkers<'_, S> {
         let mut changed = false;
         for field in fields {
             let outcome = migrate_field(&mut settings, field, self.cipher, dry_run)
-                .map_err(scan_error::<S>)?;
+                .map_err(S::Error::from)?;
             if matches!(outcome, FieldOutcome::Migrated) {
                 changed = true;
             }
@@ -63,7 +63,7 @@ impl<S: MigrationStore> Walkers<'_, S> {
                 continue;
             }
             let outcome = migrate_field(&mut settings, &field, self.cipher, dry_run)
-                .map_err(scan_error::<S>)?;
+                .map_err(S::Error::from)?;
             if matches!(outcome, FieldOutcome::Migrated) {
                 changed = true;
             }
@@ -88,15 +88,15 @@ impl<S: MigrationStore> Walkers<'_, S> {
             let Some(metadata) = row.metadata.as_ref() else {
                 continue;
             };
-            let counts = classify_row(metadata, self.cipher).map_err(scan_error::<S>)?;
-            checked_add(&mut report.scanned, counts.scanned).map_err(scan_error::<S>)?;
-            checked_add(&mut report.already_v2, counts.already_v2).map_err(scan_error::<S>)?;
-            checked_add(&mut report.plaintext, counts.plaintext).map_err(scan_error::<S>)?;
+            let counts = classify_row(metadata, self.cipher).map_err(S::Error::from)?;
+            checked_add(&mut report.scanned, counts.scanned).map_err(S::Error::from)?;
+            checked_add(&mut report.already_v2, counts.already_v2).map_err(S::Error::from)?;
+            checked_add(&mut report.plaintext, counts.plaintext).map_err(S::Error::from)?;
             if counts.legacy == 0 {
                 continue;
             }
             if dry_run {
-                checked_add(&mut report.legacy, counts.legacy).map_err(scan_error::<S>)?;
+                checked_add(&mut report.legacy, counts.legacy).map_err(S::Error::from)?;
                 continue;
             }
             let Ok(re_encrypted) = transform.reencrypt(metadata, self.cipher) else {
@@ -104,10 +104,10 @@ impl<S: MigrationStore> Walkers<'_, S> {
                     "Skipping {} callback_vars (transform failed)",
                     table.location()
                 );
-                checked_add(&mut report.undecryptable, counts.legacy).map_err(scan_error::<S>)?;
+                checked_add(&mut report.undecryptable, counts.legacy).map_err(S::Error::from)?;
                 continue;
             };
-            checked_add(&mut report.migrated, counts.legacy).map_err(scan_error::<S>)?;
+            checked_add(&mut report.migrated, counts.legacy).map_err(S::Error::from)?;
             self.store
                 .save_callback_metadata(table, &row.key, &re_encrypted)
                 .await?;
@@ -158,17 +158,12 @@ fn migrate_field(
     let MigrationJson::String(sealed) = &replacement else {
         return Ok(FieldOutcome::Residual);
     };
-    if unchanged(&current.0, &sealed.0) {
+    // The source keeps a legacy value that re-encrypts to the same ciphertext residual; a fresh nonce always changes it.
+    if current.0.expose_secret() == sealed.0.expose_secret() {
         return Ok(FieldOutcome::Residual);
     }
     settings.insert(field.to_owned(), replacement);
     Ok(FieldOutcome::Migrated)
-}
-
-// The source keeps a legacy value that re-encrypts to the same ciphertext residual; a fresh nonce always changes it, so no stored value takes this branch.
-#[cfg_attr(test, mutants::skip)]
-fn unchanged(before: &SecretString, after: &SecretString) -> bool {
-    before.expose_secret() == after.expose_secret()
 }
 
 fn count_outcome<S: MigrationStore>(
@@ -179,16 +174,16 @@ fn count_outcome<S: MigrationStore>(
         FieldOutcome::Skipped => Ok(()),
         FieldOutcome::AlreadyV2 => report
             .count(Some(ValueClass::Migrated))
-            .map_err(scan_error::<S>),
+            .map_err(S::Error::from),
         FieldOutcome::Plaintext => report
             .count(Some(ValueClass::Plaintext))
-            .map_err(scan_error::<S>),
+            .map_err(S::Error::from),
         FieldOutcome::Residual => report
             .count(Some(ValueClass::Legacy))
-            .map_err(scan_error::<S>),
+            .map_err(S::Error::from),
         FieldOutcome::Migrated => {
-            checked_add(&mut report.scanned, 1).map_err(scan_error::<S>)?;
-            checked_add(&mut report.migrated, 1).map_err(scan_error::<S>)
+            checked_add(&mut report.scanned, 1).map_err(S::Error::from)?;
+            checked_add(&mut report.migrated, 1).map_err(S::Error::from)
         }
     }
 }
@@ -243,7 +238,9 @@ fn mapping<S: MigrationStore>(
 ) -> Result<Option<BTreeMap<String, MigrationJson>>, S::Error> {
     let decoded = match stored {
         MigrationJson::Object(settings) => return Ok(Some(settings)),
-        MigrationJson::String(text) => decode(text.0.expose_secret().as_bytes())?,
+        MigrationJson::String(text) => {
+            decode_migration_json(text.0.expose_secret().as_bytes()).map_err(S::Error::from)?
+        }
         MigrationJson::Null
         | MigrationJson::Bool(_)
         | MigrationJson::Number(_)
@@ -259,14 +256,6 @@ fn mapping<S: MigrationStore>(
         | MigrationJson::String(_)
         | MigrationJson::Array(_) => Ok(None),
     }
-}
-
-fn decode<S: MigrationStore>(bytes: &[u8]) -> Result<MigrationJson, S::Error> {
-    decode_migration_json(bytes).map_err(scan_error::<S>)
-}
-
-fn scan_error<S: MigrationStore>(source: ScanError) -> S::Error {
-    <S::Error as From<ScanError>>::from(source)
 }
 
 fn checked_add(counter: &mut u64, amount: u64) -> Result<(), ScanError> {
