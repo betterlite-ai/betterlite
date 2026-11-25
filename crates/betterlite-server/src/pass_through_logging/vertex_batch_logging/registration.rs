@@ -5,14 +5,14 @@ use betterlite_models::model_registration::JsonObject;
 use betterlite_openai::batches::records::BatchObject;
 use rust_decimal::Decimal;
 use secrecy::SecretString;
-use tokio::runtime::Handle;
 
 use super::error::VertexBatchError;
 use crate::pass_through_logging::anthropic_batch::{
     BatchRegistrant, BatchRegistration, ManagedBatchRegistry,
 };
+use crate::pass_through_logging::background_tasks::BackgroundTasks;
 use crate::pass_through_logging::batch_attribution::{
-    log_batch_registration_result, optional_str, request_tags_from_metadata,
+    optional_str, request_tags_from_metadata, spawn_batch_registration,
 };
 
 pub(super) fn request(
@@ -60,22 +60,11 @@ pub(super) fn request(
 }
 
 pub(super) fn spawn(
+    background: &BackgroundTasks,
     registry: &Arc<dyn ManagedBatchRegistry>,
     request: BatchRegistration,
 ) -> Result<(), VertexBatchError> {
-    let runtime = Handle::try_current().map_err(|source| VertexBatchError::NoRuntime { source })?;
-    let unified_object_id = request.unified_object_id.clone();
-    let model_object_id = request.model_object_id.clone();
-    let is_batch_create = request.create_if_missing;
-    let finished = runtime.spawn(registry.store_unified_object_id(request));
-    runtime.spawn(async move {
-        log_batch_registration_result(
-            finished.await,
-            "Vertex AI",
-            &unified_object_id,
-            &model_object_id,
-            is_batch_create,
-        );
-    });
+    let _handle = spawn_batch_registration(background, registry, "Vertex AI", request)
+        .map_err(|source| VertexBatchError::NoRuntime { source })?;
     Ok(())
 }

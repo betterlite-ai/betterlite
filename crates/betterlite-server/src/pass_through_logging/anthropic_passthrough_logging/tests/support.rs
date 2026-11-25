@@ -37,6 +37,7 @@ use super::super::{
 use crate::pass_through_logging::anthropic_batch::{
     AnthropicBatchLogging, BatchRegistration, ManagedBatchRegistry, RegistryError, ResponseIds,
 };
+use crate::pass_through_logging::background_tasks::BackgroundTasks;
 use crate::pass_through_logging::response_costing::{ResponseCostRequest, ResponseCostService};
 
 pub(super) const MESSAGES_ROUTE: &str = "/anthropic/v1/messages";
@@ -163,7 +164,12 @@ pub(super) fn logger(
     registry: &Arc<RecordingRegistry>,
 ) -> AnthropicPassthroughLogger {
     let shared_registry: Arc<dyn ManagedBatchRegistry> = Arc::<RecordingRegistry>::clone(registry);
-    let batch_logging = AnthropicBatchLogging::new(None, Some(shared_registry), Arc::new(FixedIds));
+    let batch_logging = AnthropicBatchLogging::new(
+        None,
+        Some(shared_registry),
+        Arc::new(FixedIds),
+        BackgroundTasks::default(),
+    );
     let shared_cost: Arc<dyn ResponseCostService> = Arc::<RecordingCost>::clone(cost);
     AnthropicPassthroughLogger::new(batch_logging, shared_cost)
 }
