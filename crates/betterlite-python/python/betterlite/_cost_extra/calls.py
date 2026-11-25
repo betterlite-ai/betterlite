@@ -102,13 +102,13 @@ def transcription_cost(
     return pair(ENGINE.transcription_cost, json.dumps(request))
 
 
-def default_image_cost_calculator(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2407
+def default_image_cost_calculator(  # noqa: PLR0913, PLR0917, ARG001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2407
     model: str,
     custom_llm_provider: str | None = None,
     quality: str | None = None,
     n: int | None = 1,
     size: str | None = "1024-x-1024",
-    optional_params: dict[str, JsonValue] | None = None,  # noqa: ARG001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2413
+    optional_params: dict[str, JsonValue] | None = None,
     model_info: dict[str, JsonValue] | None = None,
 ) -> float:
     request: ImageRequestWire = {

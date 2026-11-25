@@ -176,7 +176,12 @@ class ReferenceProcessor(Protocol):
     ) -> ReferenceUsage: ...
 
 
+class ReferenceUsageFactory(Protocol):
+    def __call__(self, **values: JsonValue) -> ReferenceUsage: ...
+
+
 class ReferenceProcessors(Protocol):
+    Usage: ReferenceUsageFactory
     BaseTokenUsageProcessor: ReferenceProcessor
     RealtimeAPITokenUsageProcessor: ReferenceProcessor
     ResponsesWebSocketTokenUsageProcessor: ReferenceProcessor  # ast-grep-ignore: no-long-names
@@ -345,10 +350,7 @@ def reference_usage(
         values["cache_read_input_tokens"] = cached
     if prompt_details is not None:
         values["prompt_tokens_details"] = prompt_details
-    return cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1857
-        ReferenceUsage,
-        importlib.import_module("litellm.types.utils").Usage(**values),
-    )
+    return REFERENCE_PROCESSORS.Usage(**values)
 
 
 def usage_counts(usage: Usage | ReferenceUsage) -> CountsView:
@@ -438,8 +440,8 @@ MIXED_USAGES: Final[list[Usage]] = [
     ),
 ]
 REFERENCE_MIXED_USAGES: Final[list[ReferenceUsage]] = [
-    reference_usage(MIXED_ALIAS_TOKENS, 1, MIXED_ALIAS_TOKENS),
     reference_usage(MIXED_DETAIL_TOKENS, 1, None, MIXED_DETAILS),
+    reference_usage(MIXED_ALIAS_TOKENS, 1, MIXED_ALIAS_TOKENS),
 ]
 SERVER_TOOL_USAGE: Final[dict[str, JsonValue]] = {
     "input_tokens": WS_FIRST_PROMPT,
