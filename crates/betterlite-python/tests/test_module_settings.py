@@ -6,17 +6,26 @@ from collections.abc import Awaitable, Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
-from types import ModuleType
-from typing import Final, TypeAlias, get_type_hints
+from types import ModuleType, NoneType
+from typing import Final, TypeAlias, get_args, get_type_hints
 
+import httpx2
 import litellm
 import pytest
 from pydantic import JsonValue, TypeAdapter
 
 import betterlite
 import betterlite._settings.callbacks as settings_callbacks
+import betterlite._settings.params as settings_params
 from betterlite import _native
+from betterlite._router_types_routing import ModelGroupSettings
 from betterlite._settings.callbacks import Callback
+from betterlite._settings.params import CacheReference, ProxyAuthReference
+from betterlite.types.integrations import datadog, newrelic, pointfive, zerobus
+from betterlite.types.integrations.datadog_llm_obs import DatadogLLMObsInitParams
+from betterlite.types.proxy.management_endpoints import ui_sso
+from betterlite.types.secret_managers.main import KeyManagementSystem
+from betterlite.types.utils import BudgetConfig
 from betterlite.types.utils.base import ModelValue
 
 ASSIGNMENT_LIMIT = 2314
@@ -200,6 +209,45 @@ ASSIGNMENT_GROUPS: tuple[tuple[str, ...], ...] = (
     NOT_BUILT,
 )
 
+DECLARED_ARGUMENTS: Final[dict[str, tuple[type, ...]]] = {
+    "Optional[str]": (str, NoneType),
+    "Optional[float]": (float, NoneType),
+    "Optional[List]": (list[JsonValue], NoneType),
+    "Optional[Dict]": (dict[str, JsonValue], NoneType),
+    "Optional[Dict[str, list]]": (dict[str, list[JsonValue]], NoneType),
+    "Optional[List[str]]": (list[str], NoneType),
+    "Optional[bool]": (bool, NoneType),
+    "Optional[int]": (int, NoneType),
+    "Optional[Union[str, List]]": (str, list[JsonValue], NoneType),
+    "Optional[dict]": (dict[str, JsonValue], NoneType),
+    "str | None": (str, NoneType),
+    "float | None": (float, NoneType),
+}
+
+SPECIAL_ARGUMENTS: Final[dict[str, tuple[type, ...]]] = {
+    "_key_management_system": (KeyManagementSystem, NoneType),
+    "aclient_session": (httpx2.AsyncClient, NoneType),
+    "cache": (CacheReference, NoneType),
+    "client_session": (httpx2.Client, NoneType),
+    "datadog_llm_observability_params": (DatadogLLMObsInitParams, dict[str, JsonValue], NoneType),
+    "datadog_params": (datadog.DatadogInitParams, dict[str, JsonValue], NoneType),
+    "default_team_params": (ui_sso.DefaultTeamSSOParams, dict[str, JsonValue], NoneType),
+    "key_generation_settings": (object, NoneType),
+    "mcp_tool_search": (Mapping[str, JsonValue], NoneType),
+    "model_group_settings": (ModelGroupSettings, NoneType),
+    "newrelic_params": (newrelic.NewRelicInitParams, dict[str, JsonValue], NoneType),
+    "pointfive_params": (pointfive.PointFiveInitParams, Mapping[str, JsonValue], NoneType),
+    "priority_reservation": (dict[str, object], NoneType),
+    "proxy_auth": (ProxyAuthReference, NoneType),
+    "secret_manager_client": (object, NoneType),
+    "tag_budget_config": (dict[str, BudgetConfig], NoneType),
+    "upperbound_key_generate_params": (ui_sso.UpperboundKeyGenerateParams, NoneType),
+    "zerobus_params": (zerobus.ZerobusInitParams, Mapping[str, JsonValue], NoneType),
+}
+
+# in_memory_llm_clients_cache carries JsonValue, a type alias rather than a class
+ALIASED_SETTINGS: tuple[str, ...] = ("in_memory_llm_clients_cache",)
+
 ENV_VARIABLES: tuple[str, ...] = (
     "LITELLM_MODE",
     "DEFAULT_MAX_TOKENS",
@@ -347,6 +395,27 @@ def test_setting_defaults_cover_litellm_assignments() -> None:
     assert len(listed) == len(set(listed))
     assert set(listed) == assigned
     assert len(assigned) > MIN_ASSIGNMENTS
+
+
+# ast-grep-ignore: no-long-names
+def test_setting_annotations_match_litellm_declarations() -> None:
+    theirs: dict[str, str] = litellm.__annotations__
+    ours: dict[str, type] = settings_params.__annotations__
+    members = _members(settings_params)
+    names = sorted(name for name, value in members.items() if value is None)
+    bare = [name for name in names if name in theirs and name not in ours]
+    assert bare == []
+    stray = [name for name in names if name not in theirs and name in ours]
+    assert stray == []
+    for name in names:
+        if name not in theirs or name in ALIASED_SETTINGS:
+            continue
+        if name in SPECIAL_ARGUMENTS:
+            expected = SPECIAL_ARGUMENTS[name]
+        else:
+            expected = DECLARED_ARGUMENTS[theirs[name]]
+        arguments: tuple[type, ...] = get_args(ours[name])
+        assert arguments == expected, name
 
 
 # ast-grep-ignore: no-long-names
