@@ -64,21 +64,13 @@ fn histogram_keys(
     description: &CollectorDescription,
     label_values: &[String],
 ) -> Result<HistogramKeys, MultiprocessError> {
-    let sum = key_of(
-        description,
-        &format!("{}_sum", description.name),
-        label_values,
-        None,
-    )?;
+    let sample = format!("{}_sum", description.name);
+    let sum = key_of(description, &sample, label_values, None)?;
     let mut buckets = Vec::with_capacity(description.buckets.len());
+    let bucket_name = format!("{}_bucket", description.name);
     for bound in &description.buckets {
         let le = float_to_go_string(bound.key());
-        let key = key_of(
-            description,
-            &format!("{}_bucket", description.name),
-            label_values,
-            Some(&le),
-        )?;
+        let key = key_of(description, &bucket_name, label_values, Some(&le))?;
         buckets.push(BucketKey { key, bound: *bound });
     }
     Ok(HistogramKeys { sum, buckets })

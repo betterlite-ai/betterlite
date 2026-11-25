@@ -104,12 +104,8 @@ impl MultiProcessWriter {
     ) -> Result<(), MultiprocessError> {
         let keys = series::keys(description, label_values)?;
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        let file = open_file(
-            &mut state,
-            &self.directory,
-            FileKind::of(description),
-            self.pid,
-        )?;
+        let kind = FileKind::of(description);
+        let file = open_file(&mut state, &self.directory, kind, self.pid)?;
         let result = match write {
             SeriesWrite::Update(update) => series::apply(file, &keys, update),
             SeriesWrite::Create => {

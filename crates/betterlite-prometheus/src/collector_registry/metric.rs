@@ -8,7 +8,7 @@ use crate::collector_factory::collector::{Collector, MetricUpdate, MetricValue};
 use crate::multiprocess::writer::MultiProcessWriter;
 
 use gauge_mode::GaugeMode;
-use sample::{Sample, added};
+use sample::{Sample, added, label_key};
 
 pub(crate) mod binding;
 pub mod gauge_mode;
@@ -229,13 +229,6 @@ impl PrometheusMetric {
         Arc::make_mut(&mut self.description).multiprocess_mode = mode;
         self
     }
-}
-
-fn label_key(label_values: &[Option<String>]) -> Vec<String> {
-    label_values
-        .iter()
-        .map(|value| value.clone().unwrap_or_else(|| MISSING_LABEL.to_owned()))
-        .collect()
 }
 
 impl Collector for PrometheusMetric {

@@ -93,9 +93,8 @@ pub(super) fn scrape_answer(
 
 fn metric_file_names(directory: &Path) -> Result<Vec<String>, Box<HelperError>> {
     let mut names = Vec::new();
-    for listed in fs::read_dir(directory).or_value_error()? {
-        let entry = listed.or_value_error()?;
-        let path = entry.path();
+    for entry in fs::read_dir(directory).or_value_error()? {
+        let path = entry.or_value_error()?.path();
         if path.extension() != Some(OsStr::new("db")) {
             continue;
         }
@@ -109,10 +108,10 @@ fn metric_file_names(directory: &Path) -> Result<Vec<String>, Box<HelperError>> 
 }
 
 fn used_length(bytes: &[u8]) -> usize {
-    match bytes.first_chunk::<4>() {
-        Some(field) => usize::try_from(i32::from_le_bytes(*field)).unwrap_or_default(),
-        None => 0,
-    }
+    let Some(field) = bytes.first_chunk::<4>() else {
+        return 0;
+    };
+    usize::try_from(i32::from_le_bytes(*field)).unwrap_or_default()
 }
 
 fn used_hex(bytes: &[u8]) -> String {

@@ -27,6 +27,12 @@ struct StoredValue {
     value: f64,
 }
 
+impl StoredValue {
+    const fn new(position: usize, value: f64) -> Self {
+        Self { position, value }
+    }
+}
+
 #[derive(Clone, Copy)]
 pub(super) enum ValueChange {
     Add(f64),
@@ -97,13 +103,9 @@ impl FileState {
         let used_field = encode_used(self.used)?;
         write_at(&self.file, USED_OFFSET, &used_field, &self.path)?;
         let position = self.used.saturating_sub(TWO_DOUBLES_BYTES);
-        let _inserted = self.values.insert(
-            key.to_owned(),
-            StoredValue {
-                position,
-                value: 0.0,
-            },
-        );
+        let _inserted = self
+            .values
+            .insert(key.to_owned(), StoredValue::new(position, 0.0));
         Ok(())
     }
 
@@ -121,12 +123,8 @@ impl FileState {
             ValueChange::Add(amount) => Add::add(stored.value, amount),
             ValueChange::Replace(value) => value,
         };
-        write_at(
-            &self.file,
-            stored.position,
-            &encode_value(stored.value, 0.0),
-            &self.path,
-        )
+        let bytes = encode_value(stored.value, 0.0);
+        write_at(&self.file, stored.position, &bytes, &self.path)
     }
 }
 
@@ -161,13 +159,7 @@ fn rebuilt(path: PathBuf, file: fs::File, capacity: usize) -> Result<FileState, 
 fn stored_values(bytes: &[u8]) -> Result<BTreeMap<String, StoredValue>, MultiprocessError> {
     let mut values = BTreeMap::new();
     for (entry, position) in decode_db_values(bytes)? {
-        let _replaced = values.insert(
-            entry.key,
-            StoredValue {
-                position,
-                value: entry.value,
-            },
-        );
+        let _replaced = values.insert(entry.key, StoredValue::new(position, entry.value));
     }
     Ok(values)
 }
