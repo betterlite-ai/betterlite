@@ -1,0 +1,18 @@
+kind: helper
+name: native-errors-raw-provider-status
+call:
+  native_error:
+    kind: raw
+    model: command-r
+    custom_llm_provider: cohere
+    error_str: "unrecognized failure"
+    status_code: 498
+calls:
+  - native_error:
+      kind: raw
+      model: command-r
+      custom_llm_provider: cohere
+      error_str: "invalid api token"
+      status_code: 400
+env: {}
+compare: {ignore: []}
