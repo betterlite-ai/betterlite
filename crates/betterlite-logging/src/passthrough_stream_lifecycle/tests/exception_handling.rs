@@ -197,6 +197,10 @@ async fn disconnect_during_usage_recovery_preserves_usage_and_dispatches_one_fai
     lifecycle.tasks.wait().await;
 
     assert_eq!(recorded_usage(logging_obj.as_ref()), Some((10, 5, 15)));
+    assert_eq!(
+        harness.failure_dispatch.usage_at_dispatch(),
+        vec![Some((10, 5, 15))]
+    );
     assert_eq!(harness.queue.kinds(), vec![StreamJobKind::Failure]);
     assert_eq!(harness.failure_dispatch.failures().len(), 1);
 }

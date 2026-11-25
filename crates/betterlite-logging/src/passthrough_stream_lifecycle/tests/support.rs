@@ -516,6 +516,7 @@ pub(super) struct RecordedFailure {
 #[derive(Default)]
 pub(super) struct RecordingFailureDispatch {
     pub(super) failures: Mutex<Vec<RecordedFailure>>,
+    usage_at_dispatch: Mutex<Vec<Option<(i64, i64, i64)>>>,
 }
 
 impl RecordingFailureDispatch {
@@ -525,14 +526,25 @@ impl RecordingFailureDispatch {
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
     }
+
+    pub(super) fn usage_at_dispatch(&self) -> Vec<Option<(i64, i64, i64)>> {
+        self.usage_at_dispatch
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
 }
 
 impl StreamFailureDispatch for RecordingFailureDispatch {
     fn dispatch_failure(
         &self,
-        _logging_obj: Arc<StreamLoggingObject>,
+        logging_obj: Arc<StreamLoggingObject>,
         failure: &StreamFailure,
     ) -> StreamWork {
+        self.usage_at_dispatch
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(recorded_usage(logging_obj.as_ref()));
         self.failures
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
