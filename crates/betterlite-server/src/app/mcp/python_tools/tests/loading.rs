@@ -2,7 +2,7 @@ use betterlite_mcp::openapi_tools::output::OpenApiToolOutput;
 use betterlite_mcp::tool_registry::registry::ToolRegistryError;
 use rstest::rstest;
 
-use super::support::{call, entries, fixture, tool_yaml};
+use super::support::{call, entries, fixture, tools_yaml};
 use crate::app::mcp::python_tools::PythonToolsError;
 
 #[tokio::test]
@@ -14,11 +14,12 @@ async fn loads_each_configured_handler_in_entry_order() {
     let second = fixture
         .workspace
         .module("b8871_second", "def run():\n    return \"second\"\n");
-    let configured = entries(&format!(
-        "{}{}",
-        tool_yaml("first", &format!("{first}.run")),
-        tool_yaml("second", &format!("{second}.run"))
-    ));
+    let first_handler = format!("{first}.run");
+    let second_handler = format!("{second}.run");
+    let configured = entries(&tools_yaml(&[
+        ("first", first_handler.as_str()),
+        ("second", second_handler.as_str()),
+    ]));
     fixture.load(Some(&configured)).await.unwrap();
     assert_eq!(fixture.names(), ["first", "second"]);
     assert_eq!(
@@ -39,7 +40,8 @@ async fn imports_a_module_below_the_config_folder() {
         "b8871_nested",
         "def echo(city):\n    return city\n",
     );
-    let configured = entries(&tool_yaml("echo", &format!("{module}.echo")));
+    let handler = format!("{module}.echo");
+    let configured = entries(&tools_yaml(&[("echo", handler.as_str())]));
     fixture.load(Some(&configured)).await.unwrap();
     assert_eq!(
         call(&fixture, "echo", r#"{"city": "Paris"}"#)
@@ -61,12 +63,14 @@ async fn a_duplicate_name_replaces_the_handler_without_reordering() {
     let third = fixture
         .workspace
         .module("b8871_dup_three", "def run():\n    return \"three\"\n");
-    let configured = entries(&format!(
-        "{}{}{}",
-        tool_yaml("alpha", &format!("{first}.run")),
-        tool_yaml("beta", &format!("{second}.run")),
-        tool_yaml("alpha", &format!("{third}.run"))
-    ));
+    let first_handler = format!("{first}.run");
+    let second_handler = format!("{second}.run");
+    let third_handler = format!("{third}.run");
+    let configured = entries(&tools_yaml(&[
+        ("alpha", first_handler.as_str()),
+        ("beta", second_handler.as_str()),
+        ("alpha", third_handler.as_str()),
+    ]));
     fixture.load(Some(&configured)).await.unwrap();
     assert_eq!(fixture.names(), ["alpha", "beta"]);
     assert_eq!(
@@ -100,7 +104,8 @@ async fn skips_an_incomplete_entry_without_importing_it(#[case] yaml: &str) {
 async fn skips_a_handler_that_resolved_to_none() {
     let fixture = fixture();
     let module = fixture.workspace.module("b8871_none", "handler = None\n");
-    let configured = entries(&tool_yaml("skipped", &format!("{module}.handler")));
+    let handler = format!("{module}.handler");
+    let configured = entries(&tools_yaml(&[("skipped", handler.as_str())]));
     fixture.load(Some(&configured)).await.unwrap();
     assert!(fixture.names().is_empty());
 }
@@ -114,12 +119,13 @@ async fn keeps_earlier_tools_when_a_later_import_fails() {
     let later = fixture
         .workspace
         .module("b8871_later", "def run():\n    return \"later\"\n");
-    let configured = entries(&format!(
-        "{}{}{}",
-        tool_yaml("kept", &format!("{first}.run")),
-        tool_yaml("broken", "b8871_ghost.missing"),
-        tool_yaml("later", &format!("{later}.run"))
-    ));
+    let first_handler = format!("{first}.run");
+    let later_handler = format!("{later}.run");
+    let configured = entries(&tools_yaml(&[
+        ("kept", first_handler.as_str()),
+        ("broken", "b8871_ghost.missing"),
+        ("later", later_handler.as_str()),
+    ]));
     let error = fixture.load(Some(&configured)).await.unwrap_err();
     match error {
         PythonToolsError::Load { handler, .. } => assert_eq!(handler, "b8871_ghost.missing"),
@@ -134,11 +140,9 @@ async fn keeps_earlier_tools_when_a_later_entry_is_not_a_mapping() {
     let first = fixture
         .workspace
         .module("b8871_map", "def run():\n    return \"kept\"\n");
-    let configured = entries(&format!(
-        "{}{}",
-        tool_yaml("kept", &format!("{first}.run")),
-        "  - not-a-mapping\n"
-    ));
+    let first_handler = format!("{first}.run");
+    let kept = tools_yaml(&[("kept", first_handler.as_str())]);
+    let configured = entries(&format!("{kept}  - not-a-mapping\n"));
     let error = fixture.load(Some(&configured)).await.unwrap_err();
     assert!(matches!(
         error,
@@ -178,7 +182,8 @@ async fn loading_never_calls_the_handler() {
     let source =
         format!("def run():\n    open(\"{path}\", \"w\").write(\"called\")\n    return \"idle\"\n");
     let module = fixture.workspace.module("b8871_not_called", &source);
-    let configured = entries(&tool_yaml("idle", &format!("{module}.run")));
+    let handler = format!("{module}.run");
+    let configured = entries(&tools_yaml(&[("idle", handler.as_str())]));
     fixture.load(Some(&configured)).await.unwrap();
     assert_eq!(fixture.names(), ["idle"]);
     assert!(!marker.exists());

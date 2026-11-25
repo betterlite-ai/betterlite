@@ -22,6 +22,7 @@ use thiserror::Error;
 
 use crate::python_hooks::HooksError;
 use crate::python_hooks::PythonHooks;
+use crate::python_hooks::deadline::LOAD_DEADLINE;
 use crate::python_hooks::slots::{HookSlot, LoadedHook};
 
 use self::arguments::keyword_arguments;
@@ -93,14 +94,24 @@ async fn ready_loader(
             source: Box::new(source),
         })?;
     // get_instance_fn returns the attribute as it is, so a None one is the handler the registry skips
-    let skipping = hook
-        .host
-        .attach(|py| hook.object.loaded.object.bind(py).is_none());
+    // The visit is tracked blocking work, so another Python thread holding the GIL cannot park this task
+    let tracker = Arc::clone(&hook.tracker);
+    let host = hook.host.clone();
+    let (skipping, checked) = tracker
+        .run(&host, LOAD_DEADLINE, move |py| {
+            let skipping = hook.object.loaded.object.bind(py).is_none();
+            (skipping, hook)
+        })
+        .await
+        .map_err(|source| PythonToolsError::Load {
+            handler: handler.to_owned(),
+            source: Box::new(HooksError::Call(CallError::Work(source))),
+        })?;
     if skipping {
         return Ok(ReadyLoader { handler: None });
     }
     Ok(ReadyLoader {
-        handler: Some(Arc::new(PythonToolHandler { hook })),
+        handler: Some(Arc::new(PythonToolHandler { hook: checked })),
     })
 }
 

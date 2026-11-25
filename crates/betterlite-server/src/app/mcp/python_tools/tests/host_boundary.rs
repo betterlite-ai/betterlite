@@ -7,7 +7,7 @@ use tokio::task::JoinSet;
 use tokio::time::advance;
 
 use super::support::{
-    context, entries, fixture, load_tool, on_sys_path, tool_yaml, workspace, yield_times,
+    context, entries, fixture, load_tool, on_sys_path, tools_yaml, workspace, yield_times,
 };
 use crate::app::mcp::python_tools::{PythonToolsError, load_configured_tools};
 use crate::python_hooks::HooksError;
@@ -48,7 +48,7 @@ async fn a_remote_handler_needs_the_config_file_provenance(#[case] scheme: &str)
     let hooks = PythonHooks::new(None);
     let registry = ToolRegistry::default();
     let handler = format!("{scheme}://bucket/b8871_remote.handler");
-    let configured = entries(&tool_yaml("remote", &handler));
+    let configured = entries(&tools_yaml(&[("remote", handler.as_str())]));
     let error = load_configured_tools(
         &registry,
         &hooks,
@@ -95,7 +95,7 @@ async fn a_local_module_needs_the_config_file_provenance() {
     let handler = format!("{module}.echo");
     let hooks = PythonHooks::new(None);
     let registry = ToolRegistry::default();
-    let configured = entries(&tool_yaml("echo", &handler));
+    let configured = entries(&tools_yaml(&[("echo", handler.as_str())]));
     let error = load_configured_tools(
         &registry,
         &hooks,

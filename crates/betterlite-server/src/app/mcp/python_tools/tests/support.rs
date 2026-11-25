@@ -93,13 +93,24 @@ pub(super) fn entries(yaml: &str) -> Vec<McpToolEntry> {
     decode_mcp_tools(yaml.as_bytes()).unwrap().entries
 }
 
-pub(super) fn tool_yaml(name: &str, handler: &str) -> String {
-    format!("mcp_tools:\n  - name: {name}\n    description: runs {name}\n    handler: {handler}\n")
+pub(super) fn tools_yaml(tools: &[(&str, &str)]) -> String {
+    let mut configured = String::from("mcp_tools:\n");
+    for &(name, handler) in tools {
+        configured.push_str("  - name: ");
+        configured.push_str(name);
+        configured.push_str("\n    description: runs ");
+        configured.push_str(name);
+        configured.push_str("\n    handler: ");
+        configured.push_str(handler);
+        configured.push('\n');
+    }
+    configured
 }
 
 pub(super) async fn load_tool(fixture: &Fixture, module: &str, source: &str, attribute: &str) {
     let qualified = fixture.workspace.module(module, source);
-    let configured = entries(&tool_yaml("tool", &format!("{qualified}.{attribute}")));
+    let handler = format!("{qualified}.{attribute}");
+    let configured = entries(&tools_yaml(&[("tool", handler.as_str())]));
     fixture.load(Some(&configured)).await.unwrap();
 }
 
