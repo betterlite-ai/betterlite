@@ -16,6 +16,7 @@ call:
       - {access_group_id: ag-1, access_mcp_server_ids: [srv-extra]}
     toolset_grants: {srv-toolset: [list]}
     permission:
+      object_permission_id: op-case
       mcp_servers: [gh, srv-direct, unknown-name]
       mcp_access_groups: [grp-1]
       mcp_tool_permissions: {tool-alias: [read]}
@@ -30,6 +31,7 @@ calls:
       access_groups: []
       toolset_grants: {}
       permission:
+        object_permission_id: op-case
         mcp_servers: [shared, all-proxy-mcpservers]
         mcp_access_groups: [grp-2]
         mcp_tool_permissions: {srv-a: [read], beta: [write]}
@@ -42,7 +44,7 @@ calls:
       access_groups:
         - {access_group_id: ag-1, access_mcp_server_ids: [alpha, srv-loose]}
       toolset_grants: {}
-      permission: {mcp_servers: null, mcp_access_groups: null, mcp_tool_permissions: null, mcp_toolsets: null}
+      permission: {object_permission_id: op-case, mcp_servers: null, mcp_access_groups: null, mcp_tool_permissions: null, mcp_toolsets: null}
       access_group_ids: [ag-1]
 env: {}
 compare: {ignore: []}

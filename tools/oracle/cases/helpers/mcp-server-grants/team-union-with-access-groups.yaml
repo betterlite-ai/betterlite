@@ -16,6 +16,7 @@ call:
     blocked: false
     team_access_group_ids: [ag-team, ag-missing]
     permission:
+      object_permission_id: op-case
       mcp_servers: [al, nope]
       mcp_access_groups: [grp-1]
       mcp_tool_permissions: {beta: [read]}
@@ -42,6 +43,6 @@ calls:
       team_id: team-1
       blocked: true
       team_access_group_ids: [ag-team]
-      permission: {mcp_servers: [srv-a], mcp_access_groups: null, mcp_tool_permissions: null, mcp_toolsets: null}
+      permission: {object_permission_id: op-case, mcp_servers: [srv-a], mcp_access_groups: null, mcp_tool_permissions: null, mcp_toolsets: null}
 env: {}
 compare: {ignore: []}

@@ -15,6 +15,7 @@ call:
     blocked: false
     team_access_group_ids: [ag-team]
     permission:
+      object_permission_id: op-case
       mcp_servers: [all-proxy-mcpservers]
       mcp_access_groups: [grp-1]
       mcp_tool_permissions: {srv-tools: [read]}
@@ -31,6 +32,6 @@ calls:
       team_id: team-1
       blocked: false
       team_access_group_ids: []
-      permission: {mcp_servers: [srv-a, all-proxy-mcpservers, unknown-name], mcp_access_groups: null, mcp_tool_permissions: null, mcp_toolsets: null}
+      permission: {object_permission_id: op-case, mcp_servers: [srv-a, all-proxy-mcpservers, unknown-name], mcp_access_groups: null, mcp_tool_permissions: null, mcp_toolsets: null}
 env: {}
 compare: {ignore: []}

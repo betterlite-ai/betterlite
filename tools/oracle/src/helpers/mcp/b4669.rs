@@ -4,7 +4,6 @@ mod tests;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use betterlite_db::budget_permission_rows::PermissionList;
 use betterlite_mcp::auth::object_permission_hydration::reads::ObjectPermission;
 use betterlite_mcp::auth::object_permission_hydration::record::McpAuth;
 use betterlite_mcp::registry::servers::{RegistrySettings, ServerRegistry};
@@ -18,19 +17,6 @@ use tokio::runtime::Builder;
 use tokio::sync::RwLock;
 
 use self::reads::CaseReads;
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct PermissionRecord {
-    #[serde(rename = "mcp_servers")]
-    servers: Option<Vec<String>>,
-    #[serde(rename = "mcp_access_groups")]
-    access_groups: Option<Vec<String>>,
-    #[serde(rename = "mcp_tool_permissions")]
-    tool_permissions: Option<ToolGrants>,
-    #[serde(rename = "mcp_toolsets")]
-    toolsets: Option<Vec<String>>,
-}
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -46,7 +32,7 @@ pub(crate) struct KeyCall {
     servers: Vec<MCPServer>,
     access_groups: Vec<AccessGroupRecord>,
     toolset_grants: ToolGrants,
-    permission: PermissionRecord,
+    permission: ObjectPermission,
     access_group_ids: Vec<String>,
 }
 
@@ -59,7 +45,7 @@ pub(crate) struct TeamCall {
     team_id: String,
     blocked: bool,
     team_access_group_ids: Vec<String>,
-    permission: Option<PermissionRecord>,
+    permission: Option<ObjectPermission>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -111,7 +97,7 @@ async fn key_answer(call: &KeyCall) -> Vec<String> {
             end_user_id: None,
             agent_id: None,
             object_permission_id: None,
-            object_permission: Some(ObjectPermission::from(&call.permission)),
+            object_permission: Some(call.permission.clone()),
             requires_fresh_policy: false,
         },
         access_group_ids: call.access_group_ids.clone(),
@@ -144,7 +130,7 @@ async fn team_answer(call: &TeamCall) -> Vec<String> {
     let team = TeamRecord {
         blocked: call.blocked,
         access_group_ids: call.team_access_group_ids.clone(),
-        object_permission: call.permission.as_ref().map(ObjectPermission::from),
+        object_permission: call.permission.clone(),
     };
     let reads = case_reads(
         &call.servers,
@@ -182,26 +168,5 @@ fn case_reads(
         toolset_grants: toolset_grants.clone(),
         team,
         user_teams: None,
-    }
-}
-
-// the case carries no object permission id, so every converted row shares one placeholder
-impl From<&PermissionRecord> for ObjectPermission {
-    fn from(permission: &PermissionRecord) -> Self {
-        Self {
-            object_permission_id: String::from("op-case"),
-            mcp_servers: PermissionList(permission.servers.clone()),
-            mcp_access_groups: PermissionList(permission.access_groups.clone()),
-            mcp_tool_permissions: permission.tool_permissions.clone(),
-            vector_stores: PermissionList(None),
-            agents: PermissionList(None),
-            agent_access_groups: PermissionList(None),
-            models: PermissionList(None),
-            mcp_toolsets: permission.toolsets.clone(),
-            blocked_tools: PermissionList(None),
-            search_tools: PermissionList(None),
-            mcp_tool_search_enabled: None,
-            skills: None,
-        }
     }
 }

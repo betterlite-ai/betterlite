@@ -12,6 +12,7 @@ call:
       - {access_group_id: ag-1, access_mcp_server_ids: [srv-extra]}
     toolset_grants: {srv-toolset: [list]}
     permission:
+      object_permission_id: op-case
       mcp_servers: [gh, no-mcp-servers]
       mcp_access_groups: [grp-1]
       mcp_tool_permissions: {gh: [read]}
@@ -24,7 +25,7 @@ calls:
         - {server_id: srv-gh, name: github, alias: gh, server_name: null, transport: http, access_groups: [grp-1]}
       access_groups: []
       toolset_grants: {}
-      permission: {mcp_servers: [no-mcp-servers], mcp_access_groups: null, mcp_tool_permissions: null, mcp_toolsets: null}
+      permission: {object_permission_id: op-case, mcp_servers: [no-mcp-servers], mcp_access_groups: null, mcp_tool_permissions: null, mcp_toolsets: null}
       access_group_ids: []
   - b4669:
       function: key
@@ -35,6 +36,7 @@ calls:
         - {access_group_id: ag-1, access_mcp_server_ids: [srv-extra]}
       toolset_grants: {srv-toolset: [list]}
       permission:
+        object_permission_id: op-case
         mcp_servers: [gh]
         mcp_access_groups: [grp-1]
         mcp_tool_permissions: {gh: [read]}
