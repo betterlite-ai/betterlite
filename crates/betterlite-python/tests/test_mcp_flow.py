@@ -1,6 +1,8 @@
 import asyncio
 import importlib
 import json
+import subprocess
+import sys
 from collections.abc import Awaitable, Callable
 from typing import Final, Literal, Protocol, TypedDict, TypeVar
 
@@ -167,3 +169,31 @@ def test_flow_matches_litellm() -> None:
     assert ours["result"]["isError"] is False
     assert ours["result"]["content"] == [{"type": "text", "text": f"called {TOOL_NAME}"}]
     assert our_auth == their_auth == f"Bearer {BEARER}"
+
+
+# the wheel needs no mcp, so the import must succeed with mcp hidden in a fresh process
+PROBE: Final = """
+import importlib
+import sys
+
+class Blocker:
+    def find_spec(self, name, path=None, target=None):
+        if name == "mcp" or name.startswith("mcp."):
+            raise ModuleNotFoundError(name)
+        return None
+
+sys.meta_path.insert(0, Blocker())
+module = importlib.import_module(sys.argv[1])
+print("exports=" + ",".join(module.__all__))
+"""
+
+
+def test_imports_without_mcp() -> None:
+    done = subprocess.run(
+        [sys.executable, "-c", PROBE, "betterlite.experimental_mcp_client"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert done.returncode == 0, done.stderr
+    assert f"exports={','.join(EXPECTED_EXPORTS)}" in done.stdout
