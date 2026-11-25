@@ -194,8 +194,8 @@ async fn a_row_read_failure_keeps_the_table_error_as_its_source() {
 
 #[tokio::test]
 async fn a_reconnect_failure_keeps_the_table_and_reconnect_errors() {
-    let (reconnect, _reasons) = FakeReconnect::new(ReconnectResult::Failed);
-    let mut reconnect = Some(reconnect);
+    let (reconnect_client, _reasons) = FakeReconnect::new(ReconnectResult::Failed);
+    let mut reconnect = Some(reconnect_client);
     let db = FakeSso::new(SsoReply::Transport);
     let error = read_sso_row(reconnect.as_mut(), &db).await.unwrap_err();
 

@@ -78,7 +78,10 @@ where
         Err(database) => {
             let recorded = fault.lock().unwrap_or_else(PoisonError::into_inner).take();
             if let Some(source) = recorded {
-                return Err(SettingsReloadError::SsoRow { source, database });
+                return Err(SettingsReloadError::SsoRow {
+                    source,
+                    database: Box::new(database),
+                });
             }
             Err(SettingsReloadError::Database(database))
         }

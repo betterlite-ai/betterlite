@@ -60,7 +60,7 @@ pub enum SettingsReloadError {
     SsoRow {
         #[source]
         source: TableError,
-        database: DbError,
+        database: Box<DbError>,
     },
     #[error("sso_settings is not a JSON object")]
     SsoNotAnObject,
