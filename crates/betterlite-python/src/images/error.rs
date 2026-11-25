@@ -50,7 +50,7 @@ impl CallFailure {
         }
     }
 
-    fn from_class(class: ErrorClass, message: String) -> Self {
+    pub(crate) fn from_class(class: ErrorClass, message: String) -> Self {
         let metadata = class.metadata();
         Self {
             kind: class_name(&class).to_owned(),
@@ -85,7 +85,11 @@ impl From<SessionError> for PyErr {
     }
 }
 
-const fn context(message: String, model: Option<String>, provider: Option<String>) -> ErrorContext {
+pub(crate) const fn context(
+    message: String,
+    model: Option<String>,
+    provider: Option<String>,
+) -> ErrorContext {
     ErrorContext {
         message,
         model,
@@ -96,16 +100,6 @@ const fn context(message: String, model: Option<String>, provider: Option<String
         body_param: None,
         body_code: None,
     }
-}
-
-// a local refusal LiteLLM reaches through ValueError, which its exception mapping turns into a connection error
-pub(crate) fn connection_failure(
-    message: String,
-    model: Option<String>,
-    provider: Option<String>,
-) -> CallFailure {
-    let class = ErrorClass::ApiConnection(Box::new(context(message.clone(), model, provider)));
-    CallFailure::from_class(class, message)
 }
 
 pub(crate) fn provider_failure(

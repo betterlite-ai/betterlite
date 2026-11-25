@@ -14,6 +14,7 @@ import pytest
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import TypedDict
 
+import betterlite
 from betterlite._completion.errors import UnsupportedCallArgument
 from betterlite._images import main as images_main
 from betterlite.exceptions import (
@@ -263,9 +264,11 @@ def test_edit_sends_files_in_order() -> None:
             model="gpt-image-1",
             mask=NamedFile(MASK_BYTES, "mask.png"),
             api_base=server.url,
-            api_key=GOOD_KEY,
+            api_key=BAD_KEY,
+            extra_headers={"Authorization": f"Bearer {GOOD_KEY}"},
         )
         call = server.calls[-1]
+    assert header_of(call, "authorization") == f"Bearer {GOOD_KEY}"
     body = call["body"]
     assert call["path"] == EDITS_PATH
     assert offset(body, b'name="prompt"') < offset(body, b'name="image[]"')
@@ -276,6 +279,7 @@ def test_edit_sends_files_in_order() -> None:
     assert offset(body, b"Content-Type: image/png") < second
     assert offset(body, b"Content-Type: image/jpeg") > first
     assert offset(body, b'name="mask"') < mask
+    assert response.created == CREATED
     assert response.data[0].b64_json == B64
     assert response._hidden_params == {}  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L792
 
@@ -393,7 +397,7 @@ def test_agenerate_requires_model() -> None:
 
 
 @pytest.mark.parametrize("drop", [False, True])
-def test_generate_params_drop(drop: bool) -> None:
+def test_generate_params_drop(*, drop: bool) -> None:
     with closing(ImageServer()) as server:
         if drop:
             image_generation(
@@ -422,18 +426,6 @@ def test_generate_params_extra(extra: dict[str, JsonValue]) -> None:
     assert "extra_body" not in body
 
 
-def test_edit_caller_authorization() -> None:
-    with closing(ImageServer()) as server:
-        response = image_edit(
-            image=NamedFile(PNG_BYTES, "cat.png"), prompt=PROMPT, model=DEFAULT_MODEL,
-            api_base=server.url, api_key=BAD_KEY,
-            extra_headers={"Authorization": f"Bearer {GOOD_KEY}"},
-        )
-        call = server.calls[-1]
-    assert header_of(call, "authorization") == f"Bearer {GOOD_KEY}"
-    assert response.created == CREATED
-
-
 @pytest.mark.parametrize("name", ["client", "shared_session"])
 def test_generate_refuses_client(name: str) -> None:
     with pytest.raises(UnsupportedCallArgument) as caught:
@@ -454,8 +446,12 @@ def test_generate_drops_logger(caplog: pytest.LogCaptureFixture) -> None:
 
 def test_avariation_missing_key(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.setattr("betterlite.api_key", None)
-    monkeypatch.setattr("betterlite.openai_key", None)
-    with pytest.raises(APIConnectionError) as caught:
-        asyncio.run(aimage_variation(image=NamedFile(PNG_BYTES, "cat.png")))
+    previous_key, previous_openai = betterlite.api_key, betterlite.openai_key
+    betterlite.api_key = None
+    betterlite.openai_key = None
+    try:
+        with pytest.raises(APIConnectionError) as caught:
+            asyncio.run(aimage_variation(image=NamedFile(PNG_BYTES, "cat.png")))
+    finally:
+        betterlite.api_key, betterlite.openai_key = previous_key, previous_openai
     assert caught.value.status_code == HTTPStatus.INTERNAL_SERVER_ERROR

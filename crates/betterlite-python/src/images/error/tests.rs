@@ -1,10 +1,9 @@
 #![cfg(test)]
 
 use super::super::NativeImageError;
-use super::{
-    CallFailure, SessionError, class_error, connection_failure, convert_failure, provider_failure,
-};
+use super::{CallFailure, SessionError, class_error, context, convert_failure, provider_failure};
 use crate::images::convert::ConvertError;
+use betterlite_error::error::ErrorClass;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -34,10 +33,13 @@ fn plain_failure_keeps_kind_message_and_model() {
 fn connection_failure_serializes_class_metadata() {
     Python::initialize();
     Python::attach(|py| {
-        let failure = connection_failure(
+        let failure = CallFailure::from_class(
+            ErrorClass::ApiConnection(Box::new(context(
+                String::from("connection refused"),
+                Some(String::from("dall-e-2")),
+                Some(String::from("openai")),
+            ))),
             String::from("connection refused"),
-            Some(String::from("dall-e-2")),
-            Some(String::from("openai")),
         );
         let error = class_error(&failure);
         let text = error.value(py).str().unwrap();

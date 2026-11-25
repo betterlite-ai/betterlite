@@ -1,7 +1,8 @@
 use super::convert::fields::target;
 use super::convert::{DEFAULT_IMAGE_NAME, ImageAnswer, ImageCallWire, OPENAI_PROVIDER, images};
-use super::error::{CallFailure, connection_failure, convert_failure, provider_failure};
+use super::error::{CallFailure, context, convert_failure, provider_failure};
 use super::session::{ImageSession, SilentImageLogger, call_setup, now_seconds};
+use betterlite_error::error::ErrorClass;
 use betterlite_openai::api::image_contracts::records::ImageFile;
 use betterlite_openai::image_variations::error::{ImageVariationSource, OpenAiImageVariationError};
 use betterlite_openai::image_variations::request::{
@@ -33,36 +34,25 @@ pub(crate) async fn variation(
             async_call,
         ));
     }
-    let request = request(session, &call, &files, async_call, &model)?;
-    round(session, request, &model, &provider).await
-}
-
-fn request(
-    session: &ImageSession,
-    call: &ImageCallWire,
-    files: &[(String, CallFile)],
-    async_call: bool,
-    model: &str,
-) -> Result<ImageVariationRequest, CallFailure> {
     let setup = call_setup(
         session,
         &call.arguments,
         &call.settings,
-        model,
+        &model,
         OPENAI_PROVIDER,
     )?;
     let Some(api_key) = setup.credentials.api_key else {
         return Err(local_failure(
             String::from("API key is required for OpenAI image variations"),
-            model,
+            &model,
             OPENAI_PROVIDER,
             async_call,
         ));
     };
-    Ok(ImageVariationRequest {
-        model: Some(model.to_owned()),
-        image: first_image(files, model)
-            .map_err(|error| local_failure(error.message, model, OPENAI_PROVIDER, async_call))?,
+    let request = ImageVariationRequest {
+        model: Some(model.clone()),
+        image: first_image(&files, &model)
+            .map_err(|error| local_failure(error.message, &model, OPENAI_PROVIDER, async_call))?,
         optional_params: RequestMap::new(),
         headers: Some(setup.headers),
         api_key: Some(api_key),
@@ -75,7 +65,8 @@ fn request(
         config: Some(OpenAiImageVariationConfig),
         boundary: Uuid::new_v4().to_string(),
         now_seconds: now_seconds(),
-    })
+    };
+    round(session, request, &model, &provider).await
 }
 
 async fn round(
@@ -130,7 +121,14 @@ mod tests;
 
 fn local_failure(message: String, model: &str, provider: &str, async_call: bool) -> CallFailure {
     if async_call {
-        connection_failure(message, Some(model.to_owned()), Some(provider.to_owned()))
+        CallFailure::from_class(
+            ErrorClass::ApiConnection(Box::new(context(
+                message.clone(),
+                Some(model.to_owned()),
+                Some(provider.to_owned()),
+            ))),
+            message,
+        )
     } else {
         CallFailure::plain("ValueError", message, Some(model.to_owned()))
     }

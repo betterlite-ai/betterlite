@@ -64,9 +64,7 @@ def image_generation(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/li
 ) -> ImageResponse:
     given = (prompt, model, n, quality, response_format, size, style, user,
              timeout, api_key, api_base, api_version, custom_llm_provider)
-    named = {**kwargs, **dict(zip(GENERATION_NAMES, given, strict=False))}
-    payload = image_payload(named)
-    return image_response(call_image(NativeImageSession("{}").generate, payload))
+    return call_image(NativeImageSession("{}").generate, GENERATION_NAMES, given, kwargs)
 
 
 async def aimage_generation(*args: CallValue, **kwargs: CallValue) -> ImageResponse:
@@ -86,9 +84,7 @@ def image_variation(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/lit
     **kwargs: CallValue,
 ) -> ImageResponse:
     given = (image, model, n, response_format, size, user)
-    named = {**kwargs, **dict(zip(VARIATION_NAMES, given, strict=False))}
-    payload = image_payload(named)
-    return image_response(call_image(NativeImageSession("{}").variation, payload))
+    return call_image(NativeImageSession("{}").variation, VARIATION_NAMES, given, kwargs)
 
 
 async def aimage_variation(*args: CallValue, **kwargs: CallValue) -> ImageResponse:
@@ -119,10 +115,7 @@ def image_edit(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/
 ) -> ImageResponse:
     given = (image, prompt, model, mask, n, quality, response_format, size, user,
              extra_headers, extra_query, extra_body, timeout, custom_llm_provider)
-    named = {**kwargs, **dict(zip(EDIT_NAMES, given, strict=False))}
-    payload = image_payload(named)
-    session = NativeImageSession("{}")
-    return image_response(call_image(session.edit, payload))
+    return call_image(NativeImageSession("{}").edit, EDIT_NAMES, given, kwargs)
 
 
 async def aimage_edit(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L964
@@ -160,9 +153,13 @@ def image_payload(values: Mapping[str, CallValue]) -> CallPayload:
     return to_call_payload(payload)
 
 
-def call_image(method: SyncNativeCall, payload: CallPayload) -> str:
+def call_image(
+    method: SyncNativeCall, names: tuple[str, ...], given: tuple[CallValue, ...],
+    kwargs: Mapping[str, CallValue],
+) -> ImageResponse:
+    payload = image_payload({**kwargs, **dict(zip(names, given, strict=False))})
     try:
-        return method(payload.text, payload.blobs)
+        return image_response(method(payload.text, payload.blobs))
     except NativeImageError as failure:
         raise_image_error(failure)
 

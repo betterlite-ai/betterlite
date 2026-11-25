@@ -72,12 +72,8 @@ pub(crate) fn edit_options(
     model: &str,
     global_drop_params: bool,
 ) -> Result<RequestMap, ConvertError> {
-    let additional = strings(arguments, "additional_drop_params")?;
     let call_drop = boolean(arguments, "drop_params")?.unwrap_or(false);
-    let mut selected = requested(arguments);
-    for name in &additional {
-        selected.shift_remove(name);
-    }
+    let mut selected = requested(arguments, &strings(arguments, "additional_drop_params")?);
     // imageConfig is the only declared edit option OpenAI does not support.
     if selected.shift_remove("imageConfig").is_some() && !global_drop_params && !call_drop {
         return Err(ConvertError::UnsupportedParams {
@@ -88,7 +84,7 @@ pub(crate) fn edit_options(
     Ok(selected)
 }
 
-fn requested(arguments: &RequestMap) -> RequestMap {
+fn requested(arguments: &RequestMap, additional: &[String]) -> RequestMap {
     let mut selected = RequestMap::new();
     for name in DECLARED_EDIT_PARAMS.split_whitespace() {
         let Some(value) = arguments
@@ -97,7 +93,7 @@ fn requested(arguments: &RequestMap) -> RequestMap {
         else {
             continue;
         };
-        if name != "mask" {
+        if name != "mask" && !additional.iter().any(|dropped| dropped == name) {
             selected.insert(name.to_owned(), value.clone());
         }
     }

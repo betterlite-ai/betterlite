@@ -4,9 +4,10 @@ use super::convert::{
     ConvertError, DEFAULT_IMAGE_NAME, DEFAULT_MASK_NAME, ImageAnswer, ImageCallWire,
     OPENAI_PROVIDER, content_type_for, images,
 };
-use super::error::{CallFailure, connection_failure, convert_failure, provider_failure};
+use super::error::{CallFailure, context, convert_failure, provider_failure};
 use super::session::{CallSetup, ImageSession, call_setup, now_seconds};
 use betterlite_config::sections::{Section as _, image_edit_call};
+use betterlite_error::error::ErrorClass;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::multipart::MultipartPart;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
@@ -42,10 +43,14 @@ pub(crate) async fn edit(
     let (model, provider) =
         target(&call.arguments).map_err(|error| convert_failure(&error, None, None))?;
     if provider != OPENAI_PROVIDER {
-        return Err(connection_failure(
-            format!("image edit is not supported for {provider}"),
-            Some(model),
-            Some(provider),
+        let message = format!("image edit is not supported for {provider}");
+        return Err(CallFailure::from_class(
+            ErrorClass::ApiConnection(Box::new(context(
+                message.clone(),
+                Some(model),
+                Some(provider),
+            ))),
+            message,
         ));
     }
     let setup = call_setup(session, &call.arguments, &call.settings, &model, &provider)?;

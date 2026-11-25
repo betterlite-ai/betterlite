@@ -1,8 +1,9 @@
 use super::convert::fields::{field, target, text};
 use super::convert::options::generation_options;
 use super::convert::{ImageAnswer, ImageCallWire, OPENAI_PROVIDER};
-use super::error::{CallFailure, connection_failure, convert_failure, provider_failure};
+use super::error::{CallFailure, context, convert_failure, provider_failure};
 use super::session::{ImageSession, SilentImageLogger, call_setup, now_seconds};
+use betterlite_error::error::ErrorClass;
 use betterlite_openai::image_generation::call::ImageGenerationCall;
 use betterlite_openai::image_generation::request::{
     begin_image_generation, finish_image_generation, send_image_generation,
@@ -15,10 +16,14 @@ pub(crate) async fn generate(
     let (model, provider) =
         target(&call.arguments).map_err(|error| convert_failure(&error, None, None))?;
     if provider != OPENAI_PROVIDER {
-        return Err(connection_failure(
-            format!("image generation is not supported for {provider}"),
-            Some(model),
-            Some(provider),
+        let message = format!("image generation is not supported for {provider}");
+        return Err(CallFailure::from_class(
+            ErrorClass::ApiConnection(Box::new(context(
+                message.clone(),
+                Some(model),
+                Some(provider),
+            ))),
+            message,
         ));
     }
     let request = request(session, &call, &model, &provider)?;
