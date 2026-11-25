@@ -198,32 +198,32 @@ async fn run_membership_failure(failure: MembershipLoadError) -> (StatusCode, St
     run_request(failing).await
 }
 
-fn assert_outage((status, body, reached): (StatusCode, String, bool)) {
-    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{body}");
+fn assert_outage((status, body, reached): &(StatusCode, String, bool)) {
+    assert_eq!(*status, StatusCode::SERVICE_UNAVAILABLE, "{body}");
     assert!(body.contains("\"type\":\"no_db_connection\""), "{body}");
     assert!(body.contains("\"param\":\"None\""), "{body}");
     assert!(body.contains("\"code\":\"503\""), "{body}");
     assert!(body.contains(TRANSIENT_MESSAGE), "{body}");
-    assert!(!reached);
+    assert!(!*reached);
 }
 
 #[tokio::test]
 async fn membership_database_outages_are_service_unavailable() {
-    assert_outage(run_membership_failure(deadline_failure()).await);
+    assert_outage(&run_membership_failure(deadline_failure()).await);
     assert_outage(
-        run_membership_failure(lookup_failure(DbLookupError::Database(database_fault(
+        &run_membership_failure(lookup_failure(DbLookupError::Database(database_fault(
             ErrorType::Connect,
         ))))
         .await,
     );
     assert_outage(
-        run_membership_failure(MembershipLoadError::Read(MembershipReadFailure::Access(
+        &run_membership_failure(MembershipLoadError::Read(MembershipReadFailure::Access(
             Box::new(NativeDbError::NoDbConnected),
         )))
         .await,
     );
     assert_outage(
-        run_membership_failure(MembershipLoadError::Shared(Arc::new(deadline_failure()))).await,
+        &run_membership_failure(MembershipLoadError::Shared(Arc::new(deadline_failure()))).await,
     );
 }
 
