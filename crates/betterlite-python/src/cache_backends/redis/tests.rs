@@ -80,7 +80,9 @@ fn backends_redis_close_is_ok() {
         .unwrap();
         let settings = RedisSettings {
             overrides,
-            ..RedisSettings::default()
+            namespace: None,
+            default_ttl: None,
+            redis_flush_size: None,
         };
         let native = Python::attach(|py| open(py, settings).unwrap());
         drop(

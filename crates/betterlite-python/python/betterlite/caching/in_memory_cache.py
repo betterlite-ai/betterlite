@@ -52,7 +52,9 @@ class InMemoryCache(_BackendCache[NativeMemory]):
         return float(counted)
 
     async def async_increment(self, key: str, value: float, **kwargs: JsonValue) -> float:
-        counted = number_value(await self.native.async_increment(key, value, self._write_ttl(kwargs)))
+        counted = number_value(
+            await self.native.async_increment(key, value, self._write_ttl(kwargs))
+        )
         return float(counted)
 
     # LiteLLM answers the absolute expiry it stores, not the seconds left.
