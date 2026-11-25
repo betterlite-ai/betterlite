@@ -10,13 +10,9 @@ use pyo3_async_runtimes::tokio::get_runtime;
 
 #[test]
 fn batch_results_are_consumed_once() {
-    Python::initialize();
     let slot = Mutex::new(Some(7_u8));
-    assert_eq!(take_result(&slot, "consumed").unwrap(), 7_u8);
-    assert_eq!(
-        take_result(&slot, "consumed").unwrap_err().to_string(),
-        "RuntimeError: consumed"
-    );
+    assert_eq!(take_slot(&slot), Some(7_u8));
+    assert_eq!(take_slot(&slot), None);
 }
 
 #[test]

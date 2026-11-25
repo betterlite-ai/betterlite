@@ -72,7 +72,7 @@ class NativeDual:
         self, keys: list[str], local_only: bool
     ) -> list[str | None] | None: ...
     def async_batch_get(
-        self, keys: list[str], local_only: bool, throttle_redis: bool
+        self, keys: list[str], options: tuple[bool, bool]
     ) -> Awaitable[list[str | None] | None]: ...
     @staticmethod
     def async_batch_get_shared(

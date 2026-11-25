@@ -23,7 +23,8 @@ pub(crate) struct NativeDeclaredBatchRead {
 #[pymethods]
 impl NativeDeferred {
     fn async_wait<'py>(&self, py: Python<'py>) -> AsyncAnswer<'py> {
-        let result = take_result(&self.result, "deferred cache result was already consumed")?;
+        let result = take_slot(&self.result)
+            .ok_or_else(|| PyRuntimeError::new_err("deferred cache result was already consumed"))?;
         future_into_py(py, async move {
             result
                 .await
@@ -32,17 +33,8 @@ impl NativeDeferred {
     }
 
     pub(super) fn cancel(&self) {
-        match self.result.lock() {
-            Ok(mut held) => {
-                if let Some(result) = held.take() {
-                    result.cancel();
-                }
-            }
-            Err(poisoned) => {
-                if let Some(result) = poisoned.into_inner().take() {
-                    result.cancel();
-                }
-            }
+        if let Some(result) = take_slot(&self.result) {
+            result.cancel();
         }
     }
 }
@@ -50,17 +42,17 @@ impl NativeDeferred {
 #[pymethods]
 impl NativeDeclaredBatchRead {
     fn async_resolve<'py>(&self, py: Python<'py>) -> AsyncAnswer<'py> {
-        take_result(&self.declared, "declared batch read was already consumed")
-            .and_then(|declared| future_into_py(py, resolve(Arc::clone(&self.cache), declared)))
+        let declared = take_slot(&self.declared)
+            .ok_or_else(|| PyRuntimeError::new_err("declared batch read was already consumed"))?;
+        future_into_py(py, resolve(Arc::clone(&self.cache), declared))
     }
 }
 
-fn take_result<T>(slot: &Mutex<Option<T>>, consumed: &str) -> PyResult<T> {
-    let value = match slot.lock() {
+fn take_slot<T>(slot: &Mutex<Option<T>>) -> Option<T> {
+    match slot.lock() {
         Ok(mut held) => held.take(),
         Err(poisoned) => poisoned.into_inner().take(),
-    };
-    value.ok_or_else(|| PyRuntimeError::new_err(consumed.to_owned()))
+    }
 }
 
 async fn resolve(

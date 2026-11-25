@@ -167,7 +167,7 @@ class DualCache(BaseCache):
     ) -> list[JsonValue] | None:
         _unread = (parent_otel_span, kwargs)
         result = await self.native.async_batch_get(
-            keys, local_only, throttle_redis
+            keys, (local_only, throttle_redis)
         )
         return _batch_values(result)
 

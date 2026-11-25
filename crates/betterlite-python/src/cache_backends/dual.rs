@@ -96,7 +96,7 @@ impl NativeDual {
         keys: Vec<String>,
         local_only: bool,
     ) -> PyResult<Option<Vec<Option<String>>>> {
-        py.detach(|| {
+        py.detach(move || {
             let values = BatchReads::batch_get_cache(&*self.cache, &keys, local_only);
             batch::encode(values)
         })
@@ -106,8 +106,7 @@ impl NativeDual {
         &self,
         py: Python<'py>,
         keys: Vec<String>,
-        local_only: bool,
-        throttle_redis: bool,
+        (local_only, throttle_redis): (bool, bool),
     ) -> AsyncAnswer<'py> {
         let settings = BatchReadOptions {
             local_only,
@@ -121,10 +120,10 @@ impl NativeDual {
     }
 
     #[staticmethod]
-    fn async_batch_get_shared<'py>(
-        py: Python<'py>,
-        reads: Vec<(Py<NativeDual>, Vec<String>)>,
-    ) -> AsyncAnswer<'py> {
+    fn async_batch_get_shared(
+        py: Python<'_>,
+        reads: Vec<(Py<Self>, Vec<String>)>,
+    ) -> AsyncAnswer<'_> {
         let owned = reads
             .into_iter()
             .map(|(handle, keys)| {
@@ -148,6 +147,7 @@ impl NativeDual {
         };
         let declared = BatchReads::declare_batch_get(&*self.cache, &keys, &batch)
             .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
+        drop(keys);
         Py::new(
             py,
             NativeDeclaredBatchRead {
@@ -175,11 +175,12 @@ impl NativeDual {
         py: Python<'_>,
         key: &str,
     ) -> PyResult<Option<Py<NativeDeferred>>> {
-        self.cache
+        let result = self
+            .cache
             .delete_cache_pre_call(key)
             .map_err(BackendHandleError::from)
-            .map_err(PyErr::from)
-            .and_then(|result| batch::deferred(py, result))
+            .map_err(PyErr::from)?;
+        batch::deferred(py, result)
     }
 
     fn increment(
@@ -251,15 +252,15 @@ impl NativeDual {
     }
 
     fn async_ping<'py>(&self, py: Python<'py>) -> AsyncAnswer<'py> {
-        match &self.redis {
-            Some(tier) => {
+        self.redis.as_ref().map_or_else(
+            || future_into_py(py, async { Ok(true) }),
+            |tier| {
                 let owned = Arc::clone(tier);
                 future_into_py(py, async move {
                     error::backend_err(owned.admin.ping(None).await)
                 })
-            }
-            None => future_into_py(py, async { Ok(true) }),
-        }
+            },
+        )
     }
 
     fn close(&self, py: Python<'_>) -> PyResult<()> {

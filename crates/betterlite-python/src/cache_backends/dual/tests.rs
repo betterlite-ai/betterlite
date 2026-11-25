@@ -182,9 +182,9 @@ fn backends_dual_cancel_drops_the_deferred_write() {
             .block_on(request_redis_batch_scope(Duration::from_secs(1), async {
                 native.set_cache_pre_call(py, "key", "1", None).unwrap()
             }));
-        let deferred = deferred.unwrap();
-        assert!(deferred.borrow(py).result.lock().unwrap().is_some());
-        deferred.borrow(py).cancel();
-        assert!(deferred.borrow(py).result.lock().unwrap().is_none());
+        let pending = deferred.unwrap();
+        assert!(pending.borrow(py).result.lock().unwrap().is_some());
+        pending.borrow(py).cancel();
+        assert!(pending.borrow(py).result.lock().unwrap().is_none());
     });
 }
