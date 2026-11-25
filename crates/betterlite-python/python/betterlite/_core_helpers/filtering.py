@@ -40,6 +40,8 @@ def _removed_in_parent(value: PythonValue) -> bool:
     match value:
         case Exception():
             return True
+        case BaseException():
+            return False
         case type():  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L644
             return False
         case Callable():

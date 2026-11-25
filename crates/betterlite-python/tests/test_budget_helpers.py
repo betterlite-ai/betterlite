@@ -170,7 +170,8 @@ ERROR_CASES: Final[tuple[tuple[PythonValue, PythonValue, PythonValue], ...]] = (
     (None, None, "openai"))
 PROJECTED_MESSAGES: Final[list[dict[str, JsonValue]]] = [
     {"role": "user", "content": "ab"}, {"role": "user", "content": "c"}]
-USAGE_DATA: Final[dict[str, JsonValue]] = {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+USAGE_DATA: Final[dict[str, JsonValue]] = {
+    "prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
 EXCEPTION_ADAPTER: Final[TypeAdapter[BaseException]] = TypeAdapter(
     BaseException, config=ConfigDict(arbitrary_types_allowed=True)
 )
@@ -493,7 +494,8 @@ def test_helper_metadata_names() -> None:
     assert ours == reference == {METADATA_KEY: {}}
     existing: dict[str, PythonValue] = {METADATA_KEY: {}}
     key, bucket = get_or_create_metadata_bucket(existing)
-    assert key == METADATA_KEY and bucket is existing[METADATA_KEY]
+    assert key == METADATA_KEY
+    assert bucket is existing[METADATA_KEY]
 
 
 def test_helper_messages() -> None:

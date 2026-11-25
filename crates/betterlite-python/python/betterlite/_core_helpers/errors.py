@@ -65,13 +65,13 @@ def _is_litellm_limit(category: PythonValue) -> bool:
 def _status_value(
     exception: BaseException | _CodeError | _StatusError,
 ) -> PythonValue:
-    # ast-grep-ignore: no-isinstance
-    if isinstance(exception, _CodeError):
-        return exception.code
-    # ast-grep-ignore: no-isinstance
-    if isinstance(exception, _StatusError):
-        return exception.status_code
-    return None
+    match exception:
+        case _CodeError():
+            return exception.code
+        case _StatusError():
+            return exception.status_code
+        case BaseException():
+            return None
 
 
 def _client_status(value: PythonValue) -> bool:
