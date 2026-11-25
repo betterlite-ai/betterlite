@@ -80,6 +80,7 @@ REALTIME_COMPLETION_TOKENS: Final = 20
 REALTIME_CACHED_TOKENS: Final = 50
 REALTIME_AUDIO_TOKENS: Final = 50
 REALTIME_OUTPUT_AUDIO_TOKENS: Final = 10
+CACHED_AUDIO_TOKENS: Final = 10
 WS_FIRST_PROMPT: Final = 10
 WS_FIRST_COMPLETION: Final = 2
 WS_SECOND_PROMPT: Final = 5
@@ -663,14 +664,14 @@ def test_processor_mixed_cache() -> None:
     assert usage_counts(reference)["cached_tokens"] == expected_cached_tokens
 
 
-def test_processors_preserve_nested_cached_audio_details() -> None:
+def test_cached_audio_collectors() -> None:
     usage: dict[str, JsonValue] = {
         "input_tokens": 30,
         "output_tokens": 0,
         "total_tokens": 30,
         "input_tokens_details": {
             "cached_tokens": 20,
-            "cached_tokens_details": {"audio_tokens": 10},
+            "cached_tokens_details": {"audio_tokens": CACHED_AUDIO_TOKENS},
         },
     }
     realtime: dict[str, JsonValue] = {"type": "response.done", "response": {"usage": usage}}
@@ -682,8 +683,8 @@ def test_processors_preserve_nested_cached_audio_details() -> None:
         .collect_usage_from_realtime_stream_results([realtime])
     )
     compare_usages(realtime_ours, realtime_reference)
-    assert usage_counts(realtime_ours[0])["cached_audio_tokens"] == 10
-    assert usage_counts(realtime_reference[0])["cached_audio_tokens"] == 10
+    assert usage_counts(realtime_ours[0])["cached_audio_tokens"] == CACHED_AUDIO_TOKENS
+    assert usage_counts(realtime_reference[0])["cached_audio_tokens"] == CACHED_AUDIO_TOKENS
 
     websocket: dict[str, JsonValue] = {
         "type": "response.completed",
@@ -695,8 +696,8 @@ def test_processors_preserve_nested_cached_audio_details() -> None:
         .collect_usage_from_responses_ws_results([websocket])
     )
     compare_usages(websocket_ours, websocket_reference)
-    assert usage_counts(websocket_ours[0])["cached_audio_tokens"] == 10
-    assert usage_counts(websocket_reference[0])["cached_audio_tokens"] == 10
+    assert usage_counts(websocket_ours[0])["cached_audio_tokens"] == CACHED_AUDIO_TOKENS
+    assert usage_counts(websocket_reference[0])["cached_audio_tokens"] == CACHED_AUDIO_TOKENS
 
 
 def test_processor_empty() -> None:
