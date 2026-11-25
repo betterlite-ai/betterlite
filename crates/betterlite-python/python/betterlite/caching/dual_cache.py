@@ -1,4 +1,5 @@
 import json
+from asyncio import Future
 from collections.abc import Generator, Sequence
 from typing import Final
 
@@ -19,12 +20,11 @@ _DEFAULT_BATCH_CACHE_EXPIRY: Final = 10.0
 class _DeferredResult:
     def __init__(self, native: NativeDeferred) -> None:
         self.native = native
+        self.cancel = native.cancel
 
-    def __await__(self) -> Generator[object, None, None]:
-        return self.native.async_wait().__await__()
-
-    def cancel(self) -> None:
-        self.native.cancel()
+    def __await__(self) -> Generator[Future[None], None, None]:
+        waiting: Generator[Future[None], None, None] = self.native.async_wait().__await__()
+        yield from waiting
 
 
 # LiteLLM's local_only is a bool; a value of another type names the field and fails.
@@ -34,6 +34,12 @@ def _local_only(value: JsonValue) -> bool:
             return flag
         case int() | float() | str() | list() | dict() | None:
             raise ValueError(f"local_only must be a bool, not {type(value).__name__}")
+
+
+def _batch_values(values: list[str | None] | None) -> list[JsonValue] | None:
+    if values is None:
+        return None
+    return [_value_or_none(value) for value in values]
 
 
 class DualCache(BaseCache):
@@ -143,38 +149,35 @@ class DualCache(BaseCache):
         return await self.in_memory_cache.async_get_cache(key)
 
     def batch_get_cache(
-        self, keys: list[str], parent_otel_span: JsonValue = None,
-        local_only: bool = False, **kwargs: JsonValue,
+        self,
+        keys: list[str],
+        parent_otel_span: JsonValue = None,
+        local_only: bool = False,  # noqa: FBT001, FBT002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L218-L223
+        **kwargs: JsonValue,
     ) -> list[JsonValue] | None:
         _unread = (parent_otel_span, kwargs)
-        result = self.native.batch_get(keys, local_only)
-        return None if result is None else [
-            _value_or_none(value) for value in result
-        ]
+        return _batch_values(self.native.batch_get(keys, local_only))
 
     async def async_batch_get_cache(
-        self, keys: list[str], parent_otel_span: JsonValue = None,
-        local_only: bool = False, throttle_redis: bool = True,
+        self,
+        keys: list[str],
+        parent_otel_span: JsonValue = None,
+        local_only: bool = False, throttle_redis: bool = True,  # noqa: FBT001, FBT002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L401-L407
         **kwargs: JsonValue,
     ) -> list[JsonValue] | None:
         _unread = (parent_otel_span, kwargs)
         result = await self.native.async_batch_get(
             keys, local_only, throttle_redis
         )
-        return None if result is None else [
-            _value_or_none(value) for value in result
-        ]
+        return _batch_values(result)
 
     @staticmethod
     async def async_batch_get_cache_shared(
-        reads: Sequence[tuple[DualCache, list[str]]],
+        reads: Sequence[tuple["DualCache", list[str]]],
     ) -> list[list[JsonValue] | None]:
         native_reads = [(cache.native, keys) for cache, keys in reads]
         answers = await NativeDual.async_batch_get_shared(native_reads)
-        return [
-            None if answer is None else [_value_or_none(value) for value in answer]
-            for answer in answers
-        ]
+        return [_batch_values(answer) for answer in answers]
 
     def declare_batch_get(self, keys: Sequence[str]) -> NativeDeclaredBatchRead | None:
         return self.native.declare_batch_get(list(keys))

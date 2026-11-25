@@ -206,7 +206,7 @@ class DynamicCache(BaseCache):
     @override
     async def async_set_cache(
         self, key: str, value: JsonValue, **_kwargs: JsonValue
-    ) -> bool | None:
+    ) -> None:
         self.values[key] = value
 
     @override
@@ -422,7 +422,7 @@ def test_dual_keeps_memory_ttl(redis_server: FakeRedisServer) -> None:
     assert theirs.get_cache("litellm:ttl-backfill", local_only=True) is None
 
 
-def test_dual_batch_reads_include_memory_and_redis(redis_server: FakeRedisServer) -> None:
+def test_dual_batch_reads(redis_server: FakeRedisServer) -> None:
     ours_redis = RedisCache(host=redis_server.host, port=redis_server.port)
     ours = DualCache(in_memory_cache=InMemoryCache(), redis_cache=ours_redis)
     ours.set_cache("ours:batch-redis", CACHED)
@@ -445,7 +445,7 @@ def test_dual_batch_reads_include_memory_and_redis(redis_server: FakeRedisServer
     assert shared == [[CACHED], [CACHED]]
 
 
-def test_dual_deferred_methods_without_request_batch() -> None:
+def test_dual_without_batch() -> None:
     cache = DualCache()
     assert cache.declare_batch_get(["key"]) is None
     assert asyncio.run(cache.async_set_cache_pre_call("key", CACHED, None)) is None
@@ -476,16 +476,18 @@ def test_disk_counts_large_ints(tmp_path: Path) -> None:
     assert ours.increment_cache("large", 1) == LARGE_COUNT + 1
 
 
-def test_lookups_share_the_store() -> None:
+@pytest.mark.parametrize("operation", ["flush", "delete"])
+def test_lookups_share_the_store(operation: str) -> None:
     cache = Cache()
     store = _memory_store(cache)
     cache.add_cache(CHAT_RESPONSE, model=CHAT["model"], messages=CHAT["messages"])
     assert cache.get_cache(model=CHAT["model"], messages=CHAT["messages"]) == CHAT_RESPONSE
-    store.flush_cache()
-    assert cache.get_cache(model=CHAT["model"], messages=CHAT["messages"]) is None
-    cache.add_cache(CHAT_RESPONSE, model=CHAT["model"], messages=CHAT["messages"])
-    store.delete_cache(cache.get_cache_key(model=CHAT["model"], messages=CHAT["messages"]))
-    assert cache.get_cache(model=CHAT["model"], messages=CHAT["messages"]) is None
+    if operation == "flush":
+        store.flush_cache()
+    else:
+        store.delete_cache(cache.get_cache_key(**CHAT))
+    assert cache.get_cache(**CHAT) is None
+
 
 
 def test_dynamic_cache_object() -> None:

@@ -316,7 +316,7 @@ def test_verbose_prints_on_enable(capsys: pytest.CaptureFixture[str]) -> None:
 
 def test_enable_keeps_cache() -> None:
     ours = Cache()
-    betterlite.cache = ours  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L402-L405
+    betterlite.cache = ours
     LITELLM_SWITCHES.update_cache()
     reference = LITELLM_STATE.cache
     enable_cache(type="disk")

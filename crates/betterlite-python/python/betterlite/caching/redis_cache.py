@@ -16,7 +16,7 @@ from betterlite.caching._backend import (
 
 _DEFAULT_TTL: Final = 60
 _DEFAULT_FLUSH_SIZE: Final = 100
-# The native overrides read these as text, since serde_json's arbitrary_precision rejects numbers there.
+# Native untagged scalars need text when serde_json enables arbitrary_precision.
 _TEXT_OVERRIDES: Final = (
     "port",
     "db",
@@ -63,8 +63,11 @@ class RedisCache(_BackendCache[NativeRedis]):
             overrides["socket_timeout"] = socket_timeout
         for name in _TEXT_OVERRIDES:
             value = overrides.get(name)
-            if value is not None and not isinstance(value, str):
-                overrides[name] = json.dumps(value)
+            match value:
+                case str() | None:
+                    continue
+                case bool() | int() | float() | list() | dict():
+                    overrides[name] = json.dumps(value)
         settings: dict[str, JsonValue] = {
             "overrides": overrides,
             "default_ttl": resolved_ttl,

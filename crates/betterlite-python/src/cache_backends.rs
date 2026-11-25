@@ -1,7 +1,8 @@
 use pyo3::prelude::*;
 
 use self::disk::NativeDisk;
-use self::dual::{NativeDeclaredBatchRead, NativeDeferred, NativeDual};
+use self::dual::NativeDual;
+use self::dual::batch::{NativeDeclaredBatchRead, NativeDeferred};
 use self::memory::NativeMemory;
 use self::redis::NativeRedis;
 

@@ -1,6 +1,7 @@
 from typing import Protocol
 
 from pydantic import JsonValue
+from typing_extensions import override
 
 from betterlite.types.guardrails.core import GuardrailItem
 from betterlite.types.prompts.init_prompts import PromptSpec
@@ -112,6 +113,7 @@ require_managed_files = False
 enable_caching_on_provider_specific_optional_params = False  # ast-grep-ignore: no-long-names
 caching_with_models = False
 class CacheReference(Protocol):
+    @override
     def __str__(self) -> str: ...
 
 

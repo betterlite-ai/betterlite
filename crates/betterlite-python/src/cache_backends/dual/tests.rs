@@ -18,7 +18,7 @@ use crate::cache_backends::settings::RedisSettings;
 const ITEM_KIB: i64 = 1024;
 const DEAD_TIER: &str = r#"{"overrides": {"host": "127.0.0.1", "port": "1", "socket_timeout": "0.1", "socket_connect_timeout": "0.1"}}"#;
 
-fn native_dual(redis: Option<Arc<RedisCache>>) -> NativeDual {
+pub(super) fn native_dual(redis: Option<Arc<RedisCache>>) -> NativeDual {
     Python::initialize();
     let clock = Arc::new(convert::wall_clock);
     let ops = Arc::new(LocalMemoryOps::new(ITEM_KIB, clock).unwrap());
@@ -38,7 +38,7 @@ fn native_dual(redis: Option<Arc<RedisCache>>) -> NativeDual {
 }
 
 // Nothing listens on port 1, so the tier is only there to make the dual cache defer its writes.
-fn dead_tier() -> Arc<RedisCache> {
+pub(super) fn dead_tier() -> Arc<RedisCache> {
     let parsed: RedisSettings = convert::parse_settings(DEAD_TIER).unwrap();
     Python::attach(|py| open(py, parsed)).unwrap().cache
 }
