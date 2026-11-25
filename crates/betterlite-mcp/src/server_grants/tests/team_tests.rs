@@ -20,18 +20,30 @@ fn team_id_is_only_the_callers_own(#[case] team_id: Option<&str>, #[case] expect
     assert_eq!(team_id_for_grant(None), None);
 }
 
+// the three auth shapes; clippy forbids an Option<Option<_>> case parameter
+#[derive(Clone, Copy)]
+enum TeamArg {
+    NoAuth,
+    NoTeam,
+    Dashboard,
+}
+
 #[rstest]
-#[case::no_auth(None)]
-#[case::no_team(Some(None))]
-#[case::dashboard_team(Some(Some("litellm-dashboard")))]
+#[case::no_auth(TeamArg::NoAuth)]
+#[case::no_team(TeamArg::NoTeam)]
+#[case::dashboard_team(TeamArg::Dashboard)]
 #[tokio::test]
-async fn team_without_a_grant_team_reads_nothing(#[case] team: Option<Option<&str>>) {
+async fn team_without_a_grant_team_reads_nothing(#[case] team: TeamArg) {
     let server_grants = grants(FakeReads {
         team: Scripted::Value(Some(team_record(Some(four_source_row())))),
         user_teams: Scripted::Value(Some(names(&["team-a", "team-b"]))),
         ..FakeReads::standard()
     });
-    let auth = team.map(|team_id| grant_auth(team_id, false));
+    let auth = match team {
+        TeamArg::NoAuth => None,
+        TeamArg::NoTeam => Some(grant_auth(None, false)),
+        TeamArg::Dashboard => Some(grant_auth(Some("litellm-dashboard"), false)),
+    };
     assert!(
         server_grants
             .team_servers(auth.as_ref())

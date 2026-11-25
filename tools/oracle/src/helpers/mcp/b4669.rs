@@ -22,10 +22,14 @@ use self::reads::CaseReads;
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct PermissionRecord {
-    mcp_servers: Option<Vec<String>>,
-    mcp_access_groups: Option<Vec<String>>,
-    mcp_tool_permissions: Option<ToolGrants>,
-    mcp_toolsets: Option<Vec<String>>,
+    #[serde(rename = "mcp_servers")]
+    servers: Option<Vec<String>>,
+    #[serde(rename = "mcp_access_groups")]
+    access_groups: Option<Vec<String>>,
+    #[serde(rename = "mcp_tool_permissions")]
+    tool_permissions: Option<ToolGrants>,
+    #[serde(rename = "mcp_toolsets")]
+    toolsets: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -186,14 +190,14 @@ fn grant_auth(team_id: Option<&str>, access_group_ids: &[String]) -> GrantAuth {
 fn permission_row(permission: &PermissionRecord) -> ObjectPermission {
     ObjectPermission {
         object_permission_id: String::from("op-case"),
-        mcp_servers: PermissionList(permission.mcp_servers.clone()),
-        mcp_access_groups: PermissionList(permission.mcp_access_groups.clone()),
-        mcp_tool_permissions: permission.mcp_tool_permissions.clone(),
+        mcp_servers: PermissionList(permission.servers.clone()),
+        mcp_access_groups: PermissionList(permission.access_groups.clone()),
+        mcp_tool_permissions: permission.tool_permissions.clone(),
         vector_stores: PermissionList(None),
         agents: PermissionList(None),
         agent_access_groups: PermissionList(None),
         models: PermissionList(None),
-        mcp_toolsets: permission.mcp_toolsets.clone(),
+        mcp_toolsets: permission.toolsets.clone(),
         blocked_tools: PermissionList(None),
         search_tools: PermissionList(None),
         mcp_tool_search_enabled: None,

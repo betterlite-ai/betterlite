@@ -163,33 +163,48 @@ impl GrantReads for FakeReads {
     fn team(
         &self,
         team_id: &str,
-        fresh: bool,
+        requires_fresh_policy: bool,
     ) -> impl Future<Output = Result<Option<TeamRecord>, GrantReadError>> + Send {
-        self.grant_read("team", team_id, fresh, &self.team)
+        self.grant_read("team", team_id, requires_fresh_policy, &self.team)
     }
 
     fn user_team_ids(
         &self,
         user_id: &str,
-        fresh: bool,
+        requires_fresh_policy: bool,
     ) -> impl Future<Output = Result<Option<Vec<String>>, GrantReadError>> + Send {
-        self.grant_read("user_team_ids", user_id, fresh, &self.user_teams)
+        self.grant_read(
+            "user_team_ids",
+            user_id,
+            requires_fresh_policy,
+            &self.user_teams,
+        )
     }
 
     fn access_group_server_ids(
         &self,
-        ids: &[String],
-        fresh: bool,
+        access_group_ids: &[String],
+        requires_fresh_policy: bool,
     ) -> impl Future<Output = Result<Vec<String>, GrantReadError>> + Send {
-        self.grant_read("access_group_server_ids", ids, fresh, &self.unified)
+        self.grant_read(
+            "access_group_server_ids",
+            access_group_ids,
+            requires_fresh_policy,
+            &self.unified,
+        )
     }
 
     fn servers_from_access_groups(
         &self,
-        groups: &[String],
-        fresh: bool,
+        access_groups: &[String],
+        requires_fresh_policy: bool,
     ) -> impl Future<Output = Result<Vec<String>, GrantReadError>> + Send {
-        self.grant_read("servers_from_access_groups", groups, fresh, &self.legacy)
+        self.grant_read(
+            "servers_from_access_groups",
+            access_groups,
+            requires_fresh_policy,
+            &self.legacy,
+        )
     }
 }
 
