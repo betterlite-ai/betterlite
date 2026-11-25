@@ -1,0 +1,73 @@
+id: B10098
+title: B4668's object permission cases replay in the MCP helper group
+description: >-
+  Fix a red scheduled run on main. The scheduled gate run https://github.com/betterlite-ai/betterlite/actions/runs/45508633123
+  (head 6cd36950ec0) failed four tests in betterlite-oracle-server, the object_permissions::tests::replays_object_permissions_cases
+  cases for unloadable-entitlement-db-failure, unloadable-entitlement-error, wildcard-tool-unrestricted and
+  wildcard-with-toolset-grants. Each failed the same way: betterlite answered UnknownOperation, "no helper operation is
+  named b4668", and LiteLLM answered without an error.
+
+
+  B4668 (https://github.com/betterlite-ai/betterlite/pull/3144, ae5ccdebb27) added those four cases to
+  tools/oracle/cases/helpers/object-permissions, and they call operation b4668. b4668 lives in the MCP helper group
+  (tools/oracle/src/helpers/mcp/b4668.rs, package betterlite-oracle-mcp), while the folder is replayed by the server
+  group's object_permissions test with only the server group loaded. B4668's own checks only grepped the case files and
+  its merge queue run tested affected packages, so the failure first showed up in the scheduled run.
+
+
+  The fix moves the four cases into tools/oracle/cases/helpers/mcp-object-permissions and replays that folder from a
+  tests module under b4668 in the MCP group, the way b6594 replays mcp-server-utils. The four cases B816 wrote for the
+  server group stay where they are. The case content doesn't change.
+scope:
+  paths:
+  - tools/oracle/cases/helpers/object-permissions/unloadable-entitlement-db-failure.yaml
+  - tools/oracle/cases/helpers/object-permissions/unloadable-entitlement-error.yaml
+  - tools/oracle/cases/helpers/object-permissions/wildcard-tool-unrestricted.yaml
+  - tools/oracle/cases/helpers/object-permissions/wildcard-with-toolset-grants.yaml
+  - tools/oracle/cases/helpers/mcp-object-permissions/**
+  - tools/oracle/src/helpers/mcp/b4668.rs
+  - tools/oracle/src/helpers/mcp/b4668/tests.rs
+  lint_tables: false
+references: []
+dod:
+- text: >-
+    The four b4668 cases live in tools/oracle/cases/helpers/mcp-object-permissions with their content unchanged, and
+    tools/oracle/cases/helpers/object-permissions holds no case that calls b4668.
+  proof: [old-folder-clean, server-object-permissions]
+- text: >-
+    A tests module under b4668 in betterlite-oracle-mcp replays every case in mcp-object-permissions against LiteLLM
+    with the MCP group loaded, checks that each case calls b4668, and every case matches.
+  proof: [mcp-object-permissions]
+- text: >-
+    The server group's replays_object_permissions_cases test passes on the four cases left in object-permissions.
+  proof: [server-object-permissions]
+checks:
+  optional: []
+  commands:
+  - id: mcp-object-permissions
+    why: The moved cases must match LiteLLM from the MCP group.
+    run: cargo nextest run --locked -p betterlite-oracle-mcp --no-tests=fail -E 'test(/^b4668::tests::/)'
+  - id: server-object-permissions
+    why: The scheduled run failed the server group's object permission replay.
+    run: cargo nextest run --locked -p betterlite-oracle-server --no-tests=fail -E 'test(/^object_permissions::tests::/)'
+  - id: old-folder-clean
+    why: A b4668 case left in the server folder fails the server replay again.
+    run: test -z "$(grep -rl b4668 tools/oracle/cases/helpers/object-permissions)"
+oracle_cases:
+- tools/oracle/cases/helpers/mcp-object-permissions/unloadable-entitlement-error.yaml
+- tools/oracle/cases/helpers/mcp-object-permissions/unloadable-entitlement-db-failure.yaml
+- tools/oracle/cases/helpers/mcp-object-permissions/wildcard-tool-unrestricted.yaml
+- tools/oracle/cases/helpers/mcp-object-permissions/wildcard-with-toolset-grants.yaml
+deviations: []
+out_of_scope:
+- Loading the MCP group in the server group's object_permissions test. betterlite-oracle-server would then depend on betterlite-oracle-mcp for one folder, and each group replays only its own operations.
+- Changing b4668's helper or the case content. Both matched LiteLLM in B4668's gate run.
+- Case folders other than object-permissions.
+pitfalls:
+- Move the files with git mv so the history follows them.
+- tools/oracle/src/helpers/mcp/b6594/tests.rs shows the replay shape for a folder, with base_dir "../../.." and run_case(&[crate::GROUP], ...). b4668.rs is one file today, so it needs a mod tests line.
+- The corpus replay tests are named replays_the_..., so don't start the new test's name with replays_the_ or other tasks' filters drop it.
+review_level: standard
+budget:
+  max_changed_lines: 320
+  max_new_expects: 0
