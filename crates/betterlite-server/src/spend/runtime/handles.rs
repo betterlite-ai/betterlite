@@ -54,35 +54,42 @@ pub(super) fn build_redis(
     cache: Option<&Arc<RedisCache>>,
     events: Arc<dyn RedisBufferEventSink>,
 ) -> (RedisUpdateBuffer, RedisSpendPublisher) {
-    let (lists, push) = redis_lists(cache);
+    let handles = redis_lists(cache);
     let buffer = RedisUpdateBuffer {
-        lists,
+        lists: handles.buffer,
         enabled: settings.use_redis_transaction_buffer,
         dequeue_count: settings.dequeue_count,
         events: Arc::clone(&events),
     };
     let publisher = RedisSpendPublisher {
-        lists: push,
+        lists: handles.push,
         events,
         staging: SpendStaging::default(),
     };
     (buffer, publisher)
 }
 
-fn redis_lists(
-    cache: Option<&Arc<RedisCache>>,
-) -> (
-    Option<Arc<dyn SpendBufferLists>>,
-    Option<Arc<dyn SpendBufferPush>>,
-) {
+struct RedisListHandles {
+    buffer: Option<Arc<dyn SpendBufferLists>>,
+    push: Option<Arc<dyn SpendBufferPush>>,
+}
+
+fn redis_lists(cache: Option<&Arc<RedisCache>>) -> RedisListHandles {
     let Some(connected) = cache else {
-        return (None, None);
+        return RedisListHandles {
+            buffer: None,
+            push: None,
+        };
     };
     let lists = Arc::new(RedisSpendLists {
         cache: Arc::clone(connected),
     });
-    let buffer = Arc::clone(&lists);
-    (Some(buffer), Some(lists))
+    let buffer: Arc<dyn SpendBufferLists> = Arc::clone(&lists);
+    let push: Arc<dyn SpendBufferPush> = lists;
+    RedisListHandles {
+        buffer: Some(buffer),
+        push: Some(push),
+    }
 }
 
 pub(super) fn build_leases(
