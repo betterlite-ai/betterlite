@@ -103,6 +103,23 @@ impl Helper for Op {
 
 // with no team the resolver's base is the key list, the opt-out stops it, and the group grants are added on top
 async fn key_answer(call: &KeyCall) -> Vec<String> {
+    let auth = GrantAuth {
+        mcp: McpAuth {
+            user_id: None,
+            team_id: None,
+            org_id: None,
+            end_user_id: None,
+            agent_id: None,
+            object_permission_id: None,
+            object_permission: Some(ObjectPermission::from(&call.permission)),
+            requires_fresh_policy: false,
+        },
+        access_group_ids: call.access_group_ids.clone(),
+    };
+    key_servers_and_groups(call, &auth).await
+}
+
+async fn key_servers_and_groups(call: &KeyCall, auth: &GrantAuth) -> Vec<String> {
     let reads = case_reads(
         &call.servers,
         &call.access_groups,
@@ -110,9 +127,7 @@ async fn key_answer(call: &KeyCall) -> Vec<String> {
         None,
     );
     let grants = ServerGrants { reads };
-    let mut auth = grant_auth(None, &call.access_group_ids);
-    auth.mcp.object_permission = Some(permission_row(&call.permission));
-    let key_servers = grants.key_servers(Some(&auth)).await;
+    let key_servers = grants.key_servers(Some(auth)).await;
     if key_servers
         .iter()
         .any(|server| server.as_str() == NO_MCP_SERVERS)
@@ -120,7 +135,7 @@ async fn key_answer(call: &KeyCall) -> Vec<String> {
         return Vec::new();
     }
     let mut server_ids: BTreeSet<String> = key_servers.into_iter().collect();
-    server_ids.extend(grants.key_access_group_servers(Some(&auth)).await);
+    server_ids.extend(grants.key_access_group_servers(Some(auth)).await);
     server_ids.into_iter().collect()
 }
 
@@ -129,7 +144,7 @@ async fn team_answer(call: &TeamCall) -> Vec<String> {
     let team = TeamRecord {
         blocked: call.blocked,
         access_group_ids: call.team_access_group_ids.clone(),
-        object_permission: call.permission.as_ref().map(permission_row),
+        object_permission: call.permission.as_ref().map(ObjectPermission::from),
     };
     let reads = case_reads(
         &call.servers,
@@ -137,10 +152,9 @@ async fn team_answer(call: &TeamCall) -> Vec<String> {
         &call.toolset_grants,
         Some(team),
     );
-    let auth = grant_auth(Some(call.team_id.as_str()), &[]);
-    // get_mcp_server_access answers an empty list when the team level raises
+    // the case pins a normal team id, and a raising team level answers an empty list anyway
     let mut server_ids = ServerGrants { reads }
-        .team_servers(Some(&auth))
+        .single_team_servers(&call.team_id, false)
         .await
         .unwrap_or_default();
     server_ids.sort();
@@ -171,36 +185,23 @@ fn case_reads(
     }
 }
 
-fn grant_auth(team_id: Option<&str>, access_group_ids: &[String]) -> GrantAuth {
-    GrantAuth {
-        mcp: McpAuth {
-            user_id: None,
-            team_id: team_id.map(str::to_owned),
-            org_id: None,
-            end_user_id: None,
-            agent_id: None,
-            object_permission_id: None,
-            object_permission: None,
-            requires_fresh_policy: false,
-        },
-        access_group_ids: access_group_ids.to_vec(),
-    }
-}
-
-fn permission_row(permission: &PermissionRecord) -> ObjectPermission {
-    ObjectPermission {
-        object_permission_id: String::from("op-case"),
-        mcp_servers: PermissionList(permission.servers.clone()),
-        mcp_access_groups: PermissionList(permission.access_groups.clone()),
-        mcp_tool_permissions: permission.tool_permissions.clone(),
-        vector_stores: PermissionList(None),
-        agents: PermissionList(None),
-        agent_access_groups: PermissionList(None),
-        models: PermissionList(None),
-        mcp_toolsets: permission.toolsets.clone(),
-        blocked_tools: PermissionList(None),
-        search_tools: PermissionList(None),
-        mcp_tool_search_enabled: None,
-        skills: None,
+// the case carries no object permission id, so every converted row shares one placeholder
+impl From<&PermissionRecord> for ObjectPermission {
+    fn from(permission: &PermissionRecord) -> Self {
+        Self {
+            object_permission_id: String::from("op-case"),
+            mcp_servers: PermissionList(permission.servers.clone()),
+            mcp_access_groups: PermissionList(permission.access_groups.clone()),
+            mcp_tool_permissions: permission.tool_permissions.clone(),
+            vector_stores: PermissionList(None),
+            agents: PermissionList(None),
+            agent_access_groups: PermissionList(None),
+            models: PermissionList(None),
+            mcp_toolsets: permission.toolsets.clone(),
+            blocked_tools: PermissionList(None),
+            search_tools: PermissionList(None),
+            mcp_tool_search_enabled: None,
+            skills: None,
+        }
     }
 }
