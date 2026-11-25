@@ -60,7 +60,13 @@ from betterlite._tokens import (
     encode,
     token_counter,
 )
-from betterlite.budget_manager import DAYS_IN_A_WEEK, HOURS_IN_A_DAY, BudgetManager
+from betterlite.budget_manager import (
+    DAYS_IN_A_MONTH,
+    DAYS_IN_A_WEEK,
+    DAYS_IN_A_YEAR,
+    HOURS_IN_A_DAY,
+    BudgetManager,
+)
 from betterlite.types.utils.choices import map_finish_reason as parts_map_finish_reason
 from betterlite.types.utils.response import ModelResponse, ModelResponseStream
 
@@ -84,6 +90,8 @@ ZERO_COST: Final = 0.0
 COST: Final = 0.25
 ALICE: Final = "alice"
 BOB: Final = "bob"
+CAROL: Final = "carol"
+DAVE: Final = "dave"
 ZOE: Final = "zoe"
 NOT_FOUND_MESSAGE: Final = "User Dictionary not found!"
 LOCAL_DICT_MESSAGE: Final = "user dict from local: {}"
@@ -829,6 +837,21 @@ def test_budget_duration_reset(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     assert "duration" not in ours.user_dict[BOB]
     assert ours.user_dict[BOB]["current_cost"] != ZERO_COST
     join_saves(marker)
+
+
+def test_budget_durations(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    reference = LITELLM_BUDGET.BudgetManager(PROJECT)
+    ours = BudgetManager(PROJECT)
+    marker = set(threading.enumerate())
+    named = (("daily", ALICE), ("weekly", BOB), ("monthly", CAROL), ("yearly", DAVE))
+    for duration, user in named:
+        expected = reference.create_budget(BUDGET, user, duration, CREATED_AT)
+        assert ours.create_budget(BUDGET, user, duration, CREATED_AT) == expected
+    join_saves(marker)
+    assert ours.user_dict == reference.user_dict
+    durations = [ours.user_dict[user]["duration"] for _duration, user in named]
+    assert durations == [1, DAYS_IN_A_WEEK, DAYS_IN_A_MONTH, DAYS_IN_A_YEAR]
 
 
 def test_budget_bad_duration(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
