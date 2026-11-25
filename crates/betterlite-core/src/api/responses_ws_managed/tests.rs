@@ -3,6 +3,7 @@
 mod support;
 
 mod different_provider_model;
+mod history_caps;
 mod history_fallback_and_failure;
 mod history_guards;
 mod invalid_and_ignored;

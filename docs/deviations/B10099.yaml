@@ -1,0 +1,12 @@
+task: B10099
+deviations:
+  - what: The breaker-open error is the Rust exception type registered on betterlite._native as RedisCircuitBreakerOpenError; betterlite.caching.redis_cache does not export the class, where LiteLLM defines it in that module and raises it from its RedisCache methods.
+    why: The Python caching layer under crates/betterlite-python/python is outside this task's scope, so the class is registered by the native cache backend module that raises it; a caller catches it from betterlite._native, and a handler for Exception still sees it because the class subclasses Exception as LiteLLM's does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L449-L451
+  - what: Every native Redis handle reads REDIS_CIRCUIT_BREAKER_ENABLED, REDIS_CIRCUIT_BREAKER_FAILURE_THRESHOLD, REDIS_CIRCUIT_BREAKER_RECOVERY_TIMEOUT, REDIS_CIRCUIT_BREAKER_TIMEOUT_MIN_DURATION and REDIS_TIMEOUT_LOG_INTERVAL when it is constructed, so a changed value reaches the next handle built; LiteLLM reads them once at import into litellm.constants, so a change after the import never reaches a RedisCache.
+    why: The Python package has no config file stage, so each native handle resolves these settings from its environment snapshot at construction, as it already does for its Redis overrides.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L511-L517
+  - what: The breaker-open message joins its two clauses with a comma, as in "Redis circuit breaker is open, skipping get_cache"; LiteLLM's RedisCircuitBreakerOpenError message puts an em dash before "skipping".
+    why: The text comes from betterlite-redis's BreakerOpen display, which the server's breaker already raised for every gated Redis call, and the Python handles surface that same error so the server and the Python package word it alike.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L516
+kept_bugs: []
