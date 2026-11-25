@@ -27,6 +27,7 @@ def run(input_value: Input) -> dict[str, JsonValue]:
     metadata = input_value["request_metadata"]
     body = input_value["body"]
     reply = httpx.Response(input_value["status_code"], content=body.encode())
+    litellm_params: dict[str, JsonValue] = {"metadata": metadata}
     outcome = OUTCOME.validate_python(Handler.batch_prediction_jobs_handler(  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L791-L801
         reply,
         logging_obj,
@@ -35,7 +36,7 @@ def run(input_value: Input) -> dict[str, JsonValue]:
         start,
         start,
         cache_hit=False,
-        litellm_params={"metadata": metadata},
+        litellm_params=litellm_params,
     ))
     record = result_value(outcome.result)
     record["id"] = FIXED_ID

@@ -19,7 +19,7 @@ mod record;
 mod registration;
 mod tests;
 
-const VERTEX_BATCH_PREDICTION_JOBS_ROUTE: &str = "batchPredictionJobs";
+const BATCH_PREDICTION_JOBS_ROUTE: &str = "batchPredictionJobs";
 const UNKNOWN_MODEL: &str = "unknown";
 const SUCCESS_STATUS: u16 = 200;
 
@@ -121,6 +121,7 @@ impl VertexBatchLogging {
     #[must_use]
     // ast-grep-ignore: no-long-names
     pub fn get_actual_model_id_from_router(&self, model_name: &str) -> String {
+        // ast-grep-ignore: no-long-names - the task fixes this public name for B3642
         let extracted = extract_model_name_from_vertex_path(model_name);
         let Some(router) = self.router.as_ref() else {
             tracing::warn!("Router not available, using constructed model name: {extracted}");
