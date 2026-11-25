@@ -192,7 +192,9 @@ class DualCache(BaseCache):
     @staticmethod
     async def async_batch_get_cache_shared(
         reads: Sequence[tuple["DualCache", list[str]]],
+        parent_otel_span: JsonValue = None,
     ) -> list[list[JsonValue] | None]:
+        _unread = parent_otel_span
         native_reads = [(cache.native, keys) for cache, keys in reads]
         answers = await NativeDual.async_batch_get_shared(native_reads)
         return [_batch_values(answer) for answer in answers]

@@ -490,7 +490,8 @@ def test_dual_batch_reads(redis_server: FakeRedisServer) -> None:
     second = DualCache(in_memory_cache=InMemoryCache(), redis_cache=ours_redis)
     shared = asyncio.run(
         DualCache.async_batch_get_cache_shared(
-            [(ours, ["ours:batch-redis"]), (second, ["ours:async-batch"])]
+            [(ours, ["ours:batch-redis"]), (second, ["ours:async-batch"])],
+            parent_otel_span=None,
         )
     )
     assert shared == [[CACHED], [CACHED]]
