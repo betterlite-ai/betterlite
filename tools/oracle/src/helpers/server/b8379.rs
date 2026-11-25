@@ -23,20 +23,16 @@ pub(crate) struct Op;
 impl Helper for Op {
     type Input = Input;
 
+    // get_config with no config file and one stored row: the section the reload serves once the row is scrubbed
     fn run(input: &Self::Input) -> HelperResult {
-        answer(input).or_value_error()
+        let section = match input.section.as_str() {
+            "general_settings" => Section::GeneralSettings,
+            "litellm_settings" => Section::LitellmSettings,
+            other => return Err(Failure::UnknownSection(other.to_owned())).or_value_error(),
+        };
+        let scrubbed = scrub_remote_modules(section, &input.row);
+        let mut store = SettingsStore::from(section);
+        store.apply_db_row(DbRow::from(section), settings_mapping(Some(&scrubbed)));
+        Ok(store.resolved().into_iter().collect())
     }
-}
-
-// get_config with no config file and one stored row: the section the reload serves once the row is scrubbed
-fn answer(input: &Input) -> Result<JsonValue, Failure> {
-    let section = match input.section.as_str() {
-        "general_settings" => Section::GeneralSettings,
-        "litellm_settings" => Section::LitellmSettings,
-        other => return Err(Failure::UnknownSection(other.to_owned())),
-    };
-    let scrubbed = scrub_remote_modules(section, &input.row);
-    let mut store = SettingsStore::from(section);
-    store.apply_db_row(DbRow::from(section), settings_mapping(Some(&scrubbed)));
-    Ok(store.resolved().into_iter().collect())
 }
