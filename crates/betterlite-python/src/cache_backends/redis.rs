@@ -35,7 +35,7 @@ pub(crate) struct NativeRedis {
     settings: RedisSettings,
 }
 
-fn open(py: Python<'_>, parsed: RedisSettings) -> PyResult<NativeRedis> {
+pub(super) fn open(py: Python<'_>, parsed: RedisSettings) -> PyResult<NativeRedis> {
     let options = RedisCacheOptions {
         overrides: parsed.overrides.clone(),
         family: RedisCacheFamily::Standalone,
