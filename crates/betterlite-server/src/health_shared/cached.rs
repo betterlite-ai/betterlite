@@ -72,12 +72,13 @@ pub fn encode_cached(
 // isinstance(cached_data, str) ? json.loads(...) : cached_data, then the payload's own row shape.
 pub fn cached_payload(value: CachedValue) -> Result<CachedHealthCheck, CachedHealthError> {
     let cached = json_from_cached(value);
-    let document = if let Json::Text(text) = &cached {
-        safe_json_loads(text.as_bytes())?
+    if let Json::Text(text) = &cached {
+        let _validated = safe_json_loads(text.as_bytes())?;
+        Ok(serde_json::from_str(text)?)
     } else {
-        serde_json::to_value(&cached)?
-    };
-    Ok(serde_json::from_value(document)?)
+        let text = serde_json::to_string(&cached)?;
+        Ok(serde_json::from_str(&text)?)
+    }
 }
 
 // betterlite-redis keeps its CachedValue -> Json mapping crate-private, so this reader maps it here.
