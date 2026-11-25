@@ -242,6 +242,7 @@ fn openai_chat_null_messages_and_params_default_to_empty() {
     let Some(Call::Chat {
         messages,
         optional_params,
+        json_mode,
         ..
     }) = tools.calls().first().cloned()
     else {
@@ -249,6 +250,7 @@ fn openai_chat_null_messages_and_params_default_to_empty() {
     };
     assert_eq!(messages, Json::List(Vec::new()));
     assert_eq!(optional_params, Json::Object(JsonObject::new()));
+    assert!(!json_mode);
 }
 
 #[test]
@@ -302,7 +304,8 @@ fn openai_chat_prices_the_reply_and_fills_the_kwargs_and_call_log() {
         )
     );
     assert!(
-        logs.contents().contains("Model: gpt-4o, Cost: $0.001500"),
+        logs.contents()
+            .contains("Endpoint: chat_completions, Model: gpt-4o, Cost: $0.001500"),
         "{}",
         logs.contents()
     );
