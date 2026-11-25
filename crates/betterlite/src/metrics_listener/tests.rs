@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::env;
 use std::ffi::OsString;
 use std::io;
 use std::net::{SocketAddr, TcpListener as StdTcpListener};
@@ -13,7 +14,7 @@ use std::time::Duration;
 use axum::Router;
 use axum::routing::get;
 use betterlite_http::metrics_server::{
-    METRICS_PATH, MetricsServerError, STARTUP_POLLING, StartupPolling, StartupProbe,
+    METRICS_PATH, MetricsServerError, STARTUP_POLLING, StartupPolling, StartupProbe, answered_by,
     build_metrics_app, wait_until_serving,
 };
 use betterlite_http::proxy::base_builder;
@@ -23,6 +24,7 @@ use rstest::rstest;
 use tempfile::TempDir;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::process::Command;
 use tokio::sync::Notify;
 use tokio::time::{self, Instant};
 use tokio_util::sync::CancellationToken;
@@ -65,6 +67,14 @@ fn free_port() -> u16 {
         .local_addr()
         .unwrap()
         .port()
+}
+
+// the packaged sidecar, built beside the test binary as tests/tests.rs finds betterlite
+fn sidecar_binary() -> PathBuf {
+    let mut test_binary = env::current_exe().unwrap();
+    test_binary.pop();
+    test_binary.set_file_name("betterlite-metrics-server");
+    test_binary
 }
 
 fn large_app() -> Router {
@@ -193,6 +203,53 @@ fn the_cli_exit_code_follows_the_server_outcome() {
     let folder = TempDir::new().unwrap();
     let error = serve(&settings(&folder.path().join("missing"), 0)).unwrap_err();
     assert_eq!(report(Err(error)), ExitCode::FAILURE);
+}
+
+// the packaged entry point: main parses the CLI and serves the folder on the port it is given
+#[tokio::test]
+async fn the_binary_serves_the_folder_on_the_port_it_is_given() {
+    let folder = TempDir::new().unwrap();
+    let port = free_port();
+    let mut sidecar = Command::new(sidecar_binary())
+        .arg("--host")
+        .arg("127.0.0.1")
+        .arg("--port")
+        .arg(port.to_string())
+        .arg("--multiproc_dir")
+        .arg(folder.path())
+        .env_clear()
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    let probe = probe_for("127.0.0.1", port, sidecar.id().unwrap(), STARTUP_POLLING);
+    let started = Instant::now();
+    let mut answered = answered_by(&probe).await;
+    while !answered && started.elapsed() < Duration::from_secs(5) {
+        if sidecar.try_wait().unwrap().is_some() {
+            break;
+        }
+        time::sleep(Duration::from_millis(50)).await;
+        answered = answered_by(&probe).await;
+    }
+    let _killed = sidecar.start_kill();
+    let _waited = sidecar.wait().await;
+    assert!(
+        answered,
+        "the sidecar binary never answered on its port with its own pid"
+    );
+}
+
+// main exits with clap's usage code for a missing required argument, before any listener starts
+#[tokio::test]
+async fn the_binary_exits_with_2_when_the_folder_argument_is_missing() {
+    let status = Command::new(sidecar_binary())
+        .arg("--port")
+        .arg("4001")
+        .env_clear()
+        .status()
+        .await
+        .unwrap();
+    assert_eq!(status.code(), Some(2_i32));
 }
 
 #[tokio::test(start_paused = true)]

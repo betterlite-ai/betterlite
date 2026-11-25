@@ -27,9 +27,9 @@ use tokio::time;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
-// this file is also the bin root, where a plain mod tests; would look in src/tests.rs
+// this file is also the bin root, where mod metrics_server; would look in src/metrics_server.rs
 #[path = "metrics_listener/tests.rs"]
-mod tests;
+mod metrics_server;
 
 const PROGRAM: &str = "betterlite-metrics-server";
 const MULTIPROC_DIR: &str = "PROMETHEUS_MULTIPROC_DIR";
