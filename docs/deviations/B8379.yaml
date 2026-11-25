@@ -12,4 +12,7 @@ deviations:
   - what: A config file whose YAML document is a list, text, a number or a boolean fails the reload with OverlayError::ConfigNotMapping, which names the file.
     why: LiteLLM keeps whatever yaml.safe_load returns and fails later with an AttributeError when it calls .get on it; the typed error says what is wrong with the file instead.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5490-L5506
+  - what: A failed reload logs the typed error without the YAML parser's source excerpt, so no line of the config file reaches the log.
+    why: LiteLLM lets the parser exception reach the unhandled-exception handler, and its traceback renders the config line next to the syntax error, which can be the line holding master_key or an api_key; the error type and location still name the failure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2055
 kept_bugs: []
