@@ -26,7 +26,7 @@ const OIDC_CONFIG: &str = "general_settings:\n  master_key: os.environ/oidc/goog
 
 // the port, the recording installer behind it and the state it mutates, so a test reads the committed stores
 struct Port {
-    port: Arc<dyn ConfigOverlayPort>,
+    overlay: Arc<dyn ConfigOverlayPort>,
     installer: Arc<RecordingInstaller>,
     state: Arc<AsyncMutex<OverlayState>>,
 }
@@ -43,11 +43,11 @@ fn port_with_oidc(
 ) -> Port {
     let installer = Arc::new(recording);
     let environment = BTreeMap::from([("MASTER".to_owned(), "sk-env".to_owned())]);
-    let mut overlay = state(true, &Arc::new(RecordingRuntime::default()));
+    let mut initial_state = state(true, &Arc::new(RecordingRuntime::default()));
     if let Some(endpoint) = oidc {
-        overlay.secrets.lookup.oidc_http = endpoint;
+        initial_state.secrets.lookup.oidc_http = endpoint;
     }
-    let state = Arc::new(AsyncMutex::new(overlay));
+    let state = Arc::new(AsyncMutex::new(initial_state));
     let adapter = OverlayPortAdapter {
         state: Arc::clone(&state),
         source: file_source(path),
@@ -58,7 +58,7 @@ fn port_with_oidc(
         mutations: AsyncMutex::new(()),
     };
     Port {
-        port: Arc::new(adapter),
+        overlay: Arc::new(adapter),
         installer,
         state,
     }
@@ -70,7 +70,7 @@ async fn port_reload_returns_what_reload_config_returns() {
     let path = write_config(directory.path(), CONFIG);
     let rows = || database(&[("router_settings", json!({"num_retries": 2}))]);
     let through_port = port(&path, Some(rows()), RecordingInstaller::default())
-        .port
+        .overlay
         .reload_config()
         .await
         .unwrap();
@@ -100,7 +100,7 @@ async fn port_missing_config_file_gives_reload() {
     let directory = TempDir::new().unwrap();
     let missing = directory.path().join("absent.yaml");
     let error = port(&missing, None, RecordingInstaller::default())
-        .port
+        .overlay
         .reload_config()
         .await
         .unwrap_err();
@@ -117,7 +117,7 @@ async fn port_reload_logs_the_yaml_error_without_the_config_text() {
         "general_settings: {master_key: sk-live-secret, ]}\n",
     );
     let error = port(&path, None, RecordingInstaller::default())
-        .port
+        .overlay
         .reload_config()
         .await
         .unwrap_err();
@@ -135,7 +135,7 @@ async fn port_serves_the_endpoints_in_order() {
     let served = port(&path, None, RecordingInstaller::default());
     let endpoints = [json!({"path": "/b"}), json!({"path": "/a"})];
     served
-        .port
+        .overlay
         .serve_pass_through_endpoints(&endpoints)
         .await
         .unwrap();
@@ -149,7 +149,7 @@ async fn port_non_object_entry_gives_pass_through_and_installs_nothing() {
     let served = port(&path, None, RecordingInstaller::default());
     let endpoints = [json!({"path": "/a"}), json!("/b")];
     let error = served
-        .port
+        .overlay
         .serve_pass_through_endpoints(&endpoints)
         .await
         .unwrap_err();
@@ -168,7 +168,7 @@ async fn port_install_failure_gives_pass_through() {
     };
     let served = port(&path, None, failing);
     let error = served
-        .port
+        .overlay
         .serve_pass_through_endpoints(&[json!({"path": "/a"})])
         .await
         .unwrap_err();
@@ -185,7 +185,7 @@ async fn port_database_unavailable_on_no_db_connected() {
         Some(failing_database(failure)),
         RecordingInstaller::default(),
     )
-    .port
+    .overlay
     .reload_config()
     .await
     .unwrap_err();
@@ -202,7 +202,7 @@ async fn port_database_unavailable_not_for_create_null() {
         Some(failing_database(failure)),
         RecordingInstaller::default(),
     )
-    .port
+    .overlay
     .reload_config()
     .await
     .unwrap_err();
@@ -223,8 +223,8 @@ async fn port_reuses_the_oidc_token_an_earlier_reload_fetched() {
         RecordingInstaller::default(),
         Some(Arc::<OnceOidc>::clone(&oidc)),
     );
-    let first = served.port.reload_config().await.unwrap();
-    let second = served.port.reload_config().await.unwrap();
+    let first = served.overlay.reload_config().await.unwrap();
+    let second = served.overlay.reload_config().await.unwrap();
     let master_key = json!({"master_key": "google-token"});
     assert_eq!(first.values["general_settings"], master_key);
     assert_eq!(second.values["general_settings"], master_key);
@@ -240,12 +240,12 @@ async fn port_keeps_endpoints_served_while_a_reload_resolves() {
     let served = port_with_oidc(&path, None, RecordingInstaller::default(), Some(oidc));
     let mut tasks = JoinSet::new();
     tasks.spawn({
-        let port = Arc::clone(&served.port);
+        let port = Arc::clone(&served.overlay);
         async move { port.reload_config().await.map(|_config| ()) }
     });
     started.await.unwrap();
     tasks.spawn({
-        let port = Arc::clone(&served.port);
+        let port = Arc::clone(&served.overlay);
         async move {
             port.serve_pass_through_endpoints(&[json!({"path": "/served"})])
                 .await

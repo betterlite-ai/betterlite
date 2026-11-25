@@ -396,16 +396,16 @@ impl OidcHttp for BlockingOidc {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .take();
-        if let Some(started) = started {
-            let _sent = started.send(());
+        if let Some(sender) = started {
+            let _sent = sender.send(());
         }
         let release = self
             .release
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .take();
-        if let Some(release) = release {
-            let _released = release.recv();
+        if let Some(receiver) = release {
+            let _released = receiver.recv();
         }
         Ok(OidcResponse {
             status: 200,

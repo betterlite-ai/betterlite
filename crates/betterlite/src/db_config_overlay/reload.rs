@@ -83,13 +83,14 @@ pub fn begin_reload(
 
 // _check_for_os_environ_vars, off the runtime since a manager read blocks and the lookup is already owned
 pub async fn resolve_reload(
-    PendingReload {
+    pending: PendingReload,
+    workers: &Workers,
+) -> Result<ResolvedConfig, OverlayError> {
+    let PendingReload {
         config,
         lookup,
         env,
-    }: PendingReload,
-    workers: &Workers,
-) -> Result<ResolvedConfig, OverlayError> {
+    } = pending;
     off_runtime(workers, move || {
         let mut values = config;
         let outcome = Resolver {
@@ -150,10 +151,8 @@ fn resolved_config(state: &OverlayState, file_config: &ConfigMap) -> ConfigMap {
             );
             values.insert(PASS_THROUGH_ENDPOINTS.to_owned(), JsonValue::Array(merged));
         }
-        config.insert(
-            section.name().to_owned(),
-            JsonValue::Object(values.into_iter().collect()),
-        );
+        let resolved = JsonValue::Object(values.into_iter().collect());
+        config.insert(section.name().to_owned(), resolved);
     }
     config
 }

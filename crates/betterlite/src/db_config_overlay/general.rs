@@ -59,10 +59,8 @@ pub async fn apply_general_settings_row(
     let cache_size_was_db = current.resolution(CACHE_MAX_SIZE).source() == FieldSource::Db;
     let previous = cleanup_schedule_of(current);
     let values = settings_mapping(Some(&scrub_remote_modules(Section::GeneralSettings, row)));
-    state
-        .config
-        .general_settings
-        .apply_db_row(DbRow::GeneralSettings, values.clone());
+    let store = &mut state.config.general_settings;
+    store.apply_db_row(DbRow::GeneralSettings, values.clone());
     apply_alerting(
         &state.config.general_settings,
         &values,

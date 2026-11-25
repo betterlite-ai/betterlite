@@ -35,6 +35,12 @@ impl Workers {
             live: Mutex::new(Vec::new()),
         }
     }
+
+    fn track(&self, thread: JoinHandle<()>) {
+        let mut live = self.live.lock().unwrap_or_else(PoisonError::into_inner);
+        live.retain(|handle| !handle.is_finished());
+        live.push(thread);
+    }
 }
 
 impl Drop for Workers {
@@ -46,7 +52,7 @@ impl Drop for Workers {
     }
 }
 
-// A std thread carries no runtime handle, so a manager transport takes its blocking path; a panic drops the sender, which reads as unavailable. The live set is locked in a block of its own, since a std guard kept past the await would make the future non-Send.
+// A std thread carries no runtime handle, so a manager transport takes its blocking path; a panic drops the sender, which reads as unavailable. Workers::track holds the live set's guard, so the future holds none across the await.
 pub(super) async fn off_runtime<Work, Output>(
     workers: &Workers,
     work: Work,
@@ -64,11 +70,7 @@ where
         .name("config-overlay-worker".to_owned())
         .spawn(move || drop((slot, sender.send(work()))))
         .map_err(|source| OverlayError::WorkerStart { source })?;
-    {
-        let mut live = workers.live.lock().unwrap_or_else(PoisonError::into_inner);
-        live.retain(|handle| !handle.is_finished());
-        live.push(thread);
-    }
+    workers.track(thread);
     answer
         .await
         .map_err(|_closed| OverlayError::WorkerUnavailable)

@@ -135,13 +135,11 @@ fn warn_shadowed_keys(state: &mut OverlayState) {
             .map(SettingsStore::shadowed_db_keys)
             .unwrap_or_default();
         for key in keys {
-            if !state
-                .warned_shadowed
-                .contains(&(section.name(), key.clone()))
-            {
+            let shadowed = (section.name(), key.clone());
+            if !state.warned_shadowed.contains(&shadowed) {
                 tracing::warn!("{}", config_ownership_message(section, &key, true));
             }
-            warned.insert((section.name(), key));
+            warned.insert(shadowed);
         }
     }
     state.warned_shadowed = warned;

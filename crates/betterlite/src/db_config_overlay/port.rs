@@ -88,17 +88,19 @@ impl ConfigOverlayPort for OverlayPortAdapter {
 
 // The log keeps the typed cause but never the YAML source excerpt: a parser renders the neighboring lines, and a config file carries keys.
 fn port_error(error: &OverlayError, step: ConfigOverlayPortError) -> ConfigOverlayPortError {
-    let message = match error {
-        OverlayError::ConfigYaml { source, .. } => format!("{error}: {}", source.without_snippet()),
-        OverlayError::Includes(IncludeError::Yaml { path, source })
-        | OverlayError::Bucket(BucketConfigError::Include(IncludeError::Yaml { path, source })) => {
-            format!(
-                "invalid YAML in config include {}: {}",
-                path.display(),
-                source.without_snippet()
-            )
-        }
-        other => other.to_string(),
+    let message = if let OverlayError::ConfigYaml { source, .. } = error {
+        format!("{error}: {}", source.without_snippet())
+    } else if let OverlayError::Includes(IncludeError::Yaml { path, source })
+    | OverlayError::Bucket(BucketConfigError::Include(IncludeError::Yaml {
+        path,
+        source,
+    })) = error
+    {
+        let file = path.display();
+        let reason = source.without_snippet();
+        format!("invalid YAML in config include {file}: {reason}")
+    } else {
+        error.to_string()
     };
     tracing::error!(error = %message, "the config overlay failed");
     if let OverlayError::Database { source } = error
