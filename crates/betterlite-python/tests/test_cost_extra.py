@@ -673,7 +673,7 @@ def test_processor_mixed_cache() -> None:
     assert usage_counts(reference)["cached_tokens"] == expected_cached_tokens
 
 
-@pytest.mark.parametrize("uncached", (None, 0, CACHED_AUDIO_TOKENS))
+@pytest.mark.parametrize("uncached", [None, 0, CACHED_AUDIO_TOKENS])
 def test_processor_cached_audio(uncached: int | None) -> None:
     expected_uncached = 0 if uncached is None else uncached
     usage: dict[str, JsonValue] = {
