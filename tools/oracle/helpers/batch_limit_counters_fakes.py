@@ -129,7 +129,8 @@ class ScriptedLimiter(ParallelLimiter):
         self._responses = responses
 
     @override
-    async def atomic_check_and_increment_by_n(  # ast-grep-ignore: no-long-names
+    # ast-grep-ignore: no-long-names
+    async def atomic_check_and_increment_by_n(
         self,
         descriptors: list[RateLimitDescriptor],
         increments: list[IncrementAmounts],

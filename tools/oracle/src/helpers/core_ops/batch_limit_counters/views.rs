@@ -57,26 +57,30 @@ impl From<&ProxyRateLimitError> for ErrorView {
     fn from(error: &ProxyRateLimitError) -> Self {
         Self {
             status: 429,
-            headers: error
-                .headers
-                .as_ref()
-                .map_or_else(BTreeMap::new, |present| {
-                    present
-                        .iter()
-                        .map(|(name, value)| {
-                            (
-                                name.as_str().to_owned(),
-                                String::from_utf8_lossy(value.as_bytes()).into_owned(),
-                            )
-                        })
-                        .collect()
-                }),
+            headers: header_values(error),
             category: error.category,
             rate_limit_type: error.rate_limit_type,
             model: error.model.clone(),
             llm_provider: error.llm_provider.clone(),
         }
     }
+}
+
+fn header_values(error: &ProxyRateLimitError) -> BTreeMap<String, String> {
+    error
+        .headers
+        .as_ref()
+        .map_or_else(BTreeMap::new, |present| {
+            present
+                .iter()
+                .map(|(name, value)| {
+                    (
+                        name.as_str().to_owned(),
+                        String::from_utf8_lossy(value.as_bytes()).into_owned(),
+                    )
+                })
+                .collect()
+        })
 }
 
 #[derive(Debug, Serialize)]

@@ -725,13 +725,11 @@ async fn oversized_refund_windows_are_rejected() {
 // bounded-inputs: a charge the limiter derives is counted before the atomic call
 #[tokio::test]
 async fn oversized_limiter_charge_is_rejected() {
-    let limiter = ScriptedLimiter {
-        base: vec![
-            descriptor("api_key", "sk-1", Some(WINDOW), Some(5), None),
-            descriptor("team", "team-1", Some(WINDOW), Some(5), None),
-        ],
-        ..ScriptedLimiter::default()
-    };
+    let mut limiter = ScriptedLimiter::with_responses(Vec::new());
+    limiter.base = vec![
+        descriptor("api_key", "sk-1", Some(WINDOW), Some(5), None),
+        descriptor("team", "team-1", Some(WINDOW), Some(5), None),
+    ];
     let mut rig = harness(limiter, ScriptedStore::default(), ScriptedCache::default());
     rig.service.limits.max_items = 1;
     let result = rig
