@@ -122,6 +122,77 @@ async fn a_replayed_chunk_drops_the_null_choice_fields() {
 }
 
 #[tokio::test]
+async fn a_replayed_chunk_keeps_the_choice_logprobs() {
+    let mut response = chat_response("gpt-test", text("hello"));
+    let GuardrailValue::Object(fields) = &mut response else {
+        panic!("expected a response object");
+    };
+    let Some(GuardrailValue::Array(choices)) = fields.get_mut("choices") else {
+        panic!("expected choices");
+    };
+    let GuardrailValue::Object(choice) = &mut choices[0] else {
+        panic!("expected a choice");
+    };
+    let logprobs = object(vec![(
+        "content",
+        array(vec![object(vec![
+            ("token", text("hello")),
+            ("logprob", GuardrailValue::Decimal(-0.25)),
+        ])]),
+    )]);
+    choice.insert("logprobs".to_owned(), logprobs.clone());
+    let mut runtime = base();
+    runtime.assembled = Some(response);
+    runtime.scan_result = Ok(object(vec![]));
+    let settings = streaming_settings();
+    let output = run_buffered(&runtime, &settings, "/v1/chat/completions", chat_chunks())
+        .await
+        .unwrap();
+    let StreamChunk::Json(GuardrailValue::Object(chunk)) = &output[0] else {
+        panic!("expected a json chunk");
+    };
+    let Some(GuardrailValue::Array(out_choices)) = chunk.get("choices") else {
+        panic!("expected choices");
+    };
+    let GuardrailValue::Object(out_choice) = &out_choices[0] else {
+        panic!("expected a choice");
+    };
+    assert_eq!(out_choice.get("logprobs"), Some(&logprobs));
+}
+
+#[tokio::test]
+async fn a_replayed_chunk_leaves_a_null_choice_logprobs_out() {
+    let mut response = chat_response("gpt-test", text("hello"));
+    let GuardrailValue::Object(fields) = &mut response else {
+        panic!("expected a response object");
+    };
+    let Some(GuardrailValue::Array(choices)) = fields.get_mut("choices") else {
+        panic!("expected choices");
+    };
+    let GuardrailValue::Object(choice) = &mut choices[0] else {
+        panic!("expected a choice");
+    };
+    choice.insert("logprobs".to_owned(), GuardrailValue::Null);
+    let mut runtime = base();
+    runtime.assembled = Some(response);
+    runtime.scan_result = Ok(object(vec![]));
+    let settings = streaming_settings();
+    let output = run_buffered(&runtime, &settings, "/v1/chat/completions", chat_chunks())
+        .await
+        .unwrap();
+    let StreamChunk::Json(GuardrailValue::Object(chunk)) = &output[0] else {
+        panic!("expected a json chunk");
+    };
+    let Some(GuardrailValue::Array(out_choices)) = chunk.get("choices") else {
+        panic!("expected choices");
+    };
+    let GuardrailValue::Object(out_choice) = &out_choices[0] else {
+        panic!("expected a choice");
+    };
+    assert!(out_choice.get("logprobs").is_none());
+}
+
+#[tokio::test]
 async fn replays_the_assembled_response_as_one_chunk() {
     let mut runtime = base();
     runtime.assembled = Some(chat_response("gpt-test", text("hello world")));

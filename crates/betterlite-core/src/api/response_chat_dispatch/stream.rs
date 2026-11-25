@@ -10,7 +10,9 @@ use betterlite_models::decisions::Json;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_streaming::provider_chunk_decode::chunk::ProviderChunk;
 use betterlite_streaming::provider_chunk_decode::wrapper::{StreamSetup, StreamWrapper};
-use betterlite_streaming::stream_chunk_shaping::records::{JsonObject, StreamChoice, StreamChunk};
+use betterlite_streaming::stream_chunk_shaping::records::{
+    JsonObject, JsonValue, StreamChoice, StreamChunk,
+};
 use serde::Serialize;
 
 use super::error::{BridgeStreamError, PostStreamError};
@@ -134,7 +136,7 @@ impl MockStream {
     }
 }
 
-// convert_model_response_to_streaming: the whole message becomes each choice's delta, and its finish reason survives
+// convert_model_response_to_streaming: the whole message becomes each choice's delta, and its finish reason and logprobs survive
 fn replay_chunk(response: &ChatResponse) -> Result<StreamChunk, BridgeStreamError> {
     let choices = response
         .choices
@@ -144,7 +146,13 @@ fn replay_chunk(response: &ChatResponse) -> Result<StreamChunk, BridgeStreamErro
                 index: choice.index,
                 delta: serde_json::from_value(serde_json::to_value(&choice.message)?)?,
                 finish_reason: choice.finish_reason.clone(),
-                logprobs: None,
+                logprobs: choice
+                    .logprobs
+                    .as_ref()
+                    .map(|logprobs| {
+                        serde_json::to_value(logprobs).and_then(serde_json::from_value::<JsonValue>)
+                    })
+                    .transpose()?,
                 extra: choice.extra.clone(),
             })
         })
