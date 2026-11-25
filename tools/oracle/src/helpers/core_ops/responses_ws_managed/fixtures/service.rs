@@ -26,20 +26,16 @@ struct WarmupResponse {
     created_at: i64,
 }
 
-fn failure(message: String) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: String::from("ManagedTranscriptError"),
-        message,
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-    })
-}
-
 pub(crate) fn run(arguments: &Arguments) -> HelperResult {
     if arguments.managed.is_empty() {
-        return Err(failure(String::from("managed sessions are required")));
+        return Err(Box::new(HelperError {
+            class: String::from("ManagedTranscriptError"),
+            message: String::from("managed sessions are required"),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+        }));
     }
     let started = Instant::now();
     let millis = arguments
@@ -60,7 +56,7 @@ pub(crate) fn run(arguments: &Arguments) -> HelperResult {
             }
             frame.sort_all_objects();
             frames.push(json!({"direction":"provider_to_client", "action":"expect",
-                "text":serde_json::to_string(frame).map_err(|source| failure(source.to_string()))?}));
+                "text":serde_json::to_string(frame).map_err(|source| Box::new(HelperError { class: String::from("ManagedTranscriptError"), message: source.to_string(), status: None, error_type: None, param: None, code: None }))?}));
         }
         sessions.push(answer.effects);
     }
@@ -74,12 +70,49 @@ fn run_session(session: &Input, remaining: Duration) -> Result<Observation, Box<
     let mut input = session.clone();
     input.deadline_millis = u64::try_from(remaining.as_millis()).unwrap_or(0);
     if input.deadline_millis == 0 {
-        return Err(failure(String::from("managed transcript deadline expired")));
+        return Err(Box::new(HelperError {
+            class: String::from("ManagedTranscriptError"),
+            message: String::from("managed transcript deadline expired"),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+        }));
     }
-    let request = serde_json::to_value(input).map_err(|source| failure(source.to_string()))?;
-    let answer = (GROUP.invoke)("responses_ws_managed", &request)
-        .ok_or_else(|| failure(String::from("managed helper is not registered")))??;
-    serde_json::from_value(answer).map_err(|source| failure(source.to_string()))
+    invoke_session(&input)
+}
+
+fn invoke_session(input: &Input) -> Result<Observation, Box<HelperError>> {
+    let request = serde_json::to_value(input).map_err(|source| {
+        Box::new(HelperError {
+            class: String::from("ManagedTranscriptError"),
+            message: source.to_string(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+        })
+    })?;
+    let answer = (GROUP.invoke)("responses_ws_managed", &request).ok_or_else(|| {
+        Box::new(HelperError {
+            class: String::from("ManagedTranscriptError"),
+            message: String::from("managed helper is not registered"),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+        })
+    })??;
+    serde_json::from_value(answer).map_err(|source| {
+        Box::new(HelperError {
+            class: String::from("ManagedTranscriptError"),
+            message: source.to_string(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+        })
+    })
 }
 
 // Validate generated fields before canonicalizing them so random IDs and clocks cannot hide malformed acknowledgements.
@@ -88,8 +121,32 @@ fn normalize_warmup(
     index: usize,
     previous: &mut Option<String>,
 ) -> Result<(), Box<HelperError>> {
-    let record: Warmup =
-        serde_json::from_value(value.clone()).map_err(|source| failure(source.to_string()))?;
+    let response = validate_warmup(value, index, previous.as_deref())?;
+    *previous = Some(response.id);
+    if let Some(id) = value.pointer_mut("/response/id") {
+        *id = json!("resp_warmup_0123456789abcdef0123456789abcdef");
+    }
+    if let Some(timestamp) = value.pointer_mut("/response/created_at") {
+        *timestamp = json!(0_i64);
+    }
+    Ok(())
+}
+
+fn validate_warmup(
+    value: &Value,
+    index: usize,
+    previous: Option<&str>,
+) -> Result<WarmupResponse, Box<HelperError>> {
+    let record: Warmup = serde_json::from_value(value.clone()).map_err(|source| {
+        Box::new(HelperError {
+            class: String::from("ManagedTranscriptError"),
+            message: source.to_string(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+        })
+    })?;
     let response = record.response;
     let valid_id = response.id.strip_prefix("resp_warmup_").is_some_and(|hex| {
         hex.len() == 32
@@ -99,18 +156,18 @@ fn normalize_warmup(
     });
     if !valid_id
         || response.created_at < 0
-        || (!index.is_multiple_of(2) && previous.as_ref() != Some(&response.id))
+        || (!index.is_multiple_of(2) && previous != Some(response.id.as_str()))
     {
-        return Err(failure(String::from("invalid generated warmup fields")));
+        return Err(Box::new(HelperError {
+            class: String::from("ManagedTranscriptError"),
+            message: String::from("invalid generated warmup fields"),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+        }));
     }
-    *previous = Some(response.id);
-    if let Some(id) = value.pointer_mut("/response/id") {
-        *id = json!("resp_warmup_0123456789abcdef0123456789abcdef");
-    }
-    if let Some(timestamp) = value.pointer_mut("/response/created_at") {
-        *timestamp = json!(0_i64);
-    }
-    Ok(())
+    Ok(response)
 }
 
 #[path = "service/tests.rs"]

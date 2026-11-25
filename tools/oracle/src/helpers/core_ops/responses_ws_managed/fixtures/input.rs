@@ -1,4 +1,3 @@
-// The core helper and public B901 runner share a schema while retaining their visibility boundaries.
 macro_rules! define_input {
     ($visibility:vis) => {
 use betterlite_models::decisions::Json;

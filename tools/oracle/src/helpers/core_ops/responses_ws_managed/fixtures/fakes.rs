@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
@@ -84,7 +85,7 @@ impl ResponsesStreaming for ScriptedProvider {
             .map_err(|source| ProviderCallError::Call(AdapterError::Dispatch(Box::new(source))))?;
         match created {
             Created::Live(live) => Ok(HttpStream {
-                shared: Shared::clone(&self.shared),
+                shared: Arc::clone(&self.shared),
                 source: live.source,
             }),
             Created::Responses(_) | Created::Raw(_) | Created::Synthetic(_) | Created::Chat(_) => {
@@ -116,38 +117,29 @@ impl ProjectQuotaCallback for ScriptedQuota {
             output_tokens: estimated_output_tokens,
         });
         drop(recorder);
+        let mut context = ErrorContext {
+            message: self.row.message.clone(),
+            model: None,
+            provider: None,
+            max_retries: None,
+            num_retries: None,
+            body_type: None,
+            body_param: None,
+            body_code: None,
+        };
         match self.row.kind {
             QuotaKind::RateLimit => {
-                let message = format!("litellm.RateLimitError: {}", self.row.message);
-                Err(rate_limited(&message))
+                context.message = format!("litellm.RateLimitError: {}", self.row.message);
+                Err(ErrorClass::RateLimit(Box::new(RateLimitDetails {
+                    context,
+                    category: RateLimitCategory::LitellmRateLimit,
+                    dimension: None,
+                    headers: BTreeMap::new(),
+                })))
             }
-            QuotaKind::Internal => Err(ErrorClass::InternalServer(Box::new(context(
-                &self.row.message,
-            )))),
+            QuotaKind::Internal => Err(ErrorClass::InternalServer(Box::new(context))),
         }
     }
-}
-
-fn context(message: &str) -> ErrorContext {
-    ErrorContext {
-        message: message.to_owned(),
-        model: None,
-        provider: None,
-        max_retries: None,
-        num_retries: None,
-        body_type: None,
-        body_param: None,
-        body_code: None,
-    }
-}
-
-fn rate_limited(message: &str) -> ErrorClass {
-    ErrorClass::RateLimit(Box::new(RateLimitDetails {
-        context: context(message),
-        category: RateLimitCategory::LitellmRateLimit,
-        dimension: None,
-        headers: BTreeMap::new(),
-    }))
 }
 
 pub(super) struct ScriptedResolver;

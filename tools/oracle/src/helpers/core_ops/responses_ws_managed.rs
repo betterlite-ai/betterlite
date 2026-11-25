@@ -1,4 +1,4 @@
-#[path = "responses_ws_managed/fakes.rs"]
+#[path = "responses_ws_managed/fixtures/fakes.rs"]
 mod fakes;
 #[path = "responses_ws_managed/fixtures.rs"]
 mod fixtures;
@@ -14,10 +14,12 @@ use std::time::Duration;
 use tokio::time::timeout;
 
 use betterlite_core::api::responses_ws_managed::run::run;
+use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use betterlite_oracle_runner::mock::MockProvider;
 use betterlite_oracle_runner::routing_mock_scripts::ProviderCall;
 use serde_json::{Value, json};
-use tokio::runtime::Builder;
+use tokio::runtime::{Builder, Runtime};
 use tracing::instrument::WithSubscriber as _;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::registry;
@@ -39,22 +41,9 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        input
-            .check_bounds(1024, 0x0010_0000, 0x0100_0000)
-            .map_err(|source| support::helper_error("InputError", source.to_string()))?;
-        let runtime = Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .map_err(|source| support::helper_error("RuntimeError", source.to_string()))?;
+        let runtime = runtime_for(input)?;
         let shared = Shared::default();
-        let mock = fixtures::start_mock(input)
-            .map_err(|error| support::helper_error("MockError", error.to_string()))?;
-        let provider = ScriptedProvider {
-            shared: Arc::clone(&shared),
-            outbound: fixtures::outbound()
-                .map_err(|error| support::helper_error("FixtureError", error.to_string()))?,
-            base_url: mock.base_url.clone(),
-        };
+        let (mock, provider) = start_provider(input, &shared)?;
         let answer = runtime
             .block_on(async {
                 timeout(
@@ -63,15 +52,101 @@ impl Helper for Op {
                 )
                 .await
             })
-            .map_err(|source| support::helper_error("TimeoutError", source.to_string()))??;
-        let (calls, failure) = mock
-            .finish_recording()
-            .map_err(|error| support::helper_error("MockError", error.to_string()))?;
-        if let Some(error) = failure {
-            return Err(support::helper_error("MockError", error.to_string()));
-        }
-        answer_with_requests(answer, &calls)
+            .map_err(|source| {
+                Box::new(HelperError {
+                    class: String::from("TimeoutError"),
+                    message: source.to_string(),
+                    status: None,
+                    error_type: Some(None),
+                    param: Some(None),
+                    code: Some(None),
+                })
+            })??;
+        finish_mock(answer, mock)
     }
+}
+
+fn runtime_for(input: &Input) -> Result<Runtime, Box<HelperError>> {
+    input
+        .check_bounds(1024, 0x0010_0000, 0x0100_0000)
+        .map_err(|source| {
+            Box::new(HelperError {
+                class: String::from("InputError"),
+                message: source.to_string(),
+                status: None,
+                error_type: Some(None),
+                param: Some(None),
+                code: Some(None),
+            })
+        })?;
+    Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|source| {
+            Box::new(HelperError {
+                class: String::from("RuntimeError"),
+                message: source.to_string(),
+                status: None,
+                error_type: Some(None),
+                param: Some(None),
+                code: Some(None),
+            })
+        })
+}
+
+fn start_provider(
+    input: &Input,
+    shared: &Shared,
+) -> Result<(MockProvider, ScriptedProvider), Box<HelperError>> {
+    let mock = fixtures::start_mock(input).map_err(|error| {
+        Box::new(HelperError {
+            class: String::from("MockError"),
+            message: error.to_string(),
+            status: None,
+            error_type: Some(None),
+            param: Some(None),
+            code: Some(None),
+        })
+    })?;
+    let provider = ScriptedProvider {
+        shared: Arc::clone(shared),
+        outbound: fixtures::outbound().map_err(|error| {
+            Box::new(HelperError {
+                class: String::from("FixtureError"),
+                message: error.to_string(),
+                status: None,
+                error_type: Some(None),
+                param: Some(None),
+                code: Some(None),
+            })
+        })?,
+        base_url: mock.base_url.clone(),
+    };
+    Ok((mock, provider))
+}
+
+fn finish_mock(answer: Value, mock: MockProvider) -> HelperResult {
+    let (calls, failure) = mock.finish_recording().map_err(|error| {
+        Box::new(HelperError {
+            class: String::from("MockError"),
+            message: error.to_string(),
+            status: None,
+            error_type: Some(None),
+            param: Some(None),
+            code: Some(None),
+        })
+    })?;
+    if let Some(error) = failure {
+        return Err(Box::new(HelperError {
+            class: String::from("MockError"),
+            message: error.to_string(),
+            status: None,
+            error_type: Some(None),
+            param: Some(None),
+            code: Some(None),
+        }));
+    }
+    answer_with_requests(answer, &calls)
 }
 
 async fn run_transcript(
@@ -112,10 +187,14 @@ async fn run_transcript(
 
 fn answer_with_requests(answer: Value, calls: &[ProviderCall]) -> HelperResult {
     let Value::Object(mut fields) = answer else {
-        return Err(support::helper_error(
-            "AnswerShape",
-            String::from("the transcript answer is not an object"),
-        ));
+        return Err(Box::new(HelperError {
+            class: String::from("AnswerShape"),
+            message: String::from("the transcript answer is not an object"),
+            status: None,
+            error_type: Some(None),
+            param: Some(None),
+            code: Some(None),
+        }));
     };
     fields.insert(String::from("provider_requests"), fixtures::requests(calls));
     Ok(Value::Object(fields))

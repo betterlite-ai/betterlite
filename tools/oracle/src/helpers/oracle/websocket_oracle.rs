@@ -7,17 +7,6 @@ use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 
-fn service_error(class: &str, message: String) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: class.to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message,
-    })
-}
-
 impl Helper for Op {
     type Input = ServiceInput;
 
@@ -30,6 +19,13 @@ impl Helper for Op {
 
 impl From<DriverError> for Box<HelperError> {
     fn from(error: DriverError) -> Self {
-        service_error("ServiceError", error.to_string())
+        Box::new(HelperError {
+            class: String::from("ServiceError"),
+            message: error.to_string(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+        })
     }
 }

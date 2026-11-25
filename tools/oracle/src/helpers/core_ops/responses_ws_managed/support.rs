@@ -96,20 +96,17 @@ pub(super) fn frames(shared: &Shared) -> Result<Value, Box<HelperError>> {
     let recorded_frames = lock(shared).frames.clone();
     let mut parsed = Vec::with_capacity(recorded_frames.len());
     for frame in &recorded_frames {
-        let value = from_str::<Value>(frame)
-            .map_err(|error| helper_error("ValueError", error.to_string()))?;
+        let value = from_str::<Value>(frame).map_err(|error| {
+            Box::new(HelperError {
+                class: String::from("ValueError"),
+                message: error.to_string(),
+                status: None,
+                error_type: Some(None),
+                param: Some(None),
+                code: Some(None),
+            })
+        })?;
         parsed.push(value);
     }
     Ok(Value::Array(parsed))
-}
-
-pub(super) fn helper_error(class: &str, message: String) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: class.to_owned(),
-        status: None,
-        error_type: Some(None),
-        param: Some(None),
-        code: Some(None),
-        message,
-    })
 }
