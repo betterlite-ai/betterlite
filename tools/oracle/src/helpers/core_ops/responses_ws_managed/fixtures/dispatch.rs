@@ -18,7 +18,7 @@ use super::{
 };
 
 // The HTTP call LiteLLM makes for the turn, through the production aresponses path, with the answer discarded
-pub(in crate::helpers::core_ops::responses_ws_managed) async fn dispatch(
+pub(crate) async fn dispatch(
     outbound: &Outbound,
     base_url: &str,
     model: &str,

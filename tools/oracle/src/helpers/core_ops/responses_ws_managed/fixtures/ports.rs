@@ -29,13 +29,12 @@ use serde_json::value::RawValue;
 
 use super::FixtureError;
 
-pub(in crate::helpers::core_ops::responses_ws_managed) struct Outbound {
+pub(crate) struct Outbound {
     client: ProxiedClient,
 }
 
 // no environment reaches the fixture, so the policy resolves without a proxy route
-pub(in crate::helpers::core_ops::responses_ws_managed) fn outbound()
--> Result<Outbound, FixtureError> {
+pub(crate) fn outbound() -> Result<Outbound, FixtureError> {
     let policy =
         ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).map_err(|error| {
             FixtureError::Proxy {
@@ -59,7 +58,7 @@ impl ClientSource for Outbound {
 }
 
 // the dispatch resolves only openai: a declared provider wins, otherwise the model prefix names it
-pub(in crate::helpers::core_ops::responses_ws_managed) struct DispatchResolver;
+pub(crate) struct DispatchResolver;
 
 impl ModelResolver for DispatchResolver {
     fn resolve_model(
@@ -91,7 +90,7 @@ pub(super) struct HookFailure {
     pub(super) message: String,
 }
 
-pub(in crate::helpers::core_ops::responses_ws_managed) struct Nothing;
+pub(crate) struct Nothing;
 
 #[async_trait]
 impl DeploymentHookDispatcher for Nothing {
@@ -132,7 +131,7 @@ impl ContinuationExecutor for Nothing {
     }
 }
 
-pub(in crate::helpers::core_ops::responses_ws_managed) struct NoInterception;
+pub(crate) struct NoInterception;
 
 #[async_trait]
 impl CreateInterception<()> for NoInterception {
@@ -149,7 +148,7 @@ impl CreateInterception<()> for NoInterception {
     }
 }
 
-pub(in crate::helpers::core_ops::responses_ws_managed) struct NoBridge;
+pub(crate) struct NoBridge;
 
 #[async_trait]
 impl ChatBridge<()> for NoBridge {

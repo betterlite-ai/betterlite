@@ -42,7 +42,7 @@ calls:
 env: {}
 compare:
   ignore:
-  - /value/frames/0/response/id
-  - /value/frames/0/response/created_at
-  - /value/frames/1/response/id
-  - /value/frames/1/response/created_at
+    - {pointer: /value/frames/0/response/id, why: the warmup response id is generated}
+    - {pointer: /value/frames/0/response/created_at, why: the warmup timestamp is generated}
+    - {pointer: /value/frames/1/response/id, why: the warmup response id is generated}
+    - {pointer: /value/frames/1/response/created_at, why: the warmup timestamp is generated}

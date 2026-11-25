@@ -3,7 +3,7 @@ use thiserror::Error;
 
 #[derive(Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(in crate::helpers::core_ops::responses_ws_managed) enum ChunkKind {
+pub(crate) enum ChunkKind {
     None,
     Json,
     Object,
@@ -12,7 +12,7 @@ pub(in crate::helpers::core_ops::responses_ws_managed) enum ChunkKind {
 
 #[derive(Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(in crate::helpers::core_ops::responses_ws_managed) enum QuotaKind {
+pub(crate) enum QuotaKind {
     RateLimit,
     Internal,
 }
@@ -20,6 +20,6 @@ pub(in crate::helpers::core_ops::responses_ws_managed) enum QuotaKind {
 // A scripted provider, stream or socket failure carries only the text the case scripts for it.
 #[derive(Debug, Error)]
 #[error("{message}")]
-pub(in crate::helpers::core_ops::responses_ws_managed) struct ScriptedFailure {
-    pub(in crate::helpers::core_ops::responses_ws_managed) message: String,
+pub(crate) struct ScriptedFailure {
+    pub(crate) message: String,
 }

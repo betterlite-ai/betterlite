@@ -22,6 +22,4 @@ call:
       fails_at: null
       message: client send failed
 env: {}
-compare:
-  ignore:
-  - /value/frames/0/error/message
+compare: {ignore: []}

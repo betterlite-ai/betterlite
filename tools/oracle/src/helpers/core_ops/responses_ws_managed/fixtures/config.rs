@@ -26,7 +26,7 @@ use betterlite_provider::api::responses_provider_contract::records::{
 };
 
 // the fixture dispatches only openai, so the config it hands out is the openai one
-pub(in crate::helpers::core_ops::responses_ws_managed) struct OpenAiCreateConfig;
+pub(crate) struct OpenAiCreateConfig;
 
 impl CreateConfig for OpenAiCreateConfig {
     fn validate_environment(
@@ -123,7 +123,7 @@ impl CreateCapabilities for OpenAiCreateConfig {
     }
 }
 
-pub(in crate::helpers::core_ops::responses_ws_managed) struct Configs;
+pub(crate) struct Configs;
 
 impl ConfigLookup for Configs {
     fn responses_api_config(
