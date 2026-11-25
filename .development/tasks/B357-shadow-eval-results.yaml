@@ -30,6 +30,12 @@ description: 'Implement GET /auto_router/shadow_eval and GET /auto_router/shadow
   caller''s rejected start with the same valid form; UI visibility alone is not authorization.'
 scope:
   paths:
+  - crates/betterlite-server/src/auth/route_match.rs
+  - crates/betterlite-server/src/auth/route_match/tests.rs
+  - "crates/betterlite-server/src/cost_estimate_route/deployments.rs"
+  - "crates/betterlite-server/src/shadow_eval_validation/start.rs"
+  - "crates/betterlite-server/src/shadow_eval_validation/error.rs"
+  - "crates/betterlite-server/src/routes/shadow_eval_lifecycle.rs"
   - crates/betterlite-server/src/shadow_eval_results.rs
   - crates/betterlite-server/src/shadow_eval_results/**
   - crates/betterlite-server/src/routes/shadow_eval_results.rs
@@ -176,5 +182,5 @@ pitfalls:
   at the repository 300-line limit.
 review_level: standard
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 1600
   max_new_expects: 0
