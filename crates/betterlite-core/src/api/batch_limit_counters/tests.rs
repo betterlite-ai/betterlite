@@ -6,11 +6,12 @@ use betterlite_error::rate_limit::RateLimitDimension;
 use rstest::rstest;
 
 use crate::api::api_boundaries::ApiLimitError;
-use crate::api::batch_enqueued_reserve::{BatchReservationBackend, ReservationBackend};
+use crate::api::batch_enqueued_reserve::ReservationBackend;
 use crate::api::batch_limit_counters::BatchLimitCountersError;
 use crate::api::batch_limit_counters::input::BatchLimitCounterCall;
 use crate::api::batch_limit_counters::records::{
-    BatchCounterCode, BatchCounterLimitType, BatchLimitCounterAnswer, WindowStartValue,
+    BatchCounterCode, BatchCounterLimitType, BatchLimitCounterAnswer, BatchReservationBackend,
+    WindowStartValue,
 };
 use crate::api::batch_limit_counters::rejections::request_model;
 use crate::api::batch_limit_descriptors::descriptors::TPD_WINDOW_SECONDS;

@@ -65,34 +65,24 @@ impl BatchEnqueuedSource for ScriptedStore {
             .replies
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .pop_front();
+            .pop_front()
+            .unwrap_or(StoreReply::Reservation {
+                backend: None,
+                owner: None,
+            });
         let outcome = match next {
-            None => Ok(BatchEnqueuedReserveResult::Reservation(
-                BatchEnqueuedTokenReservation {
+            StoreReply::Reservation { backend, owner } => Ok(
+                BatchEnqueuedReserveResult::Reservation(BatchEnqueuedTokenReservation {
                     tokens,
                     scopes: scopes.to_vec(),
-                    backend: ReservationBackend::Redis,
-                    owner: String::new(),
+                    backend: backend.map_or(ReservationBackend::Redis, BackendName::reserved),
+                    owner: owner.unwrap_or_default(),
                     reserved_at_monotonic: 0.0_f64,
-                },
+                }),
+            ),
+            StoreReply::OverLimit { scope, enqueued } => Ok(BatchEnqueuedReserveResult::OverLimit(
+                BatchEnqueuedTokenOverLimit { scope, enqueued },
             )),
-            Some(StoreReply::Reservation { backend, owner }) => {
-                let chosen = backend.map_or(ReservationBackend::Memory, BackendName::reserved);
-                Ok(BatchEnqueuedReserveResult::Reservation(
-                    BatchEnqueuedTokenReservation {
-                        tokens,
-                        scopes: scopes.to_vec(),
-                        backend: chosen,
-                        owner: owner.unwrap_or_default(),
-                        reserved_at_monotonic: 0.0_f64,
-                    },
-                ))
-            }
-            Some(StoreReply::OverLimit { scope, enqueued }) => {
-                Ok(BatchEnqueuedReserveResult::OverLimit(
-                    BatchEnqueuedTokenOverLimit { scope, enqueued },
-                ))
-            }
         };
         ready(outcome)
     }
