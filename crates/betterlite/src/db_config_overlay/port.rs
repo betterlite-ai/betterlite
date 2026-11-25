@@ -97,26 +97,26 @@ fn port_error(error: &OverlayError, step: ConfigOverlayPortError) -> ConfigOverl
                 source.without_snippet()
             )
         }
-        other @ OverlayError::Bucket(_)
-        | other @ OverlayError::NoBucketReader
-        | other @ OverlayError::NothingLoaded
-        | other @ OverlayError::ConfigFileMissing { .. }
-        | other @ OverlayError::ReadConfigFile { .. }
-        | other @ OverlayError::ConfigEmpty
-        | other @ OverlayError::ConfigNotMapping { .. }
-        | other @ OverlayError::Includes(_)
-        | other @ OverlayError::Database { .. }
-        | other @ OverlayError::ConfigOwned(_)
-        | other @ OverlayError::SecretSettings { .. }
-        | other @ OverlayError::SecretProjection { .. }
-        | other @ OverlayError::SecretManager(_)
-        | other @ OverlayError::SecretLookup(_)
-        | other @ OverlayError::WorkerStart { .. }
-        | other @ OverlayError::WorkerUnavailable
-        | other @ OverlayError::CleanupSchedule(_)
-        | other @ OverlayError::Plugins(_)
-        | other @ OverlayError::PassThroughEntry { .. }
-        | other @ OverlayError::PassThroughInstall { .. } => other.to_string(),
+        other @ (OverlayError::Bucket(_)
+        | OverlayError::NoBucketReader
+        | OverlayError::NothingLoaded
+        | OverlayError::ConfigFileMissing { .. }
+        | OverlayError::ReadConfigFile { .. }
+        | OverlayError::ConfigEmpty
+        | OverlayError::ConfigNotMapping { .. }
+        | OverlayError::Includes(_)
+        | OverlayError::Database { .. }
+        | OverlayError::ConfigOwned(_)
+        | OverlayError::SecretSettings { .. }
+        | OverlayError::SecretProjection { .. }
+        | OverlayError::SecretManager(_)
+        | OverlayError::SecretLookup(_)
+        | OverlayError::WorkerStart { .. }
+        | OverlayError::WorkerUnavailable
+        | OverlayError::CleanupSchedule(_)
+        | OverlayError::Plugins(_)
+        | OverlayError::PassThroughEntry { .. }
+        | OverlayError::PassThroughInstall { .. }) => other.to_string(),
     };
     tracing::error!(error = %message, "the config overlay failed");
     if let OverlayError::Database { source } = error
