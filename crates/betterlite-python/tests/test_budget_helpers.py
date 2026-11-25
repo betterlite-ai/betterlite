@@ -805,9 +805,12 @@ def test_budget_durations(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     for duration, user in named:
         expected = reference.create_budget(BUDGET, user, duration, CREATED_AT)
         assert ours.create_budget(BUDGET, user, duration, CREATED_AT) == expected
+    frozen = OneSecondClock(1.0)
+    # ast-grep-ignore: no-string-mocking
+    monkeypatch.setattr(time, "time", frozen)
     first = ours.create_budget(BUDGET, "erin", "daily")
     second = ours.create_budget(BUDGET, "frank", "daily")
-    assert first["created_at"] == second["created_at"] == first["last_updated_at"]
+    assert first["created_at"] == second["created_at"] == first["last_updated_at"] != frozen.now
     join_saves(marker)
     durations = [ours.user_dict[user]["duration"] for _duration, user in named]
     assert durations == [1, DAYS_IN_A_WEEK, DAYS_IN_A_MONTH, DAYS_IN_A_YEAR]
