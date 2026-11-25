@@ -203,8 +203,8 @@ fn batch_non_string_model_gives_error_record(#[case] model: &str, #[case] kind: 
 #[tokio::test]
 async fn batch_rejected_response_gives_failed_record(#[case] status: u16, #[case] body: String) {
     let (port, mut received) = registry(Ok(()));
-    let (logged, call_log) =
-        Call::new(status, &body, COLLECTION_ROUTE).run(&logging(None, Some(port)));
+    let handler = logging(None, Some(port));
+    let (logged, call_log) = Call::new(status, &body, COLLECTION_ROUTE).run(&handler);
     assert_eq!(logged.result.id, RESPONSE_ID);
     assert_eq!(logged.result.model, "vertex_ai_batch");
     assert_eq!(logged.result.object, "batch_prediction_job");
