@@ -1,0 +1,84 @@
+kind: helper
+name: team-budget-admission-hard-and-window-boundaries
+call:
+  team_budget_admission:
+    calls:
+      # team spend equal to max_budget passes without an alert
+      - function: admit
+        team:
+          team_id: team-1
+          spend: 3.0
+          max_budget: 10.0
+        token:
+          token: sk-team
+          user_id: user-1
+          team_id: team-1
+        membership: null
+        spends: [10.0]
+        now: "2026-06-01T12:00:00Z"
+      # a cent over queues the team_budget alert before the denial
+      - function: admit
+        team:
+          team_id: team-1
+          spend: 3.0
+          max_budget: 10.0
+        token:
+          token: sk-team
+          user_id: user-1
+          team_id: token-team
+          team_alias: Token alias
+          org_id: token-org
+          key_alias: team-key
+        membership: null
+        spends: [10.01]
+        now: "2026-06-01T12:00:00Z"
+      # without a token the overage denies with no alert
+      - function: admit
+        team:
+          team_id: team-1
+          max_budget: 10.0
+        spends: [10.01]
+        now: "2026-06-01T12:00:00Z"
+      # a null max_budget reads nothing
+      - function: admit
+        team:
+          team_id: team-1
+          spend: 50.0
+        spends: []
+        now: "2026-06-01T12:00:00Z"
+      # each window reads its own duration key with its start, and equality on a later window denies
+      - function: admit
+        team:
+          team_id: team-1
+          budget_limits:
+            - budget_duration: 1d
+              max_budget: 20.0
+              reset_at: "2026-06-02T00:00:00Z"
+            - budget_duration: 1h
+              max_budget: 5.0
+              reset_at: "2026-06-01T13:00:00Z"
+        spends: [19.99, 5.0]
+        now: "2026-06-01T12:00:00Z"
+      # equality on the first window stops the later reads
+      - function: admit
+        team:
+          team_id: team-1
+          budget_limits:
+            - budget_duration: 1h
+              max_budget: 5.0
+              reset_at: "2026-06-01T13:00:00Z"
+            - budget_duration: 1d
+              max_budget: 20.0
+              reset_at: "2026-06-02T00:00:00Z"
+        spends: [5.0]
+        now: "2026-06-01T12:00:00Z"
+      # an empty window list reads nothing
+      - function: admit
+        team:
+          team_id: team-1
+          budget_limits: []
+        spends: []
+        now: "2026-06-01T12:00:00Z"
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,27 @@
+kind: helper
+name: team-budget-admission-auth-team-soft-alert
+call:
+  team_budget_admission:
+    calls:
+      # a soft crossing under the hard cap admits the request and alerts the team recipients only
+      - function: admit
+        team:
+          team_id: team-soft
+          team_alias: Soft team
+          spend: 12.0
+          soft_budget: 10.0
+          max_budget: 50.0
+          metadata:
+            soft_budget_alerting_emails: "finance@example.com, ops@example.com"
+        token:
+          token: sk-soft-team
+          user_id: user-soft
+          team_id: team-soft
+          team_alias: Soft team
+          key_alias: soft-key
+        membership: null
+        spends: [12.0]
+        now: "2026-06-01T12:00:00Z"
+env: {}
+compare:
+  ignore: []

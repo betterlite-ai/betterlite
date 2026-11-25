@@ -1,0 +1,26 @@
+kind: helper
+name: team-budget-admission-auth-member-model-scope
+call:
+  team_budget_admission:
+    calls:
+      # the member scope denies before any budget is read, even with a budget over its cap
+      - function: admit
+        team:
+          team_id: team-scope
+          max_budget: 1.0
+        token:
+          token: sk-scope-member
+          user_id: user-scope
+          team_id: team-scope
+        membership:
+          user_id: user-scope
+          team_id: team-scope
+          litellm_budget_table:
+            max_budget: 1.0
+            allowed_models: [gpt-4o-mini]
+        model: gpt-4o
+        spends: [5.0, 5.0]
+        now: "2026-06-01T12:00:00Z"
+env: {}
+compare:
+  ignore: []
