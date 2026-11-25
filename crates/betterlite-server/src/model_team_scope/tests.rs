@@ -619,7 +619,7 @@ async fn a_blocked_secret_read_leaves_the_async_worker_free() {
     let reads = support::StubReads::default().with_rows(vec![support::model_row(
         r#"{"model_id":"d1","model_name":"gpt-4o","litellm_params":{"model":"openai/gpt-4o","api_key":"os.environ/oidc/google/audience"}}"#,
     )]);
-    let fixture = support::DecryptFixture::with_oidc_http(http.clone());
+    let fixture = support::DecryptFixture::with_oidc_http(Arc::clone(&http));
     let context = fixture.context();
     let mut lookups = JoinSet::new();
     lookups.spawn(async move { find_model_by_id("d1", None, None, &reads, &context).await });
