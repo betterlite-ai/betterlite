@@ -13,15 +13,15 @@ _BUCKET_NAMES: Final = ("metadata", "litellm_metadata")
 def safe_deep_copy(data: PythonValue) -> PythonValue:
     if betterlite.safe_memory_mode is True:
         return data
-    match data:
-        case dict() as fields:
-            copied: dict[str, PythonValue] = {}
-            for key, value in fields.items():
-                sanitized = _sanitized_value(key, value)
-                copied_value = _copied_or_original(sanitized)
-                copied[key] = value if copied_value is sanitized else copied_value
-            return copied
-    return _copied_or_original(data)
+    fields = object_fields(data)
+    if fields is None:
+        return _copied_or_original(data)
+    copied: dict[str, PythonValue] = {}
+    for key, value in fields.items():
+        sanitized = _sanitized_value(key, value)
+        copied_value = _copied_or_original(sanitized)
+        copied[key] = value if copied_value is sanitized else copied_value
+    return copied
 
 
 def independent_snapshot(data: dict[str, PythonValue]) -> dict[str, PythonValue]:

@@ -1,7 +1,10 @@
+from collections.abc import Iterable
+from datetime import datetime
 from typing import Final, Protocol, runtime_checkable
 
-from betterlite._core_helpers.values import PythonValue
+from betterlite._core_helpers.values import CallableLeaf, PythonValue, text_of
 from betterlite.exceptions._rate_limit import RateLimitErrorCategory
+from betterlite.types.utils.base import Dumpable
 
 _LITELLM_LIMIT_CATEGORIES: Final = frozenset(
     {
@@ -44,28 +47,40 @@ def is_expected_client_error(exception: BaseException | None) -> bool:
 # LiteLLM's order: a litellm limiter rejection is the proxy's, whatever provider it names.
 def _is_provider_originated(exception: BaseException) -> bool:
     match exception:
-        case _LimitRejection() if _is_litellm_limit(exception.category):
+        case _LimitRejection() as error if _is_litellm_limit(error.category):
             return False
-        case _ProviderError() if exception.llm_provider:
+        case _ProviderError() as error if error.llm_provider:
             return True
-    return False
+        case BaseException():
+            return False
 
 
 def _is_litellm_limit(category: PythonValue) -> bool:
-    match category:
-        case str() as name:
-            return name in _LITELLM_LIMIT_CATEGORIES
-    return False
+    name = text_of(category)
+    return name is not None and name in _LITELLM_LIMIT_CATEGORIES
 
 
 def _status_value(exception: BaseException) -> PythonValue:
+    code = _code_of(exception)
+    if code is not None:
+        return code
+    return _status_of(exception)
+
+
+def _code_of(exception: BaseException) -> PythonValue:
     match exception:
-        case _CodeError() as error if error.code is not None:
+        case _CodeError() as error:
             return error.code
+        case BaseException():
+            return None
+
+
+def _status_of(exception: BaseException) -> PythonValue:
     match exception:
         case _StatusError() as error:
             return error.status_code
-    return None
+        case BaseException():
+            return None
 
 
 def _client_status(value: PythonValue) -> bool:
@@ -76,7 +91,10 @@ def _client_status(value: PythonValue) -> bool:
             return _CLIENT_ERROR_MIN <= status < _CLIENT_ERROR_MAX
         case str() | float() as raw:
             return _status_from_text(raw)
-    return False
+        case (
+            BaseException() | datetime() | Dumpable() | Iterable() | CallableLeaf() | None
+        ):
+            return False
 
 
 def _status_from_text(raw: str | float) -> bool:

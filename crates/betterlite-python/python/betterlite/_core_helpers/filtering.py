@@ -1,14 +1,23 @@
+from collections.abc import Iterable
 from contextlib import suppress
+from datetime import datetime
 from typing import Final
 
 from pydantic import JsonValue
 
-from betterlite._core_helpers.values import PythonValue
+from betterlite._core_helpers.values import CallableLeaf, PythonValue, object_fields
+from betterlite.types.utils.base import Dumpable
 
 _SKIPPED_NAMES: Final = frozenset({"Logging", "LiteLLMLoggingObj", "Router"})
 
 
 def filter_exceptions_from_params(data: PythonValue, max_depth: int = 20) -> PythonValue:
+    return _filtered_value(data, max_depth, frozenset())
+
+
+def _filtered_value(
+    data: PythonValue, max_depth: int, ancestors: frozenset[int]
+) -> PythonValue:
     if max_depth <= 0:
         return data
     if _removed_in_parent(data):
@@ -16,12 +25,17 @@ def filter_exceptions_from_params(data: PythonValue, max_depth: int = 20) -> Pyt
     name = type(data).__name__
     if name in _SKIPPED_NAMES:
         return None
+    fields = object_fields(data)
+    if fields is not None:
+        return _kept_fields(fields, max_depth, ancestors)
     match data:
-        case dict() as fields:
-            return _kept_fields(fields, max_depth)
         case list() as items:
-            return _kept_items(items, max_depth)
-    return data
+            return _kept_items(items, max_depth, ancestors)
+        case (
+            int() | float() | BaseException() | datetime()
+            | Dumpable() | Iterable() | CallableLeaf() | None
+        ):
+            return data
 
 
 def _removed_in_parent(value: PythonValue) -> bool:
@@ -30,30 +44,43 @@ def _removed_in_parent(value: PythonValue) -> bool:
             return True
         case type():  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L644
             return False
-    return callable(value)
+        case (
+            int() | float() | str() | BaseException() | datetime()
+            | Dumpable() | Iterable() | CallableLeaf() | None
+        ):
+            return callable(value)
 
 
-def _filtered_child(value: PythonValue, max_depth: int) -> PythonValue:
+def _filtered_child(
+    value: PythonValue, max_depth: int, ancestors: frozenset[int]
+) -> PythonValue:
     if _removed_in_parent(value):
         return None
+    if id(value) in ancestors:
+        return value
     with suppress(Exception):
-        return filter_exceptions_from_params(value, max_depth - 1)
+        return _filtered_value(value, max_depth - 1, ancestors)
     return None
 
 
-def _kept_fields(fields: dict[str, PythonValue], max_depth: int) -> dict[str, PythonValue]:
+def _kept_fields(
+    fields: dict[str, PythonValue], max_depth: int, ancestors: frozenset[int]
+) -> dict[str, PythonValue]:
     kept: dict[str, PythonValue] = {}
+    nested = ancestors | {id(fields)}
     for key, value in fields.items():
-        filtered = _filtered_child(value, max_depth)
+        filtered = _filtered_child(value, max_depth, nested)
         if filtered is not None:
             kept[key] = filtered
     return kept
 
 
-def _kept_items(items: list[PythonValue], max_depth: int) -> list[PythonValue]:
+def _kept_items(
+    items: list[PythonValue], max_depth: int, ancestors: frozenset[int]
+) -> list[PythonValue]:
     kept: list[PythonValue] = []
     for item in items:
-        filtered = _filtered_child(item, max_depth)
+        filtered = _filtered_child(item, max_depth, ancestors | {id(items)})
         if filtered is not None:
             kept.append(filtered)
     return kept

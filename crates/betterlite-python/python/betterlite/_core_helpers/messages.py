@@ -14,12 +14,16 @@ def remove_index_from_tool_calls(messages: list[dict[str, JsonValue]] | None) ->
             case list() as raw_calls:
                 for tool_call in raw_calls:
                     _drop_tool_call_index(tool_call)
+            case bool() | int() | float() | str() | dict() | None:
+                continue
 
 
 def _drop_tool_call_index(tool_call: JsonValue) -> None:
     match tool_call:
         case dict() as fields:
             fields.pop("index", None)
+        case bool() | int() | float() | str() | list() | None:
+            pass
 
 
 def remove_items_at_indices(items: list[_Item] | None, indices: Iterable[int]) -> None:

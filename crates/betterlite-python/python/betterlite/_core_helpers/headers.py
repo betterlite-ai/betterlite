@@ -42,14 +42,16 @@ def set_response_cost_in_hidden_params(  # ast-grep-ignore: no-long-names
             additional[COST_HEADER] = cost
             params["additional_headers"] = additional
             return
-    raise TypeError("_hidden_params must be an object")
+        case bool() | int() | float() | str() | list() | None:
+            raise TypeError("_hidden_params must be an object")
 
 
 def _existing_additional(params: dict[str, JsonValue]) -> dict[str, JsonValue]:
     match params.get("additional_headers"):
         case Mapping() as headers:
             return dict(headers)
-    return {}
+        case bool() | int() | float() | str() | list() | None:
+            return {}
 
 
 def set_provider_response_headers_in_hidden_params(  # ast-grep-ignore: no-long-names
@@ -63,7 +65,8 @@ def set_provider_response_headers_in_hidden_params(  # ast-grep-ignore: no-long-
             params["headers"] = _JSON_OBJECT.validate_python(raw)
             params["additional_headers"] = additional
             return
-    raise TypeError("_hidden_params must be an object")
+        case bool() | int() | float() | str() | list() | None:
+            raise TypeError("_hidden_params must be an object")
 
 
 def get_provider_response_headers_from_hidden_params(  # ast-grep-ignore: no-long-names

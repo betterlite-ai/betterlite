@@ -1,11 +1,13 @@
 import logging
 import re
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
+from datetime import datetime
 from typing import Final
 
 from pydantic import TypeAdapter, ValidationError
 
-from betterlite._core_helpers.values import PythonValue
+from betterlite._core_helpers.values import CallableLeaf, PythonValue, text_of
+from betterlite.types.utils.base import Dumpable
 
 _CODEX_PREFIX: Final = re.compile("^codex[-_ /]", re.IGNORECASE)
 _DROP_PARAMS_BOOL: Final[TypeAdapter[bool]] = TypeAdapter(bool)
@@ -28,10 +30,8 @@ def safe_divide_seconds(
 def normalize_drop_params(value: PythonValue) -> bool | None:
     if value is None:
         return None
-    candidate: PythonValue = value
-    match value:
-        case str() as text:
-            candidate = text.strip()
+    name = text_of(value)
+    candidate: PythonValue = value if name is None else name.strip()
     try:
         return _DROP_PARAMS_BOOL.validate_python(candidate)
     except ValidationError:
@@ -78,4 +78,5 @@ def coerce_token_limit(value: PythonValue) -> int | None:
                 return int(raw)
             except (TypeError, ValueError, OverflowError):
                 return None
-    return None
+        case BaseException() | datetime() | Dumpable() | Iterable() | CallableLeaf() | None:
+            return None

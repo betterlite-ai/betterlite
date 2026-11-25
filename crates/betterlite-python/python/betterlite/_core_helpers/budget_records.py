@@ -17,20 +17,21 @@ USERS: Final[TypeAdapter[dict[str, BudgetRecord]]] = TypeAdapter(dict[str, Budge
 
 
 def cost_decimal(value: Decimal | int | None) -> Decimal:
+    if value is None:
+        return Decimal(0)
     match value:
         case Decimal() as amount:
             return amount
         case int() as whole:
             return Decimal(whole)
-        case None:
-            return Decimal(0)
 
 
 def public_money(value: Decimal | int) -> JsonValue:
     match value:
         case Decimal() as amount:
             return float(amount)
-    return value
+        case int() as whole:
+            return whole
 
 
 def record_json(record: BudgetRecord) -> dict[str, JsonValue]:
