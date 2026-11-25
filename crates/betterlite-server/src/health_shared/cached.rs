@@ -62,13 +62,11 @@ pub fn encode_cached(
 
 // isinstance(cached_data, str) ? json.loads(...) : cached_data, then the payload's own row shape.
 pub fn cached_payload(value: CachedValue) -> Result<CachedHealthCheck, CachedHealthError> {
-    let document = match value {
-        CachedValue::Text(text) => safe_json_loads(text.as_bytes())?,
-        other @ (CachedValue::Null
-        | CachedValue::Boolean(_)
-        | CachedValue::Number(_)
-        | CachedValue::Array(_)
-        | CachedValue::Object(_)) => serde_json::to_value(json_from_cached(other))?,
+    let cached = json_from_cached(value);
+    let document = if let Json::Text(text) = &cached {
+        safe_json_loads(text.as_bytes())?
+    } else {
+        serde_json::to_value(&cached)?
     };
     Ok(serde_json::from_value(document)?)
 }
