@@ -83,9 +83,4 @@ calls:
       fails_at: null
       message: client send failed
 env: {}
-compare:
-  ignore:
-    - pointer: /value/provider_calls/0/kwargs/litellm_metadata/llm_api_timing_windows
-      why: "LiteLLM adds a wall-clock timing window to metadata; the managed provider call has no timing data"
-    - pointer: /value/provider_calls/1/kwargs/litellm_metadata/llm_api_timing_windows
-      why: "LiteLLM adds a wall-clock timing window to metadata; the managed provider call has no timing data"
+compare: {}

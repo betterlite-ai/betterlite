@@ -2,6 +2,7 @@ import json
 import socket
 import socketserver
 from collections.abc import AsyncIterator
+from copy import deepcopy
 from http.server import BaseHTTPRequestHandler
 from typing import Final, Literal, TypedDict
 
@@ -168,7 +169,7 @@ class ScriptedResponses:
         model = call.pop("model", None)
         self.recorder.trace.append("provider")
         self.recorder.calls.append({"model": model, "kwargs": call})
-        dispatch = dict(call)
+        dispatch = deepcopy(call)
         dispatch.update(model=model, api_base=self.base_url, api_key=DISPATCH_KEY, stream=True)
         _answered = await real_aresponses(**dispatch)
         if self.index >= len(self.scripts):

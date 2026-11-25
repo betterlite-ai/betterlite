@@ -23,6 +23,7 @@ class Support(Protocol):
 
 __path__ = [str(Path(__file__).with_suffix(""))]
 
+# Isolated dispatch copies require fresh answers; cache keys hash this file.
 SUPPORT: Final[Support] = cast(Support, import_module("responses_ws_managed.support_pkg"))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L2862-L2890
 
 run: Final = SUPPORT.run
