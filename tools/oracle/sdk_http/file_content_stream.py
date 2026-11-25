@@ -138,7 +138,6 @@ class FileContentStreamRequest(BaseModel):
         return result.model_dump_json(by_alias=True, exclude_unset=True)
 
 
-# LiteLLM's model_call_details as the success callback receives it
 class Details(TypedDict, total=False):
     model: Required[str]
     custom_llm_provider: str
@@ -150,22 +149,22 @@ API_BASE: TypeAdapter[str | None] = TypeAdapter(str | None)
 
 
 class Capture(CustomLogger):
-    success: list[dict[str, JsonValue]]
+    events: list[dict[str, JsonValue]]
 
     def __init__(self) -> None:
-        self.success = []
+        self.events = []
 
     @override
-    async def async_log_success_event(self, *args: JsonValue, **kwargs: JsonValue) -> None:
+    async def async_log_stream_event(self, *args: JsonValue, **kwargs: JsonValue) -> None:
         del args
-        self.success.append(kwargs)
+        self.events.append(kwargs)
 
 
-# only file_content_streaming writes the provider, which its success callback reports
+# The SDK decorator sets stream=True, so EOF reports through async_log_stream_event.
 def identity(logging_obj: Logging, capture: Capture) -> Identity | None:
-    if not capture.success:
+    if not capture.events:
         return None
-    details = DETAILS.validate_python(capture.success[-1]["kwargs"])
+    details = DETAILS.validate_python(capture.events[-1]["kwargs"])
     provider = details.get("custom_llm_provider")
     if provider is None:
         return None
