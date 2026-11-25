@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::iter::once;
 
 use betterlite_config::sections::Section as _;
 use betterlite_config::sections::includes::ConfigMap;
@@ -124,12 +125,12 @@ fn initialize_secret_manager(
     else {
         return Ok(());
     };
-    let wrapped: JsonValue = [(GENERAL_SETTINGS, general.clone())].into_iter().collect();
+    let wrapped: JsonValue = once((GENERAL_SETTINGS, general.clone())).collect();
     let raw = serde_json::from_value::<BootstrapRaw>(wrapped)
-        .map_err(|source| OverlayError::SecretSettings { source })?;
+        .map_err(|error| OverlayError::SecretSettings { source: error })?;
     let projection = raw
         .convert(env)
-        .map_err(|source| OverlayError::SecretProjection { source })?;
+        .map_err(|error| OverlayError::SecretProjection { source: error })?;
     state
         .secrets
         .initialize(&projection, source.config_file_path.as_deref(), env, None)?;

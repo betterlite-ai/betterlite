@@ -34,9 +34,13 @@ use crate::db_config_overlay::state::{
 use crate::job_scheduler::{BoxFuture, JobFn, JobSpec, SchedulerError, SchedulerState};
 
 // JSON for the tests through serde_json's parser, so no banned object path reaches the lint table
+pub(super) fn json_value(text: &str) -> JsonValue {
+    serde_json::from_str::<JsonValue>(text).unwrap()
+}
+
 macro_rules! json {
     ($($part:tt)+) => {
-        serde_json::from_str::<JsonValue>(stringify!($($part)+)).unwrap()
+        $crate::db_config_overlay::tests::support::json_value(stringify!($($part)+))
     };
 }
 pub(super) use json;

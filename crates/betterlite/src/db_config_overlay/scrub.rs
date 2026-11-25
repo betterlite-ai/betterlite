@@ -69,7 +69,7 @@ fn take_remote(slot: Option<&mut JsonValue>) -> Option<JsonValue> {
 
 // the number of remote entries dropped from a list; anything but a list is left alone
 fn drop_remote(slot: Option<&mut JsonValue>) -> usize {
-    let Some(JsonValue::Array(items)) = slot else {
+    let Some(items) = slot.and_then(JsonValue::as_array_mut) else {
         return 0;
     };
     let before = items.len();

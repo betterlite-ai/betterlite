@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::iter::once;
 
 use betterlite_config::sections::settings::coerce_bool::coerce_bool;
 use betterlite_config::sections::settings::{
@@ -30,6 +31,9 @@ const COERCED_FLAGS: [&str; 3] = [
     "disable_auto_add_proxy_admin_to_teams",
     "apply_user_budget_to_team_keys",
 ];
+
+// the alerting keys a database-owned row also sets on the running proxy, each with the effect it installs
+type DbOwnedEffect = (&'static str, fn(JsonValue) -> RuntimeEffect);
 
 // What the spend log cleanup hook needs: the live scheduler, its trigger context and cleanup_old_spend_logs as the job
 pub struct CleanupInputs<'run> {
@@ -65,9 +69,29 @@ pub async fn apply_general_settings_row(
         state.runtime.as_ref(),
         ports.plugins,
     )?;
+    apply_pass_through_setting(state, &values, installer).await?;
+    coerce_flags(&mut state.config.general_settings, &values)?;
+    on_cache_size_changed(
+        &values,
+        cache_size_was_db,
+        &mut state.config.general_settings,
+        ports.cache,
+    )?;
+    apply_store_model_in_db(state, &values)?;
+    apply_retention(state, cleanup, &previous);
+    apply_ssrf(&values, state.runtime.as_ref());
+    Ok(())
+}
+
+// _update_general_settings pass_through_endpoints: a list is served, and an absent key keeps the empty list published
+async fn apply_pass_through_setting(
+    state: &mut OverlayState,
+    values: &BTreeMap<String, JsonValue>,
+    installer: &dyn PassThroughInstaller,
+) -> Result<(), OverlayError> {
     match values.get(PASS_THROUGH_ENDPOINTS) {
         Some(JsonValue::Array(endpoints)) => {
-            serve_pass_through_endpoints(state, endpoints, installer).await?;
+            serve_pass_through_endpoints(state, endpoints, installer).await
         }
         None
         | Some(
@@ -85,19 +109,9 @@ pub async fn apply_general_settings_row(
             {
                 publish_pass_through(state, &[])?;
             }
+            Ok(())
         }
     }
-    coerce_flags(&mut state.config.general_settings, &values)?;
-    on_cache_size_changed(
-        &values,
-        cache_size_was_db,
-        &mut state.config.general_settings,
-        ports.cache,
-    )?;
-    apply_store_model_in_db(state, &values)?;
-    apply_retention(state, cleanup, &previous);
-    apply_ssrf(&values, state.runtime.as_ref());
-    Ok(())
 }
 
 // _apply_retention_settings: B8371's hook decides whether the cleanup job moves
@@ -132,7 +146,7 @@ fn apply_alerting(
     }
     let from_db =
         |key: &str| values.contains_key(key) && store.resolution(key).source() == FieldSource::Db;
-    let db_owned: [(&str, fn(JsonValue) -> RuntimeEffect); 3] = [
+    let db_owned: [DbOwnedEffect; 3] = [
         ("alerting_args", RuntimeEffect::AlertingArgs),
         ("alert_types", RuntimeEffect::AlertTypes),
         ("alert_to_webhook_url", RuntimeEffect::AlertToWebhookUrl),
@@ -143,9 +157,7 @@ fn apply_alerting(
         }
     }
     if let Some(entries) = store.get("plugins").filter(|_| from_db("plugins")) {
-        let settings: JsonObject = [("plugins".to_owned(), entries.clone())]
-            .into_iter()
-            .collect();
+        let settings: JsonObject = once(("plugins".to_owned(), entries.clone())).collect();
         plugins.replace_from_settings(&settings)?;
     }
     Ok(())

@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use betterlite_config::sections::settings::settings_store::config_ownership_message;
-use betterlite_config::sections::settings::{DbRow, JsonValue, Section};
+use betterlite_config::sections::settings::{DbRow, JsonValue, Section, SettingsStore};
 use betterlite_server::db_row_decrypt::env::decrypt_and_export_env;
 
 use super::error::OverlayError;
@@ -60,8 +60,7 @@ pub async fn overlay_db_rows(
         rows.config_param(environment),
     )
     .map_err(|source| OverlayError::Database { source })?;
-    let (general_row, router_row, litellm_row, environment_row) = fetched;
-    let stored = [general_row, router_row, litellm_row, environment_row];
+    let stored = <[Option<JsonValue>; 4]>::from(fetched);
     for (section, row) in STORE_SECTIONS.into_iter().zip(stored) {
         let Some(value) = row.filter(|value| !value.is_null()) else {
             continue;
@@ -132,7 +131,7 @@ fn warn_shadowed_keys(state: &mut OverlayState) {
         let keys = state
             .config
             .settings_store(section)
-            .map(|store| store.shadowed_db_keys())
+            .map(SettingsStore::shadowed_db_keys)
             .unwrap_or_default();
         shadowed.extend(keys.into_iter().map(|key| (section, key)));
     }
