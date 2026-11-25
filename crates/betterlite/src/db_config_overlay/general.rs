@@ -155,7 +155,7 @@ fn coerce_flags(
         if !values.contains_key(key) || store.owned_by_config(key) {
             continue;
         }
-        if let Some(value) = store.get(key).filter(|value| !value.is_null()).cloned() {
+        if let Some(value) = store.get(key).cloned() {
             store.insert(key, coerce_bool(value))?;
         }
     }

@@ -47,8 +47,7 @@ fn reload_store(
     section: Section,
     section_config: Option<&JsonValue>,
 ) -> Result<(), OverlayError> {
-    let stored = store.get(PASS_THROUGH_ENDPOINTS);
-    let serving = stored.filter(|value| !value.is_null()).cloned();
+    let serving = store.get(PASS_THROUGH_ENDPOINTS).cloned();
     store.load_yaml(settings_mapping(section_config));
     store.apply_db_row(DbRow::from(section), BTreeMap::new());
     if let Some(endpoints) = serving.filter(|_| section.is_resource_list(PASS_THROUGH_ENDPOINTS)) {
