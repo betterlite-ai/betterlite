@@ -746,8 +746,8 @@ async fn the_translator_and_wrapper_stamp_chunks_from_the_injected_sources() {
 async fn a_translation_failure_reaches_the_bridge_caller_typed() {
     let execution = FakeExecution::new(events(vec![sse("{not json")], &[]));
     let mut stream = expect_stream(expect_ok(completion(&execution, call(&streaming())).await));
-    let error = stream.next().await.unwrap_err();
-    let BridgeStreamError::Translate(error) = error else {
+    let failure = stream.next().await.unwrap_err();
+    let BridgeStreamError::Translate(error) = failure else {
         panic!("a malformed event is a translation failure");
     };
     assert!(

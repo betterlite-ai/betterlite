@@ -48,7 +48,10 @@ impl From<BridgeStreamError> for StreamFailure {
     fn from(error: BridgeStreamError) -> Self {
         match error {
             BridgeStreamError::Upstream { failure } => failure,
-            other => Self::Unclassified {
+            other @ (BridgeStreamError::Translate(_)
+            | BridgeStreamError::Json(_)
+            | BridgeStreamError::Wrapper(_)
+            | BridgeStreamError::View(_)) => Self::Unclassified {
                 text: other.to_string(),
             },
         }
