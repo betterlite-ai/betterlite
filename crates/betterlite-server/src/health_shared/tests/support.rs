@@ -49,8 +49,7 @@ use crate::health_shared::probe::{SharedHealthProbe, SharedProbeCall};
 use crate::health_shared::results::HealthResultsCache;
 use crate::health_shared::settings::{DEFAULT_SETTINGS, SharedHealthSettings};
 use crate::health_shared::status_view::{
-    LastCheckedBy, RedisStatus, SharedHealthStatus, SharedHealthStatusError,
-    SharedHealthStatusSource,
+    RedisStatus, SharedHealthStatus, SharedHealthStatusError, SharedHealthStatusSource,
 };
 use crate::model_deprecation::clock::UtcClock;
 
@@ -679,7 +678,7 @@ pub(crate) fn sample_status() -> SharedHealthStatus {
             lock_in_progress: false,
             cache_available: false,
             cache_age_seconds: None,
-            last_checked_by: LastCheckedBy::CacheUnavailable,
+            last_checked_by: None,
         }),
     }
 }
