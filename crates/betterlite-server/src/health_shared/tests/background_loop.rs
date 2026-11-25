@@ -196,6 +196,18 @@ async fn a_missing_deployment_list_probes_nothing() {
 }
 
 #[tokio::test]
+async fn a_loop_without_a_store_releases_the_window_lock() {
+    let world = World::new(instant(SHARED_AT));
+    let mut deps = world.background(None, vec![deployment("probe-ok", "probe-ok", false)]);
+    deps.store = None;
+    let sleeper = StepSleeper::default();
+    let mut loop_future = Box::pin(background_loop(deps, sleeper.clone()));
+    run_until_sleep(&sleeper, &mut loop_future).await;
+    assert!(world.lock.released(SAVE_JOB_ID));
+    assert!(!world.lock.holds(SAVE_JOB_ID));
+}
+
+#[tokio::test]
 async fn a_completed_save_keeps_the_window_lock() {
     let world = World::new(instant(SHARED_AT));
     let manager = world.pod_manager(POD_A);

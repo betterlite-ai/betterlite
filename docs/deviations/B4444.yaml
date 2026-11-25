@@ -12,6 +12,9 @@ deviations:
   - what: The loop writes no background_health_check_loop_started, cycle_start, cycle_complete or cycle_duration_exceeded_interval lines and no overlap warning; it logs a failed shared check and a failed direct check instead.
     why: Those lines carry thread_count and rss_mb from B4443's instrumentation, and the overlap warning needs LiteLLM's module-level background_health_check_loop_active flag, which the workspace's no-global-state rule forbids; the cycle's probe, cache, save and health state writes are unchanged.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L4520-L4658
+  - what: The loop runs the window gate even when it has no health check store; B7640's save_background reports a missing store as a failed save, so the gate takes the window lock and releases it again. LiteLLM returns from _schedule_background_health_check_db_save before scheduling when prisma_client is None.
+    why: The loop's store is optional because the composition root decides whether a database exists, and B7640's save contract reports the missing store as a failed save; releasing the lock is what that report asks for, and no health rows are written either way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L4345-L4346
   - what: max_concurrency is forwarded unchanged to B4443's perform_health_check, and None or a non-positive value stays unbounded with no cap of its own.
     why: This matches LiteLLM, whose unbounded path starts one task per model with asyncio.gather; the task outline flagged the default as a decision point, so it is recorded here.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L539-L576
