@@ -1,0 +1,77 @@
+id: B10103
+title: A managed Responses WebSocket keeps a bounded turn history
+description: >-
+  Fix a LiteLLM bug that B945 copied. LiteLLM's managed Responses WebSocket stores, for every completed turn, the full
+  message list (prior history, the turn's input and its output) under the turn's response id in _session_history,
+  and never drops an entry. A client that keeps one connection open and sends turn after turn grows the gateway's
+  memory without limit, and since each entry repeats the whole conversation before it, the growth is quadratic. B945
+  (https://github.com/betterlite-ai/betterlite/pull/3166) built the same store in
+  crates/betterlite-core/src/api/responses_ws_managed/history.rs on the session_history map that B944 put in
+  responses_ws_history.rs, and its review flagged it under the bounded-inputs rule.
+
+
+  The fix gives each connection a 16 MiB budget for stored history, counted as the serialized JSON length of each
+  stored message list. session_history keeps insertion order, and storing a turn first removes any entry with the
+  same id, then drops the oldest entries until the new one fits. A turn whose list alone is over 16 MiB isn't stored
+  and one warning says so. A later turn whose previous_response_id names a dropped or unstored entry gets the empty
+  history, the same as LiteLLM gives for an id it never saw.
+scope:
+  paths:
+  - crates/betterlite-core/src/api/responses_ws_history.rs
+  - crates/betterlite-core/src/api/responses_ws_history/tests.rs
+  - crates/betterlite-core/src/api/responses_ws_managed/history.rs
+  - crates/betterlite-core/src/api/responses_ws_managed/tests.rs
+  - crates/betterlite-core/src/api/responses_ws_managed/tests/history_caps.rs
+  - crates/betterlite-core/src/api/responses_ws_managed/tests/support.rs
+  - tools/oracle/src/helpers/core_ops/responses_ws_managed/support.rs
+  - tools/oracle/src/helpers/core_ops/responses_ws_history/views.rs
+  - docs/deviations/B10103.yaml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L2585-L2603
+  why: _get_history_messages answers [] for an unknown id, and _store_history keeps every entry.
+dod:
+- text: >-
+    Storing turns whose lists add up to more than 16 MiB drops the oldest entries first, so the stored lists never
+    add up to more than 16 MiB, and the newest turn is always kept when its own list fits.
+  proof: [history-caps]
+- text: >-
+    A turn whose list alone is over 16 MiB is not stored and warns once, and a later turn that names it, or names a
+    dropped entry, as previous_response_id is sent with no history, as for an unknown id.
+  proof: [history-caps]
+- text: >-
+    Storing an id that is already stored replaces it and counts only the new list. Connections under the budget store
+    and look up history exactly as before.
+  proof: [history-caps, ws-managed, ws-history]
+- text: >-
+    docs/deviations/B10103.yaml has a row that says LiteLLM keeps every turn, with the pinned LiteLLM link.
+  proof: [deviation-row]
+checks:
+  optional: []
+  commands:
+  - id: history-caps
+    why: The stored history passes its budget, or a dropped entry answers something other than the empty history.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_managed::tests::history_caps($|::)/)'
+  - id: ws-managed
+    why: The budget changed a connection that stays under it.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_managed::/) - test(/::replays_corpus$/)'
+  - id: ws-history
+    why: The new map type changed the history lookup.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_ws_history::/) - test(/::replays_corpus$/)'
+  - id: deviation-row
+    why: The cap needs its deviations row with the pinned LiteLLM link.
+    run: grep -q 'streaming_iterator.py#L2585-L2603' docs/deviations/B10103.yaml
+oracle_cases: []
+deviations: []
+out_of_scope:
+- Sharing the repeated conversation prefix between entries. The budget already bounds the memory.
+- The Redis or database session history of the HTTP Responses route. It has its own lookup settings.
+pitfalls:
+- Count the bytes with a writer that only adds up lengths, so counting doesn't build a second copy of the list.
+- Keep the running total on the handler next to session_history, and lower it when an entry is dropped or replaced, so storing a turn doesn't sum every entry again.
+- The tests must not build 16 MiB per case. Make the budget a handler field with 16 MiB as its default, build the test handlers with a small budget, and add one test that the default is 16 MiB.
+- Mount history_caps.rs in responses_ws_managed/tests.rs beside the other test modules.
+review_level: standard
+budget:
+  max_changed_lines: 450
+  max_new_expects: 0

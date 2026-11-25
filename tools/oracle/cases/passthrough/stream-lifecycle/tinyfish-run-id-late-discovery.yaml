@@ -1,0 +1,20 @@
+kind: helper
+name: tinyfish-run-id-late-discovery
+call:
+  b3609:
+    endpoint_type: "tinyfish"
+    status_code: 200
+    cost_injection: false
+    url_route: "https://agent.tinyfish.ai/v1/automation/run-sse"
+    deferred: false
+    tinyfish_poller: false
+    run_id: "run-1"
+    chunks:
+      - [100, 97, 116, 97, 58, 32, 123, 34, 115, 116, 101, 112, 34, 58, 49, 125, 10, 10]
+      - [100, 97, 116, 97, 58, 32, 123, 34, 114, 117, 110, 95, 105, 100, 34, 58, 34, 114, 117, 110, 45, 49, 34, 44, 34, 115, 116, 97, 116, 117, 115, 34, 58, 34, 114, 117, 110, 110, 105, 110, 103, 34, 125, 10, 10]
+      - [100, 97, 116, 97, 58, 32, 123, 34, 114, 117, 110, 95, 105, 100, 34, 58, 34, 114, 117, 110, 45, 50, 34, 44, 34, 115, 116, 97, 116, 117, 115, 34, 58, 34, 114, 117, 110, 110, 105, 110, 103, 34, 125, 10, 10]
+    failure: null
+    disconnect_after: null
+    request_body: null
+env: {}
+compare: {ignore: []}

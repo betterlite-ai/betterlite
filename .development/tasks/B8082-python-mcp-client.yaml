@@ -50,6 +50,12 @@ description: >-
   already locks through `litellm[proxy]`.
 scope:
   paths:
+  - crates/betterlite-mcp/src/client/sdk_transport/streamable/post.rs
+  - crates/betterlite-mcp/src/client/tools/result.rs
+  - crates/betterlite-mcp/src/client/sdk_transport/tests/streamable.rs
+  - crates/betterlite-python/src/mcp/convert/tests.rs
+  - "crates/betterlite-python/src/mcp/convert/payload.rs"
+  - "crates/betterlite-python/pyproject.toml"
   - crates/betterlite-python/python/betterlite/experimental_mcp_client/__init__.py
   - crates/betterlite-python/python/betterlite/experimental_mcp_client/types.py
   - crates/betterlite-python/python/betterlite/experimental_mcp_client/errors.py
@@ -127,5 +133,5 @@ pitfalls:
 - "Ruff flags LiteLLM's own signatures here (PLR0913, PLR0917, FBT001, FBT002, A002). Put the noqa on the flagged line with the pinned LiteLLM link on the same line, one expect per line; don't add per-file-ignores to ruff.toml."
 review_level: security
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 1800
   max_new_expects: 5

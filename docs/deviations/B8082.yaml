@@ -1,0 +1,72 @@
+task: B8082
+deviations:
+  - what: >-
+      load_mcp_tools, call_openai_tool, call_mcp_tool and list_tools_with_pagination accept only an MCPSession from
+      MCPClient.run_with_session, and refuse an mcp.ClientSession with UnsupportedMcpArgument("session").
+    why: >-
+      The wheel has no mcp package, and the pagination and the call run in the native client, which needs the Rust
+      session behind the object.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/tools.py#L159-L236
+  - what: >-
+      sampling_callback, elicitation_callback, logging_callback, aws_auth, resolved_auth and host_progress_callback
+      raise UnsupportedMcpArgument.
+    why: >-
+      Rust cannot call back into Python in the middle of a session, and an httpx2.Auth object cannot drive the Rust
+      transport. AWS signing is selected with auth_type "aws_sigv4".
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L386-L428
+  - what: MCPSigV4Auth and the _MCPHTTPClient and _MCPResponseStream helpers are not exposed.
+    why: They exist to feed httpx2 and are replaced by B4742 and B4743 in Rust.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L200-L375
+  - what: >-
+      Result objects are ResponseObject classes, not the mcp package's pydantic models, and McpError,
+      UnsupportedMcpArgument and UnknownNativeError stand in for mcp.MCPError and LiteLLM's refused-argument errors.
+    why: >-
+      The wheel does not depend on the mcp package, so no mcp models are installed. Code that catches mcp.MCPError
+      catches McpError instead; the code and message attributes match.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L817-L960
+  - what: >-
+      A POST answer whose error status other than 404 carries a JSON-RPC error body is relayed as that JSON-RPC error;
+      LiteLLM's HTTP client raises httpx2.HTTPStatusError for every POST error status except 404.
+    why: >-
+      The MCP streamable HTTP client reads a JSON-RPC error body before falling back, and betterlite keeps that branch;
+      LiteLLM's _MCPHTTPClient wraps it and raises before the MCP client sees the body.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L247-L251
+  - what: >-
+      The HTTPStatusError text uses the http crate's canonical reason phrase; LiteLLM's httpx2 text uses the reason
+      phrase the server sent, or Python's http.HTTPStatus wording, so a few statuses read differently (413, 418, 422).
+    why: >-
+      The native transport keeps the status code and the headers, not the status line, so the reason phrase comes from
+      the standard table. The 401 case LiteLLM's callers act on reads the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L247-L251
+  - what: >-
+      ssl_verify takes a bool, a CA bundle path or None and refuses every other value, an ssl.SSLContext included, and
+      an unknown protocol_version raises ValueError rather than pydantic's ValidationError.
+    why: >-
+      The Rust transport takes a boolean or a CA path, and the settings are validated in Rust and reported as a native
+      error payload.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L386-L430
+  - what: >-
+      update_auth_value stores the value it is given; LiteLLM stores basic credentials already base64-encoded in
+      _mcp_auth_value. The Authorization header sent on the wire is the same.
+    why: The Rust transport builds the header from auth_type and the raw value on each request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L720-L735
+  - what: >-
+      The auth_type values oauth2_id_jag, true_passthrough and oauth_delegate are refused with ValueError when the
+      client is built.
+    why: >-
+      Those flows live in Python in LiteLLM and need the Python MCPClient; the native client only carries the header
+      the resolved credential slot holds.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp.py#L27-L66
+  - what: >-
+      LITELLM_MCP_CLIENT_TIMEOUT is read when each MCPClient is built; LiteLLM reads it once at import.
+    why: >-
+      The task fixes the read at construction. A process that sets the variable before importing either library sees
+      the same timeout, and a change made after import reaches betterlite only.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L201
+kept_bugs:
+  - what: list_tools answers an empty list when the server fails and raise_on_error is false.
+    why: LiteLLM's MCPClient relies on that swallow so one unreachable MCP server does not fail the whole request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L817-L873
+  - what: call_tool answers an isError tool result when the server fails and raise_on_error is false.
+    why: LiteLLM's tool loop hands that result back to the model instead of failing the request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L878-L960

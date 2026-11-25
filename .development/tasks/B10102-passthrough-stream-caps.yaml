@@ -1,0 +1,73 @@
+id: B10102
+title: The pass-through stream logger keeps a bounded copy of the stream
+description: >-
+  Fix a LiteLLM bug that B3609 copied. LiteLLM's pass-through chunk_processor appends every upstream chunk to raw_bytes
+  for the end-of-stream log, and its SSE reassembly buffers (pending for cost injection, tinyfish_pending for the
+  TinyFish run_id scan) grow until a frame ends. Nothing caps them, so a long or never-ending provider stream grows the
+  gateway's memory without limit. B3609 (https://github.com/betterlite-ai/betterlite/pull/3164) built the same thing in
+  crates/betterlite-logging/src/passthrough_stream_lifecycle/chunk_processor.rs and chunk_processor/frames.rs, and its
+  parity review flagged it under the bounded-inputs rule.
+
+
+  The fix caps all three buffers and never changes the bytes the client gets. The copy kept for logging stops at
+  64 MiB per stream: past that, chunks are still forwarded but not kept, one warning says so, and the success log runs
+  on what was kept. 64 MiB is about twice the largest stream a working setup sends (128k output tokens at about 200
+  bytes of SSE each). An incomplete SSE frame in either reassembly buffer stops at 16 MiB, the pooled transport's reply
+  cap that B1315 also uses for an unterminated fragment. Past it, the cost-injection path forwards the buffered bytes
+  as they arrived and injects nothing for the rest of the stream, and the TinyFish scan stops, each with one warning.
+scope:
+  paths:
+  - crates/betterlite-logging/src/passthrough_stream_lifecycle.rs
+  - crates/betterlite-logging/src/passthrough_stream_lifecycle/chunk_processor.rs
+  - crates/betterlite-logging/src/passthrough_stream_lifecycle/chunk_processor/frames.rs
+  - crates/betterlite-logging/src/passthrough_stream_lifecycle/tests/stream_caps.rs
+  - crates/betterlite-logging/src/passthrough_stream_lifecycle/tests/support.rs
+  - docs/deviations/B10102.yaml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L192-L225
+  why: raw_bytes.append, tinyfish_pending and pending grow with no limit.
+dod:
+- text: >-
+    A stream that sends more than 64 MiB keeps at most 64 MiB of chunks for logging, forwards every byte to the client
+    unchanged, warns once, and still runs the success log once on the kept chunks.
+  proof: [stream-caps]
+- text: >-
+    A cost-injection stream whose incomplete frame passes 16 MiB forwards those bytes unchanged, forwards later chunks
+    without injection, and warns once. A TinyFish stream whose incomplete frame passes 16 MiB stops scanning for a
+    run_id and warns once. Streams under both caps behave exactly as before.
+  proof: [stream-caps, chunk-iteration, cost-injection-frames, tinyfish-run-id]
+- text: >-
+    docs/deviations/B10102.yaml has one row per cap that says LiteLLM keeps everything, with the pinned LiteLLM link.
+  proof: [deviation-rows]
+checks:
+  optional: []
+  commands:
+  - id: stream-caps
+    why: A buffer still grows past its cap, or the client sees different bytes.
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^passthrough_stream_lifecycle::stream_caps/)'
+  - id: chunk-iteration
+    why: The caps changed a stream that stays under them.
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^passthrough_stream_lifecycle::chunk_iteration/)'
+  - id: cost-injection-frames
+    why: The cost-injection cap changed a normal stream.
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^passthrough_stream_lifecycle::cost_injection_frames/)'
+  - id: tinyfish-run-id
+    why: The TinyFish cap changed a normal stream.
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^passthrough_stream_lifecycle::tinyfish_run_id/)'
+  - id: deviation-rows
+    why: The caps need their deviations rows with the pinned LiteLLM link.
+    run: grep -q 'streaming_handler.py#L192-L225' docs/deviations/B10102.yaml
+oracle_cases: []
+deviations: []
+out_of_scope:
+- Rebuilding the logged response incrementally so a stream past the cap still logs its final usage frame. That needs every pass-through provider handler to parse chunk by chunk.
+- Other streaming paths. They have their own caps.
+pitfalls:
+- Mount stream_caps.rs from passthrough_stream_lifecycle.rs with a path attribute, like chunk_iteration, so its tests are named passthrough_stream_lifecycle::stream_caps.
+- Count the kept bytes as chunks arrive. Summing raw_bytes again on every chunk is quadratic.
+- The tests must not allocate 64 MiB per case. Make the caps fields with the real values as defaults and build the test streams with small caps, plus one test that the defaults are 64 MiB and 16 MiB.
+review_level: standard
+budget:
+  max_changed_lines: 450
+  max_new_expects: 0

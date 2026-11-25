@@ -1,9 +1,15 @@
 use std::any::type_name;
 use std::error::Error;
+use std::sync::Arc;
 
 use betterlite_prompts::arguments::json::{Json, Object};
+use http::StatusCode;
+use rmcp::ServiceError;
 use serde::{Deserialize, Serialize};
 
+use crate::client::cleanup::http_client::ResponseHead;
+use crate::client::http_transport::error::McpHttpError;
+use crate::client::sdk_transport::error::SdkError;
 use crate::client::sessions::error::SessionError;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -144,10 +150,15 @@ where
     Source: Error + Send + Sync + 'static,
 {
     match error {
-        SessionError::Runtime(source) => Failure {
-            error_type: short_type_name::<Source>(),
-            message: source.to_string(),
-        },
+        SessionError::Runtime(source) => {
+            if let Some(failure) = status_failure(source) {
+                return failure;
+            }
+            Failure {
+                error_type: short_type_name::<Source>(),
+                message: source.to_string(),
+            }
+        }
         SessionError::Stream(failure) => Failure {
             error_type: short_type_name::<Source>(),
             message: failure.source_error().to_string(),
@@ -173,6 +184,62 @@ where
             message: error.to_string(),
         },
     }
+}
+
+// httpx2's HTTPStatusError text, so a swallowed failure and a raised one read the same (client.py L249-L251)
+fn status_failure<Source>(source: &Arc<Source>) -> Option<Failure>
+where
+    Source: Error + Send + Sync + 'static,
+{
+    let head = status_head(source.as_ref())?;
+    let request_url = head
+        .capture
+        .as_ref()
+        .map(|record| record.exchange.url.as_str());
+    Some(Failure {
+        error_type: "HTTPStatusError",
+        message: http_status_message(head.status, request_url),
+    })
+}
+
+#[must_use]
+pub fn http_status_message(status: u16, url: Option<&str>) -> String {
+    let reason = StatusCode::from_u16(status)
+        .ok()
+        .as_ref()
+        .and_then(StatusCode::canonical_reason)
+        .unwrap_or_default();
+    let kind = match status {
+        100..=199 => "Informational response",
+        300..=399 => "Redirect response",
+        400..=499 => "Client error",
+        500..=599 => "Server error",
+        _ => "Invalid status code",
+    };
+    let request_url = url.unwrap_or_default();
+    format!(
+        "{kind} '{status} {reason}' for url '{request_url}'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/{status}"
+    )
+}
+
+// rmcp wraps a failed transport send in ServiceError::TransportSend, so the status error can sit under it
+fn status_head<'source>(source: &'source (dyn Error + 'static)) -> Option<&'source ResponseHead> {
+    let error = source.downcast_ref::<SdkError>()?;
+    if let SdkError::Service(ServiceError::TransportSend(send_error)) = error
+        && let Some(inner) = send_error.error.downcast_ref::<SdkError>()
+    {
+        return status_from_sdk(inner);
+    }
+    status_from_sdk(error)
+}
+
+fn status_from_sdk(error: &SdkError) -> Option<&ResponseHead> {
+    if let SdkError::Http(http) = error
+        && let McpHttpError::Status(head) = http.as_ref()
+    {
+        return Some(head.as_ref());
+    }
+    None
 }
 
 // A cleanup that ran past its bound surfaces as asyncio.CancelledError in LiteLLM, so it takes the cancellation path

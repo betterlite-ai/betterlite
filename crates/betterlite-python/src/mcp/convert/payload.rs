@@ -1,8 +1,10 @@
 use betterlite_mcp::client::http_transport::error::McpHttpError;
 use betterlite_mcp::client::sdk_transport::error::SdkError;
 use betterlite_mcp::client::sessions::error::SessionError;
+use betterlite_mcp::client::tools::result::http_status_message;
 use betterlite_mcp::tools::pagination::ToolError;
 use betterlite_prompts::arguments::json::{Json, Object};
+use http::HeaderMap;
 use rmcp::service::ServiceError;
 use serde::Serialize;
 // The Python class names LiteLLM's MCP failures carry; B8082 maps them back to its exception classes
@@ -14,6 +16,8 @@ pub(crate) enum McpErrorKind {
     Timeout,
     #[serde(rename = "RuntimeError")]
     Runtime,
+    #[serde(rename = "HTTPStatusError")]
+    HttpStatus,
     #[serde(rename = "ValueError")]
     Value,
     #[serde(rename = "CancelledError")]
@@ -110,8 +114,10 @@ fn service_payload(error: &ServiceError) -> NativeMcpErrorPayload {
 }
 fn http_payload(error: &McpHttpError) -> NativeMcpErrorPayload {
     if let McpHttpError::Status(head) = error {
-        let preview = head.capture.as_ref().map(|record| record.preview.as_str());
-        return status_payload(head.status, preview);
+        let capture = head.capture.as_ref();
+        let preview = capture.map(|record| record.preview.as_str());
+        let url = capture.map(|record| record.exchange.url.as_str());
+        return status_payload(head.status, preview, url, &head.headers);
     }
     let timed_out = matches!(
         error,
@@ -124,16 +130,35 @@ fn http_payload(error: &McpHttpError) -> NativeMcpErrorPayload {
     };
     NativeMcpErrorPayload::plain(kind, error.to_string())
 }
-// The status and the masked body preview are all Python gets about an HTTP failure that carried no JSON-RPC error
-pub(crate) fn status_payload(status: u16, preview: Option<&str>) -> NativeMcpErrorPayload {
+// The status, the masked body preview and the request URL are all Python gets about an HTTP failure without a JSON-RPC error
+pub(crate) fn status_payload(
+    status: u16,
+    preview: Option<&str>,
+    url: Option<&str>,
+    headers: &HeaderMap,
+) -> NativeMcpErrorPayload {
     let number = Json::Number(serde_json::Number::from(status));
     let body = Json::Text(preview.unwrap_or("(no body captured)").to_owned());
+    let link = Json::Text(url.unwrap_or_default().to_owned());
+    let response_headers = headers
+        .iter()
+        .filter_map(|(name, value)| {
+            value.to_str().ok().map(|text| {
+                Json::List(vec![
+                    Json::Text(name.as_str().to_owned()),
+                    Json::Text(text.to_owned()),
+                ])
+            })
+        })
+        .collect();
     let mut data = Object::new();
     data.insert("status".to_owned(), number);
     data.insert("body".to_owned(), body);
+    data.insert("url".to_owned(), link);
+    data.insert("headers".to_owned(), Json::List(response_headers));
     NativeMcpErrorPayload {
-        kind: McpErrorKind::Runtime,
-        message: format!("the MCP server answered HTTP {status}"),
+        kind: McpErrorKind::HttpStatus,
+        message: http_status_message(status, url),
         code: None,
         data: Some(Json::Object(data)),
     }
