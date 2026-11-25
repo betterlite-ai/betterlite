@@ -107,13 +107,13 @@ class CountsView(TypedDict):
 
 
 class CachedDetailsView(TypedDict, total=False):
-    audio_tokens: int
+    audio_tokens: int | None
 
 
 class DetailsView(TypedDict, total=False):
-    cached_tokens: int
-    audio_tokens: int
-    text_tokens: int
+    cached_tokens: int | None
+    audio_tokens: int | None
+    text_tokens: int | None
     cached_tokens_details: NotRequired[CachedDetailsView | None]
 
 
@@ -376,10 +376,10 @@ def usage_counts(usage: Usage | ReferenceUsage) -> CountsView:
         prompt_tokens=dump["prompt_tokens"],
         completion_tokens=dump["completion_tokens"],
         total_tokens=dump["total_tokens"],
-        cached_tokens=cached,
-        cached_audio_tokens=cached_audio,
-        prompt_audio_tokens=prompt_audio,
-        completion_audio_tokens=completion_audio,
+        cached_tokens=0 if cached is None else cached,
+        cached_audio_tokens=0 if cached_audio is None else cached_audio,
+        prompt_audio_tokens=0 if prompt_audio is None else prompt_audio,
+        completion_audio_tokens=0 if completion_audio is None else completion_audio,
     )
 
 
@@ -673,13 +673,17 @@ def test_processor_mixed_cache() -> None:
     assert usage_counts(reference)["cached_tokens"] == expected_cached_tokens
 
 
-def test_processor_cached_audio() -> None:
+@pytest.mark.parametrize("uncached", (None, 0, CACHED_AUDIO_TOKENS))
+def test_processor_cached_audio(uncached: int | None) -> None:
+    expected_uncached = 0 if uncached is None else uncached
     usage: dict[str, JsonValue] = {
         "input_tokens": 30,
         "output_tokens": 0,
         "total_tokens": 30,
         "input_tokens_details": {
             "cached_tokens": 20,
+            "audio_tokens": uncached,
+            "text_tokens": uncached,
             "cached_tokens_details": {"audio_tokens": CACHED_AUDIO_TOKENS},
         },
     }
@@ -694,6 +698,7 @@ def test_processor_cached_audio() -> None:
     compare_usages(realtime_ours, realtime_reference)
     assert usage_counts(realtime_ours[0])["cached_audio_tokens"] == CACHED_AUDIO_TOKENS
     assert usage_counts(realtime_reference[0])["cached_audio_tokens"] == CACHED_AUDIO_TOKENS
+    assert usage_counts(realtime_ours[0])["prompt_audio_tokens"] == expected_uncached
 
     websocket: dict[str, JsonValue] = {
         "type": "response.completed",
@@ -707,6 +712,7 @@ def test_processor_cached_audio() -> None:
     compare_usages(websocket_ours, websocket_reference)
     assert usage_counts(websocket_ours[0])["cached_audio_tokens"] == CACHED_AUDIO_TOKENS
     assert usage_counts(websocket_reference[0])["cached_audio_tokens"] == CACHED_AUDIO_TOKENS
+    assert usage_counts(websocket_ours[0])["prompt_audio_tokens"] == expected_uncached
 
 
 def test_processor_empty() -> None:
