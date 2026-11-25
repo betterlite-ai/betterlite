@@ -151,7 +151,7 @@ impl NativeRedis {
     }
 
     fn async_flush<'py>(&self, py: Python<'py>) -> AsyncAnswer<'py> {
-        blocking::into_py(py, {
+        blocking::awaitable(py, {
             let cache = Arc::clone(&self.cache);
             move || cache.admin.flush_cache()
         })

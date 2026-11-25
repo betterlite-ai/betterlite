@@ -5,7 +5,7 @@ use tokio::task::JoinSet;
 
 use super::error::{self, BackendHandleError};
 
-pub(super) fn into_py<Work, Failure>(py: Python<'_>, work: Work) -> PyResult<Bound<'_, PyAny>>
+pub(super) fn awaitable<Work, Failure>(py: Python<'_>, work: Work) -> PyResult<Bound<'_, PyAny>>
 where
     Work: FnOnce() -> Result<(), Failure> + Send + 'static,
     Failure: Send + 'static,

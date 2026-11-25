@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use pyo3::prelude::*;
 use pyo3_async_runtimes::tokio::{into_future, run};
 
-use super::into_py;
+use super::awaitable;
 use crate::cache_backends::error::BackendHandleError;
 
 #[test]
@@ -17,7 +17,7 @@ fn blocking_cache_work_runs_and_reports_errors() {
     Python::attach(|py| {
         run(py, async move {
             let success = Python::attach(|attached| {
-                into_future(into_py(attached, move || {
+                into_future(awaitable(attached, move || {
                     written.store(true, Ordering::SeqCst);
                     Ok::<(), BackendHandleError>(())
                 })?)
@@ -25,7 +25,7 @@ fn blocking_cache_work_runs_and_reports_errors() {
             let answer = success.await?;
             Python::attach(|attached| assert!(answer.is_none(attached)));
             let failure = Python::attach(|attached| {
-                into_future(into_py(attached, || {
+                into_future(awaitable(attached, || {
                     Err(BackendHandleError::IncrementUnavailable)
                 })?)
             })?;

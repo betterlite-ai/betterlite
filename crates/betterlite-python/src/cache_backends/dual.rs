@@ -237,7 +237,7 @@ impl NativeDual {
     }
 
     fn async_flush<'py>(&self, py: Python<'py>) -> AsyncAnswer<'py> {
-        blocking::into_py(py, {
+        blocking::awaitable(py, {
             let cache = Arc::clone(&self.cache);
             move || cache.flush_cache()
         })
