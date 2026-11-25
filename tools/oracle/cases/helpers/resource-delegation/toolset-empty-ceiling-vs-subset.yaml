@@ -1,0 +1,39 @@
+kind: helper
+name: toolset_empty_ceiling_vs_subset
+call:
+  resource_delegation:
+    function: validate_toolsets
+    permission: {mcp_toolsets: ["t-a", "t-b"]}
+    team: {team_id: team-1}
+calls:
+  - resource_delegation:
+      function: validate_toolsets
+      permission: {mcp_toolsets: ["t-a", "t-b"]}
+      team: {team_id: team-1, mcp_toolsets: []}
+  - resource_delegation:
+      function: validate_toolsets
+      permission: {mcp_toolsets: ["t-a", "t-b"]}
+      team: {team_id: team-1, mcp_toolsets: ["t-a"]}
+  - resource_delegation:
+      function: validate_toolsets
+      permission: {mcp_toolsets: ["t-a"]}
+      team: {team_id: team-1, mcp_toolsets: ["t-a"]}
+  - resource_delegation:
+      function: validate_toolsets
+      permission: {mcp_toolsets: ["t-a", "t-b"]}
+      team: {team_id: team-1, mcp_toolsets: ["t-a"]}
+      is_proxy_admin: true
+  - resource_delegation:
+      function: validate_toolsets
+      permission: {mcp_toolsets: ["t"]}
+      is_proxy_admin: true
+  - resource_delegation:
+      function: validate_toolsets
+      permission: {mcp_toolsets: ["t"]}
+      is_proxy_admin: false
+  - resource_delegation:
+      function: validate_toolsets
+      permission: {mcp_toolsets: []}
+      team: {team_id: team-1, mcp_toolsets: ["t-a"]}
+env: {}
+compare: {ignore: []}

@@ -1,6 +1,22 @@
-use pyo3::prelude::*;
+mod convert;
+mod error;
+mod native;
+mod session;
+mod stream;
+mod tests;
 
-pub const fn register(_module: &Bound<'_, PyModule>) -> PyResult<()> {
-    // The assistant_runs family task adds its native functions here.
+use error::NativeAssistantRunError;
+use native::NativeAssistantRunSession;
+use pyo3::prelude::*;
+use stream::NativeAssistantStream;
+
+// litellm/assistants/main.py's message and run calls: one session per call, its exception and the event stream.
+pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add_class::<NativeAssistantRunSession>()?;
+    module.add_class::<NativeAssistantStream>()?;
+    module.add(
+        "NativeAssistantRunError",
+        module.py().get_type::<NativeAssistantRunError>(),
+    )?;
     Ok(())
 }

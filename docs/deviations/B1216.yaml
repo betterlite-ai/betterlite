@@ -1,0 +1,12 @@
+task: B1216
+deviations:
+  - what: Where LiteLLM calls verbose_proxy_logger.exception with only a message, betterlite logs the same message with the error text appended after a colon.
+    why: tracing records no exception object, so the error's text is the only way to keep the failure detail the traceback used to carry; the three sites are the caller-scope lookup, the team fetch and the teamId authorization lookup.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L15172
+kept_bugs:
+  - what: A team row whose stored columns fail to decode is treated as a missing team, so a teamId filter answers with an empty model list instead of an error.
+    why: _load_team_object_for_model_filter catches every exception from the team read and returns None, and the filter then answers [] with a 200; a working proxy relies on that page loading rather than failing when one stored row is malformed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L15089-L15091
+  - what: A failed model-name read during the team filter keeps the router-resolved ids and answers 200 with only those models.
+    why: _gather_team_accessible_model_ids logs the database failure at debug and returns the ids gathered so far; a working proxy relies on the team filter still answering when the model-name query fails.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L15139-L15140

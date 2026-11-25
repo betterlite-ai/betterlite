@@ -1,0 +1,7 @@
+kind: helper
+name: mcp-separator-probe-seed-slash
+call:
+  b8970:
+    separator: "/"
+env: {}
+compare: {ignore: []}

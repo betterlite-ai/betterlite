@@ -1,0 +1,36 @@
+task: B3609
+deviations:
+  - what: PassThroughStreamContext exposes its success handler as success_handler instead of passthrough_success_handler_obj.
+    why: The LiteLLM field name is 31 characters and the clippy clear-names rules reject identifiers over 30; the shorter name keeps the same role and the same construction site.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L56-L60
+  - what: The failure helpers are schedule_failure_logging and record_partial_usage_failure instead of schedule_stream_failure_logging and _record_partial_usage_for_failure.
+    why: The LiteLLM names are 31 and 33 characters; Rust identifiers stop at 30 under the clippy clear-names rules, and the shortened names keep the same words.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L69-L98
+  - what: The Anthropic partial-usage handler and the shared provider reconstruction arrive through the AnthropicPartialUsage port and B3608's build_passthrough_logging_result, and a reconstruction error becomes a logged warning instead of a caught exception.
+    why: betterlite has no exceptions and the provider handlers belong to the provider-leaf tasks; the port carries the same call at the same point, and the warning keeps LiteLLM's message and endpoint name.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L105-L128
+  - what: A TinyFish stream whose poller already spawned skips failure logging entirely.
+    why: LiteLLM returns before recording partial usage or dispatching failure handlers because the poller owns the authoritative row and a second row would collide on its request id; betterlite keeps that exclusive billing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L79-L80
+  - what: A clean completion parks the success job through the DeferredStreamLogging port when the lifecycle has one, and binds the reservation before parking, as LiteLLM writes the coroutine to logging_obj._deferred_stream_complete_args.
+    why: betterlite owns no logging object to hang the coroutine on, and the port keeps the same order, with the job built and the reservation bound once, exactly, and never on a disconnect or an error path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L235-L242
+  - what: The reconstruction of a failed stream's partial usage reads its end time from the stream's injected clock instead of LiteLLM's datetime.now(timezone.utc) at the moment of failure.
+    why: Both values are the time the failure is handled; betterlite threads one SuccessClock through the success and failure paths, so the logged end time has one source and the tests can pin it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L112-L123
+  - what: The first-chunk completion stamp and the success job's end time read the stream's injected clock instead of LiteLLM's datetime.now().
+    why: The same SuccessClock supplies every timestamp the lifecycle logs, so a stream's completion, success and failure times share one source and the tests can pin each one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L64-L67
+  - what: A rejected logging job logs the admission reason, where LiteLLM logs the exception raised while scheduling.
+    why: betterlite's queue reports rejection as a value rather than raising; the log line keeps LiteLLM's prefix and states why the job was dropped.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L268-L275
+  - what: Client disconnect is a dropped chunk stream rather than a GeneratorExit exception; a completion guard's drop runs the finally block exactly once.
+    why: Rust has no GeneratorExit and an async stream cannot await after it is dropped, so the terminal accounting lives in a Drop guard that sees the same state LiteLLM's finally block sees.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L260-L275
+  - what: The partial response cost is read as a decimal, plain or in exponent form; a cost outside the decimal range skips the partial usage record with a warning, where LiteLLM's float() records inf.
+    why: Spend is kept in decimals, and an infinite cost is not a usable spend value; the warning names the conversion error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L130-L136
+kept_bugs:
+  - what: A client that disconnects mid-stream still produces a successful pass-through log row carrying the partial usage collected before the disconnect, because GeneratorExit skips the failure path and the finally block schedules success logging.
+    why: Spend tracking relies on the partial row (LIT-2642); a working proxy counts the tokens it already forwarded, so betterlite keeps the behavior and documents it rather than turning the disconnect into a logged failure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L260-L275

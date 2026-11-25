@@ -1,0 +1,3 @@
+litellm_settings:
+  autorouter_presets_url:
+    - https://presets.test/catalog.json

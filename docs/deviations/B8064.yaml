@@ -1,0 +1,15 @@
+task: B8064
+deviations:
+  - what: "A specialised cost function returns a Python float made from Rust's exact Decimal result, so a last-digit difference from LiteLLM's float arithmetic is possible; the tests compare with a relative difference of 1e-12."
+    why: The native engine computes money as Decimal, so the value crosses into Python once, as a float.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2496
+  - what: "A model the image calculator cannot price raises the same bare Exception class as LiteLLM but with a shorter message: betterlite names the model, where LiteLLM lists every candidate name it tried."
+    why: The Rust calculator's error names its own cause, and the candidate list lives only in the Python lookup loop it ports.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2475
+  - what: "ocr_cost on a per-page model whose usage reports no pages_processed raises ValueError naming the model and provider, where LiteLLM's message is the fixed 'OCR response pages_processed is None'."
+    why: The Rust OCR calculator's error carries the model it read, so the failure names what was priced.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2233
+  - what: "A realtime result with no type key, a response.done event with no response object, or a usage value that is neither an object nor null, raises a native Exception naming the missing field or shape; LiteLLM indexes result['type'] and result['response'] directly and lets Python's KeyError or AttributeError escape."
+    why: The event list arrives as data, so the failure names the field instead of a bare KeyError.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2828
+kept_bugs: []

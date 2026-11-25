@@ -1,0 +1,103 @@
+kind: helper
+name: key-limit-policy-org-model-limits
+call:
+  key_limit_policy:
+    check: organization
+    request:
+      kind: generate
+      body: {tpm_limit_type: guaranteed_throughput, model_rpm_limit: {gpt-4: 15}}
+    organization:
+      organization_id: org-1
+      budget_id: budget-1
+      created_by: admin
+      updated_by: admin
+      models: []
+      litellm_budget_table: {budget_id: budget-1, rpm_limit: 20}
+    keys:
+      - {token: k1, organization_id: org-1, metadata: {model_rpm_limit: {gpt-4: 6}}}
+calls:
+  - key_limit_policy:
+      check: organization
+      request:
+        kind: generate
+        body: {rpm_limit_type: guaranteed_throughput, model_rpm_limit: {gpt-4: 11}}
+      organization:
+        organization_id: org-1
+        budget_id: budget-1
+        created_by: admin
+        updated_by: admin
+        models: []
+        metadata: {model_rpm_limit: {gpt-4: 10}}
+      keys: []
+  - key_limit_policy:
+      check: organization
+      request:
+        kind: generate
+        body: {rpm_limit_type: guaranteed_throughput, tpm_limit: 1000, rpm_limit: 1000}
+      organization:
+        organization_id: org-1
+        budget_id: budget-1
+        created_by: admin
+        updated_by: admin
+        models: []
+      keys:
+        - {token: k1, organization_id: org-1, rpm_limit: 100}
+  - key_limit_policy:
+      check: organization
+      request:
+        kind: generate
+        body: {rpm_limit_type: guaranteed_throughput, tpm_limit: 11}
+      organization:
+        organization_id: org-1
+        budget_id: budget-1
+        created_by: admin
+        updated_by: admin
+        models: []
+        litellm_budget_table: {budget_id: budget-1, tpm_limit: 10}
+      keys:
+        - {token: k1, organization_id: org-1, tpm_limit: 5}
+  - key_limit_policy:
+      check: organization
+      request:
+        kind: generate
+        body: {rpm_limit_type: guaranteed_throughput, rpm_limit: 10}
+      organization:
+        organization_id: org-1
+        budget_id: budget-1
+        created_by: admin
+        updated_by: admin
+        models: []
+        litellm_budget_table: {budget_id: budget-1, rpm_limit: 10}
+      keys:
+        - {token: k1, organization_id: org-1, rpm_limit: 0}
+  - key_limit_policy:
+      check: organization
+      request:
+        kind: generate
+        body: {rpm_limit_type: guaranteed_throughput, model_tpm_limit: {gpt-4: 4}}
+      organization:
+        organization_id: org-1
+        budget_id: budget-1
+        created_by: admin
+        updated_by: admin
+        models: []
+        metadata: {model_tpm_limit: {gpt-4: 5}}
+      keys:
+        - {token: k1, organization_id: org-1, metadata: {model_tpm_limit: {gpt-4: 2}}}
+  - key_limit_policy:
+      check: organization
+      request:
+        kind: generate
+        body: {rpm_limit_type: guaranteed_throughput, rpm_limit: 4}
+      organization:
+        organization_id: org-1
+        budget_id: budget-1
+        created_by: admin
+        updated_by: admin
+        models: []
+        litellm_budget_table: {budget_id: budget-1, rpm_limit: 10}
+      keys:
+        - {token: k1, organization_id: org-1, rpm_limit: 5}
+        - {token: k2, organization_id: org-9, rpm_limit: 50}
+env: {}
+compare: {ignore: []}

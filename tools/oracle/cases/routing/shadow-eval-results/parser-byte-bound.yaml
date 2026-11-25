@@ -1,0 +1,76 @@
+kind: probe
+name: shadow-eval-results-parser-byte-bound
+probes:
+- clock:
+    unix_millis: 1700000000000
+    monotonic_millis: 0
+  samples: []
+  operation:
+    shadow_eval_results:
+      now_millis: 1700000000000
+      steps:
+      - list:
+          role: proxy_admin
+          store: true
+          query: limit=50&pad=
+      - list:
+          role: proxy_admin
+          store: true
+          query: limit=50&pad=
+          pad_to: 1048576
+      - list:
+          role: proxy_admin
+          store: true
+          query: limit=50&pad=
+          pad_to: 1048577
+      - list:
+          role: proxy_admin
+          store: true
+          query: limit=0
+      - list:
+          role: proxy_admin
+          store: true
+          query: limit=201
+      - list:
+          role: proxy_admin
+          store: true
+          query: limit=
+      - list:
+          role: proxy_admin
+          store: true
+          query: limit=1.5
+      - list:
+          role: proxy_admin
+          store: true
+          query: target_type=bogus&target_id=k
+      - list:
+          role: proxy_admin
+          store: true
+          query: limit=1&limit=2
+      - list:
+          role: proxy_admin
+          store: true
+          query: target_type=key&target_id=k&target_type=user
+      jobs: []
+      errors: []
+      by_tier: []
+      by_model: []
+      by_leg: []
+      by_router: []
+      rows:
+        keys: []
+        teams: []
+        users: []
+compare:
+  ignore: []
+  expected_difference:
+  - pointer: /output/shadow_eval_results/steps/2
+    reference:
+      outcome: listed
+      jobs: []
+    rust:
+      outcome: over_limit
+      bytes: 1048577
+      limit: 1048576
+    why: betterlite refuses a shadow eval query past 1048576 bytes before decoding it, a bound LiteLLM's query parser has no equivalent for
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/auto_router_endpoints.py#L1802-L1895

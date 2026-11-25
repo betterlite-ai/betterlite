@@ -23,9 +23,9 @@ mod pricing;
 
 // The router snapshot the quote's model resolution reads, built from the same B844 indices the server serves.
 pub struct DeploymentSet {
-    catalog: DeploymentCatalog,
-    aliases: AliasMap,
-    groups: RoutingGroupIndex,
+    pub(crate) catalog: DeploymentCatalog,
+    pub(crate) aliases: AliasMap,
+    pub(crate) groups: RoutingGroupIndex,
 }
 
 #[derive(Debug, thiserror::Error)]

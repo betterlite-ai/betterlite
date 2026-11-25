@@ -1,0 +1,21 @@
+task: B921
+deviations:
+  - what: "A dict payload that fails ResponsesAPIResponse validation is rebuilt by dropping the top-level field whose path names it and injecting the defaults of absent required fields; when the failing path names no removable key (an invalid output item, say) the bridge raises a typed completion error instead of pydantic's model_construct result."
+    why: "Rust has no model_construct; the proxy keeps the lenient acceptance LiteLLM relies on and turns only the cases pydantic would leave half-built into a named failure. a_dict_payload_that_cannot_be_constructed_names_completion and an_invalid_dict_field_falls_back_to_lenient_construction pin both sides."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/handler.py#L64-L90
+  - what: "get_model_response_iterator receives no sync_stream flag here: B920's iterator decodes one event line at a time and the entry mode is carried by the caller, so the parameter has nothing to switch."
+    why: "B920 owns the iterator and exposes no sync/async split, and the bridge decodes no bytes itself; the sync and async entries differ only in which port method they call."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/handler.py#L288-L300
+  - what: "Provider post-stream processing reaches the bridge through an injected PostStreamDeps seam, and a provider whose chat config row is absent (MissingJsonRecord) leaves the stream unchanged; LiteLLM asks ProviderConfigManager directly."
+    why: "B2230 supplies the selection on main but B2202, which adds the per-provider post_stream_processing implementations, does not exist yet; injecting the seam lets the selection and the verbatim return be tested without it."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/handler.py#L378-L396
+  - what: "The defensive 'Stream completed response is invalid' check is not ported, because the coercion result is always a ResponsesAPIResponse in betterlite."
+    why: "The task records the guard as unreachable once coercion is closed, so the branch would be dead code."
+    link: ""
+  - what: "A provider stream that ends without a terminal event fails here with the bridge's typed 'Stream ended without a completed response' error, while LiteLLM 1.105.1 raises litellm.APIConnectionError('<provider> closed the responses stream before any terminal event (response.completed, response.incomplete or response.failed)') from the streaming iterator before the handler's ValueError is reached."
+    why: "B920 owns the event parser and B927 composes the iterator and its terminal-event check outside this bridge, which only sees decoded payloads, so the handler's own guard stays as the task text requires; a_stream_without_a_completed_response_is_an_error pins the bridge side, and an oracle case on a truncated stream cannot match."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L979-L986
+kept_bugs:
+  - what: "The non-streaming collect path reads only the terminal response and drops every delta it drained before it, so a truncated stream loses the text it already received."
+    why: "LiteLLM's _collect_response_from_stream ignores the deltas the iterator yielded, and a working setup may rely on the terminal object's output and usage rather than on partial text."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/handler.py#L92-L106

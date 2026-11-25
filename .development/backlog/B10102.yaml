@@ -1,0 +1,13 @@
+id: B10102
+milestone: R2 bug fixes
+title: The pass-through stream logger keeps a bounded copy of the stream
+status: done
+depends_on: [B3609]
+file: tasks/B10102-passthrough-stream-caps.yaml
+covers: []
+parent: null
+split_from: null
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 3184

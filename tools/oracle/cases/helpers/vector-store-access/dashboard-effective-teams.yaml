@@ -1,0 +1,262 @@
+kind: helper
+name: vector-store-access-dashboard-effective-teams
+call:
+  vector_store_access:
+    function: can_user_access_vector_store
+    vector_store: {vector_store_id: vs_from_key, team_id: team_x}
+    auth:
+      user_id: u_session
+      team_id: litellm-dashboard
+      object_permission: {object_permission_id: p_session_key, vector_stores: [vs_from_key]}
+      team_object_permission: {object_permission_id: p_synthetic_team, vector_stores: [vs_from_synthetic]}
+      team_object_permission_id: p_synthetic_team
+    database: true
+    object_permissions:
+      p_session_key: {object_permission_id: p_session_key, vector_stores: [vs_from_key]}
+      p_team_b: {object_permission_id: p_team_b, vector_stores: [vs_from_team_b]}
+    teams:
+      team_a:
+        team_id: team_a
+        object_permission: {object_permission_id: p_team_a, vector_stores: [vs_from_team_a]}
+      team_b:
+        team_id: team_b
+        object_permission_id: p_team_b
+      team_c:
+        team_id: team_c
+        object_permission: {object_permission_id: p_team_c, vector_stores: [vs_from_team_c]}
+    user_teams: [team_a, team_b]
+calls:
+  - vector_store_access:
+      function: can_user_access_vector_store
+      vector_store: {vector_store_id: vs_from_synthetic, team_id: team_x}
+      auth:
+        user_id: u_session
+        team_id: litellm-dashboard
+        object_permission: {object_permission_id: p_session_key, vector_stores: [vs_from_key]}
+        team_object_permission: {object_permission_id: p_synthetic_team, vector_stores: [vs_from_synthetic]}
+        team_object_permission_id: p_synthetic_team
+      database: true
+      object_permissions:
+        p_session_key: {object_permission_id: p_session_key, vector_stores: [vs_from_key]}
+        p_team_b: {object_permission_id: p_team_b, vector_stores: [vs_from_team_b]}
+      teams:
+        team_a:
+          team_id: team_a
+          object_permission: {object_permission_id: p_team_a, vector_stores: [vs_from_team_a]}
+        team_b:
+          team_id: team_b
+          object_permission_id: p_team_b
+        team_c:
+          team_id: team_c
+          object_permission: {object_permission_id: p_team_c, vector_stores: [vs_from_team_c]}
+      user_teams: [team_a, team_b]
+  - vector_store_access:
+      function: can_user_access_vector_store
+      vector_store: {vector_store_id: vs_a_owned, team_id: team_a}
+      auth:
+        user_id: u_session
+        team_id: litellm-dashboard
+      database: true
+      object_permissions: {}
+      teams:
+        team_a: {team_id: team_a}
+      user_teams: [team_a]
+  - vector_store_access:
+      function: can_user_access_vector_store
+      vector_store: {vector_store_id: vs_b_owned, team_id: team_b}
+      auth:
+        user_id: u_session
+        team_id: litellm-dashboard
+      database: true
+      object_permissions: {}
+      teams:
+        team_b: {team_id: team_b}
+      user_teams: [team_b]
+  - vector_store_access:
+      function: can_user_access_vector_store
+      vector_store: {vector_store_id: vs_from_team_a, team_id: team_x}
+      auth:
+        user_id: u_session
+        team_id: litellm-dashboard
+      database: true
+      object_permissions: {}
+      teams:
+        team_a:
+          team_id: team_a
+          object_permission: {object_permission_id: p_team_a, vector_stores: [vs_from_team_a]}
+      user_teams: [team_a]
+  - vector_store_access:
+      function: can_user_access_vector_store
+      vector_store: {vector_store_id: vs_from_team_b, team_id: team_x}
+      auth:
+        user_id: u_session
+        team_id: litellm-dashboard
+      database: true
+      object_permissions:
+        p_team_b: {object_permission_id: p_team_b, vector_stores: [vs_from_team_b]}
+      teams:
+        team_b:
+          team_id: team_b
+          object_permission_id: p_team_b
+      user_teams: [team_b]
+  - vector_store_access:
+      function: can_user_access_vector_store
+      vector_store: {vector_store_id: vs_from_team_c, team_id: team_x}
+      auth:
+        user_id: u_session
+        team_id: litellm-dashboard
+      database: true
+      object_permissions: {}
+      teams:
+        team_c:
+          team_id: team_c
+          object_permission: {object_permission_id: p_team_c, vector_stores: [vs_from_team_c]}
+      user_teams: [team_a, team_b]
+  - vector_store_access:
+      function: can_user_access_vector_store
+      vector_store: {vector_store_id: vs_synthetic, team_id: litellm-dashboard}
+      auth:
+        user_id: u_session
+        team_id: litellm-dashboard
+      database: true
+      object_permissions: {}
+      teams:
+        team_a: {team_id: team_a}
+      user_teams: [team_a]
+  - vector_store_access:
+      function: can_user_access_vector_store
+      vector_store: {vector_store_id: vs_stranger, team_id: team_d}
+      auth:
+        user_id: u_session
+        team_id: litellm-dashboard
+      database: true
+      object_permissions: {}
+      teams:
+        team_a: {team_id: team_a}
+      user_teams: [team_a]
+  - vector_store_access:
+      function: can_user_access_vector_store
+      vector_store: {vector_store_id: vs_teamless}
+      auth:
+        user_id: u_session
+        team_id: litellm-dashboard
+      database: true
+      object_permissions: {}
+      teams: {}
+      user_teams: []
+  - vector_store_access:
+      function: can_user_access_vector_store
+      vector_store: {vector_store_id: vs_a_owned, team_id: team_a}
+      auth:
+        user_id: u_session
+        team_id: litellm-dashboard
+      database: false
+      object_permissions: {}
+      teams:
+        team_a: {team_id: team_a}
+      user_teams: [team_a]
+  - vector_store_access:
+      function: filter_listable_vector_stores
+      vector_stores:
+        - {vector_store_id: vs_from_synthetic, team_id: team_x}
+        - {vector_store_id: vs_from_key, team_id: team_x}
+        - {vector_store_id: vs_a_owned, team_id: team_a}
+        - {vector_store_id: vs_b_owned, team_id: team_b}
+        - {vector_store_id: vs_from_team_a, team_id: team_x}
+        - {vector_store_id: vs_from_team_b, team_id: team_x}
+        - {vector_store_id: vs_from_team_c, team_id: team_x}
+        - {vector_store_id: vs_synthetic, team_id: litellm-dashboard}
+        - {vector_store_id: vs_teamless}
+        - {vector_store_id: vs_stranger, team_id: team_d}
+      auth:
+        user_id: u_session
+        team_id: litellm-dashboard
+        object_permission: {object_permission_id: p_session_key, vector_stores: [vs_from_key]}
+        team_object_permission: {object_permission_id: p_synthetic_team, vector_stores: [vs_from_synthetic]}
+        team_object_permission_id: p_synthetic_team
+      database: true
+      object_permissions:
+        p_session_key: {object_permission_id: p_session_key, vector_stores: [vs_from_key]}
+        p_team_b: {object_permission_id: p_team_b, vector_stores: [vs_from_team_b]}
+      teams:
+        team_a:
+          team_id: team_a
+          object_permission: {object_permission_id: p_team_a, vector_stores: [vs_from_team_a]}
+        team_b:
+          team_id: team_b
+          object_permission_id: p_team_b
+        team_c:
+          team_id: team_c
+          object_permission: {object_permission_id: p_team_c, vector_stores: [vs_from_team_c]}
+      user_teams: [team_a, team_b]
+  - vector_store_access:
+      function: filter_listable_vector_stores
+      vector_stores:
+        - {vector_store_id: vs_from_key, team_id: team_x}
+        - {vector_store_id: vs_a_owned, team_id: team_a}
+      auth:
+        user_id: u_session
+        team_id: litellm-dashboard
+        object_permission: {object_permission_id: p_session_key, vector_stores: [vs_from_key]}
+      database: false
+      object_permissions: {}
+      teams: {}
+      user_teams: [team_a]
+  - vector_store_access:
+      function: filter_listable_vector_stores
+      vector_stores:
+        - {vector_store_id: vs_from_key, team_id: team_x}
+        - {vector_store_id: vs_a_owned, team_id: team_a}
+      auth:
+        user_id: u_session
+        team_id: litellm-dashboard
+        object_permission: {object_permission_id: p_session_key, vector_stores: [vs_from_key]}
+      database: true
+      object_permissions: {}
+      teams: {}
+      user_teams: []
+  - vector_store_access:
+      function: can_user_access_vector_store
+      vector_store: {vector_store_id: vs_a_owned, team_id: team_a}
+      auth:
+        user_id: u_session
+        team_id: litellm-dashboard
+      database: true
+      object_permissions: {}
+      teams:
+        team_a: {team_id: team_a}
+      user_teams: [team_a, team_missing]
+  - vector_store_access:
+      function: can_user_access_vector_store
+      vector_store: {vector_store_id: vs_from_team_c, team_id: team_x}
+      auth:
+        user_id: u_key
+        team_id: team_a
+        team_object_permission: {object_permission_id: p_inline, vector_stores: [vs_from_team_c]}
+      database: true
+      object_permissions: {}
+      teams: {}
+      user_teams: []
+  - vector_store_access:
+      function: can_user_access_vector_store
+      vector_store: {vector_store_id: vs_from_team_c, team_id: team_x}
+      auth:
+        user_id: u_key
+        team_id: team_d
+        team_object_permission: null
+        team_object_permission_id: p_team_c
+      database: true
+      object_permissions:
+        p_team_c: {object_permission_id: p_team_c, vector_stores: [vs_from_team_c]}
+      teams: {}
+      user_teams: []
+  - vector_store_access:
+      function: can_user_access_vector_store
+      vector_store: {vector_store_id: vs_a_owned, team_id: team_a}
+      auth: {user_id: u_key, team_id: team_a}
+      database: true
+      object_permissions: {}
+      teams: {}
+      user_teams: []
+env: {}
+compare: {ignore: []}

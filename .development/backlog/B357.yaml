@@ -1,7 +1,7 @@
 id: B357
 milestone: M2 routing
 title: Shadow evaluation listings and aggregate results
-status: todo
+status: done
 depends_on: [B381, B380, B345, B051, B301, B361, B356, B860, B9942]
 file: tasks/B357-shadow-eval-results.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/management_endpoints/auto_router_endpoints.py"
 parent: B021
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3098

@@ -1,0 +1,52 @@
+kind: probe
+name: shadow-eval-results-detail-missing-404
+probes:
+- clock:
+    unix_millis: 1700000000000
+    monotonic_millis: 0
+  samples: []
+  operation:
+    shadow_eval_results:
+      now_millis: 1700000000000
+      jobs:
+      - id: live-1
+        group_id: live
+        target_type: key
+        target_id: key-live
+        router_name: router-a
+        router_names:
+        - router-a
+        direction: forward
+        judge_model: judge-model
+        shadow_percentage: 10.0
+        max_turns: 5
+        created_at: '2023-11-14T22:11:40Z'
+        ends_at: '2023-11-15T22:13:20Z'
+      steps:
+      - list:
+          role: proxy_admin
+          store: true
+          query: ''
+      - detail:
+          role: proxy_admin
+          store: true
+          job_id: ghost
+      - detail:
+          role: proxy_admin
+          store: false
+          job_id: ghost
+      - detail:
+          role: proxy_admin_viewer
+          store: true
+          job_id: ghost
+      errors: []
+      by_tier: []
+      by_model: []
+      by_leg: []
+      by_router: []
+      rows:
+        keys: []
+        teams: []
+        users: []
+compare:
+  ignore: []

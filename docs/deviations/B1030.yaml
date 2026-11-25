@@ -1,0 +1,21 @@
+task: B1030
+deviations:
+  - what: The Azure file_content client receives the read phase of a structured timeout (absent when read is absent) and a parsed float for numeric text, where LiteLLM passes the raw timeout value to AzureOpenAI, retaining connect, write and pool phases.
+    why: The existing Azure client parameters accept scalar seconds, so a phase object or raw text cannot pass through that interface.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L628-L687
+  - what: A chunk_size of zero, or one no usize can hold, streams with the SDK's default one-mebibyte chunks.
+    why: LiteLLM hands the value to httpx iter_bytes, which raises "range() arg 3 must not be zero" on the first chunk of a live stream and yields one-byte chunks when the body is already buffered; a zero-sized stream can never advance, so betterlite treats zero as unset and uses the default the call already declares.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L1869-L1871
+  - what: A non-SDK HTTP client supplied to azure file_content is ignored, not forwarded.
+    why: LiteLLM passes any non-None client into AzureOpenAIFilesAPI.file_content, and get_azure_openai_client returns it unchanged even when it is not an OpenAI/AzureOpenAI client; the sync SDK call then fails on the missing .files attribute and the async one raises ValueError. Because the declared client type is an SDK client, betterlite treats another kind as absent so the Azure handler creates its own.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L510-L524
+kept_bugs:
+  - what: Azure file_content builds its client from the raw timeout keyword and ignores the resolved timeout argument, so request_timeout alone leaves the client default.
+    why: Existing downloads can rely on the client's 600-second default even when request_timeout is shorter; forwarding the resolved deadline would break those calls.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/files/handler.py#L109-L116
+  - what: The unsupported-provider file_content 400 carries CREATE_THREAD as its response request method; the unreachable unsupported streaming branch keeps the same method from L1127.
+    why: The task DoD requires this text, and callers inspecting error.response.request can observe it. Preserve that compatibility quirk rather than changing the error metadata.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L1026
+  - what: "The unsupported-provider file_content 400 says \"Supported providers are 'openai', 'azure', 'vertex_ai', 'bedrock', 'manus', 'anthropic'.\" and leaves out gemini, mistral, xai, hosted_vllm and litellm_proxy, which file_content also serves."
+    why: The message is LiteLLM's exact text and a caller can match on it, and only a provider file_content does not serve reaches it, so the short list never sends anyone to a call that fails.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L1020

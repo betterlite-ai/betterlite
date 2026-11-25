@@ -7,8 +7,9 @@ use rmcp::model::{ClientNotification, ErrorCode, ErrorData, JsonRpcMessage, Requ
 use rmcp::service::{RxJsonRpcMessage, TxJsonRpcMessage};
 use tracing::warn;
 
-use crate::client::cleanup::http_client::HttpResponse;
+use crate::client::cleanup::http_client::{HttpResponse, ResponseHead};
 use crate::client::cleanup::recording::ResponseBody as _;
+use crate::client::http_transport::error::McpHttpError;
 use crate::client::http_transport::request::McpHttpRequest;
 use crate::client::http_transport::send::HttpBody;
 use crate::client::sdk_transport::error::SdkError;
@@ -70,8 +71,8 @@ async fn answer(
     let HttpResponse {
         status,
         headers,
+        capture,
         mut body,
-        ..
     } = response;
     if status == 202 {
         let message = "server answered a request with 202 Accepted".to_owned();
@@ -92,7 +93,12 @@ async fn answer(
         return Ok(());
     }
     if status >= 400 {
-        return answer_error(core, status, &headers, body, id).await;
+        let head = ResponseHead {
+            status,
+            headers,
+            capture,
+        };
+        return answer_error(core, head, body, id).await;
     }
     if initialize {
         note_session(core, &headers);
@@ -102,7 +108,7 @@ async fn answer(
 async fn answer_body(
     core: &StreamableCore,
     headers: HeaderMap,
-    mut body: HttpBody,
+    body: HttpBody,
     id: RequestId,
 ) -> Result<(), SdkError> {
     let kind = content_type(&headers);
@@ -113,9 +119,7 @@ async fn answer_body(
         return read_events(core, body, &headers, id).await;
     }
     let message = format!("Unexpected content type: {kind}");
-    push_error(core, ErrorCode::INVALID_REQUEST, message, id).await?;
-    drop(body.close().await);
-    Ok(())
+    reject(core, body, ErrorCode::INVALID_REQUEST, message, id).await
 }
 // mcp catches only httpx2.StreamError and ValidationError here, so a read error ends its transport; betterlite answers the request (docs/deviations/B9652.yaml)
 async fn push_json(
@@ -140,12 +144,11 @@ async fn push_json(
 }
 async fn answer_error(
     core: &StreamableCore,
-    status: u16,
-    headers: &HeaderMap,
+    head: ResponseHead,
     mut body: HttpBody,
     id: RequestId,
 ) -> Result<(), SdkError> {
-    if content_type(headers).starts_with("application/json")
+    if content_type(&head.headers).starts_with("application/json")
         && let Ok(content) = body.read_all().await
         && let Ok(JsonRpcMessage::Error(error)) =
             serde_json::from_slice::<RxJsonRpcMessage<RoleClient>>(&content)
@@ -153,17 +156,29 @@ async fn answer_error(
         let reply: RxJsonRpcMessage<RoleClient> = JsonRpcMessage::error(error.error, Some(id));
         return push(core, reply).await;
     }
-    let (error_code, text) = if status != 404 {
-        (
-            ErrorCode::INTERNAL_ERROR,
-            "Server returned an error response",
-        )
-    } else if session_id(core).is_some() {
+    // LiteLLM's HTTP client raises HTTPStatusError for every POST error status but 404 (client.py L249-L251)
+    if head.status != 404 {
+        drop(body.close().await);
+        return Err(SdkError::Http(Arc::new(McpHttpError::Status(Box::new(
+            head,
+        )))));
+    }
+    let (error_code, text) = if session_id(core).is_some() {
         (ErrorCode::INVALID_REQUEST, "Session terminated")
     } else {
         (ErrorCode::METHOD_NOT_FOUND, "Not Found")
     };
-    push_error(core, error_code, text.to_owned(), id).await?;
+    reject(core, body, error_code, text.to_owned(), id).await
+}
+
+async fn reject(
+    core: &StreamableCore,
+    mut body: HttpBody,
+    response_code: ErrorCode,
+    message: String,
+    id: RequestId,
+) -> Result<(), SdkError> {
+    push_error(core, response_code, message, id).await?;
     drop(body.close().await);
     Ok(())
 }

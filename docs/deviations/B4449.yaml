@@ -1,0 +1,6 @@
+task: B4449
+deviations:
+  - what: A health check on a model whose mode is video_generation, realtime or evaluation reports the endpoint unhealthy with an error naming the mode as not built, where LiteLLM runs the call.
+    why: Those owners (B3338's avideo_generation, B1127's realtime health probe, B3515's asystemone) are deferred (value split, 2026-11-19); an unhealthy answer keeps the check from reporting a model it never called as healthy.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_helpers.py#L164-L287
+kept_bugs: []

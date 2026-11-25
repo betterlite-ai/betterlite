@@ -112,6 +112,12 @@ fn streaming_choice(choice: &GuardrailValue) -> Option<GuardrailValue> {
     {
         fields.insert("finish_reason".to_owned(), finish_reason.clone());
     }
+    if let Some(logprobs) = choice_fields
+        .get("logprobs")
+        .filter(|value| !matches!(value, GuardrailValue::Null))
+    {
+        fields.insert("logprobs".to_owned(), logprobs.clone());
+    }
     Some(GuardrailValue::Object(fields))
 }
 

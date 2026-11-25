@@ -1,0 +1,49 @@
+kind: helper
+name: mcp-gateway-dcr-register-bad-shapes
+call:
+  b4674:
+    register:
+      - now: 1700000000
+        body: {redirect_uris: ['https://client.example/callback#fragment']}
+        token_exchange_available: false
+        native_redirect_uris: null
+    open: null
+    claims: null
+calls:
+  - b4674:
+      register:
+        - now: 1700000000
+          body: {redirect_uris: ['https://claude.ai@attacker.example/callback']}
+          token_exchange_available: false
+          native_redirect_uris: null
+      open: null
+      claims: null
+  - b4674:
+      register:
+        - now: 1700000000
+          body: {redirect_uris: ['https://good.example\evil.example/callback']}
+          token_exchange_available: false
+          native_redirect_uris: null
+      open: null
+      claims: null
+  - b4674:
+      register:
+        - now: 1700000000
+          body: {redirect_uris: ['ftp://host/cb']}
+          token_exchange_available: false
+          native_redirect_uris: null
+      open: null
+      claims: null
+  - b4674:
+      register:
+        - now: 1700000000
+          body: {redirect_uris: ['myapp://host/cb']}
+          token_exchange_available: false
+          native_redirect_uris: null
+      open: null
+      claims: null
+env: {}
+compare:
+  ignore:
+    - pointer: /value/register/0/error_description
+      why: LiteLLM relays str(HTTPException.detail), a Python dict repr, while betterlite relays the validator's clean description
