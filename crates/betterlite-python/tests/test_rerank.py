@@ -3,6 +3,7 @@ import importlib
 import inspect
 import json
 import threading
+import time
 from collections.abc import Awaitable
 from contextlib import closing
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -11,7 +12,9 @@ from typing import ClassVar, Final, Protocol, TypedDict
 import pytest
 from pydantic import JsonValue, TypeAdapter
 
+import betterlite
 from betterlite._completion.errors import UnsupportedCallArgument
+from betterlite._rerank.main import MAX_DOCUMENTS, MAX_HEADERS
 from betterlite.exceptions import (
     APIConnectionError,
     AuthenticationError,
@@ -41,6 +44,11 @@ SECOND_SCORE: Final = 0.4
 SEARCH_UNITS: Final = 1
 SEARCH_COST: Final = 0.002
 MAX_CHUNKS: Final = 10
+# matches MAX_REQUEST_BYTES in crates/betterlite-python/src/rerank/native.rs
+WIRE_LIMIT: Final = 8 * 1024 * 1024
+PROVIDER_DELAY: Final = 0.5
+INFINITY_PROVIDER: Final = "infinity"
+INFINITY_KEY: Final = "infinity-key-1"
 MISSING_MODEL_TEXT: Final = "model parameter is required but was None"
 UNSUPPORTED_TEXT: Final = "Unsupported provider: openai"
 NOT_WIRED_TEXT: Final = "the together_ai rerank handler is not wired into betterlite"
@@ -101,10 +109,14 @@ class RerankServer(ThreadingHTTPServer):
     daemon_threads = True
 
     def __init__(
-        self, status: int = OK, body: dict[str, JsonValue] | None = None
+        self,
+        status: int = OK,
+        body: dict[str, JsonValue] | None = None,
+        delay: float = 0.0,
     ) -> None:
         self.status = status
         self.body = RERANK_BODY if body is None else body
+        self.delay = delay
         self.calls: list[RecordedCall] = []
         super().__init__((HOST, 0), _Handler)
         _Handler.owner = self
@@ -131,6 +143,7 @@ class _Handler(BaseHTTPRequestHandler):
         declared = self.headers.get("Content-Length")
         body = b"" if declared is None else self.rfile.read(int(declared))
         self.owner.record(self.path, dict(self.headers.items()), body)
+        time.sleep(self.owner.delay)
         content = json.dumps(self.owner.body).encode()
         self.send_response(self.owner.status)
         self.send_header("Content-Type", JSON_TYPE)
@@ -265,6 +278,21 @@ def test_call_async_flag() -> None:
     assert indexes_of(response) == [SECOND_INDEX, FIRST_INDEX]
 
 
+def test_call_async_overhead_excludes_provider_time() -> None:
+    with closing(RerankServer(delay=PROVIDER_DELAY)) as server:
+        response = asyncio.run(
+            arerank(
+                model=MODEL, query=QUERY, documents=DOCUMENTS_TEXT,
+                custom_llm_provider=PROVIDER, api_base=server.url, api_key=GOOD_KEY,
+            )
+        )
+        hidden = hidden_of(response)
+    response_ms = FLOAT.validate_python(hidden["_response_ms"])
+    overhead = FLOAT.validate_python(hidden["litellm_overhead_time_ms"])
+    assert response_ms >= PROVIDER_DELAY * 1000.0
+    assert overhead < response_ms / 2.0
+
+
 def test_call_no_document() -> None:
     with closing(RerankServer(body=NO_DOCUMENT_BODY)) as server:
         outcome = rerank(
@@ -349,6 +377,95 @@ def test_request_headers() -> None:
     assert "headers" not in body
     assert body["query"] == QUERY
     assert response_of(outcome).id == "rerank-1"
+
+
+def test_request_infinity_module_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("INFINITY_API_KEY", raising=False)
+    monkeypatch.setattr(betterlite, "infinity_key", INFINITY_KEY)
+    with closing(RerankServer()) as server:
+        outcome = rerank(
+            model=MODEL, query=QUERY, documents=DOCUMENTS_TEXT,
+            custom_llm_provider=INFINITY_PROVIDER, api_base=server.url,
+        )
+        call = server.calls[-1]
+    assert header_of(call, "authorization") == f"Bearer {INFINITY_KEY}"
+    assert response_of(outcome).id == "rerank-1"
+
+
+LIMIT_CASES: Final[
+    list[tuple[list[str | dict[str, JsonValue]], dict[str, str] | None, str]]
+] = [
+    ([DOCUMENTS_TEXT[0]] * (MAX_DOCUMENTS + 1), None, "documents"),
+    (DOCUMENTS_TEXT, {f"h{index}": "v" for index in range(MAX_HEADERS + 1)}, "headers"),
+]
+
+
+@pytest.mark.parametrize(("documents", "headers", "message"), LIMIT_CASES)
+def test_request_limit_refused_before_dispatch(
+    documents: list[str | dict[str, JsonValue]],
+    headers: dict[str, str] | None,
+    message: str,
+) -> None:
+    with closing(RerankServer()) as server:
+        with pytest.raises(ValueError, match=message):
+            _ = rerank(
+                model=MODEL, query=QUERY, documents=documents,
+                custom_llm_provider=PROVIDER, api_base=server.url, api_key=GOOD_KEY,
+                headers=headers,
+            )
+        assert server.calls == []
+
+
+@pytest.mark.parametrize(("documents", "headers", "message"), LIMIT_CASES)
+def test_request_limit_refused_before_dispatch_async(
+    documents: list[str | dict[str, JsonValue]],
+    headers: dict[str, str] | None,
+    message: str,
+) -> None:
+    with closing(RerankServer()) as server:
+        with pytest.raises(ValueError, match=message):
+            _ = asyncio.run(
+                arerank(
+                    model=MODEL, query=QUERY, documents=documents,
+                    custom_llm_provider=PROVIDER, api_base=server.url, api_key=GOOD_KEY,
+                    headers=headers,
+                )
+            )
+        assert server.calls == []
+
+
+def test_request_module_headers_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    module_headers = {f"h{index}": "v" for index in range(MAX_HEADERS + 1)}
+    monkeypatch.setattr(betterlite, "headers", module_headers)
+    with pytest.raises(ValueError, match="headers"):
+        _ = rerank(
+            model=MODEL, query=QUERY, documents=DOCUMENTS_TEXT,
+            custom_llm_provider=PROVIDER,
+        )
+
+
+def test_request_wire_limit_refused_before_dispatch() -> None:
+    documents = ["x" * (WIRE_LIMIT + 1)]
+    with closing(RerankServer()) as server:
+        with pytest.raises(ValueError, match="bytes"):
+            _ = rerank(
+                model=MODEL, query=QUERY, documents=documents,
+                custom_llm_provider=PROVIDER, api_base=server.url, api_key=GOOD_KEY,
+            )
+        assert server.calls == []
+
+
+def test_request_wire_limit_refused_before_dispatch_async() -> None:
+    documents = ["x" * (WIRE_LIMIT + 1)]
+    with closing(RerankServer()) as server:
+        with pytest.raises(ValueError, match="bytes"):
+            _ = asyncio.run(
+                arerank(
+                    model=MODEL, query=QUERY, documents=documents,
+                    custom_llm_provider=PROVIDER, api_base=server.url, api_key=GOOD_KEY,
+                )
+            )
+        assert server.calls == []
 
 
 def test_error_authentication() -> None:

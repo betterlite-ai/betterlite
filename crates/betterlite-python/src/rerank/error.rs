@@ -10,7 +10,6 @@ use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
 
 create_exception!(betterlite_native, NativeRerankError, PyException);
 
-// One failed call: the session could not be built, or the rerank dispatcher raised its exception.
 #[derive(Debug)]
 pub(crate) enum CallFailure {
     Session(SessionError),
@@ -30,6 +29,8 @@ pub(crate) enum SessionError {
     },
     #[error(transparent)]
     Logging(#[from] LoggingStateError),
+    #[error("{0}")]
+    Limit(String),
 }
 
 // NativeRerankError carries the payload main.py maps to LiteLLM's exception class; a session error is a plain one.
@@ -69,7 +70,9 @@ impl From<SessionError> for PyErr {
     fn from(error: SessionError) -> Self {
         let message = error.to_string();
         match error {
-            SessionError::Json(ConvertError::Json { .. }) => PyValueError::new_err(message),
+            SessionError::Limit(_) | SessionError::Json(ConvertError::Json { .. }) => {
+                PyValueError::new_err(message)
+            }
             SessionError::Json(ConvertError::Encode { .. })
             | SessionError::Completion(_)
             | SessionError::Redact { .. }

@@ -14,7 +14,6 @@ use uuid::Uuid;
 
 mod tests;
 
-// The one text a native method takes: the call's arguments, the remaining kwargs and the settings snapshot.
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub(crate) struct RerankCallWire {
@@ -38,7 +37,6 @@ pub(crate) struct RerankArguments {
     pub(crate) max_tokens_per_doc: Option<i64>,
 }
 
-// the module-level values main.py's rerank reads before it dispatches
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub(crate) struct RerankSettingsWire {
@@ -47,6 +45,7 @@ pub(crate) struct RerankSettingsWire {
     pub(crate) cohere_key: Option<SecretString>,
     pub(crate) drop_params: Option<bool>,
     pub(crate) headers: Option<Headers>,
+    pub(crate) infinity_key: Option<SecretString>,
     pub(crate) togetherai_api_key: Option<SecretString>,
 }
 
@@ -112,28 +111,18 @@ impl NativeRerankErrorPayload {
 impl RerankCallWire {
     // rerank's own call: the ninth default (return_documents=True) arrives as a value from main.py
     pub(crate) fn into_call(self) -> RerankCall {
-        let RerankArguments {
-            model,
-            query,
-            documents,
-            custom_llm_provider,
-            top_n,
-            rank_fields,
-            return_documents,
-            max_chunks_per_doc,
-            max_tokens_per_doc,
-        } = self.arguments;
+        let return_documents = self.arguments.return_documents;
         RerankCall {
-            model,
-            query,
-            documents,
-            custom_llm_provider,
-            top_n,
-            rank_fields,
+            model: self.arguments.model,
+            query: self.arguments.query,
+            documents: self.arguments.documents,
+            custom_llm_provider: self.arguments.custom_llm_provider,
+            top_n: self.arguments.top_n,
+            rank_fields: self.arguments.rank_fields,
             return_documents: return_documents
                 .map_or(ReturnDocuments::Null, ReturnDocuments::Value),
-            max_chunks_per_doc,
-            max_tokens_per_doc,
+            max_chunks_per_doc: self.arguments.max_chunks_per_doc,
+            max_tokens_per_doc: self.arguments.max_tokens_per_doc,
             kwargs: self.kwargs,
         }
     }
@@ -169,43 +158,39 @@ pub(crate) struct HiddenFacts<'facts> {
 #[must_use]
 pub(crate) fn hidden_params(facts: &HiddenFacts<'_>) -> HiddenParams {
     let mut hidden = HiddenParams::new();
-    let response_ms = Number::from_f64(facts.response_ms).map_or(Json::Null, Json::Number);
-    hidden.insert(String::from("_response_ms"), response_ms);
-    let callback_ms = Number::from_f64(0.0_f64).map_or(Json::Null, Json::Number);
-    hidden.insert(String::from("callback_duration_ms"), callback_ms);
-    hidden.insert(
-        String::from("litellm_call_id"),
-        Json::Text(facts.call_id.to_owned()),
-    );
-    let api_base = facts
-        .api_base
-        .map_or(Json::Null, |base| Json::Text(base.to_owned()));
-    hidden.insert(String::from("api_base"), api_base);
-    hidden.insert(
-        String::from("model_id"),
-        facts.model_id.map_or(Json::Null, Clone::clone),
-    );
+    hidden.insert(String::from("_response_ms"), number(facts.response_ms));
+    hidden.insert(String::from("callback_duration_ms"), number(0.0_f64));
+    hidden.insert(String::from("litellm_call_id"), text(Some(facts.call_id)));
+    hidden.insert(String::from("api_base"), text(facts.api_base));
+    let model_id = facts.model_id.cloned().unwrap_or(Json::Null);
+    hidden.insert(String::from("model_id"), model_id);
     // main.py overwrites the cost with the priced answer, as LiteLLM's logging does after the call
     hidden.insert(String::from("response_cost"), Json::Null);
-    hidden.insert(
-        String::from("additional_headers"),
-        Json::Object(IndexMap::new()),
-    );
-    hidden.insert(
-        String::from("litellm_model_name"),
-        Json::Text(facts.litellm_model.to_owned()),
-    );
-    hidden.insert(
-        String::from("custom_llm_provider"),
-        Json::Text(facts.provider.to_owned()),
-    );
+    let additional = Json::Object(IndexMap::new());
+    hidden.insert(String::from("additional_headers"), additional);
+    let model_name = text(Some(facts.litellm_model));
+    hidden.insert(String::from("litellm_model_name"), model_name);
+    let provider = text(Some(facts.provider));
+    hidden.insert(String::from("custom_llm_provider"), provider);
     if let Some(overhead) = facts.overhead_ms {
-        hidden.insert(
-            String::from("litellm_overhead_time_ms"),
-            Number::from_f64(overhead).map_or(Json::Null, Json::Number),
-        );
+        hidden.insert(String::from("litellm_overhead_time_ms"), number(overhead));
     }
     hidden
+}
+
+// Number::from_f64 gives None for NaN and infinities, which JSON keeps as null
+fn number(value: f64) -> Json {
+    match Number::from_f64(value) {
+        Some(parsed) => Json::Number(parsed),
+        None => Json::Null,
+    }
+}
+
+fn text(value: Option<&str>) -> Json {
+    match value {
+        Some(shown) => Json::Text(shown.to_owned()),
+        None => Json::Null,
+    }
 }
 
 // The JSON text Python validates as RerankResponse, beside the provider the cost lookup needs.
@@ -243,7 +228,6 @@ pub(crate) fn declared_api_base(kwargs: &IndexMap<String, Json>) -> Option<Strin
     non_empty_text(kwargs.get("base_url")).map(str::to_owned)
 }
 
-// set_hidden_params reads kwargs["model_info"]["id"] into the answer's model_id
 pub(crate) fn model_info_id(kwargs: &IndexMap<String, Json>) -> Option<&Json> {
     let Json::Object(info) = kwargs.get("model_info")? else {
         return None;
@@ -251,7 +235,6 @@ pub(crate) fn model_info_id(kwargs: &IndexMap<String, Json>) -> Option<&Json> {
     info.get("id")
 }
 
-// `litellm_call_id = kwargs.get("litellm_call_id") or str(uuid.uuid4())`
 #[must_use]
 pub(crate) fn call_id(kwargs: &IndexMap<String, Json>) -> String {
     non_empty_text(kwargs.get("litellm_call_id"))

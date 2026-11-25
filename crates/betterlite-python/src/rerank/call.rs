@@ -40,7 +40,6 @@ impl CallFacts {
     }
 }
 
-// main.py's rerank call, from the resolved provider to the answer Python turns into a RerankResponse.
 #[cfg_attr(test, mutants::skip)]
 pub(crate) async fn call(
     session: &RerankSession,
@@ -50,7 +49,7 @@ pub(crate) async fn call(
     let started = Instant::now();
     let settings = session.settings(&wire.settings);
     let cohere = session.cohere_settings(&wire.settings);
-    let host = session.host_settings();
+    let host = session.host_settings(&wire.settings);
     let globals = global_credentials(&wire.settings);
     let context = session.context(&globals);
     let identity = CatalogIdentity { context: &context };
@@ -69,7 +68,6 @@ pub(crate) async fn call(
     Ok(answer(started, entry, &facts, &operations, response))
 }
 
-// the two call types pyc's CallTypes names for these entry points
 #[cfg_attr(test, mutants::skip)]
 const fn call_type(entry: Entry) -> &'static str {
     match entry {

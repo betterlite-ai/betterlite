@@ -55,4 +55,7 @@ deviations:
       The azure_ai rerank handler is not wired into betterlite, so no provider here could spend the token; the
       refusal names the argument instead of silently dropping it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L137
+  - what: betterlite refuses a rerank request past 8 MiB of wire text, 100000 documents or 256 headers with a ValueError.
+    why: LiteLLM sends whatever it is given; betterlite bounds the caller-sized text, document list and header maps before dispatch.
+    link: ""
 kept_bugs: []

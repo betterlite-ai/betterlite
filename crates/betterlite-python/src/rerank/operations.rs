@@ -55,7 +55,6 @@ struct HttpState<'visit> {
     now: DateTime<FixedOffset>,
 }
 
-// B1013's mapping and B2454's transport, wired to the providers the SDK can send through.
 pub(crate) struct Operations<'call> {
     session: &'call RerankSession,
     cohere: &'call cohere_rerank_settings::Settings,
@@ -80,7 +79,6 @@ impl<'call> Operations<'call> {
         }
     }
 
-    // the provider get_llm_provider resolved, as map_options sees it
     #[cfg_attr(test, mutants::skip)]
     pub(crate) fn provider(&self) -> Option<String> {
         self.provider
@@ -139,8 +137,9 @@ impl<'call> Operations<'call> {
                 refusal_kind,
             ))),
         };
+        let provider_ms = started.elapsed().as_secs_f64().mul_add(1000.0_f64, 0.0_f64);
         self.provider_ms
-            .store(started.elapsed().as_secs_f64().to_bits(), Ordering::Relaxed);
+            .store(provider_ms.to_bits(), Ordering::Relaxed);
         outcome
     }
 }

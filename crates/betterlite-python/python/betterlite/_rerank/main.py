@@ -3,6 +3,7 @@ from typing import Final, TypedDict
 
 from pydantic import JsonValue, TypeAdapter
 
+import betterlite
 from betterlite import exceptions
 from betterlite._completion.errors import UnsupportedCallArgument
 from betterlite._cost_extra import rerank_cost
@@ -15,11 +16,13 @@ from betterlite._endpoints import (
     to_call_payload,
 )
 from betterlite._native import NativeRerankError, NativeRerankSession
-from betterlite.types.rerank import RerankResponse
+from betterlite.types.rerank import RerankResponse, RerankResponseMeta, RerankResponseResult
 
 MISSING_MODEL: Final = (
     "model parameter is required but was None. Please provide a valid model name."
 )
+MAX_DOCUMENTS: Final = 100_000
+MAX_HEADERS: Final = 256
 # the module settings main.py's rerank reads before it dispatches, as LiteLLM's branches do
 SETTINGS: Final[tuple[str, ...]] = (
     "api_base", "api_key", "cohere_key", "drop_params", "headers", "togetherai_api_key",
@@ -47,12 +50,13 @@ SKIPPED_KWARGS: Final[tuple[str, ...]] = (
 
 TEXT: Final[TypeAdapter[str | None]] = TypeAdapter(str | None)
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
+HEADERS: Final[TypeAdapter[dict[str, JsonValue] | None]] = TypeAdapter(dict[str, JsonValue] | None)
 
 
 class RerankAnswer(TypedDict):
     id: str | None
-    results: JsonValue
-    meta: JsonValue
+    results: list[RerankResponseResult] | None
+    meta: RerankResponseMeta | None
     provider: str
     hidden_params: dict[str, JsonValue]
     response_ms: float
@@ -122,6 +126,8 @@ def request_arguments(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/l
     *,
     return_documents: bool | None,
 ) -> dict[str, CallValue]:
+    if len(documents) > MAX_DOCUMENTS:
+        raise ValueError(f"too many rerank documents: {len(documents)} > {MAX_DOCUMENTS}")
     return {
         "model": model,
         "query": query,
@@ -170,10 +176,16 @@ def response_from_answer(answer: RerankAnswer) -> RerankResponse:
 
 def call_payload(values: Mapping[str, CallValue], named: tuple[str, ...]) -> CallPayload:
     # the top-level names are the payload's own: it drops the logger, refuses a client and warns
+    settings = read_settings(SETTINGS)
+    settings["infinity_key"] = JSON.validate_python(betterlite.infinity_key)
+    caller: dict[str, JsonValue] = HEADERS.validate_python(values.get("headers")) or {}
+    module: dict[str, JsonValue] = HEADERS.validate_python(settings.get("headers")) or {}
+    if len(caller) + len(module) > MAX_HEADERS:
+        raise ValueError(f"too many rerank headers: {len(caller) + len(module)} > {MAX_HEADERS}")
     payload: dict[str, CallValue] = {
         "arguments": forwarded_arguments(values, named),
         "kwargs": extra_arguments(values, named),
-        "settings": read_settings(SETTINGS),
+        "settings": settings,
         "client": values.get("client"),
         "logger_fn": values.get("logger_fn"),
         "shared_session": values.get("shared_session"),

@@ -27,7 +27,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use uuid::Uuid;
 
-// Everything one Python session owns: the environment snapshot, the HTTP client and the catalog it resolves against.
 pub(crate) struct RerankSession {
     pub(crate) environment: BTreeMap<String, String>,
     pub(crate) catalog: Arc<ModelCatalog>,
@@ -84,10 +83,14 @@ impl RerankSession {
     }
 
     #[cfg_attr(test, mutants::skip)]
-    pub(crate) fn host_settings(&self) -> jina_infinity_rerank::Settings {
+    pub(crate) fn host_settings(
+        &self,
+        wire: &RerankSettingsWire,
+    ) -> jina_infinity_rerank::Settings {
         jina_infinity_rerank::Settings {
+            // an empty environment value falls through to betterlite.infinity_key, which is kept even when empty
             infinity_api_key: environment_secret(&self.environment, "INFINITY_API_KEY"),
-            infinity_key: None,
+            infinity_key: wire.infinity_key.clone(),
         }
     }
 

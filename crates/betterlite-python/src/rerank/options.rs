@@ -9,7 +9,6 @@ use betterlite_provider::api::rerank_contracts::{
     get_optional_rerank_params,
 };
 
-// The three shapes a selected config takes: a provider family config, one of Nvidia's two clients, or no handler.
 pub(super) enum FamilyChoice {
     Family(RerankConfig),
     Nvidia,
