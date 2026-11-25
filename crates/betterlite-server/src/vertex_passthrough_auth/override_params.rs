@@ -3,8 +3,9 @@ use tracing::{debug, warn};
 
 use super::non_empty_text;
 
-// The one LiteLLM_ManagedVectorStore field _override_vertex_params_from_router_credentials reads
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+// The one LiteLLM_ManagedVectorStore field _override_vertex_params_from_router_credentials reads.
+// No Debug: litellm_params carries api_key and vertex_credentials verbatim.
+#[derive(Clone, Default, Eq, PartialEq)]
 pub struct RouterCredentials {
     pub litellm_params: Option<JsonObject>,
 }
