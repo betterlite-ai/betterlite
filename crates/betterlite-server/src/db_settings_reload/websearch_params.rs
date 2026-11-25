@@ -18,8 +18,7 @@ pub enum WebsearchParamError {
     MaxAgenticLoops(#[from] AgenticLoopCeilingError),
 }
 
-// _websearch_handler_params: "enabled" gates the callback and an enabled_providers that is not a
-// non-empty list is dropped, so the handler's own defaults apply.
+// _websearch_handler_params: "enabled" gates the callback, and an enabled_providers that is not a non-empty list is dropped, so the handler's own defaults apply.
 pub(crate) fn handler_params(stored: &JsonMap) -> Result<WebsearchParams, WebsearchParamError> {
     let defaults = WebsearchParams::default();
     let enabled_providers = match stored.get("enabled_providers") {
