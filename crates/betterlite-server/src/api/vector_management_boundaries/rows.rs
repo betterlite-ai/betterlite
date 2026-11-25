@@ -21,8 +21,7 @@ pub trait VectorStoreRows: Send + Sync {
     ) -> impl Future<Output = Result<Option<ManagedVectorStoresTable>, TableError>> + Send;
 }
 
-// _row_to_vector_store: LiteLLM_ManagedVectorStore(**row.model_dump()), every column under its own name;
-// the table has no is_config column, so the key stays absent until _with_ownership supplies it
+// _row_to_vector_store: LiteLLM_ManagedVectorStore(**row.model_dump()); the table has no is_config column, so the key stays absent until _with_ownership supplies it
 pub fn row_to_vector_store(
     row: ManagedVectorStoresTable,
 ) -> Result<LiteLlmManagedVectorStore, serde_json::Error> {

@@ -3,7 +3,7 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::api::vector_store_records::records::vector::LiteLlmManagedVectorStore;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_server::api::vector_management_boundaries::ownership::with_ownership;
-use betterlite_server::api::vector_management_boundaries::redaction::redact_sensitive_litellm_params;
+use betterlite_server::api::vector_management_boundaries::redaction::LitellmParamsRedactor;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -44,14 +44,12 @@ impl Helper for Op {
 
 fn project(vector_store: &serde_json::Value) -> HelperResult {
     let record: LiteLlmManagedVectorStore = serde_json::from_value(vector_store.clone())?;
-    Ok(serde_json::to_value(with_ownership(&record))?)
+    let owned = with_ownership(&record);
+    Ok(serde_json::to_value(owned)?)
 }
 
 fn redact(litellm_params: &serde_json::Value, depth: usize) -> HelperResult {
     let parsed: Json = serde_json::from_value(litellm_params.clone())?;
-    Ok(serde_json::to_value(redact_sensitive_litellm_params(
-        &parsed,
-        depth,
-        ApiLimits::default(),
-    ))?)
+    let redacted = LitellmParamsRedactor::new().redact(&parsed, depth, ApiLimits::default());
+    Ok(serde_json::to_value(redacted)?)
 }

@@ -49,11 +49,6 @@ pub enum VectorManagementError {
     Json(#[from] serde_json::Error),
 }
 
-#[must_use]
-pub fn config_owned_message(vector_store_id: &str) -> String {
-    format!("Vector store {vector_store_id} {CONFIG_OWNED_TAIL}")
-}
-
 impl VectorManagementError {
     // the HTTPException the helper raises; None is the plain exception the route turns into a 500
     #[must_use]
@@ -62,7 +57,7 @@ impl VectorManagementError {
             Self::ConfigOwned { vector_store_id } => Some((
                 400,
                 VectorManagementDetail::ConfigOwned(ConfigOwnedDetail {
-                    error: config_owned_message(vector_store_id),
+                    error: format!("Vector store {vector_store_id} {CONFIG_OWNED_TAIL}"),
                     vector_store_id: vector_store_id.clone(),
                 }),
             )),

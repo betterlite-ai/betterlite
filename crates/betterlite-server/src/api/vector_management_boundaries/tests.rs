@@ -28,6 +28,7 @@ use betterlite_db::team_rows::archived::LiteLLMTeamTableCachedObj;
 use betterlite_logging::python_json::dumps;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::vector_store_records::records::vector::LiteLlmManagedVectorStore;
+use rstest::rstest;
 
 use super::error::{
     ACCESS_DENIED, ConfigOwnedDetail, ErrorDetail, VectorManagementDetail, VectorManagementError,
@@ -35,7 +36,7 @@ use super::error::{
 use super::fetch::{check_vector_store_access, fetch_store_before_access};
 use super::json::{ManagementJsonError, decode_management_json};
 use super::ownership::{raise_if_config_owned, with_ownership};
-use super::redaction::{REDACTED_BY_LITELM, redact_sensitive_litellm_params, redact_store_params};
+use super::redaction::{LitellmParamsRedactor, REDACTED_BY_LITELM, redact_store_params};
 use super::rows::{VectorStoreRows, row_to_vector_store};
 
 fn json(source: &str) -> Json {
@@ -63,7 +64,7 @@ fn registry(stored: Vec<LiteLlmManagedVectorStore>) -> VectorStoreRegistry {
 }
 
 fn redacted_text(params: &str, depth: usize) -> Json {
-    redact_sensitive_litellm_params(&Json::Text(params.to_owned()), depth, ApiLimits::default())
+    LitellmParamsRedactor::new().redact(&Json::Text(params.to_owned()), depth, ApiLimits::default())
 }
 
 const REDACT_CASE: &str = r#"{
@@ -99,6 +100,12 @@ const REDACTED_CASE: &str = r#"{
         "api_base": "https://api.example.com/v1"
     }
 }"#;
+
+const TIGHT_JSON_LIMITS: ApiLimits = ApiLimits {
+    max_json_bytes: 4,
+    max_event_bytes: 1024 * 1024,
+    max_items: 64 * 1024,
+};
 
 #[test]
 fn ownership_projection_supplies_absent_is_config_as_false() {
@@ -203,7 +210,7 @@ fn http_details_cover_only_the_helpers_http_exceptions() {
 #[test]
 fn redact_vector_credentials_marks_sensitive_values() {
     assert_eq!(
-        redact_sensitive_litellm_params(&json(REDACT_CASE), 0, ApiLimits::default()),
+        LitellmParamsRedactor::new().redact(&json(REDACT_CASE), 0, ApiLimits::default()),
         json(REDACTED_CASE)
     );
 }
@@ -212,41 +219,40 @@ fn redact_vector_credentials_marks_sensitive_values() {
 fn redact_vector_credentials_consumes_depth_per_nested_dict() {
     let nested = json(r#"{"outer": {"inner": "kept"}}"#);
     assert_eq!(
-        redact_sensitive_litellm_params(&nested, 8, ApiLimits::default()),
+        LitellmParamsRedactor::new().redact(&nested, 8, ApiLimits::default()),
         json(r#"{"outer": {"inner": "kept"}}"#)
     );
     assert_eq!(
-        redact_sensitive_litellm_params(&nested, 9, ApiLimits::default()),
+        LitellmParamsRedactor::new().redact(&nested, 9, ApiLimits::default()),
         json(r#"{"outer": "REDACTED_BY_LITELM"}"#)
     );
     assert_eq!(
-        redact_sensitive_litellm_params(&nested, 10, ApiLimits::default()),
+        LitellmParamsRedactor::new().redact(&nested, 10, ApiLimits::default()),
         json(r#""REDACTED_BY_LITELM""#)
     );
 }
 
-#[test]
-fn redact_vector_credentials_passes_top_level_scalars_and_plain_lists_through() {
-    for source in [
-        "null",
-        "7",
-        "1.5",
-        "true",
-        "false",
-        r#"["a", 7, null, ["nested"]]"#,
-    ] {
-        assert_eq!(
-            redact_sensitive_litellm_params(&json(source), 0, ApiLimits::default()),
-            json(source)
-        );
-    }
+#[rstest]
+#[case::null("null")]
+#[case::integer("7")]
+#[case::float("1.5")]
+#[case::bool_true("true")]
+#[case::bool_false("false")]
+#[case::list(r#"["a", 7, null, ["nested"]]"#)]
+fn redact_vector_credentials_passes_top_level_scalars_and_plain_lists_through(
+    #[case] source: &str,
+) {
+    assert_eq!(
+        LitellmParamsRedactor::new().redact(&json(source), 0, ApiLimits::default()),
+        json(source)
+    );
 }
 
 #[test]
 fn redact_vector_credentials_redacts_credential_maps_inside_lists() {
     let params = json(r#"{"configs": [{"api_key": "secret", "region": "us"}, "plain"]}"#);
     assert_eq!(
-        redact_sensitive_litellm_params(&params, 0, ApiLimits::default()),
+        LitellmParamsRedactor::new().redact(&params, 0, ApiLimits::default()),
         json(r#"{"configs": [{"api_key": "REDACTED_BY_LITELM", "region": "us"}, "plain"]}"#)
     );
 }
@@ -255,7 +261,7 @@ fn redact_vector_credentials_redacts_credential_maps_inside_lists() {
 fn redact_vector_credentials_does_not_parse_a_string_inside_a_dict() {
     let params = json(r#"{"litellm_embedding_config": "{\"api_key\": \"secret\"}"}"#);
     assert_eq!(
-        redact_sensitive_litellm_params(&params, 0, ApiLimits::default()),
+        LitellmParamsRedactor::new().redact(&params, 0, ApiLimits::default()),
         params
     );
 }
@@ -283,42 +289,40 @@ fn serialized_vector_params_marks_invalid_json() {
 #[test]
 fn serialized_vector_params_marks_text_beyond_serde_json() {
     // NaN and Infinity parse in Python's json but not in serde_json
-    for source in ["NaN", "Infinity", "-Infinity"] {
-        assert_eq!(
-            redacted_text(source, 0),
-            Json::Text(REDACTED_BY_LITELM.to_owned()),
-            "for {source}"
-        );
-    }
+    assert_eq!(
+        redacted_text("NaN", 0),
+        Json::Text(REDACTED_BY_LITELM.to_owned())
+    );
+    assert_eq!(
+        redacted_text("Infinity", 0),
+        Json::Text(REDACTED_BY_LITELM.to_owned())
+    );
+    assert_eq!(
+        redacted_text("-Infinity", 0),
+        Json::Text(REDACTED_BY_LITELM.to_owned())
+    );
     let deep = format!("{}{}", "[".repeat(200), "]".repeat(200));
     assert_eq!(
         redacted_text(&deep, 0),
         Json::Text(REDACTED_BY_LITELM.to_owned())
     );
-    let limits = ApiLimits {
-        max_json_bytes: 4,
-        ..ApiLimits::default()
-    };
     assert_eq!(
-        redact_sensitive_litellm_params(&Json::Text("{\"a\": 1}".to_owned()), 0, limits),
+        LitellmParamsRedactor::new().redact(
+            &Json::Text("{\"a\": 1}".to_owned()),
+            0,
+            TIGHT_JSON_LIMITS,
+        ),
         Json::Text(REDACTED_BY_LITELM.to_owned())
     );
 }
 
-#[test]
-fn serialized_vector_params_keeps_parsed_scalars() {
-    for (source, expected) in [
-        ("null", "null"),
-        ("7", "7"),
-        ("true", "true"),
-        (r#""text""#, r#""REDACTED_BY_LITELM""#),
-    ] {
-        assert_eq!(
-            redacted_text(source, 0),
-            Json::Text(expected.to_owned()),
-            "for {source}"
-        );
-    }
+#[rstest]
+#[case::null("null", "null")]
+#[case::integer("7", "7")]
+#[case::bool_true("true", "true")]
+#[case::text(r#""text""#, r#""REDACTED_BY_LITELM""#)]
+fn serialized_vector_params_keeps_parsed_scalars(#[case] source: &str, #[case] expected: &str) {
+    assert_eq!(redacted_text(source, 0), Json::Text(expected.to_owned()));
 }
 
 #[test]
@@ -378,12 +382,8 @@ fn decode_management_json_reports_invalid_text_and_the_limit() {
         decode_management_json(b"{\"a\":\"\xff\"}", ApiLimits::default()),
         Err(ManagementJsonError::Syntax(_))
     ));
-    let limits = ApiLimits {
-        max_json_bytes: 4,
-        ..ApiLimits::default()
-    };
     assert!(matches!(
-        decode_management_json(b"{\"a\": 1}", limits),
+        decode_management_json(b"{\"a\": 1}", TIGHT_JSON_LIMITS),
         Err(ManagementJsonError::Limits(ApiLimitError::JsonTooLarge {
             observed: 8,
             limit: 4
@@ -674,7 +674,7 @@ fn replays_corpus() {
             let Ok(value) = decode_management_json(&bytes, ApiLimits::default()) else {
                 return false;
             };
-            let redacted = redact_sensitive_litellm_params(&value, 0, ApiLimits::default());
+            let redacted = LitellmParamsRedactor::new().redact(&value, 0, ApiLimits::default());
             let reparsed: Json = serde_json::from_str(&dumps(&redacted))
                 .expect("a redacted value writes back as JSON");
             assert_eq!(dumps(&reparsed), dumps(&redacted));
