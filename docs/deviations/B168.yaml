@@ -10,7 +10,7 @@ deviations:
     why: 'The method is an async generator, and the narrower annotation lets a caller stop the stream early with aclose() without a type suppression, which the zero-expect budget forbids; an AsyncGenerator is an AsyncIterator, so code written against LiteLLM''s annotation still type-checks.'
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/client.py#L98-L106
   - what: 'Breaking out of asend_message_streaming before the agent ends closes the native stream in the helper''s finally, while LiteLLM''s asend_message_streaming iterates its A2AStreamingIterator in a plain async for with no close path and leaves the SDK stream to the SDK and garbage collection.'
-    why: 'An abandoned stream must not keep the native handle open, and the caller sees the same chunks either way; the deterministic close is unobservable except that the handle is closed when the loop stops.'
+    why: 'An abandoned stream must not keep the native handle open, and the caller sees the same chunks either way; the close shows only on the native handle, which hands back no further chunk once the stream is closed, and the class-level test checks that while the loop is still running.'
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L758-L764
 kept_bugs:
   - what: 'A2AClient.send_message_streaming builds its client without a streaming argument, so the client is created with main.py''s streaming=False default and the method performs a buffered send that yields one response even when the agent sends several events.'
