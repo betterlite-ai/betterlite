@@ -12,7 +12,6 @@ use super::{
     ConvertError, DEFAULT_CONTENT_TYPE, DEFAULT_MASK_NAME, SettingsWire, image_file, images, parse,
 };
 use crate::completion::setup::outbound_client;
-use betterlite_config::loader::startup::process_environment;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::image_contracts::records::ImageFile;
@@ -560,8 +559,16 @@ fn request_session_present_drops_an_empty_secret() {
 
 #[test]
 fn request_image_session_build_reads_process_environment() {
-    let image_session = ImageSession::build("{}").unwrap();
-    assert_eq!(image_session.environment, process_environment());
+    temp_env::with_var("B6043_IMAGE_TEST", Some("marker"), || {
+        let image_session = ImageSession::build("{}").unwrap();
+        assert_eq!(
+            image_session
+                .environment
+                .get("B6043_IMAGE_TEST")
+                .map(String::as_str),
+            Some("marker")
+        );
+    });
 }
 
 #[test]
