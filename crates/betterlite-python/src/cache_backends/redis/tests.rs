@@ -20,6 +20,7 @@ use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3_async_runtimes::tokio::get_runtime;
 
 use super::*;
+use crate::cache_backends::error::{self, RedisCircuitBreakerOpenError};
 use crate::cache_backends::settings::RedisSettings;
 use crate::cache_backends::tests::test_gate;
 
@@ -238,6 +239,20 @@ fn backends_redis_breaker_opens_and_probes() {
             ))
             .unwrap_err();
         assert!(counted.to_string().contains("circuit breaker is open"));
+        // the admin slice reports through the Redis admin error and answers the same class
+        let deleted = get_runtime()
+            .block_on(async {
+                error::backend_err(
+                    native
+                        .cache
+                        .admin
+                        .delete_cache_keys(&["key".to_owned()])
+                        .await,
+                )
+            })
+            .unwrap_err();
+        assert!(deleted.is_instance_of::<RedisCircuitBreakerOpenError>(py));
+        assert!(deleted.to_string().contains("circuit breaker is open"));
         clock.advance(RECOVERY_TIMEOUT + Duration::from_secs(1));
         // the probe is admitted and fails on the connection, so it answers like the first call
         assert_eq!(native.get(py, "key").unwrap(), None);

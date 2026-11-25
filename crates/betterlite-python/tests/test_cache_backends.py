@@ -444,6 +444,23 @@ def test_redis_breaker_disabled(
         assert BREAKER_OPEN_MESSAGE not in str(failed.value)
 
 
+# The dual cache over an open breaker raises the same class as the Redis handle it wraps.
+def test_redis_breaker_dual_delete_and_ttl(
+    redis_server: FakeRedisServer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("REDIS_CIRCUIT_BREAKER_FAILURE_THRESHOLD", "1")
+    dual = DualCache(redis_cache=RedisCache(host=redis_server.host, port=redis_server.port))
+    redis_server.set_failing(failing=True)
+    # the dual read swallows the connection failure after the breaker counted it
+    assert dual.get_cache("breaker:key") is None
+    with pytest.raises(Exception, match=BREAKER_OPEN_MESSAGE) as deleted:
+        asyncio.run(dual.async_delete_cache("breaker:key"))
+    assert type(deleted.value).__name__ == BREAKER_ERROR_NAME
+    with pytest.raises(Exception, match=BREAKER_OPEN_MESSAGE) as remaining:
+        asyncio.run(dual.async_get_ttl("breaker:key"))
+    assert type(remaining.value).__name__ == BREAKER_ERROR_NAME
+
+
 def test_dual_matches_litellm() -> None:
     ours = DualCache()
     theirs = LITELLM_CACHING.DualCache()

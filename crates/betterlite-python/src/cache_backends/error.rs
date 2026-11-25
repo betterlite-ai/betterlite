@@ -125,6 +125,24 @@ impl BackendHandleError {
         {
             return Some(open);
         }
+        if let Self::Dual {
+            source: DualCacheError::RedisDelete(RedisAdminError::Breaker(open)),
+        } = self
+        {
+            return Some(open);
+        }
+        if let Self::Dual {
+            source: DualCacheError::RedisTtl(RedisCacheError::Breaker(open)),
+        } = self
+        {
+            return Some(open);
+        }
+        if let Self::Dual {
+            source: DualCacheError::RedisSetAdd(RedisCacheValuesError::BreakerOpen(open)),
+        } = self
+        {
+            return Some(open);
+        }
         None
     }
 }
