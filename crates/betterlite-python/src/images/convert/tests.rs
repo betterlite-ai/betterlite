@@ -439,7 +439,7 @@ fn request_edit_reply_decodes_a_success_and_names_a_failure() {
         body: br#"{"error":{"message":"boom"}}"#.to_vec(),
     };
     let refusal = reply(&denied, "dall-e-2", "openai", &redactor()).unwrap_err();
-    assert_eq!(refusal.message, "boom");
+    assert_eq!(refusal.message, "OpenAIException - boom");
 }
 
 #[test]
@@ -602,7 +602,10 @@ fn error_edit_provider_class(#[case] status: u16, #[case] kind: &str) {
     };
     let failure = reply(&response, "dall-e-2", "openai", &redactor()).unwrap_err();
     assert_eq!(failure.kind, kind);
-    assert_eq!(failure.message, "provider failure");
+    assert_eq!(
+        failure.message,
+        format!("{kind}: OpenAIException - provider failure")
+    );
 }
 
 #[rstest]

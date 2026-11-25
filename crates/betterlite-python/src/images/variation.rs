@@ -121,14 +121,11 @@ mod tests;
 
 fn local_failure(message: String, model: &str, provider: &str, async_call: bool) -> CallFailure {
     if async_call {
-        CallFailure::from_class(
-            ErrorClass::ApiConnection(Box::new(context(
-                message.clone(),
-                Some(model.to_owned()),
-                Some(provider.to_owned()),
-            ))),
+        CallFailure::from_class(&ErrorClass::ApiConnection(Box::new(context(
             message,
-        )
+            Some(model.to_owned()),
+            Some(provider.to_owned()),
+        ))))
     } else {
         CallFailure::plain("ValueError", message, Some(model.to_owned()))
     }

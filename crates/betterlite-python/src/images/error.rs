@@ -1,16 +1,17 @@
 use super::convert::ConvertError;
 use crate::completion::error::SessionError as CompletionSessionError;
-use crate::embeddings::convert::NativeEmbeddingErrorPayload;
 use betterlite_context::media_optional_params::error::MediaParamsError;
 use betterlite_error::dispatch::{DispatchInput, RawException, RawExceptionBody, dispatch};
-use betterlite_error::error::{ErrorClass, ErrorContext};
+use betterlite_error::error::metadata::RetryMetadata;
+use betterlite_error::error::{ErrorClass, ErrorContext, class_message};
 use betterlite_redact::error::RedactionError;
 use betterlite_redact::secret::Redactor;
-use betterlite_sdk::call_wrapper::error::class_name;
+use betterlite_sdk::call_wrapper::error::{class_name, class_status};
 use pyo3::PyErr;
 use pyo3::create_exception;
 use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
 use serde::Serialize;
+use std::collections::BTreeMap;
 
 create_exception!(betterlite_native, NativeImageError, PyException);
 
@@ -35,8 +36,10 @@ pub(crate) struct CallFailure {
     pub(crate) model: Option<String>,
     #[serde(rename = "llm_provider")]
     pub(crate) provider: Option<String>,
-    #[serde(skip)]
-    pub(crate) class: Option<Box<ErrorClass>>,
+    pub(crate) status_code: Option<u16>,
+    headers: BTreeMap<String, String>,
+    #[serde(flatten)]
+    retry: RetryMetadata,
 }
 
 impl CallFailure {
@@ -46,28 +49,33 @@ impl CallFailure {
             message,
             model,
             provider: None,
-            class: None,
+            status_code: None,
+            headers: BTreeMap::new(),
+            retry: RetryMetadata::default(),
         }
     }
 
-    pub(crate) fn from_class(class: ErrorClass, message: String) -> Self {
+    pub(crate) fn from_class(class: &ErrorClass) -> Self {
         let metadata = class.metadata();
+        let headers = if let ErrorClass::RateLimit(details) = class {
+            details.headers.clone()
+        } else {
+            BTreeMap::new()
+        };
         Self {
-            kind: class_name(&class).to_owned(),
-            message,
+            kind: class_name(class).to_owned(),
+            message: class_message(class),
             model: metadata.model,
             provider: metadata.provider,
-            class: Some(Box::new(class)),
+            status_code: class_status(class),
+            headers,
+            retry: metadata.retry,
         }
     }
 }
 
 pub(crate) fn class_error(failure: &CallFailure) -> PyErr {
-    let encoded = failure.class.as_ref().map_or_else(
-        || serde_json::to_string(failure),
-        |class| serde_json::to_string(&NativeEmbeddingErrorPayload::from_class(class)),
-    );
-    match encoded {
+    match serde_json::to_string(failure) {
         Ok(text) => NativeImageError::new_err(text),
         Err(_encoding) => PyRuntimeError::new_err(failure.message.clone()),
     }
@@ -112,7 +120,7 @@ pub(crate) fn provider_failure(
     let raw = RawException {
         model: model.to_owned(),
         custom_llm_provider: provider.to_owned(),
-        error_str: message.clone(),
+        error_str: message,
         status_code: status,
         status_code_is_synthesized: false,
         message: None,
@@ -120,7 +128,7 @@ pub(crate) fn provider_failure(
         exception_type: String::new(),
     };
     let class = dispatch(&DispatchInput::Raw(Box::new(raw)), redactor);
-    CallFailure::from_class(class, message)
+    CallFailure::from_class(&class)
 }
 
 // LiteLLM's local ValueErrors become connection errors, except the edit parameter check's own class
@@ -130,7 +138,7 @@ pub(crate) fn convert_failure(
     provider: Option<String>,
 ) -> CallFailure {
     let message = error.to_string();
-    let details = Box::new(context(message.clone(), model, provider));
+    let details = Box::new(context(message, model, provider));
     let class = if matches!(
         error,
         ConvertError::UnsupportedParams { .. }
@@ -140,7 +148,7 @@ pub(crate) fn convert_failure(
     } else {
         ErrorClass::ApiConnection(details)
     };
-    CallFailure::from_class(class, message)
+    CallFailure::from_class(&class)
 }
 
 mod tests;

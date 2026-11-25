@@ -44,14 +44,9 @@ pub(crate) async fn edit(
         target(&call.arguments).map_err(|error| convert_failure(&error, None, None))?;
     if provider != OPENAI_PROVIDER {
         let message = format!("image edit is not supported for {provider}");
-        return Err(CallFailure::from_class(
-            ErrorClass::ApiConnection(Box::new(context(
-                message.clone(),
-                Some(model),
-                Some(provider),
-            ))),
-            message,
-        ));
+        return Err(CallFailure::from_class(&ErrorClass::ApiConnection(
+            Box::new(context(message, Some(model), Some(provider))),
+        )));
     }
     let setup = call_setup(session, &call.arguments, &call.settings, &model, &provider)?;
     if setup.credentials.api_key.is_none() {

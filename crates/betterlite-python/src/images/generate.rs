@@ -17,14 +17,9 @@ pub(crate) async fn generate(
         target(&call.arguments).map_err(|error| convert_failure(&error, None, None))?;
     if provider != OPENAI_PROVIDER {
         let message = format!("image generation is not supported for {provider}");
-        return Err(CallFailure::from_class(
-            ErrorClass::ApiConnection(Box::new(context(
-                message.clone(),
-                Some(model),
-                Some(provider),
-            ))),
-            message,
-        ));
+        return Err(CallFailure::from_class(&ErrorClass::ApiConnection(
+            Box::new(context(message, Some(model), Some(provider))),
+        )));
     }
     let request = request(session, &call, &model, &provider)?;
     let mut logger = SilentImageLogger;
