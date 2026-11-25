@@ -11,9 +11,9 @@ pub enum VertexLocationError {
 }
 
 // LiteLLM's get_vertex_base_url: the proxy copy keeps its own errors, so it never calls the betterlite-vertex host builder
-#[must_use]
 pub fn passthrough_vertex_base_url(location: Option<&str>) -> Result<String, VertexLocationError> {
-    let checked = validate_vertex_location(location).map_err(core_location_error)?;
+    let checked =
+        validate_vertex_location(location).map_err(|error| core_location_error(&error))?;
     if checked == "global" {
         return Ok("https://aiplatform.googleapis.com/".to_owned());
     }
@@ -23,7 +23,7 @@ pub fn passthrough_vertex_base_url(location: Option<&str>) -> Result<String, Ver
     Ok(format!("https://aiplatform.{checked}.rep.googleapis.com/"))
 }
 
-fn core_location_error(error: CoreLocationError) -> VertexLocationError {
+const fn core_location_error(error: &CoreLocationError) -> VertexLocationError {
     match error {
         CoreLocationError::Required => VertexLocationError::Required,
         CoreLocationError::Invalid | CoreLocationError::Project { .. } => {

@@ -36,11 +36,18 @@ impl FakeLookup {
     fn seen(&self) -> Vec<String> {
         self.seen.lock().unwrap().clone()
     }
+
+    fn record(&self, model: &str) {
+        self.seen
+            .lock()
+            .expect("the seen list is not poisoned")
+            .push(model.to_owned());
+    }
 }
 
 impl VertexDeploymentLookup for FakeLookup {
     fn deployment_for_pass_through(&self, model: &str) -> Result<Option<Deployment>, LookupError> {
-        self.seen.lock().unwrap().push(model.to_owned());
+        self.record(model);
         match &self.answer {
             Answer::Deployment(deployment) => Ok(Some(deployment.clone())),
             Answer::Missing => Ok(None),

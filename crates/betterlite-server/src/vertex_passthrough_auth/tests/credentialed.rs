@@ -217,7 +217,7 @@ async fn a_malformed_credential_document_is_a_source_error() {
         None,
         Some(json_text("{\"type\": \"service_account\"}")),
     );
-    let error = prepared(&setup, executor.clone()).await.unwrap_err();
+    let error = prepared(&setup, Arc::clone(&executor)).await.unwrap_err();
     assert!(matches!(&error, VertexAuthError::Credentials(_)));
     let text = error.to_string();
     assert!(

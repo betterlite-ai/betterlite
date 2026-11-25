@@ -104,10 +104,10 @@ impl CredentialExecutor for FakeExecutor {
     }
 }
 
-pub(super) fn deps<'keys>(
+pub(super) fn deps(
     executor: Arc<FakeExecutor>,
-    master_key: Option<&'keys SecretString>,
-) -> VertexAuthDeps<'keys> {
+    master_key: Option<&SecretString>,
+) -> VertexAuthDeps<'_> {
     let clock: Arc<dyn CredentialClock> = Arc::new(SystemClock);
     VertexAuthDeps {
         clock,

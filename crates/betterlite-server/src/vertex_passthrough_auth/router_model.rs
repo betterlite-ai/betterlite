@@ -59,36 +59,29 @@ pub fn resolve_vertex_router_model(
     let Some(lookup) = router else {
         return original_model(&request);
     };
-    let deployment = match lookup.deployment_for_pass_through(request.model_id) {
-        Ok(Some(deployment)) => deployment,
-        Ok(None) => return original_model(&request),
-        Err(error) => {
-            return failed_model(
-                &request,
-                request.project.as_deref(),
-                request.location.as_deref(),
-                &error,
-            );
-        }
-    };
+    match lookup.deployment_for_pass_through(request.model_id) {
+        Ok(Some(deployment)) => resolve_deployment(request, deployment),
+        Ok(None) => original_model(&request),
+        Err(error) => failed_model(
+            &request,
+            request.project.as_deref(),
+            request.location.as_deref(),
+            &error,
+        ),
+    }
+}
+
+fn resolve_deployment(
+    request: VertexModelRequest<'_>,
+    deployment: Deployment,
+) -> ResolvedVertexModel {
     let Deployment {
         litellm_params,
         model_info,
     } = deployment;
     let deployment_model_info = model_info_map(model_info);
-    // The router values are read before the provider call, and the blanket except returns them as they stand
-    let project = litellm_params
-        .get("vertex_project")
-        .and_then(non_empty_text)
-        .map(str::to_owned)
-        .or_else(|| request.project.clone());
-    let location = litellm_params
-        .get("vertex_location")
-        .and_then(non_empty_text)
-        .map(str::to_owned)
-        .or_else(|| request.location.clone());
-    let configured_model = litellm_params.get("model").and_then(non_empty_text);
-    let Some(model) = configured_model else {
+    let (project, location) = router_values(&litellm_params, &request);
+    let Some(model) = litellm_params.get("model").and_then(non_empty_text) else {
         return ResolvedVertexModel {
             encoded_endpoint: request.encoded_endpoint,
             endpoint: request.endpoint,
@@ -112,6 +105,24 @@ pub fn resolve_vertex_router_model(
         location,
         deployment_model_info,
     }
+}
+
+// The router values are read before the provider call, and the blanket except returns them as they stand
+fn router_values(
+    litellm_params: &JsonObject,
+    request: &VertexModelRequest<'_>,
+) -> (Option<String>, Option<String>) {
+    let project = litellm_params
+        .get("vertex_project")
+        .and_then(non_empty_text)
+        .map(str::to_owned)
+        .or_else(|| request.project.clone());
+    let location = litellm_params
+        .get("vertex_location")
+        .and_then(non_empty_text)
+        .map(str::to_owned)
+        .or_else(|| request.location.clone());
+    (project, location)
 }
 
 fn original_model(request: &VertexModelRequest<'_>) -> ResolvedVertexModel {

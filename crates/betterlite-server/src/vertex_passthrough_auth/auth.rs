@@ -76,7 +76,7 @@ enum AuthSource<'source> {
 }
 
 // The first branch covers no credentials and a record without a project; only a configured project reaches branch two
-fn auth_source<'source>(
+const fn auth_source<'source>(
     vertex_credentials: Option<&'source VertexPassThroughCredentials>,
     router_credentials: Option<&'source RouterCredentials>,
 ) -> AuthSource<'source> {
@@ -95,19 +95,17 @@ struct TokenRequest {
     location: Option<String>,
 }
 
-#[must_use]
 pub async fn prepare_vertex_auth_headers(
-    input: VertexAuthInput<'_>,
-    deps: &VertexAuthDeps<'_>,
-) -> Result<VertexAuthPrep, VertexAuthError> {
-    let VertexAuthInput {
+    VertexAuthInput {
         request,
         vertex_credentials,
         router_credentials,
         project,
         location,
         user_api_key,
-    } = input;
+    }: VertexAuthInput<'_>,
+    deps: &VertexAuthDeps<'_>,
+) -> Result<VertexAuthPrep, VertexAuthError> {
     match auth_source(vertex_credentials.as_ref(), router_credentials) {
         AuthSource::CallerHeaders => {
             let headers = vertex_credentialless_headers(request, user_api_key, &deps.filters)?;
@@ -204,7 +202,6 @@ async fn token_headers(
 }
 
 // LiteLLM's _get_token_and_url with model "", stream false, api_base "" and version v1; only the auth token is kept
-#[must_use]
 pub(super) fn vertex_token_target(
     token: &SecretString,
     project: Option<&str>,
