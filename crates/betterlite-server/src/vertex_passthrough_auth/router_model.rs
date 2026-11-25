@@ -1,31 +1,29 @@
-use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Display;
 
-use betterlite_models::catalog::ModelCatalog;
 use betterlite_models::decisions::Json;
-use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::model_registration::JsonObject;
-use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
-use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::{
     ResolutionContext, ResolutionError, ResolutionRequest, ResolvedModel, resolve,
 };
+use betterlite_router::passthrough_selection::error::PassthroughSelectionError;
 use tracing::debug;
 
 use super::non_empty_text;
 
-// The two fields _resolve_vertex_model_from_router reads; model_info keeps LiteLLM's untyped read
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+// The two fields _resolve_vertex_model_from_router reads; model_info keeps LiteLLM's untyped read.
+// No Debug: litellm_params carries api_key and vertex_credentials verbatim.
+#[derive(Clone, Default, Eq, PartialEq)]
 pub struct Deployment {
     pub litellm_params: JsonObject,
     pub model_info: Option<Json>,
 }
 
-// B396's pass-through selection error, carried with the text it printed
-#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
-#[error("{message}")]
+// B396's pass-through selection error, kept typed so the router's cause survives the swallow
+#[derive(Debug, thiserror::Error)]
+#[error("{source}")]
 pub struct LookupError {
-    pub message: String,
+    #[from]
+    source: PassthroughSelectionError,
 }
 
 // LiteLLM's Router.get_available_deployment_for_pass_through, which B396 backs
@@ -55,12 +53,13 @@ pub struct VertexModelRequest<'request> {
 pub fn resolve_vertex_router_model(
     request: VertexModelRequest<'_>,
     router: Option<&dyn VertexDeploymentLookup>,
+    resolution: &ResolutionContext<'_>,
 ) -> ResolvedVertexModel {
     let Some(lookup) = router else {
         return original_model(&request);
     };
     match lookup.deployment_for_pass_through(request.model_id) {
-        Ok(Some(deployment)) => resolve_deployment(request, deployment),
+        Ok(Some(deployment)) => resolve_deployment(request, deployment, resolution),
         Ok(None) => original_model(&request),
         Err(error) => failed_model(
             &request,
@@ -74,6 +73,7 @@ pub fn resolve_vertex_router_model(
 fn resolve_deployment(
     request: VertexModelRequest<'_>,
     deployment: Deployment,
+    resolution: &ResolutionContext<'_>,
 ) -> ResolvedVertexModel {
     let Deployment {
         litellm_params,
@@ -90,7 +90,7 @@ fn resolve_deployment(
             deployment_model_info,
         };
     };
-    let resolved = match resolve_model(model, request.model_id) {
+    let resolved = match resolve_model(model, request.model_id, resolution) {
         Ok(resolved) => resolved,
         Err(error) => {
             return failed_model(&request, project.as_deref(), location.as_deref(), &error);
@@ -167,12 +167,12 @@ fn model_info_map(model_info: Option<Json>) -> Option<JsonObject> {
     }
 }
 
-// LiteLLM's get_llm_provider(model=model_from_config): provider defaults come from the bundled registry
-fn resolve_model(model: &str, model_id: &str) -> Result<ResolvedModel, ResolutionError> {
-    let catalog = ModelCatalog::default();
-    let known_model_names = BTreeSet::new();
-    let custom_providers = BTreeSet::new();
-    let environment = BTreeMap::new();
+// LiteLLM's get_llm_provider(model=model_from_config): the route injects the populated catalog, since only it resolves a bare model
+fn resolve_model(
+    model: &str,
+    model_id: &str,
+    resolution: &ResolutionContext<'_>,
+) -> Result<ResolvedModel, ResolutionError> {
     let resolved = resolve(
         &ResolutionRequest {
             model,
@@ -180,15 +180,7 @@ fn resolve_model(model: &str, model_id: &str) -> Result<ResolvedModel, Resolutio
             api_base: None,
             api_key: None,
         },
-        &ResolutionContext {
-            catalog: &catalog,
-            known_model_names: &known_model_names,
-            custom_providers: &custom_providers,
-            environment: &environment,
-            registry: JSONProviderRegistry::load(),
-            policies: ProviderPolicies::default(),
-            globals: GlobalCredentials::default(),
-        },
+        resolution,
     )?;
     debug!(
         actual_model = %resolved.model,

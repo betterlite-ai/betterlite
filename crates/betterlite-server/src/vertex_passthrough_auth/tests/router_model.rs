@@ -1,7 +1,14 @@
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Mutex;
 
+use betterlite_models::catalog::{BundledCatalog, ModelCatalog};
 use betterlite_models::decisions::Json;
+use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::model_registration::JsonObject;
+use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
+use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
+use betterlite_models::resolution::ResolutionContext;
+use betterlite_router::passthrough_selection::error::PassthroughSelectionError;
 use serde_json::Number;
 use tracing::subscriber::DefaultGuard;
 
@@ -14,10 +21,13 @@ use super::support::{LogBuffer, capture_logs, json_text, parameters};
 const ROUTE: &str =
     "v1/projects/url-project/locations/us-central1/publishers/google/models/claude:rawPredict";
 
+static NO_NAMES: BTreeSet<String> = BTreeSet::new();
+static NO_ENVIRONMENT: BTreeMap<String, String> = BTreeMap::new();
+
 enum Answer {
     Deployment(Deployment),
     Missing,
-    Failed(String),
+    Failed,
 }
 
 struct FakeLookup {
@@ -51,9 +61,11 @@ impl VertexDeploymentLookup for FakeLookup {
         match &self.answer {
             Answer::Deployment(deployment) => Ok(Some(deployment.clone())),
             Answer::Missing => Ok(None),
-            Answer::Failed(message) => Err(LookupError {
-                message: message.clone(),
-            }),
+            Answer::Failed => Err(LookupError::from(
+                PassthroughSelectionError::NotConfigured {
+                    model: model.to_owned(),
+                },
+            )),
         }
     }
 }
@@ -93,21 +105,45 @@ fn deployment(params: &[(&str, Json)], model_info: Option<Json>) -> Deployment {
     }
 }
 
+fn resolution_context(catalog: &ModelCatalog) -> ResolutionContext<'_> {
+    ResolutionContext {
+        catalog,
+        known_model_names: &NO_NAMES,
+        custom_providers: &NO_NAMES,
+        environment: &NO_ENVIRONMENT,
+        registry: JSONProviderRegistry::load(),
+        policies: ProviderPolicies::default(),
+        globals: GlobalCredentials::default(),
+    }
+}
+
 fn resolved(
     model_id: &'static str,
     answer: Answer,
 ) -> (ResolvedVertexModel, Vec<String>, LogBuffer, DefaultGuard) {
+    let catalog = ModelCatalog::default();
+    resolved_with(model_id, answer, &catalog)
+}
+
+fn resolved_with(
+    model_id: &'static str,
+    answer: Answer,
+    catalog: &ModelCatalog,
+) -> (ResolvedVertexModel, Vec<String>, LogBuffer, DefaultGuard) {
     let (logs, guard) = capture_logs();
     let lookup = FakeLookup::new(answer);
     let lookup_ref: &dyn VertexDeploymentLookup = &lookup;
-    let result = resolve_vertex_router_model(request(model_id), Some(lookup_ref));
+    let context = resolution_context(catalog);
+    let result = resolve_vertex_router_model(request(model_id), Some(lookup_ref), &context);
     (result, lookup.seen(), logs, guard)
 }
 
 #[test]
 fn no_router_returns_the_inputs_unchanged() {
     let (logs, _guard) = capture_logs();
-    let result = resolve_vertex_router_model(request("claude"), None);
+    let catalog = ModelCatalog::default();
+    let result =
+        resolve_vertex_router_model(request("claude"), None, &resolution_context(&catalog));
     assert_eq!(result, url_values());
     assert!(!logs.text().contains("get_llm_provider returned"));
 }
@@ -122,8 +158,7 @@ fn a_missing_deployment_returns_the_inputs_unchanged() {
 
 #[test]
 fn a_lookup_error_logs_the_model_and_returns_the_inputs() {
-    let failure = "no deployment has use_in_pass_through".to_owned();
-    let (result, seen, logs, _guard) = resolved("claude", Answer::Failed(failure));
+    let (result, seen, logs, _guard) = resolved("claude", Answer::Failed);
     assert_eq!(seen, vec!["claude".to_owned()]);
     assert_eq!(result, url_values());
     let text = logs.text();
@@ -133,9 +168,18 @@ fn a_lookup_error_logs_the_model_and_returns_the_inputs() {
     );
     assert!(text.contains("claude"), "{text}");
     assert!(
-        text.contains("no deployment has use_in_pass_through"),
+        text.contains("has no deployments configured with use_in_pass_through=True"),
         "{text}"
     );
+}
+
+#[test]
+fn the_lookup_error_keeps_the_router_selection_error_as_its_source() {
+    let error = LookupError::from(PassthroughSelectionError::NotConfigured {
+        model: "claude".to_owned(),
+    });
+    let source = std::error::Error::source(&error).expect("the router error is the source");
+    assert!(source.downcast_ref::<PassthroughSelectionError>().is_some());
 }
 
 #[test]
@@ -207,7 +251,12 @@ fn the_provider_prefix_is_stripped_from_every_occurrence() {
     let (logs, _guard) = capture_logs();
     let lookup = FakeLookup::new(Answer::Deployment(record));
     let lookup_ref: &dyn VertexDeploymentLookup = &lookup;
-    let result = resolve_vertex_router_model(request_on("claude", route), Some(lookup_ref));
+    let catalog = ModelCatalog::default();
+    let result = resolve_vertex_router_model(
+        request_on("claude", route),
+        Some(lookup_ref),
+        &resolution_context(&catalog),
+    );
     assert_eq!(
         result.endpoint,
         "v1/projects/claude-3-5-sonnet-v2@20241022/locations/us-central1/publishers/anthropic/models/claude-3-5-sonnet-v2@20241022:rawPredict"
@@ -220,6 +269,25 @@ fn the_provider_prefix_is_stripped_from_every_occurrence() {
     assert!(text.contains("get_llm_provider returned"), "{text}");
     assert!(text.contains("Resolved router model"), "{text}");
     assert!(text.contains("claude-3-5-sonnet-v2@20241022"), "{text}");
+}
+
+#[test]
+fn a_bare_catalog_model_resolves_and_replaces_the_url_alias() {
+    let info = parameters(&[("id", json_text("dep-1"))]);
+    let record = deployment(
+        &[("model", json_text("gemini-2.5-flash"))],
+        Some(Json::Object(info.clone())),
+    );
+    let mut bundled = BundledCatalog::default();
+    let catalog = bundled.get();
+    let (result, _seen, logs, _guard) =
+        resolved_with("claude", Answer::Deployment(record), catalog.as_ref());
+    assert_eq!(
+        result.endpoint,
+        "v1/projects/url-project/locations/us-central1/publishers/google/models/gemini-2.5-flash:rawPredict"
+    );
+    assert_eq!(result.deployment_model_info, Some(info));
+    assert!(logs.text().contains("Resolved router model"));
 }
 
 #[test]
