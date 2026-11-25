@@ -256,18 +256,14 @@ async fn an_exempt_path_touches_no_admission_metric() {
 }
 
 #[tokio::test]
-async fn a_second_in_flight_layer_logs_the_refused_registration_and_keeps_counting() {
-    let first = harness(
-        "general_settings: {}",
-        "",
-        gates(&[("/one", Behavior::Immediate)]),
-    );
+async fn a_second_layer_logs_the_refused_registration_and_keeps_counting() {
+    let first = harness(ONE_SLOT, "", gates(&[("/one", Behavior::Immediate)]));
     let mut requests = Requests::default();
     requests.start(&first.router, "/one");
     assert_eq!(requests.complete("/one").await.0, StatusCode::OK);
     let second = harness_on(
         Arc::clone(&first.registry),
-        "general_settings: {}",
+        ONE_SLOT,
         "",
         gates(&[("/two", Behavior::Hold)]),
     );
@@ -281,15 +277,21 @@ async fn a_second_in_flight_layer_logs_the_refused_registration_and_keeps_counti
     requests.start(&second.router, "/two");
     await_started(&second.gates, "/two").await;
     assert_eq!(second.stack.in_flight.current.load(Ordering::Acquire), 1);
+    assert_eq!(second.stack.admission.stats().admitted, 1);
     drop(guard);
     let written = fs::read_to_string(log.path()).unwrap();
     assert!(
         written.contains("could not register the in-flight requests gauge"),
         "{written}"
     );
+    assert!(
+        written.contains("could not register the admission control metrics"),
+        "{written}"
+    );
     second.gates.get("/two").unwrap().release.notify_one();
     assert_eq!(requests.complete("/two").await.0, StatusCode::OK);
     assert_eq!(second.stack.in_flight.current.load(Ordering::Acquire), 0);
+    assert_eq!(second.stack.admission.stats().admitted, 0);
     assert_eq!(gauge(&first.registry, IN_FLIGHT), zero());
 }
 
