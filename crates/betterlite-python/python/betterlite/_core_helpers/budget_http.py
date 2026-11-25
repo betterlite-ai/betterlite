@@ -18,13 +18,14 @@ _USER_AGENT_VARIABLE: Final = "LITELLM_USER_AGENT"
 _SSL_CERTIFICATE_VARIABLE: Final = "SSL_CERTIFICATE"
 _DEFAULT_TIMEOUT: Final = httpx2.Timeout(timeout=_TIMEOUT_SECONDS, connect=_CONNECT_SECONDS)
 _JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
-DEFAULT_SSL_CIPHERS: Final = (
+DEFAULT_SSL_CIPHERS: Final = env_str(
+    "LITELLM_SSL_CIPHERS",
     "TLS_AES_256_GCM_SHA384:TLS_AES_128_GCM_SHA256:TLS_CHACHA20_POLY1305_SHA256:"
     "ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-GCM-SHA256:"
     "ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES128-GCM-SHA256:"
     "ECDHE-RSA-CHACHA20-POLY1305:ECDHE-ECDSA-CHACHA20-POLY1305:"
     "ECDHE-RSA-AES256-SHA384:ECDHE-RSA-AES128-SHA256:"
-    "AES256-GCM-SHA384:AES128-GCM-SHA256"
+    "AES256-GCM-SHA384:AES128-GCM-SHA256",
 )
 
 
@@ -67,10 +68,10 @@ def _ssl_context(
     context = ssl.create_default_context(cafile=cafile)
     context.minimum_version = ssl.TLSVersion.TLSv1_2
     match security_level:
-        case str() as level:
+        case str() as level if level != "":
             context.set_ciphers(level)
-        case None:
-            context.set_ciphers(env_str("LITELLM_SSL_CIPHERS", DEFAULT_SSL_CIPHERS))
+        case str() | None:
+            context.set_ciphers(DEFAULT_SSL_CIPHERS)
     match ecdh_curve:
         case str() as curve:
             with suppress(AttributeError, ValueError):
