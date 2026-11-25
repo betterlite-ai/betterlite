@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_db::ptu::store::sleeper::Sleeper;
+use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use chrono::{DateTime, Utc};
 use num_traits::ToPrimitive as _;
@@ -12,12 +13,14 @@ use crate::health_cycle::endpoints::HealthCheckResult;
 use crate::model_deprecation::clock::UtcClock;
 
 use super::cache::SharedHealthCache;
-use super::cached::{CachedHealthCheck, cached_payload, encode_cached, epoch_seconds, from_cached};
+use super::cached::{
+    CachedHealthCheck, cached_payload, encode_cached, epoch_seconds, from_cached, json_from_cached,
+};
 use super::error::SharedHealthError;
 use super::lease::{release_lock, shared_lock_lease};
 use super::probe::{SharedHealthProbe, SharedProbeCall};
 use super::settings::SharedHealthSettings;
-use super::status_view::{RedisStatus, SharedHealthStatus, cache_fields, lock_fields};
+use super::status_view::{RedisStatus, SharedHealthStatus, cache_fields};
 
 pub const POLL_INTERVAL_SECONDS: u64 = 5;
 
@@ -270,7 +273,8 @@ impl SharedHealthCheckManager {
                 return status;
             }
         };
-        let (lock_owner, lock_in_progress) = lock_fields(owner);
+        let lock_in_progress = owner.is_some();
+        let lock_owner = owner.map_or(Json::Null, json_from_cached);
         let (cache_available, cache_age_seconds, last_checked_by) =
             cache_fields(self.cached_health_check_results().await, self.clock.now());
         status.redis = Some(RedisStatus::Available {

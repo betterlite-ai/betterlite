@@ -2,11 +2,10 @@ use std::ops::Sub as _;
 
 use async_trait::async_trait;
 use betterlite_models::decisions::Json;
-use betterlite_redis::cache_primitives::decode::CachedValue;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 
-use super::cached::{CachedHealthCheck, epoch_seconds, json_from_cached};
+use super::cached::{CachedHealthCheck, epoch_seconds};
 use super::manager::SharedHealthCheckManager;
 
 // get_health_check_status' dict: the four fixed keys, then whatever the configured Redis answers.
@@ -56,13 +55,6 @@ impl SharedHealthStatusSource for SharedHealthCheckManager {
     async fn status(&self) -> Result<SharedHealthStatus, SharedHealthStatusError> {
         Ok(self.get_health_check_status().await)
     }
-}
-
-// The lock facts get_health_check_status adds: the stored owner as JSON and whether a lock is held.
-#[must_use]
-pub(crate) fn lock_fields(owner: Option<CachedValue>) -> (Json, bool) {
-    let lock_in_progress = owner.is_some();
-    (owner.map_or(Json::Null, json_from_cached), lock_in_progress)
 }
 
 // The cache facts get_health_check_status adds: availability, age from the payload's timestamp, and the checker.
