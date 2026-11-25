@@ -18,7 +18,7 @@ where
             .join_next()
             .await
             .ok_or_else(|| PyRuntimeError::new_err("flush task was not started"))?
-            .map_err(BackendHandleError::from)?;
+            .map_err(|source| BackendHandleError::Join { source })?;
         error::backend_err(outcome)
     })
 }

@@ -14,28 +14,26 @@ fn blocking_cache_work_runs_and_reports_errors() {
     Python::initialize();
     let completed = Arc::new(AtomicBool::new(false));
     let written = Arc::clone(&completed);
-    Python::attach(|py| {
-        run(py, async move {
-            let success = Python::attach(|attached| {
-                into_future(awaitable(attached, move || {
-                    written.store(true, Ordering::SeqCst);
-                    Ok::<(), BackendHandleError>(())
-                })?)
-            })?;
-            let answer = success.await?;
-            Python::attach(|attached| assert!(answer.is_none(attached)));
-            let failure = Python::attach(|attached| {
-                into_future(awaitable(attached, || {
-                    Err(BackendHandleError::IncrementUnavailable)
-                })?)
-            })?;
-            assert_eq!(
-                failure.await.unwrap_err().to_string(),
-                "RuntimeError: the increment result is not available"
-            );
-            Ok(())
-        })
-        .unwrap();
-    });
+    let work = async move {
+        let success = Python::attach(|attached| {
+            into_future(awaitable(attached, move || {
+                written.store(true, Ordering::SeqCst);
+                Ok::<(), BackendHandleError>(())
+            })?)
+        })?;
+        let answer = success.await?;
+        Python::attach(|attached| assert!(answer.is_none(attached)));
+        let failure = Python::attach(|attached| {
+            into_future(awaitable(attached, || {
+                Err(BackendHandleError::IncrementUnavailable)
+            })?)
+        })?;
+        assert_eq!(
+            failure.await.unwrap_err().to_string(),
+            "RuntimeError: the increment result is not available"
+        );
+        Ok(())
+    };
+    Python::attach(|py| run(py, work)).unwrap();
     assert!(completed.load(Ordering::SeqCst));
 }

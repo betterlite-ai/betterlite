@@ -20,7 +20,7 @@ use betterlite_redis::redis_live_client::LiveClientFactory;
 use pyo3::prelude::*;
 use pyo3_async_runtimes::tokio::{future_into_py, get_runtime};
 
-use super::error::{self, BackendHandleError};
+use super::error;
 use super::settings::RedisSettings;
 use super::{blocking, convert};
 
