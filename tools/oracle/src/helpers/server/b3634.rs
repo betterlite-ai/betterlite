@@ -102,20 +102,22 @@ fn handler_outcome(
     // success_handler's shaping: the body as an object, or an empty one for a list or no JSON
     let response_body: JsonObject = serde_json::from_str(&input.body).unwrap_or_default();
     let start_time = fixture::start_time()?;
-    let request = AnthropicPassthroughInput {
-        status_code: input.status_code,
-        response_headers: &headers,
-        response_text: &input.body,
-        response_body: &response_body,
-        url_route: &input.url_route,
-        start_time,
-        end_time: start_time,
-        request_body: &input.request_body,
-        kwargs: logged_kwargs(input),
-    };
     let mut handled = None;
     logging_obj.edit(&mut |call_log| {
-        handled = Some(logger.anthropic_passthrough_handler(request, call_log));
+        handled = Some(logger.anthropic_passthrough_handler(
+            AnthropicPassthroughInput {
+                status_code: input.status_code,
+                response_headers: &headers,
+                response_text: &input.body,
+                response_body: &response_body,
+                url_route: &input.url_route,
+                start_time,
+                end_time: start_time,
+                request_body: &input.request_body,
+                kwargs: logged_kwargs(input),
+            },
+            call_log,
+        ));
     });
     handled
         .ok_or("the fixture call log was not in its slot")
