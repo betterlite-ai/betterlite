@@ -149,11 +149,10 @@ fn run_gate(
         GateOp::Toolsets => {
             let requested: BTreeSet<String> =
                 requested_entries("mcp_toolsets", permission, false).or_value_error()?;
-            gate_result(validate_requested_toolsets(
-                &requested,
-                grants.as_ref(),
-                is_proxy_admin,
-            ))
+            gate_result(
+                validate_requested_toolsets(&requested, grants.as_ref(), is_proxy_admin)
+                    .map_err(GateError::from),
+            )
         }
         GateOp::VectorStores => gate_result(validate_vector_stores(
             permission,
