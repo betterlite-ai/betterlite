@@ -77,10 +77,14 @@ pub fn resolve_vertex_router_model(
     } = deployment;
     let deployment_model_info = model_info_map(model_info);
     // The router values are read before the provider call, and the blanket except returns them as they stand
-    let project = router_text(&litellm_params, "vertex_project")
+    let project = litellm_params
+        .get("vertex_project")
+        .and_then(non_empty_text)
         .map(str::to_owned)
         .or_else(|| request.project.clone());
-    let location = router_text(&litellm_params, "vertex_location")
+    let location = litellm_params
+        .get("vertex_location")
+        .and_then(non_empty_text)
         .map(str::to_owned)
         .or_else(|| request.location.clone());
     let configured_model = litellm_params.get("model").and_then(non_empty_text);
@@ -142,13 +146,6 @@ where
         location: location.map(str::to_owned),
         deployment_model_info: None,
     }
-}
-
-fn router_text<'deployment>(
-    params: &'deployment JsonObject,
-    field: &str,
-) -> Option<&'deployment str> {
-    params.get(field).and_then(non_empty_text)
 }
 
 fn model_info_map(model_info: Option<Json>) -> Option<JsonObject> {
