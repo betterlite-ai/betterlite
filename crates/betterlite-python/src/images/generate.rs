@@ -71,7 +71,8 @@ pub(crate) fn request(
         &call.arguments,
         model,
         call.settings.drop_params.unwrap_or(false),
-    )?;
+    )
+    .map_err(|error| convert_failure(&error, Some(model.to_owned()), Some(provider.to_owned())))?;
     Ok(ImageGenerationCall {
         model: model.to_owned(),
         prompt,

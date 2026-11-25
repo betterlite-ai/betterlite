@@ -1,6 +1,6 @@
 use super::convert::{ConvertError, ImageAnswer, parse};
 use super::edit::edit;
-use super::error::{CallFailure, NativeImageError, SessionError, class_error};
+use super::error::{CallFailure, SessionError, class_error};
 use super::generate::generate;
 use super::session::ImageSession;
 use super::variation::variation;

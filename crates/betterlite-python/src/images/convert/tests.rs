@@ -59,7 +59,7 @@ fn recorded_image(name: Option<&str>, bytes: u8) -> ImageFile {
     }
 }
 
-fn edited(text: &str, drop: bool) -> Result<super::RequestMap, ConvertError> {
+fn edited(text: &str, drop: bool) -> Result<RequestMap, ConvertError> {
     let (wire, _files) = call(text);
     edit_options(&wire.arguments, "dall-e-2", drop)
 }

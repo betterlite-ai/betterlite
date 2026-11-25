@@ -2,7 +2,7 @@ use super::{ConvertError, DEFAULT_GENERATION_MODEL, OPENAI_PROVIDER};
 use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_sdk::call_setup::RequestMap;
-use std::time::{Duration, TryFromFloatSecsError};
+use std::time::Duration;
 
 pub(crate) fn text(arguments: &RequestMap, name: &str) -> Result<Option<String>, ConvertError> {
     match arguments.get(name) {

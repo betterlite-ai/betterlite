@@ -33,8 +33,7 @@ pub(crate) async fn variation(
         ));
     }
     let request = request(session, &call, &files, async_call, &model)?;
-    let reply = round(session, request, &model, &provider).await?;
-    Ok(ImageAnswer::new(reply, None))
+    round(session, request, &model, &provider).await
 }
 
 fn request(
