@@ -26,13 +26,11 @@ fn spawn_lookup(
     tasks.spawn(async move {
         off_runtime(&task_workers, move || {
             task_count.fetch_add(1, Ordering::Relaxed);
-            drop(task_started.try_send(()));
-            drop(
-                task_released
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .recv(),
-            );
+            let _started = task_started.try_send(());
+            let _released = task_released
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .recv();
         })
         .await
     });
@@ -79,13 +77,11 @@ async fn workers_join_a_canceled_worker_when_the_owner_drops() {
     let mut tasks = JoinSet::new();
     tasks.spawn(async move {
         off_runtime(&task_workers, move || {
-            drop(started.try_send(()));
-            drop(
-                released
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .recv(),
-            );
+            let _started = started.try_send(());
+            let _released = released
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .recv();
             task_finished.store(true, Ordering::Relaxed);
         })
         .await
@@ -99,7 +95,7 @@ async fn workers_join_a_canceled_worker_when_the_owner_drops() {
         .name("b8379-drop-workers".to_owned())
         .spawn(move || {
             drop(workers);
-            drop(dropped.send(()));
+            let _sent = dropped.send(());
         })
         .unwrap();
     let early = dropped_reading.recv_timeout(Duration::from_millis(200));

@@ -397,7 +397,7 @@ impl OidcHttp for BlockingOidc {
             .unwrap_or_else(PoisonError::into_inner)
             .take();
         if let Some(started) = started {
-            drop(started.send(()));
+            let _sent = started.send(());
         }
         let release = self
             .release
@@ -405,7 +405,7 @@ impl OidcHttp for BlockingOidc {
             .unwrap_or_else(PoisonError::into_inner)
             .take();
         if let Some(release) = release {
-            drop(release.recv());
+            let _released = release.recv();
         }
         Ok(OidcResponse {
             status: 200,

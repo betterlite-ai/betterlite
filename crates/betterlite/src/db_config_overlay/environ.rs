@@ -46,7 +46,7 @@ impl Drop for Workers {
     }
 }
 
-// A std thread carries no runtime handle, so a manager transport takes its blocking path; a panic drops the sender, which reads as unavailable.
+// A std thread carries no runtime handle, so a manager transport takes its blocking path; a panic drops the sender, which reads as unavailable. The live set is locked in a block of its own, since a std guard kept past the await would make the future non-Send.
 pub(super) async fn off_runtime<Work, Output>(
     workers: &Workers,
     work: Work,
@@ -64,10 +64,11 @@ where
         .name("config-overlay-worker".to_owned())
         .spawn(move || drop((slot, sender.send(work()))))
         .map_err(|source| OverlayError::WorkerStart { source })?;
-    let mut live = workers.live.lock().unwrap_or_else(PoisonError::into_inner);
-    live.retain(|thread| !thread.is_finished());
-    live.push(thread);
-    drop(live);
+    {
+        let mut live = workers.live.lock().unwrap_or_else(PoisonError::into_inner);
+        live.retain(|handle| !handle.is_finished());
+        live.push(thread);
+    }
     answer
         .await
         .map_err(|_closed| OverlayError::WorkerUnavailable)
