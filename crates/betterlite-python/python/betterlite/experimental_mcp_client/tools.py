@@ -9,7 +9,7 @@ from betterlite._native import (
     tool_to_openai,
     tool_to_responses,
 )
-from betterlite.experimental_mcp_client.client import MCPSession
+from betterlite.experimental_mcp_client.client import MCPSession, RefusedArgument
 from betterlite.experimental_mcp_client.errors import UnsupportedMcpArgument, native_text
 from betterlite.experimental_mcp_client.types import (
     CallToolRequestParams,
@@ -68,7 +68,7 @@ normalize_mcp_input_schema = _normalize_mcp_input_schema
 
 
 # A session from another package has no Rust session behind it, so pagination and calls refuse it
-def checked_session(session: object) -> None:
+def checked_session(session: MCPSession | RefusedArgument) -> None:
     match session:
         case MCPSession():
             return

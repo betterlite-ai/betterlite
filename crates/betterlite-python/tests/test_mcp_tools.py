@@ -284,19 +284,23 @@ def test_session_refuses_foreign() -> None:
 
 
 def test_transform_openai_tool() -> None:
-    ours = Tool(name=TOOL_NAME, description=TOOL_DESCRIPTION, inputSchema=SCHEMA)
+    ours = Tool.model_validate(
+        {"name": TOOL_NAME, "description": TOOL_DESCRIPTION, "input_schema": SCHEMA}
+    )
     theirs = TheirTool(name=TOOL_NAME, description=TOOL_DESCRIPTION, input_schema=SCHEMA)
     assert transform_mcp_tool_to_openai_tool(ours) == their_openai_tool(theirs)
-    bare = Tool(name=OTHER_TOOL_NAME, inputSchema=BARE_SCHEMA)
+    bare = Tool.model_validate({"name": OTHER_TOOL_NAME, "input_schema": BARE_SCHEMA})
     their_bare = TheirTool(name=OTHER_TOOL_NAME, input_schema=BARE_SCHEMA)
     assert transform_mcp_tool_to_openai_tool(bare) == their_openai_tool(their_bare)
 
 
 def test_transform_responses_tool() -> None:
-    ours = Tool(name=TOOL_NAME, description=TOOL_DESCRIPTION, inputSchema=SCHEMA)
+    ours = Tool.model_validate(
+        {"name": TOOL_NAME, "description": TOOL_DESCRIPTION, "input_schema": SCHEMA}
+    )
     theirs = TheirTool(name=TOOL_NAME, description=TOOL_DESCRIPTION, input_schema=SCHEMA)
     assert transform_mcp_tool_to_openai_responses_api_tool(ours) == their_responses_tool(theirs)
-    bare = Tool(name=OTHER_TOOL_NAME, inputSchema=BARE_SCHEMA)
+    bare = Tool.model_validate({"name": OTHER_TOOL_NAME, "input_schema": BARE_SCHEMA})
     their_bare = TheirTool(name=OTHER_TOOL_NAME, input_schema=BARE_SCHEMA)
     assert transform_mcp_tool_to_openai_responses_api_tool(bare) == their_responses_tool(
         their_bare
@@ -304,14 +308,16 @@ def test_transform_responses_tool() -> None:
 
 
 def test_transform_anthropic_tool() -> None:
-    ours = Tool(name=TOOL_NAME, description=TOOL_DESCRIPTION, inputSchema=RICH_SCHEMA)
+    ours = Tool.model_validate(
+        {"name": TOOL_NAME, "description": TOOL_DESCRIPTION, "input_schema": RICH_SCHEMA}
+    )
     theirs = TheirTool(name=TOOL_NAME, description=TOOL_DESCRIPTION, input_schema=RICH_SCHEMA)
     reference: AnthropicMessagesTool = their_anthropic_tool(theirs)
     assert transform_mcp_tool_to_anthropic_tool(ours) == reference
 
 
 def test_transform_bare_tool() -> None:
-    ours = Tool(name=OTHER_TOOL_NAME, inputSchema=BARE_SCHEMA)
+    ours = Tool.model_validate({"name": OTHER_TOOL_NAME, "input_schema": BARE_SCHEMA})
     theirs = TheirTool(name=OTHER_TOOL_NAME, input_schema=BARE_SCHEMA)
     reference: AnthropicMessagesTool = their_anthropic_tool(theirs)
     assert transform_mcp_tool_to_anthropic_tool(ours) == reference
