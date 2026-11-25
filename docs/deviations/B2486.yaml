@@ -1,0 +1,35 @@
+task: B2486
+deviations:
+  - what: >-
+      Lists inside litellm_params are walked like objects: a credential field in a list entry becomes
+      REDACTED_BY_LITELM and a list or object nested in a list consumes one of the ten depth levels.
+      LiteLLM returns a list value unchanged in this helper, so a list of provider configs keeps every
+      api_key.
+    why: >-
+      The repository's no-secret-output rule requires closing this credential exposure; every nonsecret
+      value in the list is preserved and the difference is recorded here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/management_endpoints.py#L121-L132
+  - what: >-
+      Stored params text that only Python's json module accepts (a NaN or Infinity token, an unpaired
+      surrogate escape) becomes REDACTED_BY_LITELM instead of being parsed and reserialized.
+    why: >-
+      serde_json implements standard JSON, and betterlite reads stored text through it, so it cannot parse
+      what Python would; betterlite returns the redaction sentinel rather than the original bytes, which
+      keeps the credential out of the response.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/management_endpoints.py#L116-L121
+  - what: >-
+      Stored params text nested more than 128 levels deep becomes REDACTED_BY_LITELM instead of a partially
+      redacted reserialized string.
+    why: >-
+      serde_json refuses to parse past 128 levels of nesting and the workspace does not lift that limit,
+      so a deeper object fails to parse; the redactor answers with the sentinel as it does for every other
+      text it cannot read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/management_endpoints.py#L116-L121
+  - what: >-
+      Stored params text larger than the 16 MiB JSON boundary becomes REDACTED_BY_LITELM in the redactor,
+      and metadata callers get a decode error, where LiteLLM parses and reserializes it.
+    why: >-
+      Every stored JSON read goes through the bounded JSON machinery so one oversized row cannot spend
+      unbounded CPU and memory in a request; a working setup's litellm_params is far under the bound.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/management_endpoints.py#L116-L121
+kept_bugs: []
