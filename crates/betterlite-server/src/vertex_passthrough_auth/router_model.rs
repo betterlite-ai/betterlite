@@ -42,8 +42,8 @@ pub struct ResolvedVertexModel {
     pub deployment_model_info: Option<JsonObject>,
 }
 
-pub struct VertexModelRequest<'a> {
-    pub model_id: &'a str,
+pub struct VertexModelRequest<'request> {
+    pub model_id: &'request str,
     pub encoded_endpoint: String,
     pub endpoint: String,
     pub project: Option<String>,
@@ -71,18 +71,19 @@ pub fn resolve_vertex_router_model(
             );
         }
     };
-    let deployment_model_info = model_info_map(deployment.model_info);
+    let Deployment {
+        litellm_params,
+        model_info,
+    } = deployment;
+    let deployment_model_info = model_info_map(model_info);
     // The router values are read before the provider call, and the blanket except returns them as they stand
-    let project = router_text(&deployment, "vertex_project")
+    let project = router_text(&litellm_params, "vertex_project")
         .map(str::to_owned)
         .or_else(|| request.project.clone());
-    let location = router_text(&deployment, "vertex_location")
+    let location = router_text(&litellm_params, "vertex_location")
         .map(str::to_owned)
         .or_else(|| request.location.clone());
-    let configured_model = deployment
-        .litellm_params
-        .get("model")
-        .and_then(non_empty_text);
+    let configured_model = litellm_params.get("model").and_then(non_empty_text);
     let Some(model) = configured_model else {
         return ResolvedVertexModel {
             encoded_endpoint: request.encoded_endpoint,
@@ -120,12 +121,15 @@ fn original_model(request: &VertexModelRequest<'_>) -> ResolvedVertexModel {
 }
 
 // The blanket except: one debug line naming the model and the error, never a key or a credential
-fn failed_model<Error: Display>(
+fn failed_model<Error>(
     request: &VertexModelRequest<'_>,
     project: Option<&str>,
     location: Option<&str>,
     error: &Error,
-) -> ResolvedVertexModel {
+) -> ResolvedVertexModel
+where
+    Error: Display,
+{
     debug!(
         model_id = request.model_id,
         error = %error,
@@ -141,23 +145,16 @@ fn failed_model<Error: Display>(
 }
 
 fn router_text<'deployment>(
-    deployment: &'deployment Deployment,
+    params: &'deployment JsonObject,
     field: &str,
 ) -> Option<&'deployment str> {
-    deployment
-        .litellm_params
-        .get(field)
-        .and_then(non_empty_text)
+    params.get(field).and_then(non_empty_text)
 }
 
 fn model_info_map(model_info: Option<Json>) -> Option<JsonObject> {
     match model_info {
         Some(Json::Object(object)) => Some(object),
-        Some(Json::Null)
-        | Some(Json::Bool(_))
-        | Some(Json::Number(_))
-        | Some(Json::Text(_))
-        | Some(Json::List(_))
+        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))
         | None => None,
     }
 }

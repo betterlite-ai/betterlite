@@ -30,21 +30,21 @@ use super::headers::allowed_vertex_headers;
 use super::override_params::RouterCredentials;
 use crate::pass_through_credentials::VertexPassThroughCredentials;
 
-pub struct VertexAuthInput<'a> {
-    pub request: &'a HeaderMap,
+pub struct VertexAuthInput<'request> {
+    pub request: &'request HeaderMap,
     pub vertex_credentials: Option<VertexPassThroughCredentials>,
-    pub router_credentials: Option<&'a RouterCredentials>,
+    pub router_credentials: Option<&'request RouterCredentials>,
     pub project: Option<String>,
     pub location: Option<String>,
-    pub user_api_key: &'a UserAPIKeyAuth,
+    pub user_api_key: &'request UserAPIKeyAuth,
 }
 
 // LiteLLM builds a VertexBase per call, so the cache is fresh per call; the tracker still belongs to the server
-pub struct VertexAuthDeps<'a> {
+pub struct VertexAuthDeps<'deps> {
     pub clock: Arc<dyn CredentialClock>,
     pub executor: Arc<dyn CredentialExecutor>,
     pub tasks: TaskTracker,
-    pub filters: FilterSettings<'a>,
+    pub filters: FilterSettings<'deps>,
 }
 
 #[derive(Debug)]
@@ -150,7 +150,7 @@ fn configured_credentials(
         None | Some(Json::Null) => Ok(None),
         Some(Json::Text(text)) => decoded(text),
         Some(Json::Object(object)) => decoded(&dumps_object(object)),
-        Some(Json::Bool(_)) | Some(Json::Number(_)) | Some(Json::List(_)) => {
+        Some(Json::Bool(_) | Json::Number(_) | Json::List(_)) => {
             Err(VertexAuthError::CredentialsType)
         }
     }

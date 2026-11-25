@@ -108,8 +108,9 @@ pub(super) fn deps<'keys>(
     executor: Arc<FakeExecutor>,
     master_key: Option<&'keys SecretString>,
 ) -> VertexAuthDeps<'keys> {
+    let clock: Arc<dyn CredentialClock> = Arc::new(SystemClock);
     VertexAuthDeps {
-        clock: Arc::new(SystemClock) as Arc<dyn CredentialClock>,
+        clock,
         executor,
         tasks: TaskTracker::new(),
         filters: FilterSettings {
@@ -176,7 +177,8 @@ pub(super) fn prepared_text<'prepared>(
     headers: &'prepared IndexMap<String, SecretString>,
     name: &str,
 ) -> Option<&'prepared str> {
-    headers.get(name).map(ExposeSecret::expose_secret)
+    let secret = headers.get(name)?;
+    Some(secret.expose_secret())
 }
 
 pub(super) fn texts(headers: &IndexMap<String, SecretString>) -> Vec<&str> {
