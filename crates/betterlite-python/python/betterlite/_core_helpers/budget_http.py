@@ -67,11 +67,10 @@ def _ssl_context(
 ) -> ssl.SSLContext:
     context = ssl.create_default_context(cafile=cafile)
     context.minimum_version = ssl.TLSVersion.TLSv1_2
-    match security_level:
-        case str() as level if level != "":
-            context.set_ciphers(level)
-        case str() | None:
-            context.set_ciphers(DEFAULT_SSL_CIPHERS)
+    if security_level:
+        context.set_ciphers(security_level)
+    else:
+        context.set_ciphers(DEFAULT_SSL_CIPHERS)
     match ecdh_curve:
         case str() as curve:
             with suppress(AttributeError, ValueError):
