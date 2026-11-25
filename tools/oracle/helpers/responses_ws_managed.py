@@ -15,7 +15,7 @@ from litellm.responses.streaming_iterator import ProjectQuotaCallback
 from pydantic import JsonValue
 from typing_extensions import override
 
-from .fakes import (
+from .responses_ws_managed_fakes import (
     JSON,
     Answering,
     Input,
