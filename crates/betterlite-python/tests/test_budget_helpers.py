@@ -146,6 +146,31 @@ HEADER_CASES: Final[tuple[dict[str, str], ...]] = (
     {"x-ratelimit-remaining-requests": "9"},
     {},
 )
+DIVIDE_CASES: Final[tuple[tuple[float, float, float], ...]] = (
+    (4.0, 2.0, 0.0), (4.0, 0.0, 0.0), (4.0, 0.0, 7.0), (4.0, -2.0, 0.0),
+)
+SECONDS_CASES: Final[tuple[tuple[float, float, float | None], ...]] = (
+    (10.0, 0.0, None), (10.0, 0.0, 5.0), (10.0, -1.0, None), (10.0, 4.0, None),
+)
+NAME_CASES: Final[tuple[tuple[str, str | None, dict[str, PythonValue]], ...]] = (
+    ("claude", "bedrock", {}),
+    ("claude", "anthropic", {}),
+    ("bedrock/x", "bedrock", {"deployment": "anthropic/y"}),
+    ("x", "bedrock", {"deployment": "claude"}),
+    ("", "bedrock", {}),
+    ("x", None, {}),
+)
+META_KWARGS_CASES: Final[tuple[dict[str, PythonValue], ...]] = (
+    {},
+    {"litellm_params": None},
+    {"litellm_params": {}},
+    {"litellm_params": {METADATA_KEY: {}}},
+    {"litellm_params": {LITELLM_METADATA_KEY: {}}},
+    {"litellm_params": {METADATA_KEY: None, LITELLM_METADATA_KEY: {"m": 2}}},
+    {"litellm_params": {METADATA_KEY: {"user_api_key": "k"}, LITELLM_METADATA_KEY: {"m": 2}}},
+    {"litellm_params": {METADATA_KEY: {"user_api_key": "k"}}},
+)
+NO_ITEMS: list[JsonValue] | None = None
 PROJECTED_MESSAGES: Final[list[dict[str, JsonValue]]] = [
     {"role": "user", "content": "ab"},
     {"role": "user", "content": "c"},
@@ -153,15 +178,16 @@ PROJECTED_MESSAGES: Final[list[dict[str, JsonValue]]] = [
 USAGE_DATA: Final[dict[str, JsonValue]] = {
     "prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2,
 }
+JSON_ADAPTER: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 HOSTED_USERS: Final[dict[str, dict[str, JsonValue]]] = {ALICE: {"total_budget": BUDGET}}
-HOSTED_REPLY: Final[dict[str, JsonValue]] = {"status": "ok", "data": HOSTED_USERS}
+HOSTED_DATA: Final[JsonValue] = JSON_ADAPTER.validate_python(HOSTED_USERS)
+HOSTED_REPLY: Final[dict[str, JsonValue]] = {"status": "ok", "data": HOSTED_DATA}
 ERROR_REPLY: Final[dict[str, JsonValue]] = {"status": "error"}
 BAD_DATA_REPLY: Final[dict[str, JsonValue]] = {"status": "ok", "data": {ALICE: 5}}
 SAVED_REPLY: Final[dict[str, JsonValue]] = {"status": "success"}
 HOSTED_SAVE_BODY: Final[dict[str, JsonValue]] = {
-    "project_name": PROJECT, "user_dict": HOSTED_USERS,
+    "project_name": PROJECT, "user_dict": HOSTED_DATA,
 }
-JSON_ADAPTER: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 
 
 class ReferenceResponse(Protocol):
@@ -173,8 +199,8 @@ class ReferenceResponse(Protocol):
 class ReferenceCall(Protocol):
     def __call__(
         self,
-        *args: PythonValue | ReferenceResponse | logging.Logger | httpx2.Headers,
-        **kwargs: PythonValue | ReferenceResponse | logging.Logger | httpx2.Headers,
+        *args: PythonValue | ReferenceResponse | logging.Logger | httpx2.Headers | set[str],
+        **kwargs: PythonValue | ReferenceResponse | logging.Logger | httpx2.Headers | set[str],
     ) -> PythonValue: ...
 
 
@@ -307,14 +333,16 @@ def fields_of(value: PythonValue) -> dict[str, PythonValue]:
     match value:
         case dict() as fields:
             return fields
-    raise TypeError("expected an object")
+        case object():
+            raise TypeError("expected an object")
 
 
 def error_text(value: PythonValue) -> str:
     match value:
         case BaseException() as error:
             return str(error)
-    raise TypeError("expected an exception")
+        case object():
+            raise TypeError("expected an exception")
 
 
 def hidden_of(response: ReferenceResponse) -> dict[str, PythonValue]:
@@ -329,7 +357,8 @@ def ours_hidden(response: ModelResponse | ModelResponseStream) -> dict[str, Json
     match value:
         case dict() as fields:
             return fields
-    raise TypeError("expected hidden params")
+        case object():
+            raise TypeError("expected hidden params")
 
 
 def copy_payload(span: datetime) -> dict[str, PythonValue]:
@@ -356,9 +385,9 @@ def filter_payload() -> dict[str, PythonValue]:
         "function": helper_function,
         "error": ValueError(BOOM),
         "none": None,
-        "router": Router(),
-        "logging": Logging(),
-        "list": [ValueError(BOOM), {"router": Router()}, 1],
+        "router": Router.model_construct(),
+        "logging": Logging.model_construct(),
+        "list": [ValueError(BOOM), {"router": Router.model_construct()}, 1],
     }
 
 
@@ -441,25 +470,13 @@ def test_helper_codex_agent() -> None:
 
 
 def test_helper_safe_divide() -> None:
-    cases: tuple[tuple[float, float, float], ...] = (
-        (4.0, 2.0, 0.0),
-        (4.0, 0.0, 0.0),
-        (4.0, 0.0, 7.0),
-        (4.0, -2.0, 0.0),
-    )
-    for numerator, denominator, default in cases:
+    for numerator, denominator, default in DIVIDE_CASES:
         expected = LITELLM_HELPERS.safe_divide(numerator, denominator, default)
         assert safe_divide(numerator, denominator, default) == expected
 
 
 def test_helper_divide_seconds() -> None:
-    cases: tuple[tuple[float, float, float | None], ...] = (
-        (10.0, 0.0, None),
-        (10.0, 0.0, 5.0),
-        (10.0, -1.0, None),
-        (10.0, 4.0, None),
-    )
-    for seconds, denominator, default in cases:
+    for seconds, denominator, default in SECONDS_CASES:
         expected = LITELLM_HELPERS.safe_divide_seconds(seconds, denominator, default)
         assert safe_divide_seconds(seconds, denominator, default) == expected
 
@@ -507,16 +524,12 @@ def test_helper_tool_call_index() -> None:
 
 
 def test_helper_remove_items() -> None:
-    items: list[JsonValue] = ["a", "b", "c", "d"]
-    reference_items: list[JsonValue] = list(items)
-    ours_items: list[JsonValue] = list(items)
-    LITELLM_HELPERS.remove_items_at_indices(reference_items, [0, 1, 9, 1, -1])
-    remove_items_at_indices(ours_items, [0, 1, 9, 1, -1])
-    expected: list[JsonValue] = ["c", "d"]
-    assert ours_items == reference_items == expected
-    no_items: list[JsonValue] | None = None
-    remove_items_at_indices(no_items, [0])
-    LITELLM_HELPERS.remove_items_at_indices(no_items, [0])
+    reference: list[JsonValue] = ["a", "b", "c", "d"]
+    ours: list[JsonValue] = list(reference)
+    LITELLM_HELPERS.remove_items_at_indices(reference, [0, 1, 9, 1, -1])
+    remove_items_at_indices(ours, [0, 1, 9, 1, -1])
+    assert ours == reference == ["c", "d"]
+    assert remove_items_at_indices(NO_ITEMS, [0]) is None
 
 
 def test_helper_metadata_name() -> None:
@@ -544,36 +557,13 @@ def test_helper_metadata_bucket() -> None:
 
 
 def test_helper_meta_kwargs() -> None:
-    cases: tuple[dict[str, PythonValue], ...] = (
-        {},
-        {"litellm_params": None},
-        {"litellm_params": {}},
-        {"litellm_params": {METADATA_KEY: {}}},
-        {"litellm_params": {LITELLM_METADATA_KEY: {}}},
-        {"litellm_params": {METADATA_KEY: None, LITELLM_METADATA_KEY: {"m": 2}}},
-        {
-            "litellm_params": {
-                METADATA_KEY: {"user_api_key": "k"},
-                LITELLM_METADATA_KEY: {"m": 2},
-            }
-        },
-        {"litellm_params": {METADATA_KEY: {"user_api_key": "k"}}},
-    )
-    for kwargs in cases:
+    for kwargs in META_KWARGS_CASES:
         expected = LITELLM_HELPERS.get_litellm_metadata_from_kwargs(copy.deepcopy(kwargs))
         assert get_litellm_metadata_from_kwargs(copy.deepcopy(kwargs)) == expected
 
 
 def test_helper_reconstruct_name() -> None:
-    cases: tuple[tuple[str, str | None, dict[str, PythonValue]], ...] = (
-        ("claude", "bedrock", {}),
-        ("claude", "anthropic", {}),
-        ("bedrock/x", "bedrock", {"deployment": "anthropic/y"}),
-        ("x", "bedrock", {"deployment": "claude"}),
-        ("", "bedrock", {}),
-        ("x", None, {}),
-    )
-    for model_name, provider, metadata in cases:
+    for model_name, provider, metadata in NAME_CASES:
         expected = LITELLM_HELPERS.reconstruct_model_name(model_name, provider, metadata)
         assert reconstruct_model_name(model_name, provider, metadata) == expected
 
@@ -713,7 +703,7 @@ def test_helper_filter_exceptions() -> None:
     reference_filtered = fields_of(
         LITELLM_HELPERS.filter_exceptions_from_params(filter_payload())
     )
-    expected_filtered = {"class": ValueError, "list": [{}, 1]}
+    expected_filtered: dict[str, PythonValue] = {"class": ValueError, "list": [{}, 1]}
     assert ours_filtered == reference_filtered == expected_filtered
 
 
@@ -771,13 +761,10 @@ def test_budget_lifecycle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     }
     assert reference.create_budget(BUDGET, BOB, "weekly", CREATED_AT) == expected_bob
     reference.update_cost(ALICE, model=CHAT_MODEL, input_text="hi", output_text="yo")
-    reference_completion = LITELLM_RESPONSES.ModelResponse(model=CHAT_MODEL)
-    reference.update_cost(ALICE, completion_obj=reference_completion)
+    reference.update_cost(ALICE, completion_obj=LITELLM_RESPONSES.ModelResponse(model=CHAT_MODEL))
     reference_projected = reference.projected_cost(CHAT_MODEL, PROJECTED_MESSAGES, ALICE)
-    reference_total = reference.get_total_budget(ALICE)
     reference_current = reference.get_current_cost(ALICE)
     reference_model = reference.get_model_cost(ALICE)
-    reference_users = reference.get_users()
     reference_reset = reference.reset_cost(ALICE)
     join_saves(reference_marker)
     assert reference.save_data() == {"status": "success"}
@@ -792,15 +779,14 @@ def test_budget_lifecycle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     assert ours.create_budget(BUDGET, ALICE) == {"total_budget": BUDGET}
     assert ours.create_budget(BUDGET, BOB, "weekly", CREATED_AT) == expected_bob
     ours.update_cost(ALICE, model=CHAT_MODEL, input_text="hi", output_text="yo")
-    ours_completion = ModelResponse(model=CHAT_MODEL)
-    ours.update_cost(ALICE, completion_obj=ours_completion)
+    ours.update_cost(ALICE, completion_obj=ModelResponse(model=CHAT_MODEL))
     assert ours.projected_cost(CHAT_MODEL, PROJECTED_MESSAGES, ALICE) == reference_projected
     assert ours.get_current_cost(BOB) == reference.get_current_cost(BOB)
     assert ours.get_model_cost(BOB) == reference.get_model_cost(BOB)
-    assert ours.get_total_budget(ALICE) == reference_total
+    assert ours.get_total_budget(ALICE) == reference.get_total_budget(ALICE)
     assert ours.get_current_cost(ALICE) == reference_current
     assert ours.get_model_cost(ALICE) == reference_model
-    assert ours.get_users() == reference_users
+    assert ours.get_users() == reference.get_users()
     for user in (ALICE, BOB, ZOE):
         assert ours.is_valid_user(user) == reference.is_valid_user(user)
     assert ours.reset_cost(ALICE) == reference_reset
@@ -905,7 +891,8 @@ def test_budget_module_client(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_budget_bad_stored_data(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
-    Path(COST_FILE).write_text(json.dumps({ALICE: 5}))
+    corrupt: dict[str, JsonValue] = {ALICE: 5}
+    Path(COST_FILE).write_text(json.dumps(corrupt))
     with pytest.raises(ValidationError, match=ALICE):
         BudgetManager(PROJECT)
     with RecordingServer() as server:
