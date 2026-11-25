@@ -12,10 +12,11 @@ use pyo3_async_runtimes::tokio::{get_runtime, into_future, run};
 use serde_json::Number;
 use tokio::time::sleep;
 
-use super::super::redis::{open, test_gate};
+use super::super::redis::open;
 use super::*;
 use crate::cache_backends::convert;
 use crate::cache_backends::settings::RedisSettings;
+use crate::cache_backends::tests::test_gate;
 
 const ITEM_KIB: i64 = 1024;
 const DEAD_TIER: &str = r#"{"overrides": {"host": "127.0.0.1", "port": "1", "socket_timeout": "0.1", "socket_connect_timeout": "0.1"}}"#;

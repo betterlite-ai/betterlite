@@ -21,6 +21,7 @@ use pyo3_async_runtimes::tokio::get_runtime;
 
 use super::*;
 use crate::cache_backends::settings::RedisSettings;
+use crate::cache_backends::tests::test_gate;
 
 // The numeric overrides are text because arbitrary_precision breaks the untagged number fields. Nothing listens on port 1, so a call reaches the client and every command fails on the way out.
 const DEAD_REDIS: &str = r#"{"host": "127.0.0.1", "port": "1", "socket_timeout": "0.1", "socket_connect_timeout": "0.1"}"#;
@@ -255,6 +256,18 @@ fn backends_redis_breaker_survives_a_namespace_change() {
     });
 }
 
+fn failed_count_message(native: &NativeRedis) -> String {
+    get_runtime()
+        .block_on(count(
+            Arc::clone(&native.cache),
+            "key".to_owned(),
+            1.0_f64,
+            None,
+        ))
+        .unwrap_err()
+        .to_string()
+}
+
 // With the breaker off, every call reaches Redis and fails on the connection.
 #[test]
 fn backends_redis_breaker_disabled_never_opens() {
@@ -262,17 +275,17 @@ fn backends_redis_breaker_disabled_never_opens() {
     let clock = Arc::new(FakeClock::new());
     let gate = gate_with(breaker_policy(1, false), &clock);
     let native = Python::attach(|py| open(py, dead_settings(), gate).unwrap());
-    for _call in 0..3 {
-        let failed = get_runtime()
-            .block_on(count(
-                Arc::clone(&native.cache),
-                "key".to_owned(),
-                1.0_f64,
-                None,
-            ))
-            .unwrap_err();
-        assert!(!failed.to_string().contains("circuit breaker is open"));
-    }
+    let messages = [
+        failed_count_message(&native),
+        failed_count_message(&native),
+        failed_count_message(&native),
+    ];
+    assert!(
+        messages
+            .iter()
+            .all(|text| !text.contains("circuit breaker is open")),
+        "the breaker is off, so every call fails on the connection"
+    );
 }
 
 // The constructor reads the settings from the environment, as LiteLLM reads its constants.

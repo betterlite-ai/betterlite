@@ -412,8 +412,8 @@ def test_namespace_reaches_redis(redis_server: FakeRedisServer) -> None:
     assert redis_server.stored("old:litellm:key") is None
 
 
-# LiteLLM's breaker opens on the failures a get swallows and answers RedisCircuitBreakerOpenError while open.
-def test_redis_breaker_opens_and_recovers(
+# LiteLLM's breaker opens on the failures a get swallows and raises RedisCircuitBreakerOpenError.
+def test_redis_breaker_recovers(
     redis_server: FakeRedisServer, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("REDIS_CIRCUIT_BREAKER_FAILURE_THRESHOLD", "1")
@@ -431,7 +431,7 @@ def test_redis_breaker_opens_and_recovers(
 
 
 # With REDIS_CIRCUIT_BREAKER_ENABLED=false every call still reaches the failing Redis.
-def test_redis_breaker_disabled_never_opens(
+def test_redis_breaker_disabled(
     redis_server: FakeRedisServer, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("REDIS_CIRCUIT_BREAKER_ENABLED", "false")

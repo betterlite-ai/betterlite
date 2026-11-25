@@ -88,27 +88,9 @@ fn breaker_gate(environment: &BTreeMap<String, String>) -> PyResult<PolicyGate> 
     ))
 }
 
-// A real breaker for the tests that only need a cache to build; the breaker tests build their own.
-#[cfg(test)]
-pub(super) fn test_gate() -> Arc<PolicyGate> {
-    use std::time::Duration;
-    let settings = BreakerSettings {
-        enabled: true,
-        failure_threshold: 5,
-        recovery_timeout: Duration::from_secs(60),
-        timeout_min_duration: Duration::from_secs(5),
-        timeout_log_interval: Duration::from_secs(5),
-    };
-    Arc::new(PolicyGate::new(
-        RedisFailurePolicy::new(settings, BreakerMetrics::new(None)),
-        Arc::new(|| Duration::ZERO),
-    ))
-}
-
 #[pymethods]
 impl NativeRedis {
     #[new]
-    // ast-grep-ignore: no-one-line-functions - Python calls this constructor, so there is no Rust caller to inline into
     fn new(py: Python<'_>, settings: &str) -> PyResult<Self> {
         let parsed = convert::parse_settings(settings)?;
         let environment = process_environment();
