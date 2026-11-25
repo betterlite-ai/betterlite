@@ -1,0 +1,51 @@
+task: B6045
+deviations:
+  - what: "`speech` returns betterlite's own `HttpxBinaryResponseContent`, a plain class with content, status_code, headers, text, read, json, iter_bytes, write_to_file and stream_to_file, where LiteLLM returns the OpenAI SDK's httpx-based class with a `.response` and its encoding, iter_text, iter_lines, iter_raw and async methods."
+    why: The OpenAI SDK type cannot cross from Rust, and the task fixes this class's shape while the provider's status and headers ride beside the bytes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L121
+  - what: The speech reply carries no `_hidden_params`, where LiteLLM's binary response stores the provider headers, `_response_ms` and the wrapper's call metadata there.
+    why: The plain response class exposes the status and headers the task names, and the Rust session keeps no logging metadata to fill the wrapper keys with.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L779
+  - what: Only the OpenAI provider is implemented; a transcription or speech call for azure, vertex_ai, bedrock, groq, NVIDIA Riva, Soniox, EdenAI or any other provider fails with an error naming it, where LiteLLM dispatches to that provider's handler.
+    why: The task builds the OpenAI call path through the Rust SDK and leaves other providers' audio request code out of scope.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8059
+  - what: A missing API key raises betterlite's `APIConnectionError` carrying the OpenAI SDK's own message, where LiteLLM lets `openai.OpenAIError` escape.
+    why: Betterlite maps every failure to its exception classes, and the message is the one callers already match on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7933
+  - what: A sync transcription returns betterlite's exception classes for provider failures, and local input errors (a non-text model, a bad timeout, a missing file, an invalid speech response_format, a non-text voice) raise `ValueError`, where LiteLLM's own validation errors surface as TypeError, ValueError or a `BadRequestError` from its SDK models.
+    why: The Rust call reports failures as data, and the Python layer rebuilds the class LiteLLM would have raised; a wrong-typed value is an error that names its field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7933
+  - what: A cached transcription dict is validated tolerantly, so unknown keys are dropped, where `TranscriptionResponse(**cached_response_dict)` raises TypeError for a key it does not take.
+    why: The dict reaches betterlite as JSON and the shared response model validates what it knows; no caller depends on the TypeError.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L753
+  - what: Unknown transcription kwargs (and `atranscription=True` passed to the sync `transcription`) are ignored and never reach the request, where LiteLLM forwards the first through extra_body and turns the second into a coroutine.
+    why: The Rust transcription request carries the five named OpenAI params the SDK's multipart body allows.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7933
+  - what: A file without a name, and the tuple form `(None, content)`, both become `audio.wav`; LiteLLM logs the tuple form under its own `(None, bytes)` identity while sending the same multipart part.
+    why: B6040's file marker keeps one default name, so the bytes and tuple forms are indistinguishable inside Rust.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/audio_utils/utils.py#L36
+  - what: "`speech` with a non-text `voice` raises `ValueError` at the payload boundary, where LiteLLM raises `BadRequestError`; a missing voice raises the same `BadRequestError` in both, and an empty string is sent as the voice in both."
+    why: B6040's payload conversion types every argument before Rust decides the provider, so a non-text voice fails before the friendly message can be chosen.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8341
+  - what: An unknown speech `response_format` fails locally with `ValueError`, where LiteLLM forwards the string and the provider rejects it.
+    why: The Rust speech request types the format as the six values the providers share.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8273
+  - what: A `client` argument raises `UnsupportedCallArgument`, where LiteLLM sends the call through it.
+    why: B6040's call path has one Rust client and no Python client crosses the boundary, as its own deviations record.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8238
+  - what: A speech reply larger than the transport's 16 MiB body limit fails with `ValueError`, where LiteLLM streams the whole body to disk.
+    why: The Rust transport reads the reply through one bounded stream, and an unbounded audio body has no place to go.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py
+  - what: The unmapped-speech-provider error keeps LiteLLM's first sentence but omits the full provider list it prints.
+    why: The provider list is LiteLLM's runtime enum dump and betterlite names providers module by module.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8717
+  - what: Speech `timeout` objects with several phases become the largest phase, and a call without a timeout uses `REQUEST_TIMEOUT` or 6000 seconds read when the native session is built.
+    why: The Rust transport enforces one deadline per call, as B6040's deviations record.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L576
+  - what: A transcription never sends `OPENAI_ORGANIZATION`, where LiteLLM sets the OpenAI module's `organization` before the transcription handler builds its client; the organization argument is honored for speech in both.
+    why: The Rust transcription connection carries no organization field, and betterlite never mutates a process-global OpenAI client.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8067
+  - what: A transcription's `_hidden_params` holds model, custom_llm_provider, headers, additional_headers, audio_transcription_duration and _response_ms, where LiteLLM's wrapper also adds litellm_call_id, api_base, model_id, response_cost, litellm_model_name, litellm_overhead_time_ms and callback_duration_ms; _response_ms and audio_transcription_duration measure the provider call here, not the wrapper's whole window.
+    why: The Rust call path carries no router model info or cost calculator, and its timing starts at the native call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/response_metadata.py#L118
+kept_bugs: []
