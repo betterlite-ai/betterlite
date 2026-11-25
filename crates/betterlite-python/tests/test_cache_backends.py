@@ -137,11 +137,11 @@ class NativeWrites(Protocol):
 
     def async_get(self, key: str) -> Awaitable[str | None]: ...
 
-    def async_delete(self, keys: list[str]) -> Awaitable[None]: ...
+    def async_delete(self, keys: list[str]) -> Awaitable[JsonValue]: ...
 
-    def async_flush(self) -> Awaitable[None]: ...
+    def async_flush(self) -> Awaitable[JsonValue]: ...
 
-    def async_close(self) -> Awaitable[None]: ...
+    def async_close(self) -> Awaitable[JsonValue]: ...
 
 
 async def _native_void_calls(native: NativeWrites) -> None:
@@ -586,10 +586,12 @@ def test_redis_checks_arguments() -> None:
 
 def test_redis_override_schema() -> None:
     supplied: dict[str, JsonValue] = {"socket_timeout": 0, "db": 0, "ssl": False}
+    nodes: dict[str, JsonValue] = {"startup_nodes": None}
+    invalid: dict[str, JsonValue] = {"socket_timeout": "slow"}
     assert REDIS_OVERRIDES.validate_python(supplied) == supplied
-    assert REDIS_OVERRIDES.validate_python({"startup_nodes": None}) == {"startup_nodes": None}
+    assert REDIS_OVERRIDES.validate_python(nodes) == nodes
     with pytest.raises(ValidationError, match="socket_timeout"):
-        REDIS_OVERRIDES.validate_python({"socket_timeout": "slow"})
+        REDIS_OVERRIDES.validate_python(invalid)
 
 
 # LiteLLM's DiskCache needs the diskcache package, which the oracle environment does not install.
