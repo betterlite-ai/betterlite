@@ -65,7 +65,7 @@ fn evaluation_args_maps_every_documented_field() {
     );
     assert_eq!(args.kwargs.get("top_k"), Some(&json("5")));
     let key = args.api_key.expect("the api key converts");
-    assert_eq!(key.expose_secret().as_str(), "sk-test");
+    assert_eq!(key.expose_secret(), "sk-test");
 }
 
 #[test]

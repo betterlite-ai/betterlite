@@ -227,10 +227,10 @@ pub(crate) fn prepare<'deps>(
     }
 }
 
-pub(crate) fn parts<'a>(
-    environment: &'a Environment,
-    log: &'a LogEnv,
-) -> (ResolutionContext<'a>, PrePostEnv<'a>) {
+pub(crate) fn parts<'fixture>(
+    environment: &'fixture Environment,
+    log: &'fixture LogEnv,
+) -> (ResolutionContext<'fixture>, PrePostEnv<'fixture>) {
     (environment.context(), log.env())
 }
 

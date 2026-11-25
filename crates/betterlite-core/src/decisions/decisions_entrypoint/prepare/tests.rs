@@ -7,7 +7,7 @@ use std::time::Duration;
 use betterlite_models::decisions::{DecisionsJson, Json, ir};
 use betterlite_openai::credentials::LiteLlmGlobals;
 use betterlite_openai::decisions::call::fields::RequestFormat;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 
 use super::prepare_decisions_call;
 use crate::decisions::DecisionsEntryError;
@@ -57,9 +57,7 @@ fn prepare_keeps_the_openai_request_and_the_connection_values() {
     assert_eq!(call.timeout, Some(Duration::from_secs(5)));
     assert_eq!(call.headers.get("x-test").map(String::as_str), Some("1"));
     assert_eq!(
-        call.api_key
-            .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+        call.api_key.as_ref().map(ExposeSecret::expose_secret),
         Some(API_KEY)
     );
 }
@@ -115,9 +113,7 @@ fn prepare_uses_the_callers_globals_for_openai_credentials() {
     let call = prepare_decisions_call(caller, args).expect("the call prepares");
     assert_eq!(call.api_base, "http://127.0.0.1:8");
     assert_eq!(
-        call.api_key
-            .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+        call.api_key.as_ref().map(ExposeSecret::expose_secret),
         Some("global-key")
     );
 }

@@ -24,7 +24,7 @@ use super::seams::EvaluationProbeCall;
 use crate::health_probe_modes::calls::{EvaluationCall, HealthProbeReply};
 use crate::health_probe_modes::error::HealthProbeError;
 use crate::health_probe_modes::evaluation::EvaluationCallParams;
-use crate::health_probe_modes::logging::HealthProbeLogging as _;
+use crate::health_probe_modes::logging::HealthProbeLogging;
 
 mod tests;
 
@@ -86,8 +86,8 @@ where
         let args = evaluation_args(&call.params)?;
         let logging = call
             .logging
-            .as_ref()
-            .and_then(|logging| logging.logging_state());
+            .as_deref()
+            .and_then(HealthProbeLogging::logging_state);
         let resolution = self.setup.resolution();
         let sink = TracingSink;
         let env = logging_environment(self.redactor.as_ref(), &sink, self.clock);
@@ -123,15 +123,16 @@ where
 }
 
 fn timeout(seconds: Option<f64>) -> Result<Option<Duration>, HealthProbeError> {
-    let Some(seconds) = seconds else {
+    let Some(given) = seconds else {
         return Ok(None);
     };
-    Duration::try_from_secs_f64(seconds)
-        .map(Some)
-        .map_err(|source| HealthProbeError::EvaluationPayload {
+    let duration = Duration::try_from_secs_f64(given).map_err(|source| {
+        HealthProbeError::EvaluationPayload {
             field: TIMEOUT_KEY,
             source: serde_json::Error::custom(source.to_string()),
-        })
+        }
+    })?;
+    Ok(Some(duration))
 }
 
 fn entry_failure(error: DecisionsEntryError) -> HealthProbeError {

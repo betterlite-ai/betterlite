@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use betterlite_models::decisions::systemone::DecisionsResponse as SystemOneDecisionsResponse;
 use betterlite_models::decisions::{Extra, Json};
 use betterlite_openai::openai_base_config::Headers;
 use secrecy::SecretString;
@@ -11,8 +12,9 @@ use crate::decisions::{DecisionsDeps, DecisionsEntryError};
 mod asystemone;
 mod systemone_entrypoint;
 
+#[expect(clippy::pub_use, reason = "litellm.systemone exports asystemone")]
 pub use asystemone::asystemone;
-pub use betterlite_models::decisions::systemone::DecisionsResponse;
+pub type DecisionsResponse = SystemOneDecisionsResponse;
 
 use systemone_entrypoint::{prepare_systemone_call, systemone_response};
 

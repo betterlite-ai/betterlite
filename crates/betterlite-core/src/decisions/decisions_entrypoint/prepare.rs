@@ -8,10 +8,10 @@ mod tests;
 const STATE_KEY: &str = "state";
 
 // _prepare_decisions_call: the fields come from _request_fields, and state never travels on as a litellm param
-pub(crate) fn prepare_decisions_call<'deps>(
-    prepare: DecisionsPrepare<'deps>,
+pub(crate) fn prepare_decisions_call(
+    prepare: DecisionsPrepare<'_>,
     args: DecisionsArgs,
-) -> Result<DecisionsCall<'deps>, DecisionsEntryError> {
+) -> Result<DecisionsCall<'_>, DecisionsEntryError> {
     let DecisionsArgs {
         model,
         input,

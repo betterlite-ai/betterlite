@@ -5,6 +5,8 @@ use betterlite_error::error::details::ResponseDetails;
 use betterlite_error::error::{ErrorClass, ErrorContext};
 use betterlite_logging::logging_pre_post::env::PrePostEnv;
 use betterlite_logging::logging_state::LoggingState;
+use betterlite_models::decisions::openai::DecisionResponse;
+use betterlite_models::decisions::systemone::DecisionsResponse as SystemOneDecisionsResponse;
 use betterlite_models::decisions::{Extra, Json};
 use betterlite_models::resolution::ResolutionContext;
 use betterlite_openai::credentials::LiteLlmGlobals;
@@ -22,9 +24,10 @@ use crate::api::decisions_send::send::DecisionsSender;
 mod adecisions;
 pub(crate) mod decisions_entrypoint;
 
+#[expect(clippy::pub_use, reason = "litellm.decisions exports adecisions")]
 pub use adecisions::adecisions;
-pub use betterlite_models::decisions::openai::DecisionResponse as OpenAiDecisionResponse;
-pub use betterlite_models::decisions::systemone::DecisionsResponse as SystemOneResponse;
+pub type OpenAiDecisionResponse = DecisionResponse;
+pub type SystemOneResponse = SystemOneDecisionsResponse;
 
 use decisions_entrypoint::prepare_decisions_call;
 

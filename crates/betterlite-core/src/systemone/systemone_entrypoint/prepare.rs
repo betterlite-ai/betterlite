@@ -12,10 +12,10 @@ mod tests;
 const INPUT_KEY: &str = "input";
 
 // _prepare_systemone_call: the input keyword belongs to litellm.decisions, so it is rejected before anything else
-pub(crate) fn prepare_systemone_call<'deps>(
-    prepare: DecisionsPrepare<'deps>,
+pub(crate) fn prepare_systemone_call(
+    prepare: DecisionsPrepare<'_>,
     args: SystemOneArgs,
-) -> Result<DecisionsCall<'deps>, SystemOneEntryError> {
+) -> Result<DecisionsCall<'_>, SystemOneEntryError> {
     let SystemOneArgs {
         model,
         state,
@@ -29,13 +29,16 @@ pub(crate) fn prepare_systemone_call<'deps>(
         kwargs,
     } = args;
     reject_other_format(&model, &kwargs, INPUT_KEY, "decisions")?;
-    let questions =
+    let parsed_questions =
         systemone_questions(questions).map_err(|error| SystemOneEntryError::Fields {
             message: error.to_string(),
         })?;
     prepare_call(PrepareCall {
         model: &model,
-        fields: RequestFields::SystemOne(SystemOneRequestFields { state, questions }),
+        fields: RequestFields::SystemOne(SystemOneRequestFields {
+            state,
+            questions: parsed_questions,
+        }),
         safety_identifier: safety_identifier.as_deref(),
         api_key: api_key.as_ref(),
         api_base: api_base.as_deref(),
