@@ -19,7 +19,7 @@ impl Helper for Op {
 
 impl From<DriverError> for Box<HelperError> {
     fn from(error: DriverError) -> Self {
-        Box::new(HelperError {
+        Self::new(HelperError {
             class: String::from("ServiceError"),
             message: error.to_string(),
             status: None,
