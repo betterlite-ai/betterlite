@@ -4,15 +4,14 @@ use betterlite_cache::backend::memory::local::LocalMemoryOps;
 use betterlite_cache::batch_reads::BatchReadOptions;
 use betterlite_cache::batch_reads::BatchReads;
 use betterlite_cache::dual_cache::{DualCache, DualCacheSettings, MAX_REDIS_BATCH_CACHE_SIZE};
+use betterlite_cache::types::pipeline::RedisPipelineIncrement;
 use betterlite_redis::redis_cache::RedisCache;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3_async_runtimes::tokio::{future_into_py, get_runtime};
 
 use self::batch::{NativeDeclaredBatchRead, NativeDeferred, NativeRedisBatch};
-use self::values::{
-    answer_json, close_tier, count, options, pipeline_post_call, store, text_of_ttl,
-};
+use self::values::{answer_json, close_tier, count, options, store, text_of_ttl};
 use super::error::{self, BackendHandleError};
 use super::memory::NativeMemory;
 use super::redis::NativeRedis;
@@ -149,13 +148,25 @@ impl NativeDual {
         Py::new(py, NativeDeclaredBatchRead { cache, declared })
     }
 
-    fn async_increment_cache_pipeline_post_call<'py>(
+    #[pyo3(name = "async_increment_cache_pipeline_post_call")]
+    fn async_pipeline_post_call<'py>(
         &self,
         py: Python<'py>,
         operations: Vec<(String, f64, Option<i64>)>,
     ) -> AsyncAnswer<'py> {
         let cache = Arc::clone(&self.cache);
-        future_into_py(py, pipeline_post_call(cache, operations))
+        future_into_py(py, async move {
+            let queued: Vec<RedisPipelineIncrement> = operations
+                .into_iter()
+                .map(|(key, increment_value, ttl)| RedisPipelineIncrement {
+                    key,
+                    increment_value,
+                    ttl,
+                })
+                .collect();
+            cache.pipeline_increment_post_call(&queued).await;
+            Ok(())
+        })
     }
 
     fn set_cache_pre_call(

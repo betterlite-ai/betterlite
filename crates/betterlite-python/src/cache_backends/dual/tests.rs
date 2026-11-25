@@ -7,7 +7,7 @@ use betterlite_cache::backend::memory::local::LocalMemoryOps;
 use betterlite_cache::dual_cache::{DualCache, DualCacheSettings, MAX_REDIS_BATCH_CACHE_SIZE, Ttl};
 use betterlite_models::decisions::Json;
 use betterlite_redis::request_batch::scope::request_redis_batch_scope;
-use pyo3_async_runtimes::tokio::get_runtime;
+use pyo3_async_runtimes::tokio::{get_runtime, into_future, run};
 use serde_json::Number;
 
 use super::super::redis::open;
@@ -191,14 +191,19 @@ fn backends_dual_pipeline_post_call_counts_in_memory() {
         ("second".to_owned(), 3.0_f64, Some(60)),
         ("first".to_owned(), 1.0_f64, None),
     ];
-    get_runtime()
-        .block_on(pipeline_post_call(Arc::clone(&native.cache), operations))
-        .unwrap();
-    Python::attach(|py| {
-        assert_eq!(native.increment(py, "first", 0.0_f64, None).unwrap(), "3.0");
-        assert_eq!(
-            native.increment(py, "second", 0.0_f64, None).unwrap(),
-            "3.0"
-        );
-    });
+    let work = async move {
+        let pending =
+            Python::attach(|py| into_future(native.async_pipeline_post_call(py, operations)?))?;
+        let answer = pending.await?;
+        Python::attach(|py| {
+            assert!(answer.is_none(py));
+            assert_eq!(native.increment(py, "first", 0.0_f64, None).unwrap(), "3.0");
+            assert_eq!(
+                native.increment(py, "second", 0.0_f64, None).unwrap(),
+                "3.0"
+            );
+        });
+        Ok(())
+    };
+    Python::attach(|py| run(py, work)).unwrap();
 }
