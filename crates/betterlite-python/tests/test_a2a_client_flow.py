@@ -352,26 +352,20 @@ async def both_sends() -> SendFlows:
 
 async def our_stream_flow(server: AgentServer, recorder: Recorder) -> StreamFlow:
     client = A2AClient(server.url, extra_headers=EXTRA_HEADERS)
-    chunks: list[StreamResponse] = [
+    chunks = [
         STREAM_RESPONSE.validate_json(chunk.model_dump_json(exclude_none=True))
         async for chunk in client.send_message_streaming(our_stream_request(STREAM_ID))
     ]
-    return StreamFlow(
-        methods=[entry["method"] for entry in recorder.calls],
-        results=chunks,
-    )
+    return StreamFlow(methods=[entry["method"] for entry in recorder.calls], results=chunks)
 
 
 async def their_stream_flow(server: AgentServer, recorder: Recorder) -> StreamFlow:
     client = THEIR_CLIENT.A2AClient(server.url, extra_headers=EXTRA_HEADERS)
-    chunks: list[StreamResponse] = [
+    chunks = [
         STREAM_RESPONSE.validate_json(chunk.model_dump_json(exclude_none=True))
         async for chunk in client.send_message_streaming(their_stream_request(STREAM_ID))
     ]
-    return StreamFlow(
-        methods=[entry["method"] for entry in recorder.calls],
-        results=chunks,
-    )
+    return StreamFlow(methods=[entry["method"] for entry in recorder.calls], results=chunks)
 
 
 async def both_streams() -> StreamFlows:

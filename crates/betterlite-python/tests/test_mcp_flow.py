@@ -123,8 +123,7 @@ def tool_call_for(tool: ChatCompletionToolParam) -> ChatCompletionMessageToolCal
 
 async def our_flow(session: MCPSession) -> McpFlowResult:
     loaded = OPENAI_TOOLS.validate_python(await load_mcp_tools(session, "openai"))
-    call = tool_call_for(loaded[0])
-    result = await call_openai_tool(session, call)
+    result = await call_openai_tool(session, tool_call_for(loaded[0]))
     fields: ToolResult = TOOL_RESULT.validate_json(
         result.model_dump_json(by_alias=True, exclude_none=True)
     )
@@ -133,8 +132,7 @@ async def our_flow(session: MCPSession) -> McpFlowResult:
 
 async def their_flow(session: ClientSession) -> McpFlowResult:
     loaded = OPENAI_TOOLS.validate_python(await THEIR_LOADER.load_mcp_tools(session, "openai"))
-    call = tool_call_for(loaded[0])
-    result = await THEIR_CALLER.call_openai_tool(session, call)
+    result = await THEIR_CALLER.call_openai_tool(session, tool_call_for(loaded[0]))
     fields: ToolResult = TOOL_RESULT.validate_json(
         result.model_dump_json(by_alias=True, exclude_none=True)
     )
