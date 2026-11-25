@@ -1,0 +1,68 @@
+import logging
+import re
+from collections.abc import Mapping
+from typing import Final
+
+from pydantic import TypeAdapter, ValidationError
+
+from betterlite._core_helpers.values import PythonValue
+
+_CODEX_PREFIX: Final = re.compile("^codex[-_ /]", re.IGNORECASE)
+_DROP_PARAMS_BOOL: Final[TypeAdapter[bool]] = TypeAdapter(bool)
+DROP_PARAMS_ENV_VAR: Final = "LITELLM_DROP_PARAMS"
+
+
+def is_codex_user_agent(user_agent: str) -> bool:
+    matched = _CODEX_PREFIX.match(user_agent)
+    return bool(matched)
+
+
+def safe_divide_seconds(
+    seconds: float, denominator: float, default: float | None = None
+) -> float | None:
+    if denominator <= 0:
+        return default
+    return float(seconds / denominator)
+
+
+def normalize_drop_params(value: PythonValue) -> bool | None:
+    if value is None:
+        return None
+    match value:
+        case str() as text:
+            candidate: PythonValue = text.strip()
+        case object():
+            candidate = value
+    try:
+        return _DROP_PARAMS_BOOL.validate_python(candidate)
+    except ValidationError:
+        return None
+
+
+def drop_params_flag(value: PythonValue, source: str, logger: logging.Logger) -> bool:
+    normalized = normalize_drop_params(value)
+    if normalized is None and value is not None:
+        logger.warning("%s=%r is not a flag value, treating it as off", source, value)
+    return bool(normalized)
+
+
+def drop_params_env_flag(environ: Mapping[str, str], logger: logging.Logger) -> bool:
+    raw = "" if DROP_PARAMS_ENV_VAR not in environ else environ[DROP_PARAMS_ENV_VAR]
+    configured = raw.strip()
+    if len(configured) == 0:
+        return False
+    normalized = normalize_drop_params(configured)
+    if normalized is None:
+        logger.warning(
+            "%s=%r is not a flag value, treating it as on. Set it to true or false",
+            DROP_PARAMS_ENV_VAR,
+            configured,
+        )
+        return True
+    return normalized
+
+
+def safe_divide(numerator: float, denominator: float, default: float = 0) -> int | float:
+    if denominator == 0:
+        return default
+    return numerator / denominator
