@@ -1,0 +1,27 @@
+kind: helper
+name: shadow-evaluation-team-over-budget
+call:
+  b4085:
+    operation: pipeline
+    auth:
+      token: "token-1"
+      spend: 1.0
+      max_budget: 10.0
+      team_id: "team-1"
+    team:
+      team_id: "team-1"
+      max_budget: 5.0
+      spend: 5.0
+    key_spend: 1.0
+    team_spend: 5.01
+    database: true
+    pipeline_error: false
+    max_budget: null
+    job_spend: null
+    stats_spend: null
+    judge_reply: "tie"
+    arms:
+      - router: arm-router
+        shadow: reply
+env: {}
+compare: {ignore: []}
