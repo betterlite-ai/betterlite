@@ -852,8 +852,7 @@ def test_budget_decimal_costs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setattr(BETTERLITE, "token_counter", fake_token_counter)
     # ast-grep-ignore: no-string-mocking
     monkeypatch.setattr(BETTERLITE, "cost_per_token", fixed_costs)
-    manager.update_cost(
-        BOB, model=CHAT_MODEL, input_text=INPUT_TEXT, output_text=OUTPUT_TEXT)
+    manager.update_cost(BOB, model=CHAT_MODEL, input_text=INPUT_TEXT, output_text=OUTPUT_TEXT)
     assert manager.get_current_cost(BOB) == TOTAL_COST
     assert manager.get_model_cost(BOB) == {CHAT_MODEL: TOTAL_COST}
     join_saves(marker)
