@@ -10,6 +10,8 @@ use std::sync::Arc;
 type Blobs = Vec<Vec<u8>>;
 type Pending = PyResult<Py<PyAny>>;
 
+mod tests;
+
 #[pyclass(module = "betterlite._native")]
 pub(crate) struct NativeAudioSession {
     session: Arc<AudioSession>,

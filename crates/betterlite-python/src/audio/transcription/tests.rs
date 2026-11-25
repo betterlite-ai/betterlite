@@ -3,6 +3,7 @@
 use super::{hidden_params, prepare, request_duration};
 use crate::audio::convert::{AudioCallWire, parse};
 use crate::audio::session::AudioSession;
+use crate::completion::setup::outbound_client;
 use betterlite_models::call_helpers::headers::{AdditionalHeaders, ProviderHeaderProjection};
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::audio_file_input::ProcessedAudioFile;
@@ -13,11 +14,12 @@ use betterlite_sdk::call_files::CallFile;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use std::collections::BTreeMap;
+use std::iter::repeat_n;
 
 fn session() -> AudioSession {
     AudioSession {
         environment: BTreeMap::new(),
-        client: crate::completion::setup::outbound_client(&BTreeMap::new()).unwrap(),
+        client: outbound_client(&BTreeMap::new()).unwrap(),
         redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap(),
     }
 }
@@ -26,7 +28,7 @@ fn wav_bytes() -> Vec<u8> {
     let data_len = 16_000_u32;
     let mut wav = Vec::new();
     wav.extend_from_slice(b"RIFF");
-    wav.extend_from_slice(&(36 + data_len).to_le_bytes());
+    wav.extend_from_slice(&36_u32.saturating_add(data_len).to_le_bytes());
     wav.extend_from_slice(b"WAVEfmt ");
     wav.extend_from_slice(&16_u32.to_le_bytes());
     wav.extend_from_slice(&1_u16.to_le_bytes());
@@ -37,11 +39,11 @@ fn wav_bytes() -> Vec<u8> {
     wav.extend_from_slice(&16_u16.to_le_bytes());
     wav.extend_from_slice(b"data");
     wav.extend_from_slice(&data_len.to_le_bytes());
-    wav.extend(std::iter::repeat_n(0_u8, 16_000));
+    wav.extend(repeat_n(0_u8, 16_000));
     wav
 }
 
-fn wire(payload: &str) -> (AudioCallWire, Vec<(String, CallFile)>) {
+fn parse_wire(payload: &str) -> (AudioCallWire, Vec<(String, CallFile)>) {
     let mut blobs = vec![wav_bytes()];
     parse(&format!(r#"{{"arguments":{payload}}}"#), &mut blobs).unwrap()
 }
@@ -72,21 +74,13 @@ fn reply(body: &str) -> TranscriptionReply {
     }
 }
 
-fn call(atranscription: bool, file_from_kwargs: bool) -> AudioCallWire {
-    AudioCallWire {
-        atranscription,
-        file_from_kwargs,
-        ..AudioCallWire::default()
-    }
-}
-
 #[test]
 fn transcription_prepare_accepts_the_openai_provider() {
-    let (wire, files) = wire(
+    let (call, files) = parse_wire(
         r#"{"model":"openai/whisper-1","file":{"$file":{"name":"clip.wav","blob":0}},
             "api_key":"sk-test","custom_llm_provider":"openai"}"#,
     );
-    let prepared = prepare(&session(), &wire, &files).unwrap();
+    let prepared = prepare(&session(), &call, &files).unwrap();
     assert_eq!(prepared.model, "whisper-1");
     assert_eq!(prepared.provider, "openai");
     assert_eq!(prepared.input, "clip.wav");
@@ -96,11 +90,11 @@ fn transcription_prepare_accepts_the_openai_provider() {
 
 #[test]
 fn transcription_prepare_rejects_another_provider() {
-    let (wire, files) = wire(
+    let (call, files) = parse_wire(
         r#"{"model":"vertex_ai/whisper","file":{"$file":{"name":"clip.wav","blob":0}},
             "api_key":"sk-test"}"#,
     );
-    let failure = prepare(&session(), &wire, &files).unwrap_err();
+    let failure = prepare(&session(), &call, &files).unwrap_err();
     assert!(
         failure
             .message
@@ -117,11 +111,16 @@ fn request_request_duration_reads_the_wav_header() {
 
 #[test]
 fn request_hidden_params_carry_the_handler_values() {
+    let request = AudioCallWire {
+        atranscription: false,
+        file_from_kwargs: false,
+        ..AudioCallWire::default()
+    };
     let hidden = hidden_params(
         &reply(r#"{"text":"hello","duration":1.5}"#),
         &processed(),
         12.5_f64,
-        &call(false, false),
+        &request,
         "whisper-1",
     )
     .unwrap();
@@ -144,11 +143,16 @@ fn request_hidden_params_carry_the_handler_values() {
 
 #[test]
 fn request_hidden_params_compute_the_duration() {
+    let request = AudioCallWire {
+        atranscription: false,
+        file_from_kwargs: false,
+        ..AudioCallWire::default()
+    };
     let hidden = hidden_params(
         &reply(r#"{"text":"hello"}"#),
         &processed(),
         1.0_f64,
-        &call(false, false),
+        &request,
         "whisper-1",
     )
     .unwrap();
@@ -160,11 +164,16 @@ fn request_hidden_params_compute_the_duration() {
 
 #[test]
 fn request_hidden_params_compute_for_an_async_kwarg_file() {
+    let request = AudioCallWire {
+        atranscription: true,
+        file_from_kwargs: true,
+        ..AudioCallWire::default()
+    };
     let hidden = hidden_params(
         &reply(r#"{"text":"hello"}"#),
         &processed(),
         1.0_f64,
-        &call(true, true),
+        &request,
         "whisper-1",
     )
     .unwrap();
@@ -178,14 +187,12 @@ fn request_hidden_params_compute_for_an_async_kwarg_file() {
 fn request_hidden_params_take_the_async_duration() {
     let mut stored = reply(r#"{"text":"hello"}"#);
     stored.duration = StoredDuration::Known(Some(Decimal::new(3, 1)));
-    let hidden = hidden_params(
-        &stored,
-        &processed(),
-        1.0_f64,
-        &call(true, false),
-        "whisper-1",
-    )
-    .unwrap();
+    let request = AudioCallWire {
+        atranscription: true,
+        file_from_kwargs: false,
+        ..AudioCallWire::default()
+    };
+    let hidden = hidden_params(&stored, &processed(), 1.0_f64, &request, "whisper-1").unwrap();
     assert!(matches!(
         hidden.get("audio_transcription_duration"),
         Some(Json::Number(value)) if value.as_f64() == Some(0.3_f64)

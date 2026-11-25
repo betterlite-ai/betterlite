@@ -2,6 +2,7 @@
 
 use super::AudioSession;
 use crate::audio::convert::AudioSettings;
+use crate::completion::setup::outbound_client;
 use betterlite_models::decisions::Json;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_sdk::call_setup::RequestMap;
@@ -12,7 +13,7 @@ use std::time::Duration;
 fn session(environment: BTreeMap<String, String>) -> AudioSession {
     AudioSession {
         environment,
-        client: crate::completion::setup::outbound_client(&BTreeMap::new()).unwrap(),
+        client: outbound_client(&BTreeMap::new()).unwrap(),
         redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap(),
     }
 }

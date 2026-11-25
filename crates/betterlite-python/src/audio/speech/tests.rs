@@ -3,13 +3,14 @@
 use super::prepare;
 use crate::audio::convert::{SpeechCallWire, parse_speech};
 use crate::audio::session::AudioSession;
+use crate::completion::setup::outbound_client;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use std::collections::BTreeMap;
 
 fn session() -> AudioSession {
     AudioSession {
         environment: BTreeMap::new(),
-        client: crate::completion::setup::outbound_client(&BTreeMap::new()).unwrap(),
+        client: outbound_client(&BTreeMap::new()).unwrap(),
         redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap(),
     }
 }
