@@ -38,9 +38,9 @@ def override_answer(call: OverrideCall) -> list[str | None]:
     router = call["router_credentials"]
     if router is None:
         return [call["project"], call["location"]]
-    managed = LiteLLM_ManagedVectorStore(litellm_params=router["litellm_params"])
+    managed = LiteLLM_ManagedVectorStore(litellm_params=router["litellm_params"])  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/vector_stores.py#L25
     project, location = endpoint_module._override_vertex_params_from_router_credentials(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2400
-        managed, call["project"], call["location"]
+        managed, call["project"], call["location"]  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/vector_stores.py#L25
     )
     return [project, location]
 
