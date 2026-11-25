@@ -26,12 +26,21 @@ use super::target::{
 };
 use super::{ContentAnswer, ContentCall, ContentContext, FileContentStream, StreamedContent};
 
-impl<Dispatch> FileContentStream<'_, Dispatch>
+pub(super) trait FileContentStreaming<Dispatch: FileContentDispatch> {
+    async fn streamed<'call>(
+        &self,
+        call: &ContentCall<'call>,
+        selection: &Selection,
+        context: ContentContext<'call, Dispatch::Client, Dispatch::Logging>,
+    ) -> Reply<ContentAnswer, Dispatch>;
+}
+
+impl<Dispatch> FileContentStreaming<Dispatch> for FileContentStream<'_, Dispatch>
 where
     Dispatch: FileContentDispatch,
 {
     // file_content_streaming: write the identity, pick the provider branch, then let B1080 wrap the iterator
-    pub(super) async fn streamed<'call>(
+    async fn streamed<'call>(
         &self,
         call: &ContentCall<'call>,
         selection: &Selection,
@@ -81,7 +90,7 @@ where
         if COMPATIBLE_PROVIDERS.contains(&name) {
             return Ok(ContentTarget::Compatible(
                 self.plan(call.kwargs, selection.mode)
-                    .compatible(supplied_openai(client)),
+                    .compatible(supplied_openai(&client)),
             ));
         }
         if name != "vertex_ai" {
@@ -151,9 +160,7 @@ where
         result: FileContentStreamingResult,
     ) -> ContentAnswer {
         let FileContentStreamingResult {
-            stream,
-            headers,
-            exit: _,
+            stream, headers, ..
         } = result;
         let response = FileContentStreamingResponse::new(
             FileStreamSetup {
@@ -169,7 +176,7 @@ where
     }
 }
 
-const fn supplied_openai<Client>(client: Option<CallerClient<'_, Client>>) -> Option<SuppliedSdk> {
+const fn supplied_openai<Client>(client: &Option<CallerClient<'_, Client>>) -> Option<SuppliedSdk> {
     match client {
         Some(CallerClient::Sdk(SuppliedSdk::OpenAi)) => Some(SuppliedSdk::OpenAi),
         Some(CallerClient::Sdk(SuppliedSdk::Azure) | CallerClient::Http(_)) | None => None,
@@ -177,9 +184,9 @@ const fn supplied_openai<Client>(client: Option<CallerClient<'_, Client>>) -> Op
 }
 
 // vertex keeps the caller's client only as an AsyncHTTPHandler
-fn supplied_async_http<'call, Client>(
-    client: Option<CallerClient<'call, Client>>,
-) -> Option<SuppliedClient<'call, Client>> {
+fn supplied_async_http<Client>(
+    client: Option<CallerClient<'_, Client>>,
+) -> Option<SuppliedClient<'_, Client>> {
     match client {
         Some(CallerClient::Http(handler)) if handler.kind == ClientKind::Asynchronous => {
             Some(handler)
@@ -207,7 +214,7 @@ impl AsyncByteSource for SdkContentStream {
         self.stream
             .next()
             .await
-            .map(|item| item.map_err(source_failure))
+            .map(|item| item.map_err(|error| source_failure(&error)))
     }
 
     // None falls through to close(), whose Absent answer is the same Ok(()) a returned result would be
@@ -222,7 +229,7 @@ impl AsyncByteSource for SdkContentStream {
 }
 
 // httpx's iter_bytes raises the SDK's own error, which LiteLLM logs as a plain exception
-pub(super) fn source_failure(error: FilesError) -> SourceFailure {
+pub(super) fn source_failure(error: &FilesError) -> SourceFailure {
     SourceFailure::Exception(ErrorClass::Unclassified(Box::new(ErrorContext {
         message: error.to_string(),
         model: None,

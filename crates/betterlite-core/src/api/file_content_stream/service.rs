@@ -12,6 +12,7 @@ use crate::api::vector_store_http_write::service::SuppliedClient;
 
 use super::error::FileContentError;
 use super::plan::{Plan, content_timeout, known_provider, resolved_provider};
+use super::streaming::FileContentStreaming as _;
 use super::target::{
     CallerClient, ContentLogger, ContentMode, ContentOperation, ContentReply, ContentTarget,
     FileContentDispatch, GenericContent, NewLogger, SuppliedSdk, XaiBatchContent,

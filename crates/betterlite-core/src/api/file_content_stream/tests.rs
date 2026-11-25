@@ -213,7 +213,9 @@ impl FileStreamLogger for RecordingLogging {
     fn success_handler(&self, call: SuccessCall) -> Result<(), CallbackFailure> {
         self.times
             .lock()
-            .unwrap()
+            .map_err(|source| CallbackFailure {
+                message: source.to_string(),
+            })?
             .push((call.start_time, call.end_time));
         self.successes.fetch_add(1, Ordering::SeqCst);
         Ok(())
@@ -282,15 +284,13 @@ impl FileContentDispatch for FakeDispatch {
             request,
             chunk_size,
         });
-        let reply = if streamed != self.wrong_reply {
-            ContentReply::Streamed(Box::new(stream_result()))
-        } else {
+        let reply = if streamed == self.wrong_reply {
             ContentReply::Buffered(Box::new(binary()))
+        } else {
+            ContentReply::Streamed(Box::new(stream_result()))
         };
-        match self.failure {
-            Some(failure) => ready(Err(failure)),
-            None => ready(Ok(reply)),
-        }
+        self.failure
+            .map_or_else(|| ready(Ok(reply)), |failure| ready(Err(failure)))
     }
 }
 
@@ -347,7 +347,7 @@ fn generic_snapshot(content: GenericContent<'_, FakeConfig, ()>) -> GenericSeen 
         trusted: trusted.map(|snapshot| snapshot.values.keys().cloned().collect()),
         headers,
         created: match logger {
-            ContentLogger::Created(logger) => Some(*logger),
+            ContentLogger::Created(created) => Some(*created),
             ContentLogger::Supplied(_) => None,
         },
         client: client.map(|supplied| supplied.kind),
@@ -380,20 +380,11 @@ fn stream_result() -> FileContentStreamingResult {
 }
 
 // every model, catalog and environment value the resolver may read, held for the test's lifetime
+#[derive(Default)]
 struct Env {
     catalog: ModelCatalog,
     names: BTreeSet<String>,
     environment: BTreeMap<String, String>,
-}
-
-impl Default for Env {
-    fn default() -> Self {
-        Self {
-            catalog: ModelCatalog::default(),
-            names: BTreeSet::new(),
-            environment: BTreeMap::new(),
-        }
-    }
 }
 
 impl Env {
@@ -471,7 +462,7 @@ fn reader<'deps>(
     )
 }
 
-fn content_call<'call>(kwargs: &'call ContentKwargs) -> ContentCall<'call> {
+fn content_call(kwargs: &ContentKwargs) -> ContentCall<'_> {
     ContentCall {
         file_id: "file-1",
         model: None,
@@ -511,10 +502,10 @@ const fn sdk_context(kind: SuppliedSdk) -> ContentContext<'static, (), Recording
     }
 }
 
-const fn http_context<'call>(
+const fn http_context(
     kind: ClientKind,
-    trusted: Option<&'call TrustedCredentials>,
-) -> ContentContext<'call, (), RecordingLogging> {
+    trusted: Option<&TrustedCredentials>,
+) -> ContentContext<'_, (), RecordingLogging> {
     ContentContext {
         trusted,
         client: Some(CallerClient::Http(SuppliedClient {

@@ -160,7 +160,7 @@ async fn streaming_logging_identity_creates_the_missing_object(
             function_id: function_id.to_owned(),
         }]
     );
-    let logger = read.dispatch.loggers.lock().unwrap()[0].clone();
+    let logger = Arc::clone(&read.dispatch.loggers.lock().unwrap()[0]);
     assert_eq!(
         logger.identities(),
         vec![written_identity("", "openai", None)]
@@ -419,7 +419,7 @@ async fn sdk_stream_selection_vertex_without_a_config_is_unsupported() {
 }
 #[test]
 fn streamed_source_failures_are_unclassified_exceptions() {
-    let failure = stream_source_failure(FilesError::NotAsync);
+    let failure = stream_source_failure(&FilesError::NotAsync);
     let SourceFailure::Exception(ErrorClass::Unclassified(context)) = &failure else {
         panic!("not an unclassified exception: {failure:?}");
     };
