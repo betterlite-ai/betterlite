@@ -15,12 +15,12 @@ use betterlite_db::stored_cipher::DbCipher;
 use betterlite_openai::openai_base_config::Object as JsonMap;
 use thiserror::Error;
 
-use self::overrides::init_override;
+use self::overrides::apply_override;
 use self::ports::{NoReconnect, SemanticFilterReload, SettingsRows, WebsearchInterception};
 use self::settings_value::{
-    enabled_flag, is_same_object, litellm_settings_object, semantic_config, semantic_enabled,
+    enabled_flag, litellm_settings_object, semantic_config, semantic_enabled,
 };
-use self::sso::init_sso_settings;
+use self::sso::apply_sso;
 use self::websearch_params::{WebsearchParamError, handler_params};
 use crate::config_override_support::decode::StoredOverrideError;
 use crate::config_override_support::environment::RuntimeEnvironment;
@@ -67,7 +67,7 @@ pub enum SettingsReloadError {
     SecretManager(#[from] SecretManagerInitError),
 }
 
-impl<Client: Send> SettingsReloader<Client> {
+impl<Client: DbReconnect + Send> SettingsReloader<Client> {
     pub async fn reload_websearch<Db>(&mut self, db: &Db, callbacks: &dyn WebsearchInterception)
     where
         Db: SettingsRows + ?Sized,
@@ -91,28 +91,26 @@ impl<Client: Send> SettingsReloader<Client> {
         }
     }
 
-    pub async fn reload_sso<Db>(&mut self, db: &Db)
-    where
-        Db: SsoSettingsRows + ?Sized,
-        Client: DbReconnect + Send,
-    {
-        init_sso_settings(self, db).await;
+    pub async fn reload_sso<Db: SsoSettingsRows + ?Sized>(&mut self, db: &Db) {
+        if let Err(error) = apply_sso(self, db).await {
+            tracing::error!(
+                "litellm.proxy.proxy_server.py::ProxyConfig:_init_sso_settings_in_db - {error}"
+            );
+        }
     }
 
-    pub async fn reload_vault<Db>(&mut self, db: &Db)
-    where
-        Db: SettingsRows + ?Sized,
-        Client: DbReconnect + Send,
-    {
-        init_override(self, db, OverrideKind::HashicorpVault).await;
+    pub async fn reload_vault<Db: SettingsRows + ?Sized>(&mut self, db: &Db) {
+        let Err(error) = apply_override(self, db, OverrideKind::HashicorpVault).await else {
+            return;
+        };
+        tracing::error!("Error loading Hashicorp Vault config override from DB: {error}");
     }
 
-    pub async fn reload_cyberark<Db>(&mut self, db: &Db)
-    where
-        Db: SettingsRows + ?Sized,
-        Client: DbReconnect + Send,
-    {
-        init_override(self, db, OverrideKind::CyberArk).await;
+    pub async fn reload_cyberark<Db: SettingsRows + ?Sized>(&mut self, db: &Db) {
+        let Err(error) = apply_override(self, db, OverrideKind::CyberArk).await else {
+            return;
+        };
+        tracing::error!("Error loading CyberArk config override from DB: {error}");
     }
 
     async fn apply_websearch<Db>(
@@ -139,8 +137,10 @@ impl<Client: Send> SettingsReloader<Client> {
             return Ok(());
         }
         let enabled = enabled_flag(config);
-        if is_same_object(self.last_websearch.as_ref(), config)
-            && callbacks.is_registered() == enabled
+        if matches!(
+            self.last_websearch.as_ref(),
+            Some(JsonValue::Object(previous)) if previous == config
+        ) && callbacks.is_registered() == enabled
         {
             return Ok(());
         }
@@ -194,7 +194,10 @@ impl<Client: Send> SettingsReloader<Client> {
     where
         Router: ?Sized + Sync,
     {
-        if !is_same_object(self.last_semantic_filter.as_ref(), config) {
+        if !matches!(
+            self.last_semantic_filter.as_ref(),
+            Some(JsonValue::Object(previous)) if previous == config
+        ) {
             return false;
         }
         if filter.is_ready() {

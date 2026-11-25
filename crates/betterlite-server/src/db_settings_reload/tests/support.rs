@@ -90,6 +90,38 @@ impl FakeRows {
     pub(crate) fn calls(&self) -> usize {
         self.calls.load(Ordering::SeqCst)
     }
+
+    pub(crate) fn litellm(settings: JsonValue) -> Self {
+        Self::rows(Some(settings), None, None, None)
+    }
+
+    pub(crate) fn failing(error: DbError) -> Self {
+        Self::rows(None, None, None, Some(error))
+    }
+
+    pub(crate) fn vault(config: JsonValue) -> Self {
+        Self::rows(None, Some(config), None, None)
+    }
+
+    pub(crate) fn cyberark(config: JsonValue) -> Self {
+        Self::rows(None, None, Some(config), None)
+    }
+
+    fn rows(
+        litellm_settings: Option<JsonValue>,
+        vault: Option<JsonValue>,
+        cyberark: Option<JsonValue>,
+        fail: Option<DbError>,
+    ) -> Self {
+        Self {
+            litellm_settings,
+            vault,
+            cyberark,
+            fail,
+            fail_once: false,
+            calls: AtomicUsize::new(0),
+        }
+    }
 }
 
 #[async_trait]

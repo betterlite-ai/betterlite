@@ -8,10 +8,7 @@ use super::support::{
 use crate::db_settings_reload::ports::SemanticFilterReload;
 
 fn rows_with(config: &str) -> FakeRows {
-    FakeRows {
-        litellm_settings: Some(json(&format!("{{\"mcp_semantic_tool_filter\":{config}}}"))),
-        ..FakeRows::default()
-    }
+    FakeRows::litellm(json(&format!("{{\"mcp_semantic_tool_filter\":{config}}}")))
 }
 
 fn port(filter: &FakeFilter) -> Option<&dyn SemanticFilterReload<TestRouter>> {
@@ -36,10 +33,7 @@ async fn an_absent_key_does_nothing() {
     let control = ControlLog::default();
     let mut reloader = reloader(&control);
     let filter = FakeFilter::default();
-    let rows = FakeRows {
-        litellm_settings: Some(json("{\"websearch_interception_params\":{}}")),
-        ..FakeRows::default()
-    };
+    let rows = FakeRows::litellm(json("{\"websearch_interception_params\":{}}"));
     let (logs, _guard) = capture_logs();
     reloader
         .reload_semantic_filter(&rows, port(&filter), None)
@@ -308,10 +302,7 @@ async fn a_litellm_settings_that_is_not_an_object_is_logged() {
     let control = ControlLog::default();
     let mut reloader = reloader(&control);
     let filter = FakeFilter::default();
-    let rows = FakeRows {
-        litellm_settings: Some(JsonValue::String("[]".to_owned())),
-        ..FakeRows::default()
-    };
+    let rows = FakeRows::litellm(JsonValue::String("[]".to_owned()));
     let (logs, _guard) = capture_logs();
     reloader
         .reload_semantic_filter(&rows, port(&filter), None)

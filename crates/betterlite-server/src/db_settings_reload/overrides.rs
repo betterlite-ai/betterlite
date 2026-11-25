@@ -9,7 +9,6 @@ use betterlite_secret_managers::secret_types::KeyManagementSystem;
 use super::SettingsReloadError;
 use super::SettingsReloader;
 use super::ports::SettingsRows;
-use super::settings_value::is_same_object;
 use crate::config_override_support::decode::decode_stored_override;
 use crate::config_override_support::environment::project_environment;
 use crate::config_override_support::models::OverrideKind;
@@ -22,27 +21,7 @@ const HASHICORP_LOOKUP_REASON: &str = "init_hashicorp_vault_config_override_look
 const CYBERARK_LOOKUP_REASON: &str = "init_cyberark_config_override_lookup_failure";
 
 // One reload never lets a bad row stop the tick: the row's error only reaches this manager's log.
-pub(crate) async fn init_override<Db, Client>(
-    reloader: &mut SettingsReloader<Client>,
-    db: &Db,
-    kind: OverrideKind,
-) where
-    Db: SettingsRows + ?Sized,
-    Client: DbReconnect + Send,
-{
-    if let Err(error) = apply_override(reloader, db, kind).await {
-        match kind {
-            OverrideKind::HashicorpVault => {
-                tracing::error!("Error loading Hashicorp Vault config override from DB: {error}");
-            }
-            OverrideKind::CyberArk => {
-                tracing::error!("Error loading CyberArk config override from DB: {error}");
-            }
-        }
-    }
-}
-
-async fn apply_override<Db, Client>(
+pub(super) async fn apply_override<Db, Client>(
     reloader: &mut SettingsReloader<Client>,
     db: &Db,
     kind: OverrideKind,
@@ -55,12 +34,26 @@ where
         read_override(reloader.reconnect.as_mut(), db, kind, lookup_reason(kind)).await?
     else {
         if last_override(reloader, kind).is_some() {
-            clear(reloader, kind);
+            match kind {
+                OverrideKind::HashicorpVault => clear_hashicorp_vault_state(
+                    &mut reloader.environment,
+                    &mut reloader.state,
+                    reloader.control.as_mut(),
+                ),
+                OverrideKind::CyberArk => clear_cyberark_state(
+                    &mut reloader.environment,
+                    &mut reloader.state,
+                    reloader.control.as_mut(),
+                ),
+            }
         }
         return Ok(());
     };
     let config = decode_stored_override(&raw, kind)?;
-    if is_same_object(last_override(reloader, kind), &config) {
+    if matches!(
+        last_override(reloader, kind),
+        Some(JsonValue::Object(previous)) if *previous == config
+    ) {
         return Ok(());
     }
     apply_config(reloader, kind, config)?;
@@ -73,21 +66,6 @@ where
         }
     }
     Ok(())
-}
-
-fn clear<Client: Send>(reloader: &mut SettingsReloader<Client>, kind: OverrideKind) {
-    match kind {
-        OverrideKind::HashicorpVault => clear_hashicorp_vault_state(
-            &mut reloader.environment,
-            &mut reloader.state,
-            reloader.control.as_mut(),
-        ),
-        OverrideKind::CyberArk => clear_cyberark_state(
-            &mut reloader.environment,
-            &mut reloader.state,
-            reloader.control.as_mut(),
-        ),
-    }
 }
 
 fn apply_config<Client: Send>(
@@ -132,16 +110,16 @@ fn snapshot_mapping<Client: Send>(
     kind: OverrideKind,
 ) -> JsonMap {
     let snapshot = reloader.environment.snapshot();
-    kind.fields()
-        .iter()
-        .map(|field| {
-            let value = snapshot
-                .values
-                .get(field.env_var)
-                .map_or(JsonValue::Null, |text| JsonValue::String(text.clone()));
-            (field.name.to_owned(), value)
-        })
-        .collect()
+    let mut mapping = JsonMap::new();
+    for field in kind.fields() {
+        let stored = snapshot
+            .values
+            .get(field.env_var)
+            .cloned()
+            .map_or(JsonValue::Null, JsonValue::String);
+        mapping.insert(field.name.to_owned(), stored);
+    }
+    mapping
 }
 
 async fn read_override<Db, Client>(

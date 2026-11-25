@@ -51,13 +51,13 @@ pub(crate) fn enabled_flag(config: &JsonMap) -> bool {
 
 // A stored filter config must be a mapping; null is the same as no key at all.
 pub(crate) fn semantic_config(stored: &JsonValue) -> Result<Option<&JsonMap>, SettingsReloadError> {
-    match stored {
-        JsonValue::Object(config) => Ok(Some(config)),
-        JsonValue::Null => Ok(None),
-        JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::String(_) | JsonValue::Array(_) => {
-            Err(SettingsReloadError::SemanticFilterNotAnObject)
-        }
+    if let JsonValue::Object(config) = stored {
+        return Ok(Some(config));
     }
+    if stored.is_null() {
+        return Ok(None);
+    }
+    Err(SettingsReloadError::SemanticFilterNotAnObject)
 }
 
 // mcp_semantic_tool_filter is a declared bool, so a value of another type is an error naming the field.
@@ -72,10 +72,6 @@ pub(crate) fn semantic_enabled(config: &JsonMap) -> Result<bool, SettingsReloadE
             | JsonValue::Object(_),
         ) => Err(SettingsReloadError::SemanticFilterEnabledNotBool),
     }
-}
-
-pub(crate) fn is_same_object(last: Option<&JsonValue>, config: &JsonMap) -> bool {
-    matches!(last, Some(JsonValue::Object(previous)) if previous == config)
 }
 
 // The retry helper classifies faults by type, so a native transport error has to arrive as Connect.

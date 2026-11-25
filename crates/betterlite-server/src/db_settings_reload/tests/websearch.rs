@@ -7,12 +7,9 @@ use rstest::rstest;
 use super::support::{ControlLog, FakeCallbacks, FakeRows, capture_logs, fault, json, reloader};
 
 fn rows_with(params: &str) -> FakeRows {
-    FakeRows {
-        litellm_settings: Some(json(&format!(
-            "{{\"websearch_interception_params\":{params}}}"
-        ))),
-        ..FakeRows::default()
-    }
+    FakeRows::litellm(json(&format!(
+        "{{\"websearch_interception_params\":{params}}}"
+    )))
 }
 
 async fn run(params: &str) -> (Vec<Option<WebsearchParams>>, String) {
@@ -53,10 +50,7 @@ async fn an_absent_params_key_applies_nothing() {
     let control = ControlLog::default();
     let mut reloader = reloader(&control);
     let callbacks = FakeCallbacks::default();
-    let rows = FakeRows {
-        litellm_settings: Some(json("{\"other\":true}")),
-        ..FakeRows::default()
-    };
+    let rows = FakeRows::litellm(json("{\"other\":true}"));
     let (logs, _guard) = capture_logs();
     reloader.reload_websearch(&rows, &callbacks).await;
     assert!(callbacks.applied().is_empty());
@@ -75,13 +69,10 @@ async fn a_json_string_row_is_decoded_and_applied() {
     let control = ControlLog::default();
     let mut reloader = reloader(&control);
     let callbacks = FakeCallbacks::default();
-    let row = FakeRows {
-        litellm_settings: Some(JsonValue::String(
-            "{\"websearch_interception_params\":{\"enabled\":true,\"search_tool_name\":\"my-search\"}}"
-                .to_owned(),
-        )),
-        ..FakeRows::default()
-    };
+    let row = FakeRows::litellm(JsonValue::String(
+        "{\"websearch_interception_params\":{\"enabled\":true,\"search_tool_name\":\"my-search\"}}"
+            .to_owned(),
+    ));
     let (logs, _guard) = capture_logs();
     reloader.reload_websearch(&row, &callbacks).await;
     assert_eq!(callbacks.applied(), vec![Some(enabled_params())]);
@@ -100,10 +91,7 @@ async fn a_litellm_settings_that_is_not_an_object_is_logged(#[case] stored: Json
     let control = ControlLog::default();
     let mut reloader = reloader(&control);
     let callbacks = FakeCallbacks::default();
-    let row = FakeRows {
-        litellm_settings: Some(stored),
-        ..FakeRows::default()
-    };
+    let row = FakeRows::litellm(stored);
     let (logs, _guard) = capture_logs();
     reloader.reload_websearch(&row, &callbacks).await;
     assert!(callbacks.applied().is_empty());
@@ -119,10 +107,7 @@ async fn a_read_failure_is_logged_and_applies_nothing() {
     let control = ControlLog::default();
     let mut reloader = reloader(&control);
     let callbacks = FakeCallbacks::default();
-    let rows = FakeRows {
-        fail: Some(fault("the database is down")),
-        ..FakeRows::default()
-    };
+    let rows = FakeRows::failing(fault("the database is down"));
     let (logs, _guard) = capture_logs();
     reloader.reload_websearch(&rows, &callbacks).await;
     assert!(callbacks.applied().is_empty());

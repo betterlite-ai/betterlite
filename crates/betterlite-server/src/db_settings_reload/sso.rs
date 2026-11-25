@@ -18,19 +18,7 @@ const LOOKUP_REASON: &str = "init_sso_settings_in_db_lookup_failure";
 
 const DROPPED_KEYS: [&str; 3] = ["role_mappings", "team_mappings", "ui_access_mode"];
 
-pub(crate) async fn init_sso_settings<Db, Client>(reloader: &mut SettingsReloader<Client>, db: &Db)
-where
-    Db: SsoSettingsRows + ?Sized,
-    Client: DbReconnect + Send,
-{
-    if let Err(error) = apply_sso(reloader, db).await {
-        tracing::error!(
-            "litellm.proxy.proxy_server.py::ProxyConfig:_init_sso_settings_in_db - {error}"
-        );
-    }
-}
-
-async fn apply_sso<Db, Client>(
+pub(super) async fn apply_sso<Db, Client>(
     reloader: &mut SettingsReloader<Client>,
     db: &Db,
 ) -> Result<(), SettingsReloadError>
