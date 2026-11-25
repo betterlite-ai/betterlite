@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::io::{BufRead as _, BufReader, Read as _, Write as _};
-use std::net::TcpListener;
+use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
@@ -72,7 +72,7 @@ fn backends_redis_close_is_ok() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
     thread::scope(|scope| {
-        let server = scope.spawn(move || serves_until_closed(listener));
+        let server = scope.spawn(move || serves_until_closed(&listener));
         let overrides: RedisOverrides = serde_json::from_str(&format!(
             r#"{{"host":"127.0.0.1","port":"{}"}}"#,
             address.port()
@@ -95,8 +95,16 @@ fn backends_redis_close_is_ok() {
     });
 }
 
-fn serves_until_closed(listener: TcpListener) -> bool {
-    let (mut stream, _peer) = listener.accept().unwrap();
+fn serves_until_closed(listener: &TcpListener) -> bool {
+    // Construction probes a sync connection before close releases the separate async connection.
+    let (mut probe, _probe_peer) = listener.accept().unwrap();
+    assert!(answer_handshake(&mut probe, true));
+    drop(probe);
+    let (mut client, _client_peer) = listener.accept().unwrap();
+    answer_handshake(&mut client, false)
+}
+
+fn answer_handshake(stream: &mut TcpStream, probe: bool) -> bool {
     stream
         .set_read_timeout(Some(Duration::from_secs(5)))
         .unwrap();
@@ -123,11 +131,15 @@ fn serves_until_closed(listener: TcpListener) -> bool {
         }
         let reply: &[u8] = match command.first().map(Vec::as_slice) {
             Some(b"HELLO") => b"%1\r\n+proto\r\n:3\r\n",
+            Some(b"INFO") => b"$21\r\nredis_version:7.2.0\r\n\r\n",
             Some(b"CLIENT") => b"+OK\r\n",
             Some(b"PING") => b"+PONG\r\n",
             other => panic!("unexpected Redis command {other:?}"),
         };
         stream.write_all(reply).unwrap();
+        if probe && command.first().map(Vec::as_slice) == Some(b"PING") {
+            return true;
+        }
     }
 }
 

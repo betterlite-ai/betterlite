@@ -11,7 +11,7 @@ where
 {
     future_into_py(py, async move {
         work.await?;
-        Ok(Python::attach(|attached| attached.None()))
+        Ok(Python::attach(Python::None))
     })
 }
 
