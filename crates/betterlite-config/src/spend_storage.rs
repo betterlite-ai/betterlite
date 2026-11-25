@@ -7,7 +7,7 @@ mod tests;
 mod writer;
 use self::cold_storage::custom_logger;
 use self::queue::{logs_url, max_bytes};
-use self::writer::{disable_spend_logs, max_budget};
+use self::writer::{SpendLogSwitch, disable_spend_logs, max_budget};
 use crate::loader::{ConfigError, EnvironmentLookup, parse_view};
 use crate::raw::RawNumber;
 use crate::sections::Section;
@@ -56,8 +56,7 @@ pub struct GeneralSettings {
     missing_session_id: JsonValue,
     disable_spend_updates: JsonValue,
     // absent keeps the proxy's False, an explicit null stays "not exactly false"
-    #[serde(default, with = "serde_with::rust::double_option")]
-    disable_spend_logs: Option<Option<JsonValue>>,
+    disable_spend_logs: SpendLogSwitch,
     use_redis_transaction_buffer: JsonValue,
     #[serde(flatten)]
     retention: CleanupGeneralSettings,
@@ -117,7 +116,7 @@ impl Section for Raw {
             )?,
             missing_session_id: missing_session_id(&general.missing_session_id)?,
             spend_updates: spend_updates(&general.disable_spend_updates),
-            disable_spend_logs: disable_spend_logs(general.disable_spend_logs.as_ref())?,
+            disable_spend_logs: disable_spend_logs(&general.disable_spend_logs)?,
             max_budget: max_budget(litellm.max_budget, lookup)?,
             disable_end_user_cost_tracking: optional_flag(
                 &litellm.disable_end_user_cost_tracking,
