@@ -569,6 +569,10 @@ fn anthropic_chunks_complete_stream_is_logged() {
     );
     assert_eq!(outcome.kwargs.entries.get("response_cost"), Some(&priced()));
     let calls = cost.calls();
+    assert!(
+        calls.len() >= 2,
+        "the stream build prices through the lent cost service before the payload does: {calls:?}"
+    );
     assert_eq!(
         calls.last().map(|priced_call| priced_call.model.as_str()),
         Some("claude-test")
