@@ -33,11 +33,7 @@ impl From<&CallerRecord> for TeamCaller {
     fn from(record: &CallerRecord) -> Self {
         Self {
             user_id: record.user_id.clone(),
-            user_role: if record.admin_view {
-                Some(UserRole::ProxyAdmin)
-            } else {
-                None
-            },
+            user_role: record.admin_view.then_some(UserRole::ProxyAdmin),
             team_id: record.team_id.clone(),
             team_service_account: false,
         }
