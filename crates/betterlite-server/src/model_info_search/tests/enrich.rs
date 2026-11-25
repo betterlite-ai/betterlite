@@ -120,7 +120,7 @@ async fn enrich(
         &EnrichContext {
             registry,
             catalog,
-            router: router.map(|source| source as &dyn RouterSource),
+            router: router.map(|source| -> &dyn RouterSource { source }),
         },
     )
     .await
@@ -185,65 +185,67 @@ async fn debug_client_uses_none_for_missing_or_blank_client() {
 
 #[tokio::test]
 async fn catalog_three_pass() {
-    assert_catalog_lookup(
-        "openai/gpt-4o",
-        None,
-        "openai/gpt-4o",
-        None,
-        100,
-        vec![("openai/gpt-4o", None)],
-    )
+    assert_catalog_lookup(CatalogCase {
+        backend: "openai/gpt-4o",
+        base_model: None,
+        catalog_model: "openai/gpt-4o",
+        provider: None,
+        max_tokens: 100,
+        expected_calls: vec![("openai/gpt-4o", None)],
+    })
     .await;
-    assert_catalog_lookup(
-        "openai/gpt-4",
-        Some(text("gpt-4o")),
-        "openai/gpt-4",
-        None,
-        200,
-        vec![("gpt-4o", None), ("openai/gpt-4", None)],
-    )
+    assert_catalog_lookup(CatalogCase {
+        backend: "openai/gpt-4",
+        base_model: Some(text("gpt-4o")),
+        catalog_model: "openai/gpt-4",
+        provider: None,
+        max_tokens: 200,
+        expected_calls: vec![("gpt-4o", None), ("openai/gpt-4", None)],
+    })
     .await;
-    assert_catalog_lookup(
-        "openai/gpt-4o",
-        None,
-        "gpt-4o",
-        Some("openai"),
-        300,
-        vec![
+    assert_catalog_lookup(CatalogCase {
+        backend: "openai/gpt-4o",
+        base_model: None,
+        catalog_model: "gpt-4o",
+        provider: Some("openai"),
+        max_tokens: 300,
+        expected_calls: vec![
             ("openai/gpt-4o", None),
             ("openai/gpt-4o", None),
             ("gpt-4o", Some("openai")),
         ],
-    )
+    })
     .await;
 }
 
-async fn assert_catalog_lookup(
-    backend: &str,
+struct CatalogCase<'case> {
+    backend: &'case str,
     base_model: Option<Json>,
-    catalog_model: &str,
-    provider: Option<&str>,
+    catalog_model: &'case str,
+    provider: Option<&'case str>,
     max_tokens: i64,
-    expected_calls: Vec<(&str, Option<&str>)>,
-) {
+    expected_calls: Vec<(&'case str, Option<&'case str>)>,
+}
+
+async fn assert_catalog_lookup(case: CatalogCase<'_>) {
     let registry = registry("{}");
     let mut info_fields = Vec::new();
-    if let Some(base) = base_model {
+    if let Some(base) = case.base_model {
         info_fields.push(("base_model", base));
     }
-    let model = deployment(backend, info_fields, Vec::new());
+    let model = deployment(case.backend, info_fields, Vec::new());
     let catalog = FakeCatalog::new(vec![(
-        (catalog_model, provider),
-        object(vec![("max_tokens", number(max_tokens))]),
+        (case.catalog_model, case.provider),
+        object(vec![("max_tokens", number(case.max_tokens))]),
     )]);
     let enriched = enrich(&model, false, &registry, &catalog, None).await;
     assert_eq!(
         info_of(&enriched).get("max_tokens"),
-        Some(&number(max_tokens))
+        Some(&number(case.max_tokens))
     );
     assert_eq!(
         catalog.calls(),
-        expected_calls
+        case.expected_calls
             .into_iter()
             .map(|(model_name, provider_name)| {
                 (String::from(model_name), provider_name.map(String::from))
@@ -254,36 +256,36 @@ async fn assert_catalog_lookup(
 
 #[tokio::test]
 async fn azure_base_model() {
-    assert_catalog_lookup(
-        "azure/my-deploy",
-        Some(text("gpt-4o")),
-        "gpt-4o",
-        None,
-        50,
-        vec![("gpt-4o", None)],
-    )
+    assert_catalog_lookup(CatalogCase {
+        backend: "azure/my-deploy",
+        base_model: Some(text("gpt-4o")),
+        catalog_model: "gpt-4o",
+        provider: None,
+        max_tokens: 50,
+        expected_calls: vec![("gpt-4o", None)],
+    })
     .await;
 }
 
 #[tokio::test]
 async fn azure_backend_fallback_modes() {
-    assert_catalog_lookup(
-        "azure/my-deploy2",
-        None,
-        "azure/my-deploy2",
-        None,
-        60,
-        vec![("azure/my-deploy2", None)],
-    )
+    assert_catalog_lookup(CatalogCase {
+        backend: "azure/my-deploy2",
+        base_model: None,
+        catalog_model: "azure/my-deploy2",
+        provider: None,
+        max_tokens: 60,
+        expected_calls: vec![("azure/my-deploy2", None)],
+    })
     .await;
-    assert_catalog_lookup(
-        "azure/my-deploy3",
-        Some(number(5)),
-        "azure/my-deploy3",
-        None,
-        70,
-        vec![("azure/my-deploy3", None)],
-    )
+    assert_catalog_lookup(CatalogCase {
+        backend: "azure/my-deploy3",
+        base_model: Some(number(5)),
+        catalog_model: "azure/my-deploy3",
+        provider: None,
+        max_tokens: 70,
+        expected_calls: vec![("azure/my-deploy3", None)],
+    })
     .await;
 }
 
