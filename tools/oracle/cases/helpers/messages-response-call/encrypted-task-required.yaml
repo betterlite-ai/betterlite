@@ -1,0 +1,39 @@
+kind: helper
+name: messages-response-call-encrypted-task-required
+call:
+  messages_response_call:
+    call:
+      request:
+        model: gpt-4o
+        messages:
+        - role: user
+          content: hi
+        max_tokens: 64
+      stream: false
+      settings: {}
+      forwarded: {}
+    include_supported: true
+    provider: openai
+    model_info: null
+    answer:
+      shape: response
+      body:
+        id: resp_b985_encrypted
+        created_at: 1
+        model: gpt-4o
+        status: completed
+        output:
+        - type: message
+          id: msg_b985_encrypted
+          role: assistant
+          status: completed
+          content:
+          - type: output_text
+            text: encrypted
+            annotations: []
+        usage:
+          input_tokens: 4
+          output_tokens: 1
+          total_tokens: 5
+env: {}
+compare: {ignore: []}

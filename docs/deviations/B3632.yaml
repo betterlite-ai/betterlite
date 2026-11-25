@@ -1,0 +1,24 @@
+task: B3632
+deviations:
+  - what: clear_placeholder_cost takes only the response, not the response and its usage.
+    why: In LiteLLM the usage argument is the same object as response.usage; Rust has no aliasing, so a second argument would be a copy that clears nothing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L406-L408
+  - what: recover_interrupted_stream_output_tokens returns whether it changed the usage, not the usage object.
+    why: The only caller tests the result for none and then clears the cost; the response already holds the corrected usage.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L363-L403
+  - what: Failures are typed errors where LiteLLM lets Python exceptions propagate, and each fallback catches only the typed errors of the steps it wraps.
+    why: Rust has no runtime attribute errors and a panic is banned by the no-panics rule, so the typed error is the only failure left to catch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L169-L205
+  - what: The token count error branch catches B196's typed count error and the assembler runtime startup error, not every exception.
+    why: LiteLLM's bare `except Exception` also hides Python bugs such as a missing attribute; betterlite has no such class of failure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L389-L396
+  - what: The recovery has no separate "response has no usage" branch; both assembled response variants always carry a usage record, so only the absent or empty output text guard can fire there.
+    why: B2227's chat and text responses both hold a usage record, so a guard for a missing one would be unreachable code.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L377-L385
+  - what: build_streaming_response_for_logging and record_partial_usage_for_failure take one more argument after the pinned ones, an InterruptedStreamServices holding the cost service and the token counter.
+    why: LiteLLM reaches litellm.completion_cost and token_counter as module globals; the generic bounds still need an instance to call, and the no-module-state rule forbids a global, so the caller passes them in.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L207-L251
+kept_bugs:
+  - what: An interrupted stream that fell back to a usage-only response keeps the message_start output_tokens placeholder, because the usage-only response carries empty message content and the recovery finds no output text to re-count.
+    why: The fallback exists to keep a log row for a stream that could not be reconstructed, and a deployment that sees it still gets the raw output_tokens rather than a reconstructed guess; B3631 builds that response and the umbrella keeps the behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L382-L385

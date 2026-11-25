@@ -53,8 +53,10 @@ betterlite-pyhost = { path = "../betterlite-pyhost" }
 betterlite-rate-limit = { path = "../betterlite-rate-limit" }
 betterlite-redact = { path = "../betterlite-redact" }
 betterlite-redis = { path = "../betterlite-redis" }
+betterlite-reporting = { path = "../betterlite-reporting" }
 betterlite-roi = { path = "../betterlite-roi" }
 betterlite-router = { path = "../betterlite-router" }
+betterlite-sdk = { path = "../betterlite-sdk" }
 betterlite-secret-managers = { path = "../betterlite-secret-managers" }
 betterlite-secrets = { path = "../betterlite-secrets" }
 betterlite-semantic = { path = "../betterlite-semantic" }

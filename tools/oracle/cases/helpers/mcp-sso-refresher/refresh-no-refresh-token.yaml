@@ -1,0 +1,12 @@
+kind: helper
+name: refresh-no-refresh-token
+call:
+  b4664:
+    function: refresh
+    user_id: user-1
+    assertion:
+      claims: {iss: https://idp.example, sub: user-1, exp: 2000000000}
+    vars: {}
+    outcome: {kind: ok}
+env: {}
+compare: {ignore: []}
