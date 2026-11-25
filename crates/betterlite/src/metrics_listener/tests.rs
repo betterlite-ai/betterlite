@@ -302,16 +302,16 @@ async fn a_parent_that_exits_while_the_app_builds_still_stops_the_sidecar() {
     let reparenting = Arc::clone(&parent);
     let built = Arc::new(AtomicBool::new(false));
     let built_flag = Arc::clone(&built);
-    let build = move |folder: PathBuf, pid: u32| {
+    let make_app = move |directory: PathBuf, worker: u32| {
         built_flag.store(true, Ordering::SeqCst);
         reparenting.store(1, Ordering::SeqCst);
-        build_metrics_app(&folder, pid)
+        build_metrics_app(&directory, worker)
     };
     let current = Arc::clone(&parent);
     let served =
-        run_metrics_server_watched(&sidecar, build, move || current.load(Ordering::SeqCst));
+        run_metrics_server_watched(&sidecar, make_app, move || current.load(Ordering::SeqCst));
     let outcome = time::timeout(Duration::from_secs(5), served).await;
-    let _served = outcome
+    outcome
         .expect("the sidecar outlived the parent that exited while the app was built")
         .expect("the sidecar failed");
     assert!(built.load(Ordering::SeqCst));
