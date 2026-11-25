@@ -24,8 +24,8 @@ use crate::cache_backends::error::{self, RedisCircuitBreakerOpenError};
 use crate::cache_backends::settings::RedisSettings;
 use crate::cache_backends::tests::test_gate;
 
-// The numeric overrides are text because arbitrary_precision breaks the untagged number fields. Nothing listens on port 1, so a call reaches the client and every command fails on the way out.
-const DEAD_REDIS: &str = r#"{"host": "127.0.0.1", "port": "1", "socket_timeout": "0.1", "socket_connect_timeout": "0.1"}"#;
+// The constructor takes RedisSettings JSON, and the numeric overrides are text because arbitrary_precision breaks the untagged number fields. Nothing listens on port 1, so a call reaches the client and every command fails on the way out.
+const DEAD_REDIS: &str = r#"{"overrides": {"host": "127.0.0.1", "port": "1", "socket_timeout": "0.1", "socket_connect_timeout": "0.1"}}"#;
 // Short enough that a test crosses the recovery timeout, long enough that an ungated call stays inside it.
 const RECOVERY_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -69,12 +69,7 @@ fn gate_with(policy: RedisFailurePolicy, clock: &Arc<FakeClock>) -> Arc<PolicyGa
 }
 
 fn dead_settings() -> RedisSettings {
-    RedisSettings {
-        overrides: serde_json::from_str(DEAD_REDIS).unwrap(),
-        namespace: None,
-        default_ttl: None,
-        redis_flush_size: None,
-    }
+    serde_json::from_str(DEAD_REDIS).unwrap()
 }
 
 fn dead_redis() -> NativeRedis {
