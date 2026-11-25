@@ -41,6 +41,7 @@ pub struct ChatResponse {
     pub model: Option<String>,
     pub system_fingerprint: Option<String>,
     pub choices: Vec<ChatChoice>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub usage: Option<Usage>,
     #[serde(flatten)]
     pub extra: JsonObject,
@@ -52,20 +53,21 @@ pub struct ChatChoice {
     pub index: i64,
     pub message: ChatMessage,
     pub finish_reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub logprobs: Option<ChoiceLogprobs>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub provider_specific_fields: Option<JsonObject>,
     #[serde(flatten)]
     pub extra: JsonObject,
 }
 
-// Message: the payloads a replayed delta carries stay typed, absent ones stay out of the dump, and other keys round-trip
+// Message: absent payloads stay out of the dump, content, role, function_call, tool_calls and provider_specific_fields keep LiteLLM's nulls, and other keys round-trip
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ChatMessage {
     pub content: Option<String>,
     pub role: Option<String>,
     pub function_call: Option<DeltaFunction>,
     pub tool_calls: Option<Vec<ChatToolCall>>,
-    // absent payloads stay out of the dump, while the fields above keep the null LiteLLM's constructor sets
     #[serde(skip_serializing_if = "Option::is_none")]
     pub audio: Option<DeltaAudio>,
     #[serde(skip_serializing_if = "Option::is_none")]

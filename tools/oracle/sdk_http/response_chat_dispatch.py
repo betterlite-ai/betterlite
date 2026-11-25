@@ -21,7 +21,6 @@ Settled: TypeAlias = ModelResponse | CustomStreamWrapper
 
 class BridgeRun(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
     acompletion: JsonValue = False
     kwargs: dict[str, JsonValue] = Field(default_factory=dict)
 
@@ -41,7 +40,6 @@ class StreamDelta(BaseModel):
 
 class StreamChoice(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-
     delta: StreamDelta = Field(default_factory=StreamDelta)
     finish_reason: str | None = None
 

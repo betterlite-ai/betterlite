@@ -35,6 +35,20 @@ async fn a_passed_through_chat_answer_keeps_its_choice_logprobs() {
     assert_eq!(chat_json(&expect_chat(output)), chat_json(&body));
 }
 
+// litellm 1.105.1 dumps a response without usage, choice logprobs or choice provider_specific_fields when the provider sent none
+#[tokio::test]
+async fn a_passed_through_chat_answer_matches_litellms_json() {
+    let raw = r#"{"id":"chatcmpl-x","object":"chat.completion","created":1,"model":"gpt-4o-mini","system_fingerprint":null,"choices":[{"index":0,"message":{"content":"hi","role":"assistant","function_call":null,"tool_calls":null,"provider_specific_fields":null},"finish_reason":"stop"}]}"#;
+    let execution = FakeExecution::new(Answer::Chat(Box::new(serde_json::from_str(raw).unwrap())));
+    let output = expect_chat(expect_ok(
+        completion(&execution, call(&kwargs("gpt-4o-mini", "openai"))).await,
+    ));
+    assert_eq!(
+        serde_json::to_value(&*output).unwrap(),
+        serde_json::from_str::<serde_json::Value>(raw).unwrap()
+    );
+}
+
 // LiteLLM's Message always dumps content, role, function_call, tool_calls and provider_specific_fields, null when unset
 fn body_with(raw_message: &str) -> Box<super::ChatResponse> {
     let raw = format!(
