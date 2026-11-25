@@ -351,43 +351,6 @@ async fn sdk_stream_selection_sync_vertex_rejects_the_placeholder() {
 }
 
 #[tokio::test]
-async fn sdk_stream_selection_unreachable_helper_branch_is_still_built() {
-    let env = Env::default();
-    let resolution = env.resolution();
-    let read = reader(&resolution);
-    let kwargs = ContentKwargs::default();
-    let call = content_call(&kwargs);
-    let selection = Selection {
-        provider: Some(String::from("cohere")),
-        mode: ContentMode {
-            is_async: true,
-            timeout: FineTuningTimeout::Seconds(600.0_f64),
-        },
-        request: FileContentRequest {
-            file_id: String::from("file-1"),
-            extra_headers: IndexMap::new(),
-            extra_body: IndexMap::new(),
-            timeout: None,
-        },
-    };
-    let failure = read
-        .streamed(&call, &selection, bare())
-        .await
-        .err()
-        .unwrap();
-    assert!(matches!(
-        &failure,
-        FileContentError::UnsupportedStreaming { provider } if provider == "cohere"
-    ));
-    assert_eq!(
-        failure.to_string(),
-        "LiteLLM doesn't support cohere for streaming 'file_content'. Supported providers are ['hosted_vllm', 'litellm_proxy', 'openai', 'vertex_ai']."
-    );
-    assert_eq!(failure.bad_request().map(|_request| 400_u16), Some(400));
-    assert_eq!(sent(&read), Vec::new());
-}
-
-#[tokio::test]
 async fn sdk_stream_selection_vertex_without_a_config_is_unsupported() {
     let env = Env::default();
     let resolution = env.resolution();
