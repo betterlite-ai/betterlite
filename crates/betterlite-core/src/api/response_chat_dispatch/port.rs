@@ -175,8 +175,7 @@ pub struct PostStreamDeps<'deps> {
     pub processing: &'deps dyn PostStreamProcessing,
 }
 
-// ProviderConfigManager.get_provider_chat_config(...).post_stream_processing(stream): B2202's per-provider seam
-// The bridge's own stream keeps its typed failures until the AsyncChunkStream adapter sits at the wire
+// ProviderConfigManager.get_provider_chat_config(...).post_stream_processing(stream): B2202's per-provider seam, where a pass-through returns the typed stream unchanged
 pub trait PostStreamProcessing: Send + Sync {
     fn post_stream_processing(
         &self,

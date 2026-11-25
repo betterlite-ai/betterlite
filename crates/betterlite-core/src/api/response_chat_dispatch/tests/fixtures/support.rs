@@ -442,9 +442,15 @@ pub(crate) fn chat_response() -> Box<ChatResponse> {
         choices: vec![ChatChoice {
             index: 0,
             message: ChatMessage {
-                role: Some(String::from("assistant")),
                 content: Some(String::from("hello")),
-                ..ChatMessage::default()
+                role: Some(String::from("assistant")),
+                function_call: None,
+                tool_calls: None,
+                audio: None,
+                reasoning_content: None,
+                thinking_blocks: None,
+                provider_specific_fields: None,
+                extra: JsonObject::new(),
             },
             finish_reason: Some(String::from("stop")),
             logprobs: None,
