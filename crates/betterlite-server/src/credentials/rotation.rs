@@ -18,7 +18,7 @@ use betterlite_db::stored_cipher::DbCipher;
 use betterlite_mcp::sso_assertions::rotation as sso_rotation;
 use betterlite_secret_managers::secret_lookup::SecretLookup;
 use secrecy::SecretString;
-use tokio::task::JoinSet;
+use tokio_util::task::TaskTracker;
 
 use environment::{environment_values, sealed_values};
 use error::RotationError;
@@ -46,6 +46,8 @@ pub struct Rotation<'run, S, M, A, I> {
     pub new_master_key: &'run SecretString,
     pub secrets: &'run Arc<SecretLookup>,
     pub warnings: &'run Arc<Warnings>,
+    // the server's tracker, so shutdown drains a secret read the rotation had to offload
+    pub tasks: &'run TaskTracker,
     pub runtime: &'run mut RuntimeEnvironment,
 }
 
@@ -83,19 +85,15 @@ where
         if rows.is_empty() {
             return Ok(());
         }
-        // a secret reference opens a token file or waits on an OIDC provider, so the decrypt runs on the blocking pool
-        let mut blocking = JoinSet::new();
-        blocking.spawn_blocking({
+        // a secret reference opens a token file or waits on an OIDC provider, so the blocking pool decrypts and the server's tracker keeps it through shutdown
+        let decrypt = self.tasks.spawn_blocking({
             let cipher = Arc::clone(self.cipher);
             let secrets = Arc::clone(self.secrets);
             let warnings = Arc::clone(self.warnings);
             let environment = self.runtime.snapshot().values;
             move || decrypt_model_rows(&rows, &cipher, &secrets, &environment, &warnings)
         });
-        let Some(task) = blocking.join_next().await else {
-            return Err(RotationError::DecryptTaskMissing);
-        };
-        let deployments = task??;
+        let deployments = decrypt.await??;
         let prepared = deployments
             .iter()
             .map(|deployment| {

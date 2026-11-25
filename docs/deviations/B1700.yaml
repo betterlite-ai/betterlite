@@ -32,25 +32,29 @@ deviations:
   - what: >-
       Every store operation of the rotation has a deadline, taken from the values the caller builds
       the store with (betterlite_db::table_ops' defaults): the model transaction acquires its
-      connection within ten seconds, and every config, environment and credential scan or write,
-      acquisition included, within thirty seconds. A drained pool or a blocked query therefore ends
-      the wait with that stage's own boundary: a failed model scan or credential scan skips its
-      stage, while a failed model transaction or environment write still aborts the rotation and a
-      failed credential write still skips that row. The model transaction puts its two-minute limit
-      into the server as a transaction-local statement_timeout, so PostgreSQL cancels a blocked
-      statement itself, and the client waits at most twice the deadline; a model write that times
-      out has its connection dropped instead of returned to the pool. A scan or single-row write
-      that times out only stops the client's wait, because its repository owns the connection, so
-      the abandoned statement can still finish on the server.
+      connection within ten seconds and then runs between BEGIN and COMMIT under one absolute
+      two-minute deadline. Before every UPDATE and before the COMMIT the transaction sets its
+      transaction-local statement_timeout to the time the transaction has left, so PostgreSQL
+      cancels any statement that would outlive the deadline; once that time is gone it sends no
+      further statement, and the client stops waiting at that same deadline. A model write that
+      times out has its connection dropped instead of returned to the pool. Every config, environment and credential scan or write, acquisition included, ends
+      the client's wait within thirty seconds, and each keeps its stage's own failure boundary: a
+      failed model scan or credential scan skips its stage, while a failed environment write still
+      aborts the rotation and a failed credential write still skips that row. Those scan and
+      single-row write calls only bound the client's wait: their repositories own the pooled
+      connection, so the rotation cannot cancel or discard it, and a statement abandoned by the
+      client can still finish on the server.
     why: >-
       LiteLLM bounds only the model transaction, with prisma's two-minute tx timeout; its scans,
       environment update and per-credential updates wait as long as the server makes them wait, so a
-      drained pool or a locked row suspends the rotation and every later stage with it. Abandoning a
-      client-side wait does not cancel the server's statement, and returning a model connection
-      would hand the next borrower a session still busy with the old UPDATE, so the transaction
-      carries a server-side deadline and the timed-out connection is discarded. The other call sites
-      keep their existing failure boundaries because cancelling their statements would need a
-      second connection per statement.
+      drained pool or a locked row suspends the rotation and every later stage with it. A
+      per-statement statement_timeout alone would let several statements each use the whole limit,
+      so the model transaction hands every statement only the time it has left and the client waits
+      for the same absolute deadline; returning a timed-out model connection would hand the next
+      borrower a session still busy with the old UPDATE, so it is discarded. The scan and
+      single-row write calls keep their existing failure boundaries because their connection comes
+      from the repository's own pool: cancelling those statements needs a bounded repository
+      access, not a rotation that never holds the connection.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5260-L5268
 kept_bugs:
   - what: >-

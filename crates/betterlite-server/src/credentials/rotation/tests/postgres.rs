@@ -19,6 +19,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use tokio::time::timeout;
 use tokio_postgres::NoTls;
 use tokio_postgres::types::ToSql;
+use tokio_util::task::TaskTracker;
 
 use super::super::Rotation;
 use super::super::error::RotationError;
@@ -92,6 +93,17 @@ BEGIN
 END $$ LANGUAGE plpgsql;
 CREATE TRIGGER slow_first_model BEFORE UPDATE ON "LiteLLM_ProxyModelTable"
     FOR EACH ROW EXECUTE FUNCTION slow_first_model_update();
+"#;
+
+// Every model UPDATE sleeps 0.6s, so two rows fit one statement's time but not the transaction's absolute deadline.
+const SLOW_MODEL_UPDATES: &str = r#"
+CREATE FUNCTION slow_model_update() RETURNS trigger AS $$
+BEGIN
+    PERFORM pg_sleep(0.6);
+    RETURN NEW;
+END $$ LANGUAGE plpgsql;
+CREATE TRIGGER slow_model BEFORE UPDATE ON "LiteLLM_ProxyModelTable"
+    FOR EACH ROW EXECUTE FUNCTION slow_model_update();
 "#;
 
 const FAIL_CONFIG_WRITE: &str = r#"
@@ -178,6 +190,7 @@ struct Harness {
     key: SecretString,
     warnings: Arc<Warnings>,
     secrets: Arc<SecretLookup>,
+    tasks: TaskTracker,
     runtime: RuntimeEnvironment,
 }
 
@@ -229,6 +242,7 @@ impl Harness {
             key: new_key(),
             warnings: Arc::new(Warnings::default()),
             secrets: Arc::new(secrets()),
+            tasks: TaskTracker::new(),
             runtime: RuntimeEnvironment::default(),
         }
     }
@@ -256,6 +270,7 @@ impl Harness {
             new_master_key: &self.key,
             secrets: &self.secrets,
             warnings: &self.warnings,
+            tasks: &self.tasks,
             runtime: &mut self.runtime,
         };
         rotation.run(actor).await
@@ -587,6 +602,51 @@ async fn a_blocked_model_update_is_cancelled_within_the_model_deadline() {
     harness.close().await;
 }
 
+// Each update fits a statement deadline, but together they outlast the transaction's one absolute deadline, so none commits.
+#[tokio::test]
+async fn the_model_transaction_stops_at_one_absolute_deadline() {
+    let mut harness = Harness::start().await;
+    harness.model_timeout = Duration::from_secs(1);
+    harness.batch(SLOW_MODEL_UPDATES).await;
+    harness
+        .seed_model(
+            "m1",
+            &object_json(vec![("model", sealed("openai/gpt-4o"))]),
+            "{}",
+        )
+        .await;
+    harness
+        .seed_model(
+            "m2",
+            &object_json(vec![("model", sealed("openai/gpt-4o-mini"))]),
+            "{}",
+        )
+        .await;
+    let started = Instant::now();
+    let error = harness.rotate(None).await.unwrap_err();
+    assert!(matches!(
+        error,
+        RotationError::Store(StoreError::ModelTimeout)
+    ));
+    assert!(started.elapsed() < Duration::from_secs(3));
+    let first = harness.model("m1").await;
+    let JsonData::String(first_model) = &first.params["model"] else {
+        panic!("the model parameter is text");
+    };
+    assert_eq!(open(first_model, OLD_KEY).as_deref(), Some("openai/gpt-4o"));
+    assert_eq!(open(first_model, NEW_KEY), None);
+    let second = harness.model("m2").await;
+    let JsonData::String(second_model) = &second.params["model"] else {
+        panic!("the model parameter is text");
+    };
+    assert_eq!(
+        open(second_model, OLD_KEY).as_deref(),
+        Some("openai/gpt-4o-mini")
+    );
+    assert_eq!(open(second_model, NEW_KEY), None);
+    harness.close().await;
+}
+
 // A blocked model scan times out, only the model stage is skipped, and the next stages still run.
 #[tokio::test]
 async fn a_blocked_model_scan_skips_only_the_model_stage() {
@@ -768,6 +828,7 @@ async fn stored_sso_assertions_are_rotated_through_the_postgres_rows() {
         new_master_key: &harness.key,
         secrets: &harness.secrets,
         warnings: &harness.warnings,
+        tasks: &harness.tasks,
         runtime: &mut harness.runtime,
     };
     rotation.run(None).await.unwrap();

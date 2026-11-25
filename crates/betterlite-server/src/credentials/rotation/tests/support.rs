@@ -25,6 +25,7 @@ use betterlite_secrets::secret_codec::{
     Algorithm, CipherSettings, DecryptPolicy, FailureLog, FailureValue, OsNonces, StoredValue,
 };
 use secrecy::{ExposeSecret as _, SecretString};
+use tokio_util::task::TaskTracker;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::{MakeWriter, fmt};
 
@@ -525,6 +526,7 @@ pub(super) struct Fixture {
     pub new_master_key: SecretString,
     pub secrets: Arc<SecretLookup>,
     pub warnings: Arc<Warnings>,
+    pub tasks: TaskTracker,
     pub runtime: RuntimeEnvironment,
 }
 
@@ -540,6 +542,7 @@ pub(super) fn fixture() -> Fixture {
         new_master_key: new_key(),
         secrets: Arc::new(secrets()),
         warnings: Arc::new(Warnings::default()),
+        tasks: TaskTracker::new(),
         runtime: RuntimeEnvironment::default(),
     }
 }
@@ -557,6 +560,7 @@ impl Fixture {
             new_master_key: &self.new_master_key,
             secrets: &self.secrets,
             warnings: &self.warnings,
+            tasks: &self.tasks,
             runtime: &mut self.runtime,
         }
     }

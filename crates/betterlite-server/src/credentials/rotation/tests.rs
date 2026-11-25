@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+mod cancellation;
 mod credentials;
 mod environment;
 mod models;

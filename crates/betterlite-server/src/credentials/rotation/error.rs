@@ -20,8 +20,6 @@ where
     Decrypt(#[from] DbRowDecryptError),
     #[error("the model decryption task failed: {0}")]
     DecryptTask(#[from] JoinError),
-    #[error("the model decryption task never ran")]
-    DecryptTaskMissing,
     #[error(transparent)]
     Model(#[from] ModelSecretsError),
     #[error(transparent)]

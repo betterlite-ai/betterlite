@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use betterlite_db::auxiliary_repository::repository::{PrismaClient, TableError};
 use betterlite_db::budget_permission_rows::JsonData;
@@ -178,24 +178,24 @@ impl RotationStore for PostgresRotationStore<'_> {
     }
 }
 
-// The whole model write between BEGIN and COMMIT, with the server deadline on each statement and a client bound on the batch.
+// The whole model write between BEGIN and COMMIT shares one absolute deadline: each statement gets the time left, so nothing commits after it.
 async fn model_transaction(
     client: &mut PooledClient,
     models: &[PreparedModel],
     deadline: Duration,
 ) -> Result<(), StoreError> {
-    let started = timeout(deadline, client.transaction())
+    let started = Instant::now();
+    let opening = timeout(deadline, client.transaction())
         .await
         .map_err(|_elapsed| StoreError::Timeout("transaction start", deadline))?;
-    let transaction = started.map_err(|source| StoreError::Database(backend(source)))?;
-    let milliseconds = statement_millis(deadline);
-    let setting = format!("{milliseconds}ms");
+    let transaction = opening.map_err(|source| StoreError::Database(backend(source)))?;
     let write = async {
-        transaction
-            .execute(STATEMENT_TIMEOUT_SQL, &[&setting])
-            .await
-            .map_err(model_statement_error)?;
         for model in models {
+            let setting = statement_setting(deadline, started).ok_or(StoreError::ModelTimeout)?;
+            transaction
+                .execute(STATEMENT_TIMEOUT_SQL, &[&setting])
+                .await
+                .map_err(model_statement_error)?;
             transaction
                 .execute(
                     UPDATE_MODEL_PARAMS_SQL,
@@ -204,13 +204,24 @@ async fn model_transaction(
                 .await
                 .map_err(model_statement_error)?;
         }
+        let setting = statement_setting(deadline, started).ok_or(StoreError::ModelTimeout)?;
+        transaction
+            .execute(STATEMENT_TIMEOUT_SQL, &[&setting])
+            .await
+            .map_err(model_statement_error)?;
         transaction.commit().await.map_err(model_statement_error)
     };
-    // the client waits twice the server deadline, so the server's own cancellation normally answers first
-    match timeout(deadline.saturating_add(deadline), write).await {
+    // the client stops waiting at the same absolute deadline the server is cancelling statements against
+    match timeout(deadline.saturating_sub(started.elapsed()), write).await {
         Ok(result) => result,
         Err(_elapsed) => Err(StoreError::ModelTimeout),
     }
+}
+
+// PostgreSQL applies statement_timeout to each statement, so each statement gets only the time the transaction has left, and none is sent once that is gone.
+fn statement_setting(deadline: Duration, started: Instant) -> Option<String> {
+    let left = deadline.checked_sub(started.elapsed())?;
+    Some(format!("{}ms", statement_millis(left)))
 }
 
 // PostgreSQL treats zero as unlimited and refuses a statement_timeout above INT_MAX milliseconds.
