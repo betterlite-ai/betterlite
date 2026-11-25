@@ -5,8 +5,10 @@ import httpx2
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
 from betterlite._cost.helpers import COST_HEADER
-from betterlite._cost.objects import PrivateCarrier, hidden_params, private_fields
+from betterlite._cost.objects import PrivateCarrier, private_fields
 from betterlite._cost.wire import JsonSource
+from betterlite.types.decisions import DecisionsResponse, OpenAIDecisionResponse
+from betterlite.types.utils.base import Dumpable, ResponseObject
 from betterlite.types.utils.response import process_response_headers as _common_headers
 
 _INTERNAL_PREFIX: Final = "x-litellm-"
@@ -72,12 +74,20 @@ def set_provider_response_headers_in_hidden_params(  # ast-grep-ignore: no-long-
 def get_provider_response_headers_from_hidden_params(  # ast-grep-ignore: no-long-names
     response: JsonSource | None,
 ) -> dict[str, str] | None:
-    if response is None:
-        return None
-    hidden = hidden_params(response)
-    if hidden is None:
-        return None
-    try:
-        return _PROVIDER_HEADERS.validate_python(hidden.get("headers"))
-    except ValidationError:
-        return None
+    match response:
+        case None:
+            return None
+        case ResponseObject():
+            hidden: JsonValue = private_fields(response).get("_hidden_params")
+        case DecisionsResponse() | OpenAIDecisionResponse():
+            hidden = response.hidden_params
+        case Dumpable() | Mapping():
+            return None
+    match hidden:
+        case Mapping() as params:
+            try:
+                return _PROVIDER_HEADERS.validate_python(params.get("headers"))
+            except ValidationError:
+                return None
+        case bool() | int() | float() | str() | list() | None:
+            return None

@@ -5,14 +5,13 @@ import time
 from collections.abc import Mapping, Sequence
 from contextlib import suppress
 from decimal import Decimal
-from http.cookiejar import CookieJar, DefaultCookiePolicy
 from pathlib import Path
 from typing import Final, NotRequired, TypedDict
 
-import httpx2
 from pydantic import JsonValue, TypeAdapter
 
 import betterlite
+from betterlite._core_helpers.budget_http import ModuleClient
 from betterlite._core_helpers.budget_records import (
     USERS,
     BudgetRecord,
@@ -23,8 +22,7 @@ from betterlite._core_helpers.budget_records import (
 from betterlite._core_helpers.values import text_of
 from betterlite._cost.objects import dump_object
 from betterlite._cost.wire import JsonSource
-from betterlite._settings.env import env_number, env_str
-from betterlite._version import version
+from betterlite._settings.env import env_number
 
 HOURS_IN_A_DAY: Final[int] = env_number("HOURS_IN_A_DAY", 24, int)
 DAYS_IN_A_WEEK: Final[int] = env_number("DAYS_IN_A_WEEK", 7, int)
@@ -45,12 +43,6 @@ _INPUT_ERROR: Final = (
     "Either a chat completion object or the text response needs to be passed in. "
     "Learn more - https://docs.litellm.ai/docs/budget_manager"
 )
-_TIMEOUT_SECONDS: Final = 600.0
-_CONNECT_SECONDS: Final = 5.0
-_USER_AGENT_VARIABLE: Final = "LITELLM_USER_AGENT"
-_SSL_CERTIFICATE_VARIABLE: Final = "SSL_CERTIFICATE"
-_DEFAULT_TIMEOUT: Final = httpx2.Timeout(timeout=_TIMEOUT_SECONDS, connect=_CONNECT_SECONDS)
-_JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 _LOGGER: Final = logging.getLogger(__name__)
 _COST_FILE_LOCK: Final = threading.Lock()
 
@@ -63,34 +55,6 @@ class HostedReply(TypedDict):
 _REPLY: Final[TypeAdapter[HostedReply]] = TypeAdapter(HostedReply)
 
 __all__ = ["BudgetManager", "ModuleClient", "module_level_client"]
-
-
-class ModuleClient:
-    client: Final[httpx2.Client]
-    timeout: Final[httpx2.Timeout]
-    ssl_verify: Final[bool]
-
-    def __init__(
-        self, *, timeout: httpx2.Timeout | None = None, ssl_verify: bool | None = None
-    ) -> None:
-        certificate = env_str(_SSL_CERTIFICATE_VARIABLE, "") or betterlite.ssl_certificate
-        agent = env_str(_USER_AGENT_VARIABLE, f"betterlite/{version}")
-        self.timeout = _DEFAULT_TIMEOUT if timeout is None else timeout
-        self.ssl_verify = betterlite.ssl_verify if ssl_verify is None else ssl_verify
-        self.client = httpx2.Client(
-            timeout=self.timeout,
-            follow_redirects=True,
-            headers={"User-Agent": agent},
-            cookies=CookieJar(policy=DefaultCookiePolicy(allowed_domains=())),
-            verify=self.ssl_verify,
-            cert=certificate,
-            http2=betterlite.http2,
-        )
-
-    def post(self, url: str, *, headers: Mapping[str, str], json: JsonValue) -> JsonValue:
-        response = self.client.post(url, headers=dict(headers), json=json)
-        response.raise_for_status()
-        return _JSON.validate_json(response.text)
 
 
 module_level_client: Final = ModuleClient()
@@ -191,14 +155,13 @@ class BudgetManager:
         output_text: str | None = None,
     ) -> dict[str, JsonValue]:
         if model is not None and input_text is not None and output_text is not None:
-            cost = _text_cost(model, input_text, output_text)
+            amount = _text_cost(model, input_text, output_text)
         elif completion_obj is not None:
-            cost = betterlite.completion_cost(completion_response=completion_obj)
+            amount = Decimal(str(betterlite.completion_cost(completion_response=completion_obj)))
             model = _written_model(completion_obj)
         else:
             raise ValueError(_INPUT_ERROR)
         record = self.user_dict[user]
-        amount = Decimal(str(cost))
         record["current_cost"] = amount + cost_decimal(record.get("current_cost"))
         model_cost = record.get("model_cost")
         if model_cost is None:
@@ -284,7 +247,7 @@ def _written_model(completion_obj: JsonSource) -> str:
     return name
 
 
-def _text_cost(model: str, input_text: str, output_text: str) -> float:
+def _text_cost(model: str, input_text: str, output_text: str) -> Decimal:
     prompt_tokens = betterlite.token_counter(
         model=model, messages=[{"role": "user", "content": input_text}]
     )
@@ -294,4 +257,4 @@ def _text_cost(model: str, input_text: str, output_text: str) -> float:
     prompt_cost, completion_price = betterlite.cost_per_token(
         model=model, prompt_tokens=prompt_tokens, completion_tokens=completion_tokens
     )
-    return prompt_cost + completion_price
+    return Decimal(str(prompt_cost)) + Decimal(str(completion_price))
