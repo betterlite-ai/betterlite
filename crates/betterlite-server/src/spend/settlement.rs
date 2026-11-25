@@ -3,6 +3,7 @@ pub mod ports;
 
 mod tests;
 
+use std::collections::BTreeSet;
 use std::error::Error as StdError;
 
 use betterlite_auth::reservation_settlement::adjust::AdjustmentMode;
@@ -62,36 +63,7 @@ where
     if let Some(reservation) = input.reservation {
         reconcile_before_write(ports.reservations, reservation, input.response_cost).await;
     }
-    let mut counter_keys = input
-        .reservation
-        .map(get_reserved_counter_keys)
-        .unwrap_or_default();
-    counter_keys.extend(post_call_counter_keys(&PostCallCounterKeys {
-        entity: EntityCounterIds {
-            token: CounterId::from_text(input.token),
-            team_id: CounterId::from_text(input.team_id),
-            user_id: CounterId::from_text(input.user_id),
-            org_id: CounterId::from_text(input.org_id),
-            project_id: CounterId::from_text(input.project_id),
-            end_user_id: CounterId::from_text(input.end_user_id),
-        },
-        tags: input.tags.unwrap_or_default(),
-        model_access_groups: input.model_access_groups.unwrap_or_default(),
-    }));
-    let _batch = ports.batch.open(&counter_keys);
-    write_then_count(input, write, ports).await
-}
-
-// _update_database_and_spend_counters_in_batch: nothing touches the counters until the write has answered
-async fn write_then_count<Write, Counters>(
-    input: &SettlementInput<'_>,
-    write: &Write,
-    ports: &SettlementPorts<'_, Counters>,
-) -> Result<bool, SpendSettlementError<Write::Error>>
-where
-    Write: SpendWrite,
-    Counters: SpendCounterIncrement,
-{
+    let _batch = ports.batch.open(&settlement_counter_keys(input));
     let charged = match write.update_database().await {
         Ok(charged) => charged,
         Err(error) => {
@@ -110,6 +82,27 @@ where
         return Ok(false);
     }
     count_charged(input, ports).await.map(|()| true)
+}
+
+// reserved keys join the post-call keys so the one batch the increment reads through covers both
+fn settlement_counter_keys(input: &SettlementInput<'_>) -> BTreeSet<String> {
+    let mut counter_keys = input
+        .reservation
+        .map(get_reserved_counter_keys)
+        .unwrap_or_default();
+    counter_keys.extend(post_call_counter_keys(&PostCallCounterKeys {
+        entity: EntityCounterIds {
+            token: CounterId::from_text(input.token),
+            team_id: CounterId::from_text(input.team_id),
+            user_id: CounterId::from_text(input.user_id),
+            org_id: CounterId::from_text(input.org_id),
+            project_id: CounterId::from_text(input.project_id),
+            end_user_id: CounterId::from_text(input.end_user_id),
+        },
+        tags: input.tags.unwrap_or_default(),
+        model_access_groups: input.model_access_groups.unwrap_or_default(),
+    }));
+    counter_keys
 }
 
 // the row is already persisted, so a counter failure only drops the reserved counters and never retries the write

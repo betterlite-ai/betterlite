@@ -58,6 +58,24 @@ pub(super) struct Forwarded {
     pub(super) reserved: bool,
 }
 
+impl<'input> From<&SettlementInput<'input>> for Forwarded {
+    fn from(input: &SettlementInput<'input>) -> Self {
+        Self {
+            token: input.token.map(str::to_owned),
+            team_id: input.team_id.map(str::to_owned),
+            user_id: input.user_id.map(str::to_owned),
+            org_id: input.org_id.map(str::to_owned),
+            project_id: input.project_id.map(str::to_owned),
+            end_user_id: input.end_user_id.map(str::to_owned),
+            response_cost: Some(input.response_cost),
+            request_started_at: input.start_time,
+            tags: input.tags.map(<[JsonData]>::to_vec),
+            model_access_groups: input.model_access_groups.map(<[JsonData]>::to_vec),
+            reserved: input.reservation.is_some(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum Effect {
     Reconcile {
@@ -335,17 +353,6 @@ pub(super) fn armed() -> Effect {
 }
 
 pub(super) fn forwarded(reserved: bool) -> Effect {
-    Effect::Increment(Box::new(Forwarded {
-        token: Some("sk-hash".to_owned()),
-        team_id: Some("t1".to_owned()),
-        user_id: Some("u1".to_owned()),
-        org_id: Some("o1".to_owned()),
-        project_id: Some("p1".to_owned()),
-        end_user_id: Some("e1".to_owned()),
-        response_cost: Some(Decimal::from(2_i32)),
-        request_started_at: Some(started_at()),
-        tags: Some(texts("tag-a")),
-        model_access_groups: Some(texts("group-a")),
-        reserved,
-    }))
+    let request = Request::new();
+    Effect::Increment(Box::new(Forwarded::from(&request.input(reserved))))
 }
