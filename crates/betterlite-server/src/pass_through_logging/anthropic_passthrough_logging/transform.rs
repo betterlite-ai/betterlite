@@ -2,13 +2,12 @@ use betterlite_anthropic::batches::result::{BatchResponse, project_batch_results
 use betterlite_anthropic::response::wire::ResponseEnvelope;
 use betterlite_anthropic::response::{Logging, RawResponse, ResponseRequest, transform_response};
 use betterlite_logging::logging_pre_post::env::{
-    DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
+    DebugSettings, GlobalFlags, LogLevel, LogRecord, LogSink, PrePostEnv,
 };
 use betterlite_logging::logging_privacy::request::Decision;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
-use uuid::Uuid;
 
 use super::{AnthropicPassthroughError, AnthropicPassthroughInput, TransformTools, logged_json};
 
@@ -19,7 +18,11 @@ impl LogSink for DebugSink {
     // the body only writes a tracing record, so an emptied one leaves no state a test can read
     #[cfg_attr(test, mutants::skip)]
     fn emit(&self, record: LogRecord) {
-        tracing::debug!(level = ?record.level, "{}", record.message);
+        match record.level {
+            LogLevel::Debug => tracing::debug!("{}", record.message),
+            LogLevel::Warning => tracing::warn!("{}", record.message),
+            LogLevel::Error => tracing::error!("{}", record.message),
+        }
     }
 }
 
@@ -45,12 +48,13 @@ pub(super) fn transformed_response(
         logger_fn: None,
         now: input.end_time.fixed_offset(),
     };
+    let call_id = call_log.litellm_call_id.clone();
     let logging = Logging {
         state: call_log,
         env: &env,
     };
-    // ModelResponse() starts with a generated chatcmpl id, which the payload step replaces.
-    let mut envelope = ResponseEnvelope::new(format!("chatcmpl-{}", Uuid::new_v4()));
+    // ModelResponse() starts with a chatcmpl id, which the payload step replaces; a failed payload keeps this call id.
+    let mut envelope = ResponseEnvelope::new(format!("chatcmpl-{call_id}"));
     if input.url_route.contains("messages/batches") && input.url_route.contains("results") {
         let response = BatchResponse {
             status: input.status_code,

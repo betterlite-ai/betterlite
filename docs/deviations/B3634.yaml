@@ -46,6 +46,14 @@ deviations:
       and the bundled tokenizer ships with the binary, so the error is only reachable on a broken
       build.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L89-L102
+  - what: >-
+      The chatcmpl id the response transform starts with is the call log's litellm_call_id
+      rather than a random uuid4.
+    why: >-
+      A failed payload keeps that id in the logged result, and a random value there makes the
+      result nondeterministic for callers and tests; the payload step overwrites the id on
+      success, so a working setup never sees it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L122-L123
 kept_bugs:
   - what: >-
       A 200 results download at /v1/messages/batches/{id}/results contains the batch route text,
