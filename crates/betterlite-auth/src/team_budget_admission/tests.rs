@@ -531,17 +531,20 @@ async fn member_scope_absent_inherits(#[case] membership: Membership) {
 }
 
 #[rstest]
-#[case::alias_target("my-alias", true)]
-#[case::listed("gpt-4o", true)]
-#[case::unlisted("claude-3", false)]
+#[case::alias_target(Some("my-alias"), true)]
+#[case::listed(Some("gpt-4o"), true)]
+#[case::unlisted(Some("claude-3"), false)]
+#[case::no_model_skips_scope(None, true)]
 #[tokio::test]
-async fn member_alias_scope(#[case] requested: &str, #[case] allowed: bool) {
+async fn member_alias_scope(#[case] requested: Option<&str>, #[case] allowed: bool) {
     let harness = Harness::default();
     let row = team(r#"{"team_id":"team-1"}"#);
     let token = key(
         r#"{"token":"sk-member","user_id":"user-1","team_id":"team-1","aliases":{"my-alias":"gpt-4o"}}"#,
     );
-    let model = RequestedModels::One(requested.to_owned());
+    let model = requested.map_or(RequestedModels::None, |name| {
+        RequestedModels::One(name.to_owned())
+    });
     let membership = loaded(
         r#"{"user_id":"user-1","team_id":"team-1","litellm_budget_table":{"allowed_models":["gpt-4o"]}}"#,
     );

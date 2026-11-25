@@ -56,7 +56,10 @@ pub async fn admit(
         model: request.model,
         membership: shared_membership(admission, request).await?,
     };
-    member_scope::check_team_member_model_access(admission, &loaded).await?;
+    // common_checks asks for the member scope only when the request names a model
+    if *loaded.model != RequestedModels::None {
+        member_scope::check_team_member_model_access(admission, &loaded).await?;
+    }
     let hard = hard::team_max_budget_check(admission, &loaded).await;
     let windows = windows::team_multi_budget_check(admission, loaded.team).await;
     let soft = soft::team_soft_budget_check(loaded.team, loaded.token, admission.team_alerts);
