@@ -1,0 +1,11 @@
+mcp_tools:
+  - name: weather
+    description: Look up the weather
+    input_schema:
+      type: object
+      properties:
+        city: {type: string}
+    handler: module.weather
+  - name: second
+    description: d
+    handler: module.second

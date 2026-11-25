@@ -1,0 +1,5 @@
+extend = "../../../../../ruff.toml"
+src = ["../.."]
+
+[lint.per-file-ignores]
+"cost_map.py" = ["ASYNC109", "PLR0913", "PLR0917"] # LiteLLM's get_model_cost_map and refetch_model_cost_map carry six parameters, and the async refetch keeps the timeout parameter its signature has

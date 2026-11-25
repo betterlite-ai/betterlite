@@ -1,0 +1,50 @@
+kind: helper
+name: outbound-credentials-token-exchange-challenge
+call:
+  b4667:
+    function: token_exchange_challenge
+    server:
+      server_id: srv-1
+      name: Server One
+      transport: http
+      url: https://mcp.example.com/mcp
+      alias: Alias
+    root_path: /
+    scalar_root_path: ""
+    claims: null
+calls:
+  - b4667:
+      function: token_exchange_challenge
+      server:
+        server_id: srv-1
+        name: Server One
+        transport: http
+        url: https://mcp.example.com/mcp
+        alias: Alias
+      root_path: /
+      scalar_root_path: ""
+      claims: ""
+  - b4667:
+      function: token_exchange_challenge
+      server:
+        server_id: srv-1
+        name: Server One
+        transport: http
+        url: https://mcp.example.com/mcp
+        alias: Alias
+      root_path: /team/a
+      scalar_root_path: ""
+      claims: a
+  - b4667:
+      function: token_exchange_challenge
+      server:
+        server_id: srv-1
+        name: Server One
+        transport: http
+        url: https://mcp.example.com/mcp
+        alias: Alias
+      root_path: /team/a
+      scalar_root_path: ""
+      claims: '{"x": 1}'
+env: {}
+compare: {ignore: []}

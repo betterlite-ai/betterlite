@@ -1,0 +1,21 @@
+kind: helper
+name: mcp-tool-registry-list-prefix
+call:
+  b4680:
+    function: list_tools
+    tool_names: [files.read, search.web, files.write, srv_files.read]
+    prefix: files.
+    mcp_tools: null
+calls:
+  - b4680:
+      function: list_tools
+      tool_names: [files.read, search.web, files.write]
+      prefix: zzz
+      mcp_tools: null
+  - b4680:
+      function: list_tools
+      tool_names: [files.read, Files.write]
+      prefix: files.
+      mcp_tools: null
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,42 @@
+kind: helper
+name: event-capture-and-input-log
+call:
+  responses_ws_native:
+    first_message: null
+    client_frames:
+      - not-json
+      - '{"type":"response.completed"}'
+      - '{"type":"response.create","input":{}}'
+      - '{"type":"response.create","input":[{"type":"message","role":"user","content":"raw"}]}'
+    backend_frames:
+      - '{"type":"response.created"}'
+    request_data: {}
+calls:
+- responses_ws_native:
+    first_message: null
+    client_frames:
+      - '{"type":"response.create","input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"world"}]},{"type":"message","role":"assistant","content":[{"type":"input_text","text":"skip"}]},{"type":"message","role":"user","content":[{"type":"input_text","text":""}]},{"type":"message","role":"user","content":"plain"},{"type":"message","role":"user","content":[1,{"type":"input_text"}]}]}'
+    backend_frames:
+      - '{"type":"response.created"}'
+      - '{"type":"response.completed"}'
+      - '{"type":"response.output_text.delta","delta":"x"}'
+      - '{"type":"unknown"}'
+      - not json
+    request_data: {}
+- responses_ws_native:
+    first_message: null
+    client_frames:
+      - '{"type":"response.create","input":"hello"}'
+    backend_frames:
+      - '{"type":"response.created"}'
+    request_data:
+      litellm_metadata: [1]
+- responses_ws_native:
+    first_message: null
+    client_frames:
+      - '{"type":"response.create","input":[]}'
+    backend_frames: []
+    request_data: {}
+env: {}
+compare:
+  ignore: []

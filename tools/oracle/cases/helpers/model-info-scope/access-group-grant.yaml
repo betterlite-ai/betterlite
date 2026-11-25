@@ -1,0 +1,27 @@
+kind: helper
+name: model-info-scope-access-group-grant
+call:
+  model_info_scope:
+    function: grant_resolution
+    model_list:
+      - model_name: gpt-4o
+        litellm_params: {model: openai/gpt-4o}
+        model_info: {id: g1}
+      - model_name: group-model
+        litellm_params: {model: openai/gpt-4o}
+        model_info: {id: group-1, access_groups: [ag-1]}
+      - model_name: other
+        litellm_params: {model: openai/gpt-4o}
+        model_info: {id: other-1}
+    model_group_alias: {}
+    grant: [ag-1]
+    all_models: []
+    key_models: []
+    user: null
+    creators: {}
+    teams: []
+    user_teams: null
+    access_groups: []
+    caller: null
+env: {}
+compare: {ignore: []}

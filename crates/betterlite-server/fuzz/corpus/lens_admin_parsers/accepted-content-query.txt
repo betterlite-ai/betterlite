@@ -1,0 +1,1 @@
+cursor=abc&offset=2

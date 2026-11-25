@@ -5,7 +5,7 @@ use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::{ProxiedClient, base_builder};
 use betterlite_models::decisions::Json;
 use betterlite_models::passthrough_policies::sdk_timeout::{
-    DeploymentTimeouts, RequestTimeouts, RouterTimeouts, TimeoutValue, resolve_sdk_timeout,
+    DeploymentTimeouts, RequestTimeouts, RouterTimeouts, resolve_sdk_timeout, timeout_value,
 };
 use betterlite_models::resolution::ResolvedModel;
 use betterlite_openai::openai_base_config::Object;
@@ -163,21 +163,6 @@ pub(crate) fn timeouts(
         read,
         connect: read,
     })
-}
-
-// only the winning value is validated, so a list or object in a lower field never fails the call
-fn timeout_value(value: Option<&JsonValue>) -> Option<TimeoutValue> {
-    match value {
-        None | Some(JsonValue::Null) => None,
-        Some(JsonValue::Number(number)) => number.as_f64().map(TimeoutValue::Number),
-        Some(JsonValue::Bool(flag)) => {
-            Some(TimeoutValue::Number(if *flag { 1.0_f64 } else { 0.0_f64 }))
-        }
-        Some(JsonValue::String(text)) => Some(TimeoutValue::Text(text.clone())),
-        Some(other @ (JsonValue::Array(_) | JsonValue::Object(_))) => {
-            Some(TimeoutValue::Text(other.to_string()))
-        }
-    }
 }
 
 // get_async_httpx_client(params={"timeout": resolved}): the resolved timeout reaches connect and read

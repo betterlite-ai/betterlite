@@ -122,7 +122,7 @@ fn request_flags(kwargs: &mut ParameterMap) -> Flags {
         use_chat: CreateFlag(use_chat),
     }
 }
-fn response_text(call: &ResponsesCreateCall) -> Result<Option<Json>, CreateError> {
+pub(crate) fn response_text(call: &ResponsesCreateCall) -> Result<Option<Json>, CreateError> {
     let text_format = call
         .text_format
         .as_ref()
@@ -209,7 +209,7 @@ pub fn affinity(prep: &mut Prepared<'_>, call: &ResponsesCreateCall) -> Result<(
     prep.extra_headers = Some(updated.into_iter().collect());
     Ok(())
 }
-pub(super) fn connection_kwargs(call: &ResponsesCreateCall) -> ParameterMap {
+pub(crate) fn connection_kwargs(call: &ResponsesCreateCall) -> ParameterMap {
     let mut kwargs = call.kwargs.clone();
     if let Some(base) = &call.api_base {
         kwargs.insert(String::from("api_base"), JsonValue::Text(base.clone()));

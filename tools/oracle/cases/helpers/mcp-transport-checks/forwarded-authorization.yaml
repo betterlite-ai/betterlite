@@ -1,0 +1,24 @@
+kind: helper
+name: mcp-transport-checks-forwarded-authorization
+call:
+  b8724:
+    operation: forwarded_authorization
+    headers:
+      - []
+      - - [authorization, "Bearer upstream"]
+      - - [authorization, "Bearer upstream"]
+        - [x-litellm-api-key, sk-1]
+      - - [x-litellm-api-key, sk-1]
+      - - [X-LITELLM-API-KEY, sk-1]
+        - [AUTHORIZATION, tok]
+      - - [x-litellm-api-key, sk-1]
+        - [authorization, one]
+        - [authorization, two]
+      - - [authorization, ""]
+        - [x-litellm-api-key, sk-1]
+      - - [x-litellm-api-key, ""]
+        - [authorization, tok]
+      - - [x-other-header, value]
+        - [authorization, tok]
+env: {}
+compare: {ignore: []}

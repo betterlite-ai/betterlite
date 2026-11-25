@@ -1,0 +1,28 @@
+kind: helper
+name: rate-limit-drop
+call:
+  responses_ws_native:
+    first_message: null
+    client_frames:
+      - '{"type":"response.create","input":"one"}'
+      - '{"type":"response.create","input":"two"}'
+    backend_frames:
+      - '{"type":"response.created"}'
+      - '{"type":"response.completed"}'
+    request_data: {}
+calls:
+- responses_ws_native:
+    first_message: '"x"'
+    client_frames:
+      - '{"type":"response.create","input":"after"}'
+    backend_frames: []
+    request_data: {}
+- responses_ws_native:
+    first_message: null
+    client_frames:
+      - '{"type":"response.create"}'
+    backend_frames: []
+    request_data: {}
+env: {}
+compare:
+  ignore: []

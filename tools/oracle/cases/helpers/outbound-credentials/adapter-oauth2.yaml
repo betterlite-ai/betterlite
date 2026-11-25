@@ -1,0 +1,95 @@
+kind: helper
+name: outbound-credentials-adapter-oauth2
+call:
+  b4667:
+    function: to_server_spec
+    server:
+      server_id: srv-1
+      name: Server One
+      transport: http
+      url: https://mcp.example.com/mcp
+      auth_type: oauth2
+calls:
+  - b4667:
+      function: to_server_spec
+      server:
+        server_id: srv-1
+        name: Server One
+        transport: http
+        url: https://mcp.example.com/mcp
+        auth_type: oauth2
+        upstream_token_header: X-Upstream-Token
+  - b4667:
+      function: to_server_spec
+      server:
+        server_id: srv-1
+        name: Server One
+        transport: http
+        url: https://mcp.example.com/mcp
+        auth_type: oauth2
+        oauth2_flow: client_credentials
+        client_id: client-1
+        client_secret: secret-1
+        token_url: https://idp.example.com/token
+        scopes: [read, write]
+        audience: api://upstream
+        upstream_resource: https://resource.example.com
+        token_endpoint_auth_method: client_secret_basic
+  - b4667:
+      function: to_server_spec
+      server:
+        server_id: srv-1
+        name: Server One
+        transport: http
+        url: https://mcp.example.com/mcp
+        auth_type: oauth2
+        oauth2_flow: client_credentials
+        client_id: client-1
+        client_secret: secret-1
+        configured_token_url: https://configured.example.com/token
+  - b4667:
+      function: to_server_spec
+      server:
+        server_id: srv-1
+        name: Server One
+        transport: http
+        url: https://mcp.example.com/mcp/
+        auth_type: oauth2
+        oauth2_flow: client_credentials
+        client_id: client-1
+        client_secret: secret-1
+        token_url: https://idp.example.com/token
+        upstream_resource: auto
+  - b4667:
+      function: to_server_spec
+      server:
+        server_id: srv-1
+        name: Server One
+        transport: http
+        url: https://mcp.example.com/mcp
+        auth_type: oauth2
+        oauth2_flow: client_credentials
+        delegate_auth_to_upstream: true
+  - b4667:
+      function: to_server_spec
+      server:
+        server_id: srv-1
+        name: Server One
+        transport: http
+        url: https://mcp.example.com/mcp
+        auth_type: oauth2
+        delegate_auth_to_upstream: true
+  - b4667:
+      function: to_server_spec
+      server:
+        server_id: srv-1
+        name: Server One
+        transport: http
+        url: https://mcp.example.com/mcp
+        auth_type: oauth2
+        oauth2_flow: client_credentials
+        client_id: ""
+        client_secret: ""
+        token_url: ""
+env: {}
+compare: {ignore: []}

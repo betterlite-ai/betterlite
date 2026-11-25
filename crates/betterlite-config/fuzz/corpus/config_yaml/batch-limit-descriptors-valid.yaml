@@ -1,0 +1,7 @@
+general_settings:
+  disable_batch_input_file_rate_limiting: false
+  skip_batch_input_file_rate_limiting_for_providers:
+    - openai
+    - azure
+  skip_batch_input_file_rate_limiting_for_models:
+    - gpt-4o

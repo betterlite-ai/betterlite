@@ -1,0 +1,24 @@
+kind: helper
+name: model-info-scope-missing-id-skipped
+call:
+  model_info_scope:
+    function: non_admin
+    model_list:
+      - model_name: gpt-4o
+        litellm_params: {model: openai/gpt-4o}
+        model_info: {id: g1}
+    model_group_alias: {}
+    all_models:
+      - model_name: no-id-gpt
+        litellm_params: {model: openai/gpt-4o}
+        model_info: {}
+    user: null
+    creators: {}
+    teams: []
+    access_groups: []
+    caller: {user_id: null, admin_view: false, models: []}
+    grant: []
+    key_models: []
+    user_teams: null
+env: {}
+compare: {ignore: []}

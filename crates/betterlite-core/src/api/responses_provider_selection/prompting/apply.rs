@@ -7,7 +7,7 @@ use crate::api::responses_provider_selection::ParameterMap;
 use crate::api::responses_provider_selection::resolution::ModelResolver;
 use betterlite_models::controls::json_value::JsonValue;
 #[must_use]
-pub(super) fn text_value<'map>(kwargs: &'map ParameterMap, name: &str) -> Option<&'map str> {
+pub(crate) fn text_value<'map>(kwargs: &'map ParameterMap, name: &str) -> Option<&'map str> {
     match kwargs.get(name) {
         Some(JsonValue::Text(text)) => Some(text),
         Some(
@@ -30,7 +30,7 @@ pub(super) struct FinishRequest<'request> {
     pub(super) local_vars: &'request mut ParameterMap,
     pub(super) resolver: &'request dyn ModelResolver,
 }
-pub(super) fn merge_request<'request>(
+pub(crate) fn merge_request<'request>(
     model: &'request str,
     messages: &'request [ClientMessage],
     kwargs: &'request ParameterMap,

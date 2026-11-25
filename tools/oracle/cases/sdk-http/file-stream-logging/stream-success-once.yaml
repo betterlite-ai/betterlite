@@ -1,0 +1,18 @@
+kind: sdk_http
+name: file-stream-logging-stream-success-once
+env: {MANUS_API_KEY: sk-manus}
+call:
+  file_stream_logging:
+    file_id: f
+    model: m
+    scenario: drain
+    chunk_size: 4
+upstream:
+  - status: 200
+    headers: {}
+    body: {body_kind: bytes, fixture: binary-response.bin, content_type: application/octet-stream}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []

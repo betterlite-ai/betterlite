@@ -10,7 +10,8 @@ use crate::api::responses_parameters::error::ResponsesParametersError;
 use crate::api::responses_parameters::prompt_merge::{
     ClientMessage, ReturnedMessage, input_to_chat_messages,
 };
-use apply::{FinishRequest, finish, merge_request, text_value};
+use apply::{FinishRequest, finish};
+pub(crate) use apply::{merge_request, text_value};
 use betterlite_models::controls::json_value::JsonValue;
 use swap::PromptSwapError;
 use thiserror::Error;

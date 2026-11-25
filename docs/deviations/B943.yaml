@@ -1,0 +1,9 @@
+task: B943
+deviations:
+  - what: A backend close logs its debug line and finishes with final logging, where LiteLLM at the pin raises AttributeError while matching ConnectionClosed, because backend_to_client imports the websockets top-level package only and websockets 15.0.1 resolves submodules lazily, so the original exception is replaced and escapes bidirectional_forward.
+    why: A backend close is routine and must not end the relay, so betterlite keeps the behavior a setup that also imports websockets.exceptions already gets from LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L2094
+  - what: Failure dispatch receives "Traceback (most recent call last):" followed by the mapped error's visible message, where LiteLLM formats the Python exception with its frames.
+    why: betterlite has no Python frames to show, and the header plus the visible message keeps the traceback-shaped string failure handlers read while the exception itself carries the mapped status, type, param and message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L2013
+kept_bugs: []

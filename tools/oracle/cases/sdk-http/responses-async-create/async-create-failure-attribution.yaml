@@ -1,0 +1,40 @@
+kind: sdk_http
+name: responses-async-create-failure-attribution
+env: {OPENAI_API_KEY: sk-provider}
+call:
+  responses_async_create:
+    runs:
+      - model: openai/gpt-4o
+        input: hello
+        kwargs:
+          prompt_id: p
+          api_key: sk-test-secret
+        hook:
+          answer:
+            model: anthropic/claude-sonnet-4
+            messages:
+              - {role: system, content: Be brief.}
+              - {role: user, content: hello}
+            optional_params: {}
+      - model: openai/gpt-4o
+        input: hello
+      - model: no-such-model
+        input: hello
+upstream:
+  - status: 401
+    headers: {content-type: application/json}
+    body:
+      error:
+        message: bad key
+        type: invalid_api_key
+        param: null
+        code: invalid_api_key
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore:
+    - pointer: /responses_async_create/value/runs/1/failure/message
+      why: litellm prints the provider body verbatim while betterlite keeps the bounded exception message
+    - pointer: /responses_async_create/value/runs/2/failure/message
+      why: litellm appends its "Pass model as E.g." provider guidance while betterlite keeps the resolution sentence
