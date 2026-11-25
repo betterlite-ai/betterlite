@@ -1,5 +1,4 @@
-use betterlite::db_config_overlay::scrub::scrub_remote_modules;
-use betterlite::db_config_overlay::state::settings_mapping;
+use betterlite::db_config_overlay::{scrub::scrub_remote_modules, state::settings_mapping};
 use betterlite_config::sections::settings::{DbRow, JsonValue, Section, SettingsStore};
 use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};

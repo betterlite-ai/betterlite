@@ -253,9 +253,8 @@ async fn port_keeps_endpoints_served_while_a_reload_resolves() {
     });
     yield_now().await;
     release.send(()).unwrap();
-    for _ in 0..2 {
-        tasks.join_next().await.unwrap().unwrap().unwrap();
-    }
+    tasks.join_next().await.unwrap().unwrap().unwrap();
+    tasks.join_next().await.unwrap().unwrap().unwrap();
     let expected = json!([{"path": "/served"}]);
     let state = served.state.lock().await;
     assert_eq!(

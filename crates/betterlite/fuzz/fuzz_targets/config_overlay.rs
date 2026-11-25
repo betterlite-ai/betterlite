@@ -1,7 +1,6 @@
 #![no_main]
 
-use std::path::Path;
-use std::str::from_utf8;
+use std::{path::Path, str::from_utf8};
 
 use betterlite::db_config_overlay::source::parse_config_file;
 use libfuzzer_sys::fuzz_target;

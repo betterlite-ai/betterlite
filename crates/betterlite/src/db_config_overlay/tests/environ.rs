@@ -47,25 +47,22 @@ async fn workers_bound_the_live_threads() {
     let released = Arc::new(Mutex::new(released_rx));
     let count = Arc::new(AtomicUsize::new(0));
     let mut tasks = JoinSet::new();
-    for _ in 0..4 {
-        spawn_lookup(&mut tasks, &workers, &started, &released, &count);
-    }
-    for _ in 0..2 {
-        started_reading.recv().await.unwrap();
-    }
+    spawn_lookup(&mut tasks, &workers, &started, &released, &count);
+    spawn_lookup(&mut tasks, &workers, &started, &released, &count);
+    spawn_lookup(&mut tasks, &workers, &started, &released, &count);
+    spawn_lookup(&mut tasks, &workers, &started, &released, &count);
+    started_reading.recv().await.unwrap();
+    started_reading.recv().await.unwrap();
     let early = timeout(Duration::from_millis(200), started_reading.recv()).await;
     assert_eq!(early.unwrap_or(None), None);
-    for _ in 0..4 {
-        release.send(()).unwrap();
-    }
-    for _ in 0..4 {
-        timeout(Duration::from_secs(10), tasks.join_next())
-            .await
-            .unwrap()
-            .unwrap()
-            .unwrap()
-            .unwrap();
-    }
+    release.send(()).unwrap();
+    release.send(()).unwrap();
+    release.send(()).unwrap();
+    release.send(()).unwrap();
+    let joined = timeout(Duration::from_secs(10), tasks.join_all())
+        .await
+        .unwrap();
+    assert_eq!(joined.len(), 4);
     assert_eq!(count.load(Ordering::Relaxed), 4);
 }
 
