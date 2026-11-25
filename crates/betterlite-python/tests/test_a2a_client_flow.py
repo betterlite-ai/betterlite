@@ -218,6 +218,8 @@ class GuardedCalls:
         match answer:
             case NativeA2aStream() as stream:
                 self.streams.append(stream)
+            case object():
+                pass
         return answer
 
 
