@@ -198,19 +198,17 @@ fn raw_status_cohere_400_invalid_api_token() {
     assert_eq!(details.status.0, 400);
 }
 
+// BaseLLMException builds its response whatever the status, so a synthesized 500 reaches the class like any other status
 #[test]
-fn raw_status_synthesized_cohere_498_keeps_the_class_default() {
-    let mut input = raw("cohere", "unrecognized failure", Some(498));
+fn raw_status_synthesized_cohere_invalid_token_answers_500() {
+    let mut input = raw("cohere", "invalid api token", Some(500));
     input.status_code_is_synthesized = true;
-    let class =
-        dispatch_native(&input, &input.error_str).expect("cohere classifies its 498 branch");
-    let ErrorClass::BadRequest(details) = class else {
-        panic!("expected BadRequest, got {class:?}");
+    let class = dispatch_native(&input, &input.error_str)
+        .expect("cohere classifies its invalid token branch");
+    let ErrorClass::Authentication(details) = class else {
+        panic!("expected Authentication, got {class:?}");
     };
-    assert_eq!(
-        details.status.0, 400,
-        "a synthesized status carries no response, so the class keeps its own default"
-    );
+    assert_eq!(details.status.0, 500);
 }
 
 // every response-reading branch gets the same facts, so the other providers answer the provider's status too

@@ -14,5 +14,12 @@ calls:
       custom_llm_provider: cohere
       error_str: "invalid api token"
       status_code: 400
+  - native_error:
+      kind: raw
+      model: command-r
+      custom_llm_provider: cohere
+      error_str: "invalid api token"
+      status_code: 500
+      status_code_is_synthesized: true
 env: {}
 compare: {ignore: []}

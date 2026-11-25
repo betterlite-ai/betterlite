@@ -7,7 +7,7 @@ use crate::azure_openrouter::azure::{self, AzureExceptionInput};
 use crate::azure_openrouter::openrouter::{self, OpenrouterExceptionInput};
 use crate::dispatch::{RawException, RawExceptionBody, exception_provider_label};
 use crate::error::ErrorClass;
-use crate::facts::{ProviderErrorFacts, ResponseFacts, provider_response_status};
+use crate::facts::{ProviderErrorFacts, ResponseFacts};
 use crate::native_errors_a::{ai21, cloudflare, cohere, huggingface};
 use crate::native_errors_b::aleph_alpha::{self, AlephAlphaExceptionInput};
 use crate::native_errors_b::nlp_cloud::{self, NlpCloudExceptionInput};
@@ -28,8 +28,7 @@ fn facts(raw: &RawException, message: Option<String>) -> ProviderErrorFacts {
         message,
         body: None,
         headers: None,
-        response: provider_response_status(raw.status_code, raw.status_code_is_synthesized)
-            .map(ResponseFacts::base_llm_exception),
+        response: ResponseFacts::base_llm_exception(raw.status_code),
         litellm_response_headers: None,
         request: None,
     }

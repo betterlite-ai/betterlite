@@ -72,12 +72,11 @@ class _OriginalError(Exception):
         super().__init__(error_str)
         if status_code is not None:
             self.status_code = status_code
-            # BaseLLMException builds this response; a synthesized status has none
-            if not status_code_is_synthesized:
-                self.response = httpx.Response(
-                    status_code=status_code,
-                    request=httpx.Request(method="POST", url="https://docs.litellm.ai/docs"),
-                )
+            # BaseLLMException builds this response for every status, synthesized or not
+            self.response = httpx.Response(
+                status_code=status_code,
+                request=httpx.Request(method="POST", url="https://docs.litellm.ai/docs"),
+            )
         self.status_code_is_synthesized = status_code_is_synthesized
         # a real SDK exception always carries .message; the native elif chain reads it unguarded
         self.message = message if message is not None else error_str

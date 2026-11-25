@@ -24,7 +24,7 @@ impl Helper for Op {
             message: None,
             body: None,
             headers: None,
-            response: input.status_code.map(ResponseFacts::base_llm_exception),
+            response: ResponseFacts::base_llm_exception(input.status_code),
             litellm_response_headers: None,
             request: None,
         };

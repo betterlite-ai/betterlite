@@ -1,7 +1,7 @@
 use crate::dispatch::{RawException, exception_provider_label};
 use crate::error::details::ResponseDetails;
 use crate::error::{ErrorClass, ErrorContext};
-use crate::facts::{ProviderErrorFacts, ResponseFacts, provider_response_status};
+use crate::facts::{ProviderErrorFacts, ResponseFacts};
 use crate::status::status_error_class;
 
 // the openai-python SDK bug exception_type() checks against str(original_exception), ahead of every status-based fallback
@@ -36,10 +36,7 @@ fn bad_request_sdk_bug(raw: &RawException) -> Option<ErrorClass> {
         body_code: None,
     };
     Some(ErrorClass::BadRequest(Box::new(
-        ResponseDetails::with_status(
-            context,
-            provider_response_status(raw.status_code, raw.status_code_is_synthesized),
-        ),
+        ResponseDetails::with_status(context, raw.status_code),
     )))
 }
 
@@ -52,8 +49,7 @@ fn status_or_api_connection(raw: &RawException, error_str: &str) -> ErrorClass {
         message: None,
         body: None,
         headers: None,
-        response: provider_response_status(raw.status_code, raw.status_code_is_synthesized)
-            .map(ResponseFacts::base_llm_exception),
+        response: ResponseFacts::base_llm_exception(raw.status_code),
         litellm_response_headers: None,
         request: None,
     };
