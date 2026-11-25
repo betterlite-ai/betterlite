@@ -1,7 +1,7 @@
 import asyncio
-import copy
 import importlib
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
+from contextlib import aclosing
 from typing import Final, Protocol, TypedDict
 
 import litellm.a2a_protocol as their_package
@@ -51,9 +51,13 @@ from betterlite.a2a_protocol.main import (
 )
 from betterlite.a2a_protocol.types import (
     LiteLLMSendMessageResponse,
-    SendMessageRequest as OurRequest,
-    SendStreamingMessageRequest as OurStreamRequest,
     SendStreamingMessageResponse,
+)
+from betterlite.a2a_protocol.types import (
+    SendMessageRequest as OurRequest,
+)
+from betterlite.a2a_protocol.types import (
+    SendStreamingMessageRequest as OurStreamRequest,
 )
 
 REQUEST_ID: Final = "req-1"
@@ -354,7 +358,7 @@ def test_card_matches_litellm() -> None:
     recorder = Recorder()
     with V1Server(recorder) as server:
         flow = asyncio.run(both_cards(server, recorder))
-    assert parse_agent_card(copy.deepcopy(flow["ours"])) == flow["theirs"]
+    assert parse_agent_card(JSON_OBJECT.validate_python(flow["ours"])) == flow["theirs"]
     assert flow["theirs"].name == AGENT_NAME
     assert flow["paths"] == [CARD_PATH, CARD_PATH]
     assert flow["headers"] == [EXTRA_VALUE, EXTRA_VALUE]
@@ -429,8 +433,9 @@ async def early_close(
     stream: AsyncGenerator[SendStreamingMessageResponse, None] = client.send_message_streaming(
         our_stream_request(STREAM_ID)
     )
-    seen = [dumped(await anext(stream))]
-    await stream.aclose()
+    seen: list[dict[str, JsonValue]] = []
+    async with aclosing(stream) as live:
+        seen.append(dumped(await anext(live)))
     closed = 0
     for _ in range(CLOSE_POLLS):
         if fake.closed > 0:
