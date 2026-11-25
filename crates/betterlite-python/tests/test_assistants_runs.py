@@ -543,17 +543,21 @@ def test_calls_run_thread(server: RunServer) -> None:
     compare_run_thread(server, args)
 
 
-def test_calls_module_globals(server: RunServer, monkeypatch: pytest.MonkeyPatch) -> None:
-    # ast-grep-ignore: no-string-mocking
-    monkeypatch.setattr(betterlite, "api_key", GOOD_KEY)
-    # ast-grep-ignore: no-string-mocking
-    monkeypatch.setattr(betterlite, "api_base", server.url)
-    # ast-grep-ignore: no-string-mocking
-    monkeypatch.setattr(litellm, "api_key", GOOD_KEY)
-    # ast-grep-ignore: no-string-mocking
-    monkeypatch.setattr(litellm, "api_base", server.url)
-    compare_add_message(server, {})
-    compare_run_thread(server, {})
+def test_calls_module_globals(server: RunServer) -> None:
+    our_key = betterlite.api_key
+    our_base = betterlite.api_base
+    their_key = litellm.api_key
+    their_base = litellm.api_base
+    try:
+        betterlite.api_key, betterlite.api_base = GOOD_KEY, server.url  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L276
+        litellm.api_key = GOOD_KEY
+        litellm.api_base = server.url
+        compare_add_message(server, {})
+        compare_run_thread(server, {})
+    finally:
+        betterlite.api_key, betterlite.api_base = our_key, our_base
+        litellm.api_key = their_key
+        litellm.api_base = their_base
 
 
 def test_calls_handler_no_stream(server: RunServer) -> None:
