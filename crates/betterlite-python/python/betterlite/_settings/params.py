@@ -14,6 +14,7 @@ from betterlite.types.proxy.management_endpoints import ui_sso
 from betterlite.types.secret_managers.main import KeyManagementSystem
 from betterlite.types.utils import BudgetConfig
 
+
 class CacheReference(Protocol):
     @override
     def __str__(self) -> str: ...
