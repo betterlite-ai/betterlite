@@ -31,11 +31,11 @@ pub(crate) enum SessionError {
 #[derive(Debug, Serialize)]
 pub(crate) struct CallFailure {
     #[serde(rename = "type")]
-    pub(crate) kind: String,
+    pub(crate) kind: &'static str,
     pub(crate) message: String,
-    pub(crate) model: Option<String>,
+    pub(crate) model: Option<Box<str>>,
     #[serde(rename = "llm_provider")]
-    pub(crate) provider: Option<String>,
+    pub(crate) provider: Option<Box<str>>,
     pub(crate) status_code: Option<u16>,
     headers: BTreeMap<String, String>,
     #[serde(flatten)]
@@ -43,11 +43,11 @@ pub(crate) struct CallFailure {
 }
 
 impl CallFailure {
-    pub(crate) fn plain(kind: &str, message: String, model: Option<String>) -> Self {
+    pub(crate) fn plain(kind: &'static str, message: String, model: Option<String>) -> Self {
         Self {
-            kind: kind.to_owned(),
+            kind,
             message,
-            model,
+            model: model.map(String::into_boxed_str),
             provider: None,
             status_code: None,
             headers: BTreeMap::new(),
@@ -63,10 +63,10 @@ impl CallFailure {
             BTreeMap::new()
         };
         Self {
-            kind: class_name(class).to_owned(),
+            kind: class_name(class),
             message: class_message(class),
-            model: metadata.model,
-            provider: metadata.provider,
+            model: metadata.model.map(String::into_boxed_str),
+            provider: metadata.provider.map(String::into_boxed_str),
             status_code: class_status(class),
             headers,
             retry: metadata.retry,
