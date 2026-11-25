@@ -1,7 +1,7 @@
 import asyncio
 import importlib
-from collections.abc import AsyncIterator, Awaitable, Callable
-from typing import Final, Protocol, TypedDict
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from typing import Final, Protocol, TypedDict, TypeVar
 
 import litellm.a2a_protocol as their_package
 from a2a.client.card_resolver import parse_agent_card
@@ -28,13 +28,7 @@ from pydantic import BaseModel, JsonValue, TypeAdapter
 from typing_extensions import override
 
 import betterlite.a2a_protocol as our_package
-from betterlite._native import (
-    NativeA2aClient,
-    NativeA2aStream,
-    create_client,
-    get_agent_card,
-    send_message_streaming_direct,
-)
+from betterlite._native import NativeA2aStream
 from betterlite.a2a_protocol import exceptions as a2a_exceptions
 from betterlite.a2a_protocol import main as main_module
 from betterlite.a2a_protocol.client import A2AClient
@@ -49,6 +43,7 @@ from betterlite.a2a_protocol.main import (
     aget_agent_card,
     asend_message,
     asend_message_streaming,
+    client_settings,
     create_a2a_client,
     send_message,
 )
@@ -133,10 +128,6 @@ class StreamResponse(TypedDict):
     result: MessageStub
 
 
-class TimedSettings(TypedDict):
-    timeout: float
-
-
 class SendFlow(TypedDict):
     built: int
     methods: list[str]
@@ -164,7 +155,6 @@ class StreamFlows(TypedDict):
 
 SEND_RESPONSE: Final[TypeAdapter[SendResponse]] = TypeAdapter(SendResponse)
 STREAM_RESPONSE: Final[TypeAdapter[StreamResponse]] = TypeAdapter(StreamResponse)
-TIMED_SETTINGS: Final[TypeAdapter[TimedSettings]] = TypeAdapter(TimedSettings)
 
 
 class TheirA2AClient(Protocol):
@@ -193,34 +183,42 @@ class TheirClientModule(Protocol):
 THEIR_CLIENT: Final[TheirClientModule] = importlib.import_module("litellm.a2a_protocol.client")
 
 
-class CreateClientCalls:
+class SettingsCalls:
     def __init__(self) -> None:
         self.timeouts: list[float] = []
 
-    async def __call__(self, settings: str) -> NativeA2aClient:
-        fields: TimedSettings = TIMED_SETTINGS.validate_json(settings)
-        self.timeouts.append(fields["timeout"])
-        return await create_client(settings)
+    def __call__(
+        self,
+        base_url: str,
+        timeout: float,
+        extra_headers: dict[str, str] | None,
+        *,
+        streaming: bool,
+        relative_card_path: str | None,
+    ) -> str:
+        self.timeouts.append(timeout)
+        return client_settings(
+            base_url,
+            timeout,
+            extra_headers,
+            streaming=streaming,
+            relative_card_path=relative_card_path,
+        )
 
 
-class AgentCardCalls:
-    def __init__(self) -> None:
-        self.timeouts: list[float] = []
-
-    async def __call__(self, settings: str) -> str:
-        fields: TimedSettings = TIMED_SETTINGS.validate_json(settings)
-        self.timeouts.append(fields["timeout"])
-        return await get_agent_card(settings)
+_Answer = TypeVar("_Answer")
 
 
-class DirectCalls:
+class GuardedCalls:
     def __init__(self) -> None:
         self.streams: list[NativeA2aStream] = []
 
-    async def __call__(self, call: str) -> NativeA2aStream:
-        stream = await send_message_streaming_direct(call)
-        self.streams.append(stream)
-        return stream
+    async def __call__(self, call: Awaitable[_Answer]) -> _Answer:
+        answer = await call
+        match answer:
+            case NativeA2aStream() as stream:
+                self.streams.append(stream)
+        return answer
 
 
 class V1Server(AgentServer):
@@ -290,19 +288,23 @@ async def both_cards(server: AgentServer, recorder: Recorder) -> CardFlow:
     return CardFlow(ours=ours, theirs=theirs, paths=paths, headers=headers)
 
 
+def collect_send_flow(
+    answers: Sequence[BaseModel], recorder: Recorder, built: int
+) -> SendFlow:
+    results: list[SendResponse] = [
+        SEND_RESPONSE.validate_json(answer.model_dump_json(exclude_none=True))
+        for answer in answers
+    ]
+    methods: list[str] = [entry["method"] for entry in recorder.calls]
+    return SendFlow(built=built, methods=methods, results=results)
+
+
 async def our_send_flow(server: AgentServer, recorder: Recorder) -> SendFlow:
     client = A2AClient(server.url, extra_headers=EXTRA_HEADERS)
     built = len(recorder.calls)
     first = await client.send_message(our_request(REQUEST_ID))
     second = await client.send_message(our_request(SECOND_ID))
-    return SendFlow(
-        built=built,
-        methods=[entry["method"] for entry in recorder.calls],
-        results=[
-            SEND_RESPONSE.validate_json(first.model_dump_json(exclude_none=True)),
-            SEND_RESPONSE.validate_json(second.model_dump_json(exclude_none=True)),
-        ],
-    )
+    return collect_send_flow([first, second], recorder, built)
 
 
 async def their_send_flow(server: AgentServer, recorder: Recorder) -> SendFlow:
@@ -312,14 +314,7 @@ async def their_send_flow(server: AgentServer, recorder: Recorder) -> SendFlow:
         await client.send_message(their_request(request_id))
         for request_id in (REQUEST_ID, SECOND_ID)
     ]
-    results: list[SendResponse] = []
-    for answer in answers:
-        results.append(SEND_RESPONSE.validate_json(answer.model_dump_json(exclude_none=True)))
-    return SendFlow(
-        built=built,
-        methods=[entry["method"] for entry in recorder.calls],
-        results=results,
-    )
+    return collect_send_flow(answers, recorder, built)
 
 
 async def both_sends() -> SendFlows:
@@ -433,20 +428,20 @@ async def timeout_flow(server: AgentServer) -> None:
 
 
 def test_client_forwards_timeouts() -> None:
-    create_calls = CreateClientCalls()
-    card_calls = AgentCardCalls()
-    original_create = main_module.create_client
-    original_card = main_module.get_agent_card
-    main_module.create_client = create_calls
-    main_module.get_agent_card = card_calls
+    settings_calls = SettingsCalls()
+    original = main_module.client_settings
+    main_module.client_settings = settings_calls
     try:
         with V1Server(Recorder()) as server:
             asyncio.run(timeout_flow(server))
     finally:
-        main_module.create_client = original_create
-        main_module.get_agent_card = original_card
-    assert create_calls.timeouts == [DEFAULT_CLIENT_TIMEOUT, DISTINCT_TIMEOUT]
-    assert card_calls.timeouts == [DEFAULT_CLIENT_TIMEOUT, DISTINCT_TIMEOUT]
+        main_module.client_settings = original
+    assert settings_calls.timeouts == [
+        DEFAULT_CLIENT_TIMEOUT,
+        DEFAULT_CLIENT_TIMEOUT,
+        DISTINCT_TIMEOUT,
+        DISTINCT_TIMEOUT,
+    ]
 
 
 def test_card_matches_litellm() -> None:
@@ -518,17 +513,17 @@ async def remaining_chunks(stream: NativeA2aStream) -> list[str]:
 
 
 def test_stream_closes_early() -> None:
-    direct_calls = DirectCalls()
-    original = main_module.send_message_streaming_direct
-    main_module.send_message_streaming_direct = direct_calls
+    guarded_calls = GuardedCalls()
+    original = main_module.guarded
+    main_module.guarded = guarded_calls
     held: list[AsyncIterator[SendStreamingMessageResponse]] = []
     try:
         with V1Server(Recorder()) as server:
             seen = asyncio.run(first_chunk(held, server))
     finally:
-        main_module.send_message_streaming_direct = original
+        main_module.guarded = original
     assert len(seen) == SINGLE
     assert len(held) == SINGLE
-    assert len(direct_calls.streams) == SINGLE
+    assert len(guarded_calls.streams) == SINGLE
     # the server sent further events, so a handle left open would hand them back here
-    assert asyncio.run(remaining_chunks(direct_calls.streams[0])) == []
+    assert asyncio.run(remaining_chunks(guarded_calls.streams[0])) == []
