@@ -14,7 +14,10 @@ fn native_memory() -> NativeMemory {
     Python::initialize();
     let clock = Arc::new(convert::wall_clock);
     let ops = LocalMemoryOps::new(ITEM_KIB, clock).unwrap();
-    NativeMemory { ops: Arc::new(ops) }
+    NativeMemory {
+        ops: Arc::new(ops),
+        default_ttl: None,
+    }
 }
 
 #[test]

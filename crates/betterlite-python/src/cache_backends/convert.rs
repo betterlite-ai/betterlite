@@ -86,11 +86,6 @@ pub(crate) fn number_text(value: f64) -> Result<String, BackendHandleError> {
     text_of_json(&Json::Number(number))
 }
 
-// ast-grep-ignore: no-one-line-functions - a whole counter answer is JSON text through this one encode
-pub(crate) fn whole_text(value: i64) -> Result<String, BackendHandleError> {
-    text_of_json(&Json::Number(Number::from(value)))
-}
-
 // Redis wants whole seconds for its EXPIRE, and LiteLLM's int() truncates the fraction.
 pub(crate) fn whole_seconds(value: f64) -> Result<i64, BackendHandleError> {
     let truncated = value.trunc();
@@ -100,12 +95,4 @@ pub(crate) fn whole_seconds(value: f64) -> Result<i64, BackendHandleError> {
     format!("{truncated:.0}")
         .parse()
         .map_err(|_source| BackendHandleError::NotWhole { value })
-}
-
-// DiskCache.increment_cache takes an int, so a fractional increment is the caller's error.
-pub(crate) fn whole_increment(value: f64) -> Result<i64, BackendHandleError> {
-    if value.fract().abs() > 0.0_f64 {
-        return Err(BackendHandleError::NotWhole { value });
-    }
-    whole_seconds(value)
 }

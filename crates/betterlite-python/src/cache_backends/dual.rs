@@ -23,6 +23,8 @@ type MemoryDual = DualCache<LocalMemoryOps>;
 pub(crate) struct NativeDual {
     cache: Arc<MemoryDual>,
     redis: Option<Arc<RedisCache>>,
+    // the memory tier's configured default, only when it differs from the tier's own 600 seconds
+    memory_ttl: Option<f64>,
 }
 
 #[pymethods]
@@ -37,8 +39,9 @@ impl NativeDual {
         let max_size = parsed
             .max_redis_batch_cache_size
             .unwrap_or(MAX_REDIS_BATCH_CACHE_SIZE);
+        let memory_ttl = memory.default_ttl;
         let dual_settings = DualCacheSettings {
-            default_in_memory_ttl: parsed.default_in_memory_ttl,
+            default_in_memory_ttl: parsed.default_in_memory_ttl.or(memory_ttl),
             default_redis_ttl: parsed.default_redis_ttl,
             batch_cache_expiry: parsed.batch_cache_expiry,
             max_redis_batch_cache_size: max_size,
@@ -50,12 +53,13 @@ impl NativeDual {
         Ok(Self {
             cache: Arc::new(cache),
             redis: redis_tier,
+            memory_ttl,
         })
     }
 
-    fn set(&self, key: &str, value: &str, ttl: Option<f64>) -> PyResult<()> {
+    fn set(&self, py: Python<'_>, key: &str, value: &str, ttl: Option<f64>) -> PyResult<()> {
         let json = convert::json_value(value)?;
-        self.cache.set_cache(key, &json, options(ttl));
+        py.detach(|| self.cache.set_cache(key, &json, options(ttl)));
         Ok(())
     }
 
@@ -67,9 +71,8 @@ impl NativeDual {
         future_into_py(py, store(cache, owned, json, ttl))
     }
 
-    fn get(&self, key: &str) -> PyResult<Option<String>> {
-        self.cache
-            .get_cache(key, false)
+    fn get(&self, py: Python<'_>, key: &str) -> PyResult<Option<String>> {
+        py.detach(|| self.cache.get_cache(key, false))
             .as_ref()
             .map(convert::text_of_json)
             .transpose()
@@ -84,21 +87,28 @@ impl NativeDual {
         })
     }
 
-    // ast-grep-ignore: no-padded-one-line-functions - one count to text for both the sync and async callers
-    fn increment(&self, key: &str, value: f64, ttl: Option<f64>) -> PyResult<String> {
-        let counted = error::backend_err(self.cache.increment_cache(key, value, options(ttl)))?;
+    fn increment(
+        &self,
+        py: Python<'_>,
+        key: &str,
+        value: f64,
+        ttl: Option<f64>,
+    ) -> PyResult<String> {
+        let expiry = options(ttl.or(self.memory_ttl));
+        let counted =
+            error::backend_err(py.detach(|| self.cache.increment_cache(key, value, expiry)))?;
         convert::number_text(counted).map_err(PyErr::from)
     }
 
     #[rustfmt::skip]
     fn async_increment<'py>(&self, py: Python<'py>, key: &str, value: f64, ttl: Option<f64>) -> AsyncAnswer<'py> {
-        let (cache, owned) = (Arc::clone(&self.cache), key.to_owned());
-        future_into_py(py, count(cache, owned, value, ttl))
+        let (cache, owned, memory_ttl) = (Arc::clone(&self.cache), key.to_owned(), self.memory_ttl);
+        future_into_py(py, count(cache, owned, value, ttl, memory_ttl))
     }
 
-    fn delete(&self, keys: Vec<String>) -> PyResult<()> {
+    fn delete(&self, py: Python<'_>, keys: Vec<String>) -> PyResult<()> {
         for key in keys {
-            error::backend_err(self.cache.delete_cache(&key))?;
+            error::backend_err(py.detach(|| self.cache.delete_cache(&key)))?;
         }
         Ok(())
     }
@@ -126,15 +136,18 @@ impl NativeDual {
         })
     }
 
-    fn flush(&self) -> PyResult<()> {
-        error::backend_err(self.cache.flush_cache())?;
+    fn flush(&self, py: Python<'_>) -> PyResult<()> {
+        error::backend_err(py.detach(|| self.cache.flush_cache()))?;
         Ok(())
     }
 
     fn async_flush<'py>(&self, py: Python<'py>) -> AsyncAnswer<'py> {
         let cache = Arc::clone(&self.cache);
         future_into_py(py, async move {
-            error::backend_err(cache.flush_cache())?;
+            let outcome = tokio::task::spawn_blocking(move || cache.flush_cache())
+                .await
+                .map_err(BackendHandleError::from)?;
+            error::backend_err(outcome)?;
             Ok(())
         })
     }
@@ -198,8 +211,17 @@ fn answer_json(stored: Option<Json>) -> PyResult<Option<String>> {
     )
 }
 
-async fn count(cache: Arc<MemoryDual>, key: String, by: f64, ttl: Option<f64>) -> PyResult<String> {
-    let Some(counted) = cache.async_increment_cache(&key, by, options(ttl)).await else {
+async fn count(
+    cache: Arc<MemoryDual>,
+    key: String,
+    by: f64,
+    ttl: Option<f64>,
+    memory_ttl: Option<f64>,
+) -> PyResult<String> {
+    let Some(counted) = cache
+        .async_increment_cache(&key, by, options(ttl.or(memory_ttl)))
+        .await
+    else {
         return Err(PyErr::from(BackendHandleError::IncrementUnavailable));
     };
     convert::number_text(counted).map_err(PyErr::from)

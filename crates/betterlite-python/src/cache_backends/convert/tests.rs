@@ -104,11 +104,6 @@ fn backends_result_number_text_keeps_the_fraction() {
 }
 
 #[test]
-fn backends_result_whole_text_keeps_the_integer() {
-    assert_eq!(whole_text(3).unwrap(), "3");
-}
-
-#[test]
 fn backends_result_cached_null_is_json_null() {
     assert_eq!(text_of_cached(CachedValue::Null).unwrap(), "null");
 }
@@ -155,16 +150,6 @@ fn backends_result_whole_seconds_truncates_the_fraction() {
 #[test]
 fn backends_result_whole_seconds_rejects_a_non_finite_value() {
     whole_seconds(f64::NAN).unwrap_err();
-}
-
-#[test]
-fn backends_result_whole_increment_accepts_a_whole_float() {
-    assert_eq!(whole_increment(3.0_f64).unwrap(), 3);
-}
-
-#[test]
-fn backends_result_whole_increment_rejects_a_fraction() {
-    whole_increment(1.5_f64).unwrap_err();
 }
 
 #[test]

@@ -18,6 +18,7 @@ use betterlite_redis::redis_live_client::LiveClientFactory;
 use pyo3_async_runtimes::tokio::get_runtime;
 
 use super::*;
+use crate::cache_backends::settings::RedisSettings;
 
 // Nothing listens on port 1, so a call reaches the client and every command fails on the way out.
 const DEAD_REDIS: &str =
@@ -44,25 +45,37 @@ fn dead_redis() -> NativeRedis {
         .unwrap();
     NativeRedis {
         cache: Arc::new(cache),
+        settings: RedisSettings::default(),
     }
 }
 
 #[test]
 fn backends_redis_errors_surface() {
     let native = dead_redis();
-    native.set("key", "1", None).unwrap();
-    assert_eq!(native.get("key").unwrap(), None);
-    native.increment("key", 1.0_f64, None).unwrap_err();
-    native.delete(vec!["key".to_owned()]).unwrap_err();
-    native.flush().unwrap_err();
-    native.ping().unwrap_err();
-    Python::attach(|py| assert_eq!(native.ttl(py, "key").unwrap(), None));
+    Python::attach(|py| {
+        native.set(py, "key", "1", None).unwrap();
+        assert_eq!(native.get(py, "key").unwrap(), None);
+        native.increment(py, "key", 1_i64, None).unwrap_err();
+        native.delete(py, vec!["key".to_owned()]).unwrap_err();
+        native.flush(py).unwrap_err();
+        native.ping(py).unwrap_err();
+        assert_eq!(native.ttl(py, "key").unwrap(), None);
+    });
 }
 
 #[test]
 fn backends_redis_close_is_ok() {
     let native = dead_redis();
     Python::attach(|py| native.close(py));
+}
+
+// An equal namespace keeps the open client; a rebuilt one would swap the Arc the cache lives in.
+#[test]
+fn backends_redis_namespace_keeps_the_cache() {
+    let mut native = dead_redis();
+    let before = Arc::clone(&native.cache);
+    Python::attach(|py| native.set_namespace(py, None).unwrap());
+    assert!(Arc::ptr_eq(&before, &native.cache));
 }
 
 #[test]
@@ -76,8 +89,8 @@ fn backends_redis_answers_the_value_text() {
 
 #[test]
 fn backends_redis_answers_whole_seconds() {
-    assert_eq!(whole_answer(Some(5_i64)).unwrap(), Some("5".to_owned()));
-    assert_eq!(whole_answer(None).unwrap(), None);
+    assert_eq!(whole_answer(Some(5_i64)), Some("5".to_owned()));
+    assert_eq!(whole_answer(None), None);
 }
 
 #[test]
@@ -95,6 +108,7 @@ fn backends_redis_store_swallows_a_failure() {
             "key".to_owned(),
             Json::Bool(true),
             None,
+            false,
         ))
         .unwrap();
 }

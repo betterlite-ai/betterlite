@@ -9,6 +9,7 @@ use serde::Deserialize;
 pub(crate) struct MemorySettings {
     pub(crate) max_size_in_memory: Option<usize>,
     pub(crate) max_size_per_item: Option<i64>,
+    pub(crate) default_ttl: Option<f64>,
 }
 
 // DiskCache's constructor argument: LiteLLM's .litellm_cache is used when it is absent.
@@ -19,7 +20,7 @@ pub(crate) struct DiskSettings {
 }
 
 // RedisCache's constructor arguments, with every other redis kwarg passing through the overrides.
-#[derive(Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub(crate) struct RedisSettings {
     pub(crate) namespace: Option<String>,

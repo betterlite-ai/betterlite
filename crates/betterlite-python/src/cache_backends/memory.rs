@@ -21,6 +21,7 @@ const DEFAULT_MAX_SIZE_PER_ITEM_KIB: i64 = 1024;
 #[pyclass(module = "betterlite._native")]
 pub(crate) struct NativeMemory {
     pub(crate) ops: Arc<LocalMemoryOps>,
+    pub(crate) default_ttl: Option<f64>,
 }
 
 #[pymethods]
@@ -38,12 +39,18 @@ impl NativeMemory {
                 .max_size_in_memory
                 .unwrap_or(DEFAULT_MAX_SIZE_IN_MEMORY),
         );
-        Ok(Self { ops: Arc::new(ops) })
+        Ok(Self {
+            ops: Arc::new(ops),
+            default_ttl: parsed.default_ttl,
+        })
     }
 
     fn set(&self, key: &str, value: &str, ttl: Option<f64>) -> PyResult<()> {
         let cache_value = convert::cache_value(value)?;
-        error::backend_err(self.ops.set_cache(key, cache_value, ttl))?;
+        error::backend_err(
+            self.ops
+                .set_cache(key, cache_value, ttl.or(self.default_ttl)),
+        )?;
         Ok(())
     }
 
@@ -51,8 +58,8 @@ impl NativeMemory {
     #[rustfmt::skip]
     fn async_set<'py>(&self, py: Python<'py>, key: &str, value: &str, ttl: Option<f64>) -> AsyncAnswer<'py> {
         let cache_value = convert::cache_value(value)?;
-        let (ops, owned) = (Arc::clone(&self.ops), key.to_owned());
-        future_into_py(py, async move { set_value(&ops, &owned, cache_value, ttl) })
+        let (ops, owned, expiry) = (Arc::clone(&self.ops), key.to_owned(), ttl.or(self.default_ttl));
+        future_into_py(py, async move { set_value(&ops, &owned, cache_value, expiry) })
     }
 
     fn get(&self, key: &str) -> PyResult<Option<String>> {
@@ -72,17 +79,20 @@ impl NativeMemory {
         })
     }
 
-    // ast-grep-ignore: no-padded-one-line-functions - one count to text for both the sync and async callers
     fn increment(&self, key: &str, value: f64, ttl: Option<f64>) -> PyResult<String> {
-        let counted = error::backend_err(self.ops.increment_cache(key, value, ttl))?;
+        let counted = error::backend_err(self.ops.increment_cache(
+            key,
+            value,
+            ttl.or(self.default_ttl),
+        ))?;
         convert::number_text(counted).map_err(PyErr::from)
     }
 
     #[rustfmt::skip]
     fn async_increment<'py>(&self, py: Python<'py>, key: &str, value: f64, ttl: Option<f64>) -> AsyncAnswer<'py> {
-        let (ops, owned) = (Arc::clone(&self.ops), key.to_owned());
+        let (ops, owned, expiry) = (Arc::clone(&self.ops), key.to_owned(), ttl.or(self.default_ttl));
         future_into_py(py, async move {
-            let counted = error::backend_err(ops.increment_cache(&owned, value, ttl))?;
+            let counted = error::backend_err(ops.increment_cache(&owned, value, expiry))?;
             convert::number_text(counted).map_err(PyErr::from)
         })
     }

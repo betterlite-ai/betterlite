@@ -28,34 +28,42 @@ fn native_dual() -> NativeDual {
     NativeDual {
         cache: Arc::new(cache),
         redis: None,
+        memory_ttl: None,
     }
 }
 
 #[test]
 fn backends_dual_round_trip() {
     let native = native_dual();
-    native.set("key", r#"{"a":1}"#, None).unwrap();
-    assert_eq!(native.get("key").unwrap(), Some(r#"{"a":1}"#.to_owned()));
-    assert_eq!(native.get("missing").unwrap(), None);
-    native.delete(vec!["key".to_owned()]).unwrap();
-    assert_eq!(native.get("key").unwrap(), None);
-    native.set("text", "\"x\"", None).unwrap();
-    native.flush().unwrap();
-    assert_eq!(native.get("text").unwrap(), None);
+    Python::attach(|py| {
+        native.set(py, "key", r#"{"a":1}"#, None).unwrap();
+        assert_eq!(
+            native.get(py, "key").unwrap(),
+            Some(r#"{"a":1}"#.to_owned())
+        );
+        assert_eq!(native.get(py, "missing").unwrap(), None);
+        native.delete(py, vec!["key".to_owned()]).unwrap();
+        assert_eq!(native.get(py, "key").unwrap(), None);
+        native.set(py, "text", "\"x\"", None).unwrap();
+        native.flush(py).unwrap();
+        assert_eq!(native.get(py, "text").unwrap(), None);
+    });
 }
 
 #[test]
 fn backends_dual_counts_increments() {
     let native = native_dual();
-    assert_eq!(native.increment("count", 2.0_f64, None).unwrap(), "2.0");
-    assert_eq!(native.increment("count", 2.0_f64, None).unwrap(), "4.0");
+    Python::attach(|py| {
+        assert_eq!(native.increment(py, "count", 2.0_f64, None).unwrap(), "2.0");
+        assert_eq!(native.increment(py, "count", 2.0_f64, None).unwrap(), "4.0");
+    });
 }
 
 #[test]
 fn backends_dual_ttl_reads_the_remaining() {
     let native = native_dual();
     Python::attach(|py| {
-        native.set("key", "1", Some(60.0_f64)).unwrap();
+        native.set(py, "key", "1", Some(60.0_f64)).unwrap();
         let remaining = native
             .ttl(py, "key")
             .unwrap()
@@ -100,7 +108,7 @@ fn backends_dual_store_and_answer_json() {
             None,
         ))
         .unwrap();
-    assert_eq!(native.get("key").unwrap(), Some("true".to_owned()));
+    Python::attach(|py| assert_eq!(native.get(py, "key").unwrap(), Some("true".to_owned())));
     let number = Json::Number(Number::from(3_i64));
     assert_eq!(answer_json(Some(number)).unwrap(), Some("3".to_owned()));
     assert_eq!(answer_json(None).unwrap(), None);

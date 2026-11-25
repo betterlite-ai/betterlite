@@ -66,6 +66,11 @@ pub(crate) enum BackendHandleError {
         #[from]
         source: DualCacheError,
     },
+    #[error("the blocking cache task failed")]
+    Join {
+        #[from]
+        source: tokio::task::JoinError,
+    },
 }
 
 impl BackendHandleError {

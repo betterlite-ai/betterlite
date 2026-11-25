@@ -37,8 +37,8 @@ fn backends_disk_round_trip() {
 fn backends_disk_counts_increments() {
     let directory = tempfile::tempdir().unwrap();
     let native = native_disk(&directory);
-    assert_eq!(native.increment("count", 2.0_f64, None).unwrap(), "2");
-    assert_eq!(native.increment("count", 3.0_f64, None).unwrap(), "5");
+    assert_eq!(native.increment("count", 2_i64, None).unwrap(), "2");
+    assert_eq!(native.increment("count", 3_i64, None).unwrap(), "5");
 }
 
 #[test]

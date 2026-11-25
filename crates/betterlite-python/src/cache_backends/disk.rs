@@ -64,14 +64,13 @@ impl NativeDisk {
     }
 
     // DiskCache.increment_cache takes whole numbers and answers one, as LiteLLM's int-typed method does.
-    fn increment(&self, key: &str, value: f64, ttl: Option<f64>) -> PyResult<String> {
-        let whole = convert::whole_increment(value)?;
-        let counted = error::backend_err(self.cache.increment_cache(key, whole, ttl))?;
-        convert::whole_text(counted).map_err(PyErr::from)
+    fn increment(&self, key: &str, value: i64, ttl: Option<f64>) -> PyResult<String> {
+        error::backend_err(self.cache.increment_cache(key, value, ttl))
+            .map(|counted| counted.to_string())
     }
 
     #[rustfmt::skip]
-    fn async_increment<'py>(&self, py: Python<'py>, key: &str, value: f64, ttl: Option<f64>) -> AsyncAnswer<'py> {
+    fn async_increment<'py>(&self, py: Python<'py>, key: &str, value: i64, ttl: Option<f64>) -> AsyncAnswer<'py> {
         let (cache, owned) = (Arc::clone(&self.cache), key.to_owned());
         future_into_py(py, count(cache, owned, value, ttl))
     }
@@ -102,7 +101,7 @@ impl NativeDisk {
     fn async_ttl<'py>(&self, py: Python<'py>, key: &str) -> AsyncAnswer<'py> {
         let (cache, owned) = (Arc::clone(&self.cache), key.to_owned());
         future_into_py(py, async move {
-            let _stored = error::backend_err(cache.get_cache(&owned))?;
+            let _stored = error::backend_err(cache.async_get_cache(&owned).await)?;
             answer_text(None)
         })
     }
@@ -128,7 +127,7 @@ impl NativeDisk {
     fn async_ping<'py>(&self, py: Python<'py>) -> AsyncAnswer<'py> {
         let cache = Arc::clone(&self.cache);
         future_into_py(py, async move {
-            let _stored = error::backend_err(cache.get_cache(""))?;
+            let _stored = error::backend_err(cache.async_get_cache("").await)?;
             Ok(true)
         })
     }
@@ -162,10 +161,9 @@ fn answer_text(stored: Option<CacheValue>) -> PyResult<Option<String>> {
     )
 }
 
-async fn count(cache: Arc<DiskCache>, key: String, by: f64, ttl: Option<f64>) -> PyResult<String> {
-    let whole = convert::whole_increment(by)?;
-    let counted = error::backend_err(cache.async_increment(&key, whole, ttl).await)?;
-    convert::whole_text(counted).map_err(PyErr::from)
+async fn count(cache: Arc<DiskCache>, key: String, by: i64, ttl: Option<f64>) -> PyResult<String> {
+    error::backend_err(cache.async_increment(&key, by, ttl).await)
+        .map(|counted| counted.to_string())
 }
 
 mod tests;
