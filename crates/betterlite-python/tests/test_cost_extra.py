@@ -179,7 +179,7 @@ REFERENCE: ReferenceModule = importlib.import_module("litellm.cost_calculator")
 REFERENCE_OCR: ReferenceModule = importlib.import_module(
     "litellm.llms.base_llm.ocr.transformation"
 )
-REFERENCE_PROCESSORS = cast(
+REFERENCE_PROCESSORS = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2764-L2884
     ReferenceProcessors, importlib.import_module("litellm.cost_calculator")
 )
 
@@ -337,9 +337,9 @@ def reference_usage(
     }
     if prompt_details is not None:
         values["prompt_tokens_details"] = prompt_details
-    return cast(
+    return cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1857
         ReferenceUsage,
-        getattr(importlib.import_module("litellm.types.utils"), "Usage")(**values),
+        importlib.import_module("litellm.types.utils").Usage(**values),
     )
 
 
