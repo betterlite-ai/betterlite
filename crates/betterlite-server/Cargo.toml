@@ -127,6 +127,7 @@ uuid.workspace = true
 
 [dev-dependencies]
 betterlite-postgres-fixture = { path = "../../tools/postgres-fixture" }
+betterlite-redis-fixture = { path = "../../tools/redis-fixture" }
 betterlite-router = { path = "../betterlite-router", features = ["testing"] }
 betterlite-secrets = { path = "../betterlite-secrets" }
 betterlite-test-ports = { path = "../betterlite-test-ports" }

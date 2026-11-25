@@ -1,0 +1,50 @@
+kind: helper
+name: caller-headers-bedrock-signed-headers
+call:
+  b3603:
+    bedrock:
+      headers:
+        - ["X-Amz-Date", "caller-date"]
+        - ["Authorization", "Bearer x"]
+        - ["Api-Key", "a"]
+        - ["X-Api-Key", "b"]
+        - ["X-Goog-Api-Key", "c"]
+        - ["Ocp-Apim-Subscription-Key", "d"]
+        - ["X-Litellm-Api-Key", "e"]
+        - ["Host", "proxy"]
+        - ["Content-Length", "10"]
+        - ["Accept-Encoding", "gzip"]
+        - ["X-Caller-Token", "stored-key"]
+        - ["X-Custom", "v"]
+      caller:
+        stored_api_key: "stored-key"
+        jwt_claims: null
+      settings:
+        master_key: null
+        custom_auth_configured: true
+        auth_mode: []
+        litellm_key_header_name: null
+        endpoint_headers: []
+      signed_headers:
+        - ["X-Amz-Date", "signed-date"]
+        - ["X-Amz-Security-Token", "token"]
+calls:
+  - b3603:
+      bedrock:
+        headers:
+          - ["x-amz-date", "caller-date"]
+          - ["X-Custom", "v"]
+        caller:
+          stored_api_key: null
+          jwt_claims: null
+        settings:
+          master_key: null
+          custom_auth_configured: true
+          auth_mode: []
+          litellm_key_header_name: null
+          endpoint_headers: []
+        signed_headers:
+          - ["x-amz-date", "signed-date"]
+env: {}
+compare:
+  ignore: []

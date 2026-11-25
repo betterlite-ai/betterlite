@@ -1,7 +1,7 @@
 id: B3603
 milestone: M5 api families
 title: Pass-through caller credential filtering
-status: todo
+status: done
 depends_on: [B002, B10086, B760, B1100, B2314, B8410]
 file: tasks/B3603-passthrough-caller-headers.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py"
 parent: B102
 split_from: B102
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3206
