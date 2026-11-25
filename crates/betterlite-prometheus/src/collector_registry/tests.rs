@@ -1,7 +1,8 @@
 #![cfg(test)]
 
 use std::fs;
-use std::sync::Arc;
+use std::sync::{Arc, Barrier, Mutex};
+use std::thread;
 
 use rstest::rstest;
 use rust_decimal::Decimal;
@@ -656,7 +657,7 @@ fn multiprocess_binding_the_same_writer_again_is_fine() {
     );
     binding::bind_writer(&metric, &writer).unwrap();
     binding::bind_writer(&metric, &writer).unwrap();
-    assert_eq!(written_entries(&directory, "counter_36.db").len(), 1);
+    assert!(metric.multiprocess.lock().unwrap().is_some());
 }
 
 #[test]
@@ -689,4 +690,38 @@ fn multiprocess_dir_is_the_writers_folder() {
     let directory = TempDir::new().unwrap();
     let registry = multiprocess_registry(&directory, 38);
     assert_eq!(registry.multiprocess_dir(), Some(directory.path()));
+}
+
+#[test]
+fn concurrent_registrations_of_one_name_leave_one_collector() {
+    const REGISTRATIONS: usize = 16;
+    let directory = TempDir::new().unwrap();
+    let registry = multiprocess_registry(&directory, 39);
+    let barrier = Barrier::new(REGISTRATIONS);
+    let outcomes = Mutex::new(Vec::with_capacity(REGISTRATIONS));
+    thread::scope(|scope| {
+        let spawned = (0..REGISTRATIONS)
+            .map(|_slot| {
+                scope.spawn(|| {
+                    let metric = PrometheusMetric::new(
+                        CollectorKind::Counter,
+                        "litellm_shared",
+                        "Shared",
+                        &[],
+                        Vec::new(),
+                    );
+                    let _started = barrier.wait();
+                    outcomes.lock().unwrap().push(registry.register(metric));
+                })
+            })
+            .count();
+        assert_eq!(spawned, REGISTRATIONS);
+    });
+    let results = outcomes.into_inner().unwrap();
+    let registered = results.iter().filter(|outcome| outcome.is_ok()).count();
+    let refused = results.iter().filter(|outcome| outcome.is_err()).count();
+    assert_eq!(registered, 1);
+    assert_eq!(refused, REGISTRATIONS.saturating_sub(1));
+    assert_eq!(registry.metrics().len(), 1);
+    assert_eq!(written_entries(&directory, "counter_39.db").len(), 1);
 }

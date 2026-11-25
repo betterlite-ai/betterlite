@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 pub mod metric;
 
-use crate::multiprocess::writer::MultiProcessWriter;
+use crate::multiprocess::writer::{MultiProcessWriter, SeriesWrite};
 use metric::binding;
 use metric::{CollectorDescription, PrometheusMetric};
 
@@ -53,18 +53,16 @@ impl CollectorRegistry {
     // CollectorRegistry.register: every sample name a collector owns is claimed before any of them is stored
     pub fn register(&self, collector: PrometheusMetric) -> Result<(), CollectorRegistryError> {
         let names = collector.sample_names();
-        {
-            let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-            let duplicates: Vec<String> = names
-                .iter()
-                .filter(|name| state.samples.contains_key(*name))
-                .map(|name| (*name).clone())
-                .collect();
-            if !duplicates.is_empty() {
-                return Err(CollectorRegistryError::DuplicatedTimeseries { names: duplicates });
-            }
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        let duplicates: Vec<String> = names
+            .iter()
+            .filter(|name| state.samples.contains_key(*name))
+            .map(|name| (*name).clone())
+            .collect();
+        if !duplicates.is_empty() {
+            return Err(CollectorRegistryError::DuplicatedTimeseries { names: duplicates });
         }
-        // the writer's lock is taken without the registry lock, which the duplicate check released at once
+        // registry.py holds its one lock from the duplicate check through the name insert, and so does this
         if let Some(writer) = &self.multiprocess {
             binding::bind_writer(&collector, writer).map_err(|bound| {
                 CollectorRegistryError::MultiprocessBound {
@@ -73,12 +71,21 @@ impl CollectorRegistry {
                 }
             })?;
         }
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         for name in names {
             let _replaced = state.samples.insert(name, collector.clone());
         }
-        state.collectors.push(collector);
+        state.collectors.push(collector.clone());
         drop(state);
+        // the zero entries reach the files once the registry lock is free, as registry.py writes them when the metric is built
+        if let Some(writer) = self.multiprocess.as_ref()
+            && collector.description.label_names.is_empty()
+        {
+            writer.write_series(
+                &collector.description,
+                &collector.label_values,
+                SeriesWrite::Create,
+            );
+        }
         Ok(())
     }
 

@@ -1,7 +1,7 @@
 use std::sync::{Arc, PoisonError};
 
 use crate::collector_factory::collector::MetricUpdate;
-use crate::multiprocess::writer::{MultiProcessWriter, SeriesWrite};
+use crate::multiprocess::writer::MultiProcessWriter;
 
 use super::PrometheusMetric;
 
@@ -23,14 +23,6 @@ pub(crate) fn bind_writer(
         };
     }
     *slot = Some(Arc::clone(writer));
-    drop(slot);
-    if metric.description.label_names.is_empty() {
-        writer.write_series(
-            &metric.description,
-            &metric.label_values,
-            SeriesWrite::Create,
-        );
-    }
     Ok(())
 }
 
