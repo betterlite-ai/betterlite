@@ -332,9 +332,7 @@ fn rejects_a_sealed_client_id_over_the_length_cap() {
 
 #[test]
 fn accepts_a_sealed_client_id_exactly_at_the_length_cap() {
-    // AES seals to "v2:gcm:" plus a padded base64 of the 12-byte nonce, the payload and the
-    // 16-byte tag, so the sealed id lands on exactly MAX_CLIENT_ID_LENGTH (2048) characters
-    // only at these plaintext byte lengths; the XSalsa20 encoding can never reach it.
+    // An AES id is 16 + 4k characters, so only a 1494-1496 byte payload lands on the 2048 cap.
     let mut cipher = cipher();
     cipher.settings.algorithm = Algorithm::Aes256Gcm;
     let at_the_cap = registered(register_with(&cipher, boundary_uris(110, 110)));
