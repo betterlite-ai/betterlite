@@ -129,9 +129,8 @@ pub fn apply_litellm_settings(state: &mut OverlayState, values: BTreeMap<String,
 fn warn_shadowed_keys(state: &mut OverlayState) {
     let mut warned = BTreeSet::new();
     for section in WARNING_ORDER {
-        let keys = state
-            .config
-            .settings_store(section)
+        let store = state.config.settings_store(section);
+        let keys = store
             .map(SettingsStore::shadowed_db_keys)
             .unwrap_or_default();
         for key in keys {

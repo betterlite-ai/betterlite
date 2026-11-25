@@ -9,26 +9,28 @@ use betterlite_secret_managers::secret_lookup::ports::OidcHttp;
 use betterlite_server::config_overlay_port::{ConfigOverlayPort, ConfigOverlayPortError};
 use tempfile::TempDir;
 use tokio::sync::Mutex as AsyncMutex;
+use tokio::sync::Semaphore;
 use tokio::task::{JoinSet, yield_now};
 
 use super::support::{
     Journal, OnceOidc, RecordingInstaller, RecordingRuntime, blocking_oidc, database,
-    failing_database, file_source, json, reload_config, state, write_config,
+    failing_database, file_source, gated_database, json, reload_config, state, write_config,
 };
 use crate::config_boot::test_support::capture_logs;
 use crate::db_config_overlay::environ::{WORKER_LIMIT, Workers};
-use crate::db_config_overlay::port::OverlayPortAdapter;
+use crate::db_config_overlay::port::{OverlayParts, OverlayPortAdapter};
 use crate::db_config_overlay::state::{OverlayDatabase, OverlayState, PASS_THROUGH_ENDPOINTS};
 
 const CONFIG: &str =
     "model_list:\n  - model_name: gpt\ngeneral_settings:\n  master_key: os.environ/MASTER\n";
 const OIDC_CONFIG: &str = "general_settings:\n  master_key: os.environ/oidc/google/audience\n";
 
-// the port, the recording installer behind it and the state it mutates, so a test reads the committed stores
+// the port, the recording installer behind it, and the state and environment it mutates, so a test reads what the reload committed
 struct Port {
     overlay: Arc<dyn ConfigOverlayPort>,
     installer: Arc<RecordingInstaller>,
     state: Arc<AsyncMutex<OverlayState>>,
+    environment: Arc<AsyncMutex<BTreeMap<String, String>>>,
 }
 
 fn port(path: &Path, database: Option<OverlayDatabase>, recording: RecordingInstaller) -> Port {
@@ -42,25 +44,31 @@ fn port_with_oidc(
     oidc: Option<Arc<dyn OidcHttp>>,
 ) -> Port {
     let installer = Arc::new(recording);
-    let environment = BTreeMap::from([("MASTER".to_owned(), "sk-env".to_owned())]);
+    let environment = Arc::new(AsyncMutex::new(BTreeMap::from([(
+        "MASTER".to_owned(),
+        "sk-env".to_owned(),
+    )])));
     let mut initial_state = state(true, &Arc::new(RecordingRuntime::default()));
     if let Some(endpoint) = oidc {
         initial_state.secrets.lookup.oidc_http = endpoint;
     }
     let state = Arc::new(AsyncMutex::new(initial_state));
-    let adapter = OverlayPortAdapter {
+    let parts = OverlayParts {
         state: Arc::clone(&state),
         source: file_source(path),
         database,
-        environment: Arc::new(AsyncMutex::new(environment)),
+        environment: Arc::clone(&environment),
         installer: Arc::<RecordingInstaller>::clone(&installer),
-        workers: Arc::new(Workers::new(WORKER_LIMIT)),
-        mutations: AsyncMutex::new(()),
+        workers: Arc::new(Workers {
+            slots: Arc::new(Semaphore::new(WORKER_LIMIT)),
+            live: Mutex::new(Vec::new()),
+        }),
     };
     Port {
-        overlay: Arc::new(adapter),
+        overlay: Arc::new(OverlayPortAdapter::start(parts)),
         installer,
         state,
+        environment,
     }
 }
 
@@ -260,5 +268,56 @@ async fn port_keeps_endpoints_served_while_a_reload_resolves() {
     assert_eq!(
         state.config.general_settings.get(PASS_THROUGH_ENDPOINTS),
         Some(&expected)
+    );
+}
+
+// A database read is pending when another task rewrites the environment: the reload resolves against the new values, and only the database's own keys join the shared map.
+#[tokio::test]
+async fn port_keeps_a_concurrent_environment_update_during_a_database_read() {
+    let directory = TempDir::new().unwrap();
+    let path = write_config(
+        directory.path(),
+        "general_settings:\n  master_key: os.environ/SHARED\n",
+    );
+    let (database, mut started, gate) =
+        gated_database(&[("environment_variables", json!({"db_secret": "db-value"}))]);
+    let served = port(&path, Some(database), RecordingInstaller::default());
+    {
+        let mut environment = served.environment.lock().await;
+        environment.insert("SHARED".to_owned(), "before".to_owned());
+        environment.insert("STALE".to_owned(), "kept".to_owned());
+    }
+    let mut tasks = JoinSet::new();
+    tasks.spawn({
+        let port = Arc::clone(&served.overlay);
+        async move { port.reload_config().await }
+    });
+    started.recv().await.unwrap();
+    {
+        let mut environment = served.environment.lock().await;
+        environment.insert("SHARED".to_owned(), "after".to_owned());
+        environment.remove("STALE");
+        environment.insert("CONCURRENT".to_owned(), "kept".to_owned());
+    }
+    gate.add_permits(1);
+    let reloaded = tasks.join_next().await.unwrap().unwrap().unwrap();
+    assert_eq!(
+        reloaded.values["general_settings"],
+        json!({"master_key": "after"})
+    );
+    let environment = served.environment.lock().await;
+    assert_eq!(environment.get("SHARED").map(String::as_str), Some("after"));
+    assert!(!environment.contains_key("STALE"));
+    assert_eq!(
+        environment.get("CONCURRENT").map(String::as_str),
+        Some("kept")
+    );
+    assert_eq!(
+        environment.get("DB_SECRET").map(String::as_str),
+        Some("db-value")
+    );
+    assert_eq!(
+        environment.get("db_secret").map(String::as_str),
+        Some("db-value")
     );
 }

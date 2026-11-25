@@ -26,7 +26,6 @@ const GENERAL_SETTINGS: &str = "general_settings";
 pub struct PendingReload {
     config: ConfigMap,
     lookup: SecretLookup,
-    env: BTreeMap<String, String>,
 }
 
 // _load_yaml_settings_stores: every store takes the file values, and the serving pass-through list stays
@@ -48,10 +47,8 @@ fn reload_store(
     section: Section,
     section_config: Option<&JsonValue>,
 ) -> Result<(), OverlayError> {
-    let serving = store
-        .get(PASS_THROUGH_ENDPOINTS)
-        .filter(|value| !value.is_null())
-        .cloned();
+    let stored = store.get(PASS_THROUGH_ENDPOINTS);
+    let serving = stored.filter(|value| !value.is_null()).cloned();
     store.load_yaml(settings_mapping(section_config));
     store.apply_db_row(DbRow::from(section), BTreeMap::new());
     if let Some(endpoints) = serving.filter(|_| section.is_resource_list(PASS_THROUGH_ENDPOINTS)) {
@@ -74,28 +71,21 @@ pub fn begin_reload(
     let config = resolved_config(state, file_config);
     initialize_secret_manager(state, &config, source, env)?;
     let lookup = owned_secret_lookup(&state.secrets.lookup);
-    Ok(PendingReload {
-        config,
-        lookup,
-        env: env.clone(),
-    })
+    Ok(PendingReload { config, lookup })
 }
 
 // _check_for_os_environ_vars, off the runtime since a manager read blocks and the lookup is already owned
 pub async fn resolve_reload(
     pending: PendingReload,
+    environment: BTreeMap<String, String>,
     workers: &Workers,
 ) -> Result<ResolvedConfig, OverlayError> {
-    let PendingReload {
-        config,
-        lookup,
-        env,
-    } = pending;
+    let PendingReload { config, lookup } = pending;
     off_runtime(workers, move || {
         let mut values = config;
         let outcome = Resolver {
             lookup: &lookup,
-            env: &env,
+            env: &environment,
         }
         .resolve_entries(values.values_mut(), 0);
         outcome.map(|()| (values, lookup.oidc_cache))
@@ -139,15 +129,11 @@ fn resolved_config(state: &OverlayState, file_config: &ConfigMap) -> ConfigMap {
             || db_endpoints.is_some_and(JsonValue::is_array)
             || values.contains_key(PASS_THROUGH_ENDPOINTS)
         {
+            let db_list = db_endpoints.and_then(JsonValue::as_array);
+            let file_list = config_endpoints.and_then(JsonValue::as_array);
             let merged = endpoints_beside_db(
-                db_endpoints
-                    .and_then(JsonValue::as_array)
-                    .map(Vec::as_slice)
-                    .unwrap_or_default(),
-                config_endpoints
-                    .and_then(JsonValue::as_array)
-                    .map(Vec::as_slice)
-                    .unwrap_or_default(),
+                db_list.map(Vec::as_slice).unwrap_or_default(),
+                file_list.map(Vec::as_slice).unwrap_or_default(),
             );
             values.insert(PASS_THROUGH_ENDPOINTS.to_owned(), JsonValue::Array(merged));
         }
@@ -164,10 +150,8 @@ fn initialize_secret_manager(
     source: &ConfigSource,
     env: &BTreeMap<String, String>,
 ) -> Result<(), OverlayError> {
-    let Some(general) = config
-        .get(GENERAL_SETTINGS)
-        .filter(|value| value.is_object())
-    else {
+    let settings = config.get(GENERAL_SETTINGS);
+    let Some(general) = settings.filter(|value| value.is_object()) else {
         return Ok(());
     };
     let wrapped: JsonValue = once((GENERAL_SETTINGS, general.clone())).collect();
@@ -176,8 +160,7 @@ fn initialize_secret_manager(
     let projection = raw
         .convert(env)
         .map_err(|error| OverlayError::SecretProjection { source: error })?;
-    state
-        .secrets
-        .initialize(&projection, source.config_file_path.as_deref(), env, None)?;
+    let path = source.config_file_path.as_deref();
+    state.secrets.initialize(&projection, path, env, None)?;
     Ok(())
 }

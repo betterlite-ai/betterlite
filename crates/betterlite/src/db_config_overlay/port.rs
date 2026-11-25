@@ -5,9 +5,11 @@ use async_trait::async_trait;
 use betterlite_config::sections::{includes::IncludeError, settings::JsonValue};
 use betterlite_db::database_faults::native::is_native_transport_error;
 use betterlite_server::bucket_config::error::BucketConfigError;
+use betterlite_server::config_overlay_port::ConfigOverlayPortError::{PassThrough, Reload};
 use betterlite_server::config_overlay_port::{ConfigOverlayPort, ConfigOverlayPortError};
 use betterlite_server::proxy_config_state::snapshot::ConfigWithBaseline;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, mpsc, oneshot};
+use tokio_util::task::TaskTracker;
 
 use super::environ::Workers;
 use super::error::OverlayError;
@@ -20,70 +22,100 @@ use super::rows::fetch_db_rows;
 use super::source::{ConfigSource, read_config};
 use super::state::{OverlayDatabase, OverlayState};
 
-// The two functions' arguments, the off-runtime thread owner, and the lock that keeps a reload and a serve from interleaving.
-pub struct OverlayPortAdapter {
+// What a queued mutation reads: the state, where the config comes from, the stored rows, the environment and the two side-effect ports.
+pub struct OverlayParts {
     pub state: Arc<Mutex<OverlayState>>,
     pub source: ConfigSource,
     pub database: Option<OverlayDatabase>,
     pub environment: Arc<Mutex<BTreeMap<String, String>>>,
     pub installer: Arc<dyn PassThroughInstaller>,
     pub workers: Arc<Workers>,
-    pub mutations: Mutex<()>,
 }
 
-// The mutation lock makes a reload and a serve run one after the other, as LiteLLM's event loop does; no other guard spans an await.
+enum Mutation {
+    Reload(oneshot::Sender<Result<ConfigWithBaseline, OverlayError>>),
+    Serve(Vec<JsonValue>, oneshot::Sender<Result<(), OverlayError>>),
+}
+
+// LiteLLM's event loop runs a reload and a serve one after the other: one owned worker drains this queue, so no guard spans a read, a fetch, a lookup or an install.
+pub struct OverlayPortAdapter {
+    mutations: mpsc::Sender<Mutation>,
+    pub tasks: TaskTracker,
+}
+
+impl OverlayPortAdapter {
+    // The worker owns its copy of the parts, so a canceled call leaves the adapter usable and the mutation in flight still finishes.
+    #[must_use]
+    pub fn start(parts: OverlayParts) -> Self {
+        let (mutations, mut queue) = mpsc::channel(1);
+        let tasks = TaskTracker::new();
+        let _worker = tasks.spawn(async move {
+            while let Some(mutation) = queue.recv().await {
+                match mutation {
+                    Mutation::Reload(reply) => drop(reply.send(run_reload(&parts).await)),
+                    Mutation::Serve(endpoints, reply) => {
+                        drop(reply.send(run_serve(&parts, &endpoints).await));
+                    }
+                }
+            }
+        });
+        Self { mutations, tasks }
+    }
+}
+
 #[async_trait]
 impl ConfigOverlayPort for OverlayPortAdapter {
     async fn reload_config(&self) -> Result<ConfigWithBaseline, ConfigOverlayPortError> {
-        let _mutations = self.mutations.lock().await;
-        let mut environment = self.environment.lock().await.clone();
-        let file_config = read_config(&self.source, &environment, &self.workers)
-            .await
-            .map_err(|error| port_error(&error, ConfigOverlayPortError::Reload))?;
-        let store_model_in_db = {
-            let mut state = self.state.lock().await;
-            reload_stores(&mut state, &file_config)
-                .map_err(|error| port_error(&error, ConfigOverlayPortError::Reload))?;
-            state.config.store_model_in_db
-        };
-        let stored = if let Some(backed) = self.database.as_ref().filter(|_| store_model_in_db) {
-            let rows = fetch_db_rows(backed)
-                .await
-                .map_err(|error| port_error(&error, ConfigOverlayPortError::Reload))?;
-            Some((backed, rows))
-        } else {
-            None
-        };
-        let pending = {
-            let mut state = self.state.lock().await;
-            let source = &self.source;
-            let env = &mut environment;
-            begin_reload(&mut state, &file_config, stored, source, env)
-                .map_err(|error| port_error(&error, ConfigOverlayPortError::Reload))?
-        };
-        self.environment.lock().await.extend(environment);
-        let resolved = resolve_reload(pending, &self.workers)
-            .await
-            .map_err(|error| port_error(&error, ConfigOverlayPortError::Reload))?;
-        let mut state = self.state.lock().await;
-        Ok(finish_reload(&mut state, resolved))
+        let (reply, answer) = oneshot::channel();
+        let queued = self.mutations.send(Mutation::Reload(reply)).await;
+        queued.map_err(|_closed| Reload)?;
+        let outcome = answer.await.unwrap_or(Err(OverlayError::WorkerUnavailable));
+        outcome.map_err(|error| port_error(&error, Reload))
     }
 
     async fn serve_pass_through_endpoints(
         &self,
         db_endpoints: &[JsonValue],
     ) -> Result<(), ConfigOverlayPortError> {
-        let _mutations = self.mutations.lock().await;
-        let mut state = self.state.lock().await;
-        publish_pass_through(&mut state, db_endpoints)
-            .map_err(|error| port_error(&error, ConfigOverlayPortError::PassThrough))?;
-        drop(state);
-        validate_db_endpoints(db_endpoints)
-            .map_err(|error| port_error(&error, ConfigOverlayPortError::PassThrough))?;
-        install_pass_through_endpoints(db_endpoints, self.installer.as_ref())
-            .await
-            .map_err(|error| port_error(&error, ConfigOverlayPortError::PassThrough))
+        let (reply, answer) = oneshot::channel();
+        let mutation = Mutation::Serve(db_endpoints.to_vec(), reply);
+        let queued = self.mutations.send(mutation).await;
+        queued.map_err(|_closed| PassThrough)?;
+        let outcome = answer.await.unwrap_or(Err(OverlayError::WorkerUnavailable));
+        outcome.map_err(|error| port_error(&error, PassThrough))
     }
+}
+
+// get_config's turn, with every state guard confined to the synchronous step it protects
+async fn run_reload(parts: &OverlayParts) -> Result<ConfigWithBaseline, OverlayError> {
+    let initial = parts.environment.lock().await.clone();
+    let file_config = read_config(&parts.source, &initial, &parts.workers).await?;
+    let mut locked = parts.state.lock().await;
+    reload_stores(&mut locked, &file_config)?;
+    let store_model_in_db = locked.config.store_model_in_db;
+    drop(locked);
+    let stored = match parts.database.as_ref().filter(|_| store_model_in_db) {
+        Some(backed) => Some((backed, fetch_db_rows(backed).await?)),
+        None => None,
+    };
+    let (pending, environment) = {
+        let mut state = parts.state.lock().await;
+        let mut shared = parts.environment.lock().await;
+        let pending = begin_reload(&mut state, &file_config, stored, &parts.source, &mut shared)?;
+        (pending, shared.clone())
+    };
+    let resolved = resolve_reload(pending, environment, &parts.workers).await?;
+    let mut state = parts.state.lock().await;
+    Ok(finish_reload(&mut state, resolved))
+}
+
+// _serve_pass_through_endpoints, with the state guard gone before the installer runs
+async fn run_serve(parts: &OverlayParts, endpoints: &[JsonValue]) -> Result<(), OverlayError> {
+    let mut state = parts.state.lock().await;
+    publish_pass_through(&mut state, endpoints)?;
+    drop(state);
+    validate_db_endpoints(endpoints)?;
+    install_pass_through_endpoints(endpoints, parts.installer.as_ref()).await
 }
 
 // The log keeps the typed cause but never the YAML source excerpt: a parser renders the neighboring lines, and a config file carries keys.

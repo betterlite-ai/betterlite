@@ -21,34 +21,34 @@ pub const WORKER_LIMIT: usize = 4;
 // What one resolution returns: the config, and the OIDC tokens its lookups fetched, which outlive the worker.
 pub type ResolvedConfig = (ConfigMap, OidcTokenCache);
 
-// The off-runtime threads belong to the adapter: a canceled reload leaves its thread here, the semaphore bounds the live ones, and the drop joins them all.
+// The off-runtime threads belong to the adapter: a canceled reload leaves its thread here, the semaphore bounds the live ones, and shutdown joins them.
 pub struct Workers {
-    slots: Arc<Semaphore>,
-    live: Mutex<Vec<JoinHandle<()>>>,
+    pub slots: Arc<Semaphore>,
+    pub live: Mutex<Vec<JoinHandle<()>>>,
 }
 
 impl Workers {
-    #[must_use]
-    pub fn new(limit: usize) -> Self {
-        Self {
-            slots: Arc::new(Semaphore::new(limit)),
-            live: Mutex::new(Vec::new()),
-        }
-    }
-
     fn track(&self, thread: JoinHandle<()>) {
         let mut live = self.live.lock().unwrap_or_else(PoisonError::into_inner);
         live.retain(|handle| !handle.is_finished());
         live.push(thread);
     }
-}
 
-impl Drop for Workers {
-    fn drop(&mut self) {
-        let live = take(self.live.get_mut().unwrap_or_else(PoisonError::into_inner));
-        for thread in live {
-            drop(thread.join());
-        }
+    // The server drains the live threads with this, and the joins wait on a thread of their own, so no runtime thread is blocked.
+    pub async fn shutdown(&self) -> Result<(), OverlayError> {
+        let live = take(&mut *self.live.lock().unwrap_or_else(PoisonError::into_inner));
+        let (joined, answer) = oneshot::channel();
+        let _joiner = thread::Builder::new()
+            .name("config-overlay-join".to_owned())
+            .spawn(move || {
+                for thread in live {
+                    drop(thread.join());
+                }
+                let _sent = joined.send(());
+            })
+            .map_err(|source| OverlayError::WorkerStart { source })?;
+        let outcome = answer.await;
+        outcome.map_err(|_closed| OverlayError::WorkerUnavailable)
     }
 }
 
@@ -61,19 +61,16 @@ where
     Work: FnOnce() -> Output + Send + 'static,
     Output: Send + 'static,
 {
-    let slot = Arc::clone(&workers.slots)
-        .acquire_owned()
-        .await
-        .map_err(|_closed| OverlayError::WorkerUnavailable)?;
+    let acquired = Arc::clone(&workers.slots).acquire_owned().await;
+    let slot = acquired.map_err(|_closed| OverlayError::WorkerUnavailable)?;
     let (sender, answer) = oneshot::channel();
     let thread = thread::Builder::new()
         .name("config-overlay-worker".to_owned())
         .spawn(move || drop((slot, sender.send(work()))))
         .map_err(|source| OverlayError::WorkerStart { source })?;
     workers.track(thread);
-    answer
-        .await
-        .map_err(|_closed| OverlayError::WorkerUnavailable)
+    let outcome = answer.await;
+    outcome.map_err(|_closed| OverlayError::WorkerUnavailable)
 }
 
 pub struct Resolver<'resolve> {
@@ -109,8 +106,7 @@ impl Resolver<'_> {
         match value {
             JsonValue::Object(fields) => self.resolve_entries(fields.values_mut(), nested),
             JsonValue::Array(items) => {
-                let mappings = items.iter_mut().filter_map(JsonValue::as_object_mut);
-                for fields in mappings {
+                for fields in items.iter_mut().filter_map(JsonValue::as_object_mut) {
                     self.resolve_entries(fields.values_mut(), nested)?;
                 }
                 Ok(())
@@ -135,18 +131,17 @@ impl Resolver<'_> {
 
 // The worker thread owns what it reads, so this makes a lookup the reload can hand to it.
 pub(super) fn owned_secret_lookup(lookup: &SecretLookup) -> SecretLookup {
+    let tokens = lookup
+        .oidc_cache
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone();
     SecretLookup {
         manager: lookup.manager.as_ref().map(owned_manager),
         oidc_http: Arc::clone(&lookup.oidc_http),
         azure_tokens: Arc::clone(&lookup.azure_tokens),
         clock: Arc::clone(&lookup.clock),
-        oidc_cache: Mutex::new(
-            lookup
-                .oidc_cache
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .clone(),
-        ),
+        oidc_cache: Mutex::new(tokens),
     }
 }
 

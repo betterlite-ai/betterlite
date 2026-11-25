@@ -28,7 +28,7 @@ use betterlite_server::proxy_config_state::state::ProxyConfigState;
 use chrono::DateTime;
 use jiff::tz::TimeZoneDatabase;
 use secrecy::{ExposeSecret as _, SecretString};
-use tokio::sync::oneshot;
+use tokio::sync::{Semaphore, oneshot};
 
 use crate::cleanup_schedule::changes::CleanupScheduleState;
 use crate::cleanup_schedule::ports::{CacheMaxSize, CleanupScheduler};
@@ -280,6 +280,51 @@ pub(super) fn failing_database(failure: fn() -> DbError<RowError>) -> OverlayDat
     }
 }
 
+// a reader over fixed rows that reports its first read and then waits for the test's permits
+pub(super) struct GatedRows {
+    pub(super) rows: BTreeMap<String, JsonValue>,
+    gate: Arc<Semaphore>,
+    started: Mutex<Option<oneshot::Sender<()>>>,
+}
+
+#[async_trait]
+impl ConfigRowReader for GatedRows {
+    async fn config_param(&self, name: &str) -> Result<Option<JsonValue>, DbError<RowError>> {
+        let started = self
+            .started
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
+        if let Some(sender) = started {
+            let _sent = sender.send(());
+        }
+        let permit = self.gate.acquire().await.unwrap();
+        drop(permit);
+        Ok(self.rows.get(name).cloned())
+    }
+}
+
+pub(super) fn gated_database(
+    rows: &[(&str, JsonValue)],
+) -> (OverlayDatabase, oneshot::Receiver<()>, Arc<Semaphore>) {
+    let gate = Arc::new(Semaphore::new(0));
+    let (started, started_reading) = oneshot::channel();
+    let stored: BTreeMap<String, JsonValue> = rows
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), value.clone()))
+        .collect();
+    let database = OverlayDatabase {
+        rows: Arc::new(GatedRows {
+            rows: stored,
+            gate: Arc::clone(&gate),
+            started: Mutex::new(Some(started)),
+        }),
+        cipher: Arc::new(cipher()),
+        warnings: Arc::new(Warnings::default()),
+    };
+    (database, started_reading, gate)
+}
+
 pub(super) fn state(store_model_in_db: bool, runtime: &Arc<RecordingRuntime>) -> OverlayState {
     let runtime_sink: Arc<dyn RuntimeSink> = Arc::<RecordingRuntime>::clone(runtime);
     OverlayState {
@@ -320,7 +365,10 @@ pub(super) async fn reload_config(
     db: Option<&OverlayDatabase>,
     env: &mut BTreeMap<String, String>,
 ) -> Result<ConfigWithBaseline, OverlayError> {
-    let workers = Workers::new(WORKER_LIMIT);
+    let workers = Workers {
+        slots: Arc::new(Semaphore::new(WORKER_LIMIT)),
+        live: Mutex::new(Vec::new()),
+    };
     let file_config = read_config(source, env, &workers).await?;
     reload_stores(overlay, &file_config)?;
     let stored = match db.filter(|_| overlay.config.store_model_in_db) {
@@ -328,7 +376,8 @@ pub(super) async fn reload_config(
         None => None,
     };
     let pending = begin_reload(overlay, &file_config, stored, source, env)?;
-    let resolved = resolve_reload(pending, &workers).await?;
+    let resolved = resolve_reload(pending, env.clone(), &workers).await?;
+    workers.shutdown().await?;
     Ok(finish_reload(overlay, resolved))
 }
 
