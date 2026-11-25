@@ -223,7 +223,7 @@ pub fn http_status_message(status: u16, url: Option<&str>) -> String {
 }
 
 // rmcp wraps a failed transport send in ServiceError::TransportSend, so the status error can sit under it
-fn status_head(source: &(dyn Error + 'static)) -> Option<&ResponseHead> {
+fn status_head<'a>(source: &'a (dyn Error + 'static)) -> Option<&'a ResponseHead> {
     let error = source.downcast_ref::<SdkError>()?;
     if let SdkError::Service(ServiceError::TransportSend(send_error)) = error
         && let Some(inner) = send_error.error.downcast_ref::<SdkError>()

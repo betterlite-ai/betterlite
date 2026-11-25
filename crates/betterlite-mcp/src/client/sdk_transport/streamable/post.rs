@@ -174,11 +174,11 @@ async fn answer_error(
 async fn reject(
     core: &StreamableCore,
     mut body: HttpBody,
-    code: ErrorCode,
+    response_code: ErrorCode,
     message: String,
     id: RequestId,
 ) -> Result<(), SdkError> {
-    push_error(core, code, message, id).await?;
+    push_error(core, response_code, message, id).await?;
     drop(body.close().await);
     Ok(())
 }
