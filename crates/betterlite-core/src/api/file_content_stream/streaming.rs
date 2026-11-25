@@ -115,7 +115,7 @@ where
         if COMPATIBLE_PROVIDERS.contains(&name) {
             return Ok(ContentTarget::Compatible(
                 self.plan(call.kwargs, selection.mode)
-                    .compatible(supplied_openai(&client)),
+                    .compatible(supplied_openai(client.as_ref())),
             ));
         }
         if name != "vertex_ai" {
@@ -201,7 +201,7 @@ where
     }
 }
 
-const fn supplied_openai<Client>(client: &Option<CallerClient<'_, Client>>) -> Option<SuppliedSdk> {
+const fn supplied_openai<Client>(client: Option<&CallerClient<'_, Client>>) -> Option<SuppliedSdk> {
     match client {
         Some(CallerClient::Sdk(SuppliedSdk::OpenAi)) => Some(SuppliedSdk::OpenAi),
         Some(CallerClient::Sdk(SuppliedSdk::Azure) | CallerClient::Http(_)) | None => None,
@@ -220,7 +220,7 @@ fn supplied_async_http<Client>(
     }
 }
 
-pub(super) struct ContentClock(fn() -> DateTime<FixedOffset>);
+pub(super) struct ContentClock(pub(super) fn() -> DateTime<FixedOffset>);
 
 impl SuccessClock for ContentClock {
     fn now(&self) -> DateTime<FixedOffset> {
