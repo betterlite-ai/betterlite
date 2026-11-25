@@ -22,6 +22,7 @@ scope:
     - crates/betterlite-server/src/admission_control.rs
     - crates/betterlite-server/src/admission_control/**
     - crates/betterlite-server/src/server.rs
+    - tools/oracle/src/router_probes/admission_control/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/in_flight_requests_middleware.py#L36-L79
