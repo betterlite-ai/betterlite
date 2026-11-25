@@ -44,9 +44,3 @@ pub(super) enum DispatchFailure {
     #[error(transparent)]
     Create(#[from] AsyncCreateError),
 }
-
-#[derive(Debug, Error)]
-#[error("{message}")]
-pub(crate) struct HookFailure {
-    pub(super) message: String,
-}

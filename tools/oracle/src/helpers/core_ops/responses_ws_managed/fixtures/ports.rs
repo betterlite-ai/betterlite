@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::io;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -27,7 +28,7 @@ use betterlite_models::resolution::{
 };
 use serde_json::value::RawValue;
 
-use super::{FixtureError, HookFailure};
+use super::FixtureError;
 
 pub(crate) struct Outbound {
     client: ProxiedClient,
@@ -88,7 +89,7 @@ pub(crate) struct Nothing;
 
 #[async_trait]
 impl DeploymentHookDispatcher for Nothing {
-    type Error = HookFailure;
+    type Error = io::Error;
 
     async fn pre_call_deployment_hook(
         &self,
@@ -107,21 +108,17 @@ impl NamedCallbackResolver for Nothing {
 
 #[async_trait]
 impl ContinuationExecutor for Nothing {
-    type Error = HookFailure;
+    type Error = io::Error;
 
     async fn responses(&self, _call: &ResponsesContinuation) -> Result<Box<RawValue>, Self::Error> {
-        Err(HookFailure {
-            message: String::from("a continuation is not expected"),
-        })
+        Err(io::Error::other("a continuation is not expected"))
     }
 
     async fn anthropic_messages(
         &self,
         _call: &AnthropicContinuation,
     ) -> Result<Box<RawValue>, Self::Error> {
-        Err(HookFailure {
-            message: String::from("a continuation is not expected"),
-        })
+        Err(io::Error::other("a continuation is not expected"))
     }
 }
 
