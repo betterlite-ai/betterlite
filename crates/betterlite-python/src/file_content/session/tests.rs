@@ -144,11 +144,8 @@ fn a_streaming_call_hands_out_the_chunks_then_stops() {
         let text: String = tuple.get_item(0).unwrap().extract().unwrap();
         assert!(text.contains("x-upstream"));
         assert!(body_of(&tuple.get_item(1).unwrap()).is_empty());
-        let class = tuple
-            .get_item(2)
-            .unwrap()
-            .cast::<NativeFileStream>()
-            .unwrap();
+        let stream_object = tuple.get_item(2).unwrap();
+        let class = stream_object.cast::<NativeFileStream>().unwrap();
         let stream = class.borrow();
         assert!(!stream.is_async);
         let first = stream.next_chunk(py).unwrap().unwrap();

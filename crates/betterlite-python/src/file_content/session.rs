@@ -249,7 +249,7 @@ impl NativeFileContentSession {
         let core = Arc::clone(&self.core);
         future_into_py(py, async move {
             let answer = core.content(ContentEntry::Async, &call).await?;
-            Python::attach(|attached| answer_tuple(attached, answer, true))
+            Ok(Python::attach(|attached| answer_tuple(attached, answer, true))?)
         })
     }
 }

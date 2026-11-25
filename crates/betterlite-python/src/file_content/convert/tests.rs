@@ -52,7 +52,7 @@ fn request_reads_every_field_the_call_takes() {
 #[test]
 fn request_chunk_size_defaults_to_one_mebibyte() {
     let call = parse_call(r#"{"file_id":"file-abc"}"#).unwrap();
-    assert_eq!(call.chunk_size, 1_048_576_u64);
+    assert_eq!(call.chunk_size, 0x0010_0000_u64);
     assert!(!call.stream);
     assert_eq!(call.model, None);
     assert_eq!(call.custom_llm_provider, None);
