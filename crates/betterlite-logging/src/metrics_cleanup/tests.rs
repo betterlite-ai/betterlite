@@ -44,6 +44,12 @@ fn touch(folder: &Path, name: &str) {
     fs::write(folder.join(name), b"samples").unwrap();
 }
 
+fn touch_all<S: AsRef<str>>(folder: &Path, names: &[S]) {
+    for name in names {
+        touch(folder, name.as_ref());
+    }
+}
+
 // a folder where a file is expected makes remove_file fail even for root, which CI runs as
 fn blocked(folder: &Path, name: &str) {
     fs::create_dir(folder.join(name)).unwrap();
@@ -60,15 +66,16 @@ fn dead_pid() -> u32 {
 #[test]
 fn wipe_directory_removes_every_db_file_and_logs_the_count() {
     let folder = TempDir::new().unwrap();
-    for name in [
-        "counter_1.db",
-        "gauge_liveall_2.db",
-        ".hidden.db",
-        "notes.txt",
-        "db",
-    ] {
-        touch(folder.path(), name);
-    }
+    touch_all(
+        folder.path(),
+        &[
+            "counter_1.db",
+            "gauge_liveall_2.db",
+            ".hidden.db",
+            "notes.txt",
+            "db",
+        ],
+    );
     let (deleted, logs) = logs_of(|| wipe_directory(folder.path()).unwrap());
     assert_eq!(deleted, 2);
     assert!(!folder.path().join("counter_1.db").exists());
@@ -114,7 +121,7 @@ fn wipe_directory_fails_when_the_folder_cannot_be_listed() {
     let folder = TempDir::new().unwrap();
     let missing = folder.path().join("missing");
     let error = wipe_directory(&missing).unwrap_err();
-    assert!(matches!(error, CleanupError::List { ref path, .. } if *path == missing));
+    assert!(matches!(&error, CleanupError::List { path, .. } if *path == missing));
 }
 
 #[rstest]
@@ -128,15 +135,16 @@ fn mark_worker_exit_is_a_no_op_without_a_multiproc_dir(#[case] multiproc_dir: Op
 #[test]
 fn mark_worker_exit_drops_the_live_gauges_of_the_worker_and_logs_success() {
     let folder = TempDir::new().unwrap();
-    for name in [
-        "gauge_liveall_42.db",
-        "gauge_livesum_42.db",
-        "gauge_liveall_43.db",
-        "counter_42.db",
-        "gauge_all_42.db",
-    ] {
-        touch(folder.path(), name);
-    }
+    touch_all(
+        folder.path(),
+        &[
+            "gauge_liveall_42.db",
+            "gauge_livesum_42.db",
+            "gauge_liveall_43.db",
+            "counter_42.db",
+            "gauge_all_42.db",
+        ],
+    );
     let ((), logs) = logs_of(|| mark_worker_exit(42, Some(folder.path())));
     assert!(!folder.path().join("gauge_liveall_42.db").exists());
     assert!(!folder.path().join("gauge_livesum_42.db").exists());
@@ -180,7 +188,8 @@ fn is_running_is_false_for_a_reaped_process() {
 
 #[test]
 fn is_running_is_false_past_the_pid_range() {
-    assert!(!is_running(u32::try_from(i32::MAX).unwrap() + 1));
+    let past_pid_t = u32::try_from(i32::MAX).unwrap().checked_add(1).unwrap();
+    assert!(!is_running(past_pid_t));
 }
 
 #[test]
@@ -190,17 +199,18 @@ fn mark_dead_workers_marks_only_dead_owners_and_returns_them_sorted() {
     dead.sort_unstable();
     let own = dead_pid();
     let [first, second] = dead;
-    for name in [
-        format!("gauge_livesum_{second}.db"),
-        format!("gauge_liveall_{first}.db"),
-        format!("gauge_livemax_{first}.db"),
-        format!("gauge_liveall_{own}.db"),
-        "gauge_liveall_1.db".to_owned(),
-        format!("counter_{first}.db"),
-        format!("gauge_all_{first}.db"),
-    ] {
-        touch(folder.path(), &name);
-    }
+    touch_all(
+        folder.path(),
+        &[
+            format!("gauge_livesum_{second}.db"),
+            format!("gauge_liveall_{first}.db"),
+            format!("gauge_livemax_{first}.db"),
+            format!("gauge_liveall_{own}.db"),
+            "gauge_liveall_1.db".to_owned(),
+            format!("counter_{first}.db"),
+            format!("gauge_all_{first}.db"),
+        ],
+    );
     let (marked, logs) = logs_of(|| mark_dead_workers(folder.path(), own).unwrap());
     assert_eq!(marked, vec![first, second]);
     assert!(
