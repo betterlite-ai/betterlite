@@ -9,7 +9,7 @@ JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 DEFAULT_CHUNK_SIZE: Final = 1024 * 1024
 
 
-# LiteLLM hands back openai's HttpxBinaryResponseContent: the provider's bytes with their status and headers.
+# LiteLLM returns openai's HttpxBinaryResponseContent: bytes with their status and headers.
 class HttpxBinaryResponseContent:
     def __init__(self, content: bytes, status_code: int, headers: dict[str, str]) -> None:
         self._content = content

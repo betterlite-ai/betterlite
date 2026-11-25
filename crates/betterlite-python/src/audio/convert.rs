@@ -13,6 +13,7 @@ use betterlite_sdk::call_setup::RequestMap;
 use indexmap::IndexMap;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
+use serde_json::Number;
 use std::io::{self, Read};
 use std::path::Path;
 use std::time::{Duration, TryFromFloatSecsError};
@@ -190,27 +191,36 @@ pub(crate) fn text(arguments: &RequestMap, name: &str) -> Result<Option<String>,
     }
 }
 
-pub(crate) fn timeout(arguments: &RequestMap) -> Result<Duration, ConvertError> {
-    match arguments.get("timeout") {
-        Some(Json::Number(value)) => {
-            let seconds = value.as_f64().ok_or_else(|| field("timeout", "a number"))?;
-            Duration::try_from_secs_f64(seconds).map_err(|source| ConvertError::Timeout { source })
-        }
-        None | Some(Json::Null) => Ok(DEFAULT_TRANSCRIPTION_TIMEOUT),
-        Some(_other) => Err(field("timeout", "a number")),
+// The argument's number; absent and null read as None, and any other value is a field error.
+fn number<'a>(
+    arguments: &'a RequestMap,
+    name: &str,
+    expected: &'static str,
+) -> Result<Option<&'a Number>, ConvertError> {
+    match arguments.get(name) {
+        Some(Json::Number(value)) => Ok(Some(value)),
+        Some(Json::Null) | None => Ok(None),
+        Some(_other) => Err(field(name, expected)),
     }
 }
 
+pub(crate) fn timeout(arguments: &RequestMap) -> Result<Duration, ConvertError> {
+    let Some(value) = number(arguments, "timeout", "a number")? else {
+        return Ok(DEFAULT_TRANSCRIPTION_TIMEOUT);
+    };
+    let amount = value.as_f64().ok_or_else(|| field("timeout", "a number"))?;
+    Duration::try_from_secs_f64(amount).map_err(|source| ConvertError::Timeout { source })
+}
+
 pub(crate) fn max_retries(arguments: &RequestMap) -> Result<Option<u32>, ConvertError> {
-    match arguments.get("max_retries") {
-        Some(Json::Number(value)) => {
+    match number(arguments, "max_retries", "an integer")? {
+        None => Ok(None),
+        Some(value) => {
             let given = value
                 .as_i64()
                 .ok_or_else(|| field("max_retries", "an integer"))?;
             Ok(Some(u32::try_from(given.max(0)).unwrap_or(u32::MAX)))
         }
-        None | Some(Json::Null) => Ok(None),
-        Some(_other) => Err(field("max_retries", "an integer")),
     }
 }
 

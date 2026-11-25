@@ -18,8 +18,10 @@ from betterlite._endpoints import (
 from betterlite._native import NativeAudioError, NativeAudioSession
 from betterlite.types.utils.transcription import (
     TranscriptionResponse,
-    TranscriptionUsageDurationObject as DurationUsage,
     TranscriptionUsageTokensObject,
+)
+from betterlite.types.utils.transcription import (
+    TranscriptionUsageDurationObject as DurationUsage,
 )
 
 SETTINGS: Final[tuple[str, ...]] = (
@@ -84,42 +86,47 @@ def transcription(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litel
     given = (model, file, language, prompt, response_format, timestamp_granularities,
              temperature, user, timeout, api_key, api_base, api_version, max_retries,
              custom_llm_provider, base_url)
-    arguments = {**kwargs, **dict(zip(TRANSCRIPTION_NAMES, given, strict=False))}
-    payload = transcription_payload(arguments, atranscription=False, file_from_kwargs=False)
-    session = NativeAudioSession("{}")
-    answer = ANSWER.validate_python(
-        call_native(session.transcription, payload, NativeAudioError)
-    )
-    return transcription_response(answer)
+    arguments = merge_arguments(TRANSCRIPTION_NAMES, given, kwargs)
+    flags = {"atranscription": False, "file_from_kwargs": False}
+    return transcription_call(audio_payload(arguments, flags))
 
 
 async def atranscription(*args: CallValue, **kwargs: CallValue) -> TranscriptionResponse:
     _ = model_from_arguments(args, kwargs)
-    arguments = {**kwargs, **dict(zip(TRANSCRIPTION_NAMES, args, strict=False))}
-    payload = transcription_payload(
-        arguments, atranscription=True, file_from_kwargs="file" in kwargs,
-    )
-    session = NativeAudioSession("{}")
-    answer = ANSWER.validate_python(
-        await acall_native(session.atranscription, payload, NativeAudioError)
-    )
-    return transcription_response(answer)
+    arguments = merge_arguments(TRANSCRIPTION_NAMES, args, kwargs)
+    flags = {"atranscription": True, "file_from_kwargs": "file" in kwargs}
+    return await atranscription_call(audio_payload(arguments, flags))
 
 
-def transcription_payload(
-    values: Mapping[str, CallValue], *, atranscription: bool, file_from_kwargs: bool,
+def merge_arguments(
+    names: tuple[str, ...],
+    positional: tuple[CallValue, ...],
+    kwargs: Mapping[str, CallValue],
+) -> dict[str, CallValue]:
+    given = dict(zip(names, positional, strict=False))
+    return {**kwargs, **given}
+
+
+def audio_payload(
+    values: Mapping[str, CallValue], flags: Mapping[str, CallValue],
 ) -> CallPayload:
-    payload: dict[str, CallValue] = {
-        "settings": read_settings(SETTINGS),
-        "atranscription": atranscription,
-        "file_from_kwargs": file_from_kwargs,
-    }
+    payload: dict[str, CallValue] = {"settings": read_settings(SETTINGS), **flags}
     payload["arguments"] = {
         name: value for name, value in values.items()
         if value is not None and name not in DROPPED
     }
     payload.update({name: values.get(name) for name in ("client", "logger_fn", "shared_session")})
     return to_call_payload(payload)
+
+
+def transcription_call(payload: CallPayload) -> TranscriptionResponse:
+    answer = call_native(NativeAudioSession("{}").transcription, payload, NativeAudioError)
+    return transcription_response(ANSWER.validate_python(answer))
+
+
+async def atranscription_call(payload: CallPayload) -> TranscriptionResponse:
+    answer = await acall_native(NativeAudioSession("{}").atranscription, payload, NativeAudioError)
+    return transcription_response(ANSWER.validate_python(answer))
 
 
 # ast-grep-ignore: no-long-names
@@ -172,9 +179,9 @@ def speech(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob
     given = (model, input, voice, api_key, api_base, api_version, organization, project,
              max_retries, metadata, timeout, response_format, speed, instructions, client,
              headers, custom_llm_provider, aspeech, base_url)
-    arguments = {**kwargs, **dict(zip(SPEECH_NAMES, given, strict=False))}
+    arguments = merge_arguments(SPEECH_NAMES, given, kwargs)
     pending = bool(aspeech)
-    payload = speech_payload(arguments, aspeech=pending)
+    payload = audio_payload(arguments, {"aspeech": pending})
     session = NativeAudioSession("{}")
     if pending:
         return aspeech_response(session.aspeech, payload)
@@ -183,23 +190,10 @@ def speech(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob
 
 async def aspeech(*args: CallValue, **kwargs: CallValue) -> HttpxBinaryResponseContent:
     _ = model_from_arguments(args, kwargs)
-    arguments = {**kwargs, **dict(zip(SPEECH_NAMES, args, strict=False))}
-    payload = speech_payload(arguments, aspeech=True)
+    arguments = merge_arguments(SPEECH_NAMES, args, kwargs)
+    payload = audio_payload(arguments, {"aspeech": True})
     session = NativeAudioSession("{}")
     return await aspeech_response(session.aspeech, payload)
-
-
-def speech_payload(values: Mapping[str, CallValue], *, aspeech: bool) -> CallPayload:
-    payload: dict[str, CallValue] = {
-        "settings": read_settings(SETTINGS),
-        "aspeech": aspeech,
-    }
-    payload["arguments"] = {
-        name: value for name, value in values.items()
-        if value is not None and name not in DROPPED
-    }
-    payload.update({name: values.get(name) for name in ("client", "logger_fn", "shared_session")})
-    return to_call_payload(payload)
 
 
 def call_speech(method: SyncSpeech, payload: CallPayload) -> tuple[bytes, str]:

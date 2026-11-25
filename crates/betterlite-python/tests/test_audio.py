@@ -13,7 +13,7 @@ from typing import ClassVar, Final, Protocol, TypeAlias
 
 import pytest
 from pydantic import JsonValue, TypeAdapter
-from typing_extensions import TypeIs, TypedDict
+from typing_extensions import TypedDict, TypeIs
 
 import betterlite
 from betterlite._audio.binary import HttpxBinaryResponseContent
@@ -23,8 +23,10 @@ from betterlite.exceptions import APIConnectionError, AuthenticationError, BadRe
 from betterlite.main import aspeech, atranscription, speech, transcription
 from betterlite.types.utils.transcription import (
     TranscriptionResponse,
-    TranscriptionUsageDurationObject as DurationUsage,
     TranscriptionUsageTokensObject,
+)
+from betterlite.types.utils.transcription import (
+    TranscriptionUsageDurationObject as DurationUsage,
 )
 
 HOST: Final = "127.0.0.1"
