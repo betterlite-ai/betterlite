@@ -898,9 +898,7 @@ def test_budget_module_client(monkeypatch: pytest.MonkeyPatch) -> None:
     manager = BudgetManager(PROJECT, HOSTED, API_BASE)
     assert manager.user_dict == HOSTED_USERS
     expected = [{
-        "url": API_BASE + GET_BUDGET,
-        "json": {"project_name": PROJECT},
-        "content_type": JSON_TYPE,
+        "url": API_BASE + GET_BUDGET, "json": {"project_name": PROJECT}, "content_type": JSON_TYPE,
     }]
     assert fake.calls == expected
 
@@ -990,3 +988,13 @@ def test_budget_verbose(
     assert ours.user_dict == reference.user_dict == {}
     messages = [record.getMessage() for record in caplog.records]
     assert messages == [NOT_FOUND_MESSAGE, LOCAL_DICT_MESSAGE] * 2
+
+
+def test_budget_default_created_at(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    manager = BudgetManager(PROJECT)
+    marker = set(threading.enumerate())
+    first = manager.create_budget(BUDGET, ALICE, "daily")
+    second = manager.create_budget(BUDGET, BOB, "daily")
+    assert first["created_at"] == second["created_at"] == first["last_updated_at"]
+    join_saves(marker)
