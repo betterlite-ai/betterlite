@@ -67,15 +67,15 @@ async fn a_remote_handler_needs_the_config_file_provenance(#[case] scheme: &str)
                 HooksError::Load {
                     source: load_error, ..
                 } => assert!(matches!(*load_error, LoadError::RemoteNeedsConfigPath)),
-                other @ HooksError::Interpreter { .. }
-                | other @ HooksError::InterpreterTask { .. }
-                | other @ HooksError::InterpreterMissing
-                | other @ HooksError::CallbackIsClass { .. }
-                | other @ HooksError::CallbackNotDispatchable { .. }
-                | other @ HooksError::Validate { .. }
-                | other @ HooksError::Call(_)
-                | other @ HooksError::StartupSpec { .. }
-                | other @ HooksError::Startup { .. } => {
+                other @ (HooksError::Interpreter { .. }
+                | HooksError::InterpreterTask { .. }
+                | HooksError::InterpreterMissing
+                | HooksError::CallbackIsClass { .. }
+                | HooksError::CallbackNotDispatchable { .. }
+                | HooksError::Validate { .. }
+                | HooksError::Call(_)
+                | HooksError::StartupSpec { .. }
+                | HooksError::Startup { .. }) => {
                     panic!("expected the loader refusal, got {other:?}")
                 }
             }

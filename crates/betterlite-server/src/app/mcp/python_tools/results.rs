@@ -6,11 +6,11 @@ use betterlite_pyhost::json_values::JsonValue;
 pub(super) fn tool_output(value: JsonValue) -> OpenApiToolOutput {
     match value {
         JsonValue::String(text) => OpenApiToolOutput::Text(text),
-        other @ JsonValue::Null
-        | other @ JsonValue::Bool(_)
-        | other @ JsonValue::Number(_)
-        | other @ JsonValue::Array(_)
-        | other @ JsonValue::Object(_) => {
+        other @ (JsonValue::Null
+        | JsonValue::Bool(_)
+        | JsonValue::Number(_)
+        | JsonValue::Array(_)
+        | JsonValue::Object(_)) => {
             let original_text = other.to_string();
             OpenApiToolOutput::Json {
                 value: prompt_value(other),
