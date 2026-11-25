@@ -10,7 +10,10 @@ use betterlite_auth::virtual_key_routes::route_checks::{
 };
 use betterlite_error::proxy_exception::ProxyException;
 
-use crate::auth::auth_identity::AuthContext;
+use crate::auth::auth_identity::{AuthContext, StageFailure, StageInput};
+use crate::auth::route_match::decoded_route_path;
+use crate::error_body::AuthenticationFailure;
+use crate::state::ServerState;
 
 mod tests;
 
@@ -28,6 +31,39 @@ pub struct VirtualKeyRouteStageInput {
     pub registry: PassThroughRegistry,
     pub route: String,
     pub method: Option<String>,
+}
+
+pub(crate) fn stage_input(
+    request: &Request<Body>,
+    authenticated: Option<&AuthContext>,
+) -> Result<StageInput, StageFailure> {
+    let context = authenticated
+        .cloned()
+        .ok_or(AuthenticationFailure::Missing)?;
+    let (team_allowed_routes, registry) = match request.extensions().get::<Arc<ServerState>>() {
+        Some(state) => (
+            state.virtual_key_routes.team_allowed_routes.clone(),
+            state.virtual_key_routes.registry_snapshot(),
+        ),
+        None => (
+            Vec::new(),
+            PassThroughRegistry {
+                root_path: String::new(),
+                registrations: Vec::new(),
+            },
+        ),
+    };
+    let route =
+        decoded_route_path(request.uri().path()).unwrap_or_else(|| request.uri().path().to_owned());
+    let stage = VirtualKeyRouteStageInput {
+        context,
+        rule: rule_for_request(request),
+        team_allowed_routes,
+        registry,
+        route,
+        method: Some(request.method().as_str().to_uppercase()),
+    };
+    Ok(StageInput::AuthVirtualKeyRoutes(Box::new(stage)))
 }
 
 pub(crate) fn run_stage(
