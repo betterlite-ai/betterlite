@@ -64,7 +64,6 @@ pub mod passthrough_selection;
 pub mod pre_routing_registry;
 pub mod prompt_affinity;
 pub mod quality_router;
-pub mod redis_failure_policy;
 pub mod request_scheduler;
 pub mod responses_stream_fallback;
 pub mod retry_policy;
