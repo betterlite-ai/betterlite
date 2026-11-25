@@ -413,6 +413,30 @@ async fn list_without_a_database_purges_uncached_records() {
     assert_eq!(vec!["vs_config"], stored);
 }
 
+// reconciliation comes first: a stale team record would pass the filter, and is gone before it runs
+#[tokio::test]
+async fn list_filters_after_reconciling_the_registry() {
+    let database = FakeDatabase::new(vec![db_store("vs_db"), team_store("vs_team", "t1")]);
+    let state = build(Setup {
+        database: Some(database),
+        registry: Some(vec![team_store("vs_stale", "t1")]),
+        world: World::default(),
+        privileges: false,
+        settings: FeatureSettings::default(),
+    });
+    let (status, _headers, body) = call(
+        &state,
+        &internal("u1", Some("t1")),
+        Method::GET,
+        LIST_PATH,
+        "",
+    )
+    .await;
+    assert_eq!(StatusCode::OK, status);
+    assert_eq!(vec!["vs_team".to_owned()], ids(&body));
+    assert!(registry_of(&state).store_by_id("vs_stale").is_none());
+}
+
 #[tokio::test]
 async fn list_skips_records_without_an_id_and_drops_undeclared_fields() {
     let database = FakeDatabase::new(vec![
