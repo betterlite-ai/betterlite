@@ -124,7 +124,7 @@ impl NativeRedis {
 
     fn async_delete<'py>(&self, py: Python<'py>, keys: Vec<String>) -> AsyncAnswer<'py> {
         let cache = Arc::clone(&self.cache);
-        future_into_py(py, async move {
+        blocking::none_future(py, async move {
             error::backend_err(cache.admin.delete_cache_keys(&keys).await)?;
             Ok(())
         })
@@ -189,7 +189,7 @@ impl NativeRedis {
 
     fn async_close<'py>(&self, py: Python<'py>) -> AsyncAnswer<'py> {
         let cache = Arc::clone(&self.cache);
-        future_into_py(py, async move {
+        blocking::none_future(py, async move {
             cache.admin.disconnect().await;
             Ok(())
         })

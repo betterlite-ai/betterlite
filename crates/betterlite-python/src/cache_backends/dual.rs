@@ -71,7 +71,7 @@ impl NativeDual {
     fn async_set<'py>(&self, py: Python<'py>, key: &str, value: &str, ttl: Option<f64>) -> AsyncAnswer<'py> {
         let json = convert::json_value(value)?;
         let (cache, owned) = (Arc::clone(&self.cache), key.to_owned());
-        future_into_py(py, store(cache, owned, json, ttl))
+        blocking::none_future(py, store(cache, owned, json, ttl))
     }
 
     fn get(&self, py: Python<'_>, key: &str) -> PyResult<Option<String>> {
@@ -155,7 +155,7 @@ impl NativeDual {
         operations: Vec<(String, f64, Option<i64>)>,
     ) -> AsyncAnswer<'py> {
         let cache = Arc::clone(&self.cache);
-        future_into_py(py, async move {
+        blocking::none_future(py, async move {
             let queued: Vec<RedisPipelineIncrement> = operations
                 .into_iter()
                 .map(|(key, increment_value, ttl)| RedisPipelineIncrement {
@@ -220,7 +220,7 @@ impl NativeDual {
 
     fn async_delete<'py>(&self, py: Python<'py>, keys: Vec<String>) -> AsyncAnswer<'py> {
         let cache = Arc::clone(&self.cache);
-        future_into_py(py, async move {
+        blocking::none_future(py, async move {
             error::backend_err(cache.async_delete_cache_keys(&keys).await)?;
             Ok(())
         })
@@ -281,9 +281,9 @@ impl NativeDual {
 
     fn async_close<'py>(&self, py: Python<'py>) -> AsyncAnswer<'py> {
         let Some(tier) = self.redis.as_ref().map(Arc::clone) else {
-            return future_into_py(py, async move { Ok(()) });
+            return blocking::none_future(py, async move { Ok(()) });
         };
-        future_into_py(py, close_tier(tier))
+        blocking::none_future(py, close_tier(tier))
     }
 }
 
