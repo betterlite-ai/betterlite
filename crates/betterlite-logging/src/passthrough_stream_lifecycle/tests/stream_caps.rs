@@ -164,6 +164,25 @@ fn complete_frames_before_an_over_cap_tail_are_still_injected() {
     );
 }
 
+#[test]
+fn a_tinyfish_frame_at_the_cap_is_still_scanned() {
+    let harness = Harness::new(&["2024-01-01T00:00:01+00:00"]).with_tinyfish(false, Some("run-1"));
+    let (logs, _logs_guard) = capture_logs();
+    let caps = StreamBufferCaps {
+        logged_bytes: MAX_LOGGED_STREAM_BYTES,
+        frame_bytes: 16,
+    };
+    let mut run = CompletionGuard::new(plain_call(&harness, EndpointType::Tinyfish), caps);
+    let frame = b"data: {\"run_id\":\"run-1\"}\n\n".to_vec();
+    let (head, rest) = frame.split_at(16);
+    assert_eq!(run.accept(head.to_vec()), Some(head.to_vec()));
+    assert_eq!(run.accept(rest.to_vec()), Some(rest.to_vec()));
+    let started = harness.tinyfish.started();
+    assert_eq!(started.len(), 1);
+    assert_eq!(started[0].0, "run-1");
+    assert!(!logs.text().contains("TinyFish run_id scan is past"));
+}
+
 #[tokio::test]
 async fn a_tinyfish_frame_past_the_cap_stops_the_scan_and_forwards_every_chunk() {
     let harness = Harness::new(&["2024-01-01T00:00:01+00:00"]).with_tinyfish(false, Some("run-1"));
