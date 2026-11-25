@@ -1,0 +1,32 @@
+task: B3515
+deviations:
+  - what: >-
+      The deprecated state parameter warning is emitted as a tracing WARN event with a
+      category = "DeprecationWarning" field, where LiteLLM calls warnings.warn with UserWarning and
+      stacklevel=5 so the warning points at the caller's frame.
+    why: >-
+      A Rust library has no warnings module and no caller-frame stacklevel; betterlite's logging
+      pipeline is tracing, and the WARN event carries the same message and category so a caller can
+      route or filter it. Nothing is deduplicated per call site, as Python's warnings module does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/decisions/main.py#L38-L42
+  - what: >-
+      A systemone call whose answer comes back in the OpenAI decision format fails with a typed
+      DecisionsEntryError::ResponseFormat that maps to a 500 InternalServer error, where LiteLLM's
+      _systemone_response raises a bare AssertionError.
+    why: >-
+      The check is a typing guard in LiteLLM, and a bare assert is not acceptable in betterlite's
+      production code, so the same mismatch surfaces as a typed internal-server error instead of an
+      uncaught AssertionError.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/systemone/main.py#L46-L48
+kept_bugs:
+  - what: >-
+      The evaluation health check reads _hidden_params["headers"] off the decisions answer, but
+      decisions _format_response only sets model, custom_llm_provider, provider_response_model and
+      additional_headers, so the health reply always carries an empty header map.
+    why: >-
+      A working health check treats the evaluation mode's reply as healthy with no provider headers;
+      moving the provider headers into "headers" would change a documented health response shape, so
+      betterlite reads the same key and returns the same empty map. The
+      evaluation_reply_reads_headers_off_the_hidden_params_only test pins it: an answer whose hidden
+      params hold additional_headers still yields no hidden headers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8807-L8809
