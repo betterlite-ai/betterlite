@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::io;
@@ -20,6 +22,7 @@ use rstest::rstest;
 use tempfile::TempDir;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::Notify;
 use tokio::time::{self, Instant};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
@@ -249,6 +252,43 @@ async fn serve_bounded_closes_a_stalled_scrape_when_it_stops() {
         .expect("the listener task failed")
         .expect("serving failed");
     expect_closed(stalled).await;
+}
+
+#[tokio::test]
+async fn serve_bounded_finishes_the_scrape_in_flight_before_it_closes() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let signal = Arc::new(Notify::new());
+    let handler = Arc::clone(&signal);
+    let app = Router::new().route(
+        METRICS_PATH,
+        get(move || {
+            let reached = Arc::clone(&handler);
+            async move {
+                reached.notify_one();
+                time::sleep(Duration::from_millis(100)).await;
+                "done"
+            }
+        }),
+    );
+    let stop = CancellationToken::new();
+    let tasks = TaskTracker::new();
+    let mut serving = tasks.spawn(serve_bounded(listener, app, stop.clone(), SHUTDOWN_GRACE));
+    let mut scrape = TcpStream::connect(address).await.unwrap();
+    let request = format!("GET {METRICS_PATH} HTTP/1.1\r\nHost: {address}\r\n\r\n");
+    scrape.write_all(request.as_bytes()).await.unwrap();
+    let arrived = time::timeout(Duration::from_secs(5), signal.notified()).await;
+    arrived.expect("the scrape never reached the handler");
+    stop.cancel();
+    let mut response = String::new();
+    let read = time::timeout(Duration::from_secs(5), scrape.read_to_string(&mut response)).await;
+    let _read = read.expect("the drained connection never closed");
+    assert!(response.ends_with("done"), "{response}");
+    let outcome = time::timeout(SHUTDOWN_GRACE, &mut serving).await;
+    outcome
+        .expect("the listener did not finish after draining")
+        .expect("the listener task failed")
+        .expect("serving failed");
 }
 
 #[tokio::test]

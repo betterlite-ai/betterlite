@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::collections::BTreeMap;
 use std::fs;
 use std::future;
@@ -219,11 +221,15 @@ async fn wait_until_serving_polls_every_interval_and_stops_the_listener_at_the_d
     let error = wait_until_serving(&mut serving, &probe(address, QUICK), &stop, GRACE)
         .await
         .unwrap_err();
-    assert!(started.elapsed() >= QUICK.deadline);
+    let elapsed = started.elapsed();
+    assert!(elapsed >= QUICK.deadline + GRACE, "{elapsed:?}");
+    assert!(elapsed < Duration::from_secs(10), "{elapsed:?}");
     let probes = hits.load(Ordering::SeqCst);
     assert!((2..=5).contains(&probes), "{probes} probes");
     assert!(stop.is_cancelled());
-    assert!(serving.await.unwrap_err().is_cancelled());
+    let ended = time::timeout(Duration::from_secs(5), &mut serving).await;
+    let joined = ended.expect("the listener was not stopped at the deadline");
+    assert!(joined.unwrap_err().is_cancelled());
     assert_eq!(
         error.to_string(),
         format!(

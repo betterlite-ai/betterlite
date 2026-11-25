@@ -25,6 +25,10 @@ use tokio::time;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
+// this file is also the bin root, where a plain mod tests; would look in src/tests.rs
+#[path = "metrics_listener/tests.rs"]
+mod tests;
+
 const PROGRAM: &str = "betterlite-metrics-server";
 const MULTIPROC_DIR: &str = "PROMETHEUS_MULTIPROC_DIR";
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
@@ -226,14 +230,10 @@ fn report(outcome: Result<(), MetricsServerError>) -> ExitCode {
 }
 
 // the sidecar's entry point, as LiteLLM's __main__: parse the CLI, then serve until the parent process is gone
+#[cfg_attr(test, mutants::skip)]
 pub fn main() -> ExitCode {
     match metrics_server_args(env::args_os().collect(), &process_environment()) {
         Ok(settings) => report(serve(&settings)),
         Err(error) => error.exit(),
     }
-}
-
-#[cfg(test)]
-mod metrics_server {
-    include!("metrics_listener/tests.rs");
 }

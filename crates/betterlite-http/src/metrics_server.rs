@@ -222,11 +222,14 @@ pub async fn wait_until_serving(
         return served;
     }
     stop.cancel();
-    let deadline = time::Instant::now() + grace.saturating_add(CLEANUP_MARGIN);
-    while !serving.is_finished() && time::Instant::now() < deadline {
-        time::sleep(CLEANUP_POLL).await;
-    }
-    if !serving.is_finished() {
+    let bound = grace.saturating_add(CLEANUP_MARGIN);
+    let drained = time::timeout(bound, async {
+        while !serving.is_finished() {
+            time::sleep(CLEANUP_POLL).await;
+        }
+    })
+    .await;
+    if drained.is_err() {
         serving.abort();
     }
     Err(MetricsServerError::Timeout {
