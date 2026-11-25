@@ -4737,6 +4737,7 @@ dependencies = [
  "betterlite-rate-limit",
  "betterlite-redact",
  "betterlite-redis",
+ "betterlite-redis-fixture",
  "betterlite-reporting",
  "betterlite-roi",
  "betterlite-router",
