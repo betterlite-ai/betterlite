@@ -93,6 +93,7 @@ fn debug_client_name(model_info: &JsonObject, router: Option<&dyn RouterSource>)
     };
     router
         .async_client_name(text_field(model_info, "id"))
+        .filter(|name| !name.is_empty())
         .unwrap_or_else(|| "None".to_owned())
 }
 

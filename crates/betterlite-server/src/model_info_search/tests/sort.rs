@@ -42,6 +42,14 @@ fn date_sort() {
         names(&sort_models(&models, Some("created_at"), Some("asc"))),
         ["c", "a", "b"]
     );
+    let updated = vec![
+        model("b", vec![("updated_at", text("2026-01-02T00:00:00Z"))]),
+        model("a", vec![("updated_at", text("2026-01-01T00:00:00Z"))]),
+    ];
+    assert_eq!(
+        names(&sort_models(&updated, Some("updated_at"), None)),
+        ["a", "b"]
+    );
 }
 
 #[test]

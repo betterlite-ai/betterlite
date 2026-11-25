@@ -186,6 +186,22 @@ async fn debug_client_values() {
     .await
     .unwrap();
     assert_eq!(without_id.get("openai_client"), Some(&text("None")));
+    let blank = FakeRouter {
+        client: Some(String::new()),
+        discovered: JsonObject::new(),
+    };
+    let blank_client = enrich_model_info(
+        &model,
+        true,
+        &EnrichContext {
+            registry: &registry,
+            catalog: &catalog,
+            router: Some(&blank),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(blank_client.get("openai_client"), Some(&text("None")));
 }
 
 #[tokio::test]

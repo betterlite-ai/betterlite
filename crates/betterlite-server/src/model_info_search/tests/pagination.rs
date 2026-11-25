@@ -32,6 +32,7 @@ fn pagination_count() {
 
 #[rstest]
 #[case::zero_count(0, 0)]
+#[case::negative_count(-3, 0)]
 #[case::count_one(1, 1)]
 #[case::exact_multiple(4, 2)]
 #[case::remainder(5, 3)]
