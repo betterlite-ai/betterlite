@@ -8,6 +8,7 @@ use betterlite_http_fixture::server::serve;
 use pyo3::exceptions::{PyNotImplementedError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList, PyTuple};
+use pyo3_async_runtimes::tokio::get_runtime;
 
 use super::NativeFileContentSession;
 use crate::file_content::error::NativeFileContentError;
@@ -152,7 +153,10 @@ fn a_streaming_call_hands_out_the_chunks_then_stops() {
         assert_eq!(first.bind(py).as_bytes(), b"file body");
         assert!(stream.next_chunk(py).unwrap().is_none());
         stream.close(py).unwrap();
-        assert!(stream.next_chunk(py).unwrap().is_none());
+        stream.close(py).unwrap();
+        // The core closes into a sync empty source; Python swaps in its own empty iterator.
+        let mut closed = get_runtime().block_on(stream.stream.lock());
+        assert!(closed.sync_iter().unwrap().next_chunk().is_none());
     });
     serving.finish().unwrap();
 }
