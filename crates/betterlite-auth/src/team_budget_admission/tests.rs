@@ -252,7 +252,7 @@ pub(super) async fn run(
 }
 
 fn loaded(fields: &str) -> Membership {
-    Membership::Loaded(Some(member(fields)))
+    Membership::Loaded(Some(Box::new(member(fields))))
 }
 
 fn denial_of(result: Result<SoftOutcome, TeamBudgetError>) -> Denial {
@@ -360,7 +360,7 @@ async fn positive_default_only(#[case] default_max: &str, #[case] cap: Option<&s
 #[rstest]
 #[case::missing_default_row(r#"{"team_member_budget_id":"absent"}"#, 1)]
 #[case::numeric_default_id(r#"{"team_member_budget_id":7}"#, 0)]
-#[case::no_default_id(r#"{}"#, 0)]
+#[case::no_default_id("{}", 0)]
 #[tokio::test]
 async fn positive_default_only_skips_without_a_default(
     #[case] metadata: &str,

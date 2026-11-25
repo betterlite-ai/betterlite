@@ -13,11 +13,11 @@ use crate::membership_load::error::MembershipLoadError;
 
 use super::error::TeamBudgetError;
 
-// what the caller already knows about the membership; a loaded None is an answer and suppresses another query
+// what the caller already knows about the membership; the row is boxed so the enum stays small, and a loaded None answers without a query
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Membership {
     Unloaded,
-    Loaded(Option<LiteLLMTeamMembership>),
+    Loaded(Option<Box<LiteLLMTeamMembership>>),
 }
 
 // B2318's get_team_membership, which the server wires to the shared load
@@ -51,7 +51,7 @@ pub trait DefaultBudgetSource: Send + Sync {
 }
 
 #[async_trait]
-impl<'deps, Rows, Cache> DefaultBudgetSource for DefaultBudgetLookup<'deps, Rows, Cache>
+impl<Rows, Cache> DefaultBudgetSource for DefaultBudgetLookup<'_, Rows, Cache>
 where
     Rows: BudgetRows + ?Sized,
     Cache: EndUserCache + Send + Sync + ?Sized,
@@ -71,7 +71,7 @@ pub(crate) async fn resolve_membership(
     team_id: &str,
 ) -> Result<Option<LiteLLMTeamMembership>, TeamBudgetError> {
     match membership {
-        Membership::Loaded(loaded) => Ok(loaded.clone()),
+        Membership::Loaded(loaded) => Ok(loaded.as_deref().cloned()),
         Membership::Unloaded => Ok(source.team_membership(user_id, team_id).await?),
     }
 }

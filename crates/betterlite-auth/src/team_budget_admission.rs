@@ -85,5 +85,5 @@ async fn shared_membership(
         &team.fields.base.team_id,
     )
     .await?;
-    Ok(Membership::Loaded(membership))
+    Ok(Membership::Loaded(membership.map(Box::new)))
 }

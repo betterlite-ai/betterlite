@@ -20,13 +20,13 @@ pub async fn team_multi_budget_check(
     admission: &TeamAdmission<'_>,
     team: Option<&LiteLLMTeamTable>,
 ) -> Result<(), TeamBudgetError> {
-    let Some(team) = team else {
+    let Some(team_row) = team else {
         return Ok(());
     };
-    let Some(limits) = team.fields.base.budget_limits.as_deref() else {
+    let Some(limits) = team_row.fields.base.budget_limits.as_deref() else {
         return Ok(());
     };
-    let team_id = team.fields.base.team_id.as_str();
+    let team_id = team_row.fields.base.team_id.as_str();
     for limit in limits {
         let duration = limit.budget_duration.as_str();
         let counter_key = format!("spend:team:{team_id}:window:{duration}");

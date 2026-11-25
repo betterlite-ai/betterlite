@@ -347,7 +347,7 @@ fn soft_csv_trims() {
 }
 
 #[rstest]
-#[case::missing(r#"{}"#)]
+#[case::missing("{}")]
 #[case::null(r#"{"soft_budget_alerting_emails":null}"#)]
 #[case::number(r#"{"soft_budget_alerting_emails":5}"#)]
 #[case::boolean(r#"{"soft_budget_alerting_emails":true}"#)]

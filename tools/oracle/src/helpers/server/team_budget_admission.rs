@@ -142,7 +142,7 @@ async fn admit_value(call: &Call, token: Option<&UserAPIKeyAuth>) -> Result<Valu
         token,
         user_email: call.user_email.as_deref(),
         model: &model,
-        membership: Membership::Loaded(call.membership.clone()),
+        membership: Membership::Loaded(call.membership.clone().map(Box::new)),
     };
     let (denial, model_denial) = match admit(&admission, &request).await {
         Ok(_outcome) => (Value::Null, Value::Null),

@@ -26,18 +26,18 @@ pub fn team_soft_budget_check(
     token: Option<&UserAPIKeyAuth>,
     alerts: Option<&dyn TeamAlertSink>,
 ) -> SoftOutcome {
-    let Some(team) = team else {
+    let Some(team_row) = team else {
         return SoftOutcome::NotCrossed;
     };
-    let base = &team.fields.base;
-    let (Some(soft_budget), Some(spend)) = (base.soft_budget, team.fields.spend) else {
+    let base = &team_row.fields.base;
+    let (Some(soft_budget), Some(spend)) = (base.soft_budget, team_row.fields.spend) else {
         return SoftOutcome::NotCrossed;
     };
     if spend < soft_budget {
         return SoftOutcome::NotCrossed;
     }
     debug!(team_id = %base.team_id, spend = %spend, soft_budget = %soft_budget, "Crossed Soft Budget for team");
-    let Some(token) = token else {
+    let Some(valid_token) = token else {
         return SoftOutcome::CrossedWithoutToken;
     };
     let Some(recipients) = soft_budget_recipients(base.metadata.as_ref()) else {
@@ -50,8 +50,8 @@ pub fn team_soft_budget_check(
     if let Some(sink) = alerts {
         sink.schedule(token_alert(
             TeamAlertKind::SoftBudget,
-            token,
-            team,
+            valid_token,
+            team_row,
             spend,
             Some(recipients),
         ));

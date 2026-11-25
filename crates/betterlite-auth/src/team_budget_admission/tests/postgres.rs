@@ -99,7 +99,7 @@ fn stored(pool: &Pool) -> Stored {
         redis_delete_chunk_size: MAX_REDIS_BATCH_CACHE_SIZE,
     };
     let cache = Arc::new(gateway_cache(memory(), memory(), None, settings, 45.0_f64));
-    let membership_cache: Arc<dyn MembershipCache> = Arc::clone(&cache);
+    let membership_cache: Arc<dyn MembershipCache> = Arc::<StoredCache>::clone(&cache);
     let memberships = MembershipLookup {
         cache: membership_cache,
         rows: Some(Arc::new(DatabaseTeamMembership {
