@@ -37,8 +37,10 @@ pub(super) fn build_handler(
     quota: Option<&QuotaRow>,
 ) -> ManagedResponsesWebSocket<Socket> {
     let callbacks: Option<Vec<Arc<dyn ProjectQuotaCallback>>> = quota.map(|row| {
-        let callback: Arc<dyn ProjectQuotaCallback> =
-            Arc::new(ScriptedQuota::new(shared, row.clone()));
+        let callback: Arc<dyn ProjectQuotaCallback> = Arc::new(ScriptedQuota {
+            shared: Arc::clone(shared),
+            row: row.clone(),
+        });
         vec![callback]
     });
     let connection = Connection {

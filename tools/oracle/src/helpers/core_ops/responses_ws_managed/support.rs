@@ -11,9 +11,11 @@ use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::{Map, Value, from_str, json};
 
+use super::fixtures::{ChunkKind, QuotaKind, ScriptedFailure};
+
 #[derive(Clone, Deserialize)]
 pub(super) struct ChunkRow {
-    pub(super) kind: String,
+    pub(super) kind: ChunkKind,
     pub(super) value: Option<Json>,
     pub(super) event_type: Option<String>,
     pub(super) dump: Option<String>,
@@ -29,7 +31,7 @@ pub(super) struct ScriptRow {
 
 #[derive(Clone, Deserialize)]
 pub(super) struct QuotaRow {
-    pub(super) kind: String,
+    pub(super) kind: QuotaKind,
     pub(super) message: String,
 }
 
@@ -69,9 +71,9 @@ pub(super) fn lock<Value>(shared: &Mutex<Value>) -> MutexGuard<'_, Value> {
 }
 
 pub(super) struct Socket {
-    shared: Shared,
-    fails_at: Option<usize>,
-    message: String,
+    pub(super) shared: Shared,
+    pub(super) fails_at: Option<usize>,
+    pub(super) message: String,
 }
 
 #[async_trait]
@@ -96,35 +98,18 @@ impl Socket {
     }
 }
 
-pub(super) fn socket(shared: &Shared, row: &SinkRow) -> Socket {
-    Socket {
-        shared: Arc::clone(shared),
-        fails_at: row.fails_at,
-        message: row.message.clone(),
-    }
-}
-
 pub(super) struct ScriptedSource {
-    shared: Shared,
-    frames: Vec<String>,
-    disconnect: String,
-    next: usize,
-}
-
-impl ScriptedSource {
-    pub(super) fn new(shared: &Shared, frames: &[String], disconnect: &str) -> Self {
-        Self {
-            shared: Arc::clone(shared),
-            frames: frames.to_vec(),
-            disconnect: disconnect.to_owned(),
-            next: 0,
-        }
-    }
+    pub(super) shared: Shared,
+    pub(super) frames: Vec<String>,
+    pub(super) disconnect: String,
+    pub(super) next: usize,
 }
 
 #[async_trait]
 impl FrameSource for ScriptedSource {
-    async fn receive_text(&mut self) -> Result<String, FrameReceiveError> {
+    type Error = ScriptedFailure;
+
+    async fn receive_text(&mut self) -> Result<String, FrameReceiveError<ScriptedFailure>> {
         lock(&self.shared).trace.push("receive".to_owned());
         match self.frames.get(self.next) {
             Some(frame) => {
@@ -132,9 +117,9 @@ impl FrameSource for ScriptedSource {
                 self.next = self.next.saturating_add(1);
                 Ok(received)
             }
-            None => Err(FrameReceiveError {
+            None => Err(FrameReceiveError::Disconnected(ScriptedFailure {
                 message: self.disconnect.clone(),
-            }),
+            })),
         }
     }
 }

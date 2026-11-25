@@ -18,6 +18,7 @@ use betterlite_error::rate_limit::RateLimitCategory;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
+use super::fixtures::{ChunkKind, Outbound, QuotaKind, ScriptedFailure, dispatch};
 use super::support::{ChunkRow, QuotaRow, RecordedCall, RecordedQuota, ScriptRow, Shared, lock};
 
 const SCRIPT_EXHAUSTED: &str = "the case scripts no further provider call";
@@ -43,14 +44,14 @@ impl HasModelDumpJson for BrokenDump {
 }
 
 fn chunk_of(row: ChunkRow) -> ProviderChunk {
-    match row.kind.as_str() {
-        "none" => ProviderChunk::Empty,
-        "json" => ProviderChunk::Json(row.value.unwrap_or(Json::Null)),
-        "object" => ProviderChunk::Object {
+    match row.kind {
+        ChunkKind::None => ProviderChunk::Empty,
+        ChunkKind::Json => ProviderChunk::Json(row.value.unwrap_or(Json::Null)),
+        ChunkKind::Object => ProviderChunk::Object {
             kind: row.event_type,
             dump: Box::new(TextDump(row.dump.unwrap_or_default())),
         },
-        _broken => ProviderChunk::Object {
+        ChunkKind::Broken => ProviderChunk::Object {
             kind: row.event_type,
             dump: Box::new(BrokenDump),
         },
@@ -67,11 +68,15 @@ pub(super) struct ScriptedStream {
 
 #[async_trait]
 impl ResponsesStream for ScriptedStream {
-    async fn next_chunk(&mut self) -> Result<Option<ProviderChunk>, ProviderCallError> {
+    type Error = ScriptedFailure;
+
+    async fn next_chunk(
+        &mut self,
+    ) -> Result<Option<ProviderChunk>, ProviderCallError<ScriptedFailure>> {
         if Some(self.consumed) == self.raise_after {
-            return Err(ProviderCallError {
+            return Err(ProviderCallError::Stream(ScriptedFailure {
                 message: self.raise_message.clone(),
-            });
+            }));
         }
         let Some(chunk) = self.chunks.pop_front() else {
             lock(&self.shared).trace.push("provider-end".to_owned());
@@ -83,18 +88,13 @@ impl ResponsesStream for ScriptedStream {
 }
 
 pub(super) struct ScriptedProvider {
-    shared: Shared,
-    scripts: Mutex<VecDeque<ScriptRow>>,
+    pub(super) shared: Shared,
+    pub(super) scripts: Mutex<VecDeque<ScriptRow>>,
+    pub(super) outbound: Outbound,
+    pub(super) base_url: String,
 }
 
 impl ScriptedProvider {
-    pub(super) fn new(shared: &Shared, scripts: &[ScriptRow]) -> Self {
-        Self {
-            shared: Shared::clone(shared),
-            scripts: Mutex::new(VecDeque::from(scripts.to_vec())),
-        }
-    }
-
     fn record_call(&self, model: &str, call_kwargs: &IndexMap<String, Json>) {
         let mut recorder = lock(&self.shared);
         recorder.trace.push("provider".to_owned());
@@ -107,21 +107,29 @@ impl ScriptedProvider {
 
 #[async_trait]
 impl ResponsesStreaming for ScriptedProvider {
+    type Error = ScriptedFailure;
     type Stream = ScriptedStream;
 
     async fn stream(
         &self,
         model: &str,
         call_kwargs: &IndexMap<String, Json>,
-    ) -> Result<ScriptedStream, ProviderCallError> {
+    ) -> Result<ScriptedStream, ProviderCallError<ScriptedFailure>> {
         self.record_call(model, call_kwargs);
+        dispatch(&self.outbound, &self.base_url, model, call_kwargs)
+            .await
+            .map_err(|error| {
+                ProviderCallError::Call(ScriptedFailure {
+                    message: error.to_string(),
+                })
+            })?;
         let Some(row) = lock(&self.scripts).pop_front() else {
-            return Err(ProviderCallError {
+            return Err(ProviderCallError::Call(ScriptedFailure {
                 message: SCRIPT_EXHAUSTED.to_owned(),
-            });
+            }));
         };
         if let Some(message) = row.fail {
-            return Err(ProviderCallError { message });
+            return Err(ProviderCallError::Call(ScriptedFailure { message }));
         }
         let chunks: VecDeque<ProviderChunk> = row.chunks.into_iter().map(chunk_of).collect();
         Ok(ScriptedStream {
@@ -135,18 +143,11 @@ impl ResponsesStreaming for ScriptedProvider {
 }
 
 pub(super) struct ScriptedQuota {
-    shared: Shared,
-    row: QuotaRow,
+    pub(super) shared: Shared,
+    pub(super) row: QuotaRow,
 }
 
 impl ScriptedQuota {
-    pub(super) fn new(shared: &Shared, row: QuotaRow) -> Self {
-        Self {
-            shared: Shared::clone(shared),
-            row,
-        }
-    }
-
     fn record_quota(
         &self,
         requested_model: Option<&str>,
@@ -177,12 +178,11 @@ impl ProjectQuotaCallback for ScriptedQuota {
             estimated_input_tokens,
             estimated_output_tokens,
         );
-        match self.row.kind.as_str() {
-            "rate_limit" => Err(rate_limited(&self.row.message)),
-            "internal" => Err(ErrorClass::InternalServer(Box::new(context(
+        match self.row.kind {
+            QuotaKind::RateLimit => Err(rate_limited(&self.row.message)),
+            QuotaKind::Internal => Err(ErrorClass::InternalServer(Box::new(context(
                 &self.row.message,
             )))),
-            _accept => Ok(()),
         }
     }
 }

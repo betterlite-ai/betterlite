@@ -1,8 +1,10 @@
 mod fakes;
+mod fixtures;
 mod handler;
 mod support;
 
 use std::mem::take;
+use std::sync::{Arc, Mutex};
 
 use betterlite_core::api::responses_ws_history::{FrameSink, ManagedResponsesWebSocket};
 use betterlite_core::api::responses_ws_managed::provider::ResponsesStreaming;
@@ -11,7 +13,7 @@ use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use indexmap::IndexMap;
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{Value, json};
 use tokio::runtime::Builder;
 use tracing::instrument::WithSubscriber as _;
 use tracing_subscriber::layer::SubscriberExt as _;
@@ -19,7 +21,7 @@ use tracing_subscriber::registry;
 
 use self::fakes::ScriptedProvider;
 use self::handler::{Captured, build_handler};
-use self::support::{QuotaRow, ScriptRow, ScriptedSource, Shared, SinkRow, lock};
+use self::support::{QuotaRow, ScriptRow, ScriptedSource, Shared, SinkRow, Socket, lock};
 
 #[derive(Deserialize)]
 struct Setup {
@@ -50,19 +52,54 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         let runtime = Builder::new_current_thread()
+            .enable_all()
             .build()
             .map_err(|source| support::helper_error("RuntimeError", source.to_string()))?;
         let shared = Shared::default();
-        let sink = support::socket(&shared, &input.sink);
-        let provider = ScriptedProvider::new(&shared, &input.scripts);
-        let source = ScriptedSource::new(&shared, &input.frames, &input.disconnect);
-        let mut handler = build_handler(&input.setup, sink, &shared, input.quota.as_ref());
+        let mock = fixtures::start_mock(input.frames.len().saturating_add(2))
+            .map_err(|error| support::helper_error("MockError", error.to_string()))?;
+        let provider = ScriptedProvider {
+            shared: Arc::clone(&shared),
+            scripts: Mutex::new(input.scripts.iter().cloned().collect()),
+            outbound: fixtures::outbound()
+                .map_err(|error| support::helper_error("FixtureError", error.to_string()))?,
+            base_url: mock.base_url.clone(),
+        };
+        let socket = Socket {
+            shared: Arc::clone(&shared),
+            fails_at: input.sink.fails_at,
+            message: input.sink.message.clone(),
+        };
+        let source = ScriptedSource {
+            shared: Arc::clone(&shared),
+            frames: input.frames.clone(),
+            disconnect: input.disconnect.clone(),
+            next: 0,
+        };
+        let mut handler = build_handler(&input.setup, socket, &shared, input.quota.as_ref());
         let captured = Captured::default();
         let subscriber = registry().with(captured.clone());
-        runtime.block_on(
+        let answer = runtime.block_on(
             transcript(&shared, &captured, &mut handler, &provider, source)
                 .with_subscriber(subscriber),
-        )
+        )?;
+        let (calls, failure) = mock
+            .finish_recording()
+            .map_err(|error| support::helper_error("MockError", error.to_string()))?;
+        if let Some(error) = failure {
+            return Err(support::helper_error("MockError", error.to_string()));
+        }
+        let Value::Object(mut fields) = answer else {
+            return Err(support::helper_error(
+                "AnswerShape",
+                String::from("the transcript answer is not an object"),
+            ));
+        };
+        fields.insert(
+            String::from("provider_requests"),
+            fixtures::requests(&calls),
+        );
+        Ok(Value::Object(fields))
     }
 }
 
