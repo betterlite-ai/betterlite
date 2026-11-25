@@ -792,11 +792,11 @@ pub(super) fn failing_chunks(
 
 macro_rules! failure {
     () => {
-        StreamFailure::upstream(
+        $crate::passthrough_stream_lifecycle::failure::StreamFailure::upstream(
             "ScriptedReadError".to_owned(),
             "the upstream read failed".to_owned(),
             "Traceback: scripted".to_owned(),
-            Arc::new(io::Error::other("the upstream read failed")),
+            std::sync::Arc::new(std::io::Error::other("the upstream read failed")),
         )
     };
 }
