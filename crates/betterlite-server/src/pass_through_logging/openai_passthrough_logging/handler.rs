@@ -194,14 +194,8 @@ impl OpenAiPassthroughLogger {
     ) -> Result<(Json, Decimal), OpenAiPassthroughError> {
         let no_messages = Json::List(Vec::new());
         let no_params = Json::Object(JsonObject::new());
-        let messages = match input.request_body.get("messages") {
-            None | Some(Json::Null) => &no_messages,
-            Some(given) => given,
-        };
-        let optional_params = match input.request_body.get("optional_params") {
-            None | Some(Json::Null) => &no_params,
-            Some(given) => given,
-        };
+        let messages = value_or(input.request_body, "messages", &no_messages);
+        let optional_params = value_or(input.request_body, "optional_params", &no_params);
         let request = ChatTransformRequest {
             upstream: &input.upstream,
             model,
@@ -241,10 +235,8 @@ impl OpenAiPassthroughLogger {
     ) -> Result<(Json, Decimal), OpenAiPassthroughError> {
         let cost = self.tools.image_cost(endpoint, model, input.request_body);
         IMAGE_CALL_TYPE.clone_into(&mut input.call_log.call_type);
-        let data: Vec<ImageData> = match input.response_body.get("data") {
-            None | Some(Json::Null) => Vec::new(),
-            Some(images) => reencode(images)?,
-        };
+        let no_images = Json::List(Vec::new());
+        let data: Vec<ImageData> = reencode(value_or(input.response_body, "data", &no_images))?;
         // ImageResponse stamps created with the logging time and fills a zero usage; it keeps no model.
         let image = ImageResponse {
             created: input.end_time.timestamp(),
@@ -254,6 +246,14 @@ impl OpenAiPassthroughLogger {
         let mut response: JsonObject = reencode(&image)?;
         insert_hidden_cost(&mut response, cost);
         Ok((Json::Object(response), cost))
+    }
+}
+
+// Python's `body.get(key) or default`: a missing or null key gives LiteLLM's empty default.
+fn value_or<'body>(body: &'body JsonObject, key: &str, fallback: &'body Json) -> &'body Json {
+    match body.get(key) {
+        None | Some(Json::Null) => fallback,
+        Some(given) => given,
     }
 }
 

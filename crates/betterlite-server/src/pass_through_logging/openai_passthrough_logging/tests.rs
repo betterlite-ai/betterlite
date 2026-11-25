@@ -822,8 +822,10 @@ fn openai_fallback_error_is_returned_to_the_caller() {
     );
 }
 
-#[test]
-fn openai_fallback_is_only_for_the_chat_route() {
+#[rstest]
+#[case::images(IMAGES)]
+#[case::responses(RESPONSES)]
+fn openai_fallback_is_only_for_the_chat_route(#[case] url_route: &str) {
     let payload = fallback_payload();
     let tools = Arc::new(FakeTools {
         price: None,
@@ -831,11 +833,9 @@ fn openai_fallback_is_only_for_the_chat_route() {
         ..FakeTools::working()
     });
     let mut relay = Relay::new(r#"{"model": "gpt-4o"}"#, r#"{"data": 5}"#);
-    for url_route in [IMAGES, RESPONSES] {
-        let outcome = relay
-            .run(&openai_logger(&tools, &payload), url_route)
-            .unwrap();
-        assert_eq!(outcome.result, None);
-    }
+    let outcome = relay
+        .run(&openai_logger(&tools, &payload), url_route)
+        .unwrap();
+    assert_eq!(outcome.result, None);
     assert!(payload.seen().is_empty());
 }

@@ -125,6 +125,7 @@ where
     Source: Serialize + ?Sized,
     Target: DeserializeOwned,
 {
-    let text = serde_json::to_string(value).map_err(OpenAiToolsError::Encoding)?;
-    serde_json::from_str(&text).map_err(OpenAiToolsError::Encoding)
+    serde_json::to_string(value)
+        .and_then(|encoded| serde_json::from_str(&encoded))
+        .map_err(OpenAiToolsError::Encoding)
 }
