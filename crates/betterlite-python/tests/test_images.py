@@ -320,12 +320,17 @@ def test_aedit_sends_the_image() -> None:
                 image=NamedFile(PNG_BYTES, "first.png"),
                 model=DEFAULT_MODEL,
                 prompt=PROMPT,
+                mask=NamedFile(MASK_BYTES, "async-mask.png"),
+                extra_headers={"x-edit": "async"},
                 api_base=server.url,
                 api_key=GOOD_KEY,
             )
         )
         call = server.calls[-1]
     assert call["path"] == EDITS_PATH
+    assert b'name="mask"' in call["body"]
+    assert b'filename="async-mask.png"' in call["body"]
+    assert header_of(call, "x-edit") == "async"
     assert response.data[0].b64_json == B64
 
 

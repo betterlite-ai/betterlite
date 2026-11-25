@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Final, NoReturn, TypeAlias
 
@@ -137,12 +138,9 @@ async def aimage_edit(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/l
     custom_llm_provider: CallValue = None,
     **kwargs: CallValue,
 ) -> ImageResponse:
-    named = dict(kwargs, image=image, prompt=prompt, model=model, mask=mask, n=n,
-                 quality=quality, response_format=response_format, size=size, user=user,
-                 extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body,
-                 timeout=timeout, custom_llm_provider=custom_llm_provider)
-    return image_response(
-        await acall_image(NativeImageSession("{}").aedit, image_payload(named))
+    return await asyncio.to_thread(
+        image_edit, image, prompt, model, mask, n, quality, response_format, size, user,
+        extra_headers, extra_query, extra_body, timeout, custom_llm_provider, **kwargs,
     )
 
 
