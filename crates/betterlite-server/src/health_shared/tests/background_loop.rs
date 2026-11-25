@@ -210,7 +210,7 @@ async fn a_loop_without_a_store_releases_the_window_lock() {
 #[tokio::test]
 async fn a_completed_save_keeps_the_window_lock() {
     let world = World::new(instant(SHARED_AT));
-    let manager = world.pod_manager(POD_A);
+    let manager = world.pod_manager(POD_A, Some(Arc::clone(&world.lock)));
     let saved = window_gated_save(Some(&manager), &world.tasks, Some(300), async { true }).await;
     assert!(saved);
     world.tasks.close();
@@ -222,7 +222,7 @@ async fn a_completed_save_keeps_the_window_lock() {
 #[tokio::test]
 async fn a_failed_save_releases_the_window_lock() {
     let world = World::new(instant(SHARED_AT));
-    let manager = world.pod_manager(POD_A);
+    let manager = world.pod_manager(POD_A, Some(Arc::clone(&world.lock)));
     let saved = window_gated_save(Some(&manager), &world.tasks, Some(300), async { false }).await;
     assert!(!saved);
     assert!(!world.lock.holds(SAVE_JOB_ID));
@@ -232,12 +232,12 @@ async fn a_failed_save_releases_the_window_lock() {
 #[tokio::test]
 async fn another_pods_window_skips_the_save() {
     let world = World::new(instant(SHARED_AT));
-    let other = world.pod_manager(POD_B);
+    let other = world.pod_manager(POD_B, Some(Arc::clone(&world.lock)));
     assert_eq!(
         other.acquire_lock(SAVE_JOB_ID, Some(300), false).await,
         Some(true)
     );
-    let manager = world.pod_manager(POD_A);
+    let manager = world.pod_manager(POD_A, Some(Arc::clone(&world.lock)));
     let ran = Arc::new(AtomicBool::new(false));
     let flag = Arc::clone(&ran);
     let saved = window_gated_save(Some(&manager), &world.tasks, Some(300), async move {
@@ -254,7 +254,7 @@ async fn another_pods_window_skips_the_save() {
 #[tokio::test]
 async fn a_pod_lock_without_a_cache_saves_ungated() {
     let world = World::new(instant(SHARED_AT));
-    let manager = world.bare_pod_manager();
+    let manager = world.pod_manager(POD_A, None);
     let first = window_gated_save(Some(&manager), &world.tasks, Some(300), async { true }).await;
     let second = window_gated_save(Some(&manager), &world.tasks, Some(300), async { false }).await;
     assert!(first);

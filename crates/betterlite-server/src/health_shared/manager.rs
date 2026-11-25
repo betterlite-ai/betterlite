@@ -1,3 +1,4 @@
+use std::ops::Sub as _;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -11,8 +12,8 @@ use crate::model_deprecation::clock::UtcClock;
 
 use super::cache::SharedHealthCache;
 use super::cached::{
-    CachedHealthCheck, cache_age, cached_owner, cached_payload, encode_cached, epoch_seconds,
-    from_cached, json_from_cached,
+    CachedHealthCheck, cached_owner, cached_payload, encode_cached, epoch_seconds, from_cached,
+    json_from_cached,
 };
 use super::error::SharedHealthError;
 use super::probe::{SharedHealthProbe, SharedProbeCall};
@@ -125,7 +126,7 @@ impl SharedHealthCheckManager {
             }
         };
         let ttl = self.health_check_ttl.to_f64().unwrap_or_default();
-        if cache_age(self.clock.now(), payload.timestamp) > ttl {
+        if epoch_seconds(self.clock.now()).sub(payload.timestamp) > ttl {
             tracing::debug!("Cached health check results expired");
             return None;
         }
@@ -289,7 +290,7 @@ impl SharedHealthCheckManager {
         let cached = self.cached_health_check_results().await;
         status.cache_available = Some(cached.is_some());
         if let Some(payload) = cached {
-            status.cache_age_seconds = Some(cache_age(self.clock.now(), payload.timestamp));
+            status.cache_age_seconds = Some(epoch_seconds(self.clock.now()).sub(payload.timestamp));
             status.last_checked_by = payload.checked_by;
         }
         status

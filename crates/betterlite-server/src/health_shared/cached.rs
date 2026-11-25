@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::ops::{Add as _, Div as _, Sub as _};
+use std::ops::{Add as _, Div as _};
 
 use betterlite_logging::private_json::error::PrivateJsonError;
 use betterlite_logging::private_json::safe_json::{
@@ -93,12 +93,6 @@ pub fn epoch_seconds(now: DateTime<Utc>) -> f64 {
     let seconds = now.timestamp().to_f64().unwrap_or_default();
     let nanos = now.timestamp_subsec_nanos().to_f64().unwrap_or_default();
     seconds.add(nanos.div(NANOS_PER_SECOND))
-}
-
-// current_time - cache_timestamp, compared against the TTL by the caller.
-#[must_use]
-pub fn cache_age(now: DateTime<Utc>, timestamp: f64) -> f64 {
-    epoch_seconds(now).sub(timestamp)
 }
 
 // The lock's stored value is the pod id as a JSON string, the only form that can name an owner.

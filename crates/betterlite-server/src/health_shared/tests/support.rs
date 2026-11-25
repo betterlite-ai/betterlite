@@ -346,6 +346,14 @@ fn cache_failure(operation: &'static str) -> SharedHealthCacheError {
 #[error("the fixture cache failed")]
 struct FixtureFailure;
 
+// Both fakes answer a delete with the number of entries it removed.
+fn removed_count<T>(removed: Option<T>) -> i64 {
+    match removed {
+        Some(_entry) => 1,
+        None => 0,
+    }
+}
+
 #[async_trait]
 impl SharedHealthCache for FakeCache {
     async fn get(&self, key: &str) -> Result<Option<CachedValue>, SharedHealthCacheError> {
@@ -409,10 +417,7 @@ impl SharedHealthCache for FakeCache {
             return Err(cache_failure("async_delete_cache"));
         }
         state.deletes.push(key.to_owned());
-        Ok(match state.values.remove(key) {
-            Some(_stored) => 1,
-            None => 0,
-        })
+        Ok(removed_count(state.values.remove(key)))
     }
 }
 
@@ -727,14 +732,9 @@ impl LockCache for FakeLock {
 
     async fn delete(&self, key: &str) -> Result<i64, LockCacheError> {
         let mut values = self.values.lock().unwrap_or_else(PoisonError::into_inner);
-        self.deletes
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(key.to_owned());
-        Ok(match values.remove(key) {
-            Some(_owner) => 1,
-            None => 0,
-        })
+        let mut deletes = self.deletes.lock().unwrap_or_else(PoisonError::into_inner);
+        deletes.push(key.to_owned());
+        Ok(removed_count(values.remove(key)))
     }
 
     fn compare_and_delete_script(&self) -> Option<Arc<dyn LockScript>> {
@@ -857,22 +857,15 @@ impl World {
         ))
     }
 
-    pub(crate) fn pod_manager(&self, pod: &str) -> Arc<PodLockManager<FakeLock>> {
+    pub(crate) fn pod_manager(
+        &self,
+        pod: &str,
+        cache: Option<Arc<FakeLock>>,
+    ) -> Arc<PodLockManager<FakeLock>> {
         let pod_id =
             PodId::try_from(Uuid::parse_str(pod).expect("a fixture uuid")).expect("a v4 pod id");
         Arc::new(PodLockManager::new(
-            Some(Arc::clone(&self.lock)),
-            60,
-            Arc::new(NoPodLockEventSink),
-            pod_id,
-        ))
-    }
-
-    pub(crate) fn bare_pod_manager(&self) -> Arc<PodLockManager<FakeLock>> {
-        let pod_id =
-            PodId::try_from(Uuid::parse_str(POD_A).expect("a fixture uuid")).expect("a v4 pod id");
-        Arc::new(PodLockManager::new(
-            None,
+            cache,
             60,
             Arc::new(NoPodLockEventSink),
             pod_id,
@@ -893,7 +886,7 @@ impl World {
             deployments: Some(Arc::new(deployments)),
             results: Arc::clone(&self.results),
             store: Some(Arc::clone(&self.store)),
-            lock: Some(self.pod_manager(POD_A)),
+            lock: Some(self.pod_manager(POD_A, Some(Arc::clone(&self.lock)))),
             health_state: Some(Arc::clone(&self.writer)),
             clock: self.clock(),
             tasks: self.tasks.clone(),

@@ -47,10 +47,10 @@ async fn shared_status(
         return unauthenticated();
     }
     if state.checks == SharedHealthSwitch::Disabled {
-        return Json(disabled_body()).into_response();
+        return Json(not_served_body(NotServed::Disabled)).into_response();
     }
     let Some(source) = state.status.as_deref() else {
-        return Json(redis_unavailable_body()).into_response();
+        return Json(not_served_body(NotServed::RedisUnavailable)).into_response();
     };
     match source.status().await {
         Ok(status) => Json(enabled_body(status)).into_response(),
@@ -58,26 +58,34 @@ async fn shared_status(
     }
 }
 
-// The source answers before the switch: a disabled proxy says so and never reads Redis.
-fn disabled_body() -> JsonObject {
-    let mut body = JsonObject::new();
-    body.insert("shared_health_check_enabled".to_owned(), Json::Bool(false));
-    body.insert(
-        "message".to_owned(),
-        Json::Text("Shared health check is not enabled".to_owned()),
-    );
-    body
+// The two answers that stop before the status source: a disabled switch and a proxy without Redis.
+enum NotServed {
+    Disabled,
+    RedisUnavailable,
 }
 
-fn redis_unavailable_body() -> JsonObject {
-    let mut body = JsonObject::new();
-    body.insert("shared_health_check_enabled".to_owned(), Json::Bool(true));
-    body.insert("redis_available".to_owned(), Json::Bool(false));
-    body.insert(
-        "message".to_owned(),
-        Json::Text("Redis is not configured".to_owned()),
-    );
-    body
+fn not_served_body(answer: NotServed) -> JsonObject {
+    match answer {
+        NotServed::Disabled => {
+            let mut body = JsonObject::new();
+            body.insert("shared_health_check_enabled".to_owned(), Json::Bool(false));
+            body.insert(
+                "message".to_owned(),
+                Json::Text("Shared health check is not enabled".to_owned()),
+            );
+            body
+        }
+        NotServed::RedisUnavailable => {
+            let mut body = JsonObject::new();
+            body.insert("shared_health_check_enabled".to_owned(), Json::Bool(true));
+            body.insert("redis_available".to_owned(), Json::Bool(false));
+            body.insert(
+                "message".to_owned(),
+                Json::Text("Redis is not configured".to_owned()),
+            );
+            body
+        }
+    }
 }
 
 fn enabled_body(status: JsonObject) -> JsonObject {
