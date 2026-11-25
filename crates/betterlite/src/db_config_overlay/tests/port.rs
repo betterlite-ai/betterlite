@@ -279,7 +279,7 @@ async fn port_keeps_a_concurrent_environment_update_during_a_database_read() {
         directory.path(),
         "general_settings:\n  master_key: os.environ/SHARED\n",
     );
-    let (database, mut started, gate) =
+    let (database, started, gate) =
         gated_database(&[("environment_variables", json!({"db_secret": "db-value"}))]);
     let served = port(&path, Some(database), RecordingInstaller::default());
     {
@@ -292,7 +292,7 @@ async fn port_keeps_a_concurrent_environment_update_during_a_database_read() {
         let port = Arc::clone(&served.overlay);
         async move { port.reload_config().await }
     });
-    started.recv().await.unwrap();
+    started.await.unwrap();
     {
         let mut environment = served.environment.lock().await;
         environment.insert("SHARED".to_owned(), "after".to_owned());

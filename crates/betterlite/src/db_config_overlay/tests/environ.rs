@@ -101,8 +101,9 @@ async fn shutdown_joins_a_canceled_worker_after_a_later_submission() {
     let (done, mut done_reading) = oneshot::channel();
     let shutdown_workers = Arc::clone(&workers);
     tasks.spawn(async move {
-        shutdown_workers.shutdown().await;
+        shutdown_workers.shutdown().await?;
         let _sent = done.send(());
+        Ok(())
     });
     let early = timeout(Duration::from_millis(200), &mut done_reading).await;
     assert!(early.is_err());
@@ -146,8 +147,9 @@ async fn shutdown_leaves_the_runtime_free_while_the_joins_wait() {
     let (done, mut done_reading) = oneshot::channel();
     let shutdown_workers = Arc::clone(&workers);
     tasks.spawn(async move {
-        shutdown_workers.shutdown().await;
+        shutdown_workers.shutdown().await?;
         let _sent = done.send(());
+        Ok(())
     });
     tokio::time::sleep(Duration::from_millis(50)).await;
     assert!(done_reading.try_recv().is_err());

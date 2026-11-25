@@ -32,30 +32,28 @@ pub struct OverlayParts {
     pub workers: Arc<Workers>,
 }
 
-enum Mutation {
+pub enum Mutation {
     Reload(oneshot::Sender<Result<ConfigWithBaseline, OverlayError>>),
     Serve(Vec<JsonValue>, oneshot::Sender<Result<(), OverlayError>>),
 }
 
 // LiteLLM's event loop runs a reload and a serve one after the other: one owned worker drains this queue, so no guard spans a read, a fetch, a lookup or an install.
 pub struct OverlayPortAdapter {
-    mutations: mpsc::Sender<Mutation>,
+    pub mutations: mpsc::Sender<Mutation>,
     pub tasks: TaskTracker,
 }
 
 impl OverlayPortAdapter {
     // The worker owns its copy of the parts, so a canceled call leaves the adapter usable and the mutation in flight still finishes.
     #[must_use]
-    pub fn start(parts: OverlayParts) -> Self {
+    pub fn start(ctx: OverlayParts) -> Self {
         let (mutations, mut queue) = mpsc::channel(1);
         let tasks = TaskTracker::new();
         let _worker = tasks.spawn(async move {
             while let Some(mutation) = queue.recv().await {
                 match mutation {
-                    Mutation::Reload(reply) => drop(reply.send(run_reload(&parts).await)),
-                    Mutation::Serve(endpoints, reply) => {
-                        drop(reply.send(run_serve(&parts, &endpoints).await));
-                    }
+                    Mutation::Reload(reply) => drop(reply.send(run_reload(&ctx).await)),
+                    Mutation::Serve(list, reply) => drop(reply.send(run_serve(&ctx, &list).await)),
                 }
             }
         });
@@ -102,6 +100,7 @@ async fn run_reload(parts: &OverlayParts) -> Result<ConfigWithBaseline, OverlayE
         let mut state = parts.state.lock().await;
         let mut shared = parts.environment.lock().await;
         let pending = begin_reload(&mut state, &file_config, stored, &parts.source, &mut shared)?;
+        drop(state);
         (pending, shared.clone())
     };
     let resolved = resolve_reload(pending, environment, &parts.workers).await?;
