@@ -7,9 +7,7 @@ use futures_util::future::{BoxFuture, Shared};
 use tokio::sync::oneshot;
 use tokio::task::JoinSet;
 
-use crate::collector_registry::CollectorRegistry;
-
-use super::{ScrapeRenderError, ScrapeRequest, render_scrape};
+use super::{ScrapeRenderError, ScrapeRequest, ScrapeSource};
 
 pub(crate) type SharedRender = Shared<BoxFuture<'static, Result<Bytes, ScrapeRenderError>>>;
 
@@ -26,15 +24,15 @@ pub(crate) struct RenderState {
 
 // LiteLLM's CoalescedScrapeRenderer: one render off the event loop, shared by every scrape that asks for the same output
 pub struct CoalescedScrapeRenderer {
-    pub(crate) registry: Arc<CollectorRegistry>,
+    pub(crate) source: Arc<ScrapeSource>,
     pub(crate) state: Arc<Mutex<RenderState>>,
 }
 
 impl CoalescedScrapeRenderer {
     #[must_use]
-    pub fn new(registry: Arc<CollectorRegistry>) -> Self {
+    pub fn new(source: ScrapeSource) -> Self {
         Self {
-            registry,
+            source: Arc::new(source),
             state: Arc::new(Mutex::new(RenderState {
                 tasks: JoinSet::new(),
                 inflight: HashMap::new(),
@@ -47,7 +45,7 @@ impl CoalescedScrapeRenderer {
         let running = {
             let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
             poll_finished(&mut state.tasks);
-            let pending = running_render(&mut state, &self.registry, &self.state, &request);
+            let pending = running_render(&mut state, &self.source, &self.state, &request);
             drop(state);
             pending
         };
@@ -71,19 +69,19 @@ pub(crate) fn shared_render(
 
 fn running_render(
     state: &mut RenderState,
-    registry: &Arc<CollectorRegistry>,
+    source: &Arc<ScrapeSource>,
     shared_state: &Arc<Mutex<RenderState>>,
     request: &ScrapeRequest,
 ) -> SharedRender {
     if let Some(inflight) = state.inflight.get(request) {
         return SharedRender::clone(&inflight.render);
     }
-    start_render(state, registry, shared_state, request)
+    start_render(state, source, shared_state, request)
 }
 
 fn start_render(
     state: &mut RenderState,
-    registry: &Arc<CollectorRegistry>,
+    source: &Arc<ScrapeSource>,
     shared_state: &Arc<Mutex<RenderState>>,
     request: &ScrapeRequest,
 ) -> SharedRender {
@@ -91,10 +89,10 @@ fn start_render(
     state.next_id = state.next_id.wrapping_add(1);
     let (sender, receiver) = oneshot::channel();
     let scheduled = request.clone();
-    let worker_registry = Arc::clone(registry);
+    let worker_source = Arc::clone(source);
     let worker_state = Arc::clone(shared_state);
     let _spawned = state.tasks.spawn_blocking(move || {
-        finish_render(&worker_registry, &scheduled, &worker_state, sender, id);
+        finish_render(&worker_source, &scheduled, &worker_state, sender, id);
     });
     let shared = shared_render(receiver);
     let _previous = state.inflight.insert(
@@ -109,13 +107,13 @@ fn start_render(
 
 // the entry goes before the waiters hear back, and only while it still names this render
 fn finish_render(
-    registry: &CollectorRegistry,
+    source: &ScrapeSource,
     request: &ScrapeRequest,
     shared_state: &Mutex<RenderState>,
     sender: oneshot::Sender<Result<Bytes, ScrapeRenderError>>,
     id: u64,
 ) {
-    let rendered = render_scrape(registry, request);
+    let rendered = source.render(request);
     let mut state = shared_state.lock().unwrap_or_else(PoisonError::into_inner);
     if state
         .inflight
@@ -125,7 +123,7 @@ fn finish_render(
         let _removed = state.inflight.remove(request);
     }
     drop(state);
-    let _sent = sender.send(Ok(Bytes::from(rendered)));
+    let _sent = sender.send(rendered.map(Bytes::from));
 }
 
 pub(crate) fn poll_finished(tasks: &mut JoinSet<()>) {
