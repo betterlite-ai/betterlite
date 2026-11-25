@@ -355,10 +355,6 @@ def patch_costs(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(module, "completion_cost", fake_completion_cost)
 
 
-def timeout_phases(timeout: httpx2.Timeout) -> tuple[float | None, ...]:
-    return (timeout.connect, timeout.read, timeout.write, timeout.pool)
-
-
 def fields_of(value: PythonValue) -> dict[str, PythonValue]:
     fields = object_fields(value)
     if fields is None:
@@ -884,9 +880,13 @@ def test_budget_hosted_calls() -> None:
 
 
 def test_budget_hosted_transport(monkeypatch: pytest.MonkeyPatch) -> None:
-    assert timeout_phases(module_level_client.timeout) == (REFERENCE_REQUEST_TIMEOUT,) * 4
+    timeout = module_level_client.timeout
+    phases = (timeout.connect, timeout.read, timeout.write, timeout.pool)
+    assert phases == (REFERENCE_REQUEST_TIMEOUT,) * 4
     monkeypatch.setenv("REQUEST_TIMEOUT", "1234")
-    assert timeout_phases(ModuleClient().timeout) == (1234.0,) * 4
+    timeout = ModuleClient().timeout
+    phases = (timeout.connect, timeout.read, timeout.write, timeout.pool)
+    assert phases == (1234.0,) * 4
     assert module_level_client.client.follow_redirects
     assert module_level_client.ssl_options
     # ast-grep-ignore: no-string-mocking
