@@ -1,7 +1,7 @@
 import asyncio
 import copy
 import importlib
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 from typing import Final, Protocol, TypedDict
 
 import litellm.a2a_protocol as their_package
@@ -216,12 +216,11 @@ def headers_of(recorder: Recorder, name: str) -> list[str | None]:
 
 
 def post_headers(recorder: Recorder) -> list[dict[str, str]]:
-    selected: list[dict[str, str]] = []
-    for entry in recorder.calls:
-        if entry["method"] != "POST":
-            continue
-        values = entry["headers"]
-        selected.append({name: values[name] for name in POST_HEADER_NAMES if name in values})
+    selected: list[dict[str, str]] = [
+        {name: entry["headers"][name] for name in POST_HEADER_NAMES if name in entry["headers"]}
+        for entry in recorder.calls
+        if entry["method"] == "POST"
+    ]
     return selected
 
 
@@ -263,27 +262,34 @@ async def our_send_flow(server: AgentServer, recorder: Recorder) -> SendFlow:
 async def their_send_flow(server: AgentServer, recorder: Recorder) -> SendFlow:
     client = THEIR_CLIENT.A2AClient(server.url, extra_headers=EXTRA_HEADERS)
     built = len(recorder.calls)
-    first = await client.send_message(their_request(REQUEST_ID))
-    second = await client.send_message(their_request(SECOND_ID))
+    answered: list[BaseModel] = [
+        await client.send_message(their_request(request_id))
+        for request_id in (REQUEST_ID, SECOND_ID)
+    ]
     return SendFlow(
         built=built,
         methods=methods_of(recorder),
-        results=[dumped(first), dumped(second)],
+        results=[dumped(model) for model in answered],
     )
 
 
 async def both_sends() -> SendFlows:
-    our_recorder = Recorder()
-    their_recorder = Recorder()
-    with V1Server(our_recorder) as our_server:
-        ours = await our_send_flow(our_server, our_recorder)
-    with V1Server(their_recorder) as their_server:
-        theirs = await their_send_flow(their_server, their_recorder)
+    sides: dict[str, SendFlow] = {}
+    posts: dict[str, list[dict[str, str]]] = {}
+    flows: tuple[tuple[str, Callable[[AgentServer, Recorder], Awaitable[SendFlow]]], ...] = (
+        ("ours", our_send_flow),
+        ("theirs", their_send_flow),
+    )
+    for name, flow in flows:
+        recorder = Recorder()
+        with V1Server(recorder) as server:
+            sides[name] = await flow(server, recorder)
+        posts[name] = post_headers(recorder)
     return SendFlows(
-        ours=ours,
-        theirs=theirs,
-        our_posts=post_headers(our_recorder),
-        their_posts=post_headers(their_recorder),
+        ours=sides["ours"],
+        theirs=sides["theirs"],
+        our_posts=posts["ours"],
+        their_posts=posts["theirs"],
     )
 
 
@@ -368,8 +374,17 @@ def test_send_matches_litellm() -> None:
     message = JSON_OBJECT.validate_python(ours["results"][0]["result"])
     assert message["kind"] == "message"
     assert message["parts"] == [{"kind": "text", "text": REPLY_TEXT}]
-    assert flow["our_posts"] == flow["their_posts"]
-    assert flow["our_posts"] == [EXPECTED_POST_HEADERS, EXPECTED_POST_HEADERS]
+    assert flow["our_posts"] == flow["their_posts"] == [
+        EXPECTED_POST_HEADERS,
+        EXPECTED_POST_HEADERS,
+    ]
+
+
+def stream_message(chunk: dict[str, JsonValue]) -> None:
+    result = JSON_OBJECT.validate_python(chunk["result"])
+    assert chunk["id"] == STREAM_ID
+    assert result["kind"] == "message"
+    assert result["messageId"] == MESSAGE_ID
 
 
 def test_stream_matches_litellm() -> None:
@@ -379,13 +394,8 @@ def test_stream_matches_litellm() -> None:
     assert tuple(ours["methods"]) == tuple(theirs["methods"]) == STREAM_METHODS
     assert ours["results"] == theirs["results"]
     assert len(ours["results"]) == SINGLE
-    chunk = JSON_OBJECT.validate_python(ours["results"][0])
-    assert chunk["id"] == STREAM_ID
-    result = JSON_OBJECT.validate_python(chunk["result"])
-    assert result["kind"] == "message"
-    assert result["messageId"] == MESSAGE_ID
-    assert flow["our_posts"] == flow["their_posts"]
-    assert flow["our_posts"] == [EXPECTED_POST_HEADERS]
+    stream_message(ours["results"][0])
+    assert flow["our_posts"] == flow["their_posts"] == [EXPECTED_POST_HEADERS]
 
 
 class FakeStreamingCall:
