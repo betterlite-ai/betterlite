@@ -1,6 +1,6 @@
 import json
 from collections.abc import Awaitable, Mapping
-from typing import Final, NamedTuple, TypedDict, TypeAlias
+from typing import Final, NamedTuple, TypeAlias, TypedDict
 
 from pydantic import JsonValue, TypeAdapter
 
@@ -117,7 +117,9 @@ def native_answer(session: NativeFileContentSession, payload: CallPayload) -> Fi
         raise_native_error(failure)
 
 
-async def async_native_answer(session: NativeFileContentSession, payload: CallPayload) -> FileAnswer:
+async def async_native_answer(
+    session: NativeFileContentSession, payload: CallPayload
+) -> FileAnswer:
     try:
         return await session.acontent(payload.text, payload.blobs)
     except NativeFileContentError as failure:

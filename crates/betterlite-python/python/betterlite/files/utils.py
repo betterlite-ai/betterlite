@@ -30,11 +30,12 @@ class FilesAPIUtils:
     def is_batch_jsonl_file(
         create_file_data: CreateFileRequest, extracted_file_data: ExtractedFileData
     ) -> bool:
-        return (
-            create_file_data.get("purpose") == "batch"
-            and FilesAPIUtils.valid_content_type(extracted_file_data.get("content_type"))
-            and extracted_file_data.get("content") is not None
-        )
+        if create_file_data.get("purpose") != "batch":
+            return False
+        content_type = extracted_file_data.get("content_type")
+        if not FilesAPIUtils.valid_content_type(content_type):
+            return False
+        return extracted_file_data.get("content") is not None
 
     @staticmethod
     def is_batch_jsonl_request(

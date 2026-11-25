@@ -1,8 +1,8 @@
 import asyncio
 import importlib
 import inspect
-from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Iterator, Mapping
-from typing import Final, Literal, Protocol, overload
+from collections.abc import AsyncIterator, Awaitable, Coroutine, Iterator, Mapping
+from typing import Final, Literal, Protocol, TypeAlias, overload
 
 import openai
 import pytest
@@ -63,6 +63,7 @@ EXTRACTED: Final[ExtractedFileData] = {
     "content_type": "application/json",
     "headers": {},
 }
+Outcome: TypeAlias = FileContentOutcome | Awaitable[FileContentOutcome]
 
 
 class ReferenceResponse(Protocol):
@@ -105,16 +106,28 @@ class ReferenceStream(Protocol):
 class LiteLLMFiles(Protocol):
     @overload
     def file_content(
-        self, file_id: str, *, afile_content: Literal[True], **kwargs: CallValue
-    ) -> Coroutine[None, None, ReferencePlain]: ...
-
-    @overload
-    def file_content(
         self, file_id: str, *, stream: Literal[True], **kwargs: CallValue
     ) -> ReferenceStream: ...
 
     @overload
-    def file_content(self, file_id: str, **kwargs: CallValue) -> ReferencePlain: ...
+    def file_content(
+        self,
+        file_id: str,
+        *,
+        afile_content: Literal[True],
+        stream: Literal[False] = False,
+        **kwargs: CallValue,
+    ) -> Coroutine[None, None, ReferencePlain]: ...
+
+    @overload
+    def file_content(
+        self,
+        file_id: str,
+        *,
+        afile_content: Literal[False] = False,
+        stream: Literal[False] = False,
+        **kwargs: CallValue,
+    ) -> ReferencePlain: ...
 
     def file_content(
         self, file_id: str, **kwargs: CallValue
@@ -127,20 +140,12 @@ class LiteLLMFiles(Protocol):
 
     @overload
     def afile_content(
-        self, file_id: str, **kwargs: CallValue
+        self, file_id: str, *, stream: Literal[False] = False, **kwargs: CallValue
     ) -> Coroutine[None, None, ReferencePlain]: ...
 
     def afile_content(
         self, file_id: str, **kwargs: CallValue
     ) -> Coroutine[None, None, ReferencePlain | ReferenceStream]: ...
-
-
-class SignatureModule(Protocol):
-    @property
-    def file_content(self) -> Callable[..., object]: ...
-
-    @property
-    def afile_content(self) -> Callable[..., object]: ...
 
 
 class ReferenceFileUtils(Protocol):
@@ -160,13 +165,10 @@ class FileUtilsModule(Protocol):
 
 
 REFERENCE: LiteLLMFiles = importlib.import_module("litellm")
-SIGNATURES: SignatureModule = importlib.import_module("litellm")
 UTILS_MODULE: FileUtilsModule = importlib.import_module("litellm.files.utils")
 
 
-def made_plain(
-    outcome: FileContentOutcome | Awaitable[FileContentOutcome],
-) -> HttpxBinaryResponseContent:
+def made_plain(outcome: Outcome) -> HttpxBinaryResponseContent:
     match outcome:
         case HttpxBinaryResponseContent():
             return outcome
@@ -174,9 +176,7 @@ def made_plain(
             raise AssertionError("the call did not answer with a plain response")
 
 
-def made_stream(
-    outcome: FileContentOutcome | Awaitable[FileContentOutcome],
-) -> FileContentStreamingResult:
+def made_stream(outcome: Outcome) -> FileContentStreamingResult:
     match outcome:
         case FileContentStreamingResult():
             return outcome
@@ -210,11 +210,18 @@ def async_chunks(iterator: Iterator[bytes] | AsyncIterator[bytes]) -> list[bytes
 
 
 async def gathered(iterator: AsyncIterator[bytes]) -> list[bytes]:
-    return [chunk async for chunk in iterator]
+    chunks: list[bytes] = []
+    async for chunk in iterator:
+        chunks.append(chunk)
+    return chunks
 
 
-async def awaited_plain(pending: Awaitable[FileContentOutcome]) -> HttpxBinaryResponseContent:
-    return made_plain(await pending)
+async def awaited_plain(pending: Outcome) -> HttpxBinaryResponseContent:
+    match pending:
+        case Awaitable():
+            return made_plain(await pending)
+        case object():
+            raise AssertionError("the call answered with a plain result instead of a coroutine")
 
 
 def authorization(call: RecordedCall) -> str | None:
@@ -233,10 +240,10 @@ def native_cause(error: BaseException) -> NativeFileContentError:
 
 def test_signature_matches_litellm() -> None:
     assert parameter_rows(inspect.signature(file_content)) == parameter_rows(
-        inspect.signature(SIGNATURES.file_content)
+        inspect.signature(REFERENCE.file_content)
     )
     assert parameter_rows(inspect.signature(afile_content)) == parameter_rows(
-        inspect.signature(SIGNATURES.afile_content)
+        inspect.signature(REFERENCE.afile_content)
     )
     assert not inspect.iscoroutinefunction(file_content)
     assert inspect.iscoroutinefunction(afile_content)
@@ -354,7 +361,7 @@ def test_stream_matches_litellm() -> None:
         assert wrapper.custom_llm_provider == "openai"
         assert wrapper.standard_logging_object is None
         ours_hidden = wrapper._hidden_params  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/streaming.py#L133-L135
-        reference_hidden = reference.stream_iterator._hidden_params  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/streaming.py#L133-L135
+        reference_hidden = reference.stream_iterator._hidden_params  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/streaming.py#L133-L135
         wrapper.close()
         after_close = list(wrapper)
     assert made_chunks == reference_chunks == [BODY]
@@ -388,7 +395,7 @@ def test_stream_chunks_by_size() -> None:
         )
         reference_chunks = sync_chunks(reference.stream_iterator)
         made_chunks = sync_chunks(made.stream_iterator)
-    assert made_chunks == reference_chunks == [b"fil", b"e b", b"ody"]
+    assert made_chunks == reference_chunks == [BODY[:3], BODY[3:6], BODY[6:]]
 
 
 def test_stream_async_matches() -> None:
@@ -442,31 +449,11 @@ def test_stream_close_twice() -> None:
     assert str(refused.value) == ASYNC_REFUSED
 
 
-def test_stream_refuses_async_path() -> None:
+def test_stream_refuses_wrong_path() -> None:
     with FileServer() as server:
-        made = made_stream(
-            file_content(
-                file_id=FILE_ID,
-                custom_llm_provider="openai",
-                api_base=server.url,
-                api_key=GOOD_KEY,
-                stream=True,
-            )
-        )
-        wrapper = wrapper_of(made)
-        with pytest.raises(TypeError, match=ASYNC_REFUSED) as iter_refused:
-            wrapper.__aiter__()
-        with pytest.raises(TypeError, match=ASYNC_REFUSED) as next_refused:
-            asyncio.run(wrapper.__anext__())
-    assert str(iter_refused.value) == ASYNC_REFUSED
-    assert str(next_refused.value) == ASYNC_REFUSED
-
-
-def test_stream_refuses_sync_path() -> None:
-    with FileServer() as server:
-        made = made_stream(
-            asyncio.run(
-                afile_content(
+        sync_wrapper = wrapper_of(
+            made_stream(
+                file_content(
                     file_id=FILE_ID,
                     custom_llm_provider="openai",
                     api_base=server.url,
@@ -475,13 +462,31 @@ def test_stream_refuses_sync_path() -> None:
                 )
             )
         )
-        wrapper = wrapper_of(made)
-        with pytest.raises(TypeError, match=SYNC_REFUSED) as iter_refused:
-            wrapper.__iter__()
-        with pytest.raises(TypeError, match=SYNC_REFUSED) as next_refused:
-            wrapper.__next__()
-    assert str(iter_refused.value) == SYNC_REFUSED
-    assert str(next_refused.value) == SYNC_REFUSED
+        async_wrapper = wrapper_of(
+            made_stream(
+                asyncio.run(
+                    afile_content(
+                        file_id=FILE_ID,
+                        custom_llm_provider="openai",
+                        api_base=server.url,
+                        api_key=GOOD_KEY,
+                        stream=True,
+                    )
+                )
+            )
+        )
+        with pytest.raises(TypeError, match=ASYNC_REFUSED) as iter_refused:
+            sync_wrapper.__aiter__()
+        with pytest.raises(TypeError, match=ASYNC_REFUSED) as next_refused:
+            asyncio.run(sync_wrapper.__anext__())
+        with pytest.raises(TypeError, match=SYNC_REFUSED) as iter_back:
+            async_wrapper.__iter__()
+        with pytest.raises(TypeError, match=SYNC_REFUSED) as next_back:
+            async_wrapper.__next__()
+    assert str(iter_refused.value) == ASYNC_REFUSED
+    assert str(next_refused.value) == ASYNC_REFUSED
+    assert str(iter_back.value) == SYNC_REFUSED
+    assert str(next_back.value) == SYNC_REFUSED
 
 
 def test_plain_utils_match_litellm() -> None:

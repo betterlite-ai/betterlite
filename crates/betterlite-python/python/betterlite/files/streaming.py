@@ -1,4 +1,4 @@
-import datetime
+import datetime as dt
 from collections.abc import Awaitable, Iterator
 from typing import Final, Protocol, Self
 
@@ -26,11 +26,11 @@ class FileChunkStream(Protocol):
 
 
 class StreamLogging(Protocol):
-    start_time: datetime.datetime
+    start_time: dt.datetime
 
 
 class _ClosedFileChunks(FileChunkStream):
-    # Both closes swap the stream for this first, as LiteLLM swaps in iter(()) before closing the real one.
+    # Both closes swap the stream for this first, as LiteLLM swaps in iter(()) first.
     is_async = False
 
     @override
@@ -71,7 +71,7 @@ class FileContentStreamingResponse(Iterator[bytes]):
         }
         self._logging_completed = False
         self._close_completed = False
-        now = datetime.datetime.now(tz=datetime.UTC)
+        now = dt.datetime.now(tz=dt.UTC)
         self._start_time = now if logging_obj is None else logging_obj.start_time
 
     @override
@@ -84,12 +84,16 @@ class FileContentStreamingResponse(Iterator[bytes]):
     def __next__(self) -> bytes:
         if self.stream_iterator.is_async:
             raise TypeError(SYNC_REFUSED)
+        chunk = self._take_next()
+        if chunk is None:
+            raise StopIteration
+        return chunk
+
+    def _take_next(self) -> bytes | None:
         try:
             chunk = self.stream_iterator.next_chunk()
         except NativeFileContentError as failure:
             raise_native_error(failure)
-        if chunk is None:
-            raise StopIteration
         return chunk
 
     def __aiter__(self) -> Self:
@@ -100,34 +104,37 @@ class FileContentStreamingResponse(Iterator[bytes]):
     async def __anext__(self) -> bytes:
         if not self.stream_iterator.is_async:
             raise TypeError(ASYNC_REFUSED)
+        chunk = await self._take_anext()
+        if chunk is None:
+            raise StopAsyncIteration
+        return chunk
+
+    async def _take_anext(self) -> bytes | None:
         try:
             chunk = await self.stream_iterator.anext_chunk()
         except NativeFileContentError as failure:
             raise_native_error(failure)
-        if chunk is None:
-            raise StopAsyncIteration
         return chunk
 
     async def aclose(self) -> None:
         if self._close_completed:
             return
-        self._close_completed = True
-        self._logging_completed = True
-        stream_to_close = self.stream_iterator
-        self.stream_iterator = _ClosedFileChunks()
         try:
-            await stream_to_close.aclose()
+            await self._finish().aclose()
         except NativeFileContentError as failure:
             raise_native_error(failure)
 
     def close(self) -> None:
         if self._close_completed:
             return
+        try:
+            self._finish().close()
+        except NativeFileContentError as failure:
+            raise_native_error(failure)
+
+    def _finish(self) -> FileChunkStream:
         self._close_completed = True
         self._logging_completed = True
         stream_to_close = self.stream_iterator
         self.stream_iterator = _ClosedFileChunks()
-        try:
-            stream_to_close.close()
-        except NativeFileContentError as failure:
-            raise_native_error(failure)
+        return stream_to_close
