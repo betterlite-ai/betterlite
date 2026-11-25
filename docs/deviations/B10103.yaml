@@ -1,6 +1,6 @@
 task: B10103
 deviations:
-  - what: A managed Responses WebSocket connection keeps at most 16 MiB of session history, counted as the serialized JSON length of each stored message list, and storing a turn drops the oldest entries until the new one fits. LiteLLM's _session_history keeps every turn's list for the life of the connection.
+  - what: A managed Responses WebSocket connection keeps at most 16 MiB of session history, counted as the serialized JSON length of each stored message list. Storing a turn first removes any entry with the same id, which also moves it to the newest position, and then drops the oldest entries until the new one fits. LiteLLM's _session_history keeps every turn's list for the life of the connection, and a Python dict assignment keeps a re-stored id at its old position.
     why: Rule bounded-inputs caps every collection that grows with untrusted input, and each LiteLLM entry repeats the whole conversation before it, so a client that keeps one socket open grows the gateway's memory quadratically. 16 MiB holds a conversation far longer than a working client sends over one connection. A turn whose list alone is over the budget is not stored and one warning says so, and a later previous_response_id naming a dropped or unstored turn gets the empty history LiteLLM returns for an id it never saw.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L2585-L2603
 kept_bugs: []
