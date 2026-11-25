@@ -21,98 +21,89 @@ const STREAM_MODEL: &str = "gpt-4o";
 
 type Logged = fn(Json) -> PassThroughResponse;
 
-impl OpenAiPassthroughLogger {
-    // Every failure is swallowed: the entry answers with no result and empty kwargs, never the partial ones.
-    pub fn openai_collected_chunks(
-        &self,
-        input: CollectedChunksInput<'_>,
-        url_route: &str,
-    ) -> Result<PassthroughOutcome, OpenAiPassthroughError> {
-        match self.collected(input, url_route) {
-            Ok(Some(outcome)) => Ok(outcome),
-            Ok(None) => {
-                tracing::warn!("Failed to build complete response from OpenAI streaming chunks");
-                Ok(PassthroughOutcome {
-                    result: None,
-                    kwargs: ResponseLoggingKwargs::default(),
-                })
-            }
-            Err(error) => {
-                tracing::error!("Error in OpenAI streaming passthrough cost tracking: {error}");
-                Ok(PassthroughOutcome {
-                    result: None,
-                    kwargs: ResponseLoggingKwargs::default(),
-                })
-            }
-        }
-    }
+// Steps 1 to 3 and 5 to 8 of the streaming entry; the entry turns any error into an empty answer.
+pub(super) fn collected(
+    logger: &OpenAiPassthroughLogger,
+    input: CollectedChunksInput<'_>,
+    url_route: &str,
+) -> Result<Option<PassthroughOutcome>, OpenAiPassthroughError> {
+    let CollectedChunksInput {
+        call_log,
+        request_body,
+        start_time,
+        end_time,
+        all_chunks,
+    } = input;
+    let model = text_or(
+        request_body.get("model"),
+        STREAM_MODEL,
+        "request_body.model",
+    )?;
+    let is_responses = is_openai_responses_route(url_route);
+    let completed = complete_response(logger, all_chunks, &model, is_responses)?;
+    let Some((response, logged)) = completed else {
+        return Ok(None);
+    };
+    let (cost, provider) = price_stream(logger, &response, &model, is_responses, call_log)?;
+    let mut kwargs = stream_kwargs(&mut *call_log, &model, cost)?;
+    write_call_log(&mut *call_log, &model, &provider, cost);
+    let standard = StandardObjectRequest {
+        response: &response,
+        start_time,
+        end_time,
+    };
+    // Stored so the success handler adopts it and keeps a Responses reply's token split.
+    kwargs.standard_logging_object = logger.tools.standard_logging_object(&standard, &*call_log);
+    tracing::debug!(
+        "OpenAI streaming passthrough cost tracking - Model: {model}, Cost: ${cost:.6}"
+    );
+    Ok(Some(PassthroughOutcome {
+        result: Some(logged(response)),
+        kwargs,
+    }))
+}
 
-    fn collected(
-        &self,
-        input: CollectedChunksInput<'_>,
-        url_route: &str,
-    ) -> Result<Option<PassthroughOutcome>, OpenAiPassthroughError> {
-        let model = text_or(
-            input.request_body.get("model"),
-            STREAM_MODEL,
-            "request_body.model",
-        )?;
-        let is_responses = is_openai_responses_route(url_route);
-        let completed = self.complete_response(input.all_chunks, &model, is_responses)?;
-        let Some((response, logged)) = completed else {
-            return Ok(None);
-        };
-        let provider = text_or(
-            input.call_log.model_call_details.get("custom_llm_provider"),
-            OPENAI,
-            "model_call_details.custom_llm_provider",
-        )?;
-        let cost = self.tools.completion_cost(&PricedResponse {
-            response: &response,
-            model: &model,
-            custom_llm_provider: &provider,
-            call_type: is_responses.then_some(CallType::Responses),
-        })?;
-        let mut kwargs = stream_kwargs(&mut *input.call_log, &model, cost)?;
-        write_call_log(&mut *input.call_log, &model, &provider, cost);
-        let standard = StandardObjectRequest {
-            response: &response,
-            start_time: input.start_time,
-            end_time: input.end_time,
-        };
-        // Stored so the success handler adopts it and keeps a Responses reply's token split.
-        kwargs.standard_logging_object = self
-            .tools
-            .standard_logging_object(&standard, &*input.call_log);
-        tracing::debug!(
-            "OpenAI streaming passthrough cost tracking - Model: {model}, Cost: ${cost:.6}"
-        );
-        Ok(Some(PassthroughOutcome {
-            result: Some(logged(response)),
-            kwargs,
-        }))
-    }
+// Step 4: the provider from the call log, else openai, and completion_cost with a Responses call type.
+fn price_stream(
+    logger: &OpenAiPassthroughLogger,
+    response: &Json,
+    model: &str,
+    is_responses: bool,
+    call_log: &LoggingState,
+) -> Result<(Decimal, String), OpenAiPassthroughError> {
+    let provider = text_or(
+        call_log.model_call_details.get("custom_llm_provider"),
+        OPENAI,
+        "model_call_details.custom_llm_provider",
+    )?;
+    let cost = logger.tools.completion_cost(&PricedResponse {
+        response,
+        model,
+        custom_llm_provider: &provider,
+        call_type: is_responses.then_some(CallType::Responses),
+    })?;
+    Ok((cost, provider))
+}
 
-    // A Responses route reads the terminal event; every other route rebuilds a chat response from the chunks.
-    fn complete_response(
-        &self,
-        all_chunks: &[String],
-        model: &str,
-        is_responses: bool,
-    ) -> Result<Option<(Json, Logged)>, OpenAiPassthroughError> {
-        if is_responses {
-            let responses: Logged = PassThroughResponse::ResponsesApi;
-            let terminal = self.tools.terminal_response(all_chunks)?;
-            return Ok(terminal.map(|response| (response, responses)));
-        }
-        let chat: Logged = PassThroughResponse::ModelResponse;
-        let text: Logged = PassThroughResponse::TextCompletion;
-        let streamed = self.tools.stream_response(all_chunks, model)?;
-        Ok(streamed.map(|built| match built {
-            StreamedResponse::Model(response) => (response, chat),
-            StreamedResponse::TextCompletion(response) => (response, text),
-        }))
+// A Responses route reads the terminal event; every other route rebuilds a chat response from the chunks.
+fn complete_response(
+    logger: &OpenAiPassthroughLogger,
+    all_chunks: &[String],
+    model: &str,
+    is_responses: bool,
+) -> Result<Option<(Json, Logged)>, OpenAiPassthroughError> {
+    if is_responses {
+        let responses: Logged = PassThroughResponse::ResponsesApi;
+        let terminal = logger.tools.terminal_response(all_chunks)?;
+        return Ok(terminal.map(|response| (response, responses)));
     }
+    let chat: Logged = PassThroughResponse::ModelResponse;
+    let text: Logged = PassThroughResponse::TextCompletion;
+    let streamed = logger.tools.stream_response(all_chunks, model)?;
+    Ok(streamed.map(|built| match built {
+        StreamedResponse::Model(response) => (response, chat),
+        StreamedResponse::TextCompletion(response) => (response, text),
+    }))
 }
 
 // LiteLLM's collected-stream kwargs; its call_type and messages entries have no field in B3630's kwargs.

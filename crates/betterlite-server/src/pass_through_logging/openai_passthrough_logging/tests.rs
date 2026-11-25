@@ -258,11 +258,11 @@ fn openai_chat_prices_the_reply_and_fills_the_kwargs_and_call_log() {
     let (logs, _guard) = capture_logs(Level::DEBUG);
     let mut relay = Relay::new(r#"{"model": "gpt-4o"}"#, "{}");
     relay.kwargs.passthrough_request_body = Some(object(r#"{"model": "gpt-4o"}"#));
-    let (tools, outcome) = run(FakeTools::working(), &mut relay, CHAT);
+    let (_tools, outcome) = run(FakeTools::working(), &mut relay, CHAT);
     let reply = object_json(r#"{"id": "chatcmpl-1", "choices": []}"#);
     assert_eq!(
         outcome.result,
-        Some(PassThroughResponse::ModelResponse(reply.clone()))
+        Some(PassThroughResponse::ModelResponse(reply))
     );
     assert_eq!(outcome.kwargs.response_cost, Some(chat_price()));
     assert_eq!(outcome.kwargs.model.as_deref(), Some("gpt-4o"));
@@ -285,9 +285,21 @@ fn openai_chat_prices_the_reply_and_fills_the_kwargs_and_call_log() {
         detail(&relay.call_log, "response_cost"),
         Some(decimal_json(chat_price()))
     );
-    let calls = tools.calls();
+    assert!(
+        logs.contents()
+            .contains("Endpoint: chat_completions, Model: gpt-4o, Cost: $0.001500"),
+        "{}",
+        logs.contents()
+    );
+}
+
+#[test]
+fn openai_chat_records_the_cost_and_standard_object_calls() {
+    let mut relay = Relay::new(r#"{"model": "gpt-4o"}"#, "{}");
+    let (tools, _outcome) = run(FakeTools::working(), &mut relay, CHAT);
+    let reply = object_json(r#"{"id": "chatcmpl-1", "choices": []}"#);
     assert_eq!(
-        calls.get(1..),
+        tools.calls().get(1..),
         Some(
             &[
                 Call::Cost {
@@ -302,12 +314,6 @@ fn openai_chat_prices_the_reply_and_fills_the_kwargs_and_call_log() {
                 },
             ][..]
         )
-    );
-    assert!(
-        logs.contents()
-            .contains("Endpoint: chat_completions, Model: gpt-4o, Cost: $0.001500"),
-        "{}",
-        logs.contents()
     );
 }
 

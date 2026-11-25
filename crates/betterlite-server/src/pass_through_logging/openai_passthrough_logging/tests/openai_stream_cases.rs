@@ -21,8 +21,8 @@ use super::super::OpenAiProvider;
 use super::super::stream::passthrough_kwargs;
 use super::super::tools::{OpenAiLoggingTools as _, StandardObjectRequest};
 use super::support::{
-    CHAT, Call, FakeTools, RESPONSES, body_user, chat_price, collect, detail, fallback_payload,
-    key, object_json, openai_logger, streamed, text, toolbox,
+    Answer, CHAT, Call, FakeTools, RESPONSES, body_user, chat_price, collect, detail,
+    fallback_payload, key, object_json, openai_logger, streamed, text, toolbox,
 };
 use crate::pass_through_logging::base_passthrough_logging::PassthroughProvider as _;
 use crate::pass_through_logging::base_passthrough_logging::tests::support::{
@@ -41,10 +41,8 @@ fn openai_stream_responses_route_prices_the_terminal_reply() {
         RESPONSES,
     );
     let reply = object_json(r#"{"id": "resp-2"}"#);
-    assert_eq!(
-        outcome.result,
-        Some(PassThroughResponse::ResponsesApi(reply.clone()))
-    );
+    let expected = PassThroughResponse::ResponsesApi(reply.clone());
+    assert_eq!(outcome.result, Some(expected));
     assert_eq!(
         tools.calls(),
         vec![
@@ -68,10 +66,8 @@ fn openai_stream_responses_route_prices_the_terminal_reply() {
         Some(object_json(r#"{"status": "success"}"#))
     );
     assert_eq!(call_log.model, "gpt-4o-mini");
-    assert_eq!(
-        detail(&call_log, "custom_llm_provider"),
-        Some(text("openai"))
-    );
+    let provider = detail(&call_log, "custom_llm_provider");
+    assert_eq!(provider, Some(text("openai")));
     assert!(logs.contents().contains(
         "OpenAI streaming passthrough cost tracking - Model: gpt-4o-mini, Cost: $0.001500"
     ));
@@ -91,7 +87,7 @@ fn openai_stream_chat_route_assembles_the_chunks(
     #[case] expected: PassThroughResponse,
 ) {
     let fake = FakeTools {
-        streamed: Some(Some(built)),
+        streamed: Answer::Value(built),
         ..FakeTools::working()
     };
     let (tools, _call_log, outcome) = streamed(fake, r#"{"model": "gpt-4o"}"#, CHAT);
@@ -143,22 +139,30 @@ fn openai_stream_provider_comes_from_the_call_log() {
 }
 
 #[rstest]
-#[case::no_terminal_reply(RESPONSES)]
-#[case::no_assembled_reply(CHAT)]
-fn openai_stream_without_a_complete_reply_answers_empty(#[case] url_route: &str) {
+#[case::no_terminal_reply(RESPONSES, false)]
+#[case::no_assembled_reply(CHAT, false)]
+#[case::terminal_parse_fails(RESPONSES, true)]
+#[case::assembly_fails(CHAT, true)]
+fn openai_stream_without_a_complete_reply_answers_empty(
+    #[case] url_route: &str,
+    #[case] fails: bool,
+) {
     let (logs, _guard) = capture_logs(Level::WARN);
     let tools = FakeTools {
-        terminal: Some(None),
-        streamed: Some(None),
+        terminal: if fails { Answer::Failed } else { Answer::Empty },
+        streamed: if fails { Answer::Failed } else { Answer::Empty },
         ..FakeTools::working()
     };
-    let (_tools, _call_log, outcome) = streamed(tools, r#"{"model": "gpt-4o"}"#, url_route);
+    let (_tools, call_log, outcome) = streamed(tools, r#"{"model": "gpt-4o"}"#, url_route);
     assert_eq!(outcome.result, None);
     assert_eq!(outcome.kwargs, ResponseLoggingKwargs::default());
-    assert!(
-        logs.contents()
-            .contains("Failed to build complete response from OpenAI streaming chunks")
-    );
+    assert_eq!(detail(&call_log, "response_cost"), None);
+    let message = if fails {
+        "Error in OpenAI streaming passthrough cost tracking"
+    } else {
+        "Failed to build complete response from OpenAI streaming chunks"
+    };
+    assert!(logs.contents().contains(message));
 }
 
 #[rstest]

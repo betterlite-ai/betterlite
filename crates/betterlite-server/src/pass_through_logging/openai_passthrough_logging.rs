@@ -20,11 +20,14 @@ use betterlite_models::model_registration::JsonObject;
 use rust_decimal::Decimal;
 use thiserror::Error;
 
+use self::handler::{Endpoint, handler_model};
 use self::tools::{ChatTransformRequest, OpenAiLoggingTools, OpenAiToolsError};
 use super::base_passthrough_logging::{
-    CollectedChunksInput, PassthroughChatLogger, PassthroughLoggingError, PassthroughPayload,
-    PassthroughProvider, PassthroughStage, UpstreamChatReply,
+    CollectedChunksInput, PassthroughChatInput, PassthroughChatLogger, PassthroughLoggingError,
+    PassthroughOutcome, PassthroughPayload, PassthroughProvider, PassthroughStage,
+    UpstreamChatReply,
 };
+use super::response_payload::ResponseLoggingKwargs;
 
 pub(crate) const OPENAI: &str = "openai";
 
@@ -63,6 +66,71 @@ impl OpenAiPassthroughLogger {
         Self {
             chat: PassthroughChatLogger::new(Arc::new(provider), payload),
             tools,
+        }
+    }
+
+    pub fn openai_passthrough_handler(
+        &self,
+        mut input: PassthroughChatInput<'_>,
+    ) -> Result<PassthroughOutcome, OpenAiPassthroughError> {
+        let Some(endpoint) = Endpoint::classify(input.url_route) else {
+            return Ok(PassthroughOutcome {
+                result: None,
+                kwargs: input.kwargs,
+            });
+        };
+        let model = handler_model(input.request_body, input.response_body)?;
+        if model.is_empty() {
+            tracing::warn!(
+                "No model found in request or response for OpenAI passthrough cost tracking"
+            );
+            return self
+                .chat
+                .passthrough_chat_handler(input)
+                .map_err(OpenAiPassthroughError::from);
+        }
+        let error = match handler::priced(self, endpoint, &model, &mut input) {
+            Ok(outcome) => return Ok(outcome),
+            Err(error) => error,
+        };
+        tracing::error!("Error in OpenAI passthrough cost tracking: {error}");
+        match endpoint {
+            Endpoint::ChatCompletions => self
+                .chat
+                .passthrough_chat_handler(input)
+                .map_err(OpenAiPassthroughError::from),
+            Endpoint::Embeddings
+            | Endpoint::ImageGeneration
+            | Endpoint::ImageEditing
+            | Endpoint::Responses => Ok(PassthroughOutcome {
+                result: None,
+                kwargs: input.kwargs,
+            }),
+        }
+    }
+
+    // Every failure is swallowed: the entry answers with no result and empty kwargs, never the partial ones.
+    pub fn openai_collected_chunks(
+        &self,
+        input: CollectedChunksInput<'_>,
+        url_route: &str,
+    ) -> Result<PassthroughOutcome, OpenAiPassthroughError> {
+        match stream::collected(self, input, url_route) {
+            Ok(Some(outcome)) => Ok(outcome),
+            Ok(None) => {
+                tracing::warn!("Failed to build complete response from OpenAI streaming chunks");
+                Ok(PassthroughOutcome {
+                    result: None,
+                    kwargs: ResponseLoggingKwargs::default(),
+                })
+            }
+            Err(error) => {
+                tracing::error!("Error in OpenAI streaming passthrough cost tracking: {error}");
+                Ok(PassthroughOutcome {
+                    result: None,
+                    kwargs: ResponseLoggingKwargs::default(),
+                })
+            }
         }
     }
 }

@@ -83,6 +83,23 @@ pub(crate) enum Call {
     },
 }
 
+// One tool answer: a failed call, a success that gives nothing, or a success with a value.
+pub(crate) enum Answer<T> {
+    Failed,
+    Empty,
+    Value(T),
+}
+
+impl<T: Clone> Answer<T> {
+    fn answer(&self) -> Result<Option<T>, OpenAiToolsError> {
+        match self {
+            Self::Failed => Err(failed()),
+            Self::Empty => Ok(None),
+            Self::Value(value) => Ok(Some(value.clone())),
+        }
+    }
+}
+
 // The tools as the handlers see them: a None answer is a failure of that call.
 pub(crate) struct FakeTools {
     pub(crate) chat: Option<Json>,
@@ -90,8 +107,8 @@ pub(crate) struct FakeTools {
     pub(crate) embedding_price: Decimal,
     pub(crate) image_price: Decimal,
     pub(crate) responses: Option<(Json, Decimal)>,
-    pub(crate) terminal: Option<Option<Json>>,
-    pub(crate) streamed: Option<Option<StreamedResponse>>,
+    pub(crate) terminal: Answer<Json>,
+    pub(crate) streamed: Answer<StreamedResponse>,
     pub(crate) price: Option<Decimal>,
     pub(crate) standard: Option<Json>,
     pub(crate) calls: Mutex<Vec<Call>>,
@@ -107,10 +124,8 @@ impl FakeTools {
             embedding_price: Decimal::new(2, 3),
             image_price: Decimal::new(4, 2),
             responses: Some((object_json(r#"{"id": "resp-1"}"#), Decimal::new(1, 2))),
-            terminal: Some(Some(object_json(r#"{"id": "resp-2"}"#))),
-            streamed: Some(Some(StreamedResponse::Model(object_json(
-                r#"{"id": "s-1"}"#,
-            )))),
+            terminal: Answer::Value(object_json(r#"{"id": "resp-2"}"#)),
+            streamed: Answer::Value(StreamedResponse::Model(object_json(r#"{"id": "s-1"}"#))),
             price: Some(Decimal::new(15, 4)),
             standard: Some(object_json(r#"{"status": "success"}"#)),
             calls: Mutex::new(Vec::new()),
@@ -157,10 +172,15 @@ impl OpenAiLoggingTools for FakeTools {
         self.embedding.clone().ok_or_else(failed)
     }
 
-    fn embedding_cost(&self, _response: &JsonObject, model: &str, provider: &str) -> Decimal {
+    fn embedding_cost(
+        &self,
+        _response: &JsonObject,
+        model: &str,
+        custom_llm_provider: &str,
+    ) -> Decimal {
         self.record(Call::EmbeddingCost {
             model: model.to_owned(),
-            provider: provider.to_owned(),
+            provider: custom_llm_provider.to_owned(),
         });
         self.embedding_price
     }
@@ -193,7 +213,7 @@ impl OpenAiLoggingTools for FakeTools {
 
     fn terminal_response(&self, _all_chunks: &[String]) -> Result<Option<Json>, OpenAiToolsError> {
         self.record(Call::Terminal);
-        self.terminal.clone().ok_or_else(failed)
+        self.terminal.answer()
     }
 
     fn stream_response(
@@ -204,7 +224,7 @@ impl OpenAiLoggingTools for FakeTools {
         self.record(Call::Stream {
             model: model.to_owned(),
         });
-        self.streamed.clone().ok_or_else(failed)
+        self.streamed.answer()
     }
 
     fn completion_cost(&self, request: &PricedResponse<'_>) -> Result<Decimal, OpenAiToolsError> {
@@ -305,7 +325,7 @@ impl PriceLookup for ImagePrices {
             "hd/1024-x-1024/dall-e-3" => 0.08_f64,
             _ => return None,
         };
-        let number = Number::from_f64(price).expect("a finite price");
+        let number = Number::from_f64(price)?;
         let mut record = PriceRecord::new();
         record.insert("output_cost_per_image".to_owned(), Scalar::Number(number));
         Some(record)
