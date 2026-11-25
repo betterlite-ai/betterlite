@@ -1,3 +1,5 @@
+mod tests;
+
 use std::collections::BTreeMap;
 use std::error::Error as _;
 use std::future::{Future, ready};
