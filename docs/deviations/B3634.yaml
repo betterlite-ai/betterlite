@@ -1,0 +1,56 @@
+task: B3634
+deviations:
+  - what: >-
+      The handler takes the upstream body as text plus a parsed object, and has no result or
+      cache_hit argument.
+    why: >-
+      LiteLLM passes an httpx.Response and never reads result or cache_hit in this handler; Rust
+      has no httpx object, so the two views of the body are explicit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L53-L65
+  - what: >-
+      The response is stored in complete_streaming_response twice for a stream, before the
+      guarded block and again once id and model are set.
+    why: >-
+      LiteLLM stores one shared object that later steps mutate in place; Rust holds a copy, so the
+      second store gives the same final state.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L428-L429
+  - what: >-
+      Errors are typed errors. The payload step's blanket except catches only the typed errors of
+      the steps it wraps (the cost call, a litellm_params entry that is not an object, a response
+      that does not encode), and a bad UTF-8 chunk is an Err where LiteLLM lets UnicodeDecodeError
+      rise.
+    why: >-
+      Rust has no runtime attribute errors and a panic is banned by the no-panics rule, so the
+      typed error is the only failure left.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L464-L466
+  - what: >-
+      The batch result is converted into the chat variant of the pass-through response enum, and
+      it carries no usage block where LiteLLM's hand-built ModelResponse() has an all-zero Usage.
+    why: >-
+      The enum has no batch variant and the downstream logger reads it as a chat response; B3633's
+      BatchLoggingResponse has no usage field, and the zero usage carries no cost or token count.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L982-L1006
+  - what: >-
+      The end user is read with validate_end_user_id_in_db fixed to false and the default
+      request-header settings.
+    why: >-
+      The pinned AnthropicPassthroughLogger::new takes only the batch logging and the cost
+      service, so it has no place for the proxy's id settings; B3606 wires the logger and can pass
+      them when it adds the HTTP cases.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L130-L137
+  - what: >-
+      When the Anthropic token counter or the secret redactor cannot be built at startup, the
+      handler returns a Tools error for every call instead of transforming the response.
+    why: >-
+      Python builds both lazily inside the transform; the Rust logger builds them once in new()
+      and the bundled tokenizer ships with the binary, so the error is only reachable on a broken
+      build.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L89-L102
+kept_bugs:
+  - what: >-
+      A 200 results download at /v1/messages/batches/{id}/results contains the batch route text,
+      so it goes to batch_creation_handler and never reaches the results transform.
+    why: >-
+      LiteLLM tests the route with a plain substring; a working setup logs results downloads as
+      batch records today, so betterlite keeps the same branch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L68-L83
