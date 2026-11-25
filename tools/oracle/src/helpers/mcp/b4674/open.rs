@@ -51,10 +51,10 @@ fn wrapped(wrap: Wrap, text: &str) -> String {
             .chars()
             .take(text.chars().count().saturating_sub(1))
             .collect(),
-        Wrap::SwapPrefix => match text.strip_prefix(GATEWAY_DCR_CLIENT_ID_PREFIX) {
-            Some(ciphertext) => format!("{GATEWAY_AUTH_CODE_PREFIX}{ciphertext}"),
-            None => text.to_owned(),
-        },
+        Wrap::SwapPrefix => text.strip_prefix(GATEWAY_DCR_CLIENT_ID_PREFIX).map_or_else(
+            || text.to_owned(),
+            |ciphertext| format!("{GATEWAY_AUTH_CODE_PREFIX}{ciphertext}"),
+        ),
     }
 }
 const fn prefix_of(prefix: SealPrefix) -> &'static str {
