@@ -54,6 +54,9 @@ mod body_boundaries;
 #[path = "tests/absent_response/tests.rs"]
 mod absent_response;
 
+#[path = "tests/base_llm_exception/tests.rs"]
+mod base_llm_exception;
+
 mod azure_policy_gate_cases;
 
 mod proxy_header_gate_cases;

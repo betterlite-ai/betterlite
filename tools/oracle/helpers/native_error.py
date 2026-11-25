@@ -4,33 +4,13 @@ import litellm
 import openai
 from litellm.exceptions import AuthenticationError
 from litellm.litellm_core_utils import exception_mapping_utils
+from litellm.llms.base_llm.chat.transformation import BaseLLMException
 
 # a working deployment sets this to keep exception_type()'s debug banner off stdout; the oracle
 # wire protocol reads a single JSON line from the same stream
 litellm.suppress_debug_info = True
 
 JsonValue: TypeAlias = None | bool | int | float | str | list["JsonValue"] | dict[str, "JsonValue"]
-
-
-class RawErrorInnerErrorInput(TypedDict):
-    code: NotRequired[str | None]
-
-
-class RawErrorDetailInput(TypedDict):
-    type: NotRequired[str | None]
-    param: NotRequired[str | None]
-    code: NotRequired[str | None]
-    message: NotRequired[str | None]
-    inner_error: NotRequired[RawErrorInnerErrorInput | None]
-    innererror: NotRequired[RawErrorInnerErrorInput | None]
-
-
-class RawErrorBodyInput(TypedDict):
-    type: NotRequired[str | None]
-    param: NotRequired[str | None]
-    code: NotRequired[str | None]
-    message: NotRequired[str | None]
-    error: NotRequired[RawErrorDetailInput | None]
 
 
 class RawInput(TypedDict):
@@ -41,7 +21,7 @@ class RawInput(TypedDict):
     status_code: NotRequired[int | None]
     status_code_is_synthesized: NotRequired[bool]
     message: NotRequired[str | None]
-    body: NotRequired[RawErrorBodyInput | None]
+    body: NotRequired[dict[str, JsonValue] | None]
     exception_type: NotRequired[str]
 
 
@@ -57,21 +37,16 @@ Input = RawInput | MappedInput
 
 
 class _OriginalError(Exception):
-    """Stands in for the SDK exception exception_type() normally introspects via getattr/hasattr."""
+    """Stands in for an SDK exception that carries no status code."""
 
     def __init__(
         self,
         error_str: str,
         *,
-        status_code: int | None = None,
-        status_code_is_synthesized: bool = False,
         message: str | None = None,
-        body: JsonValue = None,
+        body: dict[str, JsonValue] | None = None,
     ) -> None:
         super().__init__(error_str)
-        if status_code is not None:
-            self.status_code = status_code
-        self.status_code_is_synthesized = status_code_is_synthesized
         # a real SDK exception always carries .message; the native elif chain reads it unguarded
         self.message = message if message is not None else error_str
         if body is not None:
@@ -89,6 +64,13 @@ def _exception_class(name: str) -> type[_OriginalError]:
     if not name:
         return _OriginalError
     return type(name, (_OriginalError,), {})
+
+
+# a status-bearing input is a provider HTTP error, which LiteLLM models with BaseLLMException
+def _status_exception_class(name: str) -> type[BaseLLMException]:
+    if not name:
+        return BaseLLMException
+    return type(name, (BaseLLMException,), {})
 
 
 class _ExceptionTypeArguments(TypedDict):
@@ -137,14 +119,28 @@ def _dispatch(model: str, original_exception: object, custom_llm_provider: str) 
         return mapped
 
 
-def _run_raw(input_value: RawInput) -> object:
-    cause = _exception_class(input_value.get("exception_type") or "")(
-        input_value["error_str"],
-        status_code=input_value.get("status_code"),
+def _raw_exception(input_value: RawInput) -> Exception:
+    name = input_value.get("exception_type") or ""
+    status_code = input_value.get("status_code")
+    message = input_value.get("message")
+    if message is None:
+        message = input_value["error_str"]
+    if status_code is None:
+        return _exception_class(name)(
+            input_value["error_str"],
+            message=message,
+            body=input_value.get("body"),
+        )
+    return _status_exception_class(name)(
+        status_code=status_code,
+        message=message,
         status_code_is_synthesized=input_value.get("status_code_is_synthesized", False),
-        message=input_value.get("message"),
-        body=cast(JsonValue, input_value.get("body")),
+        body=input_value.get("body"),
     )
+
+
+def _run_raw(input_value: RawInput) -> object:
+    cause = _raw_exception(input_value)
     mapped = _dispatch(input_value["model"], cause, input_value["custom_llm_provider"])
     return _metadata(mapped)
 
