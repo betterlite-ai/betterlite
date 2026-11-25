@@ -90,25 +90,42 @@ fn refuse_module_fields(section: Section, fields: &mut JsonObject, names: &[&str
 
 fn refuse_module_lists(fields: &mut JsonObject) {
     for name in LITELLM_MODULE_LISTS {
-        let refused = drop_remote(fields.get_mut(name));
-        if refused > 0 {
-            tracing::warn!(
-                "Refused {refused} remote-URL entries from DB-overlay litellm_settings.{name}; only config.yaml entries may reference s3:// / gcs:// modules."
-            );
-        }
+        refuse_list_modules(fields, name);
     }
 }
 
-fn refuse_custom_handlers(fields: &mut JsonObject) {
-    let Some(JsonValue::Array(providers)) = fields.get_mut("custom_provider_map") else {
-        return;
+fn refuse_list_modules(fields: &mut JsonObject, name: &str) {
+    let refused = drop_remote(fields.get_mut(name));
+    if refused > 0 {
+        tracing::warn!(
+            "Refused {refused} remote-URL entries from DB-overlay litellm_settings.{name}; only config.yaml entries may reference s3:// / gcs:// modules."
+        );
+    }
+}
+
+// the entry a refused module sits in comes back with the refused text, so the caller names it in its warning
+fn refuse_item_modules(
+    fields: &mut JsonObject,
+    list: &str,
+    module_field: &str,
+) -> Vec<(JsonValue, JsonValue)> {
+    let Some(JsonValue::Array(items)) = fields.get_mut(list) else {
+        return Vec::new();
     };
-    for provider in providers {
-        if let Some(handler) = take_remote(provider.get_mut("custom_handler")) {
-            tracing::warn!(
-                "Refused remote-URL custom_handler from DB-overlay litellm_settings.custom_provider_map: {handler}"
-            );
+    let mut refused = Vec::new();
+    for item in items {
+        if let Some(module) = take_remote(item.get_mut(module_field)) {
+            refused.push((item.clone(), module));
         }
+    }
+    refused
+}
+
+fn refuse_custom_handlers(fields: &mut JsonObject) {
+    for (_, handler) in refuse_item_modules(fields, "custom_provider_map", "custom_handler") {
+        tracing::warn!(
+            "Refused remote-URL custom_handler from DB-overlay litellm_settings.custom_provider_map: {handler}"
+        );
     }
 }
 
@@ -142,15 +159,10 @@ fn refuse_guardrail_inner(inner: &mut JsonValue) {
 }
 
 fn refuse_pass_through_targets(fields: &mut JsonObject) {
-    let Some(JsonValue::Array(endpoints)) = fields.get_mut(PASS_THROUGH_ENDPOINTS) else {
-        return;
-    };
-    for endpoint in endpoints {
-        if let Some(target) = take_remote(endpoint.get_mut("target")) {
-            let path = endpoint.get("path").cloned().unwrap_or_default();
-            tracing::warn!(
-                "Refused remote-URL target from DB-overlay general_settings.pass_through_endpoints (path={path}): {target}"
-            );
-        }
+    for (endpoint, target) in refuse_item_modules(fields, PASS_THROUGH_ENDPOINTS, "target") {
+        let path = endpoint.get("path").cloned().unwrap_or_default();
+        tracing::warn!(
+            "Refused remote-URL target from DB-overlay general_settings.pass_through_endpoints (path={path}): {target}"
+        );
     }
 }

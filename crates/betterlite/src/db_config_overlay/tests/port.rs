@@ -1,16 +1,16 @@
 use std::collections::BTreeMap;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use betterlite_db::postgres_store::errors::DbError;
 use betterlite_db::table_ops::rows::RowError;
 use betterlite_server::config_overlay_port::{ConfigOverlayPort, ConfigOverlayPortError};
 use tempfile::TempDir;
-use tokio::sync::Mutex;
+use tokio::sync::Mutex as AsyncMutex;
 
 use super::support::{
-    RecordingInstaller, RecordingRuntime, database, failing_database, file_source, json, state,
-    write_config,
+    Journal, RecordingInstaller, RecordingRuntime, database, failing_database, file_source, json,
+    state, write_config,
 };
 use crate::db_config_overlay::port::OverlayPortAdapter;
 use crate::db_config_overlay::reload::reload_config;
@@ -29,13 +29,13 @@ fn port(path: &Path, database: Option<OverlayDatabase>, recording: RecordingInst
     let installer = Arc::new(recording);
     let environment = BTreeMap::from([("MASTER".to_owned(), "sk-env".to_owned())]);
     let adapter = OverlayPortAdapter {
-        state: Arc::new(Mutex::new(state(
+        state: Arc::new(AsyncMutex::new(state(
             true,
             &Arc::new(RecordingRuntime::default()),
         ))),
         source: file_source(path),
         database,
-        environment: Arc::new(Mutex::new(environment)),
+        environment: Arc::new(AsyncMutex::new(environment)),
         installer: Arc::<RecordingInstaller>::clone(&installer),
     };
     Port {
@@ -121,8 +121,9 @@ async fn port_install_failure_gives_pass_through() {
     let directory = TempDir::new().unwrap();
     let path = write_config(directory.path(), CONFIG);
     let failing = RecordingInstaller {
+        journal: Journal::default(),
         fails: true,
-        ..RecordingInstaller::default()
+        calls: Mutex::new(Vec::new()),
     };
     let served = port(&path, None, failing);
     let error = served

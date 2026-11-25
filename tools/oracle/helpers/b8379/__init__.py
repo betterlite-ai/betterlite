@@ -8,7 +8,12 @@ from litellm.proxy.proxy_server import ProxyConfig
 from litellm.proxy.utils import PrismaClient, evict_config_param
 from pydantic import JsonValue, TypeAdapter
 
-SECTIONS: Final = ("general_settings", "router_settings", "litellm_settings", "environment_variables")
+SECTIONS: Final = (
+    "general_settings",
+    "router_settings",
+    "litellm_settings",
+    "environment_variables",
+)
 CONFIG: Final = TypeAdapter(dict[str, JsonValue])
 
 
@@ -49,16 +54,16 @@ class Reloader(Protocol):
     async def get_config(self, config_file_path: str | None = None) -> Mapping[str, JsonValue]: ...
 
 
-async def reload(input_value: Input) -> dict[str, JsonValue]:
+async def reload(input_value: Input, reloader: Reloader) -> dict[str, JsonValue]:
     for name in SECTIONS:
         await evict_config_param(name)
-    proxy_server.prisma_client = CaseClient(ConfigTable({input_value["section"]: input_value["row"]}))
+    row = {input_value["section"]: input_value["row"]}
+    proxy_server.prisma_client = CaseClient(ConfigTable(row))
     proxy_server.store_model_in_db = True
     proxy_server.user_config_file_path = None
-    reloader: Reloader = ProxyConfig()
     return CONFIG.validate_python(await reloader.get_config())
 
 
 def run(input_value: Input) -> JsonValue:
-    config = asyncio.run(reload(input_value))
+    config = asyncio.run(reload(input_value, ProxyConfig()))
     return config[input_value["section"]]
