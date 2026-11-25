@@ -178,34 +178,19 @@ fn no_library_lookups() -> Value {
     })
 }
 
-fn store_assertion_answer(
-    runtime: &Runtime,
-    store: &LiteLlmManagedVectorStore,
-    auth: &StoreAuth,
-    detail: Option<&str>,
-) -> Result<Value, Box<HelperError>> {
-    let key = key_auth(auth)?;
-    let managed = ManagedVectorStore((*store).clone());
-    let no_lookups = NoLookups;
-    let access = VectorStoreAccess {
-        permissions: &no_lookups,
-        teams: &no_lookups,
-        session_teams: &no_lookups,
-    };
-    let outcome = runtime
-        .block_on(assert_can_access_vector_store(
-            &access, &managed, &key, detail,
-        ))
-        .map(|()| None)
-        .map_err(ManagedStoreAccessError::from);
-    outcome_answer("assert_store", outcome, &no_library_lookups())
+// which assertion an answer runs: the store the case holds, or the store an id resolves to
+enum Assertion<'assertion> {
+    Store(&'assertion LiteLlmManagedVectorStore),
+    Id {
+        world: &'assertion World,
+        vector_store_id: &'assertion str,
+    },
 }
 
-// the id resolves in the case's world and is then asserted, so the answer names every lookup
-fn id_assertion_answer(
+// both assertions answer the same shape, so one function runs whichever the case asked for
+fn assertion_answer(
     runtime: &Runtime,
-    world: &World,
-    vector_store_id: &str,
+    subject: &Assertion<'_>,
     auth: &StoreAuth,
     detail: Option<&str>,
 ) -> Result<Value, Box<HelperError>> {
@@ -216,15 +201,33 @@ fn id_assertion_answer(
         teams: &no_lookups,
         session_teams: &no_lookups,
     };
-    let lookup = world.lookup();
-    let outcome = runtime.block_on(assert_can_access_store_id(
-        &lookup,
-        &access,
-        vector_store_id,
-        &key,
-        detail,
-    ));
-    outcome_answer("assert_id", outcome, &world.lookups())
+    let (function, outcome, lookups) = match subject {
+        Assertion::Store(store) => {
+            let managed = ManagedVectorStore((*store).clone());
+            let outcome = runtime
+                .block_on(assert_can_access_vector_store(
+                    &access, &managed, &key, detail,
+                ))
+                .map(|()| None)
+                .map_err(ManagedStoreAccessError::from);
+            ("assert_store", outcome, no_library_lookups())
+        }
+        Assertion::Id {
+            world,
+            vector_store_id,
+        } => {
+            let lookup = world.lookup();
+            let outcome = runtime.block_on(assert_can_access_store_id(
+                &lookup,
+                &access,
+                vector_store_id,
+                &key,
+                detail,
+            ));
+            ("assert_id", outcome, world.lookups())
+        }
+    };
+    outcome_answer(function, outcome, &lookups)
 }
 
 pub(super) fn answer(runtime: &Runtime, call: &Call) -> Result<Value, Box<HelperError>> {
@@ -244,7 +247,10 @@ pub(super) fn answer(runtime: &Runtime, call: &Call) -> Result<Value, Box<Helper
             store,
             auth,
             detail,
-        } => store_assertion_answer(runtime, store.as_ref(), auth, detail.as_deref()),
+        } => {
+            let subject = Assertion::Store(store.as_ref());
+            assertion_answer(runtime, &subject, auth, detail.as_deref())
+        }
         Call::AssertId {
             vector_store_id,
             registry,
@@ -256,7 +262,11 @@ pub(super) fn answer(runtime: &Runtime, call: &Call) -> Result<Value, Box<Helper
             detail,
         } => {
             let world = World::build(registry.as_ref(), *database, cached, rows, *fail)?;
-            id_assertion_answer(runtime, &world, vector_store_id, auth, detail.as_deref())
+            let subject = Assertion::Id {
+                world: &world,
+                vector_store_id: vector_store_id.as_str(),
+            };
+            assertion_answer(runtime, &subject, auth, detail.as_deref())
         }
     }
 }
