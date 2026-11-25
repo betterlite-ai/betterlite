@@ -49,28 +49,33 @@ pub(crate) struct Mapping {
     pub(crate) variant: Option<&'static str>,
 }
 
+macro_rules! map_parts {
+    ($($method:ident($receiver:ident, $argument:ident) { $($body:tt)* })*) => {
+        $(fn $method<T>(&mut $receiver, $argument: &T) -> Result<(), ShapeError>
+        where
+            T: Serialize + ?Sized,
+        {
+            $($body)*
+            Ok(())
+        })*
+    };
+}
+
 impl SerializeMap for Mapping {
     type Ok = Shape;
     type Error = ShapeError;
 
-    fn serialize_key<T>(&mut self, key: &T) -> Result<(), ShapeError>
-    where
-        T: Serialize + ?Sized,
-    {
-        let Value::String(name) = serde_json::to_value(key)? else {
-            return Err(ShapeError::Key);
-        };
-        self.key = Some(name);
-        Ok(())
-    }
-
-    fn serialize_value<T>(&mut self, value: &T) -> Result<(), ShapeError>
-    where
-        T: Serialize + ?Sized,
-    {
-        let name = self.key.take().ok_or(ShapeError::MissingKey)?;
-        self.fields.insert(name, value.serialize(Probe)?);
-        Ok(())
+    map_parts! {
+        serialize_key(self, key) {
+            let Value::String(name) = serde_json::to_value(key)? else {
+                return Err(ShapeError::Key);
+            };
+            self.key = Some(name);
+        }
+        serialize_value(self, value) {
+            let name = self.key.take().ok_or(ShapeError::MissingKey)?;
+            self.fields.insert(name, value.serialize(Probe)?);
+        }
     }
 
     fn end(self) -> Result<Shape, ShapeError> {
