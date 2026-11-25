@@ -1,0 +1,35 @@
+kind: helper
+name: override-projection-malformed-json-versus-valid-scalar
+call:
+  override_projection:
+    function: project
+    kind: hashicorp_vault
+    raw: "{not json"
+calls:
+  - override_projection:
+      function: project
+      kind: hashicorp_vault
+      raw: "42"
+  - override_projection:
+      function: project
+      kind: hashicorp_vault
+      raw: "[1]"
+  - override_projection:
+      function: project
+      kind: hashicorp_vault
+      raw: '{"vault_addr":"https://vault.example.com:8200","vault_token":"hunter2-token","approle_role_id":"","client_key":"","extra_field":"left-alone"}'
+  - override_projection:
+      function: project
+      kind: cyberark
+      raw:
+        cyberark_api_base: "https://conjur.example.com"
+        cyberark_api_key: key
+        refresh_interval: 60
+        ssl_verify: "false"
+        client_key: null
+  - override_projection:
+      function: project
+      kind: hashicorp_vault
+      raw: null
+env: {}
+compare: {ignore: []}
