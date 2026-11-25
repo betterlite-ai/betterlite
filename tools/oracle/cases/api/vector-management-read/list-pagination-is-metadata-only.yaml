@@ -1,0 +1,70 @@
+kind: helper
+name: list-pagination-is-metadata-only
+call:
+  b1070:
+    calls:
+      # defaults page=1 page_size=100: every record, one page
+      - route: list
+        page: 1
+        page_size: 100
+        database: &three
+          - {vector_store_id: vs_1, custom_llm_provider: openai}
+          - {vector_store_id: vs_2, custom_llm_provider: openai}
+          - {vector_store_id: vs_3, custom_llm_provider: openai}
+        registry: null
+        caller: &admin {user_id: u1, user_role: proxy_admin, team_id: null}
+        disabled: false
+      # page 2 of two is still every record: the page number is metadata
+      - route: list
+        page: 2
+        page_size: 2
+        database: *three
+        registry: null
+        caller: *admin
+        disabled: false
+      # page 0 is echoed unchanged
+      - route: list
+        page: 0
+        page_size: 100
+        database: *three
+        registry: null
+        caller: *admin
+        disabled: false
+      # a negative page size computes Python's floor division
+      - route: list
+        page: 1
+        page_size: -2
+        database: *three
+        registry: null
+        caller: *admin
+        disabled: false
+      - route: list
+        page: 1
+        page_size: -1
+        database: *three
+        registry: null
+        caller: *admin
+        disabled: false
+      # a negative quotient that needs the floor adjustment
+      - route: list
+        page: 1
+        page_size: -3
+        database: &five
+          - {vector_store_id: vs_1, custom_llm_provider: openai}
+          - {vector_store_id: vs_2, custom_llm_provider: openai}
+          - {vector_store_id: vs_3, custom_llm_provider: openai}
+          - {vector_store_id: vs_4, custom_llm_provider: openai}
+          - {vector_store_id: vs_5, custom_llm_provider: openai}
+        registry: null
+        caller: *admin
+        disabled: false
+      # a zero page size is ZeroDivisionError's message as the catch-all 500
+      - route: list
+        page: 1
+        page_size: 0
+        database: *three
+        registry: null
+        caller: *admin
+        disabled: false
+env: {}
+compare: {ignore: []}
