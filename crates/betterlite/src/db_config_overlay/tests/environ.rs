@@ -64,6 +64,51 @@ async fn workers_bound_the_live_threads() {
     assert_eq!(count.load(Ordering::Relaxed), 4);
 }
 
+// a later submission records its handle without pruning the canceled worker still running, so the owner's drop waits for it
+#[tokio::test]
+async fn workers_join_a_canceled_worker_after_a_later_submission() {
+    let workers = Arc::new(Workers::new(2));
+    let (started, mut started_reading) = async_mpsc::channel(1);
+    let (release, released_rx) = mpsc::sync_channel::<()>(1);
+    let released = Arc::new(Mutex::new(released_rx));
+    let finished = Arc::new(AtomicBool::new(false));
+    let task_workers = Arc::clone(&workers);
+    let task_finished = Arc::clone(&finished);
+    let mut tasks = JoinSet::new();
+    tasks.spawn(async move {
+        off_runtime(&task_workers, move || {
+            let _started = started.try_send(());
+            let _released = released
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .recv();
+            task_finished.store(true, Ordering::Relaxed);
+        })
+        .await
+    });
+    started_reading.recv().await.unwrap();
+    tasks.abort_all();
+    let canceled = tasks.join_next().await.unwrap().unwrap_err();
+    assert!(canceled.is_cancelled());
+    off_runtime(&workers, || {}).await.unwrap();
+    let (dropped, dropped_reading) = mpsc::sync_channel::<()>(1);
+    let dropping = thread::Builder::new()
+        .name("b8379-drop-after-submission".to_owned())
+        .spawn(move || {
+            drop(workers);
+            let _sent = dropped.send(());
+        })
+        .unwrap();
+    let early = dropped_reading.recv_timeout(Duration::from_millis(200));
+    assert!(matches!(early, Err(RecvTimeoutError::Timeout)));
+    release.send(()).unwrap();
+    dropped_reading
+        .recv_timeout(Duration::from_secs(10))
+        .unwrap();
+    dropping.join().unwrap();
+    assert!(finished.load(Ordering::Relaxed));
+}
+
 // the future is gone, but its worker still runs, and the owner's drop waits for it
 #[tokio::test]
 async fn workers_join_a_canceled_worker_when_the_owner_drops() {
