@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use betterlite_db::budget_permission_rows::JsonData;
 use rstest::rstest;
 use serde_json::Number;

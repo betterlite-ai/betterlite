@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use betterlite_db::mcp_stored_contracts::JsonValue;
 use betterlite_db::model_secrets::DEFAULT_USER_ID;
 use rstest::rstest;

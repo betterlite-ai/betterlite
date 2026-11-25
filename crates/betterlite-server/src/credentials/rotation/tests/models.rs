@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use betterlite_db::budget_permission_rows::JsonData;
 
 use super::super::ENVIRONMENT_VARIABLES;

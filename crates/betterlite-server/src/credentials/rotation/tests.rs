@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 mod credentials;
 mod environment;
 mod models;
