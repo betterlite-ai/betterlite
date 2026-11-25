@@ -25,37 +25,37 @@ fn dispatch_and_proxy_errors_keep_the_original_cause() {
 
 use super::super::{Input, Op};
 use betterlite_oracle_helper_api::helper::Helper as _;
-use serde_json::json;
+use rstest::rstest;
+use serde_json::{Value, json};
 
-#[test]
-fn provider_events_keep_dictionary_nulls() {
+#[rstest]
+#[case::generic(
+    r#"{"type":"response.custom","absent":null,"payload":{"present":null,"items":[null,{"present":null}],"number":1.25}}"#,
+    "/payload",
+    "/absent"
+)]
+#[case::typed_response(
+    r#"{"type":"response.created","response":{"id":"wire-id","created_at":0,"output":[],"metadata":{"present":null,"items":[null,{"present":null}],"number":1.25}}}"#,
+    "/response/metadata",
+    "/response/instructions"
+)]
+fn provider_events_keep_dictionary_nulls(
+    #[case] event: &str,
+    #[case] dictionary: &str,
+    #[case] absent: &str,
+) {
     use super::provider_chunk;
     use betterlite_core::api::responses_ws_managed::provider::ProviderChunk;
 
-    for event in [
-        json!({"type":"response.custom", "absent":null,
-            "payload":{"present":null,"items":[null,{"present":null}],"number":1.25_f64}}),
-        json!({"type":"response.created", "response":{
-            "id":"wire-id","created_at":0,"output":[],
-            "metadata":{"present":null,"items":[null,{"present":null}],"number":1.25_f64}}}),
-    ] {
-        let encoded = serde_json::to_vec(&event).unwrap();
-        let Some(ProviderChunk::Json(forwarded)) = provider_chunk(&encoded).unwrap() else {
-            panic!("expected a forwarded JSON event");
-        };
-        let observed = serde_json::to_value(forwarded).unwrap();
-        let dictionary = if event["type"] == "response.custom" {
-            assert!(observed.get("absent").is_none());
-            &observed["payload"]
-        } else {
-            assert!(observed["response"].get("instructions").is_none());
-            &observed["response"]["metadata"]
-        };
-        assert_eq!(
-            dictionary,
-            &json!({"present":null,"items":[null,{"present":null}],"number":1.25_f64})
-        );
-    }
+    let Some(ProviderChunk::Json(forwarded)) = provider_chunk(event.as_bytes()).unwrap() else {
+        panic!("expected a forwarded JSON event");
+    };
+    let observed = serde_json::to_value(forwarded).unwrap();
+    let expected: Value =
+        serde_json::from_str(r#"{"present":null,"items":[null,{"present":null}],"number":1.25}"#)
+            .unwrap();
+    assert!(observed.pointer(absent).is_none());
+    assert_eq!(observed.pointer(dictionary), Some(&expected));
 }
 
 #[test]
