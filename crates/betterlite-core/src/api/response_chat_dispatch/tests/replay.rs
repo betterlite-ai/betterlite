@@ -60,14 +60,8 @@ async fn a_passed_through_chat_answer_keeps_its_images_annotations_and_reasoning
     assert_eq!(images[0].image_url.url, "https://img.test/a.png");
     assert_eq!(images[0].image_url.detail.as_deref(), Some("high"));
     assert_eq!(images[1].image_url.detail, None);
-    let annotations = message
-        .annotations
-        .as_ref()
-        .expect("the annotation stays typed");
-    let citation = annotations[0]
-        .url_citation
-        .as_ref()
-        .expect("the annotation carries its citation");
+    let annotations = message.annotations.as_ref().expect("annotations");
+    let citation = annotations[0].url_citation.as_ref().expect("citation");
     assert_eq!(citation.url.as_deref(), Some("https://a.test"));
     assert_eq!(citation.start_index, Some(0));
     assert_eq!(citation.end_index, Some(2));
