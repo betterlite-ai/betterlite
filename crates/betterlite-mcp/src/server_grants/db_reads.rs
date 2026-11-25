@@ -95,14 +95,12 @@ where
         for access_group_id in access_group_ids {
             match get_access_object(self.teams, access_group_id, requires_fresh_policy).await {
                 Ok(group) => server_ids.extend(group.access_mcp_server_ids),
-                Err(error) => {
-                    if requires_fresh_policy {
-                        return Err(GrantReadError::AccessGroup(error));
-                    }
-                    debug!(
-                        "Could not fetch access group {access_group_id} for resource field access_mcp_server_ids: {error}"
-                    );
+                Err(error) if requires_fresh_policy => {
+                    return Err(GrantReadError::AccessGroup(error));
                 }
+                Err(error) => debug!(
+                    "Could not fetch access group {access_group_id} for resource field access_mcp_server_ids: {error}"
+                ),
             }
         }
         Ok(server_ids.into_iter().collect())

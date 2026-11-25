@@ -75,13 +75,17 @@ impl FakeReads {
         self.log.lock().unwrap().clone()
     }
 
-    fn grant_read<T: Clone>(
+    fn grant_read<T, I>(
         &self,
         label: &str,
-        inputs: &dyn Debug,
+        inputs: &I,
         fresh: bool,
         script: &Scripted<T>,
-    ) -> Ready<Result<T, GrantReadError>> {
+    ) -> Ready<Result<T, GrantReadError>>
+    where
+        T: Clone,
+        I: Debug + ?Sized,
+    {
         self.record(format!("{label}:{inputs:?}:{fresh}"));
         match script {
             Scripted::Value(value) => ready(Ok(value.clone())),
@@ -89,7 +93,10 @@ impl FakeReads {
         }
     }
 
-    fn stored<T: Clone>(&self, entry: String, script: &Scripted<T>) -> Result<T, StoreDown> {
+    fn stored<T>(&self, entry: String, script: &Scripted<T>) -> Result<T, StoreDown>
+    where
+        T: Clone,
+    {
         self.record(entry);
         match script {
             Scripted::Value(value) => Ok(value.clone()),
