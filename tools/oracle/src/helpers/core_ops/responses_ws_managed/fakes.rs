@@ -94,17 +94,6 @@ pub(super) struct ScriptedProvider {
     pub(super) base_url: String,
 }
 
-impl ScriptedProvider {
-    fn record_call(&self, model: &str, call_kwargs: &IndexMap<String, Json>) {
-        let mut recorder = lock(&self.shared);
-        recorder.trace.push("provider".to_owned());
-        recorder.calls.push(RecordedCall {
-            model: model.to_owned(),
-            kwargs: call_kwargs.clone(),
-        });
-    }
-}
-
 #[async_trait]
 impl ResponsesStreaming for ScriptedProvider {
     type Error = ScriptedFailure;
@@ -115,7 +104,13 @@ impl ResponsesStreaming for ScriptedProvider {
         model: &str,
         call_kwargs: &IndexMap<String, Json>,
     ) -> Result<ScriptedStream, ProviderCallError<ScriptedFailure>> {
-        self.record_call(model, call_kwargs);
+        let mut recorder = lock(&self.shared);
+        recorder.trace.push("provider".to_owned());
+        recorder.calls.push(RecordedCall {
+            model: model.to_owned(),
+            kwargs: call_kwargs.clone(),
+        });
+        drop(recorder);
         dispatch(&self.outbound, &self.base_url, model, call_kwargs)
             .await
             .map_err(|error| {
@@ -147,23 +142,6 @@ pub(super) struct ScriptedQuota {
     pub(super) row: QuotaRow,
 }
 
-impl ScriptedQuota {
-    fn record_quota(
-        &self,
-        requested_model: Option<&str>,
-        estimated_input_tokens: i64,
-        estimated_output_tokens: i64,
-    ) {
-        let mut recorder = lock(&self.shared);
-        recorder.trace.push("quota".to_owned());
-        recorder.quotas.push(RecordedQuota {
-            model: requested_model.map(str::to_owned),
-            input_tokens: estimated_input_tokens,
-            output_tokens: estimated_output_tokens,
-        });
-    }
-}
-
 #[async_trait]
 impl ProjectQuotaCallback for ScriptedQuota {
     async fn enforce_frame_quota(
@@ -173,11 +151,14 @@ impl ProjectQuotaCallback for ScriptedQuota {
         estimated_input_tokens: i64,
         estimated_output_tokens: i64,
     ) -> Result<(), ErrorClass> {
-        self.record_quota(
-            requested_model,
-            estimated_input_tokens,
-            estimated_output_tokens,
-        );
+        let mut recorder = lock(&self.shared);
+        recorder.trace.push("quota".to_owned());
+        recorder.quotas.push(RecordedQuota {
+            model: requested_model.map(str::to_owned),
+            input_tokens: estimated_input_tokens,
+            output_tokens: estimated_output_tokens,
+        });
+        drop(recorder);
         match self.row.kind {
             QuotaKind::RateLimit => {
                 let message = format!("litellm.RateLimitError: {}", self.row.message);
