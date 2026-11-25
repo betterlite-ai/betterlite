@@ -161,13 +161,13 @@ impl PassthroughProvider for FakeProvider {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone();
-        match response {
-            Some(response) => Ok(response),
-            None => {
+        response.map_or_else(
+            || {
                 Err(PassthroughStage::Transform
                     .failed(io::Error::other("the fake transform failed")))
-            }
-        }
+            },
+            Ok,
+        )
     }
 
     fn build_complete_streaming_response(
