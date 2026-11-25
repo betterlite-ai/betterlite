@@ -106,6 +106,17 @@ CREATE TRIGGER slow_model BEFORE UPDATE ON "LiteLLM_ProxyModelTable"
     FOR EACH ROW EXECUTE FUNCTION slow_model_update();
 "#;
 
+// PostgreSQL reports a statement cancelled by statement_timeout as query_canceled, which the model transaction reports as its deadline.
+const CANCEL_MODEL_UPDATE: &str = r#"
+CREATE FUNCTION cancel_model_update() RETURNS trigger AS $$
+BEGIN
+    RAISE EXCEPTION 'canceling statement due to statement timeout' USING ERRCODE = 'query_canceled';
+    RETURN NEW;
+END $$ LANGUAGE plpgsql;
+CREATE TRIGGER cancel_model BEFORE UPDATE ON "LiteLLM_ProxyModelTable"
+    FOR EACH ROW EXECUTE FUNCTION cancel_model_update();
+"#;
+
 const FAIL_CONFIG_WRITE: &str = r#"
 CREATE FUNCTION fail_config_update() RETURNS trigger AS $$
 BEGIN
@@ -644,6 +655,32 @@ async fn the_model_transaction_stops_at_one_absolute_deadline() {
         Some("openai/gpt-4o-mini")
     );
     assert_eq!(open(second_model, NEW_KEY), None);
+    harness.close().await;
+}
+
+// A statement PostgreSQL cancels reports the model deadline rather than a database failure, even while the client still has time.
+#[tokio::test]
+async fn a_cancelled_model_statement_reports_the_model_timeout() {
+    let mut harness = Harness::start().await;
+    harness.model_timeout = Duration::from_secs(30);
+    harness.batch(CANCEL_MODEL_UPDATE).await;
+    harness
+        .seed_model(
+            "m1",
+            &object_json(vec![("model", sealed("openai/gpt-4o"))]),
+            "{}",
+        )
+        .await;
+    let error = harness.rotate(None).await.unwrap_err();
+    assert!(matches!(
+        error,
+        RotationError::Store(StoreError::ModelTimeout)
+    ));
+    let stored = harness.model("m1").await;
+    let JsonData::String(model) = &stored.params["model"] else {
+        panic!("the model parameter is text");
+    };
+    assert_eq!(open(model, OLD_KEY).as_deref(), Some("openai/gpt-4o"));
     harness.close().await;
 }
 
