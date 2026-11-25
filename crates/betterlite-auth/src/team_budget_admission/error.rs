@@ -85,9 +85,7 @@ fn outage_first(fault: &DatabaseFault) -> bool {
         .is_some_and(is_service_unavailable)
 }
 
-fn native_outage<Failure: std::fmt::Display>(
-    fault: &NativeDbError<Failure>,
-) -> Option<DatabaseFault> {
+fn native_outage<Failure>(fault: &NativeDbError<Failure>) -> Option<DatabaseFault> {
     if !is_native_transport_error(fault) {
         return None;
     }
