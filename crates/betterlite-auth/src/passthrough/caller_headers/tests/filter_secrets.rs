@@ -67,7 +67,8 @@ fn an_endpoint_configured_header_is_dropped_in_any_case() {
         "litellm_user_api_key".to_owned(),
         Json::Text(String::from("X-Endpoint-Key")),
     );
-    let config = settings(None, AuthModeFlags::default(), true, None, &[&endpoint]);
+    let endpoints = [&endpoint];
+    let config = settings(None, AuthModeFlags::default(), true, None, &endpoints);
     let map = headers(&[("X-ENDPOINT-KEY", "secret"), ("X-Safe", "v")]);
     let forwarded = caller_headers_without_secrets(&map, &caller(None, None), &[], &config);
     assert_eq!(sorted_names(&forwarded), vec!["x-safe"]);

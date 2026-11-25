@@ -67,7 +67,7 @@ fn claim_matches(presented: &TypedValue, name: &str, stored: &JsonData) -> bool 
     presented
         .json
         .get(name)
-        .map_or(stored_json.is_null(), |claim| *claim == stored_json)
+        .map_or_else(|| stored_json.is_null(), |claim| *claim == stored_json)
 }
 
 #[must_use]

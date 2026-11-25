@@ -37,7 +37,8 @@ fn the_global_override_is_lowercased() {
 #[test]
 fn a_pass_through_endpoint_names_its_caller_key_header() {
     let headers = endpoint_headers(Json::Text(String::from("X-Endpoint-Key")));
-    let config = settings(None, AuthModeFlags::default(), false, None, &[&headers]);
+    let endpoints = [&headers];
+    let config = settings(None, AuthModeFlags::default(), false, None, &endpoints);
     assert_eq!(
         texts(&operator_caller_key_names(&config)),
         vec!["x-endpoint-key"]
@@ -47,12 +48,13 @@ fn a_pass_through_endpoint_names_its_caller_key_header() {
 #[test]
 fn the_override_comes_before_the_endpoint_names() {
     let headers = endpoint_headers(Json::Text(String::from("X-Endpoint-Key")));
+    let endpoints = [&headers];
     let config = settings(
         None,
         AuthModeFlags::default(),
         false,
         Some("X-Override"),
-        &[&headers],
+        &endpoints,
     );
     assert_eq!(
         texts(&operator_caller_key_names(&config)),
@@ -64,13 +66,8 @@ fn the_override_comes_before_the_endpoint_names() {
 fn endpoint_names_are_deduplicated_among_themselves() {
     let first = endpoint_headers(Json::Text(String::from("X-Key")));
     let second = endpoint_headers(Json::Text(String::from("x-Key")));
-    let config = settings(
-        None,
-        AuthModeFlags::default(),
-        false,
-        None,
-        &[&first, &second],
-    );
+    let endpoints = [&first, &second];
+    let config = settings(None, AuthModeFlags::default(), false, None, &endpoints);
     assert_eq!(texts(&operator_caller_key_names(&config)), vec!["x-key"]);
 }
 
@@ -78,12 +75,13 @@ fn endpoint_names_are_deduplicated_among_themselves() {
 #[test]
 fn the_override_is_not_deduplicated_against_the_endpoint_names() {
     let headers = endpoint_headers(Json::Text(String::from("x-key")));
+    let endpoints = [&headers];
     let config = settings(
         None,
         AuthModeFlags::default(),
         false,
         Some("X-Key"),
-        &[&headers],
+        &endpoints,
     );
     assert_eq!(
         texts(&operator_caller_key_names(&config)),
@@ -95,13 +93,8 @@ fn the_override_is_not_deduplicated_against_the_endpoint_names() {
 fn distinct_endpoint_names_keep_their_order() {
     let first = endpoint_headers(Json::Text(String::from("X-B")));
     let second = endpoint_headers(Json::Text(String::from("x-a")));
-    let config = settings(
-        None,
-        AuthModeFlags::default(),
-        false,
-        None,
-        &[&first, &second],
-    );
+    let endpoints = [&first, &second];
+    let config = settings(None, AuthModeFlags::default(), false, None, &endpoints);
     assert_eq!(
         texts(&operator_caller_key_names(&config)),
         vec!["x-b", "x-a"]
@@ -111,14 +104,16 @@ fn distinct_endpoint_names_keep_their_order() {
 #[test]
 fn a_non_string_endpoint_value_names_no_header() {
     let headers = endpoint_headers(Json::Bool(true));
-    let config = settings(None, AuthModeFlags::default(), false, None, &[&headers]);
+    let endpoints = [&headers];
+    let config = settings(None, AuthModeFlags::default(), false, None, &endpoints);
     assert!(operator_caller_key_names(&config).is_empty());
 }
 
 #[test]
 fn an_endpoint_without_the_header_key_names_no_header() {
     let headers = JsonObject::new();
-    let config = settings(None, AuthModeFlags::default(), false, None, &[&headers]);
+    let endpoints = [&headers];
+    let config = settings(None, AuthModeFlags::default(), false, None, &endpoints);
     assert!(operator_caller_key_names(&config).is_empty());
 }
 
