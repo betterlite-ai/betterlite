@@ -46,7 +46,7 @@ mod support;
 
 use self::support::{FakeSpendLogs, StaticPayload};
 
-const PAYLOAD: &str = r#"{"user":"u1","api_key":"k1","model":"gpt-4o","model_group":"gpt-4o","custom_llm_provider":"openai","prompt_tokens":3,"completion_tokens":4,"request_id":"req-b070","startTime":"2025-01-02T03:04:05Z","endTime":"2025-01-02T03:04:06Z","request_tags":"[]","metadata":"{}","status":"success","spend":0.25}"#;
+const PAYLOAD: &str = r#"{"user":"u1","api_key":"k1","model":"gpt-4o","model_group":"gpt-4o","custom_llm_provider":"openai","prompt_tokens":3,"completion_tokens":4,"total_tokens":7,"request_id":"req-b070","startTime":"2025-01-02T03:04:05Z","endTime":"2025-01-02T03:04:06Z","request_tags":"[]","metadata":"{}","status":"success","spend":0.25}"#;
 const ACCOUNTING_ROW: &str = r#"{"user":"u1","api_key":"k1","model":"gpt-4o","model_group":"gpt-4o","custom_llm_provider":"openai","call_type":"acompletion","prompt_tokens":3,"completion_tokens":4,"request_id":"req-b070-accounting","startTime":"2025-01-02T03:04:05Z","endTime":"2025-01-02T03:04:06Z","request_tags":"[\"tag-a\",\"tag-b\"]","metadata":"{}","status":"success","spend":0.25,"team_id":"team-1","organization_id":"org-1","end_user":"eu-1","agent_id":"agent-1"}"#;
 const CONFIG: &str = "model_list:
   - {model_name: b070-spend, litellm_params: {model: openai/gpt-4o}}
@@ -62,8 +62,8 @@ fn settings() -> SpendRuntimeSettings {
     SpendRuntimeSettings {
         writer: SpendWriterSettings::default(),
         queue: SpendQueueSettings {
-            queue_capacity: 8,
-            aggregation_threshold: 6,
+            queue_capacity: 64,
+            aggregation_threshold: 32,
             flush_count: 8,
             default_lock_ttl_seconds: 60,
         },
