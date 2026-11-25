@@ -17,6 +17,7 @@ from typing_extensions import override
 
 import betterlite
 import betterlite._core_helpers as helpers_package
+import betterlite._model_info as model_info
 import betterlite.litellm_core_utils.core_helpers as reexported_helpers
 from betterlite import utils as utils_module
 from betterlite._core_helpers import (
@@ -46,12 +47,7 @@ from betterlite._core_helpers import (
 from betterlite._core_helpers.values import PythonValue
 from betterlite._cost import completion_cost, cost_per_token, response_cost_calculator
 from betterlite._cost.objects import private_fields
-from betterlite._model_info import (
-    get_max_tokens,
-    get_model_cost_mutation_generation,
-    get_model_info,
-    get_provider_info,
-)
+from betterlite._model_info import get_max_tokens, get_model_info, get_provider_info
 from betterlite._provider import get_llm_provider
 from betterlite._tokens import (
     create_pretrained_tokenizer,
@@ -748,8 +744,8 @@ def test_utils_names_same() -> None:
     assert utils_module.get_model_info is get_model_info
     assert utils_module.get_provider_info is get_provider_info
     assert utils_module.get_llm_provider is get_llm_provider
-    mutation_generation = utils_module.get_model_cost_mutation_generation
-    assert mutation_generation is get_model_cost_mutation_generation
+    mutation_generation = model_info.get_model_cost_mutation_generation
+    assert utils_module.get_model_cost_mutation_generation is mutation_generation
     assert utils_module.create_pretrained_tokenizer is create_pretrained_tokenizer
     assert utils_module.create_tokenizer is create_tokenizer
     assert utils_module.decode is decode
