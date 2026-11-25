@@ -438,6 +438,21 @@ fn jwt_explicit_prefix() {
 }
 
 #[test]
+fn jwt_key_metadata_grant_satisfies_require_auth_pass_through() {
+    let auth = jwt_key(vec![
+        ("team_id", JsonData::String("team-a".to_owned())),
+        (
+            "metadata",
+            object(&[("allowed_passthrough_routes", strings(&["/team-pass"]))]),
+        ),
+    ]);
+    let caller = RouteCaller::of_key(&auth);
+    // the metadata grant answers before the explicit JWT paths, which are empty here
+    require_auth_pass_through_access("/team-pass", &caller, &[]).unwrap();
+    require_auth_pass_through_access("/other", &caller, &[]).unwrap_err();
+}
+
+#[test]
 fn mcp_discovery_get() {
     let auth = key_of(vec![("allowed_routes", strings(&["llm_api_routes"]))]);
     let caller = RouteCaller::of_key(&auth);
