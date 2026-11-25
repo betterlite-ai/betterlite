@@ -152,7 +152,25 @@ fn answer(input: &Input) -> Result<Value, Failure> {
                 input.wildcard_only,
             )
         })),
-        Function::Paginate => paginate_answer(input),
+        Function::Paginate => {
+            let (Some(page), Some(size)) = (input.page, input.size) else {
+                return Err(Failure::Missing("paginate"));
+            };
+            let paginated = paginate_models(
+                &input.models,
+                page,
+                size,
+                input.total_count,
+                input.search.as_deref(),
+            );
+            Ok(json!({
+                "data": paginated.data,
+                "total_count": paginated.total_count,
+                "current_page": paginated.current_page,
+                "total_pages": paginated.total_pages,
+                "size": paginated.size,
+            }))
+        }
         Function::Datetime => Ok(json!(
             input
                 .value
@@ -214,26 +232,6 @@ fn enrich_answer(input: &Input) -> Result<Value, Failure> {
         &context,
     ))?;
     Ok(json!(enriched))
-}
-
-fn paginate_answer(input: &Input) -> Result<Value, Failure> {
-    let (Some(page), Some(size)) = (input.page, input.size) else {
-        return Err(Failure::Missing("paginate"));
-    };
-    let paginated = paginate_models(
-        &input.models,
-        page,
-        size,
-        input.total_count,
-        input.search.as_deref(),
-    );
-    Ok(json!({
-        "data": paginated.data,
-        "total_count": paginated.total_count,
-        "current_page": paginated.current_page,
-        "total_pages": paginated.total_pages,
-        "size": paginated.size,
-    }))
 }
 
 fn isoformat(found: &DateTime<Utc>) -> String {
