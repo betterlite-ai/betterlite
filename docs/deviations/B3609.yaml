@@ -27,6 +27,9 @@ deviations:
   - what: Client disconnect is a dropped chunk stream rather than a GeneratorExit exception; a completion guard's drop runs the finally block exactly once.
     why: Rust has no GeneratorExit and an async stream cannot await after it is dropped, so the terminal accounting lives in a Drop guard that sees the same state LiteLLM's finally block sees.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L260-L275
+  - what: The partial response cost is read as a decimal, plain or in exponent form; a cost outside the decimal range skips the partial usage record with a warning, where LiteLLM's float() records inf.
+    why: Spend is kept in decimals, and an infinite cost is not a usable spend value; the warning names the conversion error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L130-L136
 kept_bugs:
   - what: A client that disconnects mid-stream still produces a successful pass-through log row carrying the partial usage collected before the disconnect, because GeneratorExit skips the failure path and the finally block schedules success logging.
     why: Spend tracking relies on the partial row (LIT-2642); a working proxy counts the tokens it already forwarded, so betterlite keeps the behavior and documents it rather than turning the disconnect into a logged failure.
