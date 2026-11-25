@@ -72,7 +72,7 @@ class _OriginalError(Exception):
         super().__init__(error_str)
         if status_code is not None:
             self.status_code = status_code
-            # BaseLLMException gives a provider HTTP error this response; a synthesized status has none
+            # BaseLLMException builds this response; a synthesized status has none
             if not status_code_is_synthesized:
                 self.response = httpx.Response(
                     status_code=status_code,
