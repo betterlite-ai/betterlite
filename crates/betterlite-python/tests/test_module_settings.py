@@ -404,9 +404,9 @@ def test_setting_annotations_match_litellm_declarations() -> None:
     members = _members(settings_params)
     names = sorted(name for name, value in members.items() if value is None)
     bare = [name for name in names if name in theirs and name not in ours]
-    assert bare == []
+    assert bare == [], bare
     stray = [name for name in names if name not in theirs and name in ours]
-    assert stray == []
+    assert stray == [], stray
     for name in names:
         if name not in theirs or name in ALIASED_SETTINGS:
             continue
