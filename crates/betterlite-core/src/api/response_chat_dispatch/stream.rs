@@ -150,10 +150,15 @@ fn replay_chunk(response: &ChatResponse) -> StreamChunk {
     // the wrapper rebuilds the chunk's object and clock, so the replay carries only what it reads back
     StreamChunk {
         id: response.id.clone(),
+        object: String::from("chat.completion.chunk"),
+        created: 0,
         model: response.model.clone().unwrap_or_default(),
+        system_fingerprint: None,
         choices,
         usage: response.usage.clone(),
-        ..StreamChunk::default()
+        provider_specific_fields: None,
+        hidden_params: JsonObject::new(),
+        extra: JsonObject::new(),
     }
 }
 
@@ -199,9 +204,10 @@ fn close(
     wrapper: &mut StreamWrapper,
     pending: &mut VecDeque<Json>,
 ) -> Result<(), BridgeStreamError> {
-    if let Some(shaped) = wrapper.finish() {
-        pending.push_back(wrapper_view(&shaped?)?);
-    }
+    let Some(shaped) = wrapper.finish() else {
+        return Ok(());
+    };
+    pending.push_back(wrapper_view(&shaped?)?);
     Ok(())
 }
 

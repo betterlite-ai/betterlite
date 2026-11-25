@@ -30,20 +30,6 @@ where
     Execution: ResponsesExecution<Client> + Sync,
     Client: ?Sized + Sync,
 {
-    let asynchronous = matches!(call.kwargs.get("acompletion"), Some(Json::Bool(true)));
-    run(execution, call, asynchronous).await
-}
-
-// The delivery stream flag is read after build_request, because the builder promotes extra_body keys into the optional params
-async fn run<Execution, Client>(
-    execution: &Execution,
-    call: BridgeCall<'_, Client>,
-    asynchronous: bool,
-) -> Result<BridgeOutput, DispatchError<Execution::Error>>
-where
-    Execution: ResponsesExecution<Client> + Sync,
-    Client: ?Sized + Sync,
-{
     let BridgeCall {
         kwargs,
         model_response,
@@ -54,6 +40,7 @@ where
         post_stream,
         stamps,
     } = call;
+    let asynchronous = matches!(kwargs.get("acompletion"), Some(Json::Bool(true)));
     let mut input = super::input::input(kwargs)?;
     inject_stream(kwargs, &mut input.optional_params);
     let mut request = build_request(

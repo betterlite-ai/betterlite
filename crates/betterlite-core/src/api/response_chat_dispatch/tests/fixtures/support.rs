@@ -533,16 +533,7 @@ pub(crate) fn id_of(chunk: &Json) -> Option<String> {
 
 // A member of the first choice's delta, such as its tool calls or the thinking blocks a replay carried
 pub(crate) fn delta_member_of(chunk: &Json, name: &str) -> Option<Json> {
-    let Json::Object(fields) = chunk else {
-        return None;
-    };
-    let Json::List(choices) = fields.get("choices")? else {
-        return None;
-    };
-    let Json::Object(item) = choices.first()? else {
-        return None;
-    };
-    let Json::Object(delta) = item.get("delta")? else {
+    let Json::Object(delta) = choice(chunk)?.get("delta")? else {
         return None;
     };
     delta.get(name).cloned()
