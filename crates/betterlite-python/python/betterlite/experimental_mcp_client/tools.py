@@ -68,37 +68,38 @@ normalize_mcp_input_schema = _normalize_mcp_input_schema
 
 
 # A session from another package has no Rust session behind it, so pagination and calls refuse it
-def checked_session(session: MCPSession | RefusedArgument) -> None:
+def checked_session(session: MCPSession | RefusedArgument) -> MCPSession:
     match session:
         case MCPSession():
-            return
+            return session
         case object():
             raise UnsupportedMcpArgument("session")
 
 
 async def list_tools_with_pagination(
-    session: MCPSession, listing_deadline: float | None = None
+    session: MCPSession | RefusedArgument, listing_deadline: float | None = None
 ) -> list[Tool]:
-    checked_session(session)
-    return await session.load_mcp_tools(listing_deadline)
+    mcp_session = checked_session(session)
+    return await mcp_session.load_mcp_tools(listing_deadline)
 
 
 async def load_mcp_tools(
-    session: MCPSession, format: Literal["mcp", "openai"] = "mcp"  # noqa: A002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/tools.py#L159
+    session: MCPSession | RefusedArgument,
+    format: Literal["mcp", "openai"] = "mcp"  # noqa: A002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/tools.py#L159
 ) -> list[Tool] | list[ChatCompletionToolParam]:
-    checked_session(session)
+    mcp_session = checked_session(session)
     match format:
         case "openai":
-            return await session.load_openai_tools()
+            return await mcp_session.load_openai_tools()
         case object():
-            return await session.load_mcp_tools()
+            return await mcp_session.load_mcp_tools()
 
 
 async def call_mcp_tool(
-    session: MCPSession, call_tool_request_params: CallToolRequestParams
+    session: MCPSession | RefusedArgument, call_tool_request_params: CallToolRequestParams
 ) -> CallToolResult:
-    checked_session(session)
-    return await session.call_tool(
+    mcp_session = checked_session(session)
+    return await mcp_session.call_tool(
         call_tool_request_params.name, call_tool_request_params.arguments
     )
 
@@ -140,7 +141,7 @@ def transform_openai_tool_call_request_to_mcp_tool_call_request(
 
 
 async def call_openai_tool(
-    session: MCPSession, openai_tool: ChatCompletionMessageToolCall
+    session: MCPSession | RefusedArgument, openai_tool: ChatCompletionMessageToolCall
 ) -> CallToolResult:
     request = transform_openai_tool_call_request_to_mcp_tool_call_request(openai_tool)
     return await call_mcp_tool(session, request)

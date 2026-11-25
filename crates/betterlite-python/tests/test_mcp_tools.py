@@ -1,7 +1,7 @@
 import asyncio
 import importlib
 import json
-from typing import Final, NotRequired, Protocol, TypedDict, cast
+from typing import Final, NotRequired, Protocol, TypedDict
 
 import pytest
 from litellm.experimental_mcp_client.client import MCPClient as LiteLLMClient
@@ -248,7 +248,7 @@ async def closed_after_cancellation(server: Server) -> str:
 
 
 async def foreign_refused() -> str:
-    session = cast(MCPSession, object())  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/tools.py#L159-L207
+    session = object()
     try:
         await load_mcp_tools(session)
     except UnsupportedMcpArgument as failure:
