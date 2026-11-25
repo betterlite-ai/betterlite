@@ -99,7 +99,8 @@ fn scrub_cleans_both_guardrail_shapes() {
     let (logs, _guard) = capture_logs();
     let row = json!({"guardrails": [
         {"v1": {"callbacks": ["s3://bucket/g.py", "presidio"], "default_on": true}},
-        {"guardrail_name": "v2", "litellm_params": {"guardrail": "gcs://bucket/g.py", "callbacks": ["gcs://x"]}},
+        {"guardrail_name": "v2", "litellm_params": {"guardrail": "gcs://bucket/g.py", "callbacks": ["gcs://x", "s3://y"]}},
+        {"v3": {"callbacks": ["presidio", "langfuse"]}},
         "skipped"
     ]});
     let scrubbed = scrub_remote_modules(Section::LitellmSettings, &row);
@@ -108,6 +109,7 @@ fn scrub_cleans_both_guardrail_shapes() {
         json!([
             {"v1": {"callbacks": ["presidio"], "default_on": true}},
             {"guardrail_name": "v2", "litellm_params": {"guardrail": null, "callbacks": []}},
+            {"v3": {"callbacks": ["presidio", "langfuse"]}},
             "skipped"
         ])
     );
@@ -116,7 +118,13 @@ fn scrub_cleans_both_guardrail_shapes() {
         contents
             .matches("Refused 1 remote-URL entries from DB-overlay litellm_settings.guardrails[...].callbacks")
             .count(),
-        2
+        1
+    );
+    assert_eq!(
+        contents
+            .matches("Refused 2 remote-URL entries from DB-overlay litellm_settings.guardrails[...].callbacks")
+            .count(),
+        1
     );
     assert!(!contents.contains("Refused 0"));
     assert!(contents.contains(
