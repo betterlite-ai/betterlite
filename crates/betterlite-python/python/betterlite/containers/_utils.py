@@ -104,7 +104,10 @@ def decode_managed_container_id_for_request(  # ast-grep-ignore: no-long-names
     model_id = decoded.get("model_id")
     if model_id is not None and litellm_params.get("model_id") is None:
         litellm_params["model_id"] = model_id
-    return decoded.get("response_id", container_id), provider, litellm_params
+    response_id = decoded.get("response_id")
+    if response_id is None:
+        response_id = container_id
+    return response_id, provider, litellm_params
 
 
 # a creation or list call keeps only the keywords LiteLLM reads, and only when the caller gave them
