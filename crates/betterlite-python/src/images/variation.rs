@@ -1,6 +1,6 @@
 use super::convert::fields::target;
 use super::convert::{DEFAULT_IMAGE_NAME, ImageAnswer, ImageCallWire, OPENAI_PROVIDER, images};
-use super::error::{CallFailure, convert_failure, provider_failure};
+use super::error::{CallFailure, connection_failure, convert_failure, provider_failure};
 use super::session::{ImageSession, SilentImageLogger, call_setup, now_seconds};
 use betterlite_openai::api::image_contracts::records::ImageFile;
 use betterlite_openai::image_variations::error::{ImageVariationSource, OpenAiImageVariationError};
@@ -24,12 +24,13 @@ pub(crate) async fn variation(
     let (model, provider) =
         target(&call.arguments).map_err(|error| convert_failure(&error, None, None))?;
     if provider != OPENAI_PROVIDER {
-        return Err(CallFailure::plain(
-            "ValueError",
+        return Err(local_failure(
             format!(
                 "Invalid image variation provider: {provider}. Supported providers are: LITELLM_IMAGE_VARIATION_PROVIDERS"
             ),
-            Some(model),
+            &model,
+            &provider,
+            async_call,
         ));
     }
     let request = request(session, &call, &files, async_call, &model)?;
@@ -51,15 +52,17 @@ fn request(
         OPENAI_PROVIDER,
     )?;
     let Some(api_key) = setup.credentials.api_key else {
-        return Err(CallFailure::plain(
-            "ValueError",
+        return Err(local_failure(
             String::from("API key is required for OpenAI image variations"),
-            Some(model.to_owned()),
+            model,
+            OPENAI_PROVIDER,
+            async_call,
         ));
     };
     Ok(ImageVariationRequest {
         model: Some(model.to_owned()),
-        image: first_image(files, model)?,
+        image: first_image(files, model)
+            .map_err(|error| local_failure(error.message, model, OPENAI_PROVIDER, async_call))?,
         optional_params: RequestMap::new(),
         headers: Some(setup.headers),
         api_key: Some(api_key),
@@ -96,15 +99,16 @@ pub(crate) fn first_image(
     files: &[(String, CallFile)],
     model: &str,
 ) -> Result<ImageFile, CallFailure> {
-    let mut found = images(files, "image", DEFAULT_IMAGE_NAME);
-    if found.is_empty() {
-        return Err(CallFailure::plain(
-            "ValueError",
-            String::from("image is required for image variations"),
-            Some(model.to_owned()),
-        ));
-    }
-    Ok(found.remove(0))
+    images(files, "image", DEFAULT_IMAGE_NAME)
+        .into_iter()
+        .next()
+        .ok_or_else(|| {
+            CallFailure::plain(
+                "ValueError",
+                String::from("image is required for image variations"),
+                Some(model.to_owned()),
+            )
+        })
 }
 
 fn failure(
@@ -123,3 +127,11 @@ fn failure(
 }
 
 mod tests;
+
+fn local_failure(message: String, model: &str, provider: &str, async_call: bool) -> CallFailure {
+    if async_call {
+        connection_failure(message, Some(model.to_owned()), Some(provider.to_owned()))
+    } else {
+        CallFailure::plain("ValueError", message, Some(model.to_owned()))
+    }
+}

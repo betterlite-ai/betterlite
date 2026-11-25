@@ -18,6 +18,7 @@ use betterlite_openai::api::image_contracts::records::ImageFile;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_sdk::call_files::CallFile;
 use betterlite_sdk::call_setup::RequestMap;
+use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Number;
 use std::collections::BTreeMap;
@@ -587,4 +588,68 @@ fn request_explicit_credentials_drop_empty_text() {
     assert_eq!(resolved.api_base.as_deref(), Some("https://example.test"));
     assert_eq!(resolved.organization.as_deref(), Some("team"));
     assert!(resolved.api_key.is_none());
+}
+
+#[rstest]
+#[case::unauthorized(401, "AuthenticationError")]
+#[case::server_error(500, "InternalServerError")]
+fn error_edit_provider_class(#[case] status: u16, #[case] kind: &str) {
+    let response = UpstreamResponse {
+        status,
+        headers: http::HeaderMap::new(),
+        body: br#"{"error":{"message":"provider failure"}}"#.to_vec(),
+    };
+    let failure = reply(&response, "dall-e-2", "openai", &redactor()).unwrap_err();
+    assert_eq!(failure.kind, kind);
+    assert_eq!(failure.message, "provider failure");
+}
+
+#[rstest]
+#[case::sync(false, "ValueError")]
+#[case::asynchronous(true, "APIConnectionError")]
+#[tokio::test]
+async fn error_variation_missing_key_class(#[case] asynchronous: bool, #[case] kind: &str) {
+    let (wire, files) = call(r#"{"image":"unused"}"#);
+    let failure = variation(&session(), wire, files, asynchronous)
+        .await
+        .unwrap_err();
+    assert_eq!(failure.kind, kind);
+    assert!(failure.message.contains("API key is required"));
+}
+
+#[test]
+fn request_generation_call_drop_and_extra_body() {
+    let (wire, _) =
+        call(r#"{"style":"vivid","drop_params":true,"extra_body":{"seed":7},"unknown":"kept"}"#);
+    let options = generation_options(&wire.arguments, "dall-e-2", false).unwrap();
+    assert!(!options.contains_key("style"));
+    let expected = RequestMap::from_iter([
+        (String::from("seed"), Json::Number(Number::from(7_u32))),
+        (String::from("unknown"), Json::Text(String::from("kept"))),
+    ]);
+    assert_eq!(options.get("extra_body"), Some(&Json::Object(expected)));
+}
+
+#[rstest]
+#[case::provider(
+    r#"{"model":"vertex_ai/foo"}"#,
+    "vertex_ai",
+    "Invalid image variation provider"
+)]
+#[case::file(
+    r#"{"model":"dall-e-2","api_key":"key"}"#,
+    "openai",
+    "image is required"
+)]
+#[tokio::test]
+async fn error_async_variation_local(
+    #[case] input: &str,
+    #[case] provider: &str,
+    #[case] message: &str,
+) {
+    let (wire, files) = call(input);
+    let failure = variation(&session(), wire, files, true).await.unwrap_err();
+    assert_eq!(failure.kind, "APIConnectionError");
+    assert_eq!(failure.provider.as_deref(), Some(provider));
+    assert!(failure.message.contains(message));
 }

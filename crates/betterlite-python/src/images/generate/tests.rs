@@ -14,7 +14,11 @@ use std::time::Duration;
 #[tokio::test]
 async fn generate_sends_prompt_and_decodes_response() {
     let serving = serve(
-        reply("200 OK", &[], r#"{"created":11,"data":[]}"#),
+        reply(
+            "200 OK",
+            &[("x-request-id", "image-request")],
+            r#"{"created":11,"data":[]}"#,
+        ),
         Duration::ZERO,
     )
     .unwrap();
@@ -35,6 +39,13 @@ async fn generate_sends_prompt_and_decodes_response() {
     assert_eq!(
         answer.hidden_params.get("model"),
         Some(&Json::Text(String::from("dall-e-2")))
+    );
+    let expected = Json::Text(String::from("image-request"));
+    assert!(
+        matches!(answer.hidden_params.get("headers"), Some(Json::Object(fields)) if fields.get("x-request-id") == Some(&expected))
+    );
+    assert!(
+        matches!(answer.hidden_params.get("additional_headers"), Some(Json::Object(fields)) if fields.get("llm_provider-x-request-id") == Some(&expected))
     );
     let sent = serving.finish().unwrap();
     assert_eq!(sent.line, "POST /v1/images/generations HTTP/1.1");

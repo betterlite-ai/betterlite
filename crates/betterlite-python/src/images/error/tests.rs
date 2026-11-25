@@ -62,7 +62,7 @@ fn provider_failure_keeps_status_and_provider_context() {
     assert_eq!(failure.message, "rate limited");
     assert_eq!(failure.model.as_deref(), Some("dall-e-2"));
     assert_eq!(failure.provider.as_deref(), Some("openai"));
-    assert!(failure.class.is_some());
+    assert_eq!(failure.kind, "RateLimitError");
 }
 
 #[test]

@@ -42,7 +42,9 @@ pub(crate) async fn generate(
             &session.redactor,
         )
     })?;
-    Ok(ImageAnswer::new(outcome.reply, Some(&model)))
+    let mut answer = ImageAnswer::new(outcome.reply, Some(&model));
+    answer.set_headers(outcome.provider_headers);
+    Ok(answer)
 }
 
 pub(crate) fn request(

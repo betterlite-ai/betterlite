@@ -1,17 +1,19 @@
-use super::convert::fields::{target, text};
+use super::convert::fields::{target, text, timeout};
 use super::convert::options::edit_options;
 use super::convert::{
-    DEFAULT_IMAGE_NAME, DEFAULT_MASK_NAME, ImageAnswer, ImageCallWire, OPENAI_PROVIDER,
-    content_type_for, images,
+    ConvertError, DEFAULT_IMAGE_NAME, DEFAULT_MASK_NAME, ImageAnswer, ImageCallWire,
+    OPENAI_PROVIDER, content_type_for, images,
 };
 use super::error::{CallFailure, connection_failure, convert_failure, provider_failure};
 use super::session::{CallSetup, ImageSession, call_setup, now_seconds};
+use betterlite_config::sections::{Section as _, image_edit_call};
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::multipart::MultipartPart;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::image_contracts::records::{ImageFile, ImageFiles};
 use betterlite_openai::image_edits::environment::{complete_url, validate_environment};
+use betterlite_openai::image_edits::error::ImageEditError;
 use betterlite_openai::image_edits::family::select_image_edit_family;
 use betterlite_openai::image_edits::file::{ImageEditFile, multipart_parts};
 use betterlite_openai::image_edits::request::{
@@ -23,8 +25,11 @@ use betterlite_openai::image_generation::transport::ImageGenerationTransport as 
 use betterlite_redact::secret::Redactor;
 use betterlite_sdk::call_files::CallFile;
 use betterlite_sdk::call_setup::RequestMap;
-use http::Method;
+use http::header::AUTHORIZATION;
+use http::{HeaderMap, HeaderValue, Method};
 use serde::Deserialize;
+use std::collections::BTreeMap;
+use std::time::Duration;
 use uuid::Uuid;
 
 const MISSING_API_KEY: &str = "The api_key client option must be set either by passing api_key to the client or by setting the OPENAI_API_KEY environment variable";
@@ -66,15 +71,8 @@ fn outbound(
     setup: &CallSetup,
 ) -> Result<OutboundRequest, CallFailure> {
     let provider = OPENAI_PROVIDER;
-    let mut form = form(call, files, model, provider, &session.redactor)?;
-    for (_field, file) in &mut form.files {
-        let name = file
-            .filename
-            .clone()
-            .unwrap_or_else(|| DEFAULT_IMAGE_NAME.to_owned());
-        file.content_type = Some(content_type_for(&name));
-    }
-    let url = complete_url(&setup.credentials.api_base).map_err(|error| {
+    let form = form(call, files, model, provider, &session.redactor)?;
+    let map_error = |error: ImageEditError| {
         provider_failure(
             error.to_string(),
             error.status(),
@@ -82,15 +80,11 @@ fn outbound(
             provider,
             &session.redactor,
         )
-    })?;
-    let headers = validate_environment(&setup.headers, &setup.credentials).map_err(|error| {
-        provider_failure(
-            error.to_string(),
-            error.status(),
-            model,
-            provider,
-            &session.redactor,
-        )
+    };
+    let url = complete_url(&setup.credentials.api_base).map_err(map_error)?;
+    let headers = edit_headers(setup).map_err(map_error)?;
+    let deadline = edit_timeout(&call.arguments, &session.environment).map_err(|error| {
+        convert_failure(&error, Some(model.to_owned()), Some(provider.to_owned()))
     })?;
     Ok(OutboundRequest {
         method: Method::POST,
@@ -101,7 +95,7 @@ fn outbound(
             boundary: Uuid::new_v4().to_string(),
             parts: parts(&form.data, &form.files),
         },
-        deadline: setup.timeout,
+        deadline,
     })
 }
 
@@ -136,9 +130,16 @@ pub(crate) fn form(
         mask,
         options,
     };
-    transform_image_edit_request(select_image_edit_family(model), &request).map_err(|error| {
-        provider_failure(error.to_string(), error.status(), model, provider, redactor)
-    })
+    let mut form = transform_image_edit_request(select_image_edit_family(model), &request)
+        .map_err(|error| {
+            provider_failure(error.to_string(), error.status(), model, provider, redactor)
+        })?;
+    for (_field, file) in &mut form.files {
+        file.content_type = Some(content_type_for(
+            file.filename.as_deref().unwrap_or(DEFAULT_IMAGE_NAME),
+        ));
+    }
+    Ok(form)
 }
 
 async fn round(
@@ -221,3 +222,33 @@ pub(crate) fn status_message(body: &[u8]) -> String {
 }
 
 mod tests;
+
+fn edit_timeout(
+    arguments: &RequestMap,
+    environment: &BTreeMap<String, String>,
+) -> Result<Duration, ConvertError> {
+    if let Some(given) = timeout(arguments)? {
+        return Ok(given);
+    }
+    let settings = image_edit_call::Raw::default()
+        .convert(environment)
+        .map_err(|source| ConvertError::Config(Box::new(source)))?;
+    Duration::try_from_secs_f64(settings.request_timeout_seconds)
+        .map_err(|source| ConvertError::Timeout { source })
+}
+
+fn edit_headers(setup: &CallSetup) -> Result<HeaderMap, ImageEditError> {
+    let mut headers = validate_environment(&setup.headers, &setup.credentials)?;
+    if let Some((_, value)) = setup
+        .headers
+        .iter()
+        .rev()
+        .find(|(name, _)| name.eq_ignore_ascii_case("authorization"))
+    {
+        let mut authorization =
+            HeaderValue::from_str(value).map_err(ImageEditError::Authorization)?;
+        authorization.set_sensitive(true);
+        headers.insert(AUTHORIZATION, authorization);
+    }
+    Ok(headers)
+}

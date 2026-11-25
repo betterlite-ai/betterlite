@@ -1,15 +1,16 @@
 use super::convert::ConvertError;
 use crate::completion::error::SessionError as CompletionSessionError;
+use crate::embeddings::convert::NativeEmbeddingErrorPayload;
+use betterlite_context::media_optional_params::error::MediaParamsError;
 use betterlite_error::dispatch::{DispatchInput, RawException, RawExceptionBody, dispatch};
-use betterlite_error::error::{ErrorClass, ErrorContext, class_message};
+use betterlite_error::error::{ErrorClass, ErrorContext};
 use betterlite_redact::error::RedactionError;
 use betterlite_redact::secret::Redactor;
-use betterlite_sdk::call_wrapper::error::{class_name, class_status};
+use betterlite_sdk::call_wrapper::error::class_name;
 use pyo3::PyErr;
 use pyo3::create_exception;
 use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
 use serde::Serialize;
-use std::collections::BTreeMap;
 
 create_exception!(betterlite_native, NativeImageError, PyException);
 
@@ -26,13 +27,15 @@ pub(crate) enum SessionError {
     },
 }
 
-// What every failure carries: either a mapped class, or LiteLLM's bare ValueError for image_variation.
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub(crate) struct CallFailure {
+    #[serde(rename = "type")]
     pub(crate) kind: String,
     pub(crate) message: String,
     pub(crate) model: Option<String>,
+    #[serde(rename = "llm_provider")]
     pub(crate) provider: Option<String>,
+    #[serde(skip)]
     pub(crate) class: Option<Box<ErrorClass>>,
 }
 
@@ -47,66 +50,26 @@ impl CallFailure {
         }
     }
 
-    fn from_class(
-        class: ErrorClass,
-        message: String,
-        model: Option<String>,
-        provider: Option<String>,
-    ) -> Self {
+    fn from_class(class: ErrorClass, message: String) -> Self {
+        let metadata = class.metadata();
         Self {
             kind: class_name(&class).to_owned(),
             message,
-            model,
-            provider,
+            model: metadata.model,
+            provider: metadata.provider,
             class: Some(Box::new(class)),
         }
     }
 }
 
-#[derive(Debug, Serialize)]
-pub(crate) struct NativeImageErrorPayload {
-    #[serde(rename = "type")]
-    pub(crate) kind: String,
-    pub(crate) message: String,
-    pub(crate) status_code: Option<u16>,
-    pub(crate) llm_provider: Option<String>,
-    pub(crate) model: Option<String>,
-    pub(crate) headers: BTreeMap<String, String>,
-}
-
-impl NativeImageErrorPayload {
-    fn from_class(class: &ErrorClass) -> Self {
-        let mut headers = BTreeMap::new();
-        if let ErrorClass::RateLimit(details) = class {
-            headers.clone_from(&details.headers);
-        }
-        let metadata = class.metadata();
-        Self {
-            kind: class_name(class).to_owned(),
-            message: class_message(class),
-            status_code: class_status(class),
-            llm_provider: metadata.provider,
-            model: metadata.model,
-            headers,
-        }
-    }
-}
-
 pub(crate) fn class_error(failure: &CallFailure) -> PyErr {
-    let payload = failure.class.as_ref().map_or_else(
-        || NativeImageErrorPayload {
-            kind: failure.kind.clone(),
-            message: failure.message.clone(),
-            status_code: None,
-            llm_provider: failure.provider.clone(),
-            model: failure.model.clone(),
-            headers: BTreeMap::new(),
-        },
-        |class| NativeImageErrorPayload::from_class(class),
+    let encoded = failure.class.as_ref().map_or_else(
+        || serde_json::to_string(failure),
+        |class| serde_json::to_string(&NativeEmbeddingErrorPayload::from_class(class)),
     );
-    match serde_json::to_string(&payload) {
+    match encoded {
         Ok(text) => NativeImageError::new_err(text),
-        Err(_encoding) => PyRuntimeError::new_err(payload.message),
+        Err(_encoding) => PyRuntimeError::new_err(failure.message.clone()),
     }
 }
 
@@ -141,15 +104,10 @@ pub(crate) fn connection_failure(
     model: Option<String>,
     provider: Option<String>,
 ) -> CallFailure {
-    let class = ErrorClass::ApiConnection(Box::new(context(
-        message.clone(),
-        model.clone(),
-        provider.clone(),
-    )));
-    CallFailure::from_class(class, message, model, provider)
+    let class = ErrorClass::ApiConnection(Box::new(context(message.clone(), model, provider)));
+    CallFailure::from_class(class, message)
 }
 
-// A provider answer is dispatched from its status and message exactly as LiteLLM's exception_type would.
 pub(crate) fn provider_failure(
     message: String,
     status: Option<u16>,
@@ -168,12 +126,7 @@ pub(crate) fn provider_failure(
         exception_type: String::new(),
     };
     let class = dispatch(&DispatchInput::Raw(Box::new(raw)), redactor);
-    CallFailure::from_class(
-        class,
-        message,
-        Some(model.to_owned()),
-        Some(provider.to_owned()),
-    )
+    CallFailure::from_class(class, message)
 }
 
 // LiteLLM's local ValueErrors become connection errors, except the edit parameter check's own class
@@ -183,18 +136,17 @@ pub(crate) fn convert_failure(
     provider: Option<String>,
 ) -> CallFailure {
     let message = error.to_string();
-    if matches!(
+    let details = Box::new(context(message.clone(), model, provider));
+    let class = if matches!(
         error,
-        ConvertError::UnsupportedParams { .. } | ConvertError::Unsupported(_)
+        ConvertError::UnsupportedParams { .. }
+            | ConvertError::Media(MediaParamsError::ImageUnsupported { .. })
     ) {
-        let class = ErrorClass::UnsupportedParams(Box::new(context(
-            message.clone(),
-            model.clone(),
-            provider.clone(),
-        )));
-        return CallFailure::from_class(class, message, model, provider);
-    }
-    connection_failure(message, model, provider)
+        ErrorClass::UnsupportedParams(details)
+    } else {
+        ErrorClass::ApiConnection(details)
+    };
+    CallFailure::from_class(class, message)
 }
 
 mod tests;

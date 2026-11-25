@@ -7,6 +7,7 @@ use crate::images::session::ImageSession;
 use betterlite_http_fixture::reply::reply;
 use betterlite_http_fixture::server::serve;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use rstest::rstest;
 use std::collections::BTreeMap;
 use std::time::Duration;
 
@@ -37,14 +38,13 @@ async fn variation_sends_file_and_decodes_response() {
     assert!(sent.body.contains("filename=\"cat.png\""));
 }
 
+#[rstest]
+#[case::unauthorized("401 Unauthorized", "AuthenticationError")]
+#[case::server_error("500 Internal Server Error", "InternalServerError")]
 #[tokio::test]
-async fn variation_maps_provider_status_and_message() {
+async fn variation_maps_provider_status_and_message(#[case] status: &str, #[case] kind: &str) {
     let serving = serve(
-        reply(
-            "401 Unauthorized",
-            &[],
-            r#"{"error":{"message":"bad key"}}"#,
-        ),
+        reply(status, &[], r#"{"error":{"message":"bad key"}}"#),
         Duration::ZERO,
     )
     .unwrap();
@@ -62,6 +62,7 @@ async fn variation_maps_provider_status_and_message() {
     };
     let failure = variation(&session, call, files, false).await.unwrap_err();
     assert!(failure.message.contains("bad key"));
+    assert_eq!(failure.kind, kind);
     assert_eq!(failure.model.as_deref(), Some("dall-e-2"));
     let _request = serving.finish().unwrap();
 }

@@ -2,6 +2,9 @@ pub(crate) mod fields;
 pub(crate) mod options;
 mod tests;
 
+use betterlite_config::loader::ConfigError;
+use betterlite_context::media_optional_params::error::MediaParamsError;
+use betterlite_models::call_helpers::headers::ProviderHeaderProjection;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::image_contracts::records::ImageFile;
 use betterlite_openai::image_generation::reply::ImageGenerationReply;
@@ -37,9 +40,13 @@ pub(crate) struct SettingsWire {
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum ConvertError {
+    #[error(transparent)]
+    Config(Box<ConfigError>),
+    #[error(transparent)]
+    Media(#[from] MediaParamsError),
     #[error("the native request text is not JSON of the expected shape: {source}")]
     Json {
-        #[source]
+        #[from]
         source: serde_json::Error,
     },
     #[error("the answer could not be written as JSON: {source}")]
@@ -61,8 +68,6 @@ pub(crate) enum ConvertError {
     Files(#[from] CallFilesError),
     #[error("The following parameters are not supported for model {model}: {params}")]
     UnsupportedParams { model: String, params: String },
-    #[error("{0}")]
-    Unsupported(String),
 }
 
 #[derive(Debug, Serialize)]
@@ -73,6 +78,20 @@ pub(crate) struct ImageAnswer {
 }
 
 impl ImageAnswer {
+    pub(crate) fn set_headers(&mut self, projection: ProviderHeaderProjection) {
+        let headers = projection
+            .headers
+            .into_iter()
+            .map(|(name, value)| (name, Json::Text(value)))
+            .collect();
+        self.hidden_params
+            .insert(String::from("headers"), Json::Object(headers));
+        self.hidden_params.insert(
+            String::from("additional_headers"),
+            Json::Object(projection.additional_headers),
+        );
+    }
+
     pub(crate) fn new(reply: ImageGenerationReply, model: Option<&str>) -> Self {
         let mut hidden_params = IndexMap::new();
         if let Some(name) = model {
@@ -96,13 +115,11 @@ pub(crate) fn parse(
 }
 
 pub(crate) fn images(files: &[(String, CallFile)], key: &str, fallback: &str) -> Vec<ImageFile> {
-    let mut found = Vec::new();
-    for (name, file) in files {
-        if name == key {
-            found.push(image_file(file, fallback));
-        }
-    }
-    found
+    files
+        .iter()
+        .filter(|(name, _)| name == key)
+        .map(|(_, file)| image_file(file, fallback))
+        .collect()
 }
 
 pub(crate) fn image_file(file: &CallFile, default_name: &str) -> ImageFile {

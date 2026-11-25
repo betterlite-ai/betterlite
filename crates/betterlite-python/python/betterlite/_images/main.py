@@ -6,6 +6,7 @@ from pydantic import JsonValue, TypeAdapter
 from betterlite._endpoints import (
     CallPayload,
     CallValue,
+    model_from_arguments,
     read_settings,
     to_call_payload,
 )
@@ -61,27 +62,15 @@ def image_generation(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/li
     custom_llm_provider: CallValue = None,
     **kwargs: CallValue,
 ) -> ImageResponse:
-    return image_response(
-        call_image(
-            NativeImageSession("{}").generate,
-            image_payload(
-                {
-                    **kwargs,
-                    **dict(
-                        zip(
-                            GENERATION_NAMES,
-                            (prompt, model, n, quality, response_format, size, style, user,
-                             timeout, api_key, api_base, api_version, custom_llm_provider),
-                            strict=False,
-                        )
-                    ),
-                }
-            ),
-        )
-    )
+    given = (prompt, model, n, quality, response_format, size, style, user,
+             timeout, api_key, api_base, api_version, custom_llm_provider)
+    named = {**kwargs, **dict(zip(GENERATION_NAMES, given, strict=False))}
+    payload = image_payload(named)
+    return image_response(call_image(NativeImageSession("{}").generate, payload))
 
 
 async def aimage_generation(*args: CallValue, **kwargs: CallValue) -> ImageResponse:
+    _ = model_from_arguments(args, kwargs)
     arguments = {**kwargs, **dict(zip(GENERATION_NAMES, args, strict=False))}
     session = NativeImageSession("{}")
     return image_response(await acall_image(session.agenerate, image_payload(arguments)))
@@ -128,21 +117,10 @@ def image_edit(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/
     custom_llm_provider: CallValue = None,
     **kwargs: CallValue,
 ) -> ImageResponse:
-    payload = image_payload(
-        {
-            **kwargs,
-            **dict(
-                zip(
-                    EDIT_NAMES,
-                    (
-                        image, prompt, model, mask, n, quality, response_format, size, user,
-                        extra_headers, extra_query, extra_body, timeout, custom_llm_provider,
-                    ),
-                    strict=False,
-                )
-            ),
-        }
-    )
+    given = (image, prompt, model, mask, n, quality, response_format, size, user,
+             extra_headers, extra_query, extra_body, timeout, custom_llm_provider)
+    named = {**kwargs, **dict(zip(EDIT_NAMES, given, strict=False))}
+    payload = image_payload(named)
     session = NativeImageSession("{}")
     return image_response(call_image(session.edit, payload))
 
@@ -174,7 +152,10 @@ async def aimage_edit(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/l
 
 def image_payload(values: Mapping[str, CallValue]) -> CallPayload:
     payload: dict[str, CallValue] = {"settings": read_settings(SETTINGS)}
-    payload["arguments"] = {name: value for name, value in values.items() if value is not None}
+    payload["arguments"] = {
+        name: value for name, value in values.items()
+        if value is not None and name not in ("client", "logger_fn", "shared_session")
+    }
     payload.update({name: values.get(name) for name in ("client", "logger_fn", "shared_session")})
     return to_call_payload(payload)
 

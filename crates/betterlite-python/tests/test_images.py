@@ -3,8 +3,10 @@ import importlib
 import inspect
 import io
 import json
+import logging
 import threading
 from contextlib import closing
+from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import ClassVar, Final, Protocol
 
@@ -12,8 +14,14 @@ import pytest
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import TypedDict
 
+from betterlite._completion.errors import UnsupportedCallArgument
 from betterlite._images import main as images_main
-from betterlite.exceptions import AuthenticationError, BadRequestError, UnsupportedParamsError
+from betterlite.exceptions import (
+    APIConnectionError,
+    AuthenticationError,
+    BadRequestError,
+    UnsupportedParamsError,
+)
 from betterlite.main import (
     aimage_edit,
     aimage_generation,
@@ -43,6 +51,7 @@ AUTH_TEXT: Final = "Incorrect API key provided: bad-key"
 PNG_BYTES: Final = b"\x89PNG\r\n\x1a\nfirst"
 JPEG_BYTES: Final = b"\xff\xd8\xff\xe0second"
 MASK_BYTES: Final = b"\x89PNG\r\n\x1a\nmask"
+SEED: Final = 7
 CREATED: Final = 1700000000
 AUTH_BODY: Final[dict[str, JsonValue]] = {
     "error": {
@@ -142,6 +151,7 @@ class ImageHandler(BaseHTTPRequestHandler):
         encoded = json.dumps(payload).encode()
         self.send_response(status)
         self.send_header("Content-Type", JSON_TYPE)
+        self.send_header("x-request-id", "image-request")
         self.send_header("Content-Length", str(len(encoded)))
         self.end_headers()
         self.wfile.write(encoded)
@@ -208,7 +218,12 @@ def test_generate_returns_response() -> None:
     first = response.data[0]
     assert first.b64_json == B64
     assert first.revised_prompt == REVISED
-    assert response._hidden_params["model"] == DEFAULT_MODEL  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L233
+    hidden = response._hidden_params  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L233
+
+    assert hidden["model"] == DEFAULT_MODEL
+    assert BODY.validate_python(hidden["headers"])["x-request-id"] == "image-request"
+    additional = BODY.validate_python(hidden["additional_headers"])
+    assert additional["llm_provider-x-request-id"] == "image-request"
 
 
 def test_generate_ignores_mock() -> None:
@@ -227,7 +242,7 @@ def test_generate_ignores_mock() -> None:
 async def generate_call() -> tuple[ImageResponse, RecordedCall]:
     with closing(ImageServer()) as server:
         response = await aimage_generation(
-            prompt=PROMPT, api_base=server.url, api_key=GOOD_KEY,
+            prompt=PROMPT, model=DEFAULT_MODEL, api_base=server.url, api_key=GOOD_KEY,
         )
         call = server.calls[-1]
     return response, call
@@ -370,3 +385,77 @@ def test_avariation_awaitable() -> None:
         assert inspect.isawaitable(pending)
         response = asyncio.run(pending)
     assert response.data[0].b64_json == B64
+
+
+def test_agenerate_requires_model() -> None:
+    with pytest.raises(KeyError, match="model"):
+        asyncio.run(aimage_generation(prompt=PROMPT))
+
+
+@pytest.mark.parametrize("drop", [False, True])
+def test_generate_params_drop(drop: bool) -> None:
+    with closing(ImageServer()) as server:
+        if drop:
+            image_generation(
+                prompt=PROMPT, model=DEFAULT_MODEL, style="vivid", drop_params=True,
+                api_base=server.url, api_key=GOOD_KEY,
+            )
+            assert "style" not in BODY.validate_json(server.calls[-1]["body"])
+        else:
+            with pytest.raises(UnsupportedParamsError):
+                image_generation(
+                    prompt=PROMPT, model=DEFAULT_MODEL, style="vivid",
+                    api_base=server.url, api_key=GOOD_KEY,
+                )
+            assert server.calls == []
+
+
+@pytest.mark.parametrize("extra", [{"extra_body": {"seed": 7}}, {"seed": 7}])
+def test_generate_params_extra(extra: dict[str, JsonValue]) -> None:
+    with closing(ImageServer()) as server:
+        image_generation(
+            prompt=PROMPT, model="dall-e-3", api_base=server.url, api_key=GOOD_KEY,
+            **extra,
+        )
+        body = BODY.validate_json(server.calls[-1]["body"])
+    assert body["seed"] == SEED
+    assert "extra_body" not in body
+
+
+def test_edit_caller_authorization() -> None:
+    with closing(ImageServer()) as server:
+        response = image_edit(
+            image=NamedFile(PNG_BYTES, "cat.png"), prompt=PROMPT, model=DEFAULT_MODEL,
+            api_base=server.url, api_key=BAD_KEY,
+            extra_headers={"Authorization": f"Bearer {GOOD_KEY}"},
+        )
+        call = server.calls[-1]
+    assert header_of(call, "authorization") == f"Bearer {GOOD_KEY}"
+    assert response.created == CREATED
+
+
+@pytest.mark.parametrize("name", ["client", "shared_session"])
+def test_generate_refuses_client(name: str) -> None:
+    with pytest.raises(UnsupportedCallArgument) as caught:
+        image_generation(prompt=PROMPT, **{name: object()})
+    assert caught.value.argument == name
+
+
+def test_generate_drops_logger(caplog: pytest.LogCaptureFixture) -> None:
+    with closing(ImageServer()) as server, caplog.at_level(logging.WARNING, logger="LiteLLM"):
+        response = image_generation(
+            prompt=PROMPT, logger_fn=print, api_base=server.url, api_key=GOOD_KEY,
+        )
+        body = BODY.validate_json(server.calls[-1]["body"])
+    assert response.created == CREATED
+    assert "logger_fn" not in body
+    assert "logger_fn is not called" in caplog.text
+
+
+def test_avariation_missing_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr("betterlite.api_key", None)
+    monkeypatch.setattr("betterlite.openai_key", None)
+    with pytest.raises(APIConnectionError) as caught:
+        asyncio.run(aimage_variation(image=NamedFile(PNG_BYTES, "cat.png")))
+    assert caught.value.status_code == HTTPStatus.INTERNAL_SERVER_ERROR
