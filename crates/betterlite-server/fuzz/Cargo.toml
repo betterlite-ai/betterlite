@@ -580,3 +580,10 @@ path = "fuzz_targets/scoped_report_query.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "autorouter_presets"
+path = "fuzz_targets/autorouter_presets.rs"
+test = false
+doc = false
+bench = false
