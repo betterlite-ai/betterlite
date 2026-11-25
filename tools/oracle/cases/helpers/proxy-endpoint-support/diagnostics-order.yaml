@@ -1,0 +1,26 @@
+kind: helper
+name: proxy-endpoint-support-diagnostics-order
+call:
+  proxy_endpoint_support:
+    calls:
+      # the notice is logged at error level before the message it prefixes is stripped
+      - function: record
+        exception: {kind: failure, message: "boom\nThis looks like a bug in LiteLLM rather than in your request. File it with one click", status_code: null, param: null}
+        litellm_call_id: null
+        notice: true
+      # a failure that carries a status neither asks for a notice nor gets one
+      - function: record
+        exception: {kind: failure, message: boom, status_code: 429, param: null}
+        litellm_call_id: null
+        notice: false
+      # the generic branch strips the notice, an existing ProxyException keeps its message as it is
+      - function: record
+        exception: {kind: proxy, message: This looks like a bug in LiteLLM rather than in your request. kept text, error_type: internal_server_error, param: null, code: null, headers: {x-other: keep}}
+        litellm_call_id: null
+        notice: false
+      - function: record
+        exception: {kind: http, status_code: 404, detail: missing}
+        litellm_call_id: null
+        notice: false
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,39 @@
+task: B7879
+deviations:
+- what: "`run_thread_stream` and `arun_thread_stream` return betterlite stream managers of `AssistantStreamEvent` objects, not the OpenAI SDK's `AssistantStreamManager` and `AssistantEventHandler`."
+  why: The wheel does not depend on the OpenAI SDK. Iteration, `with`/`async with` and `on_event` work the same; the manager gives itself and calls the handler synchronously on both paths, and the SDK's `on_text_delta`-style handler callbacks do not exist.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L1165-L1171
+- what: "A provider failure from the sync `add_message`, `get_messages` or `run_thread` raises the betterlite exception named by LiteLLM's `exception_type`, where LiteLLM's sync path lets the raw OpenAI SDK exception through; the async calls map the same way in both."
+  why: Every request runs in Rust and comes back as an error envelope that `raise_native_error` turns into the mapped class; B7878 records the same deviation for the assistant and thread calls.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L955-L965
+- what: "`client`, an OpenAI or Azure SDK client object, raises `UnsupportedCallArgumentError` instead of driving the call, in all eight functions."
+  why: The OpenAI SDK is no dependency of the wheel and every request runs in Rust; B7878 records the same deviation for the assistant and thread calls.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L892-L900
+- what: "A streamed run calls `on_event` for every event on azure too, where LiteLLM's azure branch never passes `event_handler` to the Azure OpenAI wrapper, so a handler given to an azure stream run stays silent."
+  why: The task says the handler is called for every event, and betterlite dispatches events in Python after Rust reads them, so no provider can drop the handler a caller passed.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L1335-L1353
+- what: "`betterlite.assistants.utils` is the `_utils` module registered under that name in `sys.modules`, not a separate file."
+  why: The task scopes the helpers to `_utils.py` and keeps `get_optional_params_image_gen` importable from `betterlite.assistants.utils`; one module object means both names see the same functions.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/utils.py#L1
+- what: "`betterlite.assistants` re-exports every name of `main` and `utils`; LiteLLM's assistants directory has no `__init__.py`, so `litellm.assistants.run_thread` does not exist."
+  why: The task's Python side says `__init__.py` re-exports the names of B7878 and this task; the star import is the form the root betterlite package itself uses.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L1
+- what: "A bedrock `size` without exactly two `x`-separated parts raises a `ValueError` with betterlite's text, where LiteLLM's tuple unpacking raises the interpreter's own message."
+  why: Both raise `ValueError`; only the message text differs, and the declared type says nothing about the format.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/utils.py#L122-L128
+- what: "`add_message`, `get_messages` and `run_thread` return betterlite pydantic models (`Message`, `MessagePage`, `Run`) that keep nested values as JSON, not the OpenAI SDK's `Message`, `SyncCursorPage` and `Run` classes, so the SDK's cursor-page methods and nested content models are absent."
+  why: The OpenAI SDK is no dependency of the wheel; B7878 records the same deviation for the assistant and thread results.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L2631-L2642
+- what: "An `event_handler` that is neither None nor an object with `on_event` raises `UnsupportedCallArgumentError` naming it before the call, where LiteLLM hands any value to the OpenAI SDK's stream manager."
+  why: betterlite dispatches the events in Python, so the handler is checked where it is called; the task makes that class the answer for any other handler.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L1239-L1252
+- what: "A `run_thread_stream` or `arun_thread_stream` call that omits `custom_llm_provider`, `thread_id` or `assistant_id` raises a `KeyError` naming the missing value, where LiteLLM's forwarded call raises the interpreter's `TypeError`."
+  why: The two stream helpers build the run payload from their keyword bag instead of calling `run_thread` with its typed parameters, so a missing required value surfaces while the payload is built.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L1231-L1236
+kept_bugs:
+- what: "The message an invalid azure attachment raises is missing the closing backtick after `litellm.drop_params = True`."
+  why: LiteLLM's own text lacks it, and caller code matching the text relies on it; betterlite copies the text byte for byte.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/azure.py#L104
+- what: "The image parameter error says `user/encoding format` whatever unsupported parameter was passed."
+  why: LiteLLM's text is fixed, and caller code matching the message relies on it.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/utils.py#L112

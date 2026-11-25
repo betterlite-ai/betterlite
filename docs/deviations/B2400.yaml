@@ -1,0 +1,9 @@
+task: B2400
+deviations:
+  - what: redact_deployment refuses a deployment whose litellm_params is absent or is not an object, answering RedactError::MissingParams.
+    why: LiteLLM indexes deployment_dict["litellm_params"] directly, so a malformed deployment crashes with an unhandled KeyError or AttributeError and a 500 without naming the field; betterlite's typed error names the malformed field, and no working setup passes a deployment without litellm_params.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/openai_endpoint_utils.py#L29
+  - what: A read-only-transaction recovery that has been submitted is joined at shutdown instead of being dropped.
+    why: LiteLLM schedules the recovery with asyncio.create_task and keeps no handle, so its event loop cancels the coroutine when the process stops; betterlite spawns it into the server's TaskTracker, which the shutdown path closes and waits on, so the writer recreation it started always finishes or is reported.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8199-L8202
+kept_bugs: []

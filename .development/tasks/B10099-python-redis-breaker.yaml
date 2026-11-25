@@ -1,0 +1,113 @@
+id: B10099
+title: The Python package's native Redis handles open LiteLLM's Redis circuit breaker
+description: >-
+  LiteLLM's RedisCache runs every Redis call under a RedisCircuitBreaker. After REDIS_CIRCUIT_BREAKER_FAILURE_THRESHOLD
+  consecutive health failures the breaker opens, and Redis calls fail fast with RedisCircuitBreakerOpenError until
+  REDIS_CIRCUIT_BREAKER_RECOVERY_TIMEOUT has passed. B8066 builds the Python package's native Redis handles in
+  crates/betterlite-python/src/cache_backends/redis.rs with a QuietGate that never opens, so a dead Redis keeps taking
+  every call there.
+
+
+  betterlite already has the breaker: PolicyGate in crates/betterlite-server/src/redis_cache_wiring/gate.rs, with its
+  failure classing in gate/failure_class.rs, implements betterlite-redis's BreakerGate over betterlite-router's
+  RedisFailurePolicy, and logs through log_breaker_event and log_redis_failure in
+  crates/betterlite-server/src/routing/redis_failure_policy.rs. betterlite-python can't depend on betterlite-server.
+  It may depend on betterlite-router (deny.toml lists betterlite-python as a wrapper of betterlite-router), and
+  PolicyGate needs nothing from betterlite-server but those two log helpers.
+
+
+  So the gate, its failure classing, its tests and the two log helpers move down into betterlite-router beside
+  redis_failure_policy, betterlite-server uses them from there, and the Python native Redis handles build a PolicyGate
+  from the same REDIS_CIRCUIT_BREAKER_* settings in place of QuietGate. Nothing stays behind as a copy.
+scope:
+  paths:
+  - crates/betterlite-router/src/redis_failure_policy.rs
+  - crates/betterlite-router/src/redis_failure_policy/**
+  - crates/betterlite-router/Cargo.toml
+  - crates/betterlite-server/src/redis_cache_wiring.rs
+  - crates/betterlite-server/src/redis_cache_wiring/**
+  - crates/betterlite-server/src/routing.rs
+  - crates/betterlite-server/src/routing/redis_failure_policy.rs
+  - crates/betterlite-server/src/routing/redis_failure_policy/**
+  - crates/betterlite-server/src/routing/routing_value_store.rs
+  - crates/betterlite-server/src/routing/request_scheduler/tests.rs
+  - crates/betterlite-server/src/coord_redis_boot/build.rs
+  - crates/betterlite-server/src/coord_redis_boot/error.rs
+  - crates/betterlite-server/src/coord_redis_boot/init.rs
+  - crates/betterlite-server/src/coord_redis_boot/tests/support.rs
+  - crates/betterlite-python/Cargo.toml
+  - crates/betterlite-python/src/cache_backends.rs
+  - crates/betterlite-python/src/cache_backends/**
+  - crates/betterlite-python/tests/test_cache_backends.py
+  - crates/betterlite-python/tests/fake_redis_server.py
+  - Cargo.lock
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L158-L289
+  why: RedisCircuitBreaker, its states and when it opens and closes.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L318-L380
+  why: Which errors count as health failures and which as timeouts.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L434-L452
+  why: Swallowed failures and RedisCircuitBreakerOpenError.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L536-L600
+  why: How each async and sync Redis call runs under the breaker.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L663-L667
+  why: RedisCache builds its breaker from the constants.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L511-L516
+  why: The REDIS_CIRCUIT_BREAKER_* settings and their defaults.
+dod:
+- text: >-
+    PolicyGate, its failure classing and the log_breaker_event and log_redis_failure helpers live in betterlite-router
+    beside redis_failure_policy, with their tests. betterlite-server's Redis cache wiring, coord_redis_boot and routing
+    code use them from there, and redis_cache_wiring/gate.rs and routing/redis_failure_policy.rs are gone.
+  proof: [router-gate, server-redis, server-gate-gone]
+- text: >-
+    The native Redis handles in betterlite-python run every Redis call through a PolicyGate built from the
+    REDIS_CIRCUIT_BREAKER_* settings LiteLLM reads, and QuietGate is gone. After the failure threshold the handles
+    answer RedisCircuitBreakerOpenError the way LiteLLM's RedisCache does until the recovery timeout has passed, and a
+    call after that probes Redis again.
+  proof: [python-native, python-breaker, quiet-gate-gone]
+- text: >-
+    With REDIS_CIRCUIT_BREAKER_ENABLED=false the native handles never open the breaker, as LiteLLM's RedisCache does.
+  proof: [python-breaker]
+- text: The Python package stays clean under ruff and basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: router-gate
+    why: The moved gate or the failure policy behaves differently.
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^redis_failure_policy::/)'
+  - id: server-redis
+    why: The server's Redis cache wiring or coordination Redis broke in the move.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^redis_cache_wiring::/) or test(/^coord_redis_boot::/) or test(/^routing::routing_value_store::/) or test(/^routing::request_scheduler::/)'
+  - id: server-gate-gone
+    why: A copy of the gate or the log helpers stayed in betterlite-server.
+    run: test ! -e crates/betterlite-server/src/redis_cache_wiring/gate.rs && test ! -e crates/betterlite-server/src/routing/redis_failure_policy.rs
+  - id: quiet-gate-gone
+    why: A native handle still runs without the breaker.
+    run: test -z "$(grep -rl QuietGate crates/betterlite-python/src)"
+  - id: python-native
+    why: A native cache handle conversion breaks or panics.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^cache_backends::/)'
+  - id: python-breaker
+    why: The Python Redis cache opens, fails fast or recovers differently from LiteLLM's.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_cache_backends.py -k breaker
+  - id: python-lint
+    why: A strict type error in the caching package.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations: []
+out_of_scope:
+- The breaker metrics. betterlite-redis's breaker_metrics already counts them, and the server exports them.
+- Moving RedisFailurePolicy itself. It stays in betterlite-router.
+- The Python package's Lua script executor and health pings. They follow when their Python methods are built.
+pitfalls:
+- Move files with git mv so their history follows them, and change only the imports and visibility the move needs.
+- The breaker log helpers read betterlite-config's redis_failure_policy section, and betterlite-router already depends on betterlite-config.
+- The pytest names for this task contain breaker, since the python-breaker check selects them with -k breaker.
+- fake_redis_server.py is shared by the cache test modules. Add a way to make it fail calls, and keep its other behavior.
+review_level: standard
+budget:
+  max_changed_lines: 1600
+  max_new_expects: 0

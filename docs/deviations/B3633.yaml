@@ -1,0 +1,32 @@
+task: B3633
+deviations:
+  - what: >-
+      The managed-object write goes through an injected ManagedBatchRegistry that is None in
+      every betterlite deployment for now, so a create on the collection route logs the
+      "Managed files hook not available" warning and registers nothing.
+    why: >-
+      LiteLLM's managed_files hook lives in the enterprise package and the oracle has none; the
+      trait keeps the registration code and its tests ready for a later MIT store.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L1096-L1119
+  - what: >-
+      The text after "Error in batch_creation_handler:" and in the failed record's content and
+      error field is the Rust error text (a serde_json or B587 transform error), not Python's
+      exception text.
+    why: >-
+      Exception strings are runtime wording (docs/compatibility.md); the record shape and the
+      failed state are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L1052-L1080
+  - what: >-
+      A task panic or a missing Tokio runtime is reported through the same error log lines as a
+      Python exception or a missing event loop.
+    why: >-
+      Rust has no asyncio task, and the join result carries the same facts.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L1119-L1121
+  - what: >-
+      BatchRegistration carries create_if_missing true for the create, a field the pinned
+      Anthropic handler's store call does not send (the Vertex create does).
+    why: >-
+      B3633 owns the registration struct and B3641 needs the field to tell a create from a poll;
+      the registry is None in every deployment today, so nothing observes the difference yet.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L1149-L1158
+kept_bugs: []

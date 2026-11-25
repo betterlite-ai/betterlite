@@ -554,6 +554,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "stream_interrupted"
+path = "fuzz_targets/stream_interrupted.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "refresh_grant_body"
 path = "fuzz_targets/refresh_grant_body.rs"
 test = false
@@ -577,6 +584,27 @@ bench = false
 [[bin]]
 name = "scoped_report_query"
 path = "fuzz_targets/scoped_report_query.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "autorouter_presets"
+path = "fuzz_targets/autorouter_presets.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sso_refresh_response"
+path = "fuzz_targets/sso_refresh_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "global_report_query"
+path = "fuzz_targets/global_report_query.rs"
 test = false
 doc = false
 bench = false

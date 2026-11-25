@@ -1,0 +1,9 @@
+{
+  "custom": {
+    "label": "Custom",
+    "description": "A tier the dashboard cannot apply.",
+    "complexity_router_config": {
+      "tiers": {"SIMPLE": ["a"], "MEDIUM": ["b"], "COMPLEX": ["c"], "REASONING": ["d"], "EXTRA": ["e"]}
+    }
+  }
+}
