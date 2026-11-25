@@ -1,0 +1,12 @@
+task: B10095
+deviations:
+  - what: Under PROMETHEUS_MULTIPROC_DIR a scrape with name[] parameters keeps the listed samples and drops families left with none, as it does without the variable. LiteLLM renders nothing for any non-empty name[] list there, an empty text body or `# EOF` alone for OpenMetrics.
+    why: The empty body comes from prometheus_client's registry finding no names for a collector without describe, not from a choice LiteLLM made, and no working setup relies on a filter that drops every metric.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4581-L4586
+  - what: A .db file whose type part is gaugehistogram, info, stateset or unknown fails the scrape with 500. prometheus_client's Metric accepts those types and LiteLLM renders them.
+    why: prometheus_client's writers only create counter, gauge, histogram and summary files, so such a file comes from something else in the folder, and the four extra encodings would only serve that.
+    link: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/metrics_core.py#L6-L9
+  - what: A multiprocess folder that cannot be listed, because it was removed or is unreadable, fails the scrape with 500. prometheus_client's collect lists the folder with glob, which yields no files when the folder cannot be scanned, so LiteLLM renders an empty body.
+    why: The folder is checked when the app is built, so one that vanishes or loses its permissions later is a broken deployment; betterlite reports the read_dir error instead of hiding it as an empty scrape.
+    link: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/multiprocess.py#L156-L158
+kept_bugs: []

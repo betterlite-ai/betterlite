@@ -1,0 +1,45 @@
+task: B8599
+deviations:
+  - what: 'POST /invitation/new answers the plain error text, not Python str() of the {"error": ...} dict.'
+    why: 'docs/compatibility.md does not port Python repr or str text; status, internal_server_error type and null param stay.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8218-L8225
+  - what: 'POST /invitation/update and /invitation/delete answer 400 "Invitation id does not exist in the database." for a missing row.'
+    why: "LiteLLM lets Prisma's P2025 escape as a bare 500; an unknown id is a 4xx, and the info route already answers that 400."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L17859-L17876
+  - what: 'A queued request whose priority is missing, not an integer or outside 0..=255 answers 400 "Authentication Error, the request carries no priority between 0 and 255" before it is scheduled.'
+    why: "betterlite's FlowItem carries a u8 priority, so those values have no representation; LiteLLM passes them through and fails only on a missing value."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L4395-L4414
+  - what: 'A full local scheduler queue answers 429 with the scheduler message.'
+    why: "LiteLLM's scheduler is unbounded; betterlite refuses past 1024 pending entries and a full queue is a 429, not the 400 every other scheduling failure gets."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L4414
+  - what: 'metadata.user_api_key and metadata.user_api_key_hash carry the stored key hash for an sk- key.'
+    why: 'auth hashes api_key and token before the route sees them, and the stored hash is what LiteLLM keeps in its key record as api_key.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1615
+  - what: 'Duplicate request headers are joined with ", " and a non-UTF8 value is skipped in metadata.headers and proxy_server_request.headers.'
+    why: "Python's dict(request.headers) keeps one value per name; betterlite keeps every value the wire carried and folds repeats."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L377-L381
+  - what: 'The first-byte keepalive on /queue/chat/completions reads the global sse_keepalive_ping_interval_seconds, not a deployment keepalive_seconds.'
+    why: "The completion port exposes a healthy-deployment count and the call, not the router's deployment list, so the per-deployment override cannot be resolved here."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1136-L1144
+  - what: 'A non-streaming or pre-first-byte failure of POST /queue/chat/completions answers the replacement post_call_failure_hook returns; LiteLLM''s queue route calls the hook and discards its return, so the original error is answered.'
+    why: "The hook's docstring says a callback can return an HTTPException to transform the error response, and /chat/completions and this route's keepalive late-failure path both use the hook's answer; dropping it before the first byte is an oversight no working setup can rely on."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L16866-L16869
+  - what: 'A streamed failure that post_call_failure_hook replaces ends the stream without an error frame; LiteLLM''s data generator discards the hook''s return and writes a frame built from the original streamed error.'
+    why: "The hook's answer winning is the point of a replacement, and serializing the original would show provider detail a callback meant to hide; betterlite's generator aborts a stream whose failure hook returns a replacement, so a replaced stream ends instead of carrying LiteLLM's original-error frame."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10061-L10069
+  - what: 'POST /queue/chat/completions without a router answers the detail text "No models configured on proxy", not the {"error": ...} dict LiteLLM puts in the message field.'
+    why: 'LiteLLM raises HTTPException(500, detail={"error": ...}) and its handler copies that detail into ProxyException.message, which is declared str; docs/compatibility.md keeps output to the declared types and plain JSON, with the 500 status, auth_error type and "None" param unchanged.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L16870-L16876
+  - what: 'A store failure on GET /invitation/info, POST /invitation/update or POST /invitation/delete answers 500 with betterlite''s shared error envelope, param null and code "500", where LiteLLM''s unhandled exception handler returns only message and type with the same status and type.'
+    why: 'LiteLLM wraps none of those three handlers, so a store failure reaches that handler; betterlite answers one internal_server_error body for an unexpected storage failure and writes the cause to the error log instead of the body.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2072-L2080
+  - what: 'A store failure on those three routes answers that same 500 when the database is unreachable, where LiteLLM answers 503 with type no_db_connection and code 503.'
+    why: 'The invitation store keeps one storage-failure answer for every cause; the Prisma unavailable check lives in LiteLLM''s global exception handler, which betterlite does not have, and the cause stays in the error log.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2053-L2057
+kept_bugs:
+  - what: 'The queued route copies LiteLLM by placing the key (here its stored hash) into metadata.user_api_key and metadata.user_api_key_hash, which reaches callback and spend logs.'
+    why: 'LiteLLM does it so logging callbacks attribute spend to the key and a working setup relies on the field; it leaks a stable key identifier into every log.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1615
+  - what: 'Every failure of POST /invitation/new, a validation failure included, arrives as an internal_server_error ProxyException.'
+    why: 'LiteLLM wraps the handler in handle_exception_on_proxy, so a client cannot tell a bad-role 400 from a server fault by the type; copied because callers may switch on it.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L17766-L17774

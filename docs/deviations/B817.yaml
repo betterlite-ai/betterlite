@@ -1,0 +1,8 @@
+task: B817
+deviations:
+  - what: >-
+      Stored MCP tool JSON over 1048576 bytes or depth 64 fails with a typed limit error before resolution.
+    why: >-
+      Bound this actual json.loads boundary; mcp_tool_json_limits proves the limits separately from parity cases.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L450-L453
+kept_bugs: []

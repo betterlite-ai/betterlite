@@ -1,0 +1,15 @@
+kind: helper
+name: stable_dedupe
+call:
+  mcp_permission_ids:
+    function: dedupe
+    values: ["beta", "alpha", "beta", "gamma", "alpha"]
+calls:
+  - mcp_permission_ids:
+      function: dedupe
+      values: ["only"]
+  - mcp_permission_ids:
+      function: dedupe
+      values: []
+env: {}
+compare: {ignore: []}
