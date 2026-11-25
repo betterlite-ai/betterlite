@@ -278,7 +278,7 @@ def test_call_async_flag() -> None:
     assert indexes_of(response) == [SECOND_INDEX, FIRST_INDEX]
 
 
-def test_call_async_overhead_excludes_provider_time() -> None:
+def test_call_overhead_no_provider() -> None:
     with closing(RerankServer(delay=PROVIDER_DELAY)) as server:
         response = asyncio.run(
             arerank(
@@ -379,17 +379,21 @@ def test_request_headers() -> None:
     assert response_of(outcome).id == "rerank-1"
 
 
-def test_request_infinity_module_key(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_request_infinity_key(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("INFINITY_API_KEY", raising=False)
-    monkeypatch.setattr(betterlite, "infinity_key", INFINITY_KEY)
-    with closing(RerankServer()) as server:
-        outcome = rerank(
-            model=MODEL, query=QUERY, documents=DOCUMENTS_TEXT,
-            custom_llm_provider=INFINITY_PROVIDER, api_base=server.url,
-        )
-        call = server.calls[-1]
-    assert header_of(call, "authorization") == f"Bearer {INFINITY_KEY}"
-    assert response_of(outcome).id == "rerank-1"
+    original = betterlite.infinity_key
+    betterlite.infinity_key = INFINITY_KEY  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L290
+    try:
+        with closing(RerankServer()) as server:
+            outcome = rerank(
+                model=MODEL, query=QUERY, documents=DOCUMENTS_TEXT,
+                custom_llm_provider=INFINITY_PROVIDER, api_base=server.url,
+            )
+            call = server.calls[-1]
+        assert header_of(call, "authorization") == f"Bearer {INFINITY_KEY}"
+        assert response_of(outcome).id == "rerank-1"
+    finally:
+        betterlite.infinity_key = original
 
 
 LIMIT_CASES: Final[
@@ -401,7 +405,7 @@ LIMIT_CASES: Final[
 
 
 @pytest.mark.parametrize(("documents", "headers", "message"), LIMIT_CASES)
-def test_request_limit_refused_before_dispatch(
+def test_request_caps_refused(
     documents: list[str | dict[str, JsonValue]],
     headers: dict[str, str] | None,
     message: str,
@@ -417,7 +421,7 @@ def test_request_limit_refused_before_dispatch(
 
 
 @pytest.mark.parametrize(("documents", "headers", "message"), LIMIT_CASES)
-def test_request_limit_refused_before_dispatch_async(
+def test_async_request_caps(
     documents: list[str | dict[str, JsonValue]],
     headers: dict[str, str] | None,
     message: str,
@@ -434,18 +438,22 @@ def test_request_limit_refused_before_dispatch_async(
         assert server.calls == []
 
 
-def test_request_module_headers_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_request_headers_limit() -> None:
     module_headers = {f"h{index}": "v" for index in range(MAX_HEADERS + 1)}
-    monkeypatch.setattr(betterlite, "headers", module_headers)
-    with pytest.raises(ValueError, match="headers"):
-        _ = rerank(
-            model=MODEL, query=QUERY, documents=DOCUMENTS_TEXT,
-            custom_llm_provider=PROVIDER,
-        )
+    original = betterlite.headers
+    betterlite.headers = module_headers  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L593
+    try:
+        with pytest.raises(ValueError, match="headers"):
+            _ = rerank(
+                model=MODEL, query=QUERY, documents=DOCUMENTS_TEXT,
+                custom_llm_provider=PROVIDER,
+            )
+    finally:
+        betterlite.headers = original
 
 
-def test_request_wire_limit_refused_before_dispatch() -> None:
-    documents = ["x" * (WIRE_LIMIT + 1)]
+def test_request_bytes_refused() -> None:
+    documents: list[str | dict[str, JsonValue]] = ["x" * (WIRE_LIMIT + 1)]
     with closing(RerankServer()) as server:
         with pytest.raises(ValueError, match="bytes"):
             _ = rerank(
@@ -455,8 +463,8 @@ def test_request_wire_limit_refused_before_dispatch() -> None:
         assert server.calls == []
 
 
-def test_request_wire_limit_refused_before_dispatch_async() -> None:
-    documents = ["x" * (WIRE_LIMIT + 1)]
+def test_async_request_bytes() -> None:
+    documents: list[str | dict[str, JsonValue]] = ["x" * (WIRE_LIMIT + 1)]
     with closing(RerankServer()) as server:
         with pytest.raises(ValueError, match="bytes"):
             _ = asyncio.run(

@@ -127,23 +127,23 @@ impl RerankCallWire {
         }
     }
 
-    // arerank's call: its declared return_documents default is None, and max_tokens_per_doc stays a kwarg
+    // arerank's call: into_call's ReturnDocuments maps back to the optional flag arerank declares
     pub(crate) fn into_async_args(self) -> AsyncRerankArgs {
+        let call = self.into_call();
         AsyncRerankArgs {
-            model: self.arguments.model,
-            query: self.arguments.query,
-            documents: self.arguments.documents,
-            custom_llm_provider: self.arguments.custom_llm_provider,
-            top_n: self.arguments.top_n,
-            rank_fields: self.arguments.rank_fields,
-            return_documents: self.arguments.return_documents,
-            max_chunks_per_doc: self.arguments.max_chunks_per_doc,
-            kwargs: self.kwargs,
+            model: call.model,
+            query: call.query,
+            documents: call.documents,
+            custom_llm_provider: call.custom_llm_provider,
+            top_n: call.top_n,
+            rank_fields: call.rank_fields,
+            return_documents: call.return_documents.mapped(),
+            max_chunks_per_doc: call.max_chunks_per_doc,
+            kwargs: call.kwargs,
         }
     }
 }
 
-// The logging object's values as set_hidden_params writes them: get_api_base only ever reads the call's kwargs.
 pub(crate) struct HiddenFacts<'facts> {
     pub(crate) call_id: &'facts str,
     pub(crate) api_base: Option<&'facts str>,
@@ -193,7 +193,6 @@ fn text(value: Option<&str>) -> Json {
     }
 }
 
-// The JSON text Python validates as RerankResponse, beside the provider the cost lookup needs.
 #[derive(Debug, Serialize)]
 pub(crate) struct RerankAnswer {
     #[serde(flatten)]
@@ -203,7 +202,6 @@ pub(crate) struct RerankAnswer {
     pub(crate) response_ms: f64,
 }
 
-// A kwarg read as text only when it holds a non-empty string, the one shape set_hidden_params keeps.
 fn non_empty_text(value: Option<&Json>) -> Option<&str> {
     match value {
         Some(Json::Text(text)) if !text.is_empty() => Some(text),

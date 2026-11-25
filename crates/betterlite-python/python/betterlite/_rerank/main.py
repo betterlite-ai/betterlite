@@ -178,8 +178,10 @@ def call_payload(values: Mapping[str, CallValue], named: tuple[str, ...]) -> Cal
     # the top-level names are the payload's own: it drops the logger, refuses a client and warns
     settings = read_settings(SETTINGS)
     settings["infinity_key"] = JSON.validate_python(betterlite.infinity_key)
-    caller: dict[str, JsonValue] = HEADERS.validate_python(values.get("headers")) or {}
-    module: dict[str, JsonValue] = HEADERS.validate_python(settings.get("headers")) or {}
+    caller_headers = HEADERS.validate_python(values.get("headers"))
+    module_headers = HEADERS.validate_python(settings.get("headers"))
+    caller: dict[str, JsonValue] = {} if caller_headers is None else caller_headers
+    module: dict[str, JsonValue] = {} if module_headers is None else module_headers
     if len(caller) + len(module) > MAX_HEADERS:
         raise ValueError(f"too many rerank headers: {len(caller) + len(module)} > {MAX_HEADERS}")
     payload: dict[str, CallValue] = {
