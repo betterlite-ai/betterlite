@@ -479,21 +479,31 @@ def test_disk_counts_large_ints(tmp_path: Path) -> None:
 def test_lookups_share_the_store() -> None:
     cache = Cache()
     store = _memory_store(cache)
-    cache.add_cache(CHAT_RESPONSE, **CHAT)
-    assert cache.get_cache(**CHAT) == CHAT_RESPONSE
+    cache.add_cache(CHAT_RESPONSE, model=CHAT["model"], messages=CHAT["messages"])
+    assert cache.get_cache(model=CHAT["model"], messages=CHAT["messages"]) == CHAT_RESPONSE
     store.flush_cache()
-    assert cache.get_cache(**CHAT) is None
-    cache.add_cache(CHAT_RESPONSE, **CHAT)
-    store.delete_cache(cache.get_cache_key(**CHAT))
-    assert cache.get_cache(**CHAT) is None
+    assert cache.get_cache(model=CHAT["model"], messages=CHAT["messages"]) is None
+    cache.add_cache(CHAT_RESPONSE, model=CHAT["model"], messages=CHAT["messages"])
+    store.delete_cache(cache.get_cache_key(model=CHAT["model"], messages=CHAT["messages"]))
+    assert cache.get_cache(model=CHAT["model"], messages=CHAT["messages"]) is None
 
 
 def test_dynamic_cache_object() -> None:
     dynamic = DynamicCache()
     cache = Cache(_backend=dynamic)
-    cache.add_cache(CHAT_RESPONSE, dynamic, **CHAT)
-    assert cache.get_cache(dynamic, **CHAT) == CHAT_RESPONSE
-    assert asyncio.run(cache.async_get_cache(dynamic, **CHAT)) == CHAT_RESPONSE
+    cache.add_cache(
+        CHAT_RESPONSE, dynamic, model=CHAT["model"], messages=CHAT["messages"]
+    )
+    assert cache.get_cache(dynamic, model=CHAT["model"], messages=CHAT["messages"]) == CHAT_RESPONSE
+    assert asyncio.run(
+        cache.async_get_cache(dynamic, model=CHAT["model"], messages=CHAT["messages"])
+    ) == CHAT_RESPONSE
     dynamic.values.clear()
-    asyncio.run(cache.async_add_cache(ASYNC_RESPONSE, dynamic, **CHAT))
-    assert asyncio.run(cache.async_get_cache(dynamic, **CHAT)) == ASYNC_RESPONSE
+    asyncio.run(
+        cache.async_add_cache(
+            ASYNC_RESPONSE, dynamic, model=CHAT["model"], messages=CHAT["messages"]
+        )
+    )
+    assert asyncio.run(
+        cache.async_get_cache(dynamic, model=CHAT["model"], messages=CHAT["messages"])
+    ) == ASYNC_RESPONSE

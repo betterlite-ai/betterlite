@@ -72,7 +72,7 @@ fn backends_disk_count_adds() {
         .block_on(count(
             Arc::clone(&native.cache),
             "count".to_owned(),
-            2.0_f64,
+            2_i64,
             None,
         ))
         .unwrap();

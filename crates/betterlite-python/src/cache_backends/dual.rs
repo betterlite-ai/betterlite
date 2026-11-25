@@ -1,4 +1,5 @@
 use std::sync::{Arc, Mutex};
+use tokio::task::JoinSet;
 
 use betterlite_cache::backend::memory::local::LocalMemoryOps;
 use betterlite_cache::batch_reads::BatchReadOptions;
@@ -340,8 +341,14 @@ impl NativeDual {
     fn async_flush<'py>(&self, py: Python<'py>) -> AsyncAnswer<'py> {
         let cache = Arc::clone(&self.cache);
         future_into_py(py, async move {
-            let flushed = tokio::task::spawn_blocking(move || cache.flush_cache());
-            error::backend_err(flushed.await.map_err(BackendHandleError::from)?)
+            let mut tasks = JoinSet::new();
+            tasks.spawn_blocking(move || cache.flush_cache());
+            let flushed = tasks
+                .join_next()
+                .await
+                .ok_or_else(|| PyRuntimeError::new_err("flush task was not started"))?;
+            let outcome = flushed.map_err(BackendHandleError::from)?;
+            error::backend_err(outcome)
         })
     }
 

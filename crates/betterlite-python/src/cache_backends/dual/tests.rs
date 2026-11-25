@@ -157,6 +157,7 @@ fn backends_dual_count_adds() {
             "count".to_owned(),
             2.0_f64,
             None,
+            None,
         ))
         .unwrap();
     assert_eq!(counted, "2.0");

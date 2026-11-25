@@ -49,7 +49,7 @@ class RedisCache(_BackendCache[NativeRedis]):
         if password is not None:
             overrides["password"] = password
         if socket_timeout is not None:
-            overrides["socket_timeout"] = socket_timeout
+            overrides["socket_timeout"] = str(socket_timeout)
         settings: dict[str, JsonValue] = {
             "overrides": overrides,
             "default_ttl": resolved_ttl,

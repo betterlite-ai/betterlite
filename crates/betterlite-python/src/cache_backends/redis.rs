@@ -1,5 +1,6 @@
 use std::error::Error as StdError;
 use std::sync::Arc;
+use tokio::task::JoinSet;
 
 use betterlite_cache::configuration::settings::{
     DEFAULT_REDIS_MAJOR_VERSION, DEFAULT_REDIS_TTL_SECONDS,
@@ -17,6 +18,7 @@ use betterlite_redis::redis_client_reuse::service_hooks::ServiceHooks;
 use betterlite_redis::redis_client_reuse::store::RedisClientStore;
 use betterlite_redis::redis_client_reuse::transport::RedisCacheFamily;
 use betterlite_redis::redis_live_client::LiveClientFactory;
+use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3_async_runtimes::tokio::{future_into_py, get_runtime};
 
@@ -72,6 +74,7 @@ impl NativeRedis {
     // The pyo3 signature is the whole Python contract, so it stays on one line.
     #[rustfmt::skip]
     #[pyo3(signature = (key, value, ttl, nx = false))]
+    #[expect(clippy::too_many_arguments, reason = "PyO3 exposes Redis SET parameters individually")]
     fn async_set<'py>(&self, py: Python<'py>, key: &str, value: &str, ttl: Option<f64>, nx: bool) -> AsyncAnswer<'py> {
         let json = convert::json_value(value)?;
         let (cache, owned) = (Arc::clone(&self.cache), key.to_owned());
@@ -152,8 +155,12 @@ impl NativeRedis {
     fn async_flush<'py>(&self, py: Python<'py>) -> AsyncAnswer<'py> {
         let cache = Arc::clone(&self.cache);
         future_into_py(py, async move {
-            let outcome = tokio::task::spawn_blocking(move || cache.admin.flush_cache())
+            let mut tasks = JoinSet::new();
+            tasks.spawn_blocking(move || cache.admin.flush_cache());
+            let outcome = tasks
+                .join_next()
                 .await
+                .ok_or_else(|| PyRuntimeError::new_err("flush task was not started"))?
                 .map_err(BackendHandleError::from)?;
             error::backend_err(outcome)?;
             Ok(())

@@ -7,6 +7,7 @@ use betterlite_redis::redis_cache_values::error::RedisCacheValuesError;
 use betterlite_redis::redis_counters::RedisCountersError;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::{PyErr, PyResult};
+use tokio::task::JoinError;
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum BackendHandleError {
@@ -69,7 +70,7 @@ pub(crate) enum BackendHandleError {
     #[error("the blocking cache task failed")]
     Join {
         #[from]
-        source: tokio::task::JoinError,
+        source: JoinError,
     },
 }
 
