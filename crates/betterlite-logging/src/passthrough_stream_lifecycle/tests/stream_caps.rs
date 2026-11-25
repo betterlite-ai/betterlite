@@ -75,10 +75,11 @@ async fn a_stream_past_the_log_cap_forwards_every_chunk_and_logs_only_the_kept_p
     };
     let mut run = CompletionGuard::new(plain_call(&harness, EndpointType::OpenAi), caps);
     let chunks = vec![b"aaaaa".to_vec(), b"bbbbb".to_vec(), b"ccccc".to_vec()];
-    let mut yielded = Vec::new();
-    for chunk in chunks.clone() {
-        yielded.extend(run.accept(chunk));
-    }
+    let yielded: Vec<Vec<u8>> = chunks
+        .clone()
+        .into_iter()
+        .filter_map(|chunk| run.accept(chunk))
+        .collect();
     drop(run);
     assert_eq!(yielded, chunks);
     assert_eq!(the_logged_chunks(&harness).await, vec![b"aaaaa".to_vec()]);
