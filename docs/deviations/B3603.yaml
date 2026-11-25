@@ -71,3 +71,6 @@ kept_bugs:
       that mode authenticated nothing; betterlite keeps the order so a dev proxy forwards
       the same headers it always has.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2531-L2551
+  - what: A repeated caller header such as X-Feature sent twice reaches the provider with its first value only, and the later values are dropped before credential filtering.
+    why: LiteLLM builds every proxy header map with dict(request.headers), and Starlette's lookup answers the first value of a name. Keeping it here keeps pass-through in line with the rest of the proxy, and forwarding both values of a single-value header such as anthropic-version or Authorization can turn a working call into an upstream 400.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L378

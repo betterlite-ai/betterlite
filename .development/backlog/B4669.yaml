@@ -1,14 +1,14 @@
 id: B4669
 milestone: M9 agents and mcp
 title: MCP key and team server and toolset grants
-status: todo
+status: done
 depends_on: [B2305, B4668, B4711, B736, B737, B10078]
 file: tasks/B4669-mcp-key-team-server-grants.yaml
 covers:
   - "litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py"
 parent: B137
 split_from: B137
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3197

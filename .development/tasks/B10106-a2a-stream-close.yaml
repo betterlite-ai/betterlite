@@ -1,0 +1,64 @@
+id: B10106
+title: Closing an A2A client stream closes the agent stream before it returns
+description: >-
+  Fix a LiteLLM bug that B168 copied. A2AClient.send_message_streaming wraps asend_message_streaming in an async for
+  loop and yields each chunk
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/client.py#L98-L106).
+  When the caller closes the outer stream after the first event, Python throws GeneratorExit at the yield, the loop
+  ends, and nothing closes the inner generator. Its finally block (await stream.aclose() on the native stream in
+  crates/betterlite-python/python/betterlite/a2a_protocol/main.py) then runs later in a task asyncio's async
+  generator finalizer schedules, outside the caller's context, and an error it raises goes to the loop's exception
+  handler instead of the caller. B168's review
+  (https://github.com/betterlite-ai/betterlite/pull/3191) flagged it under owned-behavior-is-built, and no setup
+  relies on the late close.
+
+
+  Wrap the inner stream in contextlib.aclosing in crates/betterlite-python/python/betterlite/a2a_protocol/client.py,
+  so closing the outer stream awaits the inner one's close. A test closes the stream after its first event and
+  checks that the inner stream's cleanup ran before aclose returned.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/a2a_protocol/client.py
+  - crates/betterlite-python/tests/test_a2a_client_flow.py
+  - docs/deviations/B10106.yaml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/client.py#L98-L106
+  why: LiteLLM's stream wrapper leaves the inner generator to the finalizer.
+dod:
+- text: >-
+    Closing the A2AClient stream after its first event runs the inner stream's cleanup before aclose returns, in a
+    test named test_stream_close_<case>.
+  proof: [stream-close]
+- text: The A2A client flow tests and the Python lint pass.
+  proof: [a2a-client-flow, python-lint]
+- text: >-
+    docs/deviations/B10106.yaml has a row that says LiteLLM leaves the inner stream's close to the finalizer, with the
+    pinned LiteLLM link.
+  proof: [deviation-row]
+checks:
+  optional: []
+  commands:
+  - id: stream-close
+    why: Closing the outer stream still leaves the inner close to the finalizer.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "a2a-sdk==1.1.0" --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_a2a_client_flow.py -k "stream_close"
+  - id: a2a-client-flow
+    why: The fix changed what the stream answers.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "a2a-sdk==1.1.0" --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_a2a_client_flow.py -k "not exports and not stream_close"
+  - id: python-lint
+    why: The public layer is where an untyped dict would creep back in.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+  - id: deviation-row
+    why: The fix needs its deviations row with the pinned LiteLLM link.
+    run: grep -q 'a2a_protocol/client.py#L98-L106' docs/deviations/B10106.yaml
+oracle_cases: []
+deviations: []
+out_of_scope:
+- The other async generators in betterlite.a2a_protocol. main.py's asend_message_streaming already closes its native stream in a finally block.
+pitfalls:
+- The test needs an inner stream whose cleanup it can see. Use pytest's monkeypatch to put a small async generator in place of asend_message_streaming in betterlite.a2a_protocol.client, with a finally that records the close, and check the record right after await stream.aclose() without yielding to the loop first.
+- contextlib.aclosing exists from Python 3.10, the package's floor.
+review_level: standard
+budget:
+  max_changed_lines: 120
+  max_new_expects: 0
