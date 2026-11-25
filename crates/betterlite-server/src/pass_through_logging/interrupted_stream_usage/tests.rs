@@ -589,8 +589,8 @@ fn interrupted_build_skips_the_hidden_cost_for_an_xai_provider() {
         counter: &counter,
     };
     let call_log = logging_state(
-        &[("custom_llm_provider", Json::Text("xai".to_owned()))],
         &[],
+        &[("custom_llm_provider", Json::Text("xai".to_owned()))],
     );
     let body = request_body("claude-test");
     let chunks = completed_stream();
