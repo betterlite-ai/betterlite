@@ -1,0 +1,6 @@
+task: B10104
+deviations:
+  - what: "A finished chat response replayed as one stream chunk keeps each choice's logprobs on its streaming choice, through the Responses bridge, the Bedrock guardrail hook and the tool permission guardrail. LiteLLM's convert_model_response_to_streaming builds each StreamingChoices with index, delta and finish_reason only, so a response replayed through it loses its choice logprobs."
+    why: "Logprobs are the data a caller asked for, and losing them in the replay is lost data no working setup depends on. A choice without logprobs still replays exactly as before."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_model_iterator.py#L38-L48
+kept_bugs: []
