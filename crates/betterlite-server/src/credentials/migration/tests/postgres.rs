@@ -324,7 +324,7 @@ async fn real_run(
 }
 
 #[tokio::test]
-async fn postgres_attestation_reads_every_location_with_the_gate_off() {
+async fn attestation_reads_every_location_with_the_gate_off() {
     let harness = Harness::start(vec![SCHEMA.to_owned()]).await;
     seed(&harness).await;
     let before = harness.snapshot().await;
@@ -386,7 +386,7 @@ async fn postgres_attestation_reads_every_location_with_the_gate_off() {
 }
 
 #[tokio::test]
-async fn postgres_real_run_writes_json_strings_and_reports_exact_counts() {
+async fn real_run_writes_json_strings_and_reports_exact_counts() {
     let harness = Harness::start(vec![SCHEMA.to_owned()]).await;
     seed(&harness).await;
     let mut rotation = FakeRotation::default();
@@ -542,7 +542,7 @@ async fn postgres_real_run_writes_json_strings_and_reports_exact_counts() {
 }
 
 #[tokio::test]
-async fn postgres_partial_failure_keeps_the_earlier_rows_written() {
+async fn partial_failure_keeps_the_earlier_rows_written() {
     let harness = Harness::start(vec![SCHEMA.to_owned(), FAIL_CLOUDZERO_WRITE.to_owned()]).await;
     seed(&harness).await;
     let mut rotation = FakeRotation::default();
@@ -605,7 +605,7 @@ async fn postgres_partial_failure_keeps_the_earlier_rows_written() {
 }
 
 #[tokio::test]
-async fn postgres_repeat_migration_skips_migrated_rows_and_writes_nothing() {
+async fn repeat_migration_skips_migrated_rows_and_writes_nothing() {
     let harness = Harness::start(vec![SCHEMA.to_owned()]).await;
     seed(&harness).await;
     let cipher = cipher(Algorithm::Aes256Gcm, Some(SALT_KEY));
