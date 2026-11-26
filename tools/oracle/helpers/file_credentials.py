@@ -117,7 +117,7 @@ class ScriptedRouter(Router):
         # the base router reads back the overrides below while it initializes
         self.script: RouterScript = script
         self.lookups: list[JsonValue] = []
-        super().__init__(model_list=[])  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L774
+        super().__init__(model_list=[])  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L774
         self.model_list = [deployment(row) for row in script["deployments"]]
 
     @override
