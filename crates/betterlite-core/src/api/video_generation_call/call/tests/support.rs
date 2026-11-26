@@ -432,10 +432,7 @@ impl Bench {
         let work = self
             .caller
             .video_generation(request, client, &resolution, environment)?;
-        let VideoGenerationWork::Ready(object) = work else {
-            panic!("the sync entry left a pending handler for an async caller")
-        };
-        Ok(object)
+        Ok(ready_object(work))
     }
 
     pub(crate) fn leaves_pending(
@@ -474,6 +471,15 @@ impl Bench {
                 },
             )
             .await
+    }
+}
+
+fn ready_object(work: VideoGenerationWork<'_>) -> Box<VideoObject> {
+    match work {
+        VideoGenerationWork::Ready(object) => object,
+        VideoGenerationWork::Pending(_) => {
+            panic!("the sync entry left a pending handler for an async caller")
+        }
     }
 }
 

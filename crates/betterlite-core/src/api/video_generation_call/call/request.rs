@@ -14,31 +14,7 @@ pub(super) enum Polled<Output> {
     StillWaiting,
 }
 
-pub(super) fn build_handler_request<'call, Providers>(
-    request: VideoGenerationRequest,
-    client: Option<&'call <Providers::Source as ClientSource>::Client>,
-    is_async: bool,
-    litellm_params: Params,
-    prepared: Prepared<'call, Providers>,
-) -> (
-    GenerationHandlerRequest<'call, Providers::Source>,
-    &'call Providers::Config,
-    &'call Providers::Source,
-    String,
-    String,
-)
-where
-    Providers: VideoGenerationProviders,
-{
-    let model = prepared.model.clone();
-    let provider = prepared.provider.clone();
-    let config = prepared.config;
-    let source = prepared.source;
-    let handler_request = handler_request(request, client, is_async, litellm_params, prepared);
-    (handler_request, config, source, model, provider)
-}
-
-fn handler_request<'call, Providers>(
+pub(super) fn handler_request<'call, Providers>(
     request: VideoGenerationRequest,
     client: Option<&'call <Providers::Source as ClientSource>::Client>,
     is_async: bool,

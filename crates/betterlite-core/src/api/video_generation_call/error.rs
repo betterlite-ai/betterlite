@@ -19,19 +19,11 @@ const VALUE_ERROR: &str = "ValueError";
 // get_llm_provider catches its own failures and raises this class with the original model appended
 const BAD_REQUEST: &str = "BadRequestError";
 
+#[derive(Clone, Copy)]
 enum ExceptionCause {
     Local,
     Resolution,
     Transport(Option<u16>, bool),
-}
-
-enum FailureClassInput {
-    FieldType {
-        field: &'static str,
-        expected: &'static str,
-    },
-    Provider,
-    Exception(ExceptionCause),
 }
 
 #[derive(Debug, Error)]
@@ -112,44 +104,28 @@ fn failure_class(
     provider: &str,
     redactor: &Redactor,
 ) -> ErrorClass {
-    match failure_class_input(error) {
-        FailureClassInput::FieldType { field, expected } => {
-            field_error_class(field, expected, model, provider)
-        }
-        FailureClassInput::Provider => provider_class(message, model, provider),
-        FailureClassInput::Exception(cause) => {
-            exception_class(cause, message, model, provider, redactor)
-        }
-    }
-}
-
-fn failure_class_input(error: &VideoGenerationCallError) -> FailureClassInput {
-    match error {
+    let cause = match error {
         VideoGenerationCallError::FieldType { field, expected } => {
-            FailureClassInput::FieldType { field, expected }
+            return field_error_class(field, expected, model, provider);
         }
-        VideoGenerationCallError::Resolution(_) => {
-            FailureClassInput::Exception(ExceptionCause::Resolution)
-        }
+        VideoGenerationCallError::Resolution(_) => ExceptionCause::Resolution,
         VideoGenerationCallError::Unsupported { .. }
         | VideoGenerationCallError::ConfigMissing { .. }
         | VideoGenerationCallError::Selection(_)
-        | VideoGenerationCallError::UnknownProvider { .. } => FailureClassInput::Provider,
+        | VideoGenerationCallError::UnknownProvider { .. } => {
+            return provider_class(message, model, provider);
+        }
         VideoGenerationCallError::Mock(_)
         | VideoGenerationCallError::Timeout { .. }
         | VideoGenerationCallError::Logging(_)
-        | VideoGenerationCallError::Suspended => {
-            FailureClassInput::Exception(ExceptionCause::Local)
-        }
+        | VideoGenerationCallError::Suspended => ExceptionCause::Local,
         VideoGenerationCallError::Transport {
             status_code,
             status_code_is_synthesized,
             ..
-        } => FailureClassInput::Exception(ExceptionCause::Transport(
-            *status_code,
-            *status_code_is_synthesized,
-        )),
-    }
+        } => ExceptionCause::Transport(*status_code, *status_code_is_synthesized),
+    };
+    exception_class(cause, message, model, provider, redactor)
 }
 
 fn field_error_class(
@@ -190,14 +166,16 @@ fn exception_class(
         }
         ExceptionCause::Transport(status_code, synthesized) => ("", status_code, synthesized),
     };
-    let raw = exception(
-        &class_message,
-        model,
-        provider,
-        exception_type,
+    let raw = RawException {
+        model: model.unwrap_or_default().to_owned(),
+        custom_llm_provider: provider.to_owned(),
+        error_str: class_message.clone(),
         status_code,
         status_code_is_synthesized,
-    );
+        message: Some(class_message),
+        body: None,
+        exception_type: exception_type.to_owned(),
+    };
     dispatch(&DispatchInput::Raw(Box::new(raw)), redactor)
 }
 
@@ -207,26 +185,6 @@ fn provider_class(message: &str, model: Option<&str>, provider: &str) -> ErrorCl
         model.map(str::to_owned),
         provider,
     )))
-}
-
-fn exception(
-    message: &str,
-    model: Option<&str>,
-    provider: &str,
-    exception_type: &str,
-    status_code: Option<u16>,
-    status_code_is_synthesized: bool,
-) -> RawException {
-    RawException {
-        model: model.unwrap_or_default().to_owned(),
-        custom_llm_provider: provider.to_owned(),
-        error_str: message.to_owned(),
-        status_code,
-        status_code_is_synthesized,
-        message: Some(message.to_owned()),
-        body: None,
-        exception_type: exception_type.to_owned(),
-    }
 }
 
 // what the B3333 handler's failure carries into exception_type: the provider's own status, or the local text

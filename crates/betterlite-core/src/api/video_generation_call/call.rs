@@ -12,8 +12,8 @@ use betterlite_models::decisions::Json;
 use betterlite_models::resolution::{ResolutionContext, ResolutionRequest, resolve};
 use betterlite_redact::secret::Redactor;
 
-use self::prepare::Prepared;
-use self::request::{Polled, build_handler_request, poll_once};
+use self::prepare::prepare;
+use self::request::{Polled, handler_request, poll_once};
 use super::error::{VideoGenerationCallError, VideoGenerationFailure, failure};
 use super::handler::{
     GenerationHandlerEnvironment, GenerationHandlerRequest, VideoGenerationHandling,
@@ -83,42 +83,15 @@ where
             return Ok(VideoGenerationWork::Ready(Box::new(object)));
         }
         let litellm_params = request.kwargs.clone();
-        let prepared = self.prepare(&mut request, logging, resolution)?;
-        self.dispatch_prepared(
-            request,
-            client,
-            is_async,
-            litellm_params,
-            prepared,
-            GenerationCallEnvironment { logging, env },
-        )
-    }
-
-    fn dispatch_prepared<'call>(
-        &'call self,
-        request: VideoGenerationRequest,
-        client: Option<&'call <Providers::Source as ClientSource>::Client>,
-        is_async: bool,
-        litellm_params: Params,
-        prepared: Prepared<'call, Providers>,
-        environment: GenerationCallEnvironment<'call, '_>,
-    ) -> Result<VideoGenerationWork<'call>, VideoGenerationFailure> {
-        let GenerationCallEnvironment { logging, env } = environment;
-        let (handler_request, config, source, model, provider) =
-            build_handler_request(request, client, is_async, litellm_params, prepared);
+        let prepared = prepare(self, &mut request, logging, resolution)?;
         let handler_environment = GenerationHandlerEnvironment {
-            config,
-            source,
+            config: prepared.config,
+            source: prepared.source,
             logging,
             env,
         };
-        self.invoke_handler(
-            handler_request,
-            handler_environment,
-            is_async,
-            &model,
-            &provider,
-        )
+        let outgoing = handler_request(request, client, is_async, litellm_params, prepared);
+        self.invoke_handler(outgoing, handler_environment, is_async)
     }
 
     fn invoke_handler<'call>(
@@ -126,15 +99,15 @@ where
         request: GenerationHandlerRequest<'call, Providers::Source>,
         environment: GenerationHandlerEnvironment<'call, '_, Providers::Config, Providers::Source>,
         is_async: bool,
-        model: &str,
-        provider: &str,
     ) -> Result<VideoGenerationWork<'call>, VideoGenerationFailure> {
         if is_async {
             let pending = self.handler.handle(environment, request, true);
             return Ok(VideoGenerationWork::Pending(pending));
         }
+        let model = request.model.clone();
+        let provider = request.custom_llm_provider.clone();
         let polled = poll_once(self.handler.handle(environment, request, false));
-        self.sync_result(polled, model, provider)
+        self.sync_result(polled, &model, &provider)
     }
 
     // LiteLLM's avideo_generation: its own provider inference, the sync path with async_call true, then the future awaited

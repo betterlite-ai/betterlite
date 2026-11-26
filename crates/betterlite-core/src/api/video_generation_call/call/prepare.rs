@@ -5,10 +5,10 @@ use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_models::resolution::{ResolutionContext, ResolutionRequest, ResolvedModel, resolve};
+use betterlite_redact::secret::Redactor;
 use indexmap::IndexMap;
 
 use super::super::error::{VideoGenerationCallError, VideoGenerationFailure, failure};
-use super::super::handler::VideoGenerationHandling;
 use super::super::logging::{LoggedGeneration, log_call};
 use super::super::options::{provider_request_params, requested_optional_params};
 use super::super::providers::VideoGenerationProviders;
@@ -29,144 +29,146 @@ pub(crate) struct Prepared<'call, Providers: VideoGenerationProviders> {
     pub(crate) timeout: Duration,
 }
 
-impl<Providers, Handler> VideoGenerationCaller<Providers, Handler>
+// LiteLLM's try block from get_llm_provider to the handler call, every step in order
+pub(super) fn prepare<'call, Providers, Handler>(
+    caller: &'call VideoGenerationCaller<Providers, Handler>,
+    request: &mut VideoGenerationRequest,
+    logging: &mut LoggingState,
+    resolution: &ResolutionContext<'_>,
+) -> Result<Prepared<'call, Providers>, VideoGenerationFailure>
 where
     Providers: VideoGenerationProviders,
-    Handler: VideoGenerationHandling<Providers::Config, Providers::Source>,
 {
-    // LiteLLM's try block from get_llm_provider to the handler call, every step in order
-    pub(super) fn prepare<'call>(
-        &'call self,
-        request: &mut VideoGenerationRequest,
-        logging: &mut LoggingState,
-        resolution: &ResolutionContext<'_>,
-    ) -> Result<Prepared<'call, Providers>, VideoGenerationFailure> {
-        let resolved = self.resolve_target(request, resolution)?;
-        let (model, provider) = (resolved.model, resolved.provider.slug().to_owned());
-        let tag = self.video_tag(&model, &provider)?;
-        let (config, source) = self.config_source(&tag, &model, &provider)?;
-        let options = requested_optional_params(request)
-            .map_err(|error| failure(error, Some(&model), Some(&provider), &self.redactor))?;
-        let params = provider_request_params(config, &model, self.drop_params, &options);
-        log_call(
-            logging,
-            &LoggedGeneration {
-                kwargs: &request.kwargs,
-                model: &model,
-                user: request.user.as_deref(),
-                params: &params,
-                provider: &provider,
-                call_id: call_id(&request.kwargs),
-            },
+    let resolved = resolve_target(request, resolution, &caller.redactor)?;
+    let (model, provider) = (resolved.model, resolved.provider.slug().to_owned());
+    let tag = video_tag(&model, &provider, &caller.redactor)?;
+    let (config, source) =
+        config_source(&caller.providers, &tag, &model, &provider, &caller.redactor)?;
+    let options = requested_optional_params(request)
+        .map_err(|error| failure(error, Some(&model), Some(&provider), &caller.redactor))?;
+    let params = provider_request_params(config, &model, caller.drop_params, &options);
+    log_call(
+        logging,
+        &LoggedGeneration {
+            kwargs: &request.kwargs,
+            model: &model,
+            user: request.user.as_deref(),
+            params: &params,
+            provider: &provider,
+            call_id: call_id(&request.kwargs),
+        },
+    )
+    .map_err(|error| {
+        failure(
+            VideoGenerationCallError::Logging(error),
+            Some(&model),
+            Some(&provider),
+            &caller.redactor,
         )
-        .map_err(|error| {
-            failure(
-                VideoGenerationCallError::Logging(error),
-                Some(&model),
-                Some(&provider),
-                &self.redactor,
-            )
-        })?;
-        let timeout = resolved_timeout(request.timeout, self.request_timeout)
-            .map_err(|error| failure(error, Some(&model), Some(&provider), &self.redactor))?;
-        Ok(Prepared {
-            model,
-            provider,
-            config,
-            source,
-            params,
-            extra_headers: request.extra_headers.clone(),
-            extra_body: request.extra_body.clone(),
-            timeout,
-        })
-    }
+    })?;
+    let timeout = resolved_timeout(request.timeout, caller.request_timeout)
+        .map_err(|error| failure(error, Some(&model), Some(&provider), &caller.redactor))?;
+    Ok(Prepared {
+        model,
+        provider,
+        config,
+        source,
+        params,
+        extra_headers: request.extra_headers.clone(),
+        extra_body: request.extra_body.clone(),
+        timeout,
+    })
+}
 
-    // get_llm_provider(model=model, custom_llm_provider=..., api_base=None, api_key=None)
-    fn resolve_target(
-        &self,
-        request: &VideoGenerationRequest,
-        resolution: &ResolutionContext<'_>,
-    ) -> Result<ResolvedModel, VideoGenerationFailure> {
-        let requested_model = request
-            .model
-            .as_deref()
-            .filter(|model| !model.is_empty())
-            .unwrap_or(DEFAULT_MODEL);
-        resolve(
-            &ResolutionRequest {
-                model: requested_model,
-                // an empty name reaches the resolver like an absent one, the same falsy check LiteLLM makes
-                custom_llm_provider: request.custom_llm_provider.as_deref(),
-                api_base: None,
-                api_key: None,
-            },
-            resolution,
+// get_llm_provider(model=model, custom_llm_provider=..., api_base=None, api_key=None)
+fn resolve_target(
+    request: &VideoGenerationRequest,
+    resolution: &ResolutionContext<'_>,
+    redactor: &Redactor,
+) -> Result<ResolvedModel, VideoGenerationFailure> {
+    let requested_model = request
+        .model
+        .as_deref()
+        .filter(|model| !model.is_empty())
+        .unwrap_or(DEFAULT_MODEL);
+    resolve(
+        &ResolutionRequest {
+            model: requested_model,
+            // an empty name reaches the resolver like an absent one, the same falsy check LiteLLM makes
+            custom_llm_provider: request.custom_llm_provider.as_deref(),
+            api_base: None,
+            api_key: None,
+        },
+        resolution,
+    )
+    .map_err(|error| {
+        failure(
+            VideoGenerationCallError::Resolution(error),
+            Some(requested_model),
+            request.custom_llm_provider.as_deref(),
+            redactor,
         )
-        .map_err(|error| {
-            failure(
-                VideoGenerationCallError::Resolution(error),
-                Some(requested_model),
-                request.custom_llm_provider.as_deref(),
-                &self.redactor,
-            )
-        })
-    }
+    })
+}
 
-    // LlmProviders(...) and get_provider_video_config, whose failures get_llm_provider's treatment
-    fn video_tag(
-        &self,
-        model: &str,
-        provider: &str,
-    ) -> Result<VideoConfigTag, VideoGenerationFailure> {
-        let provider_id = ProviderId::from_str(provider).map_err(|source| {
-            failure(
-                VideoGenerationCallError::UnknownProvider {
-                    provider: provider.to_owned(),
-                    source,
-                },
-                Some(model),
-                Some(provider),
-                &self.redactor,
-            )
-        })?;
-        match get_provider_video_config(Some(model), provider_id) {
-            Ok(Some(tag)) => Ok(tag),
-            Ok(None) => Err(failure(
-                VideoGenerationCallError::Unsupported {
-                    provider: provider.to_owned(),
-                },
-                Some(model),
-                Some(provider),
-                &self.redactor,
-            )),
-            Err(error) => Err(failure(
-                VideoGenerationCallError::Selection(error),
-                Some(model),
-                Some(provider),
-                &self.redactor,
-            )),
-        }
+// LlmProviders(...) and get_provider_video_config, whose failures get_llm_provider's treatment
+fn video_tag(
+    model: &str,
+    provider: &str,
+    redactor: &Redactor,
+) -> Result<VideoConfigTag, VideoGenerationFailure> {
+    let provider_id = ProviderId::from_str(provider).map_err(|source| {
+        failure(
+            VideoGenerationCallError::UnknownProvider {
+                provider: provider.to_owned(),
+                source,
+            },
+            Some(model),
+            Some(provider),
+            redactor,
+        )
+    })?;
+    match get_provider_video_config(Some(model), provider_id) {
+        Ok(Some(tag)) => Ok(tag),
+        Ok(None) => Err(failure(
+            VideoGenerationCallError::Unsupported {
+                provider: provider.to_owned(),
+            },
+            Some(model),
+            Some(provider),
+            redactor,
+        )),
+        Err(error) => Err(failure(
+            VideoGenerationCallError::Selection(error),
+            Some(model),
+            Some(provider),
+            redactor,
+        )),
     }
+}
 
-    // the installed config for the tag; a provider LiteLLM has a config for but betterlite has not built yet
-    fn config_source<'call>(
-        &'call self,
-        tag: &VideoConfigTag,
-        model: &str,
-        provider: &str,
-    ) -> Result<(&'call Providers::Config, &'call Providers::Source), VideoGenerationFailure> {
-        let Some((config, source)) = self.providers.video_config(tag) else {
-            return Err(failure(
-                VideoGenerationCallError::ConfigMissing {
-                    provider: provider.to_owned(),
-                },
-                Some(model),
-                Some(provider),
-                &self.redactor,
-            ));
-        };
-        Ok((config, source))
-    }
+// the installed config for the tag; a provider LiteLLM has a config for but betterlite has not built yet
+fn config_source<'call, Providers>(
+    providers: &'call Providers,
+    tag: &VideoConfigTag,
+    model: &str,
+    provider: &str,
+    redactor: &Redactor,
+) -> Result<(&'call Providers::Config, &'call Providers::Source), VideoGenerationFailure>
+where
+    Providers: VideoGenerationProviders,
+{
+    let Some((config, source)) = providers.video_config(tag) else {
+        return Err(failure(
+            VideoGenerationCallError::ConfigMissing {
+                provider: provider.to_owned(),
+            },
+            Some(model),
+            Some(provider),
+            redactor,
+        ));
+    };
+    Ok((config, source))
 }
 
 // kwargs.get("litellm_call_id", None): the value rides into litellm_params, and only a string names a call
