@@ -17,9 +17,6 @@ call:
         options: {}
         drop_params: false
       - function: map
-        options: {response_format: 5}
-        drop_params: false
-      - function: map
         options: {response_format: url, user: u}
         drop_params: true
 env: {}

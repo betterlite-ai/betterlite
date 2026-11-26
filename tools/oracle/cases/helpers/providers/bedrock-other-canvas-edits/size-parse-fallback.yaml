@@ -23,9 +23,6 @@ call:
         options: {size: '10'}
         drop_params: false
       - function: map
-        options: {size: 10}
-        drop_params: false
-      - function: map
         options: {n: 2, size: '10x20', width: 5}
         drop_params: false
       - function: transform

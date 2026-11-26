@@ -21,9 +21,6 @@ call:
         options: {quality: null}
         drop_params: false
       - function: map
-        options: {quality: 5}
-        drop_params: false
-      - function: map
         options: {n: 2, size: 1x2, quality: hd}
         drop_params: false
       - function: map
