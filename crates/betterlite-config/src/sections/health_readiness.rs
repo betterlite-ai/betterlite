@@ -123,32 +123,26 @@ impl Section for Raw {
 }
 
 // the kubelet preStop hook can supply the token through the environment without a config reload
-fn drain_token<L>(
+fn drain_token(
     configured: Option<RawToken>,
-    lookup: &L,
-) -> Result<Option<SecretString>, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    // LiteLLM resolves an unset os.environ reference to None, which then falls through to the env var
-    let from_config = match configured {
-        Some(RawToken::Text(text)) => {
-            let unset = text
-                .strip_prefix("os.environ/")
-                .is_some_and(|variable| lookup.lookup(variable).is_none());
-            if unset {
-                None
-            } else {
-                let resolved = resolve_string(text, DRAIN_TOKEN_PATH, lookup)?;
-                Some(resolved).filter(|value| !value.is_empty())
+    lookup: &dyn EnvironmentLookup,
+) -> Result<Option<SecretString>, ConfigError> {
+    if let Some(RawToken::Text(text)) = configured {
+        // LiteLLM resolves an unset os.environ reference to None, which then falls through to the env var
+        let unset = text
+            .strip_prefix("os.environ/")
+            .is_some_and(|variable| lookup.lookup(variable).is_none());
+        if !unset {
+            let resolved = resolve_string(text, DRAIN_TOKEN_PATH, lookup)?;
+            if !resolved.is_empty() {
+                return Ok(Some(SecretString::from(resolved)));
             }
         }
-        Some(RawToken::Other(_)) | None => None,
-    };
-    let from_environment = lookup
+    }
+    let environment = lookup
         .lookup(DRAIN_TOKEN_VARIABLE)
         .filter(|value| !value.is_empty());
-    Ok(from_config.or(from_environment).map(SecretString::from))
+    Ok(environment.map(SecretString::from))
 }
 
 // a malformed timeout must not keep the pod alive past terminationGracePeriodSeconds, so it falls back to 30 s
