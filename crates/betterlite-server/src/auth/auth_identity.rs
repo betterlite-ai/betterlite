@@ -76,6 +76,28 @@ pub enum StageInput {
     AuthEndUsers(Box<EndUserStageInput>),
 }
 
+impl StageInput {
+    // every read and check these stages own ran while their input was assembled or in the prefetch, so only the identity is left
+    fn carried_context(&self) -> Option<AuthContext> {
+        match self {
+            Self::AuthTagBudgets(stage) => Some(stage.context.clone()),
+            Self::AuthKeyBudgets(stage) => Some(stage.context.clone()),
+            Self::AuthModelBudgets(stage) => Some(stage.context.clone()),
+            Self::TeamBudgetAdmission(stage) => Some(stage.context.clone()),
+            Self::AuthOrgLookup(stage) => Some(stage.context.clone()),
+            Self::AuthEndUsers(stage) => Some(stage.context.clone()),
+            Self::MasterKey(_)
+            | Self::AuthRequestPolicy(_)
+            | Self::RequestBodySafety(_)
+            | Self::AuthVirtualKeyRoutes(_)
+            | Self::AuthRequestModels(_)
+            | Self::AuthModelPatterns(_)
+            | Self::EntityModelAccess(_)
+            | Self::AuthResourceGrants(_) => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct AuthContext {
     pub principal: Principal,
@@ -138,29 +160,9 @@ pub(crate) fn dispatch(
         | AuthBackend::AuthModelBudgets
         | AuthBackend::TeamBudgetAdmission
         | AuthBackend::AuthOrgLookup
-        | AuthBackend::AuthEndUsers => carried_context(input),
-    }
-}
-
-// every read and check these stages own ran while their input was assembled or in the prefetch, so only the identity is left
-fn carried_context(input: &StageInput) -> Result<AuthContext, StageFailure> {
-    match input {
-        StageInput::AuthTagBudgets(stage) => Ok(stage.context.clone()),
-        StageInput::AuthKeyBudgets(stage) => Ok(stage.context.clone()),
-        StageInput::AuthModelBudgets(stage) => Ok(stage.context.clone()),
-        StageInput::TeamBudgetAdmission(stage) => Ok(stage.context.clone()),
-        StageInput::AuthOrgLookup(stage) => Ok(stage.context.clone()),
-        StageInput::AuthEndUsers(stage) => Ok(stage.context.clone()),
-        StageInput::MasterKey(_)
-        | StageInput::AuthRequestPolicy(_)
-        | StageInput::RequestBodySafety(_)
-        | StageInput::AuthVirtualKeyRoutes(_)
-        | StageInput::AuthRequestModels(_)
-        | StageInput::AuthModelPatterns(_)
-        | StageInput::EntityModelAccess(_)
-        | StageInput::AuthResourceGrants(_) => {
-            Err(StageFailure::from(AuthenticationFailure::Missing))
-        }
+        | AuthBackend::AuthEndUsers => input
+            .carried_context()
+            .ok_or_else(|| StageFailure::from(AuthenticationFailure::Missing)),
     }
 }
 
