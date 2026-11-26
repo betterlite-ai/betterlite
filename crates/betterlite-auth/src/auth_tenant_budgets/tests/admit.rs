@@ -59,14 +59,14 @@ fn assert_settled_org_denial(
 #[tokio::test]
 async fn project_denial_stops_the_settled_scopes() {
     let world = TagWorld::new(
-        vec![tag_with_budget("t", 100.0, Some(1.0))],
-        vec![group_with_budget("g", 100.0, Some(1.0))],
+        vec![tag_with_budget("t", 100.0, Some(1.0_f64))],
+        vec![group_with_budget("g", 100.0, Some(1.0_f64))],
     );
     let reader = ScriptedSpend::new(vec![number(11.0)]);
     let recorder = Recorder::default();
     let admission = admission(&reader, &recorder);
     let mut token = token(json!({"token": "sk", "org_id": "org-1"}));
-    let projected = project(10.0, Some((Some(10.0), None)));
+    let projected = project(10.0, Some((Some(10.0_f64), None)));
     let names = ["t".to_owned()];
     let groups = ["g".to_owned()];
     let sources = tenant_sources(&world, true);
