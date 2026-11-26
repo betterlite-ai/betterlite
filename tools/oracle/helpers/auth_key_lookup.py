@@ -1,5 +1,4 @@
 import asyncio
-import json
 from typing import Final, Literal, TypeAlias
 
 import httpx
@@ -47,6 +46,11 @@ class MappingRow(BaseModel):
 MAPPING_ROWS: Final[TypeAdapter[list[MappingRow]]] = TypeAdapter(list[MappingRow])
 
 
+class KeyStep(BaseModel):
+    kind: Literal["transport", "row"]
+    fields: Row | None = None
+
+
 class Call(BaseModel):
     aspect: Literal["cache_key", "mapping", "key_object", "session"]
     claim_name: str | None = None
@@ -82,11 +86,11 @@ class MappingDb(PrismaWrapper):
         self.litellm_jwtkeymapping = self
 
     async def find_many(self, *, where: Row, **_opts: JsonValue) -> list[MappingRow]:
-        self.state.where.append(JSON.validate_json(json.dumps(where)))
+        self.state.where.append(where)
         return self.state.mapping_rows
 
     async def find_first(self, *, where: Row, **_opts: JsonValue) -> MappingRow | None:
-        self.state.where.append(JSON.validate_json(json.dumps(where)))
+        self.state.where.append(where)
         return self.state.found
 
 
@@ -97,8 +101,10 @@ class FakeClient(PrismaClient):
         reconnect = state.reconnect
         timeout = None if reconnect is None else TIMEOUT.validate_python(reconnect.get("timeout"))
         lock = None if reconnect is None else TIMEOUT.validate_python(reconnect.get("lock"))
-        self._db_auth_reconnect_timeout_seconds = timeout
-        self._db_auth_reconnect_lock_timeout_seconds = lock
+        if timeout is not None:
+            self._db_auth_reconnect_timeout_seconds = timeout
+        if lock is not None:
+            self._db_auth_reconnect_lock_timeout_seconds = lock
 
     async def __call__(self, object_permission_id: str, *_args: LoaderArg, **_kwargs: LoaderArg) -> LiteLLM_ObjectPermissionTable | None:  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3982-L3989
         del object_permission_id, _args
@@ -113,12 +119,10 @@ class FakeClient(PrismaClient):
         step = self.state.rows.pop(0) if self.state.rows else None
         if step is None:
             return None
-        if step.get("kind") == "transport":
+        row = KeyStep.model_validate(step)
+        if row.kind == "transport":
             raise httpx.ConnectError("connection closed")
-        fields = step.get("fields")
-        if fields is None:
-            raise ValueError("a row step needs fields")
-        return LiteLLM_VerificationTokenView.model_validate(fields)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py
+        return LiteLLM_VerificationTokenView.model_validate(row.fields)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py
 
     @override
     async def attempt_db_reconnect(self, reason: str, **_opts: JsonValue) -> bool:  # type: ignore[override]  # pyright: ignore[reportIncompatibleMethodOverride]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L6434-L6450
@@ -170,10 +174,9 @@ class ScriptedUser(Scripted):
 
 class ScriptedTeam(Scripted):
     async def __call__(self, *_args: LoaderArg, **_kwargs: LoaderArg) -> LiteLLM_TeamTableCachedObj:
-        team = self.state.team
-        if team is None:
+        if self.state.team is None:
             raise TeamNotFoundError("gone")
-        return LiteLLM_TeamTableCachedObj.model_validate(team)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py
+        return LiteLLM_TeamTableCachedObj.model_validate(self.state.team)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py
 
 
 class ScriptedMembership(Scripted):
@@ -185,8 +188,9 @@ class ScriptedMembership(Scripted):
 def auth_fields(auth: UserAPIKeyAuth) -> JsonValue:
     view = JSON_OBJECT.validate_json(auth.model_dump_json())
     record: dict[str, JsonValue] = {name: view.get(name) for name in AUTH_KEYS}
-    record["models"] = JSON.validate_python([] if view.get("models") is None else view.get("models"))  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py
-    record["team_models"] = JSON.validate_python([] if view.get("team_models") is None else view.get("team_models"))  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py
+    empty_models: list[JsonValue] = []
+    record["models"] = empty_models if view.get("models") is None else view.get("models")
+    record["team_models"] = empty_models if view.get("team_models") is None else view.get("team_models")
     record["has_object_permission"] = view.get("object_permission") is not None
     return record
 
@@ -229,7 +233,7 @@ async def key_object(state: Call) -> JsonValue:
     permission = state.permissions
     if permission is not None:
         object_id = TEXT.validate_python(permission.get("id"))
-        state.table = LiteLLM_ObjectPermissionTable.model_validate({"object_permission_id": object_id})  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/object_permission.py
+        state.table = LiteLLM_ObjectPermissionTable(object_permission_id=object_id)
         state.permission_fail = permission.get("fail") is True
     client = FakeClient(state)
     cache = KeyCache(state)
@@ -261,10 +265,7 @@ async def key_object(state: Call) -> JsonValue:
 
 
 async def session(state: Call) -> JsonValue:
-    auth_row = state.auth
-    if auth_row is None:
-        raise ValueError("a session call needs the minted auth")
-    auth: UserAPIKeyAuth = UserAPIKeyAuth.model_validate(auth_row)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py
+    auth: UserAPIKeyAuth = UserAPIKeyAuth.model_validate(state.auth)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py
     client = FakeClient(state)
     cache = KeyCache(state)
     logging_obj = ProxyLogging(cache)

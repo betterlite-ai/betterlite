@@ -45,10 +45,15 @@ pub fn jwt_key_mapping_cache_key(
     claim_value: &str,
     issuer: Option<&str>,
 ) -> String {
-    issuer.filter(|value| !value.is_empty()).map_or_else(
-        || format!("jwt_key_mapping:{claim_name}:{claim_value}"),
-        |scope| format!("jwt_key_mapping:{scope}:{claim_name}:{claim_value}"),
-    )
+    let mut key = String::from("jwt_key_mapping:");
+    if let Some(scope) = issuer.filter(|value| !value.is_empty()) {
+        key.push_str(scope);
+        key.push(':');
+    }
+    key.push_str(claim_name);
+    key.push(':');
+    key.push_str(claim_value);
+    key
 }
 
 // ast-grep-ignore: no-long-names
