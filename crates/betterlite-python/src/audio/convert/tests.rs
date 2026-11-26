@@ -101,7 +101,7 @@ fn request_file_extension_sets_the_type() {
     let (processed, input) = audio_file(&named).unwrap();
     assert_eq!(processed.filename, "clip.wav");
     assert_eq!(processed.content_type, "audio/wav");
-    assert_eq!(input, "clip.wav");
+    assert_eq!(input, "(clip.wav, bytes)");
 }
 
 #[test]
@@ -113,8 +113,15 @@ fn request_tuple_type_wins() {
 
 #[test]
 fn request_file_argument_takes_a_marker() {
-    let call = wire(r#"{"file":{"$file":{"name":"clip.wav","blob":0}}}"#);
+    let mut blobs = [b"RIFF....WAVEfmt ".to_vec()];
+    let (call, files) = parse(
+        r#"{"arguments":{"file":{"$file":{"name":"clip.wav","blob":0}}}}"#,
+        &mut blobs,
+    )
+    .unwrap();
     bare_string_file(&call.arguments).unwrap();
+    assert_eq!(files, [(String::from("file"), file("clip.wav", None))]);
+    assert_eq!(blobs, [Vec::<u8>::new()]);
 }
 
 #[test]
