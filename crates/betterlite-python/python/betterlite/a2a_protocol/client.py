@@ -1,4 +1,5 @@
 from collections.abc import AsyncGenerator
+from contextlib import aclosing
 
 from betterlite.a2a_protocol.main import (
     A2AClientType,
@@ -59,5 +60,6 @@ class A2AClient:
         self, request: SendStreamingMessageRequest
     ) -> AsyncGenerator[SendStreamingMessageResponse, None]:
         client = await self._get_client()
-        async for chunk in asend_message_streaming(a2a_client=client, request=request):
-            yield chunk
+        async with aclosing(asend_message_streaming(a2a_client=client, request=request)) as chunks:
+            async for chunk in chunks:
+                yield chunk

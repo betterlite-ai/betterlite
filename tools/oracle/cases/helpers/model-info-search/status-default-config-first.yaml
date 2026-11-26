@@ -1,0 +1,38 @@
+kind: helper
+name: model-info-search-status-default-config-first
+call:
+  model_info_search:
+    function: sort
+    sort_by: status
+    sort_order: asc
+    models:
+      - model_name: db
+        model_info:
+          db_model: true
+      - model_name: config
+        model_info:
+          db_model: false
+      - model_name: missing
+        model_info: {}
+      - model_name: another-config
+        model_info:
+          db_model: false
+calls:
+  - model_info_search:
+      function: sort
+      sort_by: status
+      sort_order: desc
+      models:
+        - model_name: db
+          model_info:
+            db_model: true
+        - model_name: config
+          model_info:
+            db_model: false
+        - model_name: missing
+          model_info: {}
+        - model_name: another-config
+          model_info:
+            db_model: false
+env: {}
+compare: {ignore: []}

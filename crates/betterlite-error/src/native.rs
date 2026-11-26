@@ -7,7 +7,7 @@ use crate::azure_openrouter::azure::{self, AzureExceptionInput};
 use crate::azure_openrouter::openrouter::{self, OpenrouterExceptionInput};
 use crate::dispatch::{RawException, RawExceptionBody, exception_provider_label};
 use crate::error::ErrorClass;
-use crate::facts::ProviderErrorFacts;
+use crate::facts::{ProviderErrorFacts, ResponseFacts};
 use crate::native_errors_a::{ai21, cloudflare, cohere, huggingface};
 use crate::native_errors_b::aleph_alpha::{self, AlephAlphaExceptionInput};
 use crate::native_errors_b::nlp_cloud::{self, NlpCloudExceptionInput};
@@ -21,14 +21,14 @@ mod tests;
 // litellm._openai_like_providers, checked ahead of bedrock in exception_type()'s elif chain
 const OPENAI_LIKE_PROVIDERS: &[&str] = &["predibase", "databricks", "lemonade", "watsonx"];
 
-const fn facts(raw: &RawException, message: Option<String>) -> ProviderErrorFacts {
+fn facts(raw: &RawException, message: Option<String>) -> ProviderErrorFacts {
     ProviderErrorFacts {
         status_code: raw.status_code,
         status_code_is_synthesized: raw.status_code_is_synthesized,
         message,
         body: None,
         headers: None,
-        response: None,
+        response: ResponseFacts::base_llm_exception(raw.status_code),
         litellm_response_headers: None,
         request: None,
     }

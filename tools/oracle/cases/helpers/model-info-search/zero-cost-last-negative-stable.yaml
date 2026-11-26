@@ -1,0 +1,60 @@
+kind: helper
+name: model-info-search-zero-cost-last-negative-stable
+call:
+  model_info_search:
+    function: sort
+    sort_by: costs
+    sort_order: asc
+    models:
+      - model_name: negative
+        model_info:
+          input_cost_per_token: -0.002
+          output_cost_per_token: 0.001
+      - model_name: positive
+        model_info:
+          input_cost_per_token: 0.001
+          output_cost_per_token: 0.002
+      - model_name: zero-a
+        model_info:
+          input_cost_per_token: 0
+          output_cost_per_token: 0
+      - model_name: zero-missing
+        model_info: {}
+      - model_name: zero-null
+        model_info:
+          input_cost_per_token: null
+          output_cost_per_token: null
+      - model_name: zero-sum
+        model_info:
+          input_cost_per_token: -0.001
+          output_cost_per_token: 0.001
+calls:
+  - model_info_search:
+      function: sort
+      sort_by: costs
+      sort_order: desc
+      models:
+        - model_name: negative
+          model_info:
+            input_cost_per_token: -0.002
+            output_cost_per_token: 0.001
+        - model_name: positive
+          model_info:
+            input_cost_per_token: 0.001
+            output_cost_per_token: 0.002
+        - model_name: zero-a
+          model_info:
+            input_cost_per_token: 0
+            output_cost_per_token: 0
+        - model_name: zero-missing
+          model_info: {}
+        - model_name: zero-null
+          model_info:
+            input_cost_per_token: null
+            output_cost_per_token: null
+        - model_name: zero-sum
+          model_info:
+            input_cost_per_token: -0.001
+            output_cost_per_token: 0.001
+env: {}
+compare: {ignore: []}

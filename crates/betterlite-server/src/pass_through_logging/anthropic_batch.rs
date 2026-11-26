@@ -15,6 +15,8 @@ use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::pass_through_logging::background_tasks::BackgroundTasks;
+
 mod creation;
 mod error;
 mod records;
@@ -58,6 +60,7 @@ pub struct AnthropicBatchLogging {
     router: Option<Arc<dyn RouterModelIds>>,
     registry: Option<Arc<dyn ManagedBatchRegistry>>,
     ids: Arc<dyn ResponseIds>,
+    background: BackgroundTasks,
 }
 
 #[derive(Clone, Copy)]
@@ -169,11 +172,13 @@ impl AnthropicBatchLogging {
         router: Option<Arc<dyn RouterModelIds>>,
         registry: Option<Arc<dyn ManagedBatchRegistry>>,
         ids: Arc<dyn ResponseIds>,
+        background: BackgroundTasks,
     ) -> Self {
         Self {
             router,
             registry,
             ids,
+            background,
         }
     }
 

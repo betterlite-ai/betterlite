@@ -1,0 +1,11 @@
+kind: helper
+name: model-info-search-seed
+call:
+  model_info_search:
+    function: sort
+    models:
+      - model_name: b
+      - model_name: a
+    sort_by: model_name
+env: {}
+compare: {ignore: []}

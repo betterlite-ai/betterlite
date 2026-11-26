@@ -1,14 +1,14 @@
 id: B849
 milestone: M4 keys, spend and management
 title: Search and page visible deployment information
-status: todo
+status: done
 depends_on: [B003, B171, B303, B725, B845, B856, B860, B1216, B2225, B2400, B5365, B8382]
 file: tasks/B849-model-info-search.yaml
 covers:
   - "litellm/proxy/proxy_server.py"
 parent: B124
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3217

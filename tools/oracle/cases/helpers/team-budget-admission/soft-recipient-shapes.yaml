@@ -1,0 +1,79 @@
+kind: helper
+name: team-budget-admission-soft-recipient-shapes
+call:
+  team_budget_admission:
+    calls:
+      # a list keeps each nonblank string as written and drops blanks and other values
+      - function: soft
+        team:
+          team_id: team-1
+          spend: 5.0
+          soft_budget: 5.0
+          metadata:
+            soft_budget_alerting_emails: [" ops@example.com ", "", "   ", 7, dev@example.com]
+        token:
+          token: sk-team
+          user_id: user-1
+          team_id: team-1
+        spends: []
+        now: "2026-06-01T12:00:00Z"
+      # a comma-separated string is split and trimmed
+      - function: soft
+        team:
+          team_id: team-1
+          spend: 5.0
+          soft_budget: 5.0
+          metadata:
+            soft_budget_alerting_emails: " ops@example.com , ,dev@example.com"
+        token:
+          token: sk-team
+          user_id: user-1
+          team_id: team-1
+        spends: []
+        now: "2026-06-01T12:00:00Z"
+      # a mapping is not a recipient list, so the alert is skipped
+      - function: soft
+        team:
+          team_id: team-1
+          spend: 5.0
+          soft_budget: 5.0
+          metadata:
+            soft_budget_alerting_emails:
+              ops: ops@example.com
+        token:
+          token: sk-team
+          user_id: user-1
+          team_id: team-1
+        spends: []
+        now: "2026-06-01T12:00:00Z"
+      # a list of blanks leaves no recipient
+      - function: soft
+        team:
+          team_id: team-1
+          spend: 5.0
+          soft_budget: 5.0
+          metadata:
+            soft_budget_alerting_emails: ["  ", ""]
+        token:
+          token: sk-team
+          user_id: user-1
+          team_id: team-1
+        spends: []
+        now: "2026-06-01T12:00:00Z"
+      # a number is skipped like any other shape
+      - function: soft
+        team:
+          team_id: team-1
+          spend: 5.0
+          soft_budget: 5.0
+          metadata:
+            soft_budget_alerting_emails: 5
+        token:
+          token: sk-team
+          user_id: user-1
+          team_id: team-1
+        spends: []
+        now: "2026-06-01T12:00:00Z"
+env: {}
+compare:
+  ignore: []

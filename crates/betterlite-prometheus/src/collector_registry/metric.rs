@@ -5,9 +5,13 @@ use indexmap::IndexMap;
 use rust_decimal::Decimal;
 
 use crate::collector_factory::collector::{Collector, MetricUpdate, MetricValue};
+use crate::multiprocess::writer::MultiProcessWriter;
 
-use sample::{Sample, added};
+use gauge_mode::GaugeMode;
+use sample::{Sample, added, label_key};
 
+pub(crate) mod binding;
+pub mod gauge_mode;
 pub mod sample;
 
 const MISSING_LABEL: &str = "None";
@@ -92,6 +96,7 @@ pub struct CollectorDescription {
     pub help: String,
     pub label_names: Vec<String>,
     pub buckets: Vec<Bucket>,
+    pub multiprocess_mode: GaugeMode,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -108,6 +113,7 @@ pub struct PrometheusMetric {
     pub label_values: Vec<String>,
     pub samples: Arc<Mutex<IndexMap<Vec<String>, Sample>>>,
     pub created: SystemTime,
+    pub multiprocess: Arc<Mutex<Option<Arc<MultiProcessWriter>>>>,
 }
 
 impl PrometheusMetric {
@@ -134,6 +140,7 @@ impl PrometheusMetric {
                 .map(|label| (*label).to_owned())
                 .collect(),
             buckets,
+            multiprocess_mode: GaugeMode::All,
         };
         let mut samples = IndexMap::new();
         // prometheus_client builds the one series of a label-less metric in the constructor, so it is written before any update
@@ -151,6 +158,7 @@ impl PrometheusMetric {
             label_values: Vec::new(),
             samples: Arc::new(Mutex::new(samples)),
             created,
+            multiprocess: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -178,6 +186,7 @@ impl PrometheusMetric {
     // MetricWrapperBase.remove: no label names or the wrong count raises ValueError; an absent child is gone
     #[must_use]
     pub fn remove_series(&self, label_values: &[Option<String>]) -> SeriesRemoval {
+        binding::warn_removal(self);
         if label_values.is_empty() || self.description.label_names.len() != label_values.len() {
             return SeriesRemoval::Unsupported;
         }
@@ -213,13 +222,13 @@ impl PrometheusMetric {
         drop(samples);
         series
     }
-}
 
-fn label_key(label_values: &[Option<String>]) -> Vec<String> {
-    label_values
-        .iter()
-        .map(|value| value.clone().unwrap_or_else(|| MISSING_LABEL.to_owned()))
-        .collect()
+    // Gauge.__init__'s multiprocess_mode, which picks the gauge file this metric's values go into
+    #[must_use]
+    pub fn with_multiprocess_mode(mut self, mode: GaugeMode) -> Self {
+        Arc::make_mut(&mut self.description).multiprocess_mode = mode;
+        self
+    }
 }
 
 impl Collector for PrometheusMetric {
@@ -243,6 +252,7 @@ impl Collector for PrometheusMetric {
             label_values: values,
             samples: Arc::clone(&self.samples),
             created: self.created,
+            multiprocess: Arc::clone(&self.multiprocess),
         }
     }
 
@@ -250,6 +260,7 @@ impl Collector for PrometheusMetric {
         let mut samples = self.samples.lock().unwrap_or_else(PoisonError::into_inner);
         if update == MetricUpdate::Remove {
             let _removed = samples.shift_remove(&self.label_values);
+            binding::warn_removal(self);
             return;
         }
         let bounds = self.description.buckets.as_slice();
@@ -284,6 +295,8 @@ impl Collector for PrometheusMetric {
                 MetricUpdate::Remove,
             ) => {}
         }
+        // the bound writer takes the update before the samples lock lets the next one in, so both see the same order
+        binding::write_update(self, update);
         drop(samples);
     }
 }

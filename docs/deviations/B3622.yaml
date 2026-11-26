@@ -1,0 +1,39 @@
+task: B3622
+deviations:
+  - what: >-
+      A location with one trailing newline, such as "us-central1" followed by a newline,
+      is rejected as InvalidFormat.
+    why: >-
+      LiteLLM's re.match with $ also matches before a final newline, so it accepts the
+      location and builds a host name no client can use. betterlite matches the whole
+      string as the task requires, so the location is rejected instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2351-L2352
+  - what: >-
+      The "No vertex credentials found" ValueError is not built; auth_source sends every
+      input that could reach it to the credential-less branch instead.
+    why: >-
+      After the credential-less branch has taken its case, the remaining inputs always
+      carry router credentials or a credentials record with a project, so the raise cannot
+      fire. The Rust input type cannot express the impossible case.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2652-L2653
+  - what: >-
+      The router lookup is the VertexDeploymentLookup trait with one
+      deployment_for_pass_through method, and the vector store record is RouterCredentials
+      holding litellm_params.
+    why: >-
+      The module sits above B396's synchronous pass-through selection and B10014's store
+      record and takes only the fields it reads; B8641 and B3623 supply the
+      implementations. What a client sees is the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L1800
+kept_bugs:
+  - what: >-
+      A provider-resolution failure returns the endpoints as they stand but the project
+      and location that the router values already replaced.
+    why: >-
+      The except block at L1848 falls through to the return at L1851, which reads the
+      locals rebound at L1811-L1814, so a get_llm_provider failure after the router values
+      were read returns the router's values. The task text says this path returns the
+      URL's values; the pinned code does not, and betterlite copies the code because a
+      setup with a broken deployment model still reaches the router's project. Tested by
+      vertex_passthrough_auth::tests::router_model::a_provider_error_keeps_both_router_values.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L1848-L1851
