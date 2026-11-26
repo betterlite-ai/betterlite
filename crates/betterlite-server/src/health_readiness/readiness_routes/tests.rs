@@ -26,8 +26,8 @@ use crate::auth::authenticate;
 use crate::auth::failures::stage_failure_response;
 use crate::auth::route_match::stage;
 use crate::health_readiness::callback_listing::CallbackNames;
-use crate::health_readiness::readiness_routes::AdmissionCounter;
-use crate::health_readiness::shutdown_state::InFlightCounter;
+use crate::health_readiness::readiness_routes::AdmissionCounter as _;
+use crate::health_readiness::shutdown_state::InFlightCounter as _;
 use crate::health_readiness::tests::support::{
     FakeAdmission, FakeCallbacks, FakeInFlight, FakeProbe, FakeStall, ProbeAnswer, World,
     header_text, parse, send, send_unread,
@@ -345,7 +345,7 @@ fn names() -> CallbackNames {
 async fn callbacks_route_lists_the_seven_lists_and_counts() {
     let mut world = listing(names());
     world.settings.alerting = Some(vec!["slack".to_owned(), "email".to_owned()]);
-    world.settings.request_timeout = 1200.0;
+    world.settings.request_timeout = 1200.0_f64;
     let router = world.router(AllowRequestsOnOutage::Unsupported);
     let (status, _, body) = send(&router, Method::GET, "/settings", None).await;
     assert_eq!(status, StatusCode::OK);
@@ -378,7 +378,7 @@ async fn callbacks_route_lists_the_seven_lists_and_counts() {
     );
     assert_eq!(parsed.num_callbacks, 7);
     assert_eq!(parsed.num_alerting, 2);
-    assert_eq!(parsed.request_timeout, 1200.0);
+    assert_eq!(parsed.request_timeout.to_bits(), 1_200.0_f64.to_bits());
 }
 
 #[tokio::test]
@@ -401,7 +401,7 @@ async fn settings_alerting_is_none_when_absent() {
     let parsed: ListingBody = parse(&body);
     assert_eq!(parsed.alerting, "None");
     assert_eq!(parsed.num_alerting, 0);
-    assert_eq!(parsed.request_timeout, 6000.0);
+    assert_eq!(parsed.request_timeout.to_bits(), 6_000.0_f64.to_bits());
 }
 
 #[tokio::test]

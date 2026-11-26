@@ -11,7 +11,7 @@ use betterlite_db::database_faults::ErrorType;
 use rstest::rstest;
 use tokio::time::{Instant, advance};
 
-use super::{DbReadiness, DbStatus, StallTracker};
+use super::{DbReadiness, DbStatus, StallTracker as _};
 use crate::health_readiness::tests::support::{
     FakeProbe, FakeSources, FakeStall, ProbeAnswer, ReconnectAnswer, WorkerCensus, capture_logs,
     db_readiness,
@@ -89,8 +89,8 @@ async fn db_transport_error_reconnects_once_and_reports_connected() {
     let requests = fixture.probe.reconnect_requests();
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0].0, "health_readiness_check");
-    assert_eq!(requests[0].1, 2.0);
-    assert_eq!(requests[0].2, 2.0);
+    assert_eq!(requests[0].1.to_bits(), 2.0_f64.to_bits());
+    assert_eq!(requests[0].2.to_bits(), 2.0_f64.to_bits());
     let contents = logs.contents();
     assert!(contents.contains("health_check failed, attempting reconnect"));
     assert!(contents.contains("_db_health_readiness_check: reconnect succeeded"));

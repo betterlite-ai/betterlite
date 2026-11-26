@@ -192,10 +192,10 @@ fn request_timeout<L>(configured: Option<RawNumber>, lookup: &L) -> Result<f64, 
 where
     L: EnvironmentLookup,
 {
-    let configured = resolve_number(configured, REQUEST_TIMEOUT_PATH, lookup, parse_float)?;
+    let configured_value = resolve_number(configured, REQUEST_TIMEOUT_PATH, lookup, parse_float)?;
     let environment_text = lookup.lookup(REQUEST_TIMEOUT_VARIABLE).unwrap_or_default();
     let environment = betterlite_env::number::<f64>(REQUEST_TIMEOUT_VARIABLE, &environment_text)?;
-    Ok(configured
+    Ok(configured_value
         .or(environment)
         .unwrap_or(DEFAULT_REQUEST_TIMEOUT))
 }

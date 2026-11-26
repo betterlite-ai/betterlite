@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use betterlite_env::EnvError;
 use rstest::rstest;
-use secrecy::ExposeSecret as _;
+use secrecy::ExposeSecret;
 use tempfile::NamedTempFile;
 use tracing::subscriber::set_default;
 
@@ -99,7 +99,7 @@ fn the_drain_token_comes_from_the_config_or_the_environment(
         .drain
         .token
         .as_ref()
-        .map(|secret| secret.expose_secret().as_str());
+        .map(ExposeSecret::expose_secret);
     assert_eq!(token, expected);
 }
 
@@ -142,17 +142,20 @@ fn a_graceful_timeout_that_is_not_a_number_warns_with_the_raw_value() {
 }
 
 #[rstest]
-#[case::unset(&[], 30.0)]
-#[case::value(&[("PROXY_DB_LOOKUP_STALL_WINDOW_SECONDS", "5.5")], 5.5)]
-#[case::zero(&[("PROXY_DB_LOOKUP_STALL_WINDOW_SECONDS", "0")], 0.0)]
-#[case::negative_clamps_to_zero(&[("PROXY_DB_LOOKUP_STALL_WINDOW_SECONDS", "-2")], 0.0)]
-#[case::empty_is_unset(&[("PROXY_DB_LOOKUP_STALL_WINDOW_SECONDS", "")], 30.0)]
+#[case::unset(&[], 30.0_f64)]
+#[case::value(&[("PROXY_DB_LOOKUP_STALL_WINDOW_SECONDS", "5.5")], 5.5_f64)]
+#[case::zero(&[("PROXY_DB_LOOKUP_STALL_WINDOW_SECONDS", "0")], 0.0_f64)]
+#[case::negative_clamps_to_zero(&[("PROXY_DB_LOOKUP_STALL_WINDOW_SECONDS", "-2")], 0.0_f64)]
+#[case::empty_is_unset(&[("PROXY_DB_LOOKUP_STALL_WINDOW_SECONDS", "")], 30.0_f64)]
 fn the_stall_window_defaults_and_never_goes_negative(
     #[case] variables: &[(&str, &str)],
     #[case] expected: f64,
 ) {
     let settings = convert("general_settings: {}", variables).unwrap();
-    assert_eq!(settings.db_lookup_stall_window_seconds, expected);
+    assert_eq!(
+        settings.db_lookup_stall_window_seconds.to_bits(),
+        expected.to_bits()
+    );
 }
 
 #[test]
@@ -199,14 +202,14 @@ fn a_no_redis_flag_that_is_not_a_boolean_names_the_variable() {
 }
 
 #[rstest]
-#[case::default("litellm_settings: {}", &[], 6000.0)]
-#[case::configured("litellm_settings: {request_timeout: 1200}", &[], 1200.0)]
-#[case::environment("litellm_settings: {}", &[("REQUEST_TIMEOUT", "45")], 45.0)]
-#[case::config_wins("litellm_settings: {request_timeout: 1200}", &[("REQUEST_TIMEOUT", "45")], 1200.0)]
+#[case::default("litellm_settings: {}", &[], 6000.0_f64)]
+#[case::configured("litellm_settings: {request_timeout: 1200}", &[], 1200.0_f64)]
+#[case::environment("litellm_settings: {}", &[("REQUEST_TIMEOUT", "45")], 45.0_f64)]
+#[case::config_wins("litellm_settings: {request_timeout: 1200}", &[("REQUEST_TIMEOUT", "45")], 1200.0_f64)]
 #[case::reference(
     "litellm_settings: {request_timeout: os.environ/TIMEOUT}",
     &[("TIMEOUT", "90")],
-    90.0
+    90.0_f64
 )]
 fn the_request_timeout_resolves_like_the_router_section(
     #[case] yaml: &str,
@@ -214,7 +217,7 @@ fn the_request_timeout_resolves_like_the_router_section(
     #[case] expected: f64,
 ) {
     let settings = convert(yaml, variables).unwrap();
-    assert_eq!(settings.request_timeout, expected);
+    assert_eq!(settings.request_timeout.to_bits(), expected.to_bits());
 }
 
 #[test]
