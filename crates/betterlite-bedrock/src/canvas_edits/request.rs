@@ -105,7 +105,7 @@ fn take_generation(
         ("seed", take_json(options, "seed")?),
     ];
     // The nested config's keys keep their order and a top-level value overwrites its own key.
-    let mut config = take_nested(options)?;
+    let mut config = take_nested(options);
     for (name, value) in overrides {
         if let Some(json) = value {
             config.insert(name.to_owned(), json);
@@ -114,17 +114,17 @@ fn take_generation(
     Ok(config)
 }
 
-fn take_nested(options: &mut CanvasEditOptions) -> Result<IndexMap<String, Json>, CanvasEditError> {
+fn take_nested(options: &mut CanvasEditOptions) -> IndexMap<String, Json> {
     match take_value(options, "imageGenerationConfig") {
-        None => Ok(IndexMap::new()),
-        Some(CanvasEditValue::Json(Json::Object(fields))) => Ok(fields),
-        Some(
+        Some(CanvasEditValue::Json(Json::Object(fields))) => fields,
+        None
+        | Some(
             CanvasEditValue::Json(
                 Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_),
             )
             | CanvasEditValue::Bytes(_)
             | CanvasEditValue::Tuple,
-        ) => Ok(IndexMap::new()),
+        ) => IndexMap::new(),
     }
 }
 

@@ -162,10 +162,15 @@ fn painted_params(body: PaintedTask) -> IndexMap<String, Json> {
     let mut params = IndexMap::new();
     params.insert("image".to_owned(), Json::Text(body.image));
     params.insert("text".to_owned(), Json::Text(body.text));
-    if let Some(prompt) = body.mask_prompt {
-        params.insert("maskPrompt".to_owned(), prompt);
-    } else if let Some(image) = body.mask_image {
-        params.insert("maskImage".to_owned(), Json::Text(image));
+    let mask = body
+        .mask_prompt
+        .map(|prompt| ("maskPrompt".to_owned(), prompt))
+        .or_else(|| {
+            body.mask_image
+                .map(|image| ("maskImage".to_owned(), Json::Text(image)))
+        });
+    if let Some((name, value)) = mask {
+        params.insert(name, value);
     }
     if let Some(negative) = body.negative_text {
         params.insert("negativeText".to_owned(), negative);
