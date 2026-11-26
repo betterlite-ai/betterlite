@@ -1,7 +1,7 @@
 id: B170
 milestone: M12 python
 title: Python wheels for Linux, macOS and Windows and the PyPI release
-status: blocked
+status: todo
 depends_on: [B5369, B157]
 file: tasks/B170-python-wheel-release.yaml
 covers: []
@@ -9,5 +9,5 @@ parent: null
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, Python wheels and PyPI release wait on the Python layer"
+blocked_reason: null
 pr: null

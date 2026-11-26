@@ -1,7 +1,7 @@
 id: B648
 milestone: M3 providers
 title: Bedrock batch chat text and Responses records
-status: blocked
+status: todo
 depends_on: [B647, B644, B604, B618, B218, B171, B643, B596, B1025, B600, B175, B2205, B235, B1015, B002, B2214, B2228, B591]
 file: tasks/B648-bedrock-services-batch-records.yaml
 covers:
@@ -10,5 +10,5 @@ parent: B030
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, Bedrock batches files agents and vector stores can wait"
+blocked_reason: null
 pr: null

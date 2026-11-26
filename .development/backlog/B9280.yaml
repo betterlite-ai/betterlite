@@ -1,7 +1,7 @@
 id: B9280
 milestone: M4 keys, spend and management
 title: Verify native prompt-cache predictions and observed routing over HTTP
-status: blocked
+status: todo
 depends_on: [B001, B021, B066, B081, B173, B8742]
 file: tasks/B9280-native-cache-insights-http.yaml
 covers:
@@ -13,5 +13,5 @@ parent: B075
 split_from: B075
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, model and prompt caching insights can wait"
+blocked_reason: null
 pr: null

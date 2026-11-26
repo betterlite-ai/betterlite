@@ -1,0 +1,42 @@
+kind: helper
+name: auth-policy-support-tool-allowlist
+call:
+  auth_policy_support:
+    function: tools
+    route: /v1/chat/completions
+    body:
+      tools:
+        - {type: function, function: {name: get_weather}}
+        - {type: function, function: {name: web_search}}
+    token:
+      token: sk-oracle-policy-key
+      metadata: {allowed_tools: [web_search]}
+calls:
+  - auth_policy_support:
+      function: tools
+      route: /v1/chat/completions
+      body:
+        tools: [{type: function, function: {name: web_search}}]
+        functions: [{name: legacy_search}]
+      token:
+        token: sk-oracle-policy-key
+        metadata: {allowed_tools: [web_search, legacy_search]}
+  - auth_policy_support:
+      function: tools
+      route: /v1/chat/completions
+      body:
+        tools: [{type: function, function: {name: get_weather}}]
+      token:
+        token: sk-oracle-policy-key
+        metadata: {allowed_tools: []}
+        team_metadata: {allowed_tools: [get_weather]}
+  - auth_policy_support:
+      function: tools
+      route: /v1/files
+      body:
+        tools: [{type: function, function: {name: get_weather}}]
+      token:
+        token: sk-oracle-policy-key
+        metadata: {allowed_tools: [web_search]}
+env: {}
+compare: {ignore: []}

@@ -1,7 +1,7 @@
 id: B1536
 milestone: M3 providers
 title: Select Runway voices and download completed speech output
-status: blocked
+status: todo
 depends_on: [B002, B1534, B1135, B1084, B1087, B173, B171]
 file: tasks/B1536-runway-speech.yaml
 covers:
@@ -10,5 +10,5 @@ parent: B046
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): niche, Runway speech"
+blocked_reason: null
 pr: null
