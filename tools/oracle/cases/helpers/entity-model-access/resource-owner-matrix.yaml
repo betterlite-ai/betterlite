@@ -1,0 +1,84 @@
+kind: helper
+name: entity-model-access-resource-owner-matrix
+call:
+  entity_model_access:
+    steps:
+      - function: resources
+        model: claude
+        database: true
+        resource_field: model_names
+        token: {token: hash-9, team_id: team-1, access_group_ids: [ag-owner]}
+        cache:
+          "access_group_id:ag-owner": {access_group_id: ag-owner, access_group_name: owner group, access_model_names: [claude], assigned_team_ids: [team-1], assigned_key_ids: [hash-1]}
+      - function: resources
+        model: claude
+        database: true
+        resource_field: model_names
+        token: {token: hash-1, access_group_ids: [ag-by-key]}
+        cache:
+          "access_group_id:ag-by-key": {access_group_id: ag-by-key, access_group_name: key owned, access_model_names: [claude], assigned_key_ids: [hash-1]}
+      - function: resources
+        model: claude
+        database: true
+        resource_field: model_names
+        token: {token: hash-9, team_id: team-3, access_group_ids: [ag-other]}
+        cache:
+          "access_group_id:ag-other": {access_group_id: ag-other, access_group_name: other group, access_model_names: [claude], assigned_team_ids: [team-2]}
+      - function: resources
+        model: claude
+        database: true
+        resource_field: model_names
+        token: {token: hash-1, team_id: team-1, access_group_ids: [ag-one, ag-two]}
+        cache:
+          "access_group_id:ag-one": {access_group_id: ag-one, access_group_name: one, access_model_names: [gpt-4o, claude], access_mcp_server_ids: [mcp-1], access_agent_ids: [agent-1], assigned_team_ids: [team-1]}
+          "access_group_id:ag-two": {access_group_id: ag-two, access_group_name: two, access_model_names: [claude], access_mcp_server_ids: [mcp-1, mcp-2], access_agent_ids: [agent-2], assigned_team_ids: [team-1]}
+      - function: resources
+        model: claude
+        database: true
+        resource_field: mcp_server_ids
+        token: {token: hash-1, team_id: team-1, access_group_ids: [ag-one, ag-two]}
+        cache:
+          "access_group_id:ag-one": {access_group_id: ag-one, access_group_name: one, access_model_names: [gpt-4o, claude], access_mcp_server_ids: [mcp-1], access_agent_ids: [agent-1], assigned_team_ids: [team-1]}
+          "access_group_id:ag-two": {access_group_id: ag-two, access_group_name: two, access_model_names: [claude], access_mcp_server_ids: [mcp-1, mcp-2], access_agent_ids: [agent-2], assigned_team_ids: [team-1]}
+      - function: resources
+        model: claude
+        database: true
+        resource_field: agent_ids
+        token: {token: hash-1, team_id: team-1, access_group_ids: [ag-one, ag-two]}
+        cache:
+          "access_group_id:ag-one": {access_group_id: ag-one, access_group_name: one, access_model_names: [gpt-4o, claude], access_mcp_server_ids: [mcp-1], access_agent_ids: [agent-1], assigned_team_ids: [team-1]}
+          "access_group_id:ag-two": {access_group_id: ag-two, access_group_name: two, access_model_names: [claude], access_mcp_server_ids: [mcp-1, mcp-2], access_agent_ids: [agent-2], assigned_team_ids: [team-1]}
+      - function: resources
+        model: claude
+        database: true
+        resource_field: model_names
+        token: {token: hash-1, access_group_ids: [ag-gone, ag-by-key]}
+        cache:
+          "access_group_id:ag-by-key": {access_group_id: ag-by-key, access_group_name: key owned, access_model_names: [claude], assigned_key_ids: [hash-1]}
+      - function: resources
+        model: claude
+        database: true
+        resource_field: model_names
+        token: {token: hash-1, team_id: team-1, access_group_ids: [ag-other]}
+        team: {team_id: team-2, models: [gpt-4o]}
+        cache:
+          "access_group_id:ag-other": {access_group_id: ag-other, access_group_name: other group, access_model_names: [claude], assigned_team_ids: [team-2]}
+      - function: resources
+        model: claude
+        database: true
+        resource_field: model_names
+        token: {token: hash-1, access_group_ids: [ag-owner]}
+        team: {team_id: team-2, models: [gpt-4o]}
+        cache:
+          "access_group_id:ag-owner": {access_group_id: ag-owner, access_group_name: owner group, access_model_names: [claude], assigned_team_ids: [team-2]}
+      - function: resources
+        model: claude
+        database: false
+        resource_field: model_names
+        token: {token: hash-1, team_id: team-1, access_group_ids: [ag-owner]}
+      - function: resources
+        model: claude
+        database: true
+        token: {token: hash-1, models: [gpt-4o]}
+env: {}
+compare: {ignore: []}

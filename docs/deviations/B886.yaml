@@ -1,0 +1,15 @@
+task: B886
+deviations:
+  - what: The authorized resource list is deduplicated in first-seen order, where LiteLLM returns list(set(...)) and the order follows the process hash seed.
+    why: The task leaves the order unpromised and a Rust list needs one; every caller treats the resources as a set, and the oracle helper sorts both sides before comparing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L5212
+  - what: When an EntityModelRule is supplied, the entity model access stage enforces its organization model grants, although LiteLLM calls can_org_access_model only from the team move and auto-router permissions paths.
+    why: Betterlite treats the organization model allowlist as an inference authorization boundary and checks the supplied snapshot in the shared request stage. B10109 owns the eventual inference HTTP integration.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L2009; https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/auto_router_permissions.py#L226
+kept_bugs:
+  - what: A group read that fails for any reason is skipped without a trace in the result, so an outage of the group store only narrows the key's grants.
+    why: The task keeps LiteLLM's silent skip and a working setup relies on one unreadable group not failing the whole authorization.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L5205-L5206
+  - what: Any team lookup failure, an outage included, falls back to the team snapshot on the key, so stale team models can allow a model the live team row denies.
+    why: The task requires the fallback and a working setup relies on key-authorized requests surviving a team read failure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L5043-L5052
