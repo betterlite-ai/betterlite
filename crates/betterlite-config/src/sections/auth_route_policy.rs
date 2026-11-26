@@ -17,7 +17,7 @@ struct RawGeneral {
     admin_only_routes: Option<Vec<String>>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Settings {
     pub admin_only_routes: Option<Vec<String>>,
 }
