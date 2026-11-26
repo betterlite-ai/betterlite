@@ -6,6 +6,7 @@ use axum::body::Body;
 use axum::http::Request;
 use betterlite_auth::auth_errors::conversion::{AuthFailure, as_proxy_exception};
 use betterlite_auth::auth_model_patterns::decision::ModelAccessContext;
+use betterlite_auth::auth_model_patterns::grant::key_model_aliases;
 use betterlite_auth::auth_model_patterns::pattern::{
     ProviderInference, UnresolvedProviderInference,
 };
@@ -16,7 +17,6 @@ use betterlite_auth::auth_org_lookup::organization::OrgLookup;
 use betterlite_auth::auth_request_models::RequestedModels;
 use betterlite_auth::auth_team_lookup::lookup::TeamLookup;
 use betterlite_auth::entity_model_access::error::EntityModelAccessError;
-use betterlite_auth::entity_model_access::grant::{key_aliases, team_aliases};
 use betterlite_auth::entity_model_access::org::can_org_access_model;
 use betterlite_auth::entity_model_access::resolved::{ResolvedDeps, can_key_call_resolved_model};
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
@@ -117,8 +117,17 @@ pub(crate) async fn prefetch(stage: &EntityModelStageInput) -> Result<(), Entity
         provider,
         max_recurse_depth: stage.max_recurse_depth,
     };
-    let aliases = rule.key.as_ref().map_or_else(BTreeMap::new, team_aliases);
-    let targets = rule.key.as_ref().map_or_else(BTreeMap::new, key_aliases);
+    let aliases = rule
+        .key
+        .as_ref()
+        .and_then(|token| token.view.team_model_aliases.as_ref())
+        .map(|payload| key_model_aliases(&payload.0))
+        .unwrap_or_default();
+    let targets = rule
+        .key
+        .as_ref()
+        .map(|token| key_model_aliases(&token.view.token.aliases.0))
+        .unwrap_or_default();
     EntityModelAccessError::gate(can_user_call_model(
         &rule.model,
         rule.user.as_ref(),

@@ -3,6 +3,7 @@ use betterlite_db::team_rows::team::LiteLLMTeamTable;
 
 use crate::auth_model_patterns::ALL_TEAM_MODELS;
 use crate::auth_model_patterns::decision::ModelAccessContext;
+use crate::auth_model_patterns::grant::key_model_aliases;
 use crate::auth_org_lookup::organization::OrgLookup;
 use crate::auth_org_lookup::project::get_project_object;
 use crate::auth_request_models::RequestedModels;
@@ -14,7 +15,7 @@ use crate::team_budget_admission::sources::Membership;
 use crate::team_budget_admission::{TeamAdmission, TeamRequest as MemberRequest};
 
 use super::error::EntityModelAccessError;
-use super::grant::{fallback_team, key_aliases, team_aliases, text_models};
+use super::grant::{fallback_team, text_models};
 use super::groups::key_access_group_grants_model;
 use super::key::can_key_call_model;
 use super::project::can_project_access_model;
@@ -65,8 +66,13 @@ pub async fn can_key_call_resolved_model(
         }
     }
     if let Some(loaded) = &team_object {
-        let aliases = team_aliases(token);
-        let targets = key_aliases(token);
+        let aliases = token
+            .view
+            .team_model_aliases
+            .as_ref()
+            .map(|payload| key_model_aliases(&payload.0))
+            .unwrap_or_default();
+        let targets = key_model_aliases(&token.view.token.aliases.0);
         // the same default reaches the team check, so the team's own groups expand through it
         let checked = can_team_access_model(
             model,
@@ -112,7 +118,12 @@ pub async fn can_key_call_resolved_model(
         if let Some(loaded) = &project
             && !loaded.project.models.is_empty()
         {
-            can_project_access_model(model, Some(&loaded.project), &key_aliases(token), context)?;
+            can_project_access_model(
+                model,
+                Some(&loaded.project),
+                &key_model_aliases(&token.view.token.aliases.0),
+                context,
+            )?;
         }
     }
     Ok(())

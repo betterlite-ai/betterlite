@@ -1,15 +1,15 @@
 use betterlite_error::proxy_error_types::ModelAccessObject;
 
+use crate::auth_model_patterns::access_groups::models_from_access_groups;
 use crate::auth_model_patterns::decision::{ModelAccessContext, can_object_call_model};
 use crate::auth_model_patterns::denial::ModelAccessDecision;
-use crate::auth_model_patterns::grant::ModelGrantPattern;
 use crate::auth_request_models::RequestedModels;
 use crate::auth_team_lookup::lookup::TeamLookup;
 use crate::resolved_key::auth::UserAPIKeyAuth;
 
 use super::error::EntityModelAccessError;
-use super::grant::key_grant;
-use super::groups::{GroupResources, group_models};
+use super::grant::{entity_grant, key_grant};
+use super::groups::GroupResources;
 
 // can_key_call_model: the key's grant first, then its access groups in the key's place
 pub async fn can_key_call_model(
@@ -36,16 +36,16 @@ pub async fn can_key_call_model(
         return Err(EntityModelAccessError::Denied(denial));
     }
     let groups = GroupResources::load(lookup, &ids).await;
-    let models = group_models(&groups, &ids);
+    let models = models_from_access_groups(&ids, Some(&groups));
     if models.is_empty() {
         return Err(EntityModelAccessError::Denied(denial));
     }
-    let retry = ModelGrantPattern {
+    let retry = entity_grant(
         models,
-        team_model_aliases: grant.team_model_aliases,
-        key_model_aliases: grant.key_model_aliases,
-        team_id: grant.team_id,
-    };
+        Some(grant.team_model_aliases),
+        Some(grant.key_model_aliases),
+        grant.team_id,
+    );
     EntityModelAccessError::gate(can_object_call_model(
         model,
         &retry,

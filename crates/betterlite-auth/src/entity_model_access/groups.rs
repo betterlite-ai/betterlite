@@ -7,18 +7,18 @@ use secrecy::ExposeSecret as _;
 
 use crate::auth_model_lists::lists::dedup_first;
 use crate::auth_model_patterns::access_groups::{
-    AccessGroupError, AccessGroupLookup, AccessGroupResources, models_from_access_groups,
+    AccessGroupError, AccessGroupLookup, AccessGroupResources,
 };
 use crate::auth_model_patterns::decision::{ModelAccessContext, can_object_call_model};
 use crate::auth_model_patterns::denial::ModelAccessDecision;
-use crate::auth_model_patterns::grant::ModelGrantPattern;
+use crate::auth_model_patterns::grant::key_model_aliases;
 use crate::auth_request_models::RequestedModels;
 use crate::auth_team_lookup::access::get_access_object;
 use crate::auth_team_lookup::lookup::TeamLookup;
 use crate::resolved_key::auth::UserAPIKeyAuth;
 
 use super::error::EntityModelAccessError;
-use super::grant::{key_aliases, team_aliases};
+use super::grant::entity_grant;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ResourceKind {
@@ -78,12 +78,6 @@ impl AccessGroupLookup for GroupResources {
             access_group_id: access_group_id.to_owned(),
         })
     }
-}
-
-#[must_use]
-pub fn group_models(groups: &GroupResources, ids: &[String]) -> Vec<String> {
-    let lookup: &dyn AccessGroupLookup = groups;
-    models_from_access_groups(ids, Some(lookup))
 }
 
 // get_authorized_resources_from_key_access_groups: a group counts only when the key's team or the key itself owns it
@@ -150,12 +144,16 @@ pub async fn key_access_group_grants_model(
     if resources.is_empty() {
         return Ok(false);
     }
-    let grant = ModelGrantPattern {
-        models: resources,
-        team_model_aliases: token.map_or_else(BTreeMap::new, team_aliases),
-        key_model_aliases: token.map_or_else(BTreeMap::new, key_aliases),
-        team_id: token.and_then(|row| row.view.token.team_id.clone()),
-    };
+    let aliases = token
+        .and_then(|row| row.view.team_model_aliases.as_ref())
+        .map(|payload| key_model_aliases(&payload.0));
+    let targets = token.map(|row| key_model_aliases(&row.view.token.aliases.0));
+    let grant = entity_grant(
+        resources,
+        aliases,
+        targets,
+        token.and_then(|row| row.view.token.team_id.clone()),
+    );
     match can_object_call_model(model, &grant, ModelAccessObject::Key, context, 0) {
         ModelAccessDecision::Allowed => Ok(true),
         ModelAccessDecision::Denied(_) => Ok(false),

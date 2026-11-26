@@ -1,9 +1,6 @@
 use std::collections::BTreeMap;
 
 use betterlite_db::budget_permission_rows::JsonData;
-use betterlite_db::identity_rows::Payload;
-use betterlite_db::resource_rows::organization::OrganizationTable;
-use betterlite_db::resource_rows::project::ProjectTable;
 use betterlite_db::team_rows::archived::LiteLLMTeamTableCachedObj;
 use betterlite_db::team_rows::decoder::TeamRowError;
 use betterlite_db::team_rows::team::LiteLLMTeamTable;
@@ -26,76 +23,38 @@ pub fn text_models(models: &[JsonData]) -> Vec<String> {
     names
 }
 
+// one shape for every entity grant: its models, the aliases that apply and the team it resolves through
+#[must_use]
+pub fn entity_grant(
+    models: Vec<String>,
+    team_aliases: Option<BTreeMap<String, String>>,
+    key_aliases: Option<BTreeMap<String, String>>,
+    team_id: Option<String>,
+) -> ModelGrantPattern {
+    ModelGrantPattern {
+        models,
+        team_model_aliases: team_aliases.unwrap_or_default(),
+        key_model_aliases: key_aliases.unwrap_or_default(),
+        team_id,
+    }
+}
+
 // _resolve_key_models_for_auth_check, then key_model_aliases_for_auth_check over the same token
 #[must_use]
 pub fn key_grant(token: &UserAPIKeyAuth) -> ModelGrantPattern {
     let fields = &token.view.token;
     let models = text_models(&fields.models);
     let team_models = text_models(&token.view.team_models);
-    ModelGrantPattern {
-        models: resolve_key_models(&models, &team_models, fields.team_id.as_deref()),
-        team_model_aliases: team_aliases(token),
-        key_model_aliases: key_aliases(token),
-        team_id: fields.team_id.clone(),
-    }
-}
-
-#[must_use]
-pub fn key_aliases(token: &UserAPIKeyAuth) -> BTreeMap<String, String> {
-    key_model_aliases(&token.view.token.aliases.0)
-}
-
-// team_model_aliases is the dict[str, str] the team row's model_aliases column became
-#[must_use]
-pub fn team_aliases(token: &UserAPIKeyAuth) -> BTreeMap<String, String> {
-    alias_map(token.view.team_model_aliases.as_ref())
-}
-
-#[must_use]
-pub fn alias_map(aliases: Option<&Payload>) -> BTreeMap<String, String> {
-    aliases.map_or_else(BTreeMap::new, |payload| key_model_aliases(&payload.0))
-}
-
-#[must_use]
-pub fn team_grant(
-    team: Option<&LiteLLMTeamTable>,
-    aliases: &BTreeMap<String, String>,
-    alias_targets: &BTreeMap<String, String>,
-) -> ModelGrantPattern {
-    ModelGrantPattern {
-        models: team.map_or_else(Vec::new, |row| row.fields.base.models.clone()),
-        team_model_aliases: aliases.clone(),
-        key_model_aliases: alias_targets.clone(),
-        team_id: team.map(|row| row.fields.base.team_id.clone()),
-    }
-}
-
-// can_org_access_model takes the team aliases and never a key alias map
-#[must_use]
-pub fn org_grant(
-    org: Option<&OrganizationTable>,
-    aliases: &BTreeMap<String, String>,
-) -> ModelGrantPattern {
-    ModelGrantPattern {
-        models: org.map_or_else(Vec::new, |row| row.models.clone()),
-        team_model_aliases: aliases.clone(),
-        key_model_aliases: BTreeMap::new(),
-        team_id: None,
-    }
-}
-
-// can_project_access_model takes the key alias map and no team aliases or team id
-#[must_use]
-pub fn project_grant(
-    project: Option<&ProjectTable>,
-    alias_targets: &BTreeMap<String, String>,
-) -> ModelGrantPattern {
-    ModelGrantPattern {
-        models: project.map_or_else(Vec::new, |row| row.models.clone()),
-        team_model_aliases: BTreeMap::new(),
-        key_model_aliases: alias_targets.clone(),
-        team_id: None,
-    }
+    entity_grant(
+        resolve_key_models(&models, &team_models, fields.team_id.as_deref()),
+        token
+            .view
+            .team_model_aliases
+            .as_ref()
+            .map(|payload| key_model_aliases(&payload.0)),
+        Some(key_model_aliases(&fields.aliases.0)),
+        fields.team_id.clone(),
+    )
 }
 
 // can_key_call_resolved_model rebuilds the team from the key when the lookup fails

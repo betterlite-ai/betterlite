@@ -7,7 +7,7 @@ use crate::auth_model_patterns::decision::{ModelAccessContext, can_object_call_m
 use crate::auth_request_models::RequestedModels;
 
 use super::error::EntityModelAccessError;
-use super::grant::project_grant;
+use super::grant::entity_grant;
 
 // can_project_access_model: one matcher run with the key aliases and no team aliases
 pub fn can_project_access_model(
@@ -18,7 +18,12 @@ pub fn can_project_access_model(
 ) -> Result<(), EntityModelAccessError> {
     EntityModelAccessError::gate(can_object_call_model(
         model,
-        &project_grant(project, alias_targets),
+        &entity_grant(
+            project.map_or_else(Vec::new, |row| row.models.clone()),
+            None,
+            Some(alias_targets.clone()),
+            None,
+        ),
         ModelAccessObject::Project,
         context,
         0,
