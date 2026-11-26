@@ -302,9 +302,10 @@ fn request_encode_reports_the_value_it_cannot_write() {
         .extra
         .insert(String::from("blob"), Json::Object(Extra::new()));
     encode(&response).unwrap();
+    let invalid = BTreeMap::from([(vec![1_u8], "value")]);
     assert_eq!(
-        encode(&[f64::NAN]).unwrap_err().to_string(),
-        "the answer could not be written as JSON: float must be finite"
+        encode(&invalid).unwrap_err().to_string(),
+        "the answer could not be written as JSON: key must be a string"
     );
 }
 

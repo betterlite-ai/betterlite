@@ -94,8 +94,6 @@ def container_value(container: ContainerHandle | str) -> JsonValue:
             return JSON.validate_python(fields)
         case str() as sandbox_id:
             return JSON.validate_python(sandbox_id)
-        case object():
-            raise TypeError("a sandbox container is a ContainerHandle or a sandbox id")
 
 
 def sandbox_values(
