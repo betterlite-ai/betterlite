@@ -1,7 +1,7 @@
 import sys
 import types
 from collections.abc import Awaitable, Callable
-from typing import Final, Literal, TypeAlias, TypedDict, TypeVar, overload
+from typing import Final, Literal, TypeAlias, TypedDict, TypeVar, cast, overload
 
 import litellm
 from fastapi import FastAPI, Request
@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from litellm.proxy._types import LitellmUserRoles, UserAPIKeyAuth
 from litellm.proxy.common_utils.user_api_key_cache import UserApiKeyCache
 from litellm.proxy.vector_store_endpoints.management_endpoints import router
+from litellm.types.vector_stores import LiteLLM_ManagedVectorStore
 from litellm.vector_stores.vector_store_registry import VectorStoreRegistry
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
@@ -174,8 +175,11 @@ def stage_registry(rows: list[dict[str, JsonValue]], caller: UserAPIKeyAuth) -> 
 def answer_for(call: ListCall | InfoCall) -> Answer:
     caller = caller_of(call["caller"])
     registry = call["registry"]
+    # a fresh list per call: LiteLLM appends the staged rows to the list it is handed
     litellm.vector_store_registry = (
-        VectorStoreRegistry(vector_stores=[]) if registry is not None else None
+        VectorStoreRegistry(vector_stores=cast("list[LiteLLM_ManagedVectorStore]", []))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/vector_stores.py#L25-L49
+        if registry is not None
+        else None
     )
     if registry is not None:
         stage_registry(registry, caller)
@@ -190,7 +194,6 @@ def answer_for(call: ListCall | InfoCall) -> Answer:
 
 
 def run(input_value: Input) -> list[Answer]:
-    answers: list[Answer] = []
-    for call in input_value["calls"]:
-        answers.append(answer_for(call))
-    return answers
+    return [
+        answer_for(call) for call in input_value["calls"]
+    ]
