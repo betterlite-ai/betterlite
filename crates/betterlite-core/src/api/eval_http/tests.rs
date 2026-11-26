@@ -530,6 +530,7 @@ async fn eval_exchange_posts_a_body_and_a_query_for_reuse() {
         method: EvalMethod::Post,
         body: Some(&body),
         query: Some(&query),
+        params: None,
         timeout: Some(TIMEOUT),
         input: "run",
         complete_input_dict: Some(&body),
