@@ -48,11 +48,8 @@ where
     state.check_vector_feature(caller).await?;
     reconciled_list(state, caller, page, page_size)
         .await
-        .map_err(|error| {
+        .inspect_err(|error| {
             tracing::error!("Error listing vector stores: {error}");
-            ManagementReadError::Internal {
-                message: error.to_string(),
-            }
         })
 }
 
@@ -72,9 +69,7 @@ where
         .access()
         .filter_listable_vector_stores(&candidates, &caller.key)
         .await
-        .map_err(|error| ManagementReadError::Internal {
-            message: error.to_string(),
-        })?;
+        .map_err(|source| ManagementReadError::Access { source })?;
     let mut data = Vec::with_capacity(listable.len());
     for store in &listable {
         data.push(list_item(&store.0, state.limits)?);
@@ -100,9 +95,7 @@ where
 {
     let database_rows: Vec<LiteLlmManagedVectorStore> = rows_from_database(state.database.as_ref())
         .await
-        .map_err(|error| ManagementReadError::Internal {
-            message: error.to_string(),
-        })?;
+        .map_err(|source| ManagementReadError::Rows { source })?;
     let mut stores: IndexMap<String, LiteLlmManagedVectorStore> = IndexMap::new();
     let mut database_ids: BTreeSet<String> = BTreeSet::new();
     for row in &database_rows {

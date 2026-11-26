@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::num::ParseIntError;
 
 use axum::Json;
 use axum::http::{StatusCode, Uri};
@@ -12,7 +13,11 @@ const INTEGER_MESSAGE: &str =
 #[derive(Debug, Error)]
 pub enum QueryError {
     #[error("the {name} query parameter is not an integer")]
-    NotAnInteger { name: &'static str },
+    NotAnInteger {
+        name: &'static str,
+        #[source]
+        source: ParseIntError,
+    },
 }
 
 #[derive(Serialize)]
@@ -30,7 +35,7 @@ struct ValidationBody {
 
 impl IntoResponse for QueryError {
     fn into_response(self) -> Response {
-        let Self::NotAnInteger { name } = self;
+        let Self::NotAnInteger { name, source: _ } = self;
         let body = ValidationBody {
             detail: [Issue {
                 kind: "int_parsing",
@@ -57,6 +62,6 @@ pub fn integer(uri: &Uri, name: &'static str, default: i64) -> Result<i64, Query
             .collect();
     values.get(name).map_or(Ok(default), |text| {
         text.parse::<i64>()
-            .map_err(|_parse| QueryError::NotAnInteger { name })
+            .map_err(|source| QueryError::NotAnInteger { name, source })
     })
 }

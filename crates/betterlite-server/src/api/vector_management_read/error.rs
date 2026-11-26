@@ -3,6 +3,9 @@ use std::convert::Infallible;
 use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
+use betterlite_auth::resolved_key::auth::AuthError;
+use betterlite_core::api::vector_store_access::error::VectorStoreAccessError;
+use betterlite_db::auxiliary_repository::repository::TableError;
 use betterlite_models::decisions::Json as DecisionJson;
 use serde::Serialize;
 
@@ -14,6 +17,26 @@ use crate::search_tool_routes::body::BodyError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ManagementReadError {
+    #[error("the caller identity could not be read")]
+    Identity {
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("the caller identity could not be built")]
+    Key {
+        #[source]
+        source: AuthError,
+    },
+    #[error("{source}")]
+    Access {
+        #[source]
+        source: VectorStoreAccessError,
+    },
+    #[error("{source}")]
+    Rows {
+        #[source]
+        source: TableError,
+    },
     #[error(transparent)]
     Feature(#[from] FeatureAccessError<Infallible>),
     #[error("Database not connected")]
@@ -56,10 +79,6 @@ impl ManagementReadError {
                 };
                 (status, detail)
             }
-            Self::DatabaseNotConnected => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Some(DecisionJson::Text("Database not connected".to_owned())),
-            ),
             Self::Management(error) => match error.http() {
                 Some((status, detail)) => (
                     StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
@@ -70,7 +89,15 @@ impl ManagementReadError {
                     Some(DecisionJson::Text(error.to_string())),
                 ),
             },
-            Self::Metadata(_) | Self::MetadataShape | Self::Internal { .. } | Self::Json(_) => (
+            Self::Identity { .. }
+            | Self::Key { .. }
+            | Self::DatabaseNotConnected
+            | Self::Access { .. }
+            | Self::Rows { .. }
+            | Self::Metadata(_)
+            | Self::MetadataShape
+            | Self::Internal { .. }
+            | Self::Json(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Some(DecisionJson::Text(self.to_string())),
             ),
@@ -84,6 +111,10 @@ impl ManagementReadError {
         match self {
             Self::Management(error) => error.http().is_some(),
             Self::Feature(_)
+            | Self::Identity { .. }
+            | Self::Key { .. }
+            | Self::Access { .. }
+            | Self::Rows { .. }
             | Self::DatabaseNotConnected
             | Self::Metadata(_)
             | Self::MetadataShape
@@ -101,6 +132,10 @@ impl IntoResponse for ManagementReadError {
             Self::Query(error) => error.into_response(),
             Self::Request(error) => error.into_response(),
             error @ (Self::Feature(_)
+            | Self::Identity { .. }
+            | Self::Key { .. }
+            | Self::Access { .. }
+            | Self::Rows { .. }
             | Self::DatabaseNotConnected
             | Self::Metadata(_)
             | Self::MetadataShape

@@ -18,10 +18,8 @@ pub struct CallerView {
 
 impl CallerView {
     pub fn from_principal(principal: &Principal) -> Result<Self, ManagementReadError> {
-        let identity =
-            caller_identity(principal).map_err(|_error| ManagementReadError::Internal {
-                message: "the caller identity could not be read".to_owned(),
-            })?;
+        let identity = caller_identity(principal)
+            .map_err(|source| ManagementReadError::Identity { source })?;
         let role = identity
             .user_role
             .as_deref()
@@ -50,9 +48,6 @@ fn construct_key(
     if let Some(role) = user_role {
         fields.insert("user_role".to_owned(), JsonData::String(role.to_owned()));
     }
-    UserAPIKeyAuth::construct(AuthInput::Dict(fields)).map_err(|_error| {
-        ManagementReadError::Internal {
-            message: "the caller identity could not be built".to_owned(),
-        }
-    })
+    UserAPIKeyAuth::construct(AuthInput::Dict(fields))
+        .map_err(|source| ManagementReadError::Key { source })
 }
