@@ -216,6 +216,7 @@ pub(super) fn canvas_malformed_reply() {
     raw_json_failures_are_wrapped();
     the_decoder_failure_stays_in_the_chain();
     parsed_shapes_fail_at_their_fields();
+    a_repeated_declared_key_is_not_the_object_it_reads();
     a_non_200_status_precedes_the_shape_checks();
 }
 
@@ -279,6 +280,16 @@ fn parsed_shapes_fail_at_their_fields() {
             "{body}"
         );
     }
+}
+
+fn a_repeated_declared_key_is_not_the_object_it_reads() {
+    let error = unpriced(200, r#"{"images":["eA=="],"images":["eQ=="]}"#)
+        .expect_err("a repeated declared key fails the typed reply parse");
+    assert_eq!(error.status(), None);
+    assert!(matches!(
+        &error,
+        CanvasResultError::Reply(CanvasReplyError::NotAnObject)
+    ));
 }
 
 fn a_non_200_status_precedes_the_shape_checks() {
