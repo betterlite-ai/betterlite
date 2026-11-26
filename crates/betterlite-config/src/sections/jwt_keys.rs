@@ -4,7 +4,10 @@ use crate::sections::Section;
 pub const PUBLIC_KEY_URL_VARIABLE: &str = "JWT_PUBLIC_KEY_URL";
 
 #[derive(Debug, Default, serde::Deserialize)]
-pub struct Raw {}
+pub struct Raw {
+    #[serde(skip)]
+    _unused: (),
+}
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Settings {
