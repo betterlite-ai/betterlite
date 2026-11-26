@@ -27,6 +27,13 @@ deviations:
       rounding tail of a float product. Matching Python's binary rounding would add a second arithmetic beside
       the shared cost service for digits the JSON contract already leaves open.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_edit/amazon_nova_canvas_image_edit_transformation.py#L460-L462
+  - what: >-
+      A reply body that repeats one of the declared keys, such as two images members, is reported as a body that is
+      not a JSON object, where Python's json keeps the last value and LiteLLM normalizes that value.
+    why: >-
+      The typed reply struct derives serde's Deserialize, which rejects a repeated field; interoperable JSON carries
+      unique member names, and no working Nova Canvas setup sends a repeated one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_edit/amazon_nova_canvas_image_edit_transformation.py#L411
 kept_bugs:
   - what: >-
       An errors key raises even when its value is null, false or an empty list, and a truthy images container
