@@ -7,14 +7,35 @@ from litellm.integrations.shadow_eval_logger import ShadowEvalLogger
 from pydantic import JsonValue
 
 from b4083.support import (
-    JOBS_CACHE_SIZE, JOBS_CACHE_TTL, AttemptTable, Counter, FakePrismaClient, Funnel, JobTable,
-    hook_payload, real_response,
+    JOBS_CACHE_SIZE,
+    JOBS_CACHE_TTL,
+    AttemptTable,
+    Counter,
+    FakePrismaClient,
+    Funnel,
+    JobTable,
+    hook_payload,
+    real_response,
 )
 
 from .support import (
-    KEY_HASH, REAL_COST, REAL_TEXT, REQUEST_ID, ArmProvider, DatabaseProvider, Input, Reader,
-    SpendScript, arm_router, install, job_record, litellm_metadata, request_kwargs, row_json,
-    settle, stats,
+    KEY_HASH,
+    REAL_COST,
+    REAL_TEXT,
+    REQUEST_ID,
+    ArmProvider,
+    DatabaseProvider,
+    Input,
+    Reader,
+    SpendScript,
+    arm_router,
+    install,
+    job_record,
+    litellm_metadata,
+    request_kwargs,
+    row_json,
+    settle,
+    stats,
 )
 
 litellm.suppress_debug_info = True

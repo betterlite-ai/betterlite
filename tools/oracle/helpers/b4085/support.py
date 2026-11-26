@@ -20,9 +20,9 @@ from b4083.support import (
     Deployment,
     Funnel,
     deployment,
+    mock_reply,
     money,
     money_or_null,
-    mock_reply,
 )
 
 

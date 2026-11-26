@@ -1,35 +1,15 @@
 task: B4085
 deviations:
-  - what: >-
-      The advisory gate reads key and team spend through betterlite-auth's SpendReader trait and looks teams up through the CachedTeams
-      trait, both injected in AdvisoryDeps, instead of importing prisma_client, proxy_logging_obj and user_api_key_cache from
-      LiteLLM's proxy_server module. A denial still returns true, an empty team_id still skips the team lookup, and every other read
-      failure still logs at debug and returns false.
-    why: >-
-      betterlite keeps shared state out of proxy globals and passes collaborators through constructors, so the pipeline is handed the
-      request path's own auth operations; the gate sees the same read errors the auth path can raise.
+  - what: "The advisory gate reads key and team spend through betterlite-auth's SpendReader trait and looks teams up through the CachedTeams trait, both injected in AdvisoryDeps, instead of importing prisma_client, proxy_logging_obj and user_api_key_cache from LiteLLM's proxy_server module. A denial still returns true, an empty team_id still skips the team lookup, and every other read failure still logs at debug and returns false."
+    why: "betterlite keeps shared state out of proxy globals and passes collaborators through constructors, so the pipeline is handed the request path's own auth operations; the gate sees the same read errors the auth path can raise."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L623-L660
-  - what: >-
-      A withheld sample is counted through the injected FunnelRecorder instead of the logger's _record_funnel callback writing into a
-      shared funnel object.
-    why: >-
-      Funnel persistence is B4083's, which owns the pod-local queue and its flush; the pipeline decides that this request was withheld
-      and records one event before any arm runs, as the source does.
+  - what: "A withheld sample is counted through the injected FunnelRecorder instead of the logger's _record_funnel callback writing into a shared funnel object."
+    why: "Funnel persistence is B4083's, which owns the pod-local queue and its flush; the pipeline decides that this request was withheld and records one event before any arm runs, as the source does."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L1066-L1085
-  - what: >-
-      The evaluation budget is read through the JobSpendReader trait, which takes the counter key, the fill-time spend and the cap as
-      rust_decimal::Decimal and returns Decimal, instead of LiteLLM's _read_job_spend callable over get_current_spend with floats. A
-      raised read still logs a warning and withholds the sample.
-    why: >-
-      Money is Decimal end to end (no-float-money), and get_current_spend's Redis, database and seed collaborators are unresolved
-      (question 4), so the caller injects the read it already owns.
+  - what: "The evaluation budget is read through the JobSpendReader trait, which takes the counter key, the fill-time spend and the cap as rust_decimal::Decimal and returns Decimal, instead of LiteLLM's _read_job_spend callable over get_current_spend with floats. A raised read still logs a warning and withholds the sample."
+    why: "Money is Decimal end to end (no-float-money), and get_current_spend's Redis, database and seed collaborators are unresolved (question 4), so the caller injects the read it already owns."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L1074-L1086
-  - what: >-
-      Attempt rows and the eval-spend counter write go through B4083's record_attempt, which takes the row plus an injected
-      ShadowTables and SpendCounter, instead of the logger's own _record_attempt reaching prisma and the counter directly. The counter
-      is still written before the row, and a failed write or insert still logs and continues.
-    why: >-
-      Row insertion and counter persistence are B4083's out_of_scope, and the pipeline only runs with a database to record into, so it
-      composes the same order through the injected collaborators.
+  - what: "Attempt rows and the eval-spend counter write go through B4083's record_attempt, which takes the row plus an injected ShadowTables and SpendCounter, instead of the logger's own _record_attempt reaching prisma and the counter directly. The counter is still written before the row, and a failed write or insert still logs and continues."
+    why: "Row insertion and counter persistence are B4083's out_of_scope, and the pipeline only runs with a database to record into, so it composes the same order through the injected collaborators."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L1218-L1264
 kept_bugs: []
