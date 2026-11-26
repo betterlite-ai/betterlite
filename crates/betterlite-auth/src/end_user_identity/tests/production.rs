@@ -6,14 +6,12 @@ use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_models::decisions::Json;
 
 use super::super::cache::{POSITIVE_TTL_SECONDS, ValidationCache};
-use super::super::existence::{
-    EndUserExistence, EndUserObjectExistence, ExistenceError, UserExistence, UserProbe,
-};
-use super::super::resolve::{DatabaseLookups, EndUserIdResolver, ResolveRequest};
+use super::super::existence::{EndUserObjectExistence, ExistenceError, UserExistence, UserProbe};
+use super::super::resolve::{DatabaseLookups, EndUserIdResolver};
 use super::support::{
     Answer, RowAnswer, RowCache, ScriptedCache, ScriptedEndUsers, ScriptedRows, ScriptedUserStore,
-    ScriptedUsers, UserCachePort, capture_events, debug_messages, end_user_row, registry,
-    user_lookup,
+    ScriptedUsers, UserCachePort, capture_events, debug_messages, end_user_row, registry, request,
+    test_cache, user_lookup,
 };
 use crate::auth_cache::WriteTtl;
 use crate::auth_end_users::object::EndUserObjectError;
@@ -147,24 +145,17 @@ async fn budget_failure_falls_through_to_the_user() {
         error,
         ExistenceError::EndUser(EndUserObjectError::Defaults(_))
     ));
-    let end_user_lookups: Arc<dyn EndUserExistence> = Arc::new(existence);
-    let user_lookups: Arc<dyn UserExistence> = Arc::new(ScriptedUsers::new(Answer::Found));
-    let validation_cache = Arc::new(ScriptedCache::new());
-    let validation: Arc<dyn ValidationCache> = Arc::clone(&validation_cache);
     let identity = EndUserIdResolver {
         validate_end_user_id_in_db: true,
         max_end_user_budget_id: Some("proxy".to_owned()),
         lookups: Some(DatabaseLookups {
-            end_users: end_user_lookups,
-            users: user_lookups,
+            end_users: Arc::new(existence),
+            users: Arc::new(ScriptedUsers::new(Answer::Found)),
         }),
-        cache: validation,
+        cache: Arc::new(ScriptedCache::new()),
     };
     let resolved = identity
-        .resolve(&ResolveRequest {
-            raw_end_user_id: Some("alice"),
-            key_end_user_budget_id: None,
-        })
+        .resolve(&request("alice"))
         .await
         .expect("the lookup");
     assert_eq!(resolved.as_deref(), Some("alice"));
@@ -219,8 +210,6 @@ async fn real_user_lookup_never_creates_a_user() {
     let lookup = Arc::new(user_lookup(&user_cache, &store));
     let users: Arc<dyn UserExistence> = Arc::<UserLookup>::clone(&lookup);
     let end_users = Arc::new(ScriptedEndUsers::new(Answer::Missing));
-    let validation_cache = Arc::new(ScriptedCache::new());
-    let validation: Arc<dyn ValidationCache> = Arc::clone(&validation_cache);
     let identity = EndUserIdResolver {
         validate_end_user_id_in_db: true,
         max_end_user_budget_id: None,
@@ -228,13 +217,10 @@ async fn real_user_lookup_never_creates_a_user() {
             end_users: Arc::<ScriptedEndUsers>::clone(&end_users),
             users,
         }),
-        cache: validation,
+        cache: Arc::new(ScriptedCache::new()),
     };
     let resolved = identity
-        .resolve(&ResolveRequest {
-            raw_end_user_id: Some("ghost"),
-            key_end_user_budget_id: None,
-        })
+        .resolve(&request("ghost"))
         .await
         .expect("the lookup");
     assert!(resolved.is_none());

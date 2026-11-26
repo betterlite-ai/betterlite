@@ -64,7 +64,7 @@ async fn validation_off_no_db_passthrough() {
     assert!(cache.reads().is_empty());
     assert!(end_users.calls().is_empty());
     assert!(users.probes().is_empty());
-    let validation: Arc<dyn ValidationCache> = Arc::clone(&cache);
+    let validation: Arc<dyn ValidationCache> = Arc::<ScriptedCache>::clone(&cache);
     let without_database = EndUserIdResolver {
         validate_end_user_id_in_db: true,
         max_end_user_budget_id: None,
@@ -246,7 +246,7 @@ async fn no_user_upsert() {
     let users: Arc<dyn UserExistence> = Arc::<UserLookup>::clone(&lookup);
     let end_users = Arc::new(ScriptedEndUsers::new(Answer::Missing));
     let cache = Arc::new(ScriptedCache::new());
-    let validation: Arc<dyn ValidationCache> = Arc::clone(&cache);
+    let validation: Arc<dyn ValidationCache> = Arc::<ScriptedCache>::clone(&cache);
     let identity = EndUserIdResolver {
         validate_end_user_id_in_db: true,
         max_end_user_budget_id: None,

@@ -15,8 +15,8 @@ use tokio_util::task::TaskTracker;
 
 use super::super::cache::ValidationCache;
 use super::super::existence::{EndUserExistence, EndUserObjectExistence, UserExistence};
-use super::super::resolve::{DatabaseLookups, EndUserIdResolver, ResolveRequest};
-use super::support::{TestCache, lookup_over, registry, test_cache};
+use super::super::resolve::{DatabaseLookups, EndUserIdResolver};
+use super::support::{TestCache, lookup_over, registry, request, test_cache};
 use crate::auth_end_users::postgres::DatabaseEndUsers;
 use crate::auth_user_lookup::cache::UserCache;
 use crate::auth_user_lookup::lookup::UserLookup;
@@ -94,13 +94,6 @@ async fn count(pool: &Pool, table: &str) -> i64 {
     row.try_get(0).expect("the count column")
 }
 
-fn request(end_user_id: &str) -> ResolveRequest<'_> {
-    ResolveRequest {
-        raw_end_user_id: Some(end_user_id),
-        key_end_user_budget_id: None,
-    }
-}
-
 async fn resolve(identity: &EndUserIdResolver, end_user_id: &str) -> Option<String> {
     identity
         .resolve(&request(end_user_id))
@@ -108,52 +101,70 @@ async fn resolve(identity: &EndUserIdResolver, end_user_id: &str) -> Option<Stri
         .expect("the lookup")
 }
 
-#[tokio::test]
-async fn postgres_validation_reads_the_real_tables() {
-    let (fixture, pool) = database().await;
-    seed(&pool).await;
-    let rows = Arc::new(end_user_rows(&pool));
+struct Wired {
+    identity: EndUserIdResolver,
+    lookup: Arc<UserLookup>,
+    users_store: Arc<DatabaseUserStore>,
+}
+
+fn wire(pool: &Pool) -> Wired {
+    let rows = Arc::new(end_user_rows(pool));
     let cache = Arc::new(test_cache());
     let existence = EndUserObjectExistence {
         rows: Some(Arc::<DatabaseEndUsers>::clone(&rows)),
         budgets: Some(Arc::<DatabaseEndUsers>::clone(&rows)),
-        cache: Arc::clone(&cache),
+        cache: Arc::<TestCache>::clone(&cache),
         registry: Arc::new(registry(true, None)),
-        store: store(&pool),
+        store: store(pool),
         max_end_user_budget_id: None,
     };
     let end_users: Arc<dyn EndUserExistence> = Arc::new(existence);
     let users_store = Arc::new(DatabaseUserStore {
-        reader: store(&pool),
-        writer: store(&pool),
+        reader: store(pool),
+        writer: store(pool),
         availability: Arc::new(Availability::default()),
         default_deadline_seconds: 5.0_f64,
         tracker: tracker(),
         tasks: TaskTracker::new(),
     });
-    let user_cache: Arc<dyn UserCache> = Arc::clone(&cache);
+    let user_cache: Arc<dyn UserCache> = Arc::<TestCache>::clone(&cache);
     let user_ports: Arc<dyn UserStore> = Arc::<DatabaseUserStore>::clone(&users_store);
     let lookup = Arc::new(lookup_over(user_cache, user_ports));
     let users: Arc<dyn UserExistence> = Arc::<UserLookup>::clone(&lookup);
-    let validation: Arc<dyn ValidationCache> = Arc::clone(&cache);
+    let validation: Arc<dyn ValidationCache> = Arc::<TestCache>::clone(&cache);
     let identity = EndUserIdResolver {
         validate_end_user_id_in_db: true,
         max_end_user_budget_id: None,
         lookups: Some(DatabaseLookups { end_users, users }),
         cache: validation,
     };
-    assert_eq!(resolve(&identity, "known").await.as_deref(), Some("known"));
+    Wired {
+        identity,
+        lookup,
+        users_store,
+    }
+}
+
+#[tokio::test]
+async fn postgres_validation_reads_the_real_tables() {
+    let (fixture, pool) = database().await;
+    seed(&pool).await;
+    let wired = wire(&pool);
     assert_eq!(
-        resolve(&identity, "known-user").await.as_deref(),
+        resolve(&wired.identity, "known").await.as_deref(),
+        Some("known")
+    );
+    assert_eq!(
+        resolve(&wired.identity, "known-user").await.as_deref(),
         Some("known-user")
     );
-    assert!(resolve(&identity, "ghost").await.is_none());
+    assert!(resolve(&wired.identity, "ghost").await.is_none());
     assert_eq!(count(&pool, "LiteLLM_UserTable").await, 1);
     assert_eq!(count(&pool, "LiteLLM_EndUserTable").await, 1);
-    lookup.tasks.close();
-    lookup.tasks.wait().await;
-    users_store.tasks.close();
-    users_store.tasks.wait().await;
+    wired.lookup.tasks.close();
+    wired.lookup.tasks.wait().await;
+    wired.users_store.tasks.close();
+    wired.users_store.tasks.wait().await;
     pool.close();
     fixture.close_async().await.expect("the fixture teardown");
 }

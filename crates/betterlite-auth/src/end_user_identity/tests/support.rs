@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::error::Error;
 use std::fmt::Debug;
 use std::sync::{Arc, Mutex};
 
@@ -23,14 +24,14 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use tokio_util::task::TaskTracker;
 use tracing::field::{Field, Visit};
-use tracing::subscriber::DefaultGuard;
+use tracing::subscriber::{DefaultGuard, set_default};
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
-use tracing_subscriber::registry;
+use tracing_subscriber::registry as tracing_registry;
 
 use super::super::cache::{VALIDATION_KEY_PREFIX, ValidationCache};
 use super::super::existence::{EndUserExistence, ExistenceError, UserExistence, UserProbe};
-use super::super::resolve::{DatabaseLookups, EndUserIdResolver};
+use super::super::resolve::{DatabaseLookups, EndUserIdResolver, ResolveRequest};
 use crate::auth_cache::payload::PayloadError;
 use crate::auth_cache::{AuthCache, AuthCacheError, WriteTtl, gateway_cache};
 use crate::auth_end_users::cache::EndUserCache;
@@ -63,26 +64,34 @@ pub(super) struct ScriptedCache {
     pub(super) fail_writes: bool,
 }
 
+// which of the two cache calls fails, in place of the two bools the build cannot take
+#[derive(Clone, Copy, Debug)]
+enum Failures {
+    None,
+    Reads,
+    Writes,
+}
+
 impl ScriptedCache {
     pub(super) fn new() -> Self {
-        Self::build(false, false)
+        Self::build(Failures::None)
     }
 
     pub(super) fn failing_reads() -> Self {
-        Self::build(true, false)
+        Self::build(Failures::Reads)
     }
 
     pub(super) fn failing_writes() -> Self {
-        Self::build(false, true)
+        Self::build(Failures::Writes)
     }
 
-    fn build(fail_reads: bool, fail_writes: bool) -> Self {
+    fn build(failure: Failures) -> Self {
         Self {
             values: Mutex::new(BTreeMap::new()),
             reads: Mutex::new(Vec::new()),
             writes: Mutex::new(Vec::new()),
-            fail_reads,
-            fail_writes,
+            fail_reads: matches!(failure, Failures::Reads),
+            fail_writes: matches!(failure, Failures::Writes),
         }
     }
 
@@ -269,8 +278,15 @@ pub(super) fn lookups(
     users: &Arc<ScriptedUsers>,
 ) -> DatabaseLookups {
     DatabaseLookups {
-        end_users: Arc::clone(end_users),
-        users: Arc::clone(users),
+        end_users: Arc::<ScriptedEndUsers>::clone(end_users),
+        users: Arc::<ScriptedUsers>::clone(users),
+    }
+}
+
+pub(super) const fn request(end_user_id: &str) -> ResolveRequest<'_> {
+    ResolveRequest {
+        raw_end_user_id: Some(end_user_id),
+        key_end_user_budget_id: None,
     }
 }
 
@@ -443,7 +459,7 @@ impl ScriptedRows {
 
 fn row_failure<Failure>() -> AuthReadError<Failure>
 where
-    Failure: std::error::Error + 'static,
+    Failure: Error + 'static,
 {
     AuthReadError::Repository(DbError::NoDbConnected)
 }
@@ -464,10 +480,12 @@ impl EndUserRows for ScriptedRows {
             .expect("the seeded end users")
             .get(end_user_id)
             .cloned();
-        match (seeded, self.end_user_answer) {
-            (Some(row), _) => Ok(Some(row)),
-            (None, RowAnswer::Missing) => Ok(None),
-            (None, RowAnswer::Failure) => Err(EndUserFetchError::Read(Box::new(row_failure()))),
+        if let Some(row) = seeded {
+            return Ok(Some(row));
+        }
+        match self.end_user_answer {
+            RowAnswer::Missing => Ok(None),
+            RowAnswer::Failure => Err(EndUserFetchError::Read(Box::new(row_failure()))),
         }
     }
 }
@@ -633,7 +651,10 @@ pub(super) fn user_lookup(
     cache: &Arc<UserCachePort>,
     store: &Arc<ScriptedUserStore>,
 ) -> UserLookup {
-    lookup_over(Arc::clone(cache), Arc::clone(store))
+    lookup_over(
+        Arc::<UserCachePort>::clone(cache),
+        Arc::<ScriptedUserStore>::clone(store),
+    )
 }
 
 pub(super) fn lookup_over(cache: Arc<dyn UserCache>, store: Arc<dyn UserStore>) -> UserLookup {
@@ -723,7 +744,7 @@ impl<S: Subscriber> Layer<S> for EventLog {
 
 pub(super) fn capture_events() -> (EventLog, DefaultGuard) {
     let log = EventLog::default();
-    let guard = tracing::subscriber::set_default(registry().with(log.clone()));
+    let guard = set_default(tracing_registry().with(log.clone()));
     (log, guard)
 }
 

@@ -37,9 +37,8 @@ pub struct EndUserIdResolver {
 
 // the wired ports stay out of the log: only which probes exist is readable
 impl fmt::Debug for EndUserIdResolver {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("EndUserIdResolver")
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EndUserIdResolver")
             .field(
                 "validate_end_user_id_in_db",
                 &self.validate_end_user_id_in_db,
@@ -64,25 +63,37 @@ impl EndUserIdResolver {
         let Some(lookups) = &self.lookups else {
             return Ok(Some(raw_end_user_id.to_owned()));
         };
-        // Python's bool(): an empty proxy default is unset, while any key value, even "", was supplied
-        let has_default_budget = self
-            .max_end_user_budget_id
-            .as_deref()
-            .is_some_and(|budget_id| !budget_id.is_empty())
-            || request.key_end_user_budget_id.is_some();
+        let has_default_budget = self.has_default_budget(request);
         let cache_key = format!("{VALIDATION_KEY_PREFIX}{raw_end_user_id}");
-        let cached = self
-            .cache
-            .read(&cache_key)
-            .await
-            .map_err(ResolveError::CacheRead)?;
-        if let Some(verdict) = cached.as_ref().and_then(Verdict::of_cached) {
+        if let Some(verdict) = self.cached_verdict(&cache_key).await? {
             return Ok(match verdict {
                 Verdict::Valid => Some(raw_end_user_id.to_owned()),
                 Verdict::Invalid => has_default_budget.then(|| raw_end_user_id.to_owned()),
             });
         }
         let is_valid = exists_in_db(lookups, raw_end_user_id).await;
+        self.cache_verdict(&cache_key, is_valid).await?;
+        Ok((is_valid || has_default_budget).then(|| raw_end_user_id.to_owned()))
+    }
+
+    // Python's bool(): an empty proxy default is unset, while any key value, even "", was supplied
+    fn has_default_budget(&self, request: &ResolveRequest<'_>) -> bool {
+        self.max_end_user_budget_id
+            .as_deref()
+            .is_some_and(|budget_id| !budget_id.is_empty())
+            || request.key_end_user_budget_id.is_some()
+    }
+
+    async fn cached_verdict(&self, cache_key: &str) -> Result<Option<Verdict>, ResolveError> {
+        let cached = self
+            .cache
+            .read(cache_key)
+            .await
+            .map_err(ResolveError::CacheRead)?;
+        Ok(cached.as_ref().and_then(Verdict::of_cached))
+    }
+
+    async fn cache_verdict(&self, cache_key: &str, is_valid: bool) -> Result<(), ResolveError> {
         let verdict = if is_valid {
             Verdict::Valid
         } else {
@@ -90,13 +101,12 @@ impl EndUserIdResolver {
         };
         self.cache
             .write(
-                &cache_key,
+                cache_key,
                 &Json::Text(verdict.text().to_owned()),
                 verdict.ttl(),
             )
             .await
-            .map_err(ResolveError::CacheWrite)?;
-        Ok((is_valid || has_default_budget).then(|| raw_end_user_id.to_owned()))
+            .map_err(ResolveError::CacheWrite)
     }
 }
 
