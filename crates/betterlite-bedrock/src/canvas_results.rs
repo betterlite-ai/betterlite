@@ -1,3 +1,4 @@
+use betterlite_core::api::response_synthetic_events::python_value::has_content;
 use betterlite_logging::langfuse_assembly::usage::cost_value;
 use betterlite_models::call_helpers::headers::AdditionalHeaders;
 use betterlite_models::decisions::Json;
@@ -192,17 +193,6 @@ fn reject_error_fields(
         ));
     }
     Ok(())
-}
-
-fn has_content(value: &Json) -> bool {
-    match value {
-        Json::Null => false,
-        Json::Bool(flag) => *flag,
-        Json::Number(number) => number.as_f64().is_some_and(|float| float != 0.0_f64),
-        Json::Text(text) => !text.is_empty(),
-        Json::List(items) => !items.is_empty(),
-        Json::Object(fields) => !fields.is_empty(),
-    }
 }
 
 // A missing price is zero, an explicit null suppresses the header, and anything else is read as a Decimal, as float() would.
