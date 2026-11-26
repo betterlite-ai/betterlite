@@ -112,7 +112,7 @@ where
     // a failed read skips the scope, with the exception's text logged as compact.py does
     async fn loaded<Row, Lookup>(&self, scope: &str, lookup: Lookup) -> Option<Row>
     where
-        Lookup: Future<Output = Result<Option<Row>, Repositories::Failure>>,
+        Lookup: Future<Output = Result<Option<Row>, Repositories::Failure>> + Send,
     {
         let model = self.model;
         match lookup.await {
