@@ -491,7 +491,7 @@ def test_handle_calls_delete() -> None:
     assert call["path"] == f"{SANDBOXES_PATH}/{SANDBOX_ID}"
 
 
-def test_code_interpreter_calls_delete_after_a_failed_run() -> None:
+def test_run_failure_calls_delete() -> None:
     with closing(RecordingServer("unusable-domain")) as server, suppress(Exception):
         asyncio.run(
             acode_interpreter_tool(
