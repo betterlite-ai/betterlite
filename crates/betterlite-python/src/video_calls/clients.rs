@@ -8,7 +8,7 @@ use betterlite_core::api::video_remix_list_transport::client::{
     VideoAsyncClient, VideoClientSource, VideoRequest, VideoSyncClient,
 };
 use betterlite_core::api::video_status_transport::clients::{
-    AsyncClient as StatusAsyncClient, ClientFactories,
+    AsyncClient as StatusAsyncClient, ClientFactories, SyncClient as StatusSyncClient,
 };
 use betterlite_core::api::video_status_transport::config::VideoErrorClasses;
 use betterlite_core::api::video_status_transport::error::{
@@ -163,7 +163,7 @@ fn header_map(headers: &StatusHeaders) -> HeaderMap {
     map
 }
 
-impl VideoSyncClient for StatusClient {
+impl StatusSyncClient for StatusClient {
     fn send(&self, request: &StatusRequest) -> Result<UpstreamResponse, TransportError> {
         get_runtime().block_on(self.send_async(request))
     }

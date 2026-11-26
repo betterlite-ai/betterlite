@@ -102,6 +102,7 @@ where
     T: DeserializeOwned,
     V: Serialize,
 {
-    let encoded = serde_json::to_value(value).map_err(|source| ConvertError::Json { source })?;
-    serde_json::from_value(encoded).map_err(|source| ConvertError::Json { source })
+    let encoded = serde_json::to_value(value).map_err(ConvertError::from)?;
+    let decoded = serde_json::from_value(encoded).map_err(ConvertError::from)?;
+    Ok(decoded)
 }
