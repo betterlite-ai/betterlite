@@ -61,25 +61,37 @@ pub(crate) fn pipeline(call: &PipelineCall) -> HelperResult {
         spend: &job_spend,
         calls: &calls,
     };
-    let messages = [Json::Object(IndexMap::from([
+    let messages = shadow_messages();
+    let shadow_params = IndexMap::new();
+    let sample = shadow_sample(&messages, &shadow_params, &metadata);
+    build_runtime()?.block_on(run_shadow_eval(&job, &sample, &deps));
+    Ok(output(&recorder, &spend, &job_spend))
+}
+
+fn shadow_messages() -> [Json; 1] {
+    [Json::Object(IndexMap::from([
         ("role".to_owned(), Json::Text("user".to_owned())),
         ("content".to_owned(), Json::Text("what is 2+2?".to_owned())),
-    ]))];
-    let shadow_params = IndexMap::new();
-    let sample = ShadowSample {
+    ]))]
+}
+
+fn shadow_sample<'sample>(
+    messages: &'sample [Json],
+    shadow_params: &'sample IndexMap<String, Json>,
+    parent_metadata: &'sample IndexMap<String, Json>,
+) -> ShadowSample<'sample> {
+    ShadowSample {
         request_id: REQUEST_ID,
-        messages: &messages,
+        messages,
         real_text: REAL_TEXT,
         real_model: REAL_MODEL,
         real_cost: Decimal::new(25, 2),
         real_classifier_cost: Decimal::ZERO,
         real_cache_hit: false,
         control_tier: None,
-        shadow_params: &shadow_params,
-        parent_metadata: &metadata,
-    };
-    build_runtime()?.block_on(run_shadow_eval(&job, &sample, &deps));
-    Ok(output(&recorder, &spend, &job_spend))
+        shadow_params,
+        parent_metadata,
+    }
 }
 
 const fn script(spend: Option<Decimal>) -> SpendScript {
@@ -143,7 +155,7 @@ fn number(value: Decimal) -> Result<Number, Box<HelperError>> {
     value
         .normalize()
         .to_string()
-        .parse()
+        .parse::<Number>()
         .map_err(|error| failure("ValueError", &error.to_string()))
 }
 

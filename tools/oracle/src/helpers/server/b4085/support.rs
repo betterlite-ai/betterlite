@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 use std::future::ready;
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Mutex, MutexGuard};
 
 use async_trait::async_trait;
 use betterlite_auth::auth_key_budgets::spend::{SpendReadError, SpendReader};

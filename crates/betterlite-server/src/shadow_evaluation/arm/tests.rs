@@ -16,7 +16,7 @@ use betterlite_models::resolution::ResolutionContext;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 
-use super::{ArmCalls, ArmFailure, AttemptDeps, RouterCalls, run_shadow_arm};
+use super::{ArmCalls as _, ArmFailure, AttemptDeps, RouterCalls, run_shadow_arm};
 use crate::judge_targets::call::JudgeCall;
 use crate::judge_targets::error::JudgeDispatchError;
 use crate::judge_targets::router::JudgeRouter;
@@ -66,6 +66,11 @@ async fn a_successful_arm_records_the_verdict_and_bills_every_leg() {
         calls: &calls,
     };
     run_shadow_arm(&job, ARM, &fixture.sample(), &deps).await;
+    assert_shadow_row(&attempts, &counter);
+    assert_arm_calls(&calls, &fixture);
+}
+
+fn assert_shadow_row(attempts: &Attempts, counter: &SpendLog) {
     let rows = attempts.rows();
     assert_eq!(rows.len(), 1);
     let row = &rows[0];
@@ -88,6 +93,9 @@ async fn a_successful_arm_records_the_verdict_and_bills_every_leg() {
         counter.entries(),
         vec![(spend_key("job-1"), decimal("1.75"))]
     );
+}
+
+fn assert_arm_calls(calls: &CallsFake, fixture: &SampleFixture) {
     let shadow_calls = calls.shadow_calls();
     assert_eq!(shadow_calls.len(), 1);
     assert_eq!(shadow_calls[0].target_model, ARM);
@@ -458,27 +466,44 @@ async fn router_calls_maps_a_pod_without_a_router_to_a_failure() {
     let messages = vec![Json::Text("hi".to_owned())];
     let shadow_params = IndexMap::new();
     let parent_metadata = IndexMap::new();
+    assert_shadow_fails(&calls, &messages, &shadow_params, &parent_metadata).await;
+    assert_judge_fails(&calls, &messages, &parent_metadata).await;
+}
+
+async fn assert_shadow_fails(
+    calls: &RouterCalls<'_>,
+    messages: &[Json],
+    shadow_params: &IndexMap<String, Json>,
+    parent_metadata: &IndexMap<String, Json>,
+) {
     let request = ShadowRequest {
         target_model: ARM,
-        messages: &messages,
-        shadow_params: &shadow_params,
-        parent_metadata: &parent_metadata,
+        messages,
+        shadow_params,
+        parent_metadata,
     };
     let Err(ArmFailure::Failed(failure)) = calls.shadow(&request).await else {
         panic!("a pod without a router reports a failure");
     };
     assert_eq!(failure.error, NO_ROUTER_ERROR);
     assert_eq!(failure.cost, Decimal::ZERO);
+}
+
+async fn assert_judge_fails(
+    calls: &RouterCalls<'_>,
+    messages: &[Json],
+    parent_metadata: &IndexMap<String, Json>,
+) {
     let no_tools = Json::Null;
-    let judge_request = JudgeRequest {
+    let request = JudgeRequest {
         judge_model: "judge-model",
-        messages: &messages,
+        messages,
         real_text: "real answer",
         shadow_text: "shadow answer",
         tools: &no_tools,
-        parent_metadata: &parent_metadata,
+        parent_metadata,
     };
-    let Err(ArmFailure::Failed(failure)) = calls.judge(&judge_request).await else {
+    let Err(ArmFailure::Failed(failure)) = calls.judge(&request).await else {
         panic!("a missing judge target reports a failure");
     };
     assert!(failure.error.starts_with("judge call failed:"));

@@ -531,15 +531,19 @@ impl CallsFake {
             .map(|call| call.target_model.clone())
             .collect()
     }
-}
 
-impl CallsFake {
     fn next<Value>(answers: &Mutex<VecDeque<Answer<Value>>>, stage: &str) -> ArmStage<Value> {
-        match answers.lock().unwrap().pop_front() {
+        let mut answers = match answers.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        match answers.pop_front() {
             Some(Answer::Reply(value)) => Ok(value),
             Some(Answer::Failed(failure)) => Err(ArmFailure::Failed(failure)),
             Some(Answer::Raised(message)) => Err(ArmFailure::Raised(message.to_owned())),
-            None => panic!("the fake ran out of {stage} answers"),
+            None => Err(ArmFailure::Raised(format!(
+                "the fake ran out of {stage} answers"
+            ))),
         }
     }
 }

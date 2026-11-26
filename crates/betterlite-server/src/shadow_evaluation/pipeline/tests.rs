@@ -284,6 +284,10 @@ async fn every_arm_runs_in_order() {
         calls: &calls,
     };
     run_shadow_eval(&job, &fixture.sample(), &deps).await;
+    assert_three_arms(&calls, &attempts);
+}
+
+fn assert_three_arms(calls: &CallsFake, attempts: &Attempts) {
     assert_eq!(
         calls.shadow_targets(),
         vec![
@@ -334,6 +338,10 @@ async fn a_failed_arm_does_not_silence_the_next() {
         calls: &calls,
     };
     run_shadow_eval(&job, &fixture.sample(), &deps).await;
+    assert_failed_arm_kept_the_next(&calls, &attempts, &counter);
+}
+
+fn assert_failed_arm_kept_the_next(calls: &CallsFake, attempts: &Attempts, counter: &SpendLog) {
     assert_eq!(
         calls.shadow_targets(),
         vec!["router-a".to_owned(), "router-b".to_owned()]
