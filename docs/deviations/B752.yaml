@@ -10,3 +10,6 @@ kept_bugs:
   - what: A tag whose spend is exactly its max_budget passes, while the project, organization and access-group checks deny at equality.
     why: LiteLLM's tag branch continues on tag_spend <= max_budget, and a working setup can rely on the last cent of a tagged budget being spendable.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L6459-L6460
+  - what: The first tag over its budget denies without scheduling the tag budget alert its docstring promises, unlike the project, organization and access-group checks.
+    why: LiteLLM's tag_max_budget_check_for_tags never calls budget_alerts, so no working setup receives a tag budget alert today and betterlite sends none.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L6461-L6467
