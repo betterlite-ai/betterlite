@@ -52,9 +52,7 @@ pub(crate) fn stage_input(request: &Request<Body>) -> StageInput {
     }))
 }
 
-// get_public_key runs for a JWT-shaped credential only when a key URL is configured, exactly where LiteLLM's
-// JWT branch sits: before the master key comparison, so an unavailable or unknown key answers as its own 503
-// or 401 instead of a bad-key rejection.
+// get_public_key runs before the master key comparison, so an unavailable or unknown key answers 503 or 401.
 pub(crate) async fn prefetched(stage: JwtKeyStageInput) -> Result<StageInput, StageFailure> {
     let resolver = stage.resolver.clone();
     let token = stage
@@ -84,9 +82,7 @@ pub(crate) fn run_stage(input: &StageInput) -> Result<AuthContext, StageFailure>
     let StageInput::JwtKeys(_) = input else {
         return Err(StageFailure::from(AuthenticationFailure::Missing));
     };
-    // The key fetch and its rejection already happened. B053 builds the JWT identity, so this stage carries
-    // a placeholder that the master-key stage replaces whenever it authenticates; until then a JWT-shaped
-    // credential whose key fetched still has to match the master key.
+    // The key fetch already happened; B053 builds the JWT identity, so this placeholder lets the master key win.
     Ok(AuthContext {
         principal: Principal {
             principal_type: PrincipalType::Human,

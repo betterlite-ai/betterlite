@@ -17,8 +17,7 @@ use crate::state::shared::Shared;
 const CACHE_MAX_SIZE_PER_ITEM_KIB: i64 = 1024;
 
 pub struct Slot {
-    // None only when the memory tier cannot be built; a JWT-shaped credential then keeps its own rejection
-    // path instead of a JWKS lookup
+    // None when the memory tier cannot be built; a JWT credential then keeps its own rejection path.
     pub resolver: Option<Arc<JwksResolver>>,
 }
 

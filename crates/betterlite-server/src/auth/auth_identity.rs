@@ -36,8 +36,7 @@ pub enum AuthBackend {
     AuthEndUsers,
 }
 
-// B052 owns the final stage order; the JWT key fetch runs before the master-key comparison it sits before in
-// LiteLLM, and the master-key stage authenticates before the model stages run.
+// B052 owns the stage order; the JWT fetch runs before the master-key comparison, as in LiteLLM.
 pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
     AuthBackend::JwtKeys,
     AuthBackend::MasterKey,
