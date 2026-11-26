@@ -128,21 +128,25 @@ async fn step_value(step: &Step) -> Result<Value, Box<HelperError>> {
         Function::Resolved => {
             Box::pin(resolved_value(step, &model, &fixture, lookup.as_ref())).await
         }
-        Function::Resources => {
-            let token = token(step)?;
-            let mut resources =
-                authorized_resources(Some(&token), team.as_ref(), lookup.as_ref(), kind(step))
-                    .await;
-            // Python hands the set back in hash order, so both sides answer sorted
-            resources.sort_unstable();
-            Ok(json!({"allowed": true, "error": Value::Null, "resources": resources}))
-        }
+        Function::Resources => resource_value(step, team.as_ref(), lookup.as_ref()).await,
         Function::User => {
             let user: Option<LiteLLMUserTable> = row(step.user.as_ref())?;
             let decision = can_user_call_model(&model, user.as_ref(), targets, &context());
             Ok(decision_value(EntityModelAccessError::gate(decision)))
         }
     }
+}
+
+async fn resource_value(
+    step: &Step,
+    team: Option<&LiteLLMTeamTable>,
+    lookup: Option<&TeamLookup>,
+) -> Result<Value, Box<HelperError>> {
+    let token = token(step)?;
+    let mut resources = authorized_resources(Some(&token), team, lookup, kind(step)).await;
+    // Python hands the set back in hash order, so both sides answer sorted
+    resources.sort_unstable();
+    Ok(json!({"allowed": true, "error": Value::Null, "resources": resources}))
 }
 
 async fn team_value(
