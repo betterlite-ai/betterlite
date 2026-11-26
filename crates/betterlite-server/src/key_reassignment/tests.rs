@@ -191,6 +191,12 @@ async fn unchanged_budget_noop() {
     validate_end_user_budget_id_change(Some("b-1"), Some("b-1"), &worker, None)
         .await
         .unwrap();
+    validate_end_user_budget_id_change(None, Some("b-1"), &worker, None)
+        .await
+        .unwrap();
+    validate_end_user_budget_id_change(None, None, &worker, None)
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -267,6 +273,19 @@ async fn end_user_budget_unknown() {
 }
 
 #[tokio::test]
+async fn budget_change_without_database_500() {
+    let admin = caller(ADMIN);
+    let error = validate_end_user_budget_id_change(Some("b-1"), None, &admin, None)
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        &error,
+        KeyReassignmentError::KeyPatch(KeyPatchError::DatabaseNotConnected)
+    ));
+    assert_eq!(error.response(), (Some(500_u16), Some(DetailShape::Error)));
+}
+
+#[tokio::test]
 async fn all_team_models_skipped() {
     let key = key_row(r#"{"models": ["all-team-models"]}"#);
     let team = team_row(r#"{"team_id": "team-1", "models": ["gpt-4"]}"#);
@@ -285,8 +304,10 @@ async fn all_team_models_skipped() {
 
 #[tokio::test]
 async fn team_model_denial_first() {
-    let key = key_row(r#"{"models": ["claude"], "tpm_limit": 200}"#);
-    let team = team_row(r#"{"team_id": "team-1", "models": ["gpt-4"], "tpm_limit": 100}"#);
+    let key = key_row(r#"{"models": ["claude"], "tpm_limit": 200, "user_id": "ghost"}"#);
+    let team = team_row(
+        r#"{"team_id": "team-1", "models": ["gpt-4"], "tpm_limit": 100, "members_with_roles": [{"user_id": "member", "role": "admin"}]}"#,
+    );
     let admin = caller(ADMIN);
     let policy = caller_policy();
     let context = policy.context();
@@ -310,8 +331,10 @@ async fn team_model_denial_first() {
 
 #[tokio::test]
 async fn tpm_excess_403() {
-    let key = key_row(r#"{"tpm_limit": 200}"#);
-    let team = team_row(r#"{"team_id": "team-1", "tpm_limit": 100}"#);
+    let key = key_row(r#"{"tpm_limit": 200, "user_id": "ghost"}"#);
+    let team = team_row(
+        r#"{"team_id": "team-1", "tpm_limit": 100, "members_with_roles": [{"user_id": "member", "role": "admin"}]}"#,
+    );
     let admin = caller(ADMIN);
     let policy = caller_policy();
     let context = policy.context();
@@ -340,8 +363,10 @@ async fn tpm_excess_403() {
 
 #[tokio::test]
 async fn rpm_excess_403() {
-    let key = key_row(r#"{"tpm_limit": 5, "rpm_limit": 300}"#);
-    let team = team_row(r#"{"team_id": "team-1", "tpm_limit": 100, "rpm_limit": 200}"#);
+    let key = key_row(r#"{"tpm_limit": 5, "rpm_limit": 300, "user_id": "ghost"}"#);
+    let team = team_row(
+        r#"{"team_id": "team-1", "tpm_limit": 100, "rpm_limit": 200, "members_with_roles": [{"user_id": "member", "role": "admin"}]}"#,
+    );
     let admin = caller(ADMIN);
     let policy = caller_policy();
     let context = policy.context();
