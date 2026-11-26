@@ -348,6 +348,49 @@ async fn caller_falsey_model_and_token_skip() {
 }
 
 #[tokio::test]
+async fn caller_key_aliases_forwarded() {
+    let context = context();
+    let memberships = CaseMemberships::allowed(ALLOWING_MEMBER);
+    let caller_admission = admission(&memberships, &context);
+    // the team and the member allowlist both name gpt-4o, so only the agent key's alias allows "fast"
+    let script = Script {
+        caller: Some(CALLER_KEY.to_owned()),
+        team: Some(ALLOWING_TEAM.to_owned()),
+        ..Script::default()
+    };
+    check_agent_caller_model_access(
+        &one("fast"),
+        Some(&agent_token(AGENT_MODEL_ALIAS_KEY)),
+        Some(&script),
+        &caller_admission,
+        &context,
+    )
+    .await
+    .unwrap();
+    assert_eq!(script.events(), ["caller_auth", "caller_team"]);
+
+    // without a caller team the user's own models decide through the same alias map
+    let user_script = Script {
+        caller: Some(CALLER_KEY.to_owned()),
+        user: Some(r#"{"user_id":"caller-1","models":["gpt-4o"]}"#.to_owned()),
+        ..Script::default()
+    };
+    check_agent_caller_model_access(
+        &one("fast"),
+        Some(&agent_token(AGENT_MODEL_ALIAS_KEY)),
+        Some(&user_script),
+        &caller_admission,
+        &context,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        user_script.events(),
+        ["caller_auth", "caller_team", "caller_user"]
+    );
+}
+
+#[tokio::test]
 async fn caller_team_before_membership() {
     let context = context();
     // the team grant allows, then the member scope decides
