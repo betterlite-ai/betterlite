@@ -100,22 +100,7 @@ pub(crate) async fn prefetch(
         .0
         .as_ref()
         .and_then(|key| KeyEndUserDefaults::of_key(key).key_end_user_budget_id);
-    let production_resolver = if stage.rule.resolver.is_none() && stage.database {
-        let state = stage.state.clone();
-        let tasks = stage.tasks.clone().unwrap_or_default();
-        tokio::task::spawn_blocking(move || {
-            state
-                .as_ref()
-                .and_then(|state| state.end_user_identity.resolver(state, &tasks))
-        })
-        .await
-        .unwrap_or_else(|error| {
-            tracing::error!(%error, "the end-user identity resolver initialization failed");
-            None
-        })
-    } else {
-        None
-    };
+    let production_resolver = installed_resolver(stage).await;
     let resolver = stage
         .rule
         .resolver
@@ -134,6 +119,26 @@ pub(crate) async fn prefetch(
     };
     stage.context.principal.end_user = resolved.map(|id| EndUserIdentity { id });
     Ok(())
+}
+
+async fn installed_resolver(stage: &EndUserIdentityStageInput) -> Option<Arc<EndUserIdResolver>> {
+    if let (None, true, Some(state), Some(tasks)) = (
+        stage.rule.resolver.as_ref(),
+        stage.database,
+        stage.state.clone(),
+        stage.tasks.as_ref(),
+    ) {
+        let background = tasks.clone();
+        tasks
+            .spawn_blocking(move || state.end_user_identity.resolver(&state, &background))
+            .await
+            .unwrap_or_else(|error| {
+                tracing::error!(%error, "the end-user identity resolver initialization failed");
+                None
+            })
+    } else {
+        None
+    }
 }
 
 pub(crate) async fn prefetched(

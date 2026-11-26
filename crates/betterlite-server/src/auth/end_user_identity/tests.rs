@@ -25,17 +25,24 @@ use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::identity_rows::PydanticBool;
 use betterlite_db::identity_rows::end_user::LiteLLMEndUserTable;
 use betterlite_models::decisions::Json;
+use rand::SeedableRng as _;
+use rand::rngs::StdRng;
 use rust_decimal::Decimal;
 use secrecy::SecretString;
+use tokio_util::task::TaskTracker;
 use tower::ServiceExt as _;
 
-use super::{EndUserIdentityRule, EndUserIdentityStageInput, prefetch, stage_input};
+use super::{
+    EndUserIdentityRule, EndUserIdentityStageInput, installed_resolver, prefetch, stage_input,
+};
 use crate::auth::auth_end_users::{EndUserFailure, EndUserLookup, EndUserRule};
 use crate::auth::auth_identity::{
     AuthBackend, AuthContext, INSTALLED_STAGES, StageFailure, StageInput, dispatch,
 };
 use crate::routes;
 use crate::routes::tests::state_for;
+use crate::server::application as server_application;
+use crate::server::chat_setup::chat_executor;
 
 // a recognized route, so the auth chain runs before the marking handler
 const MODEL_ROUTE: &str = "/v1/files";
@@ -271,6 +278,25 @@ fn database_flag_comes_from_the_state() {
 }
 
 #[test]
+fn stage_uses_the_server_tracker() {
+    let tasks = TaskTracker::new();
+    let master_key = SecretString::from("secret-master-key".to_owned());
+    let context = master_context(&master_key);
+    let mut request = stage_request(&[], "{}");
+    request.extensions_mut().insert(tasks.clone());
+    let stage = stage_input(&request, Some(&context), None)
+        .expect("the authenticated request builds its stage input");
+    let inherited = stage.tasks.expect("the server tracker reaches the stage");
+    assert!(TaskTracker::ptr_eq(&tasks, &inherited));
+    let pending = inherited.token();
+    assert_eq!(tasks.len(), 1);
+    tasks.close();
+    assert!(inherited.is_closed());
+    drop(pending);
+    assert!(tasks.is_empty());
+}
+
+#[test]
 fn the_rule_debug_names_the_wired_resolver() {
     let cache = ScriptedCache::new(false);
     let (identity, _existence) = resolver(true, &cache);
@@ -321,6 +347,7 @@ async fn run_request(
     end_user_id: &str,
 ) -> (StatusCode, String, Option<String>) {
     let seen = Seen::default();
+    let tasks = TaskTracker::new();
     let mut request = Request::builder()
         .method("POST")
         .uri(MODEL_ROUTE)
@@ -334,7 +361,8 @@ async fn run_request(
         Arc::new(AtomicBool::new(false)),
         Router::new().route(MODEL_ROUTE, post(mark_called)),
         Router::new(),
-    );
+    )
+    .layer(Extension(tasks.clone()));
     if let Some(rule) = identity_rule {
         application = application.layer(Extension(rule));
     }
@@ -351,6 +379,8 @@ async fn run_request(
         .expect("the response body is readable");
     let text = String::from_utf8(body.to_vec()).expect("the response body is UTF-8");
     let id = seen.0.lock().expect("the seen end user").clone();
+    tasks.close();
+    tasks.wait().await;
     (status, text, id)
 }
 
@@ -460,21 +490,63 @@ async fn production_validation_drops_an_unknown_id() {
     assert_eq!(passthrough.as_deref(), Some("ghost-b880"));
 }
 
+fn inference_request() -> Request<Body> {
+    let mut request = stage_request(
+        &[
+            ("authorization", "Bearer secret-master-key"),
+            ("x-litellm-end-user-id", "ghost"),
+        ],
+        r#"{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hello"}]}"#,
+    );
+    *request.uri_mut() = "/v1/chat/completions".parse().unwrap();
+    request
+}
+
+#[tokio::test]
+async fn application_tracks_validation() {
+    let config = config_with_database(true);
+    let tasks = TaskTracker::new();
+    let chat = chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1)).unwrap();
+    let lookup = Arc::new(ScriptedEndUserLookup::default());
+    let app = server_application(&config, chat, Arc::new(AtomicBool::new(false)), &tasks)
+        .unwrap()
+        .layer(Extension(end_user_rule(&lookup, None)));
+    let mut known = inference_request();
+    let (identity, _existence) = resolver(true, &ScriptedCache::new(false));
+    known.extensions_mut().insert(Arc::new(EndUserIdentityRule {
+        resolver: Some(identity),
+    }));
+    app.clone().oneshot(known).await.unwrap();
+    assert_eq!(lookup.lookups(), vec!["ghost".to_owned()]);
+    lookup.lookups.lock().unwrap().clear();
+    app.oneshot(inference_request()).await.unwrap();
+    assert!(
+        lookup.lookups().is_empty(),
+        "the production resolver drops the unknown ID"
+    );
+    tasks.close();
+    tasks.wait().await;
+}
+
 // a database alone does not open the lookup: LiteLLM's validation flag must be on too
-#[test]
-fn the_production_resolver_needs_the_validation_flag() {
+#[tokio::test]
+async fn the_production_resolver_needs_the_validation_flag() {
     let master_key = SecretString::from("secret-master-key".to_owned());
     let mut request = stage_request(&[("x-litellm-end-user-id", "alice")], "{}");
     request
         .extensions_mut()
         .insert(state_for(&config_with_database(false)));
+    let tasks = TaskTracker::new();
+    request.extensions_mut().insert(tasks.clone());
     let Ok(stage) = stage_input(&request, Some(&master_context(&master_key)), None) else {
         panic!("the authenticated request builds its stage input");
     };
     assert!(
-        stage.rule.resolver.is_none(),
+        installed_resolver(&stage).await.is_none(),
         "the resolver is built only when validation is on"
     );
+    tasks.close();
+    tasks.wait().await;
 }
 
 fn key_with_end_user_budget(budget_id: &str) -> UserAPIKeyAuth {

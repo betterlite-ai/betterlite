@@ -3,4 +3,7 @@ deviations:
   - what: A failed write of the end_user_validation entry surfaces from the resolver as a 500 internal_server_error with param null and code 500, where LiteLLM's DualCache.async_set_cache logs the backend error and continues without the entry.
     why: B880 requires cache read and write errors to propagate, and betterlite's pre-call write reports its failures as AuthCacheError, so the resolver forwards them instead of trusting a verdict it could not record. LiteLLM raises the same failures only on its pipelined pre-call path, which sits outside the catch; a plain dual-cache write is logged and swallowed. A read failure stays a cache miss on both sides, because the auth cache answers a failed read with None.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L504-L518
+  - what: The complete end-user existence probe, including database session acquisition, is bounded by the configured database deadline; expiry records an invalid verdict.
+    why: A stalled connection acquisition must not hang authentication indefinitely. The ordinary lookup and default-budget behavior is preserved after the timeout.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L2026-L2033
 kept_bugs: []

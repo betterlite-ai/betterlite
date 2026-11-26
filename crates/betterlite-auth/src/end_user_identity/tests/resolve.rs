@@ -23,7 +23,7 @@ struct StalledEndUsers;
 impl EndUserExistence for StalledEndUsers {
     async fn end_user_exists(&self, _end_user_id: &str) -> Result<bool, ExistenceError> {
         sleep(Duration::from_secs(1)).await;
-        Ok(false)
+        Ok(true)
     }
 }
 
@@ -73,7 +73,7 @@ async fn unknown_enforced_user() {
     assert_wrote(&cache, "ghost", "invalid", NEGATIVE_TTL_SECONDS);
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn stalled_session_acquisition_is_bounded_by_the_probe_deadline() {
     let identity = EndUserIdResolver {
         validate_end_user_id_in_db: true,
@@ -379,4 +379,27 @@ async fn unknown_id_dropped_not_denied() {
         .expect("an unknown id is not an error");
     assert!(dropped.is_none());
     assert_wrote(&cache, "ghost", "invalid", NEGATIVE_TTL_SECONDS);
+}
+
+#[rstest]
+#[case::negative(-1.0_f64, None)]
+#[case::zero(0.0_f64, None)]
+#[case::positive(2.0_f64, Some("alice"))]
+#[tokio::test(start_paused = true)]
+async fn probe_deadline(#[case] deadline_seconds: f64, #[case] expected: Option<&str>) {
+    let identity = EndUserIdResolver {
+        validate_end_user_id_in_db: true,
+        max_end_user_budget_id: None,
+        lookups: Some(DatabaseLookups {
+            end_users: Arc::new(StalledEndUsers),
+            users: Arc::new(MissingUsers),
+            deadline_seconds,
+        }),
+        cache: Arc::new(ScriptedCache::new()),
+    };
+    let resolved = identity
+        .resolve(&request(Some("alice"), None))
+        .await
+        .unwrap();
+    assert_eq!(resolved.as_deref(), expected);
 }

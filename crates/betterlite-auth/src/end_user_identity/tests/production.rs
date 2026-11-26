@@ -1,9 +1,12 @@
 #![cfg(test)]
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
+use betterlite_cache::backend::memory::local::LocalMemoryOps;
+use betterlite_cache::dual_cache::{DualCacheSettings, MAX_REDIS_BATCH_CACHE_SIZE};
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_models::decisions::Json;
+use rstest::rstest;
 
 use super::super::cache::{POSITIVE_TTL_SECONDS, ValidationCache};
 use super::super::existence::{
@@ -12,10 +15,10 @@ use super::super::existence::{
 use super::super::resolve::{DatabaseLookups, EndUserIdResolver};
 use super::support::{
     Answer, RowAnswer, RowCache, ScriptedCache, ScriptedEndUsers, ScriptedRows, ScriptedUserStore,
-    ScriptedUsers, UserCachePort, capture_events, debug_messages, end_user_row, registry, request,
-    test_cache, user_lookup,
+    ScriptedUsers, TestCache, UserCachePort, capture_events, debug_messages, end_user_row,
+    registry, request, test_cache, user_lookup,
 };
-use crate::auth_cache::WriteTtl;
+use crate::auth_cache::{WriteTtl, gateway_cache};
 use crate::auth_end_users::object::EndUserObjectError;
 use crate::auth_user_lookup::lookup::UserLookup;
 
@@ -32,6 +35,51 @@ fn adapter(
         store: PostgresStore { pool: None },
         max_end_user_budget_id: max_end_user_budget_id.map(str::to_owned),
     }
+}
+
+fn timed_cache(now: &Arc<Mutex<f64>>) -> TestCache {
+    let time = Arc::clone(now);
+    let memory =
+        Arc::new(LocalMemoryOps::new(1024, Arc::new(move || *time.lock().unwrap())).unwrap());
+    gateway_cache(
+        Arc::clone(&memory),
+        memory,
+        None,
+        DualCacheSettings {
+            default_in_memory_ttl: None,
+            default_redis_ttl: None,
+            batch_cache_expiry: None,
+            max_redis_batch_cache_size: MAX_REDIS_BATCH_CACHE_SIZE,
+            redis_delete_chunk_size: MAX_REDIS_BATCH_CACHE_SIZE,
+        },
+        45.0_f64,
+    )
+}
+
+#[rstest]
+#[case::positive(Answer::Found, 299.0_f64, 301.0_f64)]
+#[case::negative(Answer::Missing, 59.0_f64, 61.0_f64)]
+#[tokio::test]
+async fn validation_ttl_expires(#[case] answer: Answer, #[case] before: f64, #[case] after: f64) {
+    let now = Arc::new(Mutex::new(0.0_f64));
+    let rows = Arc::new(ScriptedEndUsers::new(answer));
+    let identity = EndUserIdResolver {
+        validate_end_user_id_in_db: true,
+        max_end_user_budget_id: None,
+        lookups: Some(DatabaseLookups {
+            end_users: Arc::<ScriptedEndUsers>::clone(&rows),
+            users: Arc::new(ScriptedUsers::new(Answer::Missing)),
+            deadline_seconds: 1.0_f64,
+        }),
+        cache: Arc::new(timed_cache(&now)),
+    };
+    let first = identity.resolve(&request("alice")).await.unwrap();
+    *now.lock().unwrap() = before;
+    assert_eq!(identity.resolve(&request("alice")).await.unwrap(), first);
+    assert_eq!(rows.calls().len(), 1);
+    *now.lock().unwrap() = after;
+    assert_eq!(identity.resolve(&request("alice")).await.unwrap(), first);
+    assert_eq!(rows.calls().len(), 2);
 }
 
 #[tokio::test]

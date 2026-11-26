@@ -201,7 +201,9 @@ pub(crate) fn application(
     let endpoints = chat_routes_with_call_id(calls, include_call_id)?;
     let embeddings = embedding_routes(executor, vertex, read_through, &azure.composition);
     // the completion route recovers an output-limit 400 with the counter the chat route counts prompts with
-    let routed = router(state, shutting_down, endpoints, embeddings).layer(Extension(counter));
+    let routed = router(state, shutting_down, endpoints, embeddings)
+        .layer(Extension(counter))
+        .layer(Extension(tasks.clone()));
     // a route layer, so a blocked route's 404 still passes the security headers, size limit and admission below
     let stacked = request_stack::wrap(
         routed.route_layer(from_fn(filter_route)),

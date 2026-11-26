@@ -78,7 +78,11 @@ async fn resolve(input: &Input, fixture: &Arc<Fixture>) -> HelperResult {
     let resolver = EndUserIdResolver {
         validate_end_user_id_in_db: input.validate_in_db,
         max_end_user_budget_id: input.proxy_default.clone(),
-        lookups: input.database.then(|| DatabaseLookups { end_users, users }),
+        lookups: input.database.then(|| DatabaseLookups {
+            end_users,
+            users,
+            deadline_seconds: 30.0_f64,
+        }),
         cache,
     };
     let value = resolver
