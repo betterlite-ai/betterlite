@@ -296,15 +296,17 @@ fn assert_dispatch_reaches_the_stage() {
     ));
 }
 
-// the registered stage walks the grants on a request with a database and reaches the handler
-async fn assert_database_walk_records() {
+async fn assert_walk_records(
+    config: &Config,
+    team: TeamAnswer,
+    expected_lists: &[Vec<String>],
+    expected_matched: &[String],
+) {
     let recorder = Arc::new(Recorder::default());
     let (status, _body, reached) = run_request(
-        &config_with_database(),
+        config,
         rule(
-            Some(Arc::new(ScriptedSources {
-                team: TeamAnswer::Row,
-            })),
+            Some(Arc::new(ScriptedSources { team })),
             Arc::clone(&recorder),
         ),
     )
@@ -312,40 +314,8 @@ async fn assert_database_walk_records() {
     assert_eq!(status, StatusCode::OK);
     assert!(reached);
     let (allowlists, matched) = recorder.recorded().expect("the stage recorded its walk");
-    assert_eq!(
-        allowlists,
-        vec![
-            vec!["tier-a".to_owned()],
-            vec!["tier-a".to_owned()],
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-        ]
-    );
-    assert_eq!(matched, vec!["tier-a".to_owned()]);
-}
-
-async fn assert_no_db_walk_records() {
-    let skipped = Arc::new(Recorder::default());
-    let (status, _body, reached) = run_request(
-        &config_with_master_key(),
-        rule(
-            Some(Arc::new(ScriptedSources {
-                team: TeamAnswer::Missing,
-            })),
-            Arc::clone(&skipped),
-        ),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK);
-    assert!(reached);
-    let (lists, matched) = skipped.recorded().expect("the stage recorded its walk");
-    assert_eq!(
-        lists,
-        vec![vec!["tier-a".to_owned()], Vec::new()],
-        "the no-database answer pairs the key list with the token's team models"
-    );
-    assert!(matched.is_empty());
+    assert_eq!(allowlists, expected_lists);
+    assert_eq!(matched, expected_matched);
 }
 
 async fn assert_unwired_walk_skips() {
@@ -362,8 +332,26 @@ async fn stage_is_registered() {
     assert!(INSTALLED_STAGES.contains(&AuthBackend::ModelGrantIntersection));
     assert_slot_settings();
     assert_dispatch_reaches_the_stage();
-    assert_database_walk_records().await;
-    assert_no_db_walk_records().await;
+    assert_walk_records(
+        &config_with_database(),
+        TeamAnswer::Row,
+        &[
+            vec!["tier-a".to_owned()],
+            vec!["tier-a".to_owned()],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        ],
+        &["tier-a".to_owned()],
+    )
+    .await;
+    assert_walk_records(
+        &config_with_master_key(),
+        TeamAnswer::Missing,
+        &[vec!["tier-a".to_owned()], Vec::new()],
+        &[],
+    )
+    .await;
     assert_unwired_walk_skips().await;
 }
 
