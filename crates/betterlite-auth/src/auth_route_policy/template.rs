@@ -179,11 +179,10 @@ fn matches_pieces(pieces: &[Piece<'_>], route: &str) -> bool {
             match piece.convertor {
                 Some(convertor) => {
                     for end in after_literal..=route.len() {
-                        if route.is_char_boundary(end)
-                            && route
-                                .get(after_literal..end)
-                                .is_some_and(|candidate| convertor.accepts(candidate))
-                        {
+                        let Some(candidate) = route.get(after_literal..end) else {
+                            continue;
+                        };
+                        if convertor.accepts(candidate) {
                             next.insert(end);
                         }
                     }

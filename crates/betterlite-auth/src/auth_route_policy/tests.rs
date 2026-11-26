@@ -388,6 +388,11 @@ fn internal_viewer_routes() {
         .with_user(WATCHER_ROW)
         .with_token(r#"{"user_id":"watcher-1"}"#);
     assert_auth_error(elsewhere.run(), "401");
+    let customer = Policy::new("/spend/keys")
+        .with_method("GET")
+        .with_user(CUSTOMER_ROW)
+        .with_token(BUYER_TOKEN);
+    assert_auth_error(customer.run(), "401");
 }
 
 #[test]
@@ -765,6 +770,14 @@ fn route_group_template() {
         &self_managed,
         None
     ));
+    // a group that expands to a single route is still matched as its member, not as the group name
+    let single = owned(&["apply_guardrail_routes"]);
+    assert!(allowed_routes_check(
+        UserRole::ProxyAdmin,
+        "/guardrails/apply_guardrail",
+        &single,
+        None
+    ));
 }
 
 #[test]
@@ -834,6 +847,8 @@ fn template_text_convertor() {
     assert!(!template_matches("/x/{value}", "/x/"));
     assert!(!template_matches("/x/{value}", "/x"));
     assert!(!template_matches("/x/{value}", "/y/7"));
+    assert!(template_matches("/x/{value:str}", "/x/7"));
+    assert!(!template_matches("/x/{value:str}", "/x/7/8"));
 }
 
 #[test]
@@ -895,6 +910,8 @@ fn template_placeholders_and_literals() {
     assert!(!template_matches("/x/{1x}", "/x/7"));
     assert!(template_matches("/x/{1x}", "/x/{1x}"));
     assert!(!template_matches("/x/{value:unknown}", "/x/7"));
+    assert!(template_matches("/x/{value:}", "/x/{value:}"));
+    assert!(!template_matches("/x/{value:}", "/x/7"));
     assert!(template_matches("/x/{literal", "/x/{literal"));
     assert!(!template_matches("{a:int}{b:int}", "1é"));
 }

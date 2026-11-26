@@ -189,6 +189,11 @@ fn stage_input_reads_method_and_query() {
     assert_eq!(team.method.as_deref(), Some("POST"));
     assert!(team.user_id_query.is_none());
     assert!(!team.body.is_empty());
+    // neither an inference route nor an info route pays for parsing the body
+    let chat = stage_from(rule(), CHAT_ROUTE, "POST", r#"{"model":"gpt-4o"}"#);
+    assert!(chat.body.is_empty());
+    let info_with_body = stage_from(rule(), "/user/info", "POST", r#"{"user_id":"user-2"}"#);
+    assert!(info_with_body.body.is_empty());
 }
 
 #[test]

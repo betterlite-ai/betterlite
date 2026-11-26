@@ -72,6 +72,9 @@ fn early_denied(route: &str) -> bool {
     blocked_key_suffix(route, &EARLY_BLOCKED_KEY_SUFFIXES)
 }
 
+// every entry here is also in the early table, and every route it could still catch reaches the same 403 at
+// the end of check_access, so no test can tell this check from its negation
+#[cfg_attr(test, mutants::skip)]
 fn late_denied(route: &str) -> bool {
     if check_route_access(route, LATE_BLOCKED_WRITE_ROUTES) {
         return true;
