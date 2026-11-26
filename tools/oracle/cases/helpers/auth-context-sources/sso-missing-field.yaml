@@ -1,0 +1,34 @@
+kind: helper
+name: auth-context-sources-sso-missing-field
+call:
+  auth_context_sources:
+    function: sso
+    scenarios:
+      - microsoft_client_id: microsoft-client
+        microsoft_client_secret: null
+        microsoft_tenant: contoso
+        google_client_id: null
+        google_client_secret: null
+        generic_client_id: null
+        generic_client_secret: null
+        generic_authorization_endpoint: null
+        generic_token_endpoint: null
+        generic_userinfo_endpoint: null
+        saml_idp_metadata_url: null
+        saml_idp_metadata_xml: null
+        saml_available: true
+      - microsoft_client_id: microsoft-client
+        microsoft_client_secret: microsoft-secret
+        microsoft_tenant: null
+        google_client_id: google-client
+        google_client_secret: google-secret
+        generic_client_id: null
+        generic_client_secret: null
+        generic_authorization_endpoint: null
+        generic_token_endpoint: null
+        generic_userinfo_endpoint: null
+        saml_idp_metadata_url: null
+        saml_idp_metadata_xml: null
+        saml_available: true
+env: {}
+compare: {ignore: []}

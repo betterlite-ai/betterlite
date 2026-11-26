@@ -1,0 +1,18 @@
+kind: helper
+name: auth-context-sources-model-budget-names
+call:
+  auth_context_sources:
+    function: budget_names
+    model: gpt-4o
+calls:
+  - auth_context_sources:
+      function: budget_names
+      model: null
+  - auth_context_sources:
+      function: budget_names
+      model: [group-b, group-a, group-b]
+  - auth_context_sources:
+      function: budget_names
+      model: []
+env: {}
+compare: {ignore: []}

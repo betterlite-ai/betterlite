@@ -1,0 +1,61 @@
+kind: helper
+name: auth-context-sources-auth-alias-normalization
+call:
+  auth_context_sources:
+    function: claude
+    requested: "alias-target"
+    global_aliases: {}
+    key_aliases: {alias-target: group-one}
+    team_model_aliases: {team-target: team-group}
+    hierarchical_aliases: {hier-target: hier-group}
+    router_model_group_alias: [router-target]
+    router_model_ids: [group-one]
+    candidate_ids: {wild-target: [deployment-one]}
+    team_id: team-one
+calls:
+  - auth_context_sources:
+      function: claude
+      requested: "team-target"
+      global_aliases: {}
+      key_aliases: {alias-target: group-one}
+      team_model_aliases: {team-target: team-group}
+      hierarchical_aliases: {hier-target: hier-group}
+      router_model_group_alias: [router-target]
+      router_model_ids: [group-one]
+      candidate_ids: {wild-target: [deployment-one]}
+      team_id: team-one
+  - auth_context_sources:
+      function: claude
+      requested: "global-target"
+      global_aliases: {global-target: global-group}
+      key_aliases: null
+      team_model_aliases: null
+      hierarchical_aliases: null
+      router_model_group_alias: []
+      router_model_ids: []
+      candidate_ids: {}
+      team_id: null
+  - auth_context_sources:
+      function: claude
+      requested: "router-target"
+      global_aliases: {}
+      key_aliases: null
+      team_model_aliases: null
+      hierarchical_aliases: null
+      router_model_group_alias: [router-target]
+      router_model_ids: []
+      candidate_ids: {}
+      team_id: null
+  - auth_context_sources:
+      function: claude
+      requested: "claude-router-7465616d2d67726f7570"
+      global_aliases: {}
+      key_aliases: null
+      team_model_aliases: null
+      hierarchical_aliases: null
+      router_model_group_alias: []
+      router_model_ids: [team-group]
+      candidate_ids: {}
+      team_id: team-one
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,31 @@
+kind: helper
+name: auth-context-sources-sso-discovery-readiness-matrix
+call:
+  auth_context_sources:
+    function: sso
+    scenarios:
+      - saml_available: true
+      - microsoft_client_id: ""
+        saml_available: true
+      - google_client_id: google-client
+        saml_available: true
+      - google_client_id: google-client
+        google_client_secret: google-secret
+        saml_available: true
+      - generic_client_id: generic-client
+        generic_client_secret: generic-secret
+        generic_authorization_endpoint: https://idp.example/authorize
+        generic_token_endpoint: https://idp.example/token
+        saml_available: true
+      - generic_client_id: generic-client
+        generic_client_secret: generic-secret
+        generic_authorization_endpoint: https://idp.example/authorize
+        generic_token_endpoint: https://idp.example/token
+        generic_userinfo_endpoint: https://idp.example/userinfo
+        saml_available: true
+      - saml_idp_metadata_url: https://idp.example/metadata
+        saml_available: true
+      - saml_idp_metadata_xml: "<EntityDescriptor/>"
+        saml_available: true
+env: {}
+compare: {ignore: []}

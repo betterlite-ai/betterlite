@@ -1,0 +1,42 @@
+kind: helper
+name: auth-context-sources-hierarchical-settings
+call:
+  auth_context_sources:
+    function: router_settings
+    key_settings: {model_group_alias: {alias-one: group-one}}
+    team_settings: {model_group_alias: {alias-two: group-two}}
+    team_id: team-one
+    team_lookup: present
+calls:
+  - auth_context_sources:
+      function: router_settings
+      key_settings: "model_group_alias: {alias-two: group-two}"
+      team_settings: null
+      team_id: null
+      team_lookup: absent
+  - auth_context_sources:
+      function: router_settings
+      key_settings: {}
+      team_settings: {model_group_alias: {team-alias: team-group}}
+      team_id: team-one
+      team_lookup: present
+  - auth_context_sources:
+      function: router_settings
+      key_settings: null
+      team_settings: {model_group_alias: {team-alias: team-group}}
+      team_id: team-one
+      team_lookup: error
+  - auth_context_sources:
+      function: router_settings
+      key_settings: null
+      team_settings: {model_group_alias: {team-alias: team-group}}
+      team_id: null
+      team_lookup: present
+  - auth_context_sources:
+      function: router_settings
+      key_settings: [not, settings]
+      team_settings: {model_group_alias: {team-alias: team-group}}
+      team_id: team-one
+      team_lookup: absent
+env: {}
+compare: {ignore: []}

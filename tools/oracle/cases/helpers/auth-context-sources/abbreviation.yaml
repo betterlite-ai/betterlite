@@ -1,0 +1,23 @@
+kind: helper
+name: auth-context-sources-abbreviation
+call:
+  auth_context_sources:
+    function: abbreviate
+    api_key: short-key
+    minimum_custom_key_length: 16
+calls:
+  - auth_context_sources:
+      function: abbreviate
+      api_key: sk-1234567890abcdef
+      minimum_custom_key_length: 16
+  - auth_context_sources:
+      function: abbreviate
+      api_key: sk-1234567890abcdef
+      minimum_custom_key_length: 0
+  - auth_context_sources:
+      function: abbreviate
+      api_key: sk-1234567890abcdef
+      minimum_custom_key_length: 17
+env:
+  MINIMUM_CUSTOM_KEY_LENGTH: "16"
+compare: {ignore: []}

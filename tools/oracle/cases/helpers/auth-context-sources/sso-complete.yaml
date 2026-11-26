@@ -1,0 +1,21 @@
+kind: helper
+name: auth-context-sources-sso-complete
+call:
+  auth_context_sources:
+    function: sso
+    scenarios:
+      - microsoft_client_id: microsoft-client
+        microsoft_client_secret: microsoft-secret
+        microsoft_tenant: contoso
+        google_client_id: google-client
+        google_client_secret: google-secret
+        generic_client_id: generic-client
+        generic_client_secret: generic-secret
+        generic_authorization_endpoint: https://idp.example/authorize
+        generic_token_endpoint: https://idp.example/token
+        generic_userinfo_endpoint: https://idp.example/userinfo
+        saml_idp_metadata_url: https://idp.example/metadata
+        saml_idp_metadata_xml: null
+        saml_available: true
+env: {}
+compare: {ignore: []}
