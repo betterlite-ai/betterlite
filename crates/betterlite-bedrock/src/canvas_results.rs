@@ -93,11 +93,7 @@ where
     reject_error_fields(upstream, &fields, entries.is_empty())?;
     let data = image_data(entries)?;
     if data.is_empty() {
-        return Err(CanvasResultError::Edit(get_error_class(
-            NO_IMAGES.to_owned(),
-            upstream.status_code,
-            upstream_headers(upstream),
-        )));
+        return Err(provider_reply_error(upstream, NO_IMAGES.to_owned()));
     }
     let mut additional_headers = AdditionalHeaders::new();
     if let Some(cost) = cost_header(model, data.len(), lookup) {
@@ -114,25 +110,26 @@ where
 }
 
 fn reply_or_error(upstream: &ImageHttpResponse) -> Result<Json, CanvasResultError> {
-    match decode_canvas_reply(&upstream.body) {
-        Ok(reply) => Ok(reply),
-        Err(source) => Err(CanvasResultError::Edit(get_error_class(
-            format!("{PARSE_PREFIX}: {source}"),
-            upstream.status_code,
-            upstream_headers(upstream),
-        ))),
-    }
+    decode_canvas_reply(&upstream.body)
+        .map_err(|source| provider_reply_error(upstream, format!("{PARSE_PREFIX}: {source}")))
 }
 
 fn status_or_error(upstream: &ImageHttpResponse, reply: &Json) -> Result<(), CanvasResultError> {
     if upstream.status_code == 200 {
         return Ok(());
     }
-    Err(CanvasResultError::Edit(get_error_class(
+    Err(provider_reply_error(
+        upstream,
         format!("{ERROR_PREFIX}: {}", text_of(reply)),
+    ))
+}
+
+fn provider_reply_error(upstream: &ImageHttpResponse, message: String) -> CanvasResultError {
+    CanvasResultError::Edit(get_error_class(
+        message,
         upstream.status_code,
         upstream_headers(upstream),
-    )))
+    ))
 }
 
 // get("images") or []: an absent or null container is empty, and a container of another type names the field.
@@ -177,11 +174,10 @@ fn reject_error_fields(
         return Ok(());
     }
     if let Some(errors) = fields.get("errors") {
-        return Err(CanvasResultError::Edit(get_error_class(
+        return Err(provider_reply_error(
+            upstream,
             format!("{ERROR_PREFIX}: {}", text_of(errors)),
-            upstream.status_code,
-            upstream_headers(upstream),
-        )));
+        ));
     }
     let chosen = fields
         .get("message")
@@ -190,11 +186,10 @@ fn reject_error_fields(
     if let Some(value) = chosen
         && has_content(value)
     {
-        return Err(CanvasResultError::Edit(get_error_class(
+        return Err(provider_reply_error(
+            upstream,
             format!("{ERROR_PREFIX}: {}", text_of(value)),
-            upstream.status_code,
-            upstream_headers(upstream),
-        )));
+        ));
     }
     Ok(())
 }
