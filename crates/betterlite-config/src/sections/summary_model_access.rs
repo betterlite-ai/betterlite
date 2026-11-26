@@ -9,15 +9,7 @@ pub const DEFAULT_SUMMARY_MAX_TOKENS: u64 = 4096;
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub struct Raw {
-    general_settings: RawGeneralSettingsInput,
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(untagged)]
-enum RawGeneralSettingsInput {
-    #[default]
-    Null,
-    Settings(RawGeneralSettings),
+    general_settings: RawGeneralSettings,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -85,10 +77,7 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        let general_settings = match self.general_settings {
-            RawGeneralSettingsInput::Null => RawGeneralSettings::default(),
-            RawGeneralSettingsInput::Settings(settings) => settings,
-        };
+        let general_settings = self.general_settings;
         Ok(Settings {
             // ast-grep-ignore: no-long-names
             context_management_summary_model: summary_model(
