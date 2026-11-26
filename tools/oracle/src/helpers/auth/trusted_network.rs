@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use betterlite_auth::trusted_network::cidr::{
     CidrRanges, ip_in_networks, normalize_cidr_ranges, parse_normalized,
 };
@@ -173,7 +175,7 @@ fn resolved_context(request: &NetworkRequest<'_>, settings: &TrustedNetworkSetti
 }
 
 // Python renders a parsed network with str(), the same "address/prefix" text ipnet prints
-fn rendered<N: std::fmt::Display>(networks: &[N]) -> Vec<String> {
+fn rendered<N: Display>(networks: &[N]) -> Vec<String> {
     let mut texts = Vec::with_capacity(networks.len());
     for network in networks {
         texts.push(network.to_string());
