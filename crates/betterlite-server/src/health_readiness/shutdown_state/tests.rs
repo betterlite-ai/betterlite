@@ -106,6 +106,29 @@ async fn drain_wait_with_a_zero_timeout_returns_the_outstanding_count(
 }
 
 #[tokio::test(start_paused = true)]
+async fn drain_wait_with_a_zero_timeout_never_goes_below_zero() {
+    let in_flight = Arc::new(FakeInFlight::new(0));
+    let shutdown = state(&in_flight, Duration::from_secs(30));
+    let drained = shutdown.wait_for_drain(Some(Duration::ZERO), true).await;
+    assert_eq!(drained, 0);
+}
+
+#[tokio::test(start_paused = true)]
+async fn drain_wait_never_returns_a_negative_count() {
+    let in_flight = Arc::new(FakeInFlight::new(1));
+    let shutdown = state(&in_flight, Duration::from_secs(30));
+    let counter = Arc::clone(&in_flight);
+    let (drained, ()) = tokio::join!(
+        shutdown.wait_for_drain(Some(Duration::from_secs(1)), false),
+        async move {
+            sleep(Duration::from_millis(300)).await;
+            counter.count.store(3, Ordering::Release);
+        }
+    );
+    assert_eq!(drained, 0);
+}
+
+#[tokio::test(start_paused = true)]
 async fn drain_wait_times_out_and_returns_what_drained() {
     let (logs, _guard) = capture_logs(tracing::Level::WARN);
     let in_flight = Arc::new(FakeInFlight::new(3));
@@ -123,6 +146,7 @@ async fn drain_wait_times_out_and_returns_what_drained() {
     assert!(contents.contains("graceful_shutdown_timeout in_flight_requests=2"));
     assert!(contents.contains("elapsed_s=1.00"));
     assert!(contents.contains("timeout_s=1.0"));
+    assert!(contents.contains("proceeding with teardown"));
 }
 
 #[tokio::test(start_paused = true)]
