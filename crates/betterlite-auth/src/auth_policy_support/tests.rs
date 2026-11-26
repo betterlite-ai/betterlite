@@ -22,6 +22,7 @@ use super::org::inherit_org_identity;
 use super::team::{TeamFromTokenError, UI_TEAM_ID, team_obj_from_token, token_can_vouch_for_team};
 use super::tools::{ToolCheckError, check_tools_allowlist as check};
 use crate::auth_end_users::check::EndUserBudgetExceeded;
+use crate::auth_org_lookup::error::OrgLookupError;
 use crate::auth_org_lookup::organization::OrgLookup;
 use crate::auth_team_lookup::error::{TeamFailure, TeamLookupError};
 use crate::resolved_key::auth::UserAPIKeyAuth;
@@ -212,6 +213,19 @@ fn tool_key_overrides_team() {
     assert_eq!(denial.code, "403");
     let permitted = chat_request("key-tool");
     check(&permitted, Some(&token), None, ROUTE, &extractors).unwrap();
+}
+
+// the denial keeps its status and param through the exception conversion the proxy stage uses
+#[test]
+fn tool_denial_survives_the_proxy_conversion() {
+    let extractors = chat_extractors();
+    let token = tools_token(r#"["allowed"]"#, "null");
+    let refused = chat_request("other");
+    let error = check(&refused, Some(&token), None, ROUTE, &extractors).unwrap_err();
+    let exception = error.into_proxy_exception();
+    assert_eq!(exception.error_type, "tool_access_denied");
+    assert_eq!(exception.param.as_deref(), Some("tools"));
+    assert_eq!(exception.code, "403");
 }
 
 #[rstest]
@@ -601,6 +615,24 @@ async fn safe_fetch_other_debug_drop() {
         1
     );
     assert!(!seen.iter().any(|line| line.contains("fetch failed")));
+}
+
+// the org lookup's HTTPException statuses re-raise, and its plain failures are swallowed
+#[tokio::test]
+async fn safe_fetch_org_lookup_both_sides() {
+    let raised = safe_fetch("org", async {
+        Err::<(), OrgLookupError>(OrgLookupError::AliasNotFound {
+            org_alias: "a".to_owned(),
+        })
+    })
+    .await;
+    assert!(matches!(raised, Err(OrgLookupError::AliasNotFound { .. })));
+    let dropped = safe_fetch("org", async {
+        Err::<u8, OrgLookupError>(OrgLookupError::NoDatabase)
+    })
+    .await
+    .unwrap();
+    assert!(dropped.is_none());
 }
 
 #[test]
