@@ -58,6 +58,14 @@ pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
     AuthBackend::AuthEndUsers,
 ];
 
+const PREFETCHED_CONTEXT_STAGES: &[AuthBackend] = &[
+    AuthBackend::AuthTagBudgets,
+    AuthBackend::AuthKeyBudgets,
+    AuthBackend::TeamBudgetAdmission,
+    AuthBackend::AuthOrgLookup,
+    AuthBackend::AuthEndUsers,
+];
+
 #[derive(Clone, Debug)]
 pub enum StageInput {
     MasterKey(Option<SecretString>),
@@ -133,12 +141,8 @@ pub(crate) fn dispatch(
         AuthBackend::AuthModelPatterns => auth_model_patterns_stage(input),
         AuthBackend::EntityModelAccess => entity_model_access_stage(input),
         AuthBackend::AuthResourceGrants => auth_resource_grants_stage(input),
-        // the reads ran while these stages' inputs were assembled, so only the identity is left
-        AuthBackend::AuthTagBudgets
-        | AuthBackend::AuthKeyBudgets
-        | AuthBackend::TeamBudgetAdmission
-        | AuthBackend::AuthOrgLookup
-        | AuthBackend::AuthEndUsers => prefetched_context(input),
+        // These stages' reads ran while their inputs were assembled, so only identity remains.
+        backend if PREFETCHED_CONTEXT_STAGES.contains(&backend) => prefetched_context(input),
         AuthBackend::OrganizationRoutePolicy => org_route_policy_stage(input),
     }
 }
