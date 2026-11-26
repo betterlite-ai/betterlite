@@ -554,38 +554,47 @@ def test_transcription_local_error(field: str, value: CallValue, message: str) -
     values[field] = value
     for mode in ("sync", "async"):
         with pytest.raises(ValueError, match=message) as caught:
-            if mode == "sync":
-                transcription(**values)
-            else:
-                asyncio.run(atranscription(**values))
+            invoke_transcription(mode, values)
         cause = caught.value.__cause__
         assert cause is not None
         assert cause.__class__.__name__ == "NativeAudioError"
 
 
+def invoke_transcription(mode: str, values: dict[str, CallValue]) -> None:
+    if mode == "sync":
+        transcription(**values)
+    else:
+        asyncio.run(atranscription(**values))
+
+
+def invoke_audio(operation: str, server: AudioServer) -> None:
+    match operation:
+        case "transcription":
+            transcription(MODEL, wav_bytes(), api_base=server.url, api_key=GOOD_KEY)
+        case "atranscription":
+            asyncio.run(atranscription(
+                MODEL, wav_bytes(), api_base=server.url, api_key=GOOD_KEY,
+            ))
+        case "speech":
+            speech(TTS_MODEL, "hello", "alloy", api_base=server.url, api_key=GOOD_KEY)
+        case "aspeech":
+            asyncio.run(aspeech(
+                TTS_MODEL, "hello", "alloy", api_base=server.url, api_key=GOOD_KEY,
+            ))
+        case object():
+            pytest.fail("unknown audio operation")
+
+
 @pytest.mark.parametrize("operation", ["transcription", "atranscription", "speech", "aspeech"])
 def test_audio_provider_body_error(operation: str) -> None:
-    with closing(AudioServer()) as server, pytest.raises(BadRequestError) as caught:
+    with closing(AudioServer()) as server:
         server.error_status = BAD_REQUEST
         server.error_body = {"error": {
             "message": "Invalid file", "type": "invalid_request_error",
             "param": "file", "code": "invalid_file",
         }}
-        match operation:
-            case "transcription":
-                transcription(MODEL, wav_bytes(), api_base=server.url, api_key=GOOD_KEY)
-            case "atranscription":
-                asyncio.run(atranscription(
-                    MODEL, wav_bytes(), api_base=server.url, api_key=GOOD_KEY,
-                ))
-            case "speech":
-                speech(TTS_MODEL, "hello", "alloy", api_base=server.url, api_key=GOOD_KEY)
-            case "aspeech":
-                asyncio.run(aspeech(
-                    TTS_MODEL, "hello", "alloy", api_base=server.url, api_key=GOOD_KEY,
-                ))
-            case object():
-                pytest.fail("unknown audio operation")
+        with pytest.raises(BadRequestError) as caught:
+            invoke_audio(operation, server)
     assert caught.value.type == "invalid_request_error"
     assert caught.value.param == "file"
     assert caught.value.code == "invalid_file"
