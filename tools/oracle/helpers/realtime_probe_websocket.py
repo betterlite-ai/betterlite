@@ -14,7 +14,7 @@ from litellm.llms.vertex_ai.audio_transcription.realtime_transformation import (
 from litellm.llms.vertex_ai.realtime.transformation import VertexAIRealtimeConfig
 from litellm.llms.vertex_ai.vertex_llm_base import VertexBase
 from litellm.types.router import GenericLiteLLMParams
-from pydantic import JsonValue
+from pydantic import JsonValue, TypeAdapter
 
 AZURE_DEFAULT_API_VERSION = "2024-10-01-preview"
 OPENAI_API_BASE = "https://api.openai.com/"
@@ -71,13 +71,11 @@ def empty_view(branch: str) -> dict[str, JsonValue]:
 
 
 def text_field(values: Mapping[str, JsonValue], name: str) -> str | None:
-    value = values.get(name)
-    return value if isinstance(value, str) else None
-
-
-# `named or model_params[name]`: a named argument wins only when it is truthy
-def resolved_text(values: Mapping[str, JsonValue], named: str | None, name: str) -> str | None:
-    return named if named else text_field(values, name)
+    match values.get(name):
+        case str() as text:
+            return text
+        case object():
+            return None
 
 
 # _model_params_with_stored_credentials: stored values sit underneath the explicit parameters
@@ -103,19 +101,25 @@ def azure_protocol(scenario: Scenario, merged: Mapping[str, JsonValue]) -> str:
         configured = merged.get("realtime_protocol")
     if not configured:
         configured = os.environ.get("LITELLM_AZURE_REALTIME_PROTOCOL")
-    return configured if isinstance(configured, str) else GA_PROTOCOL
+    match configured:
+        case str() as text:
+            return text
+        case object():
+            return GA_PROTOCOL
 
 
 # `None if api_key else get_azure_ad_token(...)`, as _realtime_health_check_auth_headers reads it
 def azure_ad_token(key: str | None, merged: Mapping[str, JsonValue]) -> str | None:
     if key:
         return None
-    return get_azure_ad_token(GenericLiteLLMParams.model_validate(dict(merged)))
+    params = TypeAdapter(GenericLiteLLMParams).validate_python(merged)
+    return get_azure_ad_token(params)
 
 
-def ssl_kind() -> str:
-    context = get_shared_realtime_ssl_context()
-    return "shared" if isinstance(context, ssl.SSLContext) else "none"
+def ssl_kind(value: bool | str | ssl.SSLContext | None) -> str:
+    if value is None:
+        return "disabled"
+    return "insecure" if value is False else "shared"
 
 
 def bearer_headers(key: str | None) -> list[JsonValue]:
@@ -145,21 +149,23 @@ def azure_answer(
     token = azure_ad_token(key, merged)
     headers = AzureOpenAIRealtime.get_auth_headers(api_key=key, azure_ad_token=token)
     view = empty_view("azure")
-    view["api_base"] = base or ""
+    view["api_base"] = base
+    if base is None:
+        view["api_base"] = ""
     view["api_version"] = version or AZURE_DEFAULT_API_VERSION
     view["protocol"] = azure_protocol(scenario, merged)
     view["headers"] = pair_headers(headers)
     view["max_size"] = REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES
-    view["ssl"] = ssl_kind()
+    view["ssl"] = ssl_kind(get_shared_realtime_ssl_context())
     return view
 
 
 def base_answer(branch: str, key: str | None, base: str | None, default: str) -> JsonValue:
     view = empty_view(branch)
-    view["api_base"] = default if not base else base
+    view["api_base"] = base or default
     view["headers"] = bearer_headers(key)
     view["max_size"] = REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES
-    view["ssl"] = ssl_kind()
+    view["ssl"] = ssl_kind(get_shared_realtime_ssl_context())
     return view
 
 
@@ -170,7 +176,9 @@ def vertex_answer(scenario: Scenario, merged: dict[str, JsonValue], base: str | 
     location = VertexBase.safe_get_vertex_ai_location(dict(merged))
     region = VertexBase.get_vertex_region(vertex_region=location, model=model)
     project = scenario.get("vertex_project") or DEFAULT_PROJECT
-    token = scenario.get("vertex_token") or ""
+    token = scenario.get("vertex_token")
+    if token is None:
+        token = ""
     config = VertexAIRealtimeConfig(access_token=token, project=project, location=region)
     headers = {"Authorization": f"Bearer {token}"}
     if project:
@@ -180,16 +188,16 @@ def vertex_answer(scenario: Scenario, merged: dict[str, JsonValue], base: str | 
     view["url"] = config.get_complete_url(api_base=base, model=model)
     view["headers"] = pair_headers(headers)
     view["max_size"] = REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES
-    view["ssl"] = ssl_kind()
+    view["ssl"] = ssl_kind(get_shared_realtime_ssl_context())
     return view
 
 
 def run_scenario(scenario: Scenario) -> JsonValue:
     litellm.vertex_location = scenario.get("vertex_location")
     merged = merged_parameters(scenario)
-    key = resolved_text(merged, scenario.get("api_key"), "api_key")
-    base = resolved_text(merged, scenario.get("api_base"), "api_base")
-    version = resolved_text(merged, scenario.get("api_version"), "api_version")
+    key = scenario.get("api_key") or text_field(merged, "api_key")
+    base = scenario.get("api_base") or text_field(merged, "api_base")
+    version = scenario.get("api_version") or text_field(merged, "api_version")
     provider = scenario["custom_llm_provider"]
     if provider == "azure":
         return azure_answer(scenario, merged, key, base, version)
