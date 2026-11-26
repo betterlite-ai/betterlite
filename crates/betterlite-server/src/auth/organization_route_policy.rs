@@ -48,8 +48,10 @@ pub(crate) fn stage_input(
         .get::<Arc<OrganizationRouteRule>>()
         .map_or_else(|| Arc::new(OrganizationRouteRule::default()), Arc::clone);
     let route = request_route(request);
+    let reads_organization =
+        ORG_ADMIN_ONLY_ROUTES.contains(&route.as_str()) || route == TEAM_CREATE_ROUTE;
     // only the selected-organization checks read the body, so no other route pays for parsing it
-    let parsed = if rule.user.is_none() || !reads_selected_organization(&route) {
+    let parsed = if rule.user.is_none() || !reads_organization {
         JsonObject::new()
     } else {
         request_body(request, body)
@@ -70,11 +72,6 @@ pub(crate) fn run_stage(
     check_organization_role(stage.user.as_ref(), &stage.route, &stage.body)
         .map_err(|error| Box::new(error.into_proxy_exception()))?;
     Ok(stage.context.clone())
-}
-
-// request_data.get("organization_id") is read on the org admin routes and /team/new, and on no other route
-fn reads_selected_organization(route: &str) -> bool {
-    ORG_ADMIN_ONLY_ROUTES.contains(&route) || route == TEAM_CREATE_ROUTE
 }
 
 // LiteLLM hands the role checks the request's parsed body, so the auth reader's object is what the policy sees

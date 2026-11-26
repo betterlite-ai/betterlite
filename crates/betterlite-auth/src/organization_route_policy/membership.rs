@@ -5,8 +5,7 @@ use serde::Deserialize;
 pub const ORG_ADMIN: &str = "org_admin";
 pub const PROXY_ADMIN: &str = "proxy_admin";
 
-// LiteLLM_OrganizationMembershipTable as the role checks read it: organization_id is declared str but the pinned code
-// skips a null one, so the projection keeps it optional instead of failing the row.
+// the membership row the checks read; a null organization_id is skipped by the pinned code
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct OrganizationMembership {
@@ -49,10 +48,5 @@ impl RouteUser {
                 .insert(organization_id.clone(), membership.user_role.clone());
         }
         info
-    }
-
-    #[must_use]
-    pub fn is_proxy_admin(&self) -> bool {
-        self.user_role.as_deref() == Some(PROXY_ADMIN)
     }
 }

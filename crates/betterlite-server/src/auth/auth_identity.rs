@@ -1,3 +1,7 @@
+use std::sync::Arc;
+
+use axum::body::{Body, Bytes};
+use axum::http::{Request, header};
 use betterlite_auth::auth_identity::errors::AuthError;
 use betterlite_auth::auth_identity::records::{
     CredentialRef, NetworkContext, Principal, SourceKey,
@@ -19,6 +23,7 @@ use crate::auth::organization_route_policy::{self, OrganizationPolicyStageInput}
 use crate::auth::request_body_safety::{self, RequestBodySafetyStageInput};
 use crate::auth::team_budget_admission::TeamBudgetStageInput;
 use crate::error_body::AuthenticationFailure;
+use crate::state::ServerState;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AuthBackend {
@@ -144,7 +149,7 @@ pub(crate) fn dispatch(
             // the member scope and budget checks ran in the prefetch, so only the identity is left
             Ok(stage.context.clone())
         }
-        AuthBackend::OrganizationRoutePolicy => organization_route_policy_stage(input),
+        AuthBackend::OrganizationRoutePolicy => org_route_policy_stage(input),
         AuthBackend::AuthOrgLookup => {
             let StageInput::AuthOrgLookup(stage) = input else {
                 return Err(StageFailure::from(AuthenticationFailure::Missing));
@@ -183,7 +188,32 @@ fn auth_resource_grants_stage(input: &StageInput) -> Result<AuthContext, StageFa
     auth_resource_grants::run_stage(stage).map_err(StageFailure::ResourceGrants)
 }
 
-fn organization_route_policy_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
+pub(crate) fn safety_stage_input(
+    request: &Request<Body>,
+    authenticated: Option<&AuthContext>,
+    body: Option<&Bytes>,
+) -> Result<RequestBodySafetyStageInput, StageFailure> {
+    let context = authenticated
+        .cloned()
+        .ok_or(AuthenticationFailure::Missing)?;
+    let content_type = request
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+    let slot = request
+        .extensions()
+        .get::<Arc<ServerState>>()
+        .map(|state| state.request_body_safety.clone());
+    Ok(RequestBodySafetyStageInput {
+        context,
+        content_type,
+        body: body.cloned().unwrap_or_default(),
+        slot,
+    })
+}
+
+fn org_route_policy_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
     let StageInput::OrganizationRoutePolicy(stage) = input else {
         return Err(StageFailure::from(AuthenticationFailure::Missing));
     };

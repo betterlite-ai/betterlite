@@ -10,8 +10,7 @@ const USER_ROLE: &str = "user_role";
 const UNAUTHORIZED: i64 = 401;
 const BAD_REQUEST: i64 = 400;
 
-// The 401/auth_error rejections organization_role_based_access_check raises, with its param; OrganizationIdNotText is the
-// 400 docs/compatibility.md gives a request value the declared str | None type cannot hold.
+// the 401 auth_error rejections and their param; OrganizationIdNotText is the 400 for a wrong-typed value
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum RoutePolicyError {
     #[error("Only proxy admins can create new organizations. You are {role}")]

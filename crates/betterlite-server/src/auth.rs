@@ -60,7 +60,9 @@ use betterlite_auth::auth_request_models::catalog::{EmptyCatalog, RequestModelRe
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 
-use crate::auth::auth_identity::{AuthBackend, AuthContext, StageFailure, StageInput};
+use crate::auth::auth_identity::{
+    AuthBackend, AuthContext, StageFailure, StageInput, safety_stage_input,
+};
 use crate::auth::auth_model_patterns::{
     ModelPatternStageInput, max_recurse_depth_for_request, rule_for_request,
 };
@@ -68,9 +70,7 @@ use crate::auth::auth_request_models::{CoreDecoders, RequestModelStageInput, res
 use crate::auth::auth_resource_grants::{
     ResourceGrantStageInput, database_for_request, rule_for_request as grant_rule_for_request,
 };
-use crate::auth::request_body_safety::RequestBodySafetyStageInput;
 use crate::error_body::AuthenticationFailure;
-use crate::state::ServerState;
 use axum::body::{Body, Bytes};
 use axum::extract::State;
 use axum::http::{HeaderMap, Request, header};
@@ -140,31 +140,6 @@ fn stage_input(
             auth_end_users::stage_input(request, authenticated)?,
         ))),
     }
-}
-
-fn safety_stage_input(
-    request: &Request<Body>,
-    authenticated: Option<&AuthContext>,
-    body: Option<&Bytes>,
-) -> Result<RequestBodySafetyStageInput, StageFailure> {
-    let context = authenticated
-        .cloned()
-        .ok_or(AuthenticationFailure::Missing)?;
-    let content_type = request
-        .headers()
-        .get(header::CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok())
-        .map(str::to_owned);
-    let slot = request
-        .extensions()
-        .get::<Arc<ServerState>>()
-        .map(|state| state.request_body_safety.clone());
-    Ok(RequestBodySafetyStageInput {
-        context,
-        content_type,
-        body: body.cloned().unwrap_or_default(),
-        slot,
-    })
 }
 
 fn model_pattern_input(

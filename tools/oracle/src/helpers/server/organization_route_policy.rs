@@ -69,7 +69,9 @@ async fn answer(call: &Call) -> Result<Value, Failure> {
     match call.function {
         Function::RoleCheck => role_check_value(call),
         Function::OrgInfo => org_info_value(call),
-        Function::OrgAdmin => Ok(org_admin_value(call)),
+        Function::OrgAdmin => {
+            Ok(json!({"admin": user_is_org_admin(&call.request, call.user.as_ref())}))
+        }
         Function::TeamContext => team_context_value(call).await,
     }
 }
@@ -88,10 +90,6 @@ fn org_info_value(call: &Call) -> Result<Value, Failure> {
     let user = call.user.as_ref().ok_or(Failure::MissingUser)?;
     let info = user.organization_info();
     Ok(json!({"organizations": info.organizations, "roles": info.roles}))
-}
-
-fn org_admin_value(call: &Call) -> Value {
-    json!({"admin": user_is_org_admin(&call.request, call.user.as_ref())})
 }
 
 // the effective body the route gate reads, plus the team ids the pinned function asked to look up

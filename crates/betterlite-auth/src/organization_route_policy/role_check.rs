@@ -2,7 +2,7 @@ use betterlite_models::model_registration::JsonObject;
 
 use crate::management_routes::ORG_ADMIN_ONLY_ROUTES;
 use crate::organization_route_policy::error::RoutePolicyError;
-use crate::organization_route_policy::membership::{ORG_ADMIN, RouteUser};
+use crate::organization_route_policy::membership::{ORG_ADMIN, PROXY_ADMIN, RouteUser};
 use crate::organization_route_policy::request::PassedOrganizationId;
 
 pub const ORGANIZATION_CREATE_ROUTE: &str = "/organization/new";
@@ -19,12 +19,13 @@ pub fn check_organization_role(
     let Some(user) = user else {
         return Ok(());
     };
-    if route == ORGANIZATION_CREATE_ROUTE && !user.is_proxy_admin() {
+    let proxy_admin = user.user_role.as_deref() == Some(PROXY_ADMIN);
+    if route == ORGANIZATION_CREATE_ROUTE && !proxy_admin {
         return Err(RoutePolicyError::OrganizationCreateDenied {
-            role: display_role(user.user_role.as_deref()),
+            role: user.user_role.as_deref().unwrap_or(NO_ROLE).to_owned(),
         });
     }
-    if user.is_proxy_admin() {
+    if proxy_admin {
         return Ok(());
     }
     if ORG_ADMIN_ONLY_ROUTES.contains(&route) {
@@ -36,33 +37,48 @@ pub fn check_organization_role(
     Ok(())
 }
 
+// the organization the request selects and the role the caller holds there, None when it selects none
+fn selected_organization<'a>(
+    user: &'a RouteUser,
+    request: &JsonObject,
+) -> Result<Option<(String, Option<&'a str>)>, RoutePolicyError> {
+    let PassedOrganizationId::Text(organization_id) = PassedOrganizationId::of(request)? else {
+        return Ok(None);
+    };
+    let role = user
+        .organization_memberships
+        .iter()
+        .flatten()
+        .rev()
+        .find(|membership| membership.organization_id.as_deref() == Some(organization_id.as_str()))
+        .and_then(|membership| membership.user_role.as_deref());
+    Ok(Some((organization_id, role)))
+}
+
 // The org admin matrix: memberships must exist, the selected organization must be passed, and its stored role must be org_admin.
 fn check_org_admin_route(
     user: &RouteUser,
     route: &str,
     request: &JsonObject,
 ) -> Result<(), RoutePolicyError> {
-    let info = user.organization_info();
     if user.organization_memberships.is_none() {
         return Err(RoutePolicyError::NotAMember {
             route: route.to_owned(),
         });
     }
-    let passed = PassedOrganizationId::of(request)?;
-    let PassedOrganizationId::Text(organization_id) = passed else {
+    let Some((organization_id, role)) = selected_organization(user, request)? else {
         return Err(RoutePolicyError::MissingOrganizationId);
     };
-    // mapping.get(id) answers None for an absent key and for a stored None role alike
-    let Some(Some(role)) = info.roles.get(&organization_id) else {
-        return Err(RoutePolicyError::NoRoleInOrganization { organization_id });
-    };
-    if role.as_str() == ORG_ADMIN {
+    if role == Some(ORG_ADMIN) {
         return Ok(());
     }
+    let Some(stored) = role else {
+        return Err(RoutePolicyError::NoRoleInOrganization { organization_id });
+    };
     Err(RoutePolicyError::NotOrganizationAdmin {
         route: route.to_owned(),
         organization_id,
-        role: role.clone(),
+        role: stored.to_owned(),
     })
 }
 
@@ -80,23 +96,17 @@ fn check_team_create(
     {
         return Ok(());
     }
-    let passed = PassedOrganizationId::of(request)?;
-    let PassedOrganizationId::Text(organization_id) = passed else {
+    let Some((organization_id, role)) = selected_organization(user, request)? else {
         return Err(RoutePolicyError::TeamCreateNeedsOrganization {
             organizations: info.organizations.join(", "),
         });
     };
-    let role = info.roles.get(&organization_id).and_then(Option::as_deref);
     if role == Some(ORG_ADMIN) {
         return Ok(());
     }
     Err(RoutePolicyError::TeamCreateNeedsOrgAdmin {
         route: route.to_owned(),
         organization_id,
-        role: display_role(role),
+        role: role.unwrap_or(NO_ROLE).to_owned(),
     })
-}
-
-fn display_role(role: Option<&str>) -> String {
-    role.unwrap_or(NO_ROLE).to_owned()
 }
