@@ -11,21 +11,19 @@ use crate::auth_tenant_budgets::tags::{max_budget_check, tag_denies};
 use crate::current_spend::CurrentSpendError;
 
 use super::support::{
-    Recorder, ScriptedSpend, TagWorld, decimal, group, number, tag, tenant_sources,
+    Recorder, ScriptedSpend, TagWorld, admission, decimal, group, group_with_budget, number, tag,
+    tag_with_budget, tenant_sources,
 };
 
 #[tokio::test]
 async fn no_db_or_names_skips() {
     let world = TagWorld::new(
-        vec![tag("t", 1.0, Some(Some(10.0)))],
-        vec![group("g", 1.0, Some(Some(10.0)))],
+        vec![tag_with_budget("t", 1.0, Some(10.0))],
+        vec![group_with_budget("g", 1.0, Some(10.0))],
     );
     let reader = ScriptedSpend::new(vec![number(100.0)]);
     let recorder = Recorder::default();
-    let admission = TenantAdmission {
-        reader: &reader,
-        alerts: Some(&recorder),
-    };
+    let admission = admission(&reader, &recorder);
     let names = ["t".to_owned()];
     let groups = ["g".to_owned()];
     let without_database = tenant_sources(&world, false);
@@ -63,12 +61,12 @@ async fn no_db_or_names_skips() {
 async fn missing_budget_rows_skip() {
     let world = TagWorld::new(
         vec![
-            tag("no-table", 5.0, None),
-            tag("no-ceiling", 5.0, Some(None)),
+            tag("no-table", 5.0),
+            tag_with_budget("no-ceiling", 5.0, None),
         ],
         vec![
-            group("g-no-table", 5.0, None),
-            group("g-no-ceiling", 5.0, Some(None)),
+            group("g-no-table", 5.0),
+            group_with_budget("g-no-ceiling", 5.0, None),
         ],
     );
     let reader = ScriptedSpend::new(vec![number(100.0)]);
@@ -100,7 +98,7 @@ async fn missing_budget_rows_skip() {
 
 #[tokio::test]
 async fn authoritative_fallbacks_and_counter_names() {
-    let tags_world = TagWorld::new(vec![tag("team-a", 2.0, Some(Some(10.0)))], vec![]);
+    let tags_world = TagWorld::new(vec![tag_with_budget("team-a", 2.0, Some(10.0))], vec![]);
     let tag_reader = ScriptedSpend::new(vec![number(7.0)]);
     let recorder = Recorder::default();
     let admission = TenantAdmission {
@@ -118,7 +116,7 @@ async fn authoritative_fallbacks_and_counter_names() {
     assert_eq!(reads[0].max_budget, Some(decimal("10")));
     assert!(reads[0].fallback_authoritative);
 
-    let groups_world = TagWorld::new(vec![], vec![group("g1", 3.0, Some(Some(10.0)))]);
+    let groups_world = TagWorld::new(vec![], vec![group_with_budget("g1", 3.0, Some(10.0))]);
     let group_reader = ScriptedSpend::new(vec![number(7.0)]);
     let admission = TenantAdmission {
         reader: &group_reader,
@@ -138,7 +136,7 @@ async fn authoritative_fallbacks_and_counter_names() {
 
 #[tokio::test]
 async fn tag_equality_allowed() {
-    let world = TagWorld::new(vec![tag("equal", 0.0, Some(Some(10.0)))], vec![]);
+    let world = TagWorld::new(vec![tag_with_budget("equal", 0.0, Some(10.0))], vec![]);
     let sources = tenant_sources(&world, true);
     let recorder = Recorder::default();
     let at_ceiling = ScriptedSpend::new(vec![number(10.0)]);
@@ -170,8 +168,8 @@ async fn tag_equality_allowed() {
 async fn tag_zero_negative_and_nonfinite_ceilings() {
     let world = TagWorld::new(
         vec![
-            tag("zero", 0.0, Some(Some(0.0))),
-            tag("negative", 0.0, Some(Some(-5.0))),
+            tag_with_budget("zero", 0.0, Some(0.0)),
+            tag_with_budget("negative", 0.0, Some(-5.0)),
         ],
         vec![],
     );
@@ -210,8 +208,8 @@ async fn tag_zero_negative_and_nonfinite_ceilings() {
 async fn first_tag_denial_has_no_alert() {
     let world = TagWorld::new(
         vec![
-            tag("over", 20.0, Some(Some(10.0))),
-            tag("under", 1.0, Some(Some(10.0))),
+            tag_with_budget("over", 20.0, Some(10.0)),
+            tag_with_budget("under", 1.0, Some(10.0)),
         ],
         vec![],
     );
@@ -248,19 +246,16 @@ async fn group_nonpositive_skips_and_equality_denies() {
     let world = TagWorld::new(
         vec![],
         vec![
-            group("zero", 100.0, Some(Some(0.0))),
-            group("negative", 100.0, Some(Some(-1.0))),
-            group("equal", 10.0, Some(Some(10.0))),
-            group("below", 9.99, Some(Some(10.0))),
+            group_with_budget("zero", 100.0, Some(0.0)),
+            group_with_budget("negative", 100.0, Some(-1.0)),
+            group_with_budget("equal", 10.0, Some(10.0)),
+            group_with_budget("below", 9.99, Some(10.0)),
         ],
     );
     let sources = tenant_sources(&world, true);
     let recorder = Recorder::default();
     let reader = ScriptedSpend::new(vec![number(10.0), number(9.99)]);
-    let admission = TenantAdmission {
-        reader: &reader,
-        alerts: Some(&recorder),
-    };
+    let admission = admission(&reader, &recorder);
     access_group_max_budget_check(
         &["zero".to_owned(), "negative".to_owned()],
         &sources,
@@ -280,7 +275,11 @@ async fn group_nonpositive_skips_and_equality_denies() {
     access_group_max_budget_check(&["below".to_owned()], &sources, &admission)
         .await
         .expect("a cent below the group ceiling passes");
+    assert_group_comparisons();
+}
 
+// the gate is exclusive over a positive finite ceiling; a NaN or negative infinity ceiling applies and denies
+fn assert_group_comparisons() {
     assert!(!group_ceiling_applies(Money::Finite(decimal("0"))));
     assert!(!group_ceiling_applies(Money::Finite(decimal("-1"))));
     assert!(group_ceiling_applies(Money::Finite(decimal("0.01"))));
@@ -299,8 +298,8 @@ async fn only_matched_groups_checked() {
     let world = TagWorld::new(
         vec![],
         vec![
-            group("matched", 1.0, Some(Some(10.0))),
-            group("unmatched", 100.0, Some(Some(1.0))),
+            group_with_budget("matched", 1.0, Some(10.0)),
+            group_with_budget("unmatched", 100.0, Some(1.0)),
         ],
     );
     let sources = tenant_sources(&world, true);
@@ -329,8 +328,8 @@ async fn only_matched_groups_checked() {
 #[tokio::test]
 async fn counter_failure_propagates() {
     let world = TagWorld::new(
-        vec![tag("t", 1.0, Some(Some(10.0)))],
-        vec![group("g", 1.0, Some(Some(10.0)))],
+        vec![tag_with_budget("t", 1.0, Some(10.0))],
+        vec![group_with_budget("g", 1.0, Some(10.0))],
     );
     let sources = tenant_sources(&world, true);
     let recorder = Recorder::default();
@@ -363,7 +362,7 @@ async fn counter_failure_propagates() {
 
 #[tokio::test]
 async fn read_only_concurrent_checks_can_overshoot() {
-    let world = TagWorld::new(vec![tag("t", 0.0, Some(Some(10.0)))], vec![]);
+    let world = TagWorld::new(vec![tag_with_budget("t", 0.0, Some(10.0))], vec![]);
     let sources = tenant_sources(&world, true);
     let recorder = Recorder::default();
     let reader = ScriptedSpend::new(vec![number(6.0), number(6.0)]);

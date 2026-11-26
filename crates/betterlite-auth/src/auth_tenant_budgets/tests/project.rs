@@ -10,7 +10,9 @@ use crate::auth_tenant_budgets::project::{
     SoftOutcome, max_budget_check, max_budget_guard, soft_budget_check,
 };
 
-use super::support::{Recorder, ScriptedSpend, capture_events, decimal, number, project, token};
+use super::support::{
+    Recorder, ScriptedSpend, admission, capture_events, decimal, number, project, token,
+};
 
 #[tokio::test]
 async fn project_absent_budget_and_nonfinite_skip() {
@@ -84,10 +86,7 @@ async fn project_counter_key_and_fallback() {
 async fn project_equality_and_zero_deny() {
     let below = ScriptedSpend::new(vec![number(9.99)]);
     let below_recorder = Recorder::default();
-    let below_admission = TenantAdmission {
-        reader: &below,
-        alerts: Some(&below_recorder),
-    };
+    let below_admission = admission(&below, &below_recorder);
     max_budget_check(
         &project(9.99, Some((Some(10.0), None))),
         None,
@@ -95,59 +94,48 @@ async fn project_equality_and_zero_deny() {
     )
     .await
     .expect("a cent below the ceiling passes");
+    assert_eq!(below.reads().len(), 1);
+    equality_denies().await;
+    zero_denies().await;
+    zero_ceiling_denies_spend().await;
+}
 
-    let equality = ScriptedSpend::new(vec![number(10.0)]);
-    let equality_recorder = Recorder::default();
-    let equality_admission = TenantAdmission {
-        reader: &equality,
-        alerts: Some(&equality_recorder),
-    };
-    assert!(matches!(
-        max_budget_check(
-            &project(10.0, Some((Some(10.0), None))),
-            None,
-            &equality_admission
-        )
-        .await,
-        Err(TenantBudgetError::Denied(_))
-    ));
+async fn equality_denies() {
+    let reader = ScriptedSpend::new(vec![number(10.0)]);
+    let recorder = Recorder::default();
+    let admission = admission(&reader, &recorder);
+    let error = max_budget_check(&project(10.0, Some((Some(10.0), None))), None, &admission).await;
+    assert!(matches!(error, Err(TenantBudgetError::Denied(_))));
+}
 
-    let zero = ScriptedSpend::new(vec![number(0.0)]);
-    let zero_recorder = Recorder::default();
-    let zero_admission = TenantAdmission {
-        reader: &zero,
-        alerts: Some(&zero_recorder),
-    };
-    assert!(matches!(
-        max_budget_check(
-            &project(0.0, Some((Some(0.0), None))),
-            None,
-            &zero_admission
-        )
-        .await,
-        Err(TenantBudgetError::Denied(_))
-    ));
-    assert!(matches!(
-        max_budget_guard(
-            "proj-1",
-            decimal("0.01"),
-            Some(Money::Finite(decimal("0"))),
-            None,
-            &zero_admission
-        )
-        .await,
-        Err(TenantBudgetError::Denied(_))
-    ));
+async fn zero_denies() {
+    let reader = ScriptedSpend::new(vec![number(0.0)]);
+    let recorder = Recorder::default();
+    let admission = admission(&reader, &recorder);
+    let error = max_budget_check(&project(0.0, Some((Some(0.0), None))), None, &admission).await;
+    assert!(matches!(error, Err(TenantBudgetError::Denied(_))));
+}
+
+async fn zero_ceiling_denies_spend() {
+    let reader = ScriptedSpend::new(vec![number(0.01)]);
+    let recorder = Recorder::default();
+    let admission = admission(&reader, &recorder);
+    let error = max_budget_guard(
+        "proj-1",
+        decimal("0.01"),
+        Some(Money::Finite(decimal("0"))),
+        None,
+        &admission,
+    )
+    .await;
+    assert!(matches!(error, Err(TenantBudgetError::Denied(_))));
 }
 
 #[tokio::test]
 async fn project_alert_before_error() {
     let reader = ScriptedSpend::new(vec![number(11.0)]);
     let recorder = Recorder::default();
-    let admission = TenantAdmission {
-        reader: &reader,
-        alerts: Some(&recorder),
-    };
+    let admission = admission(&reader, &recorder);
     let auth = token(json!({
         "token": "sk-project",
         "user_id": "user-1",

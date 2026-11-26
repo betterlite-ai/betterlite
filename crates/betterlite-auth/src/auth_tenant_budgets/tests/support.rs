@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::fmt::Debug;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
@@ -26,6 +27,7 @@ use crate::auth_prefetch::rows::CachedProject;
 use crate::auth_tag_budgets::cache::{CachedValue, TagBudgetCache};
 use crate::auth_tag_budgets::groups::ModelAccessGroupBudget;
 use crate::auth_tag_budgets::rows::{BudgetRows, ModelAccessGroupBudgetRow, TagBudgetRowsFailure};
+use crate::auth_tenant_budgets::TenantAdmission;
 use crate::auth_tenant_budgets::TenantSources;
 use crate::auth_tenant_budgets::alerts::{TenantAlert, TenantAlertSink};
 use crate::current_spend::SpendQuery;
@@ -87,7 +89,7 @@ impl SpendReader for ScriptedSpend {
                 max_budget: query.max_budget,
                 fallback_authoritative: query.fallback_authoritative,
             });
-            reads.len() - 1
+            reads.len().saturating_sub(1)
         };
         if Some(index) == self.fail_at {
             return Err(SpendReadError::Unverifiable {
@@ -130,8 +132,8 @@ impl TenantAlertSink for Recorder {
 pub(crate) struct TagWorld {
     pub(crate) tags: BTreeMap<String, TagTable>,
     pub(crate) groups: BTreeMap<String, ModelAccessGroupBudgetRow>,
-    pub(crate) tag_batches: Mutex<usize>,
-    pub(crate) group_batches: Mutex<usize>,
+    pub(crate) tag_batches: AtomicUsize,
+    pub(crate) group_batches: AtomicUsize,
 }
 
 impl TagWorld {
@@ -145,21 +147,16 @@ impl TagWorld {
                 .into_iter()
                 .map(|group| (group.access_group_name.clone(), group))
                 .collect(),
-            tag_batches: Mutex::new(0),
-            group_batches: Mutex::new(0),
+            tag_batches: AtomicUsize::new(0),
+            group_batches: AtomicUsize::new(0),
         }
     }
 
     pub(crate) fn batches(&self) -> (usize, usize) {
-        let tags = *self
-            .tag_batches
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        let groups = *self
-            .group_batches
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        (tags, groups)
+        (
+            self.tag_batches.load(Ordering::Relaxed),
+            self.group_batches.load(Ordering::Relaxed),
+        )
     }
 }
 
@@ -192,7 +189,10 @@ impl TagBudgetCache for TagWorld {
 }
 
 // the rows a batch read answers with; both maps are keyed by the requested name
-fn rows_named<Row: Clone>(rows: &BTreeMap<String, Row>, names: &[String]) -> Vec<Row> {
+fn rows_named<Row>(rows: &BTreeMap<String, Row>, names: &[String]) -> Vec<Row>
+where
+    Row: Clone,
+{
     names
         .iter()
         .filter_map(|name| rows.get(name))
@@ -203,10 +203,7 @@ fn rows_named<Row: Clone>(rows: &BTreeMap<String, Row>, names: &[String]) -> Vec
 #[async_trait]
 impl BudgetRows<TagTable> for TagWorld {
     async fn by_names(&self, names: Vec<String>) -> Result<Vec<TagTable>, TagBudgetRowsFailure> {
-        *self
-            .tag_batches
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) += 1;
+        self.tag_batches.fetch_add(1, Ordering::Relaxed);
         Ok(rows_named(&self.tags, &names))
     }
 
@@ -221,10 +218,7 @@ impl BudgetRows<ModelAccessGroupBudgetRow> for TagWorld {
         &self,
         names: Vec<String>,
     ) -> Result<Vec<ModelAccessGroupBudgetRow>, TagBudgetRowsFailure> {
-        *self
-            .group_batches
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) += 1;
+        self.group_batches.fetch_add(1, Ordering::Relaxed);
         Ok(rows_named(&self.groups, &names))
     }
 
@@ -249,9 +243,20 @@ pub(crate) fn tenant_sources(world: &TagWorld, database: bool) -> TenantSources<
     }
 }
 
+// the two collaborators a check always takes: the scripted counter and the recorder it schedules alerts on
+pub(crate) fn admission<'deps>(
+    reader: &'deps ScriptedSpend,
+    recorder: &'deps Recorder,
+) -> TenantAdmission<'deps> {
+    TenantAdmission {
+        reader,
+        alerts: Some(recorder),
+    }
+}
+
 pub(crate) fn lookup(world: &Arc<OrgWorld>) -> OrgLookup {
-    let store: Arc<dyn OrgStore> = world.clone();
-    let cache: Arc<dyn OrgCache> = world.clone();
+    let store: Arc<dyn OrgStore> = Arc::<OrgWorld>::clone(world);
+    let cache: Arc<dyn OrgCache> = Arc::<OrgWorld>::clone(world);
     OrgLookup {
         store: Some(store),
         cache,
@@ -259,7 +264,10 @@ pub(crate) fn lookup(world: &Arc<OrgWorld>) -> OrgLookup {
     }
 }
 
-pub(crate) fn token<T: Serialize>(fields: T) -> UserAPIKeyAuth {
+pub(crate) fn token<T>(fields: T) -> UserAPIKeyAuth
+where
+    T: Serialize,
+{
     let value = serde_json::to_value(fields).expect("the token fields encode");
     let decoded: JsonData = serde_json::from_value(value).expect("the token fields decode");
     let JsonData::Object(map) = decoded else {
@@ -281,25 +289,41 @@ pub(crate) fn project(spend: f64, budget: Option<(Option<f64>, Option<f64>)>) ->
     serde_json::from_value(fields).expect("the project row decodes")
 }
 
-// the outer option is the budget relation, the inner one its ceiling, so a row can carry a budget table without one
-pub(crate) fn tag(name: &str, spend: f64, budget: Option<Option<f64>>) -> TagTable {
-    let mut fields = json!({"tag_name": name, "models": [], "spend": spend});
-    if let Some(max_budget) = budget {
-        fields["litellm_budget_table"] = json!({"max_budget": max_budget});
-    }
-    serde_json::from_value(fields).expect("the tag row decodes")
+// a tag row with no budget table at all
+pub(crate) fn tag(name: &str, spend: f64) -> TagTable {
+    serde_json::from_value(json!({"tag_name": name, "models": [], "spend": spend}))
+        .expect("the tag row decodes")
 }
 
-pub(crate) fn group(
+// a tag row whose budget table exists; its max_budget may still be absent
+pub(crate) fn tag_with_budget(name: &str, spend: f64, max_budget: Option<f64>) -> TagTable {
+    serde_json::from_value(json!({
+        "tag_name": name,
+        "models": [],
+        "spend": spend,
+        "litellm_budget_table": {"max_budget": max_budget},
+    }))
+    .expect("the tag row decodes")
+}
+
+// an access group row with no budget table at all
+pub(crate) fn group(name: &str, spend: f64) -> ModelAccessGroupBudgetRow {
+    serde_json::from_value(json!({"access_group_name": name, "spend": spend}))
+        .expect("the group row decodes")
+}
+
+// an access group row whose budget table exists; its max_budget may still be absent
+pub(crate) fn group_with_budget(
     name: &str,
     spend: f64,
-    budget: Option<Option<f64>>,
+    max_budget: Option<f64>,
 ) -> ModelAccessGroupBudgetRow {
-    let mut fields = json!({"access_group_name": name, "spend": spend});
-    if let Some(max_budget) = budget {
-        fields["litellm_budget_table"] = json!({"max_budget": max_budget});
-    }
-    serde_json::from_value(fields).expect("the group row decodes")
+    serde_json::from_value(json!({
+        "access_group_name": name,
+        "spend": spend,
+        "litellm_budget_table": {"max_budget": max_budget},
+    }))
+    .expect("the group row decodes")
 }
 
 pub(crate) fn organization(alias: &str, spend: f64, max_budget: Option<f64>) -> OrganizationTable {

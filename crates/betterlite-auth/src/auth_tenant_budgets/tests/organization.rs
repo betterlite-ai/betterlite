@@ -7,13 +7,14 @@ use crate::auth_key_budgets::money::Money;
 use crate::auth_org_lookup::organization::OrgLookup;
 use crate::auth_org_lookup::ports::OrgCache;
 use crate::auth_tenant_budgets::TenantAdmission;
-use crate::auth_tenant_budgets::alerts::{TenantAlertKind, TenantEventGroup};
+use crate::auth_tenant_budgets::alerts::{TenantAlert, TenantAlertKind, TenantEventGroup};
 use crate::auth_tenant_budgets::error::TenantBudgetError;
 use crate::auth_tenant_budgets::organization::{max_budget_check, org_denies};
 use crate::budget_snapshots::OrgBudgetSnapshot;
 
 use super::support::{
-    OrgWorld, Recorder, ScriptedSpend, decimal, lookup, number, organization, team, token,
+    OrgWorld, Recorder, ScriptedSpend, admission, decimal, lookup, number, organization, team,
+    token,
 };
 
 #[tokio::test]
@@ -80,7 +81,7 @@ async fn org_missing_context_skips() {
 async fn org_lookup_error_and_missing_row_skip() {
     let missing = Arc::new(OrgWorld::default());
     let missing_lookup = lookup(&missing);
-    let cache: Arc<dyn OrgCache> = Arc::clone(&missing);
+    let cache: Arc<dyn OrgCache> = Arc::<OrgWorld>::clone(&missing);
     let broken = OrgLookup {
         store: None,
         cache,
@@ -164,27 +165,8 @@ async fn org_counter_read_before_finite_test() {
     assert!(org_denies(decimal("10.01"), Money::Finite(decimal("10"))));
 }
 
-#[tokio::test]
-async fn org_equality_alert_payload_and_error() {
-    let world = Arc::new(OrgWorld::with_row(&organization("acme", 3.0, Some(10.0))));
-    let lookup = lookup(&world);
-    let reader = ScriptedSpend::new(vec![number(10.0)]);
-    let recorder = Recorder::default();
-    let admission = TenantAdmission {
-        reader: &reader,
-        alerts: Some(&recorder),
-    };
-    let mut auth = token(json!({
-        "token": "sk-org",
-        "user_id": "user-1",
-        "team_id": "team-1",
-        "team_alias": "Team alias",
-        "org_id": "org-1",
-    }));
-    let error = max_budget_check(Some(&mut auth), None, Some(&lookup), &admission)
-        .await
-        .expect_err("a spend at the ceiling denies");
-    let alerts = recorder.take();
+// the identity fields the organization alert carries come from the token, and the amounts from the row and counter
+fn assert_org_alert(alerts: &[TenantAlert]) {
     assert_eq!(alerts.len(), 1);
     assert_eq!(alerts[0].kind, TenantAlertKind::OrganizationBudget);
     assert_eq!(alerts[0].event_group, TenantEventGroup::Organization);
@@ -198,6 +180,26 @@ async fn org_equality_alert_payload_and_error() {
             .map(|secret| secret.expose_secret().to_owned()),
         Some("sk-org".to_owned())
     );
+}
+
+#[tokio::test]
+async fn org_equality_alert_payload_and_error() {
+    let world = Arc::new(OrgWorld::with_row(&organization("acme", 3.0, Some(10.0))));
+    let lookup = lookup(&world);
+    let reader = ScriptedSpend::new(vec![number(10.0)]);
+    let recorder = Recorder::default();
+    let admission = admission(&reader, &recorder);
+    let mut auth = token(json!({
+        "token": "sk-org",
+        "user_id": "user-1",
+        "team_id": "team-1",
+        "team_alias": "Team alias",
+        "org_id": "org-1",
+    }));
+    let error = max_budget_check(Some(&mut auth), None, Some(&lookup), &admission)
+        .await
+        .expect_err("a spend at the ceiling denies");
+    assert_org_alert(&recorder.take());
     let TenantBudgetError::Denied(denial) = error else {
         panic!("an organization denial is a BudgetExceededError");
     };

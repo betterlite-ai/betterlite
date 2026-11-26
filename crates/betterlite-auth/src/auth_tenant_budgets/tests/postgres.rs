@@ -166,7 +166,7 @@ fn org_store(store: PostgresStore) -> (Arc<DatabaseOrgStore>, OrgLookup) {
         }),
         tasks: TaskTracker::new(),
     });
-    let store_handle: Arc<dyn OrgStore> = Arc::clone(&database);
+    let store_handle: Arc<dyn OrgStore> = Arc::<DatabaseOrgStore>::clone(&database);
     let cache_handle: Arc<dyn OrgCache> = Arc::new(OrgWorld::default());
     let lookup = OrgLookup {
         store: Some(store_handle),

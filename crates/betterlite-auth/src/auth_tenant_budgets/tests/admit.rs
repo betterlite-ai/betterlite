@@ -3,16 +3,14 @@ use std::sync::Arc;
 use secrecy::ExposeSecret as _;
 use serde_json::json;
 
-use crate::auth_org_lookup::organization::OrgLookup;
-use crate::auth_tenant_budgets::TenantAdmission;
 use crate::auth_tenant_budgets::TenantRequest;
 use crate::auth_tenant_budgets::admit;
 use crate::auth_tenant_budgets::alerts::TenantAlertKind;
 use crate::auth_tenant_budgets::error::TenantBudgetError;
 
 use super::support::{
-    OrgWorld, Recorder, ScriptedSpend, TagWorld, group, lookup, number, organization, project, tag,
-    tenant_sources, token,
+    OrgWorld, Recorder, ScriptedSpend, TagWorld, admission, group_with_budget, lookup, number,
+    organization, project, tag_with_budget, tenant_sources, token,
 };
 
 // common_checks raises 'Project=<id>', 'Organization=<id>', 'Tag=<name>' or 'Model access group=<name>'
@@ -36,18 +34,37 @@ fn counter_keys(reader: &ScriptedSpend) -> Vec<String> {
         .collect()
 }
 
+// all three settled scopes price and read the counter, and the organization denial is the one reported
+fn assert_settled_org_denial(
+    reader: &ScriptedSpend,
+    world: &TagWorld,
+    org: &OrgWorld,
+    recorder: &Recorder,
+) {
+    assert_eq!(
+        counter_keys(reader),
+        vec![
+            "spend:org:org-1",
+            "spend:tag:t",
+            "spend:model_access_group:g"
+        ]
+    );
+    assert_eq!(world.batches(), (1, 1));
+    assert_eq!(org.lookups(), vec![("org-1".to_owned(), true)]);
+    let alerts = recorder.take();
+    assert_eq!(alerts.len(), 1);
+    assert_eq!(alerts[0].kind, TenantAlertKind::OrganizationBudget);
+}
+
 #[tokio::test]
 async fn project_denial_stops_the_settled_scopes() {
     let world = TagWorld::new(
-        vec![tag("t", 100.0, Some(Some(1.0)))],
-        vec![group("g", 100.0, Some(Some(1.0)))],
+        vec![tag_with_budget("t", 100.0, Some(1.0))],
+        vec![group_with_budget("g", 100.0, Some(1.0))],
     );
     let reader = ScriptedSpend::new(vec![number(11.0)]);
     let recorder = Recorder::default();
-    let admission = TenantAdmission {
-        reader: &reader,
-        alerts: Some(&recorder),
-    };
+    let admission = admission(&reader, &recorder);
     let mut token = token(json!({"token": "sk", "org_id": "org-1"}));
     let projected = project(10.0, Some((Some(10.0), None)));
     let names = ["t".to_owned()];
@@ -74,17 +91,14 @@ async fn project_denial_stops_the_settled_scopes() {
 #[tokio::test]
 async fn organization_denial_wins_the_settled_scopes() {
     let world = TagWorld::new(
-        vec![tag("t", 9.0, Some(Some(9.0)))],
-        vec![group("g", 9.0, Some(Some(9.0)))],
+        vec![tag_with_budget("t", 9.0, Some(9.0))],
+        vec![group_with_budget("g", 9.0, Some(9.0))],
     );
     let org = Arc::new(OrgWorld::with_row(&organization("acme", 3.0, Some(10.0))));
     let lookup = lookup(&org);
     let reader = ScriptedSpend::new(vec![number(10.0), number(10.0), number(10.0)]);
     let recorder = Recorder::default();
-    let admission = TenantAdmission {
-        reader: &reader,
-        alerts: Some(&recorder),
-    };
+    let admission = admission(&reader, &recorder);
     let mut token = token(json!({"token": "sk", "org_id": "org-1"}));
     let names = ["t".to_owned()];
     let groups = ["g".to_owned()];
@@ -104,33 +118,18 @@ async fn organization_denial_wins_the_settled_scopes() {
         denied(error),
         ("organization".to_owned(), "org-1".to_owned())
     );
-    assert_eq!(
-        counter_keys(&reader),
-        vec![
-            "spend:org:org-1",
-            "spend:tag:t",
-            "spend:model_access_group:g"
-        ]
-    );
-    assert_eq!(world.batches(), (1, 1));
-    assert_eq!(org.lookups(), vec![("org-1".to_owned(), true)]);
-    let alerts = recorder.take();
-    assert_eq!(alerts.len(), 1);
-    assert_eq!(alerts[0].kind, TenantAlertKind::OrganizationBudget);
+    assert_settled_org_denial(&reader, &world, &org, &recorder);
 }
 
 #[tokio::test]
 async fn tag_denial_beats_the_group_denial() {
     let world = TagWorld::new(
-        vec![tag("t", 9.0, Some(Some(9.0)))],
-        vec![group("g", 0.0, Some(Some(1.0)))],
+        vec![tag_with_budget("t", 9.0, Some(9.0))],
+        vec![group_with_budget("g", 0.0, Some(1.0))],
     );
     let reader = ScriptedSpend::new(vec![number(10.0), number(2.0)]);
     let recorder = Recorder::default();
-    let admission = TenantAdmission {
-        reader: &reader,
-        alerts: Some(&recorder),
-    };
+    let admission = admission(&reader, &recorder);
     let mut token = token(json!({"token": "sk"}));
     let names = ["t".to_owned()];
     let groups = ["g".to_owned()];
