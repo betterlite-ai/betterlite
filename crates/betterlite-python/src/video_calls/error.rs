@@ -1,8 +1,13 @@
 use std::collections::BTreeMap;
+use std::time::TryFromFloatSecsError;
 
 use super::convert::ConvertError;
 use crate::completion::error::SessionError as CompletionSessionError;
 use betterlite_config::env_integer::timeout::TimeoutError;
+use betterlite_core::api::video_content_call::error::VideoContentCallError;
+use betterlite_core::api::video_generation_call::error::VideoGenerationFailure;
+use betterlite_core::api::video_remix_call::error::VideoCallFailure;
+use betterlite_core::api::video_status_call::error::VideoStatusCallError;
 use betterlite_error::error::metadata::RetryMetadata;
 use betterlite_error::error::{ErrorClass, class_message};
 use betterlite_logging::logging_state::LoggingStateError;
@@ -30,6 +35,10 @@ pub(crate) enum SessionError {
     Logging(#[from] LoggingStateError),
     #[error("the request timeout is not usable: {0}")]
     Timeout(#[from] TimeoutError),
+    #[error("REQUEST_TIMEOUT is not a usable number of seconds: {0}")]
+    RequestTimeout(TryFromFloatSecsError),
+    #[error("{0}")]
+    Unmapped(String),
 }
 
 // one call's failure: the class LiteLLM would raise, written as the payload raise_native_error reads
@@ -78,12 +87,15 @@ impl From<SessionError> for PyErr {
     fn from(error: SessionError) -> Self {
         let message = error.to_string();
         match error {
-            SessionError::Json(ConvertError::Json { .. }) => PyValueError::new_err(message),
+            SessionError::Json(ConvertError::Json { .. }) | SessionError::Unmapped(_) => {
+                PyValueError::new_err(message)
+            }
             SessionError::Json(_)
             | SessionError::Completion(_)
             | SessionError::Redact { .. }
             | SessionError::Logging(_)
-            | SessionError::Timeout(_) => PyRuntimeError::new_err(message),
+            | SessionError::Timeout(_)
+            | SessionError::RequestTimeout(_) => PyRuntimeError::new_err(message),
         }
     }
 }
@@ -104,6 +116,64 @@ impl From<SessionError> for RunError {
 impl From<CallFailure> for RunError {
     fn from(failure: CallFailure) -> Self {
         Self::Call(failure)
+    }
+}
+
+impl From<ConvertError> for RunError {
+    fn from(error: ConvertError) -> Self {
+        Self::Session(SessionError::from(error))
+    }
+}
+
+impl From<VideoGenerationFailure> for RunError {
+    fn from(failure: VideoGenerationFailure) -> Self {
+        Self::Call(CallFailure::from_class(&failure.class))
+    }
+}
+
+impl From<VideoCallFailure> for RunError {
+    fn from(failure: VideoCallFailure) -> Self {
+        Self::Call(CallFailure::from_class(&failure.class))
+    }
+}
+
+// The public content entry maps every failure; an unmapped one is a ValueError that never got that far
+impl From<VideoContentCallError> for RunError {
+    fn from(error: VideoContentCallError) -> Self {
+        match error {
+            VideoContentCallError::Mapped { class, .. } => {
+                Self::Call(CallFailure::from_class(&class))
+            }
+            other @ (VideoContentCallError::Unsupported { .. }
+            | VideoContentCallError::Selection(_)
+            | VideoContentCallError::UnknownProvider { .. }
+            | VideoContentCallError::FieldType { .. }
+            | VideoContentCallError::Logging(_)
+            | VideoContentCallError::Suspended) => {
+                Self::Session(SessionError::Unmapped(other.to_string()))
+            }
+        }
+    }
+}
+
+// The public status entry maps every failure; an unmapped one is a ValueError that never got that far
+impl From<VideoStatusCallError> for RunError {
+    fn from(error: VideoStatusCallError) -> Self {
+        match error {
+            VideoStatusCallError::Mapped { class, .. } => {
+                Self::Call(CallFailure::from_class(&class))
+            }
+            other @ (VideoStatusCallError::Unsupported { .. }
+            | VideoStatusCallError::Selection(_)
+            | VideoStatusCallError::UnknownProvider { .. }
+            | VideoStatusCallError::FieldType { .. }
+            | VideoStatusCallError::Logging(_)
+            | VideoStatusCallError::MockJson { .. }
+            | VideoStatusCallError::MockModel { .. }
+            | VideoStatusCallError::Suspended) => {
+                Self::Session(SessionError::Unmapped(other.to_string()))
+            }
+        }
     }
 }
 

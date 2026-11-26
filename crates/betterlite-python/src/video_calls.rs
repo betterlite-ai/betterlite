@@ -1,12 +1,19 @@
-use pyo3::prelude::*;
-
 mod adapter;
 mod clients;
 mod convert;
 mod error;
+mod native;
+mod operations;
+mod providers;
 mod session;
 
-pub const fn register(_module: &Bound<'_, PyModule>) -> PyResult<()> {
-    // The video_calls family task adds its native functions here.
-    Ok(())
+use self::error::NativeVideoError;
+use self::native::NativeVideoSession;
+use pyo3::prelude::*;
+
+// main.py's ten video entry points: one session, its five call methods in both flavours and the exception every failure carries.
+pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add_class::<NativeVideoSession>()?;
+    let error = module.py().get_type::<NativeVideoError>();
+    module.add("NativeVideoError", error)
 }

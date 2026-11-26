@@ -1,3 +1,5 @@
+mod remix_list;
+mod status;
 mod support;
 
 use std::collections::BTreeMap;
@@ -175,7 +177,10 @@ impl VideoGenerationConfig for OpenAiVideoConfig {
             params.insert("image".to_owned(), image.clone());
         }
         if let Some(parameters) = &options.parameters {
-            params.insert("parameters".to_owned(), Json::Object(parameters.clone()));
+            params.insert(
+                "parameters".to_owned(),
+                Json::Object(parameters.clone().into_iter().collect()),
+            );
         }
         if let Some(characters) = &options.characters {
             params.insert(

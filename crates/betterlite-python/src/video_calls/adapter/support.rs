@@ -1,4 +1,5 @@
 use std::error::Error as StdError;
+use std::fmt::Display;
 use std::io::Read as _;
 
 use betterlite_core::api::video_remix_list_transport::error::ConfigFailure;
@@ -6,7 +7,6 @@ use betterlite_core::api::video_status_transport::error::ProviderFailure;
 use betterlite_core::api::videos_http_transport::video_config::RequestFile;
 use betterlite_models::decisions::Json;
 use betterlite_openai::openai_video_identifiers::multipart::{MediaBody, MultipartPart};
-use betterlite_openai::videos::error::VideoError;
 use indexmap::IndexMap;
 use secrecy::SecretString;
 
@@ -47,8 +47,11 @@ pub(super) fn file_part(
     })
 }
 
-// VideoError as the status and remix/list transforms report it: its text, with no status of its own
-pub(crate) fn provider_failure(error: VideoError) -> ProviderFailure {
+// a transform's failure as the status and remix/list traits report it: its text, with no status of its own
+pub(crate) fn provider_failure<E>(error: E) -> ProviderFailure
+where
+    E: Display,
+{
     ProviderFailure {
         message: error.to_string(),
         status_code: None,
