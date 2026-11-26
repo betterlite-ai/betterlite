@@ -14,7 +14,7 @@ use betterlite_core::api::file_provider_read::{
     FileProviderRead, ReadContext, ReadEntry, ReadKwargs,
 };
 use betterlite_core::api::file_provider_write::service::FileWrite;
-use betterlite_core::api::file_provider_write::{DeleteInput, FileWriteError, UploadInput};
+use betterlite_core::api::file_provider_write::{DeleteInput, UploadInput};
 use betterlite_core::api::resource_sdk_settings::ResourceSdkSettings;
 use betterlite_env::EnvError;
 use betterlite_http::error::HttpError;
@@ -30,11 +30,10 @@ use chrono::Utc;
 use pyo3::PyErr;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use serde::Deserialize;
-use serde::Serialize;
 use uuid::Uuid;
 
 use crate::file_calls::convert::{Call, ConvertError};
-use crate::file_calls::dispatch::{DispatchError, FileCallDispatch};
+use crate::file_calls::dispatch::FileCallDispatch;
 use crate::file_calls::error::{read_failure, write_failure};
 
 #[derive(Debug, Default, Deserialize)]
@@ -189,8 +188,22 @@ impl FileCallCore {
             call_ids: Uuid::new_v4,
         };
         match input {
-            WriteInput::Upload(upload) => write_answer(service.create_file(mode, upload).await),
-            WriteInput::Delete(delete) => write_answer(service.delete_file(mode, delete).await),
+            WriteInput::Upload(upload) => {
+                let value = service
+                    .create_file(mode, upload)
+                    .await
+                    .map_err(|error| PyErr::from(write_failure(&error)))?;
+                serde_json::to_string(&value)
+                    .map_err(|source| PyErr::from(ConvertError::Answer(source)))
+            }
+            WriteInput::Delete(delete) => {
+                let value = service
+                    .delete_file(mode, delete)
+                    .await
+                    .map_err(|error| PyErr::from(write_failure(&error)))?;
+                serde_json::to_string(&value)
+                    .map_err(|source| PyErr::from(ConvertError::Answer(source)))
+            }
         }
     }
 
@@ -245,12 +258,4 @@ const fn entry_of(mode: Mode) -> ReadEntry {
         Mode::Sync => ReadEntry::Sync,
         Mode::Asynchronous => ReadEntry::Async,
     }
-}
-
-fn write_answer<T>(answer: Result<T, FileWriteError<DispatchError>>) -> Result<String, PyErr>
-where
-    T: Serialize,
-{
-    let value = answer.map_err(|error| PyErr::from(write_failure(&error)))?;
-    serde_json::to_string(&value).map_err(|source| PyErr::from(ConvertError::Answer(source)))
 }
