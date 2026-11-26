@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use betterlite_models::decisions::Json;
 
-use super::cache::{ValidationCache, Verdict, validation_cache_key};
+use super::cache::{VALIDATION_KEY_PREFIX, ValidationCache, Verdict};
 use super::existence::{EndUserExistence, UserExistence, UserProbe};
 use crate::auth_cache::AuthCacheError;
 
@@ -70,7 +70,7 @@ impl EndUserIdResolver {
             .as_deref()
             .is_some_and(|budget_id| !budget_id.is_empty())
             || request.key_end_user_budget_id.is_some();
-        let cache_key = validation_cache_key(raw_end_user_id);
+        let cache_key = format!("{VALIDATION_KEY_PREFIX}{raw_end_user_id}");
         let cached = self
             .cache
             .read(&cache_key)

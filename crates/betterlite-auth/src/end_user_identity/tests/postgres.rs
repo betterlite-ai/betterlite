@@ -73,17 +73,6 @@ fn end_user_rows(pool: &Pool) -> DatabaseEndUsers {
     }
 }
 
-fn user_store(pool: &Pool) -> DatabaseUserStore {
-    DatabaseUserStore {
-        reader: store(pool),
-        writer: store(pool),
-        availability: Arc::new(Availability::default()),
-        default_deadline_seconds: 5.0_f64,
-        tracker: tracker(),
-        tasks: TaskTracker::new(),
-    }
-}
-
 async fn seed(pool: &Pool) {
     let client = store(pool)
         .session()
@@ -134,7 +123,14 @@ async fn postgres_validation_reads_the_real_tables() {
         max_end_user_budget_id: None,
     };
     let end_users: Arc<dyn EndUserExistence> = Arc::new(existence);
-    let users_store = Arc::new(user_store(&pool));
+    let users_store = Arc::new(DatabaseUserStore {
+        reader: store(&pool),
+        writer: store(&pool),
+        availability: Arc::new(Availability::default()),
+        default_deadline_seconds: 5.0_f64,
+        tracker: tracker(),
+        tasks: TaskTracker::new(),
+    });
     let user_cache: Arc<dyn UserCache> = Arc::clone(&cache);
     let user_ports: Arc<dyn UserStore> = Arc::<DatabaseUserStore>::clone(&users_store);
     let lookup = Arc::new(lookup_over(user_cache, user_ports));

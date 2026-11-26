@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use betterlite_models::decisions::Json;
+use rstest::rstest;
 
 use super::super::cache::{NEGATIVE_TTL_SECONDS, POSITIVE_TTL_SECONDS, ValidationCache};
 use super::super::existence::UserExistence;
@@ -11,7 +12,6 @@ use super::support::{
     Answer, ScriptedCache, ScriptedEndUsers, ScriptedUserStore, ScriptedUsers, UserCachePort,
     assert_wrote, capture_events, debug_messages, resolver_for, user_lookup,
 };
-use crate::auth_cache::WriteTtl;
 use crate::auth_user_lookup::lookup::UserLookup;
 
 fn collaborators(end_users: Answer, users: Answer) -> (Arc<ScriptedEndUsers>, Arc<ScriptedUsers>) {
@@ -125,38 +125,27 @@ async fn negative_cache_60() {
     assert_eq!(cache.reads().len(), 2);
 }
 
+#[rstest]
+#[case::null("null")]
+#[case::boolean("true")]
+#[case::number("7")]
+#[case::text("\"maybe\"")]
+#[case::list("[]")]
+#[case::object("{}")]
 #[tokio::test]
-async fn unknown_cache_value_miss() {
+async fn unknown_cache_value_miss(#[case] cached: &str) {
     let cache = Arc::new(ScriptedCache::new());
-    let values: Vec<Json> =
-        serde_json::from_str(r#"[null,true,7,"maybe",[],{}]"#).expect("the cached values");
     let (end_users, users) = collaborators(Answer::Found, Answer::Missing);
     let identity = resolver_for(Arc::clone(&cache), &end_users, &users, true, None);
-    let mut ids = Vec::new();
-    for (index, value) in values.iter().enumerate() {
-        let id = format!("ghost-{index}");
-        cache.seed(&id, value.clone());
-        ids.push(id);
-    }
-    for id in &ids {
-        let resolved = identity
-            .resolve(&request(Some(id), None))
-            .await
-            .expect("the lookup");
-        assert_eq!(resolved.as_deref(), Some(id.as_str()));
-    }
-    assert_eq!(end_users.calls(), ids);
-    let writes = cache.writes();
-    assert_eq!(writes.len(), values.len());
-    for write in &writes {
-        assert_eq!(write.value, Json::Text("valid".to_owned()));
-        assert_eq!(
-            write.ttl,
-            WriteTtl {
-                seconds: POSITIVE_TTL_SECONDS
-            }
-        );
-    }
+    let value: Json = serde_json::from_str(cached).expect("the cached value");
+    cache.seed("ghost", value);
+    let resolved = identity
+        .resolve(&request(Some("ghost"), None))
+        .await
+        .expect("the lookup");
+    assert_eq!(resolved.as_deref(), Some("ghost"));
+    assert_eq!(end_users.calls(), vec!["ghost".to_owned()]);
+    assert_wrote(&cache, "ghost", "valid", POSITIVE_TTL_SECONDS);
 }
 
 #[tokio::test]
@@ -295,6 +284,21 @@ async fn lookup_errors_debug_then_negative() {
     assert!(messages[0].starts_with("end_user validation: get_end_user_object lookup failed:"));
     assert!(messages[1].starts_with("end_user validation: get_user_object lookup failed:"));
     assert_wrote(&cache, "ghost", "invalid", NEGATIVE_TTL_SECONDS);
+}
+
+#[test]
+fn debug_hides_the_wired_ports() {
+    let cache = Arc::new(ScriptedCache::new());
+    let (end_users, users) = collaborators(Answer::Found, Answer::Missing);
+    let identity = resolver_for(cache, &end_users, &users, true, Some("proxy"));
+    let debug = format!("{identity:?}");
+    assert!(debug.contains("EndUserIdResolver"), "{debug}");
+    assert!(debug.contains("lookups: true"), "{debug}");
+    assert!(
+        debug.contains("max_end_user_budget_id: Some(\"proxy\")"),
+        "{debug}"
+    );
+    assert!(!debug.contains("Scripted"), "{debug}");
 }
 
 #[tokio::test]

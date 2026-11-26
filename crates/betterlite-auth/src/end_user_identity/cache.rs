@@ -9,7 +9,7 @@ pub const POSITIVE_TTL_SECONDS: f64 = 300.0;
 pub const NEGATIVE_TTL_SECONDS: f64 = 60.0;
 
 // LiteLLM's raw-cache key, which stores the verdict and never a row
-const VALIDATION_KEY_PREFIX: &str = "end_user_validation:";
+pub const VALIDATION_KEY_PREFIX: &str = "end_user_validation:";
 
 // the answer LiteLLM stores as the string "valid" or "invalid"
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -51,11 +51,6 @@ impl Verdict {
             },
         }
     }
-}
-
-#[must_use]
-pub fn validation_cache_key(end_user_id: &str) -> String {
-    format!("{VALIDATION_KEY_PREFIX}{end_user_id}")
 }
 
 // the raw-cache read and write LiteLLM makes around its verdict; a failure escapes to the caller

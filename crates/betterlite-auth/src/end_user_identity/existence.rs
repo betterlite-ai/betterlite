@@ -39,19 +39,25 @@ pub trait UserExistence: Send + Sync {
     async fn user_exists(&self, probe: &UserProbe<'_>) -> Result<bool, ExistenceError>;
 }
 
-#[async_trait]
-impl UserExistence for UserLookup {
-    async fn user_exists(&self, probe: &UserProbe<'_>) -> Result<bool, ExistenceError> {
-        self.get_user_object(UserLookupRequest {
+impl<'probe> From<&'probe UserProbe<'probe>> for UserLookupRequest<'probe> {
+    fn from(probe: &'probe UserProbe<'probe>) -> Self {
+        Self {
             user_id: Some(probe.user_id),
             sso_user_id: None,
             user_email: probe.user_email,
             user_id_upsert: probe.user_id_upsert,
             check_db_only: Some(probe.check_db_only),
-        })
-        .await
-        .map(|found| found.is_some())
-        .map_err(ExistenceError::User)
+        }
+    }
+}
+
+#[async_trait]
+impl UserExistence for UserLookup {
+    async fn user_exists(&self, probe: &UserProbe<'_>) -> Result<bool, ExistenceError> {
+        self.get_user_object(UserLookupRequest::from(probe))
+            .await
+            .map(|found| found.is_some())
+            .map_err(ExistenceError::User)
     }
 }
 

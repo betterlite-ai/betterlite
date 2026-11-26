@@ -28,7 +28,7 @@ use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use tracing_subscriber::registry;
 
-use super::super::cache::{ValidationCache, validation_cache_key};
+use super::super::cache::{VALIDATION_KEY_PREFIX, ValidationCache};
 use super::super::existence::{EndUserExistence, ExistenceError, UserExistence, UserProbe};
 use super::super::resolve::{DatabaseLookups, EndUserIdResolver};
 use crate::auth_cache::payload::PayloadError;
@@ -86,11 +86,22 @@ impl ScriptedCache {
         }
     }
 
+    fn record_read(&self, cache_key: &str) -> Result<(), AuthCacheError> {
+        self.reads
+            .lock()
+            .expect("the cache reads")
+            .push(cache_key.to_owned());
+        if self.fail_reads {
+            return Err(cache_failure());
+        }
+        Ok(())
+    }
+
     pub(super) fn seed(&self, end_user_id: &str, value: Json) {
         self.values
             .lock()
             .expect("the cache contents")
-            .insert(validation_cache_key(end_user_id), value);
+            .insert(format!("{VALIDATION_KEY_PREFIX}{end_user_id}"), value);
     }
 
     pub(super) fn reads(&self) -> Vec<String> {
@@ -111,19 +122,9 @@ pub(super) fn cache_failure() -> AuthCacheError {
 #[async_trait]
 impl ValidationCache for ScriptedCache {
     async fn read(&self, cache_key: &str) -> Result<Option<Json>, AuthCacheError> {
-        self.reads
-            .lock()
-            .expect("the cache reads")
-            .push(cache_key.to_owned());
-        if self.fail_reads {
-            return Err(cache_failure());
-        }
-        Ok(self
-            .values
-            .lock()
-            .expect("the cache contents")
-            .get(cache_key)
-            .cloned())
+        self.record_read(cache_key)?;
+        let values = self.values.lock().expect("the cache contents");
+        Ok(values.get(cache_key).cloned())
     }
 
     async fn write(
@@ -160,7 +161,10 @@ pub(super) fn assert_wrote(
     let writes = cache.writes();
     assert_eq!(writes.len(), 1);
     let write = &writes[0];
-    assert_eq!(write.cache_key, validation_cache_key(end_user_id));
+    assert_eq!(
+        write.cache_key,
+        format!("{VALIDATION_KEY_PREFIX}{end_user_id}")
+    );
     assert_eq!(write.value, Json::Text(verdict.to_owned()));
     assert_eq!(
         write.ttl,
@@ -175,6 +179,16 @@ pub(super) enum Answer {
     Found,
     Missing,
     Error,
+}
+
+impl Answer {
+    fn found(self) -> Option<bool> {
+        match self {
+            Self::Found => Some(true),
+            Self::Missing => Some(false),
+            Self::Error => None,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -199,15 +213,10 @@ impl ScriptedEndUsers {
 #[async_trait]
 impl EndUserExistence for ScriptedEndUsers {
     async fn end_user_exists(&self, end_user_id: &str) -> Result<bool, ExistenceError> {
-        self.calls
-            .lock()
-            .expect("the end-user calls")
-            .push(end_user_id.to_owned());
-        match self.answer {
-            Answer::Found => Ok(true),
-            Answer::Missing => Ok(false),
-            Answer::Error => Err(ExistenceError::EndUser(EndUserObjectError::NoDatabase)),
-        }
+        let mut calls = self.calls.lock().expect("the end-user calls");
+        calls.push(end_user_id.to_owned());
+        let found = self.answer.found();
+        found.ok_or(ExistenceError::EndUser(EndUserObjectError::NoDatabase))
     }
 }
 
@@ -250,11 +259,8 @@ impl UserExistence for ScriptedUsers {
                 user_id_upsert: probe.user_id_upsert,
                 check_db_only: probe.check_db_only,
             });
-        match self.answer {
-            Answer::Found => Ok(true),
-            Answer::Missing => Ok(false),
-            Answer::Error => Err(ExistenceError::User(UserLookupError::NoDatabase)),
-        }
+        let found = self.answer.found();
+        found.ok_or(ExistenceError::User(UserLookupError::NoDatabase))
     }
 }
 
@@ -303,7 +309,6 @@ pub(super) fn end_user_row(user_id: &str) -> LiteLLMEndUserTable {
 pub(super) struct RowCache {
     pub(super) values: Mutex<BTreeMap<String, Json>>,
     pub(super) reads: Mutex<Vec<String>>,
-    pub(super) writes: Mutex<Vec<String>>,
 }
 
 impl RowCache {
@@ -311,7 +316,6 @@ impl RowCache {
         Self {
             values: Mutex::new(BTreeMap::new()),
             reads: Mutex::new(Vec::new()),
-            writes: Mutex::new(Vec::new()),
         }
     }
 
@@ -334,10 +338,6 @@ impl RowCache {
 
     pub(super) fn reads(&self) -> Vec<String> {
         self.reads.lock().expect("the cache reads").clone()
-    }
-
-    pub(super) fn writes(&self) -> Vec<String> {
-        self.writes.lock().expect("the cache writes").clone()
     }
 }
 
@@ -375,10 +375,6 @@ impl EndUserCache for RowCache {
     where
         Row: Serialize + Sync,
     {
-        self.writes
-            .lock()
-            .expect("the cache writes")
-            .push(cache_key.to_owned());
         let value = serde_json::to_value(row).map_err(PayloadError::Json)?;
         let encoded = serde_json::from_value::<Json>(value).map_err(PayloadError::Json)?;
         self.values
@@ -399,16 +395,7 @@ impl RegistryCache for RowCache {
         Ok(None)
     }
 
-    async fn write(
-        &self,
-        cache_key: &str,
-        _answer: &Json,
-        _ttl: f64,
-    ) -> Result<(), AuthCacheError> {
-        self.writes
-            .lock()
-            .expect("the cache writes")
-            .push(cache_key.to_owned());
+    async fn write(&self, _key: &str, _answer: &Json, _ttl: f64) -> Result<(), AuthCacheError> {
         Ok(())
     }
 
@@ -600,10 +587,6 @@ pub(super) struct UserCachePort {
 }
 
 impl UserCachePort {
-    pub(super) fn reads(&self) -> Vec<String> {
-        self.reads.lock().expect("the user cache reads").clone()
-    }
-
     pub(super) fn write_keys(&self) -> Vec<String> {
         self.writes.lock().expect("the user cache writes").clone()
     }

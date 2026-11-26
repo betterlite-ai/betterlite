@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use async_trait::async_trait;
 use betterlite_auth::auth_cache::{AuthCacheError, WriteTtl};
 use betterlite_auth::auth_user_lookup::error::UserLookupError;
-use betterlite_auth::end_user_identity::cache::{ValidationCache, validation_cache_key};
+use betterlite_auth::end_user_identity::cache::{VALIDATION_KEY_PREFIX, ValidationCache};
 use betterlite_auth::end_user_identity::existence::{
     EndUserExistence, ExistenceError, UserExistence, UserProbe,
 };
@@ -111,7 +111,7 @@ impl Fixture {
     fn new(input: &Input) -> Self {
         let mut values = BTreeMap::new();
         if let (Some(id), Some(cached)) = (&input.raw_end_user_id, &input.cached) {
-            let _previous = values.insert(validation_cache_key(id), cached.clone());
+            let _previous = values.insert(format!("{VALIDATION_KEY_PREFIX}{id}"), cached.clone());
         }
         Self {
             end_user: input.end_user,
