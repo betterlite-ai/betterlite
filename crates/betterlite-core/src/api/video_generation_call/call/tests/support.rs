@@ -397,18 +397,6 @@ impl Resolver {
             environment: BTreeMap::new(),
         }
     }
-
-    pub(crate) fn context(&self) -> ResolutionContext<'_> {
-        ResolutionContext {
-            catalog: &self.catalog,
-            known_model_names: &self.names,
-            custom_providers: &self.names,
-            environment: &self.environment,
-            registry: JSONProviderRegistry::default(),
-            policies: ProviderPolicies::default(),
-            globals: GlobalCredentials::default(),
-        }
-    }
 }
 
 #[derive(Clone, Copy)]
@@ -483,7 +471,15 @@ impl Bench {
         invocation: Invocation,
     ) -> Result<Invoked, VideoGenerationFailure> {
         let env = self.fixture.env.pre_post();
-        let resolution = self.resolver.context();
+        let resolution = ResolutionContext {
+            catalog: &self.resolver.catalog,
+            known_model_names: &self.resolver.names,
+            custom_providers: &self.resolver.names,
+            environment: &self.resolver.environment,
+            registry: JSONProviderRegistry::default(),
+            policies: ProviderPolicies::default(),
+            globals: GlobalCredentials::default(),
+        };
         let environment = GenerationCallEnvironment {
             logging: &mut self.fixture.state,
             env: &env,
