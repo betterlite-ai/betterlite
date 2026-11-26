@@ -1,0 +1,72 @@
+kind: helper
+name: trusted-network-invalid-cidr-warning
+env: {}
+compare: {ignore: []}
+call:
+  trusted_network:
+    headers: {x_forwarded_for: null, x_forwarded_proto: null, host: null}
+    peer: null
+    scheme: http
+    settings: {proxy_base_url: null, use_x_forwarded_for: false, trusted_proxy_ranges: [10.0.0.0/8, not-a-cidr, "  ", 192.168.0.0/16], mcp_trusted_proxy_ranges: null, mcp_internal_ip_ranges: null, mcp_xff_num_trusted_hops: null}
+    scenario: {kind: parse_trusted_proxy_ranges, client_ip: null, xff_header: "", num_trusted_hops: 0, feature_name: "", setting_name: ""}
+calls:
+  - trusted_network:
+      headers: {x_forwarded_for: null, x_forwarded_proto: null, host: null}
+      peer: null
+      scheme: http
+      settings: {proxy_base_url: null, use_x_forwarded_for: false, trusted_proxy_ranges: [10.1.2.3/8], mcp_trusted_proxy_ranges: null, mcp_internal_ip_ranges: null, mcp_xff_num_trusted_hops: null}
+      scenario: {kind: parse_trusted_proxy_ranges, client_ip: null, xff_header: "", num_trusted_hops: 0, feature_name: "", setting_name: ""}
+  - trusted_network:
+      headers: {x_forwarded_for: null, x_forwarded_proto: null, host: null}
+      peer: null
+      scheme: http
+      settings: {proxy_base_url: null, use_x_forwarded_for: false, trusted_proxy_ranges: [192.168.1.0/255.255.255.0], mcp_trusted_proxy_ranges: null, mcp_internal_ip_ranges: null, mcp_xff_num_trusted_hops: null}
+      scenario: {kind: parse_trusted_proxy_ranges, client_ip: null, xff_header: "", num_trusted_hops: 0, feature_name: "", setting_name: ""}
+  - trusted_network:
+      headers: {x_forwarded_for: null, x_forwarded_proto: null, host: null}
+      peer: null
+      scheme: http
+      settings: {proxy_base_url: null, use_x_forwarded_for: false, trusted_proxy_ranges: [10.1.2.3], mcp_trusted_proxy_ranges: null, mcp_internal_ip_ranges: null, mcp_xff_num_trusted_hops: null}
+      scenario: {kind: parse_trusted_proxy_ranges, client_ip: null, xff_header: "", num_trusted_hops: 0, feature_name: "", setting_name: ""}
+  - trusted_network:
+      headers: {x_forwarded_for: null, x_forwarded_proto: null, host: null}
+      peer: null
+      scheme: http
+      settings: {proxy_base_url: null, use_x_forwarded_for: false, trusted_proxy_ranges: null, mcp_trusted_proxy_ranges: null, mcp_internal_ip_ranges: [bad, ""], mcp_xff_num_trusted_hops: null}
+      scenario: {kind: parse_internal_networks, client_ip: null, xff_header: "", num_trusted_hops: 0, feature_name: "", setting_name: ""}
+  - trusted_network:
+      headers: {x_forwarded_for: null, x_forwarded_proto: null, host: null}
+      peer: null
+      scheme: http
+      settings: {proxy_base_url: null, use_x_forwarded_for: false, trusted_proxy_ranges: null, mcp_trusted_proxy_ranges: null, mcp_internal_ip_ranges: [], mcp_xff_num_trusted_hops: null}
+      scenario: {kind: parse_internal_networks, client_ip: null, xff_header: "", num_trusted_hops: 0, feature_name: "", setting_name: ""}
+  - trusted_network:
+      headers: {x_forwarded_for: null, x_forwarded_proto: null, host: null}
+      peer: null
+      scheme: http
+      settings: {proxy_base_url: null, use_x_forwarded_for: false, trusted_proxy_ranges: null, mcp_trusted_proxy_ranges: [10.0.0.0/8, junk], mcp_internal_ip_ranges: null, mcp_xff_num_trusted_hops: null}
+      scenario: {kind: parse_trusted_proxy_networks, client_ip: null, xff_header: "", num_trusted_hops: 0, feature_name: "", setting_name: ""}
+  - trusted_network:
+      headers: {x_forwarded_for: null, x_forwarded_proto: null, host: null}
+      peer: 10.0.0.5
+      scheme: http
+      settings: {proxy_base_url: null, use_x_forwarded_for: false, trusted_proxy_ranges: [junk], mcp_trusted_proxy_ranges: null, mcp_internal_ip_ranges: null, mcp_xff_num_trusted_hops: null}
+      scenario: {kind: require_trusted_proxy_request, client_ip: null, xff_header: "", num_trusted_hops: 0, feature_name: custom_ui_sso_sign_in_handler, setting_name: trusted_proxy_ranges}
+  - trusted_network:
+      headers: {x_forwarded_for: null, x_forwarded_proto: null, host: null}
+      peer: 10.0.0.5
+      scheme: http
+      settings: {proxy_base_url: null, use_x_forwarded_for: false, trusted_proxy_ranges: null, mcp_trusted_proxy_ranges: [192.168.0.0/16], mcp_internal_ip_ranges: null, mcp_xff_num_trusted_hops: null}
+      scenario: {kind: require_trusted_proxy_request, client_ip: null, xff_header: "", num_trusted_hops: 0, feature_name: custom_ui_sso_sign_in_handler, setting_name: mcp_trusted_proxy_ranges}
+  - trusted_network:
+      headers: {x_forwarded_for: null, x_forwarded_proto: null, host: null}
+      peer: 192.168.0.9
+      scheme: http
+      settings: {proxy_base_url: null, use_x_forwarded_for: false, trusted_proxy_ranges: null, mcp_trusted_proxy_ranges: [192.168.0.0/16], mcp_internal_ip_ranges: null, mcp_xff_num_trusted_hops: null}
+      scenario: {kind: require_trusted_proxy_request, client_ip: null, xff_header: "", num_trusted_hops: 0, feature_name: custom_ui_sso_sign_in_handler, setting_name: mcp_trusted_proxy_ranges}
+  - trusted_network:
+      headers: {x_forwarded_for: null, x_forwarded_proto: null, host: null}
+      peer: null
+      scheme: http
+      settings: {proxy_base_url: null, use_x_forwarded_for: false, trusted_proxy_ranges: null, mcp_trusted_proxy_ranges: null, mcp_internal_ip_ranges: null, mcp_xff_num_trusted_hops: null}
+      scenario: {kind: is_internal_ip, client_ip: "10.1.2.3, 8.8.8.8", xff_header: "", num_trusted_hops: 0, feature_name: "", setting_name: ""}

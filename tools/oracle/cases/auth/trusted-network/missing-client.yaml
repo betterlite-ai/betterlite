@@ -1,0 +1,26 @@
+name: auth-trusted-network-missing-client
+config: |
+  general_settings:
+    master_key: oracle-master
+    use_x_forwarded_for: true
+    trusted_proxy_ranges: [127.0.0.0/8]
+  model_list:
+    - model_name: safety-model
+      litellm_params:
+        model: openai/safety-upstream
+        api_base: "{{upstream}}"
+        api_key: oracle-key
+env: {}
+request:
+  method: POST
+  path: /v1/chat/completions
+  headers:
+    content-type: application/json
+    authorization: Bearer oracle-master
+  body:
+    model: safety-model
+    messages:
+      - {role: user, content: Say hello.}
+    langfuse_host: https://evil.example
+upstream: []
+compare: {headers: [content-type], headers_present: [], upstream_headers: [], ignore: []}

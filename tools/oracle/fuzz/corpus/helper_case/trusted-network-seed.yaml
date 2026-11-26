@@ -1,0 +1,6 @@
+kind: helper
+name: trusted-network-seed
+env: {}
+compare: {ignore: []}
+call:
+  trusted_network: {"headers": {"x_forwarded_for": "203.0.113.9", "x_forwarded_proto": "https", "host": "proxy.example"}, "peer": "127.0.0.1", "scheme": "http", "settings": {"proxy_base_url": null, "use_x_forwarded_for": true, "trusted_proxy_ranges": ["127.0.0.0/8"], "mcp_trusted_proxy_ranges": ["127.0.0.0/8"], "mcp_internal_ip_ranges": null, "mcp_xff_num_trusted_hops": 1}, "scenario": {"kind": "resolve_network_context", "client_ip": null, "xff_header": "", "num_trusted_hops": 0, "feature_name": "", "setting_name": ""}}
