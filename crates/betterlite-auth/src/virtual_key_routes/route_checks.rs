@@ -147,21 +147,25 @@ fn llm_api_outcome(
     if requested.route == AUTO_ROUTER_SESSION && requested.method == Some("GET") {
         return LlmApiOutcome::Granted;
     }
+    let mut protected_without_access = false;
     if registry.is_registered(requested.route) {
         if !is_protected_pass_through(requested.route, requested.method, registry) {
             return LlmApiOutcome::Granted;
         }
-        return if check_passthrough_route_access(requested.route, caller) {
-            LlmApiOutcome::Granted
-        } else {
-            LlmApiOutcome::ProtectedWithoutAccess
-        };
+        if check_passthrough_route_access(requested.route, caller) {
+            return LlmApiOutcome::Granted;
+        }
+        // the denial is remembered, and the carve-outs below still get their say
+        protected_without_access = true;
     }
     if is_mcp_discovery_route(requested.route, requested.method) {
         return LlmApiOutcome::Granted;
     }
     if check_route_access(requested.route, AGENT_MANAGEMENT_ROUTES) {
         return LlmApiOutcome::Granted;
+    }
+    if protected_without_access {
+        return LlmApiOutcome::ProtectedWithoutAccess;
     }
     LlmApiOutcome::NotMatched
 }

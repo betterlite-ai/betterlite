@@ -28,19 +28,6 @@ pub struct RouteCaller<'caller> {
 }
 
 impl<'caller> RouteCaller<'caller> {
-    // no key was resolved for the request, so no route restriction applies
-    #[must_use]
-    pub const fn absent() -> Self {
-        Self {
-            allowed_routes: AllowedRoutes::Unset,
-            metadata: None,
-            team_metadata: None,
-            jwt_claims: false,
-            has_token: false,
-            team_id: None,
-        }
-    }
-
     #[must_use]
     pub fn of_key(key: &'caller UserAPIKeyAuth) -> Self {
         let token = &key.view.token;

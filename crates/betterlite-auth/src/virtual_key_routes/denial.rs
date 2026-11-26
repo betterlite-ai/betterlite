@@ -6,17 +6,18 @@ const AUTH_ERROR: &str = "auth_error";
 const PARAM_NONE: &str = "None";
 const FORBIDDEN: i64 = 403;
 
+// betterlite's own wording: the same status, type, param and code LiteLLM answers, the message names what to do
 #[must_use]
 pub fn auth_pass_through_denied(route: &str) -> Box<ProxyException> {
     forbidden(format!(
-        "Key/team not allowed to access passthrough route {route}. Configure `allowed_passthrough_routes` on the team or key."
+        "the key or team may not use the pass-through route {route}; set allowed_passthrough_routes on the key or the team"
     ))
 }
 
 #[must_use]
 pub fn password_reset_denied() -> Box<ProxyException> {
     forbidden(
-        "This account's password must be changed before the session can be used: it was either found in a known data breach or set by an admin. Change it via POST /user/password/change (UI: /ui/change-password), then log in again."
+        "this account must change its password before using the proxy: a breach or an admin set it. Change it with POST /user/password/change (UI: /ui/change-password), then sign in again."
             .to_owned(),
     )
 }
@@ -24,8 +25,8 @@ pub fn password_reset_denied() -> Box<ProxyException> {
 #[must_use]
 pub fn virtual_route_denied(route: &str, allowed_routes: &[&str]) -> Box<ProxyException> {
     forbidden(format!(
-        "Virtual key is not allowed to call this route. Only allowed to call routes: {}. Tried to call route: {route}",
-        route_list_repr(allowed_routes)
+        "the key may not call {route}; its allowed routes are {}",
+        allowed_routes_text(allowed_routes)
     ))
 }
 
@@ -42,17 +43,11 @@ fn forbidden(message: String) -> Box<ProxyException> {
     Box::new(ProxyException::new(init))
 }
 
-// LiteLLM interpolates the Python repr of the key's list into the message
-fn route_list_repr(routes: &[&str]) -> String {
-    let mut rendered = String::from("[");
-    for (index, route) in routes.iter().enumerate() {
-        if index > 0 {
-            rendered.push_str(", ");
-        }
-        rendered.push('\'');
-        rendered.push_str(&route.replace('\\', "\\\\").replace('\'', "\\'"));
-        rendered.push('\'');
+// the allowed entries in order, without quoting, and "none" when the list holds no path
+fn allowed_routes_text(routes: &[&str]) -> String {
+    if routes.is_empty() {
+        "none".to_owned()
+    } else {
+        routes.join(", ")
     }
-    rendered.push(']');
-    rendered
 }

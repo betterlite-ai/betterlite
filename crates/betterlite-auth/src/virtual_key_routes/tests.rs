@@ -13,13 +13,23 @@ use crate::route_match::groups::get_actual_routes;
 
 use super::caller::{
     AllowedRoutes, RouteCaller, check_passthrough_route_access, jwt_team_allowed_routes,
-    jwt_team_grant_pass_through, password_reset_required,
+    jwt_team_grant_pass_through,
 };
 use super::groups::group_routes;
 use super::pass_through::require_pass_through_access;
 use super::route_checks::{CalledRoute, check_virtual_key_route};
 
 const ALL_METHODS: [&str; 5] = ["GET", "POST", "PUT", "DELETE", "PATCH"];
+
+// the caller shape when no key was resolved: no route restriction applies
+const NO_KEY: RouteCaller<'static> = RouteCaller {
+    allowed_routes: AllowedRoutes::Unset,
+    metadata: None,
+    team_metadata: None,
+    jwt_claims: false,
+    has_token: false,
+    team_id: None,
+};
 
 fn strings(values: &[&str]) -> JsonData {
     let items = values
@@ -125,9 +135,7 @@ fn mit_enterprise_import_absent() {
         *check_virtual_key_route(called("/v1/chat/completions", "POST"), &caller, &registry)
             .unwrap_err();
     // the MIT fallback owns the denial: no enterprise check turns this into another error shape
-    assert!(
-        assert_forbidden(&exception).starts_with("Virtual key is not allowed to call this route.")
-    );
+    assert!(assert_forbidden(&exception).starts_with("the key may not call /v1/chat/completions"));
 }
 
 #[test]
@@ -154,7 +162,7 @@ fn routes_none_allows() {
 fn routes_nonlist_allows() {
     let caller = RouteCaller {
         allowed_routes: AllowedRoutes::NotAList,
-        ..RouteCaller::absent()
+        ..NO_KEY
     };
     let registry = registry_of(&[(
         "pass-a",
@@ -217,7 +225,7 @@ fn non_string_route_entries_are_ignored() {
     let exception =
         *check_virtual_key_route(called("/v1/models", "GET"), &numbers_caller, &registry)
             .unwrap_err();
-    assert!(assert_forbidden(&exception).contains("Only allowed to call routes: []"));
+    assert!(assert_forbidden(&exception).contains("its allowed routes are none"));
 }
 
 #[test]
@@ -318,7 +326,7 @@ fn nonempty_key_overrides_team() {
     )]);
     let exception =
         *check_virtual_key_route(called("/team-pass", "POST"), &caller, &registry).unwrap_err();
-    assert!(assert_forbidden(&exception).contains("passthrough route /team-pass"));
+    assert!(assert_forbidden(&exception).contains("pass-through route /team-pass"));
 }
 
 #[test]
@@ -336,7 +344,7 @@ fn missing_metadata_grant() {
     )]);
     let exception =
         *check_virtual_key_route(called("/team-pass", "POST"), &caller, &registry).unwrap_err();
-    assert!(assert_forbidden(&exception).contains("Configure `allowed_passthrough_routes`"));
+    assert!(assert_forbidden(&exception).contains("set allowed_passthrough_routes"));
 }
 
 #[test]
@@ -361,7 +369,7 @@ fn null_metadata_grants() {
     )]);
     let exception =
         *check_virtual_key_route(called("/team-pass", "POST"), &caller, &registry).unwrap_err();
-    assert!(assert_forbidden(&exception).contains("Configure `allowed_passthrough_routes`"));
+    assert!(assert_forbidden(&exception).contains("set allowed_passthrough_routes"));
 }
 
 #[test]
@@ -380,7 +388,7 @@ fn jwt_team_only() {
     let plain = key_of(vec![("team_id", JsonData::String("team-a".to_owned()))]);
     let plain_caller = RouteCaller::of_key(&plain);
     assert!(jwt_team_allowed_routes(&plain_caller, &settings).is_empty());
-    assert!(jwt_team_allowed_routes(&RouteCaller::absent(), &settings).is_empty());
+    assert!(jwt_team_allowed_routes(&NO_KEY, &settings).is_empty());
     require_pass_through_access("/team-pass", &caller, routes).unwrap_err();
 }
 
@@ -394,7 +402,7 @@ fn jwt_mapped_key_excluded() {
     let settings = vec!["/team-pass/*".to_owned()];
     assert!(jwt_team_allowed_routes(&caller, &settings).is_empty());
     let exception = *require_pass_through_access("/team-pass/x", &caller, &[]).unwrap_err();
-    assert!(assert_forbidden(&exception).contains("passthrough route /team-pass/x"));
+    assert!(assert_forbidden(&exception).contains("pass-through route /team-pass/x"));
 }
 
 #[test]
@@ -463,9 +471,7 @@ fn mcp_discovery_write_denied(#[case] route: &str) {
     let registry = registry_of(&[]);
     let exception =
         *check_virtual_key_route(called(route, "POST"), &caller, &registry).unwrap_err();
-    assert!(
-        assert_forbidden(&exception).starts_with("Virtual key is not allowed to call this route.")
-    );
+    assert!(assert_forbidden(&exception).starts_with("the key may not call"));
 }
 
 #[test]
@@ -502,6 +508,55 @@ fn agent_compatibility_grant() {
 }
 
 #[test]
+fn mcp_discovery_grant_survives_a_protected_registration() {
+    let auth = key_of(vec![("allowed_routes", strings(&["llm_api_routes"]))]);
+    let caller = RouteCaller::of_key(&auth);
+    let registry = registry_of(&[(
+        "pass-a",
+        PassThroughRouteType::Exact,
+        "/v1/mcp/server",
+        Some(true),
+    )]);
+    // the protected registration is ungranted, and the read-only discovery carve-out still grants the GET
+    check_virtual_key_route(called("/v1/mcp/server", "GET"), &caller, &registry).unwrap();
+    let exception =
+        *check_virtual_key_route(called("/v1/mcp/server", "POST"), &caller, &registry).unwrap_err();
+    assert!(
+        assert_forbidden(&exception)
+            .starts_with("the key or team may not use the pass-through route /v1/mcp/server")
+    );
+}
+
+#[test]
+fn agent_grant_survives_a_protected_registration() {
+    let auth = key_of(vec![("allowed_routes", strings(&["llm_api_routes"]))]);
+    let caller = RouteCaller::of_key(&auth);
+    let registry = registry_of(&[(
+        "pass-a",
+        PassThroughRouteType::Subpath,
+        "/v1/agents",
+        Some(true),
+    )]);
+    // the protected registration is ungranted, and the agent carve-out still grants its routes
+    check_virtual_key_route(
+        called("/v1/agents/agent-a/kill_switch", "POST"),
+        &caller,
+        &registry,
+    )
+    .unwrap();
+    let exception = *check_virtual_key_route(
+        called("/v1/agents/agent-a/unknown", "POST"),
+        &caller,
+        &registry,
+    )
+    .unwrap_err();
+    assert!(
+        assert_forbidden(&exception)
+            .starts_with("the key or team may not use the pass-through route")
+    );
+}
+
+#[test]
 fn password_reset_denied() {
     let auth = key_of(vec![
         ("allowed_routes", strings(&["/v1/models"])),
@@ -516,8 +571,9 @@ fn password_reset_denied() {
         *check_virtual_key_route(called("/v1/chat/completions", "POST"), &caller, &registry)
             .unwrap_err();
     let message = assert_forbidden(&exception);
-    assert!(message.contains("password must be changed"));
-    assert!(message.contains("/user/password/change"));
+    assert!(message.contains("must change its password"));
+    assert!(message.contains("POST /user/password/change"));
+    assert!(message.contains("/ui/change-password"));
 }
 
 #[test]
@@ -538,9 +594,7 @@ fn only_a_true_reset_flag_denies() {
     let exception =
         *check_virtual_key_route(called("/v1/chat/completions", "POST"), &caller, &registry)
             .unwrap_err();
-    assert!(
-        assert_forbidden(&exception).starts_with("Virtual key is not allowed to call this route.")
-    );
+    assert!(assert_forbidden(&exception).starts_with("the key may not call /v1/chat/completions"));
 }
 
 #[test]
@@ -567,7 +621,7 @@ fn virtual_route_denied() {
             .unwrap_err();
     assert_eq!(
         assert_forbidden(&exception),
-        "Virtual key is not allowed to call this route. Only allowed to call routes: ['/v1/models']. Tried to call route: /v1/chat/completions"
+        "the key may not call /v1/chat/completions; its allowed routes are /v1/models"
     );
 }
 
@@ -585,7 +639,7 @@ fn registered_protected_route() {
         *check_virtual_key_route(called("/team-pass", "POST"), &caller, &registry).unwrap_err();
     assert!(
         assert_forbidden(&exception)
-            .starts_with("Key/team not allowed to access passthrough route")
+            .starts_with("the key or team may not use the pass-through route /team-pass")
     );
 }
 
@@ -597,9 +651,7 @@ fn absent_auth_unprotected() {
     // only an auth=true registration joins openai_routes, so an absent flag grants nothing there
     let exception =
         *check_virtual_key_route(called("/team-pass", "POST"), &caller, &registry).unwrap_err();
-    assert!(
-        assert_forbidden(&exception).starts_with("Virtual key is not allowed to call this route.")
-    );
+    assert!(assert_forbidden(&exception).starts_with("the key may not call /team-pass"));
     // llm_api_routes reaches the registration itself, where an absent flag leaves it open
     let llm_auth = key_of(vec![("allowed_routes", strings(&["llm_api_routes"]))]);
     let llm_caller = RouteCaller::of_key(&llm_auth);
@@ -624,21 +676,8 @@ fn passthrough_denial_precedes_reset() {
     )]);
     let exception =
         *check_virtual_key_route(called("/team-pass", "POST"), &caller, &registry).unwrap_err();
-    assert!(exception.message.contains("passthrough route /team-pass"));
+    assert!(exception.message.contains("pass-through route /team-pass"));
     assert!(!exception.message.contains("password"));
-}
-
-#[test]
-fn absent_caller_holds_no_key_facts() {
-    let caller = RouteCaller::absent();
-    assert_eq!(caller.allowed_routes, AllowedRoutes::Unset);
-    assert!(caller.metadata.is_none());
-    assert!(caller.team_metadata.is_none());
-    assert!(!caller.jwt_claims);
-    assert!(!caller.has_token);
-    assert!(caller.team_id.is_none());
-    assert!(!check_passthrough_route_access("/team-pass", &caller));
-    assert!(!password_reset_required(&caller));
 }
 
 #[test]
@@ -691,7 +730,7 @@ fn method_filtered_registration_is_unprotected() {
     check_virtual_key_route(called("/team-pass", "GET"), &caller, &registry).unwrap();
     let exception =
         *check_virtual_key_route(called("/team-pass", "POST"), &caller, &registry).unwrap_err();
-    assert!(exception.message.contains("passthrough route /team-pass"));
+    assert!(exception.message.contains("pass-through route /team-pass"));
 }
 
 #[rstest]
@@ -711,7 +750,7 @@ fn passthrough_grant_truthiness(#[case] value: JsonData, #[case] allowed: bool) 
     let caller = RouteCaller {
         metadata: Some(&key),
         team_metadata: Some(&team),
-        ..RouteCaller::absent()
+        ..NO_KEY
     };
     // a falsy key grant falls back to the team list; a truthy non-iterable one wins and denies
     assert_eq!(
@@ -729,7 +768,7 @@ fn string_and_object_grants_iterate_like_python() {
     )]);
     let text_caller = RouteCaller {
         metadata: Some(&text),
-        ..RouteCaller::absent()
+        ..NO_KEY
     };
     assert!(!check_passthrough_route_access("/team-pass", &text_caller));
     // an object is iterated by key
@@ -739,7 +778,7 @@ fn string_and_object_grants_iterate_like_python() {
     )]);
     let map_caller = RouteCaller {
         metadata: Some(&map),
-        ..RouteCaller::absent()
+        ..NO_KEY
     };
     assert!(check_passthrough_route_access("/team-pass", &map_caller));
     // non-string list entries are skipped rather than raising
@@ -752,7 +791,7 @@ fn string_and_object_grants_iterate_like_python() {
     )]);
     let mixed_caller = RouteCaller {
         metadata: Some(&mixed),
-        ..RouteCaller::absent()
+        ..NO_KEY
     };
     assert!(check_passthrough_route_access("/team-pass", &mixed_caller));
     // a one-character string is the one value that matches through the character iteration
@@ -762,7 +801,7 @@ fn string_and_object_grants_iterate_like_python() {
     )]);
     let single_caller = RouteCaller {
         metadata: Some(&single),
-        ..RouteCaller::absent()
+        ..NO_KEY
     };
     assert!(check_passthrough_route_access("x", &single_caller));
 }
@@ -780,12 +819,12 @@ fn denial_message_lists_every_allowed_route() {
             .unwrap_err();
     assert_eq!(
         assert_forbidden(&exception),
-        "Virtual key is not allowed to call this route. Only allowed to call routes: ['/v1/models', '/v1/embeddings']. Tried to call route: /v1/chat/completions"
+        "the key may not call /v1/chat/completions; its allowed routes are /v1/models, /v1/embeddings"
     );
 }
 
 #[test]
-fn denial_message_escapes_route_text() {
+fn denial_message_keeps_route_text() {
     let auth = key_of(vec![(
         "allowed_routes",
         strings(&["/v1/it's", "/v1/back\\slash"]),
@@ -795,8 +834,10 @@ fn denial_message_escapes_route_text() {
     let exception =
         *check_virtual_key_route(called("/v1/chat/completions", "POST"), &caller, &registry)
             .unwrap_err();
-    // the message renders the list like Python's repr, escaping quotes and backslashes
-    assert!(assert_forbidden(&exception).contains(r"['/v1/it\'s', '/v1/back\\slash']"));
+    // betterlite writes the entries as they are, with no quoting or escaping
+    assert!(
+        assert_forbidden(&exception).contains("its allowed routes are /v1/it's, /v1/back\\slash")
+    );
 }
 
 #[test]
@@ -808,7 +849,7 @@ fn only_member_names_expand_as_groups() {
     let exception =
         *check_virtual_key_route(called("/v1/models/model-a", "GET"), &caller, &registry)
             .unwrap_err();
-    assert!(assert_forbidden(&exception).contains("['/v1/models/{model}']"));
+    assert!(assert_forbidden(&exception).contains("its allowed routes are /v1/models/{model}"));
 }
 
 #[test]
@@ -818,7 +859,7 @@ fn group_entry_denies_route_outside_the_group() {
     let registry = registry_of(&[]);
     let exception =
         *check_virtual_key_route(called("/spend/logs", "GET"), &caller, &registry).unwrap_err();
-    assert!(assert_forbidden(&exception).contains("['openai_routes']"));
+    assert!(assert_forbidden(&exception).contains("its allowed routes are openai_routes"));
 }
 
 #[test]
