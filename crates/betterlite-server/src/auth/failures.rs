@@ -22,6 +22,7 @@ pub(crate) fn stage_failure_response(failure: &StageFailure) -> Response {
         | StageFailure::VirtualKeyRoutes(exception)
         | StageFailure::KeyBudgets(exception)
         | StageFailure::TeamBudgets(exception)
+        | StageFailure::OrganizationRoutePolicy(exception)
         | StageFailure::OrgLookup(exception)
         | StageFailure::EndUsers(exception)
         | StageFailure::AuthContextSources(exception) => denial_response(exception),

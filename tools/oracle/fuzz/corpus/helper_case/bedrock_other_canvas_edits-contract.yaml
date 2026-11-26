@@ -1,0 +1,17 @@
+kind: helper
+name: bedrock-other-canvas-edits-contract
+call:
+  bedrock_other_canvas_edits:
+    model_cost: {}
+    calls:
+      - function: multipart
+      - function: url
+      - function: supported_params
+      - function: environment
+        headers: {x-a: b}
+      - function: error_class
+        message: boom
+        status: 418
+        headers: {h: v}
+env: {}
+compare: {ignore: []}

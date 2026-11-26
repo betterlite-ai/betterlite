@@ -1,0 +1,48 @@
+kind: helper
+name: organization-route-policy-cross-org-denied
+call:
+  organization_route_policy:
+    calls:
+      # org_admin in org-a, ordinary member in org-b: the selected organization decides
+      - function: role_check
+        user:
+          user_role: internal_user
+          organization_memberships:
+            - {organization_id: org-a, user_role: org_admin}
+            - {organization_id: org-b, user_role: internal_user}
+        route: /organization/info
+        request: {organization_id: org-b}
+      - function: role_check
+        user:
+          user_role: internal_user
+          organization_memberships:
+            - {organization_id: org-a, user_role: org_admin}
+            - {organization_id: org-b, user_role: internal_user}
+        route: /organization/info
+        request: {organization_id: org-a}
+      - function: role_check
+        user:
+          user_role: internal_user
+          organization_memberships:
+            - {organization_id: org-a, user_role: org_admin}
+            - {organization_id: org-b, user_role: internal_user}
+        route: /team/new
+        request: {organization_id: org-b}
+      - function: role_check
+        user:
+          user_role: internal_user
+          organization_memberships:
+            - {organization_id: org-a, user_role: org_admin}
+            - {organization_id: org-b, user_role: internal_user}
+        route: /team/new
+        request: {organization_id: org-a}
+      # administrating org-a does not make the caller an admin for every requested organization
+      - function: org_admin
+        user:
+          user_role: internal_user
+          organization_memberships:
+            - {organization_id: org-a, user_role: org_admin}
+            - {organization_id: org-b, user_role: internal_user}
+        request: {organization_id: org-a, organizations: [org-b]}
+env: {}
+compare: {ignore: []}
