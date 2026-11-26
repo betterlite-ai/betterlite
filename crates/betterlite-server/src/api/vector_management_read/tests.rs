@@ -3,6 +3,8 @@
 mod info;
 mod support;
 
+use std::sync::Arc;
+
 use axum::http::{HeaderMap, Method, StatusCode};
 use betterlite_config::sections::management_rbac::Settings as FeatureSettings;
 use betterlite_models::decisions::Json;
@@ -177,7 +179,7 @@ async fn list_reconciliation_purges_and_syncs_the_registry() {
     assert!(captured.contains("Removed deleted vector store vs_stale from in-memory registry"));
 }
 
-fn assert_reconciled_registry(state: &std::sync::Arc<VectorManagementReadState<FakeDatabase>>) {
+fn assert_reconciled_registry(state: &Arc<VectorManagementReadState<FakeDatabase>>) {
     let registry = registry_of(state);
     let stored: Vec<String> = registry
         .stores
