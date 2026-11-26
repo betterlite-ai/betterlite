@@ -205,12 +205,12 @@ fn alias_canonical_decoding_only() {
 async fn claude_six_routes_only(#[case] route: &str, #[case] eligible: bool) {
     assert_eq!(CLAUDE_MODEL_ROUTES.contains(&route), eligible, "{route}");
     let router = FakeRouter::new(BTreeSet::new(), set_of(&[GROUP]), BTreeMap::new());
-    let outcome = ClaudeFixture::new(&encoded(GROUP))
+    let outcome_0 = ClaudeFixture::new(&encoded(GROUP))
         .route(route)
         .run(Some(&router))
         .await;
     assert_eq!(
-        outcome,
+        outcome_0,
         ClaudeNormalization {
             normalized: eligible,
             source: eligible.then(|| GROUP.to_owned()),
@@ -223,12 +223,12 @@ async fn claude_six_routes_only(#[case] route: &str, #[case] eligible: bool) {
 #[tokio::test]
 async fn claude_marker_skip() {
     let router = FakeRouter::new(BTreeSet::new(), set_of(&[GROUP]), BTreeMap::new());
-    let outcome = ClaudeFixture::new(&encoded(GROUP))
+    let outcome_1 = ClaudeFixture::new(&encoded(GROUP))
         .normalized()
         .run(Some(&router))
         .await;
     assert_eq!(
-        outcome,
+        outcome_1,
         ClaudeNormalization {
             normalized: true,
             source: None,
@@ -241,32 +241,34 @@ async fn claude_marker_skip() {
 async fn claude_body_identity() {
     let router = FakeRouter::new(BTreeSet::new(), set_of(&[GROUP]), BTreeMap::new());
     let listed = format!(r#"{{"model": ["{0}", "{0}"]}}"#, encoded(GROUP));
-    let outcome = ClaudeFixture::from_body(&listed).run(Some(&router)).await;
+    let outcome_2 = ClaudeFixture::from_body(&listed).run(Some(&router)).await;
     assert_eq!(
-        outcome,
+        outcome_2,
         ClaudeNormalization {
             normalized: false,
             source: None,
         }
     );
     // the routed model comes from target_model_names while body.model stays empty
-    let routed = format!(
+    let target_names = format!(
         r#"{{"model": "", "target_model_names": "{}"}}"#,
         encoded(GROUP)
     );
-    let outcome = ClaudeFixture::from_body(&routed).run(Some(&router)).await;
+    let outcome_3 = ClaudeFixture::from_body(&target_names)
+        .run(Some(&router))
+        .await;
     assert_eq!(
-        outcome,
+        outcome_3,
         ClaudeNormalization {
             normalized: false,
             source: None,
         }
     );
-    let outcome = ClaudeFixture::from_body(r#"{"model": 7}"#)
+    let outcome_4 = ClaudeFixture::from_body(r#"{"model": 7}"#)
         .run(Some(&router))
         .await;
     assert_eq!(
-        outcome,
+        outcome_4,
         ClaudeNormalization {
             normalized: false,
             source: None,
@@ -289,9 +291,9 @@ async fn claude_prefix_suffix_case(
     #[case] source: Option<&str>,
 ) {
     let router = FakeRouter::new(BTreeSet::new(), set_of(&[GROUP]), BTreeMap::new());
-    let outcome = ClaudeFixture::new(model).run(Some(&router)).await;
+    let outcome_5 = ClaudeFixture::new(model).run(Some(&router)).await;
     assert_eq!(
-        outcome,
+        outcome_5,
         ClaudeNormalization {
             normalized,
             source: source.map(str::to_owned),
@@ -303,11 +305,11 @@ async fn claude_prefix_suffix_case(
 #[tokio::test]
 async fn claude_marks_unresolved() {
     let router = FakeRouter::default();
-    let outcome = ClaudeFixture::new(&encoded("unknown-group"))
+    let outcome_6 = ClaudeFixture::new(&encoded("unknown-group"))
         .run(Some(&router))
         .await;
     assert_eq!(
-        outcome,
+        outcome_6,
         ClaudeNormalization {
             normalized: true,
             source: None,
@@ -317,9 +319,9 @@ async fn claude_marks_unresolved() {
 }
 
 async fn assert_router_names_group(router: FakeRouter) {
-    let outcome = ClaudeFixture::new(&encoded(GROUP)).run(Some(&router)).await;
+    let outcome_7 = ClaudeFixture::new(&encoded(GROUP)).run(Some(&router)).await;
     assert_eq!(
-        outcome,
+        outcome_7,
         ClaudeNormalization {
             normalized: true,
             source: Some(GROUP.to_owned()),
@@ -328,96 +330,30 @@ async fn assert_router_names_group(router: FakeRouter) {
     assert!(!router.asked().is_empty());
 }
 
+#[rstest]
+#[case::literal(ClaudeFixture::new(&encoded(GROUP)).global_alias(&encoded(GROUP)), None)]
+#[case::global(ClaudeFixture::new(&encoded(GROUP)).global_alias(GROUP), Some(GROUP))]
+#[case::key(ClaudeFixture::new(&encoded(GROUP)).key_aliases(r#"{"group-one":"target"}"#), Some(GROUP))]
+#[case::team(ClaudeFixture::new(&encoded(GROUP)).team_model_aliases(r#"{"group-one":"target"}"#), Some(GROUP))]
+#[case::hierarchical(ClaudeFixture::new(&encoded(GROUP)).key_router_settings(r#"{"model_group_alias":{"group-one":"target"}}"#), Some(GROUP))]
 #[tokio::test]
-async fn claude_alias_order() {
-    let requested = encoded(GROUP);
-    // a route that owns the view id itself needs no rewrite and never reaches the router
-    let router = FakeRouter::new(BTreeSet::new(), set_of(&[GROUP]), BTreeMap::new());
-    let mut fixture = ClaudeFixture::new(&requested);
-    fixture
-        .global_aliases
-        .insert(requested.clone(), "target".to_owned());
+async fn claude_alias_order(#[case] fixture: ClaudeFixture, #[case] expected: Option<&str>) {
+    let router = FakeRouter::default();
     let outcome = fixture.run(Some(&router)).await;
     assert_eq!(
         outcome,
         ClaudeNormalization {
             normalized: true,
-            source: None,
+            source: expected.map(str::to_owned)
         }
     );
-    assert!(router.asked().is_empty());
+}
 
-    // the global alias map answers the decoded id
-    let outcome = ClaudeFixture::new(&requested)
-        .global_alias(GROUP)
-        .run(Some(&router))
-        .await;
-    assert_eq!(
-        outcome,
-        ClaudeNormalization {
-            normalized: true,
-            source: Some(GROUP.to_owned()),
-        }
-    );
-
-    // the key aliases come next
-    let outcome = ClaudeFixture::new(&requested)
-        .key_aliases(&format!(r#"{{"{GROUP}": "target"}}"#))
-        .run(Some(&router))
-        .await;
-    assert_eq!(
-        outcome,
-        ClaudeNormalization {
-            normalized: true,
-            source: Some(GROUP.to_owned()),
-        }
-    );
-
-    // then the team's aliases
-    let outcome = ClaudeFixture::new(&requested)
-        .team_model_aliases(&format!(r#"{{"{GROUP}": "target"}}"#))
-        .run(Some(&router))
-        .await;
-    assert_eq!(
-        outcome,
-        ClaudeNormalization {
-            normalized: true,
-            source: Some(GROUP.to_owned()),
-        }
-    );
-
-    // then the hierarchical router settings' model_group_alias
-    let outcome = ClaudeFixture::new(&requested)
-        .key_router_settings(&format!(
-            r#"{{"model_group_alias": {{"{GROUP}": "target"}}}}"#
-        ))
-        .run(Some(&router))
-        .await;
-    assert_eq!(
-        outcome,
-        ClaudeNormalization {
-            normalized: true,
-            source: Some(GROUP.to_owned()),
-        }
-    );
-
-    // and finally the router's own model group aliases, model ids and candidate ids
-    assert_router_names_group(FakeRouter::new(
-        set_of(&[GROUP]),
-        BTreeSet::new(),
-        BTreeMap::new(),
-    ))
-    .await;
-    assert_router_names_group(FakeRouter::new(
-        BTreeSet::new(),
-        set_of(&[GROUP]),
-        BTreeMap::new(),
-    ))
-    .await;
-    assert_router_names_group(FakeRouter::new(
-        BTreeSet::new(),
-        BTreeSet::new(),
-        BTreeMap::from([(GROUP.to_owned(), vec!["deployment-id".to_owned()])]),
-    ))
-    .await;
+#[rstest]
+#[case::aliases(FakeRouter::new(set_of(&[GROUP]), BTreeSet::new(), BTreeMap::new()))]
+#[case::ids(FakeRouter::new(BTreeSet::new(), set_of(&[GROUP]), BTreeMap::new()))]
+#[case::candidates(FakeRouter::new(BTreeSet::new(), BTreeSet::new(), BTreeMap::from([(GROUP.to_owned(), vec!["deployment-id".to_owned()])])))]
+#[tokio::test]
+async fn claude_router_name_sources(#[case] router: FakeRouter) {
+    assert_router_names_group(router).await;
 }

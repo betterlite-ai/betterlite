@@ -179,8 +179,8 @@ pub async fn normalize_claude_model(
 fn eligible_requested_model(
     input: &ClaudeNormalizationInput<'_>,
 ) -> Result<Option<String>, CatalogError> {
-    let requested = get_model_from_request_context(&input.model_context, input.collaborators)?;
-    let RequestedModels::One(requested) = requested else {
+    let models = get_model_from_request_context(&input.model_context, input.collaborators)?;
+    let RequestedModels::One(requested) = models else {
         return Ok(None);
     };
     if input.request_data.get("model") != Some(&Json::Text(requested.clone())) {

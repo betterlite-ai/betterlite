@@ -189,3 +189,43 @@ fn minimum_key_nonpositive(#[case] value: &str, #[case] expected: i64) {
         .expect("zero and negative values are not clamped");
     assert_eq!(settings.minimum_custom_key_length, expected);
 }
+
+#[test]
+fn environment_section_keeps_yaml_mapping() {
+    let loader = ConfigLoader {
+        lookup: BTreeMap::<String, String>::new(),
+    };
+    let config = loader
+        .load("general_settings:\n  master_key: test-key\n")
+        .unwrap();
+    assert_eq!(
+        config
+            .sections
+            .auth_context_sources
+            .minimum_custom_key_length,
+        16
+    );
+    let error = loader.load("unknown_sso_setting: true").unwrap_err();
+    let ConfigError::Unsupported { paths } = error else {
+        panic!("unknown YAML keys must stay unsupported")
+    };
+    assert_eq!(paths, ["unknown_sso_setting"]);
+}
+
+#[test]
+fn settings_default_has_pinned_minimum() {
+    let settings = Settings::default();
+    assert_eq!(settings.minimum_custom_key_length, 16);
+    assert!(settings.microsoft_client_id.is_none());
+    assert!(settings.google_client_id.is_none());
+    assert!(settings.generic_client_id.is_none());
+    assert!(settings.saml_idp_metadata_url.is_none());
+    assert!(settings.saml_idp_metadata_xml.is_none());
+    assert!(settings.google_client_secret.is_none());
+    assert!(settings.microsoft_client_secret.is_none());
+    assert!(settings.microsoft_tenant.is_none());
+    assert!(settings.generic_client_secret.is_none());
+    assert!(settings.generic_authorization_endpoint.is_none());
+    assert!(settings.generic_token_endpoint.is_none());
+    assert!(settings.generic_userinfo_endpoint.is_none());
+}

@@ -43,50 +43,78 @@ impl From<&Settings> for SsoConfiguration {
     }
 }
 
-// One setting counts when it is present and not empty, the rule every provider shares.
-fn filled(value: Option<&str>) -> bool {
-    match value {
-        Some(text) => !text.is_empty(),
-        None => false,
-    }
-}
-
 // has_user_setup_sso: presence, not readiness, because the UI only decides whether to show the button.
 #[must_use]
 pub fn has_user_setup_sso(configuration: &SsoConfiguration) -> bool {
     configuration.microsoft_client_id.is_some()
         || configuration.google_client_id.is_some()
         || configuration.generic_client_id.is_some()
-        || filled(configuration.saml_idp_metadata_url.as_deref())
-        || filled(configuration.saml_idp_metadata_xml.as_deref())
+        || configuration
+            .saml_idp_metadata_url
+            .as_deref()
+            .is_some_and(|text| !text.is_empty())
+        || configuration
+            .saml_idp_metadata_xml
+            .as_deref()
+            .is_some_and(|text| !text.is_empty())
 }
 
 // Each provider is checked on its own, so an incomplete one can never mask a complete one.
 #[must_use]
 pub fn is_provider_configured(configuration: &SsoConfiguration, runtime: SsoRuntime) -> bool {
-    let google = filled(configuration.google_client_id.as_deref())
+    let google = configuration
+        .google_client_id
+        .as_deref()
+        .is_some_and(|text| !text.is_empty())
         && configuration
             .google_client_secret
             .as_ref()
             .is_some_and(|secret| !secret.expose_secret().is_empty());
-    let microsoft = filled(configuration.microsoft_client_id.as_deref())
+    let microsoft = configuration
+        .microsoft_client_id
+        .as_deref()
+        .is_some_and(|text| !text.is_empty())
         && configuration
             .microsoft_client_secret
             .as_ref()
             .is_some_and(|secret| !secret.expose_secret().is_empty())
-        && filled(configuration.microsoft_tenant.as_deref());
-    let generic = filled(configuration.generic_client_id.as_deref())
+        && configuration
+            .microsoft_tenant
+            .as_deref()
+            .is_some_and(|text| !text.is_empty());
+    let saml = runtime.saml_available
+        && (configuration
+            .saml_idp_metadata_url
+            .as_deref()
+            .is_some_and(|text| !text.is_empty())
+            || configuration
+                .saml_idp_metadata_xml
+                .as_deref()
+                .is_some_and(|text| !text.is_empty()));
+    google || microsoft || generic_configured(configuration) || saml
+}
+
+fn generic_configured(configuration: &SsoConfiguration) -> bool {
+    configuration
+        .generic_client_id
+        .as_deref()
+        .is_some_and(|text| !text.is_empty())
         && configuration
             .generic_client_secret
             .as_ref()
             .is_some_and(|secret| !secret.expose_secret().is_empty())
-        && filled(configuration.generic_authorization_endpoint.as_deref())
-        && filled(configuration.generic_token_endpoint.as_deref())
-        && filled(configuration.generic_userinfo_endpoint.as_deref());
-    let saml = runtime.saml_available
-        && (filled(configuration.saml_idp_metadata_url.as_deref())
-            || filled(configuration.saml_idp_metadata_xml.as_deref()));
-    google || microsoft || generic || saml
+        && configuration
+            .generic_authorization_endpoint
+            .as_deref()
+            .is_some_and(|text| !text.is_empty())
+        && configuration
+            .generic_token_endpoint
+            .as_deref()
+            .is_some_and(|text| !text.is_empty())
+        && configuration
+            .generic_userinfo_endpoint
+            .as_deref()
+            .is_some_and(|text| !text.is_empty())
 }
 
 // Abbreviation is for compatible response parameters; it does not permit logging credentials.

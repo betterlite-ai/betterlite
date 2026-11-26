@@ -11,7 +11,7 @@ use betterlite_models::model_registration::JsonObject;
 use rstest::rstest;
 
 use crate::auth_context_sources::router_settings::{
-    MAX_ROUTER_SETTINGS_BYTES, TeamRouterSettings, decode_router_settings,
+    MAX_ROUTER_SETTINGS_BYTES, TeamRouterSettings as _, decode_router_settings,
     hierarchical_router_settings, parse_router_settings_value,
 };
 use crate::auth_prefetch::permission::lookup::{
@@ -324,5 +324,15 @@ fn replays_the_auth_context_sources_corpus(
     assert!(
         decoded.is_none_or(|settings| !settings.is_empty()),
         "{path:?}"
+    );
+}
+
+#[tokio::test]
+async fn team_settings_keep_all_json_types() {
+    let document = r#"{"null":null,"bool":true,"number":42,"array":[false,7,"kept"],"object":{"value":"text"}}"#;
+    let teams = FakeTeams::new(TeamAnswer::Settings(team_columns(document)));
+    assert_eq!(
+        hierarchical_router_settings(None, Some("team-one"), &teams).await,
+        Some(object(document))
     );
 }

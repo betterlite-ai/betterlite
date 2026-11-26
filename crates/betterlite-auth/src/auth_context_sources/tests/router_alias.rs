@@ -14,7 +14,7 @@ const MARKED_ONLY: RouterAliasRewrite = RouterAliasRewrite {
     target: None,
 };
 
-fn input<'request>(settings: Option<&'request Json>) -> RouterAliasInput<'request> {
+fn input(settings: Option<&Json>) -> RouterAliasInput<'_> {
     RouterAliasInput {
         state: RouterAliasState::Fresh,
         passthrough: false,
@@ -30,70 +30,21 @@ fn teams_with_settings(settings: &str) -> FakeTeams {
     FakeTeams::new(TeamAnswer::Settings(team_columns(settings)))
 }
 
+#[rstest]
+#[case::ineligible(RouterAliasInput { state: RouterAliasState::Ineligible { already_resolved: false }, ..input(None) }, RouterAliasRewrite::default())]
+#[case::ineligible_marked(RouterAliasInput { state: RouterAliasState::Ineligible { already_resolved: true }, ..input(None) }, MARKED_ONLY)]
+#[case::resolved(RouterAliasInput { state: RouterAliasState::Resolved, ..input(None) }, MARKED_ONLY)]
+#[case::passthrough(RouterAliasInput { passthrough: true, ..input(None) }, MARKED_ONLY)]
+#[case::missing_model(RouterAliasInput { requested_model: None, ..input(None) }, MARKED_ONLY)]
+#[case::unavailable_body(RouterAliasInput { raw_body_available: false, ..input(None) }, MARKED_ONLY)]
 #[tokio::test]
-async fn router_marker_before_skip() {
+async fn router_marker_before_skip(
+    #[case] mut request: RouterAliasInput<'static>,
+    #[case] expected: RouterAliasRewrite,
+) {
+    request.team_id = Some("team-one");
     let teams = teams_with_settings(ALIASES);
-    let outside_route = RouterAliasInput {
-        state: RouterAliasState::Ineligible {
-            already_resolved: false,
-        },
-        team_id: Some("team-one"),
-        ..input(None)
-    };
-    assert_eq!(
-        resolve_router_alias(&outside_route, &teams).await,
-        RouterAliasRewrite::default()
-    );
-
-    // an ineligible route reports the marker it found, and a marked one keeps it
-    let already_marked = RouterAliasInput {
-        state: RouterAliasState::Ineligible {
-            already_resolved: true,
-        },
-        team_id: Some("team-one"),
-        ..input(None)
-    };
-    assert_eq!(
-        resolve_router_alias(&already_marked, &teams).await,
-        MARKED_ONLY
-    );
-
-    // a marked request never reaches the settings read again
-    let marked = RouterAliasInput {
-        state: RouterAliasState::Resolved,
-        team_id: Some("team-one"),
-        ..input(None)
-    };
-    assert_eq!(resolve_router_alias(&marked, &teams).await, MARKED_ONLY);
-
-    // every later early return still sets the marker, so a retry cannot rewrite
-    let passthrough = RouterAliasInput {
-        passthrough: true,
-        team_id: Some("team-one"),
-        ..input(None)
-    };
-    assert_eq!(
-        resolve_router_alias(&passthrough, &teams).await,
-        MARKED_ONLY
-    );
-    let missing_model = RouterAliasInput {
-        requested_model: None,
-        team_id: Some("team-one"),
-        ..input(None)
-    };
-    assert_eq!(
-        resolve_router_alias(&missing_model, &teams).await,
-        MARKED_ONLY
-    );
-    let unavailable_body = RouterAliasInput {
-        raw_body_available: false,
-        team_id: Some("team-one"),
-        ..input(None)
-    };
-    assert_eq!(
-        resolve_router_alias(&unavailable_body, &teams).await,
-        MARKED_ONLY
-    );
+    assert_eq!(resolve_router_alias(&request, &teams).await, expected);
     assert!(teams.calls().is_empty());
 }
 
@@ -101,25 +52,25 @@ async fn router_marker_before_skip() {
 async fn passthrough_not_rewritten() {
     let settings = json(ALIASES);
     let passthrough = teams_with_settings(ALIASES);
-    let request = RouterAliasInput {
+    let request_0 = RouterAliasInput {
         passthrough: true,
         team_id: Some("team-one"),
         ..input(Some(&settings))
     };
     assert_eq!(
-        resolve_router_alias(&request, &passthrough).await,
+        resolve_router_alias(&request_0, &passthrough).await,
         MARKED_ONLY
     );
     assert!(passthrough.calls().is_empty());
 
-    // the same alias on a routed request rewrites from the key settings alone
+    // the same alias on a routed request_0 rewrites from the key settings alone
     let routed = teams_with_settings(ALIASES);
-    let request = RouterAliasInput {
+    let request_1 = RouterAliasInput {
         team_id: Some("team-one"),
         ..input(Some(&settings))
     };
     assert_eq!(
-        resolve_router_alias(&request, &routed).await,
+        resolve_router_alias(&request_1, &routed).await,
         RouterAliasRewrite {
             marker_set: true,
             client_requested_model: Some("alias-one".to_owned()),
@@ -130,11 +81,11 @@ async fn passthrough_not_rewritten() {
 
     // with no key settings the team's settings answer
     let from_team = teams_with_settings(ALIASES);
-    let request = RouterAliasInput {
+    let request_2 = RouterAliasInput {
         team_id: Some("team-one"),
         ..input(None)
     };
-    let rewrite = resolve_router_alias(&request, &from_team).await;
+    let rewrite = resolve_router_alias(&request_2, &from_team).await;
     assert_eq!(rewrite.target, Some("group-one".to_owned()));
     assert_eq!(from_team.calls(), vec!["team-one".to_owned()]);
 }
@@ -172,12 +123,12 @@ async fn nonjson_not_rewritten() {
 #[case::no_alias_map(json(r#"{"num_retries": 3}"#))]
 #[tokio::test]
 async fn alias_self_none_unchanged(#[case] candidate: Json) {
-    let request = RouterAliasInput {
+    let request_3 = RouterAliasInput {
         requested_model: Some("alias-one"),
         ..input(Some(&candidate))
     };
     assert_eq!(
-        resolve_router_alias(&request, &teams_with_settings(ALIASES)).await,
+        resolve_router_alias(&request_3, &teams_with_settings(ALIASES)).await,
         MARKED_ONLY,
         "{candidate:?}"
     );
@@ -187,11 +138,11 @@ async fn alias_self_none_unchanged(#[case] candidate: Json) {
 async fn log_crlf_stripped() {
     let settings = json(r#"{"model_group_alias": {"bad\nname": "target\r\nname"}}"#);
     let (logs, _guard) = Logs::capture();
-    let request = RouterAliasInput {
+    let request_4 = RouterAliasInput {
         requested_model: Some("bad\nname"),
         ..input(Some(&settings))
     };
-    let rewrite = resolve_router_alias(&request, &teams_with_settings(ALIASES)).await;
+    let rewrite = resolve_router_alias(&request_4, &teams_with_settings(ALIASES)).await;
     assert_eq!(rewrite.target, Some("target\r\nname".to_owned()));
     let captured = logs.text();
     assert!(
@@ -205,9 +156,7 @@ async fn log_crlf_stripped() {
 async fn client_model_setdefault() {
     let teams = teams_with_settings(ALIASES);
     let settings = json(ALIASES);
-    let fresh = RouterAliasInput {
-        ..input(Some(&settings))
-    };
+    let fresh = input(Some(&settings));
     assert_eq!(
         resolve_router_alias(&fresh, &teams)
             .await
@@ -225,13 +174,11 @@ async fn client_model_setdefault() {
     assert_eq!(rewrite.client_requested_model, Some("earlier".to_owned()));
     assert_eq!(rewrite.target, Some("group-one".to_owned()));
 
-    // a request with no rewrite leaves the scope key unset
+    // a request_4 with no rewrite leaves the scope key unset
     let unchanged = json(r#"{"model_group_alias": {"alias-one": "alias-one"}}"#);
-    let request = RouterAliasInput {
-        ..input(Some(&unchanged))
-    };
+    let request_5 = input(Some(&unchanged));
     assert_eq!(
-        resolve_router_alias(&request, &teams)
+        resolve_router_alias(&request_5, &teams)
             .await
             .client_requested_model,
         None

@@ -11,7 +11,11 @@ pub const DEFAULT_MINIMUM_KEY_LENGTH: i64 = 16;
 
 // None means the variable is unset; Some("") means it is set to an empty string, as os.getenv reads it.
 #[derive(Debug, Default, serde::Deserialize)]
-pub struct Raw {}
+pub struct Raw {
+    // A skipped unit keeps the environment-only section map-shaped for the YAML loader.
+    #[serde(skip)]
+    _unused: (),
+}
 
 #[derive(Debug, Clone)]
 pub struct Settings {

@@ -12,7 +12,7 @@ use crate::auth_team_lookup::error::TeamLookupError;
 use crate::auth_team_lookup::lookup::{TeamLookup, TeamRequest, TeamSource};
 use crate::auth_team_lookup::team::get_team_object;
 
-pub const MAX_ROUTER_SETTINGS_BYTES: usize = 1_048_576;
+pub const MAX_ROUTER_SETTINGS_BYTES: usize = 0x0010_0000;
 pub const MAX_ROUTER_SETTINGS_DEPTH: usize = 64;
 
 #[must_use]
@@ -52,8 +52,18 @@ fn settings_object(parsed: Json) -> Option<JsonObject> {
 
 fn json_depth(value: &Json) -> usize {
     match value {
-        Json::Object(entries) => 1 + entries.values().map(json_depth).max().unwrap_or(0),
-        Json::List(items) => 1 + items.iter().map(json_depth).max().unwrap_or(0),
+        Json::Object(entries) => entries
+            .values()
+            .map(json_depth)
+            .max()
+            .unwrap_or(0)
+            .saturating_add(1),
+        Json::List(items) => items
+            .iter()
+            .map(json_depth)
+            .max()
+            .unwrap_or(0)
+            .saturating_add(1),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => 0,
     }
 }
@@ -84,12 +94,12 @@ pub async fn hierarchical_router_settings(
     if let Some(settings) = parse_router_settings_value(key_settings) {
         return Some(settings);
     }
-    let team_id = team_id?;
-    match teams.router_settings(team_id).await {
+    let requested_team = team_id?;
+    match teams.router_settings(requested_team).await {
         Ok(Some(columns)) => parse_router_settings_value(Some(&json_object(&columns))),
         Ok(None) => None,
         Err(error) => {
-            tracing::debug!(team_id, error = %error, "the team router settings lookup failed");
+            tracing::debug!(team_id = requested_team, error = %error, "the team router settings lookup failed");
             None
         }
     }
@@ -118,7 +128,7 @@ fn json_object(columns: &BTreeMap<String, JsonData>) -> Json {
     Json::Object(
         columns
             .iter()
-            .map(|(name, value)| (name.clone(), json_value(value)))
+            .map(|(name, entry)| (name.clone(), json_value(entry)))
             .collect(),
     )
 }
@@ -133,7 +143,7 @@ fn json_value(value: &JsonData) -> Json {
         JsonData::Object(entries) => Json::Object(
             entries
                 .iter()
-                .map(|(name, value)| (name.clone(), json_value(value)))
+                .map(|(name, entry)| (name.clone(), json_value(entry)))
                 .collect(),
         ),
     }

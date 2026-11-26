@@ -158,8 +158,11 @@ fn abbreviation_threshold_tail() {
     assert_eq!(abbreviate_api_key(&tiny, 3), "sk-...abc");
 
     // the threshold counts characters, not bytes
-    let unicode = SecretString::from("ééééé".to_owned());
-    assert_eq!(abbreviate_api_key(&unicode, 5), "sk-...éééé");
+    let unicode = SecretString::from("\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}".to_owned());
+    assert_eq!(
+        abbreviate_api_key(&unicode, 5),
+        "sk-...\u{e9}\u{e9}\u{e9}\u{e9}"
+    );
     assert_eq!(abbreviate_api_key(&unicode, 6), "sk-...");
 
     // a negative configured minimum is not clamped, and every key is abbreviated
@@ -194,4 +197,61 @@ fn budget_list_preserved() {
         model_names_for_budget_checks(&RequestedModels::Many(names.clone())),
         names
     );
+}
+
+#[rstest]
+#[case::google_missing_id(&[("GOOGLE_CLIENT_SECRET", "secret")])]
+#[case::google_missing_secret(&[("GOOGLE_CLIENT_ID", "id")])]
+#[case::google_empty_secret(&[("GOOGLE_CLIENT_ID", "id"), ("GOOGLE_CLIENT_SECRET", "")])]
+#[case::microsoft_empty_secret(&[("MICROSOFT_CLIENT_ID", "id"), ("MICROSOFT_CLIENT_SECRET", ""), ("MICROSOFT_TENANT", "tenant")])]
+#[case::generic_empty_secret(&[("GENERIC_CLIENT_ID", "id"), ("GENERIC_CLIENT_SECRET", ""), ("GENERIC_AUTHORIZATION_ENDPOINT", "authorize"), ("GENERIC_TOKEN_ENDPOINT", "token"), ("GENERIC_USERINFO_ENDPOINT", "userinfo")])]
+fn empty_secrets_are_not_ready(#[case] environment: &[(&str, &str)]) {
+    assert!(!is_provider_configured(
+        &configured(environment),
+        SAML_UNAVAILABLE
+    ));
+}
+
+#[rstest]
+#[case::microsoft("MICROSOFT_CLIENT_ID")]
+#[case::google("GOOGLE_CLIENT_ID")]
+#[case::generic("GENERIC_CLIENT_ID")]
+fn discovery_each_empty_id(#[case] name: &str) {
+    let configuration = configured(&[(name, "")]);
+    assert!(has_user_setup_sso(&configuration));
+    assert!(!is_provider_configured(&configuration, SAML_UNAVAILABLE));
+}
+
+const GOOGLE: [(&str, &str); 2] = [
+    ("GOOGLE_CLIENT_ID", "client"),
+    ("GOOGLE_CLIENT_SECRET", "secret"),
+];
+
+#[rstest]
+#[case::google_client_id(&GOOGLE, "GOOGLE_CLIENT_ID")]
+#[case::google_client_secret(&GOOGLE, "GOOGLE_CLIENT_SECRET")]
+#[case::microsoft_client_id(&MICROSOFT, "MICROSOFT_CLIENT_ID")]
+#[case::microsoft_client_secret(&MICROSOFT, "MICROSOFT_CLIENT_SECRET")]
+#[case::microsoft_tenant(&MICROSOFT, "MICROSOFT_TENANT")]
+#[case::generic_client_id(&GENERIC, "GENERIC_CLIENT_ID")]
+#[case::generic_client_secret(&GENERIC, "GENERIC_CLIENT_SECRET")]
+#[case::generic_authorization_endpoint(&GENERIC, "GENERIC_AUTHORIZATION_ENDPOINT")]
+#[case::generic_token_endpoint(&GENERIC, "GENERIC_TOKEN_ENDPOINT")]
+#[case::generic_userinfo_endpoint(&GENERIC, "GENERIC_USERINFO_ENDPOINT")]
+fn every_empty_companion_disables_its_provider(
+    #[case] provider: &[(&str, &str)],
+    #[case] missing: &str,
+) {
+    assert!(is_provider_configured(
+        &configured(provider),
+        SAML_UNAVAILABLE
+    ));
+    let incomplete: Vec<_> = provider
+        .iter()
+        .map(|(name, value)| (*name, if *name == missing { "" } else { *value }))
+        .collect();
+    assert!(!is_provider_configured(
+        &configured(&incomplete),
+        SAML_UNAVAILABLE
+    ));
 }
