@@ -31,13 +31,13 @@ pub(crate) fn container_answer(container: &SandboxContainer) -> Result<String, C
 
 // A run or a delete takes the handle acreate_sandbox returned, or a bare sandbox id.
 pub(crate) fn container_of(arguments: &Arguments) -> Result<SandboxContainer, ConvertError> {
-    if let Json::Object(fields) = &arguments.container {
-        return handle_container(fields, arguments);
+    match &arguments.container {
+        Some(Json::Object(fields)) => handle_container(fields, arguments),
+        Some(Json::Text(id)) => Ok(bare_container(id, arguments)),
+        None | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_)) => {
+            Err(ConvertError::Container)
+        }
     }
-    if let Json::Text(id) = &arguments.container {
-        return Ok(bare_container(id, arguments));
-    }
-    Err(ConvertError::Container)
 }
 
 fn bare_container(id: &str, arguments: &Arguments) -> SandboxContainer {

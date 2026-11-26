@@ -325,7 +325,7 @@ fn tool_answer_names_the_provider_the_key_and_the_base() {
 fn container_of_reads_a_bare_id_as_an_e2b_handle() {
     let arguments = Arguments {
         provider: String::from("e2b"),
-        container: Json::Text(String::from("sbx-3")),
+        container: Some(Json::Text(String::from("sbx-3"))),
         // ast-grep-ignore: no-default-struct-update - the test sets only the fields it reads
         ..Arguments::default()
     };
@@ -343,7 +343,7 @@ fn container_of_reads_the_nested_hidden_params() {
     let arguments = Arguments {
         provider: String::from("e2b"),
         use_server_proxy: Some(true),
-        container: Json::Object(Extra::from([
+        container: Some(Json::Object(Extra::from([
             (String::from("id"), Json::Text(String::from("sbx-4"))),
             (
                 String::from("hidden_params"),
@@ -360,7 +360,7 @@ fn container_of_reads_the_nested_hidden_params() {
                     ),
                 ])),
             ),
-        ])),
+        ]))),
         // ast-grep-ignore: no-default-struct-update - the test sets only the fields it reads
         ..Arguments::default()
     };
@@ -395,7 +395,7 @@ fn container_of_reads_an_opensandbox_handle_and_its_proxy_flag() {
     let arguments = Arguments {
         provider: String::from("opensandbox"),
         use_server_proxy: Some(true),
-        container: Json::Object(Extra::from([
+        container: Some(Json::Object(Extra::from([
             (String::from("id"), Json::Text(String::from("sbx-5"))),
             (
                 String::from("domain"),
@@ -421,7 +421,7 @@ fn container_of_reads_an_opensandbox_handle_and_its_proxy_flag() {
                     ),
                 ])),
             ),
-        ])),
+        ]))),
         // ast-grep-ignore: no-default-struct-update - the test sets only the fields it reads
         ..Arguments::default()
     };
@@ -448,7 +448,7 @@ fn container_of_reads_an_opensandbox_handle_and_its_proxy_flag() {
 #[test]
 fn container_of_rejects_a_container_with_no_id() {
     let arguments = Arguments {
-        container: Json::Bool(true),
+        container: Some(Json::Bool(true)),
         // ast-grep-ignore: no-default-struct-update - the test sets only the fields it reads
         ..Arguments::default()
     };
@@ -457,10 +457,10 @@ fn container_of_rejects_a_container_with_no_id() {
         Err(ConvertError::Container)
     ));
     let object = Arguments {
-        container: Json::Object(Extra::from([(
+        container: Some(Json::Object(Extra::from([(
             String::from("provider"),
             Json::Text(String::from("e2b")),
-        )])),
+        )]))),
         // ast-grep-ignore: no-default-struct-update - the test sets only the fields it reads
         ..Arguments::default()
     };
@@ -469,7 +469,7 @@ fn container_of_rejects_a_container_with_no_id() {
         Err(ConvertError::Container)
     ));
     let numbers = Arguments {
-        container: Json::Number(Number::from(1_u32)),
+        container: Some(Json::Number(Number::from(1_u32))),
         // ast-grep-ignore: no-default-struct-update - the test sets only the fields it reads
         ..Arguments::default()
     };
@@ -484,7 +484,7 @@ fn container_of_falls_back_to_the_run_proxy_flag() {
     let arguments = Arguments {
         provider: String::from("opensandbox"),
         use_server_proxy: Some(true),
-        container: Json::Object(Extra::from([
+        container: Some(Json::Object(Extra::from([
             (String::from("id"), Json::Text(String::from("sbx-6"))),
             (
                 String::from("hidden_params"),
@@ -493,7 +493,7 @@ fn container_of_falls_back_to_the_run_proxy_flag() {
                     Json::Text(String::from("https://execd.example")),
                 )])),
             ),
-        ])),
+        ]))),
         // ast-grep-ignore: no-default-struct-update - the test sets only the fields it reads
         ..Arguments::default()
     };
@@ -504,4 +504,31 @@ fn container_of_falls_back_to_the_run_proxy_flag() {
     assert!(handle.execd_headers.is_empty());
     assert_eq!(handle.container.provider, "opensandbox");
     assert!(handle.container.hidden_params.api_key.is_none());
+}
+
+#[test]
+fn container_of_prefers_the_handles_own_proxy_flag() {
+    let arguments = Arguments {
+        provider: String::from("opensandbox"),
+        use_server_proxy: Some(true),
+        container: Some(Json::Object(Extra::from([
+            (String::from("id"), Json::Text(String::from("sbx-7"))),
+            (
+                String::from("hidden_params"),
+                Json::Object(Extra::from([
+                    (
+                        String::from("execd_endpoint"),
+                        Json::Text(String::from("https://execd.example")),
+                    ),
+                    (String::from("use_server_proxy"), Json::Bool(false)),
+                ])),
+            ),
+        ]))),
+        // ast-grep-ignore: no-default-struct-update - the test sets only the fields it reads
+        ..Arguments::default()
+    };
+    let SandboxContainer::OpenSandbox(handle) = container_of(&arguments).unwrap() else {
+        panic!("an execd endpoint reads as an opensandbox handle");
+    };
+    assert!(!handle.use_server_proxy);
 }

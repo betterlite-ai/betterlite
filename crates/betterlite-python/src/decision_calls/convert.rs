@@ -84,7 +84,7 @@ pub(crate) struct Arguments {
     pub(crate) custom_llm_provider: Option<String>,
     pub(crate) extra_headers: Option<Headers>,
     pub(crate) provider: String,
-    pub(crate) container: Json,
+    pub(crate) container: Option<Json>,
     pub(crate) code: String,
     pub(crate) template: Option<String>,
     // the sandbox create timeout is an integer while the decisions timeout is a float

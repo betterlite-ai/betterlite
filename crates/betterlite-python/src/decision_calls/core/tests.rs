@@ -92,3 +92,77 @@ fn core_azure_ai_builds_the_foundry_decisions_url() {
     let url = (config.complete_url)("https://res.example", "gpt-4o");
     assert_eq!(url, "https://res.example/providers/microsoft/v1/systemone");
 }
+
+#[test]
+fn core_answers_a_sync_decision_with_an_unusable_timeout_as_a_conversion_failure() {
+    let core: SessionCore = SessionCore::build("{}").unwrap();
+    let wire: CallWire =
+        parse(r#"{"operation": "decisions", "arguments": {"model": "gpt-4o", "timeout": -1.0}}"#)
+            .unwrap();
+    let failure = core.call(&wire).unwrap_err();
+    assert!(matches!(
+        failure,
+        SessionFailure::Invalid(ConvertError::Timeout { .. })
+    ));
+}
+
+#[tokio::test]
+async fn core_answers_an_async_systemone_timeout_as_a_conversion_failure() {
+    let core: SessionCore = SessionCore::build("{}").unwrap();
+    let wire: CallWire =
+        parse(r#"{"operation": "systemone", "arguments": {"model": "gpt-4o", "timeout": -1.0}}"#)
+            .unwrap();
+    let failure = core.acall(&wire).await.unwrap_err();
+    assert!(matches!(
+        failure,
+        SessionFailure::Invalid(ConvertError::Timeout { .. })
+    ));
+}
+
+#[tokio::test]
+async fn core_answers_an_unusable_sandbox_create_interval_as_a_conversion_failure() {
+    let core: SessionCore = SessionCore::build("{}").unwrap();
+    let wire: CallWire =
+        parse(r#"{"operation": "create_sandbox", "arguments": {"poll_interval": -1.0}}"#).unwrap();
+    let failure = core.acall(&wire).await.unwrap_err();
+    assert!(matches!(
+        failure,
+        SessionFailure::Invalid(ConvertError::Timeout { .. })
+    ));
+}
+
+#[tokio::test]
+async fn core_answers_a_run_with_no_container_as_a_conversion_failure() {
+    let core: SessionCore = SessionCore::build("{}").unwrap();
+    let wire: CallWire =
+        parse(r#"{"operation": "run_code", "arguments": {"code": "print(1)"}}"#).unwrap();
+    let failure = core.acall(&wire).await.unwrap_err();
+    assert!(matches!(
+        failure,
+        SessionFailure::Invalid(ConvertError::Container)
+    ));
+}
+
+#[tokio::test]
+async fn core_answers_a_delete_with_no_container_as_a_conversion_failure() {
+    let core: SessionCore = SessionCore::build("{}").unwrap();
+    let wire: CallWire = parse(r#"{"operation": "delete_sandbox", "arguments": {}}"#).unwrap();
+    let failure = core.acall(&wire).await.unwrap_err();
+    assert!(matches!(
+        failure,
+        SessionFailure::Invalid(ConvertError::Container)
+    ));
+}
+
+#[tokio::test]
+async fn core_answers_an_unusable_code_interpreter_interval_as_a_conversion_failure() {
+    let core: SessionCore = SessionCore::build("{}").unwrap();
+    let wire: CallWire =
+        parse(r#"{"operation": "code_interpreter", "arguments": {"poll_interval": -1.0}}"#)
+            .unwrap();
+    let failure = core.acall(&wire).await.unwrap_err();
+    assert!(matches!(
+        failure,
+        SessionFailure::Invalid(ConvertError::Timeout { .. })
+    ));
+}

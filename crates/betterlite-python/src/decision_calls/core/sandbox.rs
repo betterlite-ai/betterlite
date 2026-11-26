@@ -27,7 +27,10 @@ impl SessionCore {
 
     pub(super) fn resolve_tool(&self, wire: &CallWire) -> Result<String, SessionFailure> {
         let tools = self.tools.lock().unwrap_or_else(PoisonError::into_inner);
-        let found = tools.tools.get(&wire.arguments.name);
+        let found = match wire.arguments.name.as_deref() {
+            Some(name) => tools.tools.get(name),
+            None => None,
+        };
         tool_answer(found).map_err(SessionFailure::from)
     }
 

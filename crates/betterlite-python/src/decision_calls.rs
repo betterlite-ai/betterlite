@@ -2,6 +2,7 @@ mod convert;
 mod core;
 mod error;
 mod sandbox;
+mod tests;
 mod transport;
 
 use std::sync::Arc;
