@@ -65,11 +65,8 @@ async fn publishes_the_pruned_settings_and_answers_the_caller_message() {
     assert_eq!(published[0].0, SETTING);
     assert_eq!(published[0].1, stored);
     let section = harness.stored(Section::LitellmSettings).unwrap();
-    assert_eq!(
-        section.get("other_setting"),
-        Some(&json!({"enabled": true}))
-    );
-    assert_eq!(section.get("default_internal_user_params"), Some(&stored));
+    // the config file owns other_setting, so the save writes only the changed key to the database row
+    assert_eq!(section, values(&[("default_internal_user_params", stored)]));
 }
 
 #[tokio::test]
