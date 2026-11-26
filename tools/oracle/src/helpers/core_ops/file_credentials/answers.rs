@@ -14,7 +14,6 @@ use betterlite_core::api::file_credentials::team::{
 use betterlite_models::controls::call_params::TRUSTED_CREDENTIALS_KEY;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
-use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::HelperResult;
 use secrecy::ExposeSecret as _;
 use serde_json::{Value, json};
@@ -116,28 +115,6 @@ fn team_answer(provider: &str, built: &Scenario<'_>) -> HelperResult {
     Ok(json!({"function": "team_credentials", "credentials": found, "lookups": lookups}))
 }
 
-fn apply_answer(provider: &str, built: &Scenario<'_>, data: &JsonObject) -> HelperResult {
-    let merged = merged_data(built, provider, data)?;
-    Ok(json!({"function": "apply_team_credentials", "data": merged}))
-}
-
-fn merged_data(
-    built: &Scenario<'_>,
-    provider: &str,
-    data: &JsonObject,
-) -> Result<JsonObject, Box<HelperError>> {
-    let mut merged = data.clone();
-    apply_team_credentials(
-        &mut merged,
-        built.catalog.as_ref(),
-        &built.identity,
-        provider,
-        &built.expansion.context(),
-    )
-    .map_err(|error| failure(error.to_string()))?;
-    Ok(merged)
-}
-
 fn internal_answer(model_id: Option<&str>, data: &JsonObject, router: &RouterInput) -> Value {
     let catalog = ScriptedCatalog::new(router);
     // a caller-supplied mapping under the internal key, which the Python side reports on a miss
@@ -195,7 +172,16 @@ pub(crate) fn answer(call: &Call) -> HelperResult {
             router,
         } => {
             let built = scenario(key, router.as_ref())?;
-            apply_answer(provider, &built, data)
+            let mut merged = data.clone();
+            apply_team_credentials(
+                &mut merged,
+                built.catalog.as_ref(),
+                &built.identity,
+                provider,
+                &built.expansion.context(),
+            )
+            .map_err(|error| failure(error.to_string()))?;
+            Ok(json!({"function": "apply_team_credentials", "data": merged}))
         }
         Call::InternalCredentials {
             model_id,
