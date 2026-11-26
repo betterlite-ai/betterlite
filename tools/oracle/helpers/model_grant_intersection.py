@@ -31,7 +31,6 @@ Function = Literal["enforced", "collected", "stamped"]
 Fault = Literal["team", "user", "project", "membership", "org", "serving"]
 JsonRow = dict[str, JsonValue]
 Row = dict[str, object]
-Include = Mapping[str, JsonValue] | None
 
 
 class Call(TypedDict):
@@ -49,12 +48,6 @@ class Call(TypedDict):
     registry: NotRequired[list[str]]
     serving: NotRequired[dict[str, list[str]]]
     outages: NotRequired[list[Fault]]
-
-
-class Answer(TypedDict):
-    value: JsonValue
-    error: JsonValue
-    events: list[str]
 
 
 class StoredRow(BaseModel):
@@ -82,7 +75,7 @@ class Table:
         self.outage = outage
 
     async def find_unique(
-        self, *, where: Mapping[str, JsonValue], include: Include = None
+        self, *, where: Mapping[str, JsonValue], include: Mapping[str, JsonValue] | None = None
     ) -> StoredRow | None:
         del include
         key = self.key(where)
@@ -184,9 +177,7 @@ def identifier(row: JsonRow) -> tuple[str, ...]:
 
 
 def client_of(call: Call, events: list[str], *, faults: bool = True) -> FakePrismaClient:
-    outages = outages_of(call)
-    if not faults:
-        outages = []
+    outages = [] if not faults else outages_of(call)
     db: dict[str, Table | RegistryTable] = {}
     sources: list[tuple[str, str, JsonRow | None]] = [
         ("litellm_teamtable", "team", call.get("team")),
@@ -236,47 +227,50 @@ async def walked(call: Call, auth: UserAPIKeyAuth, harness: Harness) -> JsonValu
     client = client_of(call, harness.events) if call["database"] else None
     if call["function"] == "enforced":
         allowlists = await enforced_model_allowlists(auth, client, harness.cache, harness.proxy)
-        view: list[list[str]] = [[str(model) for model in models] for models in allowlists]
-        return JSON.validate_python(view)
+        return JSON.validate_python([list(models) for models in allowlists])
+    loaded = bool(call.get("membership_loaded"))
+    preloader = client_of(call, [], faults=False)
     team: LiteLLM_TeamTableCachedObj | None = None
     project: LiteLLM_ProjectTableCachedObj | None = None
     membership: LiteLLM_TeamMembership | None = None
-    loaded_flag = call.get("membership_loaded")
-    loaded = False if loaded_flag is None else loaded_flag
-    if client is not None:
-        preloader = client_of(call, [], faults=False)
-        listed_team = call.get("team")
-        if listed_team is not None:
-            team_id = TEXT.validate_python(listed_team["team_id"])
-            team = await get_team_object(team_id, preloader, harness.cache)
-        listed_project = call.get("project")
-        if listed_project is not None:
-            project_id = TEXT.validate_python(listed_project["project_id"])
-            project = await get_project_object(project_id, preloader, harness.cache)
-        listed_membership = call.get("membership")
-        if listed_membership is not None and loaded:
-            user_id = TEXT.validate_python(listed_membership["user_id"])
-            member_team = TEXT.validate_python(listed_membership["team_id"])
-            membership = await get_team_membership(user_id, member_team, preloader, harness.cache)
-    serving = call.get("serving")
-    if serving is None:
-        serving = {}
-    router = ScriptedRouter(serving, harness.events, unreadable="serving" in outages_of(call))
+    listed_team = call.get("team")
+    if listed_team is not None:
+        team_id = TEXT.validate_python(listed_team["team_id"])
+        team = await get_team_object(team_id, preloader, harness.cache)
+    listed_project = call.get("project")
+    if listed_project is not None:
+        project_id = TEXT.validate_python(listed_project["project_id"])
+        project = await get_project_object(project_id, preloader, harness.cache)
+    listed_membership = call.get("membership")
+    if listed_membership is not None and loaded:
+        user_id = TEXT.validate_python(listed_membership["user_id"])
+        member_team = TEXT.validate_python(listed_membership["team_id"])
+        membership = await get_team_membership(user_id, member_team, preloader, harness.cache)
+    router = router_of(call, harness)
     if call["function"] == "collected":
         matched = await collect_matched_model_access_groups(
             call.get("models"), auth, team, project, router, client,
             harness.cache, harness.proxy, membership, loaded,
         )
-        names: list[str] = [str(name) for name in matched]
-        return JSON.validate_python(names)
+        return JSON.validate_python(list(matched))
     returned = await stamp_matched_model_access_groups(
         call.get("models"), auth, team, project, router, client,
         harness.cache, harness.proxy, membership, loaded,
     )
-    stored = auth.matched_model_access_groups
+    return stamp_of(returned, auth.matched_model_access_groups)
+
+
+def router_of(call: Call, harness: Harness) -> ScriptedRouter:
+    serving = call.get("serving")
+    if serving is None:
+        serving = {}
+    return ScriptedRouter(serving, harness.events, unreadable="serving" in outages_of(call))
+
+
+def stamp_of(returned: tuple[str, ...], stored: list[str] | None) -> JsonValue:
     stamp: dict[str, list[str]] = {
-        "returned": [str(name) for name in returned],
-        "stored": [] if stored is None else [str(name) for name in stored],
+        "returned": list(returned),
+        "stored": [] if stored is None else stored,
     }
     return JSON.validate_python(stamp)
 
@@ -293,5 +287,9 @@ def run(input_value: Call) -> JsonValue:
     except (httpx.ConnectError, RuntimeError, ValueError):
         missing: dict[str, JsonValue] = {"status": None}
         error = JSON.validate_python(missing)
-    answer: Answer = {"value": value, "error": error, "events": harness.events}
+    answer: JsonRow = {
+        "value": value,
+        "error": error,
+        "events": JSON.validate_python(harness.events),
+    }
     return JSON.validate_python(answer)
