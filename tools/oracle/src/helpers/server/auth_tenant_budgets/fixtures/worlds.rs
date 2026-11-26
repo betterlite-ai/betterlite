@@ -1,13 +1,8 @@
 use std::collections::BTreeMap;
-use std::sync::Arc;
 
 use async_trait::async_trait;
 use betterlite_auth::auth_cache::AuthCacheError;
 use betterlite_auth::auth_cache::payload::PayloadError;
-use betterlite_auth::auth_org_lookup::organization::OrgLookup;
-use betterlite_auth::auth_org_lookup::ports::{OrgCache, OrgStore, StoreAnswer};
-use betterlite_auth::auth_prefetch::rows::CachedProject;
-use betterlite_auth::auth_read::table::AuthReadError;
 use betterlite_auth::auth_tag_budgets::cache::{CachedValue, TagBudgetCache};
 use betterlite_auth::auth_tag_budgets::groups::ModelAccessGroupBudget;
 use betterlite_auth::auth_tag_budgets::rows::{
@@ -18,8 +13,6 @@ use betterlite_auth::budget_snapshots::BudgetSnapshotError;
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 use betterlite_db::budget_permission_rows::LiteLLMBudgetTable;
 use betterlite_db::managed_resource_rows::tag::TagTable;
-use betterlite_db::postgres_store::errors::DbError;
-use betterlite_db::resource_rows::organization::OrganizationTable;
 use betterlite_models::decisions::Json;
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
@@ -121,12 +114,13 @@ impl BudgetRows<ModelAccessGroupBudgetRow> for TagWorld {
         &self,
         names: Vec<String>,
     ) -> Result<Vec<ModelAccessGroupBudgetRow>, TagBudgetRowsFailure> {
-        Ok(self
-            .groups
-            .values()
-            .filter(|row| names.contains(&row.access_group_name))
-            .cloned()
-            .collect())
+        let mut found = Vec::new();
+        for name in names {
+            if let Some(row) = self.groups.get(&name) {
+                found.push(row.clone());
+            }
+        }
+        Ok(found)
     }
 
     async fn registry_rows(
@@ -134,89 +128,6 @@ impl BudgetRows<ModelAccessGroupBudgetRow> for TagWorld {
         _take: i64,
     ) -> Result<Vec<ModelAccessGroupBudgetRow>, TagBudgetRowsFailure> {
         Ok(self.groups.values().cloned().collect())
-    }
-}
-
-// the organization lookup a case seeds, either answering its one row or failing like an unreachable database
-pub(crate) struct OrgWorld {
-    organization: Option<OrganizationTable>,
-    raises: bool,
-}
-
-pub(crate) fn org_world(organization: Option<OrganizationTable>, raises: bool) -> Arc<OrgWorld> {
-    Arc::new(OrgWorld {
-        organization,
-        raises,
-    })
-}
-
-pub(crate) fn org_lookup(world: &Arc<OrgWorld>) -> OrgLookup {
-    let cache: Arc<dyn OrgCache> = Arc::<OrgWorld>::clone(world);
-    let store: Arc<dyn OrgStore> = Arc::<OrgWorld>::clone(world);
-    OrgLookup {
-        store: Some(store),
-        cache,
-        in_memory_ttl: 5.0_f64,
-    }
-}
-
-#[async_trait]
-impl OrgCache for OrgWorld {
-    async fn read_org(
-        &self,
-        _key: &str,
-        _local_only: bool,
-    ) -> Result<Option<OrganizationTable>, AuthCacheError> {
-        Ok(None)
-    }
-
-    async fn write_org(
-        &self,
-        _key: &str,
-        _org: &OrganizationTable,
-        _ttl: f64,
-    ) -> Result<(), AuthCacheError> {
-        Ok(())
-    }
-
-    async fn read_project(&self, _key: &str) -> Result<Option<CachedProject>, AuthCacheError> {
-        Ok(None)
-    }
-
-    async fn write_project(
-        &self,
-        _key: &str,
-        _project: &CachedProject,
-        _ttl: f64,
-    ) -> Result<(), AuthCacheError> {
-        Ok(())
-    }
-
-    fn management_ttl(&self) -> f64 {
-        60.0
-    }
-}
-
-#[async_trait]
-impl OrgStore for OrgWorld {
-    async fn find_org(&self, org_id: &str, _include_budget: bool) -> StoreAnswer<Option<String>> {
-        if self.raises {
-            return Err(Box::new(AuthReadError::Repository(DbError::CreateNull)));
-        }
-        let found = self
-            .organization
-            .clone()
-            .filter(|row| row.organization_id.as_deref() == Some(org_id));
-        Ok(found
-            .map(|row| serde_json::to_string(&row).expect("the seeded organization serializes")))
-    }
-
-    async fn find_by_alias(&self, _org_alias: &str) -> StoreAnswer<Vec<String>> {
-        Ok(Vec::new())
-    }
-
-    async fn find_project(&self, _project_id: &str) -> StoreAnswer<Option<String>> {
-        Ok(None)
     }
 }
 
