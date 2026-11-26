@@ -4752,6 +4752,7 @@ dependencies = [
  "betterlite-prompts",
  "betterlite-provider",
  "betterlite-pyhost",
+ "betterlite-rag",
  "betterlite-rate-limit",
  "betterlite-redact",
  "betterlite-redis",
