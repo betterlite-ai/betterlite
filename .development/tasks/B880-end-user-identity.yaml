@@ -64,6 +64,7 @@ description: >-
   B1100 registers state/end_user_identity.rs as a stub slot, so fill only crates/betterlite-server/src/state/end_user_identity.rs and leave state.rs as it is.
 scope:
   paths:
+    - "crates/betterlite-server/src/server.rs"
     - crates/betterlite-auth/src/end_user_identity.rs
     - crates/betterlite-auth/src/end_user_identity/**
     - crates/betterlite-auth/Cargo.toml
