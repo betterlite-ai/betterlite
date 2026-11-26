@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+mod accounting_edges;
 mod descriptor_service;
 mod support;
 
