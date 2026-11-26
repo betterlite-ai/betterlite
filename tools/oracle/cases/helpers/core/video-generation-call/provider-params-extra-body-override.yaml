@@ -1,0 +1,22 @@
+kind: helper
+name: b3338-provider-params-extra-body-override
+call:
+  b3338:
+    function: provider
+    call:
+      prompt: a prompt
+      model: sora-2
+      seconds: "8"
+      size: 720x1280
+      user: null
+      custom_llm_provider: null
+      extra_headers: {x-team: health}
+      extra_query: null
+      extra_body: {size: "480x854", seed: "7"}
+      timeout: 600
+      kwargs: {user: u1}
+    model: sora-2
+    drop_params: false
+    mock_response: ""
+env: {}
+compare: {ignore: []}
