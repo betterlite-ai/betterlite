@@ -1,0 +1,79 @@
+kind: helper
+name: organization-route-policy-all-requested-organizations
+call:
+  organization_route_policy:
+    calls:
+      # the singular id and each list entry are candidates, and every candidate must be administered
+      - function: org_admin
+        user:
+          user_role: internal_user
+          organization_memberships:
+            - {organization_id: org-a, user_role: org_admin}
+            - {organization_id: org-b, user_role: org_admin}
+        request: {organization_id: org-a, organizations: [org-b]}
+      - function: org_admin
+        user:
+          user_role: internal_user
+          organization_memberships:
+            - {organization_id: org-a, user_role: org_admin}
+            - {organization_id: org-b, user_role: org_admin}
+        request: {organizations: [org-a, org-b, org-a]}
+      # a singular id the caller only belongs to is not hidden by an administered list
+      - function: org_admin
+        user:
+          user_role: internal_user
+          organization_memberships:
+            - {organization_id: org-a, user_role: org_admin}
+            - {organization_id: org-b, user_role: org_admin}
+        request: {organization_id: org-c, organizations: [org-a]}
+      # a null singular id joins no candidate, and a non-list organizations value is no candidate list
+      - function: org_admin
+        user:
+          user_role: internal_user
+          organization_memberships:
+            - {organization_id: org-a, user_role: org_admin}
+        request: {organization_id: null, organizations: [org-a]}
+      - function: org_admin
+        user:
+          user_role: internal_user
+          organization_memberships:
+            - {organization_id: org-a, user_role: org_admin}
+        request: {organization_id: org-a, organizations: org-b}
+      # non-string candidates can match no administered organization
+      - function: org_admin
+        user:
+          user_role: internal_user
+          organization_memberships:
+            - {organization_id: org-a, user_role: org_admin}
+        request: {organization_id: org-a, organizations: [7]}
+      - function: org_admin
+        user:
+          user_role: internal_user
+          organization_memberships:
+            - {organization_id: org-a, user_role: org_admin}
+        request: {organization_id: 12}
+      # no candidates, no memberships, no user, and a proxy admin without an administered organization
+      - function: org_admin
+        user:
+          user_role: internal_user
+          organization_memberships:
+            - {organization_id: org-a, user_role: org_admin}
+      - function: org_admin
+        user:
+          user_role: internal_user
+          organization_memberships:
+            - {organization_id: org-a, user_role: org_admin}
+        request: {organizations: []}
+      - function: org_admin
+        user: {user_role: internal_user}
+        request: {organization_id: org-a}
+      - function: org_admin
+        request: {organization_id: org-a}
+      - function: org_admin
+        user:
+          user_role: proxy_admin
+          organization_memberships:
+            - {organization_id: org-a, user_role: internal_user}
+        request: {organization_id: org-a}
+env: {}
+compare: {ignore: []}

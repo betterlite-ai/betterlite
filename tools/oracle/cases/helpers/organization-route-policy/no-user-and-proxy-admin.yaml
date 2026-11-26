@@ -1,0 +1,38 @@
+kind: helper
+name: organization-route-policy-no-user-and-proxy-admin
+call:
+  organization_route_policy:
+    calls:
+      # a request without a user object skips every organization route check
+      - function: role_check
+        route: /organization/new
+      - function: role_check
+        route: /organization/info
+        request: {organization_id: org-a}
+      # a proxy admin passes /organization/new and returns before the selected-organization checks
+      - function: role_check
+        user: {user_role: proxy_admin}
+        route: /organization/new
+      - function: role_check
+        user: {user_role: proxy_admin}
+        route: /organization/info
+      - function: role_check
+        user: {user_role: proxy_admin, organization_memberships: []}
+        route: /team/new
+      # every other role, including org_admin and a missing role, is refused at creation
+      - function: role_check
+        user: {user_role: internal_user, organization_memberships: null}
+        route: /organization/new
+      - function: role_check
+        user: {user_role: null}
+        route: /organization/new
+      - function: role_check
+        user: {user_role: org_admin}
+        route: /organization/new
+      # a route outside the pinned list is untouched
+      - function: role_check
+        user: {user_role: internal_user, organization_memberships: []}
+        route: /v1/chat/completions
+        request: {model: gpt-4}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,57 @@
+kind: helper
+name: organization-route-policy-one-org-team-create-requires-id
+call:
+  organization_route_policy:
+    calls:
+      # one membership is enough to make organization_id required on /team/new
+      - function: role_check
+        user:
+          user_role: internal_user
+          organization_memberships:
+            - {organization_id: org-a, user_role: org_admin}
+        route: /team/new
+      - function: role_check
+        user:
+          user_role: internal_user
+          organization_memberships:
+            - {organization_id: org-a, user_role: org_admin}
+        route: /team/new
+        request: {organization_id: null}
+      # an empty string is a passed id, so the selected-organization role check answers
+      - function: role_check
+        user:
+          user_role: internal_user
+          organization_memberships:
+            - {organization_id: org-a, user_role: org_admin}
+        route: /team/new
+        request: {organization_id: ""}
+      - function: role_check
+        user:
+          user_role: internal_user
+          organization_memberships:
+            - {organization_id: org-a, user_role: org_admin}
+        route: /team/new
+        request: {organization_id: org-a}
+      # no memberships and an empty list both leave /team/new unrestricted
+      - function: role_check
+        user: {user_role: internal_user, organization_memberships: []}
+        route: /team/new
+      - function: role_check
+        user: {user_role: internal_user, organization_memberships: null}
+        route: /team/new
+      # a null-id row still counts as a membership, and it contributes no organization to the message list
+      - function: role_check
+        user:
+          user_role: internal_user
+          organization_memberships:
+            - {organization_id: null, user_role: org_admin}
+        route: /team/new
+      - function: role_check
+        user:
+          user_role: internal_user
+          organization_memberships:
+            - {organization_id: org-b, user_role: internal_user}
+        route: /team/new
+        request: {organization_id: org-b}
+env: {}
+compare: {ignore: []}
