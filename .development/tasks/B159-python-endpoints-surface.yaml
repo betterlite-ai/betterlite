@@ -16,6 +16,9 @@ description: >-
 
 scope:
   paths:
+  - crates/betterlite-python/python/betterlite/__init__.py
+  - crates/betterlite-python/python/betterlite/main.py
+  - crates/betterlite-python/tests/endpoint_server.py
   - crates/betterlite-python/tests/test_endpoint_surface.py
   lint_tables: false
 references:
