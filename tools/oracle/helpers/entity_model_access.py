@@ -25,7 +25,7 @@ from litellm.proxy.common_utils.user_api_key_cache import (
     UserApiKeyCache,
     team_membership_reservation_cache_key,
 )
-from litellm.proxy.utils import PrismaClient, ProxyLogging
+from litellm.proxy.utils import PrismaClient
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
 
@@ -95,18 +95,16 @@ class Database(PrismaClient):
     def __init__(self) -> None: ...
 
 
-class ServiceLogging:
-    async def async_service_success_hook(self, **_kwargs: object) -> None: ...
-
-
-class ProxyLoggingStub(ProxyLogging):
+class ProxyLoggingStub:
     def __init__(self) -> None:
-        self.service_logging_obj = ServiceLogging()
+        self.service_logging_obj = self
+
+    async def async_service_success_hook(self, **_kwargs: JsonValue) -> None: ...
 
 
 class ProxyServer(ModuleType):
     prisma_client: PrismaClient | None
-    proxy_logging_obj: ProxyLogging | None
+    proxy_logging_obj: ProxyLoggingStub
     user_api_key_cache: UserApiKeyCache
 
 
