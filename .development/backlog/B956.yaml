@@ -1,7 +1,7 @@
 id: B956
 milestone: M5 api families
 title: Chat mcp plans
-status: blocked
+status: todo
 depends_on: [B014, B171, B948, B949, B1087, B950]
 file: tasks/B956-chat-mcp-plans.yaml
 covers:
@@ -10,5 +10,5 @@ parent: B080
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, MCP tools in chat wait on MCP"
+blocked_reason: null
 pr: null

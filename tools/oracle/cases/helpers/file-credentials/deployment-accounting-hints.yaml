@@ -1,0 +1,160 @@
+kind: helper
+name: file-credentials-deployment-accounting-hints
+call:
+  file_credentials:
+    calls:
+    - function: deployment_info
+      model_id: d1
+      data:
+        x: 1
+        litellm_metadata: {keep: 1, model_info: {old: true}}
+      router:
+        model_names: []
+        access_groups: {}
+        deployments: []
+        credentials:
+          d1:
+            api_key: k1
+            api_base: https://one
+            vertex_credentials: {type: service_account}
+            model: m1
+            custom_llm_provider: openai
+        credential_deployments:
+          d1:
+            access_windows: null
+            allow_fail_open: null
+            base_model: null
+            blocked: null
+            cache_creation_input_token_cost: null
+            cache_read_input_token_cost: null
+            cost_per_ptu_per_hour: null
+            created_at: null
+            created_by: null
+            db_model: false
+            discoverable: null
+            enable_tag_filtering: null
+            id: d1
+            input_cost_per_character: null
+            input_cost_per_token: null
+            internal_router_model: null
+            member_auto_router: false
+            output_cost_per_character: null
+            output_cost_per_token: null
+            ptu_count: null
+            ptu_effective_from: null
+            ptu_effective_to: null
+            team_id: t
+            team_public_model_name: null
+            tier: null
+            tiered_pricing: null
+            updated_at: null
+            updated_by: null
+    - function: deployment_info
+      model_id: missing
+      data: {x: 1}
+      router:
+        model_names: []
+        access_groups: {}
+        deployments: []
+        credentials:
+          d1:
+            api_key: k1
+            api_base: https://one
+            vertex_credentials: {type: service_account}
+            model: m1
+            custom_llm_provider: openai
+        credential_deployments:
+          d1:
+            access_windows: null
+            allow_fail_open: null
+            base_model: null
+            blocked: null
+            cache_creation_input_token_cost: null
+            cache_read_input_token_cost: null
+            cost_per_ptu_per_hour: null
+            created_at: null
+            created_by: null
+            db_model: false
+            discoverable: null
+            enable_tag_filtering: null
+            id: d1
+            input_cost_per_character: null
+            input_cost_per_token: null
+            internal_router_model: null
+            member_auto_router: false
+            output_cost_per_character: null
+            output_cost_per_token: null
+            ptu_count: null
+            ptu_effective_from: null
+            ptu_effective_to: null
+            team_id: t
+            team_public_model_name: null
+            tier: null
+            tiered_pricing: null
+            updated_at: null
+            updated_by: null
+    - function: deployment_info
+      model_id: d1
+      data: {x: 1}
+    - function: internal_credentials
+      model_id: d1
+      data: {x: 1}
+      router:
+        model_names: []
+        access_groups: {}
+        deployments: []
+        credentials:
+          d1:
+            api_key: k1
+            api_base: https://one
+            vertex_credentials: {type: service_account}
+            model: m1
+            custom_llm_provider: openai
+        credential_deployments: {}
+    - function: internal_credentials
+      model_id: null
+      data: {x: 1, _litellm_internal_model_credentials: {api_key: caller}}
+      router:
+        model_names: []
+        access_groups: {}
+        deployments: []
+        credentials:
+          d1:
+            api_key: k1
+            api_base: https://one
+            vertex_credentials: {type: service_account}
+            model: m1
+            custom_llm_provider: openai
+        credential_deployments: {}
+    - function: internal_credentials
+      model_id: missing
+      data: {x: 1, _litellm_internal_model_credentials: {api_key: caller}}
+      router:
+        model_names: []
+        access_groups: {}
+        deployments: []
+        credentials:
+          d1:
+            api_key: k1
+            api_base: https://one
+            vertex_credentials: {type: service_account}
+            model: m1
+            custom_llm_provider: openai
+        credential_deployments: {}
+    - function: internal_credentials
+      model_id: d1
+      data: {x: 1, _litellm_internal_model_credentials: {api_key: caller}}
+      router:
+        model_names: []
+        access_groups: {}
+        deployments: []
+        credentials:
+          d1:
+            api_key: k1
+            api_base: https://one
+            vertex_credentials: {type: service_account}
+            model: m1
+            custom_llm_provider: openai
+        credential_deployments: {}
+env: {}
+compare: {ignore: []}

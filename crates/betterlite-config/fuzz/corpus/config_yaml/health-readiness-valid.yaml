@@ -1,0 +1,13 @@
+general_settings:
+  allow_public_health_readiness_details: true
+  enable_drain_endpoint: true
+  drain_endpoint_token: pre-stop-secret
+  alerting:
+    - slack
+litellm_settings:
+  request_timeout: 1200
+model_list:
+  - model_name: health-readiness-model
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: sk-health-readiness

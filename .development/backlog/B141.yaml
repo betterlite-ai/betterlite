@@ -1,7 +1,7 @@
 id: B141
 milestone: M9 agents and mcp
 title: Agents API, agent registry and agent identity
-status: blocked
+status: todo
 depends_on: [B549, B4782, B4788, B8100, B8589, B8610, B8648, B9850]
 file: tasks/B141-a2a-backend-auth-wiring.yaml
 covers:
@@ -10,5 +10,5 @@ parent: null
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, agents API can wait"
+blocked_reason: null
 pr: null
