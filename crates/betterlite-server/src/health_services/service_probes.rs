@@ -197,9 +197,9 @@ fn health_reply(status: IntegrationHealthStatus, healthy: &str) -> ServiceBody {
 }
 
 fn sqs_reply(
-    status: Result<IntegrationHealthStatus, ServiceTestError>,
+    outcome: Result<IntegrationHealthStatus, ServiceTestError>,
 ) -> Result<Option<ServiceBody>, ServiceError> {
-    let status = status?;
+    let status = outcome?;
     Ok(Some(ServiceBody::Health(HealthBody {
         status: status.status,
         message: status.error_message,
