@@ -1,0 +1,27 @@
+task: B3423
+deviations:
+  - what: "delete_eval and cancel_eval are async functions, and adelete_eval and acancel_eval await them directly instead of running a sync function through partial, contextvars.copy_context and loop.run_in_executor."
+    why: "betterlite's evals transport is async only (B9370), and Rust has neither contextvars nor a GIL, so there is no sync body to hand to an executor; each wrapper sets the same async keyword and awaits the same prepare, transform, send and response."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L808-L831
+  - what: "adelete_eval and acancel_eval copy the call keywords before they set the async keyword to true, instead of writing into the caller's kwargs dict."
+    why: "docs/compatibility.md leaves caller data unchanged; LiteLLM's kwargs[\"adelete_eval\"] = True and kwargs[\"acancel_eval\"] = True write into the dict the caller passed, which betterlite does not copy back."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L811
+  - what: "litellm_logging_obj, litellm_call_id, client and shared_session arrive as typed parameters (the log argument, EvalLifecycleDeps::client) instead of kwargs entries, and the logging object cannot be absent."
+    why: "LiteLLM reads them out of **kwargs, so a call without litellm_logging_obj fails as an AttributeError that exception_type maps; betterlite takes B249's logging state as a required argument and the pooled client and request timeout as dependencies."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L867-L872
+  - what: "local_vars = locals() is not captured, so exception_type runs with the model, the provider and the original exception only."
+    why: "LiteLLM passes completion_kwargs=local_vars so exception_type can read the call keywords; betterlite's dispatch (B185) reads the error's own status, message and body, and the same inputs stay on EvalLifecycleCall for a caller that needs them."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L865-L932
+  - what: "The request timeout is a Duration on EvalLifecycleDeps that the caller resolves from B198's configured request_timeout, and a supplied zero duration falls back to it as `timeout or request_timeout` does."
+    why: "LiteLLM reads the litellm.constants.request_timeout module global (6000 seconds unless REQUEST_TIMEOUT is set) when it calls the handler; betterlite keeps that value in config, and Python's falsey zero takes the same path a missing timeout does."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L570
+  - what: "A provider name with no evals API config answers a BadRequestError (400) with model \"\" and the provider set, where LiteLLM's ValueError goes through exception_type and comes out as an APIConnectionError (500)."
+    why: "The provider name is the caller's input and the call can never succeed, so a 500 tells the client the server broke when its own request was wrong."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L879-L884
+  - what: "cancel_eval takes the request body out of transform_cancel_eval_request and never hands it to the handler, and the handler posts {} as LiteLLM's cancel handler does."
+    why: "The transform's body is not sent by LiteLLM either (json={}), so dropping it keeps the wire body empty and leaves no path that could send a transformed body."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1041-L1066
+kept_bugs:
+  - what: "delete_eval and cancel_eval accept extra_query and never forward it to the provider."
+    why: "LiteLLM declares the parameter and its handler call passes no query, so a working caller that sets extra_query relies on it being ignored; betterlite keeps the keyword accepted and dropped rather than forwarding it."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L911-L922
