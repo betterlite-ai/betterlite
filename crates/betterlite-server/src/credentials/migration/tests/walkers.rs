@@ -11,8 +11,8 @@ use super::super::store::{CallbackRow, CallbackTable};
 use super::support::{
     EXPECTED_LOCATIONS, FailingTransform, FakeError, FakeRotation, FakeStore, RotationCall,
     SALT_KEY, Write, callback_row, callback_settings_metadata, callback_text,
-    callback_vars_metadata, cipher, covered_report, field_text, legacy, location_names,
-    location_of, marked, migration, object, open, secret, v2,
+    callback_vars_metadata, cipher, clean_store, covered_report, field_text, legacy,
+    location_names, location_of, marked, migration, object, open, secret, v2,
 };
 
 #[tokio::test]
@@ -236,11 +236,7 @@ async fn a_failed_callback_transform_counts_the_legacy_values_undecryptable() {
 }
 
 fn team_write_fixture() -> FakeStore {
-    let store = FakeStore::default();
-    store.scans.lock().unwrap().extend([
-        covered_report([0, 0, 0, 0, 0, 0]),
-        covered_report([0, 0, 0, 0, 0, 0]),
-    ]);
+    let store = clean_store();
     store.teams.lock().unwrap().extend([
         callback_row(
             "team-1",
@@ -358,22 +354,23 @@ async fn invalid_json_inside_a_config_row_propagates() {
 }
 
 fn sso_fixture() -> FakeStore {
-    let store = FakeStore::default();
-    store.scans.lock().unwrap().extend([
-        covered_report([0, 0, 0, 0, 0, 0]),
-        covered_report([0, 0, 0, 0, 0, 0]),
-    ]);
-    store.settings.lock().unwrap().insert(
-        "sso_config".to_owned(),
-        object(vec![
-            ("client_secret", secret(&legacy(SALT_KEY, "sso-secret"))),
-            ("client_id", secret("plain-client")),
-            ("already", secret(&v2(SALT_KEY, "sso-done"))),
-            ("empty", secret("")),
-            ("count", MigrationJson::Bool(true)),
-        ]),
-    );
+    let store = clean_store();
     store
+        .settings
+        .lock()
+        .unwrap()
+        .insert("sso_config".to_owned(), sso_values());
+    store
+}
+
+fn sso_values() -> MigrationJson {
+    object(vec![
+        ("client_secret", secret(&legacy(SALT_KEY, "sso-secret"))),
+        ("client_id", secret("plain-client")),
+        ("already", secret(&v2(SALT_KEY, "sso-done"))),
+        ("empty", secret("")),
+        ("count", MigrationJson::Bool(true)),
+    ])
 }
 
 #[tokio::test]

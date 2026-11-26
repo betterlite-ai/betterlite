@@ -115,6 +115,63 @@ const INSERT_TEAM_STRING: &str = "INSERT INTO \"LiteLLM_TeamTable\" (team_id, me
 const INSERT_TOKEN: &str = "INSERT INTO \"LiteLLM_VerificationToken\" (token, metadata, updated_at) \
      VALUES ($1, ($2::text)::jsonb, TIMESTAMP '2000-01-01 00:00:00')";
 
+#[derive(Clone, Copy)]
+struct Row<'a> {
+    table: &'a str,
+    column: &'a str,
+    key_column: &'a str,
+    key: &'a str,
+}
+
+const ENVIRONMENT_VARIABLES: Row<'static> = Row {
+    table: "LiteLLM_Config",
+    column: "param_value",
+    key_column: "param_name",
+    key: "environment_variables",
+};
+const VANTAGE: Row<'static> = Row {
+    table: "LiteLLM_Config",
+    column: "param_value",
+    key_column: "param_name",
+    key: "vantage_settings",
+};
+const CLOUDZERO: Row<'static> = Row {
+    table: "LiteLLM_Config",
+    column: "param_value",
+    key_column: "param_name",
+    key: "cloudzero_settings",
+};
+const SSO: Row<'static> = Row {
+    table: "LiteLLM_SSOConfig",
+    column: "sso_settings",
+    key_column: "id",
+    key: "sso_config",
+};
+const TEAM_MARKED: Row<'static> = Row {
+    table: "LiteLLM_TeamTable",
+    column: "metadata",
+    key_column: "team_id",
+    key: "team-marked",
+};
+const TEAM_CLEAN: Row<'static> = Row {
+    table: "LiteLLM_TeamTable",
+    column: "metadata",
+    key_column: "team_id",
+    key: "team-clean",
+};
+const TEAM_STRING: Row<'static> = Row {
+    table: "LiteLLM_TeamTable",
+    column: "metadata",
+    key_column: "team_id",
+    key: "team-string",
+};
+const TOKEN_CLEAN: Row<'static> = Row {
+    table: "LiteLLM_VerificationToken",
+    column: "metadata",
+    key_column: "token",
+    key: "token-clean",
+};
+
 #[derive(Parser)]
 struct TestEnvironment {
     #[arg(long, env = "POSTGRES_TEST_URL")]
@@ -188,14 +245,14 @@ impl Harness {
         row.get::<_, String>(0)
     }
 
-    async fn json_kind(&self, table: &str, column: &str, key_column: &str, key: &str) -> String {
+    async fn kind(&self, table: &str, column: &str, key_column: &str, key: &str) -> String {
         let sql = format!(
             "SELECT jsonb_typeof(\"{column}\")::text FROM \"{table}\" WHERE \"{key_column}\" = $1"
         );
         self.probe(&sql, &[&key]).await
     }
 
-    async fn json_content(
+    async fn content(
         &self,
         table: &str,
         column: &str,
@@ -211,6 +268,20 @@ impl Harness {
     async fn updated_at(&self, table: &str, key_column: &str, key: &str) -> String {
         let sql = format!("SELECT updated_at::text FROM \"{table}\" WHERE \"{key_column}\" = $1");
         self.probe(&sql, &[&key]).await
+    }
+
+    async fn kind_of(&self, row: Row<'_>) -> String {
+        self.kind(row.table, row.column, row.key_column, row.key)
+            .await
+    }
+
+    async fn content_of(&self, row: Row<'_>) -> MigrationJson {
+        self.content(row.table, row.column, row.key_column, row.key)
+            .await
+    }
+
+    async fn updated_at_of(&self, row: Row<'_>) -> String {
+        self.updated_at(row.table, row.key_column, row.key).await
     }
 
     async fn snapshot(&self) -> Vec<String> {
@@ -241,84 +312,106 @@ impl Harness {
 async fn seed(harness: &Harness) {
     seed_covered_rows(harness).await;
     seed_config_rows(harness).await;
-    seed_sso_and_token_rows(harness).await;
-    seed_team_rows(harness).await;
+    seed_callback_rows(harness).await;
+    seed_sso_row(harness).await;
+}
+
+async fn insert_value(harness: &Harness, statement: &str, value: &MigrationJson) {
+    let text = json(value);
+    harness.execute(statement, &[&text]).await;
+}
+
+async fn insert_row(harness: &Harness, statement: &str, name: &str, value: &MigrationJson) {
+    let text = json(value);
+    harness.execute(statement, &[&name, &text]).await;
 }
 
 async fn seed_covered_rows(harness: &Harness) {
-    let model = json(&object(vec![(
-        "api_key",
-        secret(&legacy(SALT_KEY, "sk-model")),
-    )]));
-    harness.execute(INSERT_MODEL, &[&model]).await;
-    let credential = json(&object(vec![(
-        "token",
-        secret(&legacy(SALT_KEY, "sk-credential")),
-    )]));
-    harness.execute(INSERT_CREDENTIAL, &[&credential]).await;
-    let environment = json(&object(vec![(
-        "DB_PASSWORD",
-        secret(&legacy(SALT_KEY, "db-password")),
-    )]));
-    harness
-        .execute(
-            INSERT_CONFIG_OBJECT,
-            &[&"environment_variables", &environment],
-        )
-        .await;
+    for (statement, value) in [(INSERT_MODEL, model()), (INSERT_CREDENTIAL, credential())] {
+        insert_value(harness, statement, &value).await;
+    }
 }
 
 async fn seed_config_rows(harness: &Harness) {
-    let vantage = json(&object(vec![
+    for (statement, name, value) in config_rows() {
+        insert_row(harness, statement, name, &value).await;
+    }
+}
+
+async fn seed_callback_rows(harness: &Harness) {
+    for (statement, key, metadata) in callback_rows() {
+        insert_row(harness, statement, key, &metadata).await;
+    }
+}
+
+async fn seed_sso_row(harness: &Harness) {
+    insert_value(harness, INSERT_SSO, &sso()).await;
+}
+
+fn model() -> MigrationJson {
+    object(vec![("api_key", secret(&legacy(SALT_KEY, "sk-model")))])
+}
+
+fn credential() -> MigrationJson {
+    object(vec![("token", secret(&legacy(SALT_KEY, "sk-credential")))])
+}
+
+fn config_rows() -> [(&'static str, &'static str, MigrationJson); 3] {
+    [
+        (INSERT_CONFIG_OBJECT, "environment_variables", environment()),
+        (INSERT_CONFIG_OBJECT, "vantage_settings", vantage()),
+        (INSERT_CONFIG_STRING, "cloudzero_settings", cloudzero()),
+    ]
+}
+
+fn environment() -> MigrationJson {
+    object(vec![(
+        "DB_PASSWORD",
+        secret(&legacy(SALT_KEY, "db-password")),
+    )])
+}
+
+fn vantage() -> MigrationJson {
+    object(vec![
         ("api_key", secret(&legacy(SALT_KEY, "sk-vantage"))),
         ("integration_token", secret(&v2(SALT_KEY, "token-vantage"))),
-    ]));
-    harness
-        .execute(INSERT_CONFIG_OBJECT, &[&"vantage_settings", &vantage])
-        .await;
-    let cloudzero = json(&object(vec![(
-        "api_key",
-        secret(&legacy(SALT_KEY, "sk-cloudzero")),
-    )]));
-    harness
-        .execute(INSERT_CONFIG_STRING, &[&"cloudzero_settings", &cloudzero])
-        .await;
+    ])
 }
 
-async fn seed_sso_and_token_rows(harness: &Harness) {
-    let sso = json(&object(vec![
+fn cloudzero() -> MigrationJson {
+    object(vec![("api_key", secret(&legacy(SALT_KEY, "sk-cloudzero")))])
+}
+
+fn callback_rows() -> [(&'static str, &'static str, MigrationJson); 4] {
+    [
+        (INSERT_TEAM_OBJECT, "team-marked", team_marked()),
+        (INSERT_TEAM_OBJECT, "team-clean", team_clean()),
+        (INSERT_TEAM_STRING, "team-string", team_string()),
+        (INSERT_TOKEN, "token-clean", token_metadata()),
+    ]
+}
+
+fn team_marked() -> MigrationJson {
+    callback_vars_metadata(vec![("api_key", marked(&legacy(SALT_KEY, "sk-team")))])
+}
+
+fn team_clean() -> MigrationJson {
+    callback_settings_metadata(vec![("api_key", marked(&v2(SALT_KEY, "sk-done")))])
+}
+
+fn team_string() -> MigrationJson {
+    callback_vars_metadata(vec![("api_key", marked(&legacy(SALT_KEY, "sk-string")))])
+}
+
+fn token_metadata() -> MigrationJson {
+    object(vec![("other", secret("value"))])
+}
+
+fn sso() -> MigrationJson {
+    object(vec![
         ("client_secret", secret(&legacy(SALT_KEY, "sso-secret"))),
         ("client_id", secret("plain-client")),
-    ]));
-    harness.execute(INSERT_SSO, &[&sso]).await;
-    let token = json(&object(vec![("other", secret("value"))]));
-    harness
-        .execute(INSERT_TOKEN, &[&"token-clean", &token])
-        .await;
-}
-
-async fn seed_team_rows(harness: &Harness) {
-    let team_marked = json(&callback_vars_metadata(vec![(
-        "api_key",
-        marked(&legacy(SALT_KEY, "sk-team")),
-    )]));
-    harness
-        .execute(INSERT_TEAM_OBJECT, &[&"team-marked", &team_marked])
-        .await;
-    let team_clean = json(&callback_settings_metadata(vec![(
-        "api_key",
-        marked(&v2(SALT_KEY, "sk-done")),
-    )]));
-    harness
-        .execute(INSERT_TEAM_OBJECT, &[&"team-clean", &team_clean])
-        .await;
-    let team_string = json(&callback_vars_metadata(vec![(
-        "api_key",
-        marked(&legacy(SALT_KEY, "sk-string")),
-    )]));
-    harness
-        .execute(INSERT_TEAM_STRING, &[&"team-string", &team_string])
-        .await;
+    ])
 }
 
 async fn real_run(
@@ -424,140 +517,77 @@ fn assert_report_counts(report: &MigrationReport, rotation: &FakeRotation) {
     );
 }
 
-async fn assert_team_marked_row(harness: &Harness) {
-    assert_eq!(
-        harness
-            .json_kind("LiteLLM_TeamTable", "metadata", "team_id", "team-marked")
-            .await,
-        "string"
-    );
-    let team_metadata = harness
-        .json_content("LiteLLM_TeamTable", "metadata", "team_id", "team-marked")
-        .await;
-    let sealed = callback_text(&team_metadata, "api_key");
+async fn assert_kind(harness: &Harness, row: Row<'_>, expected: &str) {
+    assert_eq!(harness.kind_of(row).await, expected);
+}
+
+async fn assert_sealed(harness: &Harness, row: Row<'_>, field: &str, expected: &str) {
+    let value = harness.content_of(row).await;
+    let text = field_text(&value, field).expect("the sealed field stays text");
+    assert!(text.starts_with("v2:gcm:"));
+    assert_eq!(open(SALT_KEY, &text).as_deref(), Some(expected));
+}
+
+async fn assert_legacy(harness: &Harness, row: Row<'_>, field: &str, expected: &str) {
+    let value = harness.content_of(row).await;
+    let text = field_text(&value, field).expect("the legacy field stays text");
+    assert!(!text.starts_with("v2:gcm:"));
+    assert_eq!(open(SALT_KEY, &text).as_deref(), Some(expected));
+}
+
+async fn assert_kept(harness: &Harness, row: Row<'_>, field: &str, expected: &str) {
+    let value = harness.content_of(row).await;
+    assert_eq!(field_text(&value, field).as_deref(), Some(expected));
+}
+
+async fn assert_marked(harness: &Harness, row: Row<'_>, field: &str, expected: &str) {
+    let metadata = harness.content_of(row).await;
+    let sealed = callback_text(&metadata, field);
     let inner = sealed
         .strip_prefix("litellm_enc::")
         .expect("the migrated value keeps the marker");
     assert!(inner.starts_with("v2:gcm:"));
-    assert_eq!(open(SALT_KEY, inner).as_deref(), Some("sk-team"));
-    assert_ne!(
-        harness
-            .updated_at("LiteLLM_TeamTable", "team_id", "team-marked")
-            .await,
-        SEED_TIME
-    );
+    assert_eq!(open(SALT_KEY, inner).as_deref(), Some(expected));
+}
+
+async fn assert_changed(harness: &Harness, row: Row<'_>) {
+    assert_ne!(harness.updated_at_of(row).await, SEED_TIME);
+}
+
+async fn assert_unchanged(harness: &Harness, row: Row<'_>) {
+    assert_eq!(harness.updated_at_of(row).await, SEED_TIME);
+}
+
+async fn assert_team_marked_row(harness: &Harness) {
+    assert_kind(harness, TEAM_MARKED, "string").await;
+    assert_marked(harness, TEAM_MARKED, "api_key", "sk-team").await;
+    assert_changed(harness, TEAM_MARKED).await;
 }
 
 async fn assert_team_clean_and_string_rows(harness: &Harness) {
-    assert_eq!(
-        harness
-            .json_kind("LiteLLM_TeamTable", "metadata", "team_id", "team-clean")
-            .await,
-        "object"
-    );
-    assert_eq!(
-        harness
-            .updated_at("LiteLLM_TeamTable", "team_id", "team-clean")
-            .await,
-        SEED_TIME
-    );
-    assert_eq!(
-        harness
-            .json_kind("LiteLLM_TeamTable", "metadata", "team_id", "team-string")
-            .await,
-        "string"
-    );
+    assert_kind(harness, TEAM_CLEAN, "object").await;
+    assert_unchanged(harness, TEAM_CLEAN).await;
+    assert_kind(harness, TEAM_STRING, "string").await;
 }
 
 async fn assert_vantage_row(harness: &Harness) {
-    assert_eq!(
-        harness
-            .json_kind(
-                "LiteLLM_Config",
-                "param_value",
-                "param_name",
-                "vantage_settings"
-            )
-            .await,
-        "string"
-    );
-    let vantage_value = harness
-        .json_content(
-            "LiteLLM_Config",
-            "param_value",
-            "param_name",
-            "vantage_settings",
-        )
-        .await;
-    let api_key = field_text(&vantage_value, "api_key").expect("api_key stays text");
-    assert!(api_key.starts_with("v2:gcm:"));
-    assert_eq!(open(SALT_KEY, &api_key).as_deref(), Some("sk-vantage"));
-    assert_eq!(
-        field_text(&vantage_value, "integration_token").as_deref(),
-        Some(v2(SALT_KEY, "token-vantage").as_str())
-    );
+    let token = v2(SALT_KEY, "token-vantage");
+    assert_kind(harness, VANTAGE, "string").await;
+    assert_sealed(harness, VANTAGE, "api_key", "sk-vantage").await;
+    assert_kept(harness, VANTAGE, "integration_token", &token).await;
 }
 
 async fn assert_environment_and_cloudzero_rows(harness: &Harness) {
-    assert_eq!(
-        harness
-            .json_kind(
-                "LiteLLM_Config",
-                "param_value",
-                "param_name",
-                "environment_variables"
-            )
-            .await,
-        "object"
-    );
-    let cloudzero = harness
-        .json_content(
-            "LiteLLM_Config",
-            "param_value",
-            "param_name",
-            "cloudzero_settings",
-        )
-        .await;
-    let cloudzero_key = field_text(&cloudzero, "api_key").expect("api_key stays text");
-    assert!(cloudzero_key.starts_with("v2:gcm:"));
-    assert_eq!(
-        open(SALT_KEY, &cloudzero_key).as_deref(),
-        Some("sk-cloudzero")
-    );
+    assert_kind(harness, ENVIRONMENT_VARIABLES, "object").await;
+    assert_sealed(harness, CLOUDZERO, "api_key", "sk-cloudzero").await;
 }
 
 async fn assert_sso_and_token_rows(harness: &Harness) {
-    assert_eq!(
-        harness
-            .json_kind("LiteLLM_SSOConfig", "sso_settings", "id", "sso_config")
-            .await,
-        "string"
-    );
-    let sso_value = harness
-        .json_content("LiteLLM_SSOConfig", "sso_settings", "id", "sso_config")
-        .await;
-    let client_secret = field_text(&sso_value, "client_secret").expect("client_secret stays text");
-    assert!(client_secret.starts_with("v2:gcm:"));
-    assert_eq!(
-        open(SALT_KEY, &client_secret).as_deref(),
-        Some("sso-secret")
-    );
-    assert_eq!(
-        field_text(&sso_value, "client_id").as_deref(),
-        Some("plain-client")
-    );
-    assert_ne!(
-        harness
-            .updated_at("LiteLLM_SSOConfig", "id", "sso_config")
-            .await,
-        SEED_TIME
-    );
-    assert_eq!(
-        harness
-            .updated_at("LiteLLM_VerificationToken", "token", "token-clean")
-            .await,
-        SEED_TIME
-    );
+    assert_kind(harness, SSO, "string").await;
+    assert_sealed(harness, SSO, "client_secret", "sso-secret").await;
+    assert_kept(harness, SSO, "client_id", "plain-client").await;
+    assert_changed(harness, SSO).await;
+    assert_unchanged(harness, TOKEN_CLEAN).await;
 }
 
 #[tokio::test]
@@ -578,57 +608,14 @@ async fn partial_failure_keeps_the_earlier_rows_written() {
 }
 
 async fn assert_earlier_rows_written(harness: &Harness) {
-    assert_eq!(
-        harness
-            .json_kind("LiteLLM_TeamTable", "metadata", "team_id", "team-marked")
-            .await,
-        "string"
-    );
-    assert_eq!(
-        harness
-            .json_kind(
-                "LiteLLM_Config",
-                "param_value",
-                "param_name",
-                "vantage_settings"
-            )
-            .await,
-        "string"
-    );
+    assert_kind(harness, TEAM_MARKED, "string").await;
+    assert_kind(harness, VANTAGE, "string").await;
 }
 
 async fn assert_cloudzero_and_sso_kept(harness: &Harness) {
-    assert_eq!(
-        harness
-            .json_kind(
-                "LiteLLM_Config",
-                "param_value",
-                "param_name",
-                "cloudzero_settings"
-            )
-            .await,
-        "string"
-    );
-    let cloudzero = harness
-        .json_content(
-            "LiteLLM_Config",
-            "param_value",
-            "param_name",
-            "cloudzero_settings",
-        )
-        .await;
-    let cloudzero_key = field_text(&cloudzero, "api_key").expect("api_key stays text");
-    assert!(!cloudzero_key.starts_with("v2:gcm:"));
-    assert_eq!(
-        open(SALT_KEY, &cloudzero_key).as_deref(),
-        Some("sk-cloudzero")
-    );
-    assert_eq!(
-        harness
-            .json_kind("LiteLLM_SSOConfig", "sso_settings", "id", "sso_config")
-            .await,
-        "object"
-    );
+    assert_kind(harness, CLOUDZERO, "string").await;
+    assert_legacy(harness, CLOUDZERO, "api_key", "sk-cloudzero").await;
+    assert_kind(harness, SSO, "object").await;
 }
 
 #[tokio::test]

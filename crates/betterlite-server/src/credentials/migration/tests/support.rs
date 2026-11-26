@@ -221,6 +221,15 @@ pub(super) fn covered_report(legacy: [u64; 6]) -> MigrationReport {
     )
 }
 
+pub(super) fn clean_store() -> FakeStore {
+    let store = FakeStore::default();
+    store.scans.lock().unwrap().extend([
+        covered_report([0, 0, 0, 0, 0, 0]),
+        covered_report([0, 0, 0, 0, 0, 0]),
+    ]);
+    store
+}
+
 #[derive(Debug, thiserror::Error)]
 pub(super) enum FakeError {
     #[error("the fake store has no queued scan")]
