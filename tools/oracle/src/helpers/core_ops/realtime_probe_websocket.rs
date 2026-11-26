@@ -1,4 +1,5 @@
 mod scripted;
+mod tests;
 
 use std::fmt::Display;
 use std::sync::Arc;
@@ -95,7 +96,7 @@ struct StoredCredential {
     credential_values: JsonObject,
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct InputSettings {
     #[serde(default)]
@@ -104,6 +105,16 @@ struct InputSettings {
     credential_timeout_seconds: f64,
     #[serde(default = "default_max_message_size")]
     max_message_size_bytes: usize,
+}
+
+impl Default for InputSettings {
+    fn default() -> Self {
+        Self {
+            azure_realtime_protocol: None,
+            credential_timeout_seconds: default_timeout(),
+            max_message_size_bytes: default_max_message_size(),
+        }
+    }
 }
 
 const fn default_timeout() -> f64 {
