@@ -30,8 +30,10 @@ from betterlite.sandbox.sandbox_tools import (
 )
 from betterlite.systemone import asystemone, systemone
 from betterlite.types.decisions import (
+    DecisionsResponse,
     NoulQuestion,
     OpenAIDecisionInputMessage,
+    OpenAIDecisionResponse,
     OpenAIPredicateQuestion,
 )
 
@@ -665,23 +667,35 @@ def test_models_calls_openai(mode: str, recording: RecordingServer) -> None:
     assert DECISION_VIEW.validate_json(response.model_dump_json())["model"] == MODEL
 
 
-@pytest.mark.parametrize("mode", ["sync", "async"])
+@pytest.mark.parametrize("mode", ["sync", "async", "legacy", "legacy-async"])
 def test_models_calls_systemone(mode: str, recording: RecordingServer) -> None:
-    questions = {"greeting": NoulQuestion(type="noul", instructions="Greeting?")}
+    question = TypeAdapter(NoulQuestion).validate_python(
+        {"type": "noul", "instructions": "Greeting?", "provider_hint": None}
+    )
+    questions = {"greeting": question}
     options: CallOptions = {
         "model": SYSTEMONE_MODEL,
         "api_key": API_KEY,
         "api_base": recording.url,
         "custom_llm_provider": "azure_ai",
     }
+    response: DecisionsResponse | OpenAIDecisionResponse
     if mode == "sync":
         response = systemone(state=SYSTEMONE_STATE, questions=questions, **options)
-    else:
+    elif mode == "async":
         response = asyncio.run(
             asystemone(state=SYSTEMONE_STATE, questions=questions, **options)
         )
+    elif mode == "legacy":
+        with pytest.warns(UserWarning, match="deprecated"):
+            response = decisions(state=SYSTEMONE_STATE, questions=questions, **options)
+    else:
+        with pytest.warns(UserWarning, match="deprecated"):
+            response = asyncio.run(
+                adecisions(state=SYSTEMONE_STATE, questions=questions, **options)
+            )
     assert recording.calls[-1]["body"]["questions"] == {
-        "greeting": {"type": "noul", "instructions": "Greeting?"},
+        "greeting": {"type": "noul", "instructions": "Greeting?", "provider_hint": None},
     }
     assert SYSTEMONE_VIEW.validate_json(response.model_dump_json())["model"] == SYSTEMONE_MODEL
 

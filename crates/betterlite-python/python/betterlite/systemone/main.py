@@ -31,7 +31,7 @@ def systemone(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/b
     named: dict[str, CallValue] = {
         "model": model,
         "state": JSON.validate_python(state),
-        "questions": JSON.validate_json(QUESTIONS.dump_json(questions, exclude_none=True)),
+        "questions": JSON.validate_json(QUESTIONS.dump_json(questions)),
         "api_key": api_key,
         "api_base": api_base,
         "timeout": timeout,
@@ -64,7 +64,7 @@ async def asystemone(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/li
     named: dict[str, CallValue] = {
         "model": model,
         "state": JSON.validate_python(state),
-        "questions": JSON.validate_json(QUESTIONS.dump_json(questions, exclude_none=True)),
+        "questions": JSON.validate_json(QUESTIONS.dump_json(questions)),
         "api_key": api_key,
         "api_base": api_base,
         "timeout": timeout,

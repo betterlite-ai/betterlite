@@ -148,7 +148,7 @@ def decisions(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/b
     named: dict[str, CallValue] = {
         "model": model,
         "input": JSON.validate_json(INPUT.dump_json(input, exclude_none=True)),
-        "questions": JSON.validate_json(QUESTIONS.dump_json(questions, exclude_none=True)),
+        "questions": JSON.validate_json(QUESTIONS.dump_json(questions)),
         "safety_identifier": safety_identifier,
         "api_key": api_key,
         "api_base": api_base,
@@ -184,7 +184,7 @@ async def adecisions(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/li
     named: dict[str, CallValue] = {
         "model": model,
         "input": JSON.validate_json(INPUT.dump_json(input, exclude_none=True)),
-        "questions": JSON.validate_json(QUESTIONS.dump_json(questions, exclude_none=True)),
+        "questions": JSON.validate_json(QUESTIONS.dump_json(questions)),
         "safety_identifier": safety_identifier,
         "api_key": api_key,
         "api_base": api_base,
