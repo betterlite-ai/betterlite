@@ -1,0 +1,39 @@
+kind: helper
+name: settings-schema-seed
+call:
+  settings_schema:
+    settings_key: default_internal_user_params
+    config:
+      litellm_settings:
+        default_internal_user_params:
+          user_role: internal_user_viewer
+    schema:
+      description: root
+      properties:
+        user_role:
+          type: string
+        models:
+          description: outer models
+          anyOf:
+            - type: array
+              items:
+                $ref: "#/$defs/ModelName"
+            - type: "null"
+      $defs:
+        ModelName:
+          enum:
+            - gpt-4o
+      definitions:
+        Legacy:
+          description: legacy section
+          properties:
+            model_name:
+              description: the model name
+    defaults:
+      user_role: internal_user_viewer
+      max_budget: null
+      budget_duration: null
+      models: null
+      teams: null
+env: {}
+compare: {ignore: []}
