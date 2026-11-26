@@ -30,6 +30,7 @@ pub(super) const CATALOG: &str = r#"{
     "bedrock/canvas-fixture-bedrock-suffix": {"litellm_provider": "bedrock", "supports_nova_canvas_image_edit": true},
     "canvas-fixture-base": {"litellm_provider": "amazon", "supports_nova_canvas_image_edit": true},
     "bedrock/canvas-fixture-base-entry": {"litellm_provider": "bedrock", "supports_nova_canvas_image_edit": true},
+    "bedrock/canvas-fixture-underside": {"litellm_provider": "bedrock", "supports_nova_canvas_image_edit": true},
     "canvas-fixture-dated": {"litellm_provider": "amazon", "supports_nova_canvas_image_edit": true},
     "Canvas-Fixture-Mixed": {"litellm_provider": "amazon", "supports_nova_canvas_image_edit": true},
     "canvas-fixture-off": {"litellm_provider": "amazon", "supports_nova_canvas_image_edit": false},

@@ -210,6 +210,7 @@ pub(super) fn canvas_catalog_eligibility() {
     for model in [
         "",
         "canvas-fixture-absent",
+        "canvas-fixture-underside",
         "canvas-fixture-off",
         "canvas-fixture-text",
         "canvas-fixture-null",
