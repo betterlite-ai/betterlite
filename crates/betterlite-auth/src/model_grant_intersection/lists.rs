@@ -18,24 +18,15 @@ pub fn text_models(values: &[JsonData]) -> Vec<String> {
 
 #[must_use]
 pub fn team_models(team: Option<&LiteLLMTeamTableCachedObj>) -> Vec<String> {
-    match team {
-        Some(object) => object.team.fields.base.models.clone(),
-        None => Vec::new(),
-    }
+    team.map_or_else(Vec::new, |object| object.team.fields.base.models.clone())
 }
 
 #[must_use]
 pub fn user_models(user: Option<&LiteLLMUserTable>) -> Vec<String> {
-    match user {
-        Some(row) => text_models(&row.models),
-        None => Vec::new(),
-    }
+    user.map_or_else(Vec::new, |row| text_models(&row.models))
 }
 
 #[must_use]
 pub fn project_models(project: Option<&CachedProject>) -> Vec<String> {
-    match project {
-        Some(cached) => cached.project.models.clone(),
-        None => Vec::new(),
-    }
+    project.map_or_else(Vec::new, |cached| cached.project.models.clone())
 }

@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::error::Error;
 use std::io::Error as IoError;
 use std::sync::{Mutex, PoisonError};
 
@@ -88,12 +89,15 @@ impl GrantSources for Fixture {
                 )))),
             });
         }
-        match self.team.as_ref() {
-            Some(row) if row.team.fields.base.team_id == team_id => Ok(row.clone()),
-            _ => Err(TeamLookupError::TeamNotFound {
+        let matching = self
+            .team
+            .as_ref()
+            .filter(|row| row.team.fields.base.team_id == team_id);
+        matching
+            .cloned()
+            .ok_or_else(|| TeamLookupError::TeamNotFound {
                 team_id: team_id.to_owned(),
-            }),
-        }
+            })
     }
 
     async fn user_object(
@@ -175,9 +179,9 @@ impl ServingGroups for Fixture {
     ) -> Result<BTreeSet<String>, ServingFailure> {
         self.record(format!("serving {model} team={}", team_id.unwrap_or("-")));
         if self.outages.contains(&Fault::Serving) {
-            return Err(ServingFailure::from(Box::new(IoError::other(
-                "the access group store is down",
-            ))));
+            let failure: Box<dyn Error + Send + Sync> =
+                Box::new(IoError::other("the access group store is down"));
+            return Err(ServingFailure::from(failure));
         }
         Ok(self.serving.get(model).cloned().unwrap_or_default())
     }

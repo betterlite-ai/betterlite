@@ -14,21 +14,18 @@ pub async fn team_member_granted_models(
     membership_loaded: bool,
     sources: &dyn GrantSources,
 ) -> Result<Vec<String>, IntersectionError> {
-    let Some(team) = team else {
+    let Some(team_row) = team else {
         return Ok(Vec::new());
     };
     let Some(user_id) = token.user_id.as_deref() else {
         return Ok(Vec::new());
     };
-    let membership = if membership_loaded {
+    let member_row = if membership_loaded {
         membership
     } else {
         sources
-            .membership(user_id, &team.team.fields.base.team_id)
+            .membership(user_id, &team_row.team.fields.base.team_id)
             .await?
     };
-    match membership {
-        Some(row) => Ok(member_allowed_models(&row).to_vec()),
-        None => Ok(Vec::new()),
-    }
+    Ok(member_row.map_or_else(Vec::new, |row| member_allowed_models(&row).to_vec()))
 }

@@ -4,6 +4,34 @@ use crate::model_grant_intersection::stamp::{
 use crate::model_grant_intersection::tests::support::{
     Logs, World, auth_object, group_set, list, owned, text,
 };
+use crate::resolved_key::auth::UserAPIKeyAuth;
+
+async fn stamp_from_registry(
+    auth: &mut UserAPIKeyAuth,
+    models: &[String],
+    registry: &[&str],
+    expected: &str,
+) {
+    let world = World::new()
+        .with_registry(Ok(Some(group_set(registry))))
+        .with_serving(&[("gpt-4o", &["tier-a", "tier-b"])]);
+    let matched = stamp_matched_groups(StampRequest {
+        models: Some(models),
+        auth: Some(&mut *auth),
+        team: None,
+        project: None,
+        membership: None,
+        membership_loaded: false,
+        groups: Some(&world),
+        sources: Some(&world),
+    })
+    .await;
+    assert_eq!(matched, owned(&[expected]));
+    assert_eq!(
+        matched_model_access_groups(auth),
+        owned(&[expected]).as_slice()
+    );
+}
 
 #[tokio::test]
 async fn matched_group_stamping() {
@@ -12,45 +40,8 @@ async fn matched_group_stamping() {
         ("team_id", text("team-1")),
     ]);
     let models = owned(&["gpt-4o"]);
-    let first = World::new()
-        .with_registry(Ok(Some(group_set(&["tier-a"]))))
-        .with_serving(&[("gpt-4o", &["tier-a", "tier-b"])]);
-    let matched = stamp_matched_groups(StampRequest {
-        models: Some(&models),
-        auth: Some(&mut auth),
-        team: None,
-        project: None,
-        membership: None,
-        membership_loaded: false,
-        groups: Some(&first),
-        sources: Some(&first),
-    })
-    .await;
-    assert_eq!(matched, owned(&["tier-a"]));
-    assert_eq!(
-        matched_model_access_groups(&auth),
-        owned(&["tier-a"]).as_slice()
-    );
-
-    let second = World::new()
-        .with_registry(Ok(Some(group_set(&["tier-b"]))))
-        .with_serving(&[("gpt-4o", &["tier-a", "tier-b"])]);
-    let matched = stamp_matched_groups(StampRequest {
-        models: Some(&models),
-        auth: Some(&mut auth),
-        team: None,
-        project: None,
-        membership: None,
-        membership_loaded: false,
-        groups: Some(&second),
-        sources: Some(&second),
-    })
-    .await;
-    assert_eq!(matched, owned(&["tier-b"]));
-    assert_eq!(
-        matched_model_access_groups(&auth),
-        owned(&["tier-b"]).as_slice()
-    );
+    stamp_from_registry(&mut auth, &models, &["tier-a"], "tier-a").await;
+    stamp_from_registry(&mut auth, &models, &["tier-b"], "tier-b").await;
 }
 
 #[tokio::test]
@@ -84,10 +75,8 @@ async fn stamp_exception_debug_drop() {
     );
 }
 
-#[tokio::test]
-async fn empty_stamp_keeps_previous() {
+async fn previous_stamp_survives_empty_match() {
     let models = owned(&["gpt-4o"]);
-
     let mut auth = auth_object(&[("models", list(&["gpt-4o"]))]);
     auth.extra.matched_model_access_groups = Some(owned(&["previous"]));
     let world = World::new()
@@ -109,11 +98,14 @@ async fn empty_stamp_keeps_previous() {
         matched_model_access_groups(&auth),
         owned(&["previous"]).as_slice()
     );
+}
 
-    let mut fresh = auth_object(&[("models", list(&["gpt-4o"]))]);
-    let other = World::new()
+async fn fresh_auth_stays_unstamped() {
+    let models = owned(&["gpt-4o"]);
+    let world = World::new()
         .with_registry(Ok(Some(group_set(&["tier-a"]))))
         .with_serving(&[("gpt-4o", &["tier-a"])]);
+    let mut fresh = auth_object(&[("models", list(&["gpt-4o"]))]);
     let matched = stamp_matched_groups(StampRequest {
         models: Some(&models),
         auth: Some(&mut fresh),
@@ -121,14 +113,17 @@ async fn empty_stamp_keeps_previous() {
         project: None,
         membership: None,
         membership_loaded: false,
-        groups: Some(&other),
-        sources: Some(&other),
+        groups: Some(&world),
+        sources: Some(&world),
     })
     .await;
     assert!(matched.is_empty());
     assert!(matched_model_access_groups(&fresh).is_empty());
+}
 
-    let untouched = World::new();
+async fn missing_auth_writes_nothing() {
+    let models = owned(&["gpt-4o"]);
+    let world = World::new();
     let matched = stamp_matched_groups(StampRequest {
         models: Some(&models),
         auth: None,
@@ -136,10 +131,17 @@ async fn empty_stamp_keeps_previous() {
         project: None,
         membership: None,
         membership_loaded: false,
-        groups: Some(&untouched),
-        sources: Some(&untouched),
+        groups: Some(&world),
+        sources: Some(&world),
     })
     .await;
     assert!(matched.is_empty());
-    assert!(untouched.effects().is_empty());
+    assert!(world.effects().is_empty());
+}
+
+#[tokio::test]
+async fn empty_stamp_keeps_previous() {
+    previous_stamp_survives_empty_match().await;
+    fresh_auth_stays_unstamped().await;
+    missing_auth_writes_nothing().await;
 }

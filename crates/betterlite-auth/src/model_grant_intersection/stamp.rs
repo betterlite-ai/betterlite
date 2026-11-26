@@ -24,7 +24,7 @@ pub struct StampRequest<'request> {
 pub async fn stamp_matched_groups(request: StampRequest<'_>) -> Vec<String> {
     let StampRequest {
         models,
-        auth,
+        auth: auth_option,
         team,
         project,
         membership,
@@ -32,7 +32,7 @@ pub async fn stamp_matched_groups(request: StampRequest<'_>) -> Vec<String> {
         groups,
         sources,
     } = request;
-    let Some(auth) = auth else {
+    let Some(auth) = auth_option else {
         return Vec::new();
     };
     let token = GrantToken::of(auth);

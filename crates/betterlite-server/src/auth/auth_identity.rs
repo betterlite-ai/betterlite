@@ -144,8 +144,7 @@ pub(crate) fn dispatch(
     master_key: &SecretString,
 ) -> Result<AuthContext, StageFailure> {
     match backend {
-        AuthBackend::MasterKey => master_key_stage(input, master_key)
-            .map_err(|failure| StageFailure::Authentication(Box::new(failure))),
+        AuthBackend::MasterKey => master_key_stage(input, master_key).map_err(StageFailure::from),
         AuthBackend::AuthRequestPolicy => auth_request_policy_stage(input),
         AuthBackend::RequestBodySafety => auth_request_body_safety_stage(input),
         AuthBackend::AuthRequestModels => auth_request_models_stage(input)
@@ -187,13 +186,8 @@ pub(crate) fn dispatch(
             // the lookup and the budget check ran in the prefetch, so only the identity is left
             Ok(stage.context.clone())
         }
-        AuthBackend::ModelGrantIntersection => {
-            let StageInput::ModelGrantIntersection(stage) = input else {
-                return Err(StageFailure::from(AuthenticationFailure::Missing));
-            };
-            // the allowlist walk and the attribution ran in the prefetch, so only the identity is left
-            Ok(stage.context.clone())
-        }
+        // the allowlist walk and the attribution ran in the prefetch, so only the identity is left
+        AuthBackend::ModelGrantIntersection => model_grant_intersection_stage(input),
     }
 }
 
@@ -278,6 +272,13 @@ fn master_key_stage(
         Some(_) | None => AuthenticationFailure::Missing,
     };
     Err(failure)
+}
+
+fn model_grant_intersection_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
+    let StageInput::ModelGrantIntersection(stage) = input else {
+        return Err(StageFailure::from(AuthenticationFailure::Missing));
+    };
+    Ok(stage.context.clone())
 }
 
 mod tests;

@@ -93,10 +93,13 @@ pub(crate) async fn prefetch(stage: &GrantStageInput) -> Result<(), Box<ProxyExc
     let Some(key) = rule.key.as_ref() else {
         return Ok(());
     };
-    let sources = match (stage.database, rule.sources.as_deref()) {
-        (true, Some(sources)) => Some(sources),
-        (true, None) => return Ok(()),
-        (false, _) => None,
+    let sources = if stage.database {
+        let Some(present) = rule.sources.as_deref() else {
+            return Ok(());
+        };
+        Some(present)
+    } else {
+        None
     };
     let token = GrantToken::of(key);
     let allowlists = enforced_model_allowlists(EnforcedRequest {
@@ -109,10 +112,10 @@ pub(crate) async fn prefetch(stage: &GrantStageInput) -> Result<(), Box<ProxyExc
         let failure = error.as_auth_failure();
         Box::new(as_proxy_exception(&failure).exception().clone())
     })?;
-    let matched = match sources {
-        Some(sources) => stamped(key, rule, sources).await,
-        None => Vec::new(),
-    };
+    let mut matched = Vec::new();
+    if let Some(wired) = sources {
+        matched = stamped(key, rule, wired).await;
+    }
     if let Some(sink) = rule.sink.as_deref() {
         sink.record(&allowlists, &matched);
     }

@@ -218,10 +218,11 @@ async fn collection_errors_escape() {
     assert!(matches!(error, IntersectionError::Registry(_)));
     assert_eq!(error.http_status(), None);
 
-    let world = World::new().with_registry(Ok(None)).with_broken_router();
-    let error = collect_matched_groups(collect_request(&world, Some(&token), Some(&models)))
-        .await
-        .unwrap_err();
-    assert!(matches!(error, IntersectionError::Groups(_)));
-    assert_eq!(error.http_status(), None);
+    let router_world = World::new().with_registry(Ok(None)).with_broken_router();
+    let router_error =
+        collect_matched_groups(collect_request(&router_world, Some(&token), Some(&models)))
+            .await
+            .unwrap_err();
+    assert!(matches!(router_error, IntersectionError::Groups(_)));
+    assert_eq!(router_error.http_status(), None);
 }

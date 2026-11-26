@@ -147,7 +147,10 @@ impl GrantSink for Recorder {
     }
 }
 
-fn row<Row: DeserializeOwned>(text: &str) -> Row {
+fn row<Row>(text: &str) -> Row
+where
+    Row: DeserializeOwned,
+{
     serde_json::from_str(text).expect("the row fixture parses")
 }
 
@@ -294,7 +297,7 @@ fn assert_dispatch_reaches_the_stage() {
 }
 
 // the registered stage walks the grants on a request with a database and reaches the handler
-async fn assert_request_records_the_walk() {
+async fn assert_database_walk_records() {
     let recorder = Arc::new(Recorder::default());
     let (status, _body, reached) = run_request(
         &config_with_database(),
@@ -320,10 +323,12 @@ async fn assert_request_records_the_walk() {
         ]
     );
     assert_eq!(matched, vec!["tier-a".to_owned()]);
+}
 
-    // without a database the walk still assembles the two lists LiteLLM returns and stamps nothing
+// without a database the walk still assembles the two lists LiteLLM returns and stamps nothing
+async fn assert_no_database_walk_records() {
     let skipped = Arc::new(Recorder::default());
-    let (skip_status, _skip_body, skip_reached) = run_request(
+    let (status, _body, reached) = run_request(
         &config_with_master_key(),
         rule(
             Some(Arc::new(ScriptedSources {
@@ -333,23 +338,31 @@ async fn assert_request_records_the_walk() {
         ),
     )
     .await;
-    assert_eq!(skip_status, StatusCode::OK);
-    assert!(skip_reached);
-    let (skip_lists, skip_matched) = skipped.recorded().expect("the stage recorded its walk");
+    assert_eq!(status, StatusCode::OK);
+    assert!(reached);
+    let (lists, matched) = skipped.recorded().expect("the stage recorded its walk");
     assert_eq!(
-        skip_lists,
+        lists,
         vec![vec!["tier-a".to_owned()], Vec::new()],
         "the no-database answer pairs the key list with the token's team models"
     );
-    assert!(skip_matched.is_empty());
+    assert!(matched.is_empty());
+}
 
-    // a database without the stage's sources skips the walk rather than failing the request
+// a database without the stage's sources skips the walk rather than failing the request
+async fn assert_missing_sources_skips_the_walk() {
     let unwired = Arc::new(Recorder::default());
-    let (unwired_status, _unwired_body, unwired_reached) =
+    let (status, _body, reached) =
         run_request(&config_with_database(), rule(None, Arc::clone(&unwired))).await;
-    assert_eq!(unwired_status, StatusCode::OK);
-    assert!(unwired_reached);
+    assert_eq!(status, StatusCode::OK);
+    assert!(reached);
     assert!(unwired.recorded().is_none());
+}
+
+async fn assert_request_records_the_walk() {
+    assert_database_walk_records().await;
+    assert_no_database_walk_records().await;
+    assert_missing_sources_skips_the_walk().await;
 }
 
 #[tokio::test]

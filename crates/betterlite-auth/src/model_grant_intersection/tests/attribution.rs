@@ -5,8 +5,7 @@ use crate::model_grant_intersection::tests::support::{
     team_row, text,
 };
 
-#[tokio::test]
-async fn attribution_five_list_order() {
+async fn five_scope_lists() -> (World, Vec<Vec<String>>) {
     let world = World::new()
         .with_membership(Ok(Some(membership_row(
             "u1",
@@ -33,6 +32,12 @@ async fn attribution_five_list_order() {
     })
     .await
     .unwrap();
+    (world, lists)
+}
+
+#[tokio::test]
+async fn attribution_five_list_order() {
+    let (world, lists) = five_scope_lists().await;
     assert_eq!(
         lists,
         vec![
@@ -55,8 +60,7 @@ async fn attribution_five_list_order() {
     );
 }
 
-#[tokio::test]
-async fn key_org_before_team_org() {
+async fn key_org_wins() {
     let world = World::new().with_org(Ok(Some(organization_row("key-org", &["key-group"]))));
     let token = grant_token(&[
         ("models", list(&["*"])),
@@ -76,9 +80,12 @@ async fn key_org_before_team_org() {
     .unwrap();
     assert_eq!(lists[4], owned(&["key-group"]));
     assert_eq!(world.effects(), vec![Effect::Org("key-org".to_owned())]);
+}
 
+async fn team_org_used_when_key_has_none() {
     let world = World::new().with_org(Ok(Some(organization_row("team-org", &["team-group"]))));
     let token = grant_token(&[("models", list(&["*"]))]);
+    let team = team_row("team-1", &[], Some("team-org"));
     let lists = granted_model_lists(AttributionRequest {
         token: &token,
         team: Some(&team),
@@ -91,9 +98,12 @@ async fn key_org_before_team_org() {
     .unwrap();
     assert_eq!(lists[4], owned(&["team-group"]));
     assert_eq!(world.effects(), vec![Effect::Org("team-org".to_owned())]);
+}
 
+async fn empty_key_org_is_looked_up() {
     let world = World::new().with_org(Ok(None));
     let token = grant_token(&[("models", list(&["*"])), ("org_id", text(""))]);
+    let team = team_row("team-1", &[], Some("team-org"));
     let lists = granted_model_lists(AttributionRequest {
         token: &token,
         team: Some(&team),
@@ -106,13 +116,15 @@ async fn key_org_before_team_org() {
     .unwrap();
     assert_eq!(lists[4], Vec::<String>::new());
     assert_eq!(world.effects(), vec![Effect::Org(String::new())]);
+}
 
+async fn no_org_id_no_lookup() {
     let world = World::new();
-    let plain_team = team_row("team-1", &[], None);
+    let team = team_row("team-1", &[], None);
     let token = grant_token(&[("models", list(&["*"]))]);
     let lists = granted_model_lists(AttributionRequest {
         token: &token,
-        team: Some(&plain_team),
+        team: Some(&team),
         project: None,
         membership: None,
         membership_loaded: true,
@@ -122,6 +134,14 @@ async fn key_org_before_team_org() {
     .unwrap();
     assert_eq!(lists[4], Vec::<String>::new());
     assert!(world.effects().is_empty());
+}
+
+#[tokio::test]
+async fn key_org_before_team_org() {
+    key_org_wins().await;
+    team_org_used_when_key_has_none().await;
+    empty_key_org_is_looked_up().await;
+    no_org_id_no_lookup().await;
 }
 
 #[tokio::test]

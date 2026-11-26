@@ -50,45 +50,64 @@ fn split(answer: Answer) -> (Value, Value) {
 
 async fn walked(input: &Input, fixture: &Fixture, auth: &mut UserAPIKeyAuth) -> Answer {
     let token = GrantToken::of(auth);
-    let sources: Option<&dyn GrantSources> = if input.database { Some(fixture) } else { None };
+    let sources: Option<&dyn GrantSources> = input.database.then_some(fixture);
     match input.function {
-        Function::Enforced => Ok(json!(
-            enforced_model_allowlists(EnforcedRequest {
-                token: &token,
-                sources,
-                now: NOW,
-            })
-            .await?
-        )),
-        Function::Collected => Ok(json!(
-            collect_matched_groups(MatchedRequest {
-                models: input.models.as_deref(),
-                token: Some(&token),
-                team: fixture.team.as_ref(),
-                project: fixture.project.as_ref(),
-                membership: fixture.membership.clone(),
-                membership_loaded: input.membership_loaded,
-                groups: Some(fixture),
-                sources,
-            })
-            .await?
-        )),
-        Function::Stamped => {
-            let returned = stamp_matched_groups(StampRequest {
-                models: input.models.as_deref(),
-                auth: Some(&mut *auth),
-                team: fixture.team.as_ref(),
-                project: fixture.project.as_ref(),
-                membership: fixture.membership.clone(),
-                membership_loaded: input.membership_loaded,
-                groups: Some(fixture),
-                sources,
-            })
-            .await;
-            Ok(json!({
-                "returned": returned,
-                "stored": matched_model_access_groups(auth),
-            }))
-        }
+        Function::Enforced => enforced_answer(&token, sources).await,
+        Function::Collected => collected_answer(input, fixture, &token, sources).await,
+        Function::Stamped => Ok(stamped_answer(input, fixture, auth, &token, sources).await),
     }
+}
+
+async fn enforced_answer(token: &GrantToken, sources: Option<&dyn GrantSources>) -> Answer {
+    let lists = enforced_model_allowlists(EnforcedRequest {
+        token,
+        sources,
+        now: NOW,
+    })
+    .await?;
+    Ok(json!(lists))
+}
+
+async fn collected_answer(
+    input: &Input,
+    fixture: &Fixture,
+    token: &GrantToken,
+    sources: Option<&dyn GrantSources>,
+) -> Answer {
+    let matched = collect_matched_groups(MatchedRequest {
+        models: input.models.as_deref(),
+        token: Some(token),
+        team: fixture.team.as_ref(),
+        project: fixture.project.as_ref(),
+        membership: fixture.membership.clone(),
+        membership_loaded: input.membership_loaded,
+        groups: Some(fixture),
+        sources,
+    })
+    .await?;
+    Ok(json!(matched))
+}
+
+async fn stamped_answer(
+    input: &Input,
+    fixture: &Fixture,
+    auth: &mut UserAPIKeyAuth,
+    token: &GrantToken,
+    sources: Option<&dyn GrantSources>,
+) -> Value {
+    let returned = stamp_matched_groups(StampRequest {
+        models: input.models.as_deref(),
+        auth: Some(&mut *auth),
+        team: fixture.team.as_ref(),
+        project: fixture.project.as_ref(),
+        membership: fixture.membership.clone(),
+        membership_loaded: input.membership_loaded,
+        groups: Some(fixture),
+        sources,
+    })
+    .await;
+    json!({
+        "returned": returned,
+        "stored": matched_model_access_groups(auth),
+    })
 }

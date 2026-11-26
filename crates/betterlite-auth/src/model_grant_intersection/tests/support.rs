@@ -223,15 +223,20 @@ impl ServingGroups for World {
         let script = self.serving.lock().unwrap();
         match script.as_ref() {
             Some(Ok(map)) => Ok(map.get(model).cloned().unwrap_or_default()),
-            Some(Err(())) => Err(ServingFailure::from(Box::new(IoError::other(
-                "the access group store is down",
-            )))),
+            Some(Err(())) => {
+                let failure: Box<dyn Error + Send + Sync> =
+                    Box::new(IoError::other("the access group store is down"));
+                Err(ServingFailure::from(failure))
+            }
             None => panic!("the router ran while the test did not script it"),
         }
     }
 }
 
-fn row<Row: DeserializeOwned>(text: &str) -> Row {
+fn row<Row>(text: &str) -> Row
+where
+    Row: DeserializeOwned,
+{
     serde_json::from_str(text).unwrap()
 }
 
@@ -273,7 +278,7 @@ pub(super) fn auth_object(entries: &[(&str, JsonData)]) -> UserAPIKeyAuth {
 }
 
 pub(super) fn grant_token(entries: &[(&str, JsonData)]) -> GrantToken {
-    let auth = auth(entries);
+    let auth = auth_object(entries);
     GrantToken::of(&auth)
 }
 
@@ -282,12 +287,11 @@ pub(super) fn team_row(
     models: &[&str],
     org: Option<&str>,
 ) -> LiteLLMTeamTableCachedObj {
-    let org = match org {
-        Some(org_id) => format!(r#","organization_id":"{org_id}""#),
-        None => String::new(),
-    };
+    let organization = org.map_or_else(String::new, |org_id| {
+        format!(r#","organization_id":"{org_id}""#)
+    });
     row(&format!(
-        r#"{{"team_id":"{team_id}","models":[{}]{org},"last_refreshed_at":1.0}}"#,
+        r#"{{"team_id":"{team_id}","models":[{}]{organization},"last_refreshed_at":1.0}}"#,
         quoted(models)
     ))
 }
@@ -318,15 +322,15 @@ pub(super) fn membership_row(
     team_id: &str,
     allowed: Option<&[&str]>,
 ) -> LiteLLMTeamMembership {
-    match allowed {
-        Some(models) => row(&format!(
-            r#"{{"user_id":"{user_id}","team_id":"{team_id}","litellm_budget_table":{{"allowed_models":[{}]}}}}"#,
-            quoted(models)
-        )),
-        None => row(&format!(
-            r#"{{"user_id":"{user_id}","team_id":"{team_id}"}}"#
-        )),
-    }
+    allowed.map_or_else(
+        || row(&format!(r#"{{"user_id":"{user_id}","team_id":"{team_id}"}}"#)),
+        |models| {
+            row(&format!(
+                r#"{{"user_id":"{user_id}","team_id":"{team_id}","litellm_budget_table":{{"allowed_models":[{}]}}}}"#,
+                quoted(models)
+            ))
+        },
+    )
 }
 
 pub(super) fn unavailable() -> Box<dyn Error + Send + Sync> {

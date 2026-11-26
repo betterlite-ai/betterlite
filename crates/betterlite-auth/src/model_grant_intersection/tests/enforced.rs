@@ -34,14 +34,17 @@ async fn no_db_two_lists() {
         ("team_models", list(&["team-group"])),
         ("team_id", text("team-1")),
     ]);
-    let lists = enforced_model_allowlists(EnforcedRequest {
+    let sentinel_lists = enforced_model_allowlists(EnforcedRequest {
         token: &sentinel,
         sources: None,
         now: 0.0,
     })
     .await
     .unwrap();
-    assert_eq!(lists, vec![owned(&["team-group"]), owned(&["team-group"])]);
+    assert_eq!(
+        sentinel_lists,
+        vec![owned(&["team-group"]), owned(&["team-group"])]
+    );
 }
 
 #[tokio::test]
@@ -172,12 +175,11 @@ async fn non_text_user_models_grant_nothing() {
     assert_eq!(lists[3], owned(&["user-group"]));
 }
 
-#[tokio::test]
-async fn team_project_errors_escape() {
-    let team_token = grant_token(&[("team_id", text("team-1"))]);
+async fn assert_team_failure_escapes() {
+    let token = grant_token(&[("team_id", text("team-1"))]);
     let world = World::new().with_team(Err(TeamLookupError::NoDatabase));
     let error = enforced_model_allowlists(EnforcedRequest {
-        token: &team_token,
+        token: &token,
         sources: Some(&world),
         now: 0.0,
     })
@@ -190,22 +192,24 @@ async fn team_project_errors_escape() {
     assert_eq!(error.http_status(), None);
     assert!(matches!(error.as_auth_failure(), AuthFailure::Other { .. }));
 
-    let world = World::new().with_team(Err(TeamLookupError::TeamNotFound {
+    let missing_world = World::new().with_team(Err(TeamLookupError::TeamNotFound {
         team_id: "team-1".to_owned(),
     }));
-    let error = enforced_model_allowlists(EnforcedRequest {
-        token: &team_token,
-        sources: Some(&world),
+    let not_found = enforced_model_allowlists(EnforcedRequest {
+        token: &token,
+        sources: Some(&missing_world),
         now: 0.0,
     })
     .await
     .unwrap_err();
-    assert_eq!(error.http_status(), Some(404));
+    assert_eq!(not_found.http_status(), Some(404));
+}
 
-    let project_token = grant_token(&[("project_id", text("p1"))]);
+async fn assert_project_failure_escapes() {
+    let token = grant_token(&[("project_id", text("p1"))]);
     let world = World::new().with_project(Err(OrgLookupError::NoDatabase));
     let error = enforced_model_allowlists(EnforcedRequest {
-        token: &project_token,
+        token: &token,
         sources: Some(&world),
         now: 0.0,
     })
@@ -215,13 +219,15 @@ async fn team_project_errors_escape() {
         error,
         IntersectionError::Project(OrgLookupError::NoDatabase)
     ));
+}
 
-    let member_token = grant_token(&[("team_id", text("team-1")), ("user_id", text("u1"))]);
+async fn assert_member_failure_escapes() {
+    let token = grant_token(&[("team_id", text("team-1")), ("user_id", text("u1"))]);
     let world = World::new()
         .with_team(Ok(team_row("team-1", &[], None)))
         .with_membership(Err(MembershipLoadError::NoDatabase));
     let error = enforced_model_allowlists(EnforcedRequest {
-        token: &member_token,
+        token: &token,
         sources: Some(&world),
         now: 0.0,
     })
@@ -231,4 +237,11 @@ async fn team_project_errors_escape() {
         error,
         IntersectionError::Membership(MembershipLoadError::NoDatabase)
     ));
+}
+
+#[tokio::test]
+async fn team_project_errors_escape() {
+    assert_team_failure_escapes().await;
+    assert_project_failure_escapes().await;
+    assert_member_failure_escapes().await;
 }

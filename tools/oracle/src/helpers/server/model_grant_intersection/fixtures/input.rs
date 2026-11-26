@@ -132,59 +132,72 @@ pub(crate) struct Rows {
 
 pub(crate) fn rows(input: &Input) -> Result<Rows, Box<HelperError>> {
     Ok(Rows {
-        team: match &input.team {
-            Some(team) => Some(serde_json::from_value(json!({
-                "team_id": team.team_id,
-                "models": team.models,
-                "organization_id": team.organization_id,
-                "last_refreshed_at": 1.0_f64,
-            }))?),
-            None => None,
-        },
-        user: match &input.user {
-            Some(user) => Some(serde_json::from_value(json!({
-                "user_id": user.user_id,
-                "models": user.models,
-            }))?),
-            None => None,
-        },
-        project: match &input.project {
-            Some(project) => Some(serde_json::from_value(json!({
-                "project_id": project.project_id,
-                "models": project.models,
-                "last_refreshed_at": 1.0_f64,
-            }))?),
-            None => None,
-        },
-        org: match &input.org {
-            Some(org) => Some(serde_json::from_value(json!({
-                "organization_id": org.organization_id,
-                "budget_id": "oracle-budget",
-                "created_by": "oracle",
-                "updated_by": "oracle",
-                "models": org.models,
-            }))?),
-            None => None,
-        },
-        membership: match &input.membership {
-            Some(membership) => Some(serde_json::from_value(membership_json(membership))?),
-            None => None,
-        },
+        team: input.team.as_ref().map(team_row).transpose()?,
+        user: input.user.as_ref().map(user_row).transpose()?,
+        project: input.project.as_ref().map(project_row).transpose()?,
+        org: input.org.as_ref().map(org_row).transpose()?,
+        membership: input.membership.as_ref().map(membership_row).transpose()?,
     })
 }
 
+fn team_row(team: &Team) -> Result<LiteLLMTeamTableCachedObj, Box<HelperError>> {
+    let row = json!({
+        "team_id": team.team_id,
+        "models": team.models,
+        "organization_id": team.organization_id,
+        "last_refreshed_at": 1.0_f64,
+    });
+    Ok(serde_json::from_value(row)?)
+}
+
+fn user_row(user: &User) -> Result<LiteLLMUserTable, Box<HelperError>> {
+    let row = json!({
+        "user_id": user.user_id,
+        "models": user.models,
+    });
+    Ok(serde_json::from_value(row)?)
+}
+
+fn project_row(project: &Project) -> Result<CachedProject, Box<HelperError>> {
+    let row = json!({
+        "project_id": project.project_id,
+        "models": project.models,
+        "last_refreshed_at": 1.0_f64,
+    });
+    Ok(serde_json::from_value(row)?)
+}
+
+fn org_row(org: &Org) -> Result<OrganizationTable, Box<HelperError>> {
+    let row = json!({
+        "organization_id": org.organization_id,
+        "budget_id": "oracle-budget",
+        "created_by": "oracle",
+        "updated_by": "oracle",
+        "models": org.models,
+    });
+    Ok(serde_json::from_value(row)?)
+}
+
+fn membership_row(membership: &Membership) -> Result<LiteLLMTeamMembership, Box<HelperError>> {
+    Ok(serde_json::from_value(membership_json(membership))?)
+}
+
 fn membership_json(membership: &Membership) -> Value {
-    match &membership.allowed_models {
-        Some(allowed) => json!({
-            "user_id": membership.user_id,
-            "team_id": membership.team_id,
-            "litellm_budget_table": {"allowed_models": allowed},
-        }),
-        None => json!({
-            "user_id": membership.user_id,
-            "team_id": membership.team_id,
-        }),
-    }
+    membership.allowed_models.as_ref().map_or_else(
+        || {
+            json!({
+                "user_id": membership.user_id,
+                "team_id": membership.team_id,
+            })
+        },
+        |allowed| {
+            json!({
+                "user_id": membership.user_id,
+                "team_id": membership.team_id,
+                "litellm_budget_table": {"allowed_models": allowed},
+            })
+        },
+    )
 }
 
 pub(crate) fn auth(input: &Input) -> Result<UserAPIKeyAuth, Box<HelperError>> {
