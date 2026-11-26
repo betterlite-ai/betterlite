@@ -688,7 +688,8 @@ class ChunkedText(str):
     def __getitem__(
         self,
         key: (
-            "SupportsIndex | slice[SupportsIndex | None, SupportsIndex | None, SupportsIndex | None]"
+            "SupportsIndex | slice[SupportsIndex | None, "
+            "SupportsIndex | None, SupportsIndex | None]"
         ),
         /,
     ) -> str:
