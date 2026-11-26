@@ -155,19 +155,17 @@ pub(crate) fn end_user_stage_input(
     request: &Request<Body>,
     authenticated: Option<&AuthContext>,
 ) -> Result<EndUserStageInput, AuthenticationFailure> {
-    let mut stage = auth_end_users::stage_input(request, authenticated)?;
-    let mut rule = (*stage.rule).clone();
-    rule.end_user_id = stage
-        .context
-        .principal
-        .end_user
-        .as_ref()
-        .map(|identity| identity.id.clone());
-    stage.rule = Arc::new(rule);
-    Ok(stage)
+    auth_end_users::stage_input(request, authenticated).map(|mut stage| {
+        Arc::make_mut(&mut stage.rule).end_user_id = stage
+            .context
+            .principal
+            .end_user
+            .as_ref()
+            .map(|identity| identity.id.clone());
+        stage
+    })
 }
 
-// The following budget lookup must use the identity stage's resolved ID, including none.
 // LiteLLM lets a cache failure escape the auth path as an unhandled internal server error.
 fn exception(error: &ResolveError) -> ProxyException {
     tracing::error!(error = %error, "the end-user id validation failed");
