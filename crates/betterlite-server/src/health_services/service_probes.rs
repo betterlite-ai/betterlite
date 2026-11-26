@@ -125,7 +125,7 @@ pub async fn dispatch(
     caller: &Caller,
     ports: &Probes<'_>,
 ) -> Result<Option<ServiceBody>, ServiceError> {
-    let text = service.as_str();
+    let text = service.to_string();
     let listed = ports
         .callbacks
         .success_callback_entries()
@@ -133,6 +133,19 @@ pub async fn dispatch(
         .any(|entry| get_callback_identifier(entry) == text);
     if listed && !matches!(service, ServiceName::Langfuse | ServiceName::PointFive) {
         return mock_request(service, ports).await;
+    }
+    // the two probe branches check the role before they touch the vendor
+    if service == ServiceName::NewRelic {
+        proxy_admin_gate(
+            caller,
+            "Only proxy admins can trigger the New Relic test event.",
+        )?;
+    }
+    if service == ServiceName::PointFive {
+        proxy_admin_gate(
+            caller,
+            "Only proxy admins can trigger the PointFive liveness ping.",
+        )?;
     }
     branch(service, caller, ports).await
 }
@@ -162,8 +175,8 @@ async fn branch(
             "Galileo is healthy",
         ))),
         Kind::Sqs => sqs_reply(ports.checks.sqs().await),
-        Kind::NewRelic => newrelic(caller, ports).await,
-        Kind::PointFive => pointfive(caller, ports).await,
+        Kind::NewRelic => newrelic(ports).await,
+        Kind::PointFive => pointfive(ports).await,
         Kind::Webhook => alert_tests::webhook(caller, &ports.alerts).await,
         Kind::Slack => alert_tests::slack(service, &ports.alerts).await,
         Kind::MsTeams => alert_tests::ms_teams(&ports.alerts).await,
@@ -177,7 +190,7 @@ async fn mock_request(
     ports: &Probes<'_>,
 ) -> Result<Option<ServiceBody>, ServiceError> {
     ports.mock.send_mock_request(&MOCK_REQUEST).await?;
-    let message = format!("Mock LLM request made - check {}.", service.as_str());
+    let message = format!("Mock LLM request made - check {service}.");
     Ok(Some(ServiceBody::Success(SuccessBody {
         status: "success",
         message,
@@ -206,14 +219,7 @@ fn sqs_reply(
     })))
 }
 
-async fn newrelic(
-    caller: &Caller,
-    ports: &Probes<'_>,
-) -> Result<Option<ServiceBody>, ServiceError> {
-    proxy_admin_gate(
-        caller,
-        "Only proxy admins can trigger the New Relic test event.",
-    )?;
+async fn newrelic(ports: &Probes<'_>) -> Result<Option<ServiceBody>, ServiceError> {
     let status = ports.checks.newrelic().await?;
     Ok(Some(health_reply(
         status,
@@ -221,14 +227,7 @@ async fn newrelic(
     )))
 }
 
-async fn pointfive(
-    caller: &Caller,
-    ports: &Probes<'_>,
-) -> Result<Option<ServiceBody>, ServiceError> {
-    proxy_admin_gate(
-        caller,
-        "Only proxy admins can trigger the PointFive liveness ping.",
-    )?;
+async fn pointfive(ports: &Probes<'_>) -> Result<Option<ServiceBody>, ServiceError> {
     match ports.checks.pointfive().await {
         Ok(status) => Ok(Some(pointfive_reply(status))),
         Err(setup) => Ok(Some(ServiceBody::Health(HealthBody {

@@ -97,7 +97,7 @@ pub async fn slack(
     setup: &AlertSetup<'_>,
 ) -> Result<Option<ServiceBody>, ServiceError> {
     if !setup.alerting.iter().any(|entry| entry == "slack") {
-        return Err(not_configured(service.as_str()));
+        return Err(not_configured(&service.to_string()));
     }
     let active = setup.actions.active_alert_types();
     send_slack_alerts(setup, active.as_deref()).await?;

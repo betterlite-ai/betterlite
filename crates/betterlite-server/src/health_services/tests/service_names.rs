@@ -38,7 +38,7 @@ fn service_names_parse_and_round_trip(#[case] text: &str, #[case] name: ServiceN
         .parse::<ServiceName>()
         .expect("the accepted name parses");
     assert_eq!(parsed, name);
-    assert_eq!(name.as_str(), text);
+    assert_eq!(name.to_string(), text);
 }
 
 #[rstest]

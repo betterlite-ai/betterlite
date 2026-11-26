@@ -23,7 +23,7 @@ pub const SERVICE_NAMES: [&str; 22] = [
     "sqs",
 ];
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, strum::EnumString)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, strum::Display, strum::EnumString)]
 pub enum ServiceName {
     #[strum(serialize = "slack_budget_alerts")]
     SlackBudgetAlerts,
@@ -91,34 +91,6 @@ pub enum Kind {
 }
 
 impl ServiceName {
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::SlackBudgetAlerts => "slack_budget_alerts",
-            Self::Email => "email",
-            Self::Langfuse => "langfuse",
-            Self::LangfuseOtel => "langfuse_otel",
-            Self::Slack => "slack",
-            Self::MsTeams => "ms_teams",
-            Self::OpenMeter => "openmeter",
-            Self::Webhook => "webhook",
-            Self::Braintrust => "braintrust",
-            Self::Otel => "otel",
-            Self::CustomCallbackApi => "custom_callback_api",
-            Self::Langsmith => "langsmith",
-            Self::Datadog => "datadog",
-            Self::DatadogMetrics => "datadog_metrics",
-            Self::DatadogLlmObservability => "datadog_llm_observability",
-            Self::GenericApi => "generic_api",
-            Self::Arize => "arize",
-            Self::Galileo => "galileo",
-            Self::NewRelic => "newrelic",
-            Self::PointFive => "pointfive",
-            Self::Signoz => "signoz",
-            Self::Sqs => "sqs",
-        }
-    }
-
     #[must_use]
     pub const fn kind(self) -> Kind {
         match self {
