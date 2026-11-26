@@ -163,8 +163,20 @@ async fn branch(
             "Galileo is healthy",
         ))),
         ServiceName::Sqs => sqs_reply(ports.checks.sqs().await),
-        ServiceName::NewRelic => newrelic(caller, ports).await,
-        ServiceName::PointFive => pointfive(caller, ports).await,
+        ServiceName::NewRelic => {
+            proxy_admin_gate(
+                caller,
+                "Only proxy admins can trigger the New Relic test event.",
+            )?;
+            newrelic(ports).await
+        }
+        ServiceName::PointFive => {
+            proxy_admin_gate(
+                caller,
+                "Only proxy admins can trigger the PointFive liveness ping.",
+            )?;
+            pointfive(ports).await
+        }
         ServiceName::Langfuse => langfuse(ports).await,
         ServiceName::Webhook => alert_tests::webhook(caller, &ports.alerts).await,
         ServiceName::Slack | ServiceName::SlackBudgetAlerts => {
@@ -215,14 +227,7 @@ fn sqs_reply(
     })))
 }
 
-async fn newrelic(
-    caller: &Caller,
-    ports: &Probes<'_>,
-) -> Result<Option<ServiceBody>, ServiceError> {
-    proxy_admin_gate(
-        caller,
-        "Only proxy admins can trigger the New Relic test event.",
-    )?;
+async fn newrelic(ports: &Probes<'_>) -> Result<Option<ServiceBody>, ServiceError> {
     let status = ports.checks.newrelic().await?;
     Ok(Some(health_reply(
         status,
@@ -230,14 +235,7 @@ async fn newrelic(
     )))
 }
 
-async fn pointfive(
-    caller: &Caller,
-    ports: &Probes<'_>,
-) -> Result<Option<ServiceBody>, ServiceError> {
-    proxy_admin_gate(
-        caller,
-        "Only proxy admins can trigger the PointFive liveness ping.",
-    )?;
+async fn pointfive(ports: &Probes<'_>) -> Result<Option<ServiceBody>, ServiceError> {
     match ports.checks.pointfive().await {
         Ok(status) => Ok(Some(pointfive_reply(status))),
         Err(setup) => Ok(Some(ServiceBody::Health(HealthBody {
