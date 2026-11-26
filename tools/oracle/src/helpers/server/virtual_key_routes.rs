@@ -5,12 +5,10 @@ use betterlite_auth::pass_through_registry::{
 };
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_auth::virtual_key_routes::caller::{
-    RouteCaller, check_passthrough_route_access, jwt_team_routes_grant_pass_through,
+    RouteCaller, check_passthrough_route_access, jwt_team_grant_pass_through,
 };
-use betterlite_auth::virtual_key_routes::pass_through::is_auth_enforced_pass_through_route;
-use betterlite_auth::virtual_key_routes::route_checks::{
-    CalledRoute, is_virtual_key_allowed_to_call_route,
-};
+use betterlite_auth::virtual_key_routes::pass_through::is_protected_pass_through;
+use betterlite_auth::virtual_key_routes::route_checks::{CalledRoute, check_virtual_key_route};
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_error::proxy_exception::ProxyException;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
@@ -107,7 +105,7 @@ impl Helper for Op {
         };
         Ok(match input.function {
             Function::ShouldCallRoute => {
-                match is_virtual_key_allowed_to_call_route(called, &caller, &registry) {
+                match check_virtual_key_route(called, &caller, &registry) {
                     Ok(()) => answer(true, None),
                     Err(exception) => answer(false, Some(exception.as_ref())),
                 }
@@ -116,11 +114,11 @@ impl Helper for Op {
                 answer(check_passthrough_route_access(&input.route, &caller), None)
             }
             Function::AuthEnforced => answer(
-                is_auth_enforced_pass_through_route(&input.route, method.as_deref(), &registry),
+                is_protected_pass_through(&input.route, method.as_deref(), &registry),
                 None,
             ),
             Function::JwtGrant => answer(
-                jwt_team_routes_grant_pass_through(&input.route, &input.team_allowed_routes),
+                jwt_team_grant_pass_through(&input.route, &input.team_allowed_routes),
                 None,
             ),
         })

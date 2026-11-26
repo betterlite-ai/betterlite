@@ -5,9 +5,7 @@ use axum::http::Request;
 use betterlite_auth::pass_through_registry::PassThroughRegistry;
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 use betterlite_auth::virtual_key_routes::caller::RouteCaller;
-use betterlite_auth::virtual_key_routes::route_checks::{
-    CalledRoute, is_virtual_key_allowed_to_call_route,
-};
+use betterlite_auth::virtual_key_routes::route_checks::{CalledRoute, check_virtual_key_route};
 use betterlite_error::proxy_exception::ProxyException;
 
 use crate::auth::auth_identity::{AuthContext, StageFailure, StageInput};
@@ -77,7 +75,7 @@ pub(crate) fn run_stage(
         route: &stage.route,
         method: stage.method.as_deref(),
     };
-    is_virtual_key_allowed_to_call_route(called, &caller, &stage.registry)?;
+    check_virtual_key_route(called, &caller, &stage.registry)?;
     Ok(stage.context.clone())
 }
 

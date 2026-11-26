@@ -25,7 +25,7 @@ pub fn password_reset_denied() -> Box<ProxyException> {
 pub fn virtual_route_denied(route: &str, allowed_routes: &[&str]) -> Box<ProxyException> {
     forbidden(format!(
         "Virtual key is not allowed to call this route. Only allowed to call routes: {}. Tried to call route: {route}",
-        python_route_list(allowed_routes)
+        route_list_repr(allowed_routes)
     ))
 }
 
@@ -43,7 +43,7 @@ fn forbidden(message: String) -> Box<ProxyException> {
 }
 
 // LiteLLM interpolates the Python repr of the key's list into the message
-fn python_route_list(routes: &[&str]) -> String {
+fn route_list_repr(routes: &[&str]) -> String {
     let mut rendered = String::from("[");
     for (index, route) in routes.iter().enumerate() {
         if index > 0 {

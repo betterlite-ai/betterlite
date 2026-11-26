@@ -60,11 +60,6 @@ impl<'caller> RouteCaller<'caller> {
 }
 
 #[must_use]
-pub fn text_routes<'routes>(routes: &'routes [JsonData]) -> impl Iterator<Item = &'routes str> {
-    routes.iter().filter_map(text_entry)
-}
-
-#[must_use]
 pub fn password_reset_required(caller: &RouteCaller<'_>) -> bool {
     caller.metadata.is_some_and(|metadata| {
         matches!(
@@ -84,13 +79,13 @@ pub fn check_passthrough_route_access(route: &str, caller: &RouteCaller<'_>) -> 
         .team_metadata
         .and_then(|payload| payload.0.get(ALLOWED_PASSTHROUGH_ROUTES));
     let granted = key_routes
-        .filter(|routes| is_truthy(routes))
-        .or_else(|| team_routes.filter(|routes| is_truthy(routes)));
+        .filter(|routes| is_nonempty(routes))
+        .or_else(|| team_routes.filter(|routes| is_nonempty(routes)));
     granted.is_some_and(|routes| passthrough_routes_allow(route, routes))
 }
 
 #[must_use]
-pub fn jwt_team_allowed_routes<'settings>(
+pub const fn jwt_team_allowed_routes<'settings>(
     caller: &RouteCaller<'_>,
     settings: &'settings [String],
 ) -> &'settings [String] {
@@ -102,7 +97,7 @@ pub fn jwt_team_allowed_routes<'settings>(
 }
 
 #[must_use]
-pub fn jwt_team_routes_grant_pass_through(route: &str, team_allowed_routes: &[String]) -> bool {
+pub fn jwt_team_grant_pass_through(route: &str, team_allowed_routes: &[String]) -> bool {
     team_allowed_routes.iter().any(|allowed| {
         let path = allowed.trim_end_matches('*').trim_matches('/');
         !path.is_empty() && route_matches_wildcard_pattern(route, allowed)
@@ -127,7 +122,7 @@ fn passthrough_routes_allow(route: &str, routes: &JsonData) -> bool {
     }
 }
 
-fn is_truthy(value: &JsonData) -> bool {
+fn is_nonempty(value: &JsonData) -> bool {
     match value {
         JsonData::Null => false,
         JsonData::Bool(flag) => *flag,
@@ -141,9 +136,9 @@ fn is_truthy(value: &JsonData) -> bool {
     }
 }
 
-fn text_entry(value: &JsonData) -> Option<&str> {
+pub(crate) const fn text_entry(value: &JsonData) -> Option<&str> {
     match value {
-        JsonData::String(text) => Some(text),
+        JsonData::String(text) => Some(text.as_str()),
         JsonData::Null
         | JsonData::Bool(_)
         | JsonData::Number(_)

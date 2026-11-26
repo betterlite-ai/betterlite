@@ -7,11 +7,6 @@ pub const AUTH_ENFORCED_GROUPS: [&str; 2] = ["openai_routes", "llm_api_routes"];
 const OPENAI_ROUTES: &str = "openai_routes";
 
 #[must_use]
-pub fn is_named_group(name: &str) -> bool {
-    get_actual_routes(&[name]) != [name.to_owned()]
-}
-
-#[must_use]
 pub fn group_routes(name: &str, registry: &PassThroughRegistry) -> Vec<String> {
     let mut routes = get_actual_routes(&[name]);
     if name != OPENAI_ROUTES {
