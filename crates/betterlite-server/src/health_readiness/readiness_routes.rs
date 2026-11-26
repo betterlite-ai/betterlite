@@ -236,10 +236,11 @@ async fn health_drain(State(state): State<ReadinessState>, headers: HeaderMap) -
 // LiteLLM reads the first header value and compares it with compare_digest; an absent or
 // non-UTF-8 header is the empty string, which no configured token is
 fn drain_token_matches(mut headers: HeaderMap, expected: &SecretString) -> bool {
-    let supplied_value = headers
-        .remove(DRAIN_TOKEN_HEADER)
-        .and_then(|value| value.to_str().ok().map(str::to_owned));
-    let supplied = supplied_value.as_deref().unwrap_or_default();
+    let supplied_header = headers.remove(DRAIN_TOKEN_HEADER);
+    let supplied = supplied_header
+        .as_ref()
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default();
     bool::from(
         supplied
             .as_bytes()

@@ -112,7 +112,7 @@ impl ShutdownState {
                 let elapsed_s = elapsed.as_secs_f64();
                 let timeout_s = wait.as_secs_f64();
                 tracing::warn!(
-                    "graceful_shutdown_timeout in_flight_requests={current} elapsed_s={elapsed_s:.2} timeout_s={timeout_s:?}"
+                    "graceful_shutdown_timeout in_flight_requests={current} elapsed_s={elapsed_s:.2} timeout_s={timeout_s:?} — proceeding with teardown"
                 );
                 return initial.saturating_sub(current);
             }
