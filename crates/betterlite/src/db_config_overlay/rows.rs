@@ -37,7 +37,6 @@ const SAFE_DB_OVERRIDES: [&str; 23] = [
     "aws_sqs_callback_params",
 ];
 
-// LiteLLM sorts the shadowed (section, key) pairs, and these are the four sections in name order
 const WARNING_ORDER: [Section; 4] = [
     Section::EnvironmentVariables,
     Section::GeneralSettings,

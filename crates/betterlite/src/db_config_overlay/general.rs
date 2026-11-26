@@ -32,7 +32,6 @@ const COERCED_FLAGS: [&str; 3] = [
     "apply_user_budget_to_team_keys",
 ];
 
-// the alerting keys a database-owned row also sets on the running proxy, each with the effect it installs
 type DbOwnedEffect = (&'static str, fn(JsonValue) -> RuntimeEffect);
 
 // What the spend log cleanup hook needs: the live scheduler, its trigger context and cleanup_old_spend_logs as the job
@@ -97,7 +96,6 @@ async fn apply_pass_through_setting(
     Ok(())
 }
 
-// _apply_retention_settings: B8371's hook decides whether the cleanup job moves
 fn apply_retention(
     state: &mut OverlayState,
     cleanup: CleanupInputs<'_>,
@@ -146,7 +144,6 @@ fn apply_alerting(
     Ok(())
 }
 
-// _apply_boolean_settings: a flag the row sets is stored as a bool unless the config file owns it
 fn coerce_flags(
     store: &mut SettingsStore,
     values: &BTreeMap<String, JsonValue>,

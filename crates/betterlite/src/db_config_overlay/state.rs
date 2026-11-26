@@ -22,7 +22,6 @@ pub const STORE_SECTIONS: [Section; 4] = [
 
 pub const PASS_THROUGH_ENDPOINTS: &str = "pass_through_endpoints";
 
-// The module globals LiteLLM assigns when a stored row changes; the running proxy applies each one
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RuntimeEffect {
     Alerting(Vec<JsonValue>),

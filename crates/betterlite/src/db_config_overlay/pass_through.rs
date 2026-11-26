@@ -39,7 +39,6 @@ pub fn publish_pass_through(
     Ok(())
 }
 
-// LiteLLM validates a list of dicts; a non-object entry names its index
 pub fn validate_db_endpoints(db_endpoints: &[JsonValue]) -> Result<(), OverlayError> {
     if let Some(index) = db_endpoints
         .iter()

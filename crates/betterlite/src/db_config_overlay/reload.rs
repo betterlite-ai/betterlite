@@ -22,7 +22,6 @@ use super::state::{
 
 const GENERAL_SETTINGS: &str = "general_settings";
 
-// What the resolution needs after the sync half: the resolved config and an owned lookup to read its references with.
 pub struct PendingReload {
     config: ConfigMap,
     lookup: SecretLookup,
@@ -92,7 +91,6 @@ pub async fn resolve_reload(
     .await?
 }
 
-// _apply_resolved_runtime_settings and update_config_state
 pub fn finish_reload(state: &mut OverlayState, resolved: ResolvedConfig) -> ConfigWithBaseline {
     let (config, oidc_cache) = resolved;
     restore_oidc_tokens(&state.secrets.lookup, oidc_cache);

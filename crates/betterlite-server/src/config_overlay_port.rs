@@ -3,7 +3,6 @@ use betterlite_config::sections::settings::JsonValue;
 
 use crate::proxy_config_state::snapshot::ConfigWithBaseline;
 
-// The adapter logs the cause, so a route only needs to know which answer to send
 #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum ConfigOverlayPortError {
     #[error("the config database is not reachable")]
