@@ -5,8 +5,11 @@ from typing import Final, Literal, Protocol, TypeAlias, TypedDict, runtime_check
 
 import httpx
 import litellm
+from litellm.llms.base_llm.image_edit.transformation import BaseImageEditConfig
 from litellm.llms.bedrock.image_edit.amazon_nova_canvas_image_edit_transformation import (
     BedrockAmazonNovaCanvasImageEditConfig as NovaConfig,
+)
+from litellm.llms.bedrock.image_edit.amazon_nova_canvas_image_edit_transformation import (
     get_bedrock_image_edit_config_for_model as edit_config_for,
 )
 from litellm.llms.bedrock.image_edit.stability_transformation import (
@@ -22,10 +25,8 @@ MODEL: Final = "amazon.nova-canvas-v1:0"
 NO_HEADERS: Final[dict[str, str]] = {}
 
 Media: TypeAlias = bytes | str | tuple[int, int]
-JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 MAPPED: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
-HEADERS: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
-SUPPORTED: TypeAdapter[list[str]] = TypeAdapter(list[str])
+SUPPORTED: TypeAdapter[list[JsonValue]] = TypeAdapter(list[JsonValue])
 ARBITRARY: ConfigDict = ConfigDict(arbitrary_types_allowed=True)
 
 
@@ -114,12 +115,12 @@ class EditConfig(Protocol):
     ]
     use_multipart_form_data: Callable[[], bool]
     get_complete_url: Callable[[str, str | None, dict[str, JsonValue]], str]
-    validate_environment: Callable[[dict[str, str], str, str | None], dict[str, str]]
+    validate_environment: Callable[[dict[str, str], str, str | None], dict[str, JsonValue]]
     get_error_class: Callable[[str, int, httpx.Headers], ErrorView]
 
 
 CONFIG: EditConfig = TypeAdapter[EditConfig](EditConfig, config=ARBITRARY).validate_python(
-    NovaConfig()
+    edit_config_for(MODEL)
 )
 
 
@@ -164,8 +165,8 @@ def url_answer() -> JsonValue:
     try:
         url = CONFIG.get_complete_url(MODEL, None, {})
     except NotImplementedError as error:
-        return JSON.validate_python({"error": str(error)})
-    return JSON.validate_python({"url": url})
+        return {"error": str(error)}
+    return {"url": url}
 
 
 def map_answer(call: MapCall) -> JsonValue:
@@ -174,7 +175,7 @@ def map_answer(call: MapCall) -> JsonValue:
             CONFIG.map_openai_params(call["options"], MODEL, call["drop_params"])
         )
     message = captured.messages[-1] if captured.messages else None
-    return JSON.validate_python({"mapped": mapped, "message": message})
+    return {"mapped": mapped, "message": message}
 
 
 def transform_answer(call: TransformCall) -> JsonValue:
@@ -190,44 +191,41 @@ def transform_answer(call: TransformCall) -> JsonValue:
             MODEL, call["prompt"], image, optional, GenericLiteLLMParams(), NO_HEADERS
         )
     except ValueError as error:
-        return JSON.validate_python({"error": str(error)})
-    return JSON.validate_python({"body": MAPPED.validate_python(body), "files": len(files)})
+        return {"error": str(error)}
+    return {"body": MAPPED.validate_python(body), "files": len(files)}
 
 
 def environment_answer(call: EnvironmentCall) -> JsonValue:
-    given_spec = call["headers"]
-    given: dict[str, str] = {} if given_spec is None else given_spec
-    return JSON.validate_python({"headers": CONFIG.validate_environment(given, MODEL, None)})
+    given = call["headers"]
+    headers: dict[str, str] = {} if given is None else given
+    return {"headers": CONFIG.validate_environment(headers, MODEL, None)}
 
 
 def error_answer(call: ErrorClassCall) -> JsonValue:
     carried = CONFIG.get_error_class(
         call["message"], call["status"], httpx.Headers(call["headers"])
     )
-    carried_headers = carried.headers
-    headers = (
-        HEADERS.validate_python(dict(carried_headers))
-        if isinstance(carried_headers, httpx.Headers)
-        else None
-    )
-    answer: dict[str, JsonValue] = {
+    return {
         "status": carried.status_code,
         "message": carried.message,
-        "headers": headers,
+        "headers_present": carried.headers is not None,
     }
-    return JSON.validate_python(answer)
+
+
+def model_config(model: str) -> BaseImageEditConfig | None:
+    try:
+        return edit_config_for(model)
+    except ValueError:
+        return None
 
 
 def eligible(model: str) -> bool:
-    try:
-        config = edit_config_for(model)
-    except ValueError:
-        return False
-    return isinstance(config, NovaConfig)
-
-
-def eligibility_answer(call: ModelsCall) -> JsonValue:
-    return JSON.validate_python({"eligible": [eligible(model) for model in call["models"]]})
+    config = model_config(model)
+    match config:
+        case NovaConfig():
+            return True
+        case BaseImageEditConfig() | None:
+            return False
 
 
 def selected(model: str) -> JsonValue:
@@ -235,66 +233,42 @@ def selected(model: str) -> JsonValue:
         config = edit_config_for(model)
     except ValueError as error:
         return {"error": str(error)}
-    if isinstance(config, StabilityConfig):
-        return {"config": "stability"}
-    if isinstance(config, NovaConfig):
-        return {"config": "nova_canvas"}
-    return {"config": "other"}
-
-
-def selection_answer(call: ModelsCall) -> JsonValue:
-    return JSON.validate_python({"selected": [selected(model) for model in call["models"]]})
-
-
-def flag_answer(call: FlagCall) -> JsonValue:
-    match call["function"]:
-        case "supported_params":
-            supported = SUPPORTED.validate_python(CONFIG.get_supported_openai_params(MODEL))
-            return JSON.validate_python({"supported": supported})
-        case "multipart":
-            return JSON.validate_python({"multipart": CONFIG.use_multipart_form_data()})
-        case "url":
-            return url_answer()
-
-
-def payload_answer(call: MapCall | TransformCall) -> JsonValue:
-    match call["function"]:
-        case "map":
-            return map_answer(call)
-        case "transform":
-            return transform_answer(call)
-
-
-def contract_answer(call: EnvironmentCall | ErrorClassCall) -> JsonValue:
-    match call["function"]:
-        case "environment":
-            return environment_answer(call)
-        case "error_class":
-            return error_answer(call)
-
-
-def models_answer(call: ModelsCall) -> JsonValue:
-    match call["function"]:
-        case "eligibility":
-            return eligibility_answer(call)
-        case "selection":
-            return selection_answer(call)
+    match config:
+        case NovaConfig():
+            return {"config": "nova_canvas"}
+        case StabilityConfig():
+            return {"config": "stability"}
+        case BaseImageEditConfig():
+            return {"config": "other"}
 
 
 def call_value(call: Call) -> JsonValue:
     answer: JsonValue = None
     match call["function"]:
-        case "supported_params" | "multipart" | "url":
-            answer = flag_answer(call)
-        case "map" | "transform":
-            answer = payload_answer(call)
-        case "environment" | "error_class":
-            answer = contract_answer(call)
-        case "eligibility" | "selection":
-            answer = models_answer(call)
+        case "supported_params":
+            supported = SUPPORTED.validate_python(
+                CONFIG.get_supported_openai_params(MODEL)
+            )
+            answer = {"supported": supported}
+        case "multipart":
+            answer = {"multipart": CONFIG.use_multipart_form_data()}
+        case "url":
+            answer = url_answer()
+        case "map":
+            answer = map_answer(call)
+        case "transform":
+            answer = transform_answer(call)
+        case "environment":
+            answer = environment_answer(call)
+        case "error_class":
+            answer = error_answer(call)
+        case "eligibility":
+            answer = {"eligible": [eligible(model) for model in call["models"]]}
+        case "selection":
+            answer = {"selected": [selected(model) for model in call["models"]]}
     return answer
 
 
 def run(input_value: Input) -> JsonValue:
     litellm.model_cost = input_value["model_cost"]
-    return JSON.validate_python([call_value(call) for call in input_value["calls"]])
+    return [call_value(call) for call in input_value["calls"]]
