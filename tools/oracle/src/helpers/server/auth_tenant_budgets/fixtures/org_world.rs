@@ -79,8 +79,7 @@ impl OrgStore for OrgWorld {
             .organization
             .clone()
             .filter(|row| row.organization_id.as_deref() == Some(org_id));
-        Ok(found
-            .map(|row| serde_json::to_string(&row).expect("the seeded organization serializes")))
+        Ok(found.map(|row| serde_json::to_string(&row).unwrap_or_default()))
     }
 
     async fn find_by_alias(&self, _org_alias: &str) -> StoreAnswer<Vec<String>> {

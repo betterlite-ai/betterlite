@@ -173,11 +173,8 @@ fn recorded(
         "alerts": Value::Array(answers.recorder.alerts()),
         "denial": denial,
     });
-    if let Some(carried) = carried {
-        record
-            .as_object_mut()
-            .expect("the recorded answer is an object")
-            .insert("carried".to_owned(), carried);
+    if let (Some(carried), Some(fields)) = (carried, record.as_object_mut()) {
+        fields.insert("carried".to_owned(), carried);
     }
     Ok(record)
 }

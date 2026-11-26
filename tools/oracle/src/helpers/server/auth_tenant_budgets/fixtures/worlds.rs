@@ -93,7 +93,10 @@ impl TagBudgetCache for TagWorld {
 }
 
 // the rows a batch read answers with; both maps are keyed by the requested name
-fn rows_named<Row: Clone>(rows: &BTreeMap<String, Row>, names: &[String]) -> Vec<Row> {
+fn rows_named<Row>(rows: &BTreeMap<String, Row>, names: &[String]) -> Vec<Row>
+where
+    Row: Clone,
+{
     names
         .iter()
         .filter_map(|name| rows.get(name))
