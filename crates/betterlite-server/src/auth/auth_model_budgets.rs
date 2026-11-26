@@ -212,29 +212,10 @@ fn key_budget_exception(error: &KeyBudgetError) -> ProxyException {
 }
 
 fn failure_exception(error: &ErrorClass) -> ProxyException {
-    match error {
-        ErrorClass::BudgetExceeded(details) => budget_exception(details),
-        other @ (ErrorClass::Authentication(_)
-        | ErrorClass::NotFound(_)
-        | ErrorClass::PermissionDenied(_)
-        | ErrorClass::BadRequest(_)
-        | ErrorClass::UnprocessableEntity(_)
-        | ErrorClass::Timeout(_)
-        | ErrorClass::RateLimit(_)
-        | ErrorClass::ContextWindowExceeded(_)
-        | ErrorClass::ContentPolicyViolation(_)
-        | ErrorClass::ServiceUnavailable(_)
-        | ErrorClass::BadGateway(_)
-        | ErrorClass::InternalServer(_)
-        | ErrorClass::Api(_)
-        | ErrorClass::ApiConnection(_)
-        | ErrorClass::ApiResponseValidation(_)
-        | ErrorClass::JsonSchemaValidation(_)
-        | ErrorClass::UnsupportedParams(_)
-        | ErrorClass::GuardrailRaised(_)
-        | ErrorClass::MidStreamFallback(_)
-        | ErrorClass::Unclassified(_)) => other_exception(&class_message(other)),
+    if let ErrorClass::BudgetExceeded(details) = error {
+        return budget_exception(details);
     }
+    other_exception(&class_message(error))
 }
 
 // a budget rejection is budget_exceeded with the rejection's own status and a null param
