@@ -6,20 +6,24 @@ mod support;
 use std::fs;
 use std::path::Path;
 
+use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_models::decisions::Json;
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 use rstest::rstest;
 use tracing::Level;
 
 use super::DecodedBatchInputLine;
+use super::access::{self, AccessFailure};
 use super::decode_batch_input_accounting;
 use super::error::{BatchHttpError, BatchManagedFileError};
+use super::input::BatchInputAccountingInput;
 use super::ports::{BatchAccessCheck, BatchKeyGrant, BatchTeamLookup};
 use super::result::BatchInputAccountingResult;
 use crate::api::api_boundaries::{ApiLimitError, ApiLimits};
 use crate::api::request_destination::RequestData;
 use support::{
-    AccessMethod, FakeError, Harness, RecordedFetch, Team, input_wire, managed_file_id, row_usage,
+    AccessMethod, FakeError, Harness, RecordedFetch, Team, block_on, input_wire, managed_file_id,
+    row_usage,
 };
 
 const KEY_CALLER: &str = r#"{"api_key": "sk-test"}"#;
@@ -69,6 +73,11 @@ const NO_BODY_ROW: &str = r#"{"custom_id": "x"}"#;
 const COUNTING_ROW: &str = r#"{"body": {"model": "gpt-4o", "prompt": "hello"}}"#;
 const MANAGED_ROW: &str = r#"{"body": {"model": "smuggled", "prompt": "hello"}}"#;
 const CAP_ROW: &str = r#"{"body": {"model": "gpt-4o", "prompt": "hello", "max_tokens": 5}}"#;
+const BODY_ZERO_ROW: &str = r#"{"body": 0}"#;
+const BODY_NUMBER_ROW: &str = r#"{"body": 5}"#;
+const BODY_EMPTY_LIST_ROW: &str = r#"{"body": []}"#;
+const BODY_LIST_ROW: &str = r#"{"body": [1]}"#;
+const BODY_MESSAGES_OBJECT_ROW: &str = r#"{"body": {"messages": {}}}"#;
 
 fn json_text(value: &Json) -> String {
     serde_json::to_string(value).expect("the value encodes")
@@ -586,6 +595,41 @@ struct UnsupportedCase {
     counted: 0,
     model: None,
 })]
+#[case::numeric_body_zero(UnsupportedCase {
+    row: BODY_ZERO_ROW,
+    answers: &[],
+    total: 0,
+    counted: 0,
+    model: None,
+})]
+#[case::numeric_body_nonzero(UnsupportedCase {
+    row: BODY_NUMBER_ROW,
+    answers: &[],
+    total: 2,
+    counted: 0,
+    model: None,
+})]
+#[case::empty_list_body(UnsupportedCase {
+    row: BODY_EMPTY_LIST_ROW,
+    answers: &[],
+    total: 0,
+    counted: 0,
+    model: None,
+})]
+#[case::list_body(UnsupportedCase {
+    row: BODY_LIST_ROW,
+    answers: &[],
+    total: 3,
+    counted: 0,
+    model: None,
+})]
+#[case::object_messages_field(UnsupportedCase {
+    row: BODY_MESSAGES_OBJECT_ROW,
+    answers: &[],
+    total: 0,
+    counted: 0,
+    model: None,
+})]
 #[case::counter_failure(UnsupportedCase {
     row: COUNTING_ROW,
     answers: &[None],
@@ -722,6 +766,34 @@ fn a_member_refusal_is_a_403(#[case] check: BatchAccessCheck, #[case] reason: &s
     checks.insert("gpt-4o".to_owned(), check);
     let wire = input_wire("file-abc", Some(TEAM_CALLER), "[]");
     assert_rejected(&harness, &wire, "gpt-4o", reason);
+}
+
+// An upload whose target names decode to nothing checks the models its rows name, as LiteLLM's truthy test does
+#[test]
+fn empty_upload_targets_fall_back_to_row_models() {
+    let input: BatchInputAccountingInput =
+        serde_json::from_str(&input_wire("file-abc", Some(KEY_CALLER), "[]"))
+            .expect("the input decodes");
+    let principal = input.caller.expect("the caller decodes");
+    let caller =
+        UserAPIKeyAuth::construct(AuthInput::Dict(principal.0)).expect("the caller builds");
+    let harness = Harness::new(COUNTING_ROW);
+    harness
+        .access
+        .key_checks
+        .insert("gpt-4o".to_owned(), denied_check());
+    let row_models = IndexSet::from(["gpt-4o".to_owned()]);
+    let outcome = block_on(access::enforce(
+        &harness.access,
+        &caller,
+        &row_models,
+        Some(&[]),
+    ));
+    let AccessFailure::Http(http) = outcome.expect_err("a denied row model rejects the file")
+    else {
+        panic!("the refusal is an HTTPException");
+    };
+    assert_eq!(http.status, 403);
 }
 
 #[test]
