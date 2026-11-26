@@ -112,10 +112,11 @@ pub(crate) async fn prefetch(stage: &GrantStageInput) -> Result<(), Box<ProxyExc
         let failure = error.as_auth_failure();
         Box::new(as_proxy_exception(&failure).exception().clone())
     })?;
-    let mut matched = Vec::new();
-    if let Some(wired) = sources {
-        matched = stamped(key, rule, wired).await;
-    }
+    let matched = if let Some(wired) = sources {
+        stamped(key, rule, wired).await
+    } else {
+        Vec::new()
+    };
     if let Some(sink) = rule.sink.as_deref() {
         sink.record(&allowlists, &matched);
     }

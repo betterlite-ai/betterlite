@@ -323,7 +323,9 @@ async fn assert_database_walk_records() {
         ]
     );
     assert_eq!(matched, vec!["tier-a".to_owned()]);
-    // Without a database the stage assembles the two key lists and stamps nothing.
+}
+
+async fn assert_no_db_walk_records() {
     let skipped = Arc::new(Recorder::default());
     let (status, _body, reached) = run_request(
         &config_with_master_key(),
@@ -344,7 +346,9 @@ async fn assert_database_walk_records() {
         "the no-database answer pairs the key list with the token's team models"
     );
     assert!(matched.is_empty());
-    // A database without stage sources skips the walk and still reaches the handler.
+}
+
+async fn assert_unwired_walk_skips() {
     let unwired = Arc::new(Recorder::default());
     let (status, _body, reached) =
         run_request(&config_with_database(), rule(None, Arc::clone(&unwired))).await;
@@ -359,6 +363,8 @@ async fn stage_is_registered() {
     assert_slot_settings();
     assert_dispatch_reaches_the_stage();
     assert_database_walk_records().await;
+    assert_no_db_walk_records().await;
+    assert_unwired_walk_skips().await;
 }
 
 #[tokio::test]
@@ -387,7 +393,7 @@ async fn failure_stops_downstream() {
 fn stage_clock_reads_the_wall_clock() {
     let now = now_seconds();
     assert!(
-        now > 1_600_000_000.0,
+        now > 1_600_000_000.0_f64,
         "the stage clock reads epoch seconds: {now}"
     );
 }

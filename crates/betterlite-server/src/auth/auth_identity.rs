@@ -87,18 +87,6 @@ pub struct AuthContext {
     pub principal: Principal,
 }
 
-impl StageInput {
-    // the prefetch reads the cache, database and router, so the caller awaits it on the owned input
-    pub(crate) async fn prefetch_model_grants(
-        stage: Box<GrantStageInput>,
-    ) -> Result<Self, StageFailure> {
-        model_grant_intersection::prefetch(&stage)
-            .await
-            .map_err(StageFailure::ModelGrants)?;
-        Ok(Self::ModelGrantIntersection(stage))
-    }
-}
-
 // the resource grant stage reads the request's rule and database switch, so its input is built here
 pub(crate) fn resource_grant_stage_input(
     request: &Request<Body>,
@@ -154,6 +142,16 @@ impl From<AuthenticationFailure> for StageFailure {
 }
 
 impl StageInput {
+    // the prefetch reads the cache, database and router, so the caller awaits it on the owned input
+    pub(crate) async fn prefetch_model_grants(
+        stage: Box<GrantStageInput>,
+    ) -> Result<Self, StageFailure> {
+        model_grant_intersection::prefetch(&stage)
+            .await
+            .map_err(StageFailure::ModelGrants)?;
+        Ok(Self::ModelGrantIntersection(stage))
+    }
+
     const fn backend(&self) -> AuthBackend {
         match self {
             Self::MasterKey(_) => AuthBackend::MasterKey,
