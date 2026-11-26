@@ -2,6 +2,7 @@ mod input;
 
 use std::collections::BTreeMap;
 use std::convert::Infallible;
+use std::future::{Future, ready};
 use std::sync::{Arc, Mutex};
 
 use self::input::{Call, Caller, Input, Setup};
@@ -195,25 +196,29 @@ struct FakeDatabase {
 }
 
 impl VectorStoreDatabase for FakeDatabase {
-    async fn stores(&self) -> Result<Vec<LiteLlmManagedVectorStore>, TableError> {
-        Ok(self.rows.clone())
+    fn stores(
+        &self,
+    ) -> impl Future<Output = Result<Vec<LiteLlmManagedVectorStore>, TableError>> + Send {
+        ready(Ok(self.rows.clone()))
     }
 
-    async fn indexes(&self) -> Result<Vec<LiteLlmManagedVectorStoreIndex>, TableError> {
-        Ok(Vec::new())
+    fn indexes(
+        &self,
+    ) -> impl Future<Output = Result<Vec<LiteLlmManagedVectorStoreIndex>, TableError>> + Send {
+        ready(Ok(Vec::new()))
     }
 }
 
 impl VectorStoreRows for FakeDatabase {
-    async fn find_unique(
+    fn find_unique(
         &self,
         vector_store_id: &str,
-    ) -> Result<Option<LiteLlmManagedVectorStore>, TableError> {
-        Ok(self
+    ) -> impl Future<Output = Result<Option<LiteLlmManagedVectorStore>, TableError>> + Send {
+        ready(Ok(self
             .rows
             .iter()
             .find(|row| row.vector_store_id.as_deref() == Some(vector_store_id))
-            .cloned())
+            .cloned()))
     }
 }
 

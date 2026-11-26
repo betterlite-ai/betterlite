@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::convert::Infallible;
+use std::future::{Future, ready};
 use std::io;
 use std::str;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -115,32 +116,36 @@ impl FakeDatabase {
 }
 
 impl VectorStoreDatabase for FakeDatabase {
-    async fn stores(&self) -> Result<Vec<LiteLlmManagedVectorStore>, TableError> {
+    fn stores(
+        &self,
+    ) -> impl Future<Output = Result<Vec<LiteLlmManagedVectorStore>, TableError>> + Send {
         self.inner.store_calls.fetch_add(1, Ordering::SeqCst);
-        Ok(self.inner.rows.clone())
+        ready(Ok(self.inner.rows.clone()))
     }
 
-    async fn indexes(&self) -> Result<Vec<LiteLlmManagedVectorStoreIndex>, TableError> {
-        Ok(Vec::new())
+    fn indexes(
+        &self,
+    ) -> impl Future<Output = Result<Vec<LiteLlmManagedVectorStoreIndex>, TableError>> + Send {
+        ready(Ok(Vec::new()))
     }
 }
 
 impl VectorStoreRows for FakeDatabase {
-    async fn find_unique(
+    fn find_unique(
         &self,
         vector_store_id: &str,
-    ) -> Result<Option<LiteLlmManagedVectorStore>, TableError> {
+    ) -> impl Future<Output = Result<Option<LiteLlmManagedVectorStore>, TableError>> + Send {
         self.inner
             .unique_calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(vector_store_id.to_owned());
-        Ok(self
+        ready(Ok(self
             .inner
             .rows
             .iter()
             .find(|row| row.vector_store_id.as_deref() == Some(vector_store_id))
-            .cloned())
+            .cloned()))
     }
 }
 

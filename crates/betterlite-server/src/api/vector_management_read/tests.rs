@@ -91,9 +91,7 @@ fn loc(issue: &Json) -> Vec<String> {
 }
 
 fn content_type(headers: &HeaderMap) -> Option<&str> {
-    headers
-        .get("content-type")
-        .and_then(|value| value.to_str().ok())
+    headers.get("content-type")?.to_str().ok()
 }
 
 // a registry record carrying the metadata shape under test
@@ -161,9 +159,20 @@ async fn list_reconciles_config_and_database() {
     let shared = listed(&body, "vs_shared");
     assert_eq!("config-vs_shared", text(at(shared, "vector_store_name")));
     assert_eq!(&Json::Bool(true), at(shared, "is_config"));
-    let (alias_status, _alias_headers, alias_body) =
-        call(&state, &admin(), Method::GET, V1_LIST_PATH, "").await;
-    assert_eq!(StatusCode::OK, alias_status);
+}
+
+#[tokio::test]
+async fn list_v1_alias_returns_the_same_records() {
+    let state = build(Setup {
+        database: Some(FakeDatabase::new(vec![db_store("vs_db")])),
+        registry: None,
+        world: World::default(),
+        privileges: false,
+        settings: FeatureSettings::default(),
+    });
+    let (_, _, body) = call(&state, &admin(), Method::GET, LIST_PATH, "").await;
+    let (status, _, alias_body) = call(&state, &admin(), Method::GET, V1_LIST_PATH, "").await;
+    assert_eq!(StatusCode::OK, status);
     assert_eq!(ids(&body), ids(&alias_body));
 }
 
@@ -185,49 +194,54 @@ async fn list_reconciliation_purges_and_syncs_the_registry() {
     let (logs, _guard) = capture_logs(tracing::Level::DEBUG);
     let (status, _headers, _body) = call(&state, &admin(), Method::GET, LIST_PATH, "").await;
     assert_eq!(StatusCode::OK, status);
-    {
-        let registry = registry_of(&state);
-        let stored: Vec<String> = registry
-            .stores
-            .iter()
-            .filter_map(|store| store.vector_store_id.clone())
-            .collect();
-        assert_eq!(
-            vec![
-                "vs_shared".to_owned(),
-                "vs_config".to_owned(),
-                "vs_db".to_owned()
-            ],
-            stored
-        );
-        let row = registry
-            .store_by_id("vs_db")
-            .expect("the database row joined the registry");
-        let params = row
-            .litellm_params
-            .as_ref()
-            .expect("the row keeps its params");
-        assert_eq!(
-            Some("db-secret-vs_db"),
-            params.get("api_key").and_then(|value| value.as_str())
-        );
-        let config = registry
-            .store_by_id("vs_shared")
-            .expect("the config record stays in the registry");
-        assert_eq!(
-            Some("config-secret-vs_shared"),
-            config
-                .litellm_params
-                .as_ref()
-                .and_then(|params| params.get("api_key"))
-                .and_then(|value| value.as_str())
-        );
-    }
+    assert_reconciled_registry(&state);
     let captured = logs.contents();
     assert!(captured.contains(
         "Vector store vs_stale exists in memory but not in database - marking for deletion from cache"
     ));
     assert!(captured.contains("Removed deleted vector store vs_stale from in-memory registry"));
+}
+
+fn assert_reconciled_registry(
+    state: &std::sync::Arc<super::state::VectorManagementReadState<FakeDatabase>>,
+) {
+    let registry = registry_of(state);
+    let stored: Vec<String> = registry
+        .stores
+        .iter()
+        .filter_map(|store| store.vector_store_id.clone())
+        .collect();
+    assert_eq!(
+        vec![
+            "vs_shared".to_owned(),
+            "vs_config".to_owned(),
+            "vs_db".to_owned()
+        ],
+        stored
+    );
+    let row = registry
+        .store_by_id("vs_db")
+        .expect("the database row joined the registry");
+    let row_params = row
+        .litellm_params
+        .as_ref()
+        .expect("the row keeps its params");
+    assert_eq!(
+        Some("db-secret-vs_db"),
+        row_params.get("api_key").and_then(|value| value.as_str())
+    );
+    let config = registry
+        .store_by_id("vs_shared")
+        .expect("the config record stays in the registry");
+    assert_eq!(
+        Some("config-secret-vs_shared"),
+        config
+            .litellm_params
+            .as_ref()
+            .and_then(|values| values.get("api_key"))
+            .and_then(|value| value.as_str())
+    );
+    drop(registry);
 }
 
 #[tokio::test]
@@ -258,6 +272,21 @@ async fn list_pagination_is_metadata_only() {
     assert_eq!(3, list(at(&page_body, "data")).len());
     assert_eq!(2, number(at(&page_body, "current_page")));
     assert_eq!(2, number(at(&page_body, "total_pages")));
+}
+
+#[tokio::test]
+async fn list_pagination_keeps_zero_and_negative_values() {
+    let state = build(Setup {
+        database: Some(FakeDatabase::new(vec![
+            db_store("vs_1"),
+            db_store("vs_2"),
+            db_store("vs_3"),
+        ])),
+        registry: None,
+        world: World::default(),
+        privileges: false,
+        settings: FeatureSettings::default(),
+    });
     let (_zero_status, _zero_headers, zero_body) = call(
         &state,
         &admin(),
@@ -347,8 +376,19 @@ async fn list_query_validation_precedes_the_handler() {
     );
     assert_eq!(0, database.loads());
     assert!(registry_of(&state).store_by_id("vs_stale").is_some());
-    // the deviation: an i64 cannot hold the page, so it is the same 422 at query.page
-    let (huge_status, _huge_headers, huge_body) = call(
+}
+
+#[tokio::test]
+async fn list_rejects_page_outside_i64_range_before_the_handler() {
+    let database = FakeDatabase::new(vec![db_store("vs_db")]);
+    let state = build(Setup {
+        database: Some(database.clone()),
+        registry: Some(vec![memory_store("vs_stale")]),
+        world: World::default(),
+        privileges: false,
+        settings: FeatureSettings::default(),
+    });
+    let (status, _, body) = call(
         &state,
         &admin(),
         Method::GET,
@@ -356,10 +396,11 @@ async fn list_query_validation_precedes_the_handler() {
         "",
     )
     .await;
-    assert_eq!(StatusCode::UNPROCESSABLE_ENTITY, huge_status);
-    let huge_issue = list(at(&huge_body, "detail")).first().expect("one issue");
-    assert_eq!(vec!["query".to_owned(), "page".to_owned()], loc(huge_issue));
+    assert_eq!(StatusCode::UNPROCESSABLE_ENTITY, status);
+    let issue = list(at(&body, "detail")).first().expect("one issue");
+    assert_eq!(vec!["query".to_owned(), "page".to_owned()], loc(issue));
     assert_eq!(0, database.loads());
+    assert!(registry_of(&state).store_by_id("vs_stale").is_some());
 }
 
 #[tokio::test]
@@ -424,6 +465,7 @@ async fn list_without_a_database_purges_uncached_records() {
         .filter_map(|store| store.vector_store_id.as_deref())
         .collect();
     assert_eq!(vec!["vs_config"], stored);
+    drop(registry);
 }
 
 // reconciliation comes first: a stale team record would pass the filter, and is gone before it runs
@@ -695,51 +737,56 @@ async fn info_database_access_errors() {
         text(at(at(table, "litellm_params"), "api_key"))
     );
     assert_eq!(vec!["vs_a".to_owned()], database.asked());
+}
 
-    let missing_state = build(Setup {
+#[tokio::test]
+async fn info_missing_database_row_is_404() {
+    let state = build(Setup {
         database: Some(FakeDatabase::new(Vec::new())),
         registry: None,
         world: World::default(),
         privileges: false,
         settings: FeatureSettings::default(),
     });
-    let (missing_status, _missing_headers, missing_body) = call(
-        &missing_state,
+    let (status, _, body) = call(
+        &state,
         &admin(),
         Method::POST,
         INFO_PATH,
         r#"{"vector_store_id":"vs_missing"}"#,
     )
     .await;
-    assert_eq!(StatusCode::NOT_FOUND, missing_status);
+    assert_eq!(StatusCode::NOT_FOUND, status);
     assert_eq!(
         "Vector store with ID vs_missing not found",
-        text(at(&missing_body, "detail"))
+        text(at(&body, "detail"))
     );
+}
 
-    let row_database = FakeDatabase::new(vec![team_store("vs_team", "t9")]);
-    let row_state = build(Setup {
-        database: Some(row_database.clone()),
+#[tokio::test]
+async fn info_database_row_access_denial_is_403() {
+    let database = FakeDatabase::new(vec![team_store("vs_team", "t9")]);
+    let state = build(Setup {
+        database: Some(database.clone()),
         registry: None,
         world: World::default(),
         privileges: false,
         settings: FeatureSettings::default(),
     });
-    let caller = internal("u1", Some("t1"));
-    let (row_status, _row_headers, row_body) = call(
-        &row_state,
-        &caller,
+    let (status, _, body) = call(
+        &state,
+        &internal("u1", Some("t1")),
         Method::POST,
         INFO_PATH,
         r#"{"vector_store_id":"vs_team"}"#,
     )
     .await;
-    assert_eq!(StatusCode::FORBIDDEN, row_status);
+    assert_eq!(StatusCode::FORBIDDEN, status);
     assert_eq!(
         "Access denied: You do not have permission to access this vector store",
-        text(at(&row_body, "detail"))
+        text(at(&body, "detail"))
     );
-    assert_eq!(vec!["vs_team".to_owned()], row_database.asked());
+    assert_eq!(vec!["vs_team".to_owned()], database.asked());
 }
 
 #[tokio::test]
@@ -929,6 +976,17 @@ async fn management_read_auth_and_flags() {
     )
     .await;
     assert_eq!(StatusCode::FORBIDDEN, blocked_status);
+}
+
+#[tokio::test]
+async fn management_admin_and_viewer_bypass_the_disabled_flag() {
+    let state = build(Setup {
+        database: Some(FakeDatabase::new(vec![db_store("vs_db")])),
+        registry: None,
+        world: World::default(),
+        privileges: false,
+        settings: flags_blocked(),
+    });
     assert_eq!(
         StatusCode::OK,
         call(&state, &admin(), Method::GET, LIST_PATH, "").await.0
@@ -937,8 +995,11 @@ async fn management_read_auth_and_flags() {
         StatusCode::OK,
         call(&state, &viewer(), Method::GET, LIST_PATH, "").await.0
     );
+}
 
-    let open = build(Setup {
+#[tokio::test]
+async fn management_read_open_flags_still_apply_store_visibility() {
+    let state = build(Setup {
         database: Some(FakeDatabase::new(vec![
             db_store("vs_free"),
             team_store("vs_team", "t1"),
@@ -948,16 +1009,16 @@ async fn management_read_auth_and_flags() {
         privileges: false,
         settings: flags_open(),
     });
-    let (open_status, _open_headers, open_body) = call(
-        &open,
+    let (status, _, body) = call(
+        &state,
         &internal("u1", Some("t1")),
         Method::GET,
         LIST_PATH,
         "",
     )
     .await;
-    assert_eq!(StatusCode::OK, open_status);
-    assert_eq!(vec!["vs_team".to_owned()], ids(&open_body));
+    assert_eq!(StatusCode::OK, status);
+    assert_eq!(vec!["vs_team".to_owned()], ids(&body));
 }
 
 #[tokio::test]
