@@ -166,6 +166,17 @@ fn config_with_database() -> Config {
     .expect("the test config loads")
 }
 
+// the database without litellm_settings.validate_end_user_id_in_db
+fn config_with_database_only() -> Config {
+    ConfigLoader {
+        lookup: BTreeMap::<String, String>::new(),
+    }
+    .load(
+        "general_settings:\n  master_key: secret-master-key\n  database_url: postgresql://user:password@127.0.0.1:1/betterlite\n",
+    )
+    .expect("the test config loads")
+}
+
 fn master_context(master_key: &SecretString) -> AuthContext {
     let input = StageInput::MasterKey(Some(master_key.clone()));
     let Ok(context) = dispatch(AuthBackend::MasterKey, &input, master_key) else {
@@ -443,6 +454,23 @@ async fn production_validation_drops_an_unknown_id() {
     let (_, _, passthrough) =
         run_request(&config_with_master_key(), None, None, "ghost-b880").await;
     assert_eq!(passthrough.as_deref(), Some("ghost-b880"));
+}
+
+// a database alone does not open the lookup: LiteLLM's validation flag must be on too
+#[test]
+fn the_production_resolver_needs_the_validation_flag() {
+    let master_key = SecretString::from("secret-master-key".to_owned());
+    let mut request = stage_request(&[("x-litellm-end-user-id", "alice")], "{}");
+    request
+        .extensions_mut()
+        .insert(state_for(&config_with_database_only()));
+    let Ok(stage) = stage_input(&request, Some(&master_context(&master_key)), None) else {
+        panic!("the authenticated request builds its stage input");
+    };
+    assert!(
+        stage.rule.resolver.is_none(),
+        "the resolver is built only when validation is on"
+    );
 }
 
 fn key_with_end_user_budget(budget_id: &str) -> UserAPIKeyAuth {
