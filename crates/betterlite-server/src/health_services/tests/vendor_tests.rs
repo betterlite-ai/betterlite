@@ -29,6 +29,18 @@ async fn vendor_datadog_answers_its_health_check(
     assert_eq!(health.message.as_deref(), message);
 }
 
+#[tokio::test(start_paused = true)]
+async fn vendor_datadog_allows_an_internal_user() {
+    let world = World::default();
+    let reply = world
+        .get("/health/services?service=datadog", Some(&user_context()))
+        .await;
+    assert_eq!(reply.status, StatusCode::OK);
+    let health = reply.health();
+    assert_eq!(health.status, "healthy");
+    assert_eq!(health.message.as_deref(), Some("Datadog is healthy"));
+}
+
 #[rstest]
 #[case::healthy(Answer::Healthy, "healthy", Some("Datadog Metrics is healthy"))]
 #[case::unhealthy(Answer::Unhealthy("metrics down"), "unhealthy", Some("metrics down"))]
