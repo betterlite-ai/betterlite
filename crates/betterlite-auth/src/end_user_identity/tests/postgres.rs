@@ -135,7 +135,11 @@ fn wire(pool: &Pool) -> Wired {
     let identity = EndUserIdResolver {
         validate_end_user_id_in_db: true,
         max_end_user_budget_id: None,
-        lookups: Some(DatabaseLookups { end_users, users }),
+        lookups: Some(DatabaseLookups {
+            end_users,
+            users,
+            deadline_seconds: 30.0_f64,
+        }),
         cache: validation,
     };
     Wired {

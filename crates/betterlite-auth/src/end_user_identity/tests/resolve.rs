@@ -1,18 +1,40 @@
 #![cfg(test)]
 
 use std::sync::Arc;
+use std::time::Duration;
 
+use async_trait::async_trait;
 use betterlite_models::decisions::Json;
 use rstest::rstest;
+use tokio::time::sleep;
 
 use super::super::cache::{NEGATIVE_TTL_SECONDS, POSITIVE_TTL_SECONDS, ValidationCache};
-use super::super::existence::UserExistence;
+use super::super::existence::{EndUserExistence, ExistenceError, UserExistence, UserProbe};
 use super::super::resolve::{DatabaseLookups, EndUserIdResolver, ResolveError, ResolveRequest};
 use super::support::{
     Answer, ScriptedCache, ScriptedEndUsers, ScriptedUserStore, ScriptedUsers, UserCachePort,
     assert_wrote, capture_events, debug_messages, resolver_for, user_lookup,
 };
 use crate::auth_user_lookup::lookup::UserLookup;
+
+struct StalledEndUsers;
+
+#[async_trait]
+impl EndUserExistence for StalledEndUsers {
+    async fn end_user_exists(&self, _end_user_id: &str) -> Result<bool, ExistenceError> {
+        sleep(Duration::from_secs(1)).await;
+        Ok(false)
+    }
+}
+
+struct MissingUsers;
+
+#[async_trait]
+impl UserExistence for MissingUsers {
+    async fn user_exists(&self, _probe: &UserProbe<'_>) -> Result<bool, ExistenceError> {
+        Ok(false)
+    }
+}
 
 fn collaborators(end_users: Answer, users: Answer) -> (Arc<ScriptedEndUsers>, Arc<ScriptedUsers>) {
     (
@@ -49,6 +71,28 @@ async fn unknown_enforced_user() {
     assert!(!probes[0].user_id_upsert);
     assert!(!probes[0].check_db_only);
     assert_wrote(&cache, "ghost", "invalid", NEGATIVE_TTL_SECONDS);
+}
+
+#[tokio::test]
+async fn stalled_session_acquisition_is_bounded_by_the_probe_deadline() {
+    let identity = EndUserIdResolver {
+        validate_end_user_id_in_db: true,
+        max_end_user_budget_id: None,
+        lookups: Some(DatabaseLookups {
+            end_users: Arc::new(StalledEndUsers),
+            users: Arc::new(MissingUsers),
+            deadline_seconds: 0.01_f64,
+        }),
+        cache: Arc::new(ScriptedCache::new()),
+    };
+    let result = tokio::time::timeout(
+        Duration::from_millis(200),
+        identity.resolve(&request(Some("ghost"), None)),
+    )
+    .await
+    .expect("the full existence probe is bounded")
+    .expect("the timeout is treated as a negative existence answer");
+    assert!(result.is_none());
 }
 
 #[tokio::test]
@@ -253,6 +297,7 @@ async fn no_user_upsert() {
         lookups: Some(DatabaseLookups {
             end_users: Arc::<ScriptedEndUsers>::clone(&end_users),
             users,
+            deadline_seconds: 1.0_f64,
         }),
         cache: validation,
     };

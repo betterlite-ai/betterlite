@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use tokio_util::task::TaskTracker;
 
 use axum::body::{Body, Bytes};
 use axum::http::{Request, header};
@@ -31,6 +32,8 @@ pub struct EndUserIdentityStageInput {
     pub raw_end_user_id: Option<String>,
     pub rule: Arc<EndUserIdentityRule>,
     pub database: bool,
+    pub state: Option<Arc<ServerState>>,
+    pub tasks: Option<TaskTracker>,
 }
 
 // The rule the proxy wired stays authoritative, and without one the state supplies the production resolver.
@@ -38,11 +41,7 @@ fn rule_for_request(request: &Request<Body>) -> Arc<EndUserIdentityRule> {
     if let Some(rule) = request.extensions().get::<Arc<EndUserIdentityRule>>() {
         return Arc::clone(rule);
     }
-    let resolver = request
-        .extensions()
-        .get::<Arc<ServerState>>()
-        .and_then(|state| state.end_user_identity.resolver(state));
-    Arc::new(EndUserIdentityRule { resolver })
+    Arc::new(EndUserIdentityRule::default())
 }
 
 fn database_for_request(request: &Request<Body>) -> bool {
@@ -85,6 +84,8 @@ pub(crate) fn stage_input(
         raw_end_user_id: extracted_id(request, body),
         rule: rule_for_request(request),
         database: database_for_request(request),
+        state: request.extensions().get::<Arc<ServerState>>().cloned(),
+        tasks: request.extensions().get::<TaskTracker>().cloned(),
     })
 }
 
@@ -99,7 +100,28 @@ pub(crate) async fn prefetch(
         .0
         .as_ref()
         .and_then(|key| KeyEndUserDefaults::of_key(key).key_end_user_budget_id);
-    let resolved = match stage.rule.resolver.as_deref() {
+    let production_resolver = if stage.rule.resolver.is_none() && stage.database {
+        let state = stage.state.clone();
+        let tasks = stage.tasks.clone().unwrap_or_default();
+        tokio::task::spawn_blocking(move || {
+            state
+                .as_ref()
+                .and_then(|state| state.end_user_identity.resolver(state, &tasks))
+        })
+        .await
+        .unwrap_or_else(|error| {
+            tracing::error!(%error, "the end-user identity resolver initialization failed");
+            None
+        })
+    } else {
+        None
+    };
+    let resolver = stage
+        .rule
+        .resolver
+        .as_deref()
+        .or(production_resolver.as_deref());
+    let resolved = match resolver {
         Some(resolver) if stage.database => resolver
             .resolve(&ResolveRequest {
                 raw_end_user_id: stage.raw_end_user_id.as_deref(),
@@ -129,9 +151,6 @@ pub(crate) fn end_user_stage_input(
     authenticated: Option<&AuthContext>,
 ) -> Result<EndUserStageInput, AuthenticationFailure> {
     let mut stage = auth_end_users::stage_input(request, authenticated)?;
-    if !validated_id_decides(request, &stage.context) {
-        return Ok(stage);
-    }
     let mut rule = (*stage.rule).clone();
     rule.end_user_id = stage
         .context
@@ -143,18 +162,7 @@ pub(crate) fn end_user_stage_input(
     Ok(stage)
 }
 
-// with database validation on, the resolved id, including none, is the only id the lookup may read
-fn validated_id_decides(request: &Request<Body>, context: &AuthContext) -> bool {
-    if context.principal.end_user.is_some() {
-        return true;
-    }
-    request
-        .extensions()
-        .get::<Arc<ServerState>>()
-        .map(|state| &state.end_user_identity)
-        .is_some_and(|slot| slot.database && slot.validate_end_user_id_in_db)
-}
-
+// The following budget lookup must use the identity stage's resolved ID, including none.
 // LiteLLM lets a cache failure escape the auth path as an unhandled internal server error.
 fn exception(error: &ResolveError) -> ProxyException {
     tracing::error!(error = %error, "the end-user id validation failed");

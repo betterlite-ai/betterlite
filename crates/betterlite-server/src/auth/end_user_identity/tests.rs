@@ -141,6 +141,7 @@ fn resolver(
         lookups: Some(DatabaseLookups {
             end_users: Arc::<ScriptedExistence>::clone(&end_users),
             users,
+            deadline_seconds: 1.0_f64,
         }),
         cache: Arc::<ScriptedCache>::clone(cache),
     };
@@ -208,6 +209,8 @@ fn stage_is_registered() {
         raw_end_user_id: Some("alice".to_owned()),
         rule: Arc::new(EndUserIdentityRule::default()),
         database: true,
+        state: None,
+        tasks: None,
     };
     let input = StageInput::AuthEndUserIdentity(Box::new(stage));
     let Ok(forwarded) = dispatch(AuthBackend::AuthEndUserIdentity, &input, &master_key) else {
@@ -402,6 +405,8 @@ async fn pass_through_without_a_database() {
             resolver: Some(identity),
         }),
         database: false,
+        state: None,
+        tasks: None,
     };
     prefetch(&mut without_database)
         .await
@@ -414,6 +419,8 @@ async fn pass_through_without_a_database() {
         raw_end_user_id: Some("bob".to_owned()),
         rule: Arc::new(EndUserIdentityRule::default()),
         database: true,
+        state: None,
+        tasks: None,
     };
     prefetch(&mut without_resolver)
         .await
@@ -424,6 +431,8 @@ async fn pass_through_without_a_database() {
         raw_end_user_id: None,
         rule: Arc::new(EndUserIdentityRule::default()),
         database: true,
+        state: None,
+        tasks: None,
     };
     prefetch(&mut no_id).await.expect("no id resolves to none");
     assert_eq!(end_user_id(&no_id.context), None);
@@ -494,6 +503,8 @@ async fn key_budget_id_keeps_an_unknown_id() {
             resolver: Some(kept_resolver),
         }),
         database: true,
+        state: None,
+        tasks: None,
     };
     prefetch(&mut kept).await.expect("the end-user validation");
     assert_eq!(end_user_id(&kept.context), Some("ghost"));
@@ -507,6 +518,8 @@ async fn key_budget_id_keeps_an_unknown_id() {
             resolver: Some(dropped_resolver),
         }),
         database: true,
+        state: None,
+        tasks: None,
     };
     prefetch(&mut dropped)
         .await
@@ -625,5 +638,26 @@ async fn a_dropped_id_clears_a_preseeded_end_user_lookup() {
         lookup.lookups().is_empty(),
         "the dropped id never reaches the budget lookup"
     );
+    assert!(lookup.checks().is_empty());
+}
+
+#[tokio::test]
+async fn disabled_validation_without_id_clears_a_preseeded_budget_id() {
+    let master_key = SecretString::from("secret-master-key".to_owned());
+    let lookup = Arc::new(ScriptedEndUserLookup::default());
+    let mut request = stage_request(&[], "{}");
+    request
+        .extensions_mut()
+        .insert(state_for(&config_with_database(false)));
+    request
+        .extensions_mut()
+        .insert(end_user_rule(&lookup, Some("unrelated-user")));
+    let stage = super::end_user_stage_input(&request, Some(&master_context(&master_key)))
+        .expect("the combined stage input is built");
+    assert!(stage.rule.end_user_id.is_none());
+    crate::auth::auth_end_users::prefetch(&stage)
+        .await
+        .expect("an absent ID skips the end-user budget lookup");
+    assert!(lookup.lookups().is_empty());
     assert!(lookup.checks().is_empty());
 }

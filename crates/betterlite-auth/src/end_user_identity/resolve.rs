@@ -1,7 +1,9 @@
 use std::fmt;
 use std::sync::Arc;
+use std::time::Duration;
 
 use betterlite_models::decisions::Json;
+use tokio::time::timeout;
 
 use super::cache::{VALIDATION_KEY_PREFIX, ValidationCache, Verdict};
 use super::existence::{EndUserExistence, UserExistence, UserProbe};
@@ -11,6 +13,7 @@ use crate::auth_cache::AuthCacheError;
 pub struct DatabaseLookups {
     pub end_users: Arc<dyn EndUserExistence>,
     pub users: Arc<dyn UserExistence>,
+    pub deadline_seconds: f64,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -71,7 +74,21 @@ impl EndUserIdResolver {
                 Verdict::Invalid => has_default_budget.then(|| raw_end_user_id.to_owned()),
             });
         }
-        let is_valid = exists_in_db(lookups, raw_end_user_id).await;
+        let deadline = if lookups.deadline_seconds <= 0.0_f64 {
+            Duration::ZERO
+        } else {
+            Duration::try_from_secs_f64(lookups.deadline_seconds).unwrap_or(Duration::MAX)
+        };
+        let is_valid = match timeout(deadline, exists_in_db(lookups, raw_end_user_id)).await {
+            Ok(is_valid) => is_valid,
+            Err(_elapsed) => {
+                tracing::debug!(
+                    deadline_seconds = lookups.deadline_seconds,
+                    "end_user validation: existence probe exceeded its deadline"
+                );
+                false
+            }
+        };
         self.cache_verdict(&cache_key, is_valid).await?;
         Ok((is_valid || has_default_budget).then(|| raw_end_user_id.to_owned()))
     }

@@ -147,6 +147,7 @@ async fn end_user_adapter_swallows_a_row_failure() {
         lookups: Some(DatabaseLookups {
             end_users: Arc::new(existence),
             users: Arc::<ScriptedUsers>::clone(&users),
+            deadline_seconds: 1.0_f64,
         }),
         cache: Arc::new(ScriptedCache::new()),
     };
@@ -183,6 +184,7 @@ async fn budget_failure_falls_through_to_the_user() {
         lookups: Some(DatabaseLookups {
             end_users: Arc::new(existence),
             users: Arc::new(ScriptedUsers::new(Answer::Found)),
+            deadline_seconds: 1.0_f64,
         }),
         cache: Arc::new(ScriptedCache::new()),
     };
@@ -248,6 +250,7 @@ async fn real_user_lookup_never_creates_a_user() {
         lookups: Some(DatabaseLookups {
             end_users: Arc::<ScriptedEndUsers>::clone(&end_users),
             users,
+            deadline_seconds: 1.0_f64,
         }),
         cache: Arc::new(ScriptedCache::new()),
     };

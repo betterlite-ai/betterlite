@@ -99,7 +99,11 @@ impl Slot {
 
     // the first request that needs validation builds the resolver once, and every later request shares it
     #[must_use]
-    pub fn resolver(&self, state: &Arc<ServerState>) -> Option<Arc<EndUserIdResolver>> {
+    pub fn resolver(
+        &self,
+        state: &Arc<ServerState>,
+        tasks: &TaskTracker,
+    ) -> Option<Arc<EndUserIdResolver>> {
         if !self.database || !self.validate_end_user_id_in_db {
             return None;
         }
@@ -109,7 +113,8 @@ impl Slot {
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
         if matches!(&*installed, Installed::Unbuilt) {
-            *installed = build_resolver(state, self).map_or(Installed::Failed, Installed::Ready);
+            *installed =
+                build_resolver(state, self, tasks).map_or(Installed::Failed, Installed::Ready);
         }
         match &*installed {
             Installed::Ready(resolver) => Some(Arc::clone(resolver)),
@@ -119,7 +124,11 @@ impl Slot {
 }
 
 // The production resolver: B733's cache, B739's row lookup, B736's user probe and B1218's registry.
-fn build_resolver(state: &Arc<ServerState>, slot: &Slot) -> Option<Arc<EndUserIdResolver>> {
+fn build_resolver(
+    state: &Arc<ServerState>,
+    slot: &Slot,
+    tasks: &TaskTracker,
+) -> Option<Arc<EndUserIdResolver>> {
     let store = cli_writer_store(state)?;
     let cache = production_cache(&slot.validation.settings.cache)?;
     let end_users = Arc::new(DatabaseEndUsers {
@@ -131,7 +140,7 @@ fn build_resolver(state: &Arc<ServerState>, slot: &Slot) -> Option<Arc<EndUserId
             clock: SystemClock,
             last_hit: Mutex::new(None),
         }),
-        tasks: TaskTracker::new(),
+        tasks: tasks.clone(),
     });
     let existence = ProductionExistence {
         rows: Some(Arc::<DatabaseEndUsers>::clone(&end_users)),
@@ -143,13 +152,14 @@ fn build_resolver(state: &Arc<ServerState>, slot: &Slot) -> Option<Arc<EndUserId
         store: store.as_ref().clone(),
         max_end_user_budget_id: slot.max_end_user_budget_id.clone(),
     };
-    let users = user_lookup(&store, &cache, &slot.validation.settings)?;
+    let users = user_lookup(&store, &cache, &slot.validation.settings, tasks)?;
     Some(Arc::new(EndUserIdResolver {
         validate_end_user_id_in_db: slot.validate_end_user_id_in_db,
         max_end_user_budget_id: slot.max_end_user_budget_id.clone(),
         lookups: Some(DatabaseLookups {
             end_users: Arc::new(existence),
             users,
+            deadline_seconds: slot.validation.settings.deadline_seconds,
         }),
         cache,
     }))
@@ -178,6 +188,7 @@ fn user_lookup(
     store: &Arc<PostgresStore>,
     cache: &Arc<AuthCache<DualCache<LocalMemoryOps>>>,
     settings: &ResolverSettings,
+    tasks: &TaskTracker,
 ) -> Option<Arc<UserLookup>> {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).ok()?;
     let lookup_cache = Arc::<AuthCache<DualCache<LocalMemoryOps>>>::clone(cache);
@@ -192,13 +203,13 @@ fn user_lookup(
                 clock: SystemClock,
                 last_hit: Mutex::new(None),
             }),
-            tasks: TaskTracker::new(),
+            tasks: tasks.clone(),
         })),
         cadence: Arc::new(Cadence::new(CADENCE_MAX_SIZE, Arc::new(WallClock))),
         db_cache_expiry: DB_CACHE_EXPIRY,
         budget_reset: Arc::new(UnwiredBudgetReset),
         enrollment: Arc::new(NoDefaultTeams),
-        tasks: TaskTracker::new(),
+        tasks: tasks.clone(),
         defaults: settings.defaults.clone(),
         redactor: Arc::new(redactor),
     }))

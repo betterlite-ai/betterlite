@@ -293,6 +293,7 @@ pub(super) fn lookups(
     DatabaseLookups {
         end_users: Arc::<ScriptedEndUsers>::clone(end_users),
         users: Arc::<ScriptedUsers>::clone(users),
+        deadline_seconds: 1.0_f64,
     }
 }
 
