@@ -323,6 +323,8 @@ jobs:
               # cargo mutants numbers its shards from 0
               shards=$(jq '[.[] | select(startswith("mutants-"))] | length' <<<"$PARTS") || exit 1
               export MUTANTS_SHARD="$(( ${PART#mutants-} - 1 ))/$shards"
+              # the mutants check clears RUSTC_WRAPPER for incremental builds, so the heavy targets take turns through the workspace wrapper: all six shards of run 45709493351 died with exit 137 in three attempts
+              export RUSTC_WORKSPACE_WRAPPER="$GITHUB_WORKSPACE/.github/scripts/rustc-turns.sh"
               selection=(--only mutants) ;;
           esac
           if [[ $PART == task ]]; then
