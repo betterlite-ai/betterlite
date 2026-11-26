@@ -1,0 +1,305 @@
+#![cfg(test)]
+
+use std::sync::{Arc, PoisonError};
+
+use betterlite_http::interactions::base::clients::HttpClients;
+use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
+use rstest::rstest;
+use secrecy::SecretString;
+
+use super::super::convert::{CallWire, ConvertError, parse};
+use super::super::error::SessionFailure;
+use super::decisions::decision_deps;
+use super::{SessionCore, azure_ai};
+
+fn globals() -> GlobalCredentials {
+    GlobalCredentials {
+        api_key: Some(SecretString::from("sk-global")),
+        api_base: Some(String::from("https://global.example")),
+        xai_key: None,
+        inception_key: None,
+        lemonade_key: None,
+    }
+}
+
+#[test]
+fn core_reads_the_environment_the_session_was_given() {
+    let core: SessionCore = SessionCore::build(r#"{"environment": {"A": "B"}}"#).unwrap();
+    let resolution = core.resolution(&globals());
+    assert_eq!(
+        resolution.environment.get("A").map(String::as_str),
+        Some("B")
+    );
+    assert_eq!(
+        resolution.globals.api_base.as_deref(),
+        Some("https://global.example")
+    );
+    assert!(resolution.known_model_names.is_empty());
+    let tools_empty = core
+        .tools
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .tools
+        .is_empty();
+    assert!(tools_empty);
+}
+
+#[test]
+fn core_policy_trusts_proxy_headers_for_logging() {
+    let core: SessionCore = SessionCore::build("{}").unwrap();
+    let env = core.pre_post_env();
+    assert!(env.decision.content);
+    assert!(env.decision.key_info);
+    assert!(env.input_callbacks.is_empty());
+    assert!(env.logger_fn.is_none());
+    assert!(env.sentry.is_none());
+}
+
+#[test]
+fn core_sandbox_uses_the_session_environment() {
+    let core: SessionCore =
+        SessionCore::build(r#"{"environment":{"E2B_API_KEY":"sk-env"}}"#).unwrap();
+    let sandbox = core.sandbox();
+    assert_eq!(
+        sandbox
+            .e2b
+            .environment
+            .get("E2B_API_KEY")
+            .map(String::as_str),
+        Some("sk-env")
+    );
+    assert_eq!(
+        sandbox
+            .opensandbox
+            .environment
+            .get("E2B_API_KEY")
+            .map(String::as_str),
+        Some("sk-env")
+    );
+}
+
+#[test]
+fn core_decision_dependencies_preserve_global_settings() {
+    let core: SessionCore = SessionCore::build(r#"{"environment":{}}"#).unwrap();
+    let wire: CallWire = parse(
+        r#"{"settings":{"api_base":"https://global.example","drop_params":true},"arguments":{"model":"gpt-4o"}}"#,
+    )
+    .unwrap();
+    let globals = wire.settings.global_credentials();
+    let resolution = core.resolution(&globals);
+    let env = core.pre_post_env();
+    let mut clients = HttpClients::new(core.tls.clone(), Arc::clone(&core.proxy));
+    let deps = decision_deps(&wire, &resolution, &env, &mut clients);
+    assert_eq!(
+        deps.prepare.globals.api_base.as_deref(),
+        Some("https://global.example")
+    );
+    assert!(deps.prepare.global_drop_params);
+}
+
+#[test]
+fn core_answers_an_unknown_operation_with_the_operation_it_got() {
+    let core: SessionCore = SessionCore::build("{}").unwrap();
+    let wire: CallWire = parse(r#"{"operation": "chat"}"#).unwrap();
+    let failure = core.call(&wire).unwrap_err();
+    let SessionFailure::Invalid(ConvertError::Operation { operation }) = failure else {
+        panic!("an unknown operation is a conversion failure");
+    };
+    assert_eq!(operation, "chat");
+}
+
+#[rstest]
+#[case::unknown("chat")]
+#[case::register("register_tools")]
+#[case::resolve("resolve_tool")]
+#[tokio::test]
+async fn core_rejects_non_async_operations(#[case] operation: &str) {
+    let core = SessionCore::build(r#"{"environment":{}}"#).unwrap();
+    let wire: CallWire = parse(&format!(r#"{{"operation":"{operation}"}}"#)).unwrap();
+    let failure = core.acall(&wire).await.unwrap_err();
+    let SessionFailure::Invalid(ConvertError::Operation {
+        operation: rejected,
+    }) = failure
+    else {
+        panic!("an unsupported async operation is a conversion failure");
+    };
+    assert_eq!(rejected, operation);
+}
+
+#[test]
+fn core_registers_and_resolves_sandbox_tools() {
+    let core: SessionCore = SessionCore::build("{}").unwrap();
+    let register: CallWire = parse(
+        r#"{"operation": "register_tools", "arguments": {"tools": [
+            {"sandbox_tool_name": "e2b-tool", "litellm_params": {
+                "sandbox_provider": "e2b", "api_key": "sk-e2b", "api_base": "https://e2b.example"
+            }},
+            {"sandbox_tool_name": "skip-me", "litellm_params": {}}
+        ], "environment": {}}}"#,
+    )
+    .unwrap();
+    assert_eq!(core.call(&register).unwrap(), "null");
+    let resolve: CallWire =
+        parse(r#"{"operation": "resolve_tool", "arguments": {"name": "e2b-tool"}}"#).unwrap();
+    let answer = core.call(&resolve).unwrap();
+    assert!(answer.contains(r#""sandbox_provider":"e2b""#));
+    assert!(answer.contains(r#""api_key":"sk-e2b""#));
+    let missing: CallWire =
+        parse(r#"{"operation": "resolve_tool", "arguments": {"name": "other"}}"#).unwrap();
+    assert_eq!(core.call(&missing).unwrap(), "null");
+    let cleared: CallWire =
+        parse(r#"{"operation": "register_tools", "arguments": {"tools": [], "environment": {}}}"#)
+            .unwrap();
+    assert_eq!(core.call(&cleared).unwrap(), "null");
+    assert_eq!(core.call(&resolve).unwrap(), "null");
+}
+
+#[test]
+fn core_resolves_sandbox_tool_credentials_from_session_environment() {
+    let core: SessionCore =
+        SessionCore::build(r#"{"environment":{"E2B_API_KEY":"sk-from-env"}}"#).unwrap();
+    let register: CallWire = parse(
+        r#"{"operation":"register_tools","arguments":{"environment":{"E2B_API_KEY":"sk-from-env"},"tools":[{"sandbox_tool_name":"env-tool","litellm_params":{"sandbox_provider":"e2b","api_key":"os.environ/E2B_API_KEY"}}]}}"#,
+    )
+    .unwrap();
+    assert_eq!(core.call(&register).unwrap(), "null");
+    let resolve: CallWire =
+        parse(r#"{"operation":"resolve_tool","arguments":{"name":"env-tool"}}"#).unwrap();
+    let answer = core.call(&resolve).unwrap();
+    assert!(answer.contains(r#""api_key":"sk-from-env""#));
+}
+
+#[test]
+fn core_maps_malformed_sandbox_tool_params_to_value_error() {
+    let core: SessionCore = SessionCore::build("{}").unwrap();
+    let wire: CallWire = parse(
+        r#"{"operation":"register_tools","arguments":{"tools":[{"sandbox_tool_name":"bad","litellm_params":true}]}}"#,
+    )
+    .unwrap();
+    let SessionFailure::Raised(payload) = core.call(&wire).unwrap_err() else {
+        panic!("malformed tool params are a raised Python error");
+    };
+    assert_eq!(payload.kind, "ValueError");
+}
+
+#[test]
+fn core_maps_sandbox_tool_secret_lookup_failures_to_exceptions() {
+    let core: SessionCore = SessionCore::build("{}").unwrap();
+    let wire: CallWire = parse(
+        r#"{"operation":"register_tools","arguments":{"tools":[{"sandbox_tool_name":"oidc-tool","litellm_params":{"sandbox_provider":"e2b","api_key":"os.environ/oidc/unsupported/audience"}}]}}"#,
+    )
+    .unwrap();
+    let SessionFailure::Raised(payload) = core.call(&wire).unwrap_err() else {
+        panic!("a secret lookup failure is a raised Python error");
+    };
+    assert_eq!(payload.kind, "Exception");
+}
+
+#[test]
+fn core_azure_ai_builds_the_foundry_decisions_url() {
+    let config = azure_ai();
+    let url = (config.complete_url)("https://res.example", "gpt-4o");
+    assert_eq!(url, "https://res.example/providers/microsoft/v1/systemone");
+}
+
+#[test]
+fn core_answers_a_sync_decision_with_an_unusable_timeout_as_a_conversion_failure() {
+    let core: SessionCore = SessionCore::build("{}").unwrap();
+    let wire: CallWire =
+        parse(r#"{"operation": "decisions", "arguments": {"model": "gpt-4o", "timeout": -1.0}}"#)
+            .unwrap();
+    let failure = core.call(&wire).unwrap_err();
+    assert!(matches!(
+        failure,
+        SessionFailure::Invalid(ConvertError::Timeout { .. })
+    ));
+}
+
+#[test]
+fn core_maps_invalid_decision_fields_to_a_bad_request() {
+    let core: SessionCore = SessionCore::build(r#"{"environment":{}}"#).unwrap();
+    let wire: CallWire =
+        parse(r#"{"operation":"decisions","arguments":{"model":"gpt-4o","questions":7}}"#).unwrap();
+    let SessionFailure::Raised(payload) = core.call(&wire).unwrap_err() else {
+        panic!("invalid decision fields are a provider error");
+    };
+    assert_eq!(payload.kind, "BadRequestError");
+}
+
+#[rstest]
+#[case::decisions("decisions")]
+#[case::systemone("systemone")]
+#[tokio::test]
+async fn core_rejects_async_timeouts(#[case] operation: &str) {
+    let core: SessionCore = SessionCore::build("{}").unwrap();
+    let wire: CallWire = parse(&format!(
+        r#"{{"operation":"{operation}","arguments":{{"model":"gpt-4o","timeout":-1.0}}}}"#
+    ))
+    .unwrap();
+    let failure = core.acall(&wire).await.unwrap_err();
+    assert!(matches!(
+        failure,
+        SessionFailure::Invalid(ConvertError::Timeout { .. })
+    ));
+}
+
+#[tokio::test]
+async fn core_answers_an_unusable_sandbox_create_interval_as_a_conversion_failure() {
+    let core: SessionCore = SessionCore::build("{}").unwrap();
+    let wire: CallWire =
+        parse(r#"{"operation": "create_sandbox", "arguments": {"poll_interval": -1.0}}"#).unwrap();
+    let failure = core.acall(&wire).await.unwrap_err();
+    assert!(matches!(
+        failure,
+        SessionFailure::Invalid(ConvertError::Timeout { .. })
+    ));
+}
+
+#[tokio::test]
+async fn core_answers_a_run_with_no_container_as_a_conversion_failure() {
+    let core: SessionCore = SessionCore::build("{}").unwrap();
+    let wire: CallWire =
+        parse(r#"{"operation": "run_code", "arguments": {"code": "print(1)"}}"#).unwrap();
+    let failure = core.acall(&wire).await.unwrap_err();
+    assert!(matches!(
+        failure,
+        SessionFailure::Invalid(ConvertError::Container)
+    ));
+}
+
+#[tokio::test]
+async fn core_runs_a_valid_handle_and_propagates_the_missing_provider_key() {
+    let core: SessionCore = SessionCore::build(r#"{"environment":{}}"#).unwrap();
+    let wire: CallWire = parse(
+        r#"{"operation":"run_code","arguments":{"provider":"e2b","code":"print(1)","container":{"id":"sbx-1","provider":"e2b","hidden_params":{"envd_access_token":"envd","traffic_access_token":"traffic","api_base":"not a url"}}}}"#,
+    )
+    .unwrap();
+    assert!(matches!(
+        core.acall(&wire).await,
+        Err(SessionFailure::Raised(_))
+    ));
+}
+
+#[tokio::test]
+async fn core_answers_a_delete_with_no_container_as_a_conversion_failure() {
+    let core: SessionCore = SessionCore::build("{}").unwrap();
+    let wire: CallWire = parse(r#"{"operation": "delete_sandbox", "arguments": {}}"#).unwrap();
+    let failure = core.acall(&wire).await.unwrap_err();
+    assert!(matches!(
+        failure,
+        SessionFailure::Invalid(ConvertError::Container)
+    ));
+}
+
+#[tokio::test]
+async fn core_answers_an_unusable_code_interpreter_interval_as_a_conversion_failure() {
+    let core: SessionCore = SessionCore::build("{}").unwrap();
+    let wire: CallWire =
+        parse(r#"{"operation": "code_interpreter", "arguments": {"poll_interval": -1.0}}"#)
+            .unwrap();
+    let failure = core.acall(&wire).await.unwrap_err();
+    assert!(matches!(
+        failure,
+        SessionFailure::Invalid(ConvertError::Timeout { .. })
+    ));
+}

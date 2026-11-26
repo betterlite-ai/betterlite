@@ -1,0 +1,23 @@
+kind: helper
+name: entity-model-access-key-resolved-target
+call:
+  entity_model_access:
+    steps:
+      - function: key
+        model: fast
+        database: false
+        token: {token: hash-1, models: [gpt-4o], aliases: {fast: gpt-4o}}
+      - function: key
+        model: fast
+        database: false
+        token: {token: hash-1, models: [fast], aliases: {fast: gpt-4o}}
+      - function: key
+        model: gpt-4o
+        database: false
+        token: {token: hash-1, models: [fast], aliases: {fast: gpt-4o}}
+      - function: key
+        model: claude
+        database: false
+        token: {token: hash-1, models: []}
+env: {}
+compare: {ignore: []}

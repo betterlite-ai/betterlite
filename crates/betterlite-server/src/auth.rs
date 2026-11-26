@@ -42,6 +42,7 @@ pub mod jwt_team_authorization;
 pub mod jwt_team_selection;
 pub mod jwt_verification;
 pub mod key_context;
+pub mod key_prefix;
 pub mod master_database_auth;
 pub mod model_grant_intersection;
 pub mod oauth_tokens;
@@ -69,15 +70,13 @@ use crate::auth::auth_request_models::{RequestModelStageInput, resolve};
 use crate::auth::auth_resource_grants::{
     ResourceGrantStageInput, database_for_request, rule_for_request as grant_rule_for_request,
 };
-use crate::auth::request_body_safety::RequestBodySafetyStageInput;
+use crate::auth::virtual_key_routes::stage_input as virtual_key_route_stage_input;
 use crate::error_body::AuthenticationFailure;
-use crate::state::ServerState;
 use axum::body::{Body, Bytes};
 use axum::extract::State;
 use axum::http::{HeaderMap, Request, header};
 use axum::middleware::Next;
 use axum::response::Response;
-use regex::Regex;
 use secrecy::SecretString;
 pub(crate) async fn authenticate(
     State(master_key_state): State<Option<SecretString>>,
@@ -121,11 +120,13 @@ fn stage_input(
             auth_request_policy::stage_input(request, authenticated, body)?,
         ))),
         AuthBackend::RequestBodySafety => Ok(StageInput::RequestBodySafety(Box::new(
-            safety_stage_input(request, authenticated, body)?,
+            request_body_safety::stage_input(request, authenticated, body)?,
         ))),
+        AuthBackend::AuthVirtualKeyRoutes => virtual_key_route_stage_input(request, authenticated),
         AuthBackend::AuthRequestModels | AuthBackend::AuthModelPatterns => {
             model_pattern_input(backend, request, authenticated, resolver)
         }
+        AuthBackend::EntityModelAccess => entity_model_access::stage_input(request, authenticated),
         AuthBackend::AuthResourceGrants => Ok(resource_grant_stage_input(request, authenticated)?),
         AuthBackend::AuthTagBudgets => Ok(StageInput::AuthTagBudgets(Box::new(
             auth_tag_budgets::stage_input(request, authenticated)?,
@@ -146,31 +147,6 @@ fn stage_input(
             auth_context_sources::stage_input(request, authenticated, resolver, body)
         }
     }
-}
-
-fn safety_stage_input(
-    request: &Request<Body>,
-    authenticated: Option<&AuthContext>,
-    body: Option<&Bytes>,
-) -> Result<RequestBodySafetyStageInput, StageFailure> {
-    let context = authenticated
-        .cloned()
-        .ok_or(AuthenticationFailure::Missing)?;
-    let content_type = request
-        .headers()
-        .get(header::CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok())
-        .map(str::to_owned);
-    let slot = request
-        .extensions()
-        .get::<Arc<ServerState>>()
-        .map(|state| state.request_body_safety.clone());
-    Ok(RequestBodySafetyStageInput {
-        context,
-        content_type,
-        body: body.cloned().unwrap_or_default(),
-        slot,
-    })
 }
 
 fn model_pattern_input(
@@ -240,9 +216,11 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
                 .map_err(StageFailure::EndUsers)?;
             Ok(StageInput::AuthEndUsers(stage))
         }
+        StageInput::EntityModelAccess(stage) => entity_model_access::prefetched(stage).await,
         other @ (StageInput::MasterKey(_)
         | StageInput::AuthRequestPolicy(_)
         | StageInput::RequestBodySafety(_)
+        | StageInput::AuthVirtualKeyRoutes(_)
         | StageInput::AuthRequestModels(_)
         | StageInput::AuthModelPatterns(_)
         | StageInput::AuthContextSources(_)
@@ -336,28 +314,11 @@ pub fn parse_key_header(name: &str, header_bytes: &[u8]) -> Option<SecretString>
     }
     let header_value: String = header_bytes.iter().map(|byte| char::from(*byte)).collect();
     let token = if name == header::AUTHORIZATION.as_str() {
-        strip_prefix(&header_value).unwrap_or_default()
+        key_prefix::strip_prefix(&header_value).unwrap_or_default()
     } else if name == "x-litellm-api-key" {
-        strip_prefix(&header_value).unwrap_or(header_value)
+        key_prefix::strip_prefix(&header_value).unwrap_or(header_value)
     } else {
         header_value
     };
     Some(SecretString::from(token))
-}
-fn strip_prefix(value: &str) -> Option<String> {
-    for prefix in ["Bearer ", "Basic ", "bearer "] {
-        if value.starts_with(prefix) {
-            return Some(value.replace(prefix, ""));
-        }
-    }
-    value
-        .starts_with("AWS4-HMAC-SHA256")
-        .then(|| aws_credential(value))
-        .flatten()
-}
-fn aws_credential(value: &str) -> Option<String> {
-    let bearer = Regex::new(r"Credential=Bearer\s+([^/\s,]+)").ok()?;
-    let plain = Regex::new(r"Credential=([^/\s,]+)").ok()?;
-    let captures = bearer.captures(value).or_else(|| plain.captures(value))?;
-    captures.get(1).map(|token| token.as_str().to_owned())
 }

@@ -1,0 +1,56 @@
+id: B10110
+title: Seeded users prove the organization route policy over HTTP
+description: >-
+  B1229 builds the organization role checks in crates/betterlite-auth/src/organization_route_policy and installs them as an auth stage, and its proof stops at helper cases and behavior tests. Its HTTP cases could not run: an organization error needs a non-admin caller with organization memberships, and until B052 authenticates virtual keys every bearer but the master key gets 401 at the master stage. B870 then resolves the key to a user with memberships, and B754 calls the stage with that user and the team-org lookup. The postgres fixture also seeds no organization or membership rows. This task adds the cases once all of that has landed.
+
+
+  The fixture already creates LiteLLM_OrganizationTable and LiteLLM_OrganizationMembership. Let a seed carry organization rows and organization memberships with their user_role, and a user's own user_role, the way schema.prisma declares them, and insert them in seed_sql.rs. Then add HTTP cases under tools/oracle/cases/auth/organization-route-policy/ with keys for a proxy admin, an org_admin of one organization, an org_admin of another and an internal user with one membership: POST /organization/new by a non-admin answers 401 auth_error with param user_role; an org-admin route without organization_id, and one naming an organization the caller does not administer, answer 401 with param organization_id; the org_admin of the team's organization passes to the route; POST /team/new by the one-membership user without organization_id answers the multiple-organizations 401; a /team/update without organization_id is enriched from the team's organization; and a caller's own organization_id is kept.
+scope:
+  paths:
+  - tools/postgres-fixture/fixtures/baseline.sql
+  - tools/postgres-fixture/src/seed.rs
+  - tools/postgres-fixture/src/seed_sql.rs
+  - tools/oracle/cases/auth/organization-route-policy/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks_organization.py#L13-L107
+  why: The organization role checks and their 401 errors.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks_organization.py#L136-L216
+  why: How a request without organization_id is enriched from the team's organization.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L795-L812
+  why: The LiteLLM_OrganizationMembership row and its user_role.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L146-L179
+  why: The LiteLLM_OrganizationTable row.
+dod:
+- text: >-
+    A seed may carry organizations, organization memberships with a user_role and a user's own user_role, and the
+    fixture's own tests still pass.
+  proof: [fixture-tests]
+- text: >-
+    The seven organization cases pass against LiteLLM, and no denied request reaches the route.
+  proof: [oracle]
+checks:
+  optional: []
+  commands:
+  - id: fixture-tests
+    why: The fixture schema or seed rows changed what another case gets.
+    run: cargo nextest run --locked -p betterlite-postgres-fixture --no-tests=fail
+oracle_cases:
+- tools/oracle/cases/auth/organization-route-policy/organization-create-role-error.yaml
+- tools/oracle/cases/auth/organization-route-policy/org-admin-route-error-params.yaml
+- tools/oracle/cases/auth/organization-route-policy/cross-org-denied.yaml
+- tools/oracle/cases/auth/organization-route-policy/org-admin-team-scope.yaml
+- tools/oracle/cases/auth/organization-route-policy/team-create-one-membership.yaml
+- tools/oracle/cases/auth/organization-route-policy/patch-template-enrichment.yaml
+- tools/oracle/cases/auth/organization-route-policy/caller-org-context-retained.yaml
+deviations: []
+out_of_scope:
+- The organization checks (B1229), key authentication (B052), the user and memberships (B870) and the call site (B754). This task only seeds the fixture and adds the cases.
+pitfalls:
+- The new seed fields default to empty, so an older case needs no change.
+- A proxy admin passes every organization check, so every denial case needs a non-admin key.
+- A database case needs POSTGRES_TEST_URL when run by hand; nextest starts its own server.
+review_level: standard
+budget:
+  max_changed_lines: 500
+  max_new_expects: 0

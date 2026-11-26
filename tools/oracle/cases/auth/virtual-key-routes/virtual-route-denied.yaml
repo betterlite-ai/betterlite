@@ -1,0 +1,31 @@
+name: virtual-key-routes-static-route-denied
+native_feature_eligibility: true
+config: |
+  general_settings:
+    master_key: oracle-master
+    allowed_routes: [/v1/embeddings]
+  model_list:
+    - model_name: virtual-route-model
+      litellm_params:
+        model: openai/virtual-route-upstream
+        api_base: "{{upstream}}"
+        api_key: oracle-key
+env: {}
+request:
+  method: POST
+  path: /v1/chat/completions
+  headers:
+    content-type: application/json
+    authorization: Bearer oracle-master
+  body:
+    model: virtual-route-model
+    messages:
+      - {role: user, content: Say hello.}
+    stream: false
+upstream: []
+compare:
+  headers: [content-type]
+  headers_present: []
+  upstream_headers: []
+  ignore:
+    - {pointer: /error/message, why: betterlite writes its own message}

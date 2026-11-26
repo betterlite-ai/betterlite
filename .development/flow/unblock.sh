@@ -96,14 +96,10 @@ case "${reason}" in
   *) ;;
 esac
 
-# a reason that only mentions the budget, with no count over it, goes on to the scope rule
+# the count comes from the gate, since reports word it many ways ("1,577", "1778 added-plus-deleted lines"); a branch inside its budget goes on to the scope rule
 need=
-rest=${reason}
-# a report may quote the overage before the total ("522 changed lines over ... 2022 changed lines"), so the largest count wins
-while [[ ${rest} =~ ([0-9]+)\ (changed|counted)\ lines(.*) ]]; do
-  [[ -z "${need}" || "${BASH_REMATCH[1]}" -gt "${need}" ]] && need=${BASH_REMATCH[1]}
-  rest=${BASH_REMATCH[3]}
-done
+counted=$(PATH=${P}/bin:${PATH} cargo gate run "${id}" --only diff-budget 2>&1)
+[[ ${counted} =~ ([0-9]+)\ changed\ lines,\ budget\ is ]] && need=${BASH_REMATCH[1]}
 # no budget line leaves old empty, and the rule below skips it
 old=$(grep -o -E 'max_changed_lines: [0-9]+' "${task}")
 old=${old%%$'\n'*}
