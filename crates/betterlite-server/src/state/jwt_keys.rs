@@ -53,7 +53,9 @@ impl Slot {
             0.0,
         );
         let cache_tier: Arc<dyn KeyCache> = Arc::new(cache);
-        let http = Arc::new(ProxiedJwksHttp::new(shared.client.clone()));
+        let http = Arc::new(ProxiedJwksHttp {
+            client: shared.client.clone(),
+        });
         let wall_clock: Arc<dyn JwksClock> = Arc::new(SystemClock);
         Self {
             resolver: Some(Arc::new(JwksResolver::new(

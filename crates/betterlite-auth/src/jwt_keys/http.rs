@@ -27,15 +27,6 @@ pub trait JwksHttp: Send + Sync {
 
 pub struct ProxiedJwksHttp {
     pub client: ProxiedClient,
-    pub body_limit: usize,
-}
-
-impl ProxiedJwksHttp {
-    #[must_use]
-    pub fn new(client: ProxiedClient) -> Self {
-        let body_limit = client.limits.body_bytes.min(MAX_DOCUMENT_BYTES);
-        Self { client, body_limit }
-    }
 }
 
 #[async_trait]
@@ -48,7 +39,8 @@ impl JwksHttp for ProxiedJwksHttp {
             .get(url)
             .build()
             .map_err(|source| FetchError::Transport(HttpError::Request(source)))?;
-        match self.client.execute_buffered(request, self.body_limit).await {
+        let body_limit = self.client.limits.body_bytes.min(MAX_DOCUMENT_BYTES);
+        match self.client.execute_buffered(request, body_limit).await {
             Ok(response) => Ok(HttpReply {
                 status: response.status,
                 body: response.body,

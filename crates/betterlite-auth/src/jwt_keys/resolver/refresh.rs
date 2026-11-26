@@ -59,8 +59,14 @@ pub(super) async fn refresh_or_record_outage(
     refresh: Refresh<'_>,
 ) -> Result<Json, KeyError> {
     let unreachable_key = format!("{UNREACHABLE_CACHE_KEY_PREFIX}{cache_key}");
-    if let Some(message) = stored_outage(resolver, &unreachable_key).await? {
-        return Err(KeyError::Unreachable { message });
+    match resolver.cache.read_value(&unreachable_key).await? {
+        None | Some(Json::Null) => {}
+        Some(Json::Text(message)) => return Err(KeyError::Unreachable { message }),
+        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+            return Err(KeyError::Unreachable {
+                message: "a previous JWKS fetch failed".to_owned(),
+            });
+        }
     }
     let refreshed = match refresh_now(resolver, refresh).await {
         Ok(value) => value,
@@ -78,24 +84,6 @@ pub(super) async fn refresh_or_record_outage(
         Err(other) => return Err(other),
     };
     store_refreshed(resolver, cache_key, ttl, stale_ttl, refreshed).await
-}
-
-// a marker from an earlier outage answers for its 30 s; a stored non-text marker still counts as one
-pub(super) async fn stored_outage(
-    resolver: &JwksResolver,
-    key: &str,
-) -> Result<Option<String>, KeyError> {
-    let previous = resolver
-        .cache
-        .read_value(key)
-        .await?
-        .filter(|value| !matches!(value, Json::Null));
-    Ok(previous.map(|value| match value {
-        Json::Text(message) => message,
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-            "a previous JWKS fetch failed".to_owned()
-        }
-    }))
 }
 
 // a success writes fresh, stale, then time, so a failure leaves the entries written before it
