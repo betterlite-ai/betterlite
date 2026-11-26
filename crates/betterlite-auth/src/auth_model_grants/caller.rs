@@ -18,14 +18,18 @@ use super::access_source::AgentAccessSource;
 use super::error::AgentModelGrantsError;
 use super::requested;
 
+pub struct CallerChecks<'checks> {
+    pub teams: Option<&'checks TeamLookup>,
+    pub admission: &'checks TeamAdmission<'checks>,
+    pub context: &'checks ModelAccessContext<'checks>,
+}
+
 // _check_agent_caller_model_access: the invoking team's grant then its member scope, else the invoking user
 pub async fn check_agent_caller(
     model: &RequestedModels,
     token: Option<&UserAPIKeyAuth>,
     source: Option<&dyn AgentAccessSource>,
-    teams: Option<&TeamLookup>,
-    admission: &TeamAdmission<'_>,
-    context: &ModelAccessContext<'_>,
+    checks: &CallerChecks<'_>,
 ) -> Result<(), AgentModelGrantsError> {
     if requested::is_falsey(model) {
         return Ok(());
@@ -48,7 +52,7 @@ pub async fn check_agent_caller(
     if let Some(loaded) = access.caller_team(key).await? {
         // the member scope reads the aliases off the token it is handed, as the source forwards the agent key's
         caller.view.token.aliases = key.view.token.aliases.clone();
-        return check_caller_team(model, &caller, &loaded.team, teams, admission, context).await;
+        return check_caller_team(model, &caller, &loaded.team, checks).await;
     }
     // no team echoed: the invoking user's own model list decides, and a missing row narrows nothing
     let Some(caller_user) = access.caller_user(key).await? else {
@@ -59,7 +63,7 @@ pub async fn check_agent_caller(
         model,
         Some(&caller_user),
         &aliases,
-        context,
+        checks.context,
     ))
 }
 
@@ -68,9 +72,7 @@ async fn check_caller_team(
     model: &RequestedModels,
     caller: &UserAPIKeyAuth,
     team: &LiteLLMTeamTable,
-    teams: Option<&TeamLookup>,
-    admission: &TeamAdmission<'_>,
-    context: &ModelAccessContext<'_>,
+    checks: &CallerChecks<'_>,
 ) -> Result<(), AgentModelGrantsError> {
     let aliases = key_model_aliases(&caller.view.token.aliases.0);
     let no_team_aliases = BTreeMap::new();
@@ -78,9 +80,9 @@ async fn check_caller_team(
         team: Some(team),
         team_aliases: &no_team_aliases,
         key_aliases: &aliases,
-        lookup: teams,
+        lookup: checks.teams,
     };
-    can_team_access_model(model, &grant, context).await?;
+    can_team_access_model(model, &grant, checks.context).await?;
     let request = TeamRequest {
         team: Some(team),
         token: Some(caller),
@@ -88,7 +90,7 @@ async fn check_caller_team(
         model,
         membership: Membership::Unloaded,
     };
-    check_team_member_model_access(admission, &request)
+    check_team_member_model_access(checks.admission, &request)
         .await
         .map_err(|error| {
             AgentModelGrantsError::Entity(Box::new(EntityModelAccessError::from_member(error)))

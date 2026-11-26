@@ -1,7 +1,7 @@
 use rstest::rstest;
 
 use crate::auth_model_grants::access_source::AgentAccessSource;
-use crate::auth_model_grants::caller::check_agent_caller;
+use crate::auth_model_grants::caller::{CallerChecks, check_agent_caller};
 use crate::auth_model_grants::ceiling::check_agent_ceiling;
 use crate::auth_model_grants::error::AgentModelGrantsError;
 use crate::auth_model_patterns::denial::model_denied_client_message;
@@ -292,9 +292,11 @@ async fn caller_absent_skips() {
         &one("gpt-4o"),
         Some(&token(AGENT_KEY)),
         Some(&script),
-        None,
-        &admission,
-        &context,
+        &CallerChecks {
+            teams: None,
+            admission: &admission,
+            context: &context,
+        },
     )
     .await
     .unwrap();
@@ -326,9 +328,11 @@ async fn caller_falsey_model_and_token_skip(
         &model,
         key.as_ref(),
         Some(&denying),
-        None,
-        &admission,
-        &context,
+        &CallerChecks {
+            teams: None,
+            admission: &admission,
+            context: &context,
+        },
     )
     .await
     .unwrap();
@@ -347,9 +351,11 @@ async fn unresolved_caller_allows() {
         &one("gpt-4o"),
         Some(&agent_token(AGENT_KEY)),
         Some(&script),
-        None,
-        &admission,
-        &context,
+        &CallerChecks {
+            teams: None,
+            admission: &admission,
+            context: &context,
+        },
     )
     .await
     .unwrap();
@@ -372,9 +378,11 @@ async fn caller_key_aliases_forwarded() {
         &one("fast"),
         Some(&agent_token(AGENT_MODEL_ALIAS_KEY)),
         Some(&script),
-        None,
-        &caller_admission,
-        &context,
+        &CallerChecks {
+            teams: None,
+            admission: &caller_admission,
+            context: &context,
+        },
     )
     .await
     .unwrap();
@@ -396,9 +404,11 @@ async fn caller_user_reads_key_aliases() {
         &one("fast"),
         Some(&agent_token(AGENT_MODEL_ALIAS_KEY)),
         Some(&script),
-        None,
-        &caller_admission,
-        &context,
+        &CallerChecks {
+            teams: None,
+            admission: &caller_admission,
+            context: &context,
+        },
     )
     .await
     .unwrap();
@@ -422,9 +432,11 @@ async fn caller_team_before_membership() {
         &one("gpt-4o"),
         Some(&agent_token(AGENT_KEY)),
         Some(&script),
-        None,
-        &admission,
-        &context,
+        &CallerChecks {
+            teams: None,
+            admission: &admission,
+            context: &context,
+        },
     )
     .await
     .unwrap();
@@ -447,9 +459,11 @@ async fn caller_team_denial_stops_before_member() {
         &one("gpt-4o"),
         Some(&agent_token(AGENT_KEY)),
         Some(&script),
-        None,
-        &admission,
-        &context,
+        &CallerChecks {
+            teams: None,
+            admission: &admission,
+            context: &context,
+        },
     )
     .await
     .unwrap_err();
@@ -482,9 +496,11 @@ async fn caller_member_denial_after_team_grant() {
         &one("gpt-4o"),
         Some(&agent_token(AGENT_KEY)),
         Some(&script),
-        None,
-        &admission,
-        &context,
+        &CallerChecks {
+            teams: None,
+            admission: &admission,
+            context: &context,
+        },
     )
     .await
     .unwrap_err();
@@ -516,9 +532,11 @@ async fn caller_team_skips_user() {
         &one("gpt-4o"),
         Some(&agent_token(AGENT_KEY)),
         Some(&script),
-        None,
-        &admission,
-        &context,
+        &CallerChecks {
+            teams: None,
+            admission: &admission,
+            context: &context,
+        },
     )
     .await
     .unwrap();
@@ -539,9 +557,11 @@ async fn caller_user_fallback() {
         &one("gpt-4o"),
         Some(&agent_token(AGENT_KEY)),
         Some(&script),
-        None,
-        &admission,
-        &context,
+        &CallerChecks {
+            teams: None,
+            admission: &admission,
+            context: &context,
+        },
     )
     .await
     .unwrap();
@@ -565,9 +585,11 @@ async fn caller_user_denial_stops() {
         &one("gpt-4o"),
         Some(&agent_token(AGENT_KEY)),
         Some(&script),
-        None,
-        &admission,
-        &context,
+        &CallerChecks {
+            teams: None,
+            admission: &admission,
+            context: &context,
+        },
     )
     .await
     .unwrap_err();
@@ -596,9 +618,11 @@ async fn missing_caller_user_skips() {
         &one("gpt-4o"),
         Some(&agent_token(AGENT_KEY)),
         Some(&script),
-        None,
-        &admission,
-        &context,
+        &CallerChecks {
+            teams: None,
+            admission: &admission,
+            context: &context,
+        },
     )
     .await
     .unwrap();
@@ -641,9 +665,11 @@ async fn caller_lookup_error_propagates(#[case] step: CallerLookup) {
         &one("gpt-4o"),
         Some(&agent_token(AGENT_KEY)),
         Some(&script),
-        None,
-        &admission,
-        &context,
+        &CallerChecks {
+            teams: None,
+            admission: &admission,
+            context: &context,
+        },
     )
     .await
     .unwrap_err();
@@ -660,9 +686,11 @@ async fn missing_source_fails_callers() {
             &one("gpt-4o"),
             Some(&agent_token(AGENT_KEY)),
             None,
-            None,
-            &admission,
-            &context,
+            &CallerChecks {
+                teams: None,
+                admission: &admission,
+                context: &context,
+            },
         )
         .await,
         Err(AgentModelGrantsError::Unavailable)
