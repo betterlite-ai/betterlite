@@ -12,6 +12,7 @@ use axum::middleware::{self, Next};
 use axum::response::Response;
 use axum::routing::post;
 use betterlite_auth::auth_identity::records::SourceKey;
+use betterlite_auth::pass_through_registry::{PassThroughMetadata, PassThroughRouteType};
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::types::Config;
@@ -191,6 +192,41 @@ async fn failure_stops_downstream() {
     .await;
     assert_eq!(allowed_status, StatusCode::OK);
     assert!(allowed_reached);
+}
+
+#[test]
+fn registered_routes_reach_the_stage() {
+    let state = state_for(&config_with_master_key());
+    state
+        .virtual_key_routes
+        .registry
+        .lock()
+        .unwrap()
+        .registrations
+        .push((
+            "pass-a:exact:/team-pass:POST".to_owned(),
+            PassThroughMetadata {
+                endpoint_id: "pass-a".to_owned(),
+                route_type: PassThroughRouteType::Exact,
+                path: "/team-pass".to_owned(),
+                methods: vec!["POST".to_owned()],
+                auth: Some(true),
+            },
+        ));
+    let mut request = request_to(&Arc::new(AtomicBool::new(false)));
+    request.extensions_mut().insert(state);
+    let master_key = SecretString::from("secret-master-key".to_owned());
+    let context = master_context(&master_key);
+    let StageInput::AuthVirtualKeyRoutes(stage) = stage_input(&request, Some(&context)).unwrap()
+    else {
+        panic!("the virtual key route constructor builds its own stage input");
+    };
+    let registration = stage
+        .registry
+        .get_registered("/team-pass", Some("POST"))
+        .unwrap();
+    assert_eq!(registration.auth, Some(true));
+    assert_eq!(registration.endpoint_id, "pass-a");
 }
 
 #[tokio::test]
