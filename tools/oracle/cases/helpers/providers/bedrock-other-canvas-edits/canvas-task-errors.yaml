@@ -1,0 +1,53 @@
+kind: helper
+name: bedrock-other-canvas-edits-canvas-task-errors
+call:
+  bedrock_other_canvas_edits:
+    model_cost: {}
+    calls:
+      - function: transform
+        prompt: cat
+        image: {kind: bytes, data: img}
+        mask: null
+        options: {taskType: OUTPAINTING}
+      - function: transform
+        prompt: cat
+        image: {kind: bytes, data: img}
+        mask: null
+        options: {taskType: INPAINTING}
+      - function: transform
+        prompt: cat
+        image: {kind: bytes, data: img}
+        mask: null
+        options: {taskType: STYLE}
+      - function: transform
+        prompt: cat
+        image: {kind: bytes, data: img}
+        mask: null
+        options: {taskType: ' INPAINTING '}
+      - function: transform
+        prompt: cat
+        image: {kind: bytes, data: img}
+        mask: null
+        options: {taskType: inpainting, mask: m}
+      - function: transform
+        prompt: cat
+        image: {kind: bytes, data: img}
+        mask: null
+        options: {taskType: INPAINTING, maskPrompt: ''}
+      - function: transform
+        prompt: cat
+        image: {kind: bytes, data: img}
+        mask: null
+        options: {taskType: OUTPAINTING, maskPrompt: ''}
+      - function: transform
+        prompt: null
+        image: {kind: bytes, data: img}
+        mask: null
+        options: {taskType: STYLE}
+      - function: transform
+        prompt: cat
+        image: null
+        mask: null
+        options: {}
+env: {}
+compare: {ignore: []}

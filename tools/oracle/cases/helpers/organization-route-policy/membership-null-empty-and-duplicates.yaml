@@ -1,0 +1,46 @@
+kind: helper
+name: organization-route-policy-membership-null-empty-and-duplicates
+call:
+  organization_route_policy:
+    calls:
+      # a null organization_id row is skipped; duplicates keep their place and the last role wins
+      - function: org_info
+        user:
+          organization_memberships:
+            - {organization_id: null, user_role: org_admin}
+            - {organization_id: org-a, user_role: internal_user}
+            - {organization_id: org-a, user_role: org_admin}
+            - {organization_id: org-b, user_role: null}
+            - {organization_id: "", user_role: org_admin}
+      - function: role_check
+        user:
+          organization_memberships:
+            - {organization_id: null, user_role: org_admin}
+            - {organization_id: org-a, user_role: internal_user}
+            - {organization_id: org-a, user_role: org_admin}
+            - {organization_id: org-b, user_role: null}
+            - {organization_id: "", user_role: org_admin}
+        route: /organization/info
+        request: {organization_id: org-a}
+      # the stored path to org-b carries a null role, which is a no-role selection like an absent key
+      - function: role_check
+        user:
+          organization_memberships:
+            - {organization_id: org-a, user_role: org_admin}
+            - {organization_id: org-b, user_role: null}
+        route: /organization/info
+        request: {organization_id: org-b}
+      # an empty string is passed as given, so it selects the membership stored under that id
+      - function: role_check
+        user:
+          organization_memberships:
+            - {organization_id: "", user_role: org_admin}
+        route: /organization/info
+        request: {organization_id: ""}
+      - function: role_check
+        user:
+          organization_memberships:
+            - {organization_id: org-a, user_role: org_admin}
+        route: /organization/info
+env: {}
+compare: {ignore: []}

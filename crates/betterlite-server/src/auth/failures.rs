@@ -15,6 +15,7 @@ pub(crate) fn stage_failure_response(failure: &StageFailure) -> Response {
         StageFailure::Authentication(authentication) => authentication_error(authentication),
         StageFailure::ModelAccess(rejection) => rejection_response(rejection),
         StageFailure::JwtKeys(exception)
+        | StageFailure::EntityModelAccess(exception)
         | StageFailure::AuthRequestPolicy(exception)
         | StageFailure::ResourceGrants(exception)
         | StageFailure::TagBudgets(exception)
@@ -22,6 +23,7 @@ pub(crate) fn stage_failure_response(failure: &StageFailure) -> Response {
         | StageFailure::VirtualKeyRoutes(exception)
         | StageFailure::KeyBudgets(exception)
         | StageFailure::TeamBudgets(exception)
+        | StageFailure::OrganizationRoutePolicy(exception)
         | StageFailure::OrgLookup(exception)
         | StageFailure::EndUsers(exception) => denial_response(exception),
     }

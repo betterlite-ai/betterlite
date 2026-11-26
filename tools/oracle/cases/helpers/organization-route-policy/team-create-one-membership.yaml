@@ -1,0 +1,58 @@
+kind: helper
+name: organization-route-policy-auth-team-create-one-membership
+call:
+  organization_route_policy:
+    calls:
+      # a single membership makes organization_id required, and the one organization is listed
+      - function: role_check
+        user:
+          user_role: internal_user
+          organization_memberships:
+            - {organization_id: org-a, user_role: org_admin}
+        route: /team/new
+      # the passed organization must be one where the caller is org_admin
+      - function: role_check
+        user:
+          user_role: internal_user
+          organization_memberships:
+            - {organization_id: org-a, user_role: internal_user}
+        route: /team/new
+        request: {organization_id: org-a}
+      - function: role_check
+        user:
+          user_role: internal_user
+          organization_memberships:
+            - {organization_id: org-a, user_role: null}
+        route: /team/new
+        request: {organization_id: org-a}
+      - function: role_check
+        user:
+          user_role: internal_user
+          organization_memberships:
+            - {organization_id: org-a, user_role: org_admin}
+        route: /team/new
+        request: {organization_id: org-b}
+      # a membership stored with a null id makes organization_id required but lists no organization
+      - function: role_check
+        user:
+          user_role: internal_user
+          organization_memberships:
+            - {organization_id: null, user_role: org_admin}
+        route: /team/new
+      # the same null-id membership cannot select any organization
+      - function: role_check
+        user:
+          user_role: internal_user
+          organization_memberships:
+            - {organization_id: null, user_role: org_admin}
+        route: /team/new
+        request: {organization_id: org-a}
+      - function: role_check
+        user:
+          user_role: internal_user
+          organization_memberships:
+            - {organization_id: org-a, user_role: org_admin}
+        route: /team/new
+        request: {organization_id: org-a}
+env: {}
+compare: {ignore: []}

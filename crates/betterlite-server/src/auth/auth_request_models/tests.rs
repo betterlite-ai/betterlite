@@ -98,14 +98,31 @@ fn config_with_master_key(master_key: &str) -> Config {
 }
 
 fn master_context(master_key: &SecretString) -> AuthContext {
-    let Ok(context) = dispatch(
+    match dispatch(
         AuthBackend::MasterKey,
         &StageInput::MasterKey(Some(master_key.clone())),
         master_key,
-    ) else {
-        panic!("the master key stage authenticates");
-    };
-    context
+    ) {
+        Ok(context) => context,
+        Err(StageFailure::Authentication(_)) => {
+            panic!("the master key stage authenticates")
+        }
+        Err(
+            StageFailure::ModelAccess(_)
+            | StageFailure::EntityModelAccess(_)
+            | StageFailure::AuthRequestPolicy(_)
+            | StageFailure::ResourceGrants(_)
+            | StageFailure::TagBudgets(_)
+            | StageFailure::RequestBodySafety(_)
+            | StageFailure::VirtualKeyRoutes(_)
+            | StageFailure::KeyBudgets(_)
+            | StageFailure::TeamBudgets(_)
+            | StageFailure::OrganizationRoutePolicy(_)
+            | StageFailure::OrgLookup(_)
+            | StageFailure::EndUsers(_)
+            | StageFailure::JwtKeys(_),
+        ) => panic!("the master key stage runs no other auth check"),
+    }
 }
 
 fn stage_input(
