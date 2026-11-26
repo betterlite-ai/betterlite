@@ -1,0 +1,6 @@
+task: B1020
+deviations:
+  - what: add_internal_model_credentials returns the deployment's credentials as TrustedCredentials and removes a caller-supplied value under _litellm_internal_model_credentials from data, instead of storing a read-only mapping of them in data under that key.
+    why: a JsonObject cannot carry a typed value and betterlite-models refuses that key from request data, so the snapshot travels to the call as betterlite_models::controls::call_params::TrustedCredentials; the key is still cleared so request data cannot pass itself off as router configuration, as in B10060's prepare_data_with_credentials.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L600
+kept_bugs: []
