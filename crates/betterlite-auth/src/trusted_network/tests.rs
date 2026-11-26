@@ -844,11 +844,22 @@ fn decoder_rejects_an_unknown_field() {
 
 #[test]
 fn depth_scan_reads_brackets_in_strings_as_text() {
+    const OVER_DEPTH: usize = MAX_NETWORK_HEADER_DEPTH + 1;
     // the escaped quote keeps the string open, so its 64 brackets are text and not 64 levels
     let document = format!(r#"{{"host":"\"{}"}}"#, "[".repeat(MAX_NETWORK_HEADER_DEPTH));
     let decoded = decode_network_headers(document.as_bytes()).unwrap();
     let expected = format!("\"{}", "[".repeat(MAX_NETWORK_HEADER_DEPTH));
     assert_eq!(decoded.host.as_deref(), Some(expected.as_str()));
+
+    // an escaped backslash ends before the closing quote, so the brackets after it count as levels
+    let open = "[".repeat(MAX_NETWORK_HEADER_DEPTH);
+    let close = "]".repeat(MAX_NETWORK_HEADER_DEPTH);
+    let escaped_backslash = format!("{{\"host\":\"\\\\\",\"x\":{open}{close}}}");
+    assert!(matches!(
+        decode_network_headers(escaped_backslash.as_bytes()),
+        Err(DecodeError::TooDeep { depth, limit })
+            if depth == OVER_DEPTH && limit == MAX_NETWORK_HEADER_DEPTH
+    ));
 }
 
 #[test]
@@ -900,13 +911,6 @@ fn native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso
     let over = format!("{{\"host\":{open_over}{close_over}}}");
     assert!(matches!(
         decode_network_headers(over.as_bytes()),
-        Err(DecodeError::TooDeep { depth, limit })
-            if depth == OVER_DEPTH && limit == MAX_NETWORK_HEADER_DEPTH
-    ));
-    // an escaped backslash ends before the closing quote, so the brackets after it count as levels
-    let escaped_backslash = format!("{{\"host\":\"\\\\\",\"x\":{open_over}{close_over}}}");
-    assert!(matches!(
-        decode_network_headers(escaped_backslash.as_bytes()),
         Err(DecodeError::TooDeep { depth, limit })
             if depth == OVER_DEPTH && limit == MAX_NETWORK_HEADER_DEPTH
     ));
