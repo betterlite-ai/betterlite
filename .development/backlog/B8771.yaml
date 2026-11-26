@@ -1,7 +1,7 @@
 id: B8771
 milestone: M8 platform
 title: Prove the SSO CLI, SAML provider and status routes over HTTP
-status: blocked
+status: todo
 depends_on: [B8770, B063, B1630, B1631, B860]
 file: tasks/B8771-sso-flow-cases.yaml
 covers: []
@@ -9,5 +9,5 @@ parent: null
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, SAML and CLI login proof can wait"
+blocked_reason: null
 pr: null

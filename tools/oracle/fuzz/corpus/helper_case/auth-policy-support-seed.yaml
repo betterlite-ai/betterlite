@@ -1,0 +1,9 @@
+kind: helper
+name: auth-policy-support-seed
+call:
+  auth_policy_support:
+    function: guardrail
+    body: {metadata: {guardrails: []}}
+    team: {team_id: team-seed, metadata: {guardrails: {modify_guardrails: false}}}
+env: {}
+compare: {ignore: []}

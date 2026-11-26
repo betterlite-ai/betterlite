@@ -1,7 +1,7 @@
 id: B991
 milestone: M5 api families
 title: Claude plugin access
-status: blocked
+status: todo
 depends_on: [B171, B1087, B726, B858, B732, B855, B756, B1018, B1140, B003, B1139, B856]
 file: tasks/B991-claude-plugin-access.yaml
 covers:
@@ -12,5 +12,5 @@ parent: B081
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, Claude plugin access is new"
+blocked_reason: null
 pr: null
