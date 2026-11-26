@@ -1,3 +1,5 @@
+use axum::body::Body;
+use axum::http::Request;
 use betterlite_auth::auth_identity::errors::AuthError;
 use betterlite_auth::auth_identity::records::{
     CredentialRef, NetworkContext, Principal, SourceKey,
@@ -10,12 +12,12 @@ use subtle::ConstantTimeEq as _;
 use crate::auth::auth_end_users::EndUserStageInput;
 use crate::auth::auth_key_budgets::KeyBudgetStageInput;
 use crate::auth::auth_model_patterns::{ModelAccessRejection, ModelPatternStageInput, run_stage};
-use crate::auth::auth_org_lookup::OrgStageInput;
+use crate::auth::auth_org_lookup::{self, OrgStageInput};
 use crate::auth::auth_request_models::{RequestModelStageInput, resolve};
 use crate::auth::auth_request_policy::{self, AuthRequestPolicyStageInput};
 use crate::auth::auth_resource_grants::{self, ResourceGrantStageInput};
 use crate::auth::auth_tag_budgets::TagBudgetStageInput;
-use crate::auth::model_grant_intersection::GrantStageInput;
+use crate::auth::model_grant_intersection::{self, GrantStageInput};
 use crate::auth::request_body_safety::{self, RequestBodySafetyStageInput};
 use crate::auth::team_budget_admission::TeamBudgetStageInput;
 use crate::error_body::AuthenticationFailure;
@@ -71,6 +73,35 @@ pub enum StageInput {
 #[derive(Clone, Debug)]
 pub struct AuthContext {
     pub principal: Principal,
+}
+
+impl StageInput {
+    // the org lookup reads the request, so its input is built from the same borrowing arguments
+    pub(crate) fn org_lookup(
+        request: &Request<Body>,
+        authenticated: Option<&AuthContext>,
+    ) -> Result<Self, StageFailure> {
+        let stage = auth_org_lookup::stage_input(request, authenticated)?;
+        Ok(Self::AuthOrgLookup(Box::new(stage)))
+    }
+
+    pub(crate) fn model_grants(
+        request: &Request<Body>,
+        authenticated: Option<&AuthContext>,
+    ) -> Result<Self, StageFailure> {
+        let stage = model_grant_intersection::stage_input(request, authenticated)?;
+        Ok(Self::ModelGrantIntersection(Box::new(stage)))
+    }
+
+    // the prefetch reads the cache, database and router, so the caller awaits it on the owned input
+    pub(crate) async fn prefetch_model_grants(
+        stage: Box<GrantStageInput>,
+    ) -> Result<Self, StageFailure> {
+        model_grant_intersection::prefetch(&stage)
+            .await
+            .map_err(StageFailure::ModelGrants)?;
+        Ok(Self::ModelGrantIntersection(stage))
+    }
 }
 
 #[derive(Clone, Debug)]

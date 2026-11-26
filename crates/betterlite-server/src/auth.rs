@@ -130,15 +130,11 @@ fn stage_input(
         AuthBackend::TeamBudgetAdmission => {
             team_budget_admission::stage_input(request, authenticated)
         }
-        AuthBackend::AuthOrgLookup => Ok(StageInput::AuthOrgLookup(Box::new(
-            auth_org_lookup::stage_input(request, authenticated)?,
-        ))),
+        AuthBackend::AuthOrgLookup => StageInput::org_lookup(request, authenticated),
         AuthBackend::AuthEndUsers => Ok(StageInput::AuthEndUsers(Box::new(
             auth_end_users::stage_input(request, authenticated)?,
         ))),
-        AuthBackend::ModelGrantIntersection => Ok(StageInput::ModelGrantIntersection(Box::new(
-            model_grant_intersection::stage_input(request, authenticated)?,
-        ))),
+        AuthBackend::ModelGrantIntersection => StageInput::model_grants(request, authenticated),
     }
 }
 
@@ -234,12 +230,7 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
                 .map_err(StageFailure::EndUsers)?;
             Ok(StageInput::AuthEndUsers(stage))
         }
-        StageInput::ModelGrantIntersection(stage) => {
-            model_grant_intersection::prefetch(&stage)
-                .await
-                .map_err(StageFailure::ModelGrants)?;
-            Ok(StageInput::ModelGrantIntersection(stage))
-        }
+        StageInput::ModelGrantIntersection(stage) => StageInput::prefetch_model_grants(stage).await,
         other @ (StageInput::MasterKey(_)
         | StageInput::AuthRequestPolicy(_)
         | StageInput::RequestBodySafety(_)
