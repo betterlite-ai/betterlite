@@ -317,7 +317,7 @@ async fn failure_stops_downstream() {
 }
 
 #[test]
-fn lookup_http_errors_keep_their_status() {
+fn missing_access_group_keeps_http_status() {
     let missing_group = AccessGroupsError::Read {
         access_group_id: "group-1".to_owned(),
         source: Box::new(TeamLookupError::AccessGroupNotFound {
@@ -334,7 +334,10 @@ fn lookup_http_errors_keep_their_status() {
     assert_eq!(missing_group.code, "404");
     assert_eq!(missing_group.error_type, "auth_error");
     assert_eq!(missing_group.param.as_deref(), Some("None"));
+}
 
+#[test]
+fn unavailable_access_policy_keeps_http_status() {
     let unavailable = AccessGroupsError::Read {
         access_group_id: "group-1".to_owned(),
         source: Box::new(TeamLookupError::AccessPolicyUnavailable {
@@ -350,7 +353,10 @@ fn lookup_http_errors_keep_their_status() {
         panic!("unavailable access policies preserve their HTTP status");
     };
     assert_eq!(unavailable.code, "503");
+}
 
+#[test]
+fn missing_caller_team_keeps_http_status() {
     let caller = AgentCallerError::Team {
         team_id: "missing-team".to_owned(),
         source: Box::new(TeamLookupError::TeamNotFound {

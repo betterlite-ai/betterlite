@@ -168,8 +168,8 @@ fn stage_failure(error: AgentModelGrantsError) -> StageFailure {
             AgentCallerError::Team { source, .. } => {
                 StageFailure::ModelGrants(Box::new(team_lookup_exception(&source)))
             }
-            error @ (AgentCallerError::User { .. } | AgentCallerError::Record(_)) => {
-                StageFailure::ModelGrants(Box::new(lookup_exception(&error.to_string())))
+            caller_failure @ (AgentCallerError::User { .. } | AgentCallerError::Record(_)) => {
+                StageFailure::ModelGrants(Box::new(lookup_exception(&caller_failure.to_string())))
             }
         },
         AgentModelGrantsError::Unavailable => StageFailure::ModelGrants(Box::new(
