@@ -33,7 +33,11 @@ use betterlite_secret_managers::secret_lookup::ports::{
 use secrecy::SecretString;
 use tokio::time::Instant;
 
-use self::decisions::DecisionFormat;
+use self::asynchronous::adecision_call;
+use self::decisions::{DecisionFormat, sync_decision};
+use self::sandbox::{
+    code_interpreter, create_sandbox, delete_sandbox, register_tools, resolve_tool, run_code,
+};
 use super::convert::{CallWire, ConvertError, SessionWire, parse};
 use super::error::{SessionError, SessionFailure};
 use super::transport::ProxiedOpenSandboxHttp;
@@ -101,10 +105,24 @@ impl SessionCore {
 
     pub(crate) fn call(&self, wire: &CallWire) -> Result<String, SessionFailure> {
         match wire.operation.as_str() {
-            DECISIONS => self.sync_decision(wire, DecisionFormat::Decisions),
-            SYSTEMONE => self.sync_decision(wire, DecisionFormat::SystemOne),
-            REGISTER => self.register_tools(wire),
-            RESOLVE => self.resolve_tool(wire),
+            DECISIONS => sync_decision(self, wire, DecisionFormat::Decisions),
+            SYSTEMONE => sync_decision(self, wire, DecisionFormat::SystemOne),
+            REGISTER => register_tools(self, wire),
+            RESOLVE => resolve_tool(self, wire),
+            other => Err(SessionFailure::from(ConvertError::Operation {
+                operation: other.to_owned(),
+            })),
+        }
+    }
+
+    pub(crate) async fn acall(&self, wire: &CallWire) -> Result<String, SessionFailure> {
+        match wire.operation.as_str() {
+            DECISIONS => adecision_call(self, wire, DecisionFormat::Decisions).await,
+            SYSTEMONE => adecision_call(self, wire, DecisionFormat::SystemOne).await,
+            CREATE => create_sandbox(self, wire).await,
+            RUN => run_code(self, wire).await,
+            DELETE => delete_sandbox(self, wire).await,
+            CODE_INTERPRETER => code_interpreter(self, wire).await,
             other => Err(SessionFailure::from(ConvertError::Operation {
                 operation: other.to_owned(),
             })),

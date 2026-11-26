@@ -16,29 +16,23 @@ pub(super) enum DecisionFormat {
     SystemOne,
 }
 
-#[expect(
-    clippy::multiple_inherent_impls,
-    reason = "operation methods stay beside their operation modules"
-)]
-impl SessionCore {
-    pub(super) fn sync_decision(
-        &self,
-        wire: &CallWire,
-        format: DecisionFormat,
-    ) -> Result<String, SessionFailure> {
-        let resolution = self.resolution(&wire.settings.global_credentials());
-        let env = self.pre_post_env();
-        let mut clients = HttpClients::new(self.tls.clone(), Arc::clone(&self.proxy));
-        let deps = decision_deps(wire, &resolution, &env, &mut clients);
-        match format {
-            DecisionFormat::Decisions => {
-                let output = decisions(deps, wire.arguments.decisions()?)?;
-                decisions_answer(&output).map_err(SessionFailure::from)
-            }
-            DecisionFormat::SystemOne => {
-                let output = systemone(deps, wire.arguments.systemone()?)?;
-                response_answer(&output, &output.hidden_params).map_err(SessionFailure::from)
-            }
+pub(super) fn sync_decision(
+    core: &SessionCore,
+    wire: &CallWire,
+    format: DecisionFormat,
+) -> Result<String, SessionFailure> {
+    let resolution = core.resolution(&wire.settings.global_credentials());
+    let env = core.pre_post_env();
+    let mut clients = HttpClients::new(core.tls.clone(), Arc::clone(&core.proxy));
+    let deps = decision_deps(wire, &resolution, &env, &mut clients);
+    match format {
+        DecisionFormat::Decisions => {
+            let output = decisions(deps, wire.arguments.decisions()?)?;
+            decisions_answer(&output).map_err(SessionFailure::from)
+        }
+        DecisionFormat::SystemOne => {
+            let output = systemone(deps, wire.arguments.systemone()?)?;
+            response_answer(&output, &output.hidden_params).map_err(SessionFailure::from)
         }
     }
 }
