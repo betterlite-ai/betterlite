@@ -6,10 +6,12 @@ use std::time::Duration;
 
 use tokio::sync::{Semaphore, mpsc as async_mpsc, oneshot};
 use tokio::task::JoinSet;
-use tokio::time::timeout;
+use tokio::time::{sleep, timeout};
 
 use crate::db_config_overlay::environ::{Workers, off_runtime};
 use crate::db_config_overlay::error::OverlayError;
+
+const WAIT: Duration = Duration::from_secs(10);
 
 // one submitted lookup that records its start and waits for the test's release token
 fn spawn_lookup(
@@ -45,7 +47,6 @@ async fn workers_bound_the_live_threads() {
     });
     let (started, mut started_reading) = async_mpsc::channel(8);
     let (release, released_rx) = mpsc::sync_channel::<()>(4);
-    let released = Arc::new(Mutex::new(released_rx));
     let count = Arc::new(AtomicUsize::new(0));
     let mut tasks = JoinSet::new();
     spawn_lookup(&mut tasks, &workers, &started, &released, &count);
@@ -77,7 +78,6 @@ async fn shutdown_joins_a_canceled_worker_after_a_later_submission() {
     });
     let (started, mut started_reading) = async_mpsc::channel(1);
     let (release, released_rx) = mpsc::sync_channel::<()>(1);
-    let released = Arc::new(Mutex::new(released_rx));
     let finished = Arc::new(AtomicBool::new(false));
     let task_workers = Arc::clone(&workers);
     let task_finished = Arc::clone(&finished);
@@ -85,10 +85,7 @@ async fn shutdown_joins_a_canceled_worker_after_a_later_submission() {
     tasks.spawn(async move {
         off_runtime(&task_workers, move || {
             let _started = started.try_send(());
-            let _released = released
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .recv();
+            let _released = released_rx.recv();
             task_finished.store(true, Ordering::Relaxed);
         })
         .await
@@ -106,12 +103,9 @@ async fn shutdown_joins_a_canceled_worker_after_a_later_submission() {
         Ok(())
     });
     let early = timeout(Duration::from_millis(200), &mut done_reading).await;
-    assert!(early.is_err());
+    let _timed_out = early.unwrap_err();
     release.send(()).unwrap();
-    timeout(Duration::from_secs(10), &mut done_reading)
-        .await
-        .unwrap()
-        .unwrap();
+    timeout(WAIT, &mut done_reading).await.unwrap().unwrap();
     assert!(finished.load(Ordering::Relaxed));
 }
 
@@ -124,7 +118,6 @@ async fn shutdown_leaves_the_runtime_free_while_the_joins_wait() {
     });
     let (started, mut started_reading) = async_mpsc::channel(1);
     let (release, released_rx) = mpsc::sync_channel::<()>(1);
-    let released = Arc::new(Mutex::new(released_rx));
     let finished = Arc::new(AtomicBool::new(false));
     let task_workers = Arc::clone(&workers);
     let task_finished = Arc::clone(&finished);
@@ -132,10 +125,7 @@ async fn shutdown_leaves_the_runtime_free_while_the_joins_wait() {
     tasks.spawn(async move {
         off_runtime(&task_workers, move || {
             let _started = started.try_send(());
-            let _released = released
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .recv();
+            let _released = released_rx.recv();
             task_finished.store(true, Ordering::Relaxed);
         })
         .await
@@ -151,14 +141,11 @@ async fn shutdown_leaves_the_runtime_free_while_the_joins_wait() {
         let _sent = done.send(());
         Ok(())
     });
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    sleep(Duration::from_millis(50)).await;
     assert!(done_reading.try_recv().is_err());
     assert!(!finished.load(Ordering::Relaxed));
     release.send(()).unwrap();
-    timeout(Duration::from_secs(10), &mut done_reading)
-        .await
-        .unwrap()
-        .unwrap();
+    timeout(WAIT, &mut done_reading).await.unwrap().unwrap();
     assert!(finished.load(Ordering::Relaxed));
 }
 
@@ -171,17 +158,13 @@ async fn workers_drop_does_not_wait_for_a_canceled_worker() {
     });
     let (started, mut started_reading) = async_mpsc::channel(1);
     let (release, released_rx) = mpsc::sync_channel::<()>(1);
-    let released = Arc::new(Mutex::new(released_rx));
     let (finished, finished_reading) = mpsc::sync_channel::<()>(1);
     let task_workers = Arc::clone(&workers);
     let mut tasks = JoinSet::new();
     tasks.spawn(async move {
         off_runtime(&task_workers, move || {
             let _started = started.try_send(());
-            let _released = released
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .recv();
+            let _released = released_rx.recv();
             let _sent = finished.send(());
         })
         .await
@@ -198,16 +181,12 @@ async fn workers_drop_does_not_wait_for_a_canceled_worker() {
             let _sent = dropped.send(());
         })
         .unwrap();
-    dropped_reading
-        .recv_timeout(Duration::from_secs(10))
-        .unwrap();
+    dropped_reading.recv_timeout(WAIT).unwrap();
     assert!(matches!(
         finished_reading.try_recv(),
         Err(mpsc::TryRecvError::Empty)
     ));
     release.send(()).unwrap();
     dropping.join().unwrap();
-    finished_reading
-        .recv_timeout(Duration::from_secs(10))
-        .unwrap();
+    finished_reading.recv_timeout(WAIT).unwrap();
 }

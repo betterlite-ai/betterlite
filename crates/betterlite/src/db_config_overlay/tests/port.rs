@@ -24,6 +24,7 @@ use crate::db_config_overlay::state::{OverlayDatabase, OverlayState, PASS_THROUG
 const CONFIG: &str =
     "model_list:\n  - model_name: gpt\ngeneral_settings:\n  master_key: os.environ/MASTER\n";
 const OIDC_CONFIG: &str = "general_settings:\n  master_key: os.environ/oidc/google/audience\n";
+const SHARED_CONFIG: &str = "general_settings:\n  master_key: os.environ/SHARED\n";
 
 // the port, the recording installer behind it, and the state and environment it mutates, so a test reads what the reload committed
 struct Port {
@@ -275,49 +276,38 @@ async fn port_keeps_endpoints_served_while_a_reload_resolves() {
 #[tokio::test]
 async fn port_keeps_a_concurrent_environment_update_during_a_database_read() {
     let directory = TempDir::new().unwrap();
-    let path = write_config(
-        directory.path(),
-        "general_settings:\n  master_key: os.environ/SHARED\n",
-    );
+    let path = write_config(directory.path(), SHARED_CONFIG);
     let (database, started, gate) =
         gated_database(&[("environment_variables", json!({"db_secret": "db-value"}))]);
     let served = port(&path, Some(database), RecordingInstaller::default());
-    {
-        let mut environment = served.environment.lock().await;
-        environment.insert("SHARED".to_owned(), "before".to_owned());
-        environment.insert("STALE".to_owned(), "kept".to_owned());
-    }
+    let mut environment = served.environment.lock().await;
+    environment.insert("SHARED".to_owned(), "before".to_owned());
+    environment.insert("STALE".to_owned(), "kept".to_owned());
+    drop(environment);
     let mut tasks = JoinSet::new();
     tasks.spawn({
         let port = Arc::clone(&served.overlay);
         async move { port.reload_config().await }
     });
     started.await.unwrap();
-    {
-        let mut environment = served.environment.lock().await;
-        environment.insert("SHARED".to_owned(), "after".to_owned());
-        environment.remove("STALE");
-        environment.insert("CONCURRENT".to_owned(), "kept".to_owned());
-    }
+    let mut updated = served.environment.lock().await;
+    updated.insert("SHARED".to_owned(), "after".to_owned());
+    updated.remove("STALE");
+    updated.insert("CONCURRENT".to_owned(), "kept".to_owned());
+    drop(updated);
     gate.add_permits(1);
     let reloaded = tasks.join_next().await.unwrap().unwrap().unwrap();
     assert_eq!(
         reloaded.values["general_settings"],
         json!({"master_key": "after"})
     );
-    let environment = served.environment.lock().await;
-    assert_eq!(environment.get("SHARED").map(String::as_str), Some("after"));
-    assert!(!environment.contains_key("STALE"));
-    assert_eq!(
-        environment.get("CONCURRENT").map(String::as_str),
-        Some("kept")
-    );
-    assert_eq!(
-        environment.get("DB_SECRET").map(String::as_str),
-        Some("db-value")
-    );
-    assert_eq!(
-        environment.get("db_secret").map(String::as_str),
-        Some("db-value")
-    );
+    let published = served.environment.lock().await;
+    let expected = BTreeMap::from([
+        ("MASTER".to_owned(), "sk-env".to_owned()),
+        ("SHARED".to_owned(), "after".to_owned()),
+        ("CONCURRENT".to_owned(), "kept".to_owned()),
+        ("DB_SECRET".to_owned(), "db-value".to_owned()),
+        ("db_secret".to_owned(), "db-value".to_owned()),
+    ]);
+    assert_eq!(*published, expected);
 }
