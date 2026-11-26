@@ -158,8 +158,14 @@ pub(crate) struct HiddenFacts<'facts> {
 #[must_use]
 pub(crate) fn hidden_params(facts: &HiddenFacts<'_>) -> HiddenParams {
     let mut hidden = HiddenParams::new();
-    hidden.insert(String::from("_response_ms"), number(facts.response_ms));
-    hidden.insert(String::from("callback_duration_ms"), number(0.0_f64));
+    hidden.insert(
+        String::from("_response_ms"),
+        Number::from_f64(facts.response_ms).map_or_else(|| Json::Null, Json::Number),
+    );
+    hidden.insert(
+        String::from("callback_duration_ms"),
+        Number::from_f64(0.0_f64).map_or_else(|| Json::Null, Json::Number),
+    );
     hidden.insert(String::from("litellm_call_id"), text(Some(facts.call_id)));
     hidden.insert(String::from("api_base"), text(facts.api_base));
     let model_id = facts.model_id.cloned().unwrap_or(Json::Null);
@@ -173,14 +179,12 @@ pub(crate) fn hidden_params(facts: &HiddenFacts<'_>) -> HiddenParams {
     let provider = text(Some(facts.provider));
     hidden.insert(String::from("custom_llm_provider"), provider);
     if let Some(overhead) = facts.overhead_ms {
-        hidden.insert(String::from("litellm_overhead_time_ms"), number(overhead));
+        hidden.insert(
+            String::from("litellm_overhead_time_ms"),
+            Number::from_f64(overhead).map_or_else(|| Json::Null, Json::Number),
+        );
     }
     hidden
-}
-
-// Number::from_f64 gives None for NaN and infinities, which JSON keeps as null
-fn number(value: f64) -> Json {
-    Number::from_f64(value).map_or_else(|| Json::Null, Json::Number)
 }
 
 fn text(value: Option<&str>) -> Json {
