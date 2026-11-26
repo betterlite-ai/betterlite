@@ -42,9 +42,9 @@ deviations:
   - what: Speech `timeout` objects with several phases become the largest phase, and a call without a timeout uses `REQUEST_TIMEOUT` or 6000 seconds read when the native session is built.
     why: The Rust transport enforces one deadline per call, as B6040's deviations record.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L576
-  - what: A transcription never sends `OPENAI_ORGANIZATION`, where LiteLLM sets the OpenAI module's `organization` before the transcription handler builds its client. Speech ignores the resolved organization and project arguments in both implementations; its built client reads OPENAI_ORG_ID and OPENAI_PROJECT_ID instead.
-    why: The Rust transcription connection carries no organization field, and betterlite never mutates a process-global OpenAI client.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8067
+  - what: Betterlite transcription sends neither `OpenAI-Organization` nor `OpenAI-Project`, while LiteLLM's built transcription client reads `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID` and sends the corresponding headers. Speech ignores the resolved organization and project arguments in both implementations; its built client reads OPENAI_ORG_ID and OPENAI_PROJECT_ID instead.
+    why: The Rust TranscriptionConnection carries no organization or project fields; adding them requires a provider change outside B6045's scope.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/transcriptions/handler.py#L102
   - what: A transcription's `_hidden_params` holds model, custom_llm_provider, headers, additional_headers, audio_transcription_duration and _response_ms, where LiteLLM's wrapper also adds litellm_call_id, api_base, model_id, response_cost, litellm_model_name, litellm_overhead_time_ms and callback_duration_ms; _response_ms and audio_transcription_duration measure the provider call here, not the wrapper's whole window.
     why: The Rust call path carries no router model info or cost calculator, and its timing starts at the native call.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/response_metadata.py#L118
