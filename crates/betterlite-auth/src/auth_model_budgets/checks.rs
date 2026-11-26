@@ -61,7 +61,8 @@ pub async fn check_user_model_budget(
         return check_each_model(models, async |model| {
             limiter
                 .is_user_within_model_budget(user_id, &budget.0, model)
-                .await
+                .await?;
+            Ok(())
         })
         .await;
     }
@@ -87,7 +88,8 @@ pub async fn check_team_model_budget(
     check_each_model(models, async |model| {
         limiter
             .is_team_within_model_budget(team_id, &budget.0, Some(key_budget), model)
-            .await
+            .await?;
+        Ok(())
     })
     .await
 }
