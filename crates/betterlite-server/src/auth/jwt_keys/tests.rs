@@ -21,6 +21,7 @@ use betterlite_auth::jwt_keys::settings::JwtKeySettings;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_http::error::HttpError;
 use betterlite_models::decisions::Json;
+use rstest::rstest;
 use secrecy::SecretString;
 use tower::ServiceExt as _;
 
@@ -135,6 +136,24 @@ fn debug_keeps_the_token_out() {
     let debug = format!("{input:?}");
     assert!(debug.contains("token_present: true"), "{debug}");
     assert!(!debug.contains(TOKEN), "{debug}");
+}
+
+#[rstest]
+#[case::empty("")]
+#[case::plain_key("secret-master-key")]
+#[case::two_segments("one.two")]
+#[case::four_segments("one.two.three.four")]
+#[tokio::test]
+async fn non_jwt_credentials_skip_key_fetch(#[case] token: &str) {
+    let http: Arc<dyn JwksHttp> = Arc::new(UnreachableJwks);
+    let input = StageInput::JwtKeys(Box::new(JwtKeyStageInput {
+        resolver: Some(resolver_with(http)),
+        token: Some(SecretString::from(token.to_owned())),
+    }));
+    assert!(matches!(
+        prefetch_stage(input).await,
+        Ok(StageInput::JwtKeys(_))
+    ));
 }
 
 #[tokio::test]

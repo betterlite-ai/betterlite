@@ -10,6 +10,7 @@ use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType};
 use betterlite_auth::jwt_keys::errors::{KeyError, exception_for};
 use betterlite_auth::jwt_keys::resolver::JwksResolver;
 use betterlite_auth::jwt_keys::resolver::keys::token_kid;
+use betterlite_auth::resolved_key::credential::is_jwt;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::auth_identity::{AuthContext, StageFailure, StageInput};
@@ -61,7 +62,7 @@ pub(crate) async fn prefetched(stage: JwtKeyStageInput) -> Result<StageInput, St
         return Ok(StageInput::JwtKeys(Box::new(stage)));
     };
     let token = credential.expose_secret();
-    if token.split('.').count() != 3 {
+    if !is_jwt(Some(token)) {
         return Ok(StageInput::JwtKeys(Box::new(stage)));
     }
     let kid = token_kid(token);
