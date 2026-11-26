@@ -412,13 +412,13 @@ def test_signature_matches_litellm() -> None:
     assert inspect.iscoroutinefunction(afile_list)
 
 
-def test_create_bytes_matches_litellm() -> None:  # ast-grep-ignore: no-long-names
+def test_create_bytes_matches_litellm() -> None:
     with FileCallServer() as server:
         swapped, reference_parts, ours_parts = compared_upload(server, PAYLOAD)
     assert_same_upload(swapped, reference_parts, ours_parts, UPLOAD_NAME)
 
 
-def test_create_path_matches_litellm(tmp_path: Path) -> None:  # ast-grep-ignore: no-long-names
+def test_create_path_matches_litellm(tmp_path: Path) -> None:
     rows = tmp_path / CREATE_FILENAME
     rows.write_bytes(PAYLOAD)
     with FileCallServer() as server:
@@ -426,7 +426,7 @@ def test_create_path_matches_litellm(tmp_path: Path) -> None:  # ast-grep-ignore
     assert_same_upload(swapped, reference_parts, ours_parts, CREATE_FILENAME)
 
 
-def test_create_file_object_matches_litellm(  # ast-grep-ignore: no-long-names
+def test_create_file_object_matches_litellm(
     tmp_path: Path,
 ) -> None:
     rows = tmp_path / CREATE_FILENAME
@@ -451,13 +451,13 @@ def test_create_file_object_matches_litellm(  # ast-grep-ignore: no-long-names
         swapped, sent_parts(reference_call), sent_parts(ours_call), CREATE_FILENAME)
 
 
-def test_create_tuple_matches_litellm() -> None:  # ast-grep-ignore: no-long-names
+def test_create_tuple_matches_litellm() -> None:
     with FileCallServer() as server:
         swapped, reference_parts, ours_parts = compared_upload(server, (TUPLE_FILENAME, PAYLOAD))
     assert_same_upload(swapped, reference_parts, ours_parts, TUPLE_FILENAME)
 
 
-def test_create_expires_after_reaches_server() -> None:  # ast-grep-ignore: no-long-names
+def test_create_expires_after_reaches_server() -> None:
     with FileCallServer() as server:
         created = create_file(
             file=PAYLOAD,
@@ -482,7 +482,7 @@ def test_create_flag_coroutine() -> None:
     assert [dumped(value) for value in values] == [FILE_RECORD, FILE_RECORD]
 
 
-def test_create_provider_none_matches_litellm() -> None:  # ast-grep-ignore: no-long-names
+def test_create_provider_none_matches_litellm() -> None:
     with FileCallServer() as server:
         with pytest.raises(ValueError, match="is not a valid LlmProviders") as reference:
             REFERENCE.create_file(
@@ -548,7 +548,7 @@ def test_list_matches_litellm() -> None:
     assert dumped(swapped.ours)["has_more"] is False
 
 
-def test_list_without_purpose_matches_litellm() -> None:  # ast-grep-ignore: no-long-names
+def test_list_without_purpose_matches_litellm() -> None:
     with FileCallServer() as server:
         swapped = compared(server, OURS.file_list, REFERENCE.file_list)
     assert_same_call(swapped.reference_call, swapped.ours_call, "GET", FILES_PATH)
@@ -595,7 +595,7 @@ def test_error_matches_litellm() -> None:
     assert made.value.code is made.value.type is made.value.param is None
 
 
-def test_error_token_provider_refused() -> None:  # ast-grep-ignore: no-long-names
+def test_error_token_provider_refused() -> None:
     with pytest.raises(UnsupportedCallArgument, match="azure_ad_token_provider"):
         file_retrieve(file_id=FILE_ID, azure_ad_token_provider=GOOD_KEY)
 

@@ -111,10 +111,12 @@ def create_values(
     expires: dict[str, CallValue] | None = None
     if expires_after is not None:
         expires = {"anchor": expires_after["anchor"], "seconds": expires_after["seconds"]}
-    wrapped: CallValue = file
+    wrapped: CallValue
     match file:
         case bytes():
             wrapped = (UPLOAD_NAME, file)
+        case object():
+            wrapped = file
     return call_values(arguments, options, file=wrapped, purpose=purpose, expires_after=expires)
 
 
