@@ -23,4 +23,9 @@ request:
       - {role: user, content: Say hello.}
     stream: false
 upstream: []
-compare: {headers: [content-type], headers_present: [], upstream_headers: [], ignore: []}
+compare:
+  headers: [content-type]
+  headers_present: []
+  upstream_headers: []
+  ignore:
+    - {pointer: /error/message, why: betterlite writes its own message}

@@ -8,7 +8,7 @@ deviations:
       LiteLLM_VerificationToken.allowed_routes is an untyped list, and is_virtual_key_allowed_to_call_route
       compares every entry as a path. betterlite's row keeps the same arbitrary JSON, and this module
       treats an entry that is not a path as a non-match. non_string_route_entries_are_ignored proves the
-      skip and the string-only denial message.
+      skip and the denial that lists only the string entries.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L586-L610
   - what: >-
       A non-string entry inside an allowed_passthrough_routes list is skipped, where LiteLLM raises

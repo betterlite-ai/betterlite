@@ -26,5 +26,21 @@ calls:
       method: PUT
       key:
         allowed_routes: [llm_api_routes]
+  - virtual_key_routes:
+      function: should_call_route
+      route: /v1/mcp/server
+      method: GET
+      key:
+        allowed_routes: [llm_api_routes]
+      registrations:
+        - {endpoint_id: pass-mcp, route_type: exact, path: /v1/mcp/server, auth: true}
+  - virtual_key_routes:
+      function: should_call_route
+      route: /v1/mcp/server
+      method: POST
+      key:
+        allowed_routes: [llm_api_routes]
+      registrations:
+        - {endpoint_id: pass-mcp, route_type: exact, path: /v1/mcp/server, auth: true}
 env: {}
 compare: {ignore: []}
