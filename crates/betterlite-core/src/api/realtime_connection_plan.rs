@@ -20,7 +20,8 @@ use crate::api::realtime_connect::{AZURE_DEFAULT_API_VERSION, RealtimeConnectErr
 use self::azure::{AzureAdTokens, azure_connection, azure_protocol, transcription_query};
 use self::metadata::RealtimeModelMetadata;
 use self::parameters::{
-    bearer_headers, model_params_with_stored_credentials, model_query, resolve_probe_parameters,
+    ResolvedProbeParameters, bearer_headers, model_params_with_stored_credentials, model_query,
+    resolve_probe_parameters,
 };
 use self::vertex::VertexProbeConfig;
 
@@ -119,38 +120,7 @@ pub enum RealtimeProbeError {
     Dial(#[from] ProbeDialError),
 }
 
-impl RealtimeProbeError {
-    // the class LiteLLM's exception would carry when the proxy records the failed health check
-    #[must_use]
-    pub fn class(&self) -> &str {
-        match self {
-            Self::UnsupportedModel { .. }
-            | Self::VertexSpeechModel { .. }
-            | Self::ParameterType { .. }
-            | Self::Azure(_)
-            | Self::OpenAi(_)
-            | Self::VertexTokenTimeout { .. }
-            | Self::Token { .. } => "ValueError",
-            Self::Dial(error) => &error.class,
-        }
-    }
-
-    #[must_use]
-    pub fn status(&self) -> Option<u16> {
-        match self {
-            Self::Dial(error) => error.status,
-            Self::UnsupportedModel { .. }
-            | Self::VertexSpeechModel { .. }
-            | Self::ParameterType { .. }
-            | Self::Azure(_)
-            | Self::OpenAi(_)
-            | Self::VertexTokenTimeout { .. }
-            | Self::Token { .. } => None,
-        }
-    }
-}
-
-// _realtime_health_check: resolve the merged parameters, build the provider's connection and open it once
+// _realtime_health_check: resolve the merged parameters, then open the provider's connection once
 pub async fn realtime_health_check(
     request: &RealtimeProbeRequest,
     settings: &RealtimeProbeSettings,
@@ -158,36 +128,10 @@ pub async fn realtime_health_check(
 ) -> Result<(), RealtimeProbeError> {
     let merged = model_params_with_stored_credentials(&request.model_params, dependencies.stored);
     let resolved = resolve_probe_parameters(request, &merged)?;
-    let api_key = resolved.api_key;
-    let api_base = resolved.api_base;
-    let api_version = resolved.api_version;
     if request.custom_llm_provider == AZURE_PROVIDER {
-        let ad_token = azure::ad_token(api_key.as_ref(), &merged, dependencies.azure)?;
-        let protocol = azure_protocol(
-            request.realtime_protocol.as_deref(),
-            merged.get(REALTIME_PROTOCOL_KEY),
-            settings.azure_realtime_protocol.as_deref(),
-        );
-        let query_params = transcription_query(&request.model, dependencies.metadata);
-        let version = non_empty(api_version.as_deref()).unwrap_or(AZURE_DEFAULT_API_VERSION);
-        let connection = azure_connection(&azure::AzureProbeConnection {
-            model: &request.model,
-            api_key: api_key.as_ref(),
-            ad_token: ad_token.as_ref(),
-            api_base: api_base.as_deref(),
-            api_version: version,
-            protocol: &protocol,
-            query_params: query_params.as_ref(),
-            max_message_size_bytes: settings.max_message_size_bytes,
-            verification: dependencies.verification,
-        })?;
-        return dependencies
-            .dialer
-            .probe(&connection)
-            .await
-            .map_err(RealtimeProbeError::Dial);
+        return azure_health_check(request, settings, &merged, &resolved, dependencies).await;
     }
-    let configured_base = non_empty(api_base.as_deref());
+    let configured_base = non_empty(resolved.api_base.as_deref());
     let default_base = match request.custom_llm_provider.as_str() {
         OPENAI_PROVIDER => OPENAI_DEFAULT_API_BASE,
         XAI_PROVIDER => XAI_DEFAULT_API_BASE,
@@ -208,10 +152,44 @@ pub async fn realtime_health_check(
     probe(
         dependencies,
         url,
-        bearer_headers(api_key.as_ref()),
+        bearer_headers(resolved.api_key.as_ref()),
         settings,
     )
     .await
+}
+
+// the Azure branch: AD resolution, protocol selection, the transcription intent and B545's URL and headers
+async fn azure_health_check(
+    request: &RealtimeProbeRequest,
+    settings: &RealtimeProbeSettings,
+    merged: &JsonObject,
+    resolved: &ResolvedProbeParameters,
+    dependencies: &RealtimeProbeDependencies<'_>,
+) -> Result<(), RealtimeProbeError> {
+    let ad_token = azure::ad_token(resolved.api_key.as_ref(), merged, dependencies.azure)?;
+    let protocol = azure_protocol(
+        request.realtime_protocol.as_deref(),
+        merged.get(REALTIME_PROTOCOL_KEY),
+        settings.azure_realtime_protocol.as_deref(),
+    );
+    let query_params = transcription_query(&request.model, dependencies.metadata);
+    let version = non_empty(resolved.api_version.as_deref()).unwrap_or(AZURE_DEFAULT_API_VERSION);
+    let connection = azure_connection(&azure::AzureProbeConnection {
+        model: &request.model,
+        api_key: resolved.api_key.as_ref(),
+        ad_token: ad_token.as_ref(),
+        api_base: resolved.api_base.as_deref(),
+        api_version: version,
+        protocol: &protocol,
+        query_params: query_params.as_ref(),
+        max_message_size_bytes: settings.max_message_size_bytes,
+        verification: dependencies.verification,
+    })?;
+    dependencies
+        .dialer
+        .probe(&connection)
+        .await
+        .map_err(RealtimeProbeError::Dial)
 }
 
 // the `or` default: a configured empty string is treated as absent
