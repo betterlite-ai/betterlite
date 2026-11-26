@@ -19,6 +19,7 @@ use betterlite_db::team_rows::membership::LiteLLMTeamMembership;
 use opentelemetry::trace::SpanContext;
 use rust_decimal::Decimal;
 use tokio::sync::Mutex as AsyncMutex;
+use tokio::time::sleep;
 use tokio_util::task::TaskTracker;
 
 use crate::auth_identity::errors::AuthError as IdentityError;
@@ -163,7 +164,7 @@ impl DbReconnect for FakeReconnect {
                 .unwrap_or_else(PoisonError::into_inner)
                 .push((reason.to_owned(), timeout_seconds, lock_timeout_seconds));
             if let Some(delay) = self.delay {
-                tokio::time::sleep(delay).await;
+                sleep(delay).await;
             }
             self.answer.clone()
         })
@@ -174,9 +175,8 @@ pub(super) fn reader(source: Arc<FakeSource>, reconnect: Option<FakeReconnect>) 
     Arc::new(KeyReader {
         source,
         reconnect: reconnect.map(|client| {
-            Arc::new(AsyncMutex::new(
-                Box::new(client) as Box<dyn DbReconnect + Send>
-            ))
+            let reconnect_client: Box<dyn DbReconnect + Send> = Box::new(client);
+            Arc::new(AsyncMutex::new(reconnect_client))
         }),
         gate: Arc::new(LoopBoundSemaphore {
             value: 8,
@@ -332,7 +332,7 @@ pub(super) fn lookups(
         reader,
         cache,
         writer,
-        permissions: permissions.map(|source| source as Arc<dyn KeyPermissionLookup>),
+        permissions: permissions.map(|source| -> Arc<dyn KeyPermissionLookup> { source }),
     }
 }
 
@@ -448,10 +448,10 @@ impl TeamLoader for FakeTeams {
         request: TeamRequest<'_>,
     ) -> Result<LiteLLMTeamTableCachedObj, TeamLookupError> {
         let team_id = request.team_id.to_owned();
-        match &self.0 {
-            Some(team) => Ok(team.clone()),
-            None => Err(TeamLookupError::TeamNotFound { team_id }),
-        }
+        self.0.as_ref().map_or_else(
+            || Err(TeamLookupError::TeamNotFound { team_id }),
+            |team| Ok(team.clone()),
+        )
     }
 }
 

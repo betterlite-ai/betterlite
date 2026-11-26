@@ -56,14 +56,12 @@ pub mod virtual_key_routes;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use betterlite_auth::auth_request_models::MODEL_ROUTING_HEADER_NAME;
 use betterlite_auth::auth_request_models::catalog::{EmptyCatalog, RequestModelResolver};
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 
 use crate::auth::auth_identity::{AuthBackend, AuthContext, StageFailure, StageInput};
-use crate::auth::auth_key_lookup::key_headers::extract_key;
-pub use crate::auth::auth_key_lookup::key_headers::parse_key_header;
+use crate::auth::auth_key_lookup::key_headers::{extract_key, headers_json};
 use crate::auth::auth_model_patterns::{
     ModelPatternStageInput, max_recurse_depth_for_request, rule_for_request,
 };
@@ -75,7 +73,7 @@ use crate::auth::virtual_key_routes::stage_input as virtual_key_route_stage_inpu
 use crate::error_body::AuthenticationFailure;
 use axum::body::{Body, Bytes};
 use axum::extract::State;
-use axum::http::{HeaderMap, Request};
+use axum::http::{Request, header};
 use axum::middleware::Next;
 use axum::response::Response;
 use secrecy::SecretString;
@@ -111,8 +109,8 @@ fn stage_input(
     body: Option<&Bytes>,
 ) -> Result<StageInput, StageFailure> {
     match backend {
-        AuthBackend::AuthKeyLookup => auth_key_lookup::lookup_stage_input(request),
-        AuthBackend::MasterKey => auth_key_lookup::master_stage_input(request, authenticated),
+        AuthBackend::AuthKeyLookup => Ok(auth_key_lookup::lookup_stage_input(request)),
+        AuthBackend::MasterKey => Ok(auth_key_lookup::master_stage_input(request, authenticated)),
         AuthBackend::AuthRequestPolicy => Ok(StageInput::AuthRequestPolicy(Box::new(
             auth_request_policy::stage_input(request, authenticated, body)?,
         ))),
@@ -264,19 +262,21 @@ fn model_stage_input(
         resolver: Arc::clone(resolver),
     }
 }
-fn headers_json(headers: &HeaderMap) -> JsonObject {
-    let mut object = JsonObject::new();
-    if let Some(value) = headers.get(MODEL_ROUTING_HEADER_NAME) {
-        // LiteLLM decodes header bytes as latin-1, and only this header feeds the model candidates
-        let text: String = value
-            .as_bytes()
-            .iter()
-            .map(|byte| char::from(*byte))
-            .collect();
-        object.insert(MODEL_ROUTING_HEADER_NAME.to_owned(), Json::Text(text));
+pub fn parse_key_header(name: &str, header_bytes: &[u8]) -> Option<SecretString> {
+    if header_bytes.is_empty() {
+        return None;
     }
-    object
+    let header_value: String = header_bytes.iter().map(|byte| char::from(*byte)).collect();
+    let token = if name == header::AUTHORIZATION.as_str() {
+        key_prefix::strip_prefix(&header_value).unwrap_or_default()
+    } else if name == "x-litellm-api-key" {
+        key_prefix::strip_prefix(&header_value).unwrap_or(header_value)
+    } else {
+        header_value
+    };
+    Some(SecretString::from(token))
 }
+
 const MODEL_QUERY_KEYS: [&str; 2] = ["model", "target_model_names"];
 
 fn query_json(query: Option<&str>) -> JsonObject {

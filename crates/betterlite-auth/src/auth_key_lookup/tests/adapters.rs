@@ -43,15 +43,15 @@ impl InvalidationClock for FixedClock {
 
 fn local_cache() -> Arc<AuthCache<DualCache<LocalMemoryOps>>> {
     let settings = DualCacheSettings {
-        default_in_memory_ttl: Some(60.0),
+        default_in_memory_ttl: Some(60.0_f64),
         default_redis_ttl: None,
         batch_cache_expiry: None,
         max_redis_batch_cache_size: 100,
         redis_delete_chunk_size: 100,
     };
-    let ordinary = Arc::new(LocalMemoryOps::new(100, Arc::new(|| 42.0)).unwrap());
-    let keys = Arc::new(LocalMemoryOps::new(100, Arc::new(|| 42.0)).unwrap());
-    Arc::new(gateway_cache(ordinary, keys, None, settings, 60.0))
+    let ordinary = Arc::new(LocalMemoryOps::new(100, Arc::new(|| 42.0_f64)).unwrap());
+    let keys = Arc::new(LocalMemoryOps::new(100, Arc::new(|| 42.0_f64)).unwrap());
+    Arc::new(gateway_cache(ordinary, keys, None, settings, 60.0_f64))
 }
 
 #[tokio::test]
@@ -62,10 +62,10 @@ async fn cache_adapters_round_trip() {
         auth: auth_cache,
         usage: None,
         spend: Arc::new(DualCache::new(
-            Arc::new(LocalMemoryOps::new(100, Arc::new(|| 42.0)).unwrap()),
+            Arc::new(LocalMemoryOps::new(100, Arc::new(|| 42.0_f64)).unwrap()),
             None,
             DualCacheSettings {
-                default_in_memory_ttl: Some(60.0),
+                default_in_memory_ttl: Some(60.0_f64),
                 default_redis_ttl: None,
                 batch_cache_expiry: None,
                 max_redis_batch_cache_size: 100,
@@ -74,12 +74,12 @@ async fn cache_adapters_round_trip() {
         )),
         transport: Arc::new(UnusedTransport),
         clock: Arc::new(FixedClock),
-        access_group_ttl: 60.0,
+        access_group_ttl: 60.0_f64,
     };
     let mut auth = auth_from_fields(KEY_ROW);
     auth.extra.request_route = Some("/v1/chat/completions".to_owned());
     writer.write_key("hashed-key", &mut auth).await.unwrap();
-    assert_eq!(auth.view.last_refreshed_at, Some(Decimal::from(42)));
+    assert_eq!(auth.view.last_refreshed_at, Some(Decimal::from(42_i32)));
     let hit = cache.read_key("hashed-key").await.unwrap();
     assert_eq!(hit.view.token.key_name.as_deref(), Some("key-1"));
     assert_eq!(hit.view.token.spend, Decimal::new(15, 1));

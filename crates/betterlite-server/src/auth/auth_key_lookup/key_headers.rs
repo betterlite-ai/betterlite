@@ -1,7 +1,11 @@
 use axum::http::{HeaderMap, header};
 use secrecy::SecretString;
 
-use crate::auth::key_prefix;
+use betterlite_auth::auth_request_models::MODEL_ROUTING_HEADER_NAME;
+use betterlite_models::decisions::Json;
+use betterlite_models::model_registration::JsonObject;
+
+use crate::auth::parse_key_header;
 
 pub(crate) fn extract_key(headers: &HeaderMap) -> Option<SecretString> {
     for name in [
@@ -22,17 +26,16 @@ pub(crate) fn extract_key(headers: &HeaderMap) -> Option<SecretString> {
     None
 }
 
-pub fn parse_key_header(name: &str, header_bytes: &[u8]) -> Option<SecretString> {
-    if header_bytes.is_empty() {
-        return None;
+pub(crate) fn headers_json(headers: &HeaderMap) -> JsonObject {
+    let mut object = JsonObject::new();
+    if let Some(value) = headers.get(MODEL_ROUTING_HEADER_NAME) {
+        // LiteLLM decodes header bytes as latin-1, and only this header feeds the model candidates
+        let text: String = value
+            .as_bytes()
+            .iter()
+            .map(|byte| char::from(*byte))
+            .collect();
+        object.insert(MODEL_ROUTING_HEADER_NAME.to_owned(), Json::Text(text));
     }
-    let header_value: String = header_bytes.iter().map(|byte| char::from(*byte)).collect();
-    let token = if name == header::AUTHORIZATION.as_str() {
-        key_prefix::strip_prefix(&header_value).unwrap_or_default()
-    } else if name == "x-litellm-api-key" {
-        key_prefix::strip_prefix(&header_value).unwrap_or(header_value)
-    } else {
-        header_value
-    };
-    Some(SecretString::from(token))
+    object
 }

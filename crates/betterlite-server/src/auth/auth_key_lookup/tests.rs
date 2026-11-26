@@ -20,11 +20,12 @@ use secrecy::{ExposeSecret as _, SecretString};
 use tower::ServiceExt as _;
 
 use crate::auth::auth_identity::{AuthBackend, INSTALLED_STAGES, dispatch};
+use crate::auth::parse_key_header;
 use crate::routes;
 use crate::routes::tests::state_for;
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 
-use super::{KeyLookupStageInput, key_headers};
+use super::KeyLookupStageInput;
 
 const CHAT_ROUTE: &str = "/v1/chat/completions";
 const PRESENTED: &str = "sk-virtual-key";
@@ -145,21 +146,24 @@ async fn failure_stops_downstream() {
 
     let outage = ScriptedAuthenticator::new(Answer::Outage);
     let outage_authenticator = Arc::clone(&outage);
-    let (status, body, reached) = run_request(outage_authenticator).await;
-    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
-    assert!(body.contains("\"type\":\"no_db_connection\""), "{body}");
-    assert!(body.contains("\"code\":\"503\""), "{body}");
-    assert!(!reached);
+    let (outage_status, outage_body, outage_reached) = run_request(outage_authenticator).await;
+    assert_eq!(outage_status, StatusCode::SERVICE_UNAVAILABLE);
+    assert!(
+        outage_body.contains("\"type\":\"no_db_connection\""),
+        "{outage_body}"
+    );
+    assert!(outage_body.contains("\"code\":\"503\""), "{outage_body}");
+    assert!(!outage_reached);
     assert_eq!(outage.calls(), vec![PRESENTED.to_owned()]);
 }
 
 #[test]
 fn key_header_prefixes() {
-    let litellm = key_headers::parse_key_header("x-litellm-api-key", b"Bearer sk-litellm")
+    let litellm = parse_key_header("x-litellm-api-key", b"Bearer sk-litellm")
         .map(|key| key.expose_secret().to_owned());
     assert_eq!(litellm, Some("sk-litellm".to_owned()));
     let authorization =
-        key_headers::parse_key_header(header::AUTHORIZATION.as_str(), b"Bearer sk-authorization")
+        parse_key_header(header::AUTHORIZATION.as_str(), b"Bearer sk-authorization")
             .map(|key| key.expose_secret().to_owned());
     assert_eq!(authorization, Some("sk-authorization".to_owned()));
 }
@@ -188,9 +192,9 @@ fn authenticated_stage_forwarding() {
         panic!("master stage forwards the authenticated key");
     };
     assert_eq!(forwarded.principal.subject, "master_key");
-    assert!(dispatch(AuthBackend::AuthRequestPolicy, &input, &master).is_err());
+    dispatch(AuthBackend::AuthRequestPolicy, &input, &master).unwrap_err();
     let raw = super::StageInput::MasterKey(Some(master.clone()));
-    assert!(dispatch(AuthBackend::AuthKeyLookup, &raw, &master).is_err());
+    dispatch(AuthBackend::AuthKeyLookup, &raw, &master).unwrap_err();
 }
 
 #[rstest::rstest]
@@ -235,8 +239,7 @@ fn master_input_before_lookup() {
         .header(header::AUTHORIZATION, "Bearer master")
         .body(Body::empty())
         .unwrap();
-    let Ok(super::StageInput::MasterKey(Some(key))) = super::master_stage_input(&request, None)
-    else {
+    let super::StageInput::MasterKey(Some(key)) = super::master_stage_input(&request, None) else {
         panic!("the master stage extracts an unprocessed credential");
     };
     assert_eq!(key.expose_secret(), "master");

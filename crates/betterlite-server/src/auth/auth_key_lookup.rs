@@ -22,39 +22,39 @@ mod tests;
 
 // The presented credential and the collaborators the lookup needs; the master key is compared in the prefetch.
 #[derive(Clone)]
-pub(crate) struct KeyLookupStageInput {
+pub struct KeyLookupStageInput {
     pub(crate) presented: Option<SecretString>,
     pub(crate) authenticator: Option<Arc<dyn KeyAuthenticator>>,
     master_key: Option<SecretString>,
 }
 
 impl fmt::Debug for KeyLookupStageInput {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("KeyLookupStageInput")
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("KeyLookupStageInput")
             .field("presented", &self.presented.is_some())
             .field("authenticator", &self.authenticator.is_some())
+            .field("master_key", &self.master_key.is_some())
             .finish()
     }
 }
 
-pub(crate) fn lookup_stage_input(request: &Request<Body>) -> Result<StageInput, StageFailure> {
-    Ok(StageInput::AuthKeyLookup(Box::new(KeyLookupStageInput {
+pub(crate) fn lookup_stage_input(request: &Request<Body>) -> StageInput {
+    StageInput::AuthKeyLookup(Box::new(KeyLookupStageInput {
         presented: super::extract_key(request.headers()),
         authenticator: authenticator_for(request),
         master_key: master_key_for(request),
-    })))
+    }))
 }
 
 // An earlier stage that read the key leaves the identity here, and the master key stage only forwards it.
 pub(crate) fn master_stage_input(
     request: &Request<Body>,
     authenticated: Option<&AuthContext>,
-) -> Result<StageInput, StageFailure> {
-    Ok(authenticated.map_or_else(
+) -> StageInput {
+    authenticated.map_or_else(
         || StageInput::MasterKey(super::extract_key(request.headers())),
         |context| StageInput::Authenticated(Box::new(context.clone())),
-    ))
+    )
 }
 
 // A test or a later composition installs the authenticator as an extension or in the state slot.

@@ -18,7 +18,7 @@ use super::jwt::{
 use super::key_object::get_key_object;
 use super::reader::AUTH_RECONNECT_REASON;
 use super::session::resolve_object_permission_for_unresolvable_team;
-use super::{HashedKeyAuthenticator, KeyAuthenticator, key_identity, key_roles, role_str};
+use super::{HashedKeyAuthenticator, KeyAuthenticator as _, key_identity, key_roles, role_str};
 use crate::auth_errors::conversion::as_proxy_exception;
 use crate::auth_identity::roles::Role;
 use crate::auth_prefetch::permission::lookup::PermissionError;
@@ -296,7 +296,7 @@ async fn gate_and_retry_share_deadline() {
     let mut key_reader = reader(Arc::clone(&source), Some(reconnect));
     Arc::get_mut(&mut key_reader)
         .unwrap()
-        .default_deadline_seconds = 0.05;
+        .default_deadline_seconds = 0.05_f64;
     let error = key_reader
         .fetch("hashed-key", false, None)
         .await
@@ -374,8 +374,8 @@ async fn reconnect_false_rethrows() {
 async fn reconnect_numeric_timeouts() {
     let source = FakeSource::new(vec![Err(transport()), Ok(None)]);
     let (mut reconnect, calls) = fake_reconnect(Ok(true));
-    reconnect.timeout = Some(3.5);
-    reconnect.lock = Some(0.25);
+    reconnect.timeout = Some(3.5_f64);
+    reconnect.lock = Some(0.25_f64);
     let key_reader = reader(Arc::clone(&source), Some(reconnect));
     key_reader.fetch("hashed-key", false, None).await.unwrap();
     let attempts = reconnect_calls(&calls);

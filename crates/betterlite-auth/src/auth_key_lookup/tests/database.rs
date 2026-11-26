@@ -51,20 +51,22 @@ async fn database() -> (PostgresFixture, Pool) {
     (fixture, pool)
 }
 
-#[tokio::test]
-async fn mapping_repository_scopes() {
-    let (fixture, pool) = database().await;
-    let source = DatabaseJwtMappings {
-        reader: PostgresStore {
-            pool: Some(pool.clone()),
-        },
+fn mapping_source(pool: Option<Pool>) -> DatabaseJwtMappings {
+    DatabaseJwtMappings {
+        reader: PostgresStore { pool },
         default_deadline_seconds: 5.0,
         tracker: Arc::new(DbLookupStallTracker {
             clock: SystemClock,
             last_hit: Mutex::new(None),
         }),
         tasks: TaskTracker::new(),
-    };
+    }
+}
+
+#[tokio::test]
+async fn mapping_repository_scopes() {
+    let (fixture, pool) = database().await;
+    let source = mapping_source(Some(pool.clone()));
     assert_eq!(
         get_jwt_key_mapping_object("group", "dev", Some("issuer"), &source)
             .await
@@ -102,15 +104,7 @@ async fn mapping_repository_scopes() {
 
 #[tokio::test]
 async fn mapping_database_failure() {
-    let source = DatabaseJwtMappings {
-        reader: PostgresStore { pool: None },
-        default_deadline_seconds: 5.0,
-        tracker: Arc::new(DbLookupStallTracker {
-            clock: SystemClock,
-            last_hit: Mutex::new(None),
-        }),
-        tasks: TaskTracker::new(),
-    };
+    let source = mapping_source(None);
     assert!(source.mappings_for_tokens(&[]).await.unwrap().is_empty());
     let error = source
         .mappings_for_tokens(&["token".to_owned()])
@@ -121,11 +115,9 @@ async fn mapping_database_failure() {
     };
     assert_eq!(fault.error_type, ErrorType::Prisma);
     assert!(!fault.message.is_empty());
-    assert!(
-        get_jwt_key_mapping_object("group", "dev", None, &source)
-            .await
-            .is_err()
-    );
+    get_jwt_key_mapping_object("group", "dev", None, &source)
+        .await
+        .unwrap_err();
 }
 
 #[rstest]
