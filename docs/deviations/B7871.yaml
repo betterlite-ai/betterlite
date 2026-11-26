@@ -15,6 +15,9 @@ deviations:
   - what: "Structured httpx.Timeout values become one transport deadline: read, then connect, write, pool, or 600 seconds when all phases are unset."
     why: The Rust SDK bridge accepts one deadline, following the existing tuning bridge; independent phase timers are unavailable.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L204-L215
+  - what: "A deadline that expires, or any other transport failure, raises betterlite.APIConnectionError with status_code 500, where LiteLLM's OpenAI SDK call raises openai.APITimeoutError for a deadline and openai.APIConnectionError for a connection failure."
+    why: The shared native exception bridge carries one transport error kind, and changing it is outside B7871's scope; B7870 records the same difference for file_content.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L341-L355
   - what: "The upload's file part carries a content type guessed from the filename when the caller gives none, so a `rows.json` file reaches the server as application/json; LiteLLM's OpenAI SDK sends application/octet-stream for bytes, paths and file objects."
     why: The Rust multipart encoder keeps the provider request's own content-type rule, and the Python layer only forwards an explicit tuple content type.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L272-L288

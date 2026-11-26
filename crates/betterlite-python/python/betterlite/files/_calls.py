@@ -21,36 +21,22 @@ from betterlite.types.llms.openai.core.files import (
 from betterlite.types.utils.base import ResponseObject
 
 FileCreateProvider: TypeAlias = Literal[
-    "openai",
-    "azure",
-    "gemini",
-    "vertex_ai",
-    "bedrock",
-    "hosted_vllm",
-    "litellm_proxy",
-    "manus",
-    "anthropic",
-    "mistral",
-    "xai",
-]
+    "openai", "azure", "gemini", "vertex_ai", "bedrock", "hosted_vllm", "litellm_proxy", "manus",
+    "anthropic", "mistral", "xai"]
 FileRetrieveProvider: TypeAlias = Literal[
     "openai", "azure", "gemini", "vertex_ai", "hosted_vllm", "litellm_proxy", "manus",
-    "anthropic", "mistral", "xai",
-]
+    "anthropic", "mistral", "xai"]
 FileDeleteProvider: TypeAlias = Literal[
-    "openai", "azure", "gemini", "bedrock", "litellm_proxy", "manus", "anthropic",
-    "mistral", "xai",
-]
+    "openai", "azure", "gemini", "vertex_ai", "bedrock", "litellm_proxy", "manus", "anthropic",
+    "mistral", "xai"]
 FileListProvider: TypeAlias = Literal[
-    "openai", "azure", "litellm_proxy", "manus", "anthropic", "mistral", "xai",
-]
+    "openai", "azure", "litellm_proxy", "manus", "anthropic", "mistral", "xai"]
 
 # the GenericLiteLLMParams fields every one of the four calls reads
 PARAM_NAMES: Final[tuple[str, ...]] = (
-    "api_key", "azure_ad_token", "tenant_id", "client_id", "client_secret",
-    "azure_username", "azure_password", "azure_scope", "api_base", "api_version",
-    "organization", "max_retries", "litellm_call_id", "id", "passthrough",
-)
+    "api_key", "azure_ad_token", "tenant_id", "client_id", "client_secret", "azure_username",
+    "azure_password", "azure_scope", "api_base", "api_version", "organization", "max_retries",
+    "litellm_call_id", "id", "passthrough")
 # the openai SDK names a bare bytes upload "upload" and a stream after its file
 UPLOAD_NAME: Final = "upload"
 
@@ -61,10 +47,12 @@ class FileDeleted(ResponseObject):
     deleted: bool
 
 
-# LiteLLM hands back the SDK's SyncCursorPage, whose iteration yields the files themselves
 class FilePage(FileListPage):
+    # LiteLLM hands back the SDK's SyncCursorPage, whose iteration yields the files themselves
     @override
-    def __iter__(self) -> Iterator[OpenAIFileObject]:  # pyright: ignore[reportIncompatibleMethodOverride]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L765-L773
+    def __iter__(  # type: ignore[override]  # pyright: ignore[reportIncompatibleMethodOverride]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L765-L773
+        self,
+    ) -> Iterator[OpenAIFileObject]:
         return iter(self.data)
 
 
@@ -91,7 +79,7 @@ def file_call_session() -> NativeFileCallSession:
 def call_values(
     arguments: CallArguments,
     options: Mapping[str, CallValue],
-    given: dict[str, CallValue],
+    **given: CallValue,
 ) -> CallPayload:
     if options.get("azure_ad_token_provider") is not None:
         raise UnsupportedCallArgument("azure_ad_token_provider")
@@ -118,35 +106,13 @@ def create_values(
 ) -> CallPayload:
     expires: dict[str, CallValue] | None = None
     if expires_after is not None:
-        expires = {
-            "anchor": expires_after["anchor"],
-            "seconds": expires_after["seconds"],
-        }
-    # litellm passes a bare bytes file to the openai SDK, which names it "upload"
-    given: dict[str, CallValue] = {
-        "file": (UPLOAD_NAME, file) if isinstance(file, bytes) else file,
-        "purpose": purpose,
-        "expires_after": expires,
-    }
-    return call_values(arguments, options, given)
-
-
-def delete_values(arguments: CallArguments, options: Mapping[str, CallValue]) -> CallPayload:
-    given: dict[str, CallValue] = {
-        "file_id": arguments.file_id,
-        "model": arguments.model,
-    }
-    return call_values(arguments, options, given)
-
-
-def retrieve_values(arguments: CallArguments, options: Mapping[str, CallValue]) -> CallPayload:
-    given: dict[str, CallValue] = {"file_id": arguments.file_id}
-    return call_values(arguments, options, given)
-
-
-def listing_values(arguments: CallArguments, options: Mapping[str, CallValue]) -> CallPayload:
-    given: dict[str, CallValue] = {"purpose": arguments.purpose}
-    return call_values(arguments, options, given)
+        expires = {"anchor": expires_after["anchor"], "seconds": expires_after["seconds"]}
+    match file:
+        case bytes():
+            wrapped: CallValue = (UPLOAD_NAME, file)
+        case object():
+            wrapped = file
+    return call_values(arguments, options, file=wrapped, purpose=purpose, expires_after=expires)
 
 
 async def async_create(
@@ -164,7 +130,7 @@ async def async_create(
 async def async_delete(
     arguments: CallArguments, options: Mapping[str, CallValue]
 ) -> FileDeleted:
-    payload = delete_values(arguments, options)
+    payload = call_values(arguments, options, file_id=arguments.file_id, model=arguments.model)
     answer = await acall_native(file_call_session().adelete, payload, NativeFileCallError)
     return DELETED.validate_python(answer)
 
@@ -172,13 +138,13 @@ async def async_delete(
 async def async_retrieve(
     arguments: CallArguments, options: Mapping[str, CallValue]
 ) -> OpenAIFileObject:
-    payload = retrieve_values(arguments, options)
+    payload = call_values(arguments, options, file_id=arguments.file_id)
     answer = await acall_native(file_call_session().aretrieve, payload, NativeFileCallError)
     return FILE.validate_python(answer)
 
 
 async def async_list(arguments: CallArguments, options: Mapping[str, CallValue]) -> FilePage:
-    payload = listing_values(arguments, options)
+    payload = call_values(arguments, options, purpose=arguments.purpose)
     answer = await acall_native(file_call_session().alist, payload, NativeFileCallError)
     return PAGE.validate_python(answer)
 
@@ -192,14 +158,7 @@ def create_file(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm
     extra_body: dict[str, str] | None = None,
     **kwargs: CallValue,
 ) -> OpenAIFileObject | Awaitable[OpenAIFileObject]:
-    arguments = CallArguments(
-        file_id=None,
-        model=None,
-        custom_llm_provider=custom_llm_provider,
-        purpose=None,
-        extra_headers=extra_headers,
-        extra_body=extra_body,
-    )
+    arguments = CallArguments(None, None, custom_llm_provider, None, extra_headers, extra_body)
     if kwargs.pop("acreate_file", False) is True:
         return async_create(file, purpose, expires_after, arguments, kwargs)
     payload = create_values(file, purpose, expires_after, arguments, kwargs)
@@ -216,14 +175,7 @@ async def acreate_file(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/
     extra_body: dict[str, str] | None = None,
     **kwargs: CallValue,
 ) -> OpenAIFileObject:
-    arguments = CallArguments(
-        file_id=None,
-        model=None,
-        custom_llm_provider=custom_llm_provider,
-        purpose=None,
-        extra_headers=extra_headers,
-        extra_body=extra_body,
-    )
+    arguments = CallArguments(None, None, custom_llm_provider, None, extra_headers, extra_body)
     return await async_create(file, purpose, expires_after, arguments, kwargs)
 
 
@@ -234,19 +186,12 @@ def file_retrieve(
     extra_body: dict[str, str] | None = None,
     **kwargs: CallValue,
 ) -> OpenAIFileObject | Awaitable[OpenAIFileObject]:
-    arguments = CallArguments(
-        file_id=file_id,
-        model=None,
-        custom_llm_provider=custom_llm_provider,
-        purpose=None,
-        extra_headers=extra_headers,
-        extra_body=extra_body,
-    )
+    arguments = CallArguments(file_id, None, custom_llm_provider, None, extra_headers, extra_body)
     flagged = kwargs.pop("afile_retrieve", False) is True
     asynchronous = kwargs.pop("is_async", False) is True
     if flagged or asynchronous:
         return async_retrieve(arguments, kwargs)
-    payload = retrieve_values(arguments, kwargs)
+    payload = call_values(arguments, kwargs, file_id=file_id)
     answer = call_native(file_call_session().retrieve, payload, NativeFileCallError)
     return FILE.validate_python(answer)
 
@@ -258,14 +203,7 @@ async def afile_retrieve(
     extra_body: dict[str, str] | None = None,
     **kwargs: CallValue,
 ) -> OpenAIFileObject:
-    arguments = CallArguments(
-        file_id=file_id,
-        model=None,
-        custom_llm_provider=custom_llm_provider,
-        purpose=None,
-        extra_headers=extra_headers,
-        extra_body=extra_body,
-    )
+    arguments = CallArguments(file_id, None, custom_llm_provider, None, extra_headers, extra_body)
     return await async_retrieve(arguments, kwargs)
 
 
@@ -277,19 +215,12 @@ def file_delete(
     extra_body: dict[str, str] | None = None,
     **kwargs: CallValue,
 ) -> FileDeleted | Awaitable[FileDeleted]:
-    arguments = CallArguments(
-        file_id=file_id,
-        model=model,
-        custom_llm_provider=custom_llm_provider,
-        purpose=None,
-        extra_headers=extra_headers,
-        extra_body=extra_body,
-    )
+    arguments = CallArguments(file_id, model, custom_llm_provider, None, extra_headers, extra_body)
     flagged = kwargs.pop("afile_delete", False) is True
     asynchronous = kwargs.pop("is_async", False) is True
     if flagged or asynchronous:
         return async_delete(arguments, kwargs)
-    payload = delete_values(arguments, kwargs)
+    payload = call_values(arguments, kwargs, file_id=file_id, model=model)
     answer = call_native(file_call_session().delete, payload, NativeFileCallError)
     return DELETED.validate_python(answer)
 
@@ -301,14 +232,8 @@ async def afile_delete(
     extra_body: dict[str, str] | None = None,
     **kwargs: CallValue,
 ) -> FileDeleted:
-    arguments = CallArguments(
-        file_id=file_id,
-        model=MODEL.validate_python(kwargs.pop("model", None)),
-        custom_llm_provider=custom_llm_provider,
-        purpose=None,
-        extra_headers=extra_headers,
-        extra_body=extra_body,
-    )
+    model = MODEL.validate_python(kwargs.pop("model", None))
+    arguments = CallArguments(file_id, model, custom_llm_provider, None, extra_headers, extra_body)
     return await async_delete(arguments, kwargs)
 
 
@@ -319,19 +244,12 @@ def file_list(
     extra_body: dict[str, str] | None = None,
     **kwargs: CallValue,
 ) -> FilePage | Awaitable[FilePage]:
-    arguments = CallArguments(
-        file_id=None,
-        model=None,
-        custom_llm_provider=custom_llm_provider,
-        purpose=purpose,
-        extra_headers=extra_headers,
-        extra_body=extra_body,
-    )
+    arguments = CallArguments(None, None, custom_llm_provider, purpose, extra_headers, extra_body)
     flagged = kwargs.pop("afile_list", False) is True
     asynchronous = kwargs.pop("is_async", False) is True
     if flagged or asynchronous:
         return async_list(arguments, kwargs)
-    payload = listing_values(arguments, kwargs)
+    payload = call_values(arguments, kwargs, purpose=purpose)
     answer = call_native(file_call_session().list, payload, NativeFileCallError)
     return PAGE.validate_python(answer)
 
@@ -343,12 +261,5 @@ async def afile_list(
     extra_body: dict[str, str] | None = None,
     **kwargs: CallValue,
 ) -> FilePage:
-    arguments = CallArguments(
-        file_id=None,
-        model=None,
-        custom_llm_provider=custom_llm_provider,
-        purpose=purpose,
-        extra_headers=extra_headers,
-        extra_body=extra_body,
-    )
+    arguments = CallArguments(None, None, custom_llm_provider, purpose, extra_headers, extra_body)
     return await async_list(arguments, kwargs)

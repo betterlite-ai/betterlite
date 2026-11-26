@@ -3,7 +3,7 @@ import importlib
 import inspect
 import json
 import threading
-from collections.abc import Awaitable, Callable, Iterator, Mapping
+from collections.abc import Awaitable, Callable, Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from types import TracebackType
@@ -33,7 +33,6 @@ from betterlite.files import (
     file_retrieve,
 )
 from betterlite.files._calls import FileDeleted, FilePage
-from betterlite.types.llms.openai.core.aliases import FileTypes
 from betterlite.types.llms.openai.core.files import OpenAIFileObject
 
 HOST: Final = "127.0.0.1"
@@ -61,7 +60,11 @@ SERVER_FILE: Final[dict[str, JsonValue]] = {
     "purpose": "batch",
     "status": "processed",
 }
-FILE_RECORD: Final[dict[str, JsonValue]] = {**SERVER_FILE, "expires_at": None, "status_details": None}
+FILE_RECORD: Final[dict[str, JsonValue]] = {
+    **SERVER_FILE,
+    "expires_at": None,
+    "status_details": None,
+}
 SERVER_PAGE: Final[dict[str, JsonValue]] = {
     "object": "list",
     "data": [SERVER_FILE],
@@ -105,22 +108,27 @@ class RecordedCall(TypedDict):
     body: bytes
 
 
-class ReferenceCall(Protocol):
-    def __call__(self, *args: CallValue, **kwargs: CallValue) -> object: ...
-
-
-class LiteLLMFiles(Protocol):
-    def __getattr__(self, name: str) -> ReferenceCall: ...
-
-
 @runtime_checkable
-class Dumped(Protocol):
+class ReferenceFile(Protocol):
     def model_dump_json(self) -> str: ...
 
 
 @runtime_checkable
-class DumpedPage(Dumped, Protocol):
-    def __iter__(self) -> Iterator[object]: ...
+class ReferencePage(ReferenceFile, Protocol):
+    def __iter__(self) -> Iterator[ReferenceFile]: ...
+
+
+CallResult: TypeAlias = ReferenceFile | Awaitable[ReferenceFile]
+OurCall: TypeAlias = Callable[..., CallResult]
+
+
+# every reference call is dumped as a file record, and a page is a record whose rows iterate
+class ReferenceCall(Protocol):
+    def __call__(self, *args: CallValue, **kwargs: CallValue) -> CallResult: ...
+
+
+class LiteLLMFiles(Protocol):
+    def __getattr__(self, name: str) -> ReferenceCall: ...
 
 
 REFERENCE: LiteLLMFiles = importlib.import_module("litellm")  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L115-L804
@@ -262,24 +270,23 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(encoded)
 
-    def log_message(self, *args: object) -> None:
-        pass
 
-
-def dumped(value: object) -> dict[str, JsonValue]:
+def dumped(value: CallResult) -> dict[str, JsonValue]:
     match value:
-        case Dumped():
+        case ReferenceFile():
             return JSON_RECORD.validate_json(value.model_dump_json())
-        case object():
-            raise AssertionError("the call did not answer with a file record")
+        case Awaitable():
+            raise AssertionError("the call answered with a coroutine instead of a record")
 
 
-def dumped_items(value: object) -> list[dict[str, JsonValue]]:
+def dumped_items(value: CallResult) -> list[dict[str, JsonValue]]:
     match value:
-        case DumpedPage():
+        case ReferencePage():
             return [dumped(item) for item in value]
-        case object():
+        case ReferenceFile():
             raise AssertionError("the call did not answer with a file page")
+        case Awaitable():
+            raise AssertionError("the call answered with a coroutine instead of a page")
 
 
 async def awaited_file(
@@ -317,7 +324,6 @@ def native_cause(error: BaseException) -> NativeFileCallError:
             raise AssertionError("the exception does not carry the native error as its cause")
 
 
-OurCall: TypeAlias = Callable[..., object]
 CALL_PAIRS: Final[tuple[tuple[OurCall, OurCall], ...]] = (
     (create_file, REFERENCE.create_file),
     (acreate_file, REFERENCE.acreate_file),
@@ -340,21 +346,6 @@ SYNC_CALLS: Final[tuple[OurCall, ...]] = (
     file_delete,
     file_list,
 )
-EXPORTED: Final[tuple[tuple[object, object], ...]] = (
-    (files_package.FileContentStreamingResponse, files_main.FileContentStreamingResponse),
-    (files_package.acreate_file, files_main.acreate_file),
-    (files_package.afile_content, files_main.afile_content),
-    (files_package.afile_delete, files_main.afile_delete),
-    (files_package.afile_list, files_main.afile_list),
-    (files_package.afile_retrieve, files_main.afile_retrieve),
-    (files_package.create_file, files_main.create_file),
-    (files_package.file_content, files_main.file_content),
-    (files_package.file_delete, files_main.file_delete),
-    (files_package.file_list, files_main.file_list),
-    (files_package.file_retrieve, files_main.file_retrieve),
-)
-
-
 def test_signature_matches_litellm() -> None:
     for ours, reference in CALL_PAIRS:
         assert parameter_rows(inspect.signature(ours)) == parameter_rows(
@@ -366,7 +357,7 @@ def test_signature_matches_litellm() -> None:
         assert not inspect.iscoroutinefunction(call)
 
 
-def test_create_bytes_matches_litellm() -> None:
+def test_create_bytes_matches_litellm() -> None:  # ast-grep-ignore: no-long-names
     with FileCallServer() as server:
         reference = REFERENCE.create_file(
             file=PAYLOAD,
@@ -395,7 +386,7 @@ def test_create_bytes_matches_litellm() -> None:
     assert dumped(ours) == dumped(reference) == FILE_RECORD
 
 
-def test_create_path_matches_litellm(tmp_path: Path) -> None:
+def test_create_path_matches_litellm(tmp_path: Path) -> None:  # ast-grep-ignore: no-long-names
     rows = tmp_path / CREATE_FILENAME
     rows.write_bytes(PAYLOAD)
     with FileCallServer() as server:
@@ -423,7 +414,7 @@ def test_create_path_matches_litellm(tmp_path: Path) -> None:
     assert dumped(ours) == dumped(reference) == FILE_RECORD
 
 
-def test_create_file_object_matches_litellm(tmp_path: Path) -> None:
+def test_create_file_object_matches_litellm(tmp_path: Path) -> None:  # ast-grep-ignore: no-long-names
     rows = tmp_path / CREATE_FILENAME
     rows.write_bytes(PAYLOAD)
     with FileCallServer() as server, rows.open("rb") as stream:
@@ -454,7 +445,7 @@ def test_create_file_object_matches_litellm(tmp_path: Path) -> None:
     assert dumped(ours) == dumped(reference) == FILE_RECORD
 
 
-def test_create_tuple_matches_litellm() -> None:
+def test_create_tuple_matches_litellm() -> None:  # ast-grep-ignore: no-long-names
     with FileCallServer() as server:
         reference = REFERENCE.create_file(
             file=(TUPLE_FILENAME, PAYLOAD),
@@ -480,7 +471,7 @@ def test_create_tuple_matches_litellm() -> None:
     assert dumped(ours) == dumped(reference) == FILE_RECORD
 
 
-def test_create_expires_after_reaches_server() -> None:
+def test_create_expires_after_reaches_server() -> None:  # ast-grep-ignore: no-long-names
     with FileCallServer() as server:
         created = create_file(
             file=PAYLOAD,
@@ -520,7 +511,7 @@ def test_create_flag_coroutine() -> None:
     assert dumped(made) == dumped(direct) == FILE_RECORD
 
 
-def test_create_provider_none_matches_litellm() -> None:
+def test_create_provider_none_matches_litellm() -> None:  # ast-grep-ignore: no-long-names
     with FileCallServer() as server:
         with pytest.raises(ValueError, match="is not a valid LlmProviders") as reference:
             REFERENCE.create_file(
@@ -674,7 +665,7 @@ def test_list_matches_litellm() -> None:
     assert dumped(ours)["has_more"] is False
 
 
-def test_list_without_purpose_matches_litellm() -> None:
+def test_list_without_purpose_matches_litellm() -> None:  # ast-grep-ignore: no-long-names
     with FileCallServer() as server:
         reference = REFERENCE.file_list(
             custom_llm_provider="openai",
@@ -755,7 +746,7 @@ def test_error_matches_litellm() -> None:
     assert made.value.code is made.value.type is made.value.param is None
 
 
-def test_error_token_provider_refused() -> None:
+def test_error_token_provider_refused() -> None:  # ast-grep-ignore: no-long-names
     with pytest.raises(UnsupportedCallArgument, match="azure_ad_token_provider"):
         file_retrieve(file_id=FILE_ID, azure_ad_token_provider=GOOD_KEY)
 
@@ -763,5 +754,14 @@ def test_error_token_provider_refused() -> None:
 def test_package_exports() -> None:
     assert tuple(files_package.__all__) == EXPECTED_EXPORTS
     assert tuple(files_main.__all__) == EXPECTED_EXPORTS
-    for package_name, main_name in EXPORTED:
-        assert package_name is main_name
+    assert files_package.FileContentStreamingResponse is files_main.FileContentStreamingResponse
+    assert files_package.acreate_file is files_main.acreate_file
+    assert files_package.afile_content is files_main.afile_content
+    assert files_package.afile_delete is files_main.afile_delete
+    assert files_package.afile_list is files_main.afile_list
+    assert files_package.afile_retrieve is files_main.afile_retrieve
+    assert files_package.create_file is files_main.create_file
+    assert files_package.file_content is files_main.file_content
+    assert files_package.file_delete is files_main.file_delete
+    assert files_package.file_list is files_main.file_list
+    assert files_package.file_retrieve is files_main.file_retrieve
