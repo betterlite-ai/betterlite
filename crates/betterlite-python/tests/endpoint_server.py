@@ -17,6 +17,40 @@ SPEECH_PATH = "/v1/audio/speech"
 SPEECH_BYTES = b"ID3endpoint-speech"
 SPEECH_TYPE = "audio/mpeg"
 JSON_TYPE = "application/json"
+HATE_SCORE: Final = 0.01
+CATEGORIES: Final[dict[str, JsonValue]] = {
+    "harassment": False,
+    "harassment/threatening": False,
+    "hate": False,
+    "hate/threatening": False,
+    "illicit": False,
+    "illicit/violent": False,
+    "self-harm": False,
+    "self-harm/instructions": False,
+    "self-harm/intent": False,
+    "sexual": False,
+    "sexual/minors": False,
+    "violence": False,
+    "violence/graphic": False,
+}
+APPLIED: Final[dict[str, JsonValue]] = {
+    name: ["text"] for name in CATEGORIES
+}
+SCORES: Final[dict[str, JsonValue]] = {
+    "harassment": HATE_SCORE,
+    "harassment/threatening": HATE_SCORE,
+    "hate": HATE_SCORE,
+    "hate/threatening": HATE_SCORE,
+    "illicit": HATE_SCORE,
+    "illicit/violent": HATE_SCORE,
+    "self-harm": HATE_SCORE,
+    "self-harm/instructions": HATE_SCORE,
+    "self-harm/intent": HATE_SCORE,
+    "sexual": HATE_SCORE,
+    "sexual/minors": HATE_SCORE,
+    "violence": HATE_SCORE,
+    "violence/graphic": HATE_SCORE,
+}
 
 # One fixed answer per route, shaped as the family that calls it reads it.
 RESPONSES: Final[dict[str, dict[str, JsonValue]]] = {
@@ -30,7 +64,12 @@ RESPONSES: Final[dict[str, dict[str, JsonValue]]] = {
         "id": "modr-1",
         "model": "omni-moderation-latest",
         "results": [
-            {"flagged": False, "categories": {"hate": False}, "category_scores": {"hate": 0.01}}
+            {
+                "flagged": False,
+                "categories": CATEGORIES,
+                "category_scores": SCORES,
+                "category_applied_input_types": APPLIED,
+            }
         ],
     },
     "/v1/completions": {

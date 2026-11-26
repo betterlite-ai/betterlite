@@ -1,7 +1,7 @@
 id: B159
 milestone: M12 python
 title: Python embeddings, images, speech, transcription, rerank, moderation and text completion
-status: todo
+status: done
 depends_on: [B6041, B6042, B6043, B6044, B6045]
 file: tasks/B159-python-endpoints-surface.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/llms/bedrock/realtime/handler.py"
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3237
