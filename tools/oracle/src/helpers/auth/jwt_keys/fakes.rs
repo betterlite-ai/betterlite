@@ -10,9 +10,9 @@ use betterlite_auth::jwt_keys::clock::Clock;
 use betterlite_auth::jwt_keys::http::{FetchError, HttpReply, JwksHttp};
 use betterlite_http::error::HttpError;
 use betterlite_models::decisions::Json;
-use serde_json::Value;
 
 use super::input::{Reply, ReplyKind};
+use super::output::Write;
 
 // Every fake is reached from the resolver while a step runs, so a poisoned lock carries on with its value.
 pub(super) fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -40,16 +40,16 @@ impl Clock for StepClock {
     }
 }
 
-struct Entry {
+pub(super) struct Entry {
     value: Json,
     expires_at: f64,
 }
 
 // InMemoryCache keeps a written key readable until the clock passes its expiry, and a re-write keeps an unexpired one.
 pub(super) struct Cache {
-    entries: Mutex<BTreeMap<String, Entry>>,
-    pub(super) writes: Mutex<Vec<Value>>,
-    clock: Arc<StepClock>,
+    pub(super) entries: Mutex<BTreeMap<String, Entry>>,
+    pub(super) writes: Mutex<Vec<Write>>,
+    pub(super) clock: Arc<StepClock>,
 }
 
 impl Cache {
@@ -99,7 +99,10 @@ impl KeyCache for Cache {
                 },
             );
         }
-        lock(&self.writes).push(serde_json::json!({"key": key, "ttl": ttl_seconds}));
+        lock(&self.writes).push(Write {
+            key: key.to_owned(),
+            ttl: ttl_seconds,
+        });
         Ok(())
     }
 }

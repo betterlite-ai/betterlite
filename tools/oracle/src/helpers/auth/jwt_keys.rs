@@ -2,6 +2,7 @@ use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod fakes;
 mod input;
+mod output;
 mod scenario;
 
 pub(crate) struct Op;
