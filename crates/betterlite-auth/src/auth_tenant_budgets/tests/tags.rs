@@ -6,13 +6,22 @@ use crate::auth_tenant_budgets::TenantSources;
 use crate::auth_tenant_budgets::error::TenantBudgetError;
 use crate::auth_tenant_budgets::tags::{
     group_ceiling_applies, group_denies, max_budget_check, model_access_group_max_budget_check,
-    tag_denies,
+    names_need_a_database, tag_denies,
 };
 use crate::current_spend::CurrentSpendError;
 
 use super::support::{
     Recorder, ScriptedSpend, TagWorld, decimal, group, number, tag, tenant_sources,
 };
+
+#[test]
+fn names_need_a_database_needs_both() {
+    let names = ["t".to_owned()];
+    assert!(!names_need_a_database(false, &names));
+    assert!(!names_need_a_database(true, &[]));
+    assert!(!names_need_a_database(false, &[]));
+    assert!(names_need_a_database(true, &names));
+}
 
 #[tokio::test]
 async fn no_db_or_names_skips() {

@@ -11,13 +11,18 @@ use super::error::TenantBudgetError;
 use super::project::NO_WINDOW;
 use super::{TenantAdmission, TenantSources};
 
+// both batch checks read only a database and only names the request actually carries
+pub(crate) fn names_need_a_database(database: bool, names: &[String]) -> bool {
+    database && !names.is_empty()
+}
+
 // _tag_max_budget_check for tags B1102 already extracted: the first tag over its ceiling denies and queues no alert
 pub async fn max_budget_check(
     tag_names: &[String],
     sources: &TenantSources<'_>,
     admission: &TenantAdmission<'_>,
 ) -> Result<(), TenantBudgetError> {
-    if !sources.database || tag_names.is_empty() {
+    if !names_need_a_database(sources.database, tag_names) {
         return Ok(());
     }
     let (Some(cache), Some(rows)) = (sources.cache, sources.tags) else {
@@ -71,7 +76,7 @@ pub async fn model_access_group_max_budget_check(
     sources: &TenantSources<'_>,
     admission: &TenantAdmission<'_>,
 ) -> Result<(), TenantBudgetError> {
-    if !sources.database || group_names.is_empty() {
+    if !names_need_a_database(sources.database, group_names) {
         return Ok(());
     }
     let (Some(cache), Some(rows)) = (sources.cache, sources.groups) else {
