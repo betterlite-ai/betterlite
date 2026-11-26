@@ -1,16 +1,14 @@
 use std::sync::Arc;
 
-use secrecy::ExposeSecret as _;
-use serde_json::json;
-
 use crate::auth_tenant_budgets::TenantRequest;
 use crate::auth_tenant_budgets::admit;
 use crate::auth_tenant_budgets::alerts::TenantAlertKind;
 use crate::auth_tenant_budgets::error::TenantBudgetError;
+use secrecy::ExposeSecret as _;
 
 use super::support::{
-    OrgWorld, Recorder, ScriptedSpend, TagWorld, admission, group_with_budget, lookup, number,
-    organization, project, tag_with_budget, tenant_sources, token,
+    OrgWorld, Recorder, ScriptedSpend, TagWorld, TokenFields, admission, group_with_budget, lookup,
+    number, organization, project, tag_with_budget, tenant_sources, token,
 };
 
 // common_checks raises 'Project=<id>', 'Organization=<id>', 'Tag=<name>' or 'Model access group=<name>'
@@ -65,7 +63,10 @@ async fn project_denial_stops_the_settled_scopes() {
     let reader = ScriptedSpend::new(vec![number(11.0)]);
     let recorder = Recorder::default();
     let admission = admission(&reader, &recorder);
-    let mut token = token(json!({"token": "sk", "org_id": "org-1"}));
+    let mut token = token(TokenFields {
+        token: "sk",
+        org_id: Some("org-1"),
+    });
     let projected = project(10.0, Some((Some(10.0_f64), None)));
     let names = ["t".to_owned()];
     let groups = ["g".to_owned()];
@@ -99,7 +100,10 @@ async fn organization_denial_wins_the_settled_scopes() {
     let reader = ScriptedSpend::new(vec![number(10.0), number(10.0), number(10.0)]);
     let recorder = Recorder::default();
     let admission = admission(&reader, &recorder);
-    let mut token = token(json!({"token": "sk", "org_id": "org-1"}));
+    let mut token = token(TokenFields {
+        token: "sk",
+        org_id: Some("org-1"),
+    });
     let names = ["t".to_owned()];
     let groups = ["g".to_owned()];
     let mut sources = tenant_sources(&world, true);
@@ -130,7 +134,10 @@ async fn tag_denial_beats_the_group_denial() {
     let reader = ScriptedSpend::new(vec![number(10.0), number(2.0)]);
     let recorder = Recorder::default();
     let admission = admission(&reader, &recorder);
-    let mut token = token(json!({"token": "sk"}));
+    let mut token = token(TokenFields {
+        token: "sk",
+        org_id: None,
+    });
     let names = ["t".to_owned()];
     let groups = ["g".to_owned()];
     let sources = tenant_sources(&world, true);

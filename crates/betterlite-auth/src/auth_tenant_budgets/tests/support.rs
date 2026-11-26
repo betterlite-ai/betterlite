@@ -276,6 +276,13 @@ where
     UserAPIKeyAuth::construct(AuthInput::Dict(map)).expect("the token constructs")
 }
 
+#[derive(Serialize)]
+pub(crate) struct TokenFields<'a> {
+    pub(crate) token: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) org_id: Option<&'a str>,
+}
+
 pub(crate) fn number(value: f64) -> JsonData {
     serde_json::from_value(json!(value)).expect("the counter value decodes")
 }
