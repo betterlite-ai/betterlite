@@ -174,12 +174,12 @@ async fn stage_is_registered() {
     let with_settings = config(
         "general_settings:\n  master_key: secret-master-key\nlitellm_settings:\n  max_budget: 12.5\n",
     );
-    let state = state_for(&with_settings);
-    let settings = Arc::clone(&state.auth_model_budgets.settings);
+    let server = state_for(&with_settings);
+    let settings = Arc::clone(&server.auth_model_budgets.settings);
     assert_eq!(settings.max_budget, Decimal::new(125, 1));
     assert!(settings.max_budget > Decimal::ZERO);
     let mut request = request_to(&Arc::new(AtomicBool::new(false)));
-    request.extensions_mut().insert(Arc::clone(&state));
+    request.extensions_mut().insert(Arc::clone(&server));
     let loaded = super::settings_for_request(&request);
     assert_eq!(loaded.max_budget, Decimal::new(125, 1));
 
@@ -326,7 +326,7 @@ async fn echo_fallback(Extension(views): Extension<BodyViews>, body: Bytes) -> B
 #[tokio::test]
 async fn fallback_reaches_downstream_with_all_snapshots(#[case] value: i32) {
     let mut rule = fallback_rule(r#"["gpt-4","gpt-3.5"]"#);
-    rule.path_params = Some(BTreeMap::from([(
+    rule.path_params = Some(JsonObject::from([(
         "model".to_owned(),
         Json::Text("gpt-4".to_owned()),
     )]));
@@ -351,7 +351,7 @@ async fn fallback_reaches_downstream_with_all_snapshots(#[case] value: i32) {
 #[tokio::test]
 async fn booted_chat_fallback_and_denial(#[case] models: &str, #[case] status: &str) {
     let mut rule = fallback_rule(models);
-    rule.path_params = Some(BTreeMap::from([(
+    rule.path_params = Some(JsonObject::from([(
         "model".to_owned(),
         Json::Text("gpt-4".to_owned()),
     )]));
@@ -458,7 +458,7 @@ async fn production_chat_sends_authorized_fallback_to_provider(
     use tokio::{net::TcpListener, task::JoinSet};
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
-    let sent = Arc::new(Mutex::new(Vec::new()));
+    let sent = Arc::new(Mutex::new(Vec::<String>::new()));
     let provider = Router::new()
         .fallback(mock_provider)
         .layer(Extension(Arc::clone(&sent)));

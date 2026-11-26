@@ -19,8 +19,8 @@ use betterlite_auth::auth_model_patterns::pattern::UnresolvedProviderInference;
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 use betterlite_config::sections::auth_model_budgets::Settings;
 use betterlite_config::sections::database_reencryption::DEFAULT_RECURSE_DEPTH;
-use betterlite_error::error::ErrorClass;
 use betterlite_error::error::details::BudgetExceededDetails;
+use betterlite_error::error::{ErrorClass, class_message};
 use betterlite_error::proxy_exception::ProxyException;
 use betterlite_models::model_registration::JsonObject;
 
@@ -82,7 +82,7 @@ pub struct ModelBudgetStageInput {
     pub rule: Arc<ModelBudgetRule>,
     pub settings: Arc<Settings>,
     pub body: Option<Bytes>,
-    pub(crate) views: SharedViews,
+    pub views: SharedViews,
 }
 
 // the authentication service inserts the rule once it resolved the caller's key; without one the stage is inert
@@ -201,7 +201,7 @@ fn key_budget_exception(error: &KeyBudgetError) -> ProxyException {
         KeyBudgetError::Limiter(class) => failure_exception(class),
         KeyBudgetError::Access(access) => access.denial().map_or_else(
             || other_exception(&access.to_string()),
-            |denial| denial.as_proxy_exception(),
+            |denial| denial.as_proxy_exception().clone(),
         ),
         KeyBudgetError::Rewrite(_) => other_exception(&error.to_string()),
     }
@@ -210,7 +210,7 @@ fn key_budget_exception(error: &KeyBudgetError) -> ProxyException {
 fn failure_exception(error: &ErrorClass) -> ProxyException {
     match error {
         ErrorClass::BudgetExceeded(details) => budget_exception(details),
-        other => other_exception(&other.to_string()),
+        other => other_exception(&class_message(other)),
     }
 }
 

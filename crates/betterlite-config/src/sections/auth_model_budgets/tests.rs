@@ -178,7 +178,7 @@ async fn max_budget_null_and_empty_env_default(
 fn max_budget_missing_env_names_the_field() {
     let error = load("litellm_settings:\n  max_budget: os.environ/BUDGET", &[]).unwrap_err();
     assert!(
-        matches!(error, ConfigError::MissingEnvironment { ref variable, ref path }
+        matches!(&error, ConfigError::MissingEnvironment { variable, path }
         if variable == "BUDGET" && path == "litellm_settings.max_budget")
     );
 }

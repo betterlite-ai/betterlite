@@ -8,10 +8,10 @@ use betterlite_core::api::request_body::{
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject as PathParams;
 
-pub(crate) type SharedViews = Arc<Mutex<Option<BodyViews>>>;
+pub type SharedViews = Arc<Mutex<Option<BodyViews>>>;
 
 #[derive(Clone, Debug)]
-pub(crate) struct BodyViews {
+pub struct BodyViews {
     pub(crate) request_data: Option<JsonObject>,
     pub(crate) parsed_body: Option<ParsedBody>,
     pub(crate) json_cache: Option<JsonObject>,

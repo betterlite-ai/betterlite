@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::ops::AsyncFnMut;
+use std::future::Future;
 
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_error::error::ErrorClass;
@@ -40,9 +40,13 @@ pub async fn read_user_model_max_budget(
     }
 }
 
-async fn check_each_model<Check>(models: &[String], mut check: Check) -> Result<(), ErrorClass>
+async fn check_each_model<'models, Check, Pending>(
+    models: &'models [String],
+    mut check: Check,
+) -> Result<(), ErrorClass>
 where
-    Check: AsyncFnMut(&str) -> Result<(), ErrorClass>,
+    Check: FnMut(&'models str) -> Pending + Send,
+    Pending: Future<Output = Result<bool, ErrorClass>> + Send,
 {
     for model in models {
         check(model.as_str()).await?;
@@ -61,11 +65,8 @@ pub async fn check_user_model_budget(
         token.extra.user_model_max_budget.as_ref(),
     ) && !budget.0.is_empty()
     {
-        return check_each_model(models, async |model| {
-            limiter
-                .is_user_within_model_budget(user_id, &budget.0, model)
-                .await?;
-            Ok(())
+        return check_each_model(models, |model| {
+            limiter.is_user_within_model_budget(user_id, &budget.0, model)
         })
         .await;
     }
@@ -88,11 +89,8 @@ pub async fn check_team_model_budget(
     if budget.0.is_empty() {
         return Ok(());
     }
-    check_each_model(models, async |model| {
-        limiter
-            .is_team_within_model_budget(team_id, &budget.0, Some(key_budget), model)
-            .await?;
-        Ok(())
+    check_each_model(models, |model| {
+        limiter.is_team_within_model_budget(team_id, &budget.0, Some(key_budget), model)
     })
     .await
 }
