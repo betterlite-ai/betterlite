@@ -19,6 +19,21 @@ const VALUE_ERROR: &str = "ValueError";
 // get_llm_provider catches its own failures and raises this class with the original model appended
 const BAD_REQUEST: &str = "BadRequestError";
 
+enum ExceptionCause {
+    Local,
+    Resolution,
+    Transport(Option<u16>, bool),
+}
+
+enum FailureClassInput {
+    FieldType {
+        field: &'static str,
+        expected: &'static str,
+    },
+    Provider,
+    Exception(ExceptionCause),
+}
+
 #[derive(Debug, Error)]
 pub enum VideoGenerationCallError {
     // LiteLLM's ValueError when the selector answers none
@@ -97,57 +112,53 @@ fn failure_class(
     provider: &str,
     redactor: &Redactor,
 ) -> ErrorClass {
+    match failure_class_input(error) {
+        FailureClassInput::FieldType { field, expected } => {
+            field_error_class(field, expected, model, provider)
+        }
+        FailureClassInput::Provider => provider_class(message, model, provider),
+        FailureClassInput::Exception(cause) => {
+            exception_class(cause, message, model, provider, redactor)
+        }
+    }
+}
+
+fn failure_class_input(error: &VideoGenerationCallError) -> FailureClassInput {
     match error {
         VideoGenerationCallError::FieldType { field, expected } => {
-            ErrorClass::BadRequest(Box::new(ResponseDetails::with_status(
-                field_type_context(field, expected, model, provider),
-                None,
-            )))
+            FailureClassInput::FieldType { field, expected }
         }
         VideoGenerationCallError::Resolution(_) => {
-            resolution_class(message, model, provider, redactor)
+            FailureClassInput::Exception(ExceptionCause::Resolution)
         }
         VideoGenerationCallError::Unsupported { .. }
         | VideoGenerationCallError::ConfigMissing { .. }
         | VideoGenerationCallError::Selection(_)
-        | VideoGenerationCallError::UnknownProvider { .. } => {
-            provider_class(message, model, provider)
-        }
+        | VideoGenerationCallError::UnknownProvider { .. } => FailureClassInput::Provider,
         VideoGenerationCallError::Mock(_)
         | VideoGenerationCallError::Timeout { .. }
         | VideoGenerationCallError::Logging(_)
-        | VideoGenerationCallError::Suspended => dispatch(
-            &DispatchInput::Raw(Box::new(exception(
-                message,
-                model,
-                provider,
-                VALUE_ERROR,
-                None,
-                false,
-            ))),
-            redactor,
-        ),
+        | VideoGenerationCallError::Suspended => {
+            FailureClassInput::Exception(ExceptionCause::Local)
+        }
         VideoGenerationCallError::Transport {
             status_code,
             status_code_is_synthesized,
             ..
-        } => transport_class(
-            message,
-            model,
-            provider,
-            (*status_code, *status_code_is_synthesized),
-            redactor,
-        ),
+        } => FailureClassInput::Exception(ExceptionCause::Transport(
+            *status_code,
+            *status_code_is_synthesized,
+        )),
     }
 }
 
-fn field_type_context(
+fn field_error_class(
     field: &str,
     expected: &str,
     model: Option<&str>,
     provider: &str,
-) -> ErrorContext {
-    ErrorContext {
+) -> ErrorClass {
+    let context = ErrorContext {
         message: format!("{field} must be {expected}"),
         model: model.map(str::to_owned),
         provider: Some(provider.to_owned()),
@@ -156,28 +167,38 @@ fn field_type_context(
         body_type: None,
         body_param: Some(field.to_owned()),
         body_code: None,
-    }
+    };
+    ErrorClass::BadRequest(Box::new(ResponseDetails::with_status(context, None)))
 }
 
-// get_llm_provider wraps its failures: the original model is appended and the class is a 400
-fn resolution_class(
+fn exception_class(
+    cause: ExceptionCause,
     message: &str,
     model: Option<&str>,
     provider: &str,
     redactor: &Redactor,
 ) -> ErrorClass {
-    let wrapped = format!(
-        "GetLLMProvider Exception - {message}\n\noriginal model: {}",
-        model.unwrap_or("None")
+    let mut class_message = message.to_owned();
+    let (exception_type, status_code, status_code_is_synthesized) = match cause {
+        ExceptionCause::Local => (VALUE_ERROR, None, false),
+        ExceptionCause::Resolution => {
+            class_message = format!(
+                "GetLLMProvider Exception - {message}\n\noriginal model: {}",
+                model.unwrap_or("None")
+            );
+            (BAD_REQUEST, Some(400), false)
+        }
+        ExceptionCause::Transport(status_code, synthesized) => ("", status_code, synthesized),
+    };
+    let raw = exception(
+        &class_message,
+        model,
+        provider,
+        exception_type,
+        status_code,
+        status_code_is_synthesized,
     );
-    let raw = resolution_exception(&wrapped, model, provider);
     dispatch(&DispatchInput::Raw(Box::new(raw)), redactor)
-}
-
-fn resolution_exception(message: &str, model: Option<&str>, provider: &str) -> RawException {
-    let mut raw = exception(message, model, provider, BAD_REQUEST, None, false);
-    raw.status_code = Some(400);
-    raw
 }
 
 fn provider_class(message: &str, model: Option<&str>, provider: &str) -> ErrorClass {
@@ -186,26 +207,6 @@ fn provider_class(message: &str, model: Option<&str>, provider: &str) -> ErrorCl
         model.map(str::to_owned),
         provider,
     )))
-}
-
-// the handler's own class: the provider's status, or the text exception_type gives the absence of one
-fn transport_class(
-    message: &str,
-    model: Option<&str>,
-    provider: &str,
-    status: (Option<u16>, bool),
-    redactor: &Redactor,
-) -> ErrorClass {
-    let (status_code, status_code_is_synthesized) = status;
-    let raw = exception(
-        message,
-        model,
-        provider,
-        "",
-        status_code,
-        status_code_is_synthesized,
-    );
-    dispatch(&DispatchInput::Raw(Box::new(raw)), redactor)
 }
 
 fn exception(
