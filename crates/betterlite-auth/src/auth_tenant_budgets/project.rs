@@ -72,18 +72,18 @@ pub(crate) async fn max_budget_guard(
     if spend < ceiling {
         return Ok(());
     }
-    if let Some(token) = token {
+    if let Some(valid_token) = token {
         alerts::schedule(
             admission.alerts,
             alerts::identity_alert(
-                token,
+                valid_token,
                 TenantAlertFields {
                     kind: TenantAlertKind::ProjectBudget,
                     event_group: TenantEventGroup::Project,
                     spend,
                     max_budget: Some(ceiling),
                     soft_budget: None,
-                    organization_id: token.view.token.org_id.clone(),
+                    organization_id: valid_token.view.token.org_id.clone(),
                 },
             ),
         );
@@ -119,20 +119,20 @@ pub fn soft_budget_check(
         soft_budget = %soft_budget,
         "Crossed Soft Budget for project"
     );
-    let Some(token) = token else {
+    let Some(valid_token) = token else {
         return SoftOutcome::CrossedWithoutToken;
     };
     alerts::schedule(
         alerts,
         alerts::identity_alert(
-            token,
+            valid_token,
             TenantAlertFields {
                 kind: TenantAlertKind::SoftBudget,
                 event_group: TenantEventGroup::Project,
                 spend: row.spend,
                 max_budget: None,
                 soft_budget: Some(soft_budget),
-                organization_id: token.view.token.org_id.clone(),
+                organization_id: valid_token.view.token.org_id.clone(),
             },
         ),
     );

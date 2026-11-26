@@ -20,20 +20,21 @@ pub async fn max_budget_check(
     lookup: Option<&OrgLookup>,
     admission: &TenantAdmission<'_>,
 ) -> Result<(), TenantBudgetError> {
-    let Some(token) = token else {
+    let Some(valid_token) = token else {
         return Ok(());
     };
-    let Some(lookup) = lookup else {
+    let Some(org_lookup) = lookup else {
         return Ok(());
     };
-    let Some(org_id) = organization_id(token, team) else {
+    let Some(org_id) = organization_id(valid_token, team) else {
         return Ok(());
     };
-    let organization = match get_org_object(lookup, OrgId::Text(org_id.clone()), true).await {
-        Ok(Some(organization)) => organization,
-        Ok(None) | Err(_) => return Ok(()),
+    let Ok(Some(organization)) =
+        get_org_object(org_lookup, OrgId::Text(org_id.clone()), true).await
+    else {
+        return Ok(());
     };
-    carry_organization(token, &organization);
+    carry_organization(valid_token, &organization);
     let Some(ceiling) = organization
         .litellm_budget_table
         .as_ref()
@@ -41,7 +42,7 @@ pub async fn max_budget_check(
     else {
         return Ok(());
     };
-    enforce_ceiling(token, &org_id, organization.spend, ceiling, admission).await
+    enforce_ceiling(valid_token, &org_id, organization.spend, ceiling, admission).await
 }
 
 // the armed counter and the alert-before-error once the carried organization has a finite-shaped ceiling
@@ -90,7 +91,8 @@ fn organization_id(token: &UserAPIKeyAuth, team: Option<&LiteLLMTeamTable>) -> O
     if let Some(org_id) = token.view.token.org_id.clone() {
         return Some(org_id);
     }
-    team.and_then(|row| row.fields.base.organization_id.clone())
+    let team_row = team?;
+    team_row.fields.base.organization_id.clone()
 }
 
 // Python's `math.isfinite(ceiling) and spend >= ceiling`; a nonfinite ceiling reads the counter and allows
