@@ -125,6 +125,32 @@ fn core_resolves_sandbox_tool_credentials_from_session_environment() {
 }
 
 #[test]
+fn core_maps_malformed_sandbox_tool_params_to_value_error() {
+    let core: SessionCore = SessionCore::build("{}").unwrap();
+    let wire: CallWire = parse(
+        r#"{"operation":"register_tools","arguments":{"tools":[{"sandbox_tool_name":"bad","litellm_params":true}]}}"#,
+    )
+    .unwrap();
+    let SessionFailure::Raised(payload) = core.call(&wire).unwrap_err() else {
+        panic!("malformed tool params are a raised Python error");
+    };
+    assert_eq!(payload.kind, "ValueError");
+}
+
+#[test]
+fn core_maps_sandbox_tool_secret_lookup_failures_to_exceptions() {
+    let core: SessionCore = SessionCore::build("{}").unwrap();
+    let wire: CallWire = parse(
+        r#"{"operation":"register_tools","arguments":{"tools":[{"sandbox_tool_name":"oidc-tool","litellm_params":{"sandbox_provider":"e2b","api_key":"os.environ/oidc/unsupported/audience"}}]}}"#,
+    )
+    .unwrap();
+    let SessionFailure::Raised(payload) = core.call(&wire).unwrap_err() else {
+        panic!("a secret lookup failure is a raised Python error");
+    };
+    assert_eq!(payload.kind, "Exception");
+}
+
+#[test]
 fn core_azure_ai_builds_the_foundry_decisions_url() {
     let config = azure_ai();
     let url = (config.complete_url)("https://res.example", "gpt-4o");
@@ -142,6 +168,17 @@ fn core_answers_a_sync_decision_with_an_unusable_timeout_as_a_conversion_failure
         failure,
         SessionFailure::Invalid(ConvertError::Timeout { .. })
     ));
+}
+
+#[test]
+fn core_maps_invalid_decision_fields_to_a_bad_request() {
+    let core: SessionCore = SessionCore::build(r#"{"environment":{}}"#).unwrap();
+    let wire: CallWire =
+        parse(r#"{"operation":"decisions","arguments":{"model":"gpt-4o","questions":7}}"#).unwrap();
+    let SessionFailure::Raised(payload) = core.call(&wire).unwrap_err() else {
+        panic!("invalid decision fields are a provider error");
+    };
+    assert_eq!(payload.kind, "BadRequestError");
 }
 
 #[tokio::test]
