@@ -23,7 +23,7 @@ pub(super) fn observe(call: &ResponseCall, model_cost: &BTreeMap<String, PriceRe
         Ok(reply) => json!({
             "ok": true,
             "images": image_entries(&reply),
-            "usage": reply.response.usage.clone(),
+            "usage": reply.response.usage,
             "cost": reply.additional_headers.get(COST_HEADER),
         }),
         Err(error) => json!({"ok": false, "status": error.status()}),

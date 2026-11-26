@@ -1,3 +1,5 @@
+use std::error::Error;
+
 use betterlite_openai::api::image_contracts::records::{ImageInputTokens, ImageUsage};
 use serde_json::Error as JsonError;
 
@@ -222,11 +224,11 @@ pub(super) fn canvas_malformed_reply() {
 
 fn the_decoder_failure_stays_in_the_chain() {
     let error = unpriced(500, "not json").expect_err("bytes that are not JSON are wrapped");
-    let source = std::error::Error::source(&error).expect("the decoder failure is the source");
+    let source = Error::source(&error).expect("the decoder failure is the source");
     let decoder = source
         .downcast_ref::<CanvasReplyError>()
         .expect("the source is the decoder failure");
-    let cause = std::error::Error::source(decoder).expect("the serde error stays attached");
+    let cause = Error::source(decoder).expect("the serde error stays attached");
     assert!(cause.downcast_ref::<JsonError>().is_some());
 }
 
