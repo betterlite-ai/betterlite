@@ -53,12 +53,22 @@ async fn check_caller_model(
         return Ok(());
     };
     // the caller team is loaded before the user, and a loaded team ends the check after the member scope
-    let Some(loaded) = access.caller_team(key).await? else {
-        return check_caller_user(model, key, access, context).await;
+    if let Some(loaded) = access.caller_team(key).await? {
+        // the member scope reads the aliases off the token it is handed, as the source forwards the agent key's
+        caller.view.token.aliases = key.view.token.aliases.clone();
+        return check_caller_team(model, &caller, &loaded.team, admission, context).await;
+    }
+    // no team echoed: the invoking user's own model list decides, and a missing row narrows nothing
+    let Some(caller_user) = access.caller_user(key).await? else {
+        return Ok(());
     };
-    // the member scope reads the aliases off the token it is handed, as the source forwards the agent key's
-    caller.view.token.aliases = key.view.token.aliases.clone();
-    check_caller_team(model, &caller, &loaded.team, admission, context).await
+    let aliases = key_model_aliases(&key.view.token.aliases.0);
+    AgentModelGrantsError::gate(can_user_call_model(
+        model,
+        Some(&caller_user),
+        &aliases,
+        context,
+    ))
 }
 
 // can_team_access_model then the member scope: the agent key's aliases reach both, the team has none
@@ -90,23 +100,4 @@ async fn check_caller_team(
         .map_err(|error| {
             AgentModelGrantsError::Entity(Box::new(EntityModelAccessError::from_member(error)))
         })
-}
-
-// no team echoed: the invoking user's own model list decides, and a missing row narrows nothing
-async fn check_caller_user(
-    model: &RequestedModels,
-    key: &UserAPIKeyAuth,
-    access: &dyn AgentAccessSource,
-    context: &ModelAccessContext<'_>,
-) -> Result<(), AgentModelGrantsError> {
-    let Some(caller_user) = access.caller_user(key).await? else {
-        return Ok(());
-    };
-    let aliases = key_model_aliases(&key.view.token.aliases.0);
-    AgentModelGrantsError::gate(can_user_call_model(
-        model,
-        Some(&caller_user),
-        &aliases,
-        context,
-    ))
 }
