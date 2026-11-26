@@ -225,11 +225,10 @@ def selected(model: str) -> JsonValue:
 
 
 def eligibility_answer(call: ModelsCall) -> JsonValue:
-    eligible: list[JsonValue] = []
-    for model in call["models"]:
-        eligible.append(
-            NovaConfig._is_nova_canvas_image_edit_model(model)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_edit/amazon_nova_canvas_image_edit_transformation.py#L223-L230
-        )
+    eligible: list[JsonValue] = [
+        NovaConfig._is_nova_canvas_image_edit_model(model)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_edit/amazon_nova_canvas_image_edit_transformation.py#L223-L230
+        for model in call["models"]
+    ]
     return {"eligible": eligible}
 
 
