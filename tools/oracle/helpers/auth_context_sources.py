@@ -6,7 +6,11 @@ from typing import Final, Literal, TypeAlias, TypedDict, cast
 import litellm
 from litellm.constants import (
     CLIENT_REQUESTED_MODEL_SCOPE_KEY as CLIENT_KEY,
+)
+from litellm.constants import (
     MINIMUM_CUSTOM_KEY_LENGTH,
+)
+from litellm.constants import (
     MODEL_GROUP_ALIAS_RESOLVED_SCOPE_KEY as MARKER_KEY,
 )
 from litellm.models.team import LiteLLM_TeamTableCachedObj
@@ -29,10 +33,18 @@ _JSON: Final = TypeAdapter(JsonValue)
 MODEL: Final = TypeAdapter(str | None)
 
 # every argument type the patched team lookup takes, so the fake accepts its keyword calls
-LookupArgument: TypeAlias = str | bool | None | Span | PrismaClient | DatabaseClient | UserApiKeyCache | ProxyLogging
+LookupArgument: TypeAlias = (
+    str | bool | None | Span | PrismaClient | DatabaseClient | UserApiKeyCache | ProxyLogging
+)
 
 # what build_request puts in the scope: the request line plus the parsed-body and marker entries
-ScopeValue: TypeAlias = str | bool | list[tuple[bytes, bytes]] | dict[str, str] | tuple[tuple[str, ...], dict[str, JsonValue]]
+ScopeValue: TypeAlias = (
+    str
+    | bool
+    | list[tuple[bytes, bytes]]
+    | dict[str, str]
+    | tuple[tuple[str, ...], dict[str, JsonValue]]
+)
 
 
 class SsoScenario(TypedDict, total=False):
@@ -208,7 +220,7 @@ async def resolved_settings(call: SettingsCall) -> JsonValue:
     saved = proxy_server.get_team_object  # type: ignore[attr-defined]  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L348
     proxy_server.get_team_object = lookup  # type: ignore[attr-defined]  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L348
     try:
-        settings: dict[str, JsonValue] | None = await proxy_server.proxy_config.get_hierarchical_router_settings(  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7673-L7679
+        settings: dict[str, JsonValue] | None = await proxy_server.proxy_config.get_hierarchical_router_settings(  # noqa: E501  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7673-L7679
             user_api_key_dict=principal,
             prisma_client=None,
             proxy_logging_obj=None,
