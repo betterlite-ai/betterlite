@@ -45,8 +45,8 @@ impl OrgCache for FakeOrg {
     ) -> Result<(), AuthCacheError> {
         {
             let mut stored = self.org.lock().unwrap_or_else(PoisonError::into_inner);
-            *stored = Some(org.clone());
-        }
+            *stored = Some(org.clone())
+        };
         Ok(())
     }
 
@@ -66,8 +66,8 @@ impl OrgCache for FakeOrg {
     ) -> Result<(), AuthCacheError> {
         {
             let mut projects = self.projects.lock().unwrap_or_else(PoisonError::into_inner);
-            projects.insert(key.to_owned(), project.clone());
-        }
+            projects.insert(key.to_owned(), project.clone())
+        };
         Ok(())
     }
 
@@ -79,11 +79,11 @@ impl OrgCache for FakeOrg {
 #[async_trait]
 impl OrgStore for FakeOrg {
     async fn find_org(&self, org_id: &str, _include_budget: bool) -> StoreAnswer<Option<String>> {
-        let row = {
+        let cached = {
             let stored = self.org.lock().unwrap_or_else(PoisonError::into_inner);
             stored.clone()
         };
-        let Some(row) = row else {
+        let Some(row) = cached else {
             return Ok(None);
         };
         if row.organization_id.as_deref() != Some(org_id) {

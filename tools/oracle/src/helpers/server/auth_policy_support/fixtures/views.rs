@@ -30,7 +30,10 @@ pub(crate) const ORG_FIELDS: [&str; 6] = [
     "organization_metadata",
 ];
 
-pub(crate) fn view_fields<T: Serialize>(value: &T, names: &[&str]) -> HelperResult {
+pub(crate) fn view_fields<T>(value: &T, names: &[&str]) -> HelperResult
+where
+    T: Serialize,
+{
     let serialized = serde_json::to_value(value).or_value_error()?;
     let Value::Object(fields) = serialized else {
         return Err(invalid("the model does not serialize to an object"));
