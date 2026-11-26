@@ -262,10 +262,10 @@ pub(super) enum Lookup<T> {
 }
 
 pub(super) struct FakeRepositories {
-    journal: Journal,
-    pub user: Lookup<LiteLLMUserTable>,
-    pub project: Lookup<ProjectTable>,
-    pub membership: Lookup<LiteLLMTeamMembership>,
+    pub(super) journal: Journal,
+    pub(super) user: Lookup<LiteLLMUserTable>,
+    pub(super) project: Lookup<ProjectTable>,
+    pub(super) membership: Lookup<LiteLLMTeamMembership>,
 }
 
 impl FakeRepositories {
