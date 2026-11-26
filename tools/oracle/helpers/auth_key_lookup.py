@@ -188,9 +188,9 @@ class ScriptedMembership(Scripted):
 def auth_fields(auth: UserAPIKeyAuth) -> JsonValue:
     view = JSON_OBJECT.validate_json(auth.model_dump_json())
     record: dict[str, JsonValue] = {name: view.get(name) for name in AUTH_KEYS}
-    empty_models: list[JsonValue] = []
-    record["models"] = empty_models if view.get("models") is None else view.get("models")
-    record["team_models"] = empty_models if view.get("team_models") is None else view.get("team_models")
+    empty: list[JsonValue] = []
+    record["models"] = empty if view.get("models") is None else view.get("models")
+    record["team_models"] = empty if view.get("team_models") is None else view.get("team_models")
     record["has_object_permission"] = view.get("object_permission") is not None
     return record
 
