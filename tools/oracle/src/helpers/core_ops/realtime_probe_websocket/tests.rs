@@ -8,13 +8,13 @@ use super::Scenario;
 #[case::omitted(
     r#"{"model":"probe-model","custom_llm_provider":"openai"}"#,
     20.0_f64,
-    16_777_216_usize,
+    0x0100_0000_usize,
     None
 )]
 #[case::empty(
     r#"{"model":"probe-model","custom_llm_provider":"openai","settings":{}}"#,
     20.0_f64,
-    16_777_216_usize,
+    0x0100_0000_usize,
     None
 )]
 #[case::size_only(
@@ -26,13 +26,13 @@ use super::Scenario;
 #[case::timeout_only(
     r#"{"model":"probe-model","custom_llm_provider":"openai","settings":{"credential_timeout_seconds":5.5}}"#,
     5.5_f64,
-    16_777_216_usize,
+    0x0100_0000_usize,
     None
 )]
 #[case::protocol_only(
     r#"{"model":"probe-model","custom_llm_provider":"azure","settings":{"azure_realtime_protocol":"beta"}}"#,
     20.0_f64,
-    16_777_216_usize,
+    0x0100_0000_usize,
     Some("beta")
 )]
 #[case::explicit_zero(
