@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use crate::scrape_endpoint::MetricFamily;
 
 use super::MultiprocessError;
+use super::check_directory;
 use super::merge::merge;
 
 mod tests;
@@ -21,9 +22,7 @@ pub struct MultiProcessCollector {
 impl MultiProcessCollector {
     // LiteLLM's mount: the folder is checked when the app is built and read again at every scrape
     pub fn new(path: &Path) -> Result<Self, MultiprocessError> {
-        if !path.is_dir() {
-            return Err(MultiprocessError::MissingDirectory);
-        }
+        check_directory(path)?;
         Ok(Self {
             path: path.to_path_buf(),
         })

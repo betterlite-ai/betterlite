@@ -1,0 +1,56 @@
+kind: helper
+name: caller-headers-filter-litellm
+call:
+  b3603:
+    filter:
+      headers:
+        - ["Host", "proxy"]
+        - ["Content-Length", "42"]
+        - ["X-Litellm-Api-Key", "sk-virtual"]
+        - ["Authorization", "Bearer mk-1"]
+        - ["X-Api-Key", "stored-key"]
+        - ["Api-Key", "a"]
+        - ["Ocp-Apim-Subscription-Key", "ocp"]
+        - ["Litellm_User_Api_Key", "mapped"]
+        - ["X-Override-Key", "o"]
+        - ["X-Endpoint-Key", "e"]
+        - ["X-Caller-Token", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyLTQyIn0.c2lnbmF0dXJl"]
+        - ["X-Other-Token", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJvdGhlciJ9.c2lnbmF0dXJl"]
+        - ["X-Custom", "v"]
+      never_forwarded:
+        - "api-key"
+        - "content-length"
+        - "host"
+        - "ocp-apim-subscription-key"
+        - "x-api-key"
+        - "x-litellm-api-key"
+      caller:
+        stored_api_key: "stored-key"
+        jwt_claims: {"sub": "user-42"}
+      settings:
+        master_key: "mk-1"
+        custom_auth_configured: true
+        auth_mode: []
+        litellm_key_header_name: "X-Override-Key"
+        endpoint_headers:
+          - {"litellm_user_api_key": "x-endpoint-key"}
+calls:
+  - b3603:
+      filter:
+        headers:
+          - ["X-Litellm-Api-Key", "sk-virtual"]
+          - ["X-Stored", "stored-key"]
+          - ["Authorization", "Bearer stored-key"]
+        never_forwarded: []
+        caller:
+          stored_api_key: "stored-key"
+          jwt_claims: null
+        settings:
+          master_key: null
+          custom_auth_configured: false
+          auth_mode: []
+          litellm_key_header_name: null
+          endpoint_headers: []
+env: {}
+compare:
+  ignore: []

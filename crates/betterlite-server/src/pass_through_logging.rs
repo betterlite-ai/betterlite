@@ -1,5 +1,6 @@
 pub mod anthropic_batch;
 pub mod anthropic_passthrough_logging;
+pub mod background_tasks;
 pub mod base_passthrough_logging;
 pub mod batch_attribution;
 pub mod byte_relay;

@@ -1,0 +1,43 @@
+task: B10105
+deviations:
+  - what: >-
+      The Vertex AI batch managed-object write runs as a tracked task on the BackgroundTasks the
+      server drains at shutdown, so a write still pending when the server stops finishes and logs
+      its result. LiteLLM starts it with asyncio.create_task, keeps no reference to the task and
+      waits for it nowhere.
+    why: >-
+      A batch accepted just before the proxy stops can lose its registration, and its cost is
+      then never attributed; no working setup relies on losing the write.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L1016-L1033
+  - what: >-
+      Same wait for the Anthropic batch registration: it runs on the same tracked background
+      tasks, and the server drains it before it stops.
+    why: >-
+      The Anthropic handler copies the same fire-and-forget bug from the Vertex AI one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L1148-L1164
+  - what: >-
+      A registration task cancelled at shutdown logs "<provider> batch registration cancelled at
+      shutdown; its cost will not be tracked" for a create, or "...; its status and output file
+      may be stale" for a read, at warn level. LiteLLM's done callback reports a cancelled task
+      as "Failed to store ...: None" when it runs at all.
+    why: >-
+      The callback hangs off a task nobody waits for, and at loop close it may never run; the
+      drain names the remaining window with the consequence the failure line already uses.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/batch_attribution.py#L50-L78
+  - what: >-
+      A panic inside the registry write drops the task before it logs, so the only batch line is
+      the same cancellation warning, without the panic text. LiteLLM's done callback logs
+      finished.exception() on the failure line.
+    why: >-
+      Rust has no exception left to report once the task is gone; the panic hook still prints the
+      panic and its location, and the warning keeps the cost consequence.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/batch_attribution.py#L50-L62
+  - what: >-
+      A registry write still pending after 30 seconds is abandoned, and the timeout is logged as a failed
+      store with the provider and its create or read consequence, so BackgroundTasks::shutdown never
+      waits on a stalled registry forever.
+    why: >-
+      LiteLLM never awaits the registration, so its shutdown cannot hang on it, but a write pending at
+      shutdown is lost; betterlite drains the write and bounds how long that drain can take.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L1148-L1164
+kept_bugs: []

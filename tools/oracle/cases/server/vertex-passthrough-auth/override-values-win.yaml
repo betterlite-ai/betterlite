@@ -1,0 +1,13 @@
+kind: helper
+name: override-values-win
+call:
+  b3622:
+    function: override_params
+    router_credentials:
+      litellm_params:
+        vertex_project: store-project
+        vertex_location: europe-west4
+    project: url-project
+    location: us-central1
+env: {}
+compare: {ignore: []}

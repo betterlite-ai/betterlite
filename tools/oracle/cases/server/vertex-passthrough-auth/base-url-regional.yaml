@@ -1,0 +1,8 @@
+kind: helper
+name: base-url-regional
+call:
+  b3622:
+    function: base_url
+    location: us-central1
+env: {}
+compare: {ignore: []}

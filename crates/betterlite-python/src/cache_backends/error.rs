@@ -1,13 +1,19 @@
 use betterlite_cache::backend::BackendError;
 use betterlite_cache::disk::DiskError;
 use betterlite_cache::dual_cache::DualCacheError;
+use betterlite_config::loader::ConfigError;
 use betterlite_redis::redis_cache::error::RedisCacheError;
 use betterlite_redis::redis_cache_admin::RedisAdminError;
 use betterlite_redis::redis_cache_values::error::RedisCacheValuesError;
+use betterlite_redis::redis_client_reuse::breaker::BreakerOpen;
 use betterlite_redis::redis_counters::RedisCountersError;
-use pyo3::exceptions::{PyRuntimeError, PyValueError};
+use pyo3::create_exception;
+use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
 use pyo3::{PyErr, PyResult};
 use tokio::task::JoinError;
+
+// LiteLLM raises this class when its Redis circuit breaker is open, and a handle here raises the same class name.
+create_exception!(betterlite_native, RedisCircuitBreakerOpenError, PyException);
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum BackendHandleError {
@@ -15,6 +21,11 @@ pub(crate) enum BackendHandleError {
     Settings {
         #[source]
         source: serde_json::Error,
+    },
+    #[error("the Redis circuit breaker settings are not valid: {source}")]
+    BreakerSettings {
+        #[from]
+        source: ConfigError,
     },
     #[error("the cache value is not JSON: {source}")]
     Value {
@@ -81,15 +92,57 @@ impl BackendHandleError {
         matches!(
             self,
             Self::Settings { .. }
+                | Self::BreakerSettings { .. }
                 | Self::Value { .. }
                 | Self::TooDeep { .. }
                 | Self::NotWhole { .. }
         )
     }
+
+    // A call the breaker turned away carries its own class, as LiteLLM's RedisCache raises RedisCircuitBreakerOpenError.
+    const fn breaker_open(&self) -> Option<&BreakerOpen> {
+        if let Self::Redis {
+            source: RedisCacheError::Breaker(open),
+        } = self
+        {
+            return Some(open);
+        }
+        if let Self::RedisValues {
+            source: RedisCacheValuesError::BreakerOpen(open),
+        } = self
+        {
+            return Some(open);
+        }
+        if let Self::RedisAdmin {
+            source: RedisAdminError::Breaker(open),
+        } = self
+        {
+            return Some(open);
+        }
+        if let Self::RedisCounters {
+            source: RedisCountersError::Breaker(open),
+        } = self
+        {
+            return Some(open);
+        }
+        if let Self::Dual {
+            source:
+                DualCacheError::RedisDelete(RedisAdminError::Breaker(open))
+                | DualCacheError::RedisTtl(RedisCacheError::Breaker(open))
+                | DualCacheError::RedisSetAdd(RedisCacheValuesError::BreakerOpen(open)),
+        } = self
+        {
+            return Some(open);
+        }
+        None
+    }
 }
 
 impl From<BackendHandleError> for PyErr {
     fn from(error: BackendHandleError) -> Self {
+        if let Some(open) = error.breaker_open() {
+            return RedisCircuitBreakerOpenError::new_err(open.to_string());
+        }
         if error.is_value_error() {
             return PyValueError::new_err(error.to_string());
         }

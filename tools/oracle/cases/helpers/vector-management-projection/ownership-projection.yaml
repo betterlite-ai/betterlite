@@ -1,0 +1,37 @@
+kind: helper
+name: vector-management-projection-ownership-projection
+call:
+  vector_management_projection:
+    op: ownership_projection
+    vector_store:
+      vector_store_id: vs_absent
+      custom_llm_provider: openai
+      vector_store_name: Support docs
+      litellm_credential_name: cred_a
+      litellm_params:
+        api_base: https://example.test/v1
+        api_version: "2024-01-01"
+      team_id: team_a
+      user_id: user_a
+calls:
+  - vector_management_projection:
+      op: ownership_projection
+      vector_store:
+        vector_store_id: vs_true
+        is_config: true
+  - vector_management_projection:
+      op: ownership_projection
+      vector_store:
+        vector_store_id: vs_false
+        is_config: false
+  - vector_management_projection:
+      op: ownership_projection
+      vector_store:
+        vector_store_id: vs_null
+        is_config: null
+  - vector_management_projection:
+      op: ownership_projection
+      vector_store:
+        vector_store_id: vs_bare
+env: {}
+compare: {ignore: []}

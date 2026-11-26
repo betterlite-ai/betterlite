@@ -16,6 +16,7 @@ use betterlite_models::decisions::Json;
 use betterlite_prompts::cache_accounting::dialect::ModelFacts;
 use betterlite_prompts::cache_defaults::CacheFacts;
 use betterlite_router::prompt_affinity::service::{InjectionDefaults, TokenGate};
+use betterlite_router::redis_failure_policy::Settings as BreakerSettings;
 use betterlite_router::request_scheduler::flow::FlowItem;
 use betterlite_router::router_core::services::RouteServices as _;
 use betterlite_router::routing_state_store::Settings as SharedSettings;
@@ -24,7 +25,6 @@ use betterlite_router::routing_state_store::{RedisSettings, RoutingStateStore};
 use betterlite_router::routing_value_store::{RouteKey, RouteValue, StoreRead};
 
 use crate::routing::prompt_affinity::PromptAffinityInputs;
-use crate::routing::redis_failure_policy::policy_settings;
 use crate::routing::router_core::RouterServices;
 
 use super::build;
@@ -64,7 +64,7 @@ fn reader(port: u16) -> RoutingStateStore {
             pool_timeout_seconds: 5,
             environment: BTreeMap::new(),
         },
-        breaker: policy_settings(&config("model_list: []\n").sections.redis_failure_policy),
+        breaker: BreakerSettings::from(&config("model_list: []\n").sections.redis_failure_policy),
     };
     RoutingStateStore::new(&settings, Arc::new(|| Duration::ZERO)).expect("the reader builds")
 }

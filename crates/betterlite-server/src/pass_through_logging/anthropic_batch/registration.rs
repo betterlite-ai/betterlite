@@ -3,14 +3,13 @@ use betterlite_models::model_registration::JsonObject;
 use betterlite_openai::batches::records::BatchObject;
 use rust_decimal::Decimal;
 use secrecy::SecretString;
-use tokio::runtime::Handle;
 
 use super::error::AnthropicBatchError;
 use super::{
     AnthropicBatchLogging, BatchRegistrant, BatchRegistration, DEFAULT_USER_ID, FILE_PURPOSE,
 };
 use crate::pass_through_logging::batch_attribution::{
-    log_batch_registration_result, optional_str, request_tags_from_metadata,
+    optional_str, request_tags_from_metadata, spawn_batch_registration,
 };
 
 pub(super) fn store(
@@ -26,8 +25,6 @@ pub(super) fn store(
         );
         return Ok(());
     };
-    let runtime =
-        Handle::try_current().map_err(|source| AnthropicBatchError::NoRuntime { source })?;
     let registration = BatchRegistration {
         unified_object_id: unified_object_id.to_owned(),
         batch_object,
@@ -38,12 +35,9 @@ pub(super) fn store(
         persist_attribution: true,
         create_if_missing: true,
     };
-    let unified = unified_object_id.to_owned();
-    let model_id = model_object_id.to_owned();
-    let finished = runtime.spawn(registry.store_unified_object_id(registration));
-    runtime.spawn(async move {
-        log_batch_registration_result(finished.await, "Anthropic", &unified, &model_id, true);
-    });
+    let _handle =
+        spawn_batch_registration(&logging.background, registry, "Anthropic", registration)
+            .map_err(|source| AnthropicBatchError::NoRuntime { source })?;
     Ok(())
 }
 

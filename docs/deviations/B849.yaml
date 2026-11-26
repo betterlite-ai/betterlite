@@ -1,0 +1,15 @@
+task: B849
+deviations:
+  - what: A page size of zero or less reports total_pages 0 instead of raising or going negative.
+    why: LiteLLM computes `-(-total_count // size)` and raises ZeroDivisionError for a positive count with size 0, and reports negative total_pages for a negative size; a 500 on a size a caller can send is a bug no working setup relies on, so betterlite reports no pages and leaves the slice on Python's bounds.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L15046-L15048
+  - what: Cost sorting adds the two token prices as exact decimals.
+    why: LiteLLM adds them as binary floats and uses float("inf")/float("-inf") as its zero sentinel, so a tie such as 0.1 + 0.2 against 0.3, or a price past f64's range, can order differently; the declared type is a float and exact decimal addition follows it without the rounding.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14962-L14969
+  - what: An unreadable created_at or updated_at sorts after every readable date in both orders.
+    why: LiteLLM sorts it against datetime.max ascending and datetime.min descending, which puts it last as well, except that a readable date of exactly 9999-12-31T23:59:59.999999 ties with the ascending sentinel and keeps input order against it, while betterlite's last key sorts the unreadable date after that date too.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14943-L14948
+kept_bugs:
+  - what: The DB total_count in a search response counts every row the LIKE matches, including BYOK rows the caller's teams cannot see, so it can be larger than the number of rows returned.
+    why: LiteLLM counts before it scopes rows to the caller's teams and adds that count to the router match count; the task names this as a contract to keep, so paging totals follow LiteLLM rather than the visible rows.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14712-L14726

@@ -1,0 +1,44 @@
+kind: helper
+name: model-info-search-azure-base-model
+call:
+  model_info_search:
+    function: enrich
+    model:
+      model_name: azure-with-base
+      litellm_params:
+        model: azure/my-deploy
+      model_info:
+        id: dep-1
+        base_model: gpt-4o
+    catalog:
+      - model: gpt-4o
+        info:
+          max_tokens: 50
+calls:
+  - model_info_search:
+      function: enrich
+      model:
+        model_name: azure-plain
+        litellm_params:
+          model: azure/my-deploy2
+        model_info:
+          id: dep-2
+      catalog:
+        - model: azure/my-deploy2
+          info:
+            max_tokens: 60
+  - model_info_search:
+      function: enrich
+      model:
+        model_name: azure-odd-base
+        litellm_params:
+          model: azure/odd
+        model_info:
+          id: dep-3
+          base_model: 5
+      catalog:
+        - model: azure/odd
+          info:
+            max_tokens: 70
+env: {}
+compare: {ignore: []}

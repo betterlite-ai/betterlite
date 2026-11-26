@@ -12,6 +12,7 @@ workspace = true
 cargo-fuzz = true
 [dependencies]
 betterlite-auth = { path = "../../betterlite-auth" }
+betterlite-config = { path = "../../betterlite-config" }
 betterlite-core = { path = "../../betterlite-core" }
 betterlite-db = { path = "../../betterlite-db" }
 betterlite-models = { path = "../../betterlite-models" }
@@ -612,6 +613,34 @@ bench = false
 [[bin]]
 name = "shadow_q"
 path = "fuzz_targets/shadow_q.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "config_override"
+path = "fuzz_targets/config_override.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "vertex_batch_response"
+path = "fuzz_targets/vertex_batch_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "management_json"
+path = "fuzz_targets/management_json.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "model_info_datetime"
+path = "fuzz_targets/model_info_datetime.rs"
 test = false
 doc = false
 bench = false

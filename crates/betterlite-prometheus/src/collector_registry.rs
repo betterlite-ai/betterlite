@@ -1,8 +1,11 @@
 use std::collections::BTreeMap;
-use std::sync::{Mutex, PoisonError};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, PoisonError};
 
 pub mod metric;
 
+use crate::multiprocess::writer::{MultiProcessWriter, SeriesWrite};
+use metric::binding;
 use metric::{CollectorDescription, PrometheusMetric};
 
 mod tests;
@@ -11,10 +14,16 @@ mod tests;
 pub enum CollectorRegistryError {
     #[error("Duplicated timeseries in CollectorRegistry: {}", names.join(", "))]
     DuplicatedTimeseries { names: Vec<String> },
+    #[error(
+        "the metric {name} is already bound to the multiprocess writer in {}",
+        path.display()
+    )]
+    MultiprocessBound { name: String, path: PathBuf },
 }
 
 #[derive(Debug, Default)]
 pub struct CollectorRegistry {
+    multiprocess: Option<Arc<MultiProcessWriter>>,
     state: Mutex<RegistryState>,
 }
 
@@ -25,6 +34,22 @@ struct RegistryState {
 }
 
 impl CollectorRegistry {
+    // the one registry a worker builds when PROMETHEUS_MULTIPROC_DIR is set
+    #[must_use]
+    pub fn multiprocess(writer: MultiProcessWriter) -> Self {
+        Self {
+            multiprocess: Some(Arc::new(writer)),
+            state: Mutex::new(RegistryState::default()),
+        }
+    }
+
+    #[must_use]
+    pub fn multiprocess_dir(&self) -> Option<&Path> {
+        self.multiprocess
+            .as_deref()
+            .map(|writer| writer.directory.as_path())
+    }
+
     // CollectorRegistry.register: every sample name a collector owns is claimed before any of them is stored
     pub fn register(&self, collector: PrometheusMetric) -> Result<(), CollectorRegistryError> {
         let names = collector.sample_names();
@@ -37,11 +62,28 @@ impl CollectorRegistry {
         if !duplicates.is_empty() {
             return Err(CollectorRegistryError::DuplicatedTimeseries { names: duplicates });
         }
-        for name in names {
-            state.samples.insert(name, collector.clone());
+        // registry.py holds its one lock from the duplicate check through the name insert, and so does this
+        if let Some(writer) = &self.multiprocess {
+            binding::bind_writer(&collector, writer).map_err(|bound| {
+                CollectorRegistryError::MultiprocessBound {
+                    name: collector.description.name.clone(),
+                    path: bound.directory.clone(),
+                }
+            })?;
         }
+        for name in names {
+            let _replaced = state.samples.insert(name, collector.clone());
+        }
+        let description = Arc::clone(&collector.description);
+        let label_values = collector.label_values.clone();
         state.collectors.push(collector);
         drop(state);
+        // the zero entries reach the files once the registry lock is free, as registry.py writes them when the metric is built
+        if let Some(writer) = self.multiprocess.as_ref()
+            && description.label_names.is_empty()
+        {
+            writer.write_series(&description, &label_values, SeriesWrite::Create);
+        }
         Ok(())
     }
 

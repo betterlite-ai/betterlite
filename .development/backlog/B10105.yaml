@@ -1,0 +1,13 @@
+id: B10105
+milestone: R2 bug fixes
+title: Pass-through batch registrations finish before the server shuts down
+status: done
+depends_on: [B3641, B3634]
+file: tasks/B10105-batch-registration-drain.yaml
+covers: []
+parent: null
+split_from: null
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 3210

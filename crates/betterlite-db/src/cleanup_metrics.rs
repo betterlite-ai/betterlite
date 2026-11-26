@@ -3,6 +3,7 @@ mod tests;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use betterlite_prometheus::collector_factory::collector::{Collector as _, MetricValue};
+use betterlite_prometheus::collector_registry::metric::gauge_mode::GaugeMode;
 use betterlite_prometheus::collector_registry::metric::{Bucket, CollectorKind, PrometheusMetric};
 use betterlite_prometheus::collector_registry::{CollectorRegistry, CollectorRegistryError};
 use rust_decimal::Decimal;
@@ -84,6 +85,7 @@ struct Instrument {
     help: &'static str,
     label: &'static str,
     buckets: &'static [Bucket],
+    mode: GaugeMode,
 }
 
 const ROWS_DELETED: Instrument = Instrument {
@@ -92,6 +94,7 @@ const ROWS_DELETED: Instrument = Instrument {
     help: ROWS_DELETED_HELP,
     label: TABLE_LABEL,
     buckets: &[],
+    mode: GaugeMode::All,
 };
 
 const BATCH_DURATION: Instrument = Instrument {
@@ -100,14 +103,17 @@ const BATCH_DURATION: Instrument = Instrument {
     help: BATCH_DURATION_HELP,
     label: TABLE_LABEL,
     buckets: &BATCH_DURATION_BUCKETS,
+    mode: GaugeMode::All,
 };
 
+// spend_log_cleanup_metrics.py's rows remaining gauge is a Gauge in livemax mode
 const ROWS_REMAINING: Instrument = Instrument {
     kind: CollectorKind::Gauge,
     name: ROWS_REMAINING_NAME,
     help: ROWS_REMAINING_HELP,
     label: TABLE_LABEL,
     buckets: &[],
+    mode: GaugeMode::LiveMax,
 };
 
 const BATCH_FAILURES: Instrument = Instrument {
@@ -116,6 +122,7 @@ const BATCH_FAILURES: Instrument = Instrument {
     help: BATCH_FAILURES_HELP,
     label: TABLE_LABEL,
     buckets: &[],
+    mode: GaugeMode::All,
 };
 
 const RUNS: Instrument = Instrument {
@@ -124,6 +131,7 @@ const RUNS: Instrument = Instrument {
     help: RUNS_HELP,
     label: OUTCOME_LABEL,
     buckets: &[],
+    mode: GaugeMode::All,
 };
 
 pub struct CleanupMetrics<'registry> {
@@ -237,7 +245,8 @@ fn install(
         instrument.help,
         &[instrument.label],
         instrument.buckets.to_vec(),
-    );
+    )
+    .with_multiprocess_mode(instrument.mode);
     registry.register(metric.clone())?;
     Ok(metric)
 }
