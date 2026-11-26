@@ -126,7 +126,7 @@ class FixtureRouter(Router):
         return candidate_id in self.model_ids
 
     @override
-    def get_candidate_model_ids_for_route(  # ast-grep-ignore: no-long-names
+    def get_candidate_model_ids_for_route(
         self, model: str, team_id: str | None = None
     ) -> frozenset[str]:
         del team_id

@@ -36,7 +36,7 @@ fn json_router_settings(bytes: &[u8]) -> Option<JsonObject> {
 }
 
 fn settings_object(parsed: Json) -> Option<JsonObject> {
-    if json_depth(&parsed) > MAX_ROUTER_SETTINGS_DEPTH {
+    if !within_depth(&parsed, MAX_ROUTER_SETTINGS_DEPTH) {
         return None;
     }
     match parsed {
@@ -50,21 +50,14 @@ fn settings_object(parsed: Json) -> Option<JsonObject> {
     }
 }
 
-fn json_depth(value: &Json) -> usize {
+fn within_depth(value: &Json, remaining: usize) -> bool {
+    let Some(next) = remaining.checked_sub(1) else {
+        return !matches!(value, Json::Object(_) | Json::List(_));
+    };
     match value {
-        Json::Object(entries) => entries
-            .values()
-            .map(json_depth)
-            .max()
-            .unwrap_or(0)
-            .saturating_add(1),
-        Json::List(items) => items
-            .iter()
-            .map(json_depth)
-            .max()
-            .unwrap_or(0)
-            .saturating_add(1),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => 0,
+        Json::Object(entries) => entries.values().all(|child| within_depth(child, next)),
+        Json::List(items) => items.iter().all(|child| within_depth(child, next)),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => true,
     }
 }
 

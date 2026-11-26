@@ -91,14 +91,9 @@ async fn passthrough_selection_keeps_model(
     .load("")
     .unwrap();
     let state = state_for(&config);
-    let rule = RewriteRule {
-        endpoint_marker,
-        path_params,
-        key_settings: Some(
-            serde_json::from_str(r#"{"model_group_alias":{"alias-one":"group-one"}}"#).unwrap(),
-        ),
-        ..RewriteRule::default()
-    };
+    let mut rule = alias_rule();
+    rule.endpoint_marker = endpoint_marker;
+    rule.path_params = path_params;
     let mut markers = Markers::default();
     let body = serde_json::from_str(r#"{"model":"alias-one"}"#).unwrap();
     let empty = JsonObject::new();

@@ -255,18 +255,22 @@ fn model_stage_input(
     context: AuthContext,
     resolver: &Arc<RequestModelResolver>,
 ) -> RequestModelStageInput {
+    let route = request.uri().path().to_owned();
+    let headers = Some(headers_json(request.headers()));
+    let query = Some(query_json(request.uri().query()));
+    let body = request
+        .extensions()
+        .get::<RequestBodyInput>()
+        .and_then(|input| input.cached_body.as_ref())
+        .and_then(|cached| serde_json::to_vec(&cached.visible()).ok())
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default();
     RequestModelStageInput {
         context,
-        route: request.uri().path().to_owned(),
-        body: request
-            .extensions()
-            .get::<RequestBodyInput>()
-            .and_then(|input| input.cached_body.as_ref())
-            .and_then(|cached| serde_json::to_vec(&cached.visible()).ok())
-            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-            .unwrap_or_default(),
-        headers: Some(headers_json(request.headers())),
-        query: Some(query_json(request.uri().query())),
+        route,
+        body,
+        headers,
+        query,
         endpoint_marker: None,
         path_params: BTreeSet::new(),
         team_id: None,

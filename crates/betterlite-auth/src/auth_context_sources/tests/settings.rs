@@ -138,10 +138,10 @@ fn unusable_settings_value_is_none(#[case] value: Json) {
     assert_eq!(parse_router_settings_value(Some(&value)), None, "{value:?}");
 }
 
-fn nested(lists: usize) -> String {
+fn nested(lists: usize, leaf: &str) -> String {
     let mut text = String::from(r#"{"model_group_alias":"#);
     text.push_str(&"[".repeat(lists));
-    text.push('1');
+    text.push_str(leaf);
     text.push_str(&"]".repeat(lists));
     text.push('}');
     text
@@ -161,8 +161,8 @@ fn settings_size_depth_limits() {
     assert_eq!(decode_router_settings(text.as_bytes()), None);
 
     // 64 containers decode and 65 do not, on the YAML and the JSON boundary alike
-    assert!(decode_router_settings(nested(63).as_bytes()).is_some());
-    assert!(decode_router_settings(nested(64).as_bytes()).is_none());
+    assert!(decode_router_settings(nested(63, "1").as_bytes()).is_some());
+    assert!(decode_router_settings(nested(64, "1").as_bytes()).is_none());
 
     // invalid UTF-8 never reaches a decoder as text
     assert_eq!(decode_router_settings(&[0xff_u8, 0xfe]), None);
@@ -335,4 +335,20 @@ async fn team_settings_keep_all_json_types() {
         hierarchical_router_settings(None, Some("team-one"), &teams).await,
         Some(object(document))
     );
+}
+
+#[rstest]
+#[case::empty_array("[]", false)]
+#[case::empty_object("{}", false)]
+#[case::boolean("false", true)]
+#[case::null("null", true)]
+#[case::number("0", true)]
+#[case::string(r#""text""#, true)]
+fn settings_leaf_depth_boundary(#[case] leaf: &str, #[case] fits_at_limit: bool) {
+    assert!(decode_router_settings(nested(62, leaf).as_bytes()).is_some());
+    assert_eq!(
+        decode_router_settings(nested(63, leaf).as_bytes()).is_some(),
+        fits_at_limit
+    );
+    assert!(decode_router_settings(nested(64, leaf).as_bytes()).is_none());
 }
