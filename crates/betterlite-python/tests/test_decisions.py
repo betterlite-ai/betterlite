@@ -669,9 +669,10 @@ def test_models_calls_openai(mode: str, recording: RecordingServer) -> None:
 
 @pytest.mark.parametrize("mode", ["sync", "async", "legacy", "legacy-async"])
 def test_models_calls_systemone(mode: str, recording: RecordingServer) -> None:
-    question = TypeAdapter(NoulQuestion).validate_python(
-        {"type": "noul", "instructions": "Greeting?", "provider_hint": None}
-    )
+    question_fields: dict[str, JsonValue] = {
+        "type": "noul", "instructions": "Greeting?", "provider_hint": None,
+    }
+    question = TypeAdapter(NoulQuestion).validate_python(question_fields)
     questions = {"greeting": question}
     options: CallOptions = {
         "model": SYSTEMONE_MODEL,
