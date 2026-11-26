@@ -1,10 +1,11 @@
 mod body;
 pub mod in_flight;
+mod metrics;
 mod response;
 mod tests;
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use axum::Router;
 use axum::body::Body;
@@ -15,11 +16,16 @@ use axum::response::Response;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use betterlite_config::sections::admission_control::{Limits, Settings};
+use betterlite_prometheus::collector_factory::collector::{Collector as _, MetricValue};
+use betterlite_prometheus::collector_registry::CollectorRegistry;
+use betterlite_prometheus::collector_registry::metric::PrometheusMetric;
+use rust_decimal::Decimal;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::timeout;
 
 use self::body::GuardedBody;
 use self::in_flight::{InFlightRequests, track_in_flight};
+use self::metrics::{AdmissionMetrics, Registration, RejectionReason};
 use self::response::overloaded;
 
 // LiteLLM lets health probes and metric scrapes through so a saturated worker stays observable
@@ -51,10 +57,12 @@ pub struct AdmissionControl {
     rejected_total: AtomicU64,
     rejected_queue_full: AtomicU64,
     rejected_queue_timeout: AtomicU64,
+    registry: Arc<CollectorRegistry>,
+    registration: Mutex<Registration<AdmissionMetrics>>,
 }
 
 impl AdmissionControl {
-    fn with_limits(limits: Option<Limits>) -> Self {
+    fn with_limits(limits: Option<Limits>, registry: Arc<CollectorRegistry>) -> Self {
         Self {
             limits,
             semaphore: Arc::new(Semaphore::new(
@@ -65,22 +73,44 @@ impl AdmissionControl {
             rejected_total: AtomicU64::new(0),
             rejected_queue_full: AtomicU64::new(0),
             rejected_queue_timeout: AtomicU64::new(0),
+            registry,
+            registration: Mutex::new(Registration {
+                attempted: false,
+                built: None,
+            }),
         }
     }
 
     #[must_use]
-    pub fn from_settings(settings: &Settings) -> Self {
+    pub fn from_settings(settings: &Settings, registry: Arc<CollectorRegistry>) -> Self {
         let Some(limits) = settings.limits else {
-            return Self::with_limits(None);
+            return Self::with_limits(None, registry);
         };
         if limits.max_in_flight_requests > Semaphore::MAX_PERMITS {
             tracing::warn!(
                 max_in_flight_requests = limits.max_in_flight_requests,
                 "admission control limit exceeds the semaphore maximum; per-worker admission control is disabled"
             );
-            return Self::with_limits(None);
+            return Self::with_limits(None, registry);
         }
-        Self::with_limits(Some(limits))
+        Self::with_limits(Some(limits), registry)
+    }
+
+    // LiteLLM builds the three metrics on the first record call and never retries a refused build
+    fn metrics(&self) -> Option<AdmissionMetrics> {
+        self.registration
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .once(|| metrics::admission_metrics(&self.registry))
+    }
+
+    fn record_rejection(&self, reason: RejectionReason) {
+        if let Some(metrics) = self.metrics() {
+            metrics
+                .rejected
+                .labels(&[(metrics::REASON_LABEL, reason.as_str())])
+                .inc(MetricValue::Finite(Decimal::ONE));
+        }
     }
 
     #[must_use]
@@ -110,7 +140,11 @@ impl AdmissionControl {
         if !self.reserve_queue_slot(max_queued) {
             self.rejected_queue_full.fetch_add(1, Ordering::AcqRel);
             self.rejected_total.fetch_add(1, Ordering::AcqRel);
+            self.record_rejection(RejectionReason::QueueFull);
             return None;
+        }
+        if let Some(metrics) = self.metrics() {
+            metrics.queued.inc(MetricValue::Finite(Decimal::ONE));
         }
         let slot = QueueSlot { control: self };
         let acquired = timeout(
@@ -124,7 +158,31 @@ impl AdmissionControl {
         }
         self.rejected_queue_timeout.fetch_add(1, Ordering::AcqRel);
         self.rejected_total.fetch_add(1, Ordering::AcqRel);
+        self.record_rejection(RejectionReason::QueueTimeout);
         None
+    }
+
+    fn release(&self, counter: &AtomicU64, gauge: AdmissionGauge) {
+        decrement(counter);
+        if let Some(metrics) = self.metrics() {
+            gauge
+                .metric(&metrics)
+                .inc(MetricValue::Finite(Decimal::NEGATIVE_ONE));
+        }
+    }
+}
+
+enum AdmissionGauge {
+    Admitted,
+    Queued,
+}
+
+impl AdmissionGauge {
+    const fn metric(self, metrics: &AdmissionMetrics) -> &PrometheusMetric {
+        match self {
+            Self::Admitted => &metrics.admitted,
+            Self::Queued => &metrics.queued,
+        }
     }
 }
 
@@ -140,7 +198,8 @@ struct QueueSlot<'control> {
 
 impl Drop for QueueSlot<'_> {
     fn drop(&mut self) {
-        decrement(&self.control.queued);
+        self.control
+            .release(&self.control.queued, AdmissionGauge::Queued);
     }
 }
 
@@ -152,7 +211,8 @@ struct AdmissionSlot {
 impl Drop for AdmissionSlot {
     fn drop(&mut self) {
         drop(self.permit.take());
-        decrement(&self.control.admitted);
+        self.control
+            .release(&self.control.admitted, AdmissionGauge::Admitted);
     }
 }
 
@@ -212,6 +272,9 @@ async fn admit_request(
         return overloaded(&control.stats());
     };
     control.admitted.fetch_add(1, Ordering::AcqRel);
+    if let Some(metrics) = control.metrics() {
+        metrics.admitted.inc(MetricValue::Finite(Decimal::ONE));
+    }
     let slot = AdmissionSlot {
         control: Arc::clone(&control),
         permit: Some(permit),

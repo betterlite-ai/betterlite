@@ -1,13 +1,13 @@
 id: B10097
 milestone: R2 bug fixes
 title: Admission and in-flight Prometheus metrics
-status: todo
+status: done
 depends_on: [B022, B3875, B10095, B10096]
 file: tasks/B10097-admission-and-in-flight-gauges.yaml
 covers: []
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3222
