@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use betterlite_models::decisions::Json;
+use rstest::rstest;
 use tracing::Level;
 
 use crate::jwt_keys::errors::{KeyError, exception_for};
@@ -62,8 +63,16 @@ async fn oidc_discovery() {
     assert_eq!(fixture.http.requests().len(), 2);
 }
 
+#[rstest]
+#[case::invalid_json("{")]
+#[case::array("[]")]
+#[case::empty_object("{}")]
+#[case::empty_uri(r#"{"jwks_uri":""}"#)]
+#[case::null_uri(r#"{"jwks_uri":null}"#)]
+#[case::number_uri(r#"{"jwks_uri":7}"#)]
+#[case::list_uri(r#"{"jwks_uri":["https://idp.example.com/jwks"]}"#)]
 #[tokio::test]
-async fn discovery_status_parse_missing_uri_errors() {
+async fn discovery_status_parse_missing_uri_errors(#[case] body: &str) {
     // a status is a discovery failure with the body in the message
     let status = fixture(
         settings(Some(DISCOVERY_URL), 600.0, 3600.0),
@@ -82,33 +91,23 @@ async fn discovery_status_parse_missing_uri_errors() {
     assert_eq!(status.http.requests().len(), 1);
 
     // invalid JSON, a non-object document, and every unusable jwks_uri shape have their own failures
-    for body in [
-        "{",
-        "[]",
-        "{}",
-        r#"{"jwks_uri":""}"#,
-        r#"{"jwks_uri":null}"#,
-        r#"{"jwks_uri":7}"#,
-        r#"{"jwks_uri":["https://idp.example.com/jwks"]}"#,
-    ] {
-        let fixture = fixture(
-            settings(Some(DISCOVERY_URL), 600.0, 3600.0),
-            1_000.0,
-            vec![ScriptedHttp::text(200, body)],
-        );
-        let error = fixture
-            .resolver
-            .get_public_key(Some("a"))
-            .await
-            .unwrap_err();
-        let expected = if body == "{" {
-            matches!(error, KeyError::DiscoveryParse { .. })
-        } else {
-            matches!(error, KeyError::DiscoveryMissingUri { .. })
-        };
-        assert!(expected, "body {body} gave {error:?}");
-        assert!(fixture.cache.writes().is_empty());
-    }
+    let fixture = fixture(
+        settings(Some(DISCOVERY_URL), 600.0, 3600.0),
+        1_000.0,
+        vec![ScriptedHttp::text(200, body)],
+    );
+    let error = fixture
+        .resolver
+        .get_public_key(Some("a"))
+        .await
+        .unwrap_err();
+    let expected = if body == "{" {
+        matches!(error, KeyError::DiscoveryParse { .. })
+    } else {
+        matches!(error, KeyError::DiscoveryMissingUri { .. })
+    };
+    assert!(expected, "body {body} gave {error:?}");
+    assert!(fixture.cache.writes().is_empty());
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -276,8 +275,12 @@ async fn http_error_no_transport_retry() {
     assert!(failed.clock.sleeps().is_empty());
 }
 
+#[rstest]
+#[case::empty("")]
+#[case::spaces("   ")]
+#[case::commas(" , , ")]
 #[tokio::test]
-async fn absent_empty_and_ordered_url_list() {
+async fn absent_empty_and_ordered_url_list(#[case] raw: &str) {
     // absent is a hard failure before any fetch
     let absent = fixture(settings(None, 600.0, 3600.0), 1_000.0, Vec::new());
     let error = absent.resolver.get_public_key(None).await.unwrap_err();
@@ -289,19 +292,17 @@ async fn absent_empty_and_ordered_url_list() {
     assert!(absent.http.requests().is_empty());
 
     // empty is an empty list, which is no URL to try
-    for raw in ["", "   ", " , , "] {
-        let empty = fixture(settings(Some(raw), 600.0, 3600.0), 1_000.0, Vec::new());
-        let error = empty.resolver.get_public_key(None).await.unwrap_err();
-        assert!(matches!(
-            error,
-            KeyError::NoMatchingKey { ref keys, kid: None } if keys == "[]"
-        ));
-        assert_eq!(
-            error.to_string(),
-            "No matching public key found. keys=[], kid=None"
-        );
-        assert!(empty.http.requests().is_empty());
-    }
+    let empty = fixture(settings(Some(raw), 600.0, 3600.0), 1_000.0, Vec::new());
+    let error = empty.resolver.get_public_key(None).await.unwrap_err();
+    assert!(matches!(
+        error,
+        KeyError::NoMatchingKey { ref keys, kid: None } if keys == "[]"
+    ));
+    assert_eq!(
+        error.to_string(),
+        "No matching public key found. keys=[], kid=None"
+    );
+    assert!(empty.http.requests().is_empty());
 
     // the list is tried in order, each entry trimmed
     let first = "https://a.example.com/keys";

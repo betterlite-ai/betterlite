@@ -15,8 +15,12 @@ fn nested(depth: usize) -> String {
     format!("{}{}", "[".repeat(depth), "]".repeat(depth))
 }
 
-#[test]
-fn decoder_boundaries() {
+#[rstest]
+#[case::empty("")]
+#[case::open_brace("{")]
+#[case::not_json("not json")]
+#[case::trailing("{\"a\":1} trailing")]
+fn decoder_boundaries(#[case] body: &str) {
     // exactly the byte bound parses, one byte over is refused before parsing
     let exact = format!("\"{}\"", "a".repeat(MAX_DOCUMENT_BYTES - 2));
     assert_eq!(exact.len(), MAX_DOCUMENT_BYTES);
@@ -48,29 +52,30 @@ fn decoder_boundaries() {
     assert!(decode_discovery_document(object_depth.as_bytes()).is_ok());
 
     // anything that is not JSON is a syntax failure
-    for body in ["", "{", "not json", "{\"a\":1} trailing"] {
-        let error = decode_discovery_document(body.as_bytes()).unwrap_err();
-        assert!(matches!(error, DecodeError::Syntax(_)), "body {body:?}");
-    }
+    let error = decode_discovery_document(body.as_bytes()).unwrap_err();
+    assert!(matches!(error, DecodeError::Syntax(_)), "body {body:?}");
 }
 
-#[test]
-fn userinfo_document_requires_json_object() {
+#[rstest]
+#[case::array("[]")]
+#[case::string("\"x\"")]
+#[case::number("7")]
+#[case::null("null")]
+#[case::boolean("true")]
+fn userinfo_document_requires_json_object(#[case] body: &str) {
     let fields = userinfo_document(br#"{"sub":"a","email":"one@example.com"}"#).unwrap();
     assert_eq!(fields.len(), 2);
     assert_eq!(fields.get("sub"), Some(&json(r#""a""#)));
-    for body in ["[]", "\"x\"", "7", "null", "true"] {
-        let error = userinfo_document(body.as_bytes()).unwrap_err();
-        assert!(
-            matches!(
-                error,
-                DecodeError::NotObject {
-                    document: "UserInfo"
-                }
-            ),
-            "body {body}"
-        );
-    }
+    let error = userinfo_document(body.as_bytes()).unwrap_err();
+    assert!(
+        matches!(
+            error,
+            DecodeError::NotObject {
+                document: "UserInfo"
+            }
+        ),
+        "body {body}"
+    );
 }
 
 #[tokio::test]

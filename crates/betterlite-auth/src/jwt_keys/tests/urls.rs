@@ -2,7 +2,7 @@ use betterlite_models::decisions::Json;
 
 use crate::jwt_keys::resolver::{
     DISCOVERY_CACHE_KEY_PREFIX, KEYS_CACHE_KEY_PREFIX, STALE_CACHE_KEY_PREFIX,
-    STALE_WRITTEN_AT_CACHE_KEY_PREFIX,
+    STALE_WRITTEN_AT_PREFIX,
 };
 
 use super::support::{DISCOVERY_URL, JWKS_URL, ScriptedHttp, fixture, key, keys, settings};
@@ -45,7 +45,7 @@ async fn discovery_substring_detection_and_exact_cache_keys() {
     );
     assert_eq!(
         writes[2].key,
-        format!("{STALE_WRITTEN_AT_CACHE_KEY_PREFIX}{cache_key}")
+        format!("{STALE_WRITTEN_AT_PREFIX}{cache_key}")
     );
 
     // the second lookup is served from the cache, not the IdP

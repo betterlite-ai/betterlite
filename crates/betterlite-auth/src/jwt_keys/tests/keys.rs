@@ -1,6 +1,7 @@
 use base64::Engine as _;
 use base64::engine::general_purpose::{URL_SAFE, URL_SAFE_NO_PAD};
 use betterlite_models::decisions::Json;
+use rstest::rstest;
 
 use crate::jwt_keys::agent::{AgentLookup as _, NoRegisteredAgents};
 use crate::jwt_keys::resolver::keys::{is_allowed_domain, parse_keys, token_kid};
@@ -98,21 +99,24 @@ fn token_kid_reads_only_a_compact_jwt_object_header() {
     assert_eq!(token_kid(&compact(&padded)).as_deref(), Some("a"));
     assert_eq!(token_kid(&compact(&format!("{padded}="))), None);
 
-    // a header that is not a JSON object, has no kid, or has a non-string kid names no key
-    for raw in [
-        URL_SAFE_NO_PAD.encode(b"[1]"),
-        URL_SAFE_NO_PAD.encode(b"\"kid\""),
-        URL_SAFE_NO_PAD.encode(br#"{"alg":"RS256"}"#),
-        URL_SAFE_NO_PAD.encode(br#"{"kid":7}"#),
-        URL_SAFE_NO_PAD.encode(br#"{"kid":null}"#),
-        "!!!".to_owned(),
-    ] {
-        assert_eq!(token_kid(&compact(&raw)), None, "header {raw}");
-    }
+    // a header segment that is not base64 names no key
+    assert_eq!(token_kid(&compact("!!!")), None);
 
     // only a compact JWT has a header to read
     assert_eq!(token_kid("only.two"), None);
     assert_eq!(token_kid("one.two.three.four"), None);
     assert_eq!(token_kid(""), None);
     assert_eq!(token_kid(".."), None);
+}
+
+#[rstest]
+#[case::array("[1]")]
+#[case::string(r#""kid""#)]
+#[case::no_kid(r#"{"alg":"RS256"}"#)]
+#[case::numeric_kid(r#"{"kid":7}"#)]
+#[case::null_kid(r#"{"kid":null}"#)]
+fn token_kid_rejects_unusable_headers(#[case] header: &str) {
+    // a header that is not a JSON object, has no kid, or has a non-string kid names no key
+    let raw = URL_SAFE_NO_PAD.encode(header.as_bytes());
+    assert_eq!(token_kid(&compact(&raw)), None, "header {raw}");
 }

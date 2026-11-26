@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use betterlite_models::decisions::Json;
+use rstest::rstest;
 use tracing::Level;
 
 use crate::jwt_keys::errors::{KeyError, exception_for};
@@ -59,25 +60,23 @@ async fn fresh_nonnull_and_lock_recheck() {
     assert!(recheck.http.requests().is_empty());
 }
 
+#[rstest]
+#[case::string(r#""1000""#)]
+#[case::null("null")]
+#[case::object(r#"{"at":1000}"#)]
+#[case::list("[1000]")]
 #[tokio::test]
-async fn numeric_timestamp_not_string() {
+async fn numeric_timestamp_not_string(#[case] written_at: &str) {
     // a timestamp that is not a number is not an age, so the stale copy is not servable
-    for written_at in [
-        Json::Text("1000".to_owned()),
-        Json::Null,
-        json(r#"{"at":1000}"#),
-        json("[1000]"),
-    ] {
-        let fixture = fixture(settings(Some(JWKS_URL), 600.0, 3600.0), 1_000.0, outage());
-        fixture.cache.seed(&stale_key(), keys(&[key("a")]));
-        fixture.cache.seed(&timestamp_key(), written_at);
-        let error = fixture
-            .resolver
-            .get_public_key(Some("a"))
-            .await
-            .unwrap_err();
-        assert!(matches!(error, KeyError::Unreachable { .. }));
-    }
+    let fixture = fixture(settings(Some(JWKS_URL), 600.0, 3600.0), 1_000.0, outage());
+    fixture.cache.seed(&stale_key(), keys(&[key("a")]));
+    fixture.cache.seed(&timestamp_key(), json(written_at));
+    let error = fixture
+        .resolver
+        .get_public_key(Some("a"))
+        .await
+        .unwrap_err();
+    assert!(matches!(error, KeyError::Unreachable { .. }));
 
     // Python's bool is an int, so true is the epoch 1.0 and is served inside the window
     let boolean = fixture(settings(Some(JWKS_URL), 600.0, 3600.0), 1_000.0, outage());
