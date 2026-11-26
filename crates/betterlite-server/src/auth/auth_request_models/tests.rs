@@ -117,6 +117,7 @@ fn master_context(master_key: &SecretString) -> AuthContext {
             | StageFailure::VirtualKeyRoutes(_)
             | StageFailure::KeyBudgets(_)
             | StageFailure::TeamBudgets(_)
+            | StageFailure::OrganizationRoutePolicy(_)
             | StageFailure::OrgLookup(_)
             | StageFailure::EndUsers(_)
             | StageFailure::KeyLookup(_),
