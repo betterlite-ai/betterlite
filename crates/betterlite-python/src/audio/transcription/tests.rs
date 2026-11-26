@@ -13,6 +13,7 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_sdk::call_files::CallFile;
 use betterlite_sdk::call_setup::RequestMap;
 use indexmap::IndexMap;
+use rstest::rstest;
 use rust_decimal::Decimal;
 use serde_json::Number;
 use std::collections::BTreeMap;
@@ -85,7 +86,7 @@ fn transcription_prepare_accepts_the_openai_provider() {
     let prepared = prepare(&session(), &call, &files).unwrap();
     assert_eq!(prepared.model, "whisper-1");
     assert_eq!(prepared.provider, "openai");
-    assert_eq!(prepared.input, "clip.wav");
+    assert_eq!(prepared.input, "(clip.wav, bytes)");
     assert_eq!(prepared.connection.max_retries, 2);
     assert!(prepared.options.is_empty());
 }
@@ -224,8 +225,17 @@ fn request_hidden_params_omit_absent_async_duration() {
     assert_eq!(hidden.get("audio_transcription_duration"), None);
 }
 
-#[test]
-fn request_hidden_params_keep_undecodable_duration() {
+#[rstest]
+#[case::number(
+    StoredDuration::Known(Some(Decimal::ONE)),
+    Some(Json::Number(Number::from_f64(1.0_f64).unwrap()))
+)]
+#[case::null(StoredDuration::Known(None), Some(Json::Null))]
+#[case::absent(StoredDuration::Absent, None)]
+fn request_hidden_params_keep_undecodable_duration(
+    #[case] duration: StoredDuration,
+    #[case] expected: Option<Json>,
+) {
     let request = AudioCallWire {
         arguments: RequestMap::new(),
         settings: AudioSettings::default(),
@@ -235,21 +245,12 @@ fn request_hidden_params_keep_undecodable_duration() {
     let mut file = processed();
     file.file_content = b"unsupported audio codec".to_vec();
     let mut stored = reply(r#"{"text":"subtitle"}"#);
-    for (duration, expected) in [
-        (
-            StoredDuration::Known(Some(Decimal::ONE)),
-            Some(Json::Number(Number::from_f64(1.0_f64).unwrap())),
-        ),
-        (StoredDuration::Known(None), Some(Json::Null)),
-        (StoredDuration::Absent, None),
-    ] {
-        stored.duration = duration;
-        let hidden = hidden_params(&stored, &file, 1.0_f64, &request, "whisper-1").unwrap();
-        assert_eq!(
-            hidden.get("audio_transcription_duration"),
-            expected.as_ref()
-        );
-    }
+    stored.duration = duration;
+    let hidden = hidden_params(&stored, &file, 1.0_f64, &request, "whisper-1").unwrap();
+    assert_eq!(
+        hidden.get("audio_transcription_duration"),
+        expected.as_ref()
+    );
 }
 
 #[test]

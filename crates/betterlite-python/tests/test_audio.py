@@ -601,25 +601,29 @@ def test_audio_provider_body_error(operation: str) -> None:
     assert BODY.validate_python(caught.value.body)["code"] == "invalid_file"
 
 
-def test_speech_sdk_identity_headers(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_speech_identity_headers(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("OPENAI_ORG_ID", raising=False)
     monkeypatch.delenv("OPENAI_PROJECT_ID", raising=False)
     monkeypatch.setenv("OPENAI_ORGANIZATION", "org-env")
     monkeypatch.setenv("OPENAI_PROJECT", "project-env")
-    monkeypatch.setattr(betterlite, "organization", "org-setting")
-    monkeypatch.setattr(betterlite, "project", "project-setting")
-    with closing(AudioServer()) as server:
-        speech(
-            TTS_MODEL, "hello", "alloy", organization="org-a", project="project-a",
-            api_base=server.url, api_key=GOOD_KEY,
-        )
-        assert header_of(server.calls[-1], "openai-organization") is None
-        assert header_of(server.calls[-1], "openai-project") is None
-        monkeypatch.setenv("OPENAI_ORG_ID", "org-sdk")
-        monkeypatch.setenv("OPENAI_PROJECT_ID", "project-sdk")
-        asyncio.run(aspeech(
-            TTS_MODEL, "hello", "alloy", organization="org-a", project="project-a",
-            api_base=server.url, api_key=GOOD_KEY,
-        ))
-        assert header_of(server.calls[-1], "openai-organization") == "org-sdk"
-        assert header_of(server.calls[-1], "openai-project") == "project-sdk"
+    previous_org, previous_project = betterlite.organization, betterlite.project
+    betterlite.organization = "org-setting"
+    betterlite.project = "project-setting"
+    try:
+        with closing(AudioServer()) as server:
+            speech(
+                TTS_MODEL, "hello", "alloy", organization="org-a", project="project-a",
+                api_base=server.url, api_key=GOOD_KEY,
+            )
+            assert header_of(server.calls[-1], "openai-organization") is None
+            assert header_of(server.calls[-1], "openai-project") is None
+            monkeypatch.setenv("OPENAI_ORG_ID", "org-sdk")
+            monkeypatch.setenv("OPENAI_PROJECT_ID", "project-sdk")
+            asyncio.run(aspeech(
+                TTS_MODEL, "hello", "alloy", organization="org-a", project="project-a",
+                api_base=server.url, api_key=GOOD_KEY,
+            ))
+            assert header_of(server.calls[-1], "openai-organization") == "org-sdk"
+            assert header_of(server.calls[-1], "openai-project") == "project-sdk"
+    finally:
+        betterlite.organization, betterlite.project = previous_org, previous_project
