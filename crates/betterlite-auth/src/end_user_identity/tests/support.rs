@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt::Debug;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
 use betterlite_cache::backend::BackendError;
@@ -98,7 +98,7 @@ impl ScriptedCache {
     fn record_read(&self, cache_key: &str) -> Result<(), AuthCacheError> {
         self.reads
             .lock()
-            .expect("the cache reads")
+            .unwrap_or_else(PoisonError::into_inner)
             .push(cache_key.to_owned());
         if self.fail_reads {
             return Err(cache_failure());
@@ -222,8 +222,10 @@ impl ScriptedEndUsers {
 #[async_trait]
 impl EndUserExistence for ScriptedEndUsers {
     async fn end_user_exists(&self, end_user_id: &str) -> Result<bool, ExistenceError> {
-        let mut calls = self.calls.lock().expect("the end-user calls");
-        calls.push(end_user_id.to_owned());
+        self.calls
+            .lock()
+            .expect("the end-user calls")
+            .push(end_user_id.to_owned());
         let found = self.answer.found();
         found.ok_or(ExistenceError::EndUser(EndUserObjectError::NoDatabase))
     }
@@ -340,7 +342,7 @@ impl RowCache {
         Row: Serialize,
     {
         let value = serde_json::to_value(row)
-            .and_then(|encoded| serde_json::from_value::<Json>(encoded))
+            .and_then(serde_json::from_value::<Json>)
             .expect("the seeded row serializes");
         self.seed_json(cache_key, value);
     }
@@ -373,13 +375,12 @@ impl EndUserCache for RowCache {
             .expect("the cache contents")
             .get(cache_key)
             .cloned();
-        match stored {
-            None => Ok(None),
-            Some(cached) => serde_json::to_value(cached)
+        stored.map_or(Ok(None), |cached| {
+            serde_json::to_value(cached)
                 .map_err(PayloadError::Json)
                 .and_then(|value| serde_json::from_value::<Row>(value).map_err(PayloadError::Json))
-                .map(Some),
-        }
+                .map(Some)
+        })
     }
 
     async fn write_row<Row>(

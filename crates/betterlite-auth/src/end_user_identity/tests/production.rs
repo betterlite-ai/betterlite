@@ -128,6 +128,36 @@ async fn end_user_adapter_reports_a_cache_failure() {
     assert!(rows.queries().is_empty());
 }
 
+// B739's caught database block answers a failed row read as no row, so the user probe still decides
+#[tokio::test]
+async fn end_user_adapter_swallows_a_row_failure() {
+    let rows = Arc::new(ScriptedRows::new(RowAnswer::Failure, RowAnswer::Missing));
+    let existence = adapter(&rows, Arc::new(RowCache::new()), None);
+    assert!(
+        !existence
+            .end_user_exists("alice")
+            .await
+            .expect("the swallowed row failure")
+    );
+    assert_eq!(rows.queries(), vec!["alice".to_owned()]);
+    let users = Arc::new(ScriptedUsers::new(Answer::Found));
+    let identity = EndUserIdResolver {
+        validate_end_user_id_in_db: true,
+        max_end_user_budget_id: None,
+        lookups: Some(DatabaseLookups {
+            end_users: Arc::new(existence),
+            users: Arc::<ScriptedUsers>::clone(&users),
+        }),
+        cache: Arc::new(ScriptedCache::new()),
+    };
+    let resolved = identity
+        .resolve(&request("alice"))
+        .await
+        .expect("the lookup");
+    assert_eq!(resolved.as_deref(), Some("alice"));
+    assert_eq!(users.probes().len(), 1);
+}
+
 #[tokio::test]
 async fn budget_failure_falls_through_to_the_user() {
     let (log, _guard) = capture_events();
