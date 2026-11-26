@@ -15,6 +15,7 @@ use crate::auth::auth_request_models::{RequestModelStageInput, resolve};
 use crate::auth::auth_request_policy::{self, AuthRequestPolicyStageInput};
 use crate::auth::auth_resource_grants::{self, ResourceGrantStageInput};
 use crate::auth::auth_tag_budgets::TagBudgetStageInput;
+use crate::auth::auth_tenant_budgets::TenantBudgetStageInput;
 use crate::auth::request_body_safety::{self, RequestBodySafetyStageInput};
 use crate::auth::team_budget_admission::TeamBudgetStageInput;
 use crate::error_body::AuthenticationFailure;
@@ -30,6 +31,7 @@ pub enum AuthBackend {
     AuthTagBudgets,
     AuthKeyBudgets,
     TeamBudgetAdmission,
+    AuthTenantBudgets,
     AuthOrgLookup,
     AuthEndUsers,
 }
@@ -45,6 +47,7 @@ pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
     AuthBackend::AuthTagBudgets,
     AuthBackend::AuthKeyBudgets,
     AuthBackend::TeamBudgetAdmission,
+    AuthBackend::AuthTenantBudgets,
     AuthBackend::AuthOrgLookup,
     AuthBackend::AuthEndUsers,
 ];
@@ -60,6 +63,7 @@ pub enum StageInput {
     AuthTagBudgets(Box<TagBudgetStageInput>),
     AuthKeyBudgets(Box<KeyBudgetStageInput>),
     TeamBudgetAdmission(Box<TeamBudgetStageInput>),
+    AuthTenantBudgets(Box<TenantBudgetStageInput>),
     AuthOrgLookup(Box<OrgStageInput>),
     AuthEndUsers(Box<EndUserStageInput>),
 }
@@ -94,6 +98,7 @@ pub(crate) enum StageFailure {
     RequestBodySafety(Box<ProxyException>),
     KeyBudgets(Box<ProxyException>),
     TeamBudgets(Box<ProxyException>),
+    TenantBudgets(Box<ProxyException>),
     OrgLookup(Box<ProxyException>),
     EndUsers(Box<ProxyException>),
 }
@@ -118,42 +123,61 @@ pub(crate) fn dispatch(
             .map_err(|failure| StageFailure::Authentication(Box::new(failure))),
         AuthBackend::AuthModelPatterns => auth_model_patterns_stage(input),
         AuthBackend::AuthResourceGrants => auth_resource_grants_stage(input),
-        AuthBackend::AuthTagBudgets => {
-            let StageInput::AuthTagBudgets(stage) = input else {
-                return Err(StageFailure::from(AuthenticationFailure::Missing));
-            };
-            // the batch reads ran while this stage's input was assembled, so only the identity is left
-            Ok(stage.context.clone())
-        }
-        AuthBackend::AuthKeyBudgets => {
-            let StageInput::AuthKeyBudgets(stage) = input else {
-                return Err(StageFailure::from(AuthenticationFailure::Missing));
-            };
-            // the reads ran while the stage input was assembled, so the budget failures already surfaced there
-            Ok(stage.context.clone())
-        }
-        AuthBackend::TeamBudgetAdmission => {
-            let StageInput::TeamBudgetAdmission(stage) = input else {
-                return Err(StageFailure::from(AuthenticationFailure::Missing));
-            };
-            // the member scope and budget checks ran in the prefetch, so only the identity is left
-            Ok(stage.context.clone())
-        }
-        AuthBackend::AuthOrgLookup => {
-            let StageInput::AuthOrgLookup(stage) = input else {
-                return Err(StageFailure::from(AuthenticationFailure::Missing));
-            };
-            // the request-scoped lookup ran in the prefetch, so only the identity is left
-            Ok(stage.context.clone())
-        }
-        AuthBackend::AuthEndUsers => {
-            let StageInput::AuthEndUsers(stage) = input else {
-                return Err(StageFailure::from(AuthenticationFailure::Missing));
-            };
-            // the lookup and the budget check ran in the prefetch, so only the identity is left
-            Ok(stage.context.clone())
-        }
+        AuthBackend::AuthTagBudgets => auth_tag_budgets_stage(input),
+        AuthBackend::AuthKeyBudgets => auth_key_budgets_stage(input),
+        AuthBackend::TeamBudgetAdmission => team_budget_admission_stage(input),
+        AuthBackend::AuthTenantBudgets => auth_tenant_budgets_stage(input),
+        AuthBackend::AuthOrgLookup => auth_org_lookup_stage(input),
+        AuthBackend::AuthEndUsers => auth_end_users_stage(input),
     }
+}
+
+// the batch reads ran while this stage's input was assembled, so only the identity is left
+fn auth_tag_budgets_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
+    let StageInput::AuthTagBudgets(stage) = input else {
+        return Err(StageFailure::from(AuthenticationFailure::Missing));
+    };
+    Ok(stage.context.clone())
+}
+
+// the reads ran while the stage input was assembled, so the budget failures already surfaced there
+fn auth_key_budgets_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
+    let StageInput::AuthKeyBudgets(stage) = input else {
+        return Err(StageFailure::from(AuthenticationFailure::Missing));
+    };
+    Ok(stage.context.clone())
+}
+
+// the member scope and budget checks ran in the prefetch, so only the identity is left
+fn team_budget_admission_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
+    let StageInput::TeamBudgetAdmission(stage) = input else {
+        return Err(StageFailure::from(AuthenticationFailure::Missing));
+    };
+    Ok(stage.context.clone())
+}
+
+// the project, organization, tag and access-group checks ran in the prefetch
+fn auth_tenant_budgets_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
+    let StageInput::AuthTenantBudgets(stage) = input else {
+        return Err(StageFailure::from(AuthenticationFailure::Missing));
+    };
+    Ok(stage.context.clone())
+}
+
+// the request-scoped lookup ran in the prefetch, so only the identity is left
+fn auth_org_lookup_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
+    let StageInput::AuthOrgLookup(stage) = input else {
+        return Err(StageFailure::from(AuthenticationFailure::Missing));
+    };
+    Ok(stage.context.clone())
+}
+
+// the lookup and the budget check ran in the prefetch, so only the identity is left
+fn auth_end_users_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
+    let StageInput::AuthEndUsers(stage) = input else {
+        return Err(StageFailure::from(AuthenticationFailure::Missing));
+    };
+    Ok(stage.context.clone())
 }
 
 fn auth_request_policy_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
