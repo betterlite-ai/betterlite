@@ -22,7 +22,7 @@ use super::input::{KeyInput, Lookup, RouterInput};
 
 pub(crate) struct ScriptedCatalog<'script> {
     script: &'script RouterInput,
-    lookups: Mutex<Vec<Lookup>>,
+    pub(crate) lookups: Mutex<Vec<Lookup>>,
 }
 
 impl<'script> ScriptedCatalog<'script> {
@@ -31,10 +31,6 @@ impl<'script> ScriptedCatalog<'script> {
             script,
             lookups: Mutex::new(Vec::new()),
         }
-    }
-
-    pub(crate) fn lookups(&self) -> Vec<Lookup> {
-        locked(&self.lookups).clone()
     }
 }
 
@@ -131,6 +127,7 @@ pub(crate) struct Scenario<'script> {
     pub(crate) catalog: Option<ScriptedCatalog<'script>>,
     pub(crate) grants: AllowAll,
     pub(crate) identity: Principal,
+    pub(crate) expansion: ScriptedExpansion,
 }
 
 pub(crate) fn scenario<'script>(
@@ -141,10 +138,11 @@ pub(crate) fn scenario<'script>(
         catalog: router.map(ScriptedCatalog::new),
         grants: AllowAll,
         identity: principal_for(key)?,
+        expansion: ScriptedExpansion::default(),
     })
 }
 
-fn locked<Slot>(slot: &Mutex<Slot>) -> MutexGuard<'_, Slot> {
+pub(super) fn locked<Slot>(slot: &Mutex<Slot>) -> MutexGuard<'_, Slot> {
     match slot.lock() {
         Ok(guard) => guard,
         Err(poisoned) => poisoned.into_inner(),
