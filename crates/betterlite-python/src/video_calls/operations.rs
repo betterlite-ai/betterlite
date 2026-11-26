@@ -103,10 +103,10 @@ pub(crate) async fn generate(input: Input, mode: Mode) -> Result<VideoObject, Ru
         logging: &mut state,
         env: &env,
     };
-    if matches!(mode, Mode::Sync) {
-        if let Some(video) = mock_object(&caller, &request)? {
-            return Ok(video);
-        }
+    if matches!(mode, Mode::Sync)
+        && let Some(video) = mock_object(&caller, &request)?
+    {
+        return Ok(video);
     }
     caller
         .avideo_generation(request, None, &resolution, environment)

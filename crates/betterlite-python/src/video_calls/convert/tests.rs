@@ -82,7 +82,7 @@ fn request_generation_arguments_reach_the_call() {
     assert_eq!(request.seconds.as_deref(), Some("8"));
     assert_eq!(request.size.as_deref(), Some("720x1280"));
     assert_eq!(request.user.as_deref(), Some("u-1"));
-    assert_eq!(request.timeout, Some(12.5));
+    assert_eq!(request.timeout, Some(12.5_f64));
     assert_eq!(request.custom_llm_provider.as_deref(), Some("openai"));
     assert_eq!(
         request
@@ -149,8 +149,8 @@ fn request_generation_loose_keywords_stay_in_kwargs() {
 fn request_generation_input_reference_bytes_carry_their_name() {
     let mut blobs = vec![b"PNG".to_vec()];
     let payload = r#"{"arguments": {"prompt": "p", "input_reference": {"$file": {"blob": 0, "name": "ref.png", "content_type": "image/png"}}}}"#;
-    let (wire, media) = parse(payload, &mut blobs).unwrap();
-    let media = media.unwrap();
+    let (wire, supplied) = parse(payload, &mut blobs).unwrap();
+    let media = supplied.unwrap();
     assert_eq!(media.name.as_deref(), Some("ref.png"));
     assert_eq!(media.content, b"PNG".to_vec());
     let request = request(Operation::Generate, &wire, Some(media))
@@ -167,8 +167,8 @@ fn request_generation_input_reference_bytes_carry_their_name() {
 fn request_generation_default_file_name_is_unnamed() {
     let mut blobs = vec![b"PNG".to_vec()];
     let payload = r#"{"arguments": {"prompt": "p", "input_reference": {"$file": {"blob": 0}}}}"#;
-    let (wire, media) = parse(payload, &mut blobs).unwrap();
-    let media = media.unwrap();
+    let (wire, supplied) = parse(payload, &mut blobs).unwrap();
+    let media = supplied.unwrap();
     assert_eq!(media.name, None);
     assert_eq!(media.content, b"PNG".to_vec());
     let request = request(Operation::Generate, &wire, Some(media))
@@ -227,7 +227,7 @@ fn request_remix_arguments_reach_the_call() {
     assert_eq!(request.api_base.as_deref(), Some("http://example.test/v1"));
     assert_eq!(request.api_version.as_deref(), Some("2024-01"));
     assert_eq!(request.user.as_deref(), Some("u-1"));
-    assert_eq!(request.timeout, Some(30.0));
+    assert_eq!(request.timeout, Some(30.0_f64));
     assert_eq!(
         request
             .extra_headers
@@ -248,6 +248,13 @@ fn request_remix_arguments_reach_the_call() {
             Json::Text(String::from("v")),
         )])))
     );
+}
+
+#[test]
+fn request_remix_metadata_reaches_the_call() {
+    let request = remix(
+        r#"{"video_id":"v", "prompt":"p", "api_key":"sk-1", "litellm_metadata":{"user_api_key":"k"}, "litellm_call_id":"call-1", "litellm_trace_id":"t-1"}"#,
+    );
     assert_eq!(request.litellm_metadata.as_ref().unwrap().len(), 1);
     assert_eq!(request.litellm_call_id.as_deref(), Some("call-1"));
     assert_eq!(
@@ -266,7 +273,7 @@ fn request_list_arguments_reach_the_call() {
     assert_eq!(request.after.as_deref(), Some("video_1"));
     assert_eq!(request.limit, Some(3));
     assert_eq!(request.order.as_deref(), Some("asc"));
-    assert_eq!(request.timeout, Some(5.0));
+    assert_eq!(request.timeout, Some(5.0_f64));
     assert_eq!(request.custom_llm_provider.as_deref(), Some("openai"));
     assert_eq!(request.api_key.as_ref().unwrap().expose_secret(), "sk-1");
 }
@@ -303,9 +310,9 @@ fn request_drop_params_reads_the_argument_or_the_settings() {
     let payload = r#"{"arguments": {"prompt": "p"}, "settings": {"drop_params": true}}"#;
     let (wire, _media) = parse(payload, &mut []).unwrap();
     assert!(drop_params(&wire).unwrap());
-    let payload = r#"{"arguments": {"prompt": "p"}, "settings": {"drop_params": false}}"#;
-    let (wire, _media) = parse(payload, &mut []).unwrap();
-    assert!(!drop_params(&wire).unwrap());
+    let disabled = r#"{"arguments": {"prompt": "p"}, "settings": {"drop_params": false}}"#;
+    let (disabled_wire, _disabled_media) = parse(disabled, &mut []).unwrap();
+    assert!(!drop_params(&disabled_wire).unwrap());
 }
 
 #[test]
@@ -432,6 +439,23 @@ fn request_adapter_transforms_generation_content_and_bytes() {
     assert_eq!(files[0].field, "input_reference");
     assert_eq!(files[0].filename.as_deref(), Some("source.png"));
     assert_eq!(files[0].content, b"png-data");
+}
+
+#[test]
+fn request_adapter_transforms_content_and_bytes() {
+    let config = OpenAiVideoConfig {
+        environment: BTreeMap::new(),
+        global_api_key: None,
+        openai_key: None,
+        reference: None,
+    };
+    let params = Params::new();
+    let headers = IndexMap::new();
+    let context = VideoRequestContext {
+        api_base: "https://api.example/v1/videos",
+        litellm_params: &params,
+        headers: &headers,
+    };
     let (url, query) = config
         .transform_video_content_request("video_123", Some("thumbnail"), context)
         .unwrap();
@@ -493,7 +517,7 @@ fn request_adapter_maps_generation_options_without_dropping_values() {
 }
 
 #[test]
-fn request_adapter_builds_status_and_remix_urls() {
+fn request_adapter_builds_status_urls() {
     let config = OpenAiVideoConfig {
         environment: BTreeMap::new(),
         global_api_key: None,
@@ -519,6 +543,23 @@ fn request_adapter_builds_status_and_remix_urls() {
     .unwrap();
     assert_eq!(status_url, "https://api.example/v1/videos/video_123");
     assert!(status_params.is_empty());
+}
+
+#[test]
+fn request_adapter_builds_remix_urls() {
+    let config = OpenAiVideoConfig {
+        environment: BTreeMap::new(),
+        global_api_key: None,
+        openai_key: None,
+        reference: None,
+    };
+    let params = Params::new();
+    let headers = IndexMap::new();
+    let context = VideoRequestContext {
+        api_base: "https://api.example/v1/videos",
+        litellm_params: &params,
+        headers: &headers,
+    };
     let (remix_url, remix_params) = VideoRemixListConfig::transform_video_remix_request(
         &config,
         "video_123",
@@ -535,6 +576,23 @@ fn request_adapter_builds_status_and_remix_urls() {
     assert!(
         matches!(remix_params.get("prompt"), Some(Json::Text(value)) if value == "remix prompt")
     );
+}
+
+#[test]
+fn request_adapter_builds_list_urls() {
+    let config = OpenAiVideoConfig {
+        environment: BTreeMap::new(),
+        global_api_key: None,
+        openai_key: None,
+        reference: None,
+    };
+    let params = Params::new();
+    let headers = IndexMap::new();
+    let context = VideoRequestContext {
+        api_base: "https://api.example/v1/videos",
+        litellm_params: &params,
+        headers: &headers,
+    };
     let (list_url, list_params) = VideoRemixListConfig::transform_video_list_request(
         &config,
         VideoListQuery {
@@ -571,7 +629,7 @@ fn request_video_session_uses_the_supplied_environment() {
             .map(String::as_str),
         Some("test-key")
     );
-    assert_eq!(session.request_timeout_seconds, 42.0);
+    assert!((session.request_timeout_seconds - 42.0_f64).abs() < f64::EPSILON);
     assert!(session.known_model_names.is_empty());
     assert!(session.custom_providers.is_empty());
     let resolution = session.resolution();

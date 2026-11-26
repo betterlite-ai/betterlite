@@ -4,7 +4,7 @@ use super::super::super::clients::NativeSource;
 use super::Parts;
 
 // the request B3340's list transport takes
-pub(super) fn build<'deps, 'env>(
+pub(super) const fn build<'deps, 'env>(
     parts: Parts<'deps, 'env, VideoListCall>,
 ) -> ListRequest<'deps, 'deps, 'env, NativeSource> {
     ListRequest {

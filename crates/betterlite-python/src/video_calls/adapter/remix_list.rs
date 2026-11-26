@@ -8,13 +8,10 @@ use betterlite_core::api::video_remix_list_transport::records::{
 };
 use betterlite_models::decisions::Json;
 use betterlite_openai::error::ProviderError;
-use betterlite_openai::videos::VideoOptions;
 use betterlite_openai::videos::config::complete_url;
 use betterlite_openai::videos::error::get_error_class;
 
 use super::OpenAiVideoConfig;
-use crate::video_calls::convert::ConvertError;
-use crate::video_calls::convert::fields::json;
 
 mod list;
 mod remix;
@@ -50,7 +47,7 @@ impl VideoRemixListConfig for OpenAiVideoConfig {
     }
 
     fn transform_video_remix_response(&self, reply: VideoReply<'_>) -> VideoConverted {
-        remix::converted(reply)
+        remix::converted(&reply)
     }
 
     fn transform_video_list_request(
@@ -62,7 +59,7 @@ impl VideoRemixListConfig for OpenAiVideoConfig {
     }
 
     fn transform_video_list_response(&self, reply: VideoReply<'_>) -> PageConverted {
-        list::converted(reply)
+        list::converted(&reply)
     }
 
     // get_error_class: the headers' text values, through B525's own error class
@@ -73,14 +70,6 @@ impl VideoRemixListConfig for OpenAiVideoConfig {
         headers: ErrorHeaders,
     ) -> ProviderError {
         get_error_class(message, status_code, text_headers(headers))
-    }
-}
-
-// the params a handler holds as this crate's JSON, as the options B525's transforms read
-fn options(params: Option<&Params>) -> Result<VideoOptions, ConvertError> {
-    match params {
-        Some(entries) => json(entries),
-        None => Ok(VideoOptions::new()),
     }
 }
 

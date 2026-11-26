@@ -34,13 +34,6 @@ pub(super) fn text(arguments: &RequestMap, name: &str) -> Result<Option<String>,
     }
 }
 
-pub(super) fn required_text(arguments: &RequestMap, name: &str) -> Result<String, ConvertError> {
-    match text(arguments, name)? {
-        Some(value) => Ok(value),
-        None => Err(failed(name, STRING)),
-    }
-}
-
 // the OpenAI API types seconds as a string, and an integer is sent as given rather than formatted
 pub(super) fn seconds(arguments: &RequestMap, name: &str) -> Result<Option<String>, ConvertError> {
     if let Some(Json::Number(value)) = arguments.get(name) {

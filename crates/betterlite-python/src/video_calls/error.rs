@@ -160,7 +160,7 @@ impl From<VideoStatusCallError> for RunError {
 impl From<RunError> for PyErr {
     fn from(error: RunError) -> Self {
         match error {
-            RunError::Session(source) => PyErr::from(source),
+            RunError::Session(source) => Self::from(source),
             RunError::Call(failure) => class_error(&failure),
         }
     }

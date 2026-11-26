@@ -183,12 +183,7 @@ impl VideoGenerationConfig for OpenAiVideoConfig {
         if let Some(characters) = &options.characters {
             params.insert(
                 "characters".to_owned(),
-                Json::List(
-                    characters
-                        .iter()
-                        .map(|character| text_map(character))
-                        .collect(),
-                ),
+                Json::List(characters.iter().map(text_map).collect()),
             );
         }
         if let Some(headers) = &options.extra_headers {
