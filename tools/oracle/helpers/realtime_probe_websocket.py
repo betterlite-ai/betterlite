@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from typing import TypedDict
 
 import litellm
-from litellm.constants import REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES
+from litellm.constants import REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES as MAX_SIZE
 from litellm.llms.azure.common_utils import get_azure_ad_token
 from litellm.llms.azure.realtime.handler import AzureOpenAIRealtime
 from litellm.llms.custom_httpx.http_handler import get_shared_realtime_ssl_context
@@ -116,7 +116,7 @@ def azure_ad_token(key: str | None, merged: Mapping[str, JsonValue]) -> str | No
     return get_azure_ad_token(params)
 
 
-def ssl_kind(value: bool | str | ssl.SSLContext | None) -> str:
+def ssl_kind(*, value: bool | str | ssl.SSLContext | None) -> str:
     if value is None:
         return "disabled"
     return "insecure" if value is False else "shared"
@@ -127,10 +127,6 @@ def bearer_headers(key: str | None) -> list[JsonValue]:
     if key is not None:
         pairs.append(["Authorization", f"Bearer {key}"])
     return pairs
-
-
-def pair_headers(headers: Mapping[str, str]) -> list[JsonValue]:
-    return [[name, headers[name]] for name in sorted(headers)]
 
 
 def failure_view(branch: str, base: str | None) -> JsonValue:
@@ -154,9 +150,10 @@ def azure_answer(
         view["api_base"] = ""
     view["api_version"] = version or AZURE_DEFAULT_API_VERSION
     view["protocol"] = azure_protocol(scenario, merged)
-    view["headers"] = pair_headers(headers)
-    view["max_size"] = REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES
-    view["ssl"] = ssl_kind(get_shared_realtime_ssl_context())
+    pairs: list[JsonValue] = [[name, headers[name]] for name in sorted(headers)]
+    view["headers"] = pairs
+    view["max_size"] = MAX_SIZE
+    view["ssl"] = ssl_kind(value=get_shared_realtime_ssl_context())
     return view
 
 
@@ -164,8 +161,8 @@ def base_answer(branch: str, key: str | None, base: str | None, default: str) ->
     view = empty_view(branch)
     view["api_base"] = base or default
     view["headers"] = bearer_headers(key)
-    view["max_size"] = REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES
-    view["ssl"] = ssl_kind(get_shared_realtime_ssl_context())
+    view["max_size"] = MAX_SIZE
+    view["ssl"] = ssl_kind(value=get_shared_realtime_ssl_context())
     return view
 
 
@@ -186,9 +183,10 @@ def vertex_answer(scenario: Scenario, merged: dict[str, JsonValue], base: str | 
     view = empty_view("vertex_ai")
     view["api_base"] = base
     view["url"] = config.get_complete_url(api_base=base, model=model)
-    view["headers"] = pair_headers(headers)
-    view["max_size"] = REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES
-    view["ssl"] = ssl_kind(get_shared_realtime_ssl_context())
+    pairs: list[JsonValue] = [[name, headers[name]] for name in sorted(headers)]
+    view["headers"] = pairs
+    view["max_size"] = MAX_SIZE
+    view["ssl"] = ssl_kind(value=get_shared_realtime_ssl_context())
     return view
 
 
@@ -211,4 +209,6 @@ def run_scenario(scenario: Scenario) -> JsonValue:
 
 
 def run(argument: Input) -> JsonValue:
-    return {"scenarios": [run_scenario(scenario) for scenario in argument["scenarios"]]}
+    scenarios = argument["scenarios"]
+    answered = [run_scenario(scenario) for scenario in scenarios]
+    return {"scenarios": answered}
