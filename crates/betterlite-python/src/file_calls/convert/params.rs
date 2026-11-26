@@ -96,17 +96,11 @@ pub(super) fn read_kwargs(
 }
 
 fn read_provider(provider: Option<String>) -> ReadProvider {
-    match provider {
-        Some(name) => ReadProvider(name),
-        None => ReadProvider::default(),
-    }
+    provider.map_or_else(ReadProvider::default, ReadProvider)
 }
 
 fn kwarg(value: Option<String>) -> Kwarg {
-    match value {
-        Some(text) => Kwarg::Text(text),
-        None => Kwarg::Absent,
-    }
+    value.map_or(Kwarg::Absent, Kwarg::Text)
 }
 
 // GenericLiteLLMParams.timeout declares float | str | httpx.Timeout
