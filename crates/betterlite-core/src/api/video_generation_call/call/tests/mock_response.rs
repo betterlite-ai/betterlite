@@ -2,7 +2,8 @@ use betterlite_error::error::ErrorClass;
 use betterlite_models::decisions::Json;
 
 use super::support::{
-    Bench, MOCK_JSON, Outcome, failed, handles, lookups, object_json, request, text,
+    Bench, Invocation, MOCK_JSON, Outcome, failed, handles, lookups, object_json, ready_object,
+    request, text,
 };
 
 #[test]
@@ -118,4 +119,21 @@ fn a_mock_without_the_required_fields_is_refused() {
     );
     assert!(matches!(raised.class, ErrorClass::ApiConnection(_)));
     assert!(handles(&bench.journal).is_empty());
+}
+
+#[tokio::test]
+async fn the_async_entry_returns_a_mock_without_dispatch() {
+    let mut bench = Bench::new(Outcome::NeverAnswers);
+    let mut call = request();
+    call.kwargs
+        .insert("mock_response".to_owned(), text(MOCK_JSON));
+    let work = bench.invoke(call, None, Invocation::Async).await.unwrap();
+    let object = ready_object(work);
+    assert_eq!(object.id, "mock-1");
+    assert_eq!(object.status, "completed");
+    assert!(lookups(&bench.journal).is_empty());
+    assert!(handles(&bench.journal).is_empty());
+    assert!(bench.caller.providers.config.calls().is_empty());
+    assert_eq!(bench.fixture.state.model, "video-model");
+    assert!(bench.fixture.state.call_type.is_empty());
 }

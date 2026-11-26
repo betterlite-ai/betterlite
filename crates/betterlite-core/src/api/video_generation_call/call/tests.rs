@@ -14,3 +14,5 @@ mod suspension;
 mod timeout_fallback;
 mod unknown_provider;
 mod unsupported_provider;
+
+mod transport_adapter;

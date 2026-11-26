@@ -38,7 +38,7 @@ pub struct VideoGenerationRequest {
     pub timeout: Option<f64>,
     pub custom_llm_provider: Option<String>,
     pub extra_headers: Option<Headers>,
-    // accepted to match LiteLLM's signature: it becomes a requested option but never reaches the handler
+    // The query travels inside optional_params, not as a separate handler argument.
     pub extra_query: Option<Params>,
     pub extra_body: Option<Params>,
     pub kwargs: IndexMap<String, Json>,

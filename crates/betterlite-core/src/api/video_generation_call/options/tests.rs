@@ -2,9 +2,12 @@
 
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use rstest::rstest;
 use serde_json::Number;
 
-use super::{provider_request_params, requested_optional_params, requested_params};
+use super::{
+    RequestedOptions, provider_request_params, requested_optional_params, requested_params,
+};
 use crate::api::bfl::edit::media::SuppliedMedia;
 use crate::api::video_generation_call::VideoGenerationRequest;
 use crate::api::video_generation_call::error::VideoGenerationCallError;
@@ -66,7 +69,7 @@ fn removes_null_and_owned_entries() {
         .kwargs
         .insert("mock_response".to_owned(), text("mocked"));
     nullable_call.kwargs.insert("size".to_owned(), Json::Null);
-    let options = requested_optional_params(&mut nullable_call).unwrap();
+    let options = requested_optional_params(&mut nullable_call).unwrap().video;
     assert_eq!(
         options,
         VideoCreateOptionalRequestParams {
@@ -83,7 +86,7 @@ fn a_loose_keyword_beats_the_named_argument() {
     call.kwargs.insert("size".to_owned(), text("1080x1920"));
     call.kwargs.insert("user".to_owned(), text("loose-user"));
 
-    let options = requested_optional_params(&mut call).unwrap();
+    let options = requested_optional_params(&mut call).unwrap().video;
     assert_eq!(options.size.as_deref(), Some("1080x1920"));
     assert_eq!(options.user.as_deref(), Some("loose-user"));
 }
@@ -94,7 +97,7 @@ fn a_loose_null_removes_the_named_value() {
     call.size = Some("720x1280".to_owned());
     call.kwargs.insert("size".to_owned(), Json::Null);
 
-    let options = requested_optional_params(&mut call).unwrap();
+    let options = requested_optional_params(&mut call).unwrap().video;
     assert_eq!(options.size, None);
 }
 
@@ -116,7 +119,7 @@ fn extra_body_merges_and_its_flat_entries_beat_everything() {
         ]),
     );
 
-    let options = requested_optional_params(&mut call).unwrap();
+    let options = requested_optional_params(&mut call).unwrap().video;
     assert_eq!(options.size.as_deref(), Some("640x480"));
     assert_eq!(
         options.extra_body,
@@ -141,7 +144,7 @@ fn a_loose_extra_body_hides_the_named_one() {
     call.kwargs
         .insert("extra_body".to_owned(), text_map(&[("size", "480x854")]));
 
-    let options = requested_optional_params(&mut call).unwrap();
+    let options = requested_optional_params(&mut call).unwrap().video;
     assert_eq!(options.user, None);
     assert_eq!(options.size.as_deref(), Some("480x854"));
     assert_eq!(
@@ -162,7 +165,7 @@ fn extra_body_merges_null_entries_are_skipped() {
         ])),
     );
 
-    let options = requested_optional_params(&mut call).unwrap();
+    let options = requested_optional_params(&mut call).unwrap().video;
     assert_eq!(
         options.extra_body,
         Some(IndexMap::from([("seed".to_owned(), "7".to_owned())]))
@@ -194,7 +197,7 @@ fn an_extra_body_that_is_not_a_map_is_ignored_but_removed() {
     call.kwargs
         .insert("extra_body".to_owned(), text("not a map"));
 
-    let options = requested_optional_params(&mut call).unwrap();
+    let options = requested_optional_params(&mut call).unwrap().video;
     assert_eq!(options, empty_options());
     assert!(!call.kwargs.contains_key("extra_body"));
 }
@@ -207,7 +210,7 @@ fn a_flat_input_reference_fills_the_typed_field() {
         text_map(&[("input_reference", "frame.png")]),
     );
 
-    let options = requested_optional_params(&mut call).unwrap();
+    let options = requested_optional_params(&mut call).unwrap().video;
     assert_eq!(
         options.input_reference,
         Some(SuppliedMedia::Text("frame.png".to_owned()))
@@ -245,7 +248,15 @@ fn provider_request_params_maps_then_overrides_from_extra_body() {
         ..empty_options()
     };
 
-    let params = provider_request_params(&config, "sora-2", true, &options);
+    let params = provider_request_params(
+        &config,
+        "sora-2",
+        true,
+        &RequestedOptions {
+            video: options.clone(),
+            extra_query: None,
+        },
+    );
     assert_eq!(params.get("seconds"), Some(&text("8")));
     assert_eq!(params.get("size"), Some(&text("480x854")));
     assert_eq!(params.get("seed"), Some(&text("7")));
@@ -269,7 +280,43 @@ fn provider_request_params_drops_an_empty_extra_body_key() {
         ..empty_options()
     };
 
-    let params = provider_request_params(&config, "sora-2", false, &options);
+    let params = provider_request_params(
+        &config,
+        "sora-2",
+        false,
+        &RequestedOptions {
+            video: options,
+            extra_query: None,
+        },
+    );
     assert_eq!(params.get("size"), Some(&text("720x1280")));
     assert!(!params.contains_key("extra_body"));
+}
+
+#[rstest]
+#[case::named(None, Some(text_map(&[("after", "named")])))]
+#[case::loose(Some(text_map(&[("after", "loose")])), Some(text_map(&[("after", "loose")])))]
+#[case::empty(Some(text_map(&[])), Some(text_map(&[])))]
+#[case::null(Some(Json::Null), None)]
+fn query_survives_projection_and_mapping(
+    #[case] loose: Option<Json>,
+    #[case] expected: Option<Json>,
+) {
+    let mut call = request();
+    call.extra_query = Some(Params::from([("after".to_owned(), text("named"))]));
+    if let Some(value) = loose {
+        call.kwargs.insert("extra_query".to_owned(), value);
+    }
+    let options = requested_optional_params(&mut call).unwrap();
+    let mapped = provider_request_params(&TestingConfig::default(), "sora-2", false, &options);
+    assert_eq!(mapped.get("extra_query"), expected.as_ref());
+}
+
+#[test]
+fn a_query_of_the_wrong_type_names_the_field() {
+    let mut call = request();
+    call.kwargs
+        .insert("extra_query".to_owned(), text("not a map"));
+    let error = requested_optional_params(&mut call).unwrap_err();
+    assert_eq!(error.to_string(), "extra_query must be a map");
 }

@@ -8,12 +8,22 @@ use thiserror::Error;
 use super::providers::VideoGenerationConfig;
 use crate::api::video_records::{VideoCreateOptionalRequestParams, VideoObject};
 use crate::api::videos_http_transport::video_config::{
-    Params, RequestFiles, VideoHttpConfig, VideoLogging, VideoReply, VideoRequestContext,
+    ErrorFacts, Headers, Params, RequestFiles, VideoHttpConfig, VideoLogging, VideoReply,
+    VideoRequestContext,
 };
 
 #[derive(Debug, Error)]
 #[error("the testing config only maps options")]
 pub(crate) struct TestingError;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CreateCall {
+    pub(crate) model: String,
+    pub(crate) prompt: String,
+    pub(crate) optional_params: Params,
+    pub(crate) litellm_params: Params,
+    pub(crate) headers: Headers,
+}
 
 // one map_openai_params call, kept so a test can check the model and the drop-params switch it was handed
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -23,11 +33,12 @@ pub(crate) struct MapCall {
     pub(crate) options: VideoCreateOptionalRequestParams,
 }
 
-// a provider config whose mapping answer the test decides, with the real trait's transport half unused
+// The config records both option mapping and the transport adapter's request transform.
 #[derive(Debug, Default)]
 pub(crate) struct TestingConfig {
     mapped: Mutex<Option<Params>>,
     calls: Mutex<Vec<MapCall>>,
+    pub(crate) creates: Mutex<Vec<CreateCall>>,
 }
 
 impl TestingConfig {
@@ -35,6 +46,7 @@ impl TestingConfig {
         Self {
             mapped: Mutex::new(Some(mapped)),
             calls: Mutex::new(Vec::new()),
+            creates: Mutex::new(Vec::new()),
         }
     }
 
@@ -72,6 +84,14 @@ impl VideoGenerationConfig for TestingConfig {
 impl VideoHttpConfig for TestingConfig {
     type Error = TestingError;
 
+    fn error_facts(&self, error: &TestingError) -> ErrorFacts {
+        ErrorFacts {
+            message: error.to_string(),
+            status_code: Some(401),
+            headers: Headers::new(),
+        }
+    }
+
     fn get_complete_url(
         &self,
         _model: &str,
@@ -83,12 +103,26 @@ impl VideoHttpConfig for TestingConfig {
 
     fn transform_video_create_request(
         &self,
-        _model: &str,
-        _prompt: &str,
-        _optional_params: &Params,
-        _context: VideoRequestContext<'_>,
+        model: &str,
+        prompt: &str,
+        optional_params: &Params,
+        context: VideoRequestContext<'_>,
     ) -> Result<(Params, RequestFiles, String), TestingError> {
-        Err(TestingError)
+        self.creates
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(CreateCall {
+                model: model.to_owned(),
+                prompt: prompt.to_owned(),
+                optional_params: optional_params.clone(),
+                litellm_params: context.litellm_params.clone(),
+                headers: context.headers.clone(),
+            });
+        Ok((
+            optional_params.clone(),
+            Vec::new(),
+            context.api_base.to_owned(),
+        ))
     }
 
     fn transform_video_create_response(

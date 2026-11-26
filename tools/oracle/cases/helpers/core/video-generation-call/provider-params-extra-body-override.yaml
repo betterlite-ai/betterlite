@@ -11,7 +11,7 @@ call:
       user: null
       custom_llm_provider: null
       extra_headers: {x-team: health}
-      extra_query: null
+      extra_query: {after: cursor}
       extra_body: {size: "480x854", seed: "7"}
       timeout: 600
       kwargs: {user: u1}

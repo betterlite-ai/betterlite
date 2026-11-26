@@ -64,7 +64,7 @@ async fn the_inference_ignores_a_loose_api_base_but_the_handler_still_gets_it() 
 #[tokio::test]
 async fn a_supplied_client_reaches_the_async_handler() {
     let mut bench = Bench::new(Outcome::Answers);
-    let transport = FakeTransport;
+    let transport = FakeTransport::default();
     bench
         .invoke(request(), Some(&transport), Invocation::Async)
         .await

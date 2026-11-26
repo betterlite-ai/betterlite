@@ -11,6 +11,14 @@ use crate::api::bfl::edit::media::SuppliedMedia;
 use crate::api::video_records::VideoCreateOptionalRequestParams;
 use crate::api::videos_http_transport::video_config::Params;
 
+// The call accepts a query map that B3330's provider record does not declare.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RequestedOptions {
+    // ast-grep-ignore: no-long-names
+    pub video: VideoCreateOptionalRequestParams,
+    pub extra_query: Option<Params>,
+}
+
 const EXTRA_BODY: &str = "extra_body";
 const TIMEOUT: &str = "timeout";
 const INPUT_REFERENCE: &str = "input_reference";
@@ -23,15 +31,14 @@ const MEDIA: &str = "a file reference";
 // get_requested_video_generation_optional_param: nulls and owned names out, loose keywords over the rest, extra_body flat and last, timeout removed
 pub fn requested_optional_params(
     call: &mut VideoGenerationRequest,
-    // ast-grep-ignore: no-long-names
-) -> Result<VideoCreateOptionalRequestParams, VideoGenerationCallError> {
+) -> Result<RequestedOptions, VideoGenerationCallError> {
     let mut params = requested_params(call);
     let reference = match params.shift_remove(INPUT_REFERENCE) {
         None => call.input_reference.clone(),
         Some(value) => Some(supplied_media(value)?),
     };
     // ast-grep-ignore: no-long-names
-    Ok(VideoCreateOptionalRequestParams {
+    let video = VideoCreateOptionalRequestParams {
         input_reference: reference,
         image: params.shift_remove("image"),
         parameters: take(&mut params, "parameters", MAP)?,
@@ -43,6 +50,10 @@ pub fn requested_optional_params(
         user: take(&mut params, "user", STRING)?,
         extra_headers: take(&mut params, "extra_headers", TEXT_MAP)?,
         extra_body: take(&mut params, EXTRA_BODY, TEXT_MAP)?,
+    };
+    Ok(RequestedOptions {
+        video,
+        extra_query: take(&mut params, "extra_query", MAP)?,
     })
 }
 
@@ -83,14 +94,16 @@ pub fn provider_request_params<Config>(
     config: &Config,
     model: &str,
     drop_params: bool,
-    // ast-grep-ignore: no-long-names
-    options: &VideoCreateOptionalRequestParams,
+    options: &RequestedOptions,
 ) -> Params
 where
     Config: VideoGenerationConfig,
 {
-    let mut mapped = config.map_openai_params(options, model, drop_params);
-    if let Some(extra_body) = &options.extra_body {
+    let mut mapped = config.map_openai_params(&options.video, model, drop_params);
+    if let Some(query) = &options.extra_query {
+        mapped.insert("extra_query".to_owned(), Json::Object(query.clone()));
+    }
+    if let Some(extra_body) = &options.video.extra_body {
         for (name, value) in extra_body {
             mapped.insert(name.clone(), Json::Text(value.clone()));
         }

@@ -173,7 +173,7 @@ impl FakeProviders {
     fn new(journal: &Journal, mapped: Params, missing: bool) -> Self {
         Self {
             config: TestingConfig::returning(mapped),
-            source: FakeSource,
+            source: FakeSource::default(),
             missing,
             journal: journal.clone(),
         }
@@ -196,27 +196,54 @@ impl VideoGenerationProviders for FakeProviders {
     }
 }
 
-pub(crate) struct FakeSource;
+#[derive(Default)]
+pub(crate) struct FakeSource {
+    pub(crate) clients: Mutex<Vec<(ClientKind, Option<bool>, String)>>,
+}
 
 impl ClientSource for FakeSource {
     type Client = FakeTransport;
 
-    fn client(&self, _request: ClientRequest<'_>) -> Result<FakeTransport, ClientError> {
-        Ok(FakeTransport)
+    fn client(&self, request: ClientRequest<'_>) -> Result<FakeTransport, ClientError> {
+        self.clients
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push((
+                request.kind,
+                request.ssl_verify,
+                request.custom_llm_provider.to_owned(),
+            ));
+        Ok(FakeTransport::default())
     }
 }
 
-pub(crate) struct FakeTransport;
+pub(crate) struct FakeTransport {
+    pub(crate) status: u16,
+    pub(crate) requests: Mutex<Vec<VideoRequest>>,
+}
+
+impl Default for FakeTransport {
+    fn default() -> Self {
+        Self {
+            status: 200,
+            requests: Mutex::new(Vec::new()),
+        }
+    }
+}
 
 impl VideoTransport for FakeTransport {
     fn send(
         &self,
-        _request: VideoRequest,
+        request: VideoRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
+        self.requests
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(request);
         future_ready(Ok(UpstreamResponse {
-            status: 200,
+            status: self.status,
             headers: HeaderMap::new(),
-            body: Vec::new(),
+            body: b"quota exhausted".to_vec(),
         }))
     }
 }
@@ -300,7 +327,7 @@ impl LogEnv {
         }
     }
 
-    fn pre_post(&self) -> PrePostEnv<'_> {
+    pub(crate) fn pre_post(&self) -> PrePostEnv<'_> {
         PrePostEnv {
             debug: DebugSettings::default(),
             globals: GlobalFlags::default(),
@@ -328,7 +355,7 @@ pub(crate) fn redactor() -> Redactor {
 
 pub(crate) struct Fixture {
     pub(crate) state: LoggingState,
-    env: LogEnv,
+    pub(crate) env: LogEnv,
 }
 
 impl Fixture {

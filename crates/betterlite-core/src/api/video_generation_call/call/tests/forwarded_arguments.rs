@@ -30,7 +30,7 @@ fn merged_sorting_call() -> VideoGenerationRequest {
 #[test]
 fn the_handler_gets_the_original_extra_body_the_client_and_the_timeout() {
     let mut bench = Bench::new(Outcome::Answers);
-    let transport = FakeTransport;
+    let transport = FakeTransport::default();
     let object = bench
         .run_with(merged_sorting_call(), Some(&transport))
         .expect("the call answers");
@@ -44,8 +44,13 @@ fn the_handler_gets_the_original_extra_body_the_client_and_the_timeout() {
     );
     assert_eq!(inner.client, Some(ClientKind::Sync));
     assert!(!inner.is_async);
-    assert!(!inner.optional_params.contains_key("extra_query"));
-    assert!(!inner.litellm_params.contains_key("extra_query"));
+    let query = Json::Object(params(&[("after", text("cursor"))]));
+    assert_eq!(inner.optional_params.get("extra_query"), Some(&query));
+    assert_eq!(
+        inner.logged.optional_params.get("extra_query"),
+        Some(&query)
+    );
+    assert_eq!(inner.logged.litellm_params.get("extra_query"), Some(&query));
     assert_eq!(
         inner.litellm_params.get("extra_body"),
         Some(&Json::Object(IndexMap::from([
@@ -98,7 +103,7 @@ fn the_logging_object_and_the_async_flag_are_popped_before_the_params_are_built(
 #[test]
 fn a_true_async_flag_leaves_the_pending_handler_with_an_async_client() {
     let mut bench = Bench::new(Outcome::Answers);
-    let transport = FakeTransport;
+    let transport = FakeTransport::default();
     let mut call = request();
     call.kwargs
         .insert("async_call".to_owned(), Json::Bool(true));

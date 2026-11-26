@@ -80,7 +80,11 @@ impl Helper for Op {
             Input::Requested { call } => {
                 let mut request = call.request();
                 let options = requested_optional_params(&mut request).or_value_error()?;
-                serde_json::to_value(typed_params(&options)).or_value_error()
+                let mut params = typed_params(&options.video);
+                if let Some(query) = options.extra_query {
+                    params.insert("extra_query".to_owned(), Json::Object(query));
+                }
+                serde_json::to_value(params).or_value_error()
             }
             Input::Provider {
                 call,
