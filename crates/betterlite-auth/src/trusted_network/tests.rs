@@ -174,14 +174,9 @@ fn invalid_cidr_warning() {
         "",
     ]))));
     drop(guard);
-    let events = logs
-        .0
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .clone();
     assert_eq!(rendered(&parsed), list(&["10.0.0.0/8"]));
     assert_eq!(
-        events,
+        events(&logs),
         vec!["WARN Invalid CIDR in trusted_proxy_ranges: not-a-cidr, skipping".to_owned()]
     );
     // an internal-range list with no usable entry falls back to the documented defaults
@@ -447,8 +442,13 @@ fn request_from_trusted_proxy_gating() {
     assert!(!is_request_from_trusted_proxy(&peer_inside, &settings));
 }
 
+fn events(logs: &Logs) -> Vec<String> {
+    let recorded = logs.0.lock().unwrap_or_else(PoisonError::into_inner);
+    recorded.clone()
+}
+
 #[test]
-fn logs_only_the_ignored_header_and_unconfigured_ranges() {
+fn logs_the_ignored_header_only_when_the_toggle_is_off() {
     let logs = Logs::default();
     let subscriber = Registry::default().with(logs.clone());
     let guard = subscriber::set_default(subscriber);
@@ -461,16 +461,31 @@ fn logs_only_the_ignored_header_and_unconfigured_ranges() {
         get_mcp_client_ip(&forwarded(Some("10.0.0.5"), "203.0.113.7"), &defaults()),
         Some("10.0.0.5".to_owned())
     );
+    // the toggle on with no header has nothing to drop, so it adds no error line either
+    assert_eq!(
+        get_mcp_client_ip(&request(Some("10.0.0.5")), &mcp_settings(&["10.0.0.0/8"])),
+        Some("10.0.0.5".to_owned())
+    );
+    drop(guard);
+    assert_eq!(
+        events(&logs),
+        vec![
+            "ERROR received an X-Forwarded-For header with use_x_forwarded_for disabled; the direct peer is used for MCP access control".to_owned(),
+            "ERROR received an X-Forwarded-For header with use_x_forwarded_for disabled; the direct peer is used for MCP access control".to_owned(),
+        ]
+    );
+}
+
+#[test]
+fn logs_unconfigured_mcp_ranges_on_every_call() {
+    let logs = Logs::default();
+    let subscriber = Registry::default().with(logs.clone());
+    let guard = subscriber::set_default(subscriber);
     let trusted = mcp_settings(&["10.0.0.0/8"]);
     // trusted with configured ranges: the header is used and nothing is logged
     assert_eq!(
         get_mcp_client_ip(&forwarded(Some("10.0.0.5"), "203.0.113.7"), &trusted),
         Some("203.0.113.7".to_owned())
-    );
-    // the toggle on with no header has nothing to drop, so it adds no error line either
-    assert_eq!(
-        get_mcp_client_ip(&request(Some("10.0.0.5")), &trusted),
-        Some("10.0.0.5".to_owned())
     );
     // an empty range list is as untrusted as a missing one, and says so on every call
     assert!(!is_request_from_trusted_proxy(
@@ -486,16 +501,9 @@ fn logs_only_the_ignored_header_and_unconfigured_ranges() {
         &trusted
     ));
     drop(guard);
-    let events = logs
-        .0
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .clone();
     assert_eq!(
-        events,
+        events(&logs),
         vec![
-            "ERROR received an X-Forwarded-For header with use_x_forwarded_for disabled; the direct peer is used for MCP access control".to_owned(),
-            "ERROR received an X-Forwarded-For header with use_x_forwarded_for disabled; the direct peer is used for MCP access control".to_owned(),
             "WARN mcp_trusted_proxy_ranges is not configured, so X-Forwarded-* headers are not trusted".to_owned(),
             "WARN mcp_trusted_proxy_ranges is not configured, so X-Forwarded-* headers are not trusted".to_owned(),
         ]
@@ -503,7 +511,7 @@ fn logs_only_the_ignored_header_and_unconfigured_ranges() {
 }
 
 #[test]
-fn https_forwarded_trust() {
+fn https_base_url_precedes_the_literal_scheme() {
     let mut settings = defaults();
     assert!(!is_request_https(&request(None), &settings));
     let mut secure = request(None);
@@ -524,10 +532,12 @@ fn https_forwarded_trust() {
     assert!(!is_request_https(&secure, &settings));
     settings.proxy_base_url = Some("   ".to_owned());
     assert!(is_request_https(&secure, &settings));
+}
 
+#[test]
+fn https_forwarded_trust() {
     // a trusted proxy's X-Forwarded-Proto decides, in any case and by its first entry only
-    let mut configured = mcp_settings(&["10.0.0.0/8"]);
-    configured.proxy_base_url = None;
+    let configured = mcp_settings(&["10.0.0.0/8"]);
     assert!(is_request_https(
         &with_proto(Some("10.0.0.5"), "HTTPS, http", "http"),
         &configured
@@ -545,6 +555,13 @@ fn https_forwarded_trust() {
     assert!(is_request_https(
         &with_proto(Some("10.0.0.5"), "", "https"),
         &configured
+    ));
+    // the toggle off drops the header's authority even for a configured peer
+    let mut disabled = configured;
+    disabled.use_x_forwarded_for = false;
+    assert!(!is_request_https(
+        &with_proto(Some("10.0.0.5"), "https", "http"),
+        &disabled
     ));
 }
 
@@ -593,7 +610,10 @@ fn requires_a_trusted_direct_peer() {
         error.to_string(),
         "Custom UI SSO requires general_settings.trusted_proxy_ranges before trusting identity headers from an upstream proxy."
     );
+}
 
+#[test]
+fn rejects_a_peer_outside_the_ranges() {
     let mut configured = defaults();
     configured.trusted_proxy_ranges = Some(CidrRanges::List(list(&["10.0.0.0/8"])));
     assert!(
@@ -619,7 +639,12 @@ fn requires_a_trusted_direct_peer() {
             direct: "203.0.113.9".to_owned(),
         }
     );
-    // a missing peer is untrusted, never trusted
+}
+
+#[test]
+fn missing_peer_is_untrusted() {
+    let mut configured = defaults();
+    configured.trusted_proxy_ranges = Some(CidrRanges::List(list(&["10.0.0.0/8"])));
     let error = require_trusted_proxy_request(
         &request(None),
         &configured,
@@ -634,7 +659,12 @@ fn requires_a_trusted_direct_peer() {
             direct: "None".to_owned(),
         }
     );
+}
+
+#[test]
+fn unparsable_ranges_and_mcp_setting() {
     // only ranges that parse count as configured
+    let mut configured = defaults();
     configured.trusted_proxy_ranges = Some(CidrRanges::List(list(&["nope"])));
     assert!(matches!(
         require_trusted_proxy_request(

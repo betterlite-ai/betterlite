@@ -119,37 +119,50 @@ pub fn get_mcp_client_ip(
     }
     if use_xff && let Some(forwarded_for) = request.x_forwarded_for {
         if !is_request_from_trusted_proxy(request, settings) {
-            let direct_ip = request.peer;
-            if settings
-                .mcp_trusted_proxy_ranges
-                .as_deref()
-                .is_some_and(|ranges| !ranges.is_empty())
-            {
-                warn!(
-                    direct = ?direct_ip,
-                    "X-Forwarded-For header from an untrusted IP, ignoring"
-                );
-                return direct_ip.map(str::to_owned);
-            }
-            // XFF enabled without trusted ranges: the peer is usually the proxy itself, so fail closed
-            return Some(String::new());
+            return untrusted_forwarded_client_ip(request, settings);
         }
-        match resolve_num_trusted_hops(settings.mcp_xff_num_trusted_hops) {
-            TrustedHopCount::Invalid => return Some(String::new()),
-            TrustedHopCount::Count(count) => {
-                let Some(client_ip) = client_ip_from_xff(forwarded_for, count) else {
-                    warn!(
-                        hops = count,
-                        "X-Forwarded-For chain has fewer than mcp_xff_num_trusted_hops entries or an invalid address; failing closed"
-                    );
-                    return Some(String::new());
-                };
-                return Some(client_ip);
-            }
-            TrustedHopCount::Unset => {}
-        }
+        return Some(trusted_forwarded_client_ip(forwarded_for, settings));
     }
     Some(request_ip_address(request, use_xff))
+}
+
+// IPAddressUtils.get_mcp_client_ip's untrusted branch: the direct peer, or a missing peer fails closed.
+fn untrusted_forwarded_client_ip(
+    request: &NetworkRequest<'_>,
+    settings: &TrustedNetworkSettings,
+) -> Option<String> {
+    let direct_ip = request.peer;
+    if settings
+        .mcp_trusted_proxy_ranges
+        .as_deref()
+        .is_some_and(|ranges| !ranges.is_empty())
+    {
+        warn!(
+            direct = ?direct_ip,
+            "X-Forwarded-For header from an untrusted IP, ignoring"
+        );
+        return direct_ip.map(str::to_owned);
+    }
+    // XFF enabled without trusted ranges: the peer is usually the proxy itself, so fail closed
+    Some(String::new())
+}
+
+// the trusted branch: the Nth hop from the right, or the legacy whole header when the count is unset
+fn trusted_forwarded_client_ip(forwarded_for: &str, settings: &TrustedNetworkSettings) -> String {
+    match resolve_num_trusted_hops(settings.mcp_xff_num_trusted_hops) {
+        TrustedHopCount::Invalid => String::new(),
+        TrustedHopCount::Count(count) => {
+            let Some(client_ip) = client_ip_from_xff(forwarded_for, count) else {
+                warn!(
+                    hops = count,
+                    "X-Forwarded-For chain has fewer than mcp_xff_num_trusted_hops entries or an invalid address; failing closed"
+                );
+                return String::new();
+            };
+            client_ip
+        }
+        TrustedHopCount::Unset => forwarded_for.to_owned(),
+    }
 }
 
 // auth_utils._get_request_ip_address: the whole header when XFF is on, else the direct peer, else "".
