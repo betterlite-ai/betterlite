@@ -20,7 +20,6 @@ pub enum TeamFromTokenError {
     NonStringModel { index: usize },
 }
 
-// _team_obj_from_token: the team fields the token itself already carries, and nothing the row alone knows
 pub fn team_obj_from_token(
     token: &UserAPIKeyAuth,
 ) -> Result<LiteLLMTeamTableCachedObj, TeamFromTokenError> {
@@ -98,7 +97,6 @@ fn team_models(models: &[JsonData]) -> Result<Vec<String>, TeamFromTokenError> {
     Ok(names)
 }
 
-// _token_can_vouch_for_team: the dashboard sentinel always does, a deleted team never does, and a recorded grant does before the outage setting is read
 pub fn token_can_vouch_for_team(
     token: &UserAPIKeyAuth,
     lookup_error: &TeamLookupError,

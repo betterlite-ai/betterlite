@@ -23,7 +23,6 @@ pub enum ToolCheckError {
     Extraction(#[from] ExtractionError),
 }
 
-// check_tools_allowlist: no token, no tool-capable route or no effective allowlist means nothing to enforce
 pub fn check_tools_allowlist(
     request_body: &JsonObject,
     token: Option<&UserAPIKeyAuth>,

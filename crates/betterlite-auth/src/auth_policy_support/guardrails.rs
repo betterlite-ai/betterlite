@@ -25,7 +25,6 @@ pub enum GuardrailCheckError {
     Metadata(#[from] SafetyError),
 }
 
-// _guardrail_modification_check: any guardrail key in the two metadata containers or the root is a modification
 pub fn guardrail_modification_check(
     request_body: &JsonObject,
     team: Option<&LiteLLMTeamTable>,
@@ -44,7 +43,6 @@ pub fn guardrail_modification_check(
     Err(GuardrailCheckError::Denied)
 }
 
-// a dict counts, a JSON-string object counts, and malformed or non-object containers are ignored
 fn metadata_modifies(container: Option<&Json>) -> Result<bool, SafetyError> {
     let Some(fields) = metadata::coerce(container)? else {
         return Ok(false);
@@ -54,7 +52,6 @@ fn metadata_modifies(container: Option<&Json>) -> Result<bool, SafetyError> {
         .any(|key| fields.contains_key(*key)))
 }
 
-// can_modify_guardrails: only a dict team.metadata.guardrails with modify_guardrails literally False denies
 #[must_use]
 pub fn can_modify_guardrails(team: Option<&LiteLLMTeamTable>) -> bool {
     let Some(metadata) = team.and_then(|row| row.fields.base.metadata.as_ref()) else {
