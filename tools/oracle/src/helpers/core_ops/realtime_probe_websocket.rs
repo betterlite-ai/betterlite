@@ -40,7 +40,7 @@ impl Helper for Op {
         let runtime = RuntimeBuilder::new_current_thread()
             .enable_all()
             .build()
-            .map_err(failure)?;
+            .map_err(|error| failure(&error))?;
         let mut answered = Vec::with_capacity(input.scenarios.len());
         for scenario in &input.scenarios {
             let probe = Probe::new(scenario)?;
@@ -158,9 +158,12 @@ struct Probe<'case> {
 
 impl<'case> Probe<'case> {
     fn new(scenario: &'case Scenario) -> Result<Self, Box<HelperError>> {
-        let catalog_bytes = serde_json::to_vec(&scenario.catalog).map_err(failure)?;
-        let catalog =
-            Arc::new(ModelCatalog::parse(&catalog_bytes, UnknownFields::Warn).map_err(failure)?);
+        let catalog_bytes =
+            serde_json::to_vec(&scenario.catalog).map_err(|error| failure(&error))?;
+        let catalog = Arc::new(
+            ModelCatalog::parse(&catalog_bytes, UnknownFields::Warn)
+                .map_err(|error| failure(&error))?,
+        );
         let stored = stored_credentials(scenario);
         let settings = RealtimeProbeSettings {
             azure_realtime_protocol: scenario.settings.azure_realtime_protocol.clone(),
@@ -177,7 +180,8 @@ impl<'case> Probe<'case> {
             model_params: scenario.model_params.clone(),
         };
         let merged = merge_stored_credentials(&request.model_params, &stored);
-        let resolved = resolve_probe_parameters(&request, &merged).map_err(failure)?;
+        let resolved =
+            resolve_probe_parameters(&request, &merged).map_err(|error| failure(&error))?;
         let azure = ScriptedAzure {
             token: scenario.azure_ad_token.as_deref().map(SecretString::from),
         };
