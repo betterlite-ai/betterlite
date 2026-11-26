@@ -1,9 +1,23 @@
 from betterlite import _native as _native
+from betterlite._audio import aspeech as aspeech
+from betterlite._audio import atranscription as atranscription
+from betterlite._audio import speech as speech
+from betterlite._audio import transcription as transcription
 from betterlite._cache_ops import *
 from betterlite._cost import *
 from betterlite._cost_extra import *
+from betterlite._embeddings import aembedding as aembedding
+from betterlite._embeddings import embedding as embedding
+from betterlite._images import aimage_edit as aimage_edit
+from betterlite._images import aimage_generation as aimage_generation
+from betterlite._images import aimage_variation as aimage_variation
+from betterlite._images import image_edit as image_edit
+from betterlite._images import image_generation as image_generation
+from betterlite._images import image_variation as image_variation
 from betterlite._model_info import *
 from betterlite._provider import *
+from betterlite._rerank import arerank as arerank
+from betterlite._rerank import rerank as rerank
 from betterlite._settings.callbacks import *
 from betterlite._settings.constant_sets import *
 from betterlite._settings.cost import *
@@ -14,6 +28,11 @@ from betterlite._settings.provider_map import *
 from betterlite._settings.sets import *
 from betterlite._settings.tail import *
 from betterlite._settings.thread import *
+from betterlite._text import amoderation as amoderation
+from betterlite._text import atext_completion as atext_completion
+from betterlite._text import moderation as moderation
+from betterlite._text import text_completion as text_completion
+from betterlite._text.stream import TextCompletionStreamWrapper as TextCompletionStreamWrapper
 from betterlite._tokens import *
 from betterlite._version import version
 from betterlite.budget_manager import *
