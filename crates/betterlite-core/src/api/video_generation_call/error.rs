@@ -85,53 +85,58 @@ pub fn failure(
     redactor: &Redactor,
 ) -> VideoGenerationFailure {
     let message = error.to_string();
-    let class = error_class(
-        &error,
-        &message,
-        model,
-        provider.unwrap_or_default(),
-        redactor,
-    );
-    VideoGenerationFailure { error, class }
-}
-
-fn error_class(
-    error: &VideoGenerationCallError,
-    message: &str,
-    model: Option<&str>,
-    provider: &str,
-    redactor: &Redactor,
-) -> ErrorClass {
-    match error {
+    let provider_name = provider.unwrap_or_default();
+    let class = match &error {
+        // docs/compatibility.md: a value the declared type cannot hold is a 400 that names the field
         VideoGenerationCallError::FieldType { field, expected } => {
-            field_class(field, expected, model, provider)
+            let context = ErrorContext {
+                message: format!("{field} must be {expected}"),
+                model: model.map(str::to_owned),
+                provider: Some(provider_name.to_owned()),
+                max_retries: None,
+                num_retries: None,
+                body_type: None,
+                body_param: Some((*field).to_owned()),
+                body_code: None,
+            };
+            ErrorClass::BadRequest(Box::new(ResponseDetails::with_status(context, None)))
         }
         VideoGenerationCallError::Resolution(_) => {
-            resolution_class(message, model, provider, redactor)
+            resolution_class(&message, model, provider_name, redactor)
         }
         // the provider or model is the caller's input and the call can never succeed, so these are 400s alike
         VideoGenerationCallError::Unsupported { .. }
         | VideoGenerationCallError::ConfigMissing { .. }
         | VideoGenerationCallError::Selection(_)
         | VideoGenerationCallError::UnknownProvider { .. } => {
-            provider_class(message, model, provider)
+            provider_class(&message, model, provider_name)
         }
+        // the local text exception_type gives these: a ValueError with no status
         VideoGenerationCallError::Mock(_)
         | VideoGenerationCallError::Timeout { .. }
         | VideoGenerationCallError::Logging(_)
-        | VideoGenerationCallError::Suspended => value_class(message, model, provider, redactor),
+        | VideoGenerationCallError::Suspended => dispatch(
+            &DispatchInput::Raw(Box::new(raw_exception(
+                &message,
+                model,
+                provider_name,
+                VALUE_ERROR,
+            ))),
+            redactor,
+        ),
         VideoGenerationCallError::Transport {
             status_code,
             status_code_is_synthesized,
             ..
         } => transport_class(
-            message,
+            &message,
             model,
-            provider,
+            provider_name,
             (*status_code, *status_code_is_synthesized),
             redactor,
         ),
-    }
+    };
+    VideoGenerationFailure { error, class }
 }
 
 // get_llm_provider wraps its failures: the original model is appended and the class is a 400
@@ -145,7 +150,7 @@ fn resolution_class(
         "GetLLMProvider Exception - {message}\n\noriginal model: {}",
         model.unwrap_or("None")
     );
-    let mut raw = exception(&text, model, provider, BAD_REQUEST);
+    let mut raw = raw_exception(&text, model, provider, BAD_REQUEST);
     raw.status_code = Some(400);
     dispatch(&DispatchInput::Raw(Box::new(raw)), redactor)
 }
@@ -158,16 +163,6 @@ fn provider_class(message: &str, model: Option<&str>, provider: &str) -> ErrorCl
     )))
 }
 
-fn value_class(
-    message: &str,
-    model: Option<&str>,
-    provider: &str,
-    redactor: &Redactor,
-) -> ErrorClass {
-    let raw = exception(message, model, provider, VALUE_ERROR);
-    dispatch(&DispatchInput::Raw(Box::new(raw)), redactor)
-}
-
 // the handler's own class: the provider's status, or the text exception_type gives the absence of one
 fn transport_class(
     message: &str,
@@ -176,7 +171,7 @@ fn transport_class(
     status: (Option<u16>, bool),
     redactor: &Redactor,
 ) -> ErrorClass {
-    let mut raw = exception(message, model, provider, "");
+    let mut raw = raw_exception(message, model, provider, "");
     raw.status_code = status.0;
     raw.status_code_is_synthesized = status.1;
     dispatch(&DispatchInput::Raw(Box::new(raw)), redactor)
@@ -219,7 +214,7 @@ where
     }
 }
 
-fn exception(
+fn raw_exception(
     message: &str,
     model: Option<&str>,
     provider: &str,
@@ -235,19 +230,4 @@ fn exception(
         body: None,
         exception_type: exception_type.to_owned(),
     }
-}
-
-// docs/compatibility.md: a value the declared type cannot hold is a 400 that names the field
-fn field_class(field: &str, expected: &str, model: Option<&str>, provider: &str) -> ErrorClass {
-    let context = ErrorContext {
-        message: format!("{field} must be {expected}"),
-        model: model.map(str::to_owned),
-        provider: Some(provider.to_owned()),
-        max_retries: None,
-        num_retries: None,
-        body_type: None,
-        body_param: Some(field.to_owned()),
-        body_code: None,
-    };
-    ErrorClass::BadRequest(Box::new(ResponseDetails::with_status(context, None)))
 }

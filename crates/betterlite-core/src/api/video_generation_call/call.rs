@@ -1,5 +1,4 @@
 mod prepare;
-#[cfg(test)]
 mod tests;
 
 use std::future::Future;
@@ -55,7 +54,10 @@ pub struct VideoGenerationCaller<Providers, Handler> {
 
 // LiteLLM's mock_response short circuit on its own, for a caller with no provider or handler to hand (the oracle helper)
 pub fn mock_video_response(kwargs: &Params) -> Result<Option<VideoObject>, MockDecodeError> {
-    mock_answer::<VideoObject>(kwargs.get(MOCK_RESPONSE), MOCKED_OBJECT)
+    match kwargs.get(MOCK_RESPONSE) {
+        None | Some(Json::Null) => Ok(None),
+        Some(mock) => mock_answer::<VideoObject>(Some(mock), MOCKED_OBJECT),
+    }
 }
 
 impl<Providers, Handler> VideoGenerationCaller<Providers, Handler>
@@ -73,19 +75,14 @@ where
     ) -> Result<VideoGenerationWork<'call>, VideoGenerationFailure> {
         let GenerationCallEnvironment { logging, env } = environment;
         request.kwargs.shift_remove(LOGGING_OBJECT);
-        let is_async = matches!(
-            request.kwargs.shift_remove(ASYNC_CALL),
-            Some(Json::Bool(true))
-        );
+        let is_async = request.kwargs.shift_remove(ASYNC_CALL) == Some(Json::Bool(true));
         // the mock answers before any provider lookup and before the logging update
         if let Some(object) = self.mock_object(&request)? {
             return Ok(VideoGenerationWork::Ready(Box::new(object)));
         }
-        // GenericLiteLLMParams(**kwargs) reads the keywords as they stand before the options pop extra_body
         let litellm_params = request.kwargs.clone();
         let prepared = self.prepare(&mut request, logging, resolution)?;
-        let model = prepared.model.clone();
-        let provider = prepared.provider.clone();
+        let (model, provider) = (prepared.model.clone(), prepared.provider.clone());
         let handler_request = GenerationHandlerRequest {
             model: prepared.model,
             prompt: request.prompt,
@@ -130,8 +127,7 @@ where
             .insert(ASYNC_CALL.to_owned(), Json::Bool(true));
         let async_model = request.model.clone();
         let async_provider = request.custom_llm_provider.clone();
-        // a sync-path failure already went through exception_type and passes its wrapper through unchanged;
-        // only an error raised while awaiting the handler reaches avideo_generation's own except clause
+        // a sync-path failure already went through exception_type; only the handler's own error reaches this except
         match self.video_generation(request, client, resolution, environment)? {
             VideoGenerationWork::Ready(object) => Ok(*object),
             VideoGenerationWork::Pending(pending) => pending.await.map_err(|error| {

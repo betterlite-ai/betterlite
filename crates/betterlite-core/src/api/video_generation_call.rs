@@ -5,7 +5,6 @@ pub mod options;
 pub mod providers;
 
 mod logging;
-#[cfg(test)]
 #[path = "video_generation_call/testing/tests.rs"]
 pub(crate) mod testing;
 

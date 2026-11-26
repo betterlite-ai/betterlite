@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::sync::{Mutex, PoisonError};
 
 use betterlite_http::proxy::UpstreamResponse;

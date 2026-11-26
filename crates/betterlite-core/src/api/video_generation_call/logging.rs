@@ -17,8 +17,7 @@ pub(crate) struct LoggedGeneration<'call> {
     pub(crate) call_id: Option<&'call str>,
 }
 
-// update_from_kwargs(kwargs, model=model, user=user, optional_params=params,
-// litellm_params={"litellm_call_id", **params}, custom_llm_provider=provider), then the call type
+// update_from_kwargs with the mapped params as optional_params and litellm_params, then the create_video call type
 pub(crate) fn log_call(
     state: &mut LoggingState,
     call: &LoggedGeneration<'_>,

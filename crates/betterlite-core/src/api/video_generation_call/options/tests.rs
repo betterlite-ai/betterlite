@@ -134,6 +134,22 @@ fn extra_body_merges_and_its_flat_entries_beat_everything() {
 }
 
 #[test]
+fn a_loose_extra_body_hides_the_named_one() {
+    let mut call = request();
+    call.extra_body = Some(IndexMap::from([("user".to_owned(), text("named-user"))]));
+    call.kwargs
+        .insert("extra_body".to_owned(), text_map(&[("size", "480x854")]));
+
+    let options = requested_optional_params(&mut call).unwrap();
+    assert_eq!(options.user, None);
+    assert_eq!(options.size.as_deref(), Some("480x854"));
+    assert_eq!(
+        options.extra_body,
+        Some(IndexMap::from([("size".to_owned(), "480x854".to_owned())]))
+    );
+}
+
+#[test]
 fn extra_body_merges_null_entries_are_skipped() {
     let mut call = request();
     call.kwargs.insert(

@@ -433,15 +433,13 @@ impl Bench {
             logging: &mut self.fixture.state,
             env: &env,
         };
-        match self
+        let work = self
             .caller
-            .video_generation(request, client, &resolution, environment)?
-        {
-            VideoGenerationWork::Ready(object) => Ok(object),
-            VideoGenerationWork::Pending(_pending) => {
-                panic!("the sync entry left a pending handler for an async caller")
-            }
-        }
+            .video_generation(request, client, &resolution, environment)?;
+        let VideoGenerationWork::Ready(object) = work else {
+            panic!("the sync entry left a pending handler for an async caller")
+        };
+        Ok(object)
     }
 
     pub(crate) fn leaves_pending(
@@ -455,14 +453,11 @@ impl Bench {
             logging: &mut self.fixture.state,
             env: &env,
         };
-        match self
+        let work = self
             .caller
             .video_generation(request, client, &resolution, environment)
-        {
-            Ok(VideoGenerationWork::Pending(_pending)) => true,
-            Ok(VideoGenerationWork::Ready(_object)) => false,
-            Err(failed) => panic!("the sync entry prepares the call: {failed}"),
-        }
+            .expect("the sync entry prepares the call");
+        matches!(work, VideoGenerationWork::Pending(_pending))
     }
 
     pub(crate) async fn async_run(
@@ -472,12 +467,16 @@ impl Bench {
     ) -> Result<VideoObject, VideoGenerationFailure> {
         let env = self.fixture.env.pre_post();
         let resolution = self.resolver.context();
-        let environment = GenerationCallEnvironment {
-            logging: &mut self.fixture.state,
-            env: &env,
-        };
         self.caller
-            .avideo_generation(request, client, &resolution, environment)
+            .avideo_generation(
+                request,
+                client,
+                &resolution,
+                GenerationCallEnvironment {
+                    logging: &mut self.fixture.state,
+                    env: &env,
+                },
+            )
             .await
     }
 }

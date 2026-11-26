@@ -42,12 +42,11 @@ where
         resolution: &ResolutionContext<'_>,
     ) -> Result<Prepared<'call, Providers>, VideoGenerationFailure> {
         let resolved = self.resolve_target(request, resolution)?;
-        let model = resolved.model;
-        let provider = resolved.provider.slug().to_owned();
+        let (model, provider) = (resolved.model, resolved.provider.slug().to_owned());
         let tag = self.video_tag(&model, &provider)?;
         let (config, source) = self.config_source(&tag, &model, &provider)?;
         let options = requested_optional_params(request)
-            .map_err(|error| self.after_resolution(error, &model, &provider))?;
+            .map_err(|error| failure(error, Some(&model), Some(&provider), &self.redactor))?;
         let params = provider_request_params(config, &model, self.drop_params, &options);
         log_call(
             logging,
@@ -61,10 +60,15 @@ where
             },
         )
         .map_err(|error| {
-            self.after_resolution(VideoGenerationCallError::Logging(error), &model, &provider)
+            failure(
+                VideoGenerationCallError::Logging(error),
+                Some(&model),
+                Some(&provider),
+                &self.redactor,
+            )
         })?;
         let timeout = resolved_timeout(request.timeout, self.request_timeout)
-            .map_err(|error| self.after_resolution(error, &model, &provider))?;
+            .map_err(|error| failure(error, Some(&model), Some(&provider), &self.redactor))?;
         Ok(Prepared {
             model,
             provider,
@@ -123,28 +127,31 @@ where
         provider: &str,
     ) -> Result<VideoConfigTag, VideoGenerationFailure> {
         let provider_id = ProviderId::from_str(provider).map_err(|source| {
-            self.after_resolution(
+            failure(
                 VideoGenerationCallError::UnknownProvider {
                     provider: provider.to_owned(),
                     source,
                 },
-                model,
-                provider,
+                Some(model),
+                Some(provider),
+                &self.redactor,
             )
         })?;
         match get_provider_video_config(Some(model), provider_id) {
             Ok(Some(tag)) => Ok(tag),
-            Ok(None) => Err(self.after_resolution(
+            Ok(None) => Err(failure(
                 VideoGenerationCallError::Unsupported {
                     provider: provider.to_owned(),
                 },
-                model,
-                provider,
+                Some(model),
+                Some(provider),
+                &self.redactor,
             )),
-            Err(error) => Err(self.after_resolution(
+            Err(error) => Err(failure(
                 VideoGenerationCallError::Selection(error),
-                model,
-                provider,
+                Some(model),
+                Some(provider),
+                &self.redactor,
             )),
         }
     }
@@ -157,24 +164,16 @@ where
         provider: &str,
     ) -> Result<(&'call Providers::Config, &'call Providers::Source), VideoGenerationFailure> {
         let Some((config, source)) = self.providers.video_config(tag) else {
-            return Err(self.after_resolution(
+            return Err(failure(
                 VideoGenerationCallError::ConfigMissing {
                     provider: provider.to_owned(),
                 },
-                model,
-                provider,
+                Some(model),
+                Some(provider),
+                &self.redactor,
             ));
         };
         Ok((config, source))
-    }
-
-    fn after_resolution(
-        &self,
-        error: VideoGenerationCallError,
-        model: &str,
-        provider: &str,
-    ) -> VideoGenerationFailure {
-        failure(error, Some(model), Some(provider), &self.redactor)
     }
 }
 
