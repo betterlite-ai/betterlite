@@ -1,0 +1,60 @@
+kind: helper
+name: entity-model-access-resolved-check-order
+call:
+  entity_model_access:
+    steps:
+      - function: resolved
+        model: claude
+        database: true
+        token: {token: hash-1, models: [gpt-4o], config: {rpm: 1}}
+      - function: resolved
+        model: gpt-4o
+        database: true
+        token: {token: hash-1, models: [all-team-models], team_id: team-1}
+        cache:
+          "team_id:team-1": {team_id: team-1, models: [gpt-4o]}
+      - function: resolved
+        model: claude
+        database: true
+        token: {token: hash-1, models: [gpt-4o], team_id: team-1}
+        cache:
+          "team_id:team-1": {team_id: team-1, models: [claude]}
+      - function: resolved
+        model: gpt-4o
+        database: true
+        token: {token: hash-1, team_id: team-1, user_id: user-1}
+        cache:
+          "team_id:team-1": {team_id: team-1, models: [gpt-4o]}
+          "team_membership:user-1:team-1": {user_id: user-1, team_id: team-1, budget_id: budget-1, litellm_budget_table: {allowed_models: [claude]}}
+      - function: resolved
+        model: gpt-4o
+        database: true
+        token: {token: hash-1, team_id: team-1, user_id: user-1, project_id: project-1}
+        cache:
+          "team_id:team-1": {team_id: team-1, models: [gpt-4o]}
+          "team_membership:user-1:team-1": {user_id: user-1, team_id: team-1, budget_id: budget-1, litellm_budget_table: {allowed_models: [gpt-4o]}}
+          "project_id:project-1": {project_id: project-1, models: [claude]}
+      - function: resolved
+        model: claude
+        database: true
+        token: {token: hash-1, team_id: team-1, access_group_ids: [ag-owner]}
+        cache:
+          "team_id:team-1": {team_id: team-1, models: [gpt-4o]}
+          "access_group_id:ag-owner": {access_group_id: ag-owner, access_group_name: owner group, access_model_names: [claude], assigned_team_ids: [team-1]}
+      - function: resolved
+        model: claude
+        database: true
+        token: {token: hash-9, team_id: team-1, access_group_ids: [ag-other]}
+        cache:
+          "team_id:team-1": {team_id: team-1, models: [gpt-4o]}
+          "access_group_id:ag-other": {access_group_id: ag-other, access_group_name: other group, access_model_names: [claude], assigned_team_ids: [team-2]}
+      - function: resolved
+        model: gpt-4o
+        database: false
+        token: {token: hash-1, team_id: team-1, team_models: [gpt-4o], user_id: user-1}
+      - function: resolved
+        model: claude
+        database: false
+        token: {token: hash-1, team_id: team-1, team_models: [gpt-4o], user_id: user-1}
+env: {}
+compare: {ignore: []}

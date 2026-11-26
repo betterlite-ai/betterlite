@@ -1,0 +1,11 @@
+kind: helper
+name: entity-model-access-seed
+call:
+  entity_model_access:
+    steps:
+      - function: key
+        model: claude
+        database: false
+        token: {token: hash-1, models: [claude]}
+env: {}
+compare: {ignore: []}

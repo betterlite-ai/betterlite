@@ -1,0 +1,78 @@
+task: B7891
+deviations:
+  - what: >-
+      The sandbox tool registry is held by the native session and not in a module global.
+    why: >-
+      The rules forbid module-level state. The sandbox_tools module keeps one NativeDecisionSession
+      and registers the tools in it, so a register_sandbox_tools call replaces the tools of that
+      session and a later resolve_sandbox_tool through the same session answers the lookups
+      LiteLLM's _SANDBOX_TOOL_REGISTRY answered.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/sandbox/sandbox_tools.py#L12
+  - what: This task has no helper oracle cases.
+    why: >-
+      The functions call a native session, so pytest compares both packages against one local
+      server.
+    link: ""
+  - what: >-
+      `client` and `shared_session` raise UnsupportedCallArgument in all nine functions, and a
+      `logger_fn` is dropped with a warning.
+    why: >-
+      A Python HTTP client cannot drive the Rust client (B158), and the native call has no Python
+      callbacks to invoke. LiteLLM takes all three through **kwargs: its client decorator calls
+      logger_fn with the result, decisions forwards the rest as litellm params, and the sandbox
+      functions hand every non-internal kwarg to the provider config.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/sandbox/main.py#L48
+  - what: >-
+      The entrypoints are not decorated with @client, so no LiteLLM callback or logger event is
+      emitted, a caller's litellm_logging_obj is never updated, and litellm_call_id,
+      litellm_trace_id and litellm_metadata are stripped from the call.
+    why: >-
+      The wheel's Python layer builds no LiteLLM logging state. The native session owns the call,
+      and its pre/post logging sink discards the records because there are no Python callbacks to
+      hand them to.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/sandbox/main.py#L51-L63
+  - what: >-
+      A sandbox provider string outside e2b and opensandbox raises ValueError "Code execution is
+      not supported for provider: <provider>", where LiteLLM raises "'<provider>' is not a valid
+      SandboxProviders".
+    why: >-
+      LiteLLM first builds its SandboxProviders enum, so only a string naming a member reaches the
+      "not supported" branch. The native dispatch has one unsupported-provider error, and its text
+      is LiteLLM's own wording for a provider with no config, which names the provider the caller
+      passed. Both errors are ValueError.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/sandbox/main.py#L41
+  - what: >-
+      A sandbox tool whose litellm_params is not a mapping raises ValueError naming litellm_params,
+      where LiteLLM calls .get on that value and raises AttributeError.
+    why: >-
+      betterlite reports a wrongly typed field by name, as docs/compatibility.md says, instead of
+      leaking the attribute error of a dict method.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/sandbox/sandbox_tools.py#L32
+  - what: >-
+      A failed delete in acode_interpreter_tool is ignored silently, where LiteLLM writes
+      "sandbox: failed to delete ephemeral container: ..." to its verbose debug log.
+    why: >-
+      The run's result or error is still what the call answers, and the container is still deleted
+      after the run in both; only the debug line for a cleanup that failed is missing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/sandbox/main.py#L138-L145
+  - what: >-
+      supported_decisions_providers lives in betterlite.decisions.main and is importable from
+      betterlite.decisions, where LiteLLM keeps it in litellm.decisions.call. ContainerHandle and
+      CodeExecutionResult live in betterlite.sandbox.main and expose a hidden_params property,
+      where LiteLLM keeps both classes in litellm.llms.base_llm.sandbox.transformation with the
+      hidden params private.
+    why: >-
+      The task's scope names these modules and has no Python call or transformation module. The
+      hidden params have to be readable so a created handle can be passed back to arun_code and
+      adelete_sandbox.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/decisions/call.py#L88
+  - what: >-
+      Sandbox provider HTTP status failures raise a plain Exception with the native error as
+      their cause, rather than httpx.HTTPStatusError with a request and response. The status
+      appears in the message; response headers, body and URL are unavailable in Python.
+    why: >-
+      B3519's E2bError::HttpStatus and OpenSandboxError::HttpStatus retain only a status number.
+      Rebuilding a faithful HTTPStatusError requires provider transport changes outside B7891's
+      scope. This entry keeps the current behavior explicitly instead of fabricating HTTP metadata.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L834
+kept_bugs: []

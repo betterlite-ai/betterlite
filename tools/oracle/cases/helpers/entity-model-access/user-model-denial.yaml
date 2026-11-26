@@ -1,0 +1,30 @@
+kind: helper
+name: entity-model-access-user-model-denial
+call:
+  entity_model_access:
+    steps:
+      - function: user
+        model: fast
+        database: false
+        user: {user_id: user-1, models: [gpt-4o]}
+        alias_targets: {fast: claude}
+      - function: user
+        model: fast
+        database: false
+        user: {user_id: user-1, models: [claude]}
+        alias_targets: {fast: claude}
+      - function: user
+        model: fast
+        database: false
+        user: {user_id: user-1, models: [fast]}
+        alias_targets: {fast: claude}
+      - function: user
+        model: claude
+        database: false
+        user: {user_id: user-1, models: [gpt-4o]}
+      - function: user
+        model: claude
+        database: false
+        user: {user_id: user-1, models: [gpt-4o, claude]}
+env: {}
+compare: {ignore: []}
