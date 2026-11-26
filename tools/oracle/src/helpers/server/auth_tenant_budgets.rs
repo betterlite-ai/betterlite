@@ -61,7 +61,14 @@ async fn answer(call: &Call) -> Result<Value, Failure> {
     let token = token_of(call)?;
     let world = TagWorld::new(call.tag_rows.clone(), call.group_rows.clone());
     match call.function {
-        Function::ProjectHard => project_hard(call, &answers, token.as_ref()).await,
+        Function::ProjectHard => match call.project.as_ref() {
+            Some(row) => {
+                let outcome =
+                    project::max_budget_check(row, token.as_ref(), &answers.admission).await;
+                recorded(&answers, outcome, None)
+            }
+            None => recorded(&answers, Ok(()), None),
+        },
         Function::ProjectSoft => Ok(project_soft(call, &answers, token.as_ref())),
         Function::Organization => organization_value(call, &answers, token).await,
         Function::Tags => tags_value(call, &answers, &world).await,
@@ -74,18 +81,6 @@ fn token_of(call: &Call) -> Result<Option<UserAPIKeyAuth>, Failure> {
         return Ok(None);
     };
     Ok(Some(UserAPIKeyAuth::construct(AuthInput::Dict(fields))?))
-}
-
-async fn project_hard(
-    call: &Call,
-    answers: &Answers<'_>,
-    token: Option<&UserAPIKeyAuth>,
-) -> Result<Value, Failure> {
-    let Some(row) = call.project.as_ref() else {
-        return recorded(answers, Ok(()), None);
-    };
-    let outcome = project::max_budget_check(row, token, &answers.admission).await;
-    recorded(answers, outcome, None)
 }
 
 fn project_soft(call: &Call, answers: &Answers<'_>, token: Option<&UserAPIKeyAuth>) -> Value {
@@ -110,10 +105,11 @@ async fn organization_value(
         &answers.admission,
     )
     .await;
-    let carried = match token.as_ref() {
-        Some(token) => carried_record(token)?,
-        None => Value::Null,
-    };
+    let carried = token
+        .as_ref()
+        .map(carried_record)
+        .transpose()?
+        .unwrap_or(Value::Null);
     recorded(answers, outcome, Some(carried))
 }
 
@@ -134,14 +130,16 @@ async fn groups_value(
     answers: &Answers<'_>,
     world: &TagWorld,
 ) -> Result<Value, Failure> {
-    let sources = sources(world, call.database);
-    let outcome = access_groups::access_group_max_budget_check(
-        &call.matched_model_access_groups,
-        &sources,
-        &answers.admission,
+    recorded(
+        answers,
+        access_groups::access_group_max_budget_check(
+            &call.matched_model_access_groups,
+            &sources(world, call.database),
+            &answers.admission,
+        )
+        .await,
+        None,
     )
-    .await;
-    recorded(answers, outcome, None)
 }
 
 fn sources(world: &TagWorld, database: bool) -> TenantSources<'_> {

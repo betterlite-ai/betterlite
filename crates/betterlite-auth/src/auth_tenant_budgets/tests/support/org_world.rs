@@ -7,6 +7,9 @@ use crate::auth_cache::AuthCacheError;
 use crate::auth_org_lookup::ports::{OrgCache, OrgStore, StoreAnswer};
 use crate::auth_prefetch::rows::CachedProject;
 
+// the cache trait's fallible write answer, so each impl names it once
+type CacheWrite = Result<(), AuthCacheError>;
+
 // the B879 store and cache over one seeded row; a None row is the database answer that get_org_object raises NotFound for
 #[derive(Default)]
 pub(crate) struct OrgWorld {
@@ -49,12 +52,7 @@ impl OrgCache for OrgWorld {
         Ok(None)
     }
 
-    async fn write_org(
-        &self,
-        key: &str,
-        _org: &OrganizationTable,
-        _ttl: f64,
-    ) -> Result<(), AuthCacheError> {
+    async fn write_org(&self, key: &str, _org: &OrganizationTable, _ttl: f64) -> CacheWrite {
         self.writes
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -66,12 +64,7 @@ impl OrgCache for OrgWorld {
         Ok(None)
     }
 
-    async fn write_project(
-        &self,
-        _key: &str,
-        _project: &CachedProject,
-        _ttl: f64,
-    ) -> Result<(), AuthCacheError> {
+    async fn write_project(&self, _key: &str, _project: &CachedProject, _ttl: f64) -> CacheWrite {
         Ok(())
     }
 

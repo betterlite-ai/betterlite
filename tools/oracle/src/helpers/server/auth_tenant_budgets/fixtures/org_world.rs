@@ -9,6 +9,9 @@ use betterlite_auth::auth_read::table::AuthReadError;
 use betterlite_db::postgres_store::errors::DbError;
 use betterlite_db::resource_rows::organization::OrganizationTable;
 
+// the cache trait's fallible write answer, so each impl names it once
+type CacheWrite = Result<(), AuthCacheError>;
+
 // the organization lookup a case seeds, either answering its one row or failing like an unreachable database
 pub(crate) struct OrgWorld {
     organization: Option<OrganizationTable>,
@@ -48,12 +51,7 @@ impl OrgCache for OrgWorld {
             .clone())
     }
 
-    async fn write_org(
-        &self,
-        _key: &str,
-        org: &OrganizationTable,
-        _ttl: f64,
-    ) -> Result<(), AuthCacheError> {
+    async fn write_org(&self, _key: &str, org: &OrganizationTable, _ttl: f64) -> CacheWrite {
         *self.cached.lock().unwrap_or_else(PoisonError::into_inner) = Some(org.clone());
         Ok(())
     }
@@ -62,12 +60,7 @@ impl OrgCache for OrgWorld {
         Ok(None)
     }
 
-    async fn write_project(
-        &self,
-        _key: &str,
-        _project: &CachedProject,
-        _ttl: f64,
-    ) -> Result<(), AuthCacheError> {
+    async fn write_project(&self, _key: &str, _project: &CachedProject, _ttl: f64) -> CacheWrite {
         Ok(())
     }
 

@@ -191,6 +191,15 @@ impl TagBudgetCache for TagWorld {
     }
 }
 
+// the rows a batch read answers with; both maps are keyed by the requested name
+fn rows_named<Row: Clone>(rows: &BTreeMap<String, Row>, names: &[String]) -> Vec<Row> {
+    names
+        .iter()
+        .filter_map(|name| rows.get(name))
+        .cloned()
+        .collect()
+}
+
 #[async_trait]
 impl BudgetRows<TagTable> for TagWorld {
     async fn by_names(&self, names: Vec<String>) -> Result<Vec<TagTable>, TagBudgetRowsFailure> {
@@ -198,12 +207,7 @@ impl BudgetRows<TagTable> for TagWorld {
             .tag_batches
             .lock()
             .unwrap_or_else(PoisonError::into_inner) += 1;
-        Ok(self
-            .tags
-            .values()
-            .filter(|tag| names.contains(&tag.tag_name))
-            .cloned()
-            .collect())
+        Ok(rows_named(&self.tags, &names))
     }
 
     async fn registry_rows(&self, _take: i64) -> Result<Vec<TagTable>, TagBudgetRowsFailure> {
@@ -221,13 +225,7 @@ impl BudgetRows<ModelAccessGroupBudgetRow> for TagWorld {
             .group_batches
             .lock()
             .unwrap_or_else(PoisonError::into_inner) += 1;
-        let mut found = Vec::new();
-        for name in names {
-            if let Some(group) = self.groups.get(&name) {
-                found.push(group.clone());
-            }
-        }
-        Ok(found)
+        Ok(rows_named(&self.groups, &names))
     }
 
     async fn registry_rows(
