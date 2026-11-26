@@ -196,7 +196,7 @@ impl ConfigAudit for Recorder {
 pub(crate) struct RecordingDatabase {
     events: Events,
     sections: Mutex<BTreeMap<String, BTreeMap<String, JsonValue>>>,
-    failing: bool,
+    failure: Mutex<Option<DbError>>,
 }
 
 impl RecordingDatabase {
@@ -204,15 +204,15 @@ impl RecordingDatabase {
         Self {
             events: Arc::clone(events),
             sections: Mutex::new(BTreeMap::new()),
-            failing: false,
+            failure: Mutex::new(None),
         }
     }
 
-    pub(crate) fn failing(events: &Events) -> Self {
+    pub(crate) fn failing(events: &Events, failure: DbError) -> Self {
         Self {
             events: Arc::clone(events),
             sections: Mutex::new(BTreeMap::new()),
-            failing: true,
+            failure: Mutex::new(Some(failure)),
         }
     }
 
@@ -239,10 +239,9 @@ impl ConfigStateDatabase for RecordingDatabase {
         write: &SectionWrite,
     ) -> Result<Option<BTreeMap<String, JsonValue>>, ConfigStateError> {
         self.events.lock().expect("events").push("save");
-        if self.failing {
-            return Err(ConfigStateError::Database {
-                source: DbError::NoDbConnected,
-            });
+        let failure = self.failure.lock().expect("failure").take();
+        if let Some(error) = failure {
+            return Err(ConfigStateError::Database { source: error });
         }
         let existing = self
             .sections
@@ -314,10 +313,10 @@ impl Harness {
         Self::assemble(events, overlay, database, enabled_state())
     }
 
-    pub(crate) fn failing_database(config: BTreeMap<String, JsonValue>) -> Self {
+    pub(crate) fn failing_database(config: BTreeMap<String, JsonValue>, failure: DbError) -> Self {
         let events = events();
         let overlay = ScriptedOverlay::returning(&events, config);
-        let database = RecordingDatabase::failing(&events);
+        let database = RecordingDatabase::failing(&events, failure);
         Self::assemble(events, overlay, database, enabled_state())
     }
 

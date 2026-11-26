@@ -3,6 +3,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use betterlite_db::database_availability::chain::Chain;
 use betterlite_db::database_availability::projection::service_unavailable_error;
+use betterlite_db::database_faults::native::is_native_transport_error;
 use betterlite_error::envelope::{ErrorObject, ErrorResponse, WireField};
 use serde::Serialize;
 use thiserror::Error;
@@ -75,6 +76,14 @@ impl IntoResponse for SettingsUpdateError {
         match &self {
             Self::StorageDisabled => storage_disabled(),
             Self::Overlay(ConfigOverlayPortError::DatabaseUnavailable) => database_unavailable(),
+            // a save that hits a disconnect or pool timeout answers the pinned unhandled handler's no_db_connection 503 too
+            Self::Save(ConfigStateError::Database { source }) => {
+                if is_native_transport_error(source) {
+                    database_unavailable()
+                } else {
+                    unhandled_error(&self)
+                }
+            }
             Self::Overlay(ConfigOverlayPortError::Reload | ConfigOverlayPortError::PassThrough)
             | Self::Config(_)
             | Self::Save(
@@ -85,7 +94,6 @@ impl IntoResponse for SettingsUpdateError {
                 | ConfigStateError::SerializeConfig { .. }
                 | ConfigStateError::Encode { .. }
                 | ConfigStateError::Decode { .. }
-                | ConfigStateError::Database { .. }
                 | ConfigStateError::EnvironmentValue(_),
             ) => unhandled_error(&self),
             // _raise_config_owned's HTTPException detail, answered with save_config's 400

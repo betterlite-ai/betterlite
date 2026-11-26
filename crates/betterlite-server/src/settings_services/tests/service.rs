@@ -2,6 +2,7 @@ use axum::body::to_bytes;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse as _, Response};
 use betterlite_config::sections::settings::{JsonValue, Section};
+use betterlite_db::postgres_store::errors::DbError;
 
 use crate::config_overlay_port::ConfigOverlayPortError;
 use crate::settings_services::error::SettingsUpdateError;
@@ -152,6 +153,13 @@ async fn null_litellm_settings_is_replaced_with_the_selected_block() {
         section.get("default_internal_user_params"),
         Some(&json!({"user_role": "internal_user_viewer"}))
     );
+    assert_eq!(
+        harness.recording(),
+        vec!["reload", "publish", "save", "audit"]
+    );
+    let audited = harness.audited();
+    assert_eq!(audited.len(), 1);
+    assert_eq!(audited[0].before_value, None);
 }
 
 #[tokio::test]
@@ -257,8 +265,8 @@ async fn a_non_object_litellm_settings_is_refused_before_publishing() {
 }
 
 #[tokio::test]
-async fn failed_save_keeps_the_published_value_and_skips_the_audit() {
-    let mut harness = Harness::failing_database(values(&[]));
+async fn failed_save_answers_503_and_keeps_the_published_value() {
+    let mut harness = Harness::failing_database(values(&[]), DbError::NoDbConnected);
     let settings = record(values(&[("user_role", json!("internal_user_viewer"))]));
     let error = harness
         .update(&settings)
@@ -271,6 +279,38 @@ async fn failed_save_keeps_the_published_value_and_skips_the_audit() {
     assert!(harness.audited().is_empty());
     assert!(harness.recording().contains(&"save"));
     assert_eq!(harness.stored(Section::LitellmSettings), None);
+    let (status, body) = error_body(error).await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        body,
+        json!({
+            "error": {
+                "message": "Service Unavailable, the authentication database is temporarily unreachable. Please retry shortly.",
+                "type": "no_db_connection",
+                "param": "None",
+                "code": "503"
+            }
+        })
+    );
+}
+
+#[tokio::test]
+async fn save_database_data_fault_answers_500() {
+    let mut harness = Harness::failing_database(values(&[]), DbError::CreateNull);
+    let settings = record(values(&[("user_role", json!("internal_user_viewer"))]));
+    let error = harness
+        .update(&settings)
+        .await
+        .expect_err("the config database write failed");
+    assert!(matches!(&error, SettingsUpdateError::Save(_)));
+    assert_eq!(harness.published().len(), 1);
+    assert!(harness.audited().is_empty());
+    let (status, body) = error_body(error).await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(
+        body,
+        json!({"error": {"message": "Internal server error", "type": "internal_server_error"}})
+    );
 }
 
 #[tokio::test]

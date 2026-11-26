@@ -48,6 +48,15 @@ pub async fn update_litellm_setting(
             .collect(),
     );
     let mut config = ports.overlay.reload_config().await?;
+    // a null stored section reads as empty, but save_config diffs the baseline, which must be an object too
+    if let Some(baseline) = config.baseline.as_mut()
+        && baseline.get(LITELLM_SETTINGS) == Some(&JsonValue::Null)
+    {
+        baseline.insert(
+            LITELLM_SETTINGS.to_owned(),
+            JsonValue::Object(BTreeMap::new().into_iter().collect()),
+        );
+    }
     let mut section = object_entries(config.values.get(LITELLM_SETTINGS), LITELLM_SETTINGS)?;
     let before_value = section.get(update.setting.as_str()).cloned();
     ports.runtime.publish(update.setting, &stored);
