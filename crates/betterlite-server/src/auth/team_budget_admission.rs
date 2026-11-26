@@ -168,7 +168,7 @@ pub(crate) async fn prefetch(stage: &TeamBudgetStageInput) -> Result<(), Box<Pro
 }
 
 // _as_proxy_exception: a budget denial keeps its status, the member denial is already a ProxyException, a membership outage is B1217's 503 and the rest are 401s
-fn team_budget_exception(error: &TeamBudgetError) -> ProxyException {
+pub(crate) fn team_budget_exception(error: &TeamBudgetError) -> ProxyException {
     let failure = match error {
         TeamBudgetError::Denied(denial) => AuthFailure::BudgetExceeded {
             message: denial.message.clone(),

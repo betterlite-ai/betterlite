@@ -15,6 +15,7 @@ use crate::auth::auth_request_models::{RequestModelStageInput, resolve};
 use crate::auth::auth_request_policy::{self, AuthRequestPolicyStageInput};
 use crate::auth::auth_resource_grants::{self, ResourceGrantStageInput};
 use crate::auth::auth_tag_budgets::TagBudgetStageInput;
+use crate::auth::entity_model_access::EntityModelStageInput;
 use crate::auth::request_body_safety::{self, RequestBodySafetyStageInput};
 use crate::auth::team_budget_admission::TeamBudgetStageInput;
 use crate::error_body::AuthenticationFailure;
@@ -26,6 +27,7 @@ pub enum AuthBackend {
     RequestBodySafety,
     AuthRequestModels,
     AuthModelPatterns,
+    EntityModelAccess,
     AuthResourceGrants,
     AuthTagBudgets,
     AuthKeyBudgets,
@@ -41,6 +43,7 @@ pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
     AuthBackend::RequestBodySafety,
     AuthBackend::AuthRequestModels,
     AuthBackend::AuthModelPatterns,
+    AuthBackend::EntityModelAccess,
     AuthBackend::AuthResourceGrants,
     AuthBackend::AuthTagBudgets,
     AuthBackend::AuthKeyBudgets,
@@ -56,6 +59,7 @@ pub enum StageInput {
     RequestBodySafety(Box<RequestBodySafetyStageInput>),
     AuthRequestModels(Box<RequestModelStageInput>),
     AuthModelPatterns(Box<ModelPatternStageInput>),
+    EntityModelAccess(Box<EntityModelStageInput>),
     AuthResourceGrants(Box<ResourceGrantStageInput>),
     AuthTagBudgets(Box<TagBudgetStageInput>),
     AuthKeyBudgets(Box<KeyBudgetStageInput>),
@@ -88,6 +92,7 @@ pub trait BudgetAdmission {
 pub(crate) enum StageFailure {
     Authentication(Box<AuthenticationFailure>),
     ModelAccess(Box<ModelAccessRejection>),
+    EntityModelAccess(Box<ProxyException>),
     AuthRequestPolicy(Box<ProxyException>),
     ResourceGrants(Box<ProxyException>),
     TagBudgets(Box<ProxyException>),
@@ -117,6 +122,13 @@ pub(crate) fn dispatch(
         AuthBackend::AuthRequestModels => auth_request_models_stage(input)
             .map_err(|failure| StageFailure::Authentication(Box::new(failure))),
         AuthBackend::AuthModelPatterns => auth_model_patterns_stage(input),
+        AuthBackend::EntityModelAccess => {
+            let StageInput::EntityModelAccess(stage) = input else {
+                return Err(StageFailure::from(AuthenticationFailure::Missing));
+            };
+            // the grant checks ran in the prefetch, so only the identity is left
+            Ok(stage.context.clone())
+        }
         AuthBackend::AuthResourceGrants => auth_resource_grants_stage(input),
         AuthBackend::AuthTagBudgets => {
             let StageInput::AuthTagBudgets(stage) = input else {
