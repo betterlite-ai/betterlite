@@ -158,7 +158,7 @@ pub(crate) async fn prefetch(stage: &ModelBudgetStageInput) -> Result<(), Box<Pr
     let Some(limiter) = rule.key_limiter.as_deref() else {
         return Ok(());
     };
-    let applied = check_key_budget(rule, auth, limiter, stage.body.as_deref()).await?;
+    let applied = check_key_budget(rule, auth, limiter, stage.body.as_ref()).await?;
     *rule.applied.lock().unwrap_or_else(PoisonError::into_inner) = applied;
     Ok(())
 }
