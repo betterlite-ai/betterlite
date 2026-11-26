@@ -1,6 +1,6 @@
 import asyncio
-from collections.abc import Mapping
-from typing import Final, Literal, NotRequired, TypedDict
+from collections.abc import Callable, Coroutine, Mapping
+from typing import Final, Literal, NotRequired, TypedDict, cast
 from urllib.parse import urlencode
 
 from litellm.proxy._types import UserAPIKeyAuth
@@ -14,8 +14,6 @@ from starlette.types import Scope
 from typing_extensions import override
 
 JSON: Final = TypeAdapter(JsonValue)
-JSON_OBJECT: Final = TypeAdapter(dict[str, JsonValue])
-CREDENTIALS: Final = TypeAdapter(dict[str, JsonValue] | None)
 DETAIL: Final = TypeAdapter(dict[str, str])
 SNAPSHOT: Final = TypeAdapter(Mapping[str, JsonValue])
 
@@ -98,9 +96,12 @@ class Input(TypedDict):
     calls: list[Call]
 
 
-class Lookup(TypedDict):
-    model_id: str
-    team_id: str | None
+EXTRACT = cast("Callable[[str, Request, dict[str, JsonValue] | None], tuple[str | None, str | None]]", common_utils.extract_model_from_sources)  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L317
+ROUTE = cast("Callable[[str, Request, Router | None, dict[str, JsonValue], UserAPIKeyAuth, bool], Coroutine[object, object, tuple[bool, str | None, str | None, dict[str, JsonValue] | None]]]", common_utils.handle_model_based_routing)  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L647
+TEAM = cast("Callable[[Router | None, UserAPIKeyAuth, str], dict[str, JsonValue] | None]", common_utils.get_team_provider_credentials)  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L436
+APPLY = cast("Callable[[dict[str, JsonValue], Router | None, UserAPIKeyAuth, str], None]", common_utils.apply_team_provider_credentials)  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L556
+INTERNAL = cast("Callable[[dict[str, JsonValue], Router, str | None], None]", common_utils.add_internal_model_credentials)  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L578
+INFO = cast("Callable[[dict[str, JsonValue], Router | None, str], None]", common_utils.add_deployment_model_info)  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L603
 
 
 def deployment(row: RowScript) -> Deployment:
@@ -115,8 +116,8 @@ class ScriptedRouter(Router):
     def __init__(self, script: RouterScript) -> None:
         # the base router reads back the overrides below while it initializes
         self.script: RouterScript = script
-        self.lookups: list[Lookup] = []
-        super().__init__(model_list=[])
+        self.lookups: list[JsonValue] = []
+        super().__init__(model_list=[])  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L774
         self.model_list = [deployment(row) for row in script["deployments"]]
 
     @override
@@ -147,9 +148,7 @@ class ScriptedRouter(Router):
     ) -> Deployment | None:
         del team_id
         info = self.script["credential_deployments"].get(model_id)
-        if info is None:
-            return None
-        return deployment({"model_name": model_id, "model_info": info})
+        return None if info is None else deployment({"model_name": model_id, "model_info": info})
 
 
 def scripted_router(call: RouterCall) -> ScriptedRouter | None:
@@ -182,8 +181,8 @@ def request_for(hints: Hints) -> Request:
     return Request(scope=scope)
 
 
-def text_fields(snapshot: Mapping[str, JsonValue]) -> dict[str, str]:
-    texts: dict[str, str] = {}
+def text_fields(snapshot: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
+    texts: dict[str, JsonValue] = {}
     for name, value in snapshot.items():
         match value:
             case str():
@@ -193,109 +192,91 @@ def text_fields(snapshot: Mapping[str, JsonValue]) -> dict[str, str]:
     return texts
 
 
+def routed_answer(
+    routed: tuple[bool, str | None, str | None, dict[str, JsonValue] | None],
+    error: dict[str, JsonValue] | None,
+) -> JsonValue:
+    use_model_routing, model, original_file_id, credentials = routed
+    answer: dict[str, JsonValue] = {
+        "function": "routing",
+        "use_model_routing": use_model_routing,
+        "model": model,
+        "original_file_id": original_file_id,
+        "credentials": credentials,
+        "error": error,
+    }
+    return JSON.validate_python(answer)
+
+
 def extract_answer(call: ExtractCall) -> JsonValue:
-    embedded, param = common_utils.extract_model_from_sources(
-        file_id=call["file_id"],
-        request=request_for(call["hints"]),
-        data={"model": call["hints"]["body"]},
+    embedded, param = EXTRACT(
+        call["file_id"], request_for(call["hints"]), {"model": call["hints"]["body"]}
     )
-    return JSON.validate_python({"function": "extract", "embedded": embedded, "param": param})
+    answer: dict[str, JsonValue] = {"function": "extract", "embedded": embedded, "param": param}
+    return JSON.validate_python(answer)
 
 
 def routing_answer(call: RoutingCall) -> JsonValue:
-    router = scripted_router(call)
-    use_model_routing = False
-    model: str | None = None
-    original_file_id: str | None = None
-    credentials: dict[str, JsonValue] | None = None
-    error: dict[str, JsonValue] | None = None
     try:
-        use_model_routing, model, original_file_id, found = asyncio.run(
-            common_utils.handle_model_based_routing(
-                file_id=call["file_id"],
-                request=request_for(call["hints"]),
-                llm_router=router,
-                data={"model": call["hints"]["body"]},
-                user_api_key_dict=UserAPIKeyAuth(models=[], team_models=[], team_id=None),
-                check_file_id_encoding=call["check_file_id_encoding"],
+        routed = asyncio.run(
+            ROUTE(
+                call["file_id"],
+                request_for(call["hints"]),
+                scripted_router(call),
+                {"model": call["hints"]["body"]},
+                token({"models": [], "team_models": [], "team_id": None}),
+                call["check_file_id_encoding"],
             )
         )
-        credentials = CREDENTIALS.validate_python(found)
     except HTTPException as raised:
-        error = {
+        failure: dict[str, JsonValue] = {
             "status": raised.status_code,
             "detail": DETAIL.validate_python(raised.detail)["error"],
         }
-    return JSON.validate_python(
-        {
-            "function": "routing",
-            "use_model_routing": use_model_routing,
-            "model": model,
-            "original_file_id": original_file_id,
-            "credentials": credentials,
-            "error": error,
-        }
-    )
+        return routed_answer((False, None, None, None), failure)
+    return routed_answer(routed, None)
 
 
 def team_answer(call: TeamCall) -> JsonValue:
     router = scripted_router(call)
-    found = common_utils.get_team_provider_credentials(
-        llm_router=router,
-        user_api_key_dict=token(call["key"]),
-        custom_llm_provider=call["provider"],
-    )
-    return JSON.validate_python(
-        {
-            "function": "team_credentials",
-            "credentials": CREDENTIALS.validate_python(found),
-            "lookups": [] if router is None else router.lookups,
-        }
-    )
+    found = TEAM(router, token(call["key"]), call["provider"])
+    lookups: list[JsonValue] = [] if router is None else router.lookups
+    answer: dict[str, JsonValue] = {
+        "function": "team_credentials",
+        "credentials": found,
+        "lookups": lookups,
+    }
+    return JSON.validate_python(answer)
 
 
 def apply_answer(call: ApplyCall) -> JsonValue:
-    router = scripted_router(call)
     data = dict(call["data"])
-    common_utils.apply_team_provider_credentials(
-        data=data,
-        llm_router=router,
-        user_api_key_dict=token(call["key"]),
-        custom_llm_provider=call["provider"],
-    )
-    return JSON.validate_python(
-        {"function": "apply_team_credentials", "data": JSON_OBJECT.validate_python(data)}
-    )
+    APPLY(data, scripted_router(call), token(call["key"]), call["provider"])
+    answer: dict[str, JsonValue] = {"function": "apply_team_credentials", "data": data}
+    return JSON.validate_python(answer)
 
 
 def internal_answer(call: InternalCall) -> JsonValue:
-    router = scripted_router(call)
     data = dict(call["data"])
-    common_utils.add_internal_model_credentials(
-        data=data, llm_router=router, model_id=call["model_id"]
-    )
-    snapshot: dict[str, str] | None = None
-    if SNAPSHOT_KEY in data:
-        snapshot = text_fields(SNAPSHOT.validate_python(data[SNAPSHOT_KEY]))
-    return JSON.validate_python(
-        {
-            "function": "internal_credentials",
-            "data": {name: value for name, value in data.items() if name != SNAPSHOT_KEY},
-            "internal_key": SNAPSHOT_KEY in data,
-            "snapshot": snapshot,
-        }
-    )
+    router = scripted_router(call)
+    if router is not None:
+        INTERNAL(data, router, call["model_id"])
+    installed = data.pop(SNAPSHOT_KEY, None)
+    snapshot = None if installed is None else text_fields(SNAPSHOT.validate_python(installed))
+    answer: dict[str, JsonValue] = {
+        "function": "internal_credentials",
+        "data": data,
+        "internal_key": installed is not None,
+        "snapshot": snapshot,
+    }
+    return JSON.validate_python(answer)
 
 
 def info_answer(call: InfoCall) -> JsonValue:
-    router = scripted_router(call)
     data = dict(call["data"])
-    common_utils.add_deployment_model_info(
-        data=data, llm_router=router, model_id=call["model_id"]
-    )
-    return JSON.validate_python(
-        {"function": "deployment_info", "data": JSON_OBJECT.validate_python(data)}
-    )
+    INFO(data, scripted_router(call), call["model_id"])
+    answer: dict[str, JsonValue] = {"function": "deployment_info", "data": data}
+    return JSON.validate_python(answer)
 
 
 def answer(call: Call) -> JsonValue:
