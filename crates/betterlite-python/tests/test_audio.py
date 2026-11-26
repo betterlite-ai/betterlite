@@ -20,6 +20,7 @@ from betterlite._audio.binary import HttpxBinaryResponseContent
 from betterlite._audio.main import transcription_response_from_cached_dict
 from betterlite._completion.errors import UnsupportedCallArgument
 from betterlite._endpoints import CallValue
+from betterlite._native import NativeAudioSession
 from betterlite.exceptions import APIConnectionError, AuthenticationError, BadRequestError
 from betterlite.main import aspeech, atranscription, speech, transcription
 from betterlite.types.utils.transcription import (
@@ -606,24 +607,28 @@ def test_speech_identity_headers(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("OPENAI_PROJECT_ID", raising=False)
     monkeypatch.setenv("OPENAI_ORGANIZATION", "org-env")
     monkeypatch.setenv("OPENAI_PROJECT", "project-env")
-    previous_org, previous_project = betterlite.organization, betterlite.project
-    betterlite.organization = "org-setting"
-    betterlite.project = "project-setting"
-    try:
-        with closing(AudioServer()) as server:
-            speech(
-                TTS_MODEL, "hello", "alloy", organization="org-a", project="project-a",
-                api_base=server.url, api_key=GOOD_KEY,
-            )
-            assert header_of(server.calls[-1], "openai-organization") is None
-            assert header_of(server.calls[-1], "openai-project") is None
-            monkeypatch.setenv("OPENAI_ORG_ID", "org-sdk")
-            monkeypatch.setenv("OPENAI_PROJECT_ID", "project-sdk")
-            asyncio.run(aspeech(
-                TTS_MODEL, "hello", "alloy", organization="org-a", project="project-a",
-                api_base=server.url, api_key=GOOD_KEY,
-            ))
-            assert header_of(server.calls[-1], "openai-organization") == "org-sdk"
-            assert header_of(server.calls[-1], "openai-project") == "project-sdk"
-    finally:
-        betterlite.organization, betterlite.project = previous_org, previous_project
+    with closing(AudioServer()) as server:
+        speech(
+            TTS_MODEL, "hello", "alloy", organization="org-a", project="project-a",
+            api_base=server.url, api_key=GOOD_KEY,
+        )
+        assert header_of(server.calls[-1], "openai-organization") is None
+        assert header_of(server.calls[-1], "openai-project") is None
+        payload = json.dumps({
+            "settings": {"organization": "org-setting", "project": "project-setting"},
+            "arguments": {
+                "model": TTS_MODEL, "input": "hello", "voice": "alloy",
+                "api_base": server.url, "api_key": GOOD_KEY,
+            },
+        })
+        NativeAudioSession("{}").speech(payload, [])
+        assert header_of(server.calls[-1], "openai-organization") is None
+        assert header_of(server.calls[-1], "openai-project") is None
+        monkeypatch.setenv("OPENAI_ORG_ID", "org-sdk")
+        monkeypatch.setenv("OPENAI_PROJECT_ID", "project-sdk")
+        asyncio.run(aspeech(
+            TTS_MODEL, "hello", "alloy", organization="org-a", project="project-a",
+            api_base=server.url, api_key=GOOD_KEY,
+        ))
+        assert header_of(server.calls[-1], "openai-organization") == "org-sdk"
+        assert header_of(server.calls[-1], "openai-project") == "project-sdk"
