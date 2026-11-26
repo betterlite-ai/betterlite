@@ -14,7 +14,18 @@ from pydantic import JsonValue, TypeAdapter
 
 import betterlite
 from betterlite._completion.errors import UnsupportedCallArgument
-from betterlite._rerank.main import MAX_DOCUMENTS, MAX_HEADERS
+from betterlite._endpoints import CallValue
+from betterlite._rerank import limits as limits_module
+from betterlite._rerank import main as rerank_module
+from betterlite._rerank.limits import (
+    MAX_DEPTH,
+    MAX_HEADERS,
+    MAX_REQUEST_BYTES,
+    STRING_CHUNK,
+    RequestBudget,
+    check_request_size,
+)
+from betterlite._rerank.main import MAX_DOCUMENTS
 from betterlite.exceptions import (
     APIConnectionError,
     AuthenticationError,
@@ -45,6 +56,7 @@ SEARCH_UNITS: Final = 1
 SEARCH_COST: Final = 0.002
 MAX_CHUNKS: Final = 10
 WIRE_LIMIT: Final = 8 * 1024 * 1024
+JSON_DUMPS: Final = json.dumps
 PROVIDER_DELAY: Final = 0.5
 INFINITY_PROVIDER: Final = "infinity"
 INFINITY_KEY: Final = "infinity-key-1"
@@ -557,3 +569,126 @@ def test_error_azure_refused() -> None:
             custom_llm_provider=PROVIDER, azure_ad_token_provider=object(),
         )
     assert refused.value.argument == "azure_ad_token_provider"
+
+
+@pytest.mark.parametrize("entry", ["sync", "async", "flag"])
+@pytest.mark.parametrize("field", ["documents", "query", "extra", "aggregate", "settings"])
+def test_request_before_copy(
+    monkeypatch: pytest.MonkeyPatch, entry: str, field: str,
+) -> None:
+    text = "x" * (WIRE_LIMIT + 1)
+    query = text if field == "query" else QUERY
+    documents: list[str | dict[str, JsonValue]] = [text] if field == "documents" else []
+    extras: dict[str, CallValue] = {"extra": {"nested": text}} if field == "extra" else {}
+    if field == "aggregate":
+        query = "x" * (WIRE_LIMIT // 2)
+        documents = [{"text": query}]
+    if field == "settings":
+        monkeypatch.setattr(betterlite, "api_base", text)
+    monkeypatch.setattr(rerank_module, "JSON", None)
+    monkeypatch.setattr(rerank_module, "to_call_payload", None)
+    with pytest.raises(ValueError, match="bytes"):
+        if entry == "async":
+            _ = asyncio.run(arerank(MODEL, query, documents, **extras))
+        else:
+            _ = rerank(MODEL, query, documents, _is_async=entry == "flag", **extras)
+
+
+@pytest.mark.parametrize("entry", ["sync", "async"])
+@pytest.mark.parametrize("source", ["caller", "module", "combined"])
+def test_request_before_headers(
+    monkeypatch: pytest.MonkeyPatch, entry: str, source: str,
+) -> None:
+    caller: dict[str, str] = {}
+    module: dict[str, str] = {}
+    if source == "caller":
+        caller = {f"h{index}": "v" for index in range(MAX_HEADERS + 1)}
+    else:
+        module = {f"h{index}": "v" for index in range(MAX_HEADERS)}
+        if source == "module":
+            module["extra"] = "v"
+        else:
+            caller["extra"] = "v"
+    monkeypatch.setattr(betterlite, "headers", module)
+    monkeypatch.setattr(rerank_module, "JSON", None)
+    monkeypatch.setattr(rerank_module, "HEADERS", None)
+    with pytest.raises(ValueError, match="headers"):
+        if entry == "async":
+            _ = asyncio.run(arerank(MODEL, QUERY, [], headers=caller))
+        else:
+            _ = rerank(MODEL, QUERY, [], headers=caller)
+
+
+@pytest.mark.parametrize("value", [
+    None, True, False, 0, -123, 1.25, "", "ascii", "\"\\\n\b\t\r\f\x00\x1f\x7f",
+    "é中😀", [], {}, [None, True, {"nested": ["é", 42]}],
+])
+def test_request_size_matches_json(value: JsonValue) -> None:
+    budget = RequestBudget()
+    budget.consume(value)
+    assert budget.remaining == MAX_REQUEST_BYTES - len(json.dumps(value))
+
+
+@pytest.mark.parametrize("delta", [-1, 0, 1])
+def test_request_size_boundary(delta: int) -> None:
+    text = "x" * (WIRE_LIMIT - len('""') + delta)
+    budget = RequestBudget()
+    if delta > 0:
+        with pytest.raises(ValueError, match="bytes"):
+            budget.consume(text)
+    else:
+        budget.consume(text)
+        assert budget.remaining == -delta
+
+
+def test_request_size_escaped() -> None:
+    text = "😀" * (WIRE_LIMIT // len("\\ud83d\\ude00") + 1)
+    budget = RequestBudget()
+    with pytest.raises(ValueError, match="bytes"):
+        budget.consume({"nested": [text]})
+
+
+def test_request_size_cycle() -> None:
+    cyclic: list[CallValue] = []
+    cyclic.append(cyclic)
+    budget = RequestBudget()
+    with pytest.raises(ValueError, match="nesting"):
+        budget.consume(cyclic)
+
+
+def bounded_dumps(value: CallValue) -> str:
+    match value:
+        case str():
+            assert len(value) <= STRING_CHUNK
+    return JSON_DUMPS(value)
+
+
+def test_request_encoding_chunks(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(limits_module.json, "dumps", bounded_dumps)
+    budget = RequestBudget()
+    text = "é" * (STRING_CHUNK + 1)
+    budget.consume(text)
+    assert budget.remaining == WIRE_LIMIT - len(JSON_DUMPS(text))
+
+
+@pytest.mark.parametrize("depth", [MAX_DEPTH - 1, MAX_DEPTH, MAX_DEPTH + 1])
+def test_request_depth_boundary(depth: int) -> None:
+    budget = RequestBudget()
+    if depth > MAX_DEPTH:
+        with pytest.raises(ValueError, match="nesting"):
+            budget.consume("", depth)
+    else:
+        budget.consume("", depth)
+        assert budget.remaining == WIRE_LIMIT - len('""')
+
+
+@pytest.mark.parametrize("count", [0, MAX_HEADERS - 1, MAX_HEADERS])
+def test_request_headers_boundary(monkeypatch: pytest.MonkeyPatch, count: int) -> None:
+    monkeypatch.setattr(betterlite, "headers", {})
+    check_request_size((), {"headers": {f"h{index}": "v" for index in range(count)}})
+
+
+def test_request_integer_budget() -> None:
+    budget = RequestBudget(remaining=1)
+    with pytest.raises(ValueError, match="bytes"):
+        budget.consume(1 << WIRE_LIMIT)

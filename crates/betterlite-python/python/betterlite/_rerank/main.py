@@ -3,7 +3,6 @@ from typing import Final, TypedDict
 
 from pydantic import JsonValue, TypeAdapter
 
-import betterlite
 from betterlite import exceptions
 from betterlite._completion.errors import UnsupportedCallArgument
 from betterlite._cost_extra import rerank_cost
@@ -12,21 +11,16 @@ from betterlite._endpoints import (
     CallValue,
     acall_native,
     call_native,
-    read_settings,
     to_call_payload,
 )
 from betterlite._native import NativeRerankError, NativeRerankSession
+from betterlite._rerank.limits import RequestBudget, check_request_size, rerank_settings
 from betterlite.types.rerank import RerankResponse, RerankResponseMeta, RerankResponseResult
 
 MISSING_MODEL: Final = (
     "model parameter is required but was None. Please provide a valid model name."
 )
 MAX_DOCUMENTS: Final = 100_000
-MAX_HEADERS: Final = 256
-# the module settings main.py's rerank reads before it dispatches, as LiteLLM's branches do
-SETTINGS: Final[tuple[str, ...]] = (
-    "api_base", "api_key", "cohere_key", "drop_params", "headers", "togetherai_api_key",
-)
 # every argument rerank names itself: these never travel as an unknown provider parameter
 NAMED_ARGUMENTS: Final[tuple[str, ...]] = (
     "custom_llm_provider", "documents", "max_chunks_per_doc", "max_tokens_per_doc", "model",
@@ -77,6 +71,10 @@ def rerank(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob
     max_tokens_per_doc: int | None = None,
     **kwargs: CallValue,
 ) -> RerankResponse | Awaitable[RerankResponse]:
+    check_request_size((
+        model, query, documents, custom_llm_provider, top_n, rank_fields,
+        return_documents, max_chunks_per_doc, max_tokens_per_doc,
+    ), kwargs)
     values: dict[str, CallValue] = dict(kwargs)
     values |= request_arguments(
         model, query, documents, custom_llm_provider, top_n, rank_fields,
@@ -100,6 +98,10 @@ async def arerank(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litel
     max_chunks_per_doc: int | None = None,
     **kwargs: CallValue,
 ) -> RerankResponse:
+    check_request_size((
+        model, query, documents, custom_llm_provider, top_n, rank_fields,
+        return_documents, max_chunks_per_doc,
+    ), kwargs)
     values: dict[str, CallValue] = kwargs | request_arguments(
         model, query, documents, custom_llm_provider, top_n, rank_fields,
         max_chunks_per_doc, return_documents=return_documents,
@@ -176,14 +178,10 @@ def response_from_answer(answer: RerankAnswer) -> RerankResponse:
 
 def call_payload(values: Mapping[str, CallValue], named: tuple[str, ...]) -> CallPayload:
     # the top-level names are the payload's own: it drops the logger, refuses a client and warns
-    settings = read_settings(SETTINGS)
-    settings["infinity_key"] = JSON.validate_python(betterlite.infinity_key)
-    caller_headers = HEADERS.validate_python(values.get("headers"))
-    module_headers = HEADERS.validate_python(settings.get("headers"))
-    caller: dict[str, JsonValue] = {} if caller_headers is None else caller_headers
-    module: dict[str, JsonValue] = {} if module_headers is None else module_headers
-    if len(caller) + len(module) > MAX_HEADERS:
-        raise ValueError(f"too many rerank headers: {len(caller) + len(module)} > {MAX_HEADERS}")
+    settings = rerank_settings()
+    check_request_size((), values)
+    _ = HEADERS.validate_python(values.get("headers"))
+    _ = HEADERS.validate_python(settings.get("headers"))
     payload: dict[str, CallValue] = {
         "arguments": forwarded_arguments(values, named),
         "kwargs": extra_arguments(values, named),
@@ -192,6 +190,8 @@ def call_payload(values: Mapping[str, CallValue], named: tuple[str, ...]) -> Cal
         "logger_fn": values.get("logger_fn"),
         "shared_session": values.get("shared_session"),
     }
+    budget = RequestBudget()
+    budget.consume_fields(payload)
     return to_call_payload(payload)
 
 
