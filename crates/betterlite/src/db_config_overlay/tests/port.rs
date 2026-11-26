@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use betterlite_db::postgres_store::errors::DbError;
 use betterlite_db::table_ops::rows::RowError;
@@ -11,6 +12,7 @@ use tempfile::TempDir;
 use tokio::sync::Mutex as AsyncMutex;
 use tokio::sync::Semaphore;
 use tokio::task::{JoinSet, yield_now};
+use tokio::time::sleep;
 
 use super::support::{
     Journal, OnceOidc, RecordingInstaller, RecordingRuntime, blocking_oidc, database,
@@ -311,4 +313,37 @@ async fn port_keeps_a_concurrent_environment_update_during_a_database_read() {
         ("db_secret".to_owned(), "db-value".to_owned()),
     ]);
     assert_eq!(*published, expected);
+}
+
+// The row's export matches the snapshot, and an update that lands while the state lock is awaited must not cost it the live environment.
+#[tokio::test]
+async fn port_exports_the_row_when_the_environment_changes_while_the_state_lock_is_awaited() {
+    let directory = TempDir::new().unwrap();
+    let path = write_config(directory.path(), SHARED_CONFIG);
+    let (database, started, gate) =
+        gated_database(&[("environment_variables", json!({"SHARED": "old"}))]);
+    let served = port(&path, Some(database), RecordingInstaller::default());
+    let mut environment = served.environment.lock().await;
+    environment.insert("SHARED".to_owned(), "old".to_owned());
+    drop(environment);
+    let mut tasks = JoinSet::new();
+    tasks.spawn({
+        let port = Arc::clone(&served.overlay);
+        async move { port.reload_config().await }
+    });
+    started.await.unwrap();
+    let held = served.state.lock().await;
+    gate.add_permits(1);
+    sleep(Duration::from_millis(50)).await;
+    let mut updated = served.environment.lock().await;
+    updated.insert("SHARED".to_owned(), "new".to_owned());
+    drop(updated);
+    drop(held);
+    let reloaded = tasks.join_next().await.unwrap().unwrap().unwrap();
+    assert_eq!(
+        reloaded.values["general_settings"],
+        json!({"master_key": "old"})
+    );
+    let published = served.environment.lock().await;
+    assert_eq!(published.get("SHARED").map(String::as_str), Some("old"));
 }

@@ -237,6 +237,43 @@ async fn canceled_shutdown_leaves_the_drain_for_the_next_call() {
     assert!(finished.load(Ordering::Relaxed));
 }
 
+// a retried shutdown takes the workers tracked after the drain it reuses, so it cannot report success while a newer worker runs
+#[tokio::test]
+async fn shutdown_retry_drains_a_worker_submitted_after_the_drain_started() {
+    let workers = Arc::new(Workers {
+        slots: Arc::new(Semaphore::new(2)),
+        live: Mutex::new(Vec::new()),
+        drain: Mutex::new(None),
+    });
+    let (started, mut started_reading) = async_mpsc::channel(2);
+    let (release, released_rx) = mpsc::sync_channel::<()>(2);
+    let released = Arc::new(Mutex::new(released_rx));
+    let count = Arc::new(AtomicUsize::new(0));
+    let mut tasks = JoinSet::new();
+    spawn_lookup(&mut tasks, &workers, &started, &released, &count);
+    started_reading.recv().await.unwrap();
+    let expired = timeout(Duration::from_millis(200), workers.shutdown()).await;
+    let _still_running = expired.unwrap_err();
+    spawn_lookup(&mut tasks, &workers, &started, &released, &count);
+    started_reading.recv().await.unwrap();
+    let (done, mut done_reading) = oneshot::channel();
+    let second_workers = Arc::clone(&workers);
+    tasks.spawn(async move {
+        second_workers.shutdown().await?;
+        let _sent = done.send(());
+        Ok(())
+    });
+    let early = timeout(Duration::from_millis(200), &mut done_reading).await;
+    let _timed_out = early.unwrap_err();
+    release.send(()).unwrap();
+    let midway = timeout(Duration::from_millis(200), &mut done_reading).await;
+    let _still_blocked = midway.unwrap_err();
+    release.send(()).unwrap();
+    timeout(WAIT, &mut done_reading).await.unwrap().unwrap();
+    drop(tasks.join_all().await);
+    assert_eq!(count.load(Ordering::Relaxed), 2);
+}
+
 // a finished drain covers none of the workers tracked after it, so the next shutdown starts a fresh join
 #[tokio::test]
 async fn shutdown_after_a_finished_drain_joins_a_later_worker() {

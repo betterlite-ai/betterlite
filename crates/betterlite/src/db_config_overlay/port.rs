@@ -17,7 +17,9 @@ use super::pass_through::{
     PassThroughInstaller, install_pass_through_endpoints, publish_pass_through,
     validate_db_endpoints,
 };
-use super::reload::{begin_reload, finish_reload, reload_stores, resolve_reload};
+use super::reload::{
+    apply_stored_rows, finish_reload, prepare_reload, reload_stores, resolve_reload,
+};
 use super::rows::fetch_db_rows;
 use super::source::{ConfigSource, read_config};
 use super::state::{OverlayDatabase, OverlayState};
@@ -94,17 +96,17 @@ async fn run_reload(parts: &OverlayParts) -> Result<ConfigWithBaseline, OverlayE
         Some(backed) => Some((backed, fetch_db_rows(backed).await?)),
         None => None,
     };
-    let before = parts.environment.lock().await.clone();
+    let mut shared = parts.environment.lock().await.clone();
     let mut state = parts.state.lock().await;
-    let mut shared = before.clone();
-    let pending = begin_reload(&mut state, &file_config, stored, &parts.source, &mut shared);
-    let updates = shared
-        .iter()
-        .filter(|(key, value)| before.get(*key) != Some(*value))
-        .map(|(key, value)| ((*key).clone(), (*value).clone()));
+    let written = apply_stored_rows(&mut state, stored, &mut shared);
+    let pending = prepare_reload(&mut state, &file_config, &parts.source, &shared);
     drop(state);
-    parts.environment.lock().await.extend(updates);
-    let resolved = resolve_reload(pending?, shared, &parts.workers).await?;
+    let merged = {
+        let mut current = parts.environment.lock().await;
+        current.extend(written);
+        current.clone()
+    };
+    let resolved = resolve_reload(pending?, merged, &parts.workers).await?;
     let mut settled = parts.state.lock().await;
     Ok(finish_reload(&mut settled, resolved))
 }

@@ -40,7 +40,7 @@ use crate::db_config_overlay::error::{EndpointInstallError, OverlayError};
 use crate::db_config_overlay::general::{CleanupInputs, EffectPorts, apply_general_settings_row};
 use crate::db_config_overlay::pass_through::PassThroughInstaller;
 use crate::db_config_overlay::reload::{
-    begin_reload, finish_reload, reload_stores, resolve_reload,
+    apply_stored_rows, finish_reload, prepare_reload, reload_stores, resolve_reload,
 };
 use crate::db_config_overlay::rows::{apply_db_rows, fetch_db_rows};
 use crate::db_config_overlay::source::{ConfigSource, read_config};
@@ -354,7 +354,7 @@ pub(super) async fn overlay_db_rows(
     env: &mut BTreeMap<String, String>,
 ) -> Result<(), OverlayError> {
     let stored = fetch_db_rows(database).await?;
-    apply_db_rows(overlay, stored, database, env);
+    let _written = apply_db_rows(overlay, stored, database, env);
     Ok(())
 }
 
@@ -376,7 +376,8 @@ pub(super) async fn reload_config(
         Some(backed) => Some((backed, fetch_db_rows(backed).await?)),
         None => None,
     };
-    let pending = begin_reload(overlay, &file_config, stored, source, env)?;
+    let _written = apply_stored_rows(overlay, stored, env);
+    let pending = prepare_reload(overlay, &file_config, source, env)?;
     let resolved = resolve_reload(pending, env.clone(), &workers).await?;
     workers.shutdown().await?;
     Ok(finish_reload(overlay, resolved))

@@ -59,18 +59,19 @@ pub async fn fetch_db_rows(
     Ok(<[Option<JsonValue>; 4]>::from(fetched))
 }
 
-// _update_config_from_db's second half: each present row is prepared and applied to its store
+// _update_config_from_db's second half: each present row is prepared and applied to its store, and the environment writes come back
 pub fn apply_db_rows(
     state: &mut OverlayState,
     stored: [Option<JsonValue>; 4],
     database: &OverlayDatabase,
     env: &mut BTreeMap<String, String>,
-) {
+) -> BTreeMap<String, String> {
+    let mut written = BTreeMap::new();
     for (section, row) in STORE_SECTIONS.into_iter().zip(stored) {
         let Some(value) = row.filter(|value| !value.is_null()) else {
             continue;
         };
-        let prepared = prepare_row(section, &value, database, env);
+        let prepared = prepare_row(section, &value, database, env, &mut written);
         if section == Section::LitellmSettings {
             apply_litellm_settings(state, prepared);
             continue;
@@ -80,6 +81,7 @@ pub fn apply_db_rows(
         }
     }
     warn_shadowed_keys(state);
+    written
 }
 
 // _prepared_db_settings_values: environment values are decrypted and exported under both names, the rest scrubbed
@@ -88,6 +90,7 @@ fn prepare_row(
     value: &JsonValue,
     database: &OverlayDatabase,
     env: &mut BTreeMap<String, String>,
+    written: &mut BTreeMap<String, String>,
 ) -> BTreeMap<String, JsonValue> {
     if section != Section::EnvironmentVariables {
         return settings_mapping(Some(&scrub_remote_modules(section, value)));
@@ -100,6 +103,8 @@ fn prepare_row(
     for (key, text) in exported {
         let upper = key.to_uppercase();
         env.insert(upper.clone(), text.clone());
+        written.insert(upper.clone(), text.clone());
+        written.insert(key.clone(), text.clone());
         prepared.insert(upper, JsonValue::String(text.clone()));
         prepared.insert(key, JsonValue::String(text));
     }

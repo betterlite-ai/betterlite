@@ -55,17 +55,25 @@ fn reload_store(
     Ok(())
 }
 
-// The sync half of get_config: the fetched rows reach the stores, the sections resolve, and the manager starts before its references do.
-pub fn begin_reload(
+// _update_config_from_db's second half: the fetched rows reach the stores, and the environment writes they made come back for the live map
+pub fn apply_stored_rows(
+    state: &mut OverlayState,
+    stored: Option<(&OverlayDatabase, [Option<JsonValue>; 4])>,
+    env: &mut BTreeMap<String, String>,
+) -> BTreeMap<String, String> {
+    match stored {
+        Some((backed, rows)) => apply_db_rows(state, rows, backed, env),
+        None => BTreeMap::new(),
+    }
+}
+
+// The rest of get_config's sync half: the sections resolve, and the manager starts before its references do
+pub fn prepare_reload(
     state: &mut OverlayState,
     file_config: &ConfigMap,
-    stored: Option<(&OverlayDatabase, [Option<JsonValue>; 4])>,
     source: &ConfigSource,
-    env: &mut BTreeMap<String, String>,
+    env: &BTreeMap<String, String>,
 ) -> Result<PendingReload, OverlayError> {
-    if let Some((backed, rows)) = stored {
-        apply_db_rows(state, rows, backed, env);
-    }
     let config = resolved_config(state, file_config);
     initialize_secret_manager(state, &config, source, env)?;
     let lookup = owned_secret_lookup(&state.secrets.lookup);

@@ -34,21 +34,32 @@ impl Workers {
         live.push(thread);
     }
 
-    // The server drains the live threads with this: the join runs on a thread of its own, so no runtime thread is blocked, and a canceled call leaves the drain stored for the next one.
-    pub async fn shutdown(&self) -> Result<(), OverlayError> {
-        let mut drained = {
-            let mut stored = self.drain.lock().unwrap_or_else(PoisonError::into_inner);
-            if (*stored).as_ref().is_none_or(|done| *done.borrow()) {
-                let live = take(&mut *self.live.lock().unwrap_or_else(PoisonError::into_inner));
-                *stored = Some(Self::start_drain(live)?);
-            }
-            (*stored).clone().ok_or(OverlayError::WorkerUnavailable)?
-        };
-        while !*drained.borrow() {
-            let changed = drained.changed().await;
-            changed.map_err(|_closed| OverlayError::WorkerUnavailable)?;
+    // Takes the stored drain, or starts one over the threads live now
+    fn take_drain(&self) -> Result<watch::Receiver<bool>, OverlayError> {
+        let mut stored = self.drain.lock().unwrap_or_else(PoisonError::into_inner);
+        if (*stored).as_ref().is_none_or(|done| *done.borrow()) {
+            let live = take(&mut *self.live.lock().unwrap_or_else(PoisonError::into_inner));
+            *stored = Some(Self::start_drain(live)?);
         }
-        Ok(())
+        (*stored).clone().ok_or(OverlayError::WorkerUnavailable)
+    }
+
+    // The server drains the live threads with this: the join runs on a thread of its own, so no runtime thread is blocked, a canceled call leaves the drain stored for the next one, and a retry drains the threads tracked after it.
+    pub async fn shutdown(&self) -> Result<(), OverlayError> {
+        loop {
+            let mut drained = self.take_drain()?;
+            while !*drained.borrow() {
+                let changed = drained.changed().await;
+                changed.map_err(|_closed| OverlayError::WorkerUnavailable)?;
+            }
+            let idle = {
+                let live = self.live.lock().unwrap_or_else(PoisonError::into_inner);
+                live.is_empty()
+            };
+            if idle {
+                return Ok(());
+            }
+        }
     }
 
     fn start_drain(live: Vec<JoinHandle<()>>) -> Result<watch::Receiver<bool>, OverlayError> {
