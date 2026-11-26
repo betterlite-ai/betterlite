@@ -24,6 +24,7 @@ use betterlite_core::api::videos_http_transport::client::{
 use betterlite_core::api::videos_http_transport::video_config::{
     Headers, Params, RequestFiles, VideoHttpConfig, VideoLogging, VideoReply, VideoRequestContext,
 };
+use betterlite_error::error::ErrorClass;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::logging_state::correlation::{
@@ -263,14 +264,14 @@ fn a_call_without_a_logging_object_takes_the_placeholder() {
 }
 
 // the production probe over a fake caller and handler, so generate's own wiring is what the test reads
-fn video_probe() -> VideoGenerationProbe<FakeProviders, FakeHandler, FakeSetup> {
+fn video_probe(fails: bool) -> VideoGenerationProbe<FakeProviders, FakeHandler, FakeSetup> {
     VideoGenerationProbe {
         caller: VideoGenerationCaller {
             providers: FakeProviders {
                 config: FakeConfig,
                 source: FakeSource,
             },
-            handler: FakeHandler,
+            handler: FakeHandler { fails },
             redactor: Redactor::new(16).expect("the test redactor builds"),
             request_timeout: Duration::from_secs(600),
             drop_params: true,
@@ -286,7 +287,7 @@ fn video_probe() -> VideoGenerationProbe<FakeProviders, FakeHandler, FakeSetup> 
 
 #[tokio::test]
 async fn generate_answers_with_the_hidden_headers_of_the_object() {
-    let owner = video_probe();
+    let owner = video_probe(false);
     let call = probe(&[
         ("prompt", text("a prompt")),
         ("model", text("sora-2")),
@@ -297,6 +298,24 @@ async fn generate_answers_with_the_hidden_headers_of_the_object() {
         reply.hidden_headers,
         BTreeMap::from([(String::from("x-ms-region"), String::from("westeurope"))])
     );
+}
+
+#[tokio::test]
+async fn generate_reports_a_handler_failure_as_the_backend_class() {
+    let owner = video_probe(true);
+    let call = probe(&[
+        ("prompt", text("a prompt")),
+        ("model", text("sora-2")),
+        ("custom_llm_provider", text("openai")),
+    ]);
+    let error = owner.generate(call).await.expect_err("the handler fails");
+    let HealthProbeError::Backend { class, message, .. } = error else {
+        panic!("a handler failure keeps its class");
+    };
+    assert_eq!(message, "size must be a string");
+    let ErrorClass::BadRequest(_) = class else {
+        panic!("a handler failure keeps its 400 class");
+    };
 }
 
 struct FakeSetup {
@@ -333,7 +352,9 @@ impl VideoGenerationProviders for FakeProviders {
     }
 }
 
-struct FakeHandler;
+struct FakeHandler {
+    fails: bool,
+}
 
 impl<Config, Source> VideoGenerationHandling<Config, Source> for FakeHandler
 where
@@ -346,6 +367,16 @@ where
         _request: GenerationHandlerRequest<'call, Source>,
         _is_async: bool,
     ) -> PendingVideoGeneration<'call> {
+        if self.fails {
+            return Box::pin(
+                future_ready::<Result<VideoObject, VideoGenerationCallError>>(Err(
+                    VideoGenerationCallError::FieldType {
+                        field: "size",
+                        expected: "a string",
+                    },
+                )),
+            );
+        }
         let mut object = VideoObject::new(String::from("video-1"), String::from("completed"));
         object.hidden_params.insert(
             "headers".to_owned(),
