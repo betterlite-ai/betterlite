@@ -101,6 +101,7 @@ pub(crate) async fn authenticate(
         Err(response) => *response,
     }
 }
+
 fn stage_input(
     backend: AuthBackend,
     request: &Request<Body>,
@@ -138,6 +139,7 @@ fn stage_input(
         ))),
     }
 }
+
 fn safety_stage_input(
     request: &Request<Body>,
     authenticated: Option<&AuthContext>,

@@ -257,26 +257,32 @@ async fn run_request(
         .await
         .expect("the request reaches the router");
     let status = response.status();
-    let body = to_bytes(response.into_body(), usize::MAX)
+    let bytes = to_bytes(response.into_body(), usize::MAX)
         .await
         .expect("the response body is readable");
-    let text = String::from_utf8(body.to_vec()).expect("the response body is UTF-8");
+    let text = String::from_utf8(bytes.to_vec()).expect("the response body is UTF-8");
     (status, text, reached.load(Ordering::Acquire))
+}
+
+// a rule whose tag collaborators are the one world, with a scripted counter only when the test wires one
+fn wired_rule(world: &Arc<TagWorld>, reader: Option<Arc<ScriptedReader>>) -> Arc<TenantBudgetRule> {
+    let mut wired = rule();
+    wired.reader = reader;
+    wired.cache = Some(Arc::<TagWorld>::clone(world));
+    wired.tags = Some(Arc::<TagWorld>::clone(world));
+    Arc::new(wired)
 }
 
 #[tokio::test]
 async fn failure_stops_downstream() {
     let world = TagWorld::new(vec![tag("over", 0, 10)], false);
     let reader = ScriptedReader::new(vec![Decimal::from(20_i64)]);
-    let cache: Arc<dyn TagBudgetCache> = Arc::clone(&world);
-    let rows: Arc<dyn BudgetRows<TagTable>> = world;
-    let mut wired = rule();
-    wired.reader = Some(reader);
-    wired.cache = Some(cache);
-    wired.tags = Some(rows);
-    let rule = Arc::new(wired);
-    let (status, body, reached) =
-        run_request(&config_with_database(), rule, r#"{"tags":["over"]}"#).await;
+    let (status, body, reached) = run_request(
+        &config_with_database(),
+        wired_rule(&world, Some(reader)),
+        r#"{"tags":["over"]}"#,
+    )
+    .await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert!(body.contains("\"type\":\"budget_exceeded\""), "{body}");
     assert!(
@@ -288,17 +294,14 @@ async fn failure_stops_downstream() {
     assert!(!reached);
 
     // without a database the tag check never reads, so the same request reaches the handler
-    let world = TagWorld::new(vec![tag("over", 0, 10)], false);
-    let reader = ScriptedReader::new(vec![Decimal::from(20_i64)]);
-    let cache: Arc<dyn TagBudgetCache> = Arc::clone(&world);
-    let rows: Arc<dyn BudgetRows<TagTable>> = world;
-    let mut wired = rule();
-    wired.reader = Some(reader);
-    wired.cache = Some(cache);
-    wired.tags = Some(rows);
-    let rule = Arc::new(wired);
-    let (status, _body, reached) =
-        run_request(&config_with_master_key(), rule, r#"{"tags":["over"]}"#).await;
+    let off_world = TagWorld::new(vec![tag("over", 0, 10)], false);
+    let off_reader = ScriptedReader::new(vec![Decimal::from(20_i64)]);
+    let (status, _body, reached) = run_request(
+        &config_with_master_key(),
+        wired_rule(&off_world, Some(off_reader)),
+        r#"{"tags":["over"]}"#,
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
     assert!(reached);
 }
@@ -349,14 +352,12 @@ async fn prefetch_records_the_checked_key() {
 #[tokio::test]
 async fn tag_lookup_failure_answers_unauthorized() {
     let world = TagWorld::new(Vec::new(), true);
-    let cache: Arc<dyn TagBudgetCache> = Arc::clone(&world);
-    let rows: Arc<dyn BudgetRows<TagTable>> = world;
-    let mut wired = rule();
-    wired.cache = Some(cache);
-    wired.tags = Some(rows);
-    let rule = Arc::new(wired);
-    let (status, body, reached) =
-        run_request(&config_with_database(), rule, r#"{"tags":["broken"]}"#).await;
+    let (status, body, reached) = run_request(
+        &config_with_database(),
+        wired_rule(&world, None),
+        r#"{"tags":["broken"]}"#,
+    )
+    .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     assert!(body.contains("\"type\":\"auth_error\""), "{body}");
     assert!(
@@ -369,14 +370,12 @@ async fn tag_lookup_failure_answers_unauthorized() {
 #[tokio::test]
 async fn missing_reader_is_unavailable() {
     let world = TagWorld::new(vec![tag("t", 0, 10)], false);
-    let cache: Arc<dyn TagBudgetCache> = Arc::clone(&world);
-    let rows: Arc<dyn BudgetRows<TagTable>> = world;
-    let mut wired = rule();
-    wired.cache = Some(cache);
-    wired.tags = Some(rows);
-    let rule = Arc::new(wired);
-    let (status, body, reached) =
-        run_request(&config_with_database(), rule, r#"{"tags":["t"]}"#).await;
+    let (status, body, reached) = run_request(
+        &config_with_database(),
+        wired_rule(&world, None),
+        r#"{"tags":["t"]}"#,
+    )
+    .await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
     assert!(body.contains(BUDGET_UNVERIFIABLE_DETAIL), "{body}");
     assert!(!reached);

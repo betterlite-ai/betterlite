@@ -171,8 +171,8 @@ pub(crate) async fn prefetch(stage: &TenantBudgetStageInput) -> Result<(), Box<P
     admit(&mut request, &sources, &admission)
         .await
         .map_err(|error| Box::new(tenant_budget_exception(&error)))?;
-    if let Some(checked) = checked {
-        *rule.applied.lock().unwrap_or_else(PoisonError::into_inner) = Some(checked);
+    if let Some(resolved) = checked {
+        *rule.applied.lock().unwrap_or_else(PoisonError::into_inner) = Some(resolved);
     }
     Ok(())
 }
