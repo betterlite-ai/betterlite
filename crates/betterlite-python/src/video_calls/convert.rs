@@ -19,7 +19,7 @@ pub(crate) mod fields;
 mod requests;
 mod tests;
 
-use self::fields::failed;
+use self::fields::{STRING, failed, meta, number, params, text, texts};
 
 const INPUT_REFERENCE: &str = "input_reference";
 
@@ -207,10 +207,27 @@ pub(crate) fn request(
     let mut requests = Requests::default();
     match operation {
         Operation::Generate => requests.generation = Some(requests::generation(arguments, media)?),
-        Operation::Content => requests.content = Some(requests::content(arguments)?),
-        Operation::Remix => requests.remix = Some(requests::remix(arguments)?),
+        Operation::Remix => {
+            requests.remix = Some(VideoRemixCall {
+                video_id: text(arguments, "video_id")?.ok_or_else(|| failed("video_id", STRING))?,
+                prompt: text(arguments, "prompt")?.ok_or_else(|| failed("prompt", STRING))?,
+                custom_llm_provider: text(arguments, "custom_llm_provider")?,
+                api_key: text(arguments, "api_key")?.map(SecretString::from),
+                api_base: text(arguments, "api_base")?,
+                api_version: text(arguments, "api_version")?,
+                extra_headers: texts(arguments, "extra_headers")?,
+                extra_query: params(arguments, "extra_query")?,
+                extra_body: params(arguments, "extra_body")?,
+                mock_response: arguments.get("mock_response").cloned(),
+                litellm_metadata: meta(arguments, "litellm_metadata")?,
+                litellm_call_id: text(arguments, "litellm_call_id")?,
+                user: text(arguments, "user")?,
+                timeout: number(arguments, "timeout")?,
+                extra: loose(arguments, &REMIX_NAMED),
+            });
+        }
         Operation::List => requests.list = Some(requests::list(arguments)?),
-        Operation::Status => requests.status = Some(requests::status(arguments)?),
+        Operation::Content | Operation::Status => return requests::read(operation, arguments),
     }
     Ok(requests)
 }
