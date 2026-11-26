@@ -39,9 +39,9 @@ pub(crate) fn stage_input(
         .cloned()
         .ok_or(AuthenticationFailure::Missing)?;
     let (team_allowed_routes, registry) = match request.extensions().get::<Arc<ServerState>>() {
-        Some(state) => (
-            state.virtual_key_routes.team_allowed_routes.clone(),
-            state.virtual_key_routes.registry_snapshot(),
+        Some(server) => (
+            server.virtual_key_routes.team_allowed_routes.clone(),
+            server.virtual_key_routes.registry_snapshot(),
         ),
         None => (
             Vec::new(),
@@ -71,11 +71,11 @@ pub(crate) fn run_stage(
         Some(key) => RouteCaller::of_key(key),
         None => RouteCaller::absent(),
     };
-    let called = CalledRoute {
+    let requested = CalledRoute {
         route: &stage.route,
         method: stage.method.as_deref(),
     };
-    check_virtual_key_route(called, &caller, &stage.registry)?;
+    check_virtual_key_route(requested, &caller, &stage.registry)?;
     Ok(stage.context.clone())
 }
 

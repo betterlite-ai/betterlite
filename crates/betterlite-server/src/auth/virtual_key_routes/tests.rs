@@ -61,7 +61,7 @@ fn rule(fields: &str) -> Arc<VirtualKeyRouteRule> {
 fn stage_input(
     context: AuthContext,
     rule: Arc<VirtualKeyRouteRule>,
-    route: &str,
+    path: &str,
 ) -> VirtualKeyRouteStageInput {
     VirtualKeyRouteStageInput {
         context,
@@ -71,7 +71,7 @@ fn stage_input(
             root_path: String::new(),
             registrations: Vec::new(),
         },
-        route: route.to_owned(),
+        route: path.to_owned(),
         method: Some("POST".to_owned()),
     }
 }

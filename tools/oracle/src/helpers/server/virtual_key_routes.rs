@@ -99,13 +99,13 @@ impl Helper for Op {
         let caller = RouteCaller::of_key(&key);
         let registry = registry_of(&input.registrations);
         let method = input.method.as_deref().map(str::to_uppercase);
-        let called = CalledRoute {
+        let requested = CalledRoute {
             route: &input.route,
             method: method.as_deref(),
         };
         Ok(match input.function {
             Function::ShouldCallRoute => {
-                match check_virtual_key_route(called, &caller, &registry) {
+                match check_virtual_key_route(requested, &caller, &registry) {
                     Ok(()) => answer(true, None),
                     Err(exception) => answer(false, Some(exception.as_ref())),
                 }

@@ -226,7 +226,6 @@ fn resource_grant_stage_input(
     };
     Ok(StageInput::AuthResourceGrants(Box::new(stage)))
 }
-
 fn default_resolver() -> Arc<RequestModelResolver> {
     Arc::new(RequestModelResolver {
         catalog: Arc::new(EmptyCatalog),
