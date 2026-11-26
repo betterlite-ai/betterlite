@@ -164,6 +164,14 @@ fn parses_networks_like_ipaddress() {
         "10.1.2.3/255.255.255.128, 10.1.2.3/255.0.255.0, 10.1.2.3/::, ::1/ffff::, 10.1.2.3%eth0, fe80::1%eth0, fe80::1%".to_owned(),
     )));
     assert_eq!(rendered(&forms), list(&["10.1.2.0/25", "fe80::1/128"]));
+    // a hostmask is the netmask inverse; the all-zero mask is /0 as a netmask before its /32 inverse
+    let hostmasks = parsed_ranges(Some(&CidrRanges::Text(
+        "192.168.1.10/0.0.0.255, 10.1.2.3/0.0.0.1, 10.1.2.3/0.0.0.0, 10.1.2.3/255.255.255.255, 10.1.2.3/255.0.255.0".to_owned(),
+    )));
+    assert_eq!(
+        rendered(&hostmasks),
+        list(&["192.168.1.0/24", "10.1.2.2/31", "0.0.0.0/0", "10.1.2.3/32"])
+    );
     assert!(parsed_ranges(None).is_empty());
     assert!(parsed_ranges(Some(&CidrRanges::List(Vec::new()))).is_empty());
 }
@@ -183,6 +191,16 @@ fn scoped_ipv6_addresses_match_on_the_address() {
     assert_eq!(
         resolve_client_ip(&zoned_hop, &proxy_config(&["10.0.0.0/8"])),
         (Some("fe80::1%eth0".to_owned()), true)
+    );
+    // a slash in the text is no address at all, so the client and internal readers fail closed
+    assert!(!ip_in_networks(Some("fe80::1%eth0/128"), &private));
+    assert!(!is_trusted_proxy(Some("fe80::1%eth0/128"), &private));
+    assert!(!is_internal_ip(Some("::1%eth0/128"), None));
+    assert_eq!(client_ip_from_xff("fe80::1%eth0/128", 1), None);
+    let slashed = forwarded(Some("10.0.0.5"), "fe80::1%eth0/128");
+    assert_eq!(
+        resolve_client_ip(&slashed, &proxy_config(&["10.0.0.0/8"])),
+        (Some("10.0.0.5".to_owned()), true)
     );
 }
 

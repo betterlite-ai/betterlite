@@ -84,7 +84,7 @@ const fn unmapped(address: IpAddr) -> IpAddr {
     }
 }
 
-// ipaddress.ip_network(text, strict=False): an optional prefix length, an IPv4 netmask, or no slash.
+// ipaddress.ip_network(text, strict=False): a prefix length, an IPv4 netmask or hostmask, or no slash.
 pub(crate) fn network_from_text(text: &str) -> Option<IpNet> {
     let (address_text, prefix_text) = match text.split_once('/') {
         Some((address, prefix)) => (address, Some(prefix)),
@@ -98,10 +98,12 @@ pub(crate) fn network_from_text(text: &str) -> Option<IpNet> {
             IpNet::new(address, length).ok()?
         }
         Some(prefix) => {
-            // ipaddress takes a netmask for IPv4 only; a netmask of the other family is a ValueError
+            // an IPv4 netmask or its hostmask inverse; the other family has no netmask form
             let mask: Ipv4Addr = prefix.parse().ok()?;
             match address {
-                IpAddr::V4(ipv4) => IpNet::with_netmask(IpAddr::V4(ipv4), IpAddr::V4(mask)).ok()?,
+                IpAddr::V4(ipv4) => IpNet::with_netmask(IpAddr::V4(ipv4), IpAddr::V4(mask))
+                    .or_else(|_| IpNet::with_netmask(IpAddr::V4(ipv4), IpAddr::V4(!mask)))
+                    .ok()?,
                 IpAddr::V6(_) => return None,
             }
         }
@@ -110,8 +112,11 @@ pub(crate) fn network_from_text(text: &str) -> Option<IpNet> {
     Some(network.trunc())
 }
 
-// ipaddress.ip_address accepts one non-empty scope id on an IPv6 address and matches on the address alone.
+// ipaddress.ip_address accepts one non-empty scope id on an IPv6 address and no slash anywhere.
 pub(crate) fn parse_address(text: &str) -> Option<IpAddr> {
+    if text.contains('/') {
+        return None;
+    }
     match text.split_once('%') {
         None => text.parse().ok(),
         Some((address, scope))
