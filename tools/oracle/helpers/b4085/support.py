@@ -31,13 +31,13 @@ class AuthInput(TypedDict):
     spend: float
     max_budget: float | None
     team_id: str | None
-    metadata: NotRequired[dict[str, JsonValue]]
-    tpm_limit: NotRequired[int | None]
-    rpm_limit: NotRequired[int | None]
+    metadata: dict[str, bool]
+    tpm_limit: int | None
 
 
-class LiteLLMSettings(TypedDict):
-    budget_exceeded_throttle_percentage: float | None
+LiteLLMSettings = TypedDict(
+    "LiteLLMSettings", {"budget_exceeded_throttle_percentage": float | None}
+)
 
 
 class TeamInput(TypedDict):
@@ -211,9 +211,8 @@ def litellm_metadata(call: Input) -> dict[str, JsonValue | UserAPIKeyAuth]:
             spend=auth["spend"],
             max_budget=auth["max_budget"],
             team_id=auth["team_id"],
-            metadata=auth["metadata"] if "metadata" in auth else None,
-            tpm_limit=auth["tpm_limit"] if "tpm_limit" in auth else None,
-            rpm_limit=auth["rpm_limit"] if "rpm_limit" in auth else None,
+            metadata=auth["metadata"],
+            tpm_limit=auth["tpm_limit"],
         )
     return metadata
 

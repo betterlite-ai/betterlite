@@ -41,7 +41,6 @@ use serde::Deserialize;
 
 mod tests;
 
-// the collaborators the advisory gate reads through: the request path's spend reader, its cache-only team lookup and the alert sinks
 pub struct AdvisoryDeps<'deps> {
     pub spend: &'deps dyn SpendReader,
     pub teams: &'deps dyn CachedTeams,
@@ -55,7 +54,6 @@ pub type TeamFuture<'lookup> = Pin<
     Box<dyn Future<Output = Result<LiteLLMTeamTableCachedObj, TeamLookupError>> + Send + 'lookup>,
 >;
 
-// auth_checks get_team_object(check_cache_only=True): an absent team is an error the gate swallows, not a database read
 pub trait CachedTeams: Send + Sync {
     fn cached_team<'lookup>(&'lookup self, team_id: &'lookup str) -> TeamFuture<'lookup>;
 }
@@ -71,14 +69,12 @@ impl CachedTeams for TeamLookup {
     }
 }
 
-// how the key's own check settled: only a denial withholds, and only an unreadable check stops the team check behind it
 enum KeyGate {
     Within,
     OverBudget,
     Unreadable,
 }
 
-// _key_or_team_is_over_budget: advisory and fail-open, because real traffic on an over-budget key never reaches the success hook
 pub async fn key_or_team_over_budget(
     metadata: &IndexMap<String, Json>,
     deps: &AdvisoryDeps<'_>,
@@ -98,7 +94,6 @@ pub async fn key_or_team_over_budget(
         KeyGate::Unreadable => return false,
         KeyGate::Within => {}
     }
-    // the key's team, read from its serde form because the token view keeps the field private
     let identity: Identity = serde_json::to_value(&auth)
         .and_then(serde_json::from_value)
         .unwrap_or(Identity { team_id: None });
@@ -133,7 +128,6 @@ async fn key_gate(
     }
 }
 
-// the team's cache-only row: an absent or unreadable team is not an over-budget signal
 async fn cached_team_row(
     deps: &AdvisoryDeps<'_>,
     team_id: &str,
@@ -190,7 +184,6 @@ async fn team_is_over_budget(
     }
 }
 
-// LiteLLM's isinstance(metadata["user_api_key_auth"], UserAPIKeyAuth): anything else, or a dict the key cannot decode, is not the caller
 fn caller_auth(metadata: &IndexMap<String, Json>) -> Option<UserAPIKeyAuth> {
     let Json::Object(fields) = metadata.get("user_api_key_auth")? else {
         return None;
@@ -207,7 +200,6 @@ struct Identity {
     team_id: Option<String>,
 }
 
-// the advisory check reads the stored spend alone: no reset window, no membership and no member default reaches it
 struct NoSources;
 
 impl DurationParser for NoSources {

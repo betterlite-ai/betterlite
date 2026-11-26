@@ -15,7 +15,6 @@ use crate::shadow_evaluation::arm::{ArmCalls, AttemptDeps, run_shadow_arm};
 
 mod tests;
 
-// LiteLLM's injected _record_funnel; B4083's pod-local queue is the production recorder
 pub trait FunnelRecorder: Send + Sync {
     fn record(&self, job_id: &str, stage: FunnelStage);
 }
@@ -29,7 +28,6 @@ impl FunnelRecorder for FunnelQueue {
 pub type JobSpendFuture<'reader> =
     Pin<Box<dyn Future<Output = Result<Decimal, SpendReadError>> + Send + 'reader>>;
 
-// get_current_spend for the job's own counter: Redis first, the fill-time spend as the floor, raising only under fail-closed enforcement
 pub trait JobSpendReader: Send + Sync {
     fn read_spend<'reader>(
         &'reader self,
@@ -48,7 +46,6 @@ pub struct PipelineDeps<'deps, Database, Counter> {
     pub calls: &'deps dyn ArmCalls,
 }
 
-// _run_shadow_eval: gate once per sampled request, then every arm in turn; a withheld request counts one funnel event before any arm runs
 pub async fn run_shadow_eval<Database, Counter>(
     job: &ActiveShadowEvalJob,
     sample: &ShadowSample<'_>,
@@ -74,7 +71,6 @@ pub async fn run_shadow_eval<Database, Counter>(
     }
 }
 
-// the evaluation budget is read once before the loop: a cap crossed mid-loop overshoots by the remaining arms, like the samples already in flight
 async fn budget_allows(job: &ActiveShadowEvalJob, spend: &dyn JobSpendReader) -> bool {
     let Some(max_budget) = job.max_budget else {
         return true;

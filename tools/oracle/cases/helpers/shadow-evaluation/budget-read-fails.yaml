@@ -8,6 +8,8 @@ call:
       spend: 1.0
       max_budget: 10.0
       team_id: null
+      metadata: {}
+      tpm_limit: null
     team: null
     key_spend: null
     team_spend: null

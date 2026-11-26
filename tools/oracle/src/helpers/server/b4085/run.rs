@@ -166,7 +166,6 @@ fn metadata(call: &PipelineCall) -> Result<IndexMap<String, Json>, Box<HelperErr
     Ok(fields)
 }
 
-// the auth and team readers take a JSON number exactly as LiteLLM's pydantic payloads carry it
 fn number(value: Decimal) -> Result<Number, Box<HelperError>> {
     value
         .normalize()

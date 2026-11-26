@@ -8,7 +8,6 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 
-// one sampled request as the detached pipeline replays it: the control request's own text and costs, never the shadow's
 pub struct ShadowSample<'sample> {
     pub request_id: &'sample str,
     pub messages: &'sample [Json],

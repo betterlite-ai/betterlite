@@ -28,14 +28,12 @@ use tokio::runtime::{Builder, Runtime};
 
 use super::inputs::PipelineCall;
 
-// a poisoned lock is a failed test, not a corrupt answer, so the guard comes back rather than unwrapping again
 pub(crate) fn locked<Items>(log: &Mutex<Items>) -> MutexGuard<'_, Items> {
     match log.lock() {
         Ok(guard) => guard,
         Err(poisoned) => poisoned.into_inner(),
     }
 }
-
 #[derive(Debug, thiserror::Error)]
 #[error("scripted database failure")]
 pub(crate) struct Scripted;
@@ -51,7 +49,6 @@ pub(crate) struct SpendFake {
     pub(crate) team: SpendScript,
     pub(crate) reads: Mutex<Vec<Value>>,
 }
-
 #[async_trait]
 impl SpendReader for SpendFake {
     async fn read_spend(&self, query: &SpendQuery<'_>) -> Result<Decimal, SpendReadError> {
@@ -87,8 +84,6 @@ impl CachedTeams for TeamsFake {
         )))
     }
 }
-
-// the database, the spend counter and the funnel are one recorder here: every stage's write lands in the same answer
 #[derive(Default)]
 pub(crate) struct Recorder {
     pub(crate) rows: Mutex<Vec<ShadowAttemptRow>>,
@@ -224,7 +219,6 @@ fn call_failure(message: &str) -> CallFailure {
         classifier_cost: Decimal::ZERO,
     }
 }
-
 #[async_trait]
 impl ArmCalls for CallsFake {
     async fn shadow(&self, _request: &ShadowRequest<'_>) -> ArmStage<ShadowResponse> {
@@ -248,7 +242,6 @@ impl ArmCalls for CallsFake {
     }
 
     async fn judge(&self, _request: &JudgeRequest<'_>) -> ArmStage<JudgeVerdict> {
-        // the oracle cases seed LiteLLM's A/B coin so a raw A unmasked to the shadow preference
         match &self.judge_answer {
             JudgeAnswer::Preference(raw) => Ok(JudgeVerdict {
                 preference: unmask_preference(raw, false),

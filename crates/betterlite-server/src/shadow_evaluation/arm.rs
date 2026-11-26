@@ -13,7 +13,6 @@ use crate::shadow_evaluation::ShadowSample;
 
 mod tests;
 
-// a stage either returns its outcome or raises before one exists; the two record different rows, so the arm keeps them apart
 pub enum ArmFailure {
     Raised(String),
     Failed(CallFailure),
@@ -21,14 +20,12 @@ pub enum ArmFailure {
 
 pub type ArmStage<Value> = Result<Value, ArmFailure>;
 
-// _call_router_shadow and _call_judge as the arm sees them, so a raising stage and an in-band _CallFailure stay distinguishable
 #[async_trait]
 pub trait ArmCalls: Send + Sync {
     async fn shadow(&self, request: &ShadowRequest<'_>) -> ArmStage<ShadowResponse>;
     async fn judge(&self, request: &JudgeRequest<'_>) -> ArmStage<JudgeVerdict>;
 }
 
-// the production calls: B4084 turns every provider, dispatch and verdict failure into a _CallFailure with its own wording and cost
 pub struct RouterCalls<'deps> {
     pub shadow: ShadowDeps<'deps>,
     pub judge: JudgeDeps<'deps>,
@@ -55,7 +52,6 @@ pub struct AttemptDeps<'deps, Database, Counter> {
     pub calls: &'deps dyn ArmCalls,
 }
 
-// the row an arm writes, built from the sample and the arm's own outcome
 struct RowSpec<'row> {
     job: &'row ActiveShadowEvalJob,
     arm_router: &'row str,
@@ -87,7 +83,6 @@ impl RowSpec<'_> {
         }
     }
 
-    // a row whose shadow call billed: the tier and the served model come from the shadow response
     fn billed(&self, shadow: &ShadowResponse) -> ShadowAttemptRow {
         let mut row = self.attempt();
         row.tier = attempt_tier(
@@ -110,7 +105,6 @@ impl RowSpec<'_> {
         row
     }
 
-    // a judge that failed in band billed its cost, and the shadow's costs stay on the row
     fn judge_failure(&self, failure: CallFailure, shadow: &ShadowResponse) -> ShadowAttemptRow {
         let mut row = self.billed(shadow);
         row.judge_cost = failure.cost;
@@ -118,7 +112,6 @@ impl RowSpec<'_> {
         row
     }
 
-    // a shadow call that failed in band carries its own costs; one that raised billed nothing
     fn shadow_failure(&self, failure: ArmFailure) -> ShadowAttemptRow {
         match failure {
             ArmFailure::Raised(message) => self.pipeline(&message, None),
@@ -131,7 +124,6 @@ impl RowSpec<'_> {
         }
     }
 
-    // a raised stage records the pipeline error; a judge that raised after the shadow billed keeps that shadow cost
     fn pipeline(&self, message: &str, shadow: Option<&ShadowResponse>) -> ShadowAttemptRow {
         tracing::debug!(
             "shadow_eval: pipeline failed for {}: {message}",
@@ -145,7 +137,6 @@ impl RowSpec<'_> {
     }
 }
 
-// _run_shadow_arm: shadow call, blind judge, then one attempt row at every exit, so one arm's fault never silences a sibling
 pub async fn run_shadow_arm<Database, Counter>(
     job: &ActiveShadowEvalJob,
     arm_router: &str,
@@ -173,7 +164,6 @@ pub async fn run_shadow_arm<Database, Counter>(
     record_attempt(deps.database, deps.counter, row).await;
 }
 
-// the second half of the arm: the judge sees the sampled real answer and the shadow's, and its verdict becomes the row
 async fn judge_row(
     rows: &RowSpec<'_>,
     shadow: &ShadowResponse,
@@ -195,7 +185,6 @@ async fn judge_row(
     }
 }
 
-// the judge verdict arrives unmasked as one of the three row outcomes; anything else is LiteLLM's tie
 fn preference_outcome(preference: &str) -> AttemptOutcome {
     match preference {
         "shadow" => AttemptOutcome::Shadow,
