@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use betterlite_provider::opensandbox::helpers::{
-    OpenSandboxError, RequestTimeout, SandboxHttp, SandboxRequest,
+    OpenSandboxError, RequestTimeout, SandboxHttp as _, SandboxRequest,
 };
 use http::{HeaderMap, Method};
 use url::Url;

@@ -35,8 +35,13 @@ fn core_reads_the_environment_the_session_was_given() {
         Some("https://global.example")
     );
     assert!(resolution.known_model_names.is_empty());
-    let tools = core.tools.lock().unwrap_or_else(PoisonError::into_inner);
-    assert!(tools.tools.is_empty());
+    let tools_empty = core
+        .tools
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .tools
+        .is_empty();
+    assert!(tools_empty);
 }
 
 #[test]

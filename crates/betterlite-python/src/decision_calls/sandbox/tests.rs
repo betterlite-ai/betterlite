@@ -18,6 +18,25 @@ use super::container::{container_answer, container_of};
 use super::run::run_request;
 use super::{create_request, delete_request, network_policy, tool_answer};
 
+const CREATE_ARGUMENTS: &str = r#"{
+    "provider": "opensandbox",
+    "api_key": "sk-os",
+    "api_base": "https://os.example",
+    "template": "python",
+    "create_timeout": 600,
+    "allow_internet_access": false,
+    "metadata": {"team": "core"},
+    "env_vars": {"A": "B"},
+    "resource_limits": {"cpu": "1"},
+    "resource_requests": {"memory": "1Gi"},
+    "entrypoint": ["python", "main.py"],
+    "secure_access": true,
+    "use_server_proxy": true,
+    "ready_timeout": 0.5,
+    "poll_interval": 2.0,
+    "params": {"litellm_call_id": "call-1"}
+}"#;
+
 fn e2b_handle() -> ContainerHandle {
     ContainerHandle {
         id: String::from("sbx-1"),
@@ -34,41 +53,8 @@ fn e2b_handle() -> ContainerHandle {
 
 #[test]
 fn create_request_carries_every_provider_field() {
-    let arguments = Arguments {
-        provider: String::from("opensandbox"),
-        api_key: Some(SecretString::from("sk-os")),
-        api_base: Some(String::from("https://os.example")),
-        template: Some(String::from("python")),
-        create_timeout: Some(600),
-        allow_internet_access: Some(false),
-        metadata: Some(BTreeMap::from([(
-            String::from("team"),
-            String::from("core"),
-        )])),
-        env_vars: Some(BTreeMap::from([(String::from("A"), String::from("B"))])),
-        resource_limits: Some(BTreeMap::from([(String::from("cpu"), String::from("1"))])),
-        resource_requests: Some(BTreeMap::from([(
-            String::from("memory"),
-            String::from("1Gi"),
-        )])),
-        entrypoint: Some(vec![String::from("python"), String::from("main.py")]),
-        secure_access: Some(true),
-        use_server_proxy: Some(true),
-        ready_timeout: Some(0.5),
-        poll_interval: Some(2.0),
-        params: Extra::from([(
-            String::from("litellm_call_id"),
-            Json::Text(String::from("call-1")),
-        )]),
-        // ast-grep-ignore: no-default-struct-update - the test sets only the fields it reads
-        ..Arguments::default()
-    };
-    let policy = Some(Json::Object(Extra::from([(
-        String::from("mode"),
-        Json::Text(String::from("allow")),
-    )])));
-    let raw = network_policy(policy.as_ref()).unwrap();
-    let request = create_request(&arguments, raw.as_deref()).unwrap();
+    let arguments: Arguments = serde_json::from_str(CREATE_ARGUMENTS).unwrap();
+    let request = create_request(&arguments, None).unwrap();
     assert_eq!(request.call.provider, "opensandbox");
     assert_eq!(
         request.call.api_key.map(ExposeSecret::expose_secret),
@@ -96,13 +82,24 @@ fn create_request_carries_every_provider_field() {
             .map(String::as_str),
         Some("B")
     );
+}
+
+#[test]
+fn create_request_carries_resources_and_network_settings() {
+    let arguments: Arguments = serde_json::from_str(CREATE_ARGUMENTS).unwrap();
+    let policy = Some(Json::Object(Extra::from([(
+        String::from("mode"),
+        Json::Text(String::from("allow")),
+    )])));
+    let raw = network_policy(policy.as_ref()).unwrap();
+    let request = create_request(&arguments, raw.as_deref()).unwrap();
     assert!(request.resource_limits.is_some());
     assert!(request.resource_requests.is_some());
     let entrypoint = request.entrypoint.unwrap();
     assert_eq!(entrypoint.len(), 2);
     assert_eq!(entrypoint[1], "main.py");
     assert_eq!(
-        request.network_policy.as_deref().map(RawValue::get),
+        request.network_policy.map(RawValue::get),
         Some(r#"{"mode":"allow"}"#)
     );
     assert!(request.secure_access);
@@ -139,7 +136,7 @@ fn run_request_carries_the_code_and_the_container() {
         language: Some(String::from("python")),
         env_vars: Some(BTreeMap::from([(String::from("A"), String::from("B"))])),
         use_server_proxy: Some(true),
-        ready_timeout: Some(1.5),
+        ready_timeout: Some(1.5_f64),
         api_base: Some(String::from("https://api.e2b.example")),
         // ast-grep-ignore: no-default-struct-update - the test sets only the fields it reads
         ..Arguments::default()
@@ -273,29 +270,17 @@ fn container_answer_opensandbox_keeps_the_execution_endpoint() {
         panic!("the answer is a JSON object");
     };
     assert_eq!(fields.get("id"), Some(&Json::Text(String::from("sbx-2"))));
-    let Some(Json::Object(hidden)) = fields.get("_hidden_params") else {
-        panic!("the answer carries the hidden params");
-    };
-    assert_eq!(
-        hidden.get("api_base"),
-        Some(&Json::Text(String::from("https://os.example")))
-    );
-    assert_eq!(
-        hidden.get("api_key"),
-        Some(&Json::Text(String::from("sk-os")))
-    );
-    assert_eq!(
-        hidden.get("execd_endpoint"),
-        Some(&Json::Text(String::from("https://execd.example")))
-    );
-    let Some(Json::Object(execd_headers)) = hidden.get("execd_headers") else {
-        panic!("the execution headers are an object");
-    };
-    assert_eq!(
-        execd_headers.get("x-token"),
-        Some(&Json::Text(String::from("abc")))
-    );
-    assert_eq!(hidden.get("use_server_proxy"), Some(&Json::Bool(true)));
+    let hidden: Json = serde_json::from_str(
+        r#"{
+            "api_base": "https://os.example",
+            "api_key": "sk-os",
+            "execd_endpoint": "https://execd.example",
+            "execd_headers": {"x-token": "abc"},
+            "use_server_proxy": true
+        }"#,
+    )
+    .unwrap();
+    assert_eq!(fields.get("_hidden_params"), Some(&hidden));
 }
 
 #[test]
@@ -341,30 +326,22 @@ fn container_of_reads_a_bare_id_as_an_e2b_handle() {
 
 #[test]
 fn container_of_reads_the_nested_hidden_params() {
-    let arguments = Arguments {
-        provider: String::from("e2b"),
-        use_server_proxy: Some(true),
-        container: Some(Json::Object(Extra::from([
-            (String::from("id"), Json::Text(String::from("sbx-4"))),
-            (
-                String::from("hidden_params"),
-                Json::Object(Extra::from([
-                    (
-                        String::from("envd_access_token"),
-                        Json::Text(String::from("envd")),
-                    ),
-                    (String::from("traffic_access_token"), Json::Null),
-                    (String::from("api_key"), Json::Text(String::from("sk"))),
-                    (
-                        String::from("api_base"),
-                        Json::Text(String::from("https://e2b.example")),
-                    ),
-                ])),
-            ),
-        ]))),
-        // ast-grep-ignore: no-default-struct-update - the test sets only the fields it reads
-        ..Arguments::default()
-    };
+    let arguments: Arguments = serde_json::from_str(
+        r#"{
+            "provider": "e2b",
+            "use_server_proxy": true,
+            "container": {
+                "id": "sbx-4",
+                "hidden_params": {
+                    "envd_access_token": "envd",
+                    "traffic_access_token": null,
+                    "api_key": "sk",
+                    "api_base": "https://e2b.example"
+                }
+            }
+        }"#,
+    )
+    .unwrap();
     let SandboxContainer::E2b(handle) = container_of(&arguments).unwrap() else {
         panic!("an object without an execd endpoint reads as an e2b handle");
     };
@@ -393,39 +370,22 @@ fn container_of_reads_the_nested_hidden_params() {
 
 #[test]
 fn container_of_reads_an_opensandbox_handle_and_its_proxy_flag() {
-    let arguments = Arguments {
-        provider: String::from("opensandbox"),
-        use_server_proxy: Some(true),
-        container: Some(Json::Object(Extra::from([
-            (String::from("id"), Json::Text(String::from("sbx-5"))),
-            (
-                String::from("domain"),
-                Json::Text(String::from("https://os.example")),
-            ),
-            (
-                String::from("hidden_params"),
-                Json::Object(Extra::from([
-                    (
-                        String::from("execd_endpoint"),
-                        Json::Text(String::from("https://execd.example")),
-                    ),
-                    (
-                        String::from("execd_headers"),
-                        Json::Object(Extra::from([(
-                            String::from("x-token"),
-                            Json::Text(String::from("abc")),
-                        )])),
-                    ),
-                    (
-                        String::from("api_base"),
-                        Json::Text(String::from("https://os.example")),
-                    ),
-                ])),
-            ),
-        ]))),
-        // ast-grep-ignore: no-default-struct-update - the test sets only the fields it reads
-        ..Arguments::default()
-    };
+    let arguments: Arguments = serde_json::from_str(
+        r#"{
+            "provider": "opensandbox",
+            "use_server_proxy": true,
+            "container": {
+                "id": "sbx-5",
+                "domain": "https://os.example",
+                "hidden_params": {
+                    "execd_endpoint": "https://execd.example",
+                    "execd_headers": {"x-token": "abc"},
+                    "api_base": "https://os.example"
+                }
+            }
+        }"#,
+    )
+    .unwrap();
     let SandboxContainer::OpenSandbox(handle) = container_of(&arguments).unwrap() else {
         panic!("an execd endpoint reads as an opensandbox handle");
     };

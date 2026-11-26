@@ -92,9 +92,8 @@ fn raised(failure: SessionFailure) -> NativeDecisionPayload {
 }
 
 #[test]
-fn request_decisions_maps_every_argument() {
+fn request_decisions_maps_global_settings() {
     let wire: CallWire = parse(WIRE).unwrap();
-    assert_eq!(wire.operation, "decisions");
     let globals = wire.settings.llm_globals();
     assert_eq!(globals.api_base.as_deref(), Some("https://global.example"));
     assert_eq!(
@@ -113,7 +112,12 @@ fn request_decisions_maps_every_argument() {
     );
     assert!(credentials.xai_key.is_none());
     assert!(wire.settings.global_drop_params());
+}
 
+#[test]
+fn request_decisions_maps_every_argument() {
+    let wire: CallWire = parse(WIRE).unwrap();
+    assert_eq!(wire.operation, "decisions");
     let args = wire.arguments.decisions().unwrap();
     assert_eq!(args.model, "gpt-4o");
     assert_eq!(args.input, Some(Json::Text(String::from("hello"))));
@@ -183,13 +187,16 @@ fn request_settings_drop_params_only_counts_an_explicit_true() {
 #[test]
 fn request_timeout_rejects_unusable_seconds() {
     assert_eq!(requested_timeout(None).unwrap(), None);
-    assert_eq!(requested_timeout(Some(0.0)).unwrap(), Some(Duration::ZERO));
     assert_eq!(
-        requested_timeout(Some(2.5)).unwrap(),
+        requested_timeout(Some(0.0_f64)).unwrap(),
+        Some(Duration::ZERO)
+    );
+    assert_eq!(
+        requested_timeout(Some(2.5_f64)).unwrap(),
         Some(Duration::from_millis(2500))
     );
     assert!(matches!(
-        requested_timeout(Some(-1.0)),
+        requested_timeout(Some(-1.0_f64)),
         Err(ConvertError::Timeout { .. })
     ));
     assert!(matches!(
@@ -234,43 +241,17 @@ fn request_answer_flattens_the_response_and_the_hidden_params() {
         fields.get("model"),
         Some(&Json::Text(String::from("gpt-4o")))
     );
-    assert_eq!(
-        fields.get("usage"),
-        Some(&Json::Object(Extra::from([
-            (
-                String::from("input_tokens"),
-                Json::Number(Number::from(7_u32))
-            ),
-            (
-                String::from("input_tokens_details"),
-                Json::Object(Extra::from([
-                    (
-                        String::from("cached_tokens"),
-                        Json::Number(Number::from(0_u32))
-                    ),
-                    (
-                        String::from("cache_write_tokens"),
-                        Json::Number(Number::from(0_u32)),
-                    ),
-                ])),
-            ),
-            (
-                String::from("output_tokens"),
-                Json::Number(Number::from(3_u32))
-            ),
-            (
-                String::from("output_tokens_details"),
-                Json::Object(Extra::from([(
-                    String::from("reasoning_tokens"),
-                    Json::Number(Number::from(0_u32)),
-                )])),
-            ),
-            (
-                String::from("total_tokens"),
-                Json::Number(Number::from(10_u32))
-            ),
-        ])))
-    );
+    let usage: Json = serde_json::from_str(
+        r#"{
+            "input_tokens": 7,
+            "input_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 0},
+            "output_tokens": 3,
+            "output_tokens_details": {"reasoning_tokens": 0},
+            "total_tokens": 10
+        }"#,
+    )
+    .unwrap();
+    assert_eq!(fields.get("usage"), Some(&usage));
     assert_eq!(
         fields.get("_hidden_params"),
         Some(&Json::Object(Extra::from([(
@@ -318,7 +299,7 @@ fn request_encode_reports_the_value_it_cannot_write() {
     response
         .extra
         .insert(String::from("blob"), Json::Object(Extra::new()));
-    assert!(encode(&response).is_ok());
+    encode(&response).unwrap();
     assert_eq!(
         encode(&[f64::NAN]).unwrap_err().to_string(),
         "the answer could not be written as JSON: float must be finite"
@@ -326,8 +307,8 @@ fn request_encode_reports_the_value_it_cannot_write() {
 }
 
 #[test]
-fn request_container_of_reads_a_handle_and_a_bare_id() {
-    let mut wire: CallWire =
+fn request_container_of_reads_a_bare_id() {
+    let wire: CallWire =
         parse(r#"{"arguments": {"provider": "e2b", "container": "sbx-1"}}"#).unwrap();
     let container = container_of(&wire.arguments).unwrap();
     let SandboxContainer::E2b(handle) = container else {
@@ -335,8 +316,11 @@ fn request_container_of_reads_a_handle_and_a_bare_id() {
     };
     assert_eq!(handle.id, "sbx-1");
     assert_eq!(handle.domain, None);
+}
 
-    wire = parse(
+#[test]
+fn request_container_of_reads_an_opensandbox_handle() {
+    let wire: CallWire = parse(
         r#"{"arguments": {"provider": "opensandbox", "container": {
             "id": "sbx-2",
             "provider": "opensandbox",
@@ -368,7 +352,10 @@ fn request_container_of_reads_a_handle_and_a_bare_id() {
             .map(ExposeSecret::expose_secret),
         Some("abc")
     );
+}
 
+#[test]
+fn request_container_of_rejects_invalid_handles() {
     let wrong: CallWire = parse(r#"{"arguments": {"container": 7}}"#).unwrap();
     assert!(matches!(
         container_of(&wrong.arguments),
