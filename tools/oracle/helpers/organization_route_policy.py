@@ -2,7 +2,9 @@ import asyncio
 from datetime import UTC, datetime
 from typing import Final, Literal, NotRequired, TypeAlias, TypedDict
 
-from litellm.models.organization_membership import LiteLLM_OrganizationMembershipTable
+from litellm.models.organization_membership import (
+    LiteLLM_OrganizationMembershipTable as MembershipRow,
+)
 from litellm.models.user import LiteLLM_UserTable
 from litellm.proxy._types import LitellmUserRoles, ProxyException
 from litellm.proxy.auth import auth_checks_organization
@@ -109,9 +111,9 @@ def run(input_value: Input) -> JsonValue:
 
 def guarded(call: Call) -> JsonValue:
     try:
-        return _JSON.validate_python({"ok": True, "value": answer(call)})
+        return _JSON.validate_python({"ok": True, "value": answer(call)})  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks_organization.py#L13-L216
     except Exception:  # noqa: BLE001 - a call the pinned code cannot answer reports not-ok  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks_organization.py#L13-L216
-        return _JSON.validate_python({"ok": False})
+        return _JSON.validate_python({"ok": False})  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks_organization.py#L13-L216
 
 
 def answer(call: Call) -> JsonValue:
@@ -128,12 +130,12 @@ def role_check_answer(call: RoleCheckCall) -> JsonValue:
     request_value = call.get("request")
     body: dict[str, JsonValue] = {} if request_value is None else request_value
     try:
-        auth_checks_organization.organization_role_based_access_check(  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks_organization.py#L13-L17
+        auth_checks_organization.organization_role_based_access_check(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks_organization.py#L13-L17
             request_body=body,
             user_object=user_of(call.get("user")),
             route=call["route"],
         )
-    except ProxyException as denied:
+    except ProxyException as denied:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325
         denied_value = RoleCheckAnswer(
             denied=Denial(type=denied.type, param=denied.param, code=denied.code)
         )
@@ -182,7 +184,7 @@ def user_of(user: UserInput | None) -> LiteLLM_UserTable | None:
         None
         if membership_rows is None
         else [
-            LiteLLM_OrganizationMembershipTable.model_construct(
+            MembershipRow.model_construct(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/organization_membership.py#L17
                 user_id=USER_ID,
                 organization_id=row.get("organization_id"),  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/organization_membership.py#L21
                 user_role=row.get("user_role"),
