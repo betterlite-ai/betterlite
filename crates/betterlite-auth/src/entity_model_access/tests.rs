@@ -6,6 +6,7 @@ use std::sync::Arc;
 use betterlite_error::proxy_error_types::ProxyErrorTypes;
 use betterlite_error::proxy_exception::model_access_denied::ModelAccessDeniedProxyException;
 use chrono::Utc;
+use rstest::rstest;
 
 use crate::auth_request_models::RequestedModels;
 use crate::resolved_key::auth::UserAPIKeyAuth;
@@ -21,8 +22,8 @@ use super::team::can_team_access_model;
 mod support;
 
 use support::{
-    Script, Setup, admission, one, org_row, project_lookup, project_row, team_lookup, team_row,
-    token,
+    Script, Setup, admission, group_row, one, org_row, project_lookup, project_row, team_lookup,
+    team_row, token,
 };
 
 const TEAM_ONE: &str = r#"{"team_id":"team-1","team_alias":"Team One","models":["gpt-4o"],"access_group_ids":["ag-team"]}"#;
@@ -65,6 +66,14 @@ fn error_type(error: &EntityModelAccessError) -> String {
 
 fn internal(error: &EntityModelAccessError) -> String {
     denial(error).sanitized_internal_message()
+}
+
+fn assert_denial(error: &EntityModelAccessError, kind: ProxyErrorTypes) {
+    assert_eq!(error_type(error), kind.to_string());
+    let exception = denial(error).as_proxy_exception();
+    assert_eq!(exception.param.as_deref(), Some("model"));
+    assert_eq!(exception.code, "403");
+    assert!(!exception.message.contains("models="));
 }
 
 fn empty_aliases() -> BTreeMap<String, String> {
@@ -154,7 +163,7 @@ fn project_model_denial() {
 
 #[tokio::test]
 async fn key_groups_replace_grants() {
-    let script = Arc::new(Script::new().with_group(GROUP_KEY));
+    let script = Arc::new(Script::new().with_group(group_row(GROUP_KEY)));
     let lookup = team_lookup(&script);
     let setup = Setup::new();
     let context = setup.context();
@@ -186,7 +195,7 @@ fn single_model_internal(models: &str, tried: &str) -> String {
 
 #[tokio::test]
 async fn team_groups_union_preserves_order() {
-    let script = Arc::new(Script::new().with_group(GROUP_TEAM));
+    let script = Arc::new(Script::new().with_group(group_row(GROUP_TEAM)));
     let lookup = team_lookup(&script);
     let team = team_row(TEAM_ONE);
     let setup = Setup::new();
@@ -218,7 +227,7 @@ async fn team_groups_union_preserves_order() {
 
 #[tokio::test]
 async fn only_proxy_exception_falls_back() {
-    let script = Arc::new(Script::new().with_group(GROUP_KEY));
+    let script = Arc::new(Script::new().with_group(group_row(GROUP_KEY)));
     let lookup = team_lookup(&script);
     let setup = Setup {
         aliases: BTreeMap::new(),
@@ -253,26 +262,24 @@ async fn only_proxy_exception_falls_back() {
     assert!(script.reads().is_empty());
 }
 
+#[rstest]
+#[case::groups(TOKEN_GROUPS)]
+#[case::empty_group(TOKEN_EMPTY_GROUP)]
+#[case::missing_group(TOKEN_MISSING_GROUP)]
 #[tokio::test]
-async fn empty_groups_original_denial() {
-    let script = Arc::new(Script::new().with_group(GROUP_EMPTY));
+async fn empty_groups_original_denial(#[case] text: &str) {
+    let script = Arc::new(Script::new().with_group(group_row(GROUP_EMPTY)));
     let lookup = team_lookup(&script);
     let setup = Setup::new();
     let context = setup.context();
-    for valid_token in [
-        token(TOKEN_GROUPS),
-        token(TOKEN_EMPTY_GROUP),
-        token(TOKEN_MISSING_GROUP),
-    ] {
-        let refused = can_key_call_model(&one("claude"), &valid_token, &context, Some(&lookup))
-            .await
-            .unwrap_err();
-        assert_eq!(
-            error_type(&refused),
-            ProxyErrorTypes::KeyModelAccessDenied.to_string()
-        );
-        assert!(internal(&refused).contains("models=[\"gpt-4o\"]"));
-    }
+    let refused = can_key_call_model(&one("claude"), &token(text), &context, Some(&lookup))
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error_type(&refused),
+        ProxyErrorTypes::KeyModelAccessDenied.to_string()
+    );
+    assert!(internal(&refused).contains("models=[\"gpt-4o\"]"));
 }
 
 #[tokio::test]
@@ -310,19 +317,10 @@ async fn entity_denial_type_matrix() {
         &context,
     )
     .unwrap_err();
-    let expected = [
-        (&key_refused, ProxyErrorTypes::KeyModelAccessDenied),
-        (&team_refused, ProxyErrorTypes::TeamModelAccessDenied),
-        (&org_refused, ProxyErrorTypes::OrgModelAccessDenied),
-        (&project_refused, ProxyErrorTypes::ProjectModelAccessDenied),
-    ];
-    for (error, kind) in expected {
-        assert_eq!(error_type(error), kind.to_string());
-        let exception = denial(error).as_proxy_exception();
-        assert_eq!(exception.param.as_deref(), Some("model"));
-        assert_eq!(exception.code, "403");
-        assert!(!exception.message.contains("models="));
-    }
+    assert_denial(&key_refused, ProxyErrorTypes::KeyModelAccessDenied);
+    assert_denial(&team_refused, ProxyErrorTypes::TeamModelAccessDenied);
+    assert_denial(&org_refused, ProxyErrorTypes::OrgModelAccessDenied);
+    assert_denial(&project_refused, ProxyErrorTypes::ProjectModelAccessDenied);
 }
 
 #[tokio::test]
@@ -368,9 +366,9 @@ async fn all_team_models_skips_key() {
         error_type(&refused),
         ProxyErrorTypes::KeyModelAccessDenied.to_string()
     );
-    // with a team the sentinel inherits the key's team models, whose allowlist denies the request,
-    // so only the skipped key check leaves the team's own grant to decide
-    let script = Arc::new(Script::new().with_team(r#"{"team_id":"team-1","models":["claude"]}"#));
+    // with a team the sentinel inherits the key's team models, whose allowlist denies the request
+    let script =
+        Arc::new(Script::new().with_team(team_row(r#"{"team_id":"team-1","models":["claude"]}"#)));
     let lookup = team_lookup(&script);
     let live = ResolvedDeps {
         teams: Some(&lookup),
@@ -388,7 +386,7 @@ async fn all_team_models_skips_key() {
 
 #[tokio::test]
 async fn team_aliases_grant_their_name() {
-    let script = Arc::new(Script::new().with_team(TEAM_ONE));
+    let script = Arc::new(Script::new().with_team(team_row(TEAM_ONE)));
     let lookup = team_lookup(&script);
     let setup = Setup::new();
     let context = setup.context();
@@ -418,7 +416,11 @@ async fn team_aliases_grant_their_name() {
 
 #[tokio::test]
 async fn resolved_default_db_argument() {
-    let script = Arc::new(Script::new().with_group(GROUP_KEY).with_team(TEAM_ONE));
+    let script = Arc::new(
+        Script::new()
+            .with_group(group_row(GROUP_KEY))
+            .with_team(team_row(TEAM_ONE)),
+    );
     let lookup = team_lookup(&script);
     let setup = Setup::new();
     let context = setup.context();
@@ -493,9 +495,9 @@ async fn team_lookup_error_snapshot() {
 async fn only_team_denial_override() {
     let script = Arc::new(
         Script::new()
-            .with_team(TEAM_ONE)
-            .with_group(GROUP_OWNER)
-            .with_group(GROUP_KEY),
+            .with_team(team_row(TEAM_ONE))
+            .with_group(group_row(GROUP_OWNER))
+            .with_group(group_row(GROUP_KEY)),
     );
     let lookup = team_lookup(&script);
     let setup = Setup::new();
@@ -523,7 +525,7 @@ async fn only_team_denial_override() {
 
 #[tokio::test]
 async fn member_check_requires_live_team() {
-    let script = Arc::new(Script::new().with_team(TEAM_ONE).with_membership(
+    let script = Arc::new(Script::new().with_team(team_row(TEAM_ONE)).with_membership(
         "user-1",
         "team-1",
         MEMBER_DENYING,
@@ -537,7 +539,7 @@ async fn member_check_requires_live_team() {
     );
     assert!(internal(&refused).contains("Team member not allowed to access model"));
     // a key without a user never reaches the member scope
-    let script = Arc::new(Script::new().with_team(TEAM_ONE).with_membership(
+    let script = Arc::new(Script::new().with_team(team_row(TEAM_ONE)).with_membership(
         "user-1",
         "team-1",
         MEMBER_DENYING,
@@ -557,8 +559,8 @@ async fn member_check_requires_live_team() {
 async fn project_after_member_nonempty_only() {
     let denying = Arc::new(
         Script::new()
-            .with_team(TEAM_ONE)
-            .with_project(PROJECT_DENYING)
+            .with_team(team_row(TEAM_ONE))
+            .with_project(project_row(PROJECT_DENYING))
             .with_membership("user-1", "team-1", MEMBER_DENYING),
     );
     // the member scope runs before the project, so its denial is the one the caller sees
@@ -568,8 +570,8 @@ async fn project_after_member_nonempty_only() {
     assert!(internal(&member_refused).contains("Team member not allowed to access model"));
     let allowing = Arc::new(
         Script::new()
-            .with_team(TEAM_ONE)
-            .with_project(PROJECT_DENYING)
+            .with_team(team_row(TEAM_ONE))
+            .with_project(project_row(PROJECT_DENYING))
             .with_membership("user-1", "team-1", MEMBER_ALLOWING),
     );
     let project_refused = resolved_with(&allowing, &token(TOKEN_PROJECT), &one("gpt-4o"))
@@ -582,8 +584,8 @@ async fn project_after_member_nonempty_only() {
     // an empty project allowlist never reaches the project check
     let empty_project = Arc::new(
         Script::new()
-            .with_team(TEAM_ONE)
-            .with_project(r#"{"project_id":"project-1"}"#)
+            .with_team(team_row(TEAM_ONE))
+            .with_project(project_row(r#"{"project_id":"project-1"}"#))
             .with_membership("user-1", "team-1", MEMBER_ALLOWING),
     );
     resolved_with(&empty_project, &token(TOKEN_PROJECT), &one("gpt-4o"))
@@ -593,7 +595,7 @@ async fn project_after_member_nonempty_only() {
 
 #[tokio::test]
 async fn resource_missing_inputs_empty() {
-    let script = Arc::new(Script::new().with_group(GROUP_OWNER));
+    let script = Arc::new(Script::new().with_group(group_row(GROUP_OWNER)));
     let lookup = team_lookup(&script);
     let team = team_row(TEAM_ONE);
     let missing_token =
@@ -619,9 +621,9 @@ async fn resource_missing_inputs_empty() {
 async fn group_team_or_key_owner() {
     let script = Arc::new(
         Script::new()
-            .with_group(GROUP_OWNER)
-            .with_group(GROUP_KEY_OWNED)
-            .with_group(GROUP_OTHER_TEAM),
+            .with_group(group_row(GROUP_OWNER))
+            .with_group(group_row(GROUP_KEY_OWNED))
+            .with_group(group_row(GROUP_OTHER_TEAM)),
     );
     let lookup = team_lookup(&script);
     let team_owned =
@@ -657,7 +659,7 @@ async fn group_team_or_key_owner() {
 
 #[tokio::test]
 async fn key_team_precedes_supplied_team() {
-    let script = Arc::new(Script::new().with_group(GROUP_OTHER_TEAM));
+    let script = Arc::new(Script::new().with_group(group_row(GROUP_OTHER_TEAM)));
     let lookup = team_lookup(&script);
     let supplied = team_row(TEAM_TWO);
     // the key names its own team, so the supplied team object is not consulted
@@ -685,7 +687,7 @@ async fn key_team_precedes_supplied_team() {
 
 #[tokio::test]
 async fn group_error_silent_skip() {
-    let script = Arc::new(Script::new().with_group(GROUP_OWNER));
+    let script = Arc::new(Script::new().with_group(group_row(GROUP_OWNER)));
     let lookup = team_lookup(&script);
     let valid_token = token(r#"{"token":"hash-1","access_group_ids":["ag-missing","ag-owner"]}"#);
     let resources = authorized_resources(
@@ -702,8 +704,8 @@ async fn group_error_silent_skip() {
 async fn resource_field_matrix_dedup() {
     let script = Arc::new(
         Script::new()
-            .with_group(GROUP_MATRIX_ONE)
-            .with_group(GROUP_MATRIX_TWO),
+            .with_group(group_row(GROUP_MATRIX_ONE))
+            .with_group(group_row(GROUP_MATRIX_TWO)),
     );
     let lookup = team_lookup(&script);
     let valid_token =
@@ -736,7 +738,7 @@ async fn resource_field_matrix_dedup() {
 
 #[tokio::test]
 async fn key_group_false_on_denial() {
-    let script = Arc::new(Script::new().with_group(GROUP_OWNER));
+    let script = Arc::new(Script::new().with_group(group_row(GROUP_OWNER)));
     let lookup = team_lookup(&script);
     let setup = Setup::new();
     let context = setup.context();
@@ -779,7 +781,7 @@ async fn key_group_false_on_denial() {
 
 #[tokio::test]
 async fn matcher_other_error_propagates() {
-    let script = Arc::new(Script::new().with_group(GROUP_OWNER));
+    let script = Arc::new(Script::new().with_group(group_row(GROUP_OWNER)));
     let lookup = team_lookup(&script);
     let setup = Setup {
         aliases: BTreeMap::new(),

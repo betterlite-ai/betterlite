@@ -44,7 +44,7 @@ static UNRESOLVED_PROVIDER: UnresolvedProviderInference = UnresolvedProviderInfe
 pub(crate) struct Script {
     pub(crate) teams: BTreeMap<String, LiteLLMTeamTableCachedObj>,
     pub(crate) groups: BTreeMap<String, AccessGroupTable>,
-    pub(crate) projects: BTreeMap<String, CachedProject>,
+    pub(crate) projects: Mutex<BTreeMap<String, CachedProject>>,
     pub(crate) memberships: BTreeMap<String, LiteLLMTeamMembership>,
     pub(crate) events: Mutex<Vec<String>>,
 }
@@ -56,8 +56,7 @@ impl Script {
     }
 
     #[must_use]
-    pub(crate) fn with_team(mut self, text: &str) -> Self {
-        let team = team_row(text);
+    pub(crate) fn with_team(mut self, team: LiteLLMTeamTable) -> Self {
         let id = team.fields.base.team_id.clone();
         self.teams.insert(
             id,
@@ -70,22 +69,21 @@ impl Script {
     }
 
     #[must_use]
-    pub(crate) fn with_group(mut self, text: &str) -> Self {
-        let group = group_row(text);
+    pub(crate) fn with_group(mut self, group: AccessGroupTable) -> Self {
         self.groups.insert(group.access_group_id.clone(), group);
         self
     }
 
     #[must_use]
-    pub(crate) fn with_project(mut self, text: &str) -> Self {
-        let project = project_row(text);
-        self.projects.insert(
-            project.project_id.clone(),
-            CachedProject {
-                project,
-                last_refreshed_at: None,
-            },
-        );
+    pub(crate) fn with_project(mut self, project: ProjectTable) -> Self {
+        let entry = CachedProject {
+            project,
+            last_refreshed_at: None,
+        };
+        self.projects
+            .get_mut()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(entry.project.project_id.clone(), entry);
         self
     }
 
@@ -232,15 +230,20 @@ impl OrgCache for Script {
 
     async fn read_project(&self, key: &str) -> Result<Option<CachedProject>, AuthCacheError> {
         self.record(format!("read {key}"));
-        Ok(self.projects.get(cache_key(key, "project_id:")).cloned())
+        let projects = self.projects.lock().unwrap_or_else(PoisonError::into_inner);
+        Ok(projects.get(cache_key(key, "project_id:")).cloned())
     }
 
     async fn write_project(
         &self,
-        _key: &str,
-        _project: &CachedProject,
+        key: &str,
+        project: &CachedProject,
         _ttl: f64,
     ) -> Result<(), AuthCacheError> {
+        self.projects
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(cache_key(key, "project_id:").to_owned(), project.clone());
         Ok(())
     }
 

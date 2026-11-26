@@ -1,3 +1,5 @@
+use std::sync::PoisonError;
+
 use async_trait::async_trait;
 use betterlite_auth::auth_cache::AuthCacheError;
 use betterlite_auth::auth_org_lookup::ports::{OrgCache, OrgStore, StoreAnswer as OrgAnswer};
@@ -47,10 +49,8 @@ impl TeamCache for Fixture {
         &self,
         key: &str,
     ) -> Result<Option<AccessGroupTable>, TeamCacheError> {
-        Ok(self
-            .groups
-            .get(key.strip_prefix("access_group_id:").unwrap_or(key))
-            .cloned())
+        let id = key.strip_prefix("access_group_id:").unwrap_or(key);
+        Ok(self.groups.get(id).cloned())
     }
 
     async fn cache_access_group(
@@ -128,18 +128,25 @@ impl OrgCache for Fixture {
     }
 
     async fn read_project(&self, key: &str) -> Result<Option<CachedProject>, AuthCacheError> {
-        Ok(self
-            .projects
+        let projects = self.projects.lock().unwrap_or_else(PoisonError::into_inner);
+        Ok(projects
             .get(key.strip_prefix("project_id:").unwrap_or(key))
             .cloned())
     }
 
     async fn write_project(
         &self,
-        _key: &str,
-        _project: &CachedProject,
+        key: &str,
+        project: &CachedProject,
         _ttl: f64,
     ) -> Result<(), AuthCacheError> {
+        self.projects
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(
+                key.strip_prefix("project_id:").unwrap_or(key).to_owned(),
+                project.clone(),
+            );
         Ok(())
     }
 

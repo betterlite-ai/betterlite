@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
 use betterlite_auth::auth_end_users::defaults::MemberBudgetError;
@@ -32,7 +32,7 @@ mod tables;
 pub(super) struct Fixture {
     teams: BTreeMap<String, LiteLLMTeamTableCachedObj>,
     groups: BTreeMap<String, AccessGroupTable>,
-    projects: BTreeMap<String, CachedProject>,
+    projects: Mutex<BTreeMap<String, CachedProject>>,
     memberships: BTreeMap<String, LiteLLMTeamMembership>,
 }
 
@@ -55,13 +55,17 @@ impl Fixture {
                     .insert(id.to_owned(), serde_json::from_value(value.clone())?);
             } else if let Some(id) = key.strip_prefix("project_id:") {
                 let project: ProjectTable = serde_json::from_value(value.clone())?;
-                fixture.projects.insert(
-                    id.to_owned(),
-                    CachedProject {
-                        project,
-                        last_refreshed_at: None,
-                    },
-                );
+                fixture
+                    .projects
+                    .get_mut()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .insert(
+                        id.to_owned(),
+                        CachedProject {
+                            project,
+                            last_refreshed_at: None,
+                        },
+                    );
             } else {
                 let pair = key.strip_prefix("team_membership:").unwrap_or(key);
                 fixture
