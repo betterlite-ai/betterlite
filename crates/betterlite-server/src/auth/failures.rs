@@ -15,10 +15,12 @@ pub(crate) fn stage_failure_response(failure: &StageFailure) -> Response {
         StageFailure::Authentication(authentication) => authentication_error(authentication),
         StageFailure::KeyLookup(exception) => denial_response(exception),
         StageFailure::ModelAccess(rejection) => rejection_response(rejection),
-        StageFailure::AuthRequestPolicy(exception)
+        StageFailure::EntityModelAccess(exception)
+        | StageFailure::AuthRequestPolicy(exception)
         | StageFailure::ResourceGrants(exception)
         | StageFailure::TagBudgets(exception)
         | StageFailure::RequestBodySafety(exception)
+        | StageFailure::VirtualKeyRoutes(exception)
         | StageFailure::KeyBudgets(exception)
         | StageFailure::TeamBudgets(exception)
         | StageFailure::OrgLookup(exception)
