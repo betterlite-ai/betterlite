@@ -1,13 +1,13 @@
 id: B10108
 milestone: R2 bug fixes
 title: A database config value that resolves to a remote module through os.environ is refused
-status: todo
+status: done
 depends_on: [B8379]
 file: tasks/B10108-db-overlay-env-remote-modules.yaml
 covers: []
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3231
