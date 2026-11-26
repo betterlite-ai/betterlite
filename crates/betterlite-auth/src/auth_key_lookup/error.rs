@@ -74,10 +74,9 @@ impl KeyLookupError {
             },
             Self::Lookup(error) => lookup_failure(error),
             Self::Permission(error) => match error {
-                PermissionError::Repository(fault) => match error.database_fault() {
-                    Some(database) => AuthFailure::Database(database),
-                    None => other_failure(fault.to_string()),
-                },
+                PermissionError::Repository(fault) => error
+                    .database_fault()
+                    .map_or_else(|| other_failure(fault.to_string()), AuthFailure::Database),
                 PermissionError::MissingInDatabaseOnly => http_failure(
                     MISSING_PERMISSION_MESSAGE.to_owned(),
                     MISSING_PERMISSION_STATUS,
@@ -118,7 +117,7 @@ fn lookup_failure(error: &DbLookupError) -> AuthFailure {
     AuthFailure::Database(db_fault(ErrorType::Deadline, error.to_string()))
 }
 
-fn http_failure(detail: String, status_code: u16) -> AuthFailure {
+const fn http_failure(detail: String, status_code: u16) -> AuthFailure {
     AuthFailure::Http {
         detail,
         param: None,
@@ -127,14 +126,14 @@ fn http_failure(detail: String, status_code: u16) -> AuthFailure {
     }
 }
 
-fn other_failure(message: String) -> AuthFailure {
+const fn other_failure(message: String) -> AuthFailure {
     AuthFailure::Other {
         message,
         param: None,
     }
 }
 
-fn db_fault(error_type: ErrorType, message: String) -> DbError {
+const fn db_fault(error_type: ErrorType, message: String) -> DbError {
     DbError {
         error_type,
         message,

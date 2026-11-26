@@ -51,10 +51,10 @@ pub(crate) fn master_stage_input(
     request: &Request<Body>,
     authenticated: Option<&AuthContext>,
 ) -> Result<StageInput, StageFailure> {
-    match authenticated {
-        Some(context) => Ok(StageInput::Authenticated(Box::new(context.clone()))),
-        None => Ok(StageInput::MasterKey(super::extract_key(request.headers()))),
-    }
+    Ok(authenticated.map_or_else(
+        || StageInput::MasterKey(super::extract_key(request.headers())),
+        |context| StageInput::Authenticated(Box::new(context.clone())),
+    ))
 }
 
 // A test or a later composition installs the authenticator as an extension or in the state slot.
@@ -92,13 +92,13 @@ pub(crate) async fn prefetch(stage: KeyLookupStageInput) -> Result<StageInput, S
         .presented
         .as_ref()
         .filter(|key| !key.expose_secret().is_empty());
-    let Some(presented) = presented else {
+    let Some(credential) = presented else {
         return Err(StageFailure::from(AuthenticationFailure::Missing));
     };
     let Some(authenticator) = stage.authenticator.as_ref() else {
         return Err(StageFailure::from(AuthenticationFailure::Invalid));
     };
-    match authenticator.authenticate(presented.expose_secret()).await {
+    match authenticator.authenticate(credential.expose_secret()).await {
         Ok(outcome) => Ok(StageInput::Authenticated(Box::new(key_context(outcome)))),
         Err(error) => Err(StageFailure::KeyLookup(Box::new(
             as_proxy_exception(&error.failure()).exception().clone(),
@@ -113,14 +113,13 @@ fn key_context(outcome: KeyLookupOutcome) -> AuthContext {
         .clone()
         .or_else(|| identity.key_name.clone())
         .unwrap_or_else(|| outcome.hashed_token.clone());
-    let teams = match identity.team_id.clone() {
-        Some(id) => vec![TeamIdentity {
+    let teams = identity.team_id.clone().map_or_else(Vec::new, |id| {
+        vec![TeamIdentity {
             id,
             name: identity.team_alias.clone(),
             role: TeamRole::Member,
-        }],
-        None => Vec::new(),
-    };
+        }]
+    });
     AuthContext {
         principal: Principal {
             principal_type: PrincipalType::Human,

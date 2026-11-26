@@ -68,10 +68,8 @@ impl KeyReader {
         match bounded_db_lookup(read(call), request, &self.tasks).await {
             Ok(found) => Ok(found),
             Err(error) if is_parked(&error) => {
-                match parked.lock().unwrap_or_else(PoisonError::into_inner).take() {
-                    Some(failure) => Err(KeyLookupError::Read(failure)),
-                    None => Err(KeyLookupError::Lookup(error)),
-                }
+                let failure = parked.lock().unwrap_or_else(PoisonError::into_inner).take();
+                Err(failure.map_or_else(|| KeyLookupError::Lookup(error), KeyLookupError::Read))
             }
             Err(error) => Err(KeyLookupError::Lookup(error)),
         }
@@ -104,6 +102,21 @@ async fn read(call: ReadCall) -> Result<Option<CombinedKeyView>, DbLookupError> 
     let Some(fault) = transport_fault(&failure) else {
         return Err(park(&call.parked, failure));
     };
+    reconnect_after_failure(&call, fault).await?;
+    match call
+        .source
+        .read_key(&call.token, call.use_writer, call.parent_otel_span)
+        .await
+    {
+        Ok(found) => Ok(found),
+        Err(retry_failure) => match transport_fault(&retry_failure) {
+            Some(retry_fault) => Err(DbLookupError::Database(retry_fault)),
+            None => Err(park(&call.parked, retry_failure)),
+        },
+    }
+}
+
+async fn reconnect_after_failure(call: &ReadCall, fault: DbError) -> Result<(), DbLookupError> {
     let Some(reconnect) = call.reconnect.as_ref() else {
         return Err(DbLookupError::Database(fault));
     };
@@ -120,20 +133,9 @@ async fn read(call: ReadCall) -> Result<Option<CombinedKeyView>, DbLookupError> 
             .await
     };
     match outcome {
-        Ok(true) => {}
-        Ok(false) => return Err(DbLookupError::Database(fault)),
-        Err(error) => return Err(DbLookupError::Database(error)),
-    }
-    match call
-        .source
-        .read_key(&call.token, call.use_writer, call.parent_otel_span)
-        .await
-    {
-        Ok(found) => Ok(found),
-        Err(retry_failure) => match transport_fault(&retry_failure) {
-            Some(fault) => Err(DbLookupError::Database(fault)),
-            None => Err(park(&call.parked, retry_failure)),
-        },
+        Ok(true) => Ok(()),
+        Ok(false) => Err(DbLookupError::Database(fault)),
+        Err(error) => Err(DbLookupError::Database(error)),
     }
 }
 

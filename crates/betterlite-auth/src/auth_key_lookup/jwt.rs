@@ -45,11 +45,10 @@ pub fn jwt_key_mapping_cache_key(
     claim_value: &str,
     issuer: Option<&str>,
 ) -> String {
-    let issuer = issuer.filter(|issuer| !issuer.is_empty());
-    match issuer {
-        Some(scope) => format!("jwt_key_mapping:{scope}:{claim_name}:{claim_value}"),
-        None => format!("jwt_key_mapping:{claim_name}:{claim_value}"),
-    }
+    issuer.filter(|value| !value.is_empty()).map_or_else(
+        || format!("jwt_key_mapping:{claim_name}:{claim_value}"),
+        |scope| format!("jwt_key_mapping:{scope}:{claim_name}:{claim_value}"),
+    )
 }
 
 // ast-grep-ignore: no-long-names
@@ -59,7 +58,10 @@ pub async fn get_jwt_key_mapping_cache_keys_for_tokens(
 ) -> Result<Vec<String>, JwtError> {
     match hashed_tokens {
         [] => Ok(Vec::new()),
-        tokens => source.mappings_for_tokens(tokens).await.map(cache_keys),
+        tokens => source
+            .mappings_for_tokens(tokens)
+            .await
+            .map(|mappings| cache_keys(&mappings)),
     }
 }
 
@@ -81,7 +83,7 @@ pub async fn get_jwt_key_mapping_object(
         .map(|mapping| mapping.token))
 }
 
-fn cache_keys(mappings: Vec<JwtMappingRow>) -> Vec<String> {
+fn cache_keys(mappings: &[JwtMappingRow]) -> Vec<String> {
     mappings
         .iter()
         .map(|mapping| {
@@ -127,9 +129,9 @@ impl JwtMappingSource for DatabaseJwtMappings {
             client: Some(Arc::new(session)),
             table: JwtRows,
         };
-        let table =
+        let reader =
             AuthReadAdapter::JwtKeyMapping.open(Arc::new(table), String::new(), self.context());
-        table
+        reader
             .find_first(FindOne {
                 filter: filter.clone(),
                 include: Presence::Omitted,

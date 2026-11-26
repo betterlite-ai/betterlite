@@ -47,13 +47,9 @@ pub fn key_identity(auth: &UserAPIKeyAuth) -> KeyIdentity {
 
 #[must_use]
 pub fn key_roles(role: Option<UserRole>) -> Vec<Role> {
-    match role {
-        Some(role) => match map_role(Some(role_str(role))) {
-            Some(mapped) => vec![mapped],
-            None => Vec::new(),
-        },
-        None => Vec::new(),
-    }
+    role.map_or_else(Vec::new, |user_role| {
+        map_role(Some(role_str(user_role))).map_or_else(Vec::new, |mapped| vec![mapped])
+    })
 }
 
 const fn role_str(role: UserRole) -> &'static str {

@@ -51,12 +51,12 @@ fn apply_grants(auth: &UserAPIKeyAuth, grants: &ResolvedGrants) -> Option<UserAP
     let user = grants.identity.user.as_ref()?;
     let mut refreshed = auth.clone();
     if let Some(team) = grants.team.as_ref() {
-        let grants = team_grants(
+        let live_team_grants = team_grants(
             &team.team,
             grants.identity.membership.as_ref(),
             Some(user.user_id.as_str()),
         );
-        apply_team_grants(&mut refreshed, &grants);
+        apply_team_grants(&mut refreshed, &live_team_grants);
         refreshed.view.token.models = Vec::new();
     } else {
         refreshed.view.token.models = user_models(user)
@@ -69,7 +69,7 @@ fn apply_grants(auth: &UserAPIKeyAuth, grants: &ResolvedGrants) -> Option<UserAP
 }
 
 fn apply_team_grants(auth: &mut UserAPIKeyAuth, grants: &TeamGrants) {
-    auth.view.team_alias = grants.team_alias.clone();
+    auth.view.team_alias.clone_from(&grants.team_alias);
     auth.view.team_tpm_limit = grants.team_tpm_limit;
     auth.view.team_rpm_limit = grants.team_rpm_limit;
     auth.view.team_tpd_limit = grants.team_tpd_limit;
@@ -86,9 +86,13 @@ fn apply_team_grants(auth: &mut UserAPIKeyAuth, grants: &TeamGrants) {
     auth.view.team_blocked = grants.team_blocked;
     auth.view.team_metadata = grants.team_metadata.clone().map(Payload);
     auth.view.team_model_aliases = grants.team_model_aliases.clone().map(alias_payload);
-    auth.view.team_object_permission_id = grants.team_object_permission_id.clone();
-    auth.extra.team_object_permission = grants.team_object_permission.clone();
-    auth.view.team_member = grants.team_member.clone();
+    auth.view
+        .team_object_permission_id
+        .clone_from(&grants.team_object_permission_id);
+    auth.extra
+        .team_object_permission
+        .clone_from(&grants.team_object_permission);
+    auth.view.team_member.clone_from(&grants.team_member);
     auth.view.team_member_spend = grants.team_member_spend;
     auth.view.team_member_tpm_limit = grants.team_member_tpm_limit;
     auth.view.team_member_rpm_limit = grants.team_member_rpm_limit;
@@ -108,11 +112,11 @@ pub async fn resolve_object_permission_for_unresolvable_team(
     object_permission_id: Option<&str>,
     lookups: &KeyLookups,
 ) -> Result<Option<LiteLLMObjectPermissionTable>, PermissionError> {
-    let Some(object_permission_id) = object_permission_id else {
+    let Some(permission_id) = object_permission_id else {
         return Ok(None);
     };
     let Some(permissions) = lookups.permissions.as_deref() else {
         return Ok(None);
     };
-    permissions.permission(object_permission_id, false).await
+    permissions.permission(permission_id, false).await
 }

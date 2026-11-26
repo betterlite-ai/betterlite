@@ -47,7 +47,7 @@ pub async fn get_key_object(
             key: request.hashed_token.to_owned(),
         });
     };
-    let mut auth = auth_from_view(view)?;
+    let mut auth = auth_from_view(&view)?;
     enrich_permission(lookups, &mut auth, request).await?;
     if request.check_db_only {
         return Ok(auth);
@@ -61,8 +61,8 @@ pub async fn get_key_object(
 }
 
 // UserAPIKeyAuth.model_validate(row.model_dump(exclude_none=True)): a null row field reads as its default.
-fn auth_from_view(view: CombinedKeyView) -> Result<UserAPIKeyAuth, KeyLookupError> {
-    let text = serde_json::to_string(&view).map_err(KeyLookupError::Json)?;
+fn auth_from_view(view: &CombinedKeyView) -> Result<UserAPIKeyAuth, KeyLookupError> {
+    let text = serde_json::to_string(view).map_err(KeyLookupError::Json)?;
     let fields: BTreeMap<String, JsonData> =
         serde_json::from_str(&text).map_err(KeyLookupError::Json)?;
     UserAPIKeyAuth::construct(AuthInput::Dict(fields))
