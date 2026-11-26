@@ -11,6 +11,7 @@ use axum::Router;
 use axum::body::{Body, Bytes, to_bytes};
 use axum::extract::Extension;
 use axum::http::{Request, StatusCode, header};
+use axum::middleware;
 use axum::routing::post;
 use betterlite_auth::auth_request_models::catalog::{
     CatalogError, DeploymentRecord, ModelCatalog, RequestModelResolver,
@@ -25,8 +26,8 @@ use crate::auth::auth_identity::{
     AuthBackend, AuthContext, INSTALLED_STAGES, StageInput, dispatch,
 };
 use crate::auth::auth_request_models::CoreDecoders;
+use crate::auth::auth_route_patterns::{self, AuthSettings};
 use crate::auth::stage_input;
-use crate::routes;
 use crate::routes::tests::state_for;
 
 const MASTER_KEY: &str = "secret-master-key";
@@ -145,13 +146,19 @@ fn failing_resolver() -> Arc<RequestModelResolver> {
 async fn failure_stops_downstream() {
     let config = config_with_master_key();
     let reached = Arc::new(AtomicBool::new(false));
-    let chat = Router::new().route(PREDICTION_ROUTE, post(mark_reached));
-    let application = routes::router(
-        state_for(&config),
-        Arc::new(AtomicBool::new(false)),
-        chat,
-        Router::new(),
-    );
+    // Exercise the installed auth pipeline on a catalog-reading route without the unrelated
+    // route-admission table, which does not expose the prediction endpoint yet.
+    let settings = AuthSettings {
+        master_key: config.general_settings.master_key.clone(),
+        routes: config.sections.auth_route_patterns.clone(),
+    };
+    let application = Router::new()
+        .route(PREDICTION_ROUTE, post(mark_reached))
+        .layer(middleware::from_fn_with_state(
+            settings,
+            auth_route_patterns::stage,
+        ))
+        .layer(Extension(state_for(&config)));
     let passing = application
         .clone()
         .oneshot(prediction_request(&reached, None))

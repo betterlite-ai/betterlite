@@ -1,5 +1,7 @@
 name: auth-context-sources-alias-normalization
 config: |
+  general_settings:
+    master_key: os.environ/LITELLM_MASTER_KEY
   model_list:
     - model_name: dispatch-model
       litellm_params:
