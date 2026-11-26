@@ -65,7 +65,7 @@ async fn publishes_the_pruned_settings_and_answers_the_caller_message() {
     assert_eq!(published[0].0, SETTING);
     assert_eq!(published[0].1, stored);
     let section = harness.stored(Section::LitellmSettings).unwrap();
-    // the config file owns other_setting, so the save writes only the changed key to the database row
+    // other_setting is unchanged against the baseline, so the save writes only the new block to the database row
     assert_eq!(section, values(&[("default_internal_user_params", stored)]));
 }
 
