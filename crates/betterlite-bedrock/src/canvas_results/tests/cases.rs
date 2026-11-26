@@ -155,6 +155,7 @@ fn empty_data_raises_at_the_original_status() {
         r#"{"images":[]}"#,
         r#"{"images":["",null,false,0]}"#,
         r#"{"images":[{}]}"#,
+        r#"{"images":[[]]}"#,
         r#"{"message":null,"error":null}"#,
     ] {
         let error = unpriced(200, body).expect_err("an empty filtered list is an error");
