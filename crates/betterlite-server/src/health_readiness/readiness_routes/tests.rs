@@ -168,12 +168,10 @@ async fn public_readiness_reports_healthy_and_not_connected_without_a_database()
 
 #[tokio::test]
 async fn public_readiness_answers_503_for_an_unreachable_database() {
-    let world = World {
-        probe: Arc::new(FakeProbe::scripted(vec![ProbeAnswer::Fail(
+    let world =
+        World::default().with_probe(Arc::new(FakeProbe::scripted(vec![ProbeAnswer::Fail(
             ErrorType::Data,
-        )])),
-        ..World::default()
-    };
+        )])));
     let router = world.router(AllowRequestsOnOutage::Unsupported);
     let (status, _, body) = send(&router, Method::GET, "/health/readiness", None).await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
@@ -183,12 +181,10 @@ async fn public_readiness_answers_503_for_an_unreachable_database() {
 
 #[tokio::test]
 async fn public_readiness_keeps_200_when_requests_are_allowed_on_outage() {
-    let world = World {
-        probe: Arc::new(FakeProbe::scripted(vec![ProbeAnswer::Fail(
+    let world =
+        World::default().with_probe(Arc::new(FakeProbe::scripted(vec![ProbeAnswer::Fail(
             ErrorType::Data,
-        )])),
-        ..World::default()
-    };
+        )])));
     let router = world.router(AllowRequestsOnOutage::Boolean(true));
     let (status, _, body) = send(&router, Method::GET, "/health/readiness", None).await;
     assert_eq!(status, StatusCode::OK);
@@ -198,11 +194,9 @@ async fn public_readiness_keeps_200_when_requests_are_allowed_on_outage() {
 
 #[tokio::test]
 async fn public_readiness_reports_a_stalled_database_as_unavailable() {
-    let world = World {
-        probe: Arc::new(FakeProbe::healthy()),
-        stall: Arc::new(FakeStall { stalled: true }),
-        ..World::default()
-    };
+    let world = World::default()
+        .with_probe(Arc::new(FakeProbe::healthy()))
+        .with_stall(Arc::new(FakeStall { stalled: true }));
     let router = world.router(AllowRequestsOnOutage::Unsupported);
     let (status, _, body) = send(&router, Method::GET, "/health/readiness", None).await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
@@ -212,17 +206,15 @@ async fn public_readiness_reports_a_stalled_database_as_unavailable() {
 
 #[tokio::test]
 async fn backlog_returns_in_flight_and_admission_counters() {
-    let world = World {
-        in_flight: Arc::new(FakeInFlight::new(7)),
-        admission: Arc::new(FakeAdmission {
+    let world = World::default()
+        .with_in_flight(Arc::new(FakeInFlight::new(7)))
+        .with_admission(Arc::new(FakeAdmission {
             stats: AdmissionCounters {
                 admitted: 11,
                 queued: 2,
                 rejected: 3,
             },
-        }),
-        ..World::default()
-    };
+        }));
     let router = world.router(AllowRequestsOnOutage::Unsupported);
     let (status, _, body) = send(&router, Method::GET, "/health/backlog", None).await;
     assert_eq!(status, StatusCode::OK);
@@ -336,10 +328,7 @@ async fn license_route_answers_the_community_body() {
 }
 
 fn listing(names: CallbackNames) -> World {
-    World {
-        callbacks: Arc::new(FakeCallbacks { names }),
-        ..World::default()
-    }
+    World::default().with_callbacks(Arc::new(FakeCallbacks { names }))
 }
 
 fn names() -> CallbackNames {

@@ -249,6 +249,38 @@ impl Default for FakeSources {
     }
 }
 
+impl FakeSources {
+    pub(crate) fn with_callbacks(mut self, callbacks: Vec<String>) -> Self {
+        self.callbacks = callbacks;
+        self
+    }
+
+    pub(crate) fn with_cache(mut self, cache: Result<Option<CacheReport>, String>) -> Self {
+        self.cache = cache;
+        self
+    }
+
+    pub(crate) fn with_level(mut self, level: String) -> Self {
+        self.level = level;
+        self
+    }
+
+    pub(crate) fn with_sso(mut self, sso: bool) -> Self {
+        self.sso = sso;
+        self
+    }
+
+    pub(crate) fn with_version(mut self, version: String) -> Self {
+        self.version = version;
+        self
+    }
+
+    pub(crate) fn with_redis(mut self, redis: bool) -> Self {
+        self.redis = redis;
+        self
+    }
+}
+
 #[async_trait]
 impl ReadinessSources for FakeSources {
     fn success_callback_names(&self) -> Vec<String> {
@@ -316,6 +348,31 @@ pub(crate) struct World {
 }
 
 impl World {
+    pub(crate) fn with_probe(mut self, probe: Arc<FakeProbe>) -> Self {
+        self.probe = probe;
+        self
+    }
+
+    pub(crate) fn with_stall(mut self, stall: Arc<FakeStall>) -> Self {
+        self.stall = stall;
+        self
+    }
+
+    pub(crate) fn with_in_flight(mut self, in_flight: Arc<FakeInFlight>) -> Self {
+        self.in_flight = in_flight;
+        self
+    }
+
+    pub(crate) fn with_admission(mut self, admission: Arc<FakeAdmission>) -> Self {
+        self.admission = admission;
+        self
+    }
+
+    pub(crate) fn with_callbacks(mut self, callbacks: Arc<FakeCallbacks>) -> Self {
+        self.callbacks = callbacks;
+        self
+    }
+
     pub(crate) fn router(&self, availability: AllowRequestsOnOutage) -> Router {
         let db = Arc::new(db_readiness(
             &self.probe,

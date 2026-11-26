@@ -189,26 +189,20 @@ fn stall_replaces_only_a_connected_status(
 #[tokio::test(start_paused = true)]
 async fn no_redis_warning_is_off_when_redis_is_configured() {
     let fixture = fixture(FakeProbe::unconfigured());
-    let sources = FakeSources {
-        redis: true,
-        ..FakeSources::default()
-    };
+    let sources = FakeSources::default().with_redis(true);
     assert!(!fixture.db.show_no_redis_warning(&sources).await);
 }
 
 #[tokio::test(start_paused = true)]
 async fn no_redis_warning_is_off_when_the_flag_disables_it() {
-    let settings = HealthSettings {
-        disable_no_redis_warning: true,
-        ..HealthSettings::default()
-    };
-    let fixture = fixture_with(FakeProbe::unconfigured(), false, &settings);
-    assert!(
-        !fixture
-            .db
-            .show_no_redis_warning(&FakeSources::default())
-            .await
+    let db = DbReadiness::new(
+        Arc::new(FakeProbe::unconfigured()),
+        Arc::new(FakeStall { stalled: false }),
+        AllowRequestsOnOutage::Unsupported,
+        30.0_f64,
+        true,
     );
+    assert!(!db.show_no_redis_warning(&FakeSources::default()).await);
 }
 
 #[tokio::test(start_paused = true)]
