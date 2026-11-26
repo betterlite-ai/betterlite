@@ -128,12 +128,29 @@ pub(crate) async fn prefetch(
 fn stage_failure(error: AgentModelGrantsError) -> StageFailure {
     match error {
         AgentModelGrantsError::Denied(denial) => {
-            entity_failure(EntityModelAccessError::Denied(denial))
+            StageFailure::ModelAccess(Box::new(ModelAccessRejection::Denied(denial)))
         }
         AgentModelGrantsError::RecurseDepth { model } => {
-            entity_failure(EntityModelAccessError::RecurseDepth { model })
+            StageFailure::ModelAccess(Box::new(ModelAccessRejection::RecurseDepth { model }))
         }
-        AgentModelGrantsError::Entity(entity) => entity_failure(*entity),
+        AgentModelGrantsError::Entity(entity) => match *entity {
+            EntityModelAccessError::Denied(denial) => {
+                StageFailure::ModelAccess(Box::new(ModelAccessRejection::Denied(denial)))
+            }
+            EntityModelAccessError::RecurseDepth { model } => {
+                StageFailure::ModelAccess(Box::new(ModelAccessRejection::RecurseDepth { model }))
+            }
+            EntityModelAccessError::Member(budget) => {
+                StageFailure::ModelGrants(Box::new(team_budget_exception(&budget)))
+            }
+            EntityModelAccessError::Project(lookup) => {
+                StageFailure::ModelGrants(Box::new(org_lookup_exception(&lookup)))
+            }
+            EntityModelAccessError::TeamRow(row) => {
+                tracing::debug!(error = %row, "the caller team snapshot did not build");
+                StageFailure::ModelGrants(Box::new(lookup_exception(&row.to_string())))
+            }
+        },
         AgentModelGrantsError::Ceiling(groups) => {
             StageFailure::ModelGrants(Box::new(lookup_exception(&groups.to_string())))
         }
@@ -143,27 +160,6 @@ fn stage_failure(error: AgentModelGrantsError) -> StageFailure {
         AgentModelGrantsError::Unavailable => StageFailure::ModelGrants(Box::new(
             lookup_exception(&AgentModelGrantsError::Unavailable.to_string()),
         )),
-    }
-}
-
-fn entity_failure(error: EntityModelAccessError) -> StageFailure {
-    match error {
-        EntityModelAccessError::Denied(denial) => {
-            StageFailure::ModelAccess(Box::new(ModelAccessRejection::Denied(denial)))
-        }
-        EntityModelAccessError::RecurseDepth { model } => {
-            StageFailure::ModelAccess(Box::new(ModelAccessRejection::RecurseDepth { model }))
-        }
-        EntityModelAccessError::Member(budget) => {
-            StageFailure::ModelGrants(Box::new(team_budget_exception(&budget)))
-        }
-        EntityModelAccessError::Project(lookup) => {
-            StageFailure::ModelGrants(Box::new(org_lookup_exception(&lookup)))
-        }
-        EntityModelAccessError::TeamRow(row) => {
-            tracing::debug!(error = %row, "the caller team snapshot did not build");
-            StageFailure::ModelGrants(Box::new(lookup_exception(&row.to_string())))
-        }
     }
 }
 
