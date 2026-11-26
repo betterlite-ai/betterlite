@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use serde_json::{Value, json};
 
@@ -44,10 +44,7 @@ pub(super) fn vouch(input: &Input) -> HelperResult {
     let outage = AllowRequestsOnOutage::Boolean(input.outage);
     let error = lookup_error(lookup);
     let value = token_can_vouch_for_team(&token, &error, &outage);
-    Ok(match value {
-        Ok(allowed) => json!({ "value": allowed }),
-        Err(PolicyError::UnsupportedValue) => json!({ "error": "unsupported_value" }),
-    })
+    Ok(vouch_json(&value))
 }
 
 fn lookup_error(lookup: Lookup) -> TeamLookupError {
@@ -59,6 +56,13 @@ fn lookup_error(lookup: Lookup) -> TeamLookupError {
     }
 }
 
+fn vouch_json(outcome: &Result<bool, PolicyError>) -> Value {
+    match outcome {
+        Ok(allowed) => json!({ "value": allowed }),
+        Err(PolicyError::UnsupportedValue) => json!({ "error": "unsupported_value" }),
+    }
+}
+
 pub(super) fn org_inherit(input: &Input) -> HelperResult {
     let mut token = required_token(input.token.as_ref())?;
     let team = team_obj(input.team.as_ref())?;
@@ -67,7 +71,9 @@ pub(super) fn org_inherit(input: &Input) -> HelperResult {
         .as_ref()
         .map(|value| serde_json::from_value(value.clone()).or_value_error())
         .transpose()?;
-    let cache = Arc::new(FakeOrg::new(org));
+    let cache = Arc::new(FakeOrg {
+        org: Mutex::new(org),
+    });
     let cache_trait: Arc<dyn OrgCache> = Arc::<FakeOrg>::clone(&cache);
     let wired: Arc<dyn OrgStore> = Arc::<FakeOrg>::clone(&cache);
     let store = input.database.then_some(wired);

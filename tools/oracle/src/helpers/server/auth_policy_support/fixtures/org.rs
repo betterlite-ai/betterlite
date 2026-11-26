@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::sync::{Mutex, PoisonError};
 
 use async_trait::async_trait;
@@ -10,17 +9,7 @@ use betterlite_db::resource_rows::organization::OrganizationTable;
 
 // the org cache the lookup reads: it answers the seeded row, and a write replaces it
 pub(crate) struct FakeOrg {
-    org: Mutex<Option<OrganizationTable>>,
-    projects: Mutex<BTreeMap<String, CachedProject>>,
-}
-
-impl FakeOrg {
-    pub(crate) const fn new(org: Option<OrganizationTable>) -> Self {
-        Self {
-            org: Mutex::new(org),
-            projects: Mutex::new(BTreeMap::new()),
-        }
-    }
+    pub(crate) org: Mutex<Option<OrganizationTable>>,
 }
 
 #[async_trait]
@@ -50,24 +39,16 @@ impl OrgCache for FakeOrg {
         Ok(())
     }
 
-    async fn read_project(&self, key: &str) -> Result<Option<CachedProject>, AuthCacheError> {
-        let project = {
-            let projects = self.projects.lock().unwrap_or_else(PoisonError::into_inner);
-            projects.get(key).cloned()
-        };
-        Ok(project)
+    async fn read_project(&self, _key: &str) -> Result<Option<CachedProject>, AuthCacheError> {
+        Ok(None)
     }
 
     async fn write_project(
         &self,
-        key: &str,
-        project: &CachedProject,
+        _key: &str,
+        _project: &CachedProject,
         _ttl: f64,
     ) -> Result<(), AuthCacheError> {
-        {
-            let mut projects = self.projects.lock().unwrap_or_else(PoisonError::into_inner);
-            projects.insert(key.to_owned(), project.clone())
-        };
         Ok(())
     }
 
