@@ -1,4 +1,5 @@
 import asyncio
+import json
 from typing import Final, Literal, TypeAlias
 
 import httpx
@@ -86,11 +87,11 @@ class MappingDb(PrismaWrapper):
         self.litellm_jwtkeymapping = self
 
     async def find_many(self, *, where: Row, **_opts: JsonValue) -> list[MappingRow]:
-        self.state.where.append(where)
+        self.state.where.append(JSON.validate_json(json.dumps(where)))
         return self.state.mapping_rows
 
     async def find_first(self, *, where: Row, **_opts: JsonValue) -> MappingRow | None:
-        self.state.where.append(where)
+        self.state.where.append(JSON.validate_json(json.dumps(where)))
         return self.state.found
 
 
@@ -156,9 +157,8 @@ class KeyCache(UserApiKeyCache):
         self.state.writes += 1
 
 
-class Scripted:
-    def __init__(self, state: Call) -> None:
-        self.state = state
+class Scripted(BaseModel):
+    state: Call
 
 
 class ScriptedUser(Scripted):
@@ -272,9 +272,9 @@ async def session(state: Call) -> JsonValue:
     result: JsonValue = "ok"
     denial: JsonValue = None
     fields: JsonValue = None
-    user_api_key_auth.get_user_object = ScriptedUser(state)  # type: ignore[attr-defined]  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1409-L1452
-    user_api_key_auth.get_team_object = ScriptedTeam(state)  # type: ignore[attr-defined]  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1409-L1452
-    user_api_key_auth.get_team_membership = ScriptedMembership(state)  # type: ignore[attr-defined]  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1409-L1452
+    user_api_key_auth.get_user_object = ScriptedUser(state=state)  # type: ignore[attr-defined]  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1409-L1452
+    user_api_key_auth.get_team_object = ScriptedTeam(state=state)  # type: ignore[attr-defined]  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1409-L1452
+    user_api_key_auth.get_team_membership = ScriptedMembership(state=state)  # type: ignore[attr-defined]  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1409-L1452
     try:
         refreshed: UserAPIKeyAuth = await user_api_key_auth._refresh_session_token_grants(auth, client, cache, None, logging_obj)  # noqa: SLF001, E501  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1409-L1452
         fields = auth_fields(refreshed)
