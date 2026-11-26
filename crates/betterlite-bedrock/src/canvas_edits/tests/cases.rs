@@ -1,6 +1,8 @@
-use super::support::{body, image, json, options_json, prepared, refused, with_bytes, with_tuple};
+use super::support::{
+    body, image, json, options_json, prepared, refused, wire, with_mask_bytes, with_mask_tuple,
+};
 use crate::canvas_edits::error::CanvasEditError;
-use crate::canvas_edits::types::{CanvasEditOptions, CanvasImageInput};
+use crate::canvas_edits::types::{CanvasEditOptions, CanvasEditValue, CanvasImageInput};
 
 const TASK_ROWS: [(&str, &str); 13] = [
     (
@@ -219,11 +221,9 @@ fn wrong_type_names_the_field(source: &CanvasImageInput) {
         &options_json(r#"{"taskType": 7}"#),
     );
     assert!(matches!(&wrong_task_type, CanvasEditError::Field { field } if field == "taskType"));
-    let bad_width = refused(
-        Some("cat"),
-        Some(source),
-        &with_bytes(options_json(r#"{"width": 5}"#), "width", b"5"),
-    );
+    let mut asked = options_json(r#"{"width": 5}"#);
+    asked.width = Some(CanvasEditValue::Bytes(b"5".to_vec()));
+    let bad_width = refused(Some("cat"), Some(source), &asked);
     assert!(matches!(&bad_width, CanvasEditError::Field { field } if field == "width"));
 }
 
@@ -267,7 +267,7 @@ fn missing_image_is_refused(given: &CanvasEditOptions) {
     for options in [
         options_json(r#"{"taskType": "STYLE"}"#),
         options_json(r#"{"taskType": "INPAINTING"}"#),
-        with_bytes(given.clone(), "mask", b"m"),
+        with_mask_bytes(given.clone(), b"m"),
     ] {
         let no_image_error = refused(None, None, &options);
         assert!(matches!(no_image_error, CanvasEditError::MissingImage));
@@ -284,7 +284,7 @@ pub(super) fn tuple_file_rejection() {
         error.to_string(),
         "Nova Canvas image edit does not support tuple FileTypes. Pass a file-like object, bytes, or a base64-encoded string."
     );
-    let mask_error = refused(Some("cat"), Some(&source), &with_tuple(given, "mask"));
+    let mask_error = refused(Some("cat"), Some(&source), &with_mask_tuple(given));
     assert!(matches!(mask_error, CanvasEditError::TupleFileType));
     let tuple_task_error = refused(
         Some("cat"),
@@ -306,7 +306,7 @@ pub(super) fn tuple_file_rejection() {
         body(
             Some("cat"),
             Some(&CanvasImageInput::Text("aGVsbG8=".to_owned())),
-            &with_bytes(options_json("{}"), "mask", b"m")
+            &with_mask_bytes(options_json("{}"), b"m")
         ),
         json(
             r#"{"taskType":"INPAINTING","inPaintingParams":{"image":"aGVsbG8=","text":"cat","maskImage":"bQ=="}}"#
@@ -321,20 +321,20 @@ pub(super) fn mask_versus_mask_prompt() {
 
 fn mask_conversion_before_task() {
     let source = image("img");
-    let masked = with_bytes(options_json("{}"), "mask", b"m");
+    let masked = with_mask_bytes(options_json("{}"), b"m");
     let request = prepared(Some("cat"), Some(&source), &masked).expect("the request transforms");
     assert_eq!(
-        request.body,
+        wire(&request.body),
         json(
             r#"{"taskType":"INPAINTING","inPaintingParams":{"image":"aW1n","text":"cat","maskImage":"bQ=="}}"#
         )
     );
     assert!(request.files.is_empty());
-    assert_eq!(masked, with_bytes(options_json("{}"), "mask", b"m"));
+    assert_eq!(masked, with_mask_bytes(options_json("{}"), b"m"));
     let error = refused(
         Some("cat"),
         Some(&source),
-        &with_tuple(options_json(r#"{"taskType": "IMAGE_VARIATION"}"#), "mask"),
+        &with_mask_tuple(options_json(r#"{"taskType": "IMAGE_VARIATION"}"#)),
     );
     assert!(matches!(error, CanvasEditError::TupleFileType));
 }
@@ -371,7 +371,7 @@ fn prompt_rules_for_painted_tasks() {
         body(
             Some(""),
             Some(&source),
-            &with_bytes(options_json("{}"), "mask", b"m")
+            &with_mask_bytes(options_json("{}"), b"m")
         ),
         json(
             r#"{"taskType":"INPAINTING","inPaintingParams":{"image":"aW1n","text":" ","maskImage":"bQ=="}}"#

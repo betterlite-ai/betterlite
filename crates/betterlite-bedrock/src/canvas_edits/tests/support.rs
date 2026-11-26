@@ -7,8 +7,9 @@ use betterlite_models::model_catalog_keys::ModelCostKeys;
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
-use indexmap::IndexMap;
-use serde_json::from_str;
+use betterlite_openai::api::image_contracts::records::ImageParams;
+use serde::Serialize;
+use serde_json::{from_str, from_value, to_value};
 
 use crate::canvas_edits::eligibility::supports_nova_canvas_edit;
 use crate::canvas_edits::error::CanvasEditError;
@@ -43,25 +44,22 @@ pub(super) fn json(source: &str) -> Json {
     from_str(source).expect("the fixture is JSON")
 }
 
-pub(super) fn options_json(source: &str) -> CanvasEditOptions {
-    let fields: IndexMap<String, Json> = from_str(source).expect("the options are JSON");
-    fields
-        .into_iter()
-        .map(|(name, value)| (name, CanvasEditValue::from(value)))
-        .collect()
+pub(super) fn wire<T: Serialize>(value: &T) -> Json {
+    from_value(to_value(value).expect("the value serializes")).expect("the value is JSON")
 }
 
-pub(super) fn with_bytes(
-    mut options: CanvasEditOptions,
-    name: &str,
-    content: &[u8],
-) -> CanvasEditOptions {
-    options.insert(name.to_owned(), CanvasEditValue::Bytes(content.to_vec()));
+pub(super) fn options_json(source: &str) -> CanvasEditOptions {
+    let params: ImageParams = from_str(source).expect("the options are JSON");
+    CanvasEditOptions::from_params(&params)
+}
+
+pub(super) fn with_mask_bytes(mut options: CanvasEditOptions, content: &[u8]) -> CanvasEditOptions {
+    options.mask = Some(CanvasEditValue::Bytes(content.to_vec()));
     options
 }
 
-pub(super) fn with_tuple(mut options: CanvasEditOptions, name: &str) -> CanvasEditOptions {
-    options.insert(name.to_owned(), CanvasEditValue::Tuple);
+pub(super) fn with_mask_tuple(mut options: CanvasEditOptions) -> CanvasEditOptions {
+    options.mask = Some(CanvasEditValue::Tuple);
     options
 }
 
@@ -87,7 +85,7 @@ pub(super) fn prepared(
 
 pub(super) fn body(prompt: Prompt<'_>, image: Source<'_>, edits: Edits<'_>) -> Json {
     match prepared(prompt, image, edits) {
-        Ok(request) => request.body,
+        Ok(request) => wire(&request.body),
         Err(error) => panic!("the request transforms: {error}"),
     }
 }
@@ -99,17 +97,8 @@ pub(super) fn refused(prompt: Prompt<'_>, image: Source<'_>, edits: Edits<'_>) -
     }
 }
 
-pub(super) fn rendered(options: &CanvasEditOptions) -> Json {
-    Json::Object(
-        options
-            .iter()
-            .filter_map(|(name, value)| value.to_json().map(|json| (name.clone(), json)))
-            .collect(),
-    )
-}
-
 pub(super) fn mapped(source: &str, drop_params: bool) -> Json {
-    rendered(&map_openai_params(&options_json(source), drop_params).options)
+    wire(&map_openai_params(&options_json(source), drop_params).options)
 }
 
 pub(super) fn mapped_messages(source: &str, drop_params: bool) -> Vec<String> {
