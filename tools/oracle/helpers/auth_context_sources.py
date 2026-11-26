@@ -220,7 +220,7 @@ async def resolved_settings(call: SettingsCall) -> JsonValue:
     saved = proxy_server.get_team_object  # type: ignore[attr-defined]  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L348
     proxy_server.get_team_object = lookup  # type: ignore[attr-defined]  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L348
     try:
-        settings: dict[str, JsonValue] | None = await proxy_server.proxy_config.get_hierarchical_router_settings(  # noqa: E501  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7673-L7679
+        settings: dict[str, JsonValue] | None = await proxy_server.proxy_config.get_hierarchical_router_settings(  # type: ignore[misc]  # noqa: E501  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7673-L7679
             user_api_key_dict=principal,
             prisma_client=None,
             proxy_logging_obj=None,
