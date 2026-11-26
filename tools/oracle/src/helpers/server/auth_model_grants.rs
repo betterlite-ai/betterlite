@@ -153,10 +153,10 @@ fn token_of(step: &Step) -> Result<Option<UserAPIKeyAuth>, Box<HelperError>> {
 
 // the token survives only as the identity both sides could observe through the metadata adapter
 fn identity_of(token: Option<&UserAPIKeyAuth>) -> Result<Value, Box<HelperError>> {
-    let Some(token) = token else {
+    let Some(present) = token else {
         return Ok(Value::Null);
     };
-    let serialized = serde_json::to_value(token)?;
+    let serialized = serde_json::to_value(present)?;
     let team_id = serialized.get("team_id").cloned().unwrap_or(Value::Null);
     let user_id = serialized.get("user_id").cloned().unwrap_or(Value::Null);
     Ok(json!({"team_id": team_id, "user_id": user_id}))
