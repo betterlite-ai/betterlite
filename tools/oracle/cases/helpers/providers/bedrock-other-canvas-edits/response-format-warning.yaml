@@ -1,0 +1,23 @@
+kind: helper
+name: bedrock-other-canvas-edits-response-format-warning
+call:
+  bedrock_other_canvas_edits:
+    model_cost: {}
+    calls:
+      - function: map
+        options: {response_format: url}
+        drop_params: false
+      - function: map
+        options: {response_format: b64_json}
+        drop_params: false
+      - function: map
+        options: {response_format: null}
+        drop_params: false
+      - function: map
+        options: {}
+        drop_params: false
+      - function: map
+        options: {response_format: url, user: u}
+        drop_params: true
+env: {}
+compare: {ignore: []}

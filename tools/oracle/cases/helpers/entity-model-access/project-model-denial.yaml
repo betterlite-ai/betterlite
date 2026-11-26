@@ -1,0 +1,24 @@
+kind: helper
+name: entity-model-access-project-model-denial
+call:
+  entity_model_access:
+    steps:
+      - function: project
+        model: fast
+        database: false
+        project: {project_id: project-1, models: [gpt-4o]}
+        alias_targets: {fast: gpt-4o}
+      - function: project
+        model: claude
+        database: false
+        project: {project_id: project-1, models: [gpt-4o]}
+      - function: project
+        model: claude
+        database: false
+        project: {project_id: project-1, models: []}
+      - function: project
+        model: gpt-4o
+        database: false
+        project: {project_id: project-1, models: [gpt-4o]}
+env: {}
+compare: {ignore: []}

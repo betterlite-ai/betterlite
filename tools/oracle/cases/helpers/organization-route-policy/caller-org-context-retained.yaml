@@ -1,0 +1,27 @@
+kind: helper
+name: organization-route-policy-auth-caller-org-context-retained
+call:
+  organization_route_policy:
+    calls:
+      # a caller's own non-empty organization_id is kept and the team is never read
+      - function: team_context
+        route: /team/update
+        request: {team_id: team-1, organization_id: org-caller}
+        team_organization_id: org-team
+      - function: team_context
+        route: /team/team-1
+        request: {organization_id: org-caller}
+        route_template: "/team/{team_id}"
+        team_organization_id: org-team
+      # retention does not depend on the route carrying a team at all
+      - function: team_context
+        route: /team/delete
+        request: {organization_id: org-caller}
+        team_organization_id: org-team
+      # an explicit zero is not a non-empty string, so the team fills the field
+      - function: team_context
+        route: /team/update
+        request: {team_id: team-1, organization_id: 0}
+        team_organization_id: org-team
+env: {}
+compare: {ignore: []}
