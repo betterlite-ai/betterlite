@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import importlib
 import inspect
@@ -7,6 +9,7 @@ import time
 from collections.abc import Awaitable, Iterator
 from contextlib import closing, contextmanager, nullcontext
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from types import TracebackType
 from typing import ClassVar, Final, Protocol, SupportsIndex, TypedDict
 
 import pytest
@@ -586,16 +589,13 @@ def test_request_before_copy(entry: str, field: str) -> None:
         query = "x" * (WIRE_LIMIT // 2)
         documents = [{"text": query}]
     original = betterlite.api_base
-    original_validator = rerank_module.JSON
-    rerank_module.JSON = RefuseValidation()
     try:
         if field == "settings":
             betterlite.api_base = text
-        with pytest.raises(ValueError, match="bytes"):
+        with ValidationGuard(), pytest.raises(ValueError, match="bytes"):
             size_probe(entry, query, documents, extra)
     finally:
         betterlite.api_base = original
-        rerank_module.JSON = original_validator
 
 
 def size_probe(
@@ -613,6 +613,22 @@ class RefuseValidation(JsonValidator):
         raise AssertionError("validation ran before the input limit")
 
 
+class ValidationGuard:
+    def __init__(self) -> None:
+        self.original = rerank_module.JSON
+
+    def __enter__(self) -> None:
+        rerank_module.JSON = RefuseValidation()
+
+    def __exit__(
+        self,
+        _kind: type[BaseException] | None,
+        _error: BaseException | None,
+        _traceback: TracebackType | None,
+    ) -> None:
+        rerank_module.JSON = self.original
+
+
 @pytest.mark.parametrize("entry", ["sync", "async"])
 @pytest.mark.parametrize("source", ["caller", "module", "combined"])
 def test_request_before_headers(entry: str, source: str) -> None:
@@ -626,18 +642,13 @@ def test_request_before_headers(entry: str, source: str) -> None:
             module["extra"] = "v"
         else:
             caller["extra"] = "v"
-    original = rerank_module.JSON
-    with temporary_headers(module):
-        rerank_module.JSON = RefuseValidation()
-        try:
-            if entry == "async":
-                with pytest.raises(ValueError, match="headers"):
-                    _ = asyncio.run(arerank(MODEL, QUERY, [], headers=caller))
-            else:
-                with pytest.raises(ValueError, match="headers"):
-                    _ = rerank(MODEL, QUERY, [], headers=caller)
-        finally:
-            rerank_module.JSON = original
+    with temporary_headers(module), ValidationGuard():
+        if entry == "async":
+            with pytest.raises(ValueError, match="headers"):
+                _ = asyncio.run(arerank(MODEL, QUERY, [], headers=caller))
+        else:
+            with pytest.raises(ValueError, match="headers"):
+                _ = rerank(MODEL, QUERY, [], headers=caller)
 
 
 @pytest.mark.parametrize("value", [
@@ -678,10 +689,17 @@ def test_request_size_cycle() -> None:
 
 
 class ChunkedText(str):
-    slices: int = 0
+    __slots__ = ("slices",)
+
+    def __init__(self, _text: str) -> None:
+        self.slices: int = 0
 
     @override
-    def __getitem__(self, key: SupportsIndex | slice, /) -> str:
+    def __getitem__(
+        self,
+        key: SupportsIndex | slice[SupportsIndex | None, SupportsIndex | None, SupportsIndex | None],
+        /,
+    ) -> str:
         result = super().__getitem__(key)
         assert len(result) <= STRING_CHUNK
         self.slices += 1
