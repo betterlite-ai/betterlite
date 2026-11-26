@@ -68,11 +68,14 @@ async fn realtime_probe_vertex_timeout_and_unsupported_provider() {
         "Vertex AI realtime: timed out fetching Google OAuth access token after 0.0s; check network egress from the proxy to the OAuth token endpoint (oauth2.googleapis.com)"
     );
     let unsupported = probe_request("bedrock", MODEL, JsonObject::new());
-    let error = harness
+    let unsupported_error = harness
         .run(&unsupported, &settings())
         .await
         .expect_err("an unsupported provider is a ValueError");
-    assert_eq!(error.to_string(), "Unsupported model: realtime-a");
+    assert_eq!(
+        unsupported_error.to_string(),
+        "Unsupported model: realtime-a"
+    );
     assert_eq!(
         harness.dialer.count(),
         0,

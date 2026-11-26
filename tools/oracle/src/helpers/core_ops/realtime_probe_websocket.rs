@@ -219,7 +219,7 @@ impl<'case> Probe<'case> {
             Ok(()) => self.scenario.custom_llm_provider.clone(),
             Err(RealtimeProbeError::UnsupportedModel { .. }) => String::from("unsupported"),
             Err(RealtimeProbeError::VertexSpeechModel { .. }) => String::from("speech_to_text"),
-            Err(error) => return Err(failure(error)),
+            Err(error) => return Err(failure(&error)),
         };
         Ok((branch, dialer.take()))
     }
@@ -271,7 +271,7 @@ fn handshake_headers(handshake: &ProbeConnection) -> Vec<Value> {
         .collect()
 }
 
-fn failure<Error>(error: Error) -> Box<HelperError>
+fn failure<Error>(error: &Error) -> Box<HelperError>
 where
     Error: Display,
 {
