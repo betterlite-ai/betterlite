@@ -156,24 +156,19 @@ fn config_with_master_key() -> Config {
     .expect("the test config loads")
 }
 
-fn config_with_database() -> Config {
+// the database with litellm_settings.validate_end_user_id_in_db under the caller's control
+fn config_with_database(validate_end_user_id_in_db: bool) -> Config {
+    let validation = if validate_end_user_id_in_db {
+        "litellm_settings:\n  validate_end_user_id_in_db: true\n"
+    } else {
+        ""
+    };
     ConfigLoader {
         lookup: BTreeMap::<String, String>::new(),
     }
-    .load(
-        "general_settings:\n  master_key: secret-master-key\n  database_url: postgresql://user:password@127.0.0.1:1/betterlite\nlitellm_settings:\n  validate_end_user_id_in_db: true\n",
-    )
-    .expect("the test config loads")
-}
-
-// the database without litellm_settings.validate_end_user_id_in_db
-fn config_with_database_only() -> Config {
-    ConfigLoader {
-        lookup: BTreeMap::<String, String>::new(),
-    }
-    .load(
-        "general_settings:\n  master_key: secret-master-key\n  database_url: postgresql://user:password@127.0.0.1:1/betterlite\n",
-    )
+    .load(&format!(
+        "general_settings:\n  master_key: secret-master-key\n  database_url: postgresql://user:password@127.0.0.1:1/betterlite\n{validation}"
+    ))
     .expect("the test config loads")
 }
 
@@ -204,7 +199,7 @@ fn stage_is_registered() {
     assert!(!without.end_user_identity.database);
     assert!(!without.end_user_identity.validate_end_user_id_in_db);
     assert!(without.end_user_identity.max_end_user_budget_id.is_none());
-    let with = state_for(&config_with_database());
+    let with = state_for(&config_with_database(true));
     assert!(with.end_user_identity.database);
     assert!(with.end_user_identity.validate_end_user_id_in_db);
 
@@ -266,7 +261,7 @@ fn database_flag_comes_from_the_state() {
     assert!(!without_stage.database);
     let mut with = stage_request(&[], "{}");
     with.extensions_mut()
-        .insert(state_for(&config_with_database()));
+        .insert(state_for(&config_with_database(true)));
     let Ok(with_stage) = stage_input(&with, Some(&context), None) else {
         panic!("the authenticated request builds its stage input");
     };
@@ -287,7 +282,7 @@ fn the_rule_debug_names_the_wired_resolver() {
 
 #[test]
 fn request_id_sources() {
-    let config = config_with_database();
+    let config = config_with_database(true);
     let standard = extracted(
         &config,
         &[
@@ -365,7 +360,7 @@ async fn failure_stops_downstream() {
         resolver: Some(identity),
     });
     let (status, body, seen) =
-        run_request(&config_with_database(), Some(rule), None, "ghost").await;
+        run_request(&config_with_database(true), Some(rule), None, "ghost").await;
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
     assert!(
         body.contains("\"type\":\"internal_server_error\""),
@@ -389,7 +384,7 @@ async fn resolved_id_reaches_the_downstream_handler() {
         resolver: Some(identity),
     });
     let (status, _body, seen) =
-        run_request(&config_with_database(), Some(rule), None, "alice").await;
+        run_request(&config_with_database(true), Some(rule), None, "alice").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(seen.as_deref(), Some("alice"));
     assert_eq!(existence.calls(), vec!["alice".to_owned()]);
@@ -446,7 +441,8 @@ fn end_user_id(context: &AuthContext) -> Option<&str> {
 // the production resolver the state builds, reached through the real server constructor with no test rule
 #[tokio::test]
 async fn production_validation_drops_an_unknown_id() {
-    let (status, body, seen) = run_request(&config_with_database(), None, None, "ghost-b880").await;
+    let (status, body, seen) =
+        run_request(&config_with_database(true), None, None, "ghost-b880").await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert!(seen.is_none(), "the unknown id never reaches the handler");
 
@@ -463,7 +459,7 @@ fn the_production_resolver_needs_the_validation_flag() {
     let mut request = stage_request(&[("x-litellm-end-user-id", "alice")], "{}");
     request
         .extensions_mut()
-        .insert(state_for(&config_with_database_only()));
+        .insert(state_for(&config_with_database(false)));
     let Ok(stage) = stage_input(&request, Some(&master_context(&master_key)), None) else {
         panic!("the authenticated request builds its stage input");
     };
@@ -596,7 +592,7 @@ async fn the_end_user_budget_stage_reads_the_validated_id() {
     let (identity, _existence) = resolver(true, &cache);
     let lookup = Arc::new(ScriptedEndUserLookup::default());
     let (status, body, seen) = run_request(
-        &config_with_database(),
+        &config_with_database(true),
         Some(Arc::new(EndUserIdentityRule {
             resolver: Some(identity),
         })),
@@ -616,7 +612,7 @@ async fn a_dropped_id_clears_a_preseeded_end_user_lookup() {
     let (identity, _existence) = resolver(false, &cache);
     let lookup = Arc::new(ScriptedEndUserLookup::default());
     let (status, body, seen) = run_request(
-        &config_with_database(),
+        &config_with_database(true),
         Some(Arc::new(EndUserIdentityRule {
             resolver: Some(identity),
         })),
