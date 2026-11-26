@@ -63,6 +63,10 @@ JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 OBJECT: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
 OPENAI_RESPONSE: Final[TypeAdapter[OpenAIDecisionResponse]] = TypeAdapter(OpenAIDecisionResponse)
 SYSTEMONE_RESPONSE: Final[TypeAdapter[DecisionsResponse]] = TypeAdapter(DecisionsResponse)
+INPUT: Final[TypeAdapter[OpenAIDecisionInput | None]] = TypeAdapter(OpenAIDecisionInput | None)
+QUESTIONS: Final[TypeAdapter[OpenAIDecisionQuestions | SystemOneQuestions | None]] = TypeAdapter(
+    OpenAIDecisionQuestions | SystemOneQuestions | None
+)
 
 
 class HiddenResponse(Protocol):
@@ -143,8 +147,8 @@ def decisions(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/b
         warnings.warn(DEPRECATION, UserWarning, stacklevel=2)
     named: dict[str, CallValue] = {
         "model": model,
-        "input": JSON.validate_python(input),
-        "questions": JSON.validate_python(questions),
+        "input": JSON.validate_json(INPUT.dump_json(input, exclude_none=True)),
+        "questions": JSON.validate_json(QUESTIONS.dump_json(questions, exclude_none=True)),
         "safety_identifier": safety_identifier,
         "api_key": api_key,
         "api_base": api_base,
@@ -179,8 +183,8 @@ async def adecisions(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/li
         warnings.warn(DEPRECATION, UserWarning, stacklevel=2)
     named: dict[str, CallValue] = {
         "model": model,
-        "input": JSON.validate_python(input),
-        "questions": JSON.validate_python(questions),
+        "input": JSON.validate_json(INPUT.dump_json(input, exclude_none=True)),
+        "questions": JSON.validate_json(QUESTIONS.dump_json(questions, exclude_none=True)),
         "safety_identifier": safety_identifier,
         "api_key": api_key,
         "api_base": api_base,

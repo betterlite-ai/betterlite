@@ -17,6 +17,7 @@ from betterlite._native import NativeDecisionError
 from betterlite.decisions import adecisions, decisions, supported_decisions_providers
 from betterlite.exceptions import BadRequestError
 from betterlite.sandbox.main import (
+    ContainerHandle,
     acode_interpreter_tool,
     acreate_sandbox,
     adelete_sandbox,
@@ -28,6 +29,11 @@ from betterlite.sandbox.sandbox_tools import (
     resolve_sandbox_tool,
 )
 from betterlite.systemone import asystemone, systemone
+from betterlite.types.decisions import (
+    NoulQuestion,
+    OpenAIDecisionInputMessage,
+    OpenAIPredicateQuestion,
+)
 
 HOST: Final = "127.0.0.1"
 OK: Final = 200
@@ -223,6 +229,8 @@ class RecordingHandler(BaseHTTPRequestHandler):
             self.reply(BAD_REQUEST, ERROR_BODY)
             return
         match self.path:
+            case "/code":
+                self.reply(OK, {"text": "x" * (10 * 1024 * 1024)})
             case "/v1/decisions":
                 self.reply(OK, DECISION_BODY)
             case "/providers/microsoft/v1/systemone":
@@ -233,9 +241,15 @@ class RecordingHandler(BaseHTTPRequestHandler):
                 self.reply(NOT_FOUND, {})
 
     def create_body(self) -> dict[str, JsonValue]:
+        if self.owner.mode in {"Failed", "Stopping", "Terminated"}:
+            return {"id": SANDBOX_ID, "status": {"state": self.owner.mode}}
         if self.owner.mode == "unusable-domain":
             return {**CREATE_BODY, "domain": BAD_DOMAIN}
         return CREATE_BODY
+
+    def do_GET(self) -> None:
+        self.owner.record(self.command, self.path, dict(self.headers.items()), {})
+        self.reply(OK, {"status": {"state": self.owner.mode}})
 
     def do_DELETE(self) -> None:
         self.owner.record(self.command, self.path, dict(self.headers.items()), {})
@@ -607,3 +621,116 @@ def test_tool_params_value_error() -> None:
     tools: list[dict[str, JsonValue]] = [{"sandbox_tool_name": "x", "litellm_params": 1}]
     with pytest.raises(ValueError, match="litellm_params must be a mapping"):
         register_sandbox_tools(tools)
+
+
+@pytest.mark.parametrize("mode", ["sync", "async"])
+def test_models_calls_openai(mode: str) -> None:
+    message = OpenAIDecisionInputMessage(content="hi")
+    question = OpenAIPredicateQuestion(
+        type="predicate", name="is_greeting", instructions="Greeting?"
+    )
+    with closing(RecordingServer()) as server:
+        if mode == "sync":
+            response = decisions(
+                model=MODEL,
+                input=[message],
+                questions=[question],
+                api_key=API_KEY,
+                api_base=server.url,
+                custom_llm_provider="openai",
+            )
+        else:
+            response = asyncio.run(
+                adecisions(
+                    model=MODEL,
+                    input=[message],
+                    questions=[question],
+                    api_key=API_KEY,
+                    api_base=server.url,
+                    custom_llm_provider="openai",
+                )
+            )
+    assert server.calls[-1]["body"]["input"] == [
+        {"role": "user", "type": "message", "content": "hi"},
+    ]
+    assert server.calls[-1]["body"]["questions"] == [
+        {"type": "predicate", "name": "is_greeting", "instructions": "Greeting?"},
+    ]
+    assert DECISION_VIEW.validate_json(response.model_dump_json())["model"] == MODEL
+
+
+@pytest.mark.parametrize("mode", ["sync", "async"])
+def test_models_calls_systemone(mode: str) -> None:
+    questions = {"greeting": NoulQuestion(type="noul", instructions="Greeting?")}
+    with closing(RecordingServer()) as server:
+        if mode == "sync":
+            response = systemone(
+                model=SYSTEMONE_MODEL,
+                state=SYSTEMONE_STATE,
+                questions=questions,
+                api_key=API_KEY,
+                api_base=server.url,
+                custom_llm_provider="azure_ai",
+            )
+        else:
+            response = asyncio.run(
+                asystemone(
+                    model=SYSTEMONE_MODEL,
+                    state=SYSTEMONE_STATE,
+                    questions=questions,
+                    api_key=API_KEY,
+                    api_base=server.url,
+                    custom_llm_provider="azure_ai",
+                )
+            )
+    assert server.calls[-1]["body"]["questions"] == {
+        "greeting": {"type": "noul", "instructions": "Greeting?"},
+    }
+    assert SYSTEMONE_VIEW.validate_json(response.model_dump_json())["model"] == SYSTEMONE_MODEL
+
+
+def test_tool_name_value_error() -> None:
+    tools: list[dict[str, JsonValue]] = [
+        {"sandbox_tool_name": 1, "litellm_params": {"sandbox_provider": "e2b"}},
+    ]
+    with pytest.raises(ValueError, match="sandbox_tool_name") as raised:
+        register_sandbox_tools(tools)
+    cause = raised.value.__cause__
+    assert cause is not None
+    assert cause.__class__ is NativeDecisionError
+
+
+@pytest.mark.parametrize("state", ["Failed", "Stopping", "Terminated"])
+def test_terminal_state_value_error(state: str) -> None:
+    with closing(RecordingServer(state)) as server, pytest.raises(
+        ValueError, match=f"OpenSandbox sandbox {SANDBOX_ID} entered {state}"
+    ) as raised:
+        asyncio.run(
+            acreate_sandbox(provider="opensandbox", api_key=API_KEY, api_base=server.url)
+        )
+    cause = raised.value.__cause__
+    assert cause is not None
+    assert cause.__class__ is NativeDecisionError
+
+
+def test_output_limit_value_error() -> None:
+    with closing(RecordingServer("large-output")) as server:
+        handle = ContainerHandle(id=SANDBOX_ID, provider="opensandbox")
+        handle.set_hidden_params({"api_base": server.url, "execd_endpoint": server.url})
+        with pytest.raises(ValueError, match="output exceeded 10485760 bytes") as raised:
+            asyncio.run(arun_code(provider="opensandbox", container=handle, code="print(1)"))
+    cause = raised.value.__cause__
+    assert cause is not None
+    assert cause.__class__ is NativeDecisionError
+
+
+@pytest.mark.parametrize("provider", ["e2b", "opensandbox"])
+def test_http_status_error_deviation(provider: str) -> None:
+    with closing(RecordingServer("reject")) as server, pytest.raises(
+        Exception, match="API answered with status 400"
+    ) as raised:
+        asyncio.run(acreate_sandbox(provider=provider, api_key=API_KEY, api_base=server.url))
+    assert raised.value.__class__ is Exception
+    cause = raised.value.__cause__
+    assert cause is not None
+    assert cause.__class__ is NativeDecisionError

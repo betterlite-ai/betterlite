@@ -14,6 +14,7 @@ use betterlite_models::decisions::systemone::{
     DecisionAnswer as SystemOneAnswer, DecisionsResponse as SystemOneResponse,
 };
 use betterlite_models::decisions::{Extra, HiddenParams, Json, TokenCount};
+use betterlite_models::sandbox::SandboxOutputError;
 use betterlite_provider::e2b::E2bError;
 use betterlite_provider::opensandbox::helpers::OpenSandboxError;
 use betterlite_provider::opensandbox::lifecycle::LifecycleError;
@@ -21,6 +22,7 @@ use betterlite_provider::sandbox_dispatch::error::SandboxLifecycleError;
 use betterlite_provider::sandbox_dispatch::request::SandboxContainer;
 use betterlite_sdk::call_wrapper::error::plain_error;
 use indexmap::IndexMap;
+use rstest::rstest;
 use secrecy::ExposeSecret;
 use serde_json::Number;
 
@@ -509,5 +511,53 @@ fn error_operation_names_the_operation_the_wire_carried() {
     assert_eq!(
         error.to_string(),
         "the chat operation is not a decision call"
+    );
+}
+
+#[rstest]
+#[case::e2b(SandboxLifecycleError::E2b(E2bError::OutputTooLarge { limit: 10_485_760_usize }))]
+#[case::opensandbox(SandboxLifecycleError::OpenSandbox(LifecycleError::Sandbox(
+    OpenSandboxError::OutputTooLarge { limit: 10_485_760_usize },
+)))]
+fn error_output_limits_are_value_errors(#[case] error: SandboxLifecycleError) {
+    let payload = raised(SessionFailure::from(error));
+    assert_eq!(payload.kind, "ValueError");
+    assert_eq!(
+        payload.message,
+        "the sandbox output exceeded 10485760 bytes; aborting to avoid unbounded memory use"
+    );
+}
+
+#[test]
+fn error_create_body_limit_is_a_value_error() {
+    let payload = raised(SessionFailure::from(SandboxLifecycleError::OpenSandbox(
+        LifecycleError::Body {
+            source: SandboxOutputError::Exceeded {
+                limit: 10_485_760_usize,
+            },
+        },
+    )));
+    assert_eq!(payload.kind, "ValueError");
+    assert_eq!(
+        payload.message,
+        "sandbox output exceeded 10485760 bytes; aborting to avoid unbounded memory use"
+    );
+}
+
+#[rstest]
+#[case::failed("Failed")]
+#[case::stopping("Stopping")]
+#[case::terminated("Terminated")]
+fn error_terminal_states_are_value_errors(#[case] state: &str) {
+    let payload = raised(SessionFailure::from(SandboxLifecycleError::OpenSandbox(
+        LifecycleError::Sandbox(OpenSandboxError::UnexpectedState {
+            sandbox_id: String::from("sbx-1"),
+            state: state.to_owned(),
+        }),
+    )));
+    assert_eq!(payload.kind, "ValueError");
+    assert_eq!(
+        payload.message,
+        format!("OpenSandbox sandbox sbx-1 entered {state}")
     );
 }

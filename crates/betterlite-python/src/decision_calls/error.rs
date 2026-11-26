@@ -3,6 +3,7 @@ use std::time::Duration;
 use betterlite_config::tls::TlsPolicyError;
 use betterlite_core::decisions::DecisionsEntryError;
 use betterlite_env::EnvError;
+use betterlite_models::sandbox::SandboxOutputError;
 use betterlite_models::sandbox_dispatch::SandboxToolEntryError;
 use betterlite_provider::e2b::E2bError;
 use betterlite_provider::opensandbox::helpers::OpenSandboxError;
@@ -119,12 +120,22 @@ fn litellm_builtin(error: &SandboxLifecycleError) -> Option<(&'static str, Strin
         SandboxLifecycleError::ContainerHandleRequired { .. } => {
             Some((VALUE_ERROR, String::from(E2B_BARE_ID)))
         }
+        SandboxLifecycleError::E2b(failure @ E2bError::OutputTooLarge { .. }) => {
+            Some((VALUE_ERROR, failure.to_string()))
+        }
         SandboxLifecycleError::E2b(e2b_error) => {
             e2b_message(e2b_error).map(|message| (VALUE_ERROR, String::from(message)))
         }
+        SandboxLifecycleError::OpenSandbox(LifecycleError::Sandbox(
+            failure @ (OpenSandboxError::OutputTooLarge { .. }
+            | OpenSandboxError::UnexpectedState { .. }),
+        )) => Some((VALUE_ERROR, failure.to_string())),
         SandboxLifecycleError::OpenSandbox(LifecycleError::Sandbox(sandbox_error)) => {
             opensandbox_builtin(sandbox_error)
         }
+        SandboxLifecycleError::OpenSandbox(LifecycleError::Body {
+            source: failure @ SandboxOutputError::Exceeded { .. },
+        }) => Some((VALUE_ERROR, failure.to_string())),
         SandboxLifecycleError::Logging(_) | SandboxLifecycleError::OpenSandbox(_) => None,
     }
 }

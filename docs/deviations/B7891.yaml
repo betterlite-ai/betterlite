@@ -66,4 +66,13 @@ deviations:
       hidden params have to be readable so a created handle can be passed back to arun_code and
       adelete_sandbox.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/decisions/call.py#L88
+  - what: >-
+      Sandbox provider HTTP status failures raise a plain Exception with the native error as
+      their cause, rather than httpx.HTTPStatusError with a request and response. The status
+      appears in the message; response headers, body and URL are unavailable in Python.
+    why: >-
+      B3519's E2bError::HttpStatus and OpenSandboxError::HttpStatus retain only a status number.
+      Rebuilding a faithful HTTPStatusError requires provider transport changes outside B7891's
+      scope. This entry keeps the current behavior explicitly instead of fabricating HTTP metadata.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L834
 kept_bugs: []
