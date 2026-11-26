@@ -3,13 +3,25 @@ use std::sync::{Mutex, PoisonError};
 use async_trait::async_trait;
 
 use betterlite_auth::auth_cache::AuthCacheError;
+use betterlite_auth::auth_cache::payload::PayloadError;
 use betterlite_auth::auth_org_lookup::ports::{OrgCache, OrgStore, StoreAnswer};
 use betterlite_auth::auth_prefetch::rows::CachedProject;
 use betterlite_db::resource_rows::organization::OrganizationTable;
 
-// the org cache the lookup reads: it answers the seeded row, and a write replaces it
+// cache writes must not replace the row returned by the database fixture
 pub(crate) struct FakeOrg {
-    pub(crate) org: Mutex<Option<OrganizationTable>>,
+    org: Option<OrganizationTable>,
+    cached: Mutex<Option<String>>,
+}
+
+impl FakeOrg {
+    pub(crate) fn seeded(org: Option<OrganizationTable>) -> Result<Self, serde_json::Error> {
+        let serialized = org.as_ref().map(serde_json::to_string).transpose()?;
+        Ok(Self {
+            org,
+            cached: Mutex::new(serialized),
+        })
+    }
 }
 
 #[async_trait]
@@ -19,11 +31,15 @@ impl OrgCache for FakeOrg {
         _key: &str,
         _local_only: bool,
     ) -> Result<Option<OrganizationTable>, AuthCacheError> {
-        let org = {
-            let stored = self.org.lock().unwrap_or_else(PoisonError::into_inner);
+        let serialized = {
+            let stored = self.cached.lock().unwrap_or_else(PoisonError::into_inner);
             stored.clone()
         };
-        Ok(org)
+        serialized
+            .as_deref()
+            .map(serde_json::from_str)
+            .transpose()
+            .map_err(|source| AuthCacheError::from(PayloadError::Json(source)))
     }
 
     async fn write_org(
@@ -32,10 +48,9 @@ impl OrgCache for FakeOrg {
         org: &OrganizationTable,
         _ttl: f64,
     ) -> Result<(), AuthCacheError> {
-        {
-            let mut stored = self.org.lock().unwrap_or_else(PoisonError::into_inner);
-            *stored = Some(org.clone())
-        };
+        let serialized = serde_json::to_string(org).map_err(PayloadError::Json)?;
+        let mut stored = self.cached.lock().unwrap_or_else(PoisonError::into_inner);
+        *stored = Some(serialized);
         Ok(())
     }
 
@@ -60,17 +75,13 @@ impl OrgCache for FakeOrg {
 #[async_trait]
 impl OrgStore for FakeOrg {
     async fn find_org(&self, org_id: &str, _include_budget: bool) -> StoreAnswer<Option<String>> {
-        let cached = {
-            let stored = self.org.lock().unwrap_or_else(PoisonError::into_inner);
-            stored.clone()
-        };
-        let Some(row) = cached else {
+        let Some(row) = self.org.as_ref() else {
             return Ok(None);
         };
         if row.organization_id.as_deref() != Some(org_id) {
             return Ok(None);
         }
-        serde_json::to_string(&row).map_or_else(|_| Ok(None), |text| Ok(Some(text)))
+        serde_json::to_string(row).map_or_else(|_| Ok(None), |text| Ok(Some(text)))
     }
 
     async fn find_by_alias(&self, _org_alias: &str) -> StoreAnswer<Vec<String>> {

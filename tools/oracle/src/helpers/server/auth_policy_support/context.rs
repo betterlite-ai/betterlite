@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use serde_json::{Value, json};
 
@@ -71,9 +71,7 @@ pub(super) fn org_inherit(input: &Input) -> HelperResult {
         .as_ref()
         .map(|value| serde_json::from_value(value.clone()).or_value_error())
         .transpose()?;
-    let cache = Arc::new(FakeOrg {
-        org: Mutex::new(org),
-    });
+    let cache = Arc::new(FakeOrg::seeded(org).or_value_error()?);
     let cache_trait: Arc<dyn OrgCache> = Arc::<FakeOrg>::clone(&cache);
     let wired: Arc<dyn OrgStore> = Arc::<FakeOrg>::clone(&cache);
     let store = input.database.then_some(wired);
