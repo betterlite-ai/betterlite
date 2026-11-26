@@ -20,12 +20,12 @@ const REMIX_CALL_TYPE: &str = "video_remix";
 const LIST_CALL_TYPE: &str = "video_list";
 
 // The collaborators one remix or list call borrows, all owned here so the entry can hand them out
-struct Wiring<'s, Call> {
-    session: &'s VideoSession,
+struct Wiring<'session, Call> {
+    session: &'session VideoSession,
     providers: OpenAiProviders,
     transport: VideoRemixListTransport<NativeSource>,
     state: LoggingState,
-    env: PrePostEnv<'s>,
+    env: PrePostEnv<'session>,
     call: Call,
 }
 
@@ -36,9 +36,9 @@ pub(super) struct Parts<'deps, 'env, Call> {
     pub(super) call: &'deps Call,
 }
 
-impl<'s, Call> Wiring<'s, Call> {
+impl<'session, Call> Wiring<'session, Call> {
     fn new(
-        session: &'s VideoSession,
+        session: &'session VideoSession,
         wire: &VideoCallWire,
         call_type: &str,
         call: Call,
@@ -55,7 +55,7 @@ impl<'s, Call> Wiring<'s, Call> {
         })
     }
 
-    fn parts(&mut self) -> Parts<'_, 's, Call> {
+    fn parts(&mut self) -> Parts<'_, 'session, Call> {
         Parts {
             deps: VideoCallDeps {
                 configs: &self.providers,

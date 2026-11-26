@@ -4,21 +4,18 @@ use std::time::Duration;
 use betterlite_core::api::video_content_call::VideoContentCaller;
 use betterlite_core::api::video_content_call::handler::ContentTransportHandler;
 use betterlite_core::api::video_generation_call::call::{
-    GenerationCallEnvironment, VideoGenerationCaller,
+    GenerationCallEnvironment, VideoGenerationCaller, mock_video_response,
 };
 use betterlite_core::api::video_generation_call::error::{
     VideoGenerationCallError, failure as generation_failure,
 };
 use betterlite_core::api::video_generation_call::handler::TransportGenerationHandler;
-use betterlite_core::api::video_generation_call::{
-    DEFAULT_MODEL, VideoGenerationRequest, mock_video_response,
-};
+use betterlite_core::api::video_generation_call::{DEFAULT_MODEL, VideoGenerationRequest};
 use betterlite_core::api::video_records::VideoObject;
 use betterlite_core::api::video_status_call::VideoStatusCaller;
-use betterlite_core::api::video_status_call::handler::VideoStatusHandler;
+use betterlite_core::api::video_status_transport::handler::VideoStatusHandler;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 
-use super::adapter::OpenAiVideoConfig;
 use super::clients::{NativeSource, StatusConverter, StatusFactories};
 use super::convert::{ConvertError, Reference, Requests, VideoCallWire, drop_params};
 use super::error::{RunError, SessionError};

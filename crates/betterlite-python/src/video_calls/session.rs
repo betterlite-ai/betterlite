@@ -130,7 +130,7 @@ pub(crate) fn logging(redactor: &Redactor, call_type: &str) -> Result<LoggingSta
         },
         redactor,
         || Uuid::new_v4().to_string(),
-        Duration::default(),
+        Duration::default,
     )
     .map_err(|source| RunError::Session(SessionError::Logging(source)))
 }

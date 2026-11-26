@@ -1,6 +1,5 @@
 use std::error::Error as StdError;
 use std::fmt::Display;
-use std::io::Read as _;
 
 use betterlite_core::api::video_remix_list_transport::error::ConfigFailure;
 use betterlite_core::api::video_status_transport::error::ProviderFailure;
@@ -33,7 +32,7 @@ pub(super) fn file_part(
     let content = match body {
         MediaBody::Bytes(bytes) => bytes.to_vec(),
         MediaBody::Text(text) => text.as_bytes().to_vec(),
-        MediaBody::Stream { mut reader, .. } => {
+        MediaBody::Stream { reader, .. } => {
             let mut read = Vec::new();
             reader.read_to_end(&mut read)?;
             read

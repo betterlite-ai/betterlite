@@ -18,8 +18,8 @@ pub(crate) struct OpenAiProviders {
 }
 
 // what a content and a status call select between, named so each trait method stays one line
-type ContentFound<'a> = Selection<'a, OpenAiProviders>;
-type StatusFound<'a> = Option<&'a StatusConfig<'a, StatusFactories>>;
+type ContentFound<'config> = Selection<'config, OpenAiProviders>;
+type StatusFound<'config> = Option<&'config StatusConfig<'config, StatusFactories>>;
 
 // the tag a provider id names, when it is the one tag this family builds a config for
 fn openai_tag(provider: ProviderId) -> Result<Option<VideoConfigTag>, VideoSelectionError> {
@@ -52,14 +52,17 @@ impl VideoStatusProviders for OpenAiProviders {
     type Factories = StatusFactories;
 
     fn video_config(&self, provider: ProviderId) -> Result<StatusFound<'_>, VideoSelectionError> {
-        Ok(openai_tag(provider)?.map(|_tag| &self.config as &StatusConfig<'_, StatusFactories>))
+        Ok(
+            openai_tag(provider)?
+                .map(|_tag| -> &StatusConfig<'_, StatusFactories> { &self.config }),
+        )
     }
 }
 
 impl VideoConfigLookup for OpenAiProviders {
     fn video_config(&self, tag: &VideoConfigTag) -> Option<&dyn VideoRemixListConfig> {
         if matches!(tag, VideoConfigTag::OpenAi) {
-            return Some(&self.config as &dyn VideoRemixListConfig);
+            return Some(&self.config);
         }
         None
     }

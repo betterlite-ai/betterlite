@@ -310,7 +310,7 @@ fn request_drop_params_reads_the_argument_or_the_settings() {
 
 #[test]
 fn error_generation_without_a_prompt_names_the_field() {
-    let error = build(Operation::Generate, r#"{}"#).err().unwrap();
+    let error = build(Operation::Generate, "{}").err().unwrap();
     assert!(matches!(error, ConvertError::Field { .. }));
     assert_eq!(error.to_string(), "prompt must be a string");
 }

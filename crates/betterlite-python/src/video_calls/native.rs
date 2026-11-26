@@ -112,7 +112,10 @@ fn prepared(
 }
 
 // the object, the page or the mock's objects as the JSON text Python's TypeAdapter reads back
-fn encoded<T: Serialize>(outcome: Result<T, RunError>) -> PyResult<String> {
+fn encoded<T>(outcome: Result<T, RunError>) -> PyResult<String>
+where
+    T: Serialize,
+{
     match outcome {
         Ok(answer) => serde_json::to_string(&answer)
             .map_err(|source| PyErr::from(RunError::from(ConvertError::Encode { source }))),
