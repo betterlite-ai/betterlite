@@ -48,11 +48,11 @@ impl PostgresMigrationStore<'_> {
         params: &[&(dyn ToSql + Sync)],
     ) -> Result<Option<MigrationJson>, MigrationStoreError> {
         let client = self.client.writer.session().await?;
-        let row = client
+        let found = client
             .query_opt(sql, params)
             .await
             .map_err(|source| MigrationStoreError::Database(backend(source)))?;
-        let Some(row) = row else {
+        let Some(row) = found else {
             return Ok(None);
         };
         let column = row
@@ -106,7 +106,7 @@ impl MigrationStore for PostgresMigrationStore<'_> {
         let sql = save_settings_sql(row);
         match row {
             SettingsRow::Config { param_name, .. } => {
-                self.write(sql, &[&param_name, &text]).await?
+                self.write(sql, &[&param_name, &text]).await?;
             }
             SettingsRow::Sso => self.write(sql, &[&text]).await?,
         }

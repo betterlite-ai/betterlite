@@ -18,9 +18,9 @@ use super::super::error::MigrationError;
 use super::super::postgres::{MigrationStoreError, PostgresMigrationStore};
 use super::super::service::{Migration, check_encryption};
 use super::support::{
-    FakeRotation, RotationCall, RotationError, SALT_KEY, callback_settings_metadata, callback_text,
-    callback_vars_metadata, cipher, field_text, json, legacy, location_of, marked, object, open,
-    secret, v2,
+    EXPECTED_LOCATIONS, FakeRotation, RotationCall, RotationError, SALT_KEY,
+    callback_settings_metadata, callback_text, callback_vars_metadata, cipher, field_text, json,
+    legacy, location_names, location_of, marked, object, open, secret, v2,
 };
 
 const SCHEMA: &str = r#"
@@ -239,6 +239,13 @@ impl Harness {
 }
 
 async fn seed(harness: &Harness) {
+    seed_covered_rows(harness).await;
+    seed_config_rows(harness).await;
+    seed_sso_and_token_rows(harness).await;
+    seed_team_rows(harness).await;
+}
+
+async fn seed_covered_rows(harness: &Harness) {
     let model = json(&object(vec![(
         "api_key",
         secret(&legacy(SALT_KEY, "sk-model")),
@@ -259,6 +266,9 @@ async fn seed(harness: &Harness) {
             &[&"environment_variables", &environment],
         )
         .await;
+}
+
+async fn seed_config_rows(harness: &Harness) {
     let vantage = json(&object(vec![
         ("api_key", secret(&legacy(SALT_KEY, "sk-vantage"))),
         ("integration_token", secret(&v2(SALT_KEY, "token-vantage"))),
@@ -273,11 +283,21 @@ async fn seed(harness: &Harness) {
     harness
         .execute(INSERT_CONFIG_STRING, &[&"cloudzero_settings", &cloudzero])
         .await;
+}
+
+async fn seed_sso_and_token_rows(harness: &Harness) {
     let sso = json(&object(vec![
         ("client_secret", secret(&legacy(SALT_KEY, "sso-secret"))),
         ("client_id", secret("plain-client")),
     ]));
     harness.execute(INSERT_SSO, &[&sso]).await;
+    let token = json(&object(vec![("other", secret("value"))]));
+    harness
+        .execute(INSERT_TOKEN, &[&"token-clean", &token])
+        .await;
+}
+
+async fn seed_team_rows(harness: &Harness) {
     let team_marked = json(&callback_vars_metadata(vec![(
         "api_key",
         marked(&legacy(SALT_KEY, "sk-team")),
@@ -299,10 +319,6 @@ async fn seed(harness: &Harness) {
     harness
         .execute(INSERT_TEAM_STRING, &[&"team-string", &team_string])
         .await;
-    let token = json(&object(vec![("other", secret("value"))]));
-    harness
-        .execute(INSERT_TOKEN, &[&"token-clean", &token])
-        .await;
 }
 
 async fn real_run(
@@ -323,6 +339,38 @@ async fn real_run(
     service.run().await
 }
 
+fn assert_attested(report: &MigrationReport) {
+    assert_eq!(location_names(report), EXPECTED_LOCATIONS);
+    assert_eq!(location_of(report, "model_table").legacy, 1);
+    assert_eq!(location_of(report, "credentials").legacy, 1);
+    assert_eq!(location_of(report, "mcp_server").scanned, 0);
+    assert_eq!(
+        location_of(report, "config_environment_variables").legacy,
+        1
+    );
+    let team = location_of(report, "team.callback_vars");
+    assert_eq!((team.scanned, team.legacy, team.already_v2), (2, 1, 1));
+    assert_eq!(
+        location_of(report, "verification_token.callback_vars").scanned,
+        0
+    );
+    let vantage = location_of(report, "vantage_settings");
+    assert_eq!(
+        (vantage.scanned, vantage.legacy, vantage.already_v2),
+        (2, 1, 1)
+    );
+    assert_eq!(location_of(report, "cloudzero_settings").legacy, 1);
+    let sso = location_of(report, "sso_config");
+    assert_eq!((sso.scanned, sso.legacy, sso.plaintext), (2, 1, 1));
+    assert_eq!(
+        report
+            .as_dict()
+            .expect("the report projects")
+            .residual_legacy,
+        7
+    );
+}
+
 #[tokio::test]
 async fn attestation_reads_every_location_with_the_gate_off() {
     let harness = Harness::start(vec![SCHEMA.to_owned()]).await;
@@ -333,55 +381,7 @@ async fn attestation_reads_every_location_with_the_gate_off() {
     let report = check_encryption(&store, &cipher)
         .await
         .expect("the attestation runs with the gate off");
-    let names = report
-        .locations
-        .iter()
-        .map(|location| location.location.as_str())
-        .collect::<Vec<_>>();
-    assert_eq!(
-        names,
-        [
-            "model_table",
-            "credentials",
-            "mcp_server",
-            "mcp_user_credentials",
-            "mcp_user_env_vars",
-            "config_environment_variables",
-            "team.callback_vars",
-            "verification_token.callback_vars",
-            "vantage_settings",
-            "cloudzero_settings",
-            "sso_config",
-        ]
-    );
-    assert_eq!(location_of(&report, "model_table").legacy, 1);
-    assert_eq!(location_of(&report, "credentials").legacy, 1);
-    assert_eq!(location_of(&report, "mcp_server").scanned, 0);
-    assert_eq!(
-        location_of(&report, "config_environment_variables").legacy,
-        1
-    );
-    let team = location_of(&report, "team.callback_vars");
-    assert_eq!((team.scanned, team.legacy, team.already_v2), (2, 1, 1));
-    assert_eq!(
-        location_of(&report, "verification_token.callback_vars").scanned,
-        0
-    );
-    let vantage = location_of(&report, "vantage_settings");
-    assert_eq!(
-        (vantage.scanned, vantage.legacy, vantage.already_v2),
-        (2, 1, 1)
-    );
-    assert_eq!(location_of(&report, "cloudzero_settings").legacy, 1);
-    let sso = location_of(&report, "sso_config");
-    assert_eq!((sso.scanned, sso.legacy, sso.plaintext), (2, 1, 1));
-    assert_eq!(
-        report
-            .as_dict()
-            .expect("the report projects")
-            .residual_legacy,
-        7
-    );
+    assert_attested(&report);
     assert_eq!(harness.snapshot().await, before);
 }
 
@@ -394,17 +394,26 @@ async fn real_run_writes_json_strings_and_reports_exact_counts() {
     let report = real_run(&harness, &mut rotation, &cipher, Some("admin"))
         .await
         .expect("the migration writes every location");
-    let model = location_of(&report, "model_table");
+    assert_report_counts(&report, &rotation);
+    assert_team_marked_row(&harness).await;
+    assert_team_clean_and_string_rows(&harness).await;
+    assert_vantage_row(&harness).await;
+    assert_environment_and_cloudzero_rows(&harness).await;
+    assert_sso_and_token_rows(&harness).await;
+}
+
+fn assert_report_counts(report: &MigrationReport, rotation: &FakeRotation) {
+    let model = location_of(report, "model_table");
     assert_eq!((model.scanned, model.legacy, model.migrated), (1, 1, 0));
-    let team = location_of(&report, "team.callback_vars");
+    let team = location_of(report, "team.callback_vars");
     assert_eq!((team.scanned, team.migrated, team.already_v2), (2, 1, 1));
-    let vantage = location_of(&report, "vantage_settings");
+    let vantage = location_of(report, "vantage_settings");
     assert_eq!(
         (vantage.scanned, vantage.migrated, vantage.already_v2),
         (2, 1, 1)
     );
-    assert_eq!(location_of(&report, "cloudzero_settings").migrated, 1);
-    let sso = location_of(&report, "sso_config");
+    assert_eq!(location_of(report, "cloudzero_settings").migrated, 1);
+    let sso = location_of(report, "sso_config");
     assert_eq!((sso.migrated, sso.already_v2, sso.plaintext), (1, 1, 1));
     assert_eq!(
         rotation.calls(),
@@ -413,7 +422,9 @@ async fn real_run_writes_json_strings_and_reports_exact_counts() {
             actor: Some("admin".to_owned()),
         }]
     );
+}
 
+async fn assert_team_marked_row(harness: &Harness) {
     assert_eq!(
         harness
             .json_kind("LiteLLM_TeamTable", "metadata", "team_id", "team-marked")
@@ -435,7 +446,9 @@ async fn real_run_writes_json_strings_and_reports_exact_counts() {
             .await,
         SEED_TIME
     );
+}
 
+async fn assert_team_clean_and_string_rows(harness: &Harness) {
     assert_eq!(
         harness
             .json_kind("LiteLLM_TeamTable", "metadata", "team_id", "team-clean")
@@ -454,7 +467,9 @@ async fn real_run_writes_json_strings_and_reports_exact_counts() {
             .await,
         "string"
     );
+}
 
+async fn assert_vantage_row(harness: &Harness) {
     assert_eq!(
         harness
             .json_kind(
@@ -481,7 +496,9 @@ async fn real_run_writes_json_strings_and_reports_exact_counts() {
         field_text(&vantage_value, "integration_token").as_deref(),
         Some(v2(SALT_KEY, "token-vantage").as_str())
     );
+}
 
+async fn assert_environment_and_cloudzero_rows(harness: &Harness) {
     assert_eq!(
         harness
             .json_kind(
@@ -507,7 +524,9 @@ async fn real_run_writes_json_strings_and_reports_exact_counts() {
         open(SALT_KEY, &cloudzero_key).as_deref(),
         Some("sk-cloudzero")
     );
+}
 
+async fn assert_sso_and_token_rows(harness: &Harness) {
     assert_eq!(
         harness
             .json_kind("LiteLLM_SSOConfig", "sso_settings", "id", "sso_config")
@@ -554,6 +573,11 @@ async fn partial_failure_keeps_the_earlier_rows_written() {
         error,
         MigrationError::Store(MigrationStoreError::Database(_))
     ));
+    assert_earlier_rows_written(&harness).await;
+    assert_cloudzero_and_sso_kept(&harness).await;
+}
+
+async fn assert_earlier_rows_written(harness: &Harness) {
     assert_eq!(
         harness
             .json_kind("LiteLLM_TeamTable", "metadata", "team_id", "team-marked")
@@ -571,6 +595,9 @@ async fn partial_failure_keeps_the_earlier_rows_written() {
             .await,
         "string"
     );
+}
+
+async fn assert_cloudzero_and_sso_kept(harness: &Harness) {
     assert_eq!(
         harness
             .json_kind(
@@ -619,20 +646,24 @@ async fn repeat_migration_skips_migrated_rows_and_writes_nothing() {
         .await
         .expect("the second run only reports");
     assert_eq!(harness.snapshot().await, after_first);
-    let team = location_of(&report, "team.callback_vars");
+    assert_second_run_counts(&report);
+}
+
+fn assert_second_run_counts(report: &MigrationReport) {
+    let team = location_of(report, "team.callback_vars");
     assert_eq!((team.scanned, team.migrated, team.already_v2), (1, 0, 1));
-    let vantage = location_of(&report, "vantage_settings");
+    let vantage = location_of(report, "vantage_settings");
     assert_eq!(
         (vantage.scanned, vantage.migrated, vantage.already_v2),
         (2, 0, 2)
     );
-    let cloudzero = location_of(&report, "cloudzero_settings");
+    let cloudzero = location_of(report, "cloudzero_settings");
     assert_eq!(
         (cloudzero.scanned, cloudzero.migrated, cloudzero.already_v2),
         (1, 0, 1)
     );
-    let sso = location_of(&report, "sso_config");
+    let sso = location_of(report, "sso_config");
     assert_eq!((sso.scanned, sso.already_v2, sso.plaintext), (2, 1, 1));
-    let model = location_of(&report, "model_table");
+    let model = location_of(report, "model_table");
     assert_eq!((model.scanned, model.legacy, model.migrated), (1, 1, 0));
 }

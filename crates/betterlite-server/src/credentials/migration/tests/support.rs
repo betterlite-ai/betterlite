@@ -28,6 +28,19 @@ pub(super) const COVERED: [&str; 6] = [
     "mcp_user_env_vars",
     "config_environment_variables",
 ];
+pub(super) const EXPECTED_LOCATIONS: [&str; 11] = [
+    "model_table",
+    "credentials",
+    "mcp_server",
+    "mcp_user_credentials",
+    "mcp_user_env_vars",
+    "config_environment_variables",
+    "team.callback_vars",
+    "verification_token.callback_vars",
+    "vantage_settings",
+    "cloudzero_settings",
+    "sso_config",
+];
 
 pub(super) fn cipher(algorithm: Algorithm, key: Option<&str>) -> DbCipher {
     DbCipher {
@@ -186,6 +199,14 @@ pub(super) fn location_of<'report>(
         .expect("the report carries the location")
 }
 
+pub(super) fn location_names(report: &MigrationReport) -> Vec<&str> {
+    report
+        .locations
+        .iter()
+        .map(|location| location.location.as_str())
+        .collect()
+}
+
 pub(super) fn json(value: &MigrationJson) -> String {
     serde_json::to_string(value).expect("the fixture value is JSON")
 }
@@ -339,6 +360,13 @@ pub(super) struct FakeRotation {
 }
 
 impl FakeRotation {
+    pub(super) const fn failing() -> Self {
+        Self {
+            calls: Mutex::new(Vec::new()),
+            failure: true,
+        }
+    }
+
     pub(super) fn calls(&self) -> Vec<RotationCall> {
         self.calls
             .lock()

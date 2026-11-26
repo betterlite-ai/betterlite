@@ -9,9 +9,10 @@ use super::super::error::MigrationError;
 use super::super::service::{Migration, check_encryption};
 use super::super::store::{CallbackRow, CallbackTable};
 use super::support::{
-    FailingTransform, FakeError, FakeRotation, FakeStore, RotationCall, SALT_KEY, Write,
-    callback_row, callback_settings_metadata, callback_text, callback_vars_metadata, cipher,
-    covered_report, field_text, legacy, location_of, marked, migration, object, open, secret, v2,
+    EXPECTED_LOCATIONS, FailingTransform, FakeError, FakeRotation, FakeStore, RotationCall,
+    SALT_KEY, Write, callback_row, callback_settings_metadata, callback_text,
+    callback_vars_metadata, cipher, covered_report, field_text, legacy, location_names,
+    location_of, marked, migration, object, open, secret, v2,
 };
 
 #[tokio::test]
@@ -29,8 +30,7 @@ async fn migrate_rejects_a_disabled_gate_before_reading_any_row() {
     assert!(rotation.calls().is_empty());
 }
 
-#[tokio::test]
-async fn dry_run_scans_every_location_in_source_order_without_rotating_or_writing() {
+fn dry_run_fixture() -> FakeStore {
     let store = FakeStore::default();
     store
         .scans
@@ -63,33 +63,19 @@ async fn dry_run_scans_every_location_in_source_order_without_rotating_or_writin
             ("label", "plain".to_owned()),
         ]),
     ));
+    store
+}
+
+#[tokio::test]
+async fn dry_run_scans_every_location_in_source_order_without_rotating_or_writing() {
+    let store = dry_run_fixture();
     let mut rotation = FakeRotation::default();
     let cipher = cipher(Algorithm::Aes256Gcm, Some(SALT_KEY));
     let report = migration(&store, &mut rotation, &cipher, true)
         .run()
         .await
         .expect("the dry run reports");
-    let names = report
-        .locations
-        .iter()
-        .map(|location| location.location.as_str())
-        .collect::<Vec<_>>();
-    assert_eq!(
-        names,
-        [
-            "model_table",
-            "credentials",
-            "mcp_server",
-            "mcp_user_credentials",
-            "mcp_user_env_vars",
-            "config_environment_variables",
-            "team.callback_vars",
-            "verification_token.callback_vars",
-            "vantage_settings",
-            "cloudzero_settings",
-            "sso_config",
-        ]
-    );
+    assert_eq!(location_names(&report), EXPECTED_LOCATIONS);
     let team = location_of(&report, "team.callback_vars");
     assert_eq!(
         (team.scanned, team.legacy, team.already_v2, team.plaintext),
@@ -203,8 +189,7 @@ async fn a_rotation_failure_propagates_before_the_second_scan() {
         covered_report([1, 0, 0, 0, 0, 0]),
         covered_report([0, 0, 0, 0, 0, 0]),
     ]);
-    let mut rotation = FakeRotation::default();
-    rotation.failure = true;
+    let mut rotation = FakeRotation::failing();
     let cipher = cipher(Algorithm::Aes256Gcm, Some(SALT_KEY));
     let error = migration(&store, &mut rotation, &cipher, false)
         .run()
@@ -250,8 +235,7 @@ async fn a_failed_callback_transform_counts_the_legacy_values_undecryptable() {
     assert!(store.writes().is_empty());
 }
 
-#[tokio::test]
-async fn a_real_run_writes_the_reencrypted_callback_mapping_only_when_legacy_exists() {
+fn team_write_fixture() -> FakeStore {
     let store = FakeStore::default();
     store.scans.lock().unwrap().extend([
         covered_report([0, 0, 0, 0, 0, 0]),
@@ -270,6 +254,12 @@ async fn a_real_run_writes_the_reencrypted_callback_mapping_only_when_legacy_exi
             callback_settings_metadata(vec![("api_key", marked(&v2(SALT_KEY, "sk-done")))]),
         ),
     ]);
+    store
+}
+
+#[tokio::test]
+async fn a_real_run_writes_the_reencrypted_callback_mapping_only_when_legacy_exists() {
+    let store = team_write_fixture();
     let mut rotation = FakeRotation::default();
     let cipher = cipher(Algorithm::Aes256Gcm, Some(SALT_KEY));
     let report = migration(&store, &mut rotation, &cipher, false)
@@ -367,8 +357,7 @@ async fn invalid_json_inside_a_config_row_propagates() {
     assert!(store.writes().is_empty());
 }
 
-#[tokio::test]
-async fn sso_visits_every_nonempty_string_field_and_skips_the_rest() {
+fn sso_fixture() -> FakeStore {
     let store = FakeStore::default();
     store.scans.lock().unwrap().extend([
         covered_report([0, 0, 0, 0, 0, 0]),
@@ -384,6 +373,12 @@ async fn sso_visits_every_nonempty_string_field_and_skips_the_rest() {
             ("count", MigrationJson::Bool(true)),
         ]),
     );
+    store
+}
+
+#[tokio::test]
+async fn sso_visits_every_nonempty_string_field_and_skips_the_rest() {
+    let store = sso_fixture();
     let mut rotation = FakeRotation::default();
     let cipher = cipher(Algorithm::Aes256Gcm, Some(SALT_KEY));
     let report = migration(&store, &mut rotation, &cipher, false)

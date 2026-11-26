@@ -62,7 +62,7 @@ impl<S: MigrationStore> Walkers<'_, S> {
         dry_run: bool,
     ) -> Result<LocationReport, S::Error>
     where
-        T: CallbackTransform,
+        T: CallbackTransform + Sync,
     {
         let mut report = empty_report(table.location());
         for row in self.store.callback_rows(table).await? {

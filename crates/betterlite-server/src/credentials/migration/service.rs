@@ -25,8 +25,8 @@ pub struct Migration<'run, S, R, T> {
 impl<S, R, T> Migration<'_, S, R, T>
 where
     S: MigrationStore,
-    R: SameKeyRotation + Send,
-    T: CallbackTransform + Send,
+    R: SameKeyRotation + Send + Sync,
+    T: CallbackTransform + Send + Sync,
 {
     pub async fn run(&mut self) -> Result<MigrationReport, MigrationError<S::Error, R::Error>> {
         if self.cipher.settings.algorithm != Algorithm::Aes256Gcm {
