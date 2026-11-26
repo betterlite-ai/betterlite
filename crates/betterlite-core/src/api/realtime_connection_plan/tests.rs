@@ -640,6 +640,13 @@ async fn realtime_probe_azure_protocol() {
         "/openai/v1/realtime?intent=transcription",
         "no configured string gives GA"
     );
+    let empty_version = probe_request("azure", MODEL, params(&[("api_version", text(""))]));
+    probe.run(&empty_version, &beta_environment).await.unwrap();
+    assert_eq!(
+        dialer.last().url,
+        "/openai/realtime?api-version=2024-10-01-preview&deployment=realtime-a&intent=transcription",
+        "an empty configured version takes the default"
+    );
 
     // a falsy configured value falls through to the next truthy one
     let mut empty_named = probe_request("azure", MODEL, JsonObject::new());
@@ -734,6 +741,13 @@ async fn realtime_probe_openai_and_xai_defaults() {
     assert_eq!(
         dialer.last().url,
         "wss://api.x.ai/v1/realtime?model=realtime-a"
+    );
+    let empty_base = probe_request("openai", MODEL, params(&[("api_base", text(""))]));
+    probe.run(&empty_base, &settings()).await.unwrap();
+    assert_eq!(
+        dialer.last().url,
+        "wss://api.openai.com/v1/realtime?model=realtime-a",
+        "a configured empty base takes the default"
     );
 }
 
