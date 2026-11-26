@@ -35,6 +35,7 @@ const CUSTOMER_ROW: &str = r#"{"user_id":"buyer-1","user_role":"customer"}"#;
 const ORG_ADMIN_ROW: &str = r#"{"user_id":"user-1","user_role":"internal_user","organization_memberships":[{"user_id":"user-1","organization_id":"org-a","user_role":"org_admin","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}]}"#;
 const INTERNAL_TOKEN: &str = r#"{"user_id":"user-1"}"#;
 const VIEWER_TOKEN: &str = r#"{"user_id":"viewer-1"}"#;
+const WATCHER_TOKEN: &str = r#"{"user_id":"watcher-1"}"#;
 const BUYER_TOKEN: &str = r#"{"user_id":"buyer-1"}"#;
 const ADMIN_DEFAULT_ROUTES: [&str; 4] = [
     "management_routes",
@@ -381,21 +382,28 @@ fn org_admin_body_scope() {
 #[case::spend_keys("/spend/keys")]
 #[case::compliance_gdpr("/compliance/gdpr")]
 fn internal_viewer_routes(#[case] route: &str) {
-    let policy = Policy::new(route)
+    Policy::new(route)
         .with_method("GET")
         .with_user(WATCHER_ROW)
-        .with_token(r#"{"user_id":"watcher-1"}"#);
-    policy.run().unwrap();
-    let elsewhere = Policy::new("/user/new")
-        .with_method("POST")
-        .with_user(WATCHER_ROW)
-        .with_token(r#"{"user_id":"watcher-1"}"#);
-    assert_auth_error(elsewhere.run(), "401");
-    let customer = Policy::new("/spend/keys")
-        .with_method("GET")
-        .with_user(CUSTOMER_ROW)
-        .with_token(BUYER_TOKEN);
-    assert_auth_error(customer.run(), "401");
+        .with_token(WATCHER_TOKEN)
+        .run()
+        .unwrap();
+    assert_auth_error(
+        Policy::new("/user/new")
+            .with_method("POST")
+            .with_user(WATCHER_ROW)
+            .with_token(WATCHER_TOKEN)
+            .run(),
+        "401",
+    );
+    assert_auth_error(
+        Policy::new("/spend/keys")
+            .with_method("GET")
+            .with_user(CUSTOMER_ROW)
+            .with_token(BUYER_TOKEN)
+            .run(),
+        "401",
+    );
 }
 
 #[test]
