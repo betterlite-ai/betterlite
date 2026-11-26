@@ -356,7 +356,6 @@ async fn a_failed_arm_does_not_silence_the_next() {
 async fn the_production_funnel_queue_counts_a_withheld_sample() {
     let job = eval_job("job-1", &["router-a"], None);
     let fixture = SampleFixture::new();
-    let attempts = Attempts::new();
     let counter = SpendLog::new();
     let calls = CallsFake::new(Vec::new(), Vec::new());
     let funnel = FunnelQueue::default();
