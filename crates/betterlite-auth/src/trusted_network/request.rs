@@ -170,11 +170,7 @@ pub fn resolve_client_ip(
         return (peer.map(str::to_owned), false);
     }
     let forwarded = request.x_forwarded_for.unwrap_or_default();
-    let hops: Vec<&str> = forwarded
-        .split(',')
-        .map(str::trim)
-        .filter(|hop| !hop.is_empty())
-        .collect();
+    let hops: Vec<&str> = forwarded.split(',').map(str::trim).collect();
     for hop in hops.iter().rev() {
         if is_valid_ip(hop) && !ip_in_networks(Some(*hop), &networks) {
             return (Some((*hop).to_owned()), true);
