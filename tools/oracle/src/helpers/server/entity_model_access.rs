@@ -97,7 +97,7 @@ impl Helper for Op {
 async fn step_values(steps: &[Step]) -> Result<Vec<Value>, Box<HelperError>> {
     let mut values = Vec::with_capacity(steps.len());
     for step in steps {
-        values.push(step_value(step).await?);
+        values.push(Box::pin(step_value(step)).await?);
     }
     Ok(values)
 }
@@ -125,7 +125,9 @@ async fn step_value(step: &Step) -> Result<Value, Box<HelperError>> {
             let outcome = can_project_access_model(&model, project.as_ref(), targets, &context());
             Ok(decision_value(outcome))
         }
-        Function::Resolved => resolved_value(step, &model, &fixture, lookup.as_ref()).await,
+        Function::Resolved => {
+            Box::pin(resolved_value(step, &model, &fixture, lookup.as_ref())).await
+        }
         Function::Resources => {
             let token = token(step)?;
             let mut resources =
