@@ -7,7 +7,7 @@ use betterlite_auth::auth_policy_support::guardrails::{
 use betterlite_auth::auth_policy_support::tools::{ToolCheckError, check_tools_allowlist};
 use betterlite_oracle_helper_api::helper::HelperResult;
 
-use super::fixtures::extractors;
+use super::fixture_support::extractors;
 use super::{Input, team_obj, token_in};
 
 pub(super) fn guardrail(input: &Input) -> HelperResult {

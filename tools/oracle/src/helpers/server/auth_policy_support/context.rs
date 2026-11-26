@@ -16,7 +16,7 @@ use betterlite_error::proxy_exception::ProxyException;
 use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::HelperResult;
 
-use super::fixtures::{FakeOrg, org_fields, team_fields};
+use super::fixture_support::{FakeOrg, org_fields, team_fields};
 use super::{Failure, Input, Lookup, invalid, proxy_denial, required_token, runtime, team_obj};
 
 pub(super) fn team_from_token(input: &Input) -> HelperResult {
@@ -42,11 +42,12 @@ pub(super) fn vouch(input: &Input) -> HelperResult {
         .ok_or_else(|| invalid("the call needs a lookup"))?;
     let token = required_token(input.token.as_ref())?;
     let outage = AllowRequestsOnOutage::Boolean(input.outage);
-    let value = token_can_vouch_for_team(&token, &lookup_error(lookup), &outage);
+    let error = lookup_error(&lookup);
+    let value = token_can_vouch_for_team(&token, &error, &outage);
     Ok(vouch_json(value))
 }
 
-fn lookup_error(lookup: Lookup) -> TeamLookupError {
+fn lookup_error(lookup: &Lookup) -> TeamLookupError {
     match lookup {
         Lookup::TeamNotFound => TeamLookupError::TeamNotFound {
             team_id: "team-x".to_owned(),

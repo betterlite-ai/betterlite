@@ -685,6 +685,10 @@ fn reconstructed_team_all_fields() {
         ),
         (true, true, true)
     );
+}
+
+#[test]
+fn reconstructed_team_rejects_missing_id_and_non_string_model() {
     assert!(matches!(
         team_obj_from_token(&key(r#"{"token":"k"}"#)),
         Err(TeamFromTokenError::MissingTeamId)

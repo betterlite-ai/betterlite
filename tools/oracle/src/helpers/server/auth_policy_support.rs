@@ -1,5 +1,5 @@
 mod context;
-mod fixtures;
+mod fixture_support;
 mod policy;
 
 use std::collections::BTreeMap;

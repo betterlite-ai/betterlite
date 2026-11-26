@@ -15,7 +15,7 @@ pub(crate) struct FakeOrg {
 }
 
 impl FakeOrg {
-    pub(crate) fn new(org: Option<OrganizationTable>) -> Self {
+    pub(crate) const fn new(org: Option<OrganizationTable>) -> Self {
         Self {
             org: Mutex::new(org),
             projects: Mutex::new(BTreeMap::new()),
@@ -76,10 +76,7 @@ impl OrgStore for FakeOrg {
         if row.organization_id.as_deref() != Some(org_id) {
             return Ok(None);
         }
-        match serde_json::to_string(row) {
-            Ok(text) => Ok(Some(text)),
-            Err(_) => Ok(None),
-        }
+        serde_json::to_string(row).map_or_else(|_| Ok(None), |text| Ok(Some(text)))
     }
 
     async fn find_by_alias(&self, _org_alias: &str) -> StoreAnswer<Vec<String>> {
