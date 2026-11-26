@@ -186,12 +186,12 @@ impl DbReadiness {
 
     #[must_use]
     pub fn readiness_db_status(&self, status: DbStatus) -> DbStatus {
-        match status {
-            DbStatus::Connected if self.stall.stalled_within_window(self.stall_window_seconds) => {
-                DbStatus::Stalled
-            }
-            other => other,
+        if status == DbStatus::Connected
+            && self.stall.stalled_within_window(self.stall_window_seconds)
+        {
+            return DbStatus::Stalled;
         }
+        status
     }
 
     pub async fn resolve_public_db(&self) -> PublicDbReport {

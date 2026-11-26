@@ -96,7 +96,6 @@ impl ReadinessState {
 }
 
 // B8540 mounts this router behind the proxy's auth middleware, which exempts these paths
-#[must_use]
 pub fn readiness_routes(state: ReadinessState) -> Router {
     Router::new()
         .route(
@@ -127,10 +126,14 @@ struct PublicReadinessBody {
 
 #[derive(Serialize)]
 struct BacklogBody {
-    in_flight_requests: u64,
-    admitted_requests: u64,
-    queued_requests: u64,
-    rejected_requests: u64,
+    #[serde(rename = "in_flight_requests")]
+    in_flight: u64,
+    #[serde(rename = "admitted_requests")]
+    admitted: u64,
+    #[serde(rename = "queued_requests")]
+    queued: u64,
+    #[serde(rename = "rejected_requests")]
+    rejected: u64,
 }
 
 #[derive(Serialize)]
@@ -202,10 +205,10 @@ async fn health_backlog(State(state): State<ReadinessState>) -> Json<BacklogBody
     let counters = state.admission.counters();
     let in_flight_requests = state.in_flight.in_flight_requests();
     Json(BacklogBody {
-        in_flight_requests,
-        admitted_requests: counters.admitted,
-        queued_requests: counters.queued,
-        rejected_requests: counters.rejected,
+        in_flight: in_flight_requests,
+        admitted: counters.admitted,
+        queued: counters.queued,
+        rejected: counters.rejected,
     })
 }
 

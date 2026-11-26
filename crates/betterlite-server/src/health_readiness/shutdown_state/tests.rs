@@ -11,7 +11,7 @@ use super::{InFlightCounter, ShutdownState};
 use crate::health_readiness::tests::support::{FakeInFlight, capture_logs};
 
 fn state(in_flight: &Arc<FakeInFlight>, timeout: Duration) -> ShutdownState {
-    let counter: Arc<dyn InFlightCounter> = Arc::clone(in_flight);
+    let counter: Arc<dyn InFlightCounter> = Arc::<FakeInFlight>::clone(in_flight);
     ShutdownState::new(counter, timeout)
 }
 

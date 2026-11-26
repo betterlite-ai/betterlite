@@ -20,7 +20,7 @@ fn convert(yaml: &str, variables: &[(&str, &str)]) -> Result<Settings, ConfigErr
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
         .collect();
-    let raw: Raw = serde_saphyr::from_str(yaml).unwrap();
+    let raw: Raw = serde_saphyr::from_str(yaml).map_err(|source| ConfigError::Yaml { source })?;
     raw.convert(&environment)
 }
 
@@ -236,11 +236,11 @@ fn a_request_timeout_that_is_not_a_number_names_the_path() {
 #[case::null("general_settings: {alerting: null}", None)]
 fn the_alerting_setting_keeps_its_list(#[case] yaml: &str, #[case] expected: Option<&[&str]>) {
     let settings = convert(yaml, &[]).unwrap();
-    let expected = expected.map(|items| {
+    let expected_names = expected.map(|items| {
         items
             .iter()
             .map(|item| (*item).to_owned())
             .collect::<Vec<String>>()
     });
-    assert_eq!(settings.alerting, expected);
+    assert_eq!(settings.alerting, expected_names);
 }

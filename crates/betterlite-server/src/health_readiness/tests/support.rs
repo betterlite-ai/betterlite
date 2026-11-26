@@ -134,7 +134,7 @@ impl FakeProbe {
         Self::scripted(Vec::new())
     }
 
-    pub(crate) fn with_reconnects(mut self, reconnects: Vec<ReconnectAnswer>) -> Self {
+    pub(crate) fn with_reconnects(self, reconnects: Vec<ReconnectAnswer>) -> Self {
         *self
             .reconnects
             .lock()
@@ -296,8 +296,8 @@ pub(crate) fn db_readiness(
     settings: &HealthSettings,
 ) -> DbReadiness {
     DbReadiness::new(
-        Arc::clone(probe),
-        Arc::clone(stall),
+        Arc::<FakeProbe>::clone(probe),
+        Arc::<FakeStall>::clone(stall),
         availability,
         settings.db_lookup_stall_window_seconds,
         settings.disable_no_redis_warning,
@@ -323,10 +323,10 @@ impl World {
             availability,
             &self.settings,
         ));
-        let in_flight: Arc<dyn InFlightCounter> = Arc::clone(&self.in_flight);
-        let admission: Arc<dyn AdmissionCounter> = Arc::clone(&self.admission);
-        let sources: Arc<dyn ReadinessSources> = Arc::clone(&self.sources);
-        let callbacks: Arc<dyn CallbackNameSource> = Arc::clone(&self.callbacks);
+        let in_flight: Arc<dyn InFlightCounter> = Arc::<FakeInFlight>::clone(&self.in_flight);
+        let admission: Arc<dyn AdmissionCounter> = Arc::<FakeAdmission>::clone(&self.admission);
+        let sources: Arc<dyn ReadinessSources> = Arc::<FakeSources>::clone(&self.sources);
+        let callbacks: Arc<dyn CallbackNameSource> = Arc::<FakeCallbacks>::clone(&self.callbacks);
         let ports = ReadinessPorts {
             in_flight,
             admission,
@@ -379,7 +379,10 @@ pub(crate) async fn send_unread(router: &Router, method: Method, path: &str) -> 
         .expect("the router answers")
 }
 
-pub(crate) fn parse<Parsed: DeserializeOwned>(body: &[u8]) -> Parsed {
+pub(crate) fn parse<Parsed>(body: &[u8]) -> Parsed
+where
+    Parsed: DeserializeOwned,
+{
     match serde_json::from_slice(body) {
         Ok(parsed) => parsed,
         Err(error) => panic!("the response body is not the documented JSON: {error}"),

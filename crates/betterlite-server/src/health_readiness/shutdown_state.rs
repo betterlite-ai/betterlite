@@ -53,16 +53,15 @@ impl ShutdownState {
 
     // Idempotent: a SIGTERM after a preStop drain keeps the first start time and logs nothing
     pub fn start_shutdown(&self) {
-        {
-            let mut lifecycle = self
-                .lifecycle
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
-            if lifecycle.shutting_down {
-                return;
-            }
-            lifecycle.shutting_down = true;
+        let mut lifecycle = self
+            .lifecycle
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if lifecycle.shutting_down {
+            return;
         }
+        lifecycle.shutting_down = true;
+        drop(lifecycle);
         let in_flight_requests = self.in_flight.in_flight_requests();
         tracing::info!("graceful_shutdown_started in_flight_requests={in_flight_requests}");
     }
@@ -73,7 +72,7 @@ impl ShutdownState {
         }
         let wait = timeout.unwrap_or(self.timeout);
         // the /health/drain request flows through the in-flight middleware, so it counts itself
-        let target = if exclude_self { 1 } else { 0 };
+        let target = u64::from(exclude_self);
         let initial = self.in_flight.in_flight_requests();
         if wait.is_zero() {
             return initial.saturating_sub(target);
@@ -112,7 +111,7 @@ impl ShutdownState {
                 let elapsed_s = elapsed.as_secs_f64();
                 let timeout_s = wait.as_secs_f64();
                 tracing::warn!(
-                    "graceful_shutdown_timeout in_flight_requests={current} elapsed_s={elapsed_s:.2} timeout_s={timeout_s:?} — proceeding with teardown"
+                    "graceful_shutdown_timeout in_flight_requests={current} elapsed_s={elapsed_s:.2} timeout_s={timeout_s:?} \u{2014} proceeding with teardown"
                 );
                 return initial.saturating_sub(current);
             }
