@@ -133,7 +133,16 @@ const fn e2b_message(failure: &E2bError) -> Option<&'static str> {
     match failure {
         E2bError::MissingApiKey => Some(E2B_MISSING_KEY),
         E2bError::MissingAccessToken => Some(E2B_BARE_ID),
-        _ => None,
+        E2bError::HttpStatus { .. }
+        | E2bError::Url { .. }
+        | E2bError::InvalidHeader { .. }
+        | E2bError::Encode { .. }
+        | E2bError::CreateResponse { .. }
+        | E2bError::ResponseTooLarge { .. }
+        | E2bError::OutputTooLarge { .. }
+        | E2bError::OutputNotUtf8 { .. }
+        | E2bError::Transport { .. }
+        | E2bError::Body { .. } => None,
     }
 }
 

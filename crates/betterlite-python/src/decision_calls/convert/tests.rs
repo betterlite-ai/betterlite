@@ -452,7 +452,7 @@ fn error_sandbox_misuse_raises_litellm_value_errors() {
 
     let unsupported = raised(SessionFailure::from(
         SandboxLifecycleError::UnsupportedProvider {
-            provider: "daytona",
+            provider: String::from("daytona"),
         },
     ));
     assert_eq!(unsupported.kind, "ValueError");

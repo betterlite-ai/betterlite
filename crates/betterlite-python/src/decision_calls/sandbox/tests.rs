@@ -113,7 +113,8 @@ fn create_request_carries_every_provider_field() {
 
 #[test]
 fn create_request_leaves_the_provider_defaults_alone() {
-    let request = create_request(&Arguments::default(), None).unwrap();
+    let arguments = Arguments::default();
+    let request = create_request(&arguments, None).unwrap();
     assert_eq!(request.call.provider, "");
     assert!(request.call.api_key.is_none());
     assert!(request.call.kwargs.is_empty());

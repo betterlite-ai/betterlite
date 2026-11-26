@@ -113,9 +113,8 @@ fn native_session_maps_conversion_errors_to_python_errors() {
 fn native_session_raises_the_registered_error_with_its_payload() {
     Python::initialize();
     Python::attach(|py| {
-        let error_type = PyErr::new_type(py, c"probe.NativeDecisionError", None, None, None)
-            .unwrap()
-            .unbind();
+        let error_type =
+            PyErr::new_type(py, c"probe.NativeDecisionError", None, None, None).unwrap();
         let failure = SessionFailure::Raised(Box::new(NativeDecisionPayload::builtin(
             "ValueError",
             String::from("invalid sandbox call"),

@@ -21,6 +21,7 @@ pub(super) fn register_tools(
     let lookup = secret_lookup();
     let mut tools = core.tools.lock().unwrap_or_else(PoisonError::into_inner);
     tools.register(&entries, &lookup, &environment)?;
+    drop(tools);
     encode(&Json::Null).map_err(SessionFailure::from)
 }
 
@@ -30,7 +31,7 @@ pub(super) fn resolve_tool(core: &SessionCore, wire: &CallWire) -> Result<String
         .arguments
         .name
         .as_deref()
-        .map_or(None, |name| tools.tools.get(name));
+        .and_then(|name| tools.tools.get(name));
     tool_answer(found).map_err(SessionFailure::from)
 }
 
