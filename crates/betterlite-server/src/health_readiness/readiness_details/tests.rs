@@ -9,6 +9,7 @@ use betterlite_config::sections::env_credential_login::Settings as EnvLoginSetti
 use betterlite_config::sections::health_readiness::Settings as HealthSettings;
 use betterlite_db::database_availability::policy::AllowRequestsOnOutage;
 use betterlite_db::database_faults::ErrorType;
+use betterlite_prompts::arguments::json::{Json, Object};
 use rstest::rstest;
 use serde::Deserialize;
 
@@ -29,8 +30,20 @@ enum CacheJson {
     Semantic {
         #[serde(rename = "type")]
         cache_type: String,
-        index_info: String,
+        index_info: IndexInfo,
     },
+}
+
+#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[serde(untagged)]
+enum IndexInfo {
+    Structured(IndexFields),
+    Text(String),
+}
+
+#[derive(Debug, Deserialize, PartialEq, Eq)]
+struct IndexFields {
+    index_name: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -110,7 +123,7 @@ async fn details_body_reports_every_field() {
         .with_callbacks(vec!["langfuse".to_owned()])
         .with_cache(Ok(Some(CacheReport::Semantic {
             cache_type: "redis_semantic".to_owned(),
-            index_info: "{\"num_docs\": 1}".to_owned(),
+            index_info: Json::Text("index-info".to_owned()),
         })))
         .with_level("DEBUG".to_owned())
         .with_version("1.2.3".to_owned());
@@ -126,7 +139,7 @@ async fn details_body_reports_every_field() {
         parsed.cache,
         Some(CacheJson::Semantic {
             cache_type: "redis_semantic".to_owned(),
-            index_info: "{\"num_docs\": 1}".to_owned(),
+            index_info: IndexInfo::Text("index-info".to_owned()),
         })
     );
     assert_eq!(parsed.litellm_version, "1.2.3");
@@ -163,6 +176,54 @@ async fn details_cache_keeps_a_plain_type() {
     let (_, body) = call_plain(&setup).await;
     let parsed: DetailsBody = parse(&body);
     assert_eq!(parsed.cache, Some(CacheJson::Plain("local".to_owned())));
+}
+
+#[tokio::test]
+async fn details_semantic_cache_index_info_stays_structured() {
+    let mut index_info = Object::new();
+    index_info.insert("index_name".to_owned(), Json::Text("litellm".to_owned()));
+    let sources = FakeSources::default().with_cache(Ok(Some(CacheReport::Semantic {
+        cache_type: "redis_semantic".to_owned(),
+        index_info: Json::Object(index_info),
+    })));
+    let setup = setup(
+        FakeProbe::healthy(),
+        AllowRequestsOnOutage::Unsupported,
+        sources,
+    );
+    let (_, body) = call_plain(&setup).await;
+    let parsed: DetailsBody = parse(&body);
+    assert_eq!(
+        parsed.cache,
+        Some(CacheJson::Semantic {
+            cache_type: "redis_semantic".to_owned(),
+            index_info: IndexInfo::Structured(IndexFields {
+                index_name: "litellm".to_owned(),
+            }),
+        })
+    );
+}
+
+#[tokio::test]
+async fn details_semantic_cache_failure_index_info_stays_text() {
+    let sources = FakeSources::default().with_cache(Ok(Some(CacheReport::Semantic {
+        cache_type: "redis_semantic".to_owned(),
+        index_info: Json::Text("index does not exist - error: missing".to_owned()),
+    })));
+    let setup = setup(
+        FakeProbe::healthy(),
+        AllowRequestsOnOutage::Unsupported,
+        sources,
+    );
+    let (_, body) = call_plain(&setup).await;
+    let parsed: DetailsBody = parse(&body);
+    assert_eq!(
+        parsed.cache,
+        Some(CacheJson::Semantic {
+            cache_type: "redis_semantic".to_owned(),
+            index_info: IndexInfo::Text("index does not exist - error: missing".to_owned()),
+        })
+    );
 }
 
 #[tokio::test]

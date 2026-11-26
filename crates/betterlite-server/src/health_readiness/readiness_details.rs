@@ -4,6 +4,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse as _, Response};
 use betterlite_config::sections::aiohttp_transport_toggle::Settings as AiohttpSettings;
 use betterlite_config::sections::env_credential_login::Settings as EnvLoginSettings;
+use betterlite_prompts::arguments::json::Json as JsonValue;
 use serde::Serialize;
 use thiserror::Error;
 
@@ -25,7 +26,7 @@ pub enum CacheReport {
     Semantic {
         #[serde(rename = "type")]
         cache_type: String,
-        index_info: String,
+        index_info: JsonValue,
     },
 }
 
