@@ -2,7 +2,7 @@ use betterlite_auth::auth_model_lists::credential::CredentialSnapshot;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_openai::openai_base_config::Headers;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 
 use super::{RealtimeProbeError, RealtimeProbeRequest};
 
@@ -40,12 +40,11 @@ pub fn merge_stored_credentials(
 }
 
 // `named or merged`, with the empty string the Python `or` treats as absent
-#[must_use]
 pub fn resolve_probe_parameters(
     request: &RealtimeProbeRequest,
     merged: &JsonObject,
 ) -> Result<ResolvedProbeParameters, RealtimeProbeError> {
-    let named_key = request.api_key.as_ref().map(|key| key.expose_secret());
+    let named_key = request.api_key.as_ref().map(ExposeSecret::expose_secret);
     Ok(ResolvedProbeParameters {
         api_key: resolved_text(named_key, merged, API_KEY_KEY)?.map(SecretString::from),
         api_base: resolved_text(request.api_base.as_deref(), merged, API_BASE_KEY)?,
@@ -56,13 +55,12 @@ pub fn resolve_probe_parameters(
 // _realtime_health_check_auth_headers outside Azure: an absent key sends nothing, an empty one still sends "Bearer "
 #[must_use]
 pub fn bearer_headers(api_key: Option<&SecretString>) -> Headers {
-    match api_key {
-        None => Headers::new(),
-        Some(key) => Headers::from([(
+    api_key.map_or_else(Headers::new, |key| {
+        Headers::from([(
             String::from("Authorization"),
             format!("Bearer {}", key.expose_secret()),
-        )]),
-    }
+        )])
+    })
 }
 
 // `named or merged`: the named argument wins only when it is a non-empty string

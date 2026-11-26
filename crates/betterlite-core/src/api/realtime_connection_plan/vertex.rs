@@ -19,7 +19,7 @@ use super::{
 pub type VertexTokenSource = dyn VertexAccessTokenSource<Error = VertexTokenError>;
 
 // B1301's safe parameter accessors, over the merged deployment parameters
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct VertexProbeParameters {
     pub project: Option<String>,
     pub location: Option<String>,

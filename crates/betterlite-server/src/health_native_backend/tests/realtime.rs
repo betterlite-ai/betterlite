@@ -98,7 +98,7 @@ async fn realtime_probe_reports_the_core_failure() {
     assert_eq!(error.to_string(), "Unsupported model: realtime-a");
 }
 
-// B1301's accessors, B1304's region and B1365's Live config over the injected catalog
+// B1301's accessors, B1304's region and B1011's token source over the injected catalog
 #[tokio::test]
 async fn vertex_live_probe_reads_its_parameters() {
     let catalog = Arc::new(ModelCatalog::default());
@@ -132,6 +132,16 @@ async fn vertex_live_probe_reads_its_parameters() {
         .expect("the scripted token resolves");
     assert_eq!(token.expose_secret(), "probe-token");
     assert_eq!(project, "probe-project");
+}
+
+// B1365's Live config turns the resolved parameters into the BidiGenerateContent endpoint
+#[tokio::test]
+async fn vertex_live_probe_builds_the_live_endpoint() {
+    let probe = VertexLiveProbe {
+        catalog: Arc::new(ModelCatalog::default()),
+        settings: VertexSettings::default(),
+        tokens: Arc::new(ScriptedTokens),
+    };
     let endpoint = probe.live(
         &VertexProbeTarget {
             model: String::from("gemini-live-model"),
