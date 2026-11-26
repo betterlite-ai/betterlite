@@ -1,7 +1,7 @@
 id: B107
 milestone: M6 guardrails
 title: Third-party guardrails, A to L
-status: blocked
+status: todo
 depends_on: [B9450, B9451, B3750, B3751, B3752, B3753, B3754, B3755, B3762, B3766, B3767, B3768, B3769, B3770, B3771, B3772, B3776, B3777, B3778, B8522, B3662, B3665, B3680, B3683, B8217, B8390, B8392, B8399, B8521, B8613, B8666, B8741, B8742, B8805, B8803]
 file: tasks/B107-third-party-guardrail-http.yaml
 covers:
@@ -26,5 +26,5 @@ parent: null
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): niche, third-party guardrails Aim Akto Aporia Cisco Lasso and others A to L"
+blocked_reason: null
 pr: null

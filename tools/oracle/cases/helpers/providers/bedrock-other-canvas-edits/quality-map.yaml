@@ -1,0 +1,33 @@
+kind: helper
+name: bedrock-other-canvas-edits-quality-map
+call:
+  bedrock_other_canvas_edits:
+    model_cost: {}
+    calls:
+      - function: supported_params
+      - function: map
+        options: {quality: hd}
+        drop_params: false
+      - function: map
+        options: {quality: premium}
+        drop_params: false
+      - function: map
+        options: {quality: standard}
+        drop_params: false
+      - function: map
+        options: {quality: auto}
+        drop_params: false
+      - function: map
+        options: {quality: null}
+        drop_params: false
+      - function: map
+        options: {n: 2, size: 1x2, quality: hd}
+        drop_params: false
+      - function: map
+        options: {user: u, _x: 1, mask: m, custom: x}
+        drop_params: false
+      - function: map
+        options: {user: u, _x: 1, mask: m, width: 1, taskType: INPAINTING, imageGenerationConfig: {a: 1}, quality: hd}
+        drop_params: true
+env: {}
+compare: {ignore: []}

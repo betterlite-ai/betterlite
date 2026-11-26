@@ -1,7 +1,7 @@
 id: B094
 milestone: M5 api families
 title: Containers API
-status: blocked
+status: todo
 depends_on: [B8635, B9740, B9942]
 file: tasks/B094-container-composition-http.yaml
 covers:
@@ -12,5 +12,5 @@ parent: null
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, Containers API is new and can wait"
+blocked_reason: null
 pr: null

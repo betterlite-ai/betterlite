@@ -1,0 +1,47 @@
+id: B10111
+title: Seeded keys and teams prove the tool and guardrail policy over HTTP
+description: >-
+  B888 builds the tool allowlist and guardrail modification checks in crates/betterlite-auth/src/auth_policy_support and installs them as an auth stage. Its HTTP cases send the master key, which passes every policy check, so they only show the stage lets a master request reach the upstream. The denials need a non-admin key: until B052 authenticates virtual keys every bearer but the master key gets 401 at the master stage, and the postgres fixture's KeyRow and TeamRow carry no metadata. This task adds the denial cases once both have landed.
+
+
+  The fixture already creates the metadata JSONB column on LiteLLM_VerificationToken and LiteLLM_TeamTable. Let a seeded key row and team row carry metadata in seed.rs, and insert it in seed_sql.rs. Then add HTTP cases under tools/oracle/cases/auth/auth-policy-support/: a key whose metadata.allowed_tools leaves out a requested tool answers 403 tool_access_denied with param tools and every disallowed name; a key without allowed_tools falls back to its team's metadata.allowed_tools and is denied the same way; a permitted tool reaches the upstream; and a request that sets guardrails for a key whose team metadata.guardrails.modify_guardrails is false answers 403 with detail.error 'Your team does not have permission to modify guardrails.'. No denied request reaches the upstream.
+scope:
+  paths:
+  - tools/postgres-fixture/src/seed.rs
+  - tools/postgres-fixture/src/seed_sql.rs
+  - tools/oracle/cases/auth/auth-policy-support/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L504
+  why: The metadata column of LiteLLM_VerificationToken.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L188
+  why: The metadata column of LiteLLM_TeamTable.
+dod:
+- text: >-
+    A seeded key row and team row may set metadata, and the fixture's own tests still pass.
+  proof: [fixture-tests]
+- text: >-
+    The key tool denial, the team fallback denial, the permitted tool and the guardrail modification cases pass against LiteLLM, and no denied request reaches the upstream.
+  proof: [oracle]
+checks:
+  optional: []
+  commands:
+  - id: fixture-tests
+    why: The fixture schema or seed rows changed what another case gets.
+    run: cargo nextest run --locked -p betterlite-postgres-fixture --no-tests=fail
+oracle_cases:
+- tools/oracle/cases/auth/auth-policy-support/key-tool-denied.yaml
+- tools/oracle/cases/auth/auth-policy-support/team-tool-fallback-denied.yaml
+- tools/oracle/cases/auth/auth-policy-support/permitted-tool.yaml
+- tools/oracle/cases/auth/auth-policy-support/guardrail-modify-denied.yaml
+deviations: []
+out_of_scope:
+- The tool and guardrail checks (B888) and key authentication (B052). This task only seeds the fixture and adds the cases.
+pitfalls:
+- The new metadata fields default to an empty object, so an older case needs no change.
+- A proxy admin or the master key passes every policy check, so each denial case needs a non-admin key.
+- A database case needs POSTGRES_TEST_URL when run by hand; nextest starts its own server.
+review_level: standard
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0

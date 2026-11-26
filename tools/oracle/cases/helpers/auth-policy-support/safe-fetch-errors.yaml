@@ -1,0 +1,15 @@
+kind: helper
+name: auth-policy-support-safe-fetch-errors
+call:
+  auth_policy_support:
+    function: safe_fetch
+    failure: proxy
+calls:
+  - auth_policy_support:
+      function: safe_fetch
+      failure: team_not_found
+  - auth_policy_support:
+      function: safe_fetch
+      failure: no_database
+env: {}
+compare: {ignore: []}

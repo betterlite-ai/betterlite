@@ -15,7 +15,7 @@ description: >-
   "internal_server_error"}}. Use
   B8411's NewUserRequestTeam and B1608's DefaultTeamSSOParams. No other task declares DefaultInternalUserParams, so this task builds it in betterlite-server's signup_defaults_routes::user_defaults module.
   User-role default is internal_user_viewer, other user defaults are null; team models default []
-  and other team parameters are null. Reuse B1616/B1621's configuration bindings, which default
+  and other team parameters are null. Read user defaults from B736's existing `config.sections.auth_user_lookup.default_internal_user_params` binding and reuse B1621's team-default binding; both default
   the whole corresponding litellm setting to None rather than an eagerly materialized object.
   Decode both PATCH forms with decode_signup_defaults(bytes, User|Team), retaining the union
   of all-string teams or all-object teams and the dependency-owned exact-money validation.

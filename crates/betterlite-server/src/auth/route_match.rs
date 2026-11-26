@@ -20,6 +20,23 @@ mod tests;
 
 const MAX_ROUTE_PATH_BYTES: usize = 8_192;
 
+// Probes and the kubelet preStop hook reach these without a key, in LiteLLM and in betterlite
+pub const PUBLIC_HEALTH_PATHS: [&str; 4] = [
+    "/health/liveliness",
+    "/health/liveness",
+    "/health/readiness",
+    "/health/drain",
+];
+
+// The diagnostics keep the master-key check and only need admitting past the route table
+const AUTHENTICATED_HEALTH_PATHS: [&str; 5] = [
+    "/health/readiness/details",
+    "/health/backlog",
+    "/health/license",
+    "/settings",
+    "/active/callbacks",
+];
+
 #[derive(Debug, thiserror::Error)]
 pub enum RouteMatchError {
     #[error("route not recognized")]
@@ -47,6 +64,7 @@ pub fn admit(route: &str, method: &str) -> Result<(), RouteMatchError> {
     let recognized = classifier::is_llm_api_route(&RouteValue::Text(route))
         || check_route_access(route, &management_routes::management_routes())
         || auxiliary_routes::INFO_ROUTES.contains(&route)
+        || AUTHENTICATED_HEALTH_PATHS.contains(&route)
         || route == CACHE_ACTIVITY_PATH
         || ROUTE_PATHS.contains(&route)
         || SHADOW_EVAL_ROUTES
@@ -67,10 +85,7 @@ pub(crate) async fn stage(request: Request, next: Next) -> Response {
     let Some(route) = decoded_route_path(request.uri().path()) else {
         return RouteMatchError::Unrecognized.into_response();
     };
-    if matches!(
-        route.as_str(),
-        "/health/liveliness" | "/health/liveness" | "/health/readiness"
-    ) {
+    if PUBLIC_HEALTH_PATHS.contains(&route.as_str()) {
         return next.run(request).await;
     }
     let method = request.method().as_str().to_owned();

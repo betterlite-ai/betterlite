@@ -2,7 +2,7 @@ id: B6360
 milestone: M5 api families
 title: Video edit and extension routes
 status: todo
-depends_on: [B3342, B9944, B672, B052, B014, B1100, B1101, B10059, B844, B004, B082, B3330, B8801, B8802, B8804]
+depends_on: [B171, B3342, B9944, B672, B052, B014, B1100, B1101, B10059, B844, B004, B082, B3330, B8801, B8802]
 file: tasks/B6360-video-edit-extension-routes.yaml
 covers:
   - "litellm/proxy/video_endpoints/endpoints.py"

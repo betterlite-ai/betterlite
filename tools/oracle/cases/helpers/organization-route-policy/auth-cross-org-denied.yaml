@@ -1,0 +1,41 @@
+kind: helper
+name: organization-route-policy-auth-cross-org-denied
+call:
+  organization_route_policy:
+    calls:
+      # no memberships at all: not a member of any organization, reported against organization_id
+      - function: role_check
+        user: {user_role: internal_user, organization_memberships: null}
+        route: /organization/info
+        request: {organization_id: org-a}
+      # an empty membership list is not None, so the selected-organization branches answer instead
+      - function: role_check
+        user: {user_role: internal_user, organization_memberships: []}
+        route: /organization/info
+        request: {organization_id: org-a}
+      - function: role_check
+        user:
+          user_role: internal_user
+          organization_memberships:
+            - {organization_id: org-a, user_role: org_admin}
+        route: /organization/info
+      # a role other than org_admin on the selected organization is reported against user_role
+      - function: role_check
+        user:
+          user_role: internal_user
+          organization_memberships:
+            - {organization_id: org-a, user_role: internal_user}
+        route: /organization/info
+        request: {organization_id: org-a}
+      - function: role_check
+        user:
+          user_role: internal_user
+          organization_memberships:
+            - {organization_id: org-a, user_role: org_admin}
+        route: /team/new
+        request: {organization_id: org-b}
+      # the projection of an empty membership list
+      - function: org_info
+        user: {user_role: internal_user, organization_memberships: []}
+env: {}
+compare: {ignore: []}

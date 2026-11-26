@@ -1,7 +1,7 @@
 id: B8292
 milestone: M5 api families
 title: Langfuse pass-through route
-status: blocked
+status: todo
 depends_on: [B3615, B5082, B052]
 file: tasks/B8292-langfuse-passthrough.yaml
 covers:
@@ -10,5 +10,5 @@ parent: B103
 split_from: B103
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): niche, Langfuse pass-through route"
+blocked_reason: null
 pr: null
