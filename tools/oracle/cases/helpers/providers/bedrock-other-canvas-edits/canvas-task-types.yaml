@@ -1,0 +1,68 @@
+kind: helper
+name: bedrock-other-canvas-edits-canvas-task-types
+call:
+  bedrock_other_canvas_edits:
+    model_cost: {}
+    calls:
+      - function: transform
+        prompt: cat
+        image: {kind: bytes, data: img}
+        mask: {kind: text, text: m}
+        options: {taskType: BACKGROUND_REMOVAL, negativeText: n, width: 8}
+        drop_params: false
+      - function: transform
+        prompt: cat
+        image: {kind: bytes, data: img}
+        mask: {kind: text, text: m}
+        options: {taskType: IMAGE_VARIATION, maskPrompt: mp, negativeText: n, similarityStrength: 0.5}
+        drop_params: false
+      - function: transform
+        prompt: cat
+        image: {kind: bytes, data: img}
+        mask: {kind: text, text: m}
+        options: {taskType: OUTPAINTING, maskPrompt: mp, negativeText: n, outPaintingMode: DEFAULT}
+        drop_params: false
+      - function: transform
+        prompt: cat
+        image: {kind: bytes, data: img}
+        mask: {kind: text, text: m}
+        options: {taskType: OUTPAINTING}
+        drop_params: false
+      - function: transform
+        prompt: cat
+        image: {kind: bytes, data: img}
+        mask: {kind: text, text: m}
+        options: {taskType: INPAINTING, maskPrompt: mp}
+        drop_params: false
+      - function: transform
+        prompt: cat
+        image: {kind: bytes, data: img}
+        mask: {kind: text, text: m}
+        options: {}
+        drop_params: false
+      - function: transform
+        prompt: cat
+        image: {kind: bytes, data: img}
+        mask: null
+        options: {maskPrompt: mp}
+        drop_params: false
+      - function: transform
+        prompt: cat
+        image: {kind: bytes, data: img}
+        mask: null
+        options: {negativeText: n, similarityStrength: 0.25}
+        drop_params: false
+      - function: transform
+        prompt: cat
+        image: {kind: bytes, data: img}
+        mask: null
+        options: {taskType: '   ', negativeText: n}
+        drop_params: false
+      - function: transform
+        prompt: cat
+        image: {kind: bytes, data: img}
+        mask: null
+        options: {taskType: ''}
+        drop_params: false
+env: {}
+compare: {ignore: []}

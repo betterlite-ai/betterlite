@@ -1,0 +1,44 @@
+kind: helper
+name: bedrock-other-canvas-edits-image-bytes-base64
+call:
+  bedrock_other_canvas_edits:
+    model_cost: {}
+    calls:
+      - function: transform
+        prompt: cat
+        image: {kind: bytes, data: hello}
+        mask: null
+        options: {}
+        drop_params: false
+      - function: transform
+        prompt: cat
+        image: {kind: bytes, data: ''}
+        mask: null
+        options: {}
+        drop_params: false
+      - function: transform
+        prompt: cat
+        image: {kind: text, text: aGVsbG8=}
+        mask: null
+        options: {}
+        drop_params: false
+      - function: transform
+        prompt: cat
+        image: {kind: text, text: /tmp/picture.png}
+        mask: null
+        options: {}
+        drop_params: false
+      - function: transform
+        prompt: cat
+        image: null
+        mask: null
+        options: {}
+        drop_params: false
+      - function: transform
+        prompt: cat
+        image: null
+        mask: null
+        options: {taskType: STYLE}
+        drop_params: false
+env: {}
+compare: {ignore: []}

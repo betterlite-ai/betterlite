@@ -1,0 +1,38 @@
+kind: helper
+name: bedrock-other-canvas-edits-tuple-file-rejection
+call:
+  bedrock_other_canvas_edits:
+    model_cost: {}
+    calls:
+      - function: transform
+        prompt: cat
+        image: {kind: tuple}
+        mask: null
+        options: {}
+        drop_params: false
+      - function: transform
+        prompt: cat
+        image: {kind: bytes, data: img}
+        mask: {kind: tuple}
+        options: {}
+        drop_params: false
+      - function: transform
+        prompt: cat
+        image: {kind: bytes, data: img}
+        mask: {kind: text, text: 'https://example.test/mask.png'}
+        options: {}
+        drop_params: false
+      - function: transform
+        prompt: cat
+        image: {kind: bytes, data: img}
+        mask: {kind: tuple}
+        options: {taskType: IMAGE_VARIATION}
+        drop_params: false
+      - function: transform
+        prompt: cat
+        image: {kind: tuple}
+        mask: null
+        options: {taskType: STYLE}
+        drop_params: false
+env: {}
+compare: {ignore: []}

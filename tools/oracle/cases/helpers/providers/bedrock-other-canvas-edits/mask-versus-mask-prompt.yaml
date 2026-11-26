@@ -1,0 +1,44 @@
+kind: helper
+name: bedrock-other-canvas-edits-mask-versus-mask-prompt
+call:
+  bedrock_other_canvas_edits:
+    model_cost: {}
+    calls:
+      - function: transform
+        prompt: cat
+        image: {kind: bytes, data: img}
+        mask: {kind: bytes, data: m}
+        options: {}
+        drop_params: false
+      - function: transform
+        prompt: cat
+        image: {kind: bytes, data: img}
+        mask: {kind: tuple}
+        options: {taskType: IMAGE_VARIATION}
+        drop_params: false
+      - function: transform
+        prompt: null
+        image: {kind: bytes, data: img}
+        mask: {kind: text, text: m}
+        options: {taskType: INPAINTING, maskPrompt: mp}
+        drop_params: false
+      - function: transform
+        prompt: ''
+        image: {kind: bytes, data: img}
+        mask: {kind: text, text: m}
+        options: {taskType: OUTPAINTING, maskPrompt: mp}
+        drop_params: false
+      - function: transform
+        prompt: '  '
+        image: {kind: bytes, data: img}
+        mask: null
+        options: {taskType: OUTPAINTING, maskPrompt: mp}
+        drop_params: false
+      - function: transform
+        prompt: ''
+        image: {kind: bytes, data: img}
+        mask: {kind: bytes, data: m}
+        options: {}
+        drop_params: false
+env: {}
+compare: {ignore: []}

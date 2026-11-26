@@ -1,0 +1,39 @@
+kind: helper
+name: bedrock-other-canvas-edits-canvas-catalog-eligibility
+call:
+  bedrock_other_canvas_edits:
+    model_cost:
+      canvas-fixture-plain: {litellm_provider: amazon, supports_nova_canvas_image_edit: true}
+      canvas-fixture-suffix: {litellm_provider: amazon, supports_nova_canvas_image_edit: true}
+      bedrock/canvas-fixture-bedrock-suffix: {litellm_provider: bedrock, supports_nova_canvas_image_edit: true}
+      canvas-fixture-base: {litellm_provider: amazon, supports_nova_canvas_image_edit: true}
+      bedrock/canvas-fixture-base-entry: {litellm_provider: bedrock, supports_nova_canvas_image_edit: true}
+      canvas-fixture-dated: {litellm_provider: amazon, supports_nova_canvas_image_edit: true}
+      Canvas-Fixture-Mixed: {litellm_provider: amazon, supports_nova_canvas_image_edit: true}
+      canvas-fixture-off: {litellm_provider: amazon, supports_nova_canvas_image_edit: false}
+      canvas-fixture-text: {litellm_provider: amazon, supports_nova_canvas_image_edit: 'true'}
+      canvas-fixture-null: null
+    calls:
+      - function: eligibility
+        models:
+          - canvas-fixture-plain
+          - CANVAS-FIXTURE-PLAIN
+          - x/canvas-fixture-suffix
+          - y/z/canvas-fixture-suffix
+          - other/canvas-fixture-bedrock-suffix
+          - us.canvas-fixture-base
+          - us.canvas-fixture-base-entry
+          - canvas-fixture-dated-2024-01-01
+          - canvas-fixture-dated
+          - canvas-fixture-mixed
+      - function: eligibility
+        models:
+          - ''
+          - canvas-fixture-absent
+          - canvas-fixture-off
+          - canvas-fixture-text
+          - canvas-fixture-null
+          - amazon.nova-canvas-v1:0
+          - bedrock/nova-canvas-v1:0
+env: {}
+compare: {ignore: []}
