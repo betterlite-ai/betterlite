@@ -131,27 +131,24 @@ async fn jwks_status_parse_log_and_keys_envelope(
     );
     let capture = LevelCapture::new();
     let result = fixture.resolver.get_public_key(Some("a")).await;
-    match expected {
-        Some(selected) => {
-            assert_eq!(result.unwrap(), json(selected));
-            assert_eq!(fixture.cache.writes()[0].value, keys(&[json(selected)]));
-        }
-        None => {
-            let error = result.unwrap_err();
-            if status == 500 {
-                assert!(
-                    matches!(&error, KeyError::JwksStatus { status: 500, body: response, .. } if response == body)
-                );
-            } else {
-                assert!(matches!(error, KeyError::JwksParse { .. }));
-                assert!(capture.levels().contains(&Level::ERROR));
-                assert!(
-                    capture
-                        .messages()
-                        .iter()
-                        .any(|message| message.contains("Original Response: {"))
-                );
-            }
+    if let Some(selected) = expected {
+        assert_eq!(result.unwrap(), json(selected));
+        assert_eq!(fixture.cache.writes()[0].value, keys(&[json(selected)]));
+    } else {
+        let error = result.unwrap_err();
+        if status == 500 {
+            assert!(
+                matches!(&error, KeyError::JwksStatus { status: 500, body: response, .. } if response == body)
+            );
+        } else {
+            assert!(matches!(error, KeyError::JwksParse { .. }));
+            assert!(capture.levels().contains(&Level::ERROR));
+            assert!(
+                capture
+                    .messages()
+                    .iter()
+                    .any(|message| message.contains("Original Response: {"))
+            );
         }
     }
 }

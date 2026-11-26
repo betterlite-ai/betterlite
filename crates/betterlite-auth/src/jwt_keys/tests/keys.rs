@@ -8,40 +8,36 @@ use crate::jwt_keys::resolver::keys::{is_allowed_domain, parse_keys, token_kid};
 use super::support::json;
 
 #[rstest]
-#[case::dict_match(r#"{"kid":"a"}"#, Some(r#"a"#), Some(r#"{"kid":"a"}"#))]
-#[case::dict_miss(r#"{"kid":"a"}"#, Some(r#"b"#), None)]
+#[case::dict_match(r#"{"kid":"a"}"#, Some("a"), Some(r#"{"kid":"a"}"#))]
+#[case::dict_miss(r#"{"kid":"a"}"#, Some("b"), None)]
 #[case::dict_no_kid(r#"{"kid":"a"}"#, None, Some(r#"{"kid":"a"}"#))]
-#[case::long_dict(r#"{"kid":"a","n":"1"}"#, Some(r#"a"#), None)]
+#[case::long_dict(r#"{"kid":"a","n":"1"}"#, Some("a"), None)]
 #[case::long_dict_no_kid(r#"{"kid":"a","n":"1"}"#, None, None)]
-#[case::list_match(
-    r#"[{"kid":"a","n":"1"}]"#,
-    Some(r#"a"#),
-    Some(r#"{"kid":"a","n":"1"}"#)
-)]
-#[case::list_miss(r#"[{"kid":"a"}]"#, Some(r#"b"#), None)]
+#[case::list_match(r#"[{"kid":"a","n":"1"}]"#, Some("a"), Some(r#"{"kid":"a","n":"1"}"#))]
+#[case::list_miss(r#"[{"kid":"a"}]"#, Some("b"), None)]
 #[case::list_no_kid(r#"[{"kid":"a"}]"#, None, Some(r#"{"kid":"a"}"#))]
 #[case::list_string(r#"["a"]"#, None, None)]
-#[case::list_number(r#"[7]"#, None, None)]
+#[case::list_number("[7]", None, None)]
 #[case::last_match(
     r#"[{"kid":"a","n":"1"},{"kid":"b","n":"2"},{"kid":"a","n":"3"}]"#,
-    Some(r#"a"#),
+    Some("a"),
     Some(r#"{"kid":"a","n":"3"}"#)
 )]
 #[case::middle_match(
     r#"[{"kid":"a"},{"kid":"b"},{"kid":"a"}]"#,
-    Some(r#"b"#),
+    Some("b"),
     Some(r#"{"kid":"b"}"#)
 )]
-#[case::long_list_miss(r#"[{"kid":"a"},{"kid":"b"}]"#, Some(r#"c"#), None)]
+#[case::long_list_miss(r#"[{"kid":"a"},{"kid":"b"}]"#, Some("c"), None)]
 #[case::long_list_no_kid(r#"[{"kid":"a"},{"kid":"b"}]"#, None, None)]
 #[case::mixed_list(
     r#"[{"kid":"a"},7,"x",{"kid":"a","n":"2"}]"#,
-    Some(r#"a"#),
+    Some("a"),
     Some(r#"{"kid":"a","n":"2"}"#)
 )]
-#[case::empty_list(r#"[]"#, Some(r#"a"#), None)]
-#[case::empty_object(r#"{}"#, Some(r#"a"#), None)]
-#[case::null(r#"null"#, None, None)]
+#[case::empty_list("[]", Some("a"), None)]
+#[case::empty_object("{}", Some("a"), None)]
+#[case::null("null", None, None)]
 #[case::text(r#""a""#, None, None)]
 fn key_dict_cardinality_and_last_matching_kid(
     #[case] body: &str,

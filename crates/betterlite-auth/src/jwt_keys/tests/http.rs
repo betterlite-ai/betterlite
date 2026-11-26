@@ -27,7 +27,7 @@ fn client() -> ProxiedClient {
 #[case::larger(MAX_DOCUMENT_BYTES + 1, MAX_DOCUMENT_BYTES)]
 #[tokio::test]
 async fn inherited_body_limit(#[case] inherited: usize, #[case] expected: usize) {
-    let body = "x".repeat(expected + 1);
+    let body = "x".repeat(expected.checked_add(1).unwrap());
     let error = response(inherited, &body).await.unwrap_err();
     assert!(
         matches!(error, FetchError::Failed(HttpError::TooLarge { limit }) if limit == expected)
@@ -61,7 +61,8 @@ async fn response(limit: usize, body: &str) -> Result<HttpReply, FetchError> {
     let answer = async {
         let (mut stream, _) = listener.accept().await.unwrap();
         let mut request = [0_u8; 1024];
-        stream.read(&mut request).await.unwrap();
+        let received = stream.read(&mut request).await.unwrap();
+        assert!(received > 0);
         let header = format!(
             "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
             body.len()

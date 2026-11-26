@@ -18,9 +18,10 @@ pub fn plain_urls(raw: &str) -> Vec<String> {
 #[must_use]
 pub fn parse_keys(keys: &Json, kid: Option<&str>) -> Option<Json> {
     match keys {
-        Json::List(items) => match items.as_slice() {
-            [only] => single_key_match(only, kid).then(|| only.clone()),
-            _ => {
+        Json::List(items) => {
+            if let [only] = items.as_slice() {
+                single_key_match(only, kid).then(|| only.clone())
+            } else {
                 let mut found = None;
                 for item in items {
                     let Json::Object(fields) = item else {
@@ -35,7 +36,7 @@ pub fn parse_keys(keys: &Json, kid: Option<&str>) -> Option<Json> {
                 }
                 found
             }
-        },
+        }
         Json::Object(fields) => {
             (fields.len() == 1
                 && (kid.is_none()

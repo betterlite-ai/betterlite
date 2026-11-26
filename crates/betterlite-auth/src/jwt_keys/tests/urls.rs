@@ -10,7 +10,7 @@ use super::support::{
 };
 
 #[tokio::test]
-async fn discovery_substring_detection_and_exact_cache_keys() {
+async fn plain_jwks_url_needs_no_discovery() {
     // a plain JWKS URL is returned untouched, with no fetch
     let plain = new_resolver_fixture(settings(None, 600.0, 3600.0), 1_000.0, Vec::new());
     assert_eq!(
@@ -19,7 +19,10 @@ async fn discovery_substring_detection_and_exact_cache_keys() {
     );
     assert!(plain.http.requests().is_empty());
     assert!(plain.cache.writes().is_empty());
+}
 
+#[tokio::test]
+async fn discovery_substring_detection_and_exact_cache_keys() {
     // the marker is a substring test, so a query string after it still counts as a discovery document
     let discovery = format!("{DISCOVERY_URL}?tenant=a");
     let jwks = "https://idp.example.com/tenant-a/jwks";
