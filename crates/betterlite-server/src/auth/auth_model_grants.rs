@@ -8,7 +8,7 @@ use betterlite_auth::agent_access_groups::error::AccessGroupsError;
 use betterlite_auth::agent_caller::error::AgentCallerError;
 use betterlite_auth::auth_errors::conversion::{AuthFailure, as_proxy_exception};
 use betterlite_auth::auth_model_grants::access_source::AgentAccessSource;
-use betterlite_auth::auth_model_grants::caller::check_agent_caller_with_teams;
+use betterlite_auth::auth_model_grants::caller::check_agent_caller;
 use betterlite_auth::auth_model_grants::ceiling::check_agent_ceiling;
 use betterlite_auth::auth_model_grants::error::AgentModelGrantsError;
 use betterlite_auth::auth_model_patterns::decision::ModelAccessContext;
@@ -126,7 +126,7 @@ pub(crate) async fn prefetch(
     let source = stage.source.as_deref();
     check_agent_ceiling(&rule.model, token, source, &context).await?;
     let admission = rule.member_checks.admission(&context);
-    check_agent_caller_with_teams(
+    check_agent_caller(
         &rule.model,
         token,
         source,
@@ -194,9 +194,13 @@ fn caller_lookup_exception(error: &AgentCallerError) -> ProxyException {
     match error {
         AgentCallerError::Team { source, .. } => team_lookup_exception(source),
         AgentCallerError::User { .. } | AgentCallerError::Record(_) => {
-            lookup_exception(&error.to_string())
+            other_lookup_exception(error)
         }
     }
+}
+
+fn other_lookup_exception(error: &AgentCallerError) -> ProxyException {
+    lookup_exception(&error.to_string())
 }
 
 fn team_lookup_exception(error: &TeamLookupError) -> ProxyException {

@@ -23,16 +23,6 @@ pub async fn check_agent_caller(
     model: &RequestedModels,
     token: Option<&UserAPIKeyAuth>,
     source: Option<&dyn AgentAccessSource>,
-    admission: &TeamAdmission<'_>,
-    context: &ModelAccessContext<'_>,
-) -> Result<(), AgentModelGrantsError> {
-    check_agent_caller_with_teams(model, token, source, None, admission, context).await
-}
-
-pub async fn check_agent_caller_with_teams(
-    model: &RequestedModels,
-    token: Option<&UserAPIKeyAuth>,
-    source: Option<&dyn AgentAccessSource>,
     teams: Option<&TeamLookup>,
     admission: &TeamAdmission<'_>,
     context: &ModelAccessContext<'_>,

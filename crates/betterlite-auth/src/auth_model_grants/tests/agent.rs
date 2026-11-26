@@ -292,6 +292,7 @@ async fn caller_absent_skips() {
         &one("gpt-4o"),
         Some(&token(AGENT_KEY)),
         Some(&script),
+        None,
         &admission,
         &context,
     )
@@ -321,9 +322,16 @@ async fn caller_falsey_model_and_token_skip(
         ..Script::plain()
     };
     let key = with_token.then_some(agent_token(AGENT_KEY));
-    check_agent_caller(&model, key.as_ref(), Some(&denying), &admission, &context)
-        .await
-        .unwrap();
+    check_agent_caller(
+        &model,
+        key.as_ref(),
+        Some(&denying),
+        None,
+        &admission,
+        &context,
+    )
+    .await
+    .unwrap();
     assert!(denying.events().is_empty());
     assert!(memberships.asked().is_empty());
 }
@@ -339,6 +347,7 @@ async fn unresolved_caller_allows() {
         &one("gpt-4o"),
         Some(&agent_token(AGENT_KEY)),
         Some(&script),
+        None,
         &admission,
         &context,
     )
@@ -363,6 +372,7 @@ async fn caller_key_aliases_forwarded() {
         &one("fast"),
         Some(&agent_token(AGENT_MODEL_ALIAS_KEY)),
         Some(&script),
+        None,
         &caller_admission,
         &context,
     )
@@ -386,6 +396,7 @@ async fn caller_user_reads_key_aliases() {
         &one("fast"),
         Some(&agent_token(AGENT_MODEL_ALIAS_KEY)),
         Some(&script),
+        None,
         &caller_admission,
         &context,
     )
@@ -411,6 +422,7 @@ async fn caller_team_before_membership() {
         &one("gpt-4o"),
         Some(&agent_token(AGENT_KEY)),
         Some(&script),
+        None,
         &admission,
         &context,
     )
@@ -435,6 +447,7 @@ async fn caller_team_denial_stops_before_member() {
         &one("gpt-4o"),
         Some(&agent_token(AGENT_KEY)),
         Some(&script),
+        None,
         &admission,
         &context,
     )
@@ -469,6 +482,7 @@ async fn caller_member_denial_after_team_grant() {
         &one("gpt-4o"),
         Some(&agent_token(AGENT_KEY)),
         Some(&script),
+        None,
         &admission,
         &context,
     )
@@ -502,6 +516,7 @@ async fn caller_team_skips_user() {
         &one("gpt-4o"),
         Some(&agent_token(AGENT_KEY)),
         Some(&script),
+        None,
         &admission,
         &context,
     )
@@ -524,6 +539,7 @@ async fn caller_user_fallback() {
         &one("gpt-4o"),
         Some(&agent_token(AGENT_KEY)),
         Some(&script),
+        None,
         &admission,
         &context,
     )
@@ -549,6 +565,7 @@ async fn caller_user_denial_stops() {
         &one("gpt-4o"),
         Some(&agent_token(AGENT_KEY)),
         Some(&script),
+        None,
         &admission,
         &context,
     )
@@ -579,6 +596,7 @@ async fn missing_caller_user_skips() {
         &one("gpt-4o"),
         Some(&agent_token(AGENT_KEY)),
         Some(&script),
+        None,
         &admission,
         &context,
     )
@@ -623,6 +641,7 @@ async fn caller_lookup_error_propagates(#[case] step: CallerLookup) {
         &one("gpt-4o"),
         Some(&agent_token(AGENT_KEY)),
         Some(&script),
+        None,
         &admission,
         &context,
     )
@@ -640,6 +659,7 @@ async fn missing_source_fails_callers() {
         check_agent_caller(
             &one("gpt-4o"),
             Some(&agent_token(AGENT_KEY)),
+            None,
             None,
             &admission,
             &context,
