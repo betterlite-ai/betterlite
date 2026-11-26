@@ -193,3 +193,30 @@ async fn failure_stops_downstream() {
     assert!(text.contains("Authentication Error"), "{text}");
     assert!(!reached.load(Ordering::Acquire));
 }
+
+#[test]
+fn missing_general_settings_fall_back_to_defaults() {
+    let authenticated = master_context();
+    let incoming = Request::builder()
+        .method("POST")
+        .uri(MODEL_ROUTE)
+        .header("x-forwarded-for", CLIENT_IP)
+        .body(Body::empty())
+        .expect("the request builds");
+    let resolver = resolver_for(&incoming);
+    let Ok(staged) = stage_input(
+        AuthBackend::TrustedNetwork,
+        &incoming,
+        Some(&authenticated),
+        &resolver,
+        None,
+    ) else {
+        panic!("the production constructor builds the network stage input without a loaded config");
+    };
+    let StageInput::TrustedNetwork(stage) = &staged else {
+        panic!("the constructor returns the network stage input");
+    };
+    assert_eq!(stage.document.trusted_proxy_ranges, None);
+    assert_eq!(stage.document.mcp_trusted_proxy_ranges, None);
+    assert_eq!(stage.document.x_forwarded_for.as_deref(), Some(CLIENT_IP));
+}
