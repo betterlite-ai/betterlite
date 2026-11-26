@@ -1,0 +1,53 @@
+id: B10109
+title: A seeded virtual key's allowed_routes admits and denies routes over HTTP
+description: >-
+  B883 builds the allowed_routes check of a virtual key in crates/betterlite-server/src/auth/virtual_key_routes.rs, and
+  its proof stops at the production stages and a static-denial HTTP case. Its review asked for a case where a seeded
+  key reaches that check through real HTTP, and B883 could not build it: until B052 installs key authentication, every
+  non-master bearer gets 401 at the master stage, and the postgres fixture's LiteLLM_VerificationToken table has no
+  allowed_routes column. This task adds that case once both have landed.
+
+
+  Give the fixture LiteLLM's column (allowed_routes TEXT[] NOT NULL DEFAULT '{}', as schema.prisma declares it), let a
+  seeded key row carry allowed_routes in KeyRow, and insert it in seed_sql.rs. Then add HTTP cases under
+  tools/oracle/cases/auth/virtual-key-routes/ that seed a key with allowed_routes [/v1/models]: GET /v1/models answers
+  200, and POST /chat/completions answers LiteLLM's 403 before any upstream call.
+scope:
+  paths:
+  - tools/postgres-fixture/fixtures/baseline.sql
+  - tools/postgres-fixture/src/seed.rs
+  - tools/postgres-fixture/src/seed_sql.rs
+  - tools/oracle/cases/auth/virtual-key-routes/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L513
+  why: The allowed_routes column of LiteLLM_VerificationToken.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L587-L652
+  why: How a key's allowed_routes admits a route.
+dod:
+- text: >-
+    The fixture's LiteLLM_VerificationToken has allowed_routes, a seeded key row may set it, and the fixture's own tests
+    still pass.
+  proof: [fixture-tests]
+- text: >-
+    The allowed and denied route cases pass against LiteLLM, and the denied one shows no upstream request.
+  proof: [oracle]
+checks:
+  optional: []
+  commands:
+  - id: fixture-tests
+    why: The fixture schema or seed rows changed what another case gets.
+    run: cargo nextest run --locked -p betterlite-postgres-fixture --no-tests=fail
+oracle_cases:
+- tools/oracle/cases/auth/virtual-key-routes/allowed-route.yaml
+- tools/oracle/cases/auth/virtual-key-routes/denied-route.yaml
+deviations: []
+out_of_scope:
+- The route check itself (B883) and key authentication (B052). This task only seeds the column and adds the cases.
+pitfalls:
+- Every case seeds through KeyRow, so the new field defaults to an empty list and an older case needs no change.
+- A database case needs POSTGRES_TEST_URL when run by hand; nextest starts its own server.
+review_level: standard
+budget:
+  max_changed_lines: 300
+  max_new_expects: 0

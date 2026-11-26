@@ -1,0 +1,13 @@
+id: B10109
+milestone: M4 keys, spend and management
+title: A seeded virtual key's allowed_routes admits and denies routes over HTTP
+status: todo
+depends_on: [B052, B883]
+file: tasks/B10109-seeded-key-allowed-routes.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
