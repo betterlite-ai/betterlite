@@ -7,6 +7,7 @@ import time
 from collections.abc import Awaitable, Iterator
 from contextlib import closing, contextmanager, nullcontext
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from types import TracebackType
 from typing import ClassVar, Final, Protocol, SupportsIndex, TypedDict
 
@@ -17,6 +18,7 @@ from typing_extensions import override
 import betterlite
 from betterlite._completion.errors import UnsupportedCallArgument
 from betterlite._endpoints import CallValue
+from betterlite._endpoints.payload import Readable
 from betterlite._rerank import main as rerank_module
 from betterlite._rerank.limits import (
     MAX_DEPTH,
@@ -558,7 +560,7 @@ def test_request_before_copy(entry: str, field: str) -> None:
 
 
 def size_probe(
-    entry: str, query: str, documents: list[str | dict[str, JsonValue]], extra: JsonValue,
+    entry: str, query: str, documents: list[str | dict[str, JsonValue]], extra: CallValue,
     headers: dict[str, str] | None = None,
 ) -> None:
     if entry == "async":
@@ -687,3 +689,31 @@ def test_request_integer_budget() -> None:
     budget = RequestBudget(remaining=1)
     with pytest.raises(ValueError, match="bytes"):
         budget.consume(1 << WIRE_LIMIT)
+
+
+class Unreadable(Readable):
+    @override
+    def read(self) -> bytes:
+        raise AssertionError("rerank must not read a file-valued extra")
+
+
+@pytest.mark.parametrize("entry", ["sync", "async", "flag"])
+@pytest.mark.parametrize("placement", ["direct", "nested"])
+@pytest.mark.parametrize(
+    "extra",
+    [
+        b"", b"data", bytearray(), bytearray(WIRE_LIMIT + 1),
+        ("data", bytearray(WIRE_LIMIT + 1)),
+        ("data", b"small", "application/octet-stream"),
+        Unreadable(), ("data", Unreadable()), Path("rerank-must-not-be-opened"),
+    ],
+    ids=[
+        "empty-bytes", "bytes", "empty-buffer", "large-buffer", "large-tuple",
+        "typed-tuple", "stream", "stream-tuple", "path",
+    ],
+)
+def test_request_files_refused(entry: str, placement: str, extra: CallValue) -> None:
+    value: CallValue = extra if placement == "direct" else {"payload": [extra]}
+    with ValidationGuard(), pytest.raises(UnsupportedCallArgument) as refused:
+        size_probe(entry, QUERY, [], value)
+    assert refused.value.argument == ("extra" if placement == "direct" else "payload")

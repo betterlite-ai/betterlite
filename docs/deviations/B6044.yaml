@@ -54,4 +54,7 @@ deviations:
   - what: betterlite refuses a rerank request past 8 MiB of wire text, 100000 documents, 256 headers or 64 nesting levels with a ValueError.
     why: LiteLLM sends whatever it is given; betterlite bounds the combined input before validation copies or serialization, checks header counts before walking their maps, and bounds recursion for nested or cyclic values.
     link: ""
+  - what: File-valued rerank extras raise UnsupportedCallArgument before validation, copying, or reading their contents.
+    why: Rerank accepts JSON documents and options; refusing bytes, bytearrays, file tuples, paths, and streams prevents the shared multipart converter from bypassing its request budget.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L93-L117
 kept_bugs: []

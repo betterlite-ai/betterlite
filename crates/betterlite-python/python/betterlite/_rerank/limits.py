@@ -4,8 +4,9 @@ from dataclasses import dataclass
 from typing import Final
 
 import betterlite
+from betterlite._completion.errors import UnsupportedCallArgument
 from betterlite._endpoints import CallValue
-from betterlite._endpoints.payload import is_json_container
+from betterlite._endpoints.payload import PathValue, Readable, is_file_tuple, is_json_container
 
 MAX_REQUEST_BYTES: Final = 8 * 1024 * 1024
 MAX_HEADERS: Final = 256
@@ -22,7 +23,7 @@ class RequestBudget:
         if self.remaining < 0:
             raise ValueError(f"rerank request exceeds {MAX_REQUEST_BYTES} bytes")
 
-    def consume(self, value: CallValue, depth: int = 0) -> None:
+    def consume(self, value: CallValue, depth: int = 0, field: str = "rerank") -> None:
         if depth > MAX_DEPTH:
             raise ValueError(f"rerank request exceeds {MAX_DEPTH} nesting levels")
         if is_json_container(value):
@@ -32,11 +33,13 @@ class RequestBudget:
                 case list():
                     self.charge(2 + max(0, len(value) - 1) * 2)
                     for item in value:
-                        self.consume(item, depth + 1)
+                        self.consume(item, depth + 1, field)
             return
-        self.consume_scalar(value)
+        self.consume_scalar(value, field)
 
-    def consume_scalar(self, value: CallValue) -> None:
+    def consume_scalar(self, value: CallValue, field: str) -> None:
+        if is_file_tuple(value):
+            raise UnsupportedCallArgument(field)
         match value:
             case str():
                 # Count raw text first so escaping only allocates bounded chunks.
@@ -50,8 +53,8 @@ class RequestBudget:
                 if value.bit_length() > self.remaining * 4:
                     raise ValueError(f"rerank request exceeds {MAX_REQUEST_BYTES} bytes")
                 self.charge(len(json.dumps(value)))
-            case bytes() | bytearray():
-                self.charge(len(value))
+            case bytes() | bytearray() | PathValue() | Readable():
+                raise UnsupportedCallArgument(field)
             case object():
                 return
 
@@ -59,7 +62,7 @@ class RequestBudget:
         self.charge(2 + max(0, len(fields) - 1) * 2 + len(fields) * 2)
         for name, value in fields.items():
             self.consume(name, depth + 1)
-            self.consume(value, depth + 1)
+            self.consume(value, depth + 1, name)
 
 
 def rerank_settings() -> dict[str, CallValue]:
