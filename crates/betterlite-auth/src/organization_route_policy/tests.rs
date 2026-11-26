@@ -496,6 +496,12 @@ fn all_candidate_organizations() {
         )]),
         Some(&one)
     ));
+    // a null singular id joins no candidate, so the administered list alone answers true
+    let listed = body(&[
+        ("organization_id", Json::Null),
+        ("organizations", Json::List(vec![text("org-a")])),
+    ]);
+    assert!(user_is_org_admin(&listed, Some(&one)));
 }
 
 #[test]
