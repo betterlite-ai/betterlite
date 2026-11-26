@@ -6,27 +6,31 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use axum::Router;
-use axum::body::{Body, to_bytes};
+use axum::body::{Body, Bytes, to_bytes};
 use axum::extract::Extension;
 use axum::http::{Request, StatusCode, header};
 use axum::routing::post;
 use betterlite_auth::auth_model_budgets::checks::ModelMaxBudget;
-use betterlite_auth::auth_model_budgets::limits::UserModelBudgetLimiter;
+use betterlite_auth::auth_model_budgets::limits::{KeyModelBudgetLimiter, UserModelBudgetLimiter};
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_config::loader::ConfigLoader;
+use betterlite_config::sections::auth_model_budgets::Settings;
 use betterlite_config::sections::database_reencryption::DEFAULT_RECURSE_DEPTH;
 use betterlite_config::types::Config;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_error::error::ErrorClass;
 use betterlite_error::error::details::BudgetExceededDetails;
+use betterlite_models::decisions::Json;
+use betterlite_models::model_registration::JsonObject;
 use rust_decimal::Decimal;
 use secrecy::SecretString;
 use tower::ServiceExt as _;
 
-use super::{ModelBudgetRule, ModelBudgetStageInput};
+use super::{ModelBudgetRule, ModelBudgetStageInput, prefetch};
 use crate::auth::auth_identity::{
     AuthBackend, AuthContext, INSTALLED_STAGES, StageFailure, StageInput, dispatch,
 };
+use crate::auth::rewritten_body;
 use crate::routes;
 use crate::routes::tests::state_for;
 
@@ -64,6 +68,19 @@ fn master_context(master_key: &SecretString) -> AuthContext {
     context
 }
 
+// the details every budget rejection in these tests carries, with the entity that owns the counter
+fn exceeded_details(entity_type: &str, entity_id: &str) -> BudgetExceededDetails {
+    BudgetExceededDetails {
+        current_cost: Decimal::new(6, 0),
+        max_budget: Decimal::new(5, 0),
+        message: Some("Budget has been exceeded!".to_owned()),
+        provider: "openai".to_owned(),
+        entity_type: Some(entity_type.to_owned()),
+        entity_id: Some(entity_id.to_owned()),
+        status_code: 422,
+    }
+}
+
 struct DenyingUserLimiter;
 
 #[async_trait]
@@ -74,17 +91,9 @@ impl UserModelBudgetLimiter for DenyingUserLimiter {
         _user_model_max_budget: &ModelMaxBudget,
         _model: &str,
     ) -> Result<bool, ErrorClass> {
-        Err(ErrorClass::BudgetExceeded(Box::new(
-            BudgetExceededDetails {
-                current_cost: Decimal::new(6, 0),
-                max_budget: Decimal::new(5, 0),
-                message: Some("Budget has been exceeded!".to_owned()),
-                provider: "openai".to_owned(),
-                entity_type: Some("user".to_owned()),
-                entity_id: Some("u1".to_owned()),
-                status_code: 422,
-            },
-        )))
+        Err(ErrorClass::BudgetExceeded(Box::new(exceeded_details(
+            "user", "u1",
+        ))))
     }
 }
 
@@ -192,4 +201,80 @@ async fn failure_stops_downstream() {
     assert!(body.contains("\"param\":null"), "{body}");
     assert!(body.contains("\"code\":\"422\""), "{body}");
     assert!(!reached);
+}
+
+struct FallbackKeyLimiter;
+
+#[async_trait]
+impl KeyModelBudgetLimiter for FallbackKeyLimiter {
+    async fn is_key_within_model_budget(
+        &self,
+        _token: &UserAPIKeyAuth,
+        _model: &str,
+    ) -> Result<bool, ErrorClass> {
+        Err(ErrorClass::BudgetExceeded(Box::new(exceeded_details(
+            "key",
+            "hashed-key",
+        ))))
+    }
+
+    async fn fallback_model_within_budget(
+        &self,
+        _token: &UserAPIKeyAuth,
+        _model: &str,
+    ) -> Result<Option<String>, ErrorClass> {
+        Ok(Some("gpt-3.5".to_owned()))
+    }
+}
+
+#[tokio::test]
+async fn prefetch_rewrites_the_body_for_the_authorized_fallback() {
+    let master_key = SecretString::from(MASTER_KEY.to_owned());
+    let mut path_params = JsonObject::new();
+    path_params.insert("model".to_owned(), Json::Text("gpt-4".to_owned()));
+    let rule = Arc::new(ModelBudgetRule {
+        auth: Some(key(
+            r#"{"token":"sk-fallback","models":["gpt-4","gpt-3.5"]}"#,
+        )),
+        models: vec!["gpt-4".to_owned()],
+        model_name: Some("gpt-4".to_owned()),
+        request_model: Some("gpt-4".to_owned()),
+        user_limiter: None,
+        team_limiter: None,
+        key_limiter: Some(Arc::new(FallbackKeyLimiter)),
+        global_model_aliases: BTreeMap::new(),
+        max_recurse_depth: DEFAULT_RECURSE_DEPTH,
+        path_params: Some(path_params),
+        applied: Mutex::new(None),
+    });
+    let stage = ModelBudgetStageInput {
+        context: master_context(&master_key),
+        rule: Arc::clone(&rule),
+        settings: Arc::new(Settings::default()),
+        body: Some(Bytes::from_static(b"{\"model\":\"gpt-4\"}")),
+    };
+    prefetch(&stage)
+        .await
+        .expect("the authorized fallback rewrites the body");
+    let applied = rule.applied_body().expect("the fallback body is recorded");
+    let body = String::from_utf8(applied.to_vec()).expect("the rewritten body is UTF-8");
+    assert_eq!(body, "{\"model\":\"gpt-3.5\"}");
+}
+
+#[test]
+fn rewritten_body_prefers_the_recorded_fallback() {
+    let rule = failing_rule();
+    let mut request = request_to(&Arc::new(AtomicBool::new(false)));
+    request.extensions_mut().insert(Arc::clone(&rule));
+    assert_eq!(rewritten_body(&request, None), None);
+    let original = Bytes::from_static(b"{\"model\":\"gpt-4\"}");
+    assert_eq!(
+        rewritten_body(&request, Some(original.clone())),
+        Some(original)
+    );
+    *rule.applied.lock().unwrap() = Some(Bytes::from_static(b"{\"model\":\"gpt-3.5\"}"));
+    assert_eq!(
+        rewritten_body(&request, Some(Bytes::from_static(b"{\"model\":\"gpt-4\"}"))),
+        Some(Bytes::from_static(b"{\"model\":\"gpt-3.5\"}"))
+    );
 }
