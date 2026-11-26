@@ -6,7 +6,7 @@ use super::{
     bare_string_file, family_for, first_file, max_retries, parse, parse_speech, resolve_target,
     timeout, transcription_options,
 };
-use crate::audio::error::provider_failure;
+use crate::audio::error::{CallFailure, provider_failure};
 use betterlite_openai::api::audio_file_input::AuthorizedAudioFiles as _;
 use betterlite_openai::files::error::StatusError;
 use betterlite_openai::speech::request::SpeechFormat;
@@ -17,6 +17,7 @@ use betterlite_sdk::call_setup::RequestMap;
 use rstest::rstest;
 use rust_decimal::Decimal;
 use std::io;
+use std::mem::size_of;
 use std::path::Path;
 use std::str::FromStr as _;
 use std::time::Duration;
@@ -288,6 +289,11 @@ fn error_provider_body_keeps_fields(#[case] status: u16) {
     assert_eq!(body.kind.as_deref(), Some("invalid_request_error"));
     assert_eq!(body.param.as_deref(), Some("file"));
     assert_eq!(body.code.as_deref(), Some("invalid_file"));
+}
+
+#[test]
+fn error_wire_stays_small() {
+    assert!(size_of::<CallFailure>() < 128_usize);
 }
 
 #[test]

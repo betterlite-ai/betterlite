@@ -177,13 +177,14 @@ fn hidden_params(
         String::from("additional_headers"),
         Json::Object(reply.provider_headers.additional_headers.clone()),
     );
-    let mut duration = reply.duration;
-    if (!call.atranscription || call.file_from_kwargs)
+    let duration = if (!call.atranscription || call.file_from_kwargs)
         && !reply.response.extra.contains_key("duration")
         && let Some(found) = request_duration(&processed.file_content)
     {
-        duration = StoredDuration::Known(Some(found));
-    }
+        StoredDuration::Known(Some(found))
+    } else {
+        reply.duration
+    };
     if let StoredDuration::Known(found) = duration {
         hidden.insert(
             String::from("audio_transcription_duration"),

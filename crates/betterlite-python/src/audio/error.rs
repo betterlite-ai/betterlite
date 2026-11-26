@@ -33,13 +33,13 @@ pub(crate) enum SessionError {
 pub(crate) struct CallFailure {
     #[serde(rename = "type")]
     pub(crate) kind: &'static str,
-    pub(crate) message: String,
+    pub(crate) message: Box<str>,
     pub(crate) model: Option<Box<str>>,
     #[serde(rename = "llm_provider")]
     pub(crate) provider: Option<Box<str>>,
     pub(crate) status_code: Option<u16>,
     headers: BTreeMap<String, String>,
-    pub(crate) body: Option<RawExceptionBody>,
+    pub(crate) body: Option<Box<RawExceptionBody>>,
     #[serde(flatten)]
     retry: RetryMetadata,
 }
@@ -48,7 +48,7 @@ impl CallFailure {
     pub(crate) fn plain(kind: &'static str, message: String, model: Option<String>) -> Self {
         Self {
             kind,
-            message,
+            message: message.into_boxed_str(),
             model: model.map(String::into_boxed_str),
             provider: None,
             status_code: None,
@@ -67,7 +67,7 @@ impl CallFailure {
         };
         Self {
             kind: class_name(class),
-            message: class_message(class),
+            message: class_message(class).into_boxed_str(),
             model: metadata.model.map(String::into_boxed_str),
             provider: metadata.provider.map(String::into_boxed_str),
             status_code: class_status(class),
@@ -81,7 +81,7 @@ impl CallFailure {
 pub(crate) fn class_error(failure: &CallFailure) -> PyErr {
     match serde_json::to_string(failure) {
         Ok(text) => NativeAudioError::new_err(text),
-        Err(_encoding) => PyRuntimeError::new_err(failure.message.clone()),
+        Err(_encoding) => PyRuntimeError::new_err(failure.message.to_string()),
     }
 }
 
@@ -154,7 +154,7 @@ pub(crate) fn provider_failure(
     };
     let class = dispatch(&DispatchInput::Raw(Box::new(raw)), redactor);
     CallFailure {
-        body,
+        body: body.map(Box::new),
         ..CallFailure::from_class(&class)
     }
 }
