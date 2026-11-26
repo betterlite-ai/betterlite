@@ -9,6 +9,7 @@ use betterlite_db::team_rows::team::LiteLLMTeamTable;
 use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExceptionInit};
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
+use tracing_subscriber::layer::SubscriberExt as _;
 
 use crate::auth_cache::AuthCacheError;
 use crate::auth_org_lookup::organization::OrgLookup;

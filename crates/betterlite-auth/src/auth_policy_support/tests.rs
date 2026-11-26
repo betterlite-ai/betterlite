@@ -287,7 +287,7 @@ fn tool_exact_string_names_and_duplicates() {
 
     let duplicates = body(r#"{"functions":[{"name":"X"},{"name":"X"}]}"#);
     let refusing = tools_token(r#"["Y"]"#, "null");
-    let duplicated = denial_of(check(
+    let repeated_denial = denial_of(check(
         &duplicates,
         Some(&refusing),
         None,
@@ -295,9 +295,9 @@ fn tool_exact_string_names_and_duplicates() {
         &extractors,
     ));
     assert!(
-        duplicated.message.contains(r#"["X", "X"]"#),
+        repeated_denial.message.contains(r#"["X", "X"]"#),
         "{}",
-        duplicated.message
+        repeated_denial.message
     );
 
     let converted = body(r#"{"functions":[{"name":"1"},{"name":"True"}]}"#);

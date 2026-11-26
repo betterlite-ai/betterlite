@@ -45,7 +45,7 @@ fn inherit_org_id(token: &mut UserAPIKeyAuth, team: Option<&LiteLLMTeamTable>) {
     token.view.token.org_id = Some(organization_id.clone());
 }
 
-fn org_identity_is_populated(token: &UserAPIKeyAuth) -> bool {
+const fn org_identity_is_populated(token: &UserAPIKeyAuth) -> bool {
     token.view.organization_alias.is_some()
         || token.view.organization_max_budget.is_some()
         || token.view.organization_tpm_limit.is_some()

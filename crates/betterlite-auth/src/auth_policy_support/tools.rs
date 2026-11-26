@@ -29,7 +29,7 @@ pub fn check_tools_allowlist(
     route: &str,
     extractors: &ToolNameExtractors,
 ) -> Result<(), ToolCheckError> {
-    let Some(token) = token else {
+    let Some(present) = token else {
         return Ok(());
     };
     if !has_tool_capable_call_type(route, extractors) {
@@ -39,7 +39,7 @@ pub fn check_tools_allowlist(
     if tool_names.is_empty() {
         return Ok(());
     }
-    let Some(effective) = effective_allowed_tools(token) else {
+    let Some(effective) = effective_allowed_tools(present) else {
         return Ok(());
     };
     let allowed: BTreeSet<String> = effective.iter().map(allowed_string).collect();
@@ -80,8 +80,8 @@ fn effective_allowed_tools(token: &UserAPIKeyAuth) -> Option<&[JsonData]> {
     if let Some(entries) = nonempty_allowed_list(key_metadata.get("allowed_tools")) {
         return Some(entries);
     }
-    let team_metadata = token.view.team_metadata.as_ref();
-    team_metadata.and_then(|payload| nonempty_allowed_list(payload.0.get("allowed_tools")))
+    let payload = token.view.team_metadata.as_ref()?;
+    nonempty_allowed_list(payload.0.get("allowed_tools"))
 }
 
 fn nonempty_allowed_list(value: Option<&JsonData>) -> Option<&[JsonData]> {

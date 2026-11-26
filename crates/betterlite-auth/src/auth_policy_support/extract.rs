@@ -9,11 +9,31 @@ use betterlite_models::model_registration::JsonObject;
 use crate::auth_errors::conversion::{AuthFailure, as_proxy_exception};
 use crate::auth_request_models::is_falsey;
 
-pub type ToolNameExtractor = fn(&JsonObject) -> Result<Vec<String>, ExtractionError>;
-
 // get_call_types_for_route behind a trait: B207's catalog answers in the server, a fixture answers in a test
 pub trait ToolRouteCallTypes: fmt::Debug + Send + Sync {
     fn call_types_for_route(&self, route: &str) -> Vec<String>;
+}
+
+// the built-in extractors LiteLLM registers per tool-capable call type
+#[derive(Clone, Copy, Debug)]
+pub enum ToolNameExtractor {
+    AnthropicBody,
+    Chat,
+    Gemini,
+    Mcp,
+    Responses,
+}
+
+impl ToolNameExtractor {
+    fn extract(self, data: &JsonObject) -> Result<Vec<String>, ExtractionError> {
+        match self {
+            Self::AnthropicBody => anthropic_body_tool_names(data),
+            Self::Chat => chat_tool_names(data),
+            Self::Gemini => gemini_tool_names(data),
+            Self::Mcp => Ok(mcp_tool_names(data)),
+            Self::Responses => responses_tool_names(data),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -43,18 +63,21 @@ impl ToolNameExtractors {
             return;
         }
         for route in ["generate_content", "agenerate_content"] {
-            self.standalone.insert(route, gemini_tool_names);
+            self.standalone.insert(route, ToolNameExtractor::Gemini);
         }
-        self.standalone.insert("call_mcp_tool", mcp_tool_names);
+        self.standalone
+            .insert("call_mcp_tool", ToolNameExtractor::Mcp);
     }
 
     fn register_handler_builtins(&mut self) {
-        self.handlers.insert("completion", chat_tool_names);
-        self.handlers.insert("acompletion", chat_tool_names);
-        self.handlers.insert("responses", responses_tool_names);
-        self.handlers.insert("aresponses", responses_tool_names);
+        self.handlers.insert("completion", ToolNameExtractor::Chat);
+        self.handlers.insert("acompletion", ToolNameExtractor::Chat);
         self.handlers
-            .insert("anthropic_messages", anthropic_body_tool_names);
+            .insert("responses", ToolNameExtractor::Responses);
+        self.handlers
+            .insert("aresponses", ToolNameExtractor::Responses);
+        self.handlers
+            .insert("anthropic_messages", ToolNameExtractor::AnthropicBody);
     }
 }
 
@@ -66,10 +89,10 @@ pub fn extract_request_tool_names(
 ) -> Result<Vec<String>, ExtractionError> {
     for source_name in extractors.routes.call_types_for_route(route) {
         if let Some(extractor) = extractors.standalone.get(source_name.as_str()) {
-            return extractor(data);
+            return extractor.extract(data);
         }
         if let Some(handler) = extractors.handlers.get(source_name.as_str()) {
-            let names = handler(data)?;
+            let names = handler.extract(data)?;
             if !names.is_empty() {
                 return Ok(names);
             }
@@ -129,11 +152,11 @@ fn type_name(tool: &JsonObject) -> Option<&str> {
 
 // the Python truthy check, then the same source string conversion the named values use
 fn source_text(value: Option<&Json>) -> Option<String> {
-    let value = value?;
-    if is_falsey(value) {
+    let present = value?;
+    if is_falsey(present) {
         return None;
     }
-    Some(source_string(value))
+    Some(source_string(present))
 }
 
 fn traverse<'json>(
@@ -213,13 +236,13 @@ pub(crate) fn anthropic_body_tool_names(data: &JsonObject) -> Result<Vec<String>
 // the flat name and, only for type function, the forwarded OpenAI function.name, both nonempty strings
 #[must_use]
 pub fn anthropic_tool_names(tool: &Json) -> Vec<String> {
-    let Json::Object(tool) = tool else {
+    let Json::Object(fields) = tool else {
         return Vec::new();
     };
     let mut names = Vec::new();
-    push_nonempty_text(&mut names, tool.get("name"));
-    if type_name(tool) == Some("function")
-        && let Some(Json::Object(function)) = tool.get("function")
+    push_nonempty_text(&mut names, fields.get("name"));
+    if type_name(fields) == Some("function")
+        && let Some(Json::Object(function)) = fields.get("function")
     {
         push_nonempty_text(&mut names, function.get("name"));
     }
@@ -254,9 +277,9 @@ fn mcp_name(data: &JsonObject) -> Option<&Json> {
     data.get("mcp_tool_name")
 }
 
-pub(crate) fn mcp_tool_names(data: &JsonObject) -> Result<Vec<String>, ExtractionError> {
+fn mcp_tool_names(data: &JsonObject) -> Vec<String> {
     let Some(value) = mcp_name(data).filter(|value| !is_falsey(value)) else {
-        return Ok(Vec::new());
+        return Vec::new();
     };
-    Ok(vec![source_string(value)])
+    vec![source_string(value)]
 }
