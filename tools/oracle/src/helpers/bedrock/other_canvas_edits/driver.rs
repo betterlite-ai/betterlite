@@ -55,16 +55,17 @@ pub(super) fn observe(call: &Call, model_cost: &ParamMap, catalog: &Catalog) -> 
 }
 
 fn map_answer(call: &MapCall) -> Value {
-    let options = match CanvasEditOptions::from_params(&call.options) {
-        Ok(options) => options,
-        Err(error) => return json!({"ok": false, "error": {"status": error.status()}}),
-    };
-    let mapped = map_openai_params(&options, call.drop_params);
-    let message = mapped
-        .ignored_response_format
-        .as_ref()
-        .map(IgnoredResponseFormat::message);
-    json!({"mapped": mapped.options, "message": message})
+    match CanvasEditOptions::from_params(&call.options) {
+        Ok(options) => {
+            let mapped = map_openai_params(&options, call.drop_params);
+            let message = mapped
+                .ignored_response_format
+                .as_ref()
+                .map(IgnoredResponseFormat::message);
+            json!({"mapped": mapped.options, "message": message})
+        }
+        Err(error) => json!({"ok": false, "error": {"status": error.status()}}),
+    }
 }
 
 fn transform_answer(call: &TransformCall) -> Value {
