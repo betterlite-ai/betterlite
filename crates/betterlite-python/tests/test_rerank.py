@@ -4,12 +4,12 @@ import inspect
 import json
 import threading
 import time
-from collections.abc import Awaitable, Iterator
+from collections.abc import Awaitable, Generator
 from contextlib import closing, contextmanager, nullcontext
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from types import TracebackType
-from typing import ClassVar, Final, Protocol, SupportsIndex, TypedDict
+from typing import ClassVar, Final, Protocol, SupportsIndex, TypeAlias, TypedDict
 
 import httpx
 import pytest
@@ -38,6 +38,8 @@ from betterlite.exceptions import (
 )
 from betterlite.main import arerank, rerank
 from betterlite.types.rerank import RerankResponse
+
+SliceIndex: TypeAlias = SupportsIndex | None
 
 HOST: Final = "127.0.0.1"
 OK: Final = 200
@@ -400,8 +402,15 @@ def test_request_infinity_key(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("INFINITY_API_KEY", raising=False)
     original = betterlite.infinity_key
     betterlite.infinity_key = INFINITY_KEY
+    infinity_body: dict[str, JsonValue] = {
+        "id": "rerank-1",
+        "results": [
+            {"index": SECOND_INDEX, "relevance_score": SECOND_SCORE, "document": "second"},
+            {"index": FIRST_INDEX, "relevance_score": FIRST_SCORE, "document": "first"},
+        ],
+    }
     try:
-        with closing(RerankServer()) as server:
+        with closing(RerankServer(body=infinity_body)) as server:
             outcome = rerank(
                 model=MODEL, query=QUERY, documents=DOCUMENTS_TEXT,
                 custom_llm_provider=INFINITY_PROVIDER, api_base=server.url,
@@ -409,6 +418,7 @@ def test_request_infinity_key(monkeypatch: pytest.MonkeyPatch) -> None:
             call = server.calls[-1]
         assert header_of(call, "authorization") == f"Bearer {INFINITY_KEY}"
         assert response_of(outcome).id == "rerank-1"
+        assert results_of(response_of(outcome)) == RESULTS
     finally:
         betterlite.infinity_key = original
 
@@ -443,7 +453,7 @@ def test_request_headers_limit() -> None:
 
 
 @contextmanager
-def temporary_headers(headers: dict[str, str]) -> Iterator[None]:
+def temporary_headers(headers: dict[str, str]) -> Generator[None, None, None]:
     original = betterlite.headers
     betterlite.headers = headers  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L593
     try:
@@ -654,10 +664,7 @@ class ChunkedText(str):
     @override
     def __getitem__(
         self,
-        key: (
-            "SupportsIndex | slice[SupportsIndex | None, "
-            "SupportsIndex | None, SupportsIndex | None]"
-        ),
+        key: "SupportsIndex | slice[SliceIndex, SliceIndex, SliceIndex]",
         /,
     ) -> str:
         result = super().__getitem__(key)

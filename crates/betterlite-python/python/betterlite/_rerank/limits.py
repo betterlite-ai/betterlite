@@ -1,5 +1,5 @@
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sized
 from dataclasses import dataclass
 from typing import Final
 
@@ -91,7 +91,7 @@ def check_request_size(values: tuple[CallValue, ...], kwargs: Mapping[str, CallV
     headers = 0
     for source in (kwargs.get("headers"), betterlite.headers):
         match source:
-            case Mapping():
+            case Sized():
                 headers += len(source)
             case object():
                 continue
