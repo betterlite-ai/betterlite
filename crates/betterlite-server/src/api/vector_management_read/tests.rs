@@ -569,7 +569,9 @@ async fn info_cached_metadata_with_invalid_json_is_the_catch_all() {
 
 #[tokio::test]
 async fn info_cached_blank_and_absent_fields_follow_the_model() {
-    let stored = parsed(r#"{"vector_store_id":"","litellm_params":{"api_key":"k"}}"#);
+    let stored = parsed(
+        r#"{"vector_store_id":"","vector_store_name":"","vector_store_description":"","created_at":"","updated_at":"","litellm_credential_name":"","litellm_params":{"api_key":"k"},"team_id":"","user_id":""}"#,
+    );
     let state = build(Setup {
         database: Some(FakeDatabase::new(Vec::new())),
         registry: Some(vec![stored]),
@@ -592,6 +594,13 @@ async fn info_cached_blank_and_absent_fields_follow_the_model() {
     assert_eq!(&Json::Bool(false), at(table, "is_config"));
     assert_eq!(&Json::Null, at(table, "vector_store_metadata"));
     assert_eq!(&Json::Null, at(table, "vector_store_name"));
+    assert_eq!(&Json::Null, at(table, "vector_store_description"));
+    assert_eq!(&Json::Null, at(table, "created_at"));
+    assert_eq!(&Json::Null, at(table, "updated_at"));
+    assert_eq!(&Json::Null, at(table, "team_id"));
+    assert_eq!(&Json::Null, at(table, "user_id"));
+    // the one field LiteLLM reads without collapsing a blank to null
+    assert_eq!("", text(at(table, "litellm_credential_name")));
 }
 
 // no cache hit: the row is fetched, kept whole and redacted, and its own 404 and 403 survive the catch-all
