@@ -5,15 +5,16 @@ use std::sync::Arc;
 use betterlite_auth::auth_model_lists::credential::{CredentialEntry, CredentialSnapshot};
 use betterlite_config::tls::Verification;
 use betterlite_core::api::realtime_connect::AZURE_DEFAULT_API_VERSION;
-use betterlite_core::api::realtime_connection_plan::azure::{ad_token, azure_protocol};
+use betterlite_core::api::realtime_connection_plan::azure::azure_protocol;
 use betterlite_core::api::realtime_connection_plan::metadata::RealtimeModelMetadata;
 use betterlite_core::api::realtime_connection_plan::parameters::{
-    model_params_with_stored_credentials, resolve_probe_parameters,
+    ResolvedProbeParameters, model_params_with_stored_credentials, resolve_probe_parameters,
 };
 use betterlite_core::api::realtime_connection_plan::{
-    AZURE_PROVIDER, OPENAI_DEFAULT_API_BASE, OPENAI_PROVIDER, REALTIME_PROTOCOL_KEY,
-    RealtimeProbeDependencies, RealtimeProbeError, RealtimeProbeRequest, RealtimeProbeSettings,
-    VERTEX_AI_PROVIDER, XAI_DEFAULT_API_BASE, XAI_PROVIDER, realtime_health_check,
+    AZURE_PROVIDER, OPENAI_DEFAULT_API_BASE, OPENAI_PROVIDER, ProbeConnection,
+    REALTIME_PROTOCOL_KEY, RealtimeProbeDependencies, RealtimeProbeError, RealtimeProbeRequest,
+    RealtimeProbeSettings, VERTEX_AI_PROVIDER, XAI_DEFAULT_API_BASE, XAI_PROVIDER,
+    realtime_health_check,
 };
 use betterlite_models::catalog::{ModelCatalog, UnknownFields};
 use betterlite_models::decisions::Json;
@@ -21,7 +22,7 @@ use betterlite_models::model_registration::JsonObject;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use indexmap::IndexMap;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::runtime::Builder as RuntimeBuilder;
@@ -41,7 +42,9 @@ impl Helper for Op {
             .map_err(failure)?;
         let mut answered = Vec::with_capacity(input.scenarios.len());
         for scenario in &input.scenarios {
-            answered.push(answer(&runtime, scenario)?);
+            let probe = Probe::new(scenario)?;
+            let (branch, connection) = probe.health(&runtime)?;
+            answered.push(probe.answer(&branch, connection));
         }
         Ok(json!({ "scenarios": answered }))
     }
@@ -102,11 +105,11 @@ struct InputSettings {
     max_message_size_bytes: usize,
 }
 
-fn default_timeout() -> f64 {
+const fn default_timeout() -> f64 {
     20.0_f64
 }
 
-fn default_max_message_size() -> usize {
+const fn default_max_message_size() -> usize {
     16_777_216_usize
 }
 
@@ -117,21 +120,8 @@ fn configured_or(value: Option<String>, default: &str) -> String {
         .unwrap_or_else(|| String::from(default))
 }
 
-impl InputSettings {
-    fn probe_settings(&self) -> RealtimeProbeSettings {
-        RealtimeProbeSettings {
-            azure_realtime_protocol: self.azure_realtime_protocol.clone(),
-            credential_timeout_seconds: self.credential_timeout_seconds,
-            max_message_size_bytes: self.max_message_size_bytes,
-        }
-    }
-}
-
-fn answer(runtime: &Runtime, scenario: &Scenario) -> Result<Value, Box<HelperError>> {
-    let catalog_bytes = serde_json::to_vec(&scenario.catalog).map_err(failure)?;
-    let catalog =
-        Arc::new(ModelCatalog::parse(&catalog_bytes, UnknownFields::Warn).map_err(failure)?);
-    let stored = CredentialSnapshot::new(
+fn stored_credentials(scenario: &Scenario) -> CredentialSnapshot {
+    CredentialSnapshot::new(
         scenario
             .stored
             .iter()
@@ -140,109 +130,150 @@ fn answer(runtime: &Runtime, scenario: &Scenario) -> Result<Value, Box<HelperErr
                 credential_values: entry.credential_values.clone(),
             })
             .collect(),
-    );
-    let settings = scenario.settings.probe_settings();
-    let request = RealtimeProbeRequest {
-        model: scenario.model.clone(),
-        custom_llm_provider: scenario.custom_llm_provider.clone(),
-        api_key: scenario.api_key.as_deref().map(SecretString::from),
-        api_base: scenario.api_base.clone(),
-        api_version: scenario.api_version.clone(),
-        realtime_protocol: scenario.realtime_protocol.clone(),
-        model_params: scenario.model_params.clone(),
-    };
-    let merged = model_params_with_stored_credentials(&request.model_params, &stored);
-    let resolved = resolve_probe_parameters(&request, &merged).map_err(failure)?;
-    let azure = ScriptedAzure {
-        token: scenario.azure_ad_token.as_deref().map(SecretString::from),
-    };
-    let vertex = ScriptedVertex::new(scenario, Arc::clone(&catalog));
-    let dialer = RecordingDialer::default();
-    let verification = Verification::Enabled;
-    let metadata: &dyn RealtimeModelMetadata = catalog.as_ref();
-    let dependencies = RealtimeProbeDependencies {
-        stored: &stored,
-        metadata,
-        azure: &azure,
-        vertex: &vertex,
-        dialer: &dialer,
-        verification: &verification,
-    };
-    let outcome = runtime.block_on(realtime_health_check(&request, &settings, &dependencies));
-    let branch = match &outcome {
-        Ok(()) => scenario.custom_llm_provider.as_str(),
-        Err(RealtimeProbeError::UnsupportedModel { .. }) => "unsupported",
-        Err(RealtimeProbeError::VertexSpeechModel { .. }) => "speech_to_text",
-        Err(error) => return Err(failure(error)),
-    };
-    let connection = dialer.take();
-    let protocol = if scenario.custom_llm_provider == AZURE_PROVIDER {
-        Some(azure_protocol(
-            request.realtime_protocol.as_deref(),
-            merged.get(REALTIME_PROTOCOL_KEY),
-            settings.azure_realtime_protocol.as_deref(),
-        ))
-    } else {
-        None
-    };
-    let azure_token = if scenario.custom_llm_provider == AZURE_PROVIDER {
-        ad_token(resolved.api_key.as_ref(), &merged, &azure)
-            .map_err(failure)?
-            .map(|token| token.expose_secret().to_owned())
-    } else {
-        None
-    };
-    let base = match (scenario.custom_llm_provider.as_str(), resolved.api_base) {
+    )
+}
+
+// the `or` default each provider's url builder applies to a configured api_base
+fn base_value(provider: &str, base: Option<String>) -> Value {
+    match (provider, base) {
         (AZURE_PROVIDER, base) => json!(base.unwrap_or_default()),
-        (OPENAI_PROVIDER, base) => {
-            json!(configured_or(base, OPENAI_DEFAULT_API_BASE))
-        }
+        (OPENAI_PROVIDER, base) => json!(configured_or(base, OPENAI_DEFAULT_API_BASE)),
         (XAI_PROVIDER, base) => json!(configured_or(base, XAI_DEFAULT_API_BASE)),
         (_, base) => json!(base),
+    }
+}
+
+// one scenario's resolved inputs, built once so each step takes only the fields it reads
+struct Probe<'case> {
+    scenario: &'case Scenario,
+    catalog: Arc<ModelCatalog>,
+    stored: CredentialSnapshot,
+    settings: RealtimeProbeSettings,
+    request: RealtimeProbeRequest,
+    merged: JsonObject,
+    resolved: ResolvedProbeParameters,
+    azure: ScriptedAzure,
+}
+
+impl<'case> Probe<'case> {
+    fn new(scenario: &'case Scenario) -> Result<Self, Box<HelperError>> {
+        let catalog_bytes = serde_json::to_vec(&scenario.catalog).map_err(failure)?;
+        let catalog =
+            Arc::new(ModelCatalog::parse(&catalog_bytes, UnknownFields::Warn).map_err(failure)?);
+        let stored = stored_credentials(scenario);
+        let settings = RealtimeProbeSettings {
+            azure_realtime_protocol: scenario.settings.azure_realtime_protocol.clone(),
+            credential_timeout_seconds: scenario.settings.credential_timeout_seconds,
+            max_message_size_bytes: scenario.settings.max_message_size_bytes,
+        };
+        let request = RealtimeProbeRequest {
+            model: scenario.model.clone(),
+            custom_llm_provider: scenario.custom_llm_provider.clone(),
+            api_key: scenario.api_key.as_deref().map(SecretString::from),
+            api_base: scenario.api_base.clone(),
+            api_version: scenario.api_version.clone(),
+            realtime_protocol: scenario.realtime_protocol.clone(),
+            model_params: scenario.model_params.clone(),
+        };
+        let merged = model_params_with_stored_credentials(&request.model_params, &stored);
+        let resolved = resolve_probe_parameters(&request, &merged).map_err(failure)?;
+        let azure = ScriptedAzure {
+            token: scenario.azure_ad_token.as_deref().map(SecretString::from),
+        };
+        Ok(Self {
+            scenario,
+            catalog,
+            stored,
+            settings,
+            request,
+            merged,
+            resolved,
+            azure,
+        })
+    }
+
+    // the probe opens exactly one connection and answers its branch; the recording is the handshake it asked for
+    fn health(
+        &self,
+        runtime: &Runtime,
+    ) -> Result<(String, Option<ProbeConnection>), Box<HelperError>> {
+        let vertex = ScriptedVertex::new(self.scenario, Arc::clone(&self.catalog));
+        let dialer = RecordingDialer::default();
+        let verification = Verification::Enabled;
+        let metadata: &dyn RealtimeModelMetadata = self.catalog.as_ref();
+        let dependencies = RealtimeProbeDependencies {
+            stored: &self.stored,
+            metadata,
+            azure: &self.azure,
+            vertex: &vertex,
+            dialer: &dialer,
+            verification: &verification,
+        };
+        let outcome = runtime.block_on(realtime_health_check(
+            &self.request,
+            &self.settings,
+            &dependencies,
+        ));
+        let branch = match outcome {
+            Ok(()) => self.scenario.custom_llm_provider.clone(),
+            Err(RealtimeProbeError::UnsupportedModel { .. }) => String::from("unsupported"),
+            Err(RealtimeProbeError::VertexSpeechModel { .. }) => String::from("speech_to_text"),
+            Err(error) => return Err(failure(error)),
+        };
+        Ok((branch, dialer.take()))
+    }
+
+    // only an Azure scenario reads these, and the dialect they answer is the one the probe used
+    fn azure_fields(&self, view: &mut Value) {
+        if self.scenario.custom_llm_provider != AZURE_PROVIDER {
+            return;
+        }
+        view["protocol"] = json!(azure_protocol(
+            self.request.realtime_protocol.as_deref(),
+            self.merged.get(REALTIME_PROTOCOL_KEY),
+            self.settings.azure_realtime_protocol.as_deref(),
+        ));
+        view["api_version"] = json!(configured_or(
+            self.resolved.api_version.clone(),
+            AZURE_DEFAULT_API_VERSION,
+        ));
+    }
+
+    fn answer(&self, branch: &str, connection: Option<ProbeConnection>) -> Value {
+        let provider = self.scenario.custom_llm_provider.as_str();
+        let mut view = json!({
+            "branch": branch,
+            "api_base": base_value(provider, self.resolved.api_base.clone()),
+            "api_version": Value::Null,
+            "protocol": Value::Null,
+            "url": Value::Null,
+            "headers": json!([]),
+            "max_size": Value::Null,
+            "ssl": Value::Null,
+        });
+        self.azure_fields(&mut view);
+        handshake_fields(&mut view, connection);
+        if branch != VERTEX_AI_PROVIDER {
+            view["url"] = Value::Null;
+        }
+        view
+    }
+}
+
+// websockets.connect's arguments as the comparison reads them; an absent handshake leaves nulls
+fn handshake_fields(view: &mut Value, connection: Option<ProbeConnection>) {
+    let Some(connection) = connection else {
+        return;
     };
-    let version = match scenario.custom_llm_provider.as_str() {
-        AZURE_PROVIDER => json!(configured_or(
-            resolved.api_version,
-            AZURE_DEFAULT_API_VERSION
-        )),
-        _ => Value::Null,
-    };
-    let key = resolved
-        .api_key
-        .as_ref()
-        .map(|key| key.expose_secret().to_owned());
-    let observed = connection.map(|connection| {
-        let headers: Vec<Value> = connection
-            .headers
-            .iter()
-            .map(|(name, value)| json!([name, value]))
-            .collect();
-        (
-            json!(connection.url),
-            headers,
-            json!(connection.max_size),
-            json!(ssl_kind(&connection.ssl)),
-        )
-    });
-    let (observed_url, headers, max_size, ssl) =
-        observed.unwrap_or_else(|| (Value::Null, Vec::new(), Value::Null, Value::Null));
-    let url = if branch == VERTEX_AI_PROVIDER {
-        observed_url
-    } else {
-        Value::Null
-    };
-    Ok(json!({
-        "branch": branch,
-        "api_key": key,
-        "api_base": base,
-        "api_version": version,
-        "protocol": protocol,
-        "ad_token": azure_token,
-        "url": url,
-        "headers": headers,
-        "max_size": max_size,
-        "ssl": ssl,
-    }))
+    let headers: Vec<Value> = connection
+        .headers
+        .iter()
+        .map(|(name, value)| json!([name, value]))
+        .collect();
+    view["url"] = json!(connection.url);
+    view["headers"] = json!(headers);
+    view["max_size"] = json!(connection.max_size);
+    view["ssl"] = json!(ssl_kind(&connection.ssl));
 }
 
 fn failure<Error>(error: Error) -> Box<HelperError>

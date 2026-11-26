@@ -60,11 +60,9 @@ class Input(TypedDict):
 def empty_view(branch: str) -> dict[str, JsonValue]:
     return {
         "branch": branch,
-        "api_key": None,
         "api_base": None,
         "api_version": None,
         "protocol": None,
-        "ad_token": None,
         "url": None,
         "headers": [],
         "max_size": None,
@@ -131,9 +129,8 @@ def pair_headers(headers: Mapping[str, str]) -> list[JsonValue]:
     return [[name, headers[name]] for name in sorted(headers)]
 
 
-def failure_view(branch: str, key: str | None, base: str | None) -> JsonValue:
+def failure_view(branch: str, base: str | None) -> JsonValue:
     view = empty_view(branch)
-    view["api_key"] = key
     view["api_base"] = base
     return view
 
@@ -148,11 +145,9 @@ def azure_answer(
     token = azure_ad_token(key, merged)
     headers = AzureOpenAIRealtime.get_auth_headers(api_key=key, azure_ad_token=token)
     view = empty_view("azure")
-    view["api_key"] = key
     view["api_base"] = base or ""
     view["api_version"] = version or AZURE_DEFAULT_API_VERSION
     view["protocol"] = azure_protocol(scenario, merged)
-    view["ad_token"] = token
     view["headers"] = pair_headers(headers)
     view["max_size"] = REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES
     view["ssl"] = ssl_kind()
@@ -161,7 +156,6 @@ def azure_answer(
 
 def base_answer(branch: str, key: str | None, base: str | None, default: str) -> JsonValue:
     view = empty_view(branch)
-    view["api_key"] = key
     view["api_base"] = default if not base else base
     view["headers"] = bearer_headers(key)
     view["max_size"] = REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES
@@ -169,12 +163,10 @@ def base_answer(branch: str, key: str | None, base: str | None, default: str) ->
     return view
 
 
-def vertex_answer(
-    scenario: Scenario, merged: dict[str, JsonValue], key: str | None, base: str | None
-) -> JsonValue:
+def vertex_answer(scenario: Scenario, merged: dict[str, JsonValue], base: str | None) -> JsonValue:
     model = scenario["model"]
     if is_vertex_speech_to_text_model(model):
-        return failure_view("speech_to_text", key, base)
+        return failure_view("speech_to_text", base)
     location = VertexBase.safe_get_vertex_ai_location(dict(merged))
     region = VertexBase.get_vertex_region(vertex_region=location, model=model)
     project = scenario.get("vertex_project") or DEFAULT_PROJECT
@@ -184,7 +176,6 @@ def vertex_answer(
     if project:
         headers["x-goog-user-project"] = project
     view = empty_view("vertex_ai")
-    view["api_key"] = key
     view["api_base"] = base
     view["url"] = config.get_complete_url(api_base=base, model=model)
     view["headers"] = pair_headers(headers)
@@ -207,8 +198,8 @@ def run_scenario(scenario: Scenario) -> JsonValue:
     if provider == "xai":
         return base_answer("xai", key, base, XAI_API_BASE)
     if provider == "vertex_ai":
-        return vertex_answer(scenario, merged, key, base)
-    return failure_view("unsupported", key, base)
+        return vertex_answer(scenario, merged, base)
+    return failure_view("unsupported", base)
 
 
 def run(argument: Input) -> JsonValue:

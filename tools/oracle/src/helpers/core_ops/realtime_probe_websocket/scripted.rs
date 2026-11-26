@@ -47,7 +47,7 @@ impl RealtimeProbeDialer for RecordingDialer {
     }
 }
 
-pub(super) fn ssl_kind(ssl: &RealtimeSsl) -> &'static str {
+pub(super) const fn ssl_kind(ssl: &RealtimeSsl) -> &'static str {
     match ssl {
         RealtimeSsl::Shared(_) => "shared",
         RealtimeSsl::Insecure => "insecure",
