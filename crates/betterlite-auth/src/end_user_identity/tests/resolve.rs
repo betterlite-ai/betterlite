@@ -314,11 +314,11 @@ async fn cache_failures_propagate() {
     assert!(end_users.calls().is_empty());
     let write_failure = Arc::new(ScriptedCache::failing_writes());
     let writing = resolver_for(Arc::clone(&write_failure), &end_users, &users, true, None);
-    let error = writing
+    let write_error = writing
         .resolve(&request(Some("alice"), None))
         .await
         .expect_err("the write failure");
-    assert!(matches!(error, ResolveError::CacheWrite(_)));
+    assert!(matches!(write_error, ResolveError::CacheWrite(_)));
     assert_wrote(&write_failure, "alice", "valid", POSITIVE_TTL_SECONDS);
     assert_eq!(read_failure.reads().len(), 1);
 }

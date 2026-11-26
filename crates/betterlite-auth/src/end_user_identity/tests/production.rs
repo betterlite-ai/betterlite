@@ -6,7 +6,9 @@ use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_models::decisions::Json;
 
 use super::super::cache::{POSITIVE_TTL_SECONDS, ValidationCache};
-use super::super::existence::{EndUserObjectExistence, ExistenceError, UserExistence, UserProbe};
+use super::super::existence::{
+    EndUserExistence, EndUserObjectExistence, ExistenceError, UserExistence, UserProbe,
+};
 use super::super::resolve::{DatabaseLookups, EndUserIdResolver};
 use super::support::{
     Answer, RowAnswer, RowCache, ScriptedCache, ScriptedEndUsers, ScriptedRows, ScriptedUserStore,

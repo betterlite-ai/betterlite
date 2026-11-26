@@ -81,7 +81,7 @@ async fn resolve(input: &Input, fixture: &Arc<Fixture>) -> HelperResult {
         lookups: input.database.then(|| DatabaseLookups { end_users, users }),
         cache,
     };
-    let resolved = resolver
+    let value = resolver
         .resolve(&ResolveRequest {
             raw_end_user_id: input.raw_end_user_id.as_deref(),
             key_end_user_budget_id: input.key_end_user_budget_id.as_deref(),
@@ -89,7 +89,7 @@ async fn resolve(input: &Input, fixture: &Arc<Fixture>) -> HelperResult {
         .await
         .or_value_error()?;
     Ok(json!({
-        "value": resolved,
+        "value": value,
         "reads": fixture.reads(),
         "writes": fixture.writes(),
         "queries": fixture.queries(),
