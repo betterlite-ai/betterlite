@@ -4,12 +4,11 @@ mod support;
 
 use std::sync::atomic::Ordering;
 
-use betterlite_db::auxiliary_repository::repository::PrismaClient;
 use betterlite_db::budget_permission_rows::PermissionList;
 use betterlite_db::database_replica::availability::Availability;
 use betterlite_db::postgres_store::session::PostgresStore;
 
-use self::support::{Database, caller, caller_policy, key_row, team_row};
+use self::support::{Database, caller, caller_policy, key_row, routed_client, team_row};
 
 use crate::key_access::error::DetailShape;
 use crate::key_fields::shared::hash_token_if_needed;
@@ -200,11 +199,7 @@ async fn reads_route_to_reader() {
     ))
     .await;
     let availability = Availability::default();
-    let client = PrismaClient {
-        writer: &writer.store,
-        reader: &reader.store,
-        availability: &availability,
-    };
+    let client = routed_client(&writer.store, &reader.store, &availability);
     let by_token = get_and_validate_existing_key(Some("sk-reader"), None, Some(client))
         .await
         .unwrap();
@@ -244,11 +239,7 @@ async fn writer_outage_reads_reader() {
         .writer_unavailable
         .store(true, Ordering::SeqCst);
     let unavailable = PostgresStore { pool: None };
-    let client = PrismaClient {
-        writer: &unavailable,
-        reader: &reader.store,
-        availability: &availability,
-    };
+    let client = routed_client(&unavailable, &reader.store, &availability);
     let row = get_and_validate_existing_key(Some("sk-live"), None, Some(client))
         .await
         .unwrap();
@@ -259,6 +250,18 @@ async fn writer_outage_reads_reader() {
         relation.models,
         PermissionList(Some(vec![String::from("gpt-4")]))
     );
+    reader.close().await;
+}
+
+#[tokio::test]
+async fn writer_outage_missing_key() {
+    let reader = Database::new("").await;
+    let availability = Availability::default();
+    availability
+        .writer_unavailable
+        .store(true, Ordering::SeqCst);
+    let unavailable = PostgresStore { pool: None };
+    let client = routed_client(&unavailable, &reader.store, &availability);
     let error = get_and_validate_existing_key(Some("sk-absent"), None, Some(client))
         .await
         .unwrap_err();
@@ -294,11 +297,7 @@ async fn reader_fallback_reads_writer() {
     availability
         .reader_unavailable
         .store(true, Ordering::SeqCst);
-    let client = PrismaClient {
-        writer: &writer.store,
-        reader: &reader.store,
-        availability: &availability,
-    };
+    let client = routed_client(&writer.store, &reader.store, &availability);
     let row = get_and_validate_existing_key(Some("sk-live"), None, Some(client))
         .await
         .unwrap();
@@ -332,11 +331,7 @@ async fn relation_follows_row_side() {
     ))
     .await;
     let availability = Availability::default();
-    let client = PrismaClient {
-        writer: &writer.store,
-        reader: &reader.store,
-        availability: &availability,
-    };
+    let client = routed_client(&writer.store, &reader.store, &availability);
     let row = get_and_validate_existing_key(Some("sk-live"), None, Some(client))
         .await
         .unwrap();
@@ -400,11 +395,7 @@ async fn admin_budget_clear_no_query() {
     let admin = caller(ADMIN);
     let store = PostgresStore { pool: None };
     let availability = Availability::default();
-    let client = PrismaClient {
-        writer: &store,
-        reader: &store,
-        availability: &availability,
-    };
+    let client = routed_client(&store, &store, &availability);
     validate_end_user_budget_id_change(Some(""), Some("b-1"), &admin, Some(client))
         .await
         .unwrap();

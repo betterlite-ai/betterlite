@@ -94,6 +94,18 @@ impl Database {
     }
 }
 
+pub(super) fn routed_client<'db>(
+    writer: &'db PostgresStore,
+    reader: &'db PostgresStore,
+    availability: &'db Availability,
+) -> PrismaClient<'db> {
+    PrismaClient {
+        writer,
+        reader,
+        availability,
+    }
+}
+
 pub(super) fn team_row(text: &str) -> LiteLLMTeamTable {
     LiteLLMTeamTable::try_from(json(text)).unwrap()
 }
