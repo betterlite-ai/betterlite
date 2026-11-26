@@ -101,12 +101,13 @@ fn map_quality(options: &mut CanvasEditOptions) {
     };
     let quality = match &value {
         CanvasEditValue::Json(Json::Text(text)) if text == "hd" || text == PREMIUM => {
-            Json::Text(PREMIUM.to_owned())
+            CanvasEditValue::Json(Json::Text(PREMIUM.to_owned()))
         }
-        CanvasEditValue::Json(json) => json.clone(),
-        CanvasEditValue::Bytes(_) | CanvasEditValue::Tuple => value.clone(),
+        CanvasEditValue::Json(_) | CanvasEditValue::Bytes(_) | CanvasEditValue::Tuple => {
+            value.clone()
+        }
     };
-    options.insert("quality".to_owned(), CanvasEditValue::Json(quality));
+    options.insert("quality".to_owned(), quality);
 }
 
 // Accepted for OpenAI compatibility and dropped; b64_json and None are the silent values.
