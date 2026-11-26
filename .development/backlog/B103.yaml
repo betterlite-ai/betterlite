@@ -1,7 +1,7 @@
 id: B103
 milestone: M5 api families
 title: Mount the Langfuse pass-through route
-status: blocked
+status: todo
 depends_on: [B8292, B8640, B052, B1109, B5082, B8500, B002]
 file: tasks/B103-langfuse-route-mount.yaml
 covers:
@@ -10,5 +10,5 @@ parent: null
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): niche, Langfuse pass-through route"
+blocked_reason: null
 pr: null

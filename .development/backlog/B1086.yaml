@@ -1,7 +1,7 @@
 id: B1086
 milestone: M5 api families
 title: Assistant thread routes
-status: blocked
+status: todo
 depends_on: [B003, B004, B732, B1103, B2489, B8395]
 file: tasks/B1086-assistant-thread-routes.yaml
 covers:
@@ -10,5 +10,5 @@ parent: B124
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, Assistants API can wait"
+blocked_reason: null
 pr: null

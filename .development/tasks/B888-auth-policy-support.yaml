@@ -74,7 +74,9 @@ description: >-
   seed to B171 helper_case, which already owns this decoder.
 
 
-  Guardrail and tool fixtures send the exact presence/null/false combinations through B732 auth wiring.
+  Guardrail and tool helper cases send the exact presence/null/false combinations, and the three HTTP
+  cases send the master key through B732 auth wiring to show the installed stage lets it reach the
+  upstream. Denials over HTTP need a seeded non-admin key, so they come with B10111 after B052.
   Team lookup cases use B860 with POSTGRES_TEST_URL or testcontainers, while extractor cases compare
   only the source's native tool-name lists and leave provider calls out of the test.
 
@@ -168,8 +170,8 @@ dod:
       - oracle
       - helper-python
       - helper-case-corpus
-  - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
-      against the real MIT server.
+  - text: The HTTP oracle cases prove a master-key request passes the installed stage and reaches the
+      upstream against the real MIT server.
     proof:
       - oracle
       - behavior-tests
@@ -211,6 +213,7 @@ oracle_cases:
   - tools/oracle/cases/helpers/auth-policy-support/organization-inheritance.yaml
 deviations: []
 out_of_scope:
+  - B052 authenticates virtual keys; until then every non-master bearer gets 401 at the master stage. Seeded key and team metadata and the HTTP denial cases come with B10111.
   - B3663 owns the remaining guardrail_helpers functions and base translation utils except anthropic_tool_names, B3667 to B3678 the translation handlers,
     and every translation-handler method except
     the three extraction leaves explicitly moved here. B3680 installs runtime guardrail execution later;

@@ -1,7 +1,7 @@
 id: B9765
 milestone: M10 admin ui
 title: Exercise vector-store registration, upload and search page requests
-status: blocked
+status: todo
 depends_on: [B860, B9942, B1067, B1069, B1070, B3465, B1601, B9987, B060, B9735]
 file: tasks/B9765-dashboard-vector-store-requests.yaml
 covers:
@@ -13,5 +13,5 @@ parent: B149
 split_from: B149
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, admin UI pages for MCP agents and vector stores wait on those features"
+blocked_reason: null
 pr: null

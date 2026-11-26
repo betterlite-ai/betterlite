@@ -1,7 +1,7 @@
 id: B097
 milestone: M5 api families
 title: RAG ingestion and query
-status: blocked
+status: todo
 depends_on: [B3457, B3460, B3461, B3463, B3464, B3465, B7170, B7171, B1601, B8610, B9850, B9998]
 file: tasks/B097-rag-routes-mount.yaml
 covers: []
@@ -9,5 +9,5 @@ parent: null
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, RAG ingestion is new and can wait"
+blocked_reason: null
 pr: null

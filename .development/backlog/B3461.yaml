@@ -1,7 +1,7 @@
 id: B3461
 milestone: M5 api families
 title: RAG retrieval, reranking and query billing
-status: blocked
+status: todo
 depends_on: [B1064, B1014, B1686, B198, B185, B186, B5656, B6020, B247, B1058]
 file: tasks/B3461-rag-retrieval-query.yaml
 covers:
@@ -11,5 +11,5 @@ parent: B097
 split_from: B097
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, RAG ingestion is new and can wait"
+blocked_reason: null
 pr: null
