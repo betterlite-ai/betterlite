@@ -82,7 +82,14 @@ impl Helper for Op {
     fn run(input: &Self::Input) -> HelperResult {
         match input.function {
             Function::RouteAllowed => route_allowed(input),
-            Function::ViewerAccess => Ok(viewer_access(input)),
+            Function::ViewerAccess => {
+                let method = input.method.as_deref().map(str::to_uppercase);
+                Ok(answer(check_access(
+                    &input.route,
+                    method.as_deref(),
+                    &input.body,
+                )))
+            }
             Function::MaskedUserId => Ok(json!({"masked": mask_user_id(&input.masked)})),
             Function::JwtAllowedRoutes => jwt_allowed_routes(input),
         }
@@ -109,11 +116,6 @@ fn route_allowed(input: &Input) -> HelperResult {
         team_allowed_routes: input.team_allowed_routes.as_deref().unwrap_or_default(),
     };
     Ok(answer(is_api_route_allowed(&policy)))
-}
-
-fn viewer_access(input: &Input) -> Value {
-    let method = input.method.as_deref().map(str::to_uppercase);
-    answer(check_access(&input.route, method.as_deref(), &input.body))
 }
 
 fn jwt_allowed_routes(input: &Input) -> HelperResult {
