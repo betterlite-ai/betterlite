@@ -78,7 +78,7 @@ fn probe_request(provider: &str, model: &str, model_params: JsonObject) -> Realt
 fn settings() -> RealtimeProbeSettings {
     RealtimeProbeSettings {
         azure_realtime_protocol: None,
-        credential_timeout_seconds: 20.0,
+        credential_timeout_seconds: 20.0_f64,
         max_message_size_bytes: 16 * 1024 * 1024,
     }
 }
@@ -375,6 +375,39 @@ async fn realtime_probe_stored_precedence() {
         Headers::from([(String::from("api-key"), String::from("stored-key"))])
     );
     assert!(azure.calls().is_empty());
+    assert_eq!(
+        dialer.count(),
+        2,
+        "each successful probe opens exactly one handshake and sends no frames"
+    );
+}
+
+// _realtime_health_check's Azure leg raises when neither key nor AD token resolves
+#[tokio::test]
+async fn realtime_probe_azure_configuration_errors_propagate() {
+    let stored = empty_credentials();
+    let metadata = StaticMetadata::new();
+    let azure = ScriptedAzure::default();
+    let vertex = empty_vertex();
+    let dialer = RecordingDialer::default();
+    let probe = Probe {
+        stored: &stored,
+        metadata: &metadata,
+        azure: &azure,
+        vertex: &vertex,
+        dialer: &dialer,
+        verification: &Verification::Enabled,
+    };
+    let request = probe_request("azure", MODEL, JsonObject::new());
+    let error = probe
+        .run(&request, &settings())
+        .await
+        .expect_err("an Azure probe without a credential is a configuration error");
+    assert_eq!(
+        error.to_string(),
+        "Missing Azure credentials for the realtime endpoint. Set an api_key, or configure Azure AD auth (azure_ad_token, tenant_id/client_id/client_secret, or a managed identity)"
+    );
+    assert_eq!(dialer.count(), 0, "the build fails before any connect");
 }
 
 #[tokio::test]
@@ -809,7 +842,7 @@ async fn realtime_probe_vertex_and_failures() {
     );
 
     let mut timed_out = settings();
-    timed_out.credential_timeout_seconds = 0.0;
+    timed_out.credential_timeout_seconds = 0.0_f64;
     let timeout_error = probe
         .run(&live, &timed_out)
         .await

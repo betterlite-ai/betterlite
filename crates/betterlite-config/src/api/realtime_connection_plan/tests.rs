@@ -22,7 +22,10 @@ fn lookup(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
 fn loads_realtime_probe_settings() {
     let defaults = load_settings(DEFAULTS, lookup(&[])).unwrap();
     assert_eq!(defaults.connection.azure_realtime_protocol.as_deref(), None);
-    assert_eq!(defaults.connection.credential_timeout_seconds, 20.0);
+    assert_eq!(
+        defaults.connection.credential_timeout_seconds.to_bits(),
+        20.0_f64.to_bits()
+    );
     assert_eq!(
         defaults.max_message_size_bytes,
         DEFAULT_MAX_MESSAGE_SIZE_BYTES
@@ -41,8 +44,23 @@ fn loads_realtime_probe_settings() {
         explicit.connection.azure_realtime_protocol.as_deref(),
         Some("beta")
     );
-    assert_eq!(explicit.connection.credential_timeout_seconds, 5.5);
+    assert_eq!(
+        explicit.connection.credential_timeout_seconds.to_bits(),
+        5.5_f64.to_bits()
+    );
     assert_eq!(explicit.max_message_size_bytes, 1024);
+
+    let malformed = load_settings(
+        DEFAULTS,
+        lookup(&[("REALTIME_CREDENTIAL_RESOLUTION_TIMEOUT_SECONDS", "soon")]),
+    )
+    .unwrap_err();
+    assert!(matches!(
+        malformed,
+        ConfigError::Environment {
+            source: EnvError::Number { .. }
+        }
+    ));
 }
 
 #[test]

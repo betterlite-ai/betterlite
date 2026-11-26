@@ -78,7 +78,7 @@ async fn realtime_probe_reports_the_core_failure() {
         verification: Verification::Enabled,
         settings: RealtimeProbeSettings {
             azure_realtime_protocol: None,
-            credential_timeout_seconds: 20.0,
+            credential_timeout_seconds: 20.0_f64,
             max_message_size_bytes: 1024,
         },
     };
