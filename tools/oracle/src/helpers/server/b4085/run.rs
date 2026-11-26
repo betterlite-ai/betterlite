@@ -131,7 +131,7 @@ fn active_job(call: &PipelineCall) -> Result<ActiveShadowEvalJob, Box<HelperErro
 }
 
 fn metadata(call: &PipelineCall) -> Result<IndexMap<String, Json>, Box<HelperError>> {
-    let mut fields = IndexMap::from([(
+    let mut parent_metadata = IndexMap::from([(
         "user_api_key_hash".to_owned(),
         Json::Text(KEY_HASH.to_owned()),
     )]);
@@ -146,8 +146,8 @@ fn metadata(call: &PipelineCall) -> Result<IndexMap<String, Json>, Box<HelperErr
         if let Some(team_id) = &auth.team_id {
             record.insert("team_id".to_owned(), Json::Text(team_id.clone()));
         }
-        if let Some(fields) = &auth.metadata {
-            record.insert("metadata".to_owned(), Json::Object(fields.clone()));
+        if let Some(auth_metadata) = &auth.metadata {
+            record.insert("metadata".to_owned(), Json::Object(auth_metadata.clone()));
         }
         if let Some(tpm_limit) = auth.tpm_limit {
             record.insert(
@@ -161,9 +161,9 @@ fn metadata(call: &PipelineCall) -> Result<IndexMap<String, Json>, Box<HelperErr
                 Json::Number(Number::from(rpm_limit)),
             );
         }
-        fields.insert("user_api_key_auth".to_owned(), Json::Object(record));
+        parent_metadata.insert("user_api_key_auth".to_owned(), Json::Object(record));
     }
-    Ok(fields)
+    Ok(parent_metadata)
 }
 
 fn number(value: Decimal) -> Result<Number, Box<HelperError>> {

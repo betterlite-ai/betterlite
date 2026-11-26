@@ -31,7 +31,7 @@ class AuthInput(TypedDict):
     spend: float
     max_budget: float | None
     team_id: str | None
-    metadata: dict[str, bool]
+    metadata: dict[str, JsonValue]
     tpm_limit: int | None
 
 
