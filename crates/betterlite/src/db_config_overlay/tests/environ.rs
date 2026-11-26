@@ -47,6 +47,7 @@ async fn workers_bound_the_live_threads() {
     });
     let (started, mut started_reading) = async_mpsc::channel(8);
     let (release, released_rx) = mpsc::sync_channel::<()>(4);
+    let released = Arc::new(Mutex::new(released_rx));
     let count = Arc::new(AtomicUsize::new(0));
     let mut tasks = JoinSet::new();
     spawn_lookup(&mut tasks, &workers, &started, &released, &count);
