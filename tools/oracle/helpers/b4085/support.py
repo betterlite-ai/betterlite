@@ -35,11 +35,6 @@ class AuthInput(TypedDict):
     tpm_limit: int | None
 
 
-LiteLLMSettings = TypedDict(
-    "LiteLLMSettings", {"budget_exceeded_throttle_percentage": float | None}
-)
-
-
 class TeamInput(TypedDict):
     team_id: str
     max_budget: float
@@ -54,7 +49,7 @@ class ArmInput(TypedDict):
 class Input(TypedDict):
     operation: Literal["pipeline"]
     auth: AuthInput | None
-    litellm_settings: NotRequired[LiteLLMSettings]
+    litellm_settings: NotRequired[dict[str, float | None]]
     key_spend: float | None
     team: TeamInput | None
     team_spend: float | None

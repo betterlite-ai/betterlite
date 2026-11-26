@@ -40,7 +40,6 @@ use rust_decimal::Decimal;
 use serde::Deserialize;
 
 mod tests;
-
 pub struct AdvisoryDeps<'deps> {
     pub spend: &'deps dyn SpendReader,
     pub teams: &'deps dyn CachedTeams,
@@ -74,7 +73,6 @@ enum KeyGate {
     OverBudget,
     Unreadable,
 }
-
 pub async fn key_or_team_over_budget(
     metadata: &IndexMap<String, Json>,
     deps: &AdvisoryDeps<'_>,
