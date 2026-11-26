@@ -6,6 +6,7 @@ use crate::auth_model_patterns::decision::ModelAccessContext;
 use crate::auth_model_patterns::grant::key_model_aliases;
 use crate::auth_model_patterns::user_model::can_user_call_model;
 use crate::auth_request_models::RequestedModels;
+use crate::auth_team_lookup::lookup::TeamLookup;
 use crate::entity_model_access::error::EntityModelAccessError;
 use crate::entity_model_access::team::{TeamAccessRequest, can_team_access_model};
 use crate::resolved_key::auth::UserAPIKeyAuth;
@@ -25,6 +26,17 @@ pub async fn check_agent_caller(
     admission: &TeamAdmission<'_>,
     context: &ModelAccessContext<'_>,
 ) -> Result<(), AgentModelGrantsError> {
+    check_agent_caller_with_teams(model, token, source, None, admission, context).await
+}
+
+pub async fn check_agent_caller_with_teams(
+    model: &RequestedModels,
+    token: Option<&UserAPIKeyAuth>,
+    source: Option<&dyn AgentAccessSource>,
+    teams: Option<&TeamLookup>,
+    admission: &TeamAdmission<'_>,
+    context: &ModelAccessContext<'_>,
+) -> Result<(), AgentModelGrantsError> {
     if requested::is_falsey(model) {
         return Ok(());
     }
@@ -38,7 +50,7 @@ pub async fn check_agent_caller(
     let Some(access) = source else {
         return Err(AgentModelGrantsError::Unavailable);
     };
-    check_caller_model(model, key, access, admission, context).await
+    check_caller_model(model, key, access, teams, admission, context).await
 }
 
 // agent_caller_auth first: a key that resolves to no caller skips the check instead of widening it
@@ -46,6 +58,7 @@ async fn check_caller_model(
     model: &RequestedModels,
     key: &UserAPIKeyAuth,
     access: &dyn AgentAccessSource,
+    teams: Option<&TeamLookup>,
     admission: &TeamAdmission<'_>,
     context: &ModelAccessContext<'_>,
 ) -> Result<(), AgentModelGrantsError> {
@@ -56,7 +69,7 @@ async fn check_caller_model(
     if let Some(loaded) = access.caller_team(key).await? {
         // the member scope reads the aliases off the token it is handed, as the source forwards the agent key's
         caller.view.token.aliases = key.view.token.aliases.clone();
-        return check_caller_team(model, &caller, &loaded.team, admission, context).await;
+        return check_caller_team(model, &caller, &loaded.team, teams, admission, context).await;
     }
     // no team echoed: the invoking user's own model list decides, and a missing row narrows nothing
     let Some(caller_user) = access.caller_user(key).await? else {
@@ -76,6 +89,7 @@ async fn check_caller_team(
     model: &RequestedModels,
     caller: &UserAPIKeyAuth,
     team: &LiteLLMTeamTable,
+    teams: Option<&TeamLookup>,
     admission: &TeamAdmission<'_>,
     context: &ModelAccessContext<'_>,
 ) -> Result<(), AgentModelGrantsError> {
@@ -85,7 +99,7 @@ async fn check_caller_team(
         team: Some(team),
         team_aliases: &no_team_aliases,
         key_aliases: &aliases,
-        lookup: None,
+        lookup: teams,
     };
     can_team_access_model(model, &grant, context).await?;
     let request = TeamRequest {

@@ -17,6 +17,7 @@ use betterlite_auth::agent_policy::AgentResponse;
 use betterlite_auth::auth_model_grants::access_source::AgentAccessSource;
 use betterlite_auth::auth_model_patterns::denial::model_denied_client_message;
 use betterlite_auth::auth_request_models::RequestedModels;
+use betterlite_auth::auth_team_lookup::error::{TeamFailure, TeamLookupError};
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::types::Config;
@@ -26,7 +27,7 @@ use betterlite_db::team_rows::archived::LiteLLMTeamTableCachedObj;
 use secrecy::SecretString;
 use tower::ServiceExt as _;
 
-use super::{AgentModelGrantsRule, stage_input};
+use super::{AgentModelGrantsRule, stage_failure, stage_input};
 use crate::auth::auth_identity::{
     AuthBackend, AuthContext, INSTALLED_STAGES, StageFailure, StageInput, dispatch,
 };
@@ -69,6 +70,7 @@ fn rule(model: &str) -> Arc<AgentModelGrantsRule> {
         view: None,
         provider: None,
         global_model_aliases: BTreeMap::new(),
+        teams: None,
         member_checks: Arc::new(TeamBudgetRule::default()),
     })
 }
@@ -312,6 +314,55 @@ async fn failure_stops_downstream() {
     .await;
     assert_eq!(allowed_status, StatusCode::OK, "{allowed_body}");
     assert!(allowed_reached);
+}
+
+#[test]
+fn lookup_http_errors_keep_their_status() {
+    let missing_group = AccessGroupsError::Read {
+        access_group_id: "group-1".to_owned(),
+        source: Box::new(TeamLookupError::AccessGroupNotFound {
+            access_group_id: "group-1".to_owned(),
+        }),
+    };
+    let StageFailure::ModelGrants(missing_group) = stage_failure(
+        betterlite_auth::auth_model_grants::error::AgentModelGrantsError::Ceiling(Box::new(
+            missing_group,
+        )),
+    ) else {
+        panic!("missing access groups preserve their HTTP status");
+    };
+    assert_eq!(missing_group.code, "404");
+    assert_eq!(missing_group.error_type, "auth_error");
+    assert_eq!(missing_group.param.as_deref(), Some("None"));
+
+    let unavailable = AccessGroupsError::Read {
+        access_group_id: "group-1".to_owned(),
+        source: Box::new(TeamLookupError::AccessPolicyUnavailable {
+            access_group_id: "group-1".to_owned(),
+            cause: Box::new(TeamFailure::Throttled),
+        }),
+    };
+    let StageFailure::ModelGrants(unavailable) = stage_failure(
+        betterlite_auth::auth_model_grants::error::AgentModelGrantsError::Ceiling(Box::new(
+            unavailable,
+        )),
+    ) else {
+        panic!("unavailable access policies preserve their HTTP status");
+    };
+    assert_eq!(unavailable.code, "503");
+
+    let caller = AgentCallerError::Team {
+        team_id: "missing-team".to_owned(),
+        source: Box::new(TeamLookupError::TeamNotFound {
+            team_id: "missing-team".to_owned(),
+        }),
+    };
+    let StageFailure::ModelGrants(caller) = stage_failure(
+        betterlite_auth::auth_model_grants::error::AgentModelGrantsError::Caller(Box::new(caller)),
+    ) else {
+        panic!("missing caller teams preserve their HTTP status");
+    };
+    assert_eq!(caller.code, "404");
 }
 
 #[test]

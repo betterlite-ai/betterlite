@@ -4,9 +4,11 @@ use std::sync::Arc;
 
 use axum::body::Body;
 use axum::http::Request;
+use betterlite_auth::agent_access_groups::error::AccessGroupsError;
+use betterlite_auth::agent_caller::error::AgentCallerError;
 use betterlite_auth::auth_errors::conversion::{AuthFailure, as_proxy_exception};
 use betterlite_auth::auth_model_grants::access_source::AgentAccessSource;
-use betterlite_auth::auth_model_grants::caller::check_agent_caller;
+use betterlite_auth::auth_model_grants::caller::check_agent_caller_with_teams;
 use betterlite_auth::auth_model_grants::ceiling::check_agent_ceiling;
 use betterlite_auth::auth_model_grants::error::AgentModelGrantsError;
 use betterlite_auth::auth_model_patterns::decision::ModelAccessContext;
@@ -16,6 +18,8 @@ use betterlite_auth::auth_model_patterns::pattern::{
 use betterlite_auth::auth_model_patterns::view::ModelAccessView;
 use betterlite_auth::auth_org_lookup::error::proxy_exception as org_lookup_exception;
 use betterlite_auth::auth_request_models::RequestedModels;
+use betterlite_auth::auth_team_lookup::error::TeamLookupError;
+use betterlite_auth::auth_team_lookup::lookup::TeamLookup;
 use betterlite_auth::entity_model_access::error::EntityModelAccessError;
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 use betterlite_error::proxy_exception::ProxyException;
@@ -37,6 +41,7 @@ pub struct AgentModelGrantsRule {
     pub view: Option<Arc<dyn ModelAccessView>>,
     pub provider: Option<Arc<dyn ProviderInference>>,
     pub global_model_aliases: BTreeMap<String, String>,
+    pub teams: Option<Arc<TeamLookup>>,
     pub member_checks: Arc<TeamBudgetRule>,
 }
 
@@ -121,7 +126,15 @@ pub(crate) async fn prefetch(
     let source = stage.source.as_deref();
     check_agent_ceiling(&rule.model, token, source, &context).await?;
     let admission = rule.member_checks.admission(&context);
-    check_agent_caller(&rule.model, token, source, &admission, &context).await
+    check_agent_caller_with_teams(
+        &rule.model,
+        token,
+        source,
+        rule.teams.as_deref(),
+        &admission,
+        &context,
+    )
+    .await
 }
 
 // the agent and caller denials keep B747's response fields; a lookup failure is an authentication error
@@ -152,10 +165,10 @@ fn stage_failure(error: AgentModelGrantsError) -> StageFailure {
             }
         },
         AgentModelGrantsError::Ceiling(groups) => {
-            StageFailure::ModelGrants(Box::new(lookup_exception(&groups.to_string())))
+            StageFailure::ModelGrants(Box::new(group_lookup_exception(&groups)))
         }
         AgentModelGrantsError::Caller(caller) => {
-            StageFailure::ModelGrants(Box::new(lookup_exception(&caller.to_string())))
+            StageFailure::ModelGrants(Box::new(caller_lookup_exception(&caller)))
         }
         AgentModelGrantsError::Unavailable => StageFailure::ModelGrants(Box::new(
             lookup_exception(&AgentModelGrantsError::Unavailable.to_string()),
@@ -169,4 +182,33 @@ fn lookup_exception(message: &str) -> ProxyException {
         param: None,
     };
     as_proxy_exception(&failure).exception().clone()
+}
+
+fn group_lookup_exception(error: &AccessGroupsError) -> ProxyException {
+    match error {
+        AccessGroupsError::Read { source, .. } => team_lookup_exception(source),
+    }
+}
+
+fn caller_lookup_exception(error: &AgentCallerError) -> ProxyException {
+    match error {
+        AgentCallerError::Team { source, .. } => team_lookup_exception(source),
+        AgentCallerError::User { .. } | AgentCallerError::Record(_) => {
+            lookup_exception(&error.to_string())
+        }
+    }
+}
+
+fn team_lookup_exception(error: &TeamLookupError) -> ProxyException {
+    if let Some((status_code, _detail)) = error.http() {
+        let failure = AuthFailure::Http {
+            detail: error.to_string(),
+            param: None,
+            status_code,
+            invalid_virtual_key: false,
+        };
+        as_proxy_exception(&failure).exception().clone()
+    } else {
+        lookup_exception(&error.to_string())
+    }
 }
