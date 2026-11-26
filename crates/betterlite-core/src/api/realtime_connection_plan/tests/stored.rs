@@ -107,6 +107,55 @@ async fn realtime_probe_named_arguments_override_stored_values() {
 }
 
 #[tokio::test]
+async fn realtime_probe_empty_named_arguments_take_stored_values() {
+    let mut harness = Harness::new();
+    harness.stored = credentials(&[(
+        "c",
+        &[
+            ("api_key", text("stored-key")),
+            ("api_base", text("https://stored.test")),
+            ("api_version", text("stored-version")),
+        ],
+    )]);
+    let mut named = probe_request(
+        "azure",
+        MODEL,
+        params(&[("litellm_credential_name", text("c"))]),
+    );
+    named.api_base = Some(String::new());
+    named.realtime_protocol = Some(String::from("beta"));
+    harness.run(&named, &settings()).await.unwrap();
+    let connection = harness.dialer.last();
+    assert_eq!(
+        connection.url,
+        "wss://stored.test/openai/realtime?api-version=stored-version&deployment=realtime-a",
+        "an empty named base is absent, so the stored one applies"
+    );
+    assert_eq!(
+        connection.headers,
+        Headers::from([(String::from("api-key"), String::from("stored-key"))])
+    );
+}
+
+#[tokio::test]
+async fn realtime_probe_wrong_typed_parameters_name_the_field() {
+    let harness = Harness::new();
+    let request = probe_request(
+        "openai",
+        MODEL,
+        params(&[("api_base", Json::Number(serde_json::Number::from(1_i64)))]),
+    );
+    let error = harness
+        .run(&request, &settings())
+        .await
+        .expect_err("a non-string api_base is a type error");
+    assert_eq!(
+        error.to_string(),
+        "the realtime health check parameter api_base must be a string"
+    );
+}
+
+#[tokio::test]
 async fn realtime_probe_explicit_none_erases_a_stored_value() {
     let mut harness = Harness {
         azure: ScriptedAzure::with_token("ad-token"),
