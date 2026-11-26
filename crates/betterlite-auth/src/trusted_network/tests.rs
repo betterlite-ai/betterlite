@@ -456,7 +456,11 @@ fn logs_only_the_ignored_header_and_unconfigured_ranges() {
     let logs = Logs::default();
     let subscriber = Registry::default().with(logs.clone());
     let guard = subscriber::set_default(subscriber);
-    // a header while the toggle is off: the direct peer answers and the drop is logged
+    // a header while the toggle is off: the direct peer answers and the drop is logged on every request
+    assert_eq!(
+        get_mcp_client_ip(&forwarded(Some("10.0.0.5"), "203.0.113.7"), &defaults()),
+        Some("10.0.0.5".to_owned())
+    );
     assert_eq!(
         get_mcp_client_ip(&forwarded(Some("10.0.0.5"), "203.0.113.7"), &defaults()),
         Some("10.0.0.5".to_owned())
@@ -467,7 +471,11 @@ fn logs_only_the_ignored_header_and_unconfigured_ranges() {
         get_mcp_client_ip(&forwarded(Some("10.0.0.5"), "203.0.113.7"), &trusted),
         Some("203.0.113.7".to_owned())
     );
-    // an empty range list is as untrusted as a missing one, and says so
+    // an empty range list is as untrusted as a missing one, and says so on every call
+    assert!(!is_request_from_trusted_proxy(
+        &request(Some("10.0.0.5")),
+        &mcp_settings(&[])
+    ));
     assert!(!is_request_from_trusted_proxy(
         &request(Some("10.0.0.5")),
         &mcp_settings(&[])
@@ -485,8 +493,10 @@ fn logs_only_the_ignored_header_and_unconfigured_ranges() {
     assert_eq!(
         events,
         vec![
-            "DEBUG received an X-Forwarded-For header with use_x_forwarded_for disabled; the direct peer is used for MCP access control".to_owned(),
-            "DEBUG mcp_trusted_proxy_ranges is not configured, so X-Forwarded-* headers are not trusted".to_owned(),
+            "ERROR received an X-Forwarded-For header with use_x_forwarded_for disabled; the direct peer is used for MCP access control".to_owned(),
+            "ERROR received an X-Forwarded-For header with use_x_forwarded_for disabled; the direct peer is used for MCP access control".to_owned(),
+            "WARN mcp_trusted_proxy_ranges is not configured, so X-Forwarded-* headers are not trusted".to_owned(),
+            "WARN mcp_trusted_proxy_ranges is not configured, so X-Forwarded-* headers are not trusted".to_owned(),
         ]
     );
 }

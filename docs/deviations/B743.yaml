@@ -10,6 +10,22 @@ deviations:
       the configured ranges to pure functions with no byte limit of their own, and a request the
       gateway itself refuses stays a 401 from the auth path rather than reaching a route.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/network.py#L26-L38
+  - what: >-
+      get_mcp_client_ip logs its X-Forwarded-For-present-but-use_x_forwarded_for-disabled
+      diagnostic as an error on every affected request; LiteLLM logs it once per
+      misconfiguration window through a module-level flag.
+    why: >-
+      The same diagnostic at the same level, emitted before the fallback to the direct
+      peer; only the frequency differs, because betterlite keeps no module-level logging
+      state.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/ip_address_utils.py#L318-L338
+  - what: >-
+      is_request_from_trusted_proxy warns that mcp_trusted_proxy_ranges is not configured
+      on every call; LiteLLM logs that warning once per process.
+    why: >-
+      The same warning on the same branch; the per-call emission keeps the typed policy
+      functions free of shared mutable state.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/ip_address_utils.py#L176-L190
 kept_bugs:
   - what: >-
       is_trusted_proxy and is_internal_ip compare the address exactly as parsed and never unmap an

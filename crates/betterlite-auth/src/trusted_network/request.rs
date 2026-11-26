@@ -1,4 +1,4 @@
-use tracing::{debug, warn};
+use tracing::{error, warn};
 
 use crate::auth_identity::records::NetworkContext;
 use crate::trusted_network::cidr::{ip_in_networks, is_valid_ip, parse_normalized};
@@ -74,7 +74,7 @@ pub fn is_request_from_trusted_proxy(
             is_trusted_proxy(request.peer, &parse_trusted_proxy_networks(Some(ranges)))
         }
         Some(_) | None => {
-            debug!(
+            warn!(
                 "mcp_trusted_proxy_ranges is not configured, so X-Forwarded-* headers are not trusted"
             );
             false
@@ -111,7 +111,7 @@ pub fn get_mcp_client_ip(
 ) -> Option<String> {
     let use_xff = settings.use_x_forwarded_for;
     if !use_xff && request.x_forwarded_for.is_some() {
-        debug!(
+        error!(
             "received an X-Forwarded-For header with use_x_forwarded_for disabled; the direct peer is used for MCP access control"
         );
     }
