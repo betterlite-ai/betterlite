@@ -29,8 +29,8 @@ mod support;
 use support::{
     FakeCache, FakeMappings, FakeMembers, FakePermissions, FakeSource, FakeTeams, FakeUsers,
     FakeWriter, KEY_ROW, UserAnswer, auth_from_fields, auth_text, fake_reconnect, fault,
-    key_request, lookups, mapping, plain_session_auth, reader, reconnect_calls, refresh, team_row,
-    team_session_auth, transport, user_row, view_from_text,
+    key_request, lookups, mapping, permission_table, plain_session_auth, reader, reconnect_calls,
+    refresh, team_row, team_session_auth, transport, user_row, view_from_text,
 };
 
 #[tokio::test]
