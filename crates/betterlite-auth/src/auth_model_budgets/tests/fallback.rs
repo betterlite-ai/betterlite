@@ -1,4 +1,6 @@
-use crate::auth_model_budgets::fallback::{KeyBudgetError, check_key_budget_fallback};
+use crate::auth_model_budgets::fallback::{
+    KeyBudgetCall, KeyBudgetError, check_key_budget_fallback,
+};
 use crate::auth_model_budgets::tests::fixtures::{
     Access, RecordingRewrite, ScriptedKeyLimiter, exceeded, names, other_error, text, token,
 };
@@ -13,10 +15,12 @@ async fn only_budget_errors_attempt_fallback() {
     let limiter = ScriptedKeyLimiter::default();
     let mut request = RecordingRewrite::default();
     check_key_budget_fallback(
-        &limiter,
-        &key,
-        "gpt-4",
-        Some("gpt-4"),
+        KeyBudgetCall {
+            limiter: &limiter,
+            token: &key,
+            model_name: "gpt-4",
+            request_model: Some("gpt-4"),
+        },
         &mut request,
         &context,
         None,
@@ -29,10 +33,12 @@ async fn only_budget_errors_attempt_fallback() {
     // a limiter failure that is not a budget error escapes untouched
     *limiter.failure.lock().unwrap() = Some(other_error());
     let error = check_key_budget_fallback(
-        &limiter,
-        &key,
-        "gpt-4",
-        Some("gpt-4"),
+        KeyBudgetCall {
+            limiter: &limiter,
+            token: &key,
+            model_name: "gpt-4",
+            request_model: Some("gpt-4"),
+        },
         &mut request,
         &context,
         None,
@@ -55,10 +61,12 @@ async fn nested_model_cannot_rewrite() {
     let key = token(&[("models", names(&["gpt-4", "gpt-3.5"]))]);
     let mut request = RecordingRewrite::default();
     let error = check_key_budget_fallback(
-        &limiter,
-        &key,
-        "gpt-4",
-        Some("nested-model"),
+        KeyBudgetCall {
+            limiter: &limiter,
+            token: &key,
+            model_name: "gpt-4",
+            request_model: Some("nested-model"),
+        },
         &mut request,
         &context,
         None,
@@ -72,10 +80,19 @@ async fn nested_model_cannot_rewrite() {
     assert!(limiter.fallback_calls.lock().unwrap().is_empty());
     assert!(request.calls().is_empty());
     // without a request model the top-level name cannot be proven either
-    let error =
-        check_key_budget_fallback(&limiter, &key, "gpt-4", None, &mut request, &context, None)
-            .await
-            .unwrap_err();
+    let error = check_key_budget_fallback(
+        KeyBudgetCall {
+            limiter: &limiter,
+            token: &key,
+            model_name: "gpt-4",
+            request_model: None,
+        },
+        &mut request,
+        &context,
+        None,
+    )
+    .await
+    .unwrap_err();
     assert!(matches!(error, KeyBudgetError::Budget(_)));
     assert!(limiter.fallback_calls.lock().unwrap().is_empty());
     assert!(request.calls().is_empty());
@@ -89,10 +106,12 @@ async fn absent_fallback_preserves_error() {
     let key = token(&[("models", names(&["gpt-4"]))]);
     let mut request = RecordingRewrite::default();
     let error = check_key_budget_fallback(
-        &limiter,
-        &key,
-        "gpt-4",
-        Some("gpt-4"),
+        KeyBudgetCall {
+            limiter: &limiter,
+            token: &key,
+            model_name: "gpt-4",
+            request_model: Some("gpt-4"),
+        },
         &mut request,
         &context,
         None,
@@ -124,10 +143,12 @@ async fn fallback_key_then_team_auth() {
     ]);
     let mut request = RecordingRewrite::default();
     check_key_budget_fallback(
-        &limiter,
-        &key,
-        "gpt-4",
-        Some("gpt-4"),
+        KeyBudgetCall {
+            limiter: &limiter,
+            token: &key,
+            model_name: "gpt-4",
+            request_model: Some("gpt-4"),
+        },
         &mut request,
         &context,
         None,
@@ -152,10 +173,12 @@ async fn fallback_key_then_team_auth() {
     ]);
     let mut request = RecordingRewrite::default();
     let error = check_key_budget_fallback(
-        &limiter,
-        &key,
-        "gpt-4",
-        Some("gpt-4"),
+        KeyBudgetCall {
+            limiter: &limiter,
+            token: &key,
+            model_name: "gpt-4",
+            request_model: Some("gpt-4"),
+        },
         &mut request,
         &context,
         None,
@@ -171,10 +194,12 @@ async fn fallback_key_then_team_auth() {
         ("team_models", names(&["gpt-4"])),
     ]);
     let error = check_key_budget_fallback(
-        &limiter,
-        &key,
-        "gpt-4",
-        Some("gpt-4"),
+        KeyBudgetCall {
+            limiter: &limiter,
+            token: &key,
+            model_name: "gpt-4",
+            request_model: Some("gpt-4"),
+        },
         &mut request,
         &context,
         None,
@@ -193,10 +218,12 @@ async fn fallback_proxy_exception_preserves_budget_error() {
     let key = token(&[("models", names(&["gpt-4"]))]);
     let mut request = RecordingRewrite::default();
     let error = check_key_budget_fallback(
-        &limiter,
-        &key,
-        "gpt-4",
-        Some("gpt-4"),
+        KeyBudgetCall {
+            limiter: &limiter,
+            token: &key,
+            model_name: "gpt-4",
+            request_model: Some("gpt-4"),
+        },
         &mut request,
         &context,
         None,
@@ -227,10 +254,12 @@ async fn fallback_other_exception_propagates() {
     let key = token(&[("models", names(&["gpt-4", "gpt-3.5"]))]);
     let mut request = RecordingRewrite::default();
     let error = check_key_budget_fallback(
-        &limiter,
-        &key,
-        "gpt-4",
-        Some("gpt-4"),
+        KeyBudgetCall {
+            limiter: &limiter,
+            token: &key,
+            model_name: "gpt-4",
+            request_model: Some("gpt-4"),
+        },
         &mut request,
         &context,
         None,
@@ -252,10 +281,12 @@ async fn fallback_rewrites_all_body_views_then_existing_path() {
     let key = token(&[("models", names(&["gpt-4", "gpt-3.5"]))]);
     let mut request = RecordingRewrite::default();
     check_key_budget_fallback(
-        &limiter,
-        &key,
-        "gpt-4",
-        Some("gpt-4"),
+        KeyBudgetCall {
+            limiter: &limiter,
+            token: &key,
+            model_name: "gpt-4",
+            request_model: Some("gpt-4"),
+        },
         &mut request,
         &context,
         None,
@@ -295,10 +326,12 @@ async fn fallback_rewrites_all_body_views_then_existing_path() {
     // a route with no model path parameter keeps its path while the body views change
     let mut request = RecordingRewrite::default().without_path();
     check_key_budget_fallback(
-        &limiter,
-        &key,
-        "gpt-4",
-        Some("gpt-4"),
+        KeyBudgetCall {
+            limiter: &limiter,
+            token: &key,
+            model_name: "gpt-4",
+            request_model: Some("gpt-4"),
+        },
         &mut request,
         &context,
         None,
@@ -323,10 +356,12 @@ async fn serialization_failure_keeps_prior_mutations() {
     let key = token(&[("models", names(&["gpt-4", "gpt-3.5"]))]);
     let mut request = RecordingRewrite::default().failing_serialization();
     let error = check_key_budget_fallback(
-        &limiter,
-        &key,
-        "gpt-4",
-        Some("gpt-4"),
+        KeyBudgetCall {
+            limiter: &limiter,
+            token: &key,
+            model_name: "gpt-4",
+            request_model: Some("gpt-4"),
+        },
         &mut request,
         &context,
         None,

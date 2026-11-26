@@ -26,15 +26,25 @@ pub enum KeyBudgetError {
     Rewrite(RewriteFailure),
 }
 
+pub struct KeyBudgetCall<'a> {
+    pub limiter: &'a dyn KeyModelBudgetLimiter,
+    pub token: &'a UserAPIKeyAuth,
+    pub model_name: &'a str,
+    pub request_model: Option<&'a str>,
+}
+
 pub async fn check_key_budget_fallback(
-    limiter: &dyn KeyModelBudgetLimiter,
-    token: &UserAPIKeyAuth,
-    model_name: &str,
-    request_model: Option<&str>,
+    call: KeyBudgetCall<'_>,
     request: &mut dyn ModelRewrite,
     context: &ModelAccessContext<'_>,
     lookup: Option<&TeamLookup>,
 ) -> Result<(), KeyBudgetError> {
+    let KeyBudgetCall {
+        limiter,
+        token,
+        model_name,
+        request_model,
+    } = call;
     let exceeded = match limiter.is_key_within_model_budget(token, model_name).await {
         Ok(_within) => return Ok(()),
         Err(ErrorClass::BudgetExceeded(details)) => details,

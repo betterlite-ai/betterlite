@@ -4,7 +4,9 @@ use std::sync::Mutex;
 use betterlite_auth::auth_model_budgets::checks::{
     check_team_model_budget, check_user_model_budget,
 };
-use betterlite_auth::auth_model_budgets::fallback::{KeyBudgetError, check_key_budget_fallback};
+use betterlite_auth::auth_model_budgets::fallback::{
+    KeyBudgetCall, KeyBudgetError, check_key_budget_fallback,
+};
 use betterlite_auth::auth_model_patterns::decision::ModelAccessContext;
 use betterlite_auth::auth_model_patterns::pattern::UnresolvedProviderInference;
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
@@ -139,17 +141,13 @@ async fn fallback_error(
         provider: &provider,
         max_recurse_depth: call.max_recurse_depth.unwrap_or(DEFAULT_RECURSE_DEPTH),
     };
-    match check_key_budget_fallback(
+    let callee = KeyBudgetCall {
         limiter,
         token,
         model_name,
-        call.request_model.as_deref(),
-        request,
-        &context,
-        None,
-    )
-    .await
-    {
+        request_model: call.request_model.as_deref(),
+    };
+    match check_key_budget_fallback(callee, request, &context, None).await {
         Ok(()) => Ok(Value::Null),
         Err(KeyBudgetError::Budget(details)) => Ok(denial_json(&details)),
         Err(_other) => Err(Failure::Limiter),
