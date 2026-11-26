@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use betterlite_auth::auth_key_lookup::jwt::jwt_key_mapping_cache_key;
 use betterlite_auth::auth_key_lookup::key_identity;
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_db::budget_permission_rows::JsonData;
@@ -150,7 +151,13 @@ impl Helper for Op {
 
 async fn answer(input: &Input) -> HelperResult {
     match input {
-        Input::CacheKey(fields) => mapping_answer::cache_key(fields),
+        Input::CacheKey(fields) => Ok(json!({
+            "key": jwt_key_mapping_cache_key(
+                &fields.claim_name,
+                &fields.claim_value,
+                fields.issuer.as_deref(),
+            ),
+        })),
         Input::Mapping(fields) => mapping_answer::mapping(fields).await,
         Input::KeyObject(fields) => key_object_answer::key_object(fields).await,
         Input::Session(fields) => session_answer::session(fields).await,

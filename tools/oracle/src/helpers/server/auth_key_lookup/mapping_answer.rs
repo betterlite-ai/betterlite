@@ -1,3 +1,4 @@
+use std::slice;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
@@ -7,24 +8,13 @@ use betterlite_auth::auth_key_lookup::jwt::{
     // ast-grep-ignore: no-long-names
     get_jwt_key_mapping_cache_keys_for_tokens as batch_cache_keys,
     get_jwt_key_mapping_object,
-    jwt_key_mapping_cache_key,
 };
 use betterlite_auth::auth_read::jwt_rows::{JwtMappingFilter, JwtMappingRow};
 use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::HelperResult;
 use serde_json::{Value, json};
 
-use super::{CacheKeyInput, MappingInput, MappingLookup, MappingRow};
-
-pub(super) fn cache_key(input: &CacheKeyInput) -> HelperResult {
-    Ok(json!({
-        "key": jwt_key_mapping_cache_key(
-            &input.claim_name,
-            &input.claim_value,
-            input.issuer.as_deref(),
-        ),
-    }))
-}
+use super::{MappingInput, MappingLookup, MappingRow};
 
 pub(super) async fn mapping(input: &MappingInput) -> HelperResult {
     let found = match &input.lookup {
@@ -39,7 +29,7 @@ pub(super) async fn mapping(input: &MappingInput) -> HelperResult {
     });
     match &input.lookup {
         MappingLookup::Token { hashed_token } => {
-            let keys = batch_cache_keys(&[hashed_token.clone()], source.as_ref())
+            let keys = batch_cache_keys(slice::from_ref(hashed_token), source.as_ref())
                 .await
                 .or_value_error()?;
             Ok(json!({"keys": keys, "where": source.single_where()}))
@@ -76,10 +66,9 @@ impl ScriptedMappings {
         let Some(tokens) = self.tokens() else {
             return Value::Null;
         };
-        match tokens.first() {
-            Some(token) => json!({"token": token}),
-            None => Value::Null,
-        }
+        tokens
+            .first()
+            .map_or(Value::Null, |token| json!({"token": token}))
     }
 
     fn batch_where(&self) -> Value {

@@ -34,7 +34,7 @@ pub(super) async fn key_object(input: &KeyObjectInput) -> HelperResult {
     }))
 }
 
-fn outcome_label(error: &KeyLookupError) -> &'static str {
+const fn outcome_label(error: &KeyLookupError) -> &'static str {
     match error {
         KeyLookupError::MissingKey { .. } => "missing_key",
         KeyLookupError::NotInCache { .. } => "not_in_cache",

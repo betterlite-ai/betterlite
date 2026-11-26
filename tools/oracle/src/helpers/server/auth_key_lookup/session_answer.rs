@@ -24,7 +24,12 @@ use super::{SessionInput, UserOutcome};
 pub(super) async fn session(input: &SessionInput) -> HelperResult {
     let fixture = session_fixture(input)?;
     let auth = auth_from_fields(&input.auth)?;
-    match refresh_session_token_grants(&fixture.resolver(), &auth).await {
+    let resolver = GrantResolver {
+        users: &fixture.users,
+        teams: &fixture.teams,
+        memberships: &fixture.members,
+    };
+    match refresh_session_token_grants(&resolver, &auth).await {
         Ok(refreshed) => Ok(json!({
             "outcome": "ok",
             "denial": Value::Null,
@@ -38,7 +43,7 @@ pub(super) async fn session(input: &SessionInput) -> HelperResult {
     }
 }
 
-fn denial_kind(denial: &PublicDenial) -> &'static str {
+const fn denial_kind(denial: &PublicDenial) -> &'static str {
     match denial {
         PublicDenial::UserGone(_) => "user_gone",
         PublicDenial::TeamGone(_) => "team_gone",
@@ -77,12 +82,11 @@ impl TeamLoader for ScriptedTeams {
         &self,
         request: TeamRequest<'_>,
     ) -> Result<LiteLLMTeamTableCachedObj, TeamLookupError> {
-        match self.row.as_ref() {
-            Some(team) => Ok(team.clone()),
-            None => Err(TeamLookupError::TeamNotFound {
+        self.row
+            .clone()
+            .ok_or_else(|| TeamLookupError::TeamNotFound {
                 team_id: request.team_id.to_owned(),
-            }),
-        }
+            })
     }
 }
 
@@ -105,16 +109,6 @@ struct SessionFixture {
     users: ScriptedUsers,
     teams: ScriptedTeams,
     members: ScriptedMembers,
-}
-
-impl SessionFixture {
-    fn resolver(&self) -> GrantResolver<'_, ScriptedUsers, ScriptedTeams, ScriptedMembers> {
-        GrantResolver {
-            users: &self.users,
-            teams: &self.teams,
-            memberships: &self.members,
-        }
-    }
 }
 
 fn session_fixture(input: &SessionInput) -> Result<SessionFixture, Box<HelperError>> {

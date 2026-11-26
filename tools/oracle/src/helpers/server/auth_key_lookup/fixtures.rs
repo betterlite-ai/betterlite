@@ -129,7 +129,8 @@ impl KeyCacheWriter for ScriptedWriter {
         _hashed_token: &str,
         _auth: &mut UserAPIKeyAuth,
     ) -> Result<(), InvalidationError> {
-        *self.writes.lock().unwrap_or_else(PoisonError::into_inner) += 1;
+        let mut writes = self.writes.lock().unwrap_or_else(PoisonError::into_inner);
+        *writes = writes.saturating_add(1);
         Ok(())
     }
 }
@@ -145,9 +146,10 @@ pub(super) struct ReadFixture {
 
 impl ReadFixture {
     pub(super) fn lookups(&self) -> KeyLookups {
-        let cache: Arc<dyn KeyCache> = self.cache.clone();
-        let writer: Arc<dyn KeyCacheWriter> = self.writer.clone();
-        let permissions: Arc<dyn KeyPermissionLookup> = self.permissions.clone();
+        let cache: Arc<dyn KeyCache> = Arc::<ScriptedCache>::clone(&self.cache);
+        let writer: Arc<dyn KeyCacheWriter> = Arc::<ScriptedWriter>::clone(&self.writer);
+        let permissions: Arc<dyn KeyPermissionLookup> =
+            Arc::<ScriptedPermissions>::clone(&self.permissions);
         KeyLookups {
             reader: self.reader.as_ref().map(Arc::clone),
             cache,
