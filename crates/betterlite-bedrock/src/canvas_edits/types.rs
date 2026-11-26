@@ -192,14 +192,7 @@ where
     let Some(value) = params.shift_remove(name) else {
         return Ok(None);
     };
-    typed(&value, name)
-}
-
-fn typed<T>(value: &Json, name: &str) -> Result<Option<T>, CanvasEditError>
-where
-    T: DeserializeOwned,
-{
-    serde_json::to_string(value)
+    serde_json::to_string(&value)
         .ok()
         .and_then(|text| serde_json::from_str::<Option<T>>(&text).ok())
         .ok_or_else(|| CanvasEditError::Field {
@@ -220,18 +213,14 @@ fn mask_input(params: &mut ImageParams) -> Result<Option<CanvasImageInput>, Canv
     }
 }
 
-// A nested config is read only when it is an object; any other value is ignored, as LiteLLM's isinstance check does.
+// A nested config is parsed only when it is an object; any other value stays an unknown option.
 fn generation_input(
     params: &mut ImageParams,
 ) -> Result<Option<ImageGenerationConfig>, CanvasEditError> {
-    let Some(value) = params.shift_remove("imageGenerationConfig") else {
+    if !matches!(params.get("imageGenerationConfig"), Some(Json::Object(_))) {
         return Ok(None);
-    };
-    if matches!(value, Json::Object(_)) {
-        typed(&value, "imageGenerationConfig")
-    } else {
-        Ok(None)
     }
+    field(params, "imageGenerationConfig")
 }
 
 impl ImageGenerationConfig {
