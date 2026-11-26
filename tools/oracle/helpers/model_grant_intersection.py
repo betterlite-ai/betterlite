@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Final, Literal, NotRequired, TypedDict
 
 import httpx
@@ -24,6 +24,7 @@ from typing_extensions import override
 
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 LISTS: Final[TypeAdapter[list[str]]] = TypeAdapter(list[str])
+ALLOWLISTS: Final[TypeAdapter[list[list[str]]]] = TypeAdapter(list[list[str]])
 TEXT: Final[TypeAdapter[str]] = TypeAdapter(str)
 KEYED: Final[TypeAdapter[dict[str, str]]] = TypeAdapter(dict[str, str])
 AUTH: Final[TypeAdapter[UserAPIKeyAuth]] = TypeAdapter(UserAPIKeyAuth)
@@ -226,8 +227,10 @@ def auth_of(call: Call) -> UserAPIKeyAuth:
 async def walked(call: Call, auth: UserAPIKeyAuth, harness: Harness) -> JsonValue:
     client = client_of(call, harness.events) if call["database"] else None
     if call["function"] == "enforced":
-        allowlists = await enforced_model_allowlists(auth, client, harness.cache, harness.proxy)
-        return JSON.validate_python([list(models) for models in allowlists])
+        allowlists: tuple[Sequence[str], ...] = await enforced_model_allowlists(
+            auth, client, harness.cache, harness.proxy
+        )
+        return JSON.validate_python(ALLOWLISTS.validate_python(allowlists))
     loaded = bool(call.get("membership_loaded"))
     preloader = client_of(call, [], faults=False)
     team: LiteLLM_TeamTableCachedObj | None = None
@@ -248,12 +251,12 @@ async def walked(call: Call, auth: UserAPIKeyAuth, harness: Harness) -> JsonValu
         membership = await get_team_membership(user_id, member_team, preloader, harness.cache)
     router = router_of(call, harness)
     if call["function"] == "collected":
-        matched = await collect_matched_model_access_groups(
+        matched: tuple[str, ...] = await collect_matched_model_access_groups(
             call.get("models"), auth, team, project, router, client,
             harness.cache, harness.proxy, membership, loaded,
         )
-        return JSON.validate_python(list(matched))
-    returned = await stamp_matched_model_access_groups(
+        return JSON.validate_python(LISTS.validate_python(matched))
+    returned: tuple[str, ...] = await stamp_matched_model_access_groups(
         call.get("models"), auth, team, project, router, client,
         harness.cache, harness.proxy, membership, loaded,
     )
