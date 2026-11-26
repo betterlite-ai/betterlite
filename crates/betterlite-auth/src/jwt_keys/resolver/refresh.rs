@@ -68,7 +68,14 @@ impl JwksResolver {
         let refreshed = match self.refresh_now(refresh).await {
             Ok(value) => value,
             Err(KeyError::Unreachable { message }) => {
-                return self.record_outage(&unreachable_key, message).await;
+                self.cache
+                    .set(
+                        &unreachable_key,
+                        &Json::Text(message.clone()),
+                        UNREACHABLE_BACKOFF_SECONDS,
+                    )
+                    .await?;
+                return Err(KeyError::Unreachable { message });
             }
             Err(other) => return Err(other),
         };
@@ -89,18 +96,6 @@ impl JwksResolver {
                 "a previous JWKS fetch failed".to_owned()
             }
         }))
-    }
-
-    // the marker write can fail too, and that failure is the answer then, as LiteLLM's set_cache raises
-    async fn record_outage(&self, key: &str, message: String) -> Result<Json, KeyError> {
-        self.cache
-            .set(
-                key,
-                &Json::Text(message.clone()),
-                UNREACHABLE_BACKOFF_SECONDS,
-            )
-            .await?;
-        Err(KeyError::Unreachable { message })
     }
 
     // a success writes fresh, stale, then time, so a failure leaves the entries written before it
