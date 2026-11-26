@@ -8,11 +8,14 @@ use betterlite_error::proxy_exception::model_access_denied::ModelAccessDeniedPro
 use chrono::Utc;
 use rstest::rstest;
 
+use crate::auth_model_patterns::access_groups::{AccessGroupError, AccessGroupLookup};
 use crate::auth_request_models::RequestedModels;
 use crate::resolved_key::auth::UserAPIKeyAuth;
 
 use super::error::EntityModelAccessError;
-use super::groups::{ResourceKind, authorized_resources, key_access_group_grants_model};
+use super::groups::{
+    GroupResources, ResourceKind, authorized_resources, key_access_group_grants_model,
+};
 use super::key::can_key_call_model;
 use super::org::can_org_access_model;
 use super::project::can_project_access_model;
@@ -698,6 +701,16 @@ async fn group_error_silent_skip() {
     )
     .await;
     assert_eq!(resources, vec!["claude".to_owned()]);
+}
+
+#[tokio::test]
+async fn unreadable_group_is_unavailable() {
+    let script = Arc::new(Script::new());
+    let lookup = team_lookup(&script);
+    // the load skips a group it cannot read, and asking for that group again reports it unavailable
+    let groups = GroupResources::load(Some(&lookup), &["ag-missing".to_owned()]).await;
+    let failure = groups.access_group("ag-missing").unwrap_err();
+    assert!(matches!(failure, AccessGroupError::Unavailable { .. }));
 }
 
 #[tokio::test]

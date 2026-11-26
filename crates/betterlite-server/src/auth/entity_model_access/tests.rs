@@ -92,6 +92,13 @@ fn stage(master_key: &SecretString, models: &str) -> EntityModelStageInput {
     }
 }
 
+#[test]
+fn rule_debug_names_its_fields() {
+    // missing_debug_implementations requires the impl, so a formatted rule has to name what it holds
+    let printed = format!("{:?}", rule(DENYING_ORG));
+    assert!(printed.contains("has_user: false"), "{printed}");
+}
+
 #[tokio::test]
 async fn stage_is_registered() {
     assert!(INSTALLED_STAGES.contains(&AuthBackend::EntityModelAccess));
