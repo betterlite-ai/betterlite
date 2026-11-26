@@ -149,12 +149,10 @@ impl StaticMetadata {
     }
 
     fn failing(mut self, model: &str) -> Self {
-        self.entries.insert(
-            String::from(model),
-            Err(ModelInfoFailure {
-                message: String::from("get_model_info raised"),
-            }),
-        );
+        let failure = ModelInfoFailure {
+            message: String::from("get_model_info raised"),
+        };
+        self.entries.insert(model.to_owned(), Err(failure));
         self
     }
 }

@@ -271,13 +271,14 @@ impl OwnerCall {
     }
 
     fn realtime(call: RealtimeCall) -> Self {
+        let api_key = call.api_key.map(|key| key.expose_secret().to_owned());
         Self::Realtime {
             model: call.model,
             custom_llm_provider: call.custom_llm_provider,
             api_base: call.api_base,
             api_version: call.api_version,
             parameters: call.model_params,
-            api_key: call.api_key.map(|key| key.expose_secret().to_owned()),
+            api_key,
             logging: call.logging.is_some(),
         }
     }

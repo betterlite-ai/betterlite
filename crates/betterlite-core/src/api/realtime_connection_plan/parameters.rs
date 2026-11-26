@@ -78,10 +78,8 @@ fn resolved_secret(
     merged: &JsonObject,
     field: &'static str,
 ) -> Result<Option<SecretString>, RealtimeProbeError> {
-    if let Some(value) = named.filter(|value| !value.expose_secret().is_empty()) {
-        return Ok(Some(value.clone()));
-    }
-    resolved_text(None, merged, field).map(|value| value.map(SecretString::from))
+    let named_text = named.map(|value| value.expose_secret().as_str());
+    resolved_text(named_text, merged, field).map(|value| value.map(SecretString::from))
 }
 
 fn resolved_text(
