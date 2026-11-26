@@ -90,6 +90,9 @@ def test_surface_names_on_both() -> None:
     for facade in FACADES:
         missing = [name for name in SURFACE_NAMES if name not in dir(facade)]
         assert missing == [], missing
+    # the one surface name no call test exercises is the class itself
+    assert betterlite.TextCompletionStreamWrapper is TextCompletionStreamWrapper
+    assert betterlite.main.TextCompletionStreamWrapper is TextCompletionStreamWrapper
 
 
 def test_names_are_coroutines() -> None:
