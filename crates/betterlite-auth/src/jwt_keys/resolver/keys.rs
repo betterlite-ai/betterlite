@@ -20,22 +20,21 @@ pub fn parse_keys(keys: &Json, kid: Option<&str>) -> Option<Json> {
     match keys {
         Json::List(items) => {
             if let [only] = items.as_slice() {
-                single_key_match(only, kid).then(|| only.clone())
-            } else {
-                let mut found = None;
-                for item in items {
-                    let Json::Object(fields) = item else {
-                        continue;
-                    };
-                    let matched = kid.is_some_and(|wanted| {
-                        matches!(fields.get("kid"), Some(Json::Text(value)) if value == wanted)
-                    });
-                    if matched {
-                        found = Some(item.clone());
-                    }
-                }
-                found
+                return single_key_match(only, kid).then(|| only.clone());
             }
+            let mut found = None;
+            for item in items {
+                let Json::Object(fields) = item else {
+                    continue;
+                };
+                let matched = kid.is_some_and(|wanted| {
+                    matches!(fields.get("kid"), Some(Json::Text(value)) if value == wanted)
+                });
+                if matched {
+                    found = Some(item.clone());
+                }
+            }
+            found
         }
         Json::Object(fields) => {
             (fields.len() == 1
