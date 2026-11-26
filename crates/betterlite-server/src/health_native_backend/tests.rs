@@ -373,18 +373,23 @@ async fn backend_ocr_forwards_the_call() {
 }
 
 #[tokio::test]
-async fn backend_video_generation_reports_the_mode_as_not_built() {
+async fn backend_video_generation_forwards_the_call() {
     let harness = Harness::new();
-    let error = harness
+    harness.owner.reply(&HEALTHY_HEADERS);
+    let parameters = mode_parameters(&[
+        ("model", text("sora-2")),
+        ("custom_llm_provider", text("openai")),
+        ("prompt", text("test video generation")),
+    ]);
+    let reply = harness
         .backend()
-        .video_generation(probe_call(mode_parameters(&[("model", text("veo"))])))
+        .video_generation(probe_call(parameters.clone()))
         .await
-        .expect_err("the mode is not built");
-    assert_eq!(
-        error.to_string(),
-        "the video_generation health check is not built"
-    );
-    assert_eq!(harness.owner.count(), 0);
+        .expect("the owner answers");
+    assert_eq!(reply.hidden_headers, headers_map(&HEALTHY_HEADERS));
+    let call = harness.owner.take();
+    assert_eq!(call.mode_name(), "video_generation");
+    assert_eq!(call.parameters(), &parameters);
 }
 
 #[tokio::test]
