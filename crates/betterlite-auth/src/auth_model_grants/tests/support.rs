@@ -239,6 +239,24 @@ pub(super) struct Script {
 }
 
 impl Script {
+    // every collaborator at its skipping default, so a case overrides only the steps it scripts
+    pub(super) fn plain() -> Self {
+        Self {
+            policy: None,
+            managed: Vec::new(),
+            managed_fails: false,
+            unmanaged: None,
+            unmanaged_fails: false,
+            caller: None,
+            caller_fails: false,
+            team: None,
+            team_fails: false,
+            user: None,
+            user_fails: false,
+            events: Mutex::new(Vec::new()),
+        }
+    }
+
     fn record(&self, event: String) {
         self.events
             .lock()

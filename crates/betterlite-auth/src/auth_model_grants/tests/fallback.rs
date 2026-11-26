@@ -37,8 +37,8 @@ async fn enabled_without_token_allows() {
     assert!(check.call("anything").await);
 }
 
-#[tokio::test]
-async fn metadata_before_litellm_metadata() {
+#[test]
+fn metadata_before_litellm_metadata() {
     let mut request = BTreeMap::new();
     request.insert(
         "metadata".to_owned(),
@@ -59,13 +59,16 @@ async fn metadata_before_litellm_metadata() {
         "litellm_metadata".to_owned(),
         json(r#"{"user_api_key_auth":{"token":"sk-second","team_id":"team-second"}}"#),
     );
-    let resolved =
+    let fallthrough_resolved =
         user_api_key_auth_from_request(&fallthrough).expect("the second metadata holds a key");
-    assert_eq!(resolved.view.token.team_id.as_deref(), Some("team-second"));
+    assert_eq!(
+        fallthrough_resolved.view.token.team_id.as_deref(),
+        Some("team-second")
+    );
 }
 
-#[tokio::test]
-async fn invalid_metadata_tries_second() {
+#[test]
+fn invalid_metadata_tries_second() {
     let mut request = BTreeMap::new();
     // a shape Pydantic rejects is skipped, not fatal
     request.insert(
