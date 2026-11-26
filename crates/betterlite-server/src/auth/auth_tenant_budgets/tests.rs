@@ -16,9 +16,11 @@ use betterlite_auth::auth_key_budgets::spend::{SpendReadError, SpendReader};
 use betterlite_auth::auth_tag_budgets::cache::{CachedValue, TagBudgetCache};
 use betterlite_auth::auth_tag_budgets::groups::ModelAccessGroupBudget;
 use betterlite_auth::auth_tag_budgets::rows::{BudgetRows, TagBudgetRowsFailure};
-use betterlite_auth::current_spend::SpendQuery;
+use betterlite_auth::current_spend::{BUDGET_UNVERIFIABLE_DETAIL, SpendQuery};
+use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::types::Config;
+use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::managed_resource_rows::tag::TagTable;
 use betterlite_models::decisions::Json;
 use rust_decimal::Decimal;
@@ -26,7 +28,7 @@ use secrecy::SecretString;
 use serde_json::json;
 use tower::ServiceExt as _;
 
-use super::{TenantBudgetRule, TenantBudgetStageInput, stage_input};
+use super::{TenantBudgetRule, TenantBudgetStageInput, prefetch, stage_input};
 use crate::auth::auth_identity::{
     AuthBackend, AuthContext, INSTALLED_STAGES, StageFailure, StageInput, dispatch,
 };
@@ -277,6 +279,122 @@ async fn failure_stops_downstream() {
         run_request(&config_with_master_key(), rule, r#"{"tags":["over"]}"#).await;
     assert_eq!(status, StatusCode::OK);
     assert!(reached);
+}
+
+// a key the tenant stage can hand on, with fields the stored copy keeps
+fn checked_key() -> UserAPIKeyAuth {
+    let JsonData::Object(map) =
+        serde_json::from_str(r#"{"token": "sk-checked", "user_id": "user-1"}"#)
+            .expect("the key fixture is JSON")
+    else {
+        panic!("the key fields must be an object");
+    };
+    UserAPIKeyAuth::construct(AuthInput::Dict(map)).expect("the key fixture constructs")
+}
+
+#[test]
+fn debug_names_the_slots_and_never_the_token() {
+    let key = checked_key();
+    let rule = TenantBudgetRule {
+        auth: Some(key.clone()),
+        applied: Mutex::new(Some(key)),
+        ..TenantBudgetRule::default()
+    };
+    let rendered = format!("{rule:?}");
+    assert!(rendered.contains("has_auth: true"), "{rendered}");
+    assert!(rendered.contains("has_applied: true"), "{rendered}");
+    assert!(!rendered.contains("sk-checked"), "{rendered}");
+}
+
+#[tokio::test]
+async fn prefetch_records_the_checked_key() {
+    let master_key = SecretString::from(MASTER_KEY.to_owned());
+    let rule = Arc::new(TenantBudgetRule {
+        auth: Some(checked_key()),
+        ..TenantBudgetRule::default()
+    });
+    let stage = TenantBudgetStageInput {
+        context: master_context(&master_key),
+        rule: Arc::clone(&rule),
+        tags: Vec::new(),
+        database: false,
+    };
+    prefetch(&stage).await.expect("an unconfigured rule admits");
+    let applied = rule.applied().expect("the stage records the checked key");
+    let fields = serde_json::to_value(&applied).expect("the checked key serializes");
+    assert_eq!(fields["user_id"], json!("user-1"));
+    assert_eq!(fields["token"], json!("sk-checked"));
+}
+
+// a cache whose tag probe fails, which is the only batch failure that answers 401
+struct BrokenTags;
+
+#[async_trait]
+impl TagBudgetCache for BrokenTags {
+    async fn read_tag(&self, _key: &str) -> Result<Option<TagTable>, PayloadError> {
+        Err(PayloadError::Json(serde_json::Error::io(
+            std::io::Error::other("the cache read failed"),
+        )))
+    }
+
+    async fn read_group(&self, _key: &str) -> Result<Option<ModelAccessGroupBudget>, PayloadError> {
+        Ok(None)
+    }
+
+    async fn read_registry(&self, _key: &str) -> Result<Option<Json>, AuthCacheError> {
+        Ok(None)
+    }
+
+    async fn write(
+        &self,
+        _key: &str,
+        _value: CachedValue<'_>,
+        _ttl: f64,
+    ) -> Result<(), AuthCacheError> {
+        Ok(())
+    }
+
+    fn management_ttl(&self) -> f64 {
+        60.0
+    }
+}
+
+#[tokio::test]
+async fn tag_lookup_failure_answers_unauthorized() {
+    let world = TagWorld::new(Vec::new());
+    let rows: Arc<dyn BudgetRows<TagTable>> = world;
+    let cache: Arc<dyn TagBudgetCache> = Arc::new(BrokenTags);
+    let rule = Arc::new(TenantBudgetRule {
+        cache: Some(cache),
+        tags: Some(rows),
+        ..TenantBudgetRule::default()
+    });
+    let (status, body, reached) =
+        run_request(&config_with_database(), rule, r#"{"tags":["broken"]}"#).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert!(body.contains("\"type\":\"auth_error\""), "{body}");
+    assert!(
+        body.contains("Authentication Error, the cached tag payload could not be read"),
+        "{body}"
+    );
+    assert!(!reached);
+}
+
+#[tokio::test]
+async fn missing_reader_is_unavailable() {
+    let world = TagWorld::new(vec![tag("t", 0, 10)]);
+    let cache: Arc<dyn TagBudgetCache> = Arc::clone(&world);
+    let rows: Arc<dyn BudgetRows<TagTable>> = world;
+    let rule = Arc::new(TenantBudgetRule {
+        cache: Some(cache),
+        tags: Some(rows),
+        ..TenantBudgetRule::default()
+    });
+    let (status, body, reached) =
+        run_request(&config_with_database(), rule, r#"{"tags":["t"]}"#).await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert!(body.contains(BUDGET_UNVERIFIABLE_DETAIL), "{body}");
+    assert!(!reached);
 }
 
 fn tenant_stage(context: &AuthContext, body: &'static str) -> TenantBudgetStageInput {
