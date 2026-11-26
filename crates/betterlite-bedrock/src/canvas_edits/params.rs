@@ -59,9 +59,9 @@ pub fn map_openai_params(options: &CanvasEditOptions, drop_params: bool) -> Mapp
         .filter(|text| text.as_str() != B64_JSON)
         .map(IgnoredResponseFormat);
     if drop_params {
-        mapped
-            .passthrough
-            .retain(|name, _value| name.starts_with('_'));
+        mapped.passthrough.retain(|name, _value| {
+            name.starts_with('_') || SUPPORTED_OPENAI_PARAMS.contains(&name.as_str())
+        });
     }
     MappedOptions {
         options: mapped,

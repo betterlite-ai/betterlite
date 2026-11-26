@@ -138,6 +138,15 @@ pub(super) fn quality_map() {
             r#"{"_x":1,"mask":"m","width":1,"height":2,"numberOfImages":3,"taskType":"INPAINTING","imageGenerationConfig":{"a":1},"quality":"premium"}"#
         )
     );
+    // A supported name stays under drop_params even when its value is not the declared dict.
+    assert_eq!(
+        mapped(r#"{"imageGenerationConfig": [1], "user": "u"}"#, true),
+        json(r#"{"imageGenerationConfig":[1]}"#)
+    );
+    assert_eq!(
+        mapped(r#"{"imageGenerationConfig": null, "user": "u"}"#, true),
+        json(r#"{"imageGenerationConfig":null}"#)
+    );
     unknown_options_stay_out_of_body();
 }
 
