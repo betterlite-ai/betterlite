@@ -68,11 +68,11 @@ async fn step_answer(
     levels: &Mutex<Vec<String>>,
     step: &Step,
 ) -> Value {
-    clock.set(step.now);
-    http.script(&step.http);
-    let requested = http.requests_len();
-    let slept = clock.sleeps_len();
-    let written = cache.writes_len();
+    *lock(&clock.now) = step.now;
+    lock(&http.replies).extend(step.http.iter().cloned());
+    let requested = lock(&http.requests).len();
+    let slept = lock(&clock.sleeps).len();
+    let written = lock(&cache.writes).len();
     let noticed = lock(levels).len();
     let kid = step.kid.as_deref();
     let outcome = if step.concurrent {
@@ -89,15 +89,14 @@ async fn step_answer(
     json!({
         "value": value,
         "error": error,
-        "requests": http.requests_since(requested),
-        "sleeps": clock.sleeps_since(slept),
-        "writes": cache.writes_since(written),
-        "warnings": levels_since(levels, noticed),
+        "requests": lock(&http.requests).iter().skip(requested).cloned().collect::<Vec<String>>(),
+        "sleeps": lock(&clock.sleeps).iter().skip(slept).copied().collect::<Vec<f64>>(),
+        "writes": lock(&cache.writes).iter().skip(written).cloned().collect::<Vec<Value>>(),
+        "warnings": lock(levels).iter().skip(noticed).cloned().collect::<Vec<String>>(),
     })
 }
 
-// The stage answers a bare key failure as Authentication Error 401 and an outage as the retryable 503, and this
-// view is what both proxies put on the wire for the helper's failure.
+// The stage answers a bare key failure as 401 and an outage as the retryable 503, as both proxies do.
 fn error_view(error: &KeyError) -> Value {
     let exception = exception_for(error);
     let status = exception.code.parse::<u16>().unwrap_or(0_u16);
@@ -109,16 +108,11 @@ fn error_view(error: &KeyError) -> Value {
     })
 }
 
-fn levels_since(levels: &Mutex<Vec<String>>, index: usize) -> Vec<String> {
-    lock(levels).iter().skip(index).cloned().collect()
-}
-
 struct RecordLevels {
     levels: Arc<Mutex<Vec<String>>>,
 }
 
-// Python's logger drops debug and info below its level, so the compared warnings are the WARN events the
-// proxy logger names, and nothing else.
+// Python's logger drops debug and info below its level, so only the WARN events the proxy logger names are kept.
 impl<S: tracing::Subscriber> Layer<S> for RecordLevels {
     fn on_event(&self, event: &tracing::Event<'_>, _: Context<'_, S>) {
         let metadata = event.metadata();

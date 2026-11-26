@@ -24,32 +24,14 @@ pub(super) fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 // The wall clock a step reads: it holds still inside a step and jumps to the step's own value between them.
 #[derive(Default)]
 pub(super) struct StepClock {
-    now: Mutex<f64>,
-    sleeps: Mutex<Vec<f64>>,
-}
-
-impl StepClock {
-    pub(super) fn set(&self, now: f64) {
-        *lock(&self.now) = now;
-    }
-
-    pub(super) fn current(&self) -> f64 {
-        *lock(&self.now)
-    }
-
-    pub(super) fn sleeps_len(&self) -> usize {
-        lock(&self.sleeps).len()
-    }
-
-    pub(super) fn sleeps_since(&self, index: usize) -> Vec<f64> {
-        lock(&self.sleeps).iter().skip(index).copied().collect()
-    }
+    pub(super) now: Mutex<f64>,
+    pub(super) sleeps: Mutex<Vec<f64>>,
 }
 
 #[async_trait]
 impl Clock for StepClock {
     fn now(&self) -> f64 {
-        self.current()
+        *lock(&self.now)
     }
 
     async fn sleep(&self, delay: Duration) {
@@ -62,11 +44,10 @@ struct Entry {
     expires_at: f64,
 }
 
-// LiteLLM's InMemoryCache keeps a written key readable until the clock passes its expiry, and a second write
-// while it is unexpired replaces the value but not the expiry.
+// InMemoryCache keeps a written key readable until the clock passes its expiry, and a re-write keeps an unexpired one.
 pub(super) struct Cache {
     entries: Mutex<BTreeMap<String, Entry>>,
-    writes: Mutex<Vec<Value>>,
+    pub(super) writes: Mutex<Vec<Value>>,
     clock: Arc<StepClock>,
 }
 
@@ -78,20 +59,12 @@ impl Cache {
             clock,
         }
     }
-
-    pub(super) fn writes_len(&self) -> usize {
-        lock(&self.writes).len()
-    }
-
-    pub(super) fn writes_since(&self, index: usize) -> Vec<Value> {
-        lock(&self.writes).iter().skip(index).cloned().collect()
-    }
 }
 
 #[async_trait]
 impl KeyCache for Cache {
     async fn get(&self, key: &str) -> Result<Option<Json>, AuthCacheError> {
-        let now = self.clock.current();
+        let now = *lock(&self.clock.now);
         let mut entries = lock(&self.entries);
         let Some(entry) = entries.get(key) else {
             return Ok(None);
@@ -104,7 +77,7 @@ impl KeyCache for Cache {
     }
 
     async fn set(&self, key: &str, value: &Json, ttl_seconds: f64) -> Result<(), AuthCacheError> {
-        let now = self.clock.current();
+        let now = *lock(&self.clock.now);
         {
             let mut entries = lock(&self.entries);
             let expires_at = entries
@@ -127,26 +100,11 @@ impl KeyCache for Cache {
 
 #[derive(Default)]
 pub(super) struct Scripted {
-    replies: Mutex<VecDeque<Reply>>,
-    requests: Mutex<Vec<String>>,
+    pub(super) replies: Mutex<VecDeque<Reply>>,
+    pub(super) requests: Mutex<Vec<String>>,
 }
 
-impl Scripted {
-    pub(super) fn script(&self, replies: &[Reply]) {
-        lock(&self.replies).extend(replies.iter().cloned());
-    }
-
-    pub(super) fn requests_len(&self) -> usize {
-        lock(&self.requests).len()
-    }
-
-    pub(super) fn requests_since(&self, index: usize) -> Vec<String> {
-        lock(&self.requests).iter().skip(index).cloned().collect()
-    }
-}
-
-// A step whose script runs out answers like an unreachable provider, so the case fails on its counted requests
-// rather than on a panic.
+// A step whose script runs out answers like an unreachable provider, so a mismatch fails on its counted requests.
 #[async_trait]
 impl JwksHttp for Scripted {
     async fn get(&self, url: &str) -> Result<HttpReply, FetchError> {
