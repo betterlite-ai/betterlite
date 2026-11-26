@@ -63,6 +63,7 @@ fn port_with_oidc(
         workers: Arc::new(Workers {
             slots: Arc::new(Semaphore::new(WORKER_LIMIT)),
             live: Mutex::new(Vec::new()),
+            drain: Mutex::new(None),
         }),
     };
     Port {

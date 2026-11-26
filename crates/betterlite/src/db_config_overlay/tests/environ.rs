@@ -44,6 +44,7 @@ async fn workers_bound_the_live_threads() {
     let workers = Arc::new(Workers {
         slots: Arc::new(Semaphore::new(2)),
         live: Mutex::new(Vec::new()),
+        drain: Mutex::new(None),
     });
     let (started, mut started_reading) = async_mpsc::channel(8);
     let (release, released_rx) = mpsc::sync_channel::<()>(4);
@@ -76,6 +77,7 @@ async fn shutdown_joins_a_canceled_worker_after_a_later_submission() {
     let workers = Arc::new(Workers {
         slots: Arc::new(Semaphore::new(2)),
         live: Mutex::new(Vec::new()),
+        drain: Mutex::new(None),
     });
     let (started, mut started_reading) = async_mpsc::channel(1);
     let (release, released_rx) = mpsc::sync_channel::<()>(1);
@@ -116,6 +118,7 @@ async fn shutdown_leaves_the_runtime_free_while_the_joins_wait() {
     let workers = Arc::new(Workers {
         slots: Arc::new(Semaphore::new(1)),
         live: Mutex::new(Vec::new()),
+        drain: Mutex::new(None),
     });
     let (started, mut started_reading) = async_mpsc::channel(1);
     let (release, released_rx) = mpsc::sync_channel::<()>(1);
@@ -156,6 +159,7 @@ async fn workers_drop_does_not_wait_for_a_canceled_worker() {
     let workers = Arc::new(Workers {
         slots: Arc::new(Semaphore::new(1)),
         live: Mutex::new(Vec::new()),
+        drain: Mutex::new(None),
     });
     let (started, mut started_reading) = async_mpsc::channel(1);
     let (release, released_rx) = mpsc::sync_channel::<()>(1);
@@ -190,4 +194,45 @@ async fn workers_drop_does_not_wait_for_a_canceled_worker() {
     release.send(()).unwrap();
     dropping.join().unwrap();
     finished_reading.recv_timeout(WAIT).unwrap();
+}
+
+// a canceled shutdown leaves its joiner stored, so the next call waits on that drain instead of reporting the blocked worker done
+#[tokio::test]
+async fn canceled_shutdown_leaves_the_drain_for_the_next_call() {
+    let workers = Arc::new(Workers {
+        slots: Arc::new(Semaphore::new(1)),
+        live: Mutex::new(Vec::new()),
+        drain: Mutex::new(None),
+    });
+    let (started, mut started_reading) = async_mpsc::channel(1);
+    let (release, released_rx) = mpsc::sync_channel::<()>(1);
+    let finished = Arc::new(AtomicBool::new(false));
+    let task_workers = Arc::clone(&workers);
+    let task_finished = Arc::clone(&finished);
+    let mut tasks = JoinSet::new();
+    tasks.spawn(async move {
+        off_runtime(&task_workers, move || {
+            let _started = started.try_send(());
+            let _released = released_rx.recv();
+            task_finished.store(true, Ordering::Relaxed);
+        })
+        .await
+    });
+    started_reading.recv().await.unwrap();
+    let expired = timeout(Duration::from_millis(200), workers.shutdown()).await;
+    let _still_running = expired.unwrap_err();
+    assert!(workers.drain.lock().unwrap().is_some());
+    let (done, mut done_reading) = oneshot::channel();
+    let second_workers = Arc::clone(&workers);
+    tasks.spawn(async move {
+        second_workers.shutdown().await?;
+        let _sent = done.send(());
+        Ok(())
+    });
+    let early = timeout(Duration::from_millis(200), &mut done_reading).await;
+    let _timed_out = early.unwrap_err();
+    release.send(()).unwrap();
+    timeout(WAIT, &mut done_reading).await.unwrap().unwrap();
+    drop(tasks.join_all().await);
+    assert!(finished.load(Ordering::Relaxed));
 }

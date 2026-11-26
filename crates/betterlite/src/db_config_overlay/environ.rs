@@ -11,20 +11,20 @@ use betterlite_secret_managers::secret_lookup::{manager::ManagerState, ports::Oi
 use betterlite_secret_managers::secret_read_dispatch::SecretManagerClient as Client;
 use betterlite_secret_managers::secret_read_dispatch::settings::SecretManagerSettings;
 use secrecy::ExposeSecret as _;
-use tokio::sync::{Semaphore, oneshot};
+use tokio::sync::{Semaphore, oneshot, watch};
 
 use super::error::OverlayError;
 
 const ENVIRONMENT_PREFIX: &str = "os.environ/";
 pub const WORKER_LIMIT: usize = 4;
 
-// What one resolution returns: the config, and the OIDC tokens its lookups fetched, which outlive the worker.
 pub type ResolvedConfig = (ConfigMap, OidcTokenCache);
 
-// The off-runtime threads belong to the adapter: a canceled reload leaves its thread here, the semaphore bounds the live ones, and shutdown joins them.
+// The off-runtime threads belong to the adapter: a canceled reload leaves its thread here, the semaphore bounds the live ones, and the stored drain lets every shutdown call join them.
 pub struct Workers {
     pub slots: Arc<Semaphore>,
     pub live: Mutex<Vec<JoinHandle<()>>>,
+    pub drain: Mutex<Option<watch::Receiver<bool>>>,
 }
 
 impl Workers {
@@ -34,21 +34,34 @@ impl Workers {
         live.push(thread);
     }
 
-    // The server drains the live threads with this, and the joins wait on a thread of their own, so no runtime thread is blocked.
+    // The server drains the live threads with this, and the joins wait on a thread of their own, so no runtime thread is blocked; a canceled call leaves the drain stored for the next one.
     pub async fn shutdown(&self) -> Result<(), OverlayError> {
-        let live = take(&mut *self.live.lock().unwrap_or_else(PoisonError::into_inner));
-        let (joined, answer) = oneshot::channel();
-        let _joiner = thread::Builder::new()
-            .name("config-overlay-join".to_owned())
-            .spawn(move || {
-                for thread in live {
-                    drop(thread.join());
+        let mut drained = {
+            let mut stored = self.drain.lock().unwrap_or_else(PoisonError::into_inner);
+            match stored.as_ref().filter(|done| !*done.borrow()).cloned() {
+                Some(running) => running,
+                None => {
+                    let live = take(&mut *self.live.lock().unwrap_or_else(PoisonError::into_inner));
+                    let (finished, running) = watch::channel(false);
+                    let _joiner = thread::Builder::new()
+                        .name("config-overlay-join".to_owned())
+                        .spawn(move || {
+                            for thread in live {
+                                drop(thread.join());
+                            }
+                            let _sent = finished.send(true);
+                        })
+                        .map_err(|source| OverlayError::WorkerStart { source })?;
+                    *stored = Some(running.clone());
+                    running
                 }
-                let _sent = joined.send(());
-            })
-            .map_err(|source| OverlayError::WorkerStart { source })?;
-        let outcome = answer.await;
-        outcome.map_err(|_closed| OverlayError::WorkerUnavailable)
+            }
+        };
+        while !*drained.borrow() {
+            let changed = drained.changed().await;
+            changed.map_err(|_closed| OverlayError::WorkerUnavailable)?;
+        }
+        Ok(())
     }
 }
 
@@ -129,7 +142,6 @@ impl Resolver<'_> {
     }
 }
 
-// The worker thread owns what it reads, so this makes a lookup the reload can hand to it.
 pub(super) fn owned_secret_lookup(lookup: &SecretLookup) -> SecretLookup {
     let tokens = lookup
         .oidc_cache
@@ -145,7 +157,6 @@ pub(super) fn owned_secret_lookup(lookup: &SecretLookup) -> SecretLookup {
     }
 }
 
-// The tokens a resolution fetched outlive its worker, so they go back into the lookup the state keeps.
 pub(super) fn restore_oidc_tokens(lookup: &SecretLookup, fetched: OidcTokenCache) {
     let mut cache = lookup
         .oidc_cache

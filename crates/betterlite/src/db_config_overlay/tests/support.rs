@@ -368,6 +368,7 @@ pub(super) async fn reload_config(
     let workers = Workers {
         slots: Arc::new(Semaphore::new(WORKER_LIMIT)),
         live: Mutex::new(Vec::new()),
+        drain: Mutex::new(None),
     };
     let file_config = read_config(source, env, &workers).await?;
     reload_stores(overlay, &file_config)?;
