@@ -72,8 +72,15 @@ impl<S: MigrationStore> Walkers<'_, S> {
             legacy: 0,
         };
         for row in self.store.callback_rows(table).await? {
-            self.migrate_callback_row(table, transform, &row, dry_run, &mut report)
+            let counts = self
+                .migrate_callback_row(table, transform, &row, dry_run)
                 .await?;
+            checked_add(&mut report.scanned, counts.scanned).map_err(S::Error::from)?;
+            checked_add(&mut report.already_v2, counts.already_v2).map_err(S::Error::from)?;
+            checked_add(&mut report.plaintext, counts.plaintext).map_err(S::Error::from)?;
+            checked_add(&mut report.legacy, counts.legacy).map_err(S::Error::from)?;
+            checked_add(&mut report.migrated, counts.migrated).map_err(S::Error::from)?;
+            checked_add(&mut report.undecryptable, counts.undecryptable).map_err(S::Error::from)?;
         }
         Ok(report)
     }
@@ -85,35 +92,32 @@ impl<S: MigrationStore> Walkers<'_, S> {
         transform: &T,
         row: &CallbackRow,
         dry_run: bool,
-        report: &mut LocationReport,
-    ) -> Result<(), S::Error>
+    ) -> Result<CallbackCounts, S::Error>
     where
         T: CallbackTransform + Sync,
     {
         let Some(metadata) = row.metadata.as_ref() else {
-            return Ok(());
+            return Ok(CallbackCounts::default());
         };
-        let counts = classify_row(metadata, self.cipher).map_err(S::Error::from)?;
-        checked_add(&mut report.scanned, counts.scanned).map_err(S::Error::from)?;
-        checked_add(&mut report.already_v2, counts.already_v2).map_err(S::Error::from)?;
-        checked_add(&mut report.plaintext, counts.plaintext).map_err(S::Error::from)?;
-        if counts.legacy == 0 {
-            return Ok(());
-        }
-        if dry_run {
-            return checked_add(&mut report.legacy, counts.legacy).map_err(S::Error::from);
+        let mut counts = classify_row(metadata, self.cipher).map_err(S::Error::from)?;
+        if counts.legacy == 0 || dry_run {
+            return Ok(counts);
         }
         let Ok(re_encrypted) = transform.reencrypt(metadata, self.cipher) else {
             tracing::warn!(
                 "Skipping {} callback_vars (transform failed)",
                 table.location()
             );
-            return checked_add(&mut report.undecryptable, counts.legacy).map_err(S::Error::from);
+            counts.undecryptable = counts.legacy;
+            counts.legacy = 0;
+            return Ok(counts);
         };
-        checked_add(&mut report.migrated, counts.legacy).map_err(S::Error::from)?;
+        counts.migrated = counts.legacy;
+        counts.legacy = 0;
         self.store
             .save_callback_metadata(table, &row.key, &re_encrypted)
-            .await
+            .await?;
+        Ok(counts)
     }
 }
 
@@ -218,16 +222,18 @@ fn nonempty_string(settings: &BTreeMap<String, MigrationJson>, field: &str) -> b
 }
 
 #[derive(Default)]
-struct RowCounts {
+struct CallbackCounts {
     scanned: u64,
     already_v2: u64,
     plaintext: u64,
     legacy: u64,
+    migrated: u64,
+    undecryptable: u64,
 }
 
 // The row's legacy total comes from classification alone, so it holds even when the transform later fails.
-fn classify_row(metadata: &MigrationJson, cipher: &DbCipher) -> Result<RowCounts, ScanError> {
-    let mut counts = RowCounts::default();
+fn classify_row(metadata: &MigrationJson, cipher: &DbCipher) -> Result<CallbackCounts, ScanError> {
+    let mut counts = CallbackCounts::default();
     for vars in iter_callback_var_dicts(metadata) {
         for value in vars.values() {
             counts.scanned = counts
