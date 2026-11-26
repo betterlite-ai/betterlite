@@ -101,8 +101,7 @@ fn routing_answer(
     }
 }
 
-fn team_answer(provider: &str, key: &KeyInput, router: Option<&RouterInput>) -> HelperResult {
-    let built = scenario(key, router)?;
+fn team_answer(provider: &str, built: &Scenario<'_>) -> HelperResult {
     let found = get_team_provider_credentials(
         built.catalog.as_ref(),
         &built.identity,
@@ -117,14 +116,8 @@ fn team_answer(provider: &str, key: &KeyInput, router: Option<&RouterInput>) -> 
     Ok(json!({"function": "team_credentials", "credentials": found, "lookups": lookups}))
 }
 
-fn apply_answer(
-    provider: &str,
-    key: &KeyInput,
-    data: &JsonObject,
-    router: Option<&RouterInput>,
-) -> HelperResult {
-    let built = scenario(key, router)?;
-    let merged = merged_data(&built, provider, data)?;
+fn apply_answer(provider: &str, built: &Scenario<'_>, data: &JsonObject) -> HelperResult {
+    let merged = merged_data(built, provider, data)?;
     Ok(json!({"function": "apply_team_credentials", "data": merged}))
 }
 
@@ -191,13 +184,19 @@ pub(crate) fn answer(call: &Call) -> HelperResult {
             provider,
             key,
             router,
-        } => team_answer(provider, key, router.as_ref()),
+        } => {
+            let built = scenario(key, router.as_ref())?;
+            team_answer(provider, &built)
+        }
         Call::ApplyTeamCredentials {
             provider,
             key,
             data,
             router,
-        } => apply_answer(provider, key, data, router.as_ref()),
+        } => {
+            let built = scenario(key, router.as_ref())?;
+            apply_answer(provider, &built, data)
+        }
         Call::InternalCredentials {
             model_id,
             data,
