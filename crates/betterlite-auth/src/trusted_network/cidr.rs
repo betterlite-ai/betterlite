@@ -1,4 +1,4 @@
-use std::net::IpAddr;
+use std::net::{IpAddr, Ipv4Addr};
 
 use ipnet::IpNet;
 use serde::{Deserialize, Serialize};
@@ -64,7 +64,7 @@ pub fn ip_in_networks(client_ip: Option<&str>, networks: &[IpNet]) -> bool {
     if networks.is_empty() {
         return false;
     }
-    let Ok(address) = address_text.trim().parse::<IpAddr>() else {
+    let Some(address) = parse_address(address_text.trim()) else {
         return false;
     };
     let unmapped = unmapped(address);
@@ -84,13 +84,13 @@ const fn unmapped(address: IpAddr) -> IpAddr {
     }
 }
 
-// ipaddress.ip_network(text, strict=False): an optional prefix length, a netmask, or no slash at all.
+// ipaddress.ip_network(text, strict=False): an optional prefix length, an IPv4 netmask, or no slash.
 pub(crate) fn network_from_text(text: &str) -> Option<IpNet> {
     let (address_text, prefix_text) = match text.split_once('/') {
         Some((address, prefix)) => (address, Some(prefix)),
         None => (text, None),
     };
-    let address: IpAddr = address_text.parse().ok()?;
+    let address = parse_address(address_text)?;
     let network = match prefix_text {
         None => IpNet::new(address, address_width(address)).ok()?,
         Some(prefix) if prefix.chars().all(|character| character.is_ascii_digit()) => {
@@ -98,12 +98,29 @@ pub(crate) fn network_from_text(text: &str) -> Option<IpNet> {
             IpNet::new(address, length).ok()?
         }
         Some(prefix) => {
-            let mask: IpAddr = prefix.parse().ok()?;
-            IpNet::with_netmask(address, mask).ok()?
+            // ipaddress takes a netmask for IPv4 only; a netmask of the other family is a ValueError
+            let mask: Ipv4Addr = prefix.parse().ok()?;
+            match address {
+                IpAddr::V4(ipv4) => IpNet::with_netmask(IpAddr::V4(ipv4), IpAddr::V4(mask)).ok()?,
+                IpAddr::V6(_) => return None,
+            }
         }
     };
     // strict=False: the host bits of the supplied address are masked away
     Some(network.trunc())
+}
+
+// ipaddress.ip_address accepts one non-empty scope id on an IPv6 address and matches on the address alone.
+pub(crate) fn parse_address(text: &str) -> Option<IpAddr> {
+    match text.split_once('%') {
+        None => text.parse().ok(),
+        Some((address, scope))
+            if address.contains(':') && !scope.is_empty() && !scope.contains('%') =>
+        {
+            address.parse().ok()
+        }
+        Some(_) => None,
+    }
 }
 
 const fn address_width(address: IpAddr) -> u8 {

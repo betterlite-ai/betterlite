@@ -159,8 +159,31 @@ fn parses_networks_like_ipaddress() {
             "2001:db8::/32"
         ])
     );
+    // ipaddress takes a netmask for IPv4 only, and a scope id only on an IPv6 address
+    let forms = parsed_ranges(Some(&CidrRanges::Text(
+        "10.1.2.3/255.255.255.128, 10.1.2.3/255.0.255.0, 10.1.2.3/::, ::1/ffff::, 10.1.2.3%eth0, fe80::1%eth0, fe80::1%".to_owned(),
+    )));
+    assert_eq!(rendered(&forms), list(&["10.1.2.0/25", "fe80::1/128"]));
     assert!(parsed_ranges(None).is_empty());
     assert!(parsed_ranges(Some(&CidrRanges::List(Vec::new()))).is_empty());
+}
+
+#[test]
+fn scoped_ipv6_addresses_match_on_the_address() {
+    let private = networks(&["10.0.0.0/8", "fe80::/10"]);
+    assert!(ip_in_networks(Some("fe80::1%eth0"), &private));
+    assert!(is_trusted_proxy(Some("fe80::1%eth0"), &private));
+    assert!(is_internal_ip(Some("::1%eth0"), None));
+    assert_eq!(
+        client_ip_from_xff("fe80::1%eth0", 1),
+        Some("fe80::1%eth0".to_owned())
+    );
+    // a scoped hop is a valid chain entry, and the resolver returns the text as written
+    let zoned_hop = forwarded(Some("10.0.0.5"), "203.0.113.9, fe80::1%eth0");
+    assert_eq!(
+        resolve_client_ip(&zoned_hop, &proxy_config(&["10.0.0.0/8"])),
+        (Some("fe80::1%eth0".to_owned()), true)
+    );
 }
 
 #[test]

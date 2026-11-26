@@ -1,9 +1,7 @@
-use std::net::IpAddr;
-
 use tracing::{error, warn};
 
 use crate::auth_identity::records::NetworkContext;
-use crate::trusted_network::cidr::{ip_in_networks, parse_normalized};
+use crate::trusted_network::cidr::{ip_in_networks, parse_address, parse_normalized};
 use crate::trusted_network::internal::{is_trusted_proxy, parse_trusted_proxy_networks};
 use crate::trusted_network::settings::{TrustedNetworkSettings, TrustedProxyConfig};
 
@@ -56,7 +54,7 @@ pub fn client_ip_from_xff(xff_header: &str, num_trusted_hops: i64) -> Option<Str
         return None;
     }
     let candidate = entries.get(entries.len().checked_sub(count)?)?;
-    if candidate.parse::<IpAddr>().is_ok() {
+    if parse_address(candidate).is_some() {
         return Some((*candidate).to_owned());
     }
     None
@@ -187,7 +185,7 @@ pub fn resolve_client_ip(
     let forwarded = request.x_forwarded_for.unwrap_or_default();
     let hops: Vec<&str> = forwarded.split(',').map(str::trim).collect();
     for hop in hops.iter().rev() {
-        if hop.parse::<IpAddr>().is_ok() && !ip_in_networks(Some(*hop), &networks) {
+        if parse_address(hop).is_some() && !ip_in_networks(Some(*hop), &networks) {
             return (Some((*hop).to_owned()), true);
         }
     }

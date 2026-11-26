@@ -1,9 +1,7 @@
-use std::net::IpAddr;
-
 use ipnet::IpNet;
 use tracing::warn;
 
-use crate::trusted_network::cidr::network_from_text;
+use crate::trusted_network::cidr::{network_from_text, parse_address};
 
 // IPAddressUtils._DEFAULT_INTERNAL_NETWORKS
 pub const DEFAULT_INTERNAL_CIDRS: [&str; 6] = [
@@ -57,7 +55,7 @@ pub fn is_trusted_proxy(proxy_ip: Option<&str>, trusted_networks: &[IpNet]) -> b
     if trusted_networks.is_empty() {
         return false;
     }
-    let Ok(address) = proxy_text.trim().parse::<IpAddr>() else {
+    let Some(address) = parse_address(proxy_text.trim()) else {
         return false;
     };
     trusted_networks
@@ -78,7 +76,7 @@ pub fn is_internal_ip(client_ip: Option<&str>, internal_networks: Option<&[IpNet
         Some((first, _)) => first.trim(),
         None => client_text,
     };
-    let Ok(address) = leftmost.trim().parse::<IpAddr>() else {
+    let Some(address) = parse_address(leftmost.trim()) else {
         return false;
     };
     match internal_networks {
