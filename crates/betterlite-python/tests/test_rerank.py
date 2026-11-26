@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import asyncio
 import importlib
 import inspect
@@ -600,11 +598,12 @@ def test_request_before_copy(entry: str, field: str) -> None:
 
 def size_probe(
     entry: str, query: str, documents: list[str | dict[str, JsonValue]], extra: JsonValue,
+    headers: dict[str, str] | None = None,
 ) -> None:
     if entry == "async":
-        _ = asyncio.run(arerank(MODEL, query, documents, extra=extra))
+        _ = asyncio.run(arerank(MODEL, query, documents, extra=extra, headers=headers))
     else:
-        _ = rerank(MODEL, query, documents, _is_async=entry == "flag", extra=extra)
+        _ = rerank(MODEL, query, documents, _is_async=entry == "flag", extra=extra, headers=headers)
 
 
 class RefuseValidation(JsonValidator):
@@ -630,25 +629,16 @@ class ValidationGuard:
 
 
 @pytest.mark.parametrize("entry", ["sync", "async"])
-@pytest.mark.parametrize("source", ["caller", "module", "combined"])
-def test_request_before_headers(entry: str, source: str) -> None:
-    caller: dict[str, str] = {}
-    module: dict[str, str] = {}
-    if source == "caller":
-        caller = {f"h{index}": "v" for index in range(MAX_HEADERS + 1)}
-    else:
-        module = {f"h{index}": "v" for index in range(MAX_HEADERS)}
-        if source == "module":
-            module["extra"] = "v"
-        else:
-            caller["extra"] = "v"
-    with temporary_headers(module), ValidationGuard():
-        if entry == "async":
-            with pytest.raises(ValueError, match="headers"):
-                _ = asyncio.run(arerank(MODEL, QUERY, [], headers=caller))
-        else:
-            with pytest.raises(ValueError, match="headers"):
-                _ = rerank(MODEL, QUERY, [], headers=caller)
+@pytest.mark.parametrize(
+    ("caller_count", "module_count"),
+    [(MAX_HEADERS + 1, 0), (0, MAX_HEADERS + 1), (1, MAX_HEADERS)],
+    ids=["caller", "module", "combined"],
+)
+def test_request_before_headers(entry: str, caller_count: int, module_count: int) -> None:
+    caller = {f"h{index}": "v" for index in range(caller_count)}
+    module = {f"h{index}": "v" for index in range(module_count)}
+    with temporary_headers(module), ValidationGuard(), pytest.raises(ValueError, match="headers"):
+        size_probe(entry, QUERY, [], None, caller)
 
 
 @pytest.mark.parametrize("value", [
@@ -697,7 +687,9 @@ class ChunkedText(str):
     @override
     def __getitem__(
         self,
-        key: SupportsIndex | slice[SupportsIndex | None, SupportsIndex | None, SupportsIndex | None],
+        key: (
+            "SupportsIndex | slice[SupportsIndex | None, SupportsIndex | None, SupportsIndex | None]"
+        ),
         /,
     ) -> str:
         result = super().__getitem__(key)
