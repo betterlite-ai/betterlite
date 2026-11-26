@@ -60,7 +60,8 @@ async fn attribution_five_list_order() {
     );
 }
 
-async fn key_org_wins() {
+#[tokio::test]
+async fn key_org_before_team_org() {
     let world = World::new().with_org(Ok(Some(organization_row("key-org", &["key-group"]))));
     let token = grant_token(&[
         ("models", list(&["*"])),
@@ -80,9 +81,7 @@ async fn key_org_wins() {
     .unwrap();
     assert_eq!(lists[4], owned(&["key-group"]));
     assert_eq!(world.effects(), vec![Effect::Org("key-org".to_owned())]);
-}
-
-async fn team_org_used_when_key_has_none() {
+    // With no key organization, attribution falls back to the team's organization.
     let world = World::new().with_org(Ok(Some(organization_row("team-org", &["team-group"]))));
     let token = grant_token(&[("models", list(&["*"]))]);
     let team = team_row("team-1", &[], Some("team-org"));
@@ -98,9 +97,6 @@ async fn team_org_used_when_key_has_none() {
     .unwrap();
     assert_eq!(lists[4], owned(&["team-group"]));
     assert_eq!(world.effects(), vec![Effect::Org("team-org".to_owned())]);
-}
-
-async fn empty_key_org_is_looked_up() {
     let world = World::new().with_org(Ok(None));
     let token = grant_token(&[("models", list(&["*"])), ("org_id", text(""))]);
     let team = team_row("team-1", &[], Some("team-org"));
@@ -116,9 +112,6 @@ async fn empty_key_org_is_looked_up() {
     .unwrap();
     assert_eq!(lists[4], Vec::<String>::new());
     assert_eq!(world.effects(), vec![Effect::Org(String::new())]);
-}
-
-async fn no_org_id_no_lookup() {
     let world = World::new();
     let team = team_row("team-1", &[], None);
     let token = grant_token(&[("models", list(&["*"]))]);
@@ -134,14 +127,6 @@ async fn no_org_id_no_lookup() {
     .unwrap();
     assert_eq!(lists[4], Vec::<String>::new());
     assert!(world.effects().is_empty());
-}
-
-#[tokio::test]
-async fn key_org_before_team_org() {
-    key_org_wins().await;
-    team_org_used_when_key_has_none().await;
-    empty_key_org_is_looked_up().await;
-    no_org_id_no_lookup().await;
 }
 
 #[tokio::test]

@@ -53,7 +53,20 @@ async fn walked(input: &Input, fixture: &Fixture, auth: &mut UserAPIKeyAuth) -> 
     let sources: Option<&dyn GrantSources> = input.database.then_some(fixture);
     match input.function {
         Function::Enforced => enforced_answer(&token, sources).await,
-        Function::Collected => collected_answer(input, fixture, &token, sources).await,
+        Function::Collected => {
+            let matched = collect_matched_groups(MatchedRequest {
+                models: input.models.as_deref(),
+                token: Some(&token),
+                team: fixture.team.as_ref(),
+                project: fixture.project.as_ref(),
+                membership: fixture.membership.clone(),
+                membership_loaded: input.membership_loaded,
+                groups: Some(fixture),
+                sources,
+            })
+            .await?;
+            Ok(json!(matched))
+        }
         Function::Stamped => Ok(stamped_answer(input, fixture, auth, &token, sources).await),
     }
 }
@@ -66,26 +79,6 @@ async fn enforced_answer(token: &GrantToken, sources: Option<&dyn GrantSources>)
     })
     .await?;
     Ok(json!(lists))
-}
-
-async fn collected_answer(
-    input: &Input,
-    fixture: &Fixture,
-    token: &GrantToken,
-    sources: Option<&dyn GrantSources>,
-) -> Answer {
-    let matched = collect_matched_groups(MatchedRequest {
-        models: input.models.as_deref(),
-        token: Some(token),
-        team: fixture.team.as_ref(),
-        project: fixture.project.as_ref(),
-        membership: fixture.membership.clone(),
-        membership_loaded: input.membership_loaded,
-        groups: Some(fixture),
-        sources,
-    })
-    .await?;
-    Ok(json!(matched))
 }
 
 async fn stamped_answer(

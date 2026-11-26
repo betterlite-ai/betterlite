@@ -323,10 +323,7 @@ async fn assert_database_walk_records() {
         ]
     );
     assert_eq!(matched, vec!["tier-a".to_owned()]);
-}
-
-// without a database the walk still assembles the two lists LiteLLM returns and stamps nothing
-async fn assert_no_database_walk_records() {
+    // Without a database the stage assembles the two key lists and stamps nothing.
     let skipped = Arc::new(Recorder::default());
     let (status, _body, reached) = run_request(
         &config_with_master_key(),
@@ -347,10 +344,7 @@ async fn assert_no_database_walk_records() {
         "the no-database answer pairs the key list with the token's team models"
     );
     assert!(matched.is_empty());
-}
-
-// a database without the stage's sources skips the walk rather than failing the request
-async fn assert_missing_sources_skips_the_walk() {
+    // A database without stage sources skips the walk and still reaches the handler.
     let unwired = Arc::new(Recorder::default());
     let (status, _body, reached) =
         run_request(&config_with_database(), rule(None, Arc::clone(&unwired))).await;
@@ -359,18 +353,12 @@ async fn assert_missing_sources_skips_the_walk() {
     assert!(unwired.recorded().is_none());
 }
 
-async fn assert_request_records_the_walk() {
-    assert_database_walk_records().await;
-    assert_no_database_walk_records().await;
-    assert_missing_sources_skips_the_walk().await;
-}
-
 #[tokio::test]
 async fn stage_is_registered() {
     assert!(INSTALLED_STAGES.contains(&AuthBackend::ModelGrantIntersection));
     assert_slot_settings();
     assert_dispatch_reaches_the_stage();
-    assert_request_records_the_walk().await;
+    assert_database_walk_records().await;
 }
 
 #[tokio::test]

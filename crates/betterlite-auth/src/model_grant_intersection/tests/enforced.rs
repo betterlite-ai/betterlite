@@ -205,7 +205,9 @@ async fn assert_team_failure_escapes() {
     assert_eq!(not_found.http_status(), Some(404));
 }
 
-async fn assert_project_failure_escapes() {
+#[tokio::test]
+async fn team_project_errors_escape() {
+    assert_team_failure_escapes().await;
     let token = grant_token(&[("project_id", text("p1"))]);
     let world = World::new().with_project(Err(OrgLookupError::NoDatabase));
     let error = enforced_model_allowlists(EnforcedRequest {
@@ -219,9 +221,7 @@ async fn assert_project_failure_escapes() {
         error,
         IntersectionError::Project(OrgLookupError::NoDatabase)
     ));
-}
-
-async fn assert_member_failure_escapes() {
+    // A membership read failure escapes after the team row has been loaded.
     let token = grant_token(&[("team_id", text("team-1")), ("user_id", text("u1"))]);
     let world = World::new()
         .with_team(Ok(team_row("team-1", &[], None)))
@@ -237,11 +237,4 @@ async fn assert_member_failure_escapes() {
         error,
         IntersectionError::Membership(MembershipLoadError::NoDatabase)
     ));
-}
-
-#[tokio::test]
-async fn team_project_errors_escape() {
-    assert_team_failure_escapes().await;
-    assert_project_failure_escapes().await;
-    assert_member_failure_escapes().await;
 }

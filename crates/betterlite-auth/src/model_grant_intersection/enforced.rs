@@ -5,7 +5,7 @@ use crate::auth_identity::errors::AuthError as IdentityError;
 use crate::auth_model_patterns::grant::resolve_key_models;
 use crate::auth_user_lookup::error::UserLookupError;
 use crate::model_grant_intersection::error::IntersectionError;
-use crate::model_grant_intersection::lists::{project_models, team_models, user_models};
+use crate::model_grant_intersection::lists::text_models;
 use crate::model_grant_intersection::member::team_member_granted_models;
 use crate::model_grant_intersection::sources::GrantSources;
 use crate::model_grant_intersection::token::GrantToken;
@@ -42,10 +42,14 @@ pub async fn enforced_model_allowlists(
         team_member_granted_models(request.token, team.as_ref(), None, false, sources).await?;
     Ok(vec![
         key_list,
-        team_models(team.as_ref()),
+        team.as_ref()
+            .map_or_else(Vec::new, |object| object.team.fields.base.models.clone()),
         member,
-        user_models(user.as_ref()),
-        project_models(project.as_ref()),
+        user.as_ref()
+            .map_or_else(Vec::new, |row| text_models(&row.models)),
+        project
+            .as_ref()
+            .map_or_else(Vec::new, |cached| cached.project.models.clone()),
     ])
 }
 
