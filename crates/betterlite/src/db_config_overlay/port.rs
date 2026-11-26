@@ -22,7 +22,6 @@ use super::rows::fetch_db_rows;
 use super::source::{ConfigSource, read_config};
 use super::state::{OverlayDatabase, OverlayState};
 
-// What a queued mutation reads: the state, where the config comes from, the stored rows, the environment and the two side-effect ports.
 pub struct OverlayParts {
     pub state: Arc<Mutex<OverlayState>>,
     pub source: ConfigSource,
@@ -44,7 +43,6 @@ pub struct OverlayPortAdapter {
 }
 
 impl OverlayPortAdapter {
-    // The worker owns its copy of the parts, so a canceled call leaves the adapter usable and the mutation in flight still finishes.
     #[must_use]
     pub fn start(ctx: OverlayParts) -> Self {
         let (mutations, mut queue) = mpsc::channel(1);
@@ -96,14 +94,17 @@ async fn run_reload(parts: &OverlayParts) -> Result<ConfigWithBaseline, OverlayE
         Some(backed) => Some((backed, fetch_db_rows(backed).await?)),
         None => None,
     };
-    let (pending, environment) = {
-        let mut state = parts.state.lock().await;
-        let mut shared = parts.environment.lock().await;
-        let pending = begin_reload(&mut state, &file_config, stored, &parts.source, &mut shared)?;
-        drop(state);
-        (pending, shared.clone())
-    };
-    let resolved = resolve_reload(pending, environment, &parts.workers).await?;
+    let before = parts.environment.lock().await.clone();
+    let mut state = parts.state.lock().await;
+    let mut shared = before.clone();
+    let pending = begin_reload(&mut state, &file_config, stored, &parts.source, &mut shared);
+    let updates = shared
+        .iter()
+        .filter(|(key, value)| before.get(*key) != Some(*value))
+        .map(|(key, value)| ((*key).clone(), (*value).clone()));
+    drop(state);
+    parts.environment.lock().await.extend(updates);
+    let resolved = resolve_reload(pending?, shared, &parts.workers).await?;
     let mut state = parts.state.lock().await;
     Ok(finish_reload(&mut state, resolved))
 }
