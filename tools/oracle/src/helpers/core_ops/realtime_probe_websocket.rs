@@ -1,5 +1,6 @@
 mod scripted;
 
+use std::fmt::Display;
 use std::sync::Arc;
 
 use betterlite_auth::auth_model_lists::credential::{CredentialEntry, CredentialSnapshot};
@@ -134,8 +135,8 @@ fn stored_credentials(scenario: &Scenario) -> CredentialSnapshot {
 }
 
 // the `or` default each provider's url builder applies to a configured api_base
-fn base_value(provider: &str, base: Option<String>) -> Value {
-    match (provider, base) {
+fn base_value(provider: &str, configured: Option<String>) -> Value {
+    match (provider, configured) {
         (AZURE_PROVIDER, base) => json!(base.unwrap_or_default()),
         (OPENAI_PROVIDER, base) => json!(configured_or(base, OPENAI_DEFAULT_API_BASE)),
         (XAI_PROVIDER, base) => json!(configured_or(base, XAI_DEFAULT_API_BASE)),
@@ -223,62 +224,56 @@ impl<'case> Probe<'case> {
         Ok((branch, dialer.take()))
     }
 
-    // only an Azure scenario reads these, and the dialect they answer is the one the probe used
-    fn azure_fields(&self, view: &mut Value) {
-        if self.scenario.custom_llm_provider != AZURE_PROVIDER {
-            return;
-        }
-        view["protocol"] = json!(azure_protocol(
-            self.request.realtime_protocol.as_deref(),
-            self.merged.get(REALTIME_PROTOCOL_KEY),
-            self.settings.azure_realtime_protocol.as_deref(),
-        ));
-        view["api_version"] = json!(configured_or(
-            self.resolved.api_version.clone(),
-            AZURE_DEFAULT_API_VERSION,
-        ));
-    }
-
+    // the resolved plan plus the one handshake; the Azure fields answer only for an Azure scenario
     fn answer(&self, branch: &str, connection: Option<ProbeConnection>) -> Value {
         let provider = self.scenario.custom_llm_provider.as_str();
-        let mut view = json!({
+        let is_azure = provider == AZURE_PROVIDER;
+        let protocol = is_azure.then(|| {
+            azure_protocol(
+                self.request.realtime_protocol.as_deref(),
+                self.merged.get(REALTIME_PROTOCOL_KEY),
+                self.settings.azure_realtime_protocol.as_deref(),
+            )
+        });
+        let api_version = is_azure
+            .then(|| configured_or(self.resolved.api_version.clone(), AZURE_DEFAULT_API_VERSION));
+        let url = connection
+            .as_ref()
+            .filter(|_| branch == VERTEX_AI_PROVIDER)
+            .map(|handshake| handshake.url.clone());
+        let headers: Vec<Value> = connection
+            .as_ref()
+            .map(handshake_headers)
+            .unwrap_or_default();
+        let max_size = connection.as_ref().map(|handshake| handshake.max_size);
+        let ssl = connection
+            .as_ref()
+            .map(|handshake| ssl_kind(&handshake.ssl));
+        json!({
             "branch": branch,
             "api_base": base_value(provider, self.resolved.api_base.clone()),
-            "api_version": Value::Null,
-            "protocol": Value::Null,
-            "url": Value::Null,
-            "headers": json!([]),
-            "max_size": Value::Null,
-            "ssl": Value::Null,
-        });
-        self.azure_fields(&mut view);
-        handshake_fields(&mut view, connection);
-        if branch != VERTEX_AI_PROVIDER {
-            view["url"] = Value::Null;
-        }
-        view
+            "api_version": api_version,
+            "protocol": protocol,
+            "url": url,
+            "headers": headers,
+            "max_size": max_size,
+            "ssl": ssl,
+        })
     }
 }
 
-// websockets.connect's arguments as the comparison reads them; an absent handshake leaves nulls
-fn handshake_fields(view: &mut Value, connection: Option<ProbeConnection>) {
-    let Some(connection) = connection else {
-        return;
-    };
-    let headers: Vec<Value> = connection
+// websockets.connect's headers as the comparison reads them; an absent handshake leaves an empty list
+fn handshake_headers(handshake: &ProbeConnection) -> Vec<Value> {
+    handshake
         .headers
         .iter()
         .map(|(name, value)| json!([name, value]))
-        .collect();
-    view["url"] = json!(connection.url);
-    view["headers"] = json!(headers);
-    view["max_size"] = json!(connection.max_size);
-    view["ssl"] = json!(ssl_kind(&connection.ssl));
+        .collect()
 }
 
 fn failure<Error>(error: Error) -> Box<HelperError>
 where
-    Error: std::fmt::Display,
+    Error: Display,
 {
     Box::new(HelperError {
         class: "ValueError".to_owned(),

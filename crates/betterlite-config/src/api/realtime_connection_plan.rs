@@ -3,11 +3,11 @@ mod tests;
 use crate::api::realtime_connect::RealtimeConnectionSettings;
 use crate::api::realtime_connect::load_settings as load_connection_settings;
 use crate::loader::{ConfigError, EnvironmentLookup};
-use crate::sections::Section;
+use crate::sections::Section as _;
 use crate::sections::openai_realtime::Raw as RealtimeRaw;
 
 // the shared connection settings plus the websocket message cap the probe hands websockets.connect
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct RealtimeProbeSettings {
     pub connection: RealtimeConnectionSettings,
     pub max_message_size_bytes: usize,

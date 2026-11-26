@@ -41,15 +41,12 @@ impl RealtimeModelMetadata for ModelCatalog {
             find_info(self, &BEDROCK_NAMES, &query).map_err(|error| ModelInfoFailure {
                 message: error.to_string(),
             })?;
-        Ok(resolved.map(|resolved| {
-            let supported_endpoints = self
-                .entries
-                .get(&resolved.key)
-                .map_or_else(Vec::new, |entry| {
-                    entry.fields.metadata.supported_endpoints.clone()
-                });
+        Ok(resolved.map(|info| {
+            let supported_endpoints = self.entries.get(&info.key).map_or_else(Vec::new, |entry| {
+                entry.fields.metadata.supported_endpoints.clone()
+            });
             RealtimeModelInfo {
-                mode: resolved.mode,
+                mode: info.mode,
                 supported_endpoints,
             }
         }))

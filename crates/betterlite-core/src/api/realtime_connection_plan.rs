@@ -6,9 +6,11 @@ pub mod vertex;
 
 use async_trait::async_trait;
 use betterlite_auth::auth_model_lists::credential::CredentialSnapshot;
+use betterlite_azure::realtime::error::RealtimeError as AzureRealtimeError;
 use betterlite_config::tls::Verification;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_openai::openai_base_config::Headers;
+use betterlite_openai::realtime::error::RealtimeError as OpenAiRealtimeError;
 use betterlite_openai::realtime::url::{QueryParams, construct_url};
 use secrecy::SecretString;
 use thiserror::Error;
@@ -108,9 +110,9 @@ pub enum RealtimeProbeError {
     #[error("the realtime health check parameter {field} must be a string")]
     ParameterType { field: &'static str },
     #[error(transparent)]
-    Azure(#[from] betterlite_azure::realtime::error::RealtimeError),
+    Azure(#[from] AzureRealtimeError),
     #[error(transparent)]
-    OpenAi(#[from] betterlite_openai::realtime::error::RealtimeError),
+    OpenAi(#[from] OpenAiRealtimeError),
     #[error(
         "Vertex AI realtime: timed out fetching Google OAuth access token after {timeout_seconds:?}s; check network egress from the proxy to the OAuth token endpoint (oauth2.googleapis.com)"
     )]

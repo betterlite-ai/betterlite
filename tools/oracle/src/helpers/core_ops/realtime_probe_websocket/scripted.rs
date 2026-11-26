@@ -104,8 +104,7 @@ impl VertexProbeConfig for ScriptedVertex {
     }
 
     fn tokens(&self) -> Arc<VertexTokenSource> {
-        let source: Arc<VertexTokenSource> = self.source.clone();
-        source
+        self.source.clone()
     }
 
     fn live(&self, target: &VertexProbeTarget, api_base: Option<&str>) -> VertexProbeEndpoint {

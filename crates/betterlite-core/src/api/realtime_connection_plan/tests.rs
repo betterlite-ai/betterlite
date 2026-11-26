@@ -271,8 +271,7 @@ impl VertexProbeConfig for FakeVertex {
     }
 
     fn tokens(&self) -> Arc<VertexTokenSource> {
-        let source: Arc<VertexTokenSource> = self.tokens.clone();
-        source
+        self.tokens.clone()
     }
 
     fn live(&self, target: &VertexProbeTarget, _api_base: Option<&str>) -> VertexProbeEndpoint {
@@ -347,13 +346,13 @@ async fn realtime_probe_stored_precedence() {
     named.api_version = Some(String::from("named-version"));
     named.realtime_protocol = Some(String::from("beta"));
     probe.run(&named, &base).await.unwrap();
-    let connection = dialer.last();
+    let named_connection = dialer.last();
     assert_eq!(
-        connection.url,
+        named_connection.url,
         "wss://named.test/openai/realtime?api-version=named-version&deployment=realtime-a"
     );
     assert_eq!(
-        connection.headers,
+        named_connection.headers,
         Headers::from([(String::from("api-key"), String::from("named-key"))])
     );
     assert!(azure.calls().is_empty(), "a truthy key skips Azure AD");
@@ -366,13 +365,13 @@ async fn realtime_probe_stored_precedence() {
     );
     merged.realtime_protocol = Some(String::from("beta"));
     probe.run(&merged, &base).await.unwrap();
-    let connection = dialer.last();
+    let stored_connection = dialer.last();
     assert_eq!(
-        connection.url,
+        stored_connection.url,
         "wss://stored.test/openai/realtime?api-version=stored-version&deployment=realtime-a"
     );
     assert_eq!(
-        connection.headers,
+        stored_connection.headers,
         Headers::from([(String::from("api-key"), String::from("stored-key"))])
     );
     assert!(azure.calls().is_empty());
@@ -766,12 +765,12 @@ async fn realtime_probe_vertex_and_failures() {
         verification: &Verification::Enabled,
     };
     let chirp = probe_request("vertex_ai", "chirp_2", JsonObject::new());
-    let error = rejection
+    let rejection_error = rejection
         .run(&chirp, &settings())
         .await
         .expect_err("a Speech-to-Text model is rejected");
     assert_eq!(
-        error.to_string(),
+        rejection_error.to_string(),
         "Realtime health checks are not supported for Speech-to-Text streaming model chirp_2; health check it with mode audio_transcription"
     );
     assert_eq!(
@@ -811,21 +810,24 @@ async fn realtime_probe_vertex_and_failures() {
 
     let mut timed_out = settings();
     timed_out.credential_timeout_seconds = 0.0;
-    let error = probe
+    let timeout_error = probe
         .run(&live, &timed_out)
         .await
         .expect_err("a zero bound expires without polling");
     assert_eq!(
-        error.to_string(),
+        timeout_error.to_string(),
         "Vertex AI realtime: timed out fetching Google OAuth access token after 0.0s; check network egress from the proxy to the OAuth token endpoint (oauth2.googleapis.com)"
     );
 
     let unsupported = probe_request("bedrock", MODEL, JsonObject::new());
-    let error = probe
+    let unsupported_error = probe
         .run(&unsupported, &settings())
         .await
         .expect_err("an unsupported provider is a ValueError");
-    assert_eq!(error.to_string(), "Unsupported model: realtime-a");
+    assert_eq!(
+        unsupported_error.to_string(),
+        "Unsupported model: realtime-a"
+    );
 
     dialer.fail(ProbeDialError::new(
         "InvalidStatus",
@@ -855,11 +857,11 @@ async fn realtime_probe_vertex_and_failures() {
 
     let mut broken = probe_request("openai", MODEL, JsonObject::new());
     broken.api_base = Some(String::from("::"));
-    let error = probe
+    let build_error = probe
         .run(&broken, &settings())
         .await
         .expect_err("a URL build failure propagates");
-    assert!(matches!(error, RealtimeProbeError::OpenAi(_)));
+    assert!(matches!(build_error, RealtimeProbeError::OpenAi(_)));
     assert_eq!(dialer.count(), 3, "a failed build never reaches the dialer");
 }
 

@@ -12,7 +12,7 @@ pub const API_BASE_KEY: &str = "api_base";
 pub const API_VERSION_KEY: &str = "api_version";
 
 // the named arguments with the merged parameters underneath them, as the health check resolves them
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct ResolvedProbeParameters {
     pub api_key: Option<SecretString>,
     pub api_base: Option<String>,
