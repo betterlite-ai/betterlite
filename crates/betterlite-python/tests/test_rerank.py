@@ -273,8 +273,9 @@ def test_call_keeps_order(timeout: httpx.Timeout | None) -> None:
 
 
 @pytest.mark.parametrize("timeout", [None, httpx.Timeout(10)])
-def test_call_async_arerank(timeout: httpx.Timeout | None) -> None:
-    with closing(RerankServer()) as server:
+@pytest.mark.parametrize("delay", [0.0, PROVIDER_DELAY])
+def test_call_async_arerank(timeout: httpx.Timeout | None, delay: float) -> None:
+    with closing(RerankServer(delay=delay)) as server:
         response = asyncio.run(
             arerank(
                 model=MODEL, query=QUERY, documents=DOCUMENTS_TEXT,
@@ -289,27 +290,17 @@ def test_call_async_arerank(timeout: httpx.Timeout | None) -> None:
     assert FLOAT.validate_python(hidden["litellm_overhead_time_ms"]) >= 0.0
     assert FLOAT.validate_python(hidden["response_cost"]) == pytest.approx(SEARCH_COST)
     assert "return_documents" not in body_of(call)
+    if delay > 0.0:
+        response_ms = FLOAT.validate_python(hidden["_response_ms"])
+        overhead = FLOAT.validate_python(hidden["litellm_overhead_time_ms"])
+        assert response_ms >= delay * 1000.0
+        assert overhead < response_ms / 2.0
 
 
 def test_call_async_flag() -> None:
     with closing(RerankServer()) as server:
         response = asyncio.run(flagged_rerank(server.url))
     assert indexes_of(response) == [SECOND_INDEX, FIRST_INDEX]
-
-
-def test_call_overhead_no_provider() -> None:
-    with closing(RerankServer(delay=PROVIDER_DELAY)) as server:
-        response = asyncio.run(
-            arerank(
-                model=MODEL, query=QUERY, documents=DOCUMENTS_TEXT,
-                custom_llm_provider=PROVIDER, api_base=server.url, api_key=GOOD_KEY,
-            )
-        )
-        hidden = hidden_of(response)
-    response_ms = FLOAT.validate_python(hidden["_response_ms"])
-    overhead = FLOAT.validate_python(hidden["litellm_overhead_time_ms"])
-    assert response_ms >= PROVIDER_DELAY * 1000.0
-    assert overhead < response_ms / 2.0
 
 
 def test_call_no_document() -> None:
