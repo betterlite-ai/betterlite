@@ -213,9 +213,10 @@ fn non_string_route_entries_are_ignored() {
         "allowed_routes",
         JsonData::Array(vec![JsonData::Number(serde_json::Number::from(7_i32))]),
     )]);
-    let caller = RouteCaller::of_key(&numbers_only);
+    let numbers_caller = RouteCaller::of_key(&numbers_only);
     let exception =
-        *check_virtual_key_route(called("/v1/models", "GET"), &caller, &registry).unwrap_err();
+        *check_virtual_key_route(called("/v1/models", "GET"), &numbers_caller, &registry)
+            .unwrap_err();
     assert!(assert_forbidden(&exception).contains("Only allowed to call routes: []"));
 }
 
@@ -520,6 +521,29 @@ fn password_reset_denied() {
 }
 
 #[test]
+fn only_a_true_reset_flag_denies() {
+    let auth = key_of(vec![
+        ("allowed_routes", strings(&["/v1/models"])),
+        (
+            "metadata",
+            object(&[(
+                "password_reset_required",
+                JsonData::Number(serde_json::Number::from(1_i32)),
+            )]),
+        ),
+    ]);
+    let caller = RouteCaller::of_key(&auth);
+    let registry = registry_of(&[]);
+    // LiteLLM tests `is True`, so a truthy number leaves the ordinary denial in place
+    let exception =
+        *check_virtual_key_route(called("/v1/chat/completions", "POST"), &caller, &registry)
+            .unwrap_err();
+    assert!(
+        assert_forbidden(&exception).starts_with("Virtual key is not allowed to call this route.")
+    );
+}
+
+#[test]
 fn password_reset_allowed_route() {
     let auth = key_of(vec![
         ("allowed_routes", strings(&["/v1/models"])),
@@ -712,21 +736,21 @@ fn string_and_object_grants_iterate_like_python() {
         "allowed_passthrough_routes",
         JsonData::String("/team-pass".to_owned()),
     )]);
-    let caller = RouteCaller {
+    let text_caller = RouteCaller {
         metadata: Some(&text),
         ..RouteCaller::absent()
     };
-    assert!(!check_passthrough_route_access("/team-pass", &caller));
+    assert!(!check_passthrough_route_access("/team-pass", &text_caller));
     // an object is iterated by key
     let map = payload(&[(
         "allowed_passthrough_routes",
         object(&[("/team-pass", JsonData::Null)]),
     )]);
-    let caller = RouteCaller {
+    let map_caller = RouteCaller {
         metadata: Some(&map),
         ..RouteCaller::absent()
     };
-    assert!(check_passthrough_route_access("/team-pass", &caller));
+    assert!(check_passthrough_route_access("/team-pass", &map_caller));
     // non-string list entries are skipped rather than raising
     let mixed = payload(&[(
         "allowed_passthrough_routes",
@@ -735,11 +759,21 @@ fn string_and_object_grants_iterate_like_python() {
             JsonData::String("/team-pass".to_owned()),
         ]),
     )]);
-    let caller = RouteCaller {
+    let mixed_caller = RouteCaller {
         metadata: Some(&mixed),
         ..RouteCaller::absent()
     };
-    assert!(check_passthrough_route_access("/team-pass", &caller));
+    assert!(check_passthrough_route_access("/team-pass", &mixed_caller));
+    // a one-character string is the one value that matches through the character iteration
+    let single = payload(&[(
+        "allowed_passthrough_routes",
+        JsonData::String("x".to_owned()),
+    )]);
+    let single_caller = RouteCaller {
+        metadata: Some(&single),
+        ..RouteCaller::absent()
+    };
+    assert!(check_passthrough_route_access("x", &single_caller));
 }
 
 #[test]
@@ -757,6 +791,21 @@ fn denial_message_lists_every_allowed_route() {
         assert_forbidden(&exception),
         "Virtual key is not allowed to call this route. Only allowed to call routes: ['/v1/models', '/v1/embeddings']. Tried to call route: /v1/chat/completions"
     );
+}
+
+#[test]
+fn denial_message_escapes_route_text() {
+    let auth = key_of(vec![(
+        "allowed_routes",
+        strings(&["/v1/it's", "/v1/back\\slash"]),
+    )]);
+    let caller = RouteCaller::of_key(&auth);
+    let registry = registry_of(&[]);
+    let exception =
+        *check_virtual_key_route(called("/v1/chat/completions", "POST"), &caller, &registry)
+            .unwrap_err();
+    // the message renders the list like Python's repr, escaping quotes and backslashes
+    assert!(assert_forbidden(&exception).contains(r"['/v1/it\'s', '/v1/back\\slash']"));
 }
 
 #[test]

@@ -125,9 +125,9 @@ impl Helper for Op {
     }
 }
 
-fn caller_key(fields: Option<&KeyFields>) -> Result<UserAPIKeyAuth, Box<HelperError>> {
+fn caller_key(key_fields: Option<&KeyFields>) -> Result<UserAPIKeyAuth, Box<HelperError>> {
     let mut dict = BTreeMap::new();
-    if let Some(fields) = fields {
+    if let Some(fields) = key_fields {
         if let Some(routes) = &fields.allowed_routes {
             dict.insert("allowed_routes".to_owned(), JsonData::Array(routes.clone()));
         }

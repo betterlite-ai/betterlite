@@ -181,3 +181,14 @@ async fn failure_stops_downstream() {
     assert_eq!(allowed_status, StatusCode::OK);
     assert!(allowed_reached);
 }
+
+#[tokio::test]
+async fn a_request_without_a_key_has_no_route_restriction() {
+    let (status, _body, reached) = run_request(
+        &config_with_master_key(),
+        Arc::new(VirtualKeyRouteRule::default()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(reached);
+}
