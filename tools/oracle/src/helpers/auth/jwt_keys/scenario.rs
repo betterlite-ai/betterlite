@@ -9,7 +9,8 @@ use betterlite_auth::jwt_keys::settings::JwtKeySettings;
 use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::HelperResult;
-use serde_json::{Value, json};
+use indexmap::IndexMap;
+use serde_json::{Number, Value, json};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use tracing_subscriber::registry;
 
@@ -49,9 +50,9 @@ async fn scenario_answer(
     let clock = Arc::new(StepClock::default());
     let cache = Arc::new(Cache::new(Arc::clone(&clock)));
     let http = Arc::new(Scripted::default());
-    let cache_tier: Arc<dyn KeyCache> = Arc::clone(&cache);
-    let http_source: Arc<dyn JwksHttp> = Arc::clone(&http);
-    let wall_clock: Arc<dyn Clock> = Arc::clone(&clock);
+    let cache_tier: Arc<dyn KeyCache> = Arc::<Cache>::clone(&cache);
+    let http_source: Arc<dyn JwksHttp> = Arc::<Scripted>::clone(&http);
+    let wall_clock: Arc<dyn Clock> = Arc::<StepClock>::clone(&clock);
     let resolver = JwksResolver::new(Arc::new(settings), cache_tier, http_source, wall_clock);
     let mut steps = Vec::with_capacity(scenario.steps.len());
     for step in &scenario.steps {
@@ -97,15 +98,18 @@ async fn step_answer(
 }
 
 // The stage answers a bare key failure as 401 and an outage as the retryable 503, as both proxies do.
-fn error_view(error: &KeyError) -> Value {
+fn error_view(error: &KeyError) -> Json {
     let exception = exception_for(error);
     let status = exception.code.parse::<u16>().unwrap_or(0_u16);
-    json!({
-        "status": status,
-        "type": exception.error_type,
-        "param": exception.param,
-        "code": exception.code,
-    })
+    Json::Object(IndexMap::from([
+        ("status".to_owned(), Json::Number(Number::from(status))),
+        ("type".to_owned(), Json::Text(exception.error_type)),
+        (
+            "param".to_owned(),
+            exception.param.map_or(Json::Null, Json::Text),
+        ),
+        ("code".to_owned(), Json::Text(exception.code)),
+    ]))
 }
 
 struct RecordLevels {

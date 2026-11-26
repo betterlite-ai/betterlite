@@ -13,6 +13,7 @@ from litellm.proxy.auth import handle_jwt
 from litellm.proxy.auth.handle_jwt import JWTHandler
 from litellm.proxy.common_utils.user_api_key_cache import UserApiKeyCache
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter, ValidationError
+from typing_extensions import override
 
 litellm.suppress_debug_info = True
 
@@ -91,7 +92,7 @@ class Clock(Protocol):
     async def sleep(self, delay: float) -> None: ...
 
 
-class FakeClock(Clock):
+class FakeClock:
     def __init__(self) -> None:
         self.now: float = 0.0
         self.sleeps: list[float] = []
@@ -104,34 +105,31 @@ class FakeClock(Clock):
 
 
 # the four levels LiteLLM logs on, where only warning is compared: the rest stay silent
-class Logger:
+class Recorder:
+    def __init__(self) -> None:
+        self.warnings: list[str] = []
+
     def debug(self, message: str, *args: LogArgument) -> None: ...
 
     def info(self, message: str, *args: LogArgument) -> None: ...
-
-    def warning(self, message: str, *args: LogArgument) -> None: ...
-
-    def error(self, message: str, *args: LogArgument) -> None: ...
-
-
-class Recorder(Logger):
-    def __init__(self) -> None:
-        self.warnings: list[str] = []
 
     def warning(self, message: str, *args: LogArgument) -> None:
         del message, args
         self.warnings.append("warning")
 
+    def error(self, message: str, *args: LogArgument) -> None: ...
+
 
 # LiteLLM's in-memory tier, narrowed to the expiry rule the resolver relies on
 class Cache(InMemoryCache):
-    def __init__(self, clock: FakeClock) -> None:
+    def __init__(self, clock: Clock) -> None:
         super().__init__()
         self.clock = clock
         self.values: dict[str, JsonValue] = {}
         self.expiries: dict[str, float] = {}
         self.writes: list[WriteView] = []
 
+    @override
     def get_cache(self, key: str, **kwargs: JsonValue) -> JsonValue:
         del kwargs
         expires_at = self.expiries.get(key)
@@ -141,6 +139,7 @@ class Cache(InMemoryCache):
         self.values.pop(key, None)
         return None
 
+    @override
     def set_cache(self, key: str, value: JsonValue, **kwargs: JsonValue) -> None:
         seconds = TTL.validate_python(kwargs["ttl"])
         expires_at = self.expiries.get(key)
@@ -169,7 +168,10 @@ class ScriptedTransport:
         reply = self.replies.pop(0) if self.replies else Reply(kind="transport")
         if reply["kind"] == "transport":
             raise httpx.ConnectError("the scripted provider is unreachable", request=request)
-        return httpx.Response(reply["status"], text=reply["body"])
+        status, body = reply.get("status"), reply.get("body")
+        if status is None or body is None:
+            raise httpx.ConnectError("the scripted answer has no status or body", request=request)
+        return httpx.Response(status, text=body)
 
 
 # the stage answers a bare key failure as a 401 and an outage as the retryable 503
