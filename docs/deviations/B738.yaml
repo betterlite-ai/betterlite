@@ -1,0 +1,12 @@
+task: B738
+deviations:
+  - what: >-
+      The auth-key-lookup cases under tools/oracle/cases/auth run through the auth_key_lookup helper operation
+      instead of the served HTTP route.
+    why: >-
+      The production server slot that composes this stage still returns no authenticator, so no served route can
+      reach the stage and an HTTP case would compare LiteLLM's token_not_found_in_db answer against the
+      not-yet-composed route; the auth-folder cases in this repo follow the same helper form until the composing
+      task lands.
+    link: ''
+kept_bugs: []
