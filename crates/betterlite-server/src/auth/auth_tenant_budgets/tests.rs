@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -20,7 +21,7 @@ use betterlite_auth::current_spend::{BUDGET_UNVERIFIABLE_DETAIL, SpendQuery};
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::types::Config;
-use betterlite_db::budget_permission_rows::JsonData;
+use betterlite_db::budget_permission_rows::{JsonData, LiteLLMBudgetTable};
 use betterlite_db::managed_resource_rows::tag::TagTable;
 use betterlite_models::decisions::Json;
 use rust_decimal::Decimal;
@@ -164,9 +165,9 @@ impl TagWorld {
 impl TagBudgetCache for TagWorld {
     async fn read_tag(&self, _key: &str) -> Result<Option<TagTable>, PayloadError> {
         if self.broken {
-            return Err(PayloadError::Json(serde_json::Error::io(
-                std::io::Error::other("the cache read failed"),
-            )));
+            return Err(PayloadError::Json(serde_json::Error::io(io::Error::other(
+                "the cache read failed",
+            ))));
         }
         Ok(None)
     }
@@ -210,13 +211,15 @@ impl BudgetRows<TagTable> for TagWorld {
 }
 
 fn tag(name: &str, spend: i64, max_budget: i64) -> TagTable {
-    serde_json::from_value(json!({
-        "tag_name": name,
-        "models": [],
-        "spend": spend,
-        "litellm_budget_table": {"max_budget": max_budget},
-    }))
-    .expect("the tag row decodes")
+    let mut row: TagTable = serde_json::from_str(r#"{"tag_name":"","models":[],"spend":0}"#)
+        .expect("the tag row decodes");
+    row.tag_name = name.to_owned();
+    row.spend = Decimal::from(spend);
+    let mut budget: LiteLLMBudgetTable =
+        serde_json::from_str("{}").expect("the budget row decodes");
+    budget.max_budget = Some(Decimal::from(max_budget));
+    row.litellm_budget_table = Some(budget);
+    row
 }
 
 async fn mark_called(Extension(reached): Extension<Arc<AtomicBool>>) -> &'static str {
@@ -265,7 +268,10 @@ async fn run_request(
 }
 
 // a rule whose tag collaborators are the one world, with a scripted counter only when the test wires one
-fn wired_rule(world: &Arc<TagWorld>, reader: Option<Arc<ScriptedReader>>) -> Arc<TenantBudgetRule> {
+fn wired_rule(
+    world: &Arc<TagWorld>,
+    reader: Option<Arc<dyn SpendReader>>,
+) -> Arc<TenantBudgetRule> {
     let mut wired = rule();
     wired.reader = reader;
     wired.cache = Some(Arc::<TagWorld>::clone(world));
@@ -296,14 +302,14 @@ async fn failure_stops_downstream() {
     // without a database the tag check never reads, so the same request reaches the handler
     let off_world = TagWorld::new(vec![tag("over", 0, 10)], false);
     let off_reader = ScriptedReader::new(vec![Decimal::from(20_i64)]);
-    let (status, _body, reached) = run_request(
+    let (off_status, _body, off_reached) = run_request(
         &config_with_master_key(),
         wired_rule(&off_world, Some(off_reader)),
         r#"{"tags":["over"]}"#,
     )
     .await;
-    assert_eq!(status, StatusCode::OK);
-    assert!(reached);
+    assert_eq!(off_status, StatusCode::OK);
+    assert!(off_reached);
 }
 
 // a key the tenant stage can hand on, with fields the stored copy keeps
@@ -388,8 +394,7 @@ fn tenant_stage(context: &AuthContext, body: &'static str) -> TenantBudgetStageI
         .body(Body::empty())
         .expect("the request builds");
     let bytes = Bytes::from_static(body.as_bytes());
-    let StageInput::AuthTenantBudgets(stage) =
-        stage(&request, Some(context), Some(&bytes)).expect("the stage input builds")
+    let Ok(StageInput::AuthTenantBudgets(stage)) = stage(&request, Some(context), Some(&bytes))
     else {
         panic!("the tenant budget stage input");
     };
@@ -438,7 +443,7 @@ fn bodyless_requests_carry_no_tags_and_require_a_caller() {
     let master_key = SecretString::from(MASTER_KEY.to_owned());
     let context = master_context(&master_key);
 
-    let StageInput::AuthTenantBudgets(no_body) = stage(
+    let Ok(StageInput::AuthTenantBudgets(no_body)) = stage(
         &Request::builder()
             .method("POST")
             .uri(MODEL_ROUTE)
@@ -446,8 +451,7 @@ fn bodyless_requests_carry_no_tags_and_require_a_caller() {
             .expect("the request builds"),
         Some(&context),
         None,
-    )
-    .expect("the stage input builds") else {
+    ) else {
         panic!("the tenant budget stage input");
     };
     assert!(no_body.tags.is_empty());

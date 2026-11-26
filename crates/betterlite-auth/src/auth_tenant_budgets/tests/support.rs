@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::fmt::Debug;
+use std::mem;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -13,6 +14,7 @@ use rust_decimal::Decimal;
 use serde::Serialize;
 use serde_json::json;
 use tracing::field::{Field, Visit};
+use tracing::subscriber::{DefaultGuard, set_default};
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use tracing_subscriber::registry;
@@ -114,7 +116,7 @@ pub(crate) struct Recorder {
 
 impl Recorder {
     pub(crate) fn take(&self) -> Vec<TenantAlert> {
-        std::mem::take(&mut *self.alerts.lock().unwrap_or_else(PoisonError::into_inner))
+        mem::take(&mut *self.alerts.lock().unwrap_or_else(PoisonError::into_inner))
     }
 }
 
@@ -283,28 +285,53 @@ pub(crate) struct TokenFields<'fields> {
     pub(crate) org_id: Option<&'fields str>,
 }
 
+#[derive(Serialize)]
+pub(crate) struct AlertFields<'fields> {
+    pub(crate) token: &'fields str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) org_id: Option<&'fields str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) user_id: Option<&'fields str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) team_id: Option<&'fields str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) team_alias: Option<&'fields str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) key_alias: Option<&'fields str>,
+}
+
 pub(crate) fn number(value: f64) -> JsonData {
     serde_json::from_value(json!(value)).expect("the counter value decodes")
 }
 
 pub(crate) fn project(spend: f64, budget: Option<(Option<f64>, Option<f64>)>) -> CachedProject {
-    let mut fields = json!({"project_id": "proj-1", "spend": spend});
-    if let Some((max_budget, soft_budget)) = budget {
-        fields["litellm_budget_table"] =
-            json!({"max_budget": max_budget, "soft_budget": soft_budget});
-    }
-    serde_json::from_value(fields).expect("the project row decodes")
+    let mut row: CachedProject =
+        serde_json::from_str(r#"{"project_id":"proj-1"}"#).expect("the project row decodes");
+    row.project.spend = Decimal::try_from(spend).expect("the spend is finite");
+    row.project.litellm_budget_table = budget.map(|(max_budget, soft_budget)| {
+        let mut table = budget_table(max_budget);
+        table.soft_budget =
+            soft_budget.map(|value| Decimal::try_from(value).expect("the soft budget is finite"));
+        table
+    });
+    row
 }
 
 // a tag row with no budget table at all
 pub(crate) fn tag(name: &str, spend: f64) -> TagTable {
-    serde_json::from_value(json!({"tag_name": name, "models": [], "spend": spend}))
-        .expect("the tag row decodes")
+    let mut row: TagTable = serde_json::from_str(r#"{"tag_name":"", "models":[], "spend":0}"#)
+        .expect("the tag row decodes");
+    row.tag_name = name.to_owned();
+    row.spend = Decimal::try_from(spend).expect("the spend is finite");
+    row
 }
 
 // the budget table the two budgeted fixtures attach, carrying the one ceiling the checks read
 fn budget_table(max_budget: Option<f64>) -> LiteLLMBudgetTable {
-    serde_json::from_value(json!({"max_budget": max_budget})).expect("the budget table decodes")
+    let mut row: LiteLLMBudgetTable = serde_json::from_str("{}").expect("the budget table decodes");
+    row.max_budget =
+        max_budget.map(|value| Decimal::try_from(value).expect("the ceiling is finite"));
+    row
 }
 
 // a tag row whose budget table exists; its max_budget may still be absent
@@ -316,8 +343,11 @@ pub(crate) fn tag_with_budget(name: &str, spend: f64, max_budget: Option<f64>) -
 
 // an access group row with no budget table at all
 pub(crate) fn group(name: &str, spend: f64) -> ModelAccessGroupBudgetRow {
-    serde_json::from_value(json!({"access_group_name": name, "spend": spend}))
-        .expect("the group row decodes")
+    let mut row: ModelAccessGroupBudgetRow =
+        serde_json::from_str(r#"{"access_group_name":""}"#).expect("the group row decodes");
+    row.access_group_name = name.to_owned();
+    row.spend = Some(Decimal::try_from(spend).expect("the spend is finite"));
+    row
 }
 
 // an access group row whose budget table exists; its max_budget may still be absent
@@ -332,23 +362,19 @@ pub(crate) fn group_with_budget(
 }
 
 pub(crate) fn organization(alias: &str, spend: f64, max_budget: Option<f64>) -> OrganizationTable {
-    let mut fields = json!({
-        "organization_id": "org-1",
-        "organization_alias": alias,
-        "budget_id": "budget-1",
-        "spend": spend,
-        "created_by": "creator",
-        "updated_by": "updater",
-    });
-    if max_budget.is_some() {
-        fields["litellm_budget_table"] = json!({"max_budget": max_budget});
-    }
-    serde_json::from_value(fields).expect("the organization row decodes")
+    let mut row: OrganizationTable = serde_json::from_str(r#"{"organization_id":"org-1","budget_id":"budget-1","created_by":"creator","updated_by":"updater"}"#)
+        .expect("the organization row decodes");
+    row.organization_alias = Some(alias.to_owned());
+    row.spend = Decimal::try_from(spend).expect("the spend is finite");
+    row.litellm_budget_table = max_budget.map(|value| budget_table(Some(value)));
+    row
 }
 
 pub(crate) fn team(organization_id: Option<&str>) -> LiteLLMTeamTable {
-    serde_json::from_value(json!({"team_id": "team-1", "organization_id": organization_id}))
-        .expect("the team row decodes")
+    let mut row: LiteLLMTeamTable =
+        serde_json::from_str(r#"{"team_id":"team-1"}"#).expect("the team row decodes");
+    row.fields.organization_id = organization_id.map(str::to_owned);
+    row
 }
 
 pub(crate) fn decimal(text: &str) -> Decimal {
@@ -399,8 +425,8 @@ impl<S: Subscriber> Layer<S> for EventLog {
     }
 }
 
-pub(crate) fn capture_events() -> (EventLog, tracing::subscriber::DefaultGuard) {
+pub(crate) fn capture_events() -> (EventLog, DefaultGuard) {
     let log = EventLog::default();
-    let guard = tracing::subscriber::set_default(registry().with(log.clone()));
+    let guard = set_default(registry().with(log.clone()));
     (log, guard)
 }

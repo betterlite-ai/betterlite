@@ -2,7 +2,6 @@ use std::future::Future;
 use std::sync::Arc;
 
 use secrecy::ExposeSecret as _;
-use serde_json::json;
 
 use crate::auth_tenant_budgets::access_groups::access_group_max_budget_check as group_check;
 use crate::auth_tenant_budgets::error::TenantBudgetError;
@@ -11,9 +10,9 @@ use crate::auth_tenant_budgets::project::max_budget_check as project_check;
 use crate::auth_tenant_budgets::tags::max_budget_check as tag_check;
 
 use super::support::{
-    OrgWorld, Recorder, ScriptedSpend, TagWorld, admission, decimal, group_with_budget, lookup,
-    number, organization as organization_row, project as project_row, tag_with_budget, team,
-    tenant_sources, token,
+    OrgWorld, Recorder, ScriptedSpend, TagWorld, TokenFields, admission, decimal,
+    group_with_budget, lookup, number, organization as organization_row, project as project_row,
+    tag_with_budget, team, tenant_sources, token,
 };
 
 // every tenant denial is a BudgetExceededError: 422, the entity type and id, both amounts, and the exact message
@@ -76,7 +75,10 @@ async fn all_budget_error_fields_and_default_422() {
     let org_lookup = lookup(&org_world);
     let org_reader = ScriptedSpend::new(vec![number(10.0_f64)]);
     let org_admission = admission(&org_reader, &recorder);
-    let mut org_token = token(json!({"token": "sk-org", "org_id": "org-1"}));
+    let mut org_token = token(TokenFields {
+        token: "sk-org",
+        org_id: Some("org-1"),
+    });
     let org_team = team(None);
     let org_future = organization_check(
         Some(&mut org_token),

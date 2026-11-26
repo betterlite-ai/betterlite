@@ -1,5 +1,4 @@
 use secrecy::ExposeSecret as _;
-use serde_json::json;
 use tracing::Level;
 
 use crate::auth_key_budgets::money::Money;
@@ -11,22 +10,23 @@ use crate::auth_tenant_budgets::project::{
 };
 
 use super::support::{
-    Recorder, ScriptedSpend, admission, capture_events, decimal, number, project, token,
+    AlertFields, Recorder, ScriptedSpend, admission, capture_events, decimal, number, project,
+    token,
 };
 
 #[tokio::test]
 async fn project_absent_budget_and_nonfinite_skip() {
-    let reader = ScriptedSpend::new(vec![number(100.0)]);
+    let reader = ScriptedSpend::new(vec![number(100.0_f64)]);
     let recorder = Recorder::default();
     let admission = TenantAdmission {
         reader: &reader,
         alerts: Some(&recorder),
     };
-    let absent = project(100.0, None);
+    let absent = project(100.0_f64, None);
     max_budget_check(&absent, None, &admission)
         .await
         .expect("an absent budget table skips");
-    let missing = project(100.0, Some((None, Some(5.0))));
+    let missing = project(100.0_f64, Some((None, Some(5.0_f64))));
     max_budget_check(&missing, None, &admission)
         .await
         .expect("an absent ceiling skips");
@@ -57,17 +57,17 @@ async fn project_absent_budget_and_nonfinite_skip() {
 
 #[tokio::test]
 async fn project_counter_key_and_fallback() {
-    let reader = ScriptedSpend::new(vec![number(4.5), number(10.0)]);
+    let reader = ScriptedSpend::new(vec![number(4.5_f64), number(10.0_f64)]);
     let recorder = Recorder::default();
     let admission = TenantAdmission {
         reader: &reader,
         alerts: Some(&recorder),
     };
-    let allowed = project(4.5, Some((Some(10.0), None)));
+    let allowed = project(4.5_f64, Some((Some(10.0_f64), None)));
     max_budget_check(&allowed, None, &admission)
         .await
         .expect("a spend below the ceiling passes");
-    let denied = project(4.5, Some((Some(10.0), None)));
+    let denied = project(4.5_f64, Some((Some(10.0_f64), None)));
     assert!(matches!(
         max_budget_check(&denied, None, &admission).await,
         Err(TenantBudgetError::Denied(_))
@@ -84,11 +84,11 @@ async fn project_counter_key_and_fallback() {
 
 #[tokio::test]
 async fn project_equality_and_zero_deny() {
-    let below = ScriptedSpend::new(vec![number(9.99)]);
+    let below = ScriptedSpend::new(vec![number(9.99_f64)]);
     let below_recorder = Recorder::default();
     let below_admission = admission(&below, &below_recorder);
     max_budget_check(
-        &project(9.99, Some((Some(10.0), None))),
+        &project(9.99_f64, Some((Some(10.0_f64), None))),
         None,
         &below_admission,
     )
@@ -101,23 +101,33 @@ async fn project_equality_and_zero_deny() {
 }
 
 async fn equality_denies() {
-    let reader = ScriptedSpend::new(vec![number(10.0)]);
+    let reader = ScriptedSpend::new(vec![number(10.0_f64)]);
     let recorder = Recorder::default();
     let admission = admission(&reader, &recorder);
-    let error = max_budget_check(&project(10.0, Some((Some(10.0), None))), None, &admission).await;
+    let error = max_budget_check(
+        &project(10.0_f64, Some((Some(10.0_f64), None))),
+        None,
+        &admission,
+    )
+    .await;
     assert!(matches!(error, Err(TenantBudgetError::Denied(_))));
 }
 
 async fn zero_denies() {
-    let reader = ScriptedSpend::new(vec![number(0.0)]);
+    let reader = ScriptedSpend::new(vec![number(0.0_f64)]);
     let recorder = Recorder::default();
     let admission = admission(&reader, &recorder);
-    let error = max_budget_check(&project(0.0, Some((Some(0.0), None))), None, &admission).await;
+    let error = max_budget_check(
+        &project(0.0_f64, Some((Some(0.0_f64), None))),
+        None,
+        &admission,
+    )
+    .await;
     assert!(matches!(error, Err(TenantBudgetError::Denied(_))));
 }
 
 async fn zero_ceiling_denies_spend() {
-    let reader = ScriptedSpend::new(vec![number(0.01)]);
+    let reader = ScriptedSpend::new(vec![number(0.01_f64)]);
     let recorder = Recorder::default();
     let admission = admission(&reader, &recorder);
     let error = max_budget_guard(
@@ -133,19 +143,19 @@ async fn zero_ceiling_denies_spend() {
 
 #[tokio::test]
 async fn project_alert_before_error() {
-    let reader = ScriptedSpend::new(vec![number(11.0)]);
+    let reader = ScriptedSpend::new(vec![number(11.0_f64)]);
     let recorder = Recorder::default();
     let admission = admission(&reader, &recorder);
-    let auth = token(json!({
-        "token": "sk-project",
-        "user_id": "user-1",
-        "team_id": "team-1",
-        "team_alias": "Team alias",
-        "org_id": "org-9",
-        "key_alias": "key-alias",
-    }));
+    let auth = token(AlertFields {
+        token: "sk-project",
+        org_id: Some("org-9"),
+        user_id: Some("user-1"),
+        team_id: Some("team-1"),
+        team_alias: Some("Team alias"),
+        key_alias: Some("key-alias"),
+    });
     let error = max_budget_check(
-        &project(11.0, Some((Some(10.0), None))),
+        &project(11.0_f64, Some((Some(10.0_f64), None))),
         Some(&auth),
         &admission,
     )
@@ -174,14 +184,19 @@ async fn project_alert_before_error() {
 
 #[tokio::test]
 async fn project_without_token_denies_without_alert() {
-    let reader = ScriptedSpend::new(vec![number(11.0)]);
+    let reader = ScriptedSpend::new(vec![number(11.0_f64)]);
     let recorder = Recorder::default();
     let admission = TenantAdmission {
         reader: &reader,
         alerts: Some(&recorder),
     };
     assert!(matches!(
-        max_budget_check(&project(11.0, Some((Some(10.0), None))), None, &admission).await,
+        max_budget_check(
+            &project(11.0_f64, Some((Some(10.0_f64), None))),
+            None,
+            &admission
+        )
+        .await,
         Err(TenantBudgetError::Denied(_))
     ));
     assert!(recorder.take().is_empty());
@@ -191,8 +206,15 @@ async fn project_without_token_denies_without_alert() {
 #[tokio::test]
 async fn project_soft_row_spend_zero_boundary() {
     let recorder = Recorder::default();
-    let auth = token(json!({"token": "sk-soft", "user_id": "user-1"}));
-    let zero = project(0.0, Some((None, Some(0.0))));
+    let auth = token(AlertFields {
+        token: "sk-soft",
+        org_id: None,
+        user_id: Some("user-1"),
+        team_id: None,
+        team_alias: None,
+        key_alias: None,
+    });
+    let zero = project(0.0_f64, Some((None, Some(0.0_f64))));
     assert_eq!(
         soft_budget_check(&zero, Some(&auth), Some(&recorder)),
         SoftOutcome::Alerted
@@ -201,17 +223,17 @@ async fn project_soft_row_spend_zero_boundary() {
     assert_eq!(alerts.len(), 1);
     assert_eq!(alerts[0].spend, decimal("0"));
     assert_eq!(alerts[0].soft_budget, Some(decimal("0")));
-    let below = project(4.99, Some((None, Some(5.0))));
+    let below = project(4.99_f64, Some((None, Some(5.0_f64))));
     assert_eq!(
         soft_budget_check(&below, Some(&auth), Some(&recorder)),
         SoftOutcome::NotCrossed
     );
-    let equality = project(5.0, Some((None, Some(5.0))));
+    let equality = project(5.0_f64, Some((None, Some(5.0_f64))));
     assert_eq!(
         soft_budget_check(&equality, Some(&auth), Some(&recorder)),
         SoftOutcome::Alerted
     );
-    let hard_only = project(9.0, Some((Some(1.0), None)));
+    let hard_only = project(9.0_f64, Some((Some(1.0_f64), None)));
     assert_eq!(
         soft_budget_check(&hard_only, Some(&auth), Some(&recorder)),
         SoftOutcome::NotCrossed
@@ -222,7 +244,7 @@ async fn project_soft_row_spend_zero_boundary() {
 #[test]
 fn project_soft_debug_without_token() {
     let (events, _guard) = capture_events();
-    let crossed = project(6.0, Some((None, Some(5.0))));
+    let crossed = project(6.0_f64, Some((None, Some(5.0_f64))));
     assert_eq!(
         soft_budget_check(&crossed, None, None),
         SoftOutcome::CrossedWithoutToken
@@ -240,14 +262,15 @@ fn project_soft_debug_without_token() {
 #[test]
 fn project_soft_payload() {
     let recorder = Recorder::default();
-    let auth = token(json!({
-        "token": "sk-soft",
-        "user_id": "user-1",
-        "team_id": "team-1",
-        "team_alias": "Team alias",
-        "org_id": "org-9",
-    }));
-    let row = project(7.0, Some((None, Some(5.0))));
+    let auth = token(AlertFields {
+        token: "sk-soft",
+        org_id: Some("org-9"),
+        user_id: Some("user-1"),
+        team_id: Some("team-1"),
+        team_alias: Some("Team alias"),
+        key_alias: None,
+    });
+    let row = project(7.0_f64, Some((None, Some(5.0_f64))));
     assert_eq!(
         soft_budget_check(&row, Some(&auth), Some(&recorder)),
         SoftOutcome::Alerted

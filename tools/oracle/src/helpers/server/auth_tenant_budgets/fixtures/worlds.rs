@@ -47,7 +47,7 @@ fn group_row(budget: ModelAccessGroupBudget) -> ModelAccessGroupBudgetRow {
     }
 }
 
-fn max_budget_table(max_budget: Decimal) -> LiteLLMBudgetTable {
+const fn max_budget_table(max_budget: Decimal) -> LiteLLMBudgetTable {
     LiteLLMBudgetTable {
         budget_id: None,
         soft_budget: None,

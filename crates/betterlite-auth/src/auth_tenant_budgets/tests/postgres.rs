@@ -9,7 +9,6 @@ use betterlite_postgres_fixture::connection::PostgresFixture;
 use clap::Parser;
 use deadpool_postgres::{Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
-use serde_json::json;
 use tokio_postgres::NoTls;
 use tokio_util::task::TaskTracker;
 
@@ -28,7 +27,9 @@ use crate::auth_tenant_budgets::alerts::TenantAlertKind;
 use crate::auth_tenant_budgets::error::TenantBudgetError;
 use crate::auth_tenant_budgets::{TenantAdmission, TenantRequest, TenantSources, admit};
 
-use super::support::{OrgWorld, Recorder, ScriptedSpend, TagWorld, decimal, number, team, token};
+use super::support::{
+    OrgWorld, Recorder, ScriptedSpend, TagWorld, TokenFields, decimal, number, team, token,
+};
 
 // every entity gets its own capped budget row, so a denial names the entity that was actually exhausted
 const SEED: &str = r#"
@@ -242,7 +243,10 @@ async fn project_denial_at_the_stored_ceiling() {
         alerts: Some(&recorder),
     };
     let sources = admitted.sources();
-    let mut token = token(json!({"token": "sk", "org_id": "o-spent"}));
+    let mut token = token(TokenFields {
+        token: "sk",
+        org_id: Some("o-spent"),
+    });
     let mut request = TenantRequest {
         token: Some(&mut token),
         team: None,
@@ -275,7 +279,10 @@ async fn organization_denial_at_the_stored_ceiling() {
         alerts: Some(&recorder),
     };
     let sources = admitted.sources();
-    let mut token = token(json!({"token": "sk", "org_id": "o-spent"}));
+    let mut token = token(TokenFields {
+        token: "sk",
+        org_id: Some("o-spent"),
+    });
     let mut request = TenantRequest {
         token: Some(&mut token),
         team: None,
@@ -307,7 +314,10 @@ async fn team_organization_denial_reaches_the_stored_ceiling() {
         alerts: None,
     };
     let sources = admitted.sources();
-    let mut token = token(json!({"token": "sk"}));
+    let mut token = token(TokenFields {
+        token: "sk",
+        org_id: None,
+    });
     let row = team(Some("o-spent"));
     let mut request = TenantRequest {
         token: Some(&mut token),
@@ -335,7 +345,10 @@ async fn tag_denial_a_cent_over_the_stored_ceiling() {
         alerts: Some(&recorder),
     };
     let sources = admitted.sources();
-    let mut token = token(json!({"token": "sk"}));
+    let mut token = token(TokenFields {
+        token: "sk",
+        org_id: None,
+    });
     let names = ["tag-spent".to_owned(), "tag-roomy".to_owned()];
     let mut request = TenantRequest {
         token: Some(&mut token),
@@ -368,7 +381,10 @@ async fn tag_equality_allows_the_stored_ceiling() {
         alerts: None,
     };
     let sources = admitted.sources();
-    let mut token = token(json!({"token": "sk"}));
+    let mut token = token(TokenFields {
+        token: "sk",
+        org_id: None,
+    });
     let roomy = ["tag-roomy".to_owned()];
     let mut request = TenantRequest {
         token: Some(&mut token),
@@ -394,7 +410,10 @@ async fn unpriced_tag_skips_the_counter() {
         alerts: None,
     };
     let sources = admitted.sources();
-    let mut token = token(json!({"token": "sk"}));
+    let mut token = token(TokenFields {
+        token: "sk",
+        org_id: None,
+    });
     let unpriced = ["tag-unpriced".to_owned()];
     let mut request = TenantRequest {
         token: Some(&mut token),
@@ -421,7 +440,10 @@ async fn group_denial_at_the_stored_ceiling() {
         alerts: Some(&recorder),
     };
     let sources = admitted.sources();
-    let mut token = token(json!({"token": "sk"}));
+    let mut token = token(TokenFields {
+        token: "sk",
+        org_id: None,
+    });
     let matched = ["group-spent".to_owned()];
     let mut request = TenantRequest {
         token: Some(&mut token),
@@ -454,7 +476,10 @@ async fn group_spend_below_the_stored_ceiling() {
         alerts: None,
     };
     let sources = admitted.sources();
-    let mut token = token(json!({"token": "sk"}));
+    let mut token = token(TokenFields {
+        token: "sk",
+        org_id: None,
+    });
     let matched = ["group-roomy".to_owned()];
     let mut request = TenantRequest {
         token: Some(&mut token),
@@ -480,7 +505,10 @@ async fn missing_organization_row_skips() {
         alerts: None,
     };
     let sources = admitted.sources();
-    let mut token = token(json!({"token": "sk", "org_id": "o-absent"}));
+    let mut token = token(TokenFields {
+        token: "sk",
+        org_id: Some("o-absent"),
+    });
     let mut request = TenantRequest {
         token: Some(&mut token),
         team: None,
@@ -505,7 +533,10 @@ async fn unpriced_organization_skips_the_counter() {
         alerts: None,
     };
     let sources = admitted.sources();
-    let mut token = token(json!({"token": "sk", "org_id": "o-unpriced"}));
+    let mut token = token(TokenFields {
+        token: "sk",
+        org_id: Some("o-unpriced"),
+    });
     let mut request = TenantRequest {
         token: Some(&mut token),
         team: None,
@@ -531,7 +562,10 @@ async fn unpriced_project_skips_the_counter() {
         alerts: None,
     };
     let sources = admitted.sources();
-    let mut token = token(json!({"token": "sk"}));
+    let mut token = token(TokenFields {
+        token: "sk",
+        org_id: None,
+    });
     let mut request = TenantRequest {
         token: Some(&mut token),
         team: None,
@@ -556,7 +590,10 @@ async fn missing_tag_does_not_hide_the_group_denial() {
         alerts: None,
     };
     let sources = admitted.sources();
-    let mut token = token(json!({"token": "sk", "org_id": "o-absent"}));
+    let mut token = token(TokenFields {
+        token: "sk",
+        org_id: Some("o-absent"),
+    });
     let names = ["tag-absent".to_owned()];
     let matched = ["group-spent".to_owned()];
     let mut request = TenantRequest {

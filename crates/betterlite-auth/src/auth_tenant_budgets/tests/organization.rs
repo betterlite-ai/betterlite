@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use secrecy::ExposeSecret as _;
-use serde_json::json;
 
 use crate::auth_key_budgets::money::Money;
 use crate::auth_org_lookup::organization::OrgLookup;
@@ -13,13 +12,13 @@ use crate::auth_tenant_budgets::organization::{max_budget_check, org_denies};
 use crate::budget_snapshots::OrgBudgetSnapshot;
 
 use super::support::{
-    OrgWorld, Recorder, ScriptedSpend, admission, decimal, lookup, number, organization, team,
-    token,
+    AlertFields, OrgWorld, Recorder, ScriptedSpend, TokenFields, admission, decimal, lookup,
+    number, organization, team, token,
 };
 
 #[tokio::test]
 async fn org_token_id_precedes_team_including_empty() {
-    let world = Arc::new(OrgWorld::with_row(&organization("acme", 0.0, None)));
+    let world = Arc::new(OrgWorld::with_row(&organization("acme", 0.0_f64, None)));
     let lookup = lookup(&world);
     let reader = ScriptedSpend::new(Vec::new());
     let recorder = Recorder::default();
@@ -28,19 +27,31 @@ async fn org_token_id_precedes_team_including_empty() {
         alerts: Some(&recorder),
     };
     let team = team(Some("team-org"));
-    let mut token_org = token(json!({"token": "sk", "org_id": "token-org"}));
+    let mut token_org = token(TokenFields {
+        token: "sk",
+        org_id: Some("token-org"),
+    });
     max_budget_check(Some(&mut token_org), Some(&team), Some(&lookup), &admission)
         .await
         .expect("an absent ceiling allows");
-    let mut empty_org = token(json!({"token": "sk", "org_id": ""}));
+    let mut empty_org = token(TokenFields {
+        token: "sk",
+        org_id: Some(""),
+    });
     max_budget_check(Some(&mut empty_org), Some(&team), Some(&lookup), &admission)
         .await
         .expect("an empty token organization still wins");
-    let mut from_team = token(json!({"token": "sk"}));
+    let mut from_team = token(TokenFields {
+        token: "sk",
+        org_id: None,
+    });
     max_budget_check(Some(&mut from_team), Some(&team), Some(&lookup), &admission)
         .await
         .expect("the team organization answers when the token has none");
-    let mut nowhere = token(json!({"token": "sk"}));
+    let mut nowhere = token(TokenFields {
+        token: "sk",
+        org_id: None,
+    });
     max_budget_check(Some(&mut nowhere), None, Some(&lookup), &admission)
         .await
         .expect("no organization id skips");
@@ -57,9 +68,13 @@ async fn org_token_id_precedes_team_including_empty() {
 
 #[tokio::test]
 async fn org_missing_context_skips() {
-    let world = Arc::new(OrgWorld::with_row(&organization("acme", 0.0, Some(10.0))));
+    let world = Arc::new(OrgWorld::with_row(&organization(
+        "acme",
+        0.0_f64,
+        Some(10.0_f64),
+    )));
     let lookup = lookup(&world);
-    let reader = ScriptedSpend::new(vec![number(100.0)]);
+    let reader = ScriptedSpend::new(vec![number(100.0_f64)]);
     let recorder = Recorder::default();
     let admission = TenantAdmission {
         reader: &reader,
@@ -69,7 +84,10 @@ async fn org_missing_context_skips() {
     max_budget_check(None, Some(&team), Some(&lookup), &admission)
         .await
         .expect("a token is required");
-    let mut auth = token(json!({"token": "sk", "org_id": "token-org"}));
+    let mut auth = token(TokenFields {
+        token: "sk",
+        org_id: Some("token-org"),
+    });
     max_budget_check(Some(&mut auth), Some(&team), None, &admission)
         .await
         .expect("a database is required");
@@ -85,15 +103,18 @@ async fn org_lookup_error_and_missing_row_skip() {
     let broken = OrgLookup {
         store: None,
         cache,
-        in_memory_ttl: 60.0,
+        in_memory_ttl: 60.0_f64,
     };
-    let reader = ScriptedSpend::new(vec![number(100.0)]);
+    let reader = ScriptedSpend::new(vec![number(100.0_f64)]);
     let recorder = Recorder::default();
     let admission = TenantAdmission {
         reader: &reader,
         alerts: Some(&recorder),
     };
-    let mut absent_row = token(json!({"token": "sk", "org_id": "org-1"}));
+    let mut absent_row = token(TokenFields {
+        token: "sk",
+        org_id: Some("org-1"),
+    });
     max_budget_check(
         Some(&mut absent_row),
         None,
@@ -102,7 +123,10 @@ async fn org_lookup_error_and_missing_row_skip() {
     )
     .await
     .expect("a missing row skips");
-    let mut error = token(json!({"token": "sk", "org_id": "org-1"}));
+    let mut error = token(TokenFields {
+        token: "sk",
+        org_id: Some("org-1"),
+    });
     max_budget_check(Some(&mut error), None, Some(&broken), &admission)
         .await
         .expect("a lookup error skips");
@@ -113,7 +137,7 @@ async fn org_lookup_error_and_missing_row_skip() {
 
 #[tokio::test]
 async fn org_snapshot_before_missing_ceiling_return() {
-    let world = Arc::new(OrgWorld::with_row(&organization("acme", 3.5, None)));
+    let world = Arc::new(OrgWorld::with_row(&organization("acme", 3.5_f64, None)));
     let lookup = lookup(&world);
     let reader = ScriptedSpend::new(Vec::new());
     let recorder = Recorder::default();
@@ -121,7 +145,10 @@ async fn org_snapshot_before_missing_ceiling_return() {
         reader: &reader,
         alerts: Some(&recorder),
     };
-    let mut auth = token(json!({"token": "sk", "org_id": "org-1"}));
+    let mut auth = token(TokenFields {
+        token: "sk",
+        org_id: Some("org-1"),
+    });
     max_budget_check(Some(&mut auth), None, Some(&lookup), &admission)
         .await
         .expect("a missing ceiling allows");
@@ -139,15 +166,22 @@ async fn org_snapshot_before_missing_ceiling_return() {
 
 #[tokio::test]
 async fn org_counter_read_before_finite_test() {
-    let world = Arc::new(OrgWorld::with_row(&organization("acme", 3.0, Some(10.0))));
+    let world = Arc::new(OrgWorld::with_row(&organization(
+        "acme",
+        3.0_f64,
+        Some(10.0_f64),
+    )));
     let lookup = lookup(&world);
-    let reader = ScriptedSpend::new(vec![number(5.0)]);
+    let reader = ScriptedSpend::new(vec![number(5.0_f64)]);
     let recorder = Recorder::default();
     let admission = TenantAdmission {
         reader: &reader,
         alerts: Some(&recorder),
     };
-    let mut auth = token(json!({"token": "sk", "org_id": "org-1"}));
+    let mut auth = token(TokenFields {
+        token: "sk",
+        org_id: Some("org-1"),
+    });
     max_budget_check(Some(&mut auth), None, Some(&lookup), &admission)
         .await
         .expect("a spend below the ceiling passes");
@@ -184,18 +218,23 @@ fn assert_org_alert(alerts: &[TenantAlert]) {
 
 #[tokio::test]
 async fn org_equality_alert_payload_and_error() {
-    let world = Arc::new(OrgWorld::with_row(&organization("acme", 3.0, Some(10.0))));
+    let world = Arc::new(OrgWorld::with_row(&organization(
+        "acme",
+        3.0_f64,
+        Some(10.0_f64),
+    )));
     let lookup = lookup(&world);
-    let reader = ScriptedSpend::new(vec![number(10.0)]);
+    let reader = ScriptedSpend::new(vec![number(10.0_f64)]);
     let recorder = Recorder::default();
     let admission = admission(&reader, &recorder);
-    let mut auth = token(json!({
-        "token": "sk-org",
-        "user_id": "user-1",
-        "team_id": "team-1",
-        "team_alias": "Team alias",
-        "org_id": "org-1",
-    }));
+    let mut auth = token(AlertFields {
+        token: "sk-org",
+        org_id: Some("org-1"),
+        user_id: Some("user-1"),
+        team_id: Some("team-1"),
+        team_alias: Some("Team alias"),
+        key_alias: None,
+    });
     let error = max_budget_check(Some(&mut auth), None, Some(&lookup), &admission)
         .await
         .expect_err("a spend at the ceiling denies");

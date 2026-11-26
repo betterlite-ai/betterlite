@@ -128,6 +128,9 @@ fn master_context(master_key: &SecretString) -> AuthContext {
         Err(StageFailure::TeamBudgets(_)) => {
             panic!("the master key stage runs no team budget check")
         }
+        Err(StageFailure::TenantBudgets(_)) => {
+            panic!("the master key stage runs no tenant budget check")
+        }
         Err(StageFailure::OrgLookup(_)) => {
             panic!("the master key stage runs no organization lookup")
         }

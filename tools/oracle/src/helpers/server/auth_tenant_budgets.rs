@@ -9,7 +9,6 @@ use betterlite_auth::auth_tenant_budgets::project;
 use betterlite_auth::auth_tenant_budgets::tags;
 use betterlite_auth::auth_tenant_budgets::{TenantAdmission, TenantSources, organization};
 use betterlite_auth::resolved_key::auth::{AuthError, AuthInput, UserAPIKeyAuth};
-use betterlite_core::api::request_destination::RequestData;
 use betterlite_core::api::request_destination::parameters::tags_from_request_body;
 use betterlite_db::managed_resource_rows::tag::TagTable;
 use betterlite_oracle_helper_api::error::OrHelperError as _;
@@ -173,8 +172,8 @@ fn recorded(
         "alerts": Value::Array(answers.recorder.alerts()),
         "denial": denial,
     });
-    if let (Some(carried), Some(fields)) = (carried, record.as_object_mut()) {
-        fields.insert("carried".to_owned(), carried);
+    if let (Some(carried_value), Some(fields)) = (carried, record.as_object_mut()) {
+        fields.insert("carried".to_owned(), carried_value);
     }
     Ok(record)
 }
