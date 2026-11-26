@@ -200,6 +200,20 @@ impl Answer {
     }
 }
 
+// the body both scripted existence fakes share: record the call, then answer from the scripted outcome
+fn answered<T>(
+    calls: &Mutex<Vec<T>>,
+    record: T,
+    answer: Answer,
+    missing: ExistenceError,
+) -> Result<bool, ExistenceError> {
+    calls
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .push(record);
+    answer.found().ok_or(missing)
+}
+
 #[derive(Debug)]
 pub(super) struct ScriptedEndUsers {
     pub(super) answer: Answer,
@@ -222,12 +236,8 @@ impl ScriptedEndUsers {
 #[async_trait]
 impl EndUserExistence for ScriptedEndUsers {
     async fn end_user_exists(&self, end_user_id: &str) -> Result<bool, ExistenceError> {
-        self.calls
-            .lock()
-            .expect("the end-user calls")
-            .push(end_user_id.to_owned());
-        let found = self.answer.found();
-        found.ok_or(ExistenceError::EndUser(EndUserObjectError::NoDatabase))
+        let missing = ExistenceError::EndUser(EndUserObjectError::NoDatabase);
+        answered(&self.calls, end_user_id.to_owned(), self.answer, missing)
     }
 }
 
@@ -261,17 +271,18 @@ impl ScriptedUsers {
 #[async_trait]
 impl UserExistence for ScriptedUsers {
     async fn user_exists(&self, probe: &UserProbe<'_>) -> Result<bool, ExistenceError> {
-        self.probes
-            .lock()
-            .expect("the user probes")
-            .push(ProbeRecord {
+        let missing = ExistenceError::User(UserLookupError::NoDatabase);
+        answered(
+            &self.probes,
+            ProbeRecord {
                 user_id: probe.user_id.to_owned(),
                 user_email: probe.user_email.map(str::to_owned),
                 user_id_upsert: probe.user_id_upsert,
                 check_db_only: probe.check_db_only,
-            });
-        let found = self.answer.found();
-        found.ok_or(ExistenceError::User(UserLookupError::NoDatabase))
+            },
+            self.answer,
+            missing,
+        )
     }
 }
 
