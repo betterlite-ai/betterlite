@@ -3,10 +3,10 @@ use std::collections::BTreeSet;
 // Starlette's compile_path: literal text matches in place, each placeholder takes what its convertor's regex takes, and the route must consume the template whole
 #[must_use]
 pub(crate) fn template_matches(template: &str, route: &str) -> bool {
-    match parse(template) {
-        Some(pieces) => matches_pieces(&pieces, route),
-        None => false,
-    }
+    let Some(pieces) = parse(template) else {
+        return false;
+    };
+    matches_pieces(&pieces, route)
 }
 
 // one stretch of literal text and the placeholder that follows it, if any
@@ -28,10 +28,10 @@ impl Convertor {
     fn accepts(self, candidate: &str) -> bool {
         match self {
             Self::Text => !candidate.is_empty() && !candidate.contains('/'),
-            Self::Path => match candidate.strip_suffix('\n') {
-                Some(without) => !without.contains('\n'),
-                None => !candidate.contains('\n'),
-            },
+            Self::Path => candidate.strip_suffix('\n').map_or_else(
+                || !candidate.contains('\n'),
+                |without| !without.contains('\n'),
+            ),
             Self::Int => {
                 !candidate.is_empty() && candidate.bytes().all(|byte| byte.is_ascii_digit())
             }
@@ -132,10 +132,10 @@ fn group(rest: &str) -> Group {
     let Some((width, name)) = converted_group(converted, name_width) else {
         return Group::Literal;
     };
-    match convertor_of(name) {
-        Some(convertor) => Group::Placeholder { width, convertor },
-        None => Group::Unknown,
-    }
+    convertor_of(name).map_or(Group::Unknown, |convertor| Group::Placeholder {
+        width,
+        convertor,
+    })
 }
 
 // the width of "{name:convertor}" and the convertor's name, or None when the group is not a placeholder at all
@@ -194,16 +194,7 @@ fn matches_pieces(pieces: &[Piece<'_>], route: &str) -> bool {
             };
             let after_literal = route.len().saturating_sub(tail.len());
             match piece.convertor {
-                Some(convertor) => {
-                    for end in after_literal..=route.len() {
-                        let Some(candidate) = route.get(after_literal..end) else {
-                            continue;
-                        };
-                        if convertor.accepts(candidate) {
-                            next.insert(end);
-                        }
-                    }
-                }
+                Some(convertor) => next.extend(reachable_ends(convertor, route, after_literal)),
                 None => {
                     next.insert(after_literal);
                 }
@@ -215,4 +206,18 @@ fn matches_pieces(pieces: &[Piece<'_>], route: &str) -> bool {
         positions = next;
     }
     positions.contains(&route.len())
+}
+
+// every end offset the convertor accepts, starting where the piece's literal stopped
+fn reachable_ends(convertor: Convertor, route: &str, after_literal: usize) -> BTreeSet<usize> {
+    let mut ends = BTreeSet::new();
+    for end in after_literal..=route.len() {
+        let Some(candidate) = route.get(after_literal..end) else {
+            continue;
+        };
+        if convertor.accepts(candidate) {
+            ends.insert(end);
+        }
+    }
+    ends
 }

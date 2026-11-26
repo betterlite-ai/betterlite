@@ -20,12 +20,14 @@ pub fn allowed_routes_check(
         UserRole::ProxyAdmin => admin_allowed_routes
             .iter()
             .any(|entry| allows_entry(entry, route)),
-        UserRole::Team => match team_allowed_routes {
-            Some(routes) => routes.iter().any(|entry| allows_entry(entry, route)),
-            None => TEAM_FALLBACK_ROUTES
-                .iter()
-                .any(|entry| allows_entry(entry, route)),
-        },
+        UserRole::Team => team_allowed_routes.map_or_else(
+            || {
+                TEAM_FALLBACK_ROUTES
+                    .iter()
+                    .any(|entry| allows_entry(entry, route))
+            },
+            |routes| routes.iter().any(|entry| allows_entry(entry, route)),
+        ),
         UserRole::ProxyAdminViewer
         | UserRole::OrgAdmin
         | UserRole::InternalUser

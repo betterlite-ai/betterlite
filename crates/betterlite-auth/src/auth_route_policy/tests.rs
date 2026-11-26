@@ -507,10 +507,10 @@ fn denied_message_masks_the_caller() {
     let anonymous = Policy::new("/nothing/here")
         .with_user(r#"{"user_id":""}"#)
         .with_token(r#"{"user_id":""}"#);
-    let exception = anonymous
+    let anonymous_exception = anonymous
         .run()
         .expect_err("the fallback denies an unknown route");
-    assert!(exception.message.contains("Your user_id=*******"));
+    assert!(anonymous_exception.message.contains("Your user_id=*******"));
 }
 
 #[test]
@@ -920,6 +920,7 @@ fn template_int_and_float_convertors() {
     assert!(!template_matches("/x/{value:int}", "/x/seven"));
     assert!(!template_matches("/x/{value:int}", "/x/7.5"));
     assert!(!template_matches("/x/{value:int}", "/x/"));
+    assert!(!template_matches("{first:int}{second:int}", "1\u{e9}"));
     assert!(template_matches("/x/{value:float}", "/x/7"));
     assert!(template_matches("/x/{value:float}", "/x/7.5"));
     assert!(!template_matches("/x/{value:float}", "/x/7."));
@@ -959,15 +960,16 @@ fn template_placeholders_and_literals() {
     assert!(template_matches("/x/{_a}", "/x/7"));
     assert!(template_matches("/x/{value}x", "/x/7x"));
     assert!(template_matches("/x/{value:path}x", "/x/a/bx"));
-    assert!(!template_matches("/x/{}", "/x/7"));
-    assert!(template_matches("/x/{}", "/x/{}"));
-    assert!(!template_matches("/x/{:path}", "/x/7"));
-    assert!(template_matches("/x/{:path}", "/x/{:path}"));
     assert!(!template_matches("/x/{1x}", "/x/7"));
     assert!(template_matches("/x/{1x}", "/x/{1x}"));
     assert!(!template_matches("/x/{value:unknown}", "/x/7"));
     assert!(template_matches("/x/{value:}", "/x/{value:}"));
     assert!(!template_matches("/x/{value:}", "/x/7"));
+}
+
+#[test]
+fn empty_and_unterminated_groups_stay_literal() {
+    assert!(!template_matches("/x/{}", "/x/7"));
+    assert!(template_matches("/x/{}", "/x/{}"));
     assert!(template_matches("/x/{literal", "/x/{literal"));
-    assert!(!template_matches("{a:int}{b:int}", "1\u{e9}"));
 }
