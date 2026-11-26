@@ -171,14 +171,3 @@ fn driver_is_transport(error: &DriverError) -> bool {
             .source()
             .is_some_and(|source| source.downcast_ref::<IoError>().is_some())
 }
-
-fn connect_fault(driver: &DriverError) -> DbError {
-    DbError {
-        error_type: ErrorType::Connect,
-        message: driver.to_string(),
-        code: None,
-        meta_code: None,
-        traceback_modules: Vec::new(),
-        cause: None,
-    }
-}

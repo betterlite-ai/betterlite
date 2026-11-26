@@ -26,6 +26,8 @@ def auth_fields(auth: UserAPIKeyAuth) -> JsonValue:
     view: AuthView = AUTH_VIEW.validate_json(auth.model_dump_json())
     models = view.get("models")
     team_models = view.get("team_models")
+    model_names: list[str] = [] if models is None else models
+    team_model_names: list[str] = [] if team_models is None else team_models
     permission = view.get("object_permission")
     record: dict[str, JsonValue] = {
         "key_name": view.get("key_name"),
@@ -34,8 +36,8 @@ def auth_fields(auth: UserAPIKeyAuth) -> JsonValue:
         "team_alias": view.get("team_alias"),
         "user_role": view.get("user_role"),
         "is_session_token": view.get("is_session_token"),
-        "models": JSON.validate_python([] if models is None else models),
-        "team_models": JSON.validate_python([] if team_models is None else team_models),
+        "models": JSON.validate_python(model_names),
+        "team_models": JSON.validate_python(team_model_names),
         "object_permission_id": view.get("object_permission_id"),
         "has_object_permission": permission is not None,
     }

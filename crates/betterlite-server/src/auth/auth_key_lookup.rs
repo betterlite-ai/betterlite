@@ -17,7 +17,7 @@ use crate::auth::auth_identity::{AuthContext, StageFailure, StageInput, master_k
 use crate::error_body::AuthenticationFailure;
 use crate::state::ServerState;
 
-mod key_headers;
+pub(crate) mod key_headers;
 mod tests;
 
 // The presented credential and the collaborators the lookup needs; the master key is compared in the prefetch.

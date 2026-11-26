@@ -127,7 +127,8 @@ fn stage_is_registered() {
 #[tokio::test]
 async fn failure_stops_downstream() {
     let missing = ScriptedAuthenticator::new(Answer::Missing);
-    let (status, body, reached) = run_request(Arc::clone(&missing)).await;
+    let missing_authenticator = Arc::clone(&missing);
+    let (status, body, reached) = run_request(missing_authenticator).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     assert!(
         body.contains("\"type\":\"token_not_found_in_db\""),
@@ -139,7 +140,8 @@ async fn failure_stops_downstream() {
     assert_eq!(missing.calls(), vec![PRESENTED.to_owned()]);
 
     let outage = ScriptedAuthenticator::new(Answer::Outage);
-    let (status, body, reached) = run_request(Arc::clone(&outage)).await;
+    let outage_authenticator = Arc::clone(&outage);
+    let (status, body, reached) = run_request(outage_authenticator).await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
     assert!(body.contains("\"type\":\"no_db_connection\""), "{body}");
     assert!(body.contains("\"code\":\"503\""), "{body}");

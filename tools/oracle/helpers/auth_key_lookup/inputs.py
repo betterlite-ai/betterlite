@@ -1,6 +1,9 @@
 from typing import Final, Literal, NotRequired, TypedDict
 
+import litellm
 from pydantic import JsonValue, TypeAdapter
+
+litellm.suppress_debug_info = True
 
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 Row = dict[str, JsonValue]

@@ -48,7 +48,7 @@ class ScriptedClient(PrismaClient):
             self._db_auth_reconnect_lock_timeout_seconds = script.lock
 
     @override
-    async def get_data(  # type: ignore[override]  # pyright: ignore[reportIncompatibleMethodOverride]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4862-L4885
+    async def get_data(  # pyright: ignore[reportIncompatibleMethodOverride]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4862-L4885
         self, **_options: JsonValue
     ) -> BaseModel | None:
         used_writer = _options.get("use_writer") is True
@@ -149,7 +149,7 @@ def permission_script(permission: Permission | None) -> PermissionScript:
         "object_permission_id": permission["id"],
         "models": JSON.validate_python(models),
     }
-    table: LiteLLM_ObjectPermissionTable = LiteLLM_ObjectPermissionTable.model_validate(record)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/object_permission.py
+    table: LiteLLM_ObjectPermissionTable = LiteLLM_ObjectPermissionTable.model_validate(record)
     failed = permission.get("fail") is True
     return PermissionScript(table, fail=failed)
 

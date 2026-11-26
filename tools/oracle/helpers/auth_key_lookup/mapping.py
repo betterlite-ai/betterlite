@@ -87,16 +87,14 @@ async def mapping(call: Call) -> JsonValue:
     match lookup["mode"]:
         case "token":
             token_lookup = TOKEN_LOOKUP.validate_python(lookup)
-            keys_one: tuple[str, ...] = await auth_checks.get_jwt_key_mapping_cache_keys_for_token(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3827-L3836
-                token_lookup["hashed_token"], client
-            )
-            record["keys"] = JSON.validate_python(list(keys_one))
+            hashed = token_lookup["hashed_token"]
+            keys_one = await auth_checks.get_jwt_key_mapping_cache_keys_for_token(hashed, client)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3827-L3836
+            record["keys"] = JSON.validate_python(list(keys_one))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3827-L3836
         case "tokens":
             tokens_lookup = TOKENS_LOOKUP.validate_python(lookup)
-            keys_many = await auth_checks.get_jwt_key_mapping_cache_keys_for_tokens(
-                tokens_lookup["hashed_tokens"], client
-            )
-            record["keys"] = JSON.validate_python(list(keys_many))
+            batch = tokens_lookup["hashed_tokens"]
+            keys_many = await auth_checks.get_jwt_key_mapping_cache_keys_for_tokens(batch, client)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3843-L3852
+            record["keys"] = JSON.validate_python(list(keys_many))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3843-L3852
         case "object":
             claim_name, claim_value = claim_pair(call)
             raw_token: str | None = await auth_checks.get_jwt_key_mapping_object(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3855-L3881
