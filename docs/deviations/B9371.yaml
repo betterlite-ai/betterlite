@@ -3,6 +3,12 @@ deviations:
   - what: "A create or cancel reply that is a 3xx the client did not follow, and a delete reply of the same kind, become the provider's error class with the upstream status and body; a GET reply of any status reaches the transform."
     why: "betterlite's exchange raises for every POST or DELETE reply outside 2xx, where httpx's raise_for_status only raises for 4xx and 5xx; a redirect the client cannot follow therefore reaches transform_*_run_response in LiteLLM, which fails to read it as a run. The status check is B9370's shared eval_exchange, and the same split holds for its eval handlers."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1514
+  - what: "A delete_run that runs past its timeout becomes the provider's error class with status 500 marked synthesized and the transport's message, where LiteLLM's sync delete_run_handler turns the same timeout into litellm.Timeout with status 408."
+    why: "betterlite has one async handler and follows the async twin the proxy calls: the async httpx delete has no TimeoutException branch, so the failure reaches _handle_error with no status. A call from the sync delete would see the sync handler's 408."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1671-L1676
+  - what: "A create or cancel timeout message renders the deadline the request ran with and the elapsed time from Duration values: a whole-second deadline prints as an integer and the elapsed time as seconds plus zero-padded milliseconds (time taken=0.050). LiteLLM interpolates Python floats, so a whole-second timeout prints as 2.0 and fifty milliseconds as 0.05."
+    why: "The message still reports the timeout the request ran under and the time the failed request took; only the float rendering differs, since betterlite keeps durations typed."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L852-L866
 kept_bugs:
   - what: list_runs_handler takes no timeout and sends none, so the GET runs on the pooled client's read deadline whatever the operation asked for.
     why: "LiteLLM's list_runs_handler accepts a timeout and never puts it on the async get, so a working setup's list calls run on the client's deadline; honoring it here would time out list calls LiteLLM lets run."
