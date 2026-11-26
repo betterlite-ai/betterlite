@@ -482,16 +482,11 @@ async fn pass_through_without_a_database() {
         .await
         .expect("an absent resolver passes the id through");
     assert_eq!(end_user_id(&without_resolver.context), Some("bob"));
-    let mut no_id = EndUserIdentityStageInput {
-        context: master_context(&master_key),
-        raw_end_user_id: None,
-        rule: Arc::new(EndUserIdentityRule::default()),
-        database: true,
-        state: None,
-        tasks: None,
-    };
-    prefetch(&mut no_id).await.expect("no id resolves to none");
-    assert_eq!(end_user_id(&no_id.context), None);
+    without_resolver.raw_end_user_id = None;
+    prefetch(&mut without_resolver)
+        .await
+        .expect("no id resolves to none");
+    assert_eq!(end_user_id(&without_resolver.context), None);
 }
 
 fn end_user_id(context: &AuthContext) -> Option<&str> {

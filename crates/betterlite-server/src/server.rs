@@ -219,8 +219,7 @@ pub(crate) fn application(
         in_flight: Arc::new(InFlightRequests::new(registry)),
     };
     let application = stack.wrap(stacked);
-    let prefixed = RootPaths::from_settings(&config.sections.request_root_paths);
-    let root_wrapped = match prefixed {
+    let root_wrapped = match RootPaths::from_settings(&config.sections.request_root_paths) {
         Some(paths) => paths.wrap(application),
         None => application,
     };

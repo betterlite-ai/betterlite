@@ -108,7 +108,7 @@ pub(crate) async fn prefetch(
         .as_deref()
         .or(production_resolver.as_deref());
     let validated_id = match resolver {
-        Some(resolver) if stage.database => resolver
+        Some(identity) if stage.database => identity
             .resolve(&ResolveRequest {
                 raw_end_user_id: stage.raw_end_user_id.as_deref(),
                 key_end_user_budget_id: key_end_user_budget_id.as_deref(),
@@ -179,9 +179,8 @@ fn exception(error: &ResolveError) -> ProxyException {
 }
 
 impl fmt::Debug for EndUserIdentityStageInput {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("EndUserIdentityStageInput")
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EndUserIdentityStageInput")
             .field("context", &self.context)
             .field("raw_end_user_id", &self.raw_end_user_id)
             .field("rule", &self.rule)
