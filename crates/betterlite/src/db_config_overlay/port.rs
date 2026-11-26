@@ -105,8 +105,8 @@ async fn run_reload(parts: &OverlayParts) -> Result<ConfigWithBaseline, OverlayE
     drop(state);
     parts.environment.lock().await.extend(updates);
     let resolved = resolve_reload(pending?, shared, &parts.workers).await?;
-    let mut state = parts.state.lock().await;
-    Ok(finish_reload(&mut state, resolved))
+    let mut settled = parts.state.lock().await;
+    Ok(finish_reload(&mut settled, resolved))
 }
 
 // _serve_pass_through_endpoints, with the state guard gone before the installer runs
