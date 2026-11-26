@@ -38,19 +38,24 @@ pub(crate) fn stage_input(
     let context = authenticated
         .cloned()
         .ok_or(AuthenticationFailure::Missing)?;
-    let (team_allowed_routes, registry) = match request.extensions().get::<Arc<ServerState>>() {
-        Some(server) => (
-            server.virtual_key_routes.team_allowed_routes.clone(),
-            server.virtual_key_routes.registry_snapshot(),
-        ),
-        None => (
-            Vec::new(),
-            PassThroughRegistry {
-                root_path: String::new(),
-                registrations: Vec::new(),
+    let (team_allowed_routes, registry) =
+        request.extensions().get::<Arc<ServerState>>().map_or_else(
+            || {
+                (
+                    Vec::new(),
+                    PassThroughRegistry {
+                        root_path: String::new(),
+                        registrations: Vec::new(),
+                    },
+                )
             },
-        ),
-    };
+            |server| {
+                (
+                    server.virtual_key_routes.team_allowed_routes.clone(),
+                    server.virtual_key_routes.registry_snapshot(),
+                )
+            },
+        );
     let route =
         decoded_route_path(request.uri().path()).unwrap_or_else(|| request.uri().path().to_owned());
     let stage = VirtualKeyRouteStageInput {
@@ -67,10 +72,11 @@ pub(crate) fn stage_input(
 pub(crate) fn run_stage(
     stage: &VirtualKeyRouteStageInput,
 ) -> Result<AuthContext, Box<ProxyException>> {
-    let caller = match stage.rule.key.as_ref() {
-        Some(key) => RouteCaller::of_key(key),
-        None => RouteCaller::absent(),
-    };
+    let caller = stage
+        .rule
+        .key
+        .as_ref()
+        .map_or_else(RouteCaller::absent, RouteCaller::of_key);
     let requested = CalledRoute {
         route: &stage.route,
         method: stage.method.as_deref(),
