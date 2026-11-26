@@ -11,7 +11,6 @@ use betterlite_openai::speech::call::{SpeechCall, audio_speech};
 use betterlite_openai::speech::client::SpeechConnection;
 use betterlite_openai::speech::error::SpeechError;
 use betterlite_openai::speech::request::SpeechRequest;
-use betterlite_openai::speech::result::SpeechResponse;
 use betterlite_redact::secret::Redactor;
 
 mod tests;
@@ -24,6 +23,7 @@ struct Prepared {
     connection: SpeechConnection,
 }
 
+#[expect(clippy::too_many_lines)]
 pub(crate) async fn run(
     session: &AudioSession,
     call: SpeechCallWire,
@@ -61,16 +61,7 @@ pub(crate) async fn run(
         status_code: response.status,
         headers: response.headers.clone(),
     };
-    let content = read_content(session, &prepared, response).await?;
-    Ok(SpeechAnswer { content, header })
-}
-
-async fn read_content(
-    session: &AudioSession,
-    prepared: &Prepared,
-    response: SpeechResponse,
-) -> Result<Vec<u8>, CallFailure> {
-    response
+    let content = response
         .content(session.client.limits.body_bytes)
         .await
         .map_err(|error| {
@@ -80,7 +71,8 @@ async fn read_content(
                 &prepared.provider,
                 &session.redactor,
             )
-        })
+        })?;
+    Ok(SpeechAnswer { content, header })
 }
 
 fn prepare(session: &AudioSession, call: &SpeechCallWire) -> Result<Prepared, CallFailure> {

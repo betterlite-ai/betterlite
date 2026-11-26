@@ -50,7 +50,6 @@ impl AudioSession {
         })
     }
 
-    // get_openai_credentials over this session's environment, the payload settings and the call
     pub(crate) fn credentials(
         &self,
         settings: &AudioSettings,

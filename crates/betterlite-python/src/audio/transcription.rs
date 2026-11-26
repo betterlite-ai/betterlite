@@ -39,6 +39,7 @@ struct Prepared {
     options: IndexMap<String, Json>,
 }
 
+#[expect(clippy::too_many_lines)]
 pub(crate) async fn run(
     session: &AudioSession,
     call: AudioCallWire,
@@ -58,16 +59,27 @@ pub(crate) async fn run(
         connection: prepared.connection,
         boundary: Uuid::new_v4(),
     };
-    let reply = send_transcription(
-        session,
-        &transcription,
-        &request,
-        &prepared.model,
-        &prepared.provider,
-    )
-    .await?;
+    let mut logger = SilentAudioLogger;
+    let (outbound, pending) =
+        audio_transcriptions(&transcription, &request, &mut logger).map_err(|error| {
+            transcription_failure(
+                &error,
+                &prepared.model,
+                &prepared.provider,
+                &session.redactor,
+            )
+        })?;
+    let sent = TranscriptionTransport::send(&session.client, outbound).await;
+    let reply = finish_transcription(pending, sent, &mut logger).map_err(|error| {
+        transcription_failure(
+            &error,
+            &prepared.model,
+            &prepared.provider,
+            &session.redactor,
+        )
+    })?;
     let response_ms = started.elapsed().as_secs_f64().mul_add(1000.0_f64, 0.0_f64);
-    answer(
+    let hidden_params = hidden_params(
         &reply,
         &prepared.processed,
         response_ms,
@@ -81,34 +93,9 @@ pub(crate) async fn run(
             &prepared.provider,
             &session.redactor,
         )
-    })
-}
-
-async fn send_transcription(
-    session: &AudioSession,
-    transcription: &TranscriptionCall<'_>,
-    request: &TranscriptionRequest<'_>,
-    model: &str,
-    provider: &str,
-) -> Result<TranscriptionReply, CallFailure> {
-    let mut logger = SilentAudioLogger;
-    let (outbound, pending) = audio_transcriptions(transcription, request, &mut logger)
-        .map_err(|error| transcription_failure(&error, model, provider, &session.redactor))?;
-    let sent = TranscriptionTransport::send(&session.client, outbound).await;
-    finish_transcription(pending, sent, &mut logger)
-        .map_err(|error| transcription_failure(&error, model, provider, &session.redactor))
-}
-
-fn answer(
-    reply: &TranscriptionReply,
-    processed: &ProcessedAudioFile,
-    response_ms: f64,
-    call: &AudioCallWire,
-    model: &str,
-) -> Result<TranscriptionAnswer, TranscriptionError> {
-    let hidden_params = hidden_params(reply, processed, response_ms, call, model)?;
+    })?;
     Ok(TranscriptionAnswer {
-        reply: reply.response.clone(),
+        reply: reply.response,
         response_ms,
         hidden_params,
     })
@@ -176,7 +163,7 @@ fn transcription_connection(
     })
 }
 
-// The handler's model and headers, main.py's duration and the wrapper's timing.
+#[expect(clippy::too_many_lines)]
 fn hidden_params(
     reply: &TranscriptionReply,
     processed: &ProcessedAudioFile,
@@ -204,35 +191,29 @@ fn hidden_params(
         String::from("additional_headers"),
         Json::Object(reply.provider_headers.additional_headers.clone()),
     );
-    insert_duration(&mut hidden, reply, processed, call)?;
-    if let Some(found) = Number::from_f64(response_ms) {
-        hidden.insert(String::from("_response_ms"), Json::Number(found));
-    }
-    Ok(hidden)
-}
-
-fn insert_duration(
-    hidden: &mut IndexMap<String, Json>,
-    reply: &TranscriptionReply,
-    processed: &ProcessedAudioFile,
-    call: &AudioCallWire,
-) -> Result<(), TranscriptionError> {
+    let duration_missing = !reply.response.extra.contains_key("duration");
     if !call.atranscription || call.file_from_kwargs {
-        if !reply.response.extra.contains_key("duration")
-            && let Some(found) = request_duration(&processed.file_content)
-        {
+        if duration_missing && let Some(found) = request_duration(&processed.file_content) {
             hidden.insert(
                 String::from("audio_transcription_duration"),
                 duration_number(Some(found))?,
             );
         }
-    } else if let StoredDuration::Known(found) = &reply.duration {
-        hidden.insert(
-            String::from("audio_transcription_duration"),
-            duration_number(*found)?,
-        );
+    } else {
+        match reply.duration {
+            StoredDuration::Known(found) => {
+                hidden.insert(
+                    String::from("audio_transcription_duration"),
+                    duration_number(found)?,
+                );
+            }
+            StoredDuration::Absent => {}
+        }
     }
-    Ok(())
+    if let Some(found) = Number::from_f64(response_ms) {
+        hidden.insert(String::from("_response_ms"), Json::Number(found));
+    }
+    Ok(hidden)
 }
 
 fn request_duration(content: &[u8]) -> Option<Decimal> {
