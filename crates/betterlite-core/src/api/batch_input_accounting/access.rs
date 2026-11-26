@@ -17,10 +17,6 @@ pub(super) enum AccessFailure<AccessError> {
     Http(BatchHttpError),
 }
 
-fn caller_fields(caller: &UserAPIKeyAuth) -> Result<BatchPrincipalFields, serde_json::Error> {
-    serde_json::to_value(caller).and_then(serde_json::from_value)
-}
-
 // _enforce_batch_file_model_access: the upload target's names win over the row models, then each name is checked
 pub(super) async fn enforce<Access>(
     access: &Access,
@@ -38,7 +34,9 @@ where
     if models.is_empty() {
         return Ok(());
     }
-    let fields = caller_fields(caller).map_err(AccessFailure::Fields)?;
+    let fields: BatchPrincipalFields = serde_json::to_value(caller)
+        .and_then(serde_json::from_value)
+        .map_err(AccessFailure::Fields)?;
     let team = if wants_team(access, caller, &fields) {
         let team_id = account_limits(caller).team_id.unwrap_or_default();
         match access.team(team_id).await.map_err(AccessFailure::Source)? {
@@ -93,8 +91,22 @@ where
         BatchAccessCheck::Failed { message } => {
             return Err(AccessFailure::Http(model_envelope(model, &message)));
         }
+        // A team denial stands unless the key's own access group grants the model
         BatchAccessCheck::Denied { message } => {
-            check_grant(access, caller, team, model, &message).await?;
+            let grant = access
+                .key_group_grants(model, caller, team)
+                .await
+                .map_err(AccessFailure::Source)?;
+            match grant {
+                BatchKeyGrant::Granted => {}
+                BatchKeyGrant::Denied => {
+                    return Err(AccessFailure::Http(model_envelope(model, &message)));
+                }
+                BatchKeyGrant::Failed { message: reason } => {
+                    return Err(AccessFailure::Http(model_envelope(model, &reason)));
+                }
+                BatchKeyGrant::Http(http) => return Err(AccessFailure::Http(http)),
+            }
         }
     }
     let member = access
@@ -102,31 +114,6 @@ where
         .await
         .map_err(AccessFailure::Source)?;
     access_outcome(member, model)
-}
-
-// A team denial stands unless the key's own access group grants the model
-async fn check_grant<Access>(
-    access: &Access,
-    caller: &UserAPIKeyAuth,
-    team: &Access::Team,
-    model: &str,
-    denial: &str,
-) -> Result<(), AccessFailure<Access::Error>>
-where
-    Access: BatchModelAccess,
-{
-    match access
-        .key_group_grants(model, caller, team)
-        .await
-        .map_err(AccessFailure::Source)?
-    {
-        BatchKeyGrant::Granted => Ok(()),
-        BatchKeyGrant::Denied => Err(AccessFailure::Http(model_envelope(model, denial))),
-        BatchKeyGrant::Failed { message } => {
-            Err(AccessFailure::Http(model_envelope(model, &message)))
-        }
-        BatchKeyGrant::Http(http) => Err(AccessFailure::Http(http)),
-    }
 }
 
 async fn check_key_model<Access>(

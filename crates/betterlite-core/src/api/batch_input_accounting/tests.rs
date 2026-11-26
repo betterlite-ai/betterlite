@@ -265,7 +265,9 @@ fn mixed_model_row_access(#[case] case: MixedCase) {
         MixedOutcome::Counted => {
             assert_mixed_usage(&harness, &harness.run(&wire).expect("the rows account"));
         }
-        MixedOutcome::Rejected => assert_rejected(&harness, &wire),
+        MixedOutcome::Rejected => {
+            assert_rejected(&harness, &wire, "claude-3", "model not allowed");
+        }
     }
     assert_eq!(harness.access.asked(), labels(case.asked));
 }
@@ -292,20 +294,17 @@ fn assert_mixed_usage(harness: &Harness, result: &BatchInputAccountingResult) {
     assert!(harness.logs.silence());
 }
 
-fn assert_rejected(harness: &Harness, wire: &str) {
+fn assert_rejected(harness: &Harness, wire: &str, model: &str, reason: &str) {
     let error = harness
         .run(wire)
         .expect_err("the denied model rejects the file");
     assert_eq!(http_of(&error).status, 403);
-    assert_eq!(
-        detail_of(&error),
-        model_denial("claude-3", "model not allowed")
-    );
+    let detail = model_denial(model, reason);
+    assert_eq!(detail_of(&error), detail);
     assert_eq!(
         harness.logs.lines(Level::WARN),
         vec![format!(
-            "Batch rejected: caller not authorized for a model named in file-abc: {}",
-            detail_of(&error)
+            "Batch rejected: caller not authorized for a model named in file-abc: {detail}"
         )]
     );
     assert!(harness.logs.lines(Level::ERROR).is_empty());
@@ -707,37 +706,22 @@ fn a_team_grant_lifts_a_team_denial() {
 #[case::denied(denied_check(), "model not allowed")]
 #[case::failed(BatchAccessCheck::Failed { message: "team lookup failed".to_owned() }, "team lookup failed")]
 fn a_team_refusal_is_a_403(#[case] check: BatchAccessCheck, #[case] reason: &str) {
-    let harness = team_harness(COUNTING_ROW);
-    harness
-        .access
-        .team_checks
-        .insert("gpt-4o".to_owned(), check);
-    let error = harness
-        .run(&input_wire("file-abc", Some(TEAM_CALLER), "[]"))
-        .expect_err("the team refusal rejects the file");
-    assert_eq!(http_of(&error).status, 403);
-    assert_eq!(detail_of(&error), model_denial("gpt-4o", reason));
-    assert_eq!(harness.logs.lines(Level::WARN).len(), 1);
-    assert!(harness.logs.lines(Level::ERROR).is_empty());
+    let mut harness = team_harness(COUNTING_ROW);
+    let checks = &mut harness.access.team_checks;
+    checks.insert("gpt-4o".to_owned(), check);
+    let wire = input_wire("file-abc", Some(TEAM_CALLER), "[]");
+    assert_rejected(&harness, &wire, "gpt-4o", reason);
 }
 
 #[rstest]
 #[case::denied(denied_check(), "model not allowed")]
 #[case::failed(BatchAccessCheck::Failed { message: "member lookup failed".to_owned() }, "member lookup failed")]
 fn a_member_refusal_is_a_403(#[case] check: BatchAccessCheck, #[case] reason: &str) {
-    let harness = team_harness(COUNTING_ROW);
-    harness
-        .access
-        .member_checks
-        .insert("gpt-4o".to_owned(), check);
-    let error = harness
-        .run(&input_wire("file-abc", Some(TEAM_CALLER), "[]"))
-        .expect_err("the member refusal rejects the file");
-    assert_eq!(detail_of(&error), model_denial("gpt-4o", reason));
-    assert_eq!(
-        harness.access.asked(),
-        labels(&["team:team-1", "team_access:gpt-4o", "member:gpt-4o"])
-    );
+    let mut harness = team_harness(COUNTING_ROW);
+    let checks = &mut harness.access.member_checks;
+    checks.insert("gpt-4o".to_owned(), check);
+    let wire = input_wire("file-abc", Some(TEAM_CALLER), "[]");
+    assert_rejected(&harness, &wire, "gpt-4o", reason);
 }
 
 #[test]

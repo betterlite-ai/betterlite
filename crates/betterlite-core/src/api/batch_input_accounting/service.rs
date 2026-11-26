@@ -10,12 +10,14 @@ use super::ports::{
     BatchAccountingCalls, BatchFileFetch, BatchFileRequest, BatchFileSource, BatchModelAccess,
 };
 use super::result::BatchInputAccountingResult;
-use super::rows::{RowInput, countable_entry, entry_model, row_estimate};
+use super::rows::{RowInput, countable_entry, entry_model};
 use super::totals::{Totals, min_configured_otpm_limit};
 use super::{DecodedBatchInputLine, decode_batch_input_accounting};
 use crate::api::api_boundaries::ApiLimits;
 use crate::api::batch_managed_records::MANAGED_FILE_ID_PREFIX;
-use crate::api::batch_output_usage::tokens::{BatchTokenCounter, count_batch_entry_tokens};
+use crate::api::batch_output_usage::tokens::{
+    BatchTokenCounter, count_batch_entry_tokens, estimate_batch_entry_tokens,
+};
 use crate::api::managed_resource_ids::{is_base64_encoded_unified_id, target_model_names};
 use crate::api::request_destination::RequestData;
 
@@ -195,7 +197,11 @@ where
             }
             DecodedBatchInputLine::Fallback { raw } => {
                 let output = self.calls.output_floor(min);
-                totals.add(None, row_estimate(raw), output);
+                totals.add(
+                    None,
+                    i64::try_from(estimate_batch_entry_tokens(raw)).unwrap_or(i64::MAX),
+                    output,
+                );
                 Ok(())
             }
         }
@@ -219,7 +225,9 @@ where
             .map_err(BatchInputAccountingError::Calls)?;
         let total = match countable_entry(entry) {
             RowInput::Zero => 0,
-            RowInput::Unmeasurable => row_estimate(raw),
+            RowInput::Unmeasurable => {
+                i64::try_from(estimate_batch_entry_tokens(raw)).unwrap_or(i64::MAX)
+            }
             RowInput::Measured(measured) => self.count_measured(&measured, raw).await?,
         };
         totals.add(model, total, output);
@@ -234,7 +242,7 @@ where
     ) -> Result<i64, SliceError<Calls, Files, Access>> {
         let document = Json::Object(entry.clone());
         let Ok(tokens) = count_batch_entry_tokens(&document, None, self.counter).await else {
-            return Ok(row_estimate(raw));
+            return Ok(i64::try_from(estimate_batch_entry_tokens(raw)).unwrap_or(i64::MAX));
         };
         Ok(i64::try_from(tokens).unwrap_or(i64::MAX))
     }

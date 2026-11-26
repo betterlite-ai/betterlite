@@ -1,5 +1,4 @@
 use std::error::Error;
-use std::fmt::{self, Display, Formatter};
 
 use betterlite_auth::resolved_key::auth::AuthError;
 use betterlite_models::decisions::Json;
@@ -13,19 +12,6 @@ pub struct BatchHttpError {
     pub status: u16,
     pub detail: Json,
 }
-
-impl Display for BatchHttpError {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
-        write!(
-            formatter,
-            "status={} detail={}",
-            self.status,
-            serde_json::to_string(&self.detail).unwrap_or_default()
-        )
-    }
-}
-
-impl Error for BatchHttpError {}
 
 // The ValueErrors _fetch_managed_file_content raises before it calls the hook
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
@@ -60,7 +46,7 @@ where
     Files(FilesError),
     #[error(transparent)]
     Access(AccessError),
-    #[error(transparent)]
+    #[error("the batch file request was rejected over HTTP")]
     Http(BatchHttpError),
     #[error(transparent)]
     Managed(#[from] BatchManagedFileError),

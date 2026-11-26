@@ -20,7 +20,12 @@ pub(super) fn log_failure<CallsError, FilesError, AccessError>(
             );
         }
         Some(http) => {
-            tracing::error!("Batch input file rejected for {}: {}", file_id, http);
+            tracing::error!(
+                "Batch input file rejected for {}: status={} detail={}",
+                file_id,
+                http.status,
+                serde_json::to_string(&http.detail).unwrap_or_default()
+            );
         }
         None => {
             tracing::error!("Error counting input file usage for {}: {}", file_id, error);

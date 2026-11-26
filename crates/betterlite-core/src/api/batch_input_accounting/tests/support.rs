@@ -35,7 +35,10 @@ fn locked<Value>(mutex: &Mutex<Value>) -> MutexGuard<'_, Value> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-pub(super) fn block_on<Output>(future: impl Future<Output = Output>) -> Output {
+pub(super) fn block_on<Output, Fut>(future: Fut) -> Output
+where
+    Fut: Future<Output = Output>,
+{
     Builder::new_current_thread()
         .build()
         .expect("the test runtime builds")
@@ -246,8 +249,23 @@ pub(super) enum AccessMethod {
     Key,
 }
 
+impl AccessMethod {
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Team => "team",
+            Self::TeamAccess => "team_access",
+            Self::Grant => "grant",
+            Self::Member => "member",
+            Self::Key => "key",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub(super) struct Team(pub(super) &'static str);
+
+type Checked = Result<BatchAccessCheck, AccessPortError>;
+type Granted = Result<BatchKeyGrant, AccessPortError>;
 
 #[derive(Default)]
 pub(super) struct ScriptedAccess {
@@ -273,6 +291,47 @@ impl ScriptedAccess {
     fn note(&self, label: String) {
         locked(&self.asked).push(label);
     }
+
+    fn begin(&self, method: AccessMethod, model: &str) -> Result<(), AccessPortError> {
+        self.note(format!("{}:{model}", method.label()));
+        if self.failure == Some(method) {
+            return Err(AccessPortError);
+        }
+        Ok(())
+    }
+
+    fn verdict(
+        &self,
+        method: AccessMethod,
+        model: &str,
+        checks: &BTreeMap<String, BatchAccessCheck>,
+    ) -> Checked {
+        self.begin(method, model)?;
+        Ok(checks
+            .get(model)
+            .cloned()
+            .unwrap_or(BatchAccessCheck::Allowed))
+    }
+
+    fn team_verdict(&self, model: &str) -> Checked {
+        self.verdict(AccessMethod::TeamAccess, model, &self.team_checks)
+    }
+
+    fn member_verdict(&self, model: &str) -> Checked {
+        self.verdict(AccessMethod::Member, model, &self.member_checks)
+    }
+
+    fn key_verdict(&self, model: &str) -> Checked {
+        self.verdict(AccessMethod::Key, model, &self.key_checks)
+    }
+
+    fn grant_verdict(&self, model: &str) -> Granted {
+        self.begin(AccessMethod::Grant, model)?;
+        match self.grants.get(model) {
+            Some(grant) => Ok(grant.clone()),
+            None => Ok(BatchKeyGrant::Denied),
+        }
+    }
 }
 
 #[async_trait]
@@ -292,71 +351,20 @@ impl BatchModelAccess for ScriptedAccess {
         locked(&self.teams).pop_front().ok_or(AccessPortError)
     }
 
-    async fn team_can_access(
-        &self,
-        model: &str,
-        _caller: &UserAPIKeyAuth,
-        _team: &Team,
-    ) -> Result<BatchAccessCheck, AccessPortError> {
-        self.note(format!("team_access:{model}"));
-        if self.failure == Some(AccessMethod::TeamAccess) {
-            return Err(AccessPortError);
-        }
-        Ok(self
-            .team_checks
-            .get(model)
-            .cloned()
-            .unwrap_or(BatchAccessCheck::Allowed))
+    async fn team_can_access(&self, model: &str, _key: &UserAPIKeyAuth, _team: &Team) -> Checked {
+        self.team_verdict(model)
     }
 
-    async fn key_group_grants(
-        &self,
-        model: &str,
-        _caller: &UserAPIKeyAuth,
-        _team: &Team,
-    ) -> Result<BatchKeyGrant, AccessPortError> {
-        self.note(format!("grant:{model}"));
-        if self.failure == Some(AccessMethod::Grant) {
-            return Err(AccessPortError);
-        }
-        Ok(self
-            .grants
-            .get(model)
-            .cloned()
-            .unwrap_or(BatchKeyGrant::Denied))
+    async fn key_group_grants(&self, model: &str, _key: &UserAPIKeyAuth, _team: &Team) -> Granted {
+        self.grant_verdict(model)
     }
 
-    async fn member_can_access(
-        &self,
-        model: &str,
-        _caller: &UserAPIKeyAuth,
-        _team: &Team,
-    ) -> Result<BatchAccessCheck, AccessPortError> {
-        self.note(format!("member:{model}"));
-        if self.failure == Some(AccessMethod::Member) {
-            return Err(AccessPortError);
-        }
-        Ok(self
-            .member_checks
-            .get(model)
-            .cloned()
-            .unwrap_or(BatchAccessCheck::Allowed))
+    async fn member_can_access(&self, model: &str, _key: &UserAPIKeyAuth, _team: &Team) -> Checked {
+        self.member_verdict(model)
     }
 
-    async fn key_can_call(
-        &self,
-        model: &str,
-        _caller: &UserAPIKeyAuth,
-    ) -> Result<BatchAccessCheck, AccessPortError> {
-        self.note(format!("key:{model}"));
-        if self.failure == Some(AccessMethod::Key) {
-            return Err(AccessPortError);
-        }
-        Ok(self
-            .key_checks
-            .get(model)
-            .cloned()
-            .unwrap_or(BatchAccessCheck::Allowed))
+    async fn key_can_call(&self, model: &str, _key: &UserAPIKeyAuth) -> Checked {
+        self.key_verdict(model)
     }
 }
 
