@@ -75,7 +75,7 @@ pub(super) fn read_kwargs(
         .map(plain_read_timeout)
         .transpose()?;
     let kwargs = ReadKwargs {
-        custom_llm_provider: read_provider(provider),
+        custom_llm_provider: provider.map_or_else(ReadProvider::default, ReadProvider),
         extra_headers,
         extra_body,
         api_base: params.api_base,
@@ -86,21 +86,13 @@ pub(super) fn read_kwargs(
         request_timeout,
         max_retries: params.max_retries,
         is_async: false,
-        litellm_call_id: kwarg(params.litellm_call_id),
-        id: kwarg(params.id),
+        litellm_call_id: params.litellm_call_id.map_or(Kwarg::Absent, Kwarg::Text),
+        id: params.id.map_or(Kwarg::Absent, Kwarg::Text),
         after: None,
         limit: None,
         order: None,
     };
     Ok((kwargs, trusted))
-}
-
-fn read_provider(provider: Option<String>) -> ReadProvider {
-    provider.map_or_else(ReadProvider::default, ReadProvider)
-}
-
-fn kwarg(value: Option<String>) -> Kwarg {
-    value.map_or(Kwarg::Absent, Kwarg::Text)
 }
 
 // GenericLiteLLMParams.timeout declares float | str | httpx.Timeout
