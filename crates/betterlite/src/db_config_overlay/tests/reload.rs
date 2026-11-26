@@ -562,6 +562,170 @@ fn resolver_stops_past_the_depth_limit(
     );
 }
 
+const REFUSED_CUSTOM_AUTH: &str = "Refused remote-URL value for DB-overlay general_settings.custom_auth=\"s3://attacker/module.handler\"; only config.yaml entries may reference s3:// / gcs:// modules.";
+
+#[tokio::test]
+async fn db_reference_remote_module_from_environment_variables_row() {
+    let (logs, _guard) = capture_logs();
+    let directory = TempDir::new().unwrap();
+    let path = write_config(directory.path(), "general_settings: {}\n");
+    let mut overlay = state(true, &Arc::new(RecordingRuntime::default()));
+    let rows = database(&[
+        (
+            "general_settings",
+            json!({"custom_auth": "os.environ/AUTH_MODULE"}),
+        ),
+        (
+            "environment_variables",
+            json!({"AUTH_MODULE": "s3://attacker/module.handler"}),
+        ),
+    ]);
+    let reloaded = reload_config(
+        &mut overlay,
+        &file_source(&path),
+        Some(&rows),
+        &mut BTreeMap::new(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        reloaded.values["general_settings"],
+        json!({"custom_auth": null})
+    );
+    assert_eq!(
+        overlay.config.snapshot()["general_settings"],
+        json!({"custom_auth": null})
+    );
+    assert!(logs.contents().contains(REFUSED_CUSTOM_AUTH));
+}
+
+#[tokio::test]
+async fn db_reference_remote_module_from_the_process_environment() {
+    let (logs, _guard) = capture_logs();
+    let directory = TempDir::new().unwrap();
+    let path = write_config(directory.path(), "general_settings: {}\n");
+    let mut overlay = state(true, &Arc::new(RecordingRuntime::default()));
+    let rows = database(&[(
+        "general_settings",
+        json!({"custom_auth": "os.environ/AUTH_MODULE"}),
+    )]);
+    let mut env = environment(&[("AUTH_MODULE", "s3://attacker/module.handler")]);
+    let reloaded = reload_config(&mut overlay, &file_source(&path), Some(&rows), &mut env)
+        .await
+        .unwrap();
+    assert_eq!(
+        reloaded.values["general_settings"],
+        json!({"custom_auth": null})
+    );
+    assert!(logs.contents().contains(REFUSED_CUSTOM_AUTH));
+}
+
+// LiteLLM's _resolved_config_value rebuilds a list from its mapping items alone, so a callbacks entry that is an os.environ/ reference never becomes a module URL
+#[tokio::test]
+async fn db_reference_remote_module_stays_unresolved_in_the_callbacks_list() {
+    let (logs, _guard) = capture_logs();
+    let directory = TempDir::new().unwrap();
+    let path = write_config(directory.path(), "litellm_settings: {}\n");
+    let mut overlay = state(true, &Arc::new(RecordingRuntime::default()));
+    let rows = database(&[(
+        "litellm_settings",
+        json!({"callbacks": ["os.environ/CALLBACK", "langfuse"]}),
+    )]);
+    let mut env = environment(&[("CALLBACK", "gcs://bucket/callbacks.py")]);
+    let reloaded = reload_config(&mut overlay, &file_source(&path), Some(&rows), &mut env)
+        .await
+        .unwrap();
+    assert_eq!(
+        reloaded.values["litellm_settings"],
+        json!({"callbacks": ["os.environ/CALLBACK", "langfuse"]})
+    );
+    assert!(!logs.contents().contains("Refused 1 remote-URL entries"));
+}
+
+#[tokio::test]
+async fn db_reference_remote_module_refused_in_a_provider_map_entry() {
+    let (logs, _guard) = capture_logs();
+    let directory = TempDir::new().unwrap();
+    let path = write_config(directory.path(), "litellm_settings: {}\n");
+    let mut overlay = state(true, &Arc::new(RecordingRuntime::default()));
+    let rows = database(&[(
+        "litellm_settings",
+        json!({"custom_provider_map": [
+            {"provider": "custom", "custom_handler": "os.environ/HANDLER"}
+        ]}),
+    )]);
+    let mut env = environment(&[("HANDLER", "gcs://bucket/handler.py")]);
+    let reloaded = reload_config(&mut overlay, &file_source(&path), Some(&rows), &mut env)
+        .await
+        .unwrap();
+    assert_eq!(
+        reloaded.values["litellm_settings"],
+        json!({"custom_provider_map": [
+            {"provider": "custom", "custom_handler": null}
+        ]})
+    );
+    assert!(logs.contents().contains(
+        "Refused remote-URL custom_handler from DB-overlay litellm_settings.custom_provider_map: \"gcs://bucket/handler.py\""
+    ));
+}
+
+#[tokio::test]
+async fn db_reference_remote_module_kept_for_config_file_values() {
+    let (logs, _guard) = capture_logs();
+    let directory = TempDir::new().unwrap();
+    let path = write_config(
+        directory.path(),
+        "general_settings:\n  custom_auth: os.environ/AUTH_MODULE\n",
+    );
+    let mut overlay = state(true, &Arc::new(RecordingRuntime::default()));
+    let rows = database(&[("general_settings", json!({"master_key": "sk-db"}))]);
+    let mut env = environment(&[("AUTH_MODULE", "s3://attacker/module.handler")]);
+    let reloaded = reload_config(&mut overlay, &file_source(&path), Some(&rows), &mut env)
+        .await
+        .unwrap();
+    assert_eq!(
+        reloaded.values["general_settings"]["custom_auth"],
+        json!("s3://attacker/module.handler")
+    );
+    assert!(!logs.contents().contains(REFUSED_CUSTOM_AUTH));
+}
+
+#[tokio::test]
+async fn db_reference_remote_module_in_a_database_pass_through_target() {
+    let (logs, _guard) = capture_logs();
+    let directory = TempDir::new().unwrap();
+    let path = write_config(
+        directory.path(),
+        "general_settings:\n  pass_through_endpoints:\n    - {path: /file, target: os.environ/FILE_TARGET}\n",
+    );
+    let mut overlay = state(true, &Arc::new(RecordingRuntime::default()));
+    let rows = database(&[(
+        "general_settings",
+        json!({"pass_through_endpoints": [
+            {"path": "/remote", "target": "os.environ/DB_TARGET"},
+            {"path": "/http", "target": "https://example.test"}
+        ]}),
+    )]);
+    let mut env = environment(&[
+        ("DB_TARGET", "s3://attacker/module.handler"),
+        ("FILE_TARGET", "gcs://bucket/file_handler.py"),
+    ]);
+    let reloaded = reload_config(&mut overlay, &file_source(&path), Some(&rows), &mut env)
+        .await
+        .unwrap();
+    assert_eq!(
+        reloaded.values["general_settings"]["pass_through_endpoints"],
+        json!([
+            {"path": "/remote", "target": null},
+            {"path": "/http", "target": "https://example.test"},
+            {"path": "/file", "target": "gcs://bucket/file_handler.py"}
+        ])
+    );
+    assert!(logs.contents().contains(
+        "Refused remote-URL target from DB-overlay general_settings.pass_through_endpoints (path=\"/remote\"): \"s3://attacker/module.handler\""
+    ));
+}
+
 #[test]
 fn resolver_leaves_values_without_a_reference_alone() {
     let lookup = secret_lookup(None);
