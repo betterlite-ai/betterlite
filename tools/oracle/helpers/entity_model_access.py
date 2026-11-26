@@ -241,7 +241,8 @@ async def run_step(step: Step) -> StepResult:
 async def run_steps(steps: list[Step]) -> list[StepResult]:
     results: list[StepResult] = []
     for step in steps:
-        results.append(await run_step(step))
+        result = await run_step(step)
+        results.append(result)
     return results
 
 
