@@ -466,36 +466,28 @@ async fn router_calls_maps_a_pod_without_a_router_to_a_failure() {
     let messages = vec![Json::Text("hi".to_owned())];
     let shadow_params = IndexMap::new();
     let parent_metadata = IndexMap::new();
-    assert_shadow_fails(&calls, &messages, &shadow_params, &parent_metadata).await;
-    assert_judge_fails(&calls, &messages, &parent_metadata).await;
+    assert_calls_report_failures(&calls, &messages, &shadow_params, &parent_metadata).await;
 }
 
-async fn assert_shadow_fails(
+async fn assert_calls_report_failures(
     calls: &RouterCalls<'_>,
     messages: &[Json],
     shadow_params: &IndexMap<String, Json>,
     parent_metadata: &IndexMap<String, Json>,
 ) {
-    let request = ShadowRequest {
+    let shadow_request = ShadowRequest {
         target_model: ARM,
         messages,
         shadow_params,
         parent_metadata,
     };
-    let Err(ArmFailure::Failed(failure)) = calls.shadow(&request).await else {
+    let Err(ArmFailure::Failed(shadow_failure)) = calls.shadow(&shadow_request).await else {
         panic!("a pod without a router reports a failure");
     };
-    assert_eq!(failure.error, NO_ROUTER_ERROR);
-    assert_eq!(failure.cost, Decimal::ZERO);
-}
-
-async fn assert_judge_fails(
-    calls: &RouterCalls<'_>,
-    messages: &[Json],
-    parent_metadata: &IndexMap<String, Json>,
-) {
+    assert_eq!(shadow_failure.error, NO_ROUTER_ERROR);
+    assert_eq!(shadow_failure.cost, Decimal::ZERO);
     let no_tools = Json::Null;
-    let request = JudgeRequest {
+    let judge_request = JudgeRequest {
         judge_model: "judge-model",
         messages,
         real_text: "real answer",
@@ -503,8 +495,8 @@ async fn assert_judge_fails(
         tools: &no_tools,
         parent_metadata,
     };
-    let Err(ArmFailure::Failed(failure)) = calls.judge(&request).await else {
+    let Err(ArmFailure::Failed(judge_failure)) = calls.judge(&judge_request).await else {
         panic!("a missing judge target reports a failure");
     };
-    assert!(failure.error.starts_with("judge call failed:"));
+    assert!(judge_failure.error.starts_with("judge call failed:"));
 }

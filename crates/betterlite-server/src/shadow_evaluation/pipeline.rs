@@ -57,20 +57,15 @@ pub async fn run_shadow_eval<Database, Counter>(
     Database: ShadowTables,
     Counter: SpendCounter,
 {
-    let Some(database) = deps.database else {
-        deps.funnel.record(&job.id, FunnelStage::Withheld);
-        return;
-    };
-    if key_or_team_over_budget(sample.parent_metadata, deps.advisory).await {
-        deps.funnel.record(&job.id, FunnelStage::Withheld);
-        return;
-    }
-    if !budget_allows(job, deps.spend).await {
+    let sampled = deps.database.is_some()
+        && !key_or_team_over_budget(sample.parent_metadata, deps.advisory).await
+        && budget_allows(job, deps.spend).await;
+    if !sampled {
         deps.funnel.record(&job.id, FunnelStage::Withheld);
         return;
     }
     let attempts = AttemptDeps {
-        database: Some(database),
+        database: deps.database,
         counter: deps.counter,
         calls: deps.calls,
     };
