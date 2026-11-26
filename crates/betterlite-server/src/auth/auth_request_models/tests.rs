@@ -107,39 +107,20 @@ fn master_context(master_key: &SecretString) -> AuthContext {
         Err(StageFailure::Authentication(_)) => {
             panic!("the master key stage authenticates")
         }
-        Err(StageFailure::ModelAccess(_) | StageFailure::EntityModelAccess(_)) => {
-            panic!("the master key stage reports no model access")
-        }
-        Err(StageFailure::AuthRequestPolicy(_)) => {
-            panic!("the master key stage runs no request policy check")
-        }
-        Err(StageFailure::ResourceGrants(_)) => {
-            panic!("the master key stage reports no resource grants")
-        }
-        Err(StageFailure::TagBudgets(_)) => {
-            panic!("the master key stage reports no tag budgets")
-        }
-        Err(StageFailure::RequestBodySafety(_)) => {
-            panic!("the master key stage runs no body safety check")
-        }
-        Err(StageFailure::VirtualKeyRoutes(_)) => {
-            panic!("the master key stage runs no virtual key route check")
-        }
-        Err(StageFailure::KeyBudgets(_)) => {
-            panic!("the master key stage runs no key budget check")
-        }
-        Err(StageFailure::ModelBudgets(_)) => {
-            panic!("the master key stage runs no model budget check")
-        }
-        Err(StageFailure::TeamBudgets(_)) => {
-            panic!("the master key stage runs no team budget check")
-        }
-        Err(StageFailure::OrgLookup(_)) => {
-            panic!("the master key stage runs no organization lookup")
-        }
-        Err(StageFailure::EndUsers(_)) => {
-            panic!("the master key stage runs no end-user check")
-        }
+        Err(
+            StageFailure::ModelAccess(_)
+            | StageFailure::EntityModelAccess(_)
+            | StageFailure::AuthRequestPolicy(_)
+            | StageFailure::ResourceGrants(_)
+            | StageFailure::TagBudgets(_)
+            | StageFailure::RequestBodySafety(_)
+            | StageFailure::VirtualKeyRoutes(_)
+            | StageFailure::KeyBudgets(_)
+            | StageFailure::ModelBudgets(_)
+            | StageFailure::TeamBudgets(_)
+            | StageFailure::OrgLookup(_)
+            | StageFailure::EndUsers(_),
+        ) => panic!("the master key stage runs no other auth check"),
     }
 }
 
