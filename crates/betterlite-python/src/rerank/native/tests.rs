@@ -32,7 +32,7 @@ fn header_wire(module: usize, caller: usize) -> String {
 
 #[test]
 fn request_caps_keep_their_values() {
-    assert_eq!(MAX_REQUEST_BYTES, 8_388_608);
+    assert_eq!(MAX_REQUEST_BYTES, 0x0080_0000);
     assert_eq!(MAX_DOCUMENTS, 100_000);
     assert_eq!(MAX_HEADERS, 256);
 }

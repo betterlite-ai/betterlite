@@ -180,10 +180,7 @@ pub(crate) fn hidden_params(facts: &HiddenFacts<'_>) -> HiddenParams {
 
 // Number::from_f64 gives None for NaN and infinities, which JSON keeps as null
 fn number(value: f64) -> Json {
-    match Number::from_f64(value) {
-        Some(parsed) => Json::Number(parsed),
-        None => Json::Null,
-    }
+    Number::from_f64(value).map_or_else(|| Json::Null, Json::Number)
 }
 
 fn text(value: Option<&str>) -> Json {
