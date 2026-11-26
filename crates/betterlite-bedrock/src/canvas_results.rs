@@ -213,11 +213,10 @@ where
     let record = lookup.price_record(model)?;
     let price = match record.get(OUTPUT_COST_PER_IMAGE) {
         None => Decimal::ZERO,
-        Some(Scalar::Null) => return None,
+        Some(Scalar::Null | Scalar::Array(_) | Scalar::Object(_)) => return None,
         Some(Scalar::Bool(flag)) => Decimal::from(u8::from(*flag)),
         Some(Scalar::Number(number)) => parse_decimal_lexeme(&number.to_string()).ok()?,
         Some(Scalar::Text(text)) => parse_decimal_lexeme(text.trim()).ok()?,
-        Some(Scalar::Array(_) | Scalar::Object(_)) => return None,
     };
     let count = Decimal::from(u64::try_from(image_count).ok()?);
     Some(cost_value(price.checked_mul(count)?))
