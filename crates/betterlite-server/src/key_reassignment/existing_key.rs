@@ -10,7 +10,6 @@ use betterlite_db::key_repository::VerificationTokenRepository;
 use betterlite_db::key_repository::decode::{TokenDecodeError, decode_mapping};
 use betterlite_db::key_repository::table::columns::TokenColumn;
 use betterlite_db::key_repository::table::{RawTokenRow, TokenFilter, TokenValue};
-use betterlite_db::postgres_store::session::PostgresStore;
 
 use crate::key_fields::shared::hash_token_if_needed;
 use crate::key_list_filters::postgres::PostgresTokenClient;
