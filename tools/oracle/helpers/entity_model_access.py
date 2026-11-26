@@ -95,6 +95,15 @@ class Database(PrismaClient):
     def __init__(self) -> None: ...
 
 
+class ServiceLogging:
+    async def async_service_success_hook(self, **_kwargs: object) -> None: ...
+
+
+class ProxyLoggingStub(ProxyLogging):
+    def __init__(self) -> None:
+        self.service_logging_obj = ServiceLogging()
+
+
 class ProxyServer(ModuleType):
     prisma_client: PrismaClient | None
     proxy_logging_obj: ProxyLogging | None
@@ -228,7 +237,7 @@ async def run_step(step: Step) -> StepResult:
     fixture = Fixture(step)
     proxy_server = ProxyServer(PROXY_MODULE)
     proxy_server.prisma_client = Database() if step["database"] else None
-    proxy_server.proxy_logging_obj = None
+    proxy_server.proxy_logging_obj = ProxyLoggingStub()
     proxy_server.user_api_key_cache = KeyCache(fixture)
     sys.modules[PROXY_MODULE] = proxy_server
     try:

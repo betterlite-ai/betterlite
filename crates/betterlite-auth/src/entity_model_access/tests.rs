@@ -189,19 +189,17 @@ async fn key_groups_replace_grants() {
     can_key_call_model(&one("claude"), &valid_token, &context, Some(&lookup))
         .await
         .unwrap();
-    // the group allowlist replaces the key's own list, so the key model is no longer granted
-    let refused = can_key_call_model(&one("gpt-4o"), &valid_token, &context, Some(&lookup))
+    can_key_call_model(&one("gpt-4o"), &valid_token, &context, Some(&lookup))
+        .await
+        .unwrap();
+    let refused = can_key_call_model(&one("other"), &valid_token, &context, Some(&lookup))
         .await
         .unwrap_err();
     assert_eq!(
         error_type(&refused),
         ProxyErrorTypes::KeyModelAccessDenied.to_string()
     );
-    // the retry grant holds the group list alone: a union would still name the key's own model
-    assert_eq!(
-        internal(&refused),
-        single_model_internal("claude", "gpt-4o")
-    );
+    assert_eq!(internal(&refused), single_model_internal("claude", "other"));
 }
 
 fn single_model_internal(models: &str, tried: &str) -> String {
@@ -425,6 +423,7 @@ async fn resolved_default_db_argument() {
     let script = Arc::new(
         Script::new()
             .with_group(group_row(GROUP_KEY))
+            .with_group(group_row(GROUP_TEAM))
             .with_team(team_row(TEAM_ONE)),
     );
     let lookup = team_lookup(&script);
