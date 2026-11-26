@@ -37,6 +37,5 @@ def resolve_sandbox_tool(name: str) -> dict[str, JsonValue] | None:
     return OBJECT.validate_python(answer)
 
 
-# ast-grep-ignore: no-one-line-functions - LiteLLM's clear_sandbox_tools forwards one call
 def clear_sandbox_tools() -> None:
     register_sandbox_tools([])

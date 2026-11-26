@@ -308,7 +308,6 @@ def test_systemone_signature() -> None:
         ),
     ],
 )
-# ast-grep-ignore: no-one-line-functions - the signature comparison is the whole check
 def test_sandbox_signature(ours: inspect.Signature, reference: inspect.Signature) -> None:
     assert parameter_rows(ours) == parameter_rows(reference)
 
