@@ -1,0 +1,40 @@
+kind: helper
+name: settings-schema-defs-do-not-create-legacy-nested-sections
+call:
+  settings_schema:
+    settings_key: default_internal_user_params
+    config:
+      litellm_settings:
+        default_internal_user_params: {}
+    schema:
+      description: root
+      properties:
+        user_role:
+          type: string
+        models:
+          type: array
+          items:
+            $ref: "#/$defs/ModelName"
+        legacy:
+          type: array
+          items:
+            $ref: "#/definitions/Legacy"
+      $defs:
+        ModelName:
+          enum:
+            - gpt-4o
+      definitions:
+        Legacy:
+          description: legacy section
+          properties:
+            model_name:
+              description: the model name
+            team_id: {}
+    defaults:
+      user_role: internal_user_viewer
+      max_budget: null
+      budget_duration: null
+      models: null
+      teams: null
+env: {}
+compare: {ignore: []}

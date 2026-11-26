@@ -1,0 +1,39 @@
+kind: helper
+name: settings-schema-optional-outer-description-and-first-non-null
+call:
+  settings_schema:
+    settings_key: default_internal_user_params
+    config:
+      litellm_settings: {}
+    schema:
+      description: root description
+      properties:
+        user_role:
+          type: string
+        max_budget:
+          description: outer budget
+          anyOf:
+            - type: number
+            - type: "null"
+        budget_duration:
+          description: outer duration
+          anyOf:
+            - type: string
+        models:
+          description: outer models
+          anyOf:
+            - type: array
+              items:
+                type: string
+            - type: "null"
+        teams:
+          anyOf:
+            - type: "null"
+    defaults:
+      user_role: internal_user_viewer
+      max_budget: null
+      budget_duration: null
+      models: null
+      teams: null
+env: {}
+compare: {ignore: []}
