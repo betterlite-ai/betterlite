@@ -50,10 +50,7 @@ general_settings:
     );
     assert!(settings.use_x_forwarded_for);
     assert_eq!(settings.mcp_xff_num_trusted_hops, Some(2));
-    assert_eq!(
-        settings.proxy_base_url.as_deref(),
-        Some("https://proxy.example.com")
-    );
+    assert_eq!(settings.proxy_base_url, "https://proxy.example.com");
     // every setting above is consumed by betterlite-auth::trusted_network as this exact text or integer
     assert_ne!(settings, Settings::default());
 }
@@ -66,7 +63,7 @@ fn defaults_and_precedence() {
     assert_eq!(defaults.trusted_proxy_ranges, None);
     assert_eq!(defaults.mcp_trusted_proxy_ranges, None);
     assert_eq!(defaults.mcp_xff_num_trusted_hops, None);
-    assert_eq!(defaults.proxy_base_url, None);
+    assert_eq!(defaults.proxy_base_url, "");
 
     // the two range settings are independent: an MCP range never falls back to the XFF range
     let settings = load(
@@ -80,8 +77,8 @@ fn defaults_and_precedence() {
     );
     assert_eq!(settings.mcp_trusted_proxy_ranges, None);
     assert!(settings.use_x_forwarded_for);
-    // a variable that is set but empty stays Some(""), which is_request_https treats as unset
-    assert_eq!(settings.proxy_base_url.as_deref(), Some(""));
+    // an absent variable and an empty one both resolve to "", which is_request_https treats as unset
+    assert_eq!(settings.proxy_base_url, "");
 }
 
 #[test]

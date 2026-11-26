@@ -85,11 +85,7 @@ pub fn is_request_from_trusted_proxy(
 // IPAddressUtils.is_request_https: PROXY_BASE_URL, then a trusted X-Forwarded-Proto, then the request scheme.
 #[must_use]
 pub fn is_request_https(request: &NetworkRequest<'_>, settings: &TrustedNetworkSettings) -> bool {
-    let configured_base_url = settings
-        .proxy_base_url
-        .as_deref()
-        .unwrap_or_default()
-        .trim();
+    let configured_base_url = settings.proxy_base_url.trim();
     if !configured_base_url.is_empty() {
         return url_scheme(configured_base_url).eq_ignore_ascii_case("https");
     }

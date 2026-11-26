@@ -564,14 +564,14 @@ fn https_base_url_precedes_the_literal_scheme() {
     assert!(!is_request_https(&upper, &settings));
 
     // PROXY_BASE_URL decides first, and an empty value counts as unset
-    settings.proxy_base_url = Some(" https://gateway.example/ ".to_owned());
+    settings.proxy_base_url = " https://gateway.example/ ".to_owned();
     assert!(is_request_https(
         &with_proto(Some("10.0.0.5"), "http", "http"),
         &settings
     ));
-    settings.proxy_base_url = Some("http://gateway.example".to_owned());
+    settings.proxy_base_url = "http://gateway.example".to_owned();
     assert!(!is_request_https(&secure, &settings));
-    settings.proxy_base_url = Some("   ".to_owned());
+    settings.proxy_base_url = "   ".to_owned();
     assert!(is_request_https(&secure, &settings));
 }
 

@@ -33,7 +33,7 @@ struct RawGeneral {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Settings {
-    pub proxy_base_url: Option<String>,
+    pub proxy_base_url: String,
     pub use_x_forwarded_for: bool,
     pub trusted_proxy_ranges: Option<Vec<String>>,
     pub mcp_trusted_proxy_ranges: Option<Vec<String>>,
@@ -50,7 +50,7 @@ impl Section for Raw {
         let general_settings = self.general_settings;
         Ok(Settings {
             // is_request_https reads the variable with an empty default and trims it before parsing
-            proxy_base_url: lookup.lookup(PROXY_BASE_URL_NAME),
+            proxy_base_url: lookup.lookup(PROXY_BASE_URL_NAME).unwrap_or_default(),
             use_x_forwarded_for: general_settings.use_x_forwarded_for.unwrap_or_default(),
             trusted_proxy_ranges: ranges(
                 general_settings.trusted_proxy_ranges,

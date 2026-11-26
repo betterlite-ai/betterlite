@@ -92,8 +92,20 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let settings = trusted_settings(&input.settings);
-        let request = network_request(input);
+        let settings = TrustedNetworkSettings {
+            proxy_base_url: input.settings.proxy_base_url.clone().unwrap_or_default(),
+            use_x_forwarded_for: input.settings.use_x_forwarded_for,
+            trusted_proxy_ranges: input.settings.trusted_proxy_ranges.clone(),
+            mcp_trusted_proxy_ranges: input.settings.mcp_trusted_proxy_ranges.clone(),
+            mcp_xff_num_trusted_hops: input.settings.mcp_xff_num_trusted_hops,
+        };
+        let request = NetworkRequest {
+            peer: input.peer.as_deref(),
+            x_forwarded_for: input.headers.x_forwarded_for.as_deref(),
+            x_forwarded_proto: input.headers.x_forwarded_proto.as_deref(),
+            host: input.headers.host.as_deref(),
+            scheme: &input.scheme,
+        };
         let scenario = &input.scenario;
         let ranges = input.settings.trusted_proxy_ranges.as_ref();
         let texts = parse_normalized(&normalize_cidr_ranges(ranges), TRUSTED_PROXY);
@@ -125,26 +137,6 @@ impl Helper for Op {
                 require_trusted(&request, &settings, feature, setting_name)
             }
         }
-    }
-}
-
-fn trusted_settings(given: &Settings) -> TrustedNetworkSettings {
-    TrustedNetworkSettings {
-        proxy_base_url: given.proxy_base_url.clone(),
-        use_x_forwarded_for: given.use_x_forwarded_for,
-        trusted_proxy_ranges: given.trusted_proxy_ranges.clone(),
-        mcp_trusted_proxy_ranges: given.mcp_trusted_proxy_ranges.clone(),
-        mcp_xff_num_trusted_hops: given.mcp_xff_num_trusted_hops,
-    }
-}
-
-fn network_request(input: &Input) -> NetworkRequest<'_> {
-    NetworkRequest {
-        peer: input.peer.as_deref(),
-        x_forwarded_for: input.headers.x_forwarded_for.as_deref(),
-        x_forwarded_proto: input.headers.x_forwarded_proto.as_deref(),
-        host: input.headers.host.as_deref(),
-        scheme: &input.scheme,
     }
 }
 
