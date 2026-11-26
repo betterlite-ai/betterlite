@@ -107,7 +107,7 @@ fn master_context(master_key: &SecretString) -> AuthContext {
         Err(StageFailure::Authentication(_)) => {
             panic!("the master key stage authenticates")
         }
-        Err(StageFailure::ModelAccess(_)) => {
+        Err(StageFailure::ModelAccess(_) | StageFailure::EntityModelAccess(_)) => {
             panic!("the master key stage reports no model access")
         }
         Err(StageFailure::AuthRequestPolicy(_)) => {
