@@ -5,7 +5,6 @@ use std::sync::Arc;
 use axum::body::Body;
 use axum::extract::ConnectInfo;
 use axum::http::{Request, header};
-use betterlite_auth::trusted_network::cidr::CidrRanges;
 use betterlite_auth::trusted_network::decode::{DecodeError, TypedValue, decode_network_headers};
 use betterlite_auth::trusted_network::proxy_utils::proxy_config_from_ranges;
 use betterlite_auth::trusted_network::request::{NetworkRequest, resolve_network_context};
@@ -50,7 +49,7 @@ pub(crate) fn stage_input(
         x_forwarded_for: header_text(request, X_FORWARDED_FOR),
         x_forwarded_proto: header_text(request, X_FORWARDED_PROTO),
         host: header_text(request, header::HOST.as_str()),
-        trusted_proxy_ranges: settings.trusted_proxy_ranges.clone().map(CidrRanges::List),
+        trusted_proxy_ranges: settings.trusted_proxy_ranges.clone(),
         mcp_trusted_proxy_ranges: settings.mcp_trusted_proxy_ranges.clone(),
     };
     Ok(StageInput::TrustedNetwork(Box::new(
