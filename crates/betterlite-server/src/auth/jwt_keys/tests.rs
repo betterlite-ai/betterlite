@@ -121,6 +121,17 @@ async fn stage_is_registered() {
     assert_eq!(context.principal.auth_method, AuthMethod::BearerJwt);
 }
 
+#[test]
+fn debug_keeps_the_token_out() {
+    let input = JwtKeyStageInput {
+        resolver: None,
+        token: Some(SecretString::from(TOKEN.to_owned())),
+    };
+    let debug = format!("{input:?}");
+    assert!(debug.contains("token_present: true"), "{debug}");
+    assert!(!debug.contains(TOKEN), "{debug}");
+}
+
 #[tokio::test]
 async fn failure_stops_downstream() {
     let config = ConfigLoader {
