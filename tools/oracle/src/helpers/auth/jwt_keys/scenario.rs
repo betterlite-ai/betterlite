@@ -1,3 +1,4 @@
+use std::mem;
 use std::sync::{Arc, Mutex};
 
 use betterlite_auth::jwt_keys::cache::KeyCache;
@@ -82,10 +83,6 @@ struct Fixture<'a> {
 async fn step_answer(resolver: &JwksResolver, fixture: &Fixture<'_>, step: &Step) -> StepAnswer {
     *lock(&fixture.clock.now) = step.now;
     lock(&fixture.http.replies).extend(step.http.iter().cloned());
-    let requested = lock(&fixture.http.requests).len();
-    let slept = lock(&fixture.clock.sleeps).len();
-    let written = lock(&fixture.cache.writes).len();
-    let noticed = lock(fixture.levels).len();
     let kid = step.kid.as_deref();
     let outcome = if step.concurrent {
         let (first, second) =
@@ -101,22 +98,10 @@ async fn step_answer(resolver: &JwksResolver, fixture: &Fixture<'_>, step: &Step
     StepAnswer {
         value,
         error,
-        requests: lock(&fixture.http.requests)
-            .iter()
-            .skip(requested)
-            .cloned()
-            .collect(),
-        sleeps: lock(&fixture.clock.sleeps)
-            .iter()
-            .skip(slept)
-            .copied()
-            .collect(),
-        writes: lock(&fixture.cache.writes)
-            .iter()
-            .skip(written)
-            .cloned()
-            .collect(),
-        warnings: lock(fixture.levels).iter().skip(noticed).cloned().collect(),
+        requests: mem::take(&mut *lock(&fixture.http.requests)),
+        sleeps: mem::take(&mut *lock(&fixture.clock.sleeps)),
+        writes: mem::take(&mut *lock(&fixture.cache.writes)),
+        warnings: mem::take(&mut *lock(fixture.levels)),
     }
 }
 
