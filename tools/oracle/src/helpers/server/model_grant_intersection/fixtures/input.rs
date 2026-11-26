@@ -51,7 +51,8 @@ pub(crate) struct Token {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Team {
-    pub(crate) team_id: String,
+    #[serde(rename = "team_id")]
+    pub(crate) id: String,
     #[serde(default)]
     pub(crate) models: Vec<String>,
     #[serde(default)]
@@ -61,7 +62,8 @@ pub(crate) struct Team {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct User {
-    pub(crate) user_id: String,
+    #[serde(rename = "user_id")]
+    pub(crate) id: String,
     #[serde(default)]
     pub(crate) models: Vec<String>,
 }
@@ -69,7 +71,8 @@ pub(crate) struct User {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Project {
-    pub(crate) project_id: String,
+    #[serde(rename = "project_id")]
+    pub(crate) id: String,
     #[serde(default)]
     pub(crate) models: Vec<String>,
 }
@@ -142,7 +145,7 @@ pub(crate) fn rows(input: &Input) -> Result<Rows, Box<HelperError>> {
 
 fn team_row(team: &Team) -> Result<LiteLLMTeamTableCachedObj, Box<HelperError>> {
     let row = json!({
-        "team_id": team.team_id,
+        "team_id": team.id,
         "models": team.models,
         "organization_id": team.organization_id,
         "last_refreshed_at": 1.0_f64,
@@ -152,7 +155,7 @@ fn team_row(team: &Team) -> Result<LiteLLMTeamTableCachedObj, Box<HelperError>> 
 
 fn user_row(user: &User) -> Result<LiteLLMUserTable, Box<HelperError>> {
     let row = json!({
-        "user_id": user.user_id,
+        "user_id": user.id,
         "models": user.models,
     });
     Ok(serde_json::from_value(row)?)
@@ -160,7 +163,7 @@ fn user_row(user: &User) -> Result<LiteLLMUserTable, Box<HelperError>> {
 
 fn project_row(project: &Project) -> Result<CachedProject, Box<HelperError>> {
     let row = json!({
-        "project_id": project.project_id,
+        "project_id": project.id,
         "models": project.models,
         "last_refreshed_at": 1.0_f64,
     });
