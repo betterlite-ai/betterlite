@@ -17,6 +17,8 @@ use super::auth_request_models::{CoreDecoders, RequestModelStageInput};
 use super::model_stage_input;
 use crate::error_body::AuthenticationFailure;
 
+pub mod rewrite;
+mod selection;
 mod tests;
 
 // The empty catalog a request that carries no resolver of its own reads the model context through.

@@ -89,7 +89,7 @@ pub fn is_provider_configured(configuration: &SsoConfiguration, runtime: SsoRunt
     google || microsoft || generic || saml
 }
 
-// abbreviate_api_key: the last four characters are enough to match a key in a log, and nothing more.
+// Abbreviation is for compatible response parameters; it does not permit logging credentials.
 #[must_use]
 pub fn abbreviate_api_key(api_key: &SecretString, minimum_length: i64) -> String {
     let text = api_key.expose_secret();

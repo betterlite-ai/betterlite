@@ -11,7 +11,6 @@ use crate::auth_request_models::sources::{DispatchContext, RequestSnapshot};
 use super::AUTH_ERROR_TYPE;
 
 // _safe_get_request_headers/_safe_get_request_query_params: an unreadable value is dropped, never an error.
-#[derive(Clone, Copy, Debug)]
 pub struct ModelContext<'request> {
     pub route: &'request str,
     pub body: &'request JsonObject,

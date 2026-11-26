@@ -3,7 +3,6 @@
 use std::collections::BTreeMap;
 
 use rstest::rstest;
-use secrecy::ExposeSecret as _;
 
 use crate::loader::{ConfigError, ConfigLoader};
 

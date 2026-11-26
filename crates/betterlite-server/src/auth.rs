@@ -57,6 +57,7 @@ use std::sync::Arc;
 
 use betterlite_auth::auth_request_models::MODEL_ROUTING_HEADER_NAME;
 use betterlite_auth::auth_request_models::catalog::RequestModelResolver;
+use betterlite_core::api::request_body::RequestBodyInput;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 
@@ -93,7 +94,12 @@ pub(crate) async fn authenticate(
     let Some(master_key) = master_key_state.as_ref() else {
         return next.run(request).await;
     };
-    let pipeline = auth_stage_loop::run_stages(request, master_key, failure_response);
+    let prepared =
+        match auth_context_sources::rewrite::prepare(request, master_key, failure_response).await {
+            Ok(prepared) => prepared,
+            Err(response) => return *response,
+        };
+    let pipeline = auth_stage_loop::run_stages(prepared, master_key, failure_response);
     match Box::pin(pipeline).await {
         Ok((staged, authenticated, body)) => {
             auth_stage_loop::forward(staged, authenticated, body, next).await
@@ -266,7 +272,13 @@ fn model_stage_input(
     RequestModelStageInput {
         context,
         route: request.uri().path().to_owned(),
-        body: JsonObject::new(),
+        body: request
+            .extensions()
+            .get::<RequestBodyInput>()
+            .and_then(|input| input.cached_body.as_ref())
+            .and_then(|cached| serde_json::to_vec(&cached.visible()).ok())
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+            .unwrap_or_default(),
         headers: Some(headers_json(request.headers())),
         query: Some(query_json(request.uri().query())),
         endpoint_marker: None,

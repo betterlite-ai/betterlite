@@ -41,7 +41,7 @@ impl AliasMap<'_> {
     }
 }
 
-pub trait RouterNames {
+pub trait RouterNames: Send + Sync {
     fn model_group_alias_contains(&self, name: &str) -> bool;
     fn has_model_id(&self, name: &str) -> bool;
     fn candidate_model_ids_for_route(&self, name: &str, team_id: Option<&str>) -> Vec<String>;

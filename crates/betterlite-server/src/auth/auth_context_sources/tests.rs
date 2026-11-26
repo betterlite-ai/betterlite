@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+mod rewrites;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};

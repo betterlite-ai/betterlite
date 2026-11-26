@@ -92,7 +92,7 @@ pub(super) async fn alias_rewrite(input: &Input) -> Value {
     let rewrite = resolve_router_alias(&alias_input, &NO_TEAMS).await;
     json!({
         "marker_set": rewrite.marker_set,
-        "client_requested_model": rewrite.client_requested_model,
-        "target": rewrite.target,
+        "client_requested_model": rewrite.client_requested_model.or_else(|| input.client_requested_model.clone()),
+        "target": rewrite.target.or_else(|| input.requested_model.clone()),
     })
 }
