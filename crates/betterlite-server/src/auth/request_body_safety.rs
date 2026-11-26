@@ -1,4 +1,7 @@
-use axum::body::Bytes;
+use std::sync::Arc;
+
+use axum::body::{Body, Bytes};
+use axum::http::{Request, header};
 use betterlite_auth::request_body_safety::{
     FormMetadataExtractor, RequestBodySafety, SafetyError, is_request_body_safe,
 };
@@ -11,7 +14,9 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 
 use crate::api::request_form::decode_request_form;
-use crate::auth::auth_identity::AuthContext;
+use crate::auth::auth_identity::{AuthContext, StageFailure};
+use crate::error_body::AuthenticationFailure;
+use crate::state::ServerState;
 use crate::state::request_body_safety::Slot;
 
 mod tests;
@@ -22,6 +27,31 @@ pub struct RequestBodySafetyStageInput {
     pub content_type: Option<String>,
     pub body: Bytes,
     pub slot: Option<Slot>,
+}
+
+pub(crate) fn stage_input(
+    request: &Request<Body>,
+    authenticated: Option<&AuthContext>,
+    body: Option<&Bytes>,
+) -> Result<RequestBodySafetyStageInput, StageFailure> {
+    let context = authenticated
+        .cloned()
+        .ok_or(AuthenticationFailure::Missing)?;
+    let content_type = request
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+    let slot = request
+        .extensions()
+        .get::<Arc<ServerState>>()
+        .map(|state| state.request_body_safety.clone());
+    Ok(RequestBodySafetyStageInput {
+        context,
+        content_type,
+        body: body.cloned().unwrap_or_default(),
+        slot,
+    })
 }
 
 pub(crate) fn run_stage(

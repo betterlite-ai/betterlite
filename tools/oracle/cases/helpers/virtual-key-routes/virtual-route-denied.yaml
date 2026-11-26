@@ -1,0 +1,18 @@
+kind: helper
+name: virtual-key-routes-virtual-route-denied
+call:
+  virtual_key_routes:
+    function: should_call_route
+    route: /v1/chat/completions
+    method: POST
+    key:
+      allowed_routes: [/v1/models]
+calls:
+  - virtual_key_routes:
+      function: should_call_route
+      route: /v1/models/model-a
+      method: GET
+      key:
+        allowed_routes: [/v1/models]
+env: {}
+compare: {ignore: []}
