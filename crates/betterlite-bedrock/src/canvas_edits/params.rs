@@ -56,7 +56,7 @@ pub fn map_openai_params(options: &CanvasEditOptions, drop_params: bool) -> Mapp
     let ignored_response_format = mapped
         .response_format
         .take()
-        .filter(|text| text != B64_JSON)
+        .filter(|text| text.as_str() != B64_JSON)
         .map(IgnoredResponseFormat);
     if drop_params {
         mapped
