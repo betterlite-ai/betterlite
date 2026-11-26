@@ -36,13 +36,14 @@ impl Workers {
 
     // The server drains the live threads with this: the join runs on a thread of its own, so no runtime thread is blocked, and a canceled call leaves the drain stored for the next one.
     pub async fn shutdown(&self) -> Result<(), OverlayError> {
-        let mut stored = self.drain.lock().unwrap_or_else(PoisonError::into_inner);
-        if (*stored).as_ref().is_none_or(|done| *done.borrow()) {
-            let live = take(&mut *self.live.lock().unwrap_or_else(PoisonError::into_inner));
-            *stored = Some(Self::start_drain(live)?);
-        }
-        let mut drained = (*stored).clone().ok_or(OverlayError::WorkerUnavailable)?;
-        drop(stored);
+        let mut drained = {
+            let mut stored = self.drain.lock().unwrap_or_else(PoisonError::into_inner);
+            if (*stored).as_ref().is_none_or(|done| *done.borrow()) {
+                let live = take(&mut *self.live.lock().unwrap_or_else(PoisonError::into_inner));
+                *stored = Some(Self::start_drain(live)?);
+            }
+            (*stored).clone().ok_or(OverlayError::WorkerUnavailable)?
+        };
         while !*drained.borrow() {
             let changed = drained.changed().await;
             changed.map_err(|_closed| OverlayError::WorkerUnavailable)?;
@@ -50,7 +51,6 @@ impl Workers {
         Ok(())
     }
 
-    // Every live handle joins here, and the drain it returns reports true once the last one is done.
     fn start_drain(live: Vec<JoinHandle<()>>) -> Result<watch::Receiver<bool>, OverlayError> {
         let (finished, running) = watch::channel(false);
         let _joiner = thread::Builder::new()
