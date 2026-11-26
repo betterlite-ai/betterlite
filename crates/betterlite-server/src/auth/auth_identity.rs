@@ -7,6 +7,7 @@ use betterlite_error::proxy_exception::ProxyException;
 use secrecy::{ExposeSecret as _, SecretString};
 use subtle::ConstantTimeEq as _;
 
+use crate::auth::auth_context_sources;
 use crate::auth::auth_end_users::EndUserStageInput;
 use crate::auth::auth_key_budgets::KeyBudgetStageInput;
 use crate::auth::auth_model_patterns::{ModelAccessRejection, ModelPatternStageInput, run_stage};
@@ -32,6 +33,7 @@ pub enum AuthBackend {
     TeamBudgetAdmission,
     AuthOrgLookup,
     AuthEndUsers,
+    AuthContextSources,
 }
 
 // B052 owns the final stage order; the master-key stage authenticates before the model stages run.
@@ -47,6 +49,7 @@ pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
     AuthBackend::TeamBudgetAdmission,
     AuthBackend::AuthOrgLookup,
     AuthBackend::AuthEndUsers,
+    AuthBackend::AuthContextSources,
 ];
 
 #[derive(Clone, Debug)]
@@ -62,6 +65,7 @@ pub enum StageInput {
     TeamBudgetAdmission(Box<TeamBudgetStageInput>),
     AuthOrgLookup(Box<OrgStageInput>),
     AuthEndUsers(Box<EndUserStageInput>),
+    AuthContextSources(Box<RequestModelStageInput>),
 }
 
 #[derive(Clone, Debug)]
@@ -96,6 +100,7 @@ pub(crate) enum StageFailure {
     TeamBudgets(Box<ProxyException>),
     OrgLookup(Box<ProxyException>),
     EndUsers(Box<ProxyException>),
+    AuthContextSources(Box<ProxyException>),
 }
 
 impl From<AuthenticationFailure> for StageFailure {
@@ -153,7 +158,15 @@ pub(crate) fn dispatch(
             // the lookup and the budget check ran in the prefetch, so only the identity is left
             Ok(stage.context.clone())
         }
+        AuthBackend::AuthContextSources => auth_context_sources_stage(input),
     }
+}
+
+fn auth_context_sources_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
+    let StageInput::AuthContextSources(stage) = input else {
+        return Err(StageFailure::from(AuthenticationFailure::Missing));
+    };
+    auth_context_sources::run_stage(stage).map_err(StageFailure::AuthContextSources)
 }
 
 fn auth_request_policy_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {

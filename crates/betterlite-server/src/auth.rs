@@ -136,7 +136,26 @@ fn stage_input(
         AuthBackend::AuthEndUsers => Ok(StageInput::AuthEndUsers(Box::new(
             auth_end_users::stage_input(request, authenticated)?,
         ))),
+        AuthBackend::AuthContextSources => Ok(StageInput::AuthContextSources(Box::new(
+            auth_context_sources_stage_input(request, authenticated, resolver, body)?,
+        ))),
     }
+}
+
+fn auth_context_sources_stage_input(
+    request: &Request<Body>,
+    authenticated: Option<&AuthContext>,
+    resolver: &Arc<RequestModelResolver>,
+    body: Option<&Bytes>,
+) -> Result<RequestModelStageInput, StageFailure> {
+    let context = authenticated
+        .cloned()
+        .ok_or(AuthenticationFailure::Missing)?;
+    let mut stage = model_stage_input(request, context, resolver);
+    stage.body = body
+        .and_then(|bytes| serde_json::from_slice::<JsonObject>(bytes).ok())
+        .unwrap_or_default();
+    Ok(stage)
 }
 
 fn safety_stage_input(
@@ -236,7 +255,8 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
         | StageInput::RequestBodySafety(_)
         | StageInput::AuthRequestModels(_)
         | StageInput::AuthModelPatterns(_)
-        | StageInput::AuthResourceGrants(_)) => Ok(other),
+        | StageInput::AuthResourceGrants(_)
+        | StageInput::AuthContextSources(_)) => Ok(other),
     }
 }
 

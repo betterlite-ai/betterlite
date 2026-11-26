@@ -134,6 +134,9 @@ fn master_context(master_key: &SecretString) -> AuthContext {
         Err(StageFailure::EndUsers(_)) => {
             panic!("the master key stage runs no end-user check")
         }
+        Err(StageFailure::AuthContextSources(_)) => {
+            panic!("the master key stage resolves no request context")
+        }
     }
 }
 
