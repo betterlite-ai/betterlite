@@ -92,14 +92,16 @@ class Clock(Protocol):
     async def sleep(self, delay: float) -> None: ...
 
 
-class FakeClock:
+class FakeClock(Clock):
     def __init__(self) -> None:
         self.now: float = 0.0
         self.sleeps: list[float] = []
 
+    @override
     def time(self) -> float:
         return self.now
 
+    @override
     async def sleep(self, delay: float) -> None:
         self.sleeps.append(float(delay))
 
