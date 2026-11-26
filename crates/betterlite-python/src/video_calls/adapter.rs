@@ -8,8 +8,8 @@ use betterlite_core::api::video_generation_call::providers::VideoGenerationConfi
 // ast-grep-ignore: no-long-names
 use betterlite_core::api::video_records::{VideoCreateOptionalRequestParams, VideoObject};
 use betterlite_core::api::videos_http_transport::video_config::{
-    Headers, Params, RequestFiles, VideoEnvironment, VideoHttpConfig, VideoLogging, VideoReply,
-    VideoRequestContext,
+    ErrorFacts, Headers, Params, RequestFiles, VideoEnvironment, VideoHttpConfig, VideoLogging,
+    VideoReply, VideoRequestContext,
 };
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_models::decisions::Json;
@@ -20,7 +20,7 @@ use betterlite_openai::videos::create::{VideoCreate, create_request, create_resp
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 
-use self::support::{file_part, params_key};
+use self::support::{check_response, file_part, params_key};
 use super::convert::ConvertError;
 use super::convert::Reference;
 use super::convert::fields::json;
@@ -146,7 +146,24 @@ impl VideoHttpConfig for OpenAiVideoConfig {
         raw_response: &UpstreamResponse,
         _logging_obj: &mut VideoLogging,
     ) -> Result<Vec<u8>, Self::Error> {
+        check_response(raw_response)?;
         Ok(raw_response.body.clone())
+    }
+
+    fn error_facts(&self, error: &Self::Error) -> ErrorFacts {
+        let (status_code, headers) = if let ConvertError::Response(failure) = error {
+            (
+                failure.status_code,
+                failure.headers.clone().unwrap_or_default(),
+            )
+        } else {
+            (None, Headers::new())
+        };
+        ErrorFacts {
+            message: error.to_string(),
+            status_code,
+            headers,
+        }
     }
 }
 

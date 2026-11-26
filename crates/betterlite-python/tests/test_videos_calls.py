@@ -550,11 +550,10 @@ def test_generation_path_calls(tmp_path: Path) -> None:
         swapped = compared(
             server, SYNC_CALLS["generation"], SYNC_REFERENCES["generation"], arguments)
         ours_file = sent_parts(swapped.ours_call)[REFERENCE_FIELD]
-        reference_file = sent_parts(swapped.reference_call)[REFERENCE_FIELD]
-    assert ours_file["body"] == reference_file["body"] == PNG_BYTES
-    assert ours_file["content_type"] == reference_file["content_type"] == PNG_TYPE
+    assert REFERENCE_FIELD not in sent_parts(swapped.reference_call)
+    assert ours_file["body"] == PNG_BYTES
+    assert ours_file["content_type"] == PNG_TYPE
     assert ours_file["filename"] == PATH_NAME
-    assert reference_file["filename"] == REFERENCE_FILENAME
     assert answer_dump(swapped.ours) == answer_dump(swapped.reference)
 
 
@@ -648,15 +647,19 @@ def test_error_matches_litellm() -> None:
     assert asynchronous.value.status_code == UNAUTHORIZED
     payload = ERROR_PAYLOAD.validate_json(str(native_cause(made.value)))
     assert payload["type"] == reference_class.__name__
+    assert "status_code" in payload
     assert payload["status_code"] == UNAUTHORIZED
 
 
 @pytest.mark.parametrize("operation", ["status", "content"])
-def test_read_error_calls(operation: str) -> None:
+@pytest.mark.parametrize("asynchronous", [False, True])
+def test_read_error_calls(operation: str, *, asynchronous: bool) -> None:
     with closing(VideoServer()) as server, pytest.raises(AuthenticationError) as made:
-        SYNC_CALLS[operation](
-            video_id=VIDEO_ID, api_key=BAD_KEY, api_base=server.url,
-            custom_llm_provider=PROVIDER)
+        values = endpoint_values(server, video_id=VIDEO_ID, api_key=BAD_KEY)
+        if asynchronous:
+            asyncio.run(awaited(ASYNC_CALLS[operation](**values)))
+        else:
+            SYNC_CALLS[operation](**values)
     assert made.value.status_code == UNAUTHORIZED
 
 

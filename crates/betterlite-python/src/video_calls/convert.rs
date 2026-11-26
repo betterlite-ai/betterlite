@@ -1,6 +1,7 @@
 use std::io::Error as IoError;
 use std::time::TryFromFloatSecsError;
 
+use betterlite_core::api::video_status_transport::error::ProviderFailure;
 use betterlite_models::decisions::Json;
 use betterlite_openai::videos::error::VideoError;
 use betterlite_sdk::call_files::{CallFile, CallFilesError, files_from_payload};
@@ -42,6 +43,8 @@ pub(crate) struct Reference {
 
 #[derive(Debug, Error)]
 pub(crate) enum ConvertError {
+    #[error(transparent)]
+    Response(#[from] ProviderFailure),
     #[error("the native request text is not JSON of the expected shape: {source}")]
     Json {
         #[from]

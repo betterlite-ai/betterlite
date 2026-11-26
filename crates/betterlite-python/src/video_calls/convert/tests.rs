@@ -604,9 +604,7 @@ fn request_adapter_builds_list_urls() {
     );
     assert_eq!(list_url, "https://api.example/v1/videos");
     assert!(matches!(list_params.get("after"), Some(Json::Text(value)) if value == "video_1"));
-    assert!(
-        matches!(list_params.get("limit"), Some(Json::Number(value)) if value.as_i64() == Some(3))
-    );
+    assert_eq!(list_params.get("limit"), Some(&Json::Text("3".to_owned())));
     assert!(matches!(list_params.get("order"), Some(Json::Text(value)) if value == "asc"));
 }
 

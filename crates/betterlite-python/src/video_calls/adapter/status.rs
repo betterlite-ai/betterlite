@@ -11,7 +11,7 @@ use betterlite_openai::videos::status::status_response;
 use http::header::{HeaderName, HeaderValue};
 
 use super::OpenAiVideoConfig;
-use super::support::provider_failure;
+use super::support::{check_response, provider_failure};
 use crate::video_calls::clients::StatusClient;
 use crate::video_calls::convert::fields::json;
 
@@ -65,6 +65,7 @@ impl VideoStatusConfig for OpenAiVideoConfig {
         reply: VideoReply<'_>,
         _client: Option<&StatusClient>,
     ) -> Result<VideoObject, ProviderFailure> {
+        check_response(reply.raw_response)?;
         let video = status_response(&reply.raw_response.body, reply.custom_llm_provider)
             .map_err(provider_failure)?;
         json(&video).map_err(provider_failure)

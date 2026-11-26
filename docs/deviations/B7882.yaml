@@ -1,7 +1,7 @@
 task: B7882
 deviations:
   - what: An input_reference given as a path or an open file is uploaded with its basename as the multipart filename.
-    why: The shared payload layer normalizes every file name to its basename before the native call sees it, where LiteLLM sends input_reference.png for a Path and the full image.name for a BufferedReader.
+    why: The shared payload layer reads a Path and preserves its bytes instead of losing the file; the pinned LiteLLM comparison sends no input_reference part for a Path. Open binary files are sent by both implementations, with betterlite using the basename and LiteLLM using the full image.name.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/transformation.py#L574-L586
   - what: video_content and video_status raise the mapped provider exception when the provider answers with an error status.
     why: LiteLLM's GET helper never calls raise_for_status, so a 404 video_content returns the error body's bytes and a 401 video_status cannot reach exception_type; betterlite maps the status to NotFoundError or AuthenticationError instead of losing the error.

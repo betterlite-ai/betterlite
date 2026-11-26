@@ -6,10 +6,17 @@ use betterlite_core::api::video_remix_list_transport::config::VideoRemixListConf
 use betterlite_core::api::video_remix_list_transport::records::VideoRequestContext;
 use betterlite_core::api::video_status_transport::config::VideoStatusConfig as _;
 use betterlite_core::api::video_status_transport::records::VideoRequestContext as StatusContext;
+use betterlite_core::api::videos_http_transport::video_config::{
+    VideoHttpConfig as _, VideoLogging,
+};
+use betterlite_http::proxy::UpstreamResponse;
 use betterlite_models::decisions::Json;
+use http::header::{HeaderMap, HeaderValue};
 use indexmap::IndexMap;
+use rstest::rstest;
 
 use super::OpenAiVideoConfig;
+use crate::video_calls::convert::ConvertError;
 
 fn config() -> OpenAiVideoConfig {
     OpenAiVideoConfig {
@@ -93,4 +100,64 @@ fn transform_errors_keep_message() {
         )
         .unwrap_err();
     assert!(!failed.source.to_string().is_empty());
+}
+
+#[rstest]
+#[case::below_success(199)]
+#[case::redirect(300)]
+#[case::unauthorized(401)]
+#[case::missing(404)]
+fn response_status_keeps_facts(#[case] status: u16) {
+    let mut headers = HeaderMap::new();
+    headers.insert("x-request-id", HeaderValue::from_static("request-123"));
+    let response = UpstreamResponse {
+        status,
+        headers,
+        body: b"provider rejected".to_vec(),
+    };
+    let failure = super::support::check_response(&response).unwrap_err();
+    assert_eq!(failure.status_code, Some(status));
+    assert_eq!(failure.message, "provider rejected");
+    assert_eq!(
+        failure.headers.unwrap().get("x-request-id").unwrap(),
+        "request-123"
+    );
+    let adapter = config();
+    let error = adapter
+        .transform_video_content_response(&response, &mut VideoLogging::default())
+        .unwrap_err();
+    let facts = adapter.error_facts(&error);
+    assert_eq!(facts.status_code, Some(status));
+    assert_eq!(facts.message, "provider rejected");
+    assert_eq!(facts.headers.get("x-request-id").unwrap(), "request-123");
+}
+
+#[rstest]
+#[case::first_success(200)]
+#[case::last_success(299)]
+fn response_success_is_kept(#[case] status: u16) {
+    let response = UpstreamResponse {
+        status,
+        headers: HeaderMap::new(),
+        body: b"content".to_vec(),
+    };
+    super::support::check_response(&response).unwrap();
+    assert_eq!(
+        config()
+            .transform_video_content_response(&response, &mut VideoLogging::default())
+            .unwrap(),
+        b"content"
+    );
+}
+
+#[test]
+fn plain_error_facts_have_no_status() {
+    let error = ConvertError::Field {
+        name: "variant".to_owned(),
+        expected: "a string",
+    };
+    let facts = config().error_facts(&error);
+    assert_eq!(facts.message, "variant must be a string");
+    assert_eq!(facts.status_code, None);
+    assert!(facts.headers.is_empty());
 }
