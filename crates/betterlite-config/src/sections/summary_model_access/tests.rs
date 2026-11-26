@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use rstest::rstest;
 
-use crate::loader::ConfigLoader;
+use crate::loader::{ConfigError, ConfigLoader};
 use crate::sections::summary_model_access::{DEFAULT_SUMMARY_MAX_TOKENS, Settings};
 
 fn settings(source: &str, variables: &[(&str, &str)]) -> Settings {
@@ -110,4 +110,16 @@ fn load_summary_settings_ignores_default_max_tokens() {
         loaded.context_management_summary_max_tokens,
         DEFAULT_SUMMARY_MAX_TOKENS
     );
+}
+
+#[test]
+fn unknown_general_settings_remain_unsupported() {
+    let result = ConfigLoader {
+        lookup: BTreeMap::<String, String>::new(),
+    }
+    .load("general_settings:\n  tracing:\n    store: clickhouse\n    other: 1\n");
+    let Err(ConfigError::Unsupported { paths }) = result else {
+        panic!("expected unsupported nested setting, got {result:?}");
+    };
+    assert_eq!(paths, ["general_settings.tracing.?.other"]);
 }
