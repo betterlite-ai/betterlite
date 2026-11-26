@@ -302,6 +302,52 @@ async fn caller_absent_skips() {
 }
 
 #[tokio::test]
+async fn caller_falsey_model_and_token_skip() {
+    let context = context();
+    let memberships = CaseMemberships::default();
+    let admission = admission(&memberships, &context);
+    // the token carries a caller identity, so only the falsey model can skip before the lookup
+    let denying = Script {
+        caller: Some(CALLER_KEY.to_owned()),
+        user: Some(r#"{"user_id":"caller-1","models":["other-model"]}"#.to_owned()),
+        ..Script::default()
+    };
+    for model in [
+        RequestedModels::None,
+        RequestedModels::One(String::new()),
+        RequestedModels::Many(Vec::new()),
+    ] {
+        check_agent_caller_model_access(
+            &model,
+            Some(&agent_token(AGENT_KEY)),
+            Some(&denying),
+            &admission,
+            &context,
+        )
+        .await
+        .unwrap();
+    }
+    check_agent_caller_model_access(&one("gpt-4o"), None, Some(&denying), &admission, &context)
+        .await
+        .unwrap();
+    assert!(denying.events().is_empty());
+    assert!(memberships.asked().is_empty());
+
+    // a caller identity the source cannot resolve allows without asking for a team or a user
+    let unresolved = Script::default();
+    check_agent_caller_model_access(
+        &one("gpt-4o"),
+        Some(&agent_token(AGENT_KEY)),
+        Some(&unresolved),
+        &admission,
+        &context,
+    )
+    .await
+    .unwrap();
+    assert_eq!(unresolved.events(), ["caller_auth"]);
+}
+
+#[tokio::test]
 async fn caller_team_before_membership() {
     let context = context();
     // the team grant allows, then the member scope decides
