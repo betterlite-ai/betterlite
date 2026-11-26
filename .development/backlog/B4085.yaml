@@ -1,14 +1,14 @@
 id: B4085
 milestone: M7 observability
 title: Gate shadow spending and run every comparison arm
-status: todo
+status: done
 depends_on: [B4081, B4083, B4084, B732, B737, B751, B887]
 file: tasks/B4085-shadow-evaluation-pipeline.yaml
 covers:
   - "litellm/integrations/shadow_eval_logger.py"
 parent: B118
 split_from: B118
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3229
