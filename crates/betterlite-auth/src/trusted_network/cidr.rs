@@ -15,10 +15,10 @@ pub enum CidrRanges {
 // network.normalize_cidr_ranges: trim every entry, drop the empty ones, split a comma-separated string.
 #[must_use]
 pub fn normalize_cidr_ranges(configured: Option<&CidrRanges>) -> Vec<String> {
-    let Some(configured) = configured else {
+    let Some(ranges) = configured else {
         return Vec::new();
     };
-    match configured {
+    match ranges {
         CidrRanges::Text(text) => text
             .split(',')
             .map(str::trim)
@@ -54,16 +54,16 @@ pub fn parse_normalized(texts: &[String], setting_name: &str) -> Vec<IpNet> {
 // network.ip_in_networks: both the address and its IPv4-mapped form are checked against every network.
 #[must_use]
 pub fn ip_in_networks(client_ip: Option<&str>, networks: &[IpNet]) -> bool {
-    let Some(client_ip) = client_ip else {
+    let Some(address_text) = client_ip else {
         return false;
     };
-    if client_ip.is_empty() {
+    if address_text.is_empty() {
         return false;
     }
     if networks.is_empty() {
         return false;
     }
-    let Ok(address) = client_ip.trim().parse::<IpAddr>() else {
+    let Ok(address) = address_text.trim().parse::<IpAddr>() else {
         return false;
     };
     let unmapped = unmapped(address);

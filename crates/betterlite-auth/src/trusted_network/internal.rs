@@ -26,10 +26,10 @@ pub fn default_internal_networks() -> Vec<IpNet> {
 // IPAddressUtils.parse_internal_networks: an empty or unusable configuration falls back to the defaults.
 #[must_use]
 pub fn parse_internal_networks(configured: Option<&[String]>) -> Vec<IpNet> {
-    let Some(configured) = configured else {
+    let Some(ranges) = configured else {
         return default_internal_networks();
     };
-    let networks = parse_verbatim(configured, "mcp_internal_ip_ranges");
+    let networks = parse_verbatim(ranges, "mcp_internal_ip_ranges");
     if networks.is_empty() {
         return default_internal_networks();
     }
@@ -39,25 +39,25 @@ pub fn parse_internal_networks(configured: Option<&[String]>) -> Vec<IpNet> {
 // IPAddressUtils.parse_trusted_proxy_networks: unconfigured means X-Forwarded-For is never trusted.
 #[must_use]
 pub fn parse_trusted_proxy_networks(configured: Option<&[String]>) -> Vec<IpNet> {
-    let Some(configured) = configured else {
+    let Some(ranges) = configured else {
         return Vec::new();
     };
-    parse_verbatim(configured, "mcp_trusted_proxy_ranges")
+    parse_verbatim(ranges, "mcp_trusted_proxy_ranges")
 }
 
 // IPAddressUtils.is_trusted_proxy: the direct peer only, and no IPv4-mapped normalization here.
 #[must_use]
 pub fn is_trusted_proxy(proxy_ip: Option<&str>, trusted_networks: &[IpNet]) -> bool {
-    let Some(proxy_ip) = proxy_ip else {
+    let Some(proxy_text) = proxy_ip else {
         return false;
     };
-    if proxy_ip.is_empty() {
+    if proxy_text.is_empty() {
         return false;
     }
     if trusted_networks.is_empty() {
         return false;
     }
-    let Ok(address) = proxy_ip.trim().parse::<IpAddr>() else {
+    let Ok(address) = proxy_text.trim().parse::<IpAddr>() else {
         return false;
     };
     trusted_networks
@@ -68,15 +68,15 @@ pub fn is_trusted_proxy(proxy_ip: Option<&str>, trusted_networks: &[IpNet]) -> b
 // IPAddressUtils.is_internal_ip: the leftmost entry of a comma chain, and the defaults when none parse.
 #[must_use]
 pub fn is_internal_ip(client_ip: Option<&str>, internal_networks: Option<&[IpNet]>) -> bool {
-    let Some(client_ip) = client_ip else {
+    let Some(client_text) = client_ip else {
         return false;
     };
-    if client_ip.is_empty() {
+    if client_text.is_empty() {
         return false;
     }
-    let leftmost = match client_ip.split_once(',') {
+    let leftmost = match client_text.split_once(',') {
         Some((first, _)) => first.trim(),
-        None => client_ip,
+        None => client_text,
     };
     let Ok(address) = leftmost.trim().parse::<IpAddr>() else {
         return false;

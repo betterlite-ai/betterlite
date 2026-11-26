@@ -45,7 +45,7 @@ pub(crate) fn stage_input(
     let fallback = TrustedNetworkSettings::default();
     let settings = slot
         .as_ref()
-        .map_or(&fallback, |slot| slot.settings.as_ref());
+        .map_or(&fallback, |entry| entry.settings.as_ref());
     let document = TypedValue {
         x_forwarded_for: header_text(request, X_FORWARDED_FOR),
         x_forwarded_proto: header_text(request, X_FORWARDED_PROTO),
