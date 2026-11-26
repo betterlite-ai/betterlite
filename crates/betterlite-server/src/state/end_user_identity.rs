@@ -108,7 +108,7 @@ impl Slot {
             .installed
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
-        if let Installed::Unbuilt = &*installed {
+        if matches!(&*installed, Installed::Unbuilt) {
             *installed = build_resolver(state, self).map_or(Installed::Failed, Installed::Ready);
         }
         match &*installed {
