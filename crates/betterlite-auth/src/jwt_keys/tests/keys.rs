@@ -89,7 +89,7 @@ fn token_kid_reads_only_a_compact_jwt_object_header() {
     assert_eq!(token_kid(&compact(&header)).as_deref(), Some("a"));
 
     // padding is what pyjwt strips, up to two characters
-    let padded = URL_SAFE.encode(br#"{"kid":"a","n":1}"#);
+    let padded = URL_SAFE.encode(br#"{"kid":"a","n":100}"#);
     assert!(padded.ends_with("=="));
     assert_eq!(token_kid(&compact(&padded)).as_deref(), Some("a"));
     assert_eq!(token_kid(&compact(&format!("{padded}="))), None);
