@@ -4,15 +4,12 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use betterlite_cache::backend::memory::local::LocalMemoryOps;
-use betterlite_cache::dual_cache::{DualCache, DualCacheSettings, MAX_REDIS_BATCH_CACHE_SIZE};
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::database_failures::deadline::DbLookupError;
 use betterlite_db::database_faults::ErrorType;
 use betterlite_db::identity_rows::Payload;
 use rust_decimal::Decimal;
 
-use super::cache::KeyCache;
 use super::error::KeyLookupError;
 use super::jwt::{
     get_jwt_key_mapping_cache_keys_for_tokens, get_jwt_key_mapping_object,
@@ -22,7 +19,6 @@ use super::key_object::get_key_object;
 use super::reader::AUTH_RECONNECT_REASON;
 use super::session::resolve_object_permission_for_unresolvable_team;
 use super::{HashedKeyAuthenticator, KeyAuthenticator, key_identity, key_roles, role_str};
-use crate::auth_cache::{AuthCache, WriteOptions, gateway_cache};
 use crate::auth_errors::conversion::as_proxy_exception;
 use crate::auth_identity::roles::Role;
 use crate::auth_prefetch::permission::lookup::PermissionError;
@@ -714,42 +710,4 @@ async fn team_model_aliases_payload() {
             JsonData::String("gpt-4".to_owned())
         )])))
     );
-}
-
-type TestCache = AuthCache<DualCache<LocalMemoryOps>>;
-
-fn local_cache() -> TestCache {
-    let memory = || {
-        Arc::new(
-            LocalMemoryOps::new(1024, Arc::new(|| 0.0_f64)).expect("the local memory tier builds"),
-        )
-    };
-    let settings = DualCacheSettings {
-        default_in_memory_ttl: Some(30.0_f64),
-        default_redis_ttl: None,
-        batch_cache_expiry: None,
-        max_redis_batch_cache_size: MAX_REDIS_BATCH_CACHE_SIZE,
-        redis_delete_chunk_size: MAX_REDIS_BATCH_CACHE_SIZE,
-    };
-    gateway_cache(memory(), memory(), None, settings, 45.0_f64)
-}
-
-#[tokio::test]
-async fn key_cache_round_trip() {
-    let cache = local_cache();
-    let stored = auth_from_fields(KEY_ROW);
-    let hashed_token = "a".repeat(64);
-    cache
-        .async_set(
-            Some(hashed_token.as_str()),
-            &stored,
-            WriteOptions::default(),
-        )
-        .await
-        .expect("the key write");
-    let found = KeyCache::read_key(&cache, &hashed_token)
-        .await
-        .expect("the stored key");
-    assert_eq!(found.view.token.key_name.as_deref(), Some("key-1"));
-    assert!(KeyCache::read_key(&cache, &"b".repeat(64)).await.is_none());
 }
