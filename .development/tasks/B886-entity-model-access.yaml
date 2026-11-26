@@ -85,7 +85,13 @@ scope:
     - tools/oracle/cases/helpers/entity-model-access/**
     - tools/oracle/fuzz/corpus/helper_case/entity-model-access-*
     - crates/betterlite-server/src/auth.rs
-    - crates/betterlite-server/src/auth/**
+    - crates/betterlite-server/src/auth/auth_identity.rs
+    - crates/betterlite-server/src/auth/auth_errors.rs
+    - crates/betterlite-server/src/auth/failures.rs
+    - crates/betterlite-server/src/auth/auth_request_models/tests.rs
+    - crates/betterlite-server/src/auth/key_prefix.rs
+    - crates/betterlite-server/src/auth/key_prefix/**
+    - crates/betterlite-server/src/auth/team_budget_admission.rs
     - crates/betterlite-server/src/state/entity_model_access.rs
     - crates/betterlite-server/src/state/entity_model_access/**
     - tools/oracle/cases/auth/entity-model-access/**
