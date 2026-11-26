@@ -2,6 +2,7 @@ use betterlite_auth::resolved_key::auth::{AuthError, AuthInput, UserAPIKeyAuth};
 use betterlite_error::error::ErrorClass;
 use betterlite_error::error::details::BudgetExceededDetails;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive as _;
 use serde_json::{Number, Value, json};
 
 use super::Call;

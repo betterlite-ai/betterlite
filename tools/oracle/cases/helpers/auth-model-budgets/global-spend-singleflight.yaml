@@ -20,12 +20,12 @@ call:
       - function: global_spend
         max_budget: 0.0
         spend: 12.5
-        tokens: [key-off]
+        tokens: [key-off, key-off-second]
         admin_name: admin
       - function: global_spend
         max_budget: 5.0
         spend: 3.5
-        tokens: [key-nodb]
+        tokens: [key-nodb, key-nodb-second]
         admin_name: admin
         database: false
 env: {}

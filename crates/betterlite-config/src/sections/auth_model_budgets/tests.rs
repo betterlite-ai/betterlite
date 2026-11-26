@@ -87,6 +87,7 @@ async fn zero_negative_and_nan_skip_read(#[case] value: &str) {
 
 #[rstest]
 #[case::text("not-a-number")]
+#[case::boolean("true")]
 #[case::out_of_range("1.0e29")]
 fn invalid_budget_rejected(#[case] value: &str) {
     let source = format!("litellm_settings:\n  max_budget: {value}");

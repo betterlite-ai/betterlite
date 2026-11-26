@@ -1,8 +1,8 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use axum::Router;
@@ -457,4 +457,93 @@ async fn slot_limiter_is_used_when_request_has_no_override() {
     let response = app.oneshot(request_to(&reached)).await.unwrap();
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
     assert!(!reached.load(Ordering::Acquire));
+}
+
+#[derive(serde::Deserialize)]
+struct ProviderRequest {
+    model: String,
+}
+
+async fn mock_provider(
+    Extension(models): Extension<Arc<Mutex<Vec<String>>>>,
+    body: Bytes,
+) -> &'static str {
+    let request: ProviderRequest = serde_json::from_slice(&body).unwrap();
+    models.lock().unwrap().push(request.model);
+    r#"{"id":"c1","object":"chat.completion","created":7,"model":"fallback-wire","choices":[{"index":0,"message":{"role":"assistant","content":"hello"},"finish_reason":"stop"}]}"#
+}
+
+#[tokio::test]
+async fn production_chat_sends_authorized_fallback_to_provider() {
+    use crate::server::{application as server_application, chat_setup::chat_executor};
+    use rand::{SeedableRng as _, rngs::StdRng};
+    use tokio::{net::TcpListener, task::JoinSet};
+    use tokio_util::task::TaskTracker;
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let sent = Arc::new(Mutex::new(Vec::new()));
+    let provider = Router::new()
+        .fallback(mock_provider)
+        .layer(Extension(Arc::clone(&sent)));
+    let mut servers = JoinSet::new();
+    servers.spawn(async move {
+        axum::serve(listener, provider).await.unwrap();
+    });
+    let tasks = TaskTracker::new();
+    for (models, expected_status) in [
+        (r#"["gpt-4","gpt-3.5"]"#, StatusCode::OK),
+        (r#"["gpt-4"]"#, StatusCode::UNPROCESSABLE_ENTITY),
+    ] {
+        let app = {
+            let source = format!(
+                "general_settings: {{master_key: {MASTER_KEY}}}\nmodel_list:\n  - {{model_name: gpt-3.5, litellm_params: {{model: openai/fallback-wire, api_key: dummy, api_base: 'http://{address}/v1'}}}}\n"
+            );
+            let loaded = config(&source);
+            let executor =
+                chat_executor(&loaded, &BTreeMap::new(), StdRng::seed_from_u64(1)).unwrap();
+            server_application(&loaded, executor, Arc::new(AtomicBool::new(false)), &tasks).unwrap()
+        };
+        let rule = ModelBudgetRule {
+            auth: Some(key(&format!(r#"{{"models":{models}}}"#))),
+            models: vec!["gpt-4".to_owned()],
+            model_name: Some("gpt-4".to_owned()),
+            key_limiter: Some(Arc::new(FallbackKeyLimiter)),
+            user_limiter: None,
+            team_limiter: None,
+            global_model_aliases: BTreeMap::new(),
+            max_recurse_depth: DEFAULT_RECURSE_DEPTH,
+            path_params: None,
+        };
+        let request = Request::post(MODEL_ROUTE)
+            .header(header::AUTHORIZATION, format!("Bearer {MASTER_KEY}"))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                r#"{"model":"gpt-4","messages":[{"role":"user","content":"hi"}]}"#,
+            ))
+            .unwrap();
+        let response = app
+            .layer(Extension(Arc::new(rule)))
+            .oneshot(request)
+            .await
+            .unwrap();
+        assert_eq!(response.status(), expected_status);
+        if expected_status == StatusCode::OK {
+            assert_eq!(
+                response.headers().get("x-litellm-model-group").unwrap(),
+                "gpt-3.5"
+            );
+        }
+        let bytes = to_bytes(response.into_body(), 8192).await.unwrap();
+        if expected_status == StatusCode::UNPROCESSABLE_ENTITY {
+            assert!(
+                String::from_utf8(bytes.to_vec())
+                    .unwrap()
+                    .contains("budget_exceeded")
+            );
+        }
+        assert_eq!(*sent.lock().unwrap(), ["fallback-wire"]);
+    }
+    servers.shutdown().await;
+    tasks.close();
+    tasks.wait().await;
 }

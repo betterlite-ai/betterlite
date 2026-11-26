@@ -41,7 +41,7 @@ pub(super) fn update_value(call: &Call) -> Result<Value, Failure> {
             .end_user_model_max_budget
             .clone()
             .map(|payload| payload.0),
-        allowed_model_region: None,
+        allowed_model_region: token.extra.allowed_model_region.clone(),
     };
     Ok(limits_json(&params))
 }
@@ -49,6 +49,7 @@ pub(super) fn update_value(call: &Call) -> Result<Value, Failure> {
 fn limits_json(params: &EndUserParams) -> Value {
     json!({
         "end_user_id": params.end_user_id,
+        "allowed_model_region": params.allowed_model_region,
         "tpm": params.end_user_tpm_limit,
         "rpm": params.end_user_rpm_limit,
         "tpd": params.end_user_tpd_limit,

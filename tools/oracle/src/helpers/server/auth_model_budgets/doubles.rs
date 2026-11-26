@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
+use super::support::Failure;
 use async_trait::async_trait;
 use betterlite_auth::auth_model_budgets::checks::ModelMaxBudget;
 use betterlite_auth::auth_model_budgets::global_spend::{
@@ -13,11 +14,11 @@ use betterlite_auth::auth_model_budgets::limits::{
     KeyModelBudgetLimiter, TeamModelBudgetLimiter, UserModelBudgetLimiter,
 };
 use betterlite_auth::auth_model_budgets::request_views::{ModelRewrite, RewriteFailure};
+use betterlite_auth::auth_model_budgets::rows::SpendReadError;
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 use betterlite_cache::backend::Ttl;
 use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_db::budget_permission_rows::JsonData;
-use betterlite_db::database_failures::deadline::DbLookupError;
 use betterlite_error::error::ErrorClass;
 use betterlite_error::error::details::BudgetExceededDetails;
 use rust_decimal::Decimal;
@@ -231,16 +232,18 @@ pub(super) struct SpendRows {
 }
 
 impl SpendRows {
-    pub(super) async fn wait_until_started(&self) {
-        timeout(Duration::from_secs(1), self.started.acquire())
+    pub(super) async fn wait_until_started(&self) -> Result<(), Failure> {
+        let _permit = timeout(Duration::from_secs(1), self.started.acquire())
             .await
-            .expect("the leader starts its load");
+            .map_err(|_error| Failure::Coordinator)?
+            .map_err(|_error| Failure::Coordinator)?;
+        Ok(())
     }
 }
 
 #[async_trait]
 impl ProxyBudgetRows for SpendRows {
-    async fn find_proxy_budget(&self) -> Result<Option<Decimal>, DbLookupError> {
+    async fn find_proxy_budget(&self) -> Result<Option<Decimal>, SpendReadError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         self.started.add_permits(1);
         if self.gated {

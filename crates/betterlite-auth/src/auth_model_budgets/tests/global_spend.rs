@@ -403,3 +403,31 @@ async fn cache_backend_failure_propagates_without_alert() {
     ));
     assert!(alerts.scheduled.lock().unwrap().is_empty());
 }
+
+struct FailedRead;
+
+impl CacheBackend for FailedRead {
+    fn default_ttl(&self) -> i64 {
+        60
+    }
+}
+
+#[tokio::test]
+async fn cache_backend_read_failure_stops_database() {
+    let rows = Arc::new(FakeRows::new(Some(Decimal::ONE)));
+    let alerts = Arc::new(Alerts::default());
+    let mut fetcher = make_fetcher(
+        Arc::clone(&rows),
+        Arc::new(FakeCache::default()),
+        Arc::clone(&alerts),
+        5.0,
+        Duration::from_secs(1),
+    );
+    fetcher.cache = Arc::new(FailedRead);
+    let error = get_global_proxy_spend(Decimal::TEN, Some(&fetcher), "admin", "key")
+        .await
+        .unwrap_err();
+    assert!(matches!(error, CoordinatorError::Cache { .. }));
+    assert_eq!(rows.calls.load(Ordering::SeqCst), 0);
+    assert!(alerts.scheduled.lock().unwrap().is_empty());
+}

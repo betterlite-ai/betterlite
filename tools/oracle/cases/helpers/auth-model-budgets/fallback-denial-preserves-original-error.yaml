@@ -8,7 +8,6 @@ call:
           token: sk-deny
           models: [gpt-4]
         model_name: gpt-4
-        request_model: gpt-4
         request_data:
           model: gpt-4
         failing: true
@@ -18,7 +17,6 @@ call:
           token: sk-nested
           models: [gpt-4, gpt-3.5]
         model_name: gpt-4
-        request_model: nested-model
         request_data:
           model: nested-model
         failing: true
@@ -31,7 +29,6 @@ call:
           team_models: [gpt-4]
           model_max_budget: {}
         model_name: gpt-4
-        request_model: gpt-4
         request_data:
           model: gpt-4
         failing: true
@@ -42,7 +39,6 @@ call:
           models: []
           model_max_budget: {}
         model_name: gpt-4
-        request_model: gpt-4
         request_data:
           model: gpt-4
         failing: true

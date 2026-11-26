@@ -8,7 +8,6 @@ call:
           token: sk-p
           models: [gpt-4, gpt-3.5]
         model_name: gpt-4
-        request_model: gpt-4
         request_data:
           model: gpt-4
           stream: true
@@ -22,7 +21,6 @@ call:
           token: sk-q
           models: [gpt-4, gpt-3.5]
         model_name: gpt-4
-        request_model: gpt-4
         request_data:
           model: gpt-4
         path_params:

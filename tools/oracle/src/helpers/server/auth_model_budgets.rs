@@ -36,7 +36,6 @@ struct Call {
     token: Option<BTreeMap<String, JsonData>>,
     models: Option<Vec<String>>,
     model_name: Option<String>,
-    request_model: Option<String>,
     request_data: Option<BTreeMap<String, JsonData>>,
     path_params: Option<BTreeMap<String, JsonData>>,
     failing: Option<bool>,

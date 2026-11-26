@@ -16,8 +16,6 @@ from pydantic import JsonValue, TypeAdapter
 from starlette.requests import Request
 from typing_extensions import override
 
-litellm.suppress_debug_info = True  # Suppress provider output.
-
 OBJECT: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
 
 
@@ -37,6 +35,7 @@ Call = TypedDict("Call", {
 }, total=False)
 
 
+Input = TypedDict("Input", {"calls": list[Call]})
 END_USER_LIMIT_FIELDS = dict(zip(
     ("tpm", "rpm", "tpd", "max_budget", "model_max_budget"),
     ("end_user_tpm_limit", "end_user_rpm_limit", "end_user_tpd_limit",
@@ -59,7 +58,7 @@ def auth_of(call: Call) -> UserAPIKeyAuth:
 def end_user_result(
     end_user_id: JsonValue, values: Mapping[str, JsonValue]
 ) -> JsonValue:
-    return {"end_user_id": end_user_id, **{name: values.get(name) for name in END_USER_LIMIT_FIELDS}}
+    return {"end_user_id": end_user_id, "allowed_model_region": values.get("allowed_model_region"), **{name: values.get(name) for name in END_USER_LIMIT_FIELDS}}  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L722-L723
 
 
 def denial_record(denied: BudgetExceededError) -> JsonValue:
@@ -240,6 +239,7 @@ def end_user_update_call(call: Call) -> JsonValue:
     return end_user_result(
         updated.end_user_id,
         {
+        "allowed_model_region": updated.allowed_model_region,
         "tpm": updated.end_user_tpm_limit,
         "rpm": updated.end_user_rpm_limit,
         "tpd": updated.end_user_tpd_limit,
@@ -261,7 +261,7 @@ async def global_spend_call(call: Call) -> JsonValue:
     spend = SpendRun(admin, UserApiKeyCache(), prisma, AlertRecorder())
     first: float | None
     second: float | None = None
-    if len(tokens) > 1:
+    if len(tokens) > 1 and prisma is not None and max_budget > 0:
         first, second = await asyncio.gather(spend.spend(tokens[0]), spend.follower(table, tokens[1]))  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L733-L757
     else:
         first = await spend.spend(tokens[0])
@@ -295,6 +295,5 @@ async def answer_calls(calls: list[Call]) -> JsonValue:
     return answers
 
 
-def run(input_value: dict[str, JsonValue]) -> JsonValue:
-    calls = TypeAdapter(list[Call]).validate_python(input_value["calls"])
-    return asyncio.run(answer_calls(calls))
+def run(input_value: Input) -> JsonValue:
+    return asyncio.run(answer_calls(input_value["calls"]))

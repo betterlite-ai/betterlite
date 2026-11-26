@@ -141,11 +141,22 @@ async fn fallback_error(
         provider: &provider,
         max_recurse_depth: call.max_recurse_depth.unwrap_or(DEFAULT_RECURSE_DEPTH),
     };
+    let request_model = request
+        .request_data
+        .as_ref()
+        .and_then(|data| data.get("model"))
+        .and_then(|value| {
+            if let JsonData::String(model) = value {
+                Some(model.clone())
+            } else {
+                None
+            }
+        });
     let callee = KeyBudgetCall {
         limiter,
         token,
         model_name,
-        request_model: call.request_model.as_deref(),
+        request_model: request_model.as_deref(),
     };
     match check_key_budget_fallback(callee, request, &context, None).await {
         Ok(()) => Ok(Value::Null),

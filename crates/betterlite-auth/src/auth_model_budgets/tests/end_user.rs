@@ -88,11 +88,17 @@ async fn end_user_nonnull_fields_and_debug() {
     let mut params = EndUserParams::default();
     let zero = LiteLLMBudgetTable {
         tpm_limit: Some(0),
+        rpm_limit: Some(0),
+        tpd_limit: Some(0),
+        max_budget: Some(Decimal::ZERO),
         model_max_budget: Some(BTreeMap::new()),
         ..empty_budget()
     };
     apply_end_user_limits(&mut params, &zero, Some("eu-2"));
     assert_eq!(params.end_user_tpm_limit, Some(0));
+    assert_eq!(params.end_user_rpm_limit, Some(0));
+    assert_eq!(params.end_user_tpd_limit, Some(0));
+    assert_eq!(params.end_user_max_budget, Some(Decimal::ZERO));
     assert_eq!(params.end_user_model_max_budget, Some(BTreeMap::new()));
     assert_eq!(logs.debugs("Applied budget limits to end user").len(), 3);
 }
