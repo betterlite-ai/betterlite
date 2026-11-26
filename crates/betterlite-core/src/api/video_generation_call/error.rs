@@ -116,9 +116,17 @@ fn failure_class(
         VideoGenerationCallError::Mock(_)
         | VideoGenerationCallError::Timeout { .. }
         | VideoGenerationCallError::Logging(_)
-        | VideoGenerationCallError::Suspended => {
-            exception_class(message, model, provider, VALUE_ERROR, None, false, redactor)
-        }
+        | VideoGenerationCallError::Suspended => dispatch(
+            &DispatchInput::Raw(Box::new(exception(
+                message,
+                model,
+                provider,
+                VALUE_ERROR,
+                None,
+                false,
+            ))),
+            redactor,
+        ),
         VideoGenerationCallError::Transport {
             status_code,
             status_code_is_synthesized,
@@ -158,19 +166,18 @@ fn resolution_class(
     provider: &str,
     redactor: &Redactor,
 ) -> ErrorClass {
-    let message = format!(
+    let wrapped = format!(
         "GetLLMProvider Exception - {message}\n\noriginal model: {}",
         model.unwrap_or("None")
     );
-    exception_class(
-        &message,
-        model,
-        provider,
-        BAD_REQUEST,
-        Some(400),
-        false,
-        redactor,
-    )
+    let raw = resolution_exception(&wrapped, model, provider);
+    dispatch(&DispatchInput::Raw(Box::new(raw)), redactor)
+}
+
+fn resolution_exception(message: &str, model: Option<&str>, provider: &str) -> RawException {
+    let mut raw = exception(message, model, provider, BAD_REQUEST, None, false);
+    raw.status_code = Some(400);
+    raw
 }
 
 fn provider_class(message: &str, model: Option<&str>, provider: &str) -> ErrorClass {
@@ -190,27 +197,26 @@ fn transport_class(
     redactor: &Redactor,
 ) -> ErrorClass {
     let (status_code, status_code_is_synthesized) = status;
-    exception_class(
+    let raw = exception(
         message,
         model,
         provider,
         "",
         status_code,
         status_code_is_synthesized,
-        redactor,
-    )
+    );
+    dispatch(&DispatchInput::Raw(Box::new(raw)), redactor)
 }
 
-fn exception_class(
+fn exception(
     message: &str,
     model: Option<&str>,
     provider: &str,
     exception_type: &str,
     status_code: Option<u16>,
     status_code_is_synthesized: bool,
-    redactor: &Redactor,
-) -> ErrorClass {
-    let raw = RawException {
+) -> RawException {
+    RawException {
         model: model.unwrap_or_default().to_owned(),
         custom_llm_provider: provider.to_owned(),
         error_str: message.to_owned(),
@@ -219,8 +225,7 @@ fn exception_class(
         message: Some(message.to_owned()),
         body: None,
         exception_type: exception_type.to_owned(),
-    };
-    dispatch(&DispatchInput::Raw(Box::new(raw)), redactor)
+    }
 }
 
 // what the B3333 handler's failure carries into exception_type: the provider's own status, or the local text
