@@ -40,18 +40,7 @@ pub async fn check_agent_caller(
     let Some(access) = source else {
         return Err(AgentModelGrantsError::Unavailable);
     };
-    check_caller_model(model, key, access, teams, admission, context).await
-}
-
-// agent_caller_auth first: a key that resolves to no caller skips the check instead of widening it
-async fn check_caller_model(
-    model: &RequestedModels,
-    key: &UserAPIKeyAuth,
-    access: &dyn AgentAccessSource,
-    teams: Option<&TeamLookup>,
-    admission: &TeamAdmission<'_>,
-    context: &ModelAccessContext<'_>,
-) -> Result<(), AgentModelGrantsError> {
+    // agent_caller_auth first: a key that resolves to no caller skips rather than widening the check
     let Some(mut caller) = access.caller_auth(key).await? else {
         return Ok(());
     };

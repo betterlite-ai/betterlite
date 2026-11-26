@@ -167,9 +167,14 @@ fn stage_failure(error: AgentModelGrantsError) -> StageFailure {
         AgentModelGrantsError::Ceiling(groups) => {
             StageFailure::ModelGrants(Box::new(group_lookup_exception(&groups)))
         }
-        AgentModelGrantsError::Caller(caller) => {
-            StageFailure::ModelGrants(Box::new(caller_lookup_exception(&caller)))
-        }
+        AgentModelGrantsError::Caller(caller) => match *caller {
+            AgentCallerError::Team { source, .. } => {
+                StageFailure::ModelGrants(Box::new(team_lookup_exception(&source)))
+            }
+            error @ (AgentCallerError::User { .. } | AgentCallerError::Record(_)) => {
+                StageFailure::ModelGrants(Box::new(lookup_exception(&error.to_string())))
+            }
+        },
         AgentModelGrantsError::Unavailable => StageFailure::ModelGrants(Box::new(
             lookup_exception(&AgentModelGrantsError::Unavailable.to_string()),
         )),
@@ -188,19 +193,6 @@ fn group_lookup_exception(error: &AccessGroupsError) -> ProxyException {
     match error {
         AccessGroupsError::Read { source, .. } => team_lookup_exception(source),
     }
-}
-
-fn caller_lookup_exception(error: &AgentCallerError) -> ProxyException {
-    match error {
-        AgentCallerError::Team { source, .. } => team_lookup_exception(source),
-        AgentCallerError::User { .. } | AgentCallerError::Record(_) => {
-            other_lookup_exception(error)
-        }
-    }
-}
-
-fn other_lookup_exception(error: &AgentCallerError) -> ProxyException {
-    lookup_exception(&error.to_string())
 }
 
 fn team_lookup_exception(error: &TeamLookupError) -> ProxyException {
