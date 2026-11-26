@@ -169,10 +169,10 @@ fn missing_service_response() -> Response {
 }
 
 fn reply_response(reply: Option<ServiceBody>) -> Response {
-    match reply {
-        Some(body) => Json(body).into_response(),
-        None => Json(()).into_response(),
-    }
+    reply.map_or_else(
+        || Json(()).into_response(),
+        |body| Json(body).into_response(),
+    )
 }
 
 fn log_service_failure(error: &ServiceError) {

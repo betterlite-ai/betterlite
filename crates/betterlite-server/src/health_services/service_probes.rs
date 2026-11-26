@@ -57,10 +57,9 @@ impl Caller {
         let health = HealthCaller::from_context(context)?;
         let proxy_admin = is_proxy_admin(&health);
         let fields = key_alert_fields(context.principal.source_key.0.as_ref())?;
-        let token = match fields.token {
-            Some(secret) => secret.expose_secret().to_owned(),
-            None => String::new(),
-        };
+        let token = fields
+            .token
+            .map_or_else(String::new, |secret| secret.expose_secret().to_owned());
         Ok(Self {
             token,
             user_id: health.user_id,
@@ -89,10 +88,10 @@ struct KeyAlertFields {
 }
 
 fn key_alert_fields(key: Option<&UserAPIKeyAuth>) -> Result<KeyAlertFields, ServiceError> {
-    let Some(key) = key else {
+    let Some(source) = key else {
         return Ok(KeyAlertFields::default());
     };
-    let value = serde_json::to_value(key).map_err(ServiceError::KeyFields)?;
+    let value = serde_json::to_value(source).map_err(ServiceError::KeyFields)?;
     serde_json::from_value(value).map_err(ServiceError::KeyFields)
 }
 

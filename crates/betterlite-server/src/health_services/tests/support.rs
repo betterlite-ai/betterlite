@@ -167,12 +167,11 @@ impl MockRequests for FakeMock {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(*request);
-        match &self.failure {
-            Some(message) => Err(ServiceTestError {
+        self.failure.as_ref().map_or(Ok(()), |message| {
+            Err(ServiceTestError {
                 message: message.clone(),
-            }),
-            None => Ok(()),
-        }
+            })
+        })
     }
 }
 
@@ -431,13 +430,15 @@ impl AlertActions for FakeAlerts {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push((url.expose_secret().to_owned(), text.to_owned()));
-        match &self.teams_delivery {
-            Some(delivery) => Ok(delivery.clone()),
-            None => Ok(TeamsDelivery {
-                status_code: 200,
-                body: "ok".to_owned(),
-            }),
-        }
+        self.teams_delivery.as_ref().map_or_else(
+            || {
+                Ok(TeamsDelivery {
+                    status_code: 200,
+                    body: "ok".to_owned(),
+                })
+            },
+            |delivery| Ok(delivery.clone()),
+        )
     }
 
     fn webhook_alert_types(&self) -> Option<Vec<AlertType>> {

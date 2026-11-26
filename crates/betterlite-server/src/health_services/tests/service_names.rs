@@ -1,5 +1,6 @@
 use axum::http::StatusCode;
 use rstest::rstest;
+use strum::ParseError;
 
 use crate::health_services::service_name::{ServiceName, unknown_service_message};
 
@@ -47,7 +48,10 @@ fn service_names_parse_and_round_trip(#[case] text: &str, #[case] name: ServiceN
 #[case::empty("")]
 #[case::python_repr("['datadog']")]
 fn service_other_text_is_not_a_name(#[case] text: &str) {
-    assert!(text.parse::<ServiceName>().is_err());
+    assert_eq!(
+        text.parse::<ServiceName>().unwrap_err(),
+        ParseError::VariantNotFound
+    );
     assert_eq!(
         unknown_service_message(text),
         format!("Service must be in list. Service={text} not in {ACCEPTED}")

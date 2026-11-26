@@ -353,6 +353,10 @@ fn assert_test_email_event(event: &WebhookEvent, address: Option<&str>) {
         .as_ref()
         .expect("the test event carries the caller's token");
     assert_eq!(token.expose_secret(), "hashed-user-key");
+    assert_test_email_details(event, address);
+}
+
+fn assert_test_email_details(event: &WebhookEvent, address: Option<&str>) {
     assert_eq!(event.customer_id, None);
     assert_eq!(event.user_id.as_deref(), Some("user-1"));
     assert_eq!(event.team_id.as_deref(), Some("team-1"));
