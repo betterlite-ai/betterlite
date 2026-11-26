@@ -136,6 +136,9 @@ fn stage_input(
         AuthBackend::AuthEndUsers => Ok(StageInput::AuthEndUsers(Box::new(
             auth_end_users::stage_input(request, authenticated)?,
         ))),
+        AuthBackend::AuthPolicySupport => Ok(StageInput::AuthPolicySupport(Box::new(
+            auth_policy_support::stage_input(request, authenticated, body)?,
+        ))),
     }
 }
 
@@ -236,7 +239,8 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
         | StageInput::RequestBodySafety(_)
         | StageInput::AuthRequestModels(_)
         | StageInput::AuthModelPatterns(_)
-        | StageInput::AuthResourceGrants(_)) => Ok(other),
+        | StageInput::AuthResourceGrants(_)
+        | StageInput::AuthPolicySupport(_)) => Ok(other),
     }
 }
 

@@ -11,6 +11,7 @@ use crate::auth::auth_end_users::EndUserStageInput;
 use crate::auth::auth_key_budgets::KeyBudgetStageInput;
 use crate::auth::auth_model_patterns::{ModelAccessRejection, ModelPatternStageInput, run_stage};
 use crate::auth::auth_org_lookup::OrgStageInput;
+use crate::auth::auth_policy_support::{self, AuthPolicySupportStageInput};
 use crate::auth::auth_request_models::{RequestModelStageInput, resolve};
 use crate::auth::auth_request_policy::{self, AuthRequestPolicyStageInput};
 use crate::auth::auth_resource_grants::{self, ResourceGrantStageInput};
@@ -32,6 +33,7 @@ pub enum AuthBackend {
     TeamBudgetAdmission,
     AuthOrgLookup,
     AuthEndUsers,
+    AuthPolicySupport,
 }
 
 // B052 owns the final stage order; the master-key stage authenticates before the model stages run.
@@ -47,6 +49,7 @@ pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
     AuthBackend::TeamBudgetAdmission,
     AuthBackend::AuthOrgLookup,
     AuthBackend::AuthEndUsers,
+    AuthBackend::AuthPolicySupport,
 ];
 
 #[derive(Clone, Debug)]
@@ -62,6 +65,7 @@ pub enum StageInput {
     TeamBudgetAdmission(Box<TeamBudgetStageInput>),
     AuthOrgLookup(Box<OrgStageInput>),
     AuthEndUsers(Box<EndUserStageInput>),
+    AuthPolicySupport(Box<AuthPolicySupportStageInput>),
 }
 
 #[derive(Clone, Debug)]
@@ -96,6 +100,7 @@ pub(crate) enum StageFailure {
     TeamBudgets(Box<ProxyException>),
     OrgLookup(Box<ProxyException>),
     EndUsers(Box<ProxyException>),
+    AuthPolicySupport(Box<ProxyException>),
 }
 
 impl From<AuthenticationFailure> for StageFailure {
@@ -153,6 +158,7 @@ pub(crate) fn dispatch(
             // the lookup and the budget check ran in the prefetch, so only the identity is left
             Ok(stage.context.clone())
         }
+        AuthBackend::AuthPolicySupport => auth_policy_support_stage(input),
     }
 }
 
@@ -175,6 +181,13 @@ fn auth_resource_grants_stage(input: &StageInput) -> Result<AuthContext, StageFa
         return Err(StageFailure::from(AuthenticationFailure::Missing));
     };
     auth_resource_grants::run_stage(stage).map_err(StageFailure::ResourceGrants)
+}
+
+fn auth_policy_support_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
+    let StageInput::AuthPolicySupport(stage) = input else {
+        return Err(StageFailure::from(AuthenticationFailure::Missing));
+    };
+    auth_policy_support::run_stage(stage).map_err(StageFailure::AuthPolicySupport)
 }
 
 fn auth_model_patterns_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
