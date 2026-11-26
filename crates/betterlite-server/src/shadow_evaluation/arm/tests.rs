@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use betterlite_core::shadow_evidence::cost::PriceMap;
-use betterlite_db::shadow_tables::rows::AttemptOutcome;
+use betterlite_db::shadow_tables::rows::{AttemptOutcome, ShadowAttemptRow};
 use betterlite_models::catalog::{ModelCatalog, UnknownFields};
 use betterlite_models::decisions::Json;
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
@@ -74,6 +74,17 @@ fn assert_shadow_row(attempts: &Attempts, counter: &SpendLog) {
     let rows = attempts.rows();
     assert_eq!(rows.len(), 1);
     let row = &rows[0];
+    assert_shadow_identity(row);
+    assert_shadow_judge_costs(row);
+    assert_shadow_real_costs(row);
+    assert_eq!(row.error, None);
+    assert_eq!(
+        counter.entries(),
+        vec![(spend_key("job-1"), decimal("1.75"))]
+    );
+}
+
+fn assert_shadow_identity(row: &ShadowAttemptRow) {
     assert_eq!(row.job_id, "job-1");
     assert_eq!(row.request_id, "req-1");
     assert_eq!(row.router_name, ARM);
@@ -82,17 +93,18 @@ fn assert_shadow_row(attempts: &Attempts, counter: &SpendLog) {
     assert_eq!(row.real_model.as_deref(), Some("gpt-4o"));
     assert_eq!(row.shadow_model.as_deref(), Some("shadow-model"));
     assert_eq!(row.confidence, Some(decimal("0.9")));
+}
+
+fn assert_shadow_judge_costs(row: &ShadowAttemptRow) {
     assert_eq!(row.judge_cost, Decimal::ONE);
     assert_eq!(row.shadow_cost, decimal("0.25"));
     assert_eq!(row.shadow_classifier_cost, decimal("0.5"));
+}
+
+fn assert_shadow_real_costs(row: &ShadowAttemptRow) {
     assert_eq!(row.real_cost, Some(decimal("0.1")));
     assert_eq!(row.real_classifier_cost, decimal("0.02"));
     assert!(row.real_cache_hit);
-    assert_eq!(row.error, None);
-    assert_eq!(
-        counter.entries(),
-        vec![(spend_key("job-1"), decimal("1.75"))]
-    );
 }
 
 fn assert_arm_calls(calls: &CallsFake, fixture: &SampleFixture) {

@@ -200,19 +200,19 @@ const fn stage_name(stage: FunnelStage) -> &'static str {
 }
 
 fn output(recorder: &Recorder, spend: &SpendFake, job_spend: &JobSpendFake) -> Value {
-    let events = locked(&recorder.events);
-    let funnel_events: Vec<Value> = events
+    let funnel_events: Vec<Value> = locked(&recorder.events)
         .iter()
         .map(|(job_id, stage)| json!([job_id, stage_name(*stage)]))
         .collect();
-    let stored = locked(&recorder.rows);
-    let rows: Vec<Value> = stored.iter().map(row_json).collect();
-    let writes = locked(&recorder.writes);
+    let rows: Vec<Value> = locked(&recorder.rows).iter().map(row_json).collect();
+    let writes = locked(&recorder.writes).clone();
+    let advisory_reads = locked(&spend.reads).clone();
+    let job_spend_reads = locked(&job_spend.reads).clone();
     json!({
         "funnel": funnel_events,
         "rows": rows,
-        "spend_writes": writes.as_slice(),
-        "advisory_reads": json!(locked(&spend.reads).as_slice()),
-        "job_spend_reads": json!(locked(&job_spend.reads).as_slice()),
+        "spend_writes": writes,
+        "advisory_reads": advisory_reads,
+        "job_spend_reads": job_spend_reads,
     })
 }

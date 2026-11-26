@@ -533,11 +533,11 @@ impl CallsFake {
     }
 
     fn next<Value>(answers: &Mutex<VecDeque<Answer<Value>>>, stage: &str) -> ArmStage<Value> {
-        let mut answers = match answers.lock() {
+        let mut answer_queue = match answers.lock() {
             Ok(guard) => guard,
             Err(poisoned) => poisoned.into_inner(),
         };
-        match answers.pop_front() {
+        match answer_queue.pop_front() {
             Some(Answer::Reply(value)) => Ok(value),
             Some(Answer::Failed(failure)) => Err(ArmFailure::Failed(failure)),
             Some(Answer::Raised(message)) => Err(ArmFailure::Raised(message.to_owned())),

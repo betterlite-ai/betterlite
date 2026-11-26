@@ -81,10 +81,10 @@ pub(crate) struct TeamsFake {
 
 impl CachedTeams for TeamsFake {
     fn cached_team<'lookup>(&'lookup self, _team_id: &'lookup str) -> TeamFuture<'lookup> {
-        Box::pin(ready(match &self.team {
-            Some(team) => Ok(team.clone()),
-            None => Err(TeamLookupError::NoDatabase),
-        }))
+        Box::pin(ready(self.team.as_ref().map_or_else(
+            || Err(TeamLookupError::NoDatabase),
+            |team| Ok(team.clone()),
+        )))
     }
 }
 
