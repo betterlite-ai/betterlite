@@ -96,17 +96,15 @@ fn check_team_create(
     {
         return Ok(());
     }
-    let Some((organization_id, role)) = selected_organization(user, request)? else {
-        return Err(RoutePolicyError::TeamCreateNeedsOrganization {
+    match selected_organization(user, request)? {
+        None => Err(RoutePolicyError::TeamCreateNeedsOrganization {
             organizations: info.organizations.join(", "),
-        });
-    };
-    if role == Some(ORG_ADMIN) {
-        return Ok(());
+        }),
+        Some((_, Some(ORG_ADMIN))) => Ok(()),
+        Some((organization_id, role)) => Err(RoutePolicyError::TeamCreateNeedsOrgAdmin {
+            route: route.to_owned(),
+            organization_id,
+            role: role.unwrap_or(NO_ROLE).to_owned(),
+        }),
     }
-    Err(RoutePolicyError::TeamCreateNeedsOrgAdmin {
-        route: route.to_owned(),
-        organization_id,
-        role: role.unwrap_or(NO_ROLE).to_owned(),
-    })
 }
