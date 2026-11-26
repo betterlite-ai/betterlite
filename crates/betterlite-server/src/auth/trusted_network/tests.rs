@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use axum::Router;
 use axum::body::{Body, Bytes, to_bytes};
-use axum::extract::{ConnectInfo, Extension};
+use axum::extract::ConnectInfo;
 use axum::http::{HeaderValue, Request, StatusCode, header};
 use axum::routing::post;
 use betterlite_config::loader::ConfigLoader;
@@ -169,19 +169,18 @@ fn header_bytes_decode_as_latin1() {
     );
 }
 
-async fn mark_called(Extension(reached): Extension<Arc<AtomicBool>>, body: Bytes) -> String {
-    reached.store(true, Ordering::Release);
-    String::from_utf8(body.to_vec()).unwrap_or_default()
-}
-
 fn application(config: &Config, reached: &Arc<AtomicBool>) -> Router {
+    let marked = Arc::clone(reached);
+    let handler = move |body: Bytes| async move {
+        marked.store(true, Ordering::Release);
+        String::from_utf8(body.to_vec()).unwrap_or_default()
+    };
     routes::router(
         state_for(config),
         Arc::new(AtomicBool::new(false)),
-        Router::new().route(MODEL_ROUTE, post(mark_called)),
+        Router::new().route(MODEL_ROUTE, post(handler)),
         Router::new(),
     )
-    .layer(Extension(Arc::clone(reached)))
 }
 
 fn oversize_request() -> Request<Body> {
