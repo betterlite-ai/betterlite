@@ -25,7 +25,6 @@ use crate::user_roles::UserRole;
 // What a resolved key names, read from the typed auth without exposing its fields to the server.
 #[derive(Clone, Debug, Default)]
 pub struct KeyIdentity {
-    pub token: Option<String>,
     pub key_name: Option<String>,
     pub user_id: Option<String>,
     pub team_id: Option<String>,
@@ -37,7 +36,6 @@ pub struct KeyIdentity {
 #[must_use]
 pub fn key_identity(auth: &UserAPIKeyAuth) -> KeyIdentity {
     KeyIdentity {
-        token: auth.view.token.token.clone(),
         key_name: auth.view.token.key_name.clone(),
         user_id: auth.view.token.user_id.clone(),
         team_id: auth.view.token.team_id.clone(),

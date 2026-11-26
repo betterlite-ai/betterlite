@@ -60,33 +60,13 @@ pub async fn get_key_object(
     Ok(auth)
 }
 
-// UserAPIKeyAuth.model_validate(row.model_dump(exclude_none=True)) reads a typed auth from the row.
+// UserAPIKeyAuth.model_validate(row.model_dump(exclude_none=True)): a null row field reads as its default.
 fn auth_from_view(view: CombinedKeyView) -> Result<UserAPIKeyAuth, KeyLookupError> {
     let text = serde_json::to_string(&view).map_err(KeyLookupError::Json)?;
-    let fields: JsonData = serde_json::from_str(&text).map_err(KeyLookupError::Json)?;
-    let JsonData::Object(fields) = strip_nulls(fields) else {
-        return Err(KeyLookupError::NotAnObject);
-    };
+    let fields: BTreeMap<String, JsonData> =
+        serde_json::from_str(&text).map_err(KeyLookupError::Json)?;
     UserAPIKeyAuth::construct(AuthInput::Dict(fields))
         .map_err(|error| KeyLookupError::Row(Box::new(error)))
-}
-
-// pydantic's exclude_none drops a None at every object level and keeps a null list element.
-fn strip_nulls(value: JsonData) -> JsonData {
-    match value {
-        JsonData::Object(fields) => {
-            let mut kept = BTreeMap::new();
-            for (key, field) in fields {
-                if !matches!(field, JsonData::Null) {
-                    kept.insert(key, strip_nulls(field));
-                }
-            }
-            JsonData::Object(kept)
-        }
-        JsonData::Array(items) => JsonData::Array(items.into_iter().map(strip_nulls).collect()),
-        other
-        @ (JsonData::Null | JsonData::Bool(_) | JsonData::Number(_) | JsonData::String(_)) => other,
-    }
 }
 
 // The relation is loaded when an id exists and it is absent, and always on a writer read.
