@@ -136,7 +136,7 @@ class ScriptedRouter(Router):
         return self.script["access_groups"]
 
     @override
-    def get_deployment_credentials_with_provider(
+    def get_deployment_credentials_with_provider(  # ast-grep-ignore: no-long-names
         self, model_id: str, team_id: str | None = None
     ) -> dict[str, JsonValue] | None:
         self.lookups.append({"model_id": model_id, "team_id": team_id})
