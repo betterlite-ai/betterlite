@@ -242,17 +242,11 @@ impl<'case> Probe<'case> {
         let api_version = is_azure
             .then(|| configured_or(self.resolved.api_version.clone(), AZURE_DEFAULT_API_VERSION));
         let url = connection
-            .as_ref()
             .filter(|_| branch == VERTEX_AI_PROVIDER)
             .map(|handshake| handshake.url.clone());
-        let headers: Vec<Value> = connection
-            .as_ref()
-            .map(handshake_headers)
-            .unwrap_or_default();
-        let max_size = connection.as_ref().map(|handshake| handshake.max_size);
-        let ssl = connection
-            .as_ref()
-            .map(|handshake| ssl_kind(&handshake.ssl));
+        let headers: Vec<Value> = connection.map(handshake_headers).unwrap_or_default();
+        let max_size = connection.map(|handshake| handshake.max_size);
+        let ssl = connection.map(|handshake| ssl_kind(&handshake.ssl));
         json!({
             "branch": branch,
             "api_base": base_value(provider, self.resolved.api_base.clone()),
