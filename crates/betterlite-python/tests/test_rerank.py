@@ -44,7 +44,6 @@ SECOND_SCORE: Final = 0.4
 SEARCH_UNITS: Final = 1
 SEARCH_COST: Final = 0.002
 MAX_CHUNKS: Final = 10
-# matches MAX_REQUEST_BYTES in crates/betterlite-python/src/rerank/native.rs
 WIRE_LIMIT: Final = 8 * 1024 * 1024
 PROVIDER_DELAY: Final = 0.5
 INFINITY_PROVIDER: Final = "infinity"
@@ -382,7 +381,7 @@ def test_request_headers() -> None:
 def test_request_infinity_key(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("INFINITY_API_KEY", raising=False)
     original = betterlite.infinity_key
-    betterlite.infinity_key = INFINITY_KEY  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L290
+    betterlite.infinity_key = INFINITY_KEY
     try:
         with closing(RerankServer()) as server:
             outcome = rerank(
