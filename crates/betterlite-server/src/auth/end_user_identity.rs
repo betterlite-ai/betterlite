@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use axum::body::{Body, Bytes};
 use axum::http::{Request, header};
+use betterlite_auth::auth_end_users::defaults::KeyEndUserDefaults;
 use betterlite_auth::auth_identity::records::EndUserIdentity;
 use betterlite_auth::end_user_identity::resolve::{
     EndUserIdResolver, ResolveError, ResolveRequest,
@@ -10,6 +11,7 @@ use betterlite_auth::end_user_identity::resolve::{
 use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExceptionInit};
 use betterlite_logging::end_user::extraction::{IdSettings, request_end_user_id};
 
+use crate::auth::auth_end_users::{self, EndUserStageInput};
 use crate::auth::auth_identity::{AuthContext, StageFailure, StageInput};
 use crate::auth::request_body_safety::request_object;
 use crate::error_body::AuthenticationFailure;
@@ -17,7 +19,7 @@ use crate::state::ServerState;
 
 mod tests;
 
-// The resolver the proxy wired; this stage extracts the id and builds none of the lookup itself.
+// The resolver for this request: what the proxy wired, or else the one the state builds from its config.
 #[derive(Clone, Debug, Default)]
 pub struct EndUserIdentityRule {
     pub resolver: Option<Arc<EndUserIdResolver>>,
@@ -31,11 +33,16 @@ pub struct EndUserIdentityStageInput {
     pub database: bool,
 }
 
+// The rule the proxy wired stays authoritative, and without one the state supplies the production resolver.
 fn rule_for_request(request: &Request<Body>) -> Arc<EndUserIdentityRule> {
-    request
+    if let Some(rule) = request.extensions().get::<Arc<EndUserIdentityRule>>() {
+        return Arc::clone(rule);
+    }
+    let resolver = request
         .extensions()
-        .get::<Arc<EndUserIdentityRule>>()
-        .map_or_else(|| Arc::new(EndUserIdentityRule::default()), Arc::clone)
+        .get::<Arc<ServerState>>()
+        .and_then(|state| state.end_user_identity.resolver(state));
+    Arc::new(EndUserIdentityRule { resolver })
 }
 
 fn database_for_request(request: &Request<Body>) -> bool {
@@ -85,11 +92,18 @@ pub(crate) fn stage_input(
 pub(crate) async fn prefetch(
     stage: &mut EndUserIdentityStageInput,
 ) -> Result<(), Box<ProxyException>> {
+    let key_end_user_budget_id = stage
+        .context
+        .principal
+        .source_key
+        .0
+        .as_ref()
+        .and_then(|key| KeyEndUserDefaults::of_key(key).key_end_user_budget_id);
     let resolved = match stage.rule.resolver.as_deref() {
         Some(resolver) if stage.database => resolver
             .resolve(&ResolveRequest {
                 raw_end_user_id: stage.raw_end_user_id.as_deref(),
-                key_end_user_budget_id: None,
+                key_end_user_budget_id: key_end_user_budget_id.as_deref(),
             })
             .await
             .map_err(|error| Box::new(exception(&error)))?,
@@ -107,6 +121,38 @@ pub(crate) async fn prefetched(
         .await
         .map_err(StageFailure::EndUserIdentity)?;
     Ok(StageInput::AuthEndUserIdentity(stage))
+}
+
+// LiteLLM reads the id this stage validated, and none other, when the end-user budget lookup follows
+pub(crate) fn end_user_stage_input(
+    request: &Request<Body>,
+    authenticated: Option<&AuthContext>,
+) -> Result<EndUserStageInput, AuthenticationFailure> {
+    let mut stage = auth_end_users::stage_input(request, authenticated)?;
+    if !validated_id_decides(request, &stage.context) {
+        return Ok(stage);
+    }
+    let mut rule = (*stage.rule).clone();
+    rule.end_user_id = stage
+        .context
+        .principal
+        .end_user
+        .as_ref()
+        .map(|identity| identity.id.clone());
+    stage.rule = Arc::new(rule);
+    Ok(stage)
+}
+
+// with database validation on, the resolved id, including none, is the only id the lookup may read
+fn validated_id_decides(request: &Request<Body>, context: &AuthContext) -> bool {
+    if context.principal.end_user.is_some() {
+        return true;
+    }
+    request
+        .extensions()
+        .get::<Arc<ServerState>>()
+        .map(|state| &state.end_user_identity)
+        .is_some_and(|slot| slot.database && slot.validate_end_user_id_in_db)
 }
 
 // LiteLLM lets a cache failure escape the auth path as an unhandled internal server error.
