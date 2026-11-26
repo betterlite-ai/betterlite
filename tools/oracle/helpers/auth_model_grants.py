@@ -9,8 +9,7 @@ import litellm
 from litellm.proxy._types import ProxyException, UserAPIKeyAuth
 from litellm.proxy.agent_endpoints.auth import agent_access_groups
 from litellm.proxy.agent_endpoints.auth.agent_access_groups import AgentAccessGroupCeiling
-from litellm.proxy.auth import auth_checks
-from litellm.proxy.auth import fallback_model_access
+from litellm.proxy.auth import auth_checks, fallback_model_access
 from litellm.proxy.common_utils.user_api_key_cache import UserApiKeyCache
 from litellm.proxy.utils import PrismaClient, ProxyLogging
 from litellm.router import Router
@@ -146,9 +145,9 @@ async def agent_step(step: Step) -> StepResult:
     managed = Ceilings(rows, effects)
     unmanaged = Unmanaged(step.get("unmanaged"), effects)
     valid_token = token_of(step)
-    saved_policy = auth_checks.managed_agent_policy  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L81
+    saved_policy = auth_checks.managed_agent_policy  # type: ignore[attr-defined]  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L81
     saved_ceilings = agent_access_groups.resolve_managed_agent_ceilings
-    auth_checks.managed_agent_policy = Policy(policy_of(step), effects)  # type: ignore[attr-defined]  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L81
+    auth_checks.managed_agent_policy = Policy(policy_of(step), effects)  # type: ignore[attr-defined, assignment]  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L81
     agent_access_groups.resolve_managed_agent_ceilings = managed.managed
     try:
         try:
@@ -166,7 +165,7 @@ async def agent_step(step: Step) -> StepResult:
                 user_api_key_cache=UserApiKeyCache(),
                 proxy_logging_obj=ServiceLog(),
             )
-        except ProxyException as denial:
+        except ProxyException as denial:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325
             return {
                 "allowed": False,
                 "error": error_out(denial),
@@ -223,7 +222,10 @@ async def run_step(step: Step) -> StepResult:
 
 
 async def run_steps(steps: list[Step]) -> list[StepResult]:
-    return [await run_step(step) for step in steps]
+    results: list[StepResult] = []
+    for step in steps:
+        results.append(await run_step(step))
+    return results
 
 
 def run(input_value: Input) -> list[StepResult]:
