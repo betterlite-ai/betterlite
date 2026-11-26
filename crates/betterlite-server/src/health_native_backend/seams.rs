@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 
 use crate::health_probe_modes::calls::{
-    AudioTranscriptionCall, HealthProbeReply, ImageEditCall, OcrCall, ProbeCall,
+    AudioTranscriptionCall, EvaluationCall, HealthProbeReply, ImageEditCall, OcrCall, ProbeCall,
 };
 use crate::health_probe_modes::error::HealthProbeError;
 
@@ -66,4 +66,10 @@ pub trait ResponsesProbeCall: Send + Sync {
 #[async_trait]
 pub trait OcrProbeCall: Send + Sync {
     async fn ocr(&self, call: OcrCall) -> Result<HealthProbeReply, HealthProbeError>;
+}
+
+// B3515's asystemone; EvaluationProbe is its production implementation
+#[async_trait]
+pub trait EvaluationProbeCall: Send + Sync {
+    async fn evaluate(&self, call: EvaluationCall) -> Result<HealthProbeReply, HealthProbeError>;
 }

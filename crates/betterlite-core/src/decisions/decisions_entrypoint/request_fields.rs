@@ -1,0 +1,60 @@
+use betterlite_models::decisions::{Extra, Json};
+use betterlite_openai::decisions::call::fields::{
+    OpenAiDecisionRequestFields, RequestFields, SystemOneRequestFields,
+};
+use indexmap::IndexMap;
+
+use super::super::FieldShapeError;
+
+mod tests;
+
+const STATE_KEY: &str = "state";
+
+const DEPRECATION_MESSAGE: &str = "litellm.decisions(state=...) is deprecated, call litellm.systemone for the System One request format";
+
+// _request_fields: a state keyword selects the System One envelope and warns, everything else is OpenAI's
+pub(crate) fn request_fields(
+    decision_input: Option<Json>,
+    questions: Option<Json>,
+    kwargs: &Extra,
+) -> Result<RequestFields, FieldShapeError> {
+    let Some(state) = kwargs.get(STATE_KEY) else {
+        let parsed_questions = match questions {
+            None | Some(Json::Null) => None,
+            Some(Json::List(items)) => Some(items),
+            Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
+                return Err(FieldShapeError::QuestionsNotAList);
+            }
+        };
+        return Ok(RequestFields::OpenAi(OpenAiDecisionRequestFields {
+            input: decision_input,
+            questions: parsed_questions,
+        }));
+    };
+    tracing::warn!(category = "DeprecationWarning", "{DEPRECATION_MESSAGE}");
+    let parsed_state = state_value(state)?;
+    Ok(RequestFields::SystemOne(SystemOneRequestFields {
+        state: parsed_state,
+        questions: systemone_questions(questions)?,
+    }))
+}
+
+fn state_value(state: &Json) -> Result<Option<Json>, FieldShapeError> {
+    match state {
+        Json::Null => Ok(None),
+        Json::Text(_) | Json::Object(_) | Json::List(_) => Ok(Some(state.clone())),
+        Json::Bool(_) | Json::Number(_) => Err(FieldShapeError::StateNotDecisionJson),
+    }
+}
+
+pub(crate) fn systemone_questions(
+    questions: Option<Json>,
+) -> Result<Option<IndexMap<String, Json>>, FieldShapeError> {
+    match questions {
+        None | Some(Json::Null) => Ok(None),
+        Some(Json::Object(map)) => Ok(Some(map)),
+        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
+            Err(FieldShapeError::QuestionsNotAMap)
+        }
+    }
+}

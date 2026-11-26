@@ -1,0 +1,44 @@
+kind: helper
+name: model-info-search-catalog-three-pass
+call:
+  model_info_search:
+    function: enrich
+    model:
+      model_name: by-backend
+      litellm_params:
+        model: openai/gpt-4o
+      model_info:
+        id: dep-1
+    catalog:
+      - model: openai/gpt-4o
+        info:
+          max_tokens: 100
+calls:
+  - model_info_search:
+      function: enrich
+      model:
+        model_name: by-base-model
+        litellm_params:
+          model: openai/gpt-4
+        model_info:
+          id: dep-2
+          base_model: gpt-4o
+      catalog:
+        - model: gpt-4o
+          info:
+            max_tokens: 200
+  - model_info_search:
+      function: enrich
+      model:
+        model_name: by-provider-suffix
+        litellm_params:
+          model: openai/custom-model
+        model_info:
+          id: dep-3
+      catalog:
+        - model: custom-model
+          provider: openai
+          info:
+            max_tokens: 300
+env: {}
+compare: {ignore: []}

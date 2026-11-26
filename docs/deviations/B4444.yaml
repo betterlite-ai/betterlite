@@ -1,0 +1,36 @@
+task: B4444
+deviations:
+  - what: The background loop awaits the window-gated database save inside the cycle, where LiteLLM's _schedule_background_health_check_db_save starts it with asyncio.create_task and leaves it detached.
+    why: Detached tasks outlive shutdown and lose their errors, and this workspace forbids tokio::spawn; the save runs on the TaskTracker the loop itself runs on, and a cancelled save still releases the window lock through the lease's drop.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L4364
+  - what: GET /health/shared-status answers from the proxy's one SharedHealthCheckManager, so status.pod_id is the process's init-time id and lock_ttl and cache_ttl are the configured TTLs; LiteLLM builds a throwaway manager per request, whose pod_id is the request's millisecond and whose TTLs are the class defaults.
+    why: A per-request pod id names no running process and changes on every call, so no setup can rely on it; answering from the loop's own manager makes the status describe the pod that coordinates the checks.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L1398-L1400
+  - what: The loop probes the deployment list it is handed, less the deployments whose model_info.disable_background_health_check is true; LiteLLM also narrows the list to background_health_check_model_groups before probing.
+    why: The group filter is B4441's health probe policy and this loop's dependencies carry no group setting, so the composition root hands in the list it wants probed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L4563-L4564
+  - what: The loop writes no background_health_check_loop_started, cycle_start, cycle_complete or cycle_duration_exceeded_interval lines and no overlap warning; it logs a failed shared check and a failed direct check instead.
+    why: Those lines carry thread_count and rss_mb from B4443's instrumentation, and the overlap warning needs LiteLLM's module-level background_health_check_loop_active flag, which the workspace's no-global-state rule forbids; the cycle's probe, cache, save and health state writes are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L4520-L4658
+  - what: The loop runs the window gate even when it has no health check store; B7640's save_background reports a missing store as a failed save, so the gate takes the window lock and releases it again. LiteLLM returns from _schedule_background_health_check_db_save before scheduling when prisma_client is None.
+    why: The loop's store is optional because the composition root decides whether a database exists, and B7640's save contract reports the missing store as a failed save; releasing the lock is what that report asks for, and no health rows are written either way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L4345-L4346
+  - what: max_concurrency is forwarded unchanged to B4443's perform_health_check, and None or a non-positive value stays unbounded with no cap of its own.
+    why: This matches LiteLLM, whose unbounded path starts one task per model with asyncio.gather; the task outline flagged the default as a decision point, so it is recorded here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L539-L576
+  - what: The loop ends when the server closes the TaskTracker it runs on, after the cycle in flight finishes; LiteLLM's _run_background_health_check never stops itself and its asyncio task ends with the event loop at shutdown.
+    why: A tracked task that never returns holds the tracker's wait() open, so shutdown would hang; the closed tracker is how a TaskTracker-hosted loop learns the server is stopping, and the cycle in flight completes before the loop returns.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L4503-L4521
+  - what: The window-gated database save is cut at a 60-second SAVE_DEADLINE, for the gated and the ungated path alike, and a save that overruns it counts as a failed save, so the window lock is released and the next cycle tries again; LiteLLM awaits the save with no timeout.
+    why: The save is awaited inside the cycle here, so a stalled query would block every later cycle and shutdown forever; the deadline bounds one save and leaves what a completed save writes unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L4323-L4327
+  - what: A cycle whose check fails publishes nothing and skips the database save and the router health-state write, keeping the previous results, and the loop goes on to the next interval; LiteLLM lets the direct check's exception escape _run_background_health_check, which ends its background task with the previous health_check_results still published.
+    why: One failed check, from a router lookup or a Redis error, is transient, and ending this loop would stop every later background check until restart; LiteLLM itself leaves the previous results untouched because it publishes only after the check returns, so keeping them and continuing differs only in recovery.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L4621-L4643
+kept_bugs:
+  - what: Two processes that start in the same wall-clock millisecond get the same pod_id, so either one treats the other's health check lock as its own when releasing it and reports the other's id as lock_owner.
+    why: LiteLLM builds pod_id from int(time.time() * 1000); the collision window is the source's, and a working setup treats the lock as best-effort coordination whose TTL is the real bound.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check_utils/shared_health_check_manager.py#L40
+  - what: release_health_check_lock reads the owner and then deletes in a second call, so a lock another pod reacquires between the two calls is deleted by this pod.
+    why: The source releases this way and performs exactly this ownership check; a working setup relies on the check it does, not on compare-and-delete.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check_utils/shared_health_check_manager.py#L98-L103

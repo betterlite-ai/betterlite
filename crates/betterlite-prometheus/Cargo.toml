@@ -24,6 +24,7 @@ tracing.workspace = true
 rstest = "=0.27.0"
 tempfile = "3.27.0"
 tower = { workspace = true, features = ["util"] }
+tracing-subscriber.workspace = true
 
 [[test]]
 name = "collector_factory"

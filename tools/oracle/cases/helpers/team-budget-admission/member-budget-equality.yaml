@@ -1,0 +1,95 @@
+kind: helper
+name: team-budget-admission-member-budget-equality
+call:
+  team_budget_admission:
+    calls:
+      # spend equal to the member cap denies, after the 80% member alert goes out
+      - function: admit
+        team:
+          team_id: team-1
+          team_alias: Alpha
+          organization_id: org-1
+          metadata:
+            team_member_max_budget_alert_emails:
+              "80": [owner@example.com]
+        token:
+          token: sk-member
+          user_id: user-1
+          team_id: team-1
+        membership:
+          user_id: user-1
+          team_id: team-1
+          spend: 2.0
+          litellm_budget_table:
+            max_budget: 5.0
+        user_email: member@example.com
+        spends: [5.0]
+        now: "2026-06-01T12:00:00Z"
+      # a cent under the cap passes, and the alert still fires past 80%
+      - function: admit
+        team:
+          team_id: team-1
+          team_alias: Alpha
+          organization_id: org-1
+          metadata:
+            team_member_max_budget_alert_emails:
+              "80": [owner@example.com]
+        token:
+          token: sk-member
+          user_id: user-1
+          team_id: team-1
+        membership:
+          user_id: user-1
+          team_id: team-1
+          spend: 2.0
+          litellm_budget_table:
+            max_budget: 5.0
+        user_email: member@example.com
+        spends: [4.99]
+        now: "2026-06-01T12:00:00Z"
+      # a member override of zero denies at zero spend, and zero spend sends no alert
+      - function: admit
+        team:
+          team_id: team-1
+          metadata:
+            team_member_max_budget_alert_emails:
+              "80": [owner@example.com]
+        token:
+          token: sk-member
+          user_id: user-1
+          team_id: team-1
+        membership:
+          user_id: user-1
+          team_id: team-1
+          litellm_budget_table:
+            max_budget: 0.0
+        spends: [0.0]
+        now: "2026-06-01T12:00:00Z"
+      # a loaded None membership with no team default reads nothing
+      - function: admit
+        team:
+          team_id: team-1
+        token:
+          token: sk-member
+          user_id: user-1
+          team_id: team-1
+        membership: null
+        spends: []
+        now: "2026-06-01T12:00:00Z"
+      # a key without a user skips the member check
+      - function: admit
+        team:
+          team_id: team-1
+        token:
+          token: sk-service
+          team_id: team-1
+        membership:
+          user_id: user-1
+          team_id: team-1
+          litellm_budget_table:
+            max_budget: 0.0
+        spends: []
+        now: "2026-06-01T12:00:00Z"
+env: {}
+compare:
+  ignore: []

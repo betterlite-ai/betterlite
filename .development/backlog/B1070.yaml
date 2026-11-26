@@ -1,14 +1,14 @@
 id: B1070
 milestone: M5 api families
 title: Vector management read
-status: todo
+status: done
 depends_on: [B2486, B1060, B1062, B003, B864, B1131, B732]
 file: tasks/B1070-vector-management-read.yaml
 covers:
   - "litellm/proxy/vector_store_endpoints/management_endpoints.py"
 parent: B090
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3227

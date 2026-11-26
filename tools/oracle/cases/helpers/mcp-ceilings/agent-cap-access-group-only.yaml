@@ -1,0 +1,9 @@
+kind: helper
+name: mcp-ceilings-agent-cap-access-group-only
+call:
+  b4670:
+    allowed: [srv-a, srv-b, srv-c]
+    agent_servers: []
+    access_group_servers: [srv-b, srv-c]
+env: {}
+compare: {ignore: []}

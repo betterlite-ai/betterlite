@@ -1,0 +1,40 @@
+kind: helper
+name: model-info-search-invalid-dates-last-both-orders
+call:
+  model_info_search:
+    function: sort
+    sort_by: created_at
+    sort_order: asc
+    models:
+      - model_name: may
+        model_info:
+          created_at: "2026-05-01T00:00:00Z"
+      - model_name: garbage
+        model_info:
+          created_at: garbage
+      - model_name: january
+        model_info:
+          created_at: "2026-01-01T00:00:00Z"
+      - model_name: empty
+        model_info:
+          created_at: ""
+calls:
+  - model_info_search:
+      function: sort
+      sort_by: created_at
+      sort_order: desc
+      models:
+        - model_name: may
+          model_info:
+            created_at: "2026-05-01T00:00:00Z"
+        - model_name: garbage
+          model_info:
+            created_at: garbage
+        - model_name: january
+          model_info:
+            created_at: "2026-01-01T00:00:00Z"
+        - model_name: empty
+          model_info:
+            created_at: ""
+env: {}
+compare: {ignore: []}

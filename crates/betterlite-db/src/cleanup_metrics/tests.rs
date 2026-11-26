@@ -1,14 +1,19 @@
 #![cfg(test)]
 
+use std::fs;
 use std::io::{Result as IoResult, Write};
+use std::process;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_prometheus::collector_factory::collector::MetricValue;
 use betterlite_prometheus::collector_registry::CollectorRegistry;
 use betterlite_prometheus::collector_registry::metric::sample::Sample;
 use betterlite_prometheus::collector_registry::metric::{CollectorKind, PrometheusMetric};
+use betterlite_prometheus::multiprocess::files::decode_db_file;
+use betterlite_prometheus::multiprocess::writer::MultiProcessWriter;
 use rstest::rstest;
 use rust_decimal::Decimal;
+use tempfile::TempDir;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::MakeWriter;
 
@@ -326,4 +331,24 @@ fn a_duplicate_name_keeps_the_instruments_registered_before_it() {
     assert!(registry.get(BATCH_DURATION).is_some());
     assert!(registry.get(BATCH_FAILURES).is_none());
     assert!(registry.get(RUNS).is_none());
+}
+
+#[test]
+fn rows_remaining_writes_livemax() {
+    let directory = TempDir::new().unwrap();
+    let pid = process::id();
+    let writer = MultiProcessWriter::new(directory.path().to_path_buf(), pid).unwrap();
+    let registry = CollectorRegistry::multiprocess(writer);
+    let metrics = CleanupMetrics::new(&registry);
+    metrics.set_rows_remaining("LiteLLM_SpendLogs", 42);
+    let path = directory.path().join(format!("gauge_livemax_{pid}.db"));
+    let entries = decode_db_file(&fs::read(&path).unwrap()).unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].value.to_bits(), 42.0_f64.to_bits());
+    assert!(
+        !directory
+            .path()
+            .join(format!("gauge_all_{pid}.db"))
+            .exists()
+    );
 }

@@ -1,3 +1,4 @@
+from betterlite._audio import aspeech, atranscription, speech, transcription
 from betterlite._completion import (
     AsyncCompletions,
     Chat,
@@ -36,8 +37,8 @@ __all__ = [
     "LiteLLM", "TokenCountResponse", "UnknownNativeError", "UnsupportedCallArgument",
     "aadapter_completion", "acompletion", "acompletion_with_retries", "acount_tokens",
     "acreate", "adapter_completion", "aembedding", "aimage_edit", "aimage_generation",
-    "aimage_variation", "amoderation", "arerank", "atext_completion",
-    "check_valid_key", "completion", "completion_with_retries", "config_completion",
-    "embedding", "image_edit", "image_generation", "image_variation", "moderation",
-    "rerank", "text_completion", "valid_model",
+    "aimage_variation", "amoderation", "arerank", "aspeech", "atext_completion",
+    "atranscription", "check_valid_key", "completion", "completion_with_retries",
+    "config_completion", "embedding", "image_edit", "image_generation", "image_variation",
+    "moderation", "rerank", "speech", "text_completion", "transcription", "valid_model",
 ]

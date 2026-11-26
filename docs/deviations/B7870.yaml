@@ -1,0 +1,30 @@
+task: B7870
+deviations:
+  - what: "`FileContentStreamingResponse.stream_iterator` is betterlite's native stream handle and not the provider's iterator. It yields the same chunks and both close methods behave the same, but a caller that inspects the iterator's own type or attributes, such as an httpx.Response or a generator, sees none of them."
+    why: The bytes come from the Rust download (B1030), so Python never holds the provider response.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/streaming.py#L17-L29
+  - what: "`file_content` and `afile_content` refuse a `client` keyword with `UnsupportedCallArgument` instead of forwarding it to the provider."
+    why: A Python HTTP client cannot drive the Rust download, so B158's payload layer raises for a client it cannot carry.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L882
+  - what: "A `file_content` call for a provider whose download bridge the Rust core has not built raises `NotImplementedError`: the providers with a files config (anthropic, manus, mistral) and the xai batch results id, where LiteLLM downloads the file."
+    why: The provider choice and the download are B1030's, and its generic and xai batch targets return Unbuilt; the Python layer only wraps what the core answers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L938-L954
+  - what: "The plain result is betterlite's `HttpxBinaryResponseContent`, which exposes `content`, `text`, `headers`, `status_code`, `json()` and `read()` on the result itself. LiteLLM returns a wrapper around an httpx.Response, so `.response` and its streaming helpers (`iter_bytes`, `aclose`, `write_to_file`, `logging_summary`) are absent here."
+    why: The bytes arrive as a blob from Rust and betterlite's own Response carries the status and headers, so there is no httpx response object to wrap.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L121-L146
+  - what: "`FileContentStreamingResponse` runs no success or failure callback from Python and keeps `standard_logging_object` at None, where LiteLLM emits the callbacks when the stream ends or fails and builds that object from the logging object. `_hidden_params` holds `litellm_model_name` and `response_cost` only, without the `api_base` LiteLLM copies out of the logging object's litellm_params."
+    why: The stream's callbacks and its start time run in the Rust core (B1080), which owns the logging object; the Python wrapper gets no logging object to call back into.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/streaming.py#L123-L135
+  - what: "Structured httpx.Timeout values become one transport deadline: read, then connect, write, pool, or 600 seconds when all phases are unset."
+    why: The Rust SDK bridge accepts one deadline, following the existing tuning bridge; independent phase timers are unavailable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L880-L901
+  - what: "azure_ad_token_provider raises UnsupportedCallArgument; token strings and Azure credential kwargs are forwarded. Client-secret and username/password token acquisition remain unavailable in this bridge."
+    why: Python callables cannot run inside the Rust transport and the shared Azure NoSources implementation supplies no OAuth token acquisition. Callers can supply azure_ad_token directly.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L611-L744
+  - what: "AuthenticationError, NotFoundError, PermissionDeniedError and UnprocessableEntityError have None for code, type and param, whereas the OpenAI exceptions LiteLLM re-raises retain the provider fields. The native cause retains those fields."
+    why: The shared Python exception converter passes no body for these classes; changing it is outside B7870's scope. test_error_matches_litellm pins the reference fields and the native payload as well as this difference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L1029-L1031
+  - what: "A deadline or connection timeout raises betterlite.APIConnectionError with status_code 500 instead of the openai.APITimeoutError that LiteLLM re-raises."
+    why: The shared native exception bridge uses APIConnectionError for transport failures. test_error_timeout_phase pins the Python class and status, and the native deadline test pins its payload.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L1029-L1031
+kept_bugs: []

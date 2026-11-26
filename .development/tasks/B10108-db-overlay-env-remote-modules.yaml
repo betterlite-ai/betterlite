@@ -1,0 +1,70 @@
+id: B10108
+title: A database config value that resolves to a remote module through os.environ is refused
+description: >-
+  B8379's scrub_remote_modules (crates/betterlite/src/db_config_overlay/scrub.rs) refuses s3:// and gcs:// values in
+  the module fields of the database rows before os.environ/ references resolve. A general_settings row whose
+  custom_auth is os.environ/AUTH_MODULE passes the scrub, and when AUTH_MODULE holds s3://attacker/module.handler the
+  resolved config hands that URL to remote module loading as if the config file had named it. The environment_variables
+  row sets process variables too, so whoever can write database config can set both halves. LiteLLM has the same gap:
+  _update_config_from_db scrubs the rows
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L8055)
+  and get_config resolves os.environ/ values only afterwards
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6055-L6071),
+  although its comment at L4686-L4692 says the merge boundary closes that gap. B8379's security review found it.
+
+
+  Keep which values came from a database row through reference resolution. Once os.environ/ values have resolved,
+  check every database value in the fields scrub_remote_modules covers, and refuse one that now names an s3:// or
+  gcs:// module the same way the scrub does: a string field becomes null, a list drops the entry, and the scrub's
+  warning is logged. A config file value that resolves to a remote module still loads, as in LiteLLM. Record the
+  deviation in docs/deviations/B10108.yaml with the pinned get_config link.
+scope:
+  paths:
+  - crates/betterlite/src/db_config_overlay.rs
+  - crates/betterlite/src/db_config_overlay/**
+  - docs/deviations/B10108.yaml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L4686-L4716
+  why: The fields the database scrub covers and its remote module test.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L8055
+  why: The scrub runs on each database row as it is merged.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6055-L6071
+  why: os.environ/ references resolve after the merge, so a reference to a remote module passes the scrub.
+dod:
+- text: >-
+    A general_settings row with custom_auth os.environ/AUTH_MODULE reloads with custom_auth null and the scrub's
+    warning when AUTH_MODULE is s3://attacker/module.handler, both when the environment_variables row sets it and when
+    the process environment does, in tests named db_reference_remote_module_<case>.
+  proof: [db-reference-remote]
+- text: >-
+    A litellm_settings callbacks entry from the database that resolves to a gcs:// module is dropped, and a config file
+    custom_auth of os.environ/AUTH_MODULE still resolves to its s3:// value, in tests with the same prefix.
+  proof: [db-reference-remote]
+- text: The overlay, pass-through and port tests from B8379 still pass.
+  proof: [overlay-tests]
+- text: docs/deviations/B10108.yaml records the refusal with the pinned get_config link.
+  proof: [deviation-row]
+checks:
+  optional: []
+  commands:
+  - id: db-reference-remote
+    why: A database value still reaches remote module loading through an os.environ/ reference, or a config file one no longer does.
+    run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^db_config_overlay::.*::db_reference_remote_module_/)'
+  - id: overlay-tests
+    why: The provenance check changed another overlay, scrub, reload or port result.
+    run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^db_config_overlay::/)'
+  - id: deviation-row
+    why: The fix needs its deviations row with the pinned LiteLLM link.
+    run: grep -q 'proxy_server.py#L6055-L6071' docs/deviations/B10108.yaml
+oracle_cases: []
+deviations: []
+out_of_scope:
+- Other os.environ/ references in database rows, such as keys and URLs, resolve as in LiteLLM. Only the module fields the scrub covers are refused.
+pitfalls:
+- Call scrub_remote_modules or the field list it reads for the second check. A second list of fields or a second warning text is a copy.
+- os.environ/ references resolve through SecretLookup in resolve_reload, after the secret manager starts, so the check runs on the config resolve_reload returns.
+review_level: security
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0

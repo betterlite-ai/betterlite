@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 use std::str;
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use axum::Router;
@@ -9,6 +8,7 @@ use axum::body::{Body, Bytes, to_bytes};
 use axum::http::{HeaderMap, Request, StatusCode};
 use betterlite_config::sections::admission_control::Settings;
 use betterlite_config::sections::request_root_paths;
+use betterlite_prometheus::collector_registry::CollectorRegistry;
 use betterlite_server::admission_control::in_flight::InFlightRequests;
 use betterlite_server::admission_control::{AdmissionControl, AdmissionStack};
 use betterlite_server::middleware::request_root_paths::RootPaths;
@@ -82,9 +82,14 @@ fn build_router(
     Arc<InFlightRequests>,
 ) {
     let app = Arc::new(app::gate_app(input));
+    // the probe observes the counters, so its registry only has to exist for the two layers
+    let registry = Arc::new(CollectorRegistry::default());
     let stack = AdmissionStack {
-        admission: Arc::new(AdmissionControl::from_settings(settings)),
-        in_flight: Arc::new(InFlightRequests::default()),
+        admission: Arc::new(AdmissionControl::from_settings(
+            settings,
+            Arc::clone(&registry),
+        )),
+        in_flight: Arc::new(InFlightRequests::new(registry)),
     };
     let inner = Router::new()
         .fallback(app::dispatch)
@@ -127,7 +132,7 @@ impl Driver {
                     admitted: snapshot.admitted,
                     queued: snapshot.queued,
                     rejected_total: snapshot.rejected_total,
-                    in_flight: self.in_flight.current.load(Ordering::Acquire),
+                    in_flight: self.in_flight.stats().current,
                 });
             }
         }

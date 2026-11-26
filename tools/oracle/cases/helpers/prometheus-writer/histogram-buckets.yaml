@@ -1,0 +1,21 @@
+kind: helper
+name: prometheus-writer-histogram-buckets
+call:
+  b10096:
+    pid: 1003
+    metrics:
+      - {kind: histogram, name: litellm_latency, help: Latency seconds, labels: [], buckets: [0.5, 1.0], mode: all}
+    updates:
+      - {metric: 0, labels: [], action: observe, value: 0.5}
+      - {metric: 0, labels: [], action: observe, value: 1}
+      - {metric: 0, labels: [], action: observe, value: 3}
+      - {metric: 0, labels: [], action: observe, value: 0.25}
+    call: files
+    accept: ""
+env: {}
+compare:
+  ignore:
+    - pointer: /value/files/0/used
+      why: >-
+        serde_json writes the key compactly, so the entry lengths and the used length differ
+        from json.dumps (docs/deviations/B10096.yaml).

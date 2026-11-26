@@ -7,6 +7,7 @@ publish.workspace = true
 
 [dependencies]
 async-trait = "0.1.92"
+axum.workspace = true
 betterlite-auth = { path = "../betterlite-auth" }
 betterlite-config = { path = "../betterlite-config" }
 betterlite-core = { path = "../betterlite-core" }
@@ -16,12 +17,15 @@ betterlite-guardrails = { path = "../betterlite-guardrails" }
 betterlite-http = { path = "../betterlite-http" }
 betterlite-logging = { path = "../betterlite-logging" }
 betterlite-models = { path = "../betterlite-models" }
+betterlite-pyhost = { path = "../betterlite-pyhost" }
 betterlite-router = { path = "../betterlite-router" }
 betterlite-secret-managers = { path = "../betterlite-secret-managers" }
 betterlite-server = { path = "../betterlite-server" }
 chrono = { workspace = true, features = ["clock"] }
-clap = { version = "4.6.7", features = ["derive", "env"] }
+clap = { version = "4.6.7", features = ["derive", "env", "string"] }
 croner = "2.2.0"
+futures-util = { version = "0.3.34", default-features = false, features = ["alloc"] }
+hyper-util = { workspace = true, features = ["server-auto", "service", "tokio"] }
 indexmap = { version = "2.14.2", features = ["serde"] }
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
 nix = { version = "0.31.3", default-features = false, features = ["term"] }
@@ -30,6 +34,7 @@ regex.workspace = true
 rust_decimal.workspace = true
 secrecy.workspace = true
 serde.workspace = true
+serde-saphyr.workspace = true
 serde_json = "1.0.145"
 sha2.workspace = true
 thiserror.workspace = true
@@ -44,11 +49,17 @@ workspace = true
 
 [dev-dependencies]
 betterlite-cache = { path = "../betterlite-cache" }
+betterlite-secrets = { path = "../betterlite-secrets" }
 betterlite-server = { path = "../betterlite-server", features = ["testing"] }
 betterlite-test-ports = { path = "../betterlite-test-ports" }
+mutants = "0.0.4"
 rstest = "=0.27.0"
 serde.workspace = true
 serde_json = "1.0.145"
 tempfile = "3.27.0"
 tokio = { workspace = true, features = ["test-util", "time"] }
 tracing-subscriber.workspace = true
+
+[[bin]]
+name = "betterlite-metrics-server"
+path = "src/metrics_listener.rs"

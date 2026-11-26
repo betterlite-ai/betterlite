@@ -1,0 +1,22 @@
+kind: helper
+name: model-info-search-unknown-sort-and-key-error
+call:
+  model_info_search:
+    function: sort
+    sort_by: bogus
+    models:
+      - model_name: b
+      - model_name: a
+calls:
+  - model_info_search:
+      function: sort
+      sort_by: model_name
+      models:
+        - model_name: b
+          model_info: {}
+        - model_name: a
+          model_info: []
+        - model_name: c
+          model_info: {}
+env: {}
+compare: {ignore: []}
