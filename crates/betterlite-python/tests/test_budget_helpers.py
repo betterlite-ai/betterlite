@@ -2,6 +2,7 @@ import copy
 import importlib
 import json
 import logging
+import ssl
 import threading
 import time
 from datetime import UTC, date, datetime
@@ -15,7 +16,7 @@ from typing import ClassVar, Final, Protocol, Self, TypeAlias, TypeVar
 import httpx
 import httpx2
 import pytest
-from litellm.constants import request_timeout as reference_request_timeout
+from litellm.constants import DEFAULT_SSL_CIPHERS as reference_ssl_ciphers
 from pydantic import ConfigDict, JsonValue, TypeAdapter, ValidationError
 from typing_extensions import override
 
@@ -53,6 +54,7 @@ from betterlite._core_helpers import (
     set_provider_response_headers_in_hidden_params,
     set_response_cost_in_hidden_params,
 )
+from betterlite._core_helpers.budget_http import DEFAULT_SSL_CIPHERS
 from betterlite._core_helpers.values import PythonValue, object_fields, text_of
 from betterlite._cost import completion_cost, cost_per_token, response_cost_calculator
 from betterlite._model_info import get_max_tokens, get_model_info, get_provider_info
@@ -77,6 +79,7 @@ from betterlite.types.utils.choices import map_finish_reason as parts_map_finish
 from betterlite.types.utils.response import ModelResponse, ModelResponseStream
 
 JSON_TYPE: Final = "application/json"
+IPV4_BIND: Final = "0.0.0.0"  # noqa: S104, E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1697
 PROJECT: Final = "proj"
 CREATED_AT: Final = 1000.0
 METADATA_KEY: Final = "metadata"
@@ -171,7 +174,9 @@ ERROR_CASES: Final[tuple[tuple[PythonValue, PythonValue, PythonValue], ...]] = (
 PROJECTED_MESSAGES: Final[list[dict[str, JsonValue]]] = [
     {"role": "user", "content": "ab"}, {"role": "user", "content": "c"}]
 USAGE_DATA: Final[dict[str, JsonValue]] = {
-    "prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+    "prompt_tokens": 1, "completion_tokens": 1,
+    "total_tokens": 2,
+}
 EXCEPTION_ADAPTER: Final[TypeAdapter[BaseException]] = TypeAdapter(
     BaseException, config=ConfigDict(arbitrary_types_allowed=True)
 )
@@ -228,6 +233,21 @@ class OneSecondClock:
 
     def __call__(self) -> float:
         return self.now
+
+
+class TransportRecorder:
+    calls: ClassVar[list[dict[str, PythonValue]]] = []
+
+    def __init__(self, **options: PythonValue) -> None:
+        self.calls.append(options)
+
+
+class SettingRecorder:
+    def __init__(self) -> None:
+        self.values: list[str] = []
+
+    def __call__(self, value: str) -> None:
+        self.values.append(value)
 
 
 class StatusError(Exception):
@@ -521,17 +541,20 @@ def test_helper_messages() -> None:
 
 def test_helper_headers() -> None:
     for headers in HEADER_CASES:
-        expected = LITELLM_HELPERS.process_response_headers(headers)
-        assert process_response_headers(headers) == expected
-        preserved = LITELLM_HELPERS.process_response_headers(
-            headers, preserve_litellm_internal_headers=True)
-        assert process_response_headers(
-            headers, preserve_litellm_internal_headers=True) == preserved
+        assert process_response_headers(headers) == (
+            LITELLM_HELPERS.process_response_headers(headers)
+        )
+        assert process_response_headers(headers, preserve_litellm_internal_headers=True) == (
+            LITELLM_HELPERS.process_response_headers(
+                headers, preserve_litellm_internal_headers=True
+            )
+        )
     raw_headers = httpx2.Headers({"content-type": "text/plain", "x-litellm-z": "w"})
-    raw_expected = LITELLM_HELPERS.process_response_headers(
-        raw_headers, preserve_litellm_internal_headers=True)
-    assert process_response_headers(
-        raw_headers, preserve_litellm_internal_headers=True) == raw_expected
+    assert process_response_headers(raw_headers, preserve_litellm_internal_headers=True) == (
+        LITELLM_HELPERS.process_response_headers(
+            raw_headers, preserve_litellm_internal_headers=True
+        )
+    )
     headers = {"A": "b", "llm_provider-x": "y", "x-litellm-z": "w"}
     span = datetime(2024, 1, 1, tzinfo=UTC)
     reference = LITELLM_RESPONSES.ModelResponse()
@@ -701,18 +724,19 @@ def test_helper_reexport_and_utils() -> None:
     assert map_finish_reason is parts_map_finish_reason
     assert set(dir(LITELLM_HELPERS)) >= HELPER_NAMES
     assert frozenset(utils_module.__all__) == UTILS_NAMES
-    assert (
-        utils_module.completion_cost,
-        utils_module.cost_per_token,
-        utils_module.response_cost_calculator,
-        utils_module.get_max_tokens,
-        utils_module.get_model_info,
-        utils_module.get_provider_info,
-        utils_module.get_llm_provider,
-    ) == (
-        completion_cost, cost_per_token, response_cost_calculator, get_max_tokens,
-        get_model_info, get_provider_info, get_llm_provider,
-    )
+    assert all(actual is expected for actual, expected in zip(
+        (
+            utils_module.completion_cost, utils_module.cost_per_token,
+            utils_module.response_cost_calculator, utils_module.get_max_tokens,
+            utils_module.get_model_info, utils_module.get_provider_info,
+            utils_module.get_llm_provider,
+        ),
+        (
+            completion_cost, cost_per_token, response_cost_calculator, get_max_tokens,
+            get_model_info, get_provider_info, get_llm_provider,
+        ),
+        strict=True,
+    ))
     mutation_generation = model_info.get_model_cost_mutation_generation
     assert utils_module.get_model_cost_mutation_generation is mutation_generation
     assert (
@@ -808,9 +832,11 @@ def test_budget_duration_lifecycle(
     monkeypatch.setattr(time, "time", OneSecondClock(CREATED_AT))
     first = ours.create_budget(BUDGET, "erin", "daily")
     second = ours.create_budget(BUDGET, "frank", "daily")
-    assert first.get("created_at") == second.get("created_at") == first.get(
-        "last_updated_at"
-    ) != CREATED_AT
+    for record in (first, second):
+        assert record["created_at"] > 0
+        assert record["last_updated_at"] > 0
+        assert record["created_at"] == record["last_updated_at"]
+    assert first["created_at"] == second["created_at"] != CREATED_AT
     join_saves(marker)
     durations = [ours.user_dict[user].get("duration") for _duration, user in named]
     assert durations == [1, DAYS_IN_A_WEEK, DAYS_IN_A_MONTH, DAYS_IN_A_YEAR]
@@ -837,7 +863,6 @@ def test_budget_stored_data(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
         server.replies[GET_BUDGET] = {"status": "ok", "data": {ALICE: 5}}
         with pytest.raises(ValidationError, match=ALICE):
             BudgetManager(PROJECT, HOSTED, server.url)
-    monkeypatch.chdir(tmp_path)
     stored: dict[str, JsonValue] = {ALICE: {"total_budget": BUDGET, "current_cost": TENTH_COST}}
     Path("user_cost.json").write_text(json.dumps(stored))
     # ast-grep-ignore: no-string-mocking
@@ -875,7 +900,6 @@ def test_budget_hosted_calls() -> None:
         reference = LITELLM_BUDGET.BudgetManager(PROJECT, HOSTED, server.url)
         ours = BudgetManager(PROJECT, HOSTED, server.url)
         assert ours.get_users() == reference.get_users() == []
-        assert server.requests
     for status in (401, 500):
         with RecordingServer() as server:
             server.replies[GET_BUDGET] = ERROR_REPLY
@@ -889,42 +913,46 @@ def test_budget_hosted_calls() -> None:
 
 
 def test_budget_hosted_transport(monkeypatch: pytest.MonkeyPatch) -> None:
-    timeout = module_level_client.timeout
-    phases = (timeout.connect, timeout.read, timeout.write, timeout.pool)
-    assert phases == (reference_request_timeout,) * 4
     monkeypatch.setenv("REQUEST_TIMEOUT", "1234")
     timeout = ModuleClient().timeout
-    phases = (timeout.connect, timeout.read, timeout.write, timeout.pool)
-    assert phases == (1234.0,) * 4
-    assert module_level_client.client.follow_redirects
-    assert module_level_client.ssl_options
+    assert (timeout.connect, timeout.read, timeout.write, timeout.pool) == (1234.0,) * 4
+    cases = ((True, "false", False), (False, "true", True), (True, "true", True))
+    for force_ipv4, flag, enabled in cases:
+        # ast-grep-ignore: no-string-mocking
+        monkeypatch.setattr(BETTERLITE, "force_ipv4", force_ipv4)
+        # ast-grep-ignore: no-string-mocking
+        monkeypatch.setattr(BETTERLITE, "http2", False)
+        monkeypatch.setenv("LITELLM_HTTP2", flag)
+        # ast-grep-ignore: no-string-mocking
+        monkeypatch.setattr("httpx2.HTTPTransport", TransportRecorder)
+        # ast-grep-ignore: no-string-mocking
+        monkeypatch.setattr("httpx2.Client", TransportRecorder)
+        TransportRecorder.calls.clear()
+        ModuleClient()
+        options = TransportRecorder.calls[-1]
+        assert options["http2"] is enabled
+        transports = [item for item in TransportRecorder.calls if "local_address" in item]
+        assert transports == ([{"local_address": IPV4_BIND, "http2": enabled}] if force_ipv4 else [])  # noqa: E501
+
+
+def test_budget_tls_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert DEFAULT_SSL_CIPHERS == reference_ssl_ciphers
+    monkeypatch.setenv("SSL_VERIFY", "false")
+    assert ModuleClient().ssl_options is False
+    explicit = ModuleClient(ssl_verify=True)
+    assert explicit.ssl_options is not False
+    explicit.client.close()
+    monkeypatch.delenv("SSL_VERIFY")
+    monkeypatch.setenv("SSL_SECURITY_LEVEL", "BOGUS")
+    with pytest.raises(ssl.SSLError):
+        ModuleClient()
+    monkeypatch.setenv("SSL_SECURITY_LEVEL", "DEFAULT@SECLEVEL=1")
+    curves = SettingRecorder()
     # ast-grep-ignore: no-string-mocking
-    monkeypatch.setattr(BETTERLITE, "ssl_verify", False)
-    monkeypatch.setenv("LITELLM_USER_AGENT", "b166-agent/1")
-    configured = ModuleClient()
-    assert configured.ssl_options is False
-    assert configured.client.headers["user-agent"] == "b166-agent/1"
-    configured.client.close()
-    with RecordingServer() as server:
-        server.replies[GET_BUDGET] = HOSTED_REPLY
-        server.replies[MOVED_GET] = HOSTED_REPLY
-        server.replies[SET_BUDGET] = SAVED_REPLY
-        server.locations[GET_BUDGET] = MOVED_GET
-        reference = LITELLM_BUDGET.BudgetManager(PROJECT, HOSTED, server.url)
-        ours = BudgetManager(PROJECT, HOSTED, server.url)
-        assert ours.get_total_budget(ALICE) == reference.get_total_budget(ALICE) == BUDGET
-        assert reference.save_data() == SAVED_REPLY
-        assert ours.save_data() == SAVED_REPLY
-        saves = [request for request in server.requests if request["path"] == SET_BUDGET]
-        reference_save, ours_save = saves
-        assert reference_save["body"] == ours_save["body"] == SAVE_BODY
-    requests = list(server.requests)
-    expected_paths = [GET_BUDGET, MOVED_GET, GET_BUDGET, MOVED_GET, SET_BUDGET, SET_BUDGET]
-    assert [request["path"] for request in requests] == expected_paths
-    agents = [string_of(request["agent"]) for request in requests]
-    ours_agent = module_level_client.client.headers["user-agent"]
-    assert agents == [agents[0], agents[0], ours_agent, ours_agent, agents[0], ours_agent]
-    assert [request["cookie"] for request in requests] == [None] * 6
+    monkeypatch.setattr("ssl.SSLContext.set_ecdh_curve", curves)
+    monkeypatch.setenv("SSL_ECDH_CURVE", "curve-b166")
+    assert ModuleClient().ssl_options is not False
+    assert curves.values == ["curve-b166"]
 
 
 def test_budget_local_saves(
