@@ -23,7 +23,7 @@ use betterlite_db::team_rows::archived::LiteLLMTeamTableCachedObj;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
-use super::{AdvisoryDeps, CachedTeams, NoSources, key_or_team_over_budget};
+use super::{AdvisoryDeps, CachedTeams as _, NoSources, key_or_team_over_budget};
 use crate::shadow_evaluation::tests::{
     Alerts, SpendFake, SpendRead, SpendScript, TeamAnswer, TeamsFake, add_field, decimal,
     hook_metadata, json, key_auth, now, team_row,
