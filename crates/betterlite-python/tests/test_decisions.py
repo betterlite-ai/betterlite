@@ -295,7 +295,7 @@ def header_of(call: RecordedCall, name: str) -> str | None:
     return None
 
 
-@pytest.fixture
+@pytest.fixture(autouse=False)
 def recording() -> Iterator[RecordingServer]:
     with closing(RecordingServer()) as server:
         yield server
@@ -707,7 +707,12 @@ def test_output_limit_value_error(recording: RecordingServer) -> None:
     ("mode", "provider", "error_type", "message"),
     [
         ("Failed", "opensandbox", ValueError, f"OpenSandbox sandbox {SANDBOX_ID} entered Failed"),
-        ("Stopping", "opensandbox", ValueError, f"OpenSandbox sandbox {SANDBOX_ID} entered Stopping"),
+        (
+            "Stopping",
+            "opensandbox",
+            ValueError,
+            f"OpenSandbox sandbox {SANDBOX_ID} entered Stopping",
+        ),
         (
             "Terminated",
             "opensandbox",
