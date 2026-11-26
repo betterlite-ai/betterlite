@@ -1,0 +1,18 @@
+kind: helper
+name: auth-key-lookup-auth-missing-key
+call:
+  auth_key_lookup:
+    aspect: key_object
+    hashed_token: missing-token
+    reconnect: {answer: false}
+calls:
+  # null row columns read as the field defaults
+  - auth_key_lookup:
+      aspect: key_object
+      hashed_token: sk-hashed-b
+      rows:
+        - kind: row
+          fields: {token: sk-hashed-b, key_name: sk-ops}
+      reconnect: {answer: false}
+env: {}
+compare: {ignore: []}

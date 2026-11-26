@@ -1,0 +1,38 @@
+kind: helper
+name: auth-key-lookup-mapping-scopes-and-batches
+call:
+  auth_key_lookup:
+    aspect: mapping
+    claim_name: sub
+    claim_value: abc
+    rows:
+      - {token: hashed-token, jwt_claim_name: sub, jwt_claim_value: abc, jwt_issuer: iss}
+      - token: other-token
+        jwt_claim_name: sub
+        jwt_claim_value: abc
+        jwt_issuer: ''
+    lookup: {mode: tokens, hashed_tokens: [hashed-token, other-token]}
+calls:
+  # an empty batch never reaches the database
+  - auth_key_lookup:
+      aspect: mapping
+      claim_name: sub
+      claim_value: abc
+      lookup: {mode: tokens, hashed_tokens: []}
+  # an exact-scope object lookup filters on the active claim in its issuer scope
+  - auth_key_lookup:
+      aspect: mapping
+      claim_name: sub
+      claim_value: abc
+      issuer: iss
+      lookup:
+        mode: object
+        found: {token: hashed-token, jwt_claim_name: sub, jwt_claim_value: abc, jwt_issuer: iss}
+  # a scope with no issuer filters on the empty issuer and finds nothing
+  - auth_key_lookup:
+      aspect: mapping
+      claim_name: sub
+      claim_value: abc
+      lookup: {mode: object}
+env: {}
+compare: {ignore: []}

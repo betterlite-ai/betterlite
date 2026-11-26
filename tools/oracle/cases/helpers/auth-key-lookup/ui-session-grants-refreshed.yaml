@@ -1,0 +1,45 @@
+kind: helper
+name: auth-key-lookup-ui-session-grants-refreshed
+call:
+  auth_key_lookup:
+    aspect: session
+    auth:
+      token: sess-token
+      key_name: login
+      user_id: u1
+      team_id: t1
+      team_alias: minted
+      models: [minted-model]
+      team_models: [minted-team-model]
+      user_role: internal_user
+      is_session_token: true
+    user:
+      user_id: u1
+      user_email: u1@example.test
+      user_role: proxy_admin
+      models: [gpt-4o]
+      teams: [t1]
+    team: {team_id: t1, team_alias: live, models: [gpt-4o], tpm_limit: 10, rpm_limit: 20}
+    membership: {user_id: u1, team_id: t1}
+calls:
+  # a session without a team takes the user's own model list and keeps the minted team fields
+  - auth_key_lookup:
+      aspect: session
+      auth:
+        token: sess-token
+        key_name: login
+        user_id: u1
+        team_id: null
+        team_alias: null
+        models: [minted-model]
+        team_models: [minted-team-model]
+        user_role: internal_user
+        is_session_token: true
+      user:
+        user_id: u1
+        user_email: u1@example.test
+        user_role: proxy_admin
+        models: [gpt-4o]
+        teams: [t1]
+env: {}
+compare: {ignore: []}
