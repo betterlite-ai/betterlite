@@ -49,7 +49,7 @@ macro_rules! sandbox_request {
 
 pub(crate) fn create_request<'call>(
     arguments: &'call Arguments,
-    network_policy: Option<&'call RawValue>,
+    policy: Option<&'call RawValue>,
 ) -> Result<CreateSandbox<'call>, ConvertError> {
     Ok(sandbox_request!(CreateSandbox, arguments, {
         template: arguments.template.as_deref(),
@@ -59,7 +59,7 @@ pub(crate) fn create_request<'call>(
         resource_limits: arguments.resource_limits.as_ref(),
         resource_requests: arguments.resource_requests.as_ref(),
         entrypoint: arguments.entrypoint.as_deref(),
-        network_policy,
+        network_policy: policy,
         secure_access: arguments.secure_access.unwrap_or_default(),
     }))
 }
