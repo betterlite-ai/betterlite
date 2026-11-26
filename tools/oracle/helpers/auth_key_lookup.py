@@ -108,7 +108,7 @@ class FakeClient(PrismaClient):
         return self.state.table
 
     @override
-    async def get_data(self, **_opts: JsonValue) -> BaseModel | None:  # pyright: ignore[reportIncompatibleMethodOverride]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4862-L4885
+    async def get_data(self, **_opts: JsonValue) -> BaseModel | None:  # pyright: ignore[reportIncompatibleMethodOverride]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4862-L4885
         self.state.writers.append(_opts.get("use_writer") is True)
         step = self.state.rows.pop(0) if self.state.rows else None
         if step is None:
@@ -118,10 +118,10 @@ class FakeClient(PrismaClient):
         fields = step.get("fields")
         if fields is None:
             raise ValueError("a row step needs fields")
-        return LiteLLM_VerificationTokenView.model_validate(fields)  # type: ignore[misc]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py
+        return LiteLLM_VerificationTokenView.model_validate(fields)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py
 
     @override
-    async def attempt_db_reconnect(self, reason: str, **_opts: JsonValue) -> bool:  # type: ignore[override]  # pyright: ignore[reportIncompatibleMethodOverride]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L6434-L6450
+    async def attempt_db_reconnect(self, reason: str, **_opts: JsonValue) -> bool:  # type: ignore[override]  # pyright: ignore[reportIncompatibleMethodOverride]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L6434-L6450
         timeout = TIMEOUT.validate_python(_opts.get("timeout_seconds"))
         lock = TIMEOUT.validate_python(_opts.get("lock_timeout_seconds"))
         record: dict[str, JsonValue] = {"reason": reason, "timeout": timeout, "lock": lock}
@@ -141,10 +141,10 @@ class KeyCache(UserApiKeyCache):
         self.state = state
 
     @override
-    async def async_get_cache(self, key: str, **_kwargs: JsonValue) -> UserAPIKeyAuth | None:  # type: ignore[override]  # pyright: ignore[reportIncompatibleMethodOverride]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/user_api_key_cache.py#L175-L213
+    async def async_get_cache(self, key: str, **_kwargs: JsonValue) -> UserAPIKeyAuth | None:  # type: ignore[override]  # pyright: ignore[reportIncompatibleMethodOverride]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/user_api_key_cache.py#L175-L213
         del key
         cached = self.state.cached
-        return None if cached is None else UserAPIKeyAuth.model_validate(cached)  # type: ignore[misc]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py
+        return None if cached is None else UserAPIKeyAuth.model_validate(cached)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py
 
     @override
     async def async_set_cache(self, key: str, value: BaseModel, *, model_type: type[BaseModel], ttl: float) -> None:  # type: ignore[override]  # pyright: ignore[reportIncompatibleMethodOverride]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/user_api_key_cache.py#L215-L233
@@ -165,7 +165,7 @@ class ScriptedUser(Scripted):
         if outcome == "outage":
             raise httpx.ConnectError("connection closed")
         user = self.state.user
-        return None if user is None else LiteLLM_UserTable.model_validate(user)  # type: ignore[misc]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py
+        return None if user is None else LiteLLM_UserTable.model_validate(user)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py
 
 
 class ScriptedTeam(Scripted):
@@ -173,7 +173,7 @@ class ScriptedTeam(Scripted):
         team = self.state.team
         if team is None:
             raise TeamNotFoundError("gone")
-        return LiteLLM_TeamTableCachedObj.model_validate(team)  # type: ignore[misc]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py
+        return LiteLLM_TeamTableCachedObj.model_validate(team)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py
 
 
 class ScriptedMembership(Scripted):
@@ -210,11 +210,11 @@ async def mapping(state: Call) -> JsonValue:
     if mode == "token":
         hashed_token = TEXT.validate_python(lookup.get("hashed_token"))
         keys: tuple[str, ...] = await auth_checks.get_jwt_key_mapping_cache_keys_for_token(hashed_token, client)  # type: ignore[misc]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3827-L3836
-        record["keys"] = JSON.validate_python(list(keys))  # type: ignore[misc]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3827-L3836
+        record["keys"] = JSON.validate_python(list(keys))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3827-L3836
     elif mode == "tokens":
         hashed_tokens = TEXTS.validate_python(lookup.get("hashed_tokens"))
         batched = await auth_checks.get_jwt_key_mapping_cache_keys_for_tokens(hashed_tokens, client)
-        record["keys"] = JSON.validate_python(list(batched))  # type: ignore[misc]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3843-L3852
+        record["keys"] = JSON.validate_python(list(batched))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3843-L3852
     else:
         claim_name = TEXT.validate_python(state.claim_name)
         claim_value = TEXT.validate_python(state.claim_value)
@@ -240,13 +240,13 @@ async def key_object(state: Call) -> JsonValue:
     try:
         auth: UserAPIKeyAuth = await auth_checks.get_key_object(hashed_token, client, cache, check_cache_only=state.check_cache_only, check_db_only=state.check_db_only)  # type: ignore[misc]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3884-L3967
         fields = auth_fields(auth)
-    except ProxyException as raised:  # type: ignore[misc]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3926-L3932
+    except ProxyException as raised:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3926-L3932
         outcome = "missing_key"
         error_type = ProxyErrorTypes(raised.type).value
         error = {"type": error_type, "param": raised.param, "code": raised.code}
     except PermissionReadError:
         outcome = "permission"
-    except Exception as raised:  # noqa: BLE001, E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3947-L3954
+    except Exception as raised:  # noqa: BLE001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3947-L3954
         message = str(raised)
         outcome = "not_in_cache" if message.startswith("Key doesn't exist in cache") else "database"
     return {
@@ -264,22 +264,22 @@ async def session(state: Call) -> JsonValue:
     auth_row = state.auth
     if auth_row is None:
         raise ValueError("a session call needs the minted auth")
-    auth: UserAPIKeyAuth = UserAPIKeyAuth.model_validate(auth_row)  # type: ignore[misc]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py
+    auth: UserAPIKeyAuth = UserAPIKeyAuth.model_validate(auth_row)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py
     client = FakeClient(state)
     cache = KeyCache(state)
     logging_obj = ProxyLogging(cache)
     result: JsonValue = "ok"
     denial: JsonValue = None
     fields: JsonValue = None
-    user_api_key_auth.get_user_object = ScriptedUser(state)  # type: ignore[attr-defined]  # pyright: ignore[reportPrivateImportUsage]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1409-L1452
-    user_api_key_auth.get_team_object = ScriptedTeam(state)  # type: ignore[attr-defined]  # pyright: ignore[reportPrivateImportUsage]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1409-L1452
-    user_api_key_auth.get_team_membership = ScriptedMembership(state)  # type: ignore[attr-defined]  # pyright: ignore[reportPrivateImportUsage]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1409-L1452
+    user_api_key_auth.get_user_object = ScriptedUser(state)  # type: ignore[attr-defined]  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1409-L1452
+    user_api_key_auth.get_team_object = ScriptedTeam(state)  # type: ignore[attr-defined]  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1409-L1452
+    user_api_key_auth.get_team_membership = ScriptedMembership(state)  # type: ignore[attr-defined]  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1409-L1452
     try:
         refreshed: UserAPIKeyAuth = await user_api_key_auth._refresh_session_token_grants(auth, client, cache, None, logging_obj)  # noqa: SLF001, E501  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1409-L1452
         fields = auth_fields(refreshed)
     except TeamNotFoundError:
         result, denial = "denied", "team_gone"
-    except ProxyException:  # type: ignore[misc]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3926-L3932
+    except ProxyException:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3926-L3932
         result, denial = "denied", "user_gone"
     except HTTPException:
         result, denial = "denied", "not_a_member"
