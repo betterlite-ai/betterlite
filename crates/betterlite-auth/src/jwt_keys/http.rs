@@ -43,7 +43,7 @@ impl ProxiedJwksHttp {
 #[async_trait]
 impl JwksHttp for ProxiedJwksHttp {
     async fn get(&self, url: &str) -> Result<HttpReply, FetchError> {
-        // an unparseable configured URL is httpx.InvalidURL, which is a transport error and takes the retries
+        // an unparsable configured URL is httpx.InvalidURL, which is a transport error and takes the retries
         let request = self
             .client
             .client

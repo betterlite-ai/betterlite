@@ -15,11 +15,11 @@ pub mod keys;
 pub mod refresh;
 
 pub const STALE_CACHE_KEY_PREFIX: &str = "litellm_stale_";
-pub const STALE_WRITTEN_AT_CACHE_KEY_PREFIX: &str = "litellm_stale_written_at_";
+pub const STALE_WRITTEN_AT_PREFIX: &str = "litellm_stale_written_at_";
 pub const UNREACHABLE_CACHE_KEY_PREFIX: &str = "litellm_jwks_unreachable_";
 pub const JWKS_FETCH_ATTEMPTS: u32 = 3;
 pub const JWKS_FETCH_RETRY_BACKOFF: Duration = Duration::from_millis(250);
-pub const JWKS_UNREACHABLE_BACKOFF_SECONDS: f64 = 30.0;
+pub const UNREACHABLE_BACKOFF_SECONDS: f64 = 30.0;
 pub const DISCOVERY_CACHE_KEY_PREFIX: &str = "litellm_oidc_discovery_";
 pub const KEYS_CACHE_KEY_PREFIX: &str = "litellm_jwt_auth_keys_";
 pub const DISCOVERY_DOCUMENT_MARKER: &str = ".well-known/openid-configuration";

@@ -51,8 +51,7 @@ pub enum KeyError {
     Cache(#[from] AuthCacheError),
 }
 
-// jwks_unavailable_exception: only an unreachable IdP gets the retryable 503; every other key failure is a bare
-// auth error, which the done auth stages answer as Authentication Error, 401.
+// jwks_unavailable_exception: an unreachable IdP gets the retryable 503; every other key failure is a 401.
 #[must_use]
 pub fn exception_for(error: &KeyError) -> ProxyException {
     match error {

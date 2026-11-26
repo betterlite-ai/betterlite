@@ -2,13 +2,12 @@ use betterlite_models::decisions::Json;
 
 use super::super::errors::KeyError;
 use super::{
-    JWKS_UNREACHABLE_BACKOFF_SECONDS, JwksResolver, Refresh, STALE_CACHE_KEY_PREFIX,
-    STALE_WRITTEN_AT_CACHE_KEY_PREFIX, UNREACHABLE_CACHE_KEY_PREFIX,
+    JwksResolver, Refresh, STALE_CACHE_KEY_PREFIX, STALE_WRITTEN_AT_PREFIX,
+    UNREACHABLE_BACKOFF_SECONDS, UNREACHABLE_CACHE_KEY_PREFIX,
 };
 
 impl JwksResolver {
-    // _refresh_or_serve_stale: only an unreachable IdP unlocks the last-known-good copy, and only inside
-    // ttl + stale_ttl measured from when it was written with the settings in force right now.
+    // _refresh_or_serve_stale: only an unreachable IdP serves the last-known-good copy, inside ttl + stale_ttl.
     pub(super) async fn refresh_or_serve_stale(
         &self,
         cache_key: &str,
@@ -54,8 +53,7 @@ impl JwksResolver {
         Ok(stale)
     }
 
-    // _refresh_or_record_outage: a failed refresh is remembered for 30 seconds so an outage costs one fetch
-    // per window; a successful one writes fresh, then stale, then the wall-clock write time, in that order.
+    // _refresh_or_record_outage: a failure is remembered for 30 s; a success writes fresh, stale, then time.
     async fn refresh_or_record_outage(
         &self,
         cache_key: &str,
@@ -85,7 +83,7 @@ impl JwksResolver {
                     .set(
                         &unreachable_key,
                         &Json::Text(message.clone()),
-                        JWKS_UNREACHABLE_BACKOFF_SECONDS,
+                        UNREACHABLE_BACKOFF_SECONDS,
                     )
                     .await?;
                 return Err(KeyError::Unreachable { message });
@@ -106,7 +104,7 @@ impl JwksResolver {
                 serde_json::Number::from_f64(self.clock.now()).map_or(Json::Null, Json::Number);
             self.cache
                 .set(
-                    &format!("{STALE_WRITTEN_AT_CACHE_KEY_PREFIX}{cache_key}"),
+                    &format!("{STALE_WRITTEN_AT_PREFIX}{cache_key}"),
                     &written_at,
                     lifetime,
                 )
@@ -117,7 +115,7 @@ impl JwksResolver {
 
     // _stale_copy_age: only a numeric epoch counts, and Python's bool is an int, so true is the epoch 1.0.
     async fn stale_copy_age(&self, cache_key: &str) -> Result<Option<f64>, KeyError> {
-        let written_at_key = format!("{STALE_WRITTEN_AT_CACHE_KEY_PREFIX}{cache_key}");
+        let written_at_key = format!("{STALE_WRITTEN_AT_PREFIX}{cache_key}");
         let written_at = self.cache.get(&written_at_key).await?;
         let epoch = match written_at {
             Some(Json::Number(number)) => number.as_f64(),

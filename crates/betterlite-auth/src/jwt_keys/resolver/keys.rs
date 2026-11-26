@@ -14,8 +14,7 @@ pub fn plain_urls(raw: &str) -> Vec<String> {
         .collect()
 }
 
-// parse_keys, cardinality quirks included: one dict or one list accepts the matching kid or any kid, a longer
-// list takes the last matching entry, and a longer dict yields nothing.
+// parse_keys quirks: one dict or one list accepts the kid, a longer list takes the last match, a longer dict none.
 pub fn parse_keys(keys: &Json, kid: Option<&str>) -> Option<Json> {
     match keys {
         Json::List(items) => match items.as_slice() {

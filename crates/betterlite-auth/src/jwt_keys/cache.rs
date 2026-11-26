@@ -4,8 +4,7 @@ use betterlite_models::decisions::Json;
 use crate::auth_cache::backend::AuthCacheTier;
 use crate::auth_cache::{AuthCache, AuthCacheError, WriteOptions, WriteTtl};
 
-// The values JWTHandler stores are raw JSON: a keys list, a jwks_uri string and a numeric epoch, none of which
-// is an object the typed cache codec would accept.
+// The values JWTHandler stores are raw JSON: a keys list, a jwks_uri string and a numeric epoch.
 #[async_trait]
 pub trait KeyCache: Send + Sync {
     async fn get(&self, key: &str) -> Result<Option<Json>, AuthCacheError>;

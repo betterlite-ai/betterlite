@@ -87,8 +87,7 @@ impl JwksResolver {
         Ok(Json::Text(jwks_uri.clone()))
     }
 
-    // _fetch_jwks_keys: exactly 200; a parse failure logs the body and raises its own message; the keys member
-    // is used when present, else the response itself, and key material is never reduced to kid.
+    // _fetch_jwks_keys: exactly 200; a parse failure logs the body; the keys member wins when present.
     async fn fetch_jwks_keys(&self, url: &str) -> Result<Json, KeyError> {
         let reply = self.get_with_transient_retries(url).await?;
         if reply.status != 200 {
