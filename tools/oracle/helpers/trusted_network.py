@@ -102,6 +102,8 @@ def build_request(input_value: Input) -> Request:
         "scheme": input_value["scheme"],
         "headers": raw_headers,
         "client": client,
+        # ASGI always sets server; without it Request.url.scheme is empty without a Host header
+        "server": ("127.0.0.1", 80),
     }
     return Request(scope=scope)
 
