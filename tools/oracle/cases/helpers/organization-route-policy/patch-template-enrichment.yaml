@@ -1,0 +1,61 @@
+kind: helper
+name: organization-route-policy-auth-patch-template-enrichment
+call:
+  organization_route_policy:
+    calls:
+      # the exact /team/{team_id} template turns the last path segment into the team to look up
+      - function: team_context
+        route: /team/team-1
+        route_template: "/team/{team_id}"
+        team_organization_id: org-team
+      # without that template the path segment is not a team id, so no lookup happens
+      - function: team_context
+        route: /team/team-1
+        team_organization_id: org-team
+      # a lookup that finds no organization, or an empty one, leaves the body untouched
+      - function: team_context
+        route: /team/team-1
+        route_template: "/team/{team_id}"
+        team_organization_id: null
+      - function: team_context
+        route: /team/team-1
+        route_template: "/team/{team_id}"
+        team_organization_id: ""
+      # for the update route the team id comes from the body, not the path
+      - function: team_context
+        route: /team/update
+        request: {team_id: body-team}
+        route_template: "/team/{team_id}"
+        team_organization_id: org-team
+      - function: team_context
+        route: /team/team-1
+        request: {team_id: body-team}
+        route_template: "/team/{team_id}"
+        team_organization_id: org-team
+      # a null and an empty organization_id are both filled from the team, other fields stay
+      - function: team_context
+        route: /team/update
+        request: {team_id: body-team, organization_id: null, metadata: {trace: t-1}}
+        team_organization_id: org-team
+      - function: team_context
+        route: /team/update
+        request: {team_id: body-team, organization_id: ""}
+        team_organization_id: org-team
+      # a non-string body team id skips the lookup
+      - function: team_context
+        route: /team/update
+        request: {team_id: 7}
+        team_organization_id: org-team
+      # a trailing slash leaves an empty last segment
+      - function: team_context
+        route: /team/
+        route_template: "/team/{team_id}"
+        team_organization_id: org-team
+      # a failed lookup surfaces as an answer the helper cannot give
+      - function: team_context
+        route: /team/team-1
+        route_template: "/team/{team_id}"
+        team_organization_id: org-team
+        lookup_error: true
+env: {}
+compare: {ignore: []}

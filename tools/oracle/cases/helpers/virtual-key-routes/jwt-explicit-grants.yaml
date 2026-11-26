@@ -1,0 +1,30 @@
+kind: helper
+name: virtual-key-routes-jwt-explicit-grants
+call:
+  virtual_key_routes:
+    function: jwt_grant
+    route: /team-pass/x
+    team_allowed_routes: [/team-pass/*]
+calls:
+  - virtual_key_routes:
+      function: jwt_grant
+      route: /team-pass
+      team_allowed_routes: [/team-pass/*]
+  - virtual_key_routes:
+      function: jwt_grant
+      route: /v1/chat/completions
+      team_allowed_routes: [openai_routes]
+  - virtual_key_routes:
+      function: jwt_grant
+      route: /team-pass/x
+      team_allowed_routes: ['*', '/*']
+  - virtual_key_routes:
+      function: jwt_grant
+      route: /team-pass
+      team_allowed_routes: [/team-pass]
+  - virtual_key_routes:
+      function: jwt_grant
+      route: /team-pass
+      team_allowed_routes: []
+env: {}
+compare: {ignore: []}

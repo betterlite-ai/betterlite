@@ -1,0 +1,22 @@
+kind: helper
+name: b3338-options-loose-keyword-beats-named
+call:
+  b3338:
+    function: requested
+    call:
+      prompt: a prompt
+      model: sora-2
+      seconds: null
+      size: 720x1280
+      user: null
+      custom_llm_provider: null
+      extra_headers: null
+      extra_query: null
+      extra_body: null
+      timeout: 600
+      kwargs: {size: 1080x1920}
+    model: sora-2
+    drop_params: false
+    mock_response: ""
+env: {}
+compare: {ignore: []}

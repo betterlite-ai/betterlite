@@ -1,0 +1,22 @@
+kind: helper
+name: entity-model-access-no-default-models-key-error
+call:
+  entity_model_access:
+    steps:
+      - function: user
+        model: claude
+        database: false
+        user: {user_id: user-1, models: [no-default-models]}
+      - function: user
+        model: claude
+        database: false
+        user: {user_id: user-1, models: [gpt-4o]}
+      - function: user
+        model: gpt-4o
+        database: false
+        user: {user_id: user-1, models: [gpt-4o]}
+      - function: user
+        model: claude
+        database: false
+env: {}
+compare: {ignore: []}

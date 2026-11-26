@@ -1,0 +1,89 @@
+kind: helper
+name: bedrock-other-canvas-edits-size-parse-fallback
+call:
+  bedrock_other_canvas_edits:
+    model_cost: {}
+    calls:
+      - function: map
+        options: {size: 10x20}
+        drop_params: false
+      - function: map
+        options: {size: '007x8'}
+        drop_params: false
+      - function: map
+        options: {size: ' 10x 20'}
+        drop_params: false
+      - function: map
+        options: {size: '1_0x2_0'}
+        drop_params: false
+      - function: map
+        options: {size: '10x20x30'}
+        drop_params: false
+      - function: map
+        options: {size: '10'}
+        drop_params: false
+      - function: map
+        options: {n: 2, size: '10x20', width: 5}
+        drop_params: false
+      - function: transform
+        prompt: cat
+        image: {kind: bytes, data: img}
+        mask: null
+        options: {size: 10x20}
+      - function: transform
+        prompt: cat
+        image: {kind: bytes, data: img}
+        mask: null
+        options: {size: 10x20, width: 5}
+      - function: transform
+        prompt: cat
+        image: {kind: bytes, data: img}
+        mask: null
+        options: {size: 10x20, height: 7}
+      - function: transform
+        prompt: cat
+        image: {kind: bytes, data: img}
+        mask: null
+        options: {imageGenerationConfig: {seed: 1}, width: 9}
+      - function: transform
+        prompt: cat
+        image: {kind: bytes, data: img}
+        mask: null
+        options: {imageGenerationConfig: {width: 1}, width: 9}
+      - function: transform
+        prompt: cat
+        image: {kind: bytes, data: img}
+        mask: null
+        options: {imageGenerationConfig: {height: 1}, height: 9}
+      - function: transform
+        prompt: cat
+        image: {kind: bytes, data: img}
+        mask: null
+        options: {imageGenerationConfig: {numberOfImages: 1}, numberOfImages: 9}
+      - function: transform
+        prompt: cat
+        image: {kind: bytes, data: img}
+        mask: null
+        options: {imageGenerationConfig: {quality: standard}, quality: premium}
+      - function: transform
+        prompt: cat
+        image: {kind: bytes, data: img}
+        mask: null
+        options: {imageGenerationConfig: {cfgScale: 1.5}, cfgScale: 9.5}
+      - function: transform
+        prompt: cat
+        image: {kind: bytes, data: img}
+        mask: null
+        options: {imageGenerationConfig: {seed: 1}, seed: 6}
+      - function: transform
+        prompt: cat
+        image: {kind: bytes, data: img}
+        mask: null
+        options: {imageGenerationConfig: [1]}
+      - function: transform
+        prompt: cat
+        image: {kind: bytes, data: img}
+        mask: null
+        options: {taskType: BACKGROUND_REMOVAL, width: 8}
+env: {}
+compare: {ignore: []}

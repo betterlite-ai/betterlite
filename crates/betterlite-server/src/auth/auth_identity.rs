@@ -16,8 +16,11 @@ use crate::auth::auth_request_policy::{self, AuthRequestPolicyStageInput};
 use crate::auth::auth_resource_grants::{self, ResourceGrantStageInput};
 use crate::auth::auth_tag_budgets::TagBudgetStageInput;
 use crate::auth::auth_tenant_budgets::TenantBudgetStageInput;
+use crate::auth::entity_model_access::EntityModelStageInput;
+use crate::auth::organization_route_policy::{self, OrganizationPolicyStageInput};
 use crate::auth::request_body_safety::{self, RequestBodySafetyStageInput};
 use crate::auth::team_budget_admission::TeamBudgetStageInput;
+use crate::auth::virtual_key_routes::{self, VirtualKeyRouteStageInput};
 use crate::error_body::AuthenticationFailure;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -25,13 +28,16 @@ pub enum AuthBackend {
     MasterKey,
     AuthRequestPolicy,
     RequestBodySafety,
+    AuthVirtualKeyRoutes,
     AuthRequestModels,
     AuthModelPatterns,
+    EntityModelAccess,
     AuthResourceGrants,
     AuthTagBudgets,
     AuthKeyBudgets,
     TeamBudgetAdmission,
     AuthTenantBudgets,
+    OrganizationRoutePolicy,
     AuthOrgLookup,
     AuthEndUsers,
 }
@@ -41,13 +47,16 @@ pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
     AuthBackend::MasterKey,
     AuthBackend::AuthRequestPolicy,
     AuthBackend::RequestBodySafety,
+    AuthBackend::AuthVirtualKeyRoutes,
     AuthBackend::AuthRequestModels,
     AuthBackend::AuthModelPatterns,
+    AuthBackend::EntityModelAccess,
     AuthBackend::AuthResourceGrants,
     AuthBackend::AuthTagBudgets,
     AuthBackend::AuthKeyBudgets,
     AuthBackend::TeamBudgetAdmission,
     AuthBackend::AuthTenantBudgets,
+    AuthBackend::OrganizationRoutePolicy,
     AuthBackend::AuthOrgLookup,
     AuthBackend::AuthEndUsers,
 ];
@@ -57,13 +66,16 @@ pub enum StageInput {
     MasterKey(Option<SecretString>),
     AuthRequestPolicy(Box<AuthRequestPolicyStageInput>),
     RequestBodySafety(Box<RequestBodySafetyStageInput>),
+    AuthVirtualKeyRoutes(Box<VirtualKeyRouteStageInput>),
     AuthRequestModels(Box<RequestModelStageInput>),
     AuthModelPatterns(Box<ModelPatternStageInput>),
+    EntityModelAccess(Box<EntityModelStageInput>),
     AuthResourceGrants(Box<ResourceGrantStageInput>),
     AuthTagBudgets(Box<TagBudgetStageInput>),
     AuthKeyBudgets(Box<KeyBudgetStageInput>),
     TeamBudgetAdmission(Box<TeamBudgetStageInput>),
     AuthTenantBudgets(Box<TenantBudgetStageInput>),
+    OrganizationRoutePolicy(Box<OrganizationPolicyStageInput>),
     AuthOrgLookup(Box<OrgStageInput>),
     AuthEndUsers(Box<EndUserStageInput>),
 }
@@ -92,13 +104,16 @@ pub trait BudgetAdmission {
 pub(crate) enum StageFailure {
     Authentication(Box<AuthenticationFailure>),
     ModelAccess(Box<ModelAccessRejection>),
+    EntityModelAccess(Box<ProxyException>),
     AuthRequestPolicy(Box<ProxyException>),
     ResourceGrants(Box<ProxyException>),
     TagBudgets(Box<ProxyException>),
     RequestBodySafety(Box<ProxyException>),
+    VirtualKeyRoutes(Box<ProxyException>),
     KeyBudgets(Box<ProxyException>),
     TeamBudgets(Box<ProxyException>),
     TenantBudgets(Box<ProxyException>),
+    OrganizationRoutePolicy(Box<ProxyException>),
     OrgLookup(Box<ProxyException>),
     EndUsers(Box<ProxyException>),
 }
@@ -109,113 +124,72 @@ impl From<AuthenticationFailure> for StageFailure {
     }
 }
 
+impl StageInput {
+    const fn backend(&self) -> AuthBackend {
+        match self {
+            Self::MasterKey(_) => AuthBackend::MasterKey,
+            Self::AuthRequestPolicy(_) => AuthBackend::AuthRequestPolicy,
+            Self::RequestBodySafety(_) => AuthBackend::RequestBodySafety,
+            Self::AuthVirtualKeyRoutes(_) => AuthBackend::AuthVirtualKeyRoutes,
+            Self::AuthRequestModels(_) => AuthBackend::AuthRequestModels,
+            Self::AuthModelPatterns(_) => AuthBackend::AuthModelPatterns,
+            Self::EntityModelAccess(_) => AuthBackend::EntityModelAccess,
+            Self::AuthResourceGrants(_) => AuthBackend::AuthResourceGrants,
+            Self::AuthTagBudgets(_) => AuthBackend::AuthTagBudgets,
+            Self::AuthKeyBudgets(_) => AuthBackend::AuthKeyBudgets,
+            Self::TeamBudgetAdmission(_) => AuthBackend::TeamBudgetAdmission,
+            Self::AuthTenantBudgets(_) => AuthBackend::AuthTenantBudgets,
+            Self::OrganizationRoutePolicy(_) => AuthBackend::OrganizationRoutePolicy,
+            Self::AuthOrgLookup(_) => AuthBackend::AuthOrgLookup,
+            Self::AuthEndUsers(_) => AuthBackend::AuthEndUsers,
+        }
+    }
+}
+
 pub(crate) fn dispatch(
     backend: AuthBackend,
     input: &StageInput,
     master_key: &SecretString,
 ) -> Result<AuthContext, StageFailure> {
-    match backend {
-        AuthBackend::MasterKey => master_key_stage(input, master_key)
-            .map_err(|failure| StageFailure::Authentication(Box::new(failure))),
-        AuthBackend::AuthRequestPolicy => auth_request_policy_stage(input),
-        AuthBackend::RequestBodySafety => auth_request_body_safety_stage(input),
-        AuthBackend::AuthRequestModels => auth_request_models_stage(input)
-            .map_err(|failure| StageFailure::Authentication(Box::new(failure))),
-        AuthBackend::AuthModelPatterns => auth_model_patterns_stage(input),
-        AuthBackend::AuthResourceGrants => auth_resource_grants_stage(input),
-        AuthBackend::AuthTagBudgets => auth_tag_budgets_stage(input),
-        AuthBackend::AuthKeyBudgets => auth_key_budgets_stage(input),
-        AuthBackend::TeamBudgetAdmission => team_budget_admission_stage(input),
-        AuthBackend::AuthTenantBudgets => auth_tenant_budgets_stage(input),
-        AuthBackend::AuthOrgLookup => auth_org_lookup_stage(input),
-        AuthBackend::AuthEndUsers => auth_end_users_stage(input),
+    if backend != input.backend() {
+        return Err(StageFailure::from(AuthenticationFailure::Missing));
+    }
+    match input {
+        StageInput::MasterKey(_) => master_key_stage(input, master_key).map_err(StageFailure::from),
+        StageInput::AuthRequestPolicy(stage) => {
+            auth_request_policy::run_stage(stage).map_err(StageFailure::AuthRequestPolicy)
+        }
+        StageInput::RequestBodySafety(stage) => {
+            request_body_safety::run_stage(stage).map_err(StageFailure::RequestBodySafety)
+        }
+        StageInput::AuthVirtualKeyRoutes(stage) => {
+            virtual_key_routes::run_stage(stage).map_err(StageFailure::VirtualKeyRoutes)
+        }
+        StageInput::AuthRequestModels(stage) => auth_request_models_stage(stage),
+        StageInput::AuthModelPatterns(stage) => {
+            run_stage(stage).map_err(|rejection| StageFailure::ModelAccess(Box::new(rejection)))
+        }
+        StageInput::EntityModelAccess(stage) => Ok(stage.context.clone()),
+        StageInput::AuthResourceGrants(stage) => {
+            auth_resource_grants::run_stage(stage).map_err(StageFailure::ResourceGrants)
+        }
+        StageInput::AuthTagBudgets(stage) => Ok(stage.context.clone()),
+        StageInput::AuthKeyBudgets(stage) => Ok(stage.context.clone()),
+        StageInput::TeamBudgetAdmission(stage) => Ok(stage.context.clone()),
+        StageInput::AuthTenantBudgets(stage) => Ok(stage.context.clone()),
+        StageInput::OrganizationRoutePolicy(stage) => organization_route_policy::run_stage(stage)
+            .map_err(StageFailure::OrganizationRoutePolicy),
+        StageInput::AuthOrgLookup(stage) => Ok(stage.context.clone()),
+        StageInput::AuthEndUsers(stage) => Ok(stage.context.clone()),
     }
 }
 
-// the batch reads ran while this stage's input was assembled, so only the identity is left
-fn auth_tag_budgets_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
-    let StageInput::AuthTagBudgets(stage) = input else {
-        return Err(StageFailure::from(AuthenticationFailure::Missing));
-    };
-    Ok(stage.context.clone())
-}
-
-// the reads ran while the stage input was assembled, so the budget failures already surfaced there
-fn auth_key_budgets_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
-    let StageInput::AuthKeyBudgets(stage) = input else {
-        return Err(StageFailure::from(AuthenticationFailure::Missing));
-    };
-    Ok(stage.context.clone())
-}
-
-// the member scope and budget checks ran in the prefetch, so only the identity is left
-fn team_budget_admission_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
-    let StageInput::TeamBudgetAdmission(stage) = input else {
-        return Err(StageFailure::from(AuthenticationFailure::Missing));
-    };
-    Ok(stage.context.clone())
-}
-
-// the project, organization, tag and access-group checks ran in the prefetch
-fn auth_tenant_budgets_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
-    let StageInput::AuthTenantBudgets(stage) = input else {
-        return Err(StageFailure::from(AuthenticationFailure::Missing));
-    };
-    Ok(stage.context.clone())
-}
-
-// the request-scoped lookup ran in the prefetch, so only the identity is left
-fn auth_org_lookup_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
-    let StageInput::AuthOrgLookup(stage) = input else {
-        return Err(StageFailure::from(AuthenticationFailure::Missing));
-    };
-    Ok(stage.context.clone())
-}
-
-// the lookup and the budget check ran in the prefetch, so only the identity is left
-fn auth_end_users_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
-    let StageInput::AuthEndUsers(stage) = input else {
-        return Err(StageFailure::from(AuthenticationFailure::Missing));
-    };
-    Ok(stage.context.clone())
-}
-
-fn auth_request_policy_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
-    let StageInput::AuthRequestPolicy(stage) = input else {
-        return Err(StageFailure::from(AuthenticationFailure::Missing));
-    };
-    auth_request_policy::run_stage(stage).map_err(StageFailure::AuthRequestPolicy)
-}
-
-fn auth_request_body_safety_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
-    let StageInput::RequestBodySafety(stage) = input else {
-        return Err(StageFailure::from(AuthenticationFailure::Missing));
-    };
-    request_body_safety::run_stage(stage).map_err(StageFailure::RequestBodySafety)
-}
-
-fn auth_resource_grants_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
-    let StageInput::AuthResourceGrants(stage) = input else {
-        return Err(StageFailure::from(AuthenticationFailure::Missing));
-    };
-    auth_resource_grants::run_stage(stage).map_err(StageFailure::ResourceGrants)
-}
-
-fn auth_model_patterns_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
-    let StageInput::AuthModelPatterns(stage) = input else {
-        return Err(StageFailure::from(AuthenticationFailure::Missing));
-    };
-    run_stage(stage).map_err(|rejection| StageFailure::ModelAccess(Box::new(rejection)))
-}
-fn auth_request_models_stage(input: &StageInput) -> Result<AuthContext, AuthenticationFailure> {
-    let StageInput::AuthRequestModels(stage) = input else {
-        return Err(AuthenticationFailure::Missing);
-    };
+fn auth_request_models_stage(stage: &RequestModelStageInput) -> Result<AuthContext, StageFailure> {
     match resolve(stage) {
         Ok(_) => Ok(stage.context.clone()),
         Err(error) => {
             tracing::debug!(error = %error, "the request model stage failed");
-            Err(AuthenticationFailure::Missing)
+            Err(StageFailure::from(AuthenticationFailure::Missing))
         }
     }
 }
