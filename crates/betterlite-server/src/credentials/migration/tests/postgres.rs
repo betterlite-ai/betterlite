@@ -7,6 +7,7 @@ use betterlite_db::database_replica::availability::Availability;
 use betterlite_db::encryption_scan::report::MigrationReport;
 use betterlite_db::encryption_scan::{DbCipher, MigrationJson};
 use betterlite_db::postgres_store::session::PostgresStore;
+use betterlite_db::table_ops::{DEFAULT_ACQUIRE_TIMEOUT, DEFAULT_QUERY_TIMEOUT};
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use betterlite_secrets::secret_codec::Algorithm;
 use clap::Parser;
@@ -698,7 +699,7 @@ async fn a_store_call_without_a_free_connection_times_out_acquiring_one() {
     };
     let deadlines = MigrationDeadlines {
         acquire: Duration::from_millis(20),
-        ..MigrationDeadlines::default()
+        statement: DEFAULT_QUERY_TIMEOUT,
     };
     let migration_store = harness.migration_store_with(&store, deadlines);
     let cipher = cipher(Algorithm::Aes256Gcm, Some(SALT_KEY));
@@ -728,8 +729,8 @@ async fn a_write_waiting_on_a_lock_times_out_and_discards_its_connection() {
         pool: Some(pool.clone()),
     };
     let deadlines = MigrationDeadlines {
+        acquire: DEFAULT_ACQUIRE_TIMEOUT,
         statement: Duration::from_millis(100),
-        ..MigrationDeadlines::default()
     };
     let migration_store = harness.migration_store_with(&store, deadlines);
     let value = object(vec![(
@@ -766,8 +767,8 @@ async fn a_covered_scan_waiting_on_a_lock_times_out_and_discards_its_connection(
         pool: Some(pool.clone()),
     };
     let deadlines = MigrationDeadlines {
+        acquire: DEFAULT_ACQUIRE_TIMEOUT,
         statement: Duration::from_millis(100),
-        ..MigrationDeadlines::default()
     };
     let migration_store = harness.migration_store_with(&store, deadlines);
     let cipher = cipher(Algorithm::Aes256Gcm, Some(SALT_KEY));
