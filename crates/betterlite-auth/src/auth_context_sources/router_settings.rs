@@ -15,7 +15,6 @@ use crate::auth_team_lookup::team::get_team_object;
 pub const MAX_ROUTER_SETTINGS_BYTES: usize = 1_048_576;
 pub const MAX_ROUTER_SETTINGS_DEPTH: usize = 64;
 
-// decode_router_settings: YAML first, JSON only after a YAML parse error, and never a non-object.
 #[must_use]
 pub fn decode_router_settings(bytes: &[u8]) -> Option<JsonObject> {
     if bytes.len() > MAX_ROUTER_SETTINGS_BYTES {
@@ -51,7 +50,6 @@ fn settings_object(parsed: Json) -> Option<JsonObject> {
     }
 }
 
-// The same container count safe_json_loads enforces, so the YAML and JSON paths share one bound.
 fn json_depth(value: &Json) -> usize {
     match value {
         Json::Object(entries) => 1 + entries.values().map(json_depth).max().unwrap_or(0),
@@ -60,7 +58,6 @@ fn json_depth(value: &Json) -> usize {
     }
 }
 
-// _parse_router_settings_value: a dictionary is used as given, a string goes through the decoder.
 #[must_use]
 pub fn parse_router_settings_value(value: Option<&Json>) -> Option<JsonObject> {
     match value {
@@ -71,7 +68,6 @@ pub fn parse_router_settings_value(value: Option<&Json>) -> Option<JsonObject> {
     }
 }
 
-// The cached team read _get_hierarchical_router_settings needs, injected so the caller owns B737.
 #[async_trait]
 pub trait TeamRouterSettings: Send + Sync {
     async fn router_settings(
@@ -80,7 +76,6 @@ pub trait TeamRouterSettings: Send + Sync {
     ) -> Result<Option<BTreeMap<String, JsonData>>, TeamLookupError>;
 }
 
-// _get_hierarchical_router_settings: key settings win, the cached team is the fallback, and nothing merges.
 pub async fn hierarchical_router_settings(
     key_settings: Option<&Json>,
     team_id: Option<&str>,
@@ -100,7 +95,6 @@ pub async fn hierarchical_router_settings(
     }
 }
 
-// The B737 lookup is the production source: the cached team row, read through the shared object lookup.
 #[async_trait]
 impl TeamRouterSettings for TeamLookup {
     async fn router_settings(

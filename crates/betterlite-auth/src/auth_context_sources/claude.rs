@@ -14,7 +14,6 @@ pub const CLAUDE_MODEL_NORMALIZED_MARKER: &str = "litellm.claude_model_normalize
 pub const CLAUDE_ROUTER_PREFIX: &str = "claude-router-";
 pub const ONE_MILLION_SUFFIX: &str = "[1m]";
 
-// _CLAUDE_MODEL_ROUTES: the Anthropic-shaped endpoints Claude Code sends its chosen model to.
 pub const CLAUDE_MODEL_ROUTES: [&str; 6] = [
     "/messages",
     "/v1/messages",
@@ -24,7 +23,6 @@ pub const CLAUDE_MODEL_ROUTES: [&str; 6] = [
     "/v1/responses",
 ];
 
-// The alias maps a request carries: a key's aliases, its team's aliases and the hierarchical settings.
 #[derive(Clone, Copy, Debug)]
 pub enum AliasMap<'map> {
     Payload(&'map Payload),
@@ -43,7 +41,6 @@ impl AliasMap<'_> {
     }
 }
 
-// The router questions ClaudeCodeRoutingNames asks; B302's router answers them with its live deployments.
 pub trait RouterNames {
     fn model_group_alias_contains(&self, name: &str) -> bool;
     fn has_model_id(&self, name: &str) -> bool;
@@ -54,7 +51,6 @@ pub trait RoutingNames {
     fn contains(&self, name: &str) -> bool;
 }
 
-// ClaudeCodeRoutingNames: configured routes always own their names, including aliases and wildcard routes.
 pub struct ClaudeNameSources<'names> {
     pub global_aliases: &'names BTreeMap<String, String>,
     pub key_aliases: Option<AliasMap<'names>>,
@@ -91,7 +87,6 @@ impl RoutingNames for ClaudeNameSources<'_> {
     }
 }
 
-// claude_code_requested_group: the group a Claude Code compatibility id names, or None when no route owns it.
 #[must_use]
 pub fn claude_code_requested_group(requested: &str, names: &dyn RoutingNames) -> Option<String> {
     if names.contains(requested) {
@@ -108,7 +103,6 @@ pub fn claude_code_requested_group(requested: &str, names: &dyn RoutingNames) ->
     Some(model_id)
 }
 
-// _unmarked: the [1m] marker is case-insensitive and only ever removed from the end.
 fn unmark_one_million(name: &str) -> &str {
     let Some(start) = name.len().checked_sub(ONE_MILLION_SUFFIX.len()) else {
         return name;
@@ -122,7 +116,6 @@ fn unmark_one_million(name: &str) -> &str {
     name.get(..start).unwrap_or_default()
 }
 
-// _decoded_compatibility_id: only a canonical claude-router-<hex> id decodes, so a lookalike is left alone.
 fn decoded_compatibility_id(view_id: &str) -> Option<String> {
     let unmarked = unmark_one_million(view_id);
     let encoded = unmarked.strip_prefix(CLAUDE_ROUTER_PREFIX)?;
@@ -154,7 +147,6 @@ pub struct ClaudeNormalization {
     pub source: Option<String>,
 }
 
-// _normalize_claude_model up to the request mutation: the caller stores `normalized` and applies `source`.
 pub async fn normalize_claude_model(
     input: &ClaudeNormalizationInput<'_>,
     teams: &dyn TeamRouterSettings,
@@ -184,7 +176,6 @@ pub async fn normalize_claude_model(
     })
 }
 
-// The resolved model must be one string identical to body.model and shaped like a compatibility id.
 fn eligible_requested_model(
     input: &ClaudeNormalizationInput<'_>,
 ) -> Result<Option<String>, CatalogError> {
@@ -203,7 +194,6 @@ fn eligible_requested_model(
     Ok(Some(requested))
 }
 
-// claude_code_requested_group with the router, its team and the three alias maps, in that order.
 async fn requested_group(
     input: &ClaudeNormalizationInput<'_>,
     requested: &str,
