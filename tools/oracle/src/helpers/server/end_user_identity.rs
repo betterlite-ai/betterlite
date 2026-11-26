@@ -72,9 +72,9 @@ impl Helper for Op {
 }
 
 async fn resolve(input: &Input, fixture: &Arc<Fixture>) -> HelperResult {
-    let cache: Arc<dyn ValidationCache> = Arc::clone(fixture);
-    let end_users: Arc<dyn EndUserExistence> = Arc::clone(fixture);
-    let users: Arc<dyn UserExistence> = Arc::clone(fixture);
+    let cache: Arc<dyn ValidationCache> = Arc::<Fixture>::clone(fixture);
+    let end_users: Arc<dyn EndUserExistence> = Arc::<Fixture>::clone(fixture);
+    let users: Arc<dyn UserExistence> = Arc::<Fixture>::clone(fixture);
     let resolver = EndUserIdResolver {
         validate_end_user_id_in_db: input.validate_in_db,
         max_end_user_budget_id: input.proxy_default.clone(),
@@ -111,7 +111,7 @@ impl Fixture {
     fn new(input: &Input) -> Self {
         let mut values = BTreeMap::new();
         if let (Some(id), Some(cached)) = (&input.raw_end_user_id, &input.cached) {
-            let _previous = values.insert(format!("{VALIDATION_KEY_PREFIX}{id}"), cached.clone());
+            values.insert(format!("{VALIDATION_KEY_PREFIX}{id}"), cached.clone());
         }
         Self {
             end_user: input.end_user,
