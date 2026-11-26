@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use axum::Router;
-use axum::body::{Body, to_bytes};
+use axum::body::{Body, Bytes, to_bytes};
 use axum::extract::Extension;
 use axum::http::{Request, StatusCode, header};
 use axum::routing::post;
@@ -16,7 +16,7 @@ use betterlite_models::model_registration::JsonObject;
 use secrecy::SecretString;
 use tower::ServiceExt as _;
 
-use super::{OrganizationPolicyStageInput, OrganizationRouteRule};
+use super::{OrganizationPolicyStageInput, OrganizationRouteRule, stage_input};
 use crate::auth::auth_identity::{
     AuthBackend, AuthContext, INSTALLED_STAGES, StageFailure, StageInput, dispatch,
 };
@@ -142,6 +142,56 @@ fn stage_is_registered() {
         ),
         Err(StageFailure::Authentication(_))
     ));
+}
+
+// the stage the auth pipeline builds for one request, with the rule the auth service would have inserted
+fn stage_for(
+    route: &str,
+    body: &'static str,
+    user: Option<RouteUser>,
+) -> OrganizationPolicyStageInput {
+    let mut request = Request::builder()
+        .method("POST")
+        .uri(route)
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(body))
+        .unwrap();
+    request
+        .extensions_mut()
+        .insert(Arc::new(OrganizationRouteRule { user }));
+    let master_key = SecretString::from(MASTER_KEY.to_owned());
+    let context = master_context(&master_key);
+    let bytes = Bytes::from_static(body.as_bytes());
+    let Ok(StageInput::OrganizationRoutePolicy(stage)) =
+        stage_input(&request, Some(&context), Some(&bytes))
+    else {
+        panic!("the organization route policy builds its own stage input");
+    };
+    *stage
+}
+
+#[test]
+fn stage_input_parses_only_the_routes_that_read_the_organization() {
+    let body = "{\"organization_id\":\"org-a\"}";
+    // /team/new asks for the selected organization, so the parsed body reaches the policy
+    let team_create = stage_for(TEAM_CREATE_ROUTE, body, Some(route_user()));
+    assert_eq!(team_create.route, TEAM_CREATE_ROUTE);
+    assert_eq!(
+        team_create.body.get("organization_id"),
+        Some(&Json::Text("org-a".to_owned()))
+    );
+    // an org admin route reads the selected organization too
+    let organization = stage_for("/organization/info", body, Some(route_user()));
+    assert_eq!(
+        organization.body.get("organization_id"),
+        Some(&Json::Text("org-a".to_owned()))
+    );
+    // no other route pays for parsing the body, even when the user is resolved
+    let chat = stage_for("/v1/chat/completions", body, Some(route_user()));
+    assert!(chat.body.is_empty());
+    // without a user the stage has nothing to check, so no route parses the body
+    let anonymous = stage_for(TEAM_CREATE_ROUTE, body, None);
+    assert!(anonymous.body.is_empty());
 }
 
 #[tokio::test]
