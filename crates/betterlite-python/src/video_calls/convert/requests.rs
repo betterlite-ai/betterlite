@@ -16,6 +16,43 @@ use super::{
     STATUS_NAMED, loose,
 };
 
+// The core request records are flat. Share their common field parsing while
+// constructing each concrete record directly, without optional request slots.
+macro_rules! read_request {
+    ($arguments:ident, $named:ident, $($field:ident: $value:expr,)*) => {
+        Ok(Self {
+            video_id: text($arguments, "video_id")?.ok_or_else(|| failed("video_id", STRING))?,
+            custom_llm_provider: text($arguments, "custom_llm_provider")?,
+            extra_headers: texts($arguments, "extra_headers")?,
+            extra_query: params($arguments, "extra_query")?,
+            extra_body: params($arguments, "extra_body")?,
+            kwargs: loose($arguments, &$named),
+            $($field: $value,)*
+        })
+    };
+}
+
+macro_rules! provider_call {
+    ($arguments:ident, $named:ident, $($field:ident: $value:expr,)*) => {
+        Ok(Self {
+            custom_llm_provider: text($arguments, "custom_llm_provider")?,
+            api_key: text($arguments, "api_key")?.map(SecretString::from),
+            api_base: text($arguments, "api_base")?,
+            api_version: text($arguments, "api_version")?,
+            extra_headers: texts($arguments, "extra_headers")?,
+            extra_query: params($arguments, "extra_query")?,
+            extra_body: params($arguments, "extra_body")?,
+            mock_response: $arguments.get("mock_response").cloned(),
+            litellm_metadata: meta($arguments, "litellm_metadata")?,
+            litellm_call_id: text($arguments, "litellm_call_id")?,
+            user: text($arguments, "user")?,
+            timeout: number($arguments, "timeout")?,
+            extra: loose($arguments, &$named),
+            $($field: $value,)*
+        })
+    };
+}
+
 impl Build for VideoGenerationRequest {
     fn build(arguments: &RequestMap, media: Option<Reference>) -> Result<Self, ConvertError> {
         let mut generation =
@@ -37,81 +74,44 @@ impl Build for VideoGenerationRequest {
 
 impl Build for VideoContentRequest {
     fn build(arguments: &RequestMap, _media: Option<Reference>) -> Result<Self, ConvertError> {
-        Ok(Self {
-            video_id: text(arguments, "video_id")?.ok_or_else(|| failed("video_id", STRING))?,
+        read_request!(arguments, CONTENT_NAMED,
             timeout: duration(number(arguments, "timeout")?)?,
-            custom_llm_provider: text(arguments, "custom_llm_provider")?,
             variant: text(arguments, "variant")?,
-            extra_headers: texts(arguments, "extra_headers")?,
-            extra_query: params(arguments, "extra_query")?,
-            extra_body: params(arguments, "extra_body")?,
-            kwargs: loose(arguments, &CONTENT_NAMED),
-        })
+        )
     }
 }
 
 impl Build for VideoRemixCall {
     fn build(arguments: &RequestMap, _media: Option<Reference>) -> Result<Self, ConvertError> {
-        Ok(Self {
+        provider_call!(arguments, REMIX_NAMED,
             video_id: text(arguments, "video_id")?.ok_or_else(|| failed("video_id", STRING))?,
             prompt: text(arguments, "prompt")?.ok_or_else(|| failed("prompt", STRING))?,
-            custom_llm_provider: text(arguments, "custom_llm_provider")?,
-            api_key: text(arguments, "api_key")?.map(SecretString::from),
-            api_base: text(arguments, "api_base")?,
-            api_version: text(arguments, "api_version")?,
-            extra_headers: texts(arguments, "extra_headers")?,
-            extra_query: params(arguments, "extra_query")?,
-            extra_body: params(arguments, "extra_body")?,
-            mock_response: arguments.get("mock_response").cloned(),
-            litellm_metadata: meta(arguments, "litellm_metadata")?,
-            litellm_call_id: text(arguments, "litellm_call_id")?,
-            user: text(arguments, "user")?,
-            timeout: number(arguments, "timeout")?,
-            extra: loose(arguments, &REMIX_NAMED),
-        })
+        )
     }
 }
 
 impl Build for VideoListCall {
     fn build(arguments: &RequestMap, _media: Option<Reference>) -> Result<Self, ConvertError> {
-        Ok(Self {
+        let pagination_limit = match arguments.get("limit") {
+            None | Some(Json::Null) => None,
+            Some(Json::Number(value)) => {
+                Some(value.as_i64().ok_or_else(|| failed("limit", INTEGER))?)
+            }
+            Some(_) => return Err(failed("limit", INTEGER)),
+        };
+        provider_call!(arguments, LIST_NAMED,
             after: text(arguments, "after")?,
-            limit: match arguments.get("limit") {
-                None | Some(Json::Null) => None,
-                Some(Json::Number(value)) => {
-                    Some(value.as_i64().ok_or_else(|| failed("limit", INTEGER))?)
-                }
-                Some(_) => return Err(failed("limit", INTEGER)),
-            },
+            limit: pagination_limit,
             order: text(arguments, "order")?,
-            custom_llm_provider: text(arguments, "custom_llm_provider")?,
-            api_key: text(arguments, "api_key")?.map(SecretString::from),
-            api_base: text(arguments, "api_base")?,
-            api_version: text(arguments, "api_version")?,
-            extra_headers: texts(arguments, "extra_headers")?,
-            extra_query: params(arguments, "extra_query")?,
-            extra_body: params(arguments, "extra_body")?,
-            mock_response: arguments.get("mock_response").cloned(),
-            litellm_metadata: meta(arguments, "litellm_metadata")?,
-            litellm_call_id: text(arguments, "litellm_call_id")?,
-            user: text(arguments, "user")?,
-            timeout: number(arguments, "timeout")?,
-            extra: loose(arguments, &LIST_NAMED),
-        })
+        )
     }
 }
 
 impl Build for VideoStatusRequest {
     fn build(arguments: &RequestMap, _media: Option<Reference>) -> Result<Self, ConvertError> {
-        Ok(Self {
-            video_id: text(arguments, "video_id")?.ok_or_else(|| failed("video_id", STRING))?,
+        read_request!(arguments, STATUS_NAMED,
             timeout: Some(duration(number(arguments, "timeout")?)?.unwrap_or_default()),
-            custom_llm_provider: text(arguments, "custom_llm_provider")?,
-            extra_headers: texts(arguments, "extra_headers")?,
-            extra_query: params(arguments, "extra_query")?,
-            extra_body: params(arguments, "extra_body")?,
-            kwargs: loose(arguments, &STATUS_NAMED),
-        })
+        )
     }
 }
 

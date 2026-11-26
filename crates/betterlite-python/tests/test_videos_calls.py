@@ -3,19 +3,19 @@ import importlib
 import inspect
 import json
 import threading
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Iterator
 from contextlib import closing
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import ClassVar, Final, NamedTuple, Protocol, TypeAlias, TypeVar, runtime_checkable
 from urllib.parse import parse_qsl, urlsplit
 
-import betterlite
 import pytest
 from batch_server import parameter_rows
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import TypedDict
 
+import betterlite
 from betterlite._completion.errors import ERROR_PAYLOAD, UnsupportedCallArgument
 from betterlite._endpoints.payload import CallValue
 from betterlite._native import NativeVideoError
@@ -692,7 +692,7 @@ def test_unsupported_objects() -> None:
 
 
 @pytest.mark.parametrize("headers", [{"x-note": "line1\nline2"}, {"bad name": "value"}])
-def test_status_invalid_headers_error(headers: dict[str, str]) -> None:
+def test_status_headers_error(headers: dict[str, str]) -> None:
     with closing(VideoServer()) as server:
         values = endpoint_values(server, video_id=VIDEO_ID, extra_headers=headers)
         with pytest.raises(InternalServerError) as made:
@@ -707,18 +707,24 @@ def test_status_invalid_headers_error(headers: dict[str, str]) -> None:
         assert server.calls == []
 
 
-@pytest.mark.parametrize("key_name", ["api_key", "openai_key"])
-def test_module_key_calls(key_name: str) -> None:
+@pytest.fixture
+def _module_key(key_name: str) -> Iterator[None]:
     previous_api = betterlite.api_key
     previous_openai = betterlite.openai_key
     try:
         betterlite.api_key = GOOD_KEY if key_name == "api_key" else None
         betterlite.openai_key = GOOD_KEY if key_name == "openai_key" else None
-        with closing(VideoServer()) as server:
-            OURS.video_generation(
-                prompt=PROMPT, model=MODEL, api_base=server.url, custom_llm_provider=PROVIDER)
-            recorded = {name.lower(): value for name, value in server.last()["headers"].items()}
-            assert recorded["authorization"] == f"Bearer {GOOD_KEY}"
+        yield
     finally:
         betterlite.api_key = previous_api
         betterlite.openai_key = previous_openai
+
+
+@pytest.mark.parametrize("key_name", ["api_key", "openai_key"])
+@pytest.mark.usefixtures("_module_key")
+def test_module_key_calls() -> None:
+    with closing(VideoServer()) as server:
+        OURS.video_generation(
+            prompt=PROMPT, model=MODEL, api_base=server.url, custom_llm_provider=PROVIDER)
+        recorded = {name.lower(): value for name, value in server.last()["headers"].items()}
+        assert recorded["authorization"] == f"Bearer {GOOD_KEY}"

@@ -13,6 +13,7 @@ use betterlite_core::api::video_status_transport::records::{StatusMethod, Status
 use betterlite_http_fixture::reply::reply;
 use betterlite_http_fixture::server::serve;
 use indexmap::IndexMap;
+use rstest::rstest;
 
 use super::{NativeSource, StatusConverter, StatusFactories, user_agent};
 use crate::video_calls::convert::SettingsWire;
@@ -95,20 +96,20 @@ fn status_headers_preserve_values() {
     assert_eq!(values, ["first", "second"]);
 }
 
-#[test]
-fn status_headers_reject_invalid_values() {
+#[rstest]
+#[case::invalid_name("bad name", "value")]
+#[case::invalid_value("x-note", "line1\nline2")]
+fn status_headers_reject_invalid_values(#[case] name: &str, #[case] value: &str) {
     let session = VideoSession::build(r#"{"environment":{}}"#).unwrap();
     let adapter = config(&session, &SettingsWire::default(), None);
-    for (name, value) in [("x-note", "line1\nline2"), ("bad name", "value")] {
-        let request = StatusRequest {
-            method: StatusMethod::Get,
-            url: "http://example.test/status".to_owned(),
-            headers: IndexMap::from([(name.to_owned(), value.to_owned())]),
-            body: None,
-        };
-        let failure = super::header_map(&session.client, &request).unwrap_err();
-        let mapped = StatusConverter.convert(&adapter, StatusFailure::Send(&failure));
-        assert_eq!(mapped.status_code, 500);
-        assert!(mapped.status_code_is_synthesized);
-    }
+    let request = StatusRequest {
+        method: StatusMethod::Get,
+        url: "http://example.test/status".to_owned(),
+        headers: IndexMap::from([(name.to_owned(), value.to_owned())]),
+        body: None,
+    };
+    let failure = super::header_map(&session.client, &request).unwrap_err();
+    let mapped = StatusConverter.convert(&adapter, StatusFailure::Send(&failure));
+    assert_eq!(mapped.status_code, 500);
+    assert!(mapped.status_code_is_synthesized);
 }

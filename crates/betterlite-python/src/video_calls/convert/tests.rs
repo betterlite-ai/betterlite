@@ -16,6 +16,7 @@ use betterlite_core::api::videos_http_transport::video_config::{
 use betterlite_models::decisions::Json;
 use betterlite_sdk::call_files::CallFile;
 use indexmap::IndexMap;
+use rstest::rstest;
 use secrecy::ExposeSecret as _;
 
 use crate::video_calls::adapter::OpenAiVideoConfig;
@@ -660,40 +661,37 @@ fn request_drop_params_defaults() {
     assert!(!drop_params(&wire(r#"{"drop_params":false}"#)).unwrap());
 }
 
-#[test]
-fn request_module_keys_reach_credentials() {
+#[rstest]
+#[case::api_key(r#"{"settings":{"api_key":"global-key"}}"#)]
+#[case::openai_key(r#"{"settings":{"openai_key":"global-key"}}"#)]
+fn request_module_keys_reach_credentials(#[case] payload: &str) {
     let session = VideoSession::build(r#"{"environment":{}}"#).unwrap();
-    for payload in [
-        r#"{"settings":{"api_key":"global-key"}}"#,
-        r#"{"settings":{"openai_key":"global-key"}}"#,
-    ] {
-        let (wire, _reference) = parse(payload, &mut []).unwrap();
-        let config = session_config(&session, &wire.settings, None);
-        let headers = config.headers(&IndexMap::new(), None, None);
-        assert_eq!(
-            headers.get("Authorization").map(String::as_str),
-            Some("Bearer global-key")
-        );
-    }
+    let (wire, _reference) = parse(payload, &mut []).unwrap();
+    let config = session_config(&session, &wire.settings, None);
+    let headers = config.headers(&IndexMap::new(), None, None);
+    assert_eq!(
+        headers.get("Authorization").map(String::as_str),
+        Some("Bearer global-key")
+    );
 }
 
-#[test]
-fn error_status_headers_name_the_rejected_header() {
+#[rstest]
+#[case::invalid_name("bad name", "value")]
+#[case::invalid_value("x-note", "line1\nline2")]
+fn error_status_headers_name_the_rejected_header(#[case] name: &str, #[case] value: &str) {
     let session = VideoSession::build(r#"{"environment":{}}"#).unwrap();
     let config = session_config(&session, &SettingsWire::default(), None);
-    for (name, value) in [("bad name", "value"), ("x-note", "line1\nline2")] {
-        let headers = IndexMap::from([(name.to_owned(), value.to_owned())]);
-        let failure = VideoStatusConfig::validate_environment(
-            &config,
-            StatusEnvironment {
-                headers: &headers,
-                model: "",
-                api_key: None,
-                litellm_params: None,
-            },
-        )
-        .unwrap_err();
-        assert!(failure.message.contains(name));
-        assert_eq!(failure.status_code, Some(500));
-    }
+    let headers = IndexMap::from([(name.to_owned(), value.to_owned())]);
+    let failure = VideoStatusConfig::validate_environment(
+        &config,
+        StatusEnvironment {
+            headers: &headers,
+            model: "",
+            api_key: None,
+            litellm_params: None,
+        },
+    )
+    .unwrap_err();
+    assert!(failure.message.contains(name));
+    assert_eq!(failure.status_code, Some(500));
 }
