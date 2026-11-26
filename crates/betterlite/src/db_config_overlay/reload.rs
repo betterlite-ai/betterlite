@@ -174,7 +174,7 @@ fn db_owned_values(state: &OverlayState) -> Vec<(Section, DbOwnedValues)> {
         let keys: Vec<String> = store
             .iter()
             .filter(|(key, _)| *key != PASS_THROUGH_ENDPOINTS)
-            .filter(|(key, _)| store.resolution(*key).source() == FieldSource::Db)
+            .filter(|(key, _)| store.resolution(key).source() == FieldSource::Db)
             .map(|(key, _)| key.to_owned())
             .collect();
         let pass_through_entries = store
