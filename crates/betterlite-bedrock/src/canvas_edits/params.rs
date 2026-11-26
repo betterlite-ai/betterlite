@@ -51,10 +51,10 @@ pub fn map_openai_params(options: &CanvasEditOptions, drop_params: bool) -> Mapp
         mapped.width = Some(CanvasEditValue::Json(width));
         mapped.height = Some(CanvasEditValue::Json(height));
     }
-    if let Some(n) = mapped.n.take()
-        && !matches!(n, CanvasEditValue::Json(Json::Null))
+    if let Some(count) = mapped.image_count.take()
+        && !matches!(count, CanvasEditValue::Json(Json::Null))
     {
-        mapped.number_of_images = Some(n);
+        mapped.number_of_images = Some(count);
     }
     if let Some(quality) = mapped.quality.take()
         && !matches!(quality, CanvasEditValue::Json(Json::Null))

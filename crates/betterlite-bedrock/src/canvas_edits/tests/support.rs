@@ -44,7 +44,10 @@ pub(super) fn json(source: &str) -> Json {
     from_str(source).expect("the fixture is JSON")
 }
 
-pub(super) fn wire<T: Serialize>(value: &T) -> Json {
+pub(super) fn wire<T>(value: &T) -> Json
+where
+    T: Serialize,
+{
     from_value(to_value(value).expect("the value serializes")).expect("the value is JSON")
 }
 

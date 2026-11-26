@@ -6,8 +6,8 @@ use serde::Serialize;
 // The options LiteLLM's mapper and transform read by name; every other key stays in passthrough.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 pub struct CanvasEditOptions {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub n: Option<CanvasEditValue>,
+    #[serde(rename = "n", skip_serializing_if = "Option::is_none")]
+    pub image_count: Option<CanvasEditValue>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub size: Option<CanvasEditValue>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -167,10 +167,10 @@ impl CanvasEditOptions {
     #[must_use]
     pub fn from_params(params: &ImageParams) -> Self {
         let mut options = Self::default();
-        for (name, value) in params {
-            let value = CanvasEditValue::Json(value.clone());
+        for (name, raw) in params {
+            let value = CanvasEditValue::Json(raw.clone());
             match name.as_str() {
-                "n" => options.n = Some(value),
+                "n" => options.image_count = Some(value),
                 "size" => options.size = Some(value),
                 "response_format" => options.response_format = Some(value),
                 "mask" => options.mask = Some(value),

@@ -150,11 +150,11 @@ fn take_nested(options: &mut CanvasEditOptions) -> IndexMap<String, Json> {
 }
 
 fn take_json(value: Option<CanvasEditValue>, name: &str) -> Result<Option<Json>, CanvasEditError> {
-    let Some(value) = value.filter(|taken| !matches!(taken, CanvasEditValue::Json(Json::Null)))
+    let Some(present) = value.filter(|taken| !matches!(taken, CanvasEditValue::Json(Json::Null)))
     else {
         return Ok(None);
     };
-    value
+    present
         .to_json()
         .map(Some)
         .ok_or_else(|| CanvasEditError::Field {
