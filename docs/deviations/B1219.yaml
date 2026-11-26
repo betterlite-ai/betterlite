@@ -10,4 +10,13 @@ deviations:
       rate_denial_does_not_echo_token proves the rendered message for both the TPM and the RPM
       denial.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L4030-L4042
-kept_bugs: []
+kept_bugs:
+  - what: >-
+      The RPM ceiling is not compared when the key's tpm_limit is None: LiteLLM nests both
+      rate checks under `if key.tpm_limit is not None`, so an rpm-only key can move into a
+      team whose rpm_limit it exceeds.
+    why: >-
+      The task pins this behavior (absent_tpm_skips_rpm), and the same move succeeds on
+      LiteLLM today, so betterlite keeps the gap instead of failing an update that a
+      working setup can already make.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L4031
