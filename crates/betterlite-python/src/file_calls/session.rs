@@ -42,45 +42,52 @@ impl NativeFileCallSession {
 
     fn delete(&self, py: Python<'_>, payload: &str, _blobs: Blobs) -> PyResult<String> {
         let input = parse_delete(payload)?;
-        run_blocking(py, &self.core, Call::Delete(Box::new(input)))
+        let call = Call::Delete(Box::new(input));
+        run_blocking(py, &self.core, call)
     }
 
     fn adelete<'py>(&self, py: Python<'py>, payload: &str, _blobs: Blobs) -> Spawned<'py> {
         let input = parse_delete(payload)?;
-        run_spawned(py, &self.core, Call::Delete(Box::new(input)))
+        let call = Call::Delete(Box::new(input));
+        run_spawned(py, &self.core, call)
     }
 
     fn retrieve(&self, py: Python<'_>, payload: &str, _blobs: Blobs) -> PyResult<String> {
-        let call = parse_retrieve(payload)?;
-        run_blocking(py, &self.core, Call::Retrieve(call))
+        let read = parse_retrieve(payload)?;
+        let call = Call::Retrieve(read);
+        run_blocking(py, &self.core, call)
     }
 
     fn aretrieve<'py>(&self, py: Python<'py>, payload: &str, _blobs: Blobs) -> Spawned<'py> {
-        let call = parse_retrieve(payload)?;
-        run_spawned(py, &self.core, Call::Retrieve(call))
+        let read = parse_retrieve(payload)?;
+        let call = Call::Retrieve(read);
+        run_spawned(py, &self.core, call)
     }
 
     fn list(&self, py: Python<'_>, payload: &str, _blobs: Blobs) -> PyResult<String> {
-        let call = parse_list(payload)?;
-        run_blocking(py, &self.core, Call::List(call))
+        let read = parse_list(payload)?;
+        let call = Call::List(read);
+        run_blocking(py, &self.core, call)
     }
 
     fn alist<'py>(&self, py: Python<'py>, payload: &str, _blobs: Blobs) -> Spawned<'py> {
-        let call = parse_list(payload)?;
-        run_spawned(py, &self.core, Call::List(call))
+        let read = parse_list(payload)?;
+        let call = Call::List(read);
+        run_spawned(py, &self.core, call)
     }
 }
 
 // the type has one inherent impl, so the two ways a call runs are free functions beside it
 fn run_blocking(py: Python<'_>, core: &Arc<FileCallCore>, call: Call) -> PyResult<String> {
-    let core = Arc::clone(core);
-    py.detach(move || get_runtime().block_on(core.call(&call, Mode::Sync)))
+    let shared = Arc::clone(core);
+    let runtime = get_runtime();
+    py.detach(move || runtime.block_on(shared.call(&call, Mode::Sync)))
 }
 
 fn run_spawned<'py>(py: Python<'py>, core: &Arc<FileCallCore>, call: Call) -> Spawned<'py> {
-    let core = Arc::clone(core);
+    let shared = Arc::clone(core);
     future_into_py(
         py,
-        async move { core.call(&call, Mode::Asynchronous).await },
+        async move { shared.call(&call, Mode::Asynchronous).await },
     )
 }

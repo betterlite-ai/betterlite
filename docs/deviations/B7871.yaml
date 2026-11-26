@@ -29,7 +29,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L389-L403
 kept_bugs:
   - what: "`create_file` called without `custom_llm_provider` raises ValueError 'None is not a valid LlmProviders' before any request, and so does an explicit null; only `acreate_file` defaults the provider to openai."
-    why: LiteLLM builds LlmProviders(None) on the sync path (L234), so a working setup either passes a provider or uses acreate_file; test_create_bytes_matches_litellm and test_create_flag_coroutine pin the working shapes.
+    why: LiteLLM builds LlmProviders(None) on the sync path (L234), so a working setup either passes a provider or uses acreate_file; test_bytes_match_litellm and test_create_flag_coroutine pin the working shapes.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L234-L236
   - what: "`file_delete` keeps the declared provider when provider discovery from `model` raises, as LiteLLM's `except Exception: pass` does."
     why: A working setup can pass a model the resolver does not know and rely on the default openai provider, so the fallback is copied rather than turned into an error.

@@ -243,10 +243,14 @@ const fn entry_of(mode: Mode) -> ReadEntry {
 fn write_answer<T: Serialize>(
     answer: Result<T, FileWriteError<DispatchError>>,
 ) -> Result<String, PyErr> {
-    let value = answer.map_err(|error| PyErr::from(write_failure(&error)))?;
-    answer_text(&value)
+    answer
+        .map_err(|error| PyErr::from(write_failure(&error)))
+        .and_then(|value| answer_text(&value))
 }
 
 fn answer_text<T: Serialize>(value: &T) -> Result<String, PyErr> {
-    serde_json::to_string(value).map_err(|source| PyErr::from(ConvertError::Answer(source)))
+    match serde_json::to_string(value) {
+        Ok(text) => Ok(text),
+        Err(source) => Err(PyErr::from(ConvertError::Answer(source))),
+    }
 }

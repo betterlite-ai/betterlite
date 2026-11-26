@@ -10,7 +10,7 @@ use betterlite_core::api::resource_sdk_settings::timeout::{FineTuningTimeout, St
 use betterlite_models::controls::call_params::TrustedCredentials;
 use betterlite_openai::files::error::FilesError;
 use betterlite_openai::files::{ClientArgs, FilesClient, get_openai_client, select_client};
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::ExposeSecret as _;
 
 pub(crate) fn settings(
     api_key: Option<SecretString>,
@@ -89,7 +89,11 @@ pub(crate) fn write_litellm_params(
     timeout: FineTuningTimeout,
 ) -> LiteLlmParams {
     LiteLlmParams {
-        azure_ad_token: credential(params.credentials.as_ref(), "azure_ad_token"),
+        azure_ad_token: params
+            .credentials
+            .as_ref()
+            .and_then(|trusted| trusted.values.get("azure_ad_token"))
+            .cloned(),
         auth: auth_params(params.credentials.as_ref()),
         max_retries: params.max_retries,
         timeout: Some(seconds_of(timeout)),
@@ -103,7 +107,10 @@ pub(crate) fn delete_litellm_params(
     max_retries: Option<i64>,
 ) -> LiteLlmParams {
     LiteLlmParams {
-        azure_ad_token: credential(params.credentials, "azure_ad_token"),
+        azure_ad_token: params
+            .credentials
+            .and_then(|trusted| trusted.values.get("azure_ad_token"))
+            .cloned(),
         auth: auth_params(params.credentials),
         max_retries,
         timeout: Some(seconds_of(timeout)),
@@ -128,22 +135,30 @@ fn seconds_of(timeout: FineTuningTimeout) -> f64 {
 }
 
 fn auth_params(credentials: Option<&TrustedCredentials>) -> AuthParams {
+    let Some(trusted) = credentials else {
+        return AuthParams::default();
+    };
     AuthParams {
-        tenant_id: credential_text(credentials, "tenant_id"),
-        client_id: credential_text(credentials, "client_id"),
-        client_secret: credential(credentials, "client_secret"),
-        azure_username: credential_text(credentials, "azure_username"),
-        azure_password: credential_text(credentials, "azure_password"),
-        azure_scope: credential_text(credentials, "azure_scope"),
+        tenant_id: trusted
+            .values
+            .get("tenant_id")
+            .map(|secret| secret.expose_secret().to_owned()),
+        client_id: trusted
+            .values
+            .get("client_id")
+            .map(|secret| secret.expose_secret().to_owned()),
+        client_secret: trusted.values.get("client_secret").cloned(),
+        azure_username: trusted
+            .values
+            .get("azure_username")
+            .map(|secret| secret.expose_secret().to_owned()),
+        azure_password: trusted
+            .values
+            .get("azure_password")
+            .map(|secret| secret.expose_secret().to_owned()),
+        azure_scope: trusted
+            .values
+            .get("azure_scope")
+            .map(|secret| secret.expose_secret().to_owned()),
     }
-}
-
-fn credential(credentials: Option<&TrustedCredentials>, name: &str) -> Option<SecretString> {
-    let values = credentials?.values.get(name)?;
-    Some(values.clone())
-}
-
-fn credential_text(credentials: Option<&TrustedCredentials>, name: &str) -> Option<String> {
-    let secret = credentials?.values.get(name)?;
-    Some(secret.expose_secret().to_owned())
 }
