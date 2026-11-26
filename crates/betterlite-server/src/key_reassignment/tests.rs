@@ -2,6 +2,8 @@
 
 mod support;
 
+use std::sync::atomic::Ordering;
+
 use betterlite_db::auxiliary_repository::repository::PrismaClient;
 use betterlite_db::budget_permission_rows::PermissionList;
 use betterlite_db::database_replica::availability::Availability;
@@ -183,6 +185,171 @@ async fn alias_single_no_relation() {
     assert_eq!(row.object_permission_id.as_deref(), Some("op-1"));
     assert!(row.object_permission.is_none());
     database.close().await;
+}
+
+#[tokio::test]
+async fn reads_route_to_reader() {
+    let reader_hash = hash_token_if_needed("sk-reader");
+    let reader = Database::new(&format!(
+        r#"INSERT INTO "LiteLLM_VerificationToken" ("token", "key_alias", "user_id") VALUES ('{reader_hash}', 'reader-alias', 'reader-user');"#
+    ))
+    .await;
+    let writer_hash = hash_token_if_needed("sk-writer");
+    let writer = Database::new(&format!(
+        r#"INSERT INTO "LiteLLM_VerificationToken" ("token", "key_alias", "user_id") VALUES ('{writer_hash}', 'writer-alias', 'writer-user');"#
+    ))
+    .await;
+    let availability = Availability::default();
+    let client = PrismaClient {
+        writer: &writer.store,
+        reader: &reader.store,
+        availability: &availability,
+    };
+    let by_token = get_and_validate_existing_key(Some("sk-reader"), None, Some(client))
+        .await
+        .unwrap();
+    assert_eq!(by_token.user_id.as_deref(), Some("reader-user"));
+    let by_alias = get_and_validate_existing_key(None, Some("reader-alias"), Some(client))
+        .await
+        .unwrap();
+    assert_eq!(by_alias.user_id.as_deref(), Some("reader-user"));
+    let absent = get_and_validate_existing_key(Some("sk-writer"), None, Some(client))
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        &absent,
+        KeyReassignmentError::KeyPatch(KeyPatchError::KeyNotFound)
+    ));
+    let absent_alias = get_and_validate_existing_key(None, Some("writer-alias"), Some(client))
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        &absent_alias,
+        KeyReassignmentError::AliasNotFound { .. }
+    ));
+    writer.close().await;
+    reader.close().await;
+}
+
+#[tokio::test]
+async fn writer_outage_reads_reader() {
+    let hashed = hash_token_if_needed("sk-live");
+    let reader = Database::new(&format!(
+        r#"INSERT INTO "LiteLLM_ObjectPermissionTable" ("object_permission_id", "models") VALUES ('op-1', ARRAY['gpt-4']);
+           INSERT INTO "LiteLLM_VerificationToken" ("token", "key_alias", "object_permission_id") VALUES ('{hashed}', 'live', 'op-1');"#
+    ))
+    .await;
+    let availability = Availability::default();
+    availability
+        .writer_unavailable
+        .store(true, Ordering::SeqCst);
+    let unavailable = PostgresStore { pool: None };
+    let client = PrismaClient {
+        writer: &unavailable,
+        reader: &reader.store,
+        availability: &availability,
+    };
+    let row = get_and_validate_existing_key(Some("sk-live"), None, Some(client))
+        .await
+        .unwrap();
+    let relation = row
+        .object_permission
+        .expect("the token lookup loads the relation");
+    assert_eq!(
+        relation.models,
+        PermissionList(Some(vec![String::from("gpt-4")]))
+    );
+    let error = get_and_validate_existing_key(Some("sk-absent"), None, Some(client))
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        &error,
+        KeyReassignmentError::KeyPatch(KeyPatchError::KeyNotFound)
+    ));
+    assert_eq!(error.response(), (Some(404_u16), Some(DetailShape::Text)));
+    let alias_error = get_and_validate_existing_key(None, Some("absent"), Some(client))
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        &alias_error,
+        KeyReassignmentError::AliasNotFound { .. }
+    ));
+    assert_eq!(
+        alias_error.response(),
+        (Some(404_u16), Some(DetailShape::Text))
+    );
+    reader.close().await;
+}
+
+#[tokio::test]
+async fn reader_fallback_reads_writer() {
+    let hashed = hash_token_if_needed("sk-live");
+    let writer = Database::new(&format!(
+        r#"INSERT INTO "LiteLLM_ObjectPermissionTable" ("object_permission_id", "models") VALUES ('op-1', ARRAY['gpt-4']);
+           INSERT INTO "LiteLLM_VerificationToken" ("token", "key_alias", "user_id", "object_permission_id") VALUES ('{hashed}', 'live', 'writer-user', 'op-1');"#
+    ))
+    .await;
+    let reader = Database::new("").await;
+    let availability = Availability::default();
+    availability
+        .reader_unavailable
+        .store(true, Ordering::SeqCst);
+    let client = PrismaClient {
+        writer: &writer.store,
+        reader: &reader.store,
+        availability: &availability,
+    };
+    let row = get_and_validate_existing_key(Some("sk-live"), None, Some(client))
+        .await
+        .unwrap();
+    assert_eq!(row.user_id.as_deref(), Some("writer-user"));
+    let relation = row
+        .object_permission
+        .expect("the fallback still loads the relation");
+    assert_eq!(
+        relation.models,
+        PermissionList(Some(vec![String::from("gpt-4")]))
+    );
+    let by_alias = get_and_validate_existing_key(None, Some("live"), Some(client))
+        .await
+        .unwrap();
+    assert_eq!(by_alias.user_id.as_deref(), Some("writer-user"));
+    reader.close().await;
+    writer.close().await;
+}
+
+#[tokio::test]
+async fn relation_follows_row_side() {
+    let hashed = hash_token_if_needed("sk-live");
+    let reader = Database::new(&format!(
+        r#"INSERT INTO "LiteLLM_ObjectPermissionTable" ("object_permission_id", "models") VALUES ('op-1', ARRAY['gpt-4']);
+           INSERT INTO "LiteLLM_VerificationToken" ("token", "key_alias", "user_id", "object_permission_id") VALUES ('{hashed}', 'live', 'reader-user', 'op-1');"#
+    ))
+    .await;
+    let writer = Database::new(&format!(
+        r#"INSERT INTO "LiteLLM_ObjectPermissionTable" ("object_permission_id", "models") VALUES ('op-1', ARRAY['claude']);
+           INSERT INTO "LiteLLM_VerificationToken" ("token", "key_alias", "user_id", "object_permission_id") VALUES ('{hashed}', 'live', 'writer-user', 'op-1');"#
+    ))
+    .await;
+    let availability = Availability::default();
+    let client = PrismaClient {
+        writer: &writer.store,
+        reader: &reader.store,
+        availability: &availability,
+    };
+    let row = get_and_validate_existing_key(Some("sk-live"), None, Some(client))
+        .await
+        .unwrap();
+    assert_eq!(row.user_id.as_deref(), Some("reader-user"));
+    let relation = row
+        .object_permission
+        .expect("the token lookup loads the relation");
+    assert_eq!(
+        relation.models,
+        PermissionList(Some(vec![String::from("gpt-4")]))
+    );
+    writer.close().await;
+    reader.close().await;
 }
 
 #[tokio::test]

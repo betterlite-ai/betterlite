@@ -1,5 +1,8 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use betterlite_db::auxiliary_repository::repository::PrismaClient;
 use betterlite_db::budget_permission_rows::JsonData;
+use betterlite_db::database_replica::availability::Availability;
 use betterlite_db::database_replica::pinned::WriterPinnedClient;
 use betterlite_db::identity_rows::key::LiteLLMVerificationToken;
 use betterlite_db::key_hash::KeyHash;
@@ -7,6 +10,7 @@ use betterlite_db::key_repository::VerificationTokenRepository;
 use betterlite_db::key_repository::decode::{TokenDecodeError, decode_mapping};
 use betterlite_db::key_repository::table::columns::TokenColumn;
 use betterlite_db::key_repository::table::{RawTokenRow, TokenFilter, TokenValue};
+use betterlite_db::postgres_store::session::PostgresStore;
 
 use crate::key_fields::shared::hash_token_if_needed;
 use crate::key_list_filters::postgres::PostgresTokenClient;
@@ -24,18 +28,25 @@ pub async fn get_and_validate_existing_key(
     prisma_client: Option<PrismaClient<'_>>,
 ) -> Result<LiteLLMVerificationToken, KeyReassignmentError> {
     let client = require_prisma_client(prisma_client)?;
+    // one snapshot keeps the row and the relation it carries on the same read side
+    let availability = read_availability(client);
+    let routed = PrismaClient {
+        writer: client.writer,
+        reader: client.reader,
+        availability: &availability,
+    };
     if let Some(supplied) = token {
         let hash = KeyHash::from(hash_token_if_needed(supplied));
-        let rows = find_token_rows(client, TokenLookup::Token(&hash)).await?;
+        let rows = find_token_rows(routed, TokenLookup::Token(&hash)).await?;
         let Some(row) = rows.into_iter().next() else {
             return Err(KeyReassignmentError::from(KeyPatchError::KeyNotFound));
         };
-        return decode_key(Some(client), row).await;
+        return decode_key(Some(routed), row).await;
     }
     let Some(alias) = key_alias else {
         return Err(KeyReassignmentError::MissingKeyIdentifier);
     };
-    let rows = find_token_rows(client, TokenLookup::Alias(alias)).await?;
+    let rows = find_token_rows(routed, TokenLookup::Alias(alias)).await?;
     let [row] = rows.as_slice() else {
         return Err(match rows.len() {
             0 => KeyReassignmentError::AliasNotFound {
@@ -49,6 +60,14 @@ pub async fn get_and_validate_existing_key(
     decode_key(None, row.clone()).await
 }
 
+fn read_availability(client: PrismaClient<'_>) -> Availability {
+    let availability = client.availability;
+    Availability {
+        reader_unavailable: AtomicBool::new(availability.reader_unavailable.load(Ordering::SeqCst)),
+        writer_unavailable: AtomicBool::new(availability.writer_unavailable.load(Ordering::SeqCst)),
+    }
+}
+
 // the identifier the read starts from: a token is one unique row, an alias asks for two
 #[derive(Clone, Copy)]
 enum TokenLookup<'key> {
@@ -60,9 +79,14 @@ async fn find_token_rows(
     client: PrismaClient<'_>,
     lookup: TokenLookup<'_>,
 ) -> Result<Vec<RawTokenRow>, KeyReassignmentError> {
-    let token_client = PostgresTokenClient {
-        store: client.writer,
+    let availability = client.availability;
+    let store = if availability.reader_unavailable.load(Ordering::SeqCst) {
+        client.writer
+    } else {
+        client.reader
     };
+    // the store is already the routed read side, so the repository needs no routing of its own
+    let token_client = PostgresTokenClient { store };
     let repository = VerificationTokenRepository {
         database: Some(WriterPinnedClient::Writer(&token_client)),
     };

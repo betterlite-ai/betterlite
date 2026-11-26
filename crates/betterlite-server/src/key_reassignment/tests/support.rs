@@ -52,7 +52,7 @@ struct Environment {
 pub(super) struct Database {
     fixture: PostgresFixture,
     pool: Pool,
-    store: PostgresStore,
+    pub(super) store: PostgresStore,
     availability: Availability,
 }
 
