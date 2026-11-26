@@ -1,0 +1,34 @@
+kind: helper
+name: virtual-key-routes-denial-precedence
+call:
+  virtual_key_routes:
+    function: should_call_route
+    route: /team-pass/x
+    method: POST
+    key:
+      allowed_routes: [openai_routes, /team-pass/*]
+    registrations:
+      - {endpoint_id: pass-a, route_type: subpath, path: /team-pass, auth: true}
+calls:
+  - virtual_key_routes:
+      function: should_call_route
+      route: /team-pass
+      method: POST
+      key:
+        allowed_routes: [openai_routes]
+        metadata:
+          password_reset_required: true
+      registrations:
+        - {endpoint_id: pass-a, route_type: exact, path: /team-pass, auth: true}
+  - virtual_key_routes:
+      function: should_call_route
+      route: /team-pass
+      method: POST
+      key:
+        allowed_routes: [openai_routes, /team-pass/*]
+        metadata:
+          password_reset_required: true
+      registrations:
+        - {endpoint_id: pass-a, route_type: exact, path: /team-pass, auth: true}
+env: {}
+compare: {ignore: []}

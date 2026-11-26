@@ -1,0 +1,22 @@
+kind: helper
+name: b3338-options-extra-body-merge-flat
+call:
+  b3338:
+    function: requested
+    call:
+      prompt: a prompt
+      model: sora-2
+      seconds: null
+      size: null
+      user: null
+      custom_llm_provider: null
+      extra_headers: null
+      extra_query: null
+      extra_body: {size: 720x1280, ttl: null, api_base: https://named.invalid}
+      timeout: 600
+      kwargs: {extra_body: {size: 480x854, user: u1}, user: null}
+    model: sora-2
+    drop_params: false
+    mock_response: ""
+env: {}
+compare: {ignore: []}

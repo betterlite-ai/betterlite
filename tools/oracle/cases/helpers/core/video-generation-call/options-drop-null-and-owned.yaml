@@ -1,0 +1,22 @@
+kind: helper
+name: b3338-options-drop-null-and-owned
+call:
+  b3338:
+    function: requested
+    call:
+      prompt: a prompt
+      model: sora-2
+      seconds: "8"
+      size: null
+      user: null
+      custom_llm_provider: null
+      extra_headers: null
+      extra_query: null
+      extra_body: null
+      timeout: 600
+      kwargs: {mock_response: "yes", litellm_call_id: call-1}
+    model: sora-2
+    drop_params: false
+    mock_response: ""
+env: {}
+compare: {ignore: []}

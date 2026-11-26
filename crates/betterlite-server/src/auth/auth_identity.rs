@@ -18,6 +18,7 @@ use crate::auth::auth_tag_budgets::TagBudgetStageInput;
 use crate::auth::entity_model_access::EntityModelStageInput;
 use crate::auth::request_body_safety::{self, RequestBodySafetyStageInput};
 use crate::auth::team_budget_admission::TeamBudgetStageInput;
+use crate::auth::virtual_key_routes::{self, VirtualKeyRouteStageInput};
 use crate::error_body::AuthenticationFailure;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -25,6 +26,7 @@ pub enum AuthBackend {
     MasterKey,
     AuthRequestPolicy,
     RequestBodySafety,
+    AuthVirtualKeyRoutes,
     AuthRequestModels,
     AuthModelPatterns,
     EntityModelAccess,
@@ -41,6 +43,7 @@ pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
     AuthBackend::MasterKey,
     AuthBackend::AuthRequestPolicy,
     AuthBackend::RequestBodySafety,
+    AuthBackend::AuthVirtualKeyRoutes,
     AuthBackend::AuthRequestModels,
     AuthBackend::AuthModelPatterns,
     AuthBackend::EntityModelAccess,
@@ -57,6 +60,7 @@ pub enum StageInput {
     MasterKey(Option<SecretString>),
     AuthRequestPolicy(Box<AuthRequestPolicyStageInput>),
     RequestBodySafety(Box<RequestBodySafetyStageInput>),
+    AuthVirtualKeyRoutes(Box<VirtualKeyRouteStageInput>),
     AuthRequestModels(Box<RequestModelStageInput>),
     AuthModelPatterns(Box<ModelPatternStageInput>),
     EntityModelAccess(Box<EntityModelStageInput>),
@@ -97,6 +101,7 @@ pub(crate) enum StageFailure {
     ResourceGrants(Box<ProxyException>),
     TagBudgets(Box<ProxyException>),
     RequestBodySafety(Box<ProxyException>),
+    VirtualKeyRoutes(Box<ProxyException>),
     KeyBudgets(Box<ProxyException>),
     TeamBudgets(Box<ProxyException>),
     OrgLookup(Box<ProxyException>),
@@ -118,6 +123,7 @@ pub(crate) fn dispatch(
         AuthBackend::MasterKey => master_key_stage(input, master_key).map_err(StageFailure::from),
         AuthBackend::AuthRequestPolicy => auth_request_policy_stage(input),
         AuthBackend::RequestBodySafety => auth_request_body_safety_stage(input),
+        AuthBackend::AuthVirtualKeyRoutes => auth_virtual_key_routes_stage(input),
         AuthBackend::AuthRequestModels => auth_request_models_stage(input),
         AuthBackend::AuthModelPatterns => auth_model_patterns_stage(input),
         AuthBackend::EntityModelAccess => entity_model_access_stage(input),
@@ -187,6 +193,13 @@ fn auth_resource_grants_stage(input: &StageInput) -> Result<AuthContext, StageFa
         return Err(StageFailure::from(AuthenticationFailure::Missing));
     };
     auth_resource_grants::run_stage(stage).map_err(StageFailure::ResourceGrants)
+}
+
+fn auth_virtual_key_routes_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
+    let StageInput::AuthVirtualKeyRoutes(stage) = input else {
+        return Err(StageFailure::from(AuthenticationFailure::Missing));
+    };
+    virtual_key_routes::run_stage(stage).map_err(StageFailure::VirtualKeyRoutes)
 }
 
 fn auth_model_patterns_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
