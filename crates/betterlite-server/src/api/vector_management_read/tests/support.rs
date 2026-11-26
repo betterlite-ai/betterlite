@@ -241,8 +241,8 @@ pub(super) fn build(setup: Setup) -> Arc<VectorManagementReadState<FakeDatabase>
             credentials: Arc::new(CredentialSnapshot::default()),
         }))
     });
-    let permissions: Arc<dyn ObjectPermissionLookup> = Arc::clone(&world);
-    let teams: Arc<dyn TeamLoader> = Arc::clone(&world);
+    let permissions = Arc::clone(&world);
+    let teams = Arc::clone(&world);
     Arc::new(VectorManagementReadState {
         database: setup.database,
         registry,
@@ -295,8 +295,8 @@ pub(super) fn internal(user_id: &str, team_id: Option<&str>) -> AuthContext {
         "user_role".to_owned(),
         JsonData::String("internal_user".to_owned()),
     );
-    if let Some(team_id) = team_id {
-        fields.insert("team_id".to_owned(), JsonData::String(team_id.to_owned()));
+    if let Some(team) = team_id {
+        fields.insert("team_id".to_owned(), JsonData::String(team.to_owned()));
     }
     let key = UserAPIKeyAuth::construct(AuthInput::Dict(fields)).expect("the key is valid");
     principal(&[], Some(key))

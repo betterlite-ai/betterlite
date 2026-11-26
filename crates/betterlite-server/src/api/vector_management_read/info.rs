@@ -17,13 +17,13 @@ use crate::api::vector_management_boundaries::json::decode_management_json;
 use crate::api::vector_management_boundaries::redaction::redact_litellm_params;
 use crate::api::vector_management_boundaries::rows::VectorStoreRows;
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct InfoResponse {
     pub vector_store: StoreTable,
 }
 
 // LiteLLM_ManagedVectorStoresTable: all twelve fields, the null ones included, in the model's declared order
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct StoreTable {
     pub vector_store_id: String,
     pub custom_llm_provider: String,
@@ -91,7 +91,10 @@ async fn authorized_cached<Database>(
     state: &VectorManagementReadState<Database>,
     caller: &CallerView,
     store: &LiteLlmManagedVectorStore,
-) -> Result<InfoResponse, ManagementReadError> {
+) -> Result<InfoResponse, ManagementReadError>
+where
+    Database: Send + Sync,
+{
     let allowed = check_vector_store_access(&state.access(), store, &caller.key)
         .await
         .map_err(VectorManagementError::Access)

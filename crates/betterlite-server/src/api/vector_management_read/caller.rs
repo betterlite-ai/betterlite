@@ -44,14 +44,11 @@ fn construct_key(
     user_role: Option<&str>,
 ) -> Result<UserAPIKeyAuth, ManagementReadError> {
     let mut fields = BTreeMap::new();
-    if let Some(user_id) = user_id {
-        fields.insert("user_id".to_owned(), JsonData::String(user_id.to_owned()));
+    if let Some(id) = user_id {
+        fields.insert("user_id".to_owned(), JsonData::String(id.to_owned()));
     }
-    if let Some(user_role) = user_role {
-        fields.insert(
-            "user_role".to_owned(),
-            JsonData::String(user_role.to_owned()),
-        );
+    if let Some(role) = user_role {
+        fields.insert("user_role".to_owned(), JsonData::String(role.to_owned()));
     }
     UserAPIKeyAuth::construct(AuthInput::Dict(fields)).map_err(|_error| {
         ManagementReadError::Internal {

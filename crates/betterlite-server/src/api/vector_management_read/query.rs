@@ -18,7 +18,7 @@ pub enum QueryError {
 #[derive(Serialize)]
 struct Issue {
     #[serde(rename = "type")]
-    issue_type: &'static str,
+    kind: &'static str,
     loc: [&'static str; 2],
     msg: &'static str,
 }
@@ -33,7 +33,7 @@ impl IntoResponse for QueryError {
         let Self::NotAnInteger { name } = self;
         let body = ValidationBody {
             detail: [Issue {
-                issue_type: "int_parsing",
+                kind: "int_parsing",
                 loc: ["query", name],
                 msg: INTEGER_MESSAGE,
             }],

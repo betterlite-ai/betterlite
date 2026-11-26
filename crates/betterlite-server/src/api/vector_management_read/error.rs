@@ -45,13 +45,14 @@ impl ManagementReadError {
     #[must_use]
     pub fn refusal(&self) -> (StatusCode, Option<DecisionJson>) {
         match self {
-            Self::Feature(error) => (
-                error.status_code(),
-                match error {
+            Self::Feature(error) => {
+                let status = error.status_code();
+                let detail = match error {
                     FeatureAccessError::Disabled(feature) => convert(feature.denial()),
-                    FeatureAccessError::Privileges(never) => match *never {},
-                },
-            ),
+                    FeatureAccessError::Privileges(_never) => None,
+                };
+                (status, detail)
+            }
             Self::DatabaseNotConnected => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Some(DecisionJson::Text("Database not connected".to_owned())),
@@ -100,7 +101,13 @@ impl IntoResponse for ManagementReadError {
         match self {
             Self::Query(error) => error.into_response(),
             Self::Request(error) => error.into_response(),
-            error => {
+            error @ (Self::Feature(_)
+            | Self::DatabaseNotConnected
+            | Self::Metadata(_)
+            | Self::MetadataShape
+            | Self::Management(_)
+            | Self::Internal { .. }
+            | Self::Json(_)) => {
                 let (status, detail) = error.refusal();
                 let body_detail = detail.unwrap_or(DecisionJson::Null);
                 (
@@ -120,7 +127,6 @@ fn convert<T>(value: T) -> Option<DecisionJson>
 where
     T: Serialize,
 {
-    serde_json::to_string(&value)
-        .ok()
-        .and_then(|text| serde_json::from_str(&text).ok())
+    let text = serde_json::to_string(&value).ok()?;
+    serde_json::from_str(&text).ok()
 }

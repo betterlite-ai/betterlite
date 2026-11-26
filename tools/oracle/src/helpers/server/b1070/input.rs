@@ -2,7 +2,7 @@ use betterlite_openai::api::vector_store_records::records::vector::LiteLlmManage
 use serde::Deserialize;
 
 #[derive(Deserialize)]
-pub(super) struct Input {
+pub(crate) struct Input {
     pub(super) calls: Vec<Call>,
 }
 

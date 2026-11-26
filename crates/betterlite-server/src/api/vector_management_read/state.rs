@@ -39,10 +39,10 @@ impl<Database> VectorManagementReadState<Database> {
     }
 
     // check_feature_access_for_user: B864's switch, run before any repository work on both routes
-    pub async fn check_vector_feature(
-        &self,
-        caller: &CallerView,
-    ) -> Result<(), ManagementReadError> {
+    pub async fn check_vector_feature(&self, caller: &CallerView) -> Result<(), ManagementReadError>
+    where
+        Database: Send + Sync,
+    {
         check_feature_access(
             caller.role,
             caller.user_id.as_deref(),
