@@ -11,7 +11,10 @@ use serde_json::Value;
 use answers::answer;
 use input::Input;
 
-fn failure<Message: Display>(message: Message) -> Box<HelperError> {
+fn failure<Message>(message: Message) -> Box<HelperError>
+where
+    Message: Display,
+{
     Box::new(HelperError {
         class: "ValueError".to_owned(),
         status: None,

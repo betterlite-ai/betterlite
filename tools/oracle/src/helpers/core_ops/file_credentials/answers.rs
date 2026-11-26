@@ -31,7 +31,7 @@ fn text_map(value: Option<&Json>) -> Option<BTreeMap<String, String>> {
     };
     let texts = fields
         .iter()
-        .filter_map(|(name, value)| match value {
+        .filter_map(|(name, raw)| match raw {
             Json::Text(text) => Some((name.clone(), text.clone())),
             Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
         })
@@ -68,9 +68,9 @@ fn denied_answer(denied: AuthorizedCredentialsError<Infallible, Infallible>) -> 
     })
 }
 
-fn extract_answer(file_id: &str, input_hints: &ModelHints) -> HelperResult {
+fn extract_answer(file_id: &str, input_hints: &ModelHints) -> Value {
     let (embedded, param) = extract_model_from_sources(file_id, input_hints);
-    Ok(json!({"function": "extract", "embedded": embedded, "param": param}))
+    json!({"function": "extract", "embedded": embedded, "param": param})
 }
 
 fn routing_answer(
@@ -96,7 +96,7 @@ fn routing_answer(
         &built.identity,
     ));
     match outcome {
-        Ok(routed) => Ok(routed_answer(&routed)),
+        Ok(selected) => Ok(routed_answer(&selected)),
         Err(denied) => Ok(denied_answer(denied)),
     }
 }
@@ -110,10 +110,10 @@ fn team_answer(provider: &str, key: &KeyInput, router: Option<&RouterInput>) -> 
         &built.expansion.context(),
     )
     .map_err(|error| failure(error.to_string()))?;
-    let lookups = match built.catalog.as_ref() {
-        Some(catalog) => locked(&catalog.lookups).clone(),
-        None => Vec::new(),
-    };
+    let lookups = built
+        .catalog
+        .as_ref()
+        .map_or_else(Vec::new, |catalog| locked(&catalog.lookups).clone());
     Ok(json!({"function": "team_credentials", "credentials": found, "lookups": lookups}))
 }
 
@@ -145,11 +145,7 @@ fn merged_data(
     Ok(merged)
 }
 
-fn internal_answer(
-    model_id: Option<&str>,
-    data: &JsonObject,
-    router: &RouterInput,
-) -> HelperResult {
+fn internal_answer(model_id: Option<&str>, data: &JsonObject, router: &RouterInput) -> Value {
     let catalog = ScriptedCatalog::new(router);
     // a caller-supplied mapping under the internal key, which the Python side reports on a miss
     let caller_snapshot = text_map(data.get(TRUSTED_CREDENTIALS_KEY));
@@ -166,12 +162,12 @@ fn internal_answer(
     let snapshot = installed_snapshot.or(caller_snapshot);
     // this side answers the stored mapping out of band, so the snapshot says the key would be there
     let internal_key = snapshot.is_some();
-    Ok(json!({
+    json!({
         "function": "internal_credentials",
         "data": merged,
         "internal_key": internal_key,
         "snapshot": snapshot,
-    }))
+    })
 }
 
 fn info_answer(model_id: &str, data: &JsonObject, router: Option<&RouterInput>) -> HelperResult {
@@ -184,7 +180,7 @@ fn info_answer(model_id: &str, data: &JsonObject, router: Option<&RouterInput>) 
 
 pub(crate) fn answer(call: &Call) -> HelperResult {
     match call {
-        Call::Extract { file_id, hints } => extract_answer(file_id, hints),
+        Call::Extract { file_id, hints } => Ok(extract_answer(file_id, hints)),
         Call::Routing {
             file_id,
             hints,
@@ -206,7 +202,7 @@ pub(crate) fn answer(call: &Call) -> HelperResult {
             model_id,
             data,
             router,
-        } => internal_answer(model_id.as_deref(), data, router),
+        } => Ok(internal_answer(model_id.as_deref(), data, router)),
         Call::DeploymentInfo {
             model_id,
             data,

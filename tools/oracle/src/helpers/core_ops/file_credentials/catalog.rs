@@ -26,7 +26,7 @@ pub(crate) struct ScriptedCatalog<'script> {
 }
 
 impl<'script> ScriptedCatalog<'script> {
-    pub(crate) fn new(script: &'script RouterInput) -> Self {
+    pub(crate) const fn new(script: &'script RouterInput) -> Self {
         Self {
             script,
             lookups: Mutex::new(Vec::new()),
