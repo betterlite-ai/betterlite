@@ -111,6 +111,9 @@ fn stage_input(
 ) -> Result<StageInput, StageFailure> {
     match backend {
         AuthBackend::MasterKey => Ok(StageInput::MasterKey(extract_key(request.headers()))),
+        AuthBackend::TrustedNetwork => Ok(StageInput::TrustedNetwork(Box::new(
+            trusted_network::stage_input(request, authenticated)?,
+        ))),
         AuthBackend::AuthRequestPolicy => Ok(StageInput::AuthRequestPolicy(Box::new(
             auth_request_policy::stage_input(request, authenticated, body)?,
         ))),
@@ -232,6 +235,7 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
             Ok(StageInput::AuthEndUsers(stage))
         }
         other @ (StageInput::MasterKey(_)
+        | StageInput::TrustedNetwork(_)
         | StageInput::AuthRequestPolicy(_)
         | StageInput::RequestBodySafety(_)
         | StageInput::AuthRequestModels(_)

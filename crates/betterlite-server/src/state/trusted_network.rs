@@ -1,12 +1,23 @@
-use crate::state::shared::Shared;
+use std::sync::Arc;
+
+use betterlite_auth::trusted_network::settings::TrustedNetworkSettings;
 use betterlite_config::types::Config;
 
-pub struct Slot;
+use crate::state::shared::Shared;
+
+// Pinned once at startup: the section already resolved every os.environ/ reference into typed values.
+#[derive(Clone, Debug)]
+pub struct Slot {
+    pub settings: Arc<TrustedNetworkSettings>,
+}
 
 impl Slot {
     #[must_use]
-    pub const fn new(_config: &Config, _shared: &Shared) -> Self {
-        // the state owner fills this slot
-        Self
+    pub fn new(config: &Config, _shared: &Shared) -> Self {
+        Self {
+            settings: Arc::new(TrustedNetworkSettings::from_config(
+                &config.sections.trusted_network,
+            )),
+        }
     }
 }

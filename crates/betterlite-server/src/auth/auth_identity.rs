@@ -17,11 +17,13 @@ use crate::auth::auth_resource_grants::{self, ResourceGrantStageInput};
 use crate::auth::auth_tag_budgets::TagBudgetStageInput;
 use crate::auth::request_body_safety::{self, RequestBodySafetyStageInput};
 use crate::auth::team_budget_admission::TeamBudgetStageInput;
+use crate::auth::trusted_network::{self, TrustedNetworkStageInput};
 use crate::error_body::AuthenticationFailure;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AuthBackend {
     MasterKey,
+    TrustedNetwork,
     AuthRequestPolicy,
     RequestBodySafety,
     AuthRequestModels,
@@ -37,6 +39,7 @@ pub enum AuthBackend {
 // B052 owns the final stage order; the master-key stage authenticates before the model stages run.
 pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
     AuthBackend::MasterKey,
+    AuthBackend::TrustedNetwork,
     AuthBackend::AuthRequestPolicy,
     AuthBackend::RequestBodySafety,
     AuthBackend::AuthRequestModels,
@@ -52,6 +55,7 @@ pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
 #[derive(Clone, Debug)]
 pub enum StageInput {
     MasterKey(Option<SecretString>),
+    TrustedNetwork(Box<TrustedNetworkStageInput>),
     AuthRequestPolicy(Box<AuthRequestPolicyStageInput>),
     RequestBodySafety(Box<RequestBodySafetyStageInput>),
     AuthRequestModels(Box<RequestModelStageInput>),
@@ -88,6 +92,7 @@ pub trait BudgetAdmission {
 pub(crate) enum StageFailure {
     Authentication(Box<AuthenticationFailure>),
     ModelAccess(Box<ModelAccessRejection>),
+    TrustedNetwork(Box<ProxyException>),
     AuthRequestPolicy(Box<ProxyException>),
     ResourceGrants(Box<ProxyException>),
     TagBudgets(Box<ProxyException>),
@@ -112,6 +117,7 @@ pub(crate) fn dispatch(
     match backend {
         AuthBackend::MasterKey => master_key_stage(input, master_key)
             .map_err(|failure| StageFailure::Authentication(Box::new(failure))),
+        AuthBackend::TrustedNetwork => trusted_network_stage(input),
         AuthBackend::AuthRequestPolicy => auth_request_policy_stage(input),
         AuthBackend::RequestBodySafety => auth_request_body_safety_stage(input),
         AuthBackend::AuthRequestModels => auth_request_models_stage(input)
@@ -154,6 +160,13 @@ pub(crate) fn dispatch(
             Ok(stage.context.clone())
         }
     }
+}
+
+fn trusted_network_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
+    let StageInput::TrustedNetwork(stage) = input else {
+        return Err(StageFailure::from(AuthenticationFailure::Missing));
+    };
+    trusted_network::run_stage(stage).map_err(StageFailure::TrustedNetwork)
 }
 
 fn auth_request_policy_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {

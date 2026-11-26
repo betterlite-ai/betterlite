@@ -1,0 +1,81 @@
+use thiserror::Error;
+use tracing::warn;
+
+use crate::trusted_network::cidr::{
+    CidrRanges, ip_in_networks, normalize_cidr_ranges, parse_trusted_proxy_ranges,
+};
+use crate::trusted_network::request::NetworkRequest;
+use crate::trusted_network::settings::{TrustedNetworkSettings, TrustedProxyConfig};
+
+pub const TRUSTED_PROXY_RANGES_KEY: &str = "trusted_proxy_ranges";
+pub const MCP_TRUSTED_PROXY_RANGES_KEY: &str = "mcp_trusted_proxy_ranges";
+
+// trusted_proxy_utils.get_trusted_proxy_cidrs: the operator's ranges, normalized to strings.
+#[must_use]
+pub fn get_trusted_proxy_cidrs(settings: &TrustedNetworkSettings) -> Vec<String> {
+    normalize_cidr_ranges(settings.trusted_proxy_ranges.as_ref())
+}
+
+// user_api_key_auth._resolve_request_principal: X-Forwarded-For is trusted exactly when ranges are configured.
+#[must_use]
+pub fn principal_proxy_config(settings: &TrustedNetworkSettings) -> TrustedProxyConfig {
+    proxy_config_from_ranges(settings.trusted_proxy_ranges.as_ref())
+}
+
+// The same rule for callers that hold the decoded ranges instead of the resolved settings.
+#[must_use]
+pub fn proxy_config_from_ranges(configured: Option<&CidrRanges>) -> TrustedProxyConfig {
+    let trusted_proxy_cidrs = normalize_cidr_ranges(configured);
+    TrustedProxyConfig {
+        use_forwarded_for: !trusted_proxy_cidrs.is_empty(),
+        trusted_proxy_cidrs,
+    }
+}
+
+#[derive(Debug, Error, Eq, PartialEq)]
+pub enum TrustedProxyRequirementError {
+    #[error(
+        "{feature} requires general_settings.{setting} before trusting identity headers from an upstream proxy."
+    )]
+    NotConfigured { feature: String, setting: String },
+    #[error(
+        "{feature} only accepts identity headers from configured trusted proxy ranges. Direct client IP {direct} is not trusted."
+    )]
+    Untrusted { feature: String, direct: String },
+}
+
+// trusted_proxy_utils.require_trusted_proxy_request: the direct TCP peer ships the identity headers.
+pub fn require_trusted_proxy_request(
+    request: &NetworkRequest<'_>,
+    settings: &TrustedNetworkSettings,
+    feature_name: &str,
+    setting_name: &str,
+) -> Result<(), TrustedProxyRequirementError> {
+    let configured = match setting_name {
+        TRUSTED_PROXY_RANGES_KEY => settings.trusted_proxy_ranges.clone(),
+        MCP_TRUSTED_PROXY_RANGES_KEY => settings
+            .mcp_trusted_proxy_ranges
+            .clone()
+            .map(CidrRanges::List),
+        _ => None,
+    };
+    let networks = parse_trusted_proxy_ranges(configured.as_ref(), setting_name);
+    if networks.is_empty() {
+        return Err(TrustedProxyRequirementError::NotConfigured {
+            feature: feature_name.to_owned(),
+            setting: setting_name.to_owned(),
+        });
+    }
+    if !ip_in_networks(request.peer, &networks) {
+        warn!(
+            feature = feature_name,
+            direct = ?request.peer,
+            "rejected identity headers from an untrusted direct client"
+        );
+        return Err(TrustedProxyRequirementError::Untrusted {
+            feature: feature_name.to_owned(),
+            direct: request.peer.unwrap_or("None").to_owned(),
+        });
+    }
+    Ok(())
+}
