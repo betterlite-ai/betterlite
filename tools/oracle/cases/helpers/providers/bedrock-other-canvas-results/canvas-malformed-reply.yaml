@@ -1,0 +1,29 @@
+kind: helper
+name: bedrock-other-canvas-results-canvas-malformed-reply
+call:
+  bedrock_other_canvas_results:
+    model_cost: {}
+    calls:
+      - model: amazon.nova-canvas-v1:0
+        status: 200
+        body: not json
+      - model: amazon.nova-canvas-v1:0
+        status: 422
+        body: '{"images":'
+      - model: amazon.nova-canvas-v1:0
+        status: 200
+        body: ''
+      - model: amazon.nova-canvas-v1:0
+        status: 500
+        body: not json
+      - model: amazon.nova-canvas-v1:0
+        status: 500
+        body: 'null'
+      - model: amazon.nova-canvas-v1:0
+        status: 500
+        body: '[1]'
+      - model: amazon.nova-canvas-v1:0
+        status: 200
+        body: '{"images":["aGVsbG8="]'
+env: {}
+compare: {ignore: []}
