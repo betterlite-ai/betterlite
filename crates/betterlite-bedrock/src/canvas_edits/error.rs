@@ -1,3 +1,4 @@
+use serde_json::Error as JsonError;
 use thiserror::Error;
 
 use crate::bedrock_settings::{BedrockError, HeaderError};
@@ -27,7 +28,11 @@ pub enum CanvasEditError {
     )]
     MissingPrompt { task_type: String },
     #[error("the {field} value has a type the Nova Canvas transform does not declare")]
-    Field { field: String },
+    Field {
+        field: String,
+        #[source]
+        source: JsonError,
+    },
     #[error(
         "Unsupported Bedrock image-edit model: '{model}'. Use a stability.* image-edit model id or add supports_nova_canvas_image_edit in model_prices for this id."
     )]

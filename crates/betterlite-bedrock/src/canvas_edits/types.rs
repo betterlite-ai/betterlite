@@ -165,7 +165,7 @@ impl CanvasEditOptions {
             image_count: field(&mut remaining, "n")?,
             size: field(&mut remaining, "size")?,
             response_format: field(&mut remaining, "response_format")?,
-            mask: mask_input(&mut remaining)?,
+            mask: field(&mut remaining, "mask")?.map(CanvasImageInput::Text),
             negative_text: field(&mut remaining, "negativeText")?,
             similarity_strength: field(&mut remaining, "similarityStrength")?,
             cfg_scale: field(&mut remaining, "cfgScale")?,
@@ -184,7 +184,7 @@ impl CanvasEditOptions {
     }
 }
 
-// Each named option is parsed here with its declared type; a value the type cannot hold names the key.
+// Each named option is parsed here with its declared type; a serde failure names the key and keeps its cause.
 fn field<T>(params: &mut ImageParams, name: &str) -> Result<Option<T>, CanvasEditError>
 where
     T: DeserializeOwned,
@@ -193,24 +193,11 @@ where
         return Ok(None);
     };
     serde_json::to_string(&value)
-        .ok()
-        .and_then(|text| serde_json::from_str::<Option<T>>(&text).ok())
-        .ok_or_else(|| CanvasEditError::Field {
+        .and_then(|text| serde_json::from_str::<Option<T>>(&text))
+        .map_err(|source| CanvasEditError::Field {
             field: name.to_owned(),
+            source,
         })
-}
-
-// A JSON mask is a base64 string or null; bytes and tuples arrive from the SDK-side input instead.
-fn mask_input(params: &mut ImageParams) -> Result<Option<CanvasImageInput>, CanvasEditError> {
-    match params.shift_remove("mask") {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Text(text)) => Ok(Some(CanvasImageInput::Text(text))),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(CanvasEditError::Field {
-                field: "mask".to_owned(),
-            })
-        }
-    }
 }
 
 // A nested config is parsed only when it is an object; any other value stays an unknown option.

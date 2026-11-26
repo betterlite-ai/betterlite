@@ -1,3 +1,5 @@
+use std::error::Error as _;
+
 use super::support::{
     body, image, json, options_json, prepared, refused, refused_options, wire, with_mask_bytes,
     with_mask_tuple,
@@ -229,7 +231,7 @@ fn wrong_type_names_the_field() {
     ] {
         let error = refused_options(given);
         assert!(
-            matches!(&error, CanvasEditError::Field { field: name } if name == field),
+            matches!(&error, CanvasEditError::Field { field: name, .. } if name == field),
             "{given}"
         );
         assert_eq!(
@@ -237,6 +239,8 @@ fn wrong_type_names_the_field() {
             format!("the {field} value has a type the Nova Canvas transform does not declare"),
             "{given}"
         );
+        let cause = error.source().expect("the serde cause is kept").to_string();
+        assert!(cause.contains("invalid type"), "{given}: {cause}");
     }
 }
 
