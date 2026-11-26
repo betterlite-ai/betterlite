@@ -30,6 +30,26 @@ pub struct Settings {
     pub minimum_custom_key_length: i64,
 }
 
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            microsoft_client_id: None,
+            google_client_id: None,
+            generic_client_id: None,
+            saml_idp_metadata_url: None,
+            saml_idp_metadata_xml: None,
+            google_client_secret: None,
+            microsoft_client_secret: None,
+            microsoft_tenant: None,
+            generic_client_secret: None,
+            generic_authorization_endpoint: None,
+            generic_token_endpoint: None,
+            generic_userinfo_endpoint: None,
+            minimum_custom_key_length: DEFAULT_MINIMUM_KEY_LENGTH,
+        }
+    }
+}
+
 impl Section for Raw {
     type Settings = Settings;
 

@@ -19,7 +19,7 @@ fn load(environment: &[(&str, &str)]) -> Result<Settings, ConfigError> {
 }
 
 fn secret(secret: Option<&secrecy::SecretString>) -> Option<&str> {
-    secret.map(|value| value.expose_secret().as_str())
+    secret.map(secrecy::ExposeSecret::expose_secret)
 }
 
 #[test]
@@ -30,10 +30,10 @@ fn sso_env_absent_and_empty() {
     assert_eq!(absent.generic_client_id, None);
     assert_eq!(absent.saml_idp_metadata_url, None);
     assert_eq!(absent.saml_idp_metadata_xml, None);
-    assert_eq!(absent.google_client_secret, None);
-    assert_eq!(absent.microsoft_client_secret, None);
+    assert_eq!(secret(absent.google_client_secret.as_ref()), None);
+    assert_eq!(secret(absent.microsoft_client_secret.as_ref()), None);
     assert_eq!(absent.microsoft_tenant, None);
-    assert_eq!(absent.generic_client_secret, None);
+    assert_eq!(secret(absent.generic_client_secret.as_ref()), None);
     assert_eq!(absent.generic_authorization_endpoint, None);
     assert_eq!(absent.generic_token_endpoint, None);
     assert_eq!(absent.generic_userinfo_endpoint, None);
@@ -86,7 +86,7 @@ fn google_env_pair() {
         Some("google-secret")
     );
     assert_eq!(settings.microsoft_client_id, None);
-    assert_eq!(settings.microsoft_client_secret, None);
+    assert_eq!(secret(settings.microsoft_client_secret.as_ref()), None);
 }
 
 #[test]
