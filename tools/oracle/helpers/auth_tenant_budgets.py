@@ -20,6 +20,7 @@ from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
 
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
+EMPTY_BODY: Final[dict[str, JsonValue]] = {}
 
 
 class Call(TypedDict):
@@ -105,7 +106,7 @@ async def scripted_org_object(  # noqa: PLR0913, PLR0917  # https://github.com/B
     org_id: str,
     prisma_client: PrismaClient | None,
     user_api_key_cache: UserApiKeyCache,
-    parent_otel_span: object | None = None,
+    parent_otel_span: JsonValue = None,
     proxy_logging_obj: ProxyLogging | None = None,
     include_budget_table: bool = False,  # noqa: FBT001, FBT002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L4107-L4130
 ) -> LiteLLM_OrganizationTable | None:
@@ -122,7 +123,7 @@ async def scripted_tag_objects(  # https://github.com/BerriAI/litellm/blob/d665d
     tag_names: Sequence[str],
     prisma_client: PrismaClient | None,
     user_api_key_cache: UserApiKeyCache,
-    parent_otel_span: object | None = None,
+    parent_otel_span: JsonValue = None,
     proxy_logging_obj: ProxyLogging | None = None,
 ) -> dict[str, LiteLLM_TagTable]:
     del prisma_client, user_api_key_cache, parent_otel_span, proxy_logging_obj
@@ -210,7 +211,7 @@ async def hard_answer(
 
 
 async def project_hard_call(call: Call, recorder: Recorder) -> JsonValue:
-    check: Awaitable[None] = auth_checks._project_max_budget_check(  # type: ignore[misc]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L6136-L6191
+    check: Awaitable[None] = auth_checks._project_max_budget_check(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L6136-L6191
         project_of(call), token_of(call), recorder
     )
     return await hard_answer(call, check, recorder)
@@ -231,7 +232,7 @@ async def project_soft_call(call: Call, recorder: Recorder) -> JsonValue:
 async def organization_call(call: Call, recorder: Recorder) -> JsonValue:
     auth_checks.get_org_object = scripted_org_object  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L6337-L6345
     token = token_of(call)
-    check: Awaitable[None] = auth_checks._organization_max_budget_check(  # type: ignore[misc]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L6302-L6398
+    check: Awaitable[None] = auth_checks._organization_max_budget_check(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L6302-L6398
         token,
         team_of(call),
         SeededDatabase() if call["database"] else None,
@@ -244,10 +245,9 @@ async def organization_call(call: Call, recorder: Recorder) -> JsonValue:
 
 
 async def tags_call(call: Call, recorder: Recorder) -> JsonValue:
-    auth_checks.get_tag_objects_batch = scripted_tag_objects  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L6436-L6442
-    body = call.get("request_body")
-    check: Awaitable[None] = auth_checks._tag_max_budget_check(  # type: ignore[misc]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L6401-L6423
-        request_body={} if body is None else body,
+    auth_checks.get_tag_objects_batch = scripted_tag_objects
+    check: Awaitable[None] = auth_checks._tag_max_budget_check(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L6401-L6423
+        request_body=call.get("request_body") or EMPTY_BODY,
         prisma_client=SeededDatabase() if call["database"] else None,
         user_api_key_cache=UserApiKeyCache(),
         proxy_logging_obj=recorder,
