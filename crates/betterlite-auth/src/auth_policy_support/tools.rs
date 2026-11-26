@@ -8,9 +8,7 @@ use betterlite_models::model_registration::JsonObject;
 
 use crate::resolved_key::auth::UserAPIKeyAuth;
 
-use super::extract::{
-    ExtractionError, ToolCapableCallType, ToolNameExtractors, extract_request_tool_names,
-};
+use super::extract::{ExtractionError, ToolNameExtractors, extract_request_tool_names};
 
 const TOOL_DENIAL_PARAM: &str = "tools";
 const TOOL_DENIAL_STATUS: i64 = 403;
@@ -70,7 +68,10 @@ fn has_tool_capable_call_type(route: &str, extractors: &ToolNameExtractors) -> b
         .routes
         .call_types_for_route(route)
         .iter()
-        .any(|name| ToolCapableCallType::from_source_name(name).is_some())
+        .any(|name| {
+            extractors.standalone.contains_key(name.as_str())
+                || extractors.handlers.contains_key(name.as_str())
+        })
 }
 
 // a nonempty key list wins over the team list, and an empty or malformed one falls back to it
@@ -84,18 +85,10 @@ fn effective_allowed_tools(token: &UserAPIKeyAuth) -> Option<&[JsonData]> {
 }
 
 fn nonempty_allowed_list(value: Option<&JsonData>) -> Option<&[JsonData]> {
-    match value {
-        Some(JsonData::Array(entries)) if !entries.is_empty() => Some(entries),
-        Some(
-            JsonData::Array(_)
-            | JsonData::Null
-            | JsonData::Bool(_)
-            | JsonData::Number(_)
-            | JsonData::String(_)
-            | JsonData::Object(_),
-        )
-        | None => None,
-    }
+    let Some(JsonData::Array(entries)) = value else {
+        return None;
+    };
+    (!entries.is_empty()).then_some(entries.as_slice())
 }
 
 // str(entry): the allowlist is whatever text the stored value turns into

@@ -8,7 +8,7 @@ use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 use betterlite_db::team_rows::team::LiteLLMTeamTable;
 use betterlite_error::proxy_exception::ProxyException;
 
-use crate::auth::auth_identity::AuthContext;
+use crate::auth::auth_identity::{AuthContext, StageFailure, StageInput};
 use crate::auth::request_body_safety::request_object;
 use crate::error_body::AuthenticationFailure;
 use crate::state::ServerState;
@@ -66,11 +66,12 @@ pub(crate) fn run_stage(
     Ok(stage.context.clone())
 }
 
-pub(crate) fn stage_input(
+// the auth loop builds one StageInput per backend; the support stage carries no prefetch
+pub(crate) fn stage(
     request: &Request<Body>,
     authenticated: Option<&AuthContext>,
     body: Option<&Bytes>,
-) -> Result<AuthPolicySupportStageInput, AuthenticationFailure> {
+) -> Result<StageInput, StageFailure> {
     let context = authenticated
         .cloned()
         .ok_or(AuthenticationFailure::Missing)?;
@@ -79,17 +80,19 @@ pub(crate) fn stage_input(
         .get(header::CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
         .map(str::to_owned);
-    Ok(AuthPolicySupportStageInput {
-        context,
-        rule: rule_for_request(request),
-        route: request.uri().path().to_owned(),
-        content_type,
-        body: body.cloned(),
-        slot: request
-            .extensions()
-            .get::<Arc<ServerState>>()
-            .map(|state| state.auth_policy_support.clone()),
-    })
+    Ok(StageInput::AuthPolicySupport(Box::new(
+        AuthPolicySupportStageInput {
+            context,
+            rule: rule_for_request(request),
+            route: request.uri().path().to_owned(),
+            content_type,
+            body: body.cloned(),
+            slot: request
+                .extensions()
+                .get::<Arc<ServerState>>()
+                .map(|state| state.auth_policy_support.clone()),
+        },
+    )))
 }
 
 fn rule_for_request(request: &Request<Body>) -> Arc<AuthPolicySupportRule> {

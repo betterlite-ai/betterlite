@@ -52,13 +52,11 @@ pub mod team_budget_admission;
 pub mod trusted_network;
 pub mod virtual_key_routes;
 
-use std::collections::BTreeSet;
-use std::sync::Arc;
+use std::{collections::BTreeSet, sync::Arc};
 
 use betterlite_auth::auth_request_models::MODEL_ROUTING_HEADER_NAME;
 use betterlite_auth::auth_request_models::catalog::{EmptyCatalog, RequestModelResolver};
-use betterlite_models::decisions::Json;
-use betterlite_models::model_registration::JsonObject;
+use betterlite_models::{decisions::Json, model_registration::JsonObject};
 
 use crate::auth::auth_identity::{AuthBackend, AuthContext, StageFailure, StageInput};
 use crate::auth::auth_model_patterns::{
@@ -69,8 +67,7 @@ use crate::auth::auth_resource_grants::{
     ResourceGrantStageInput, database_for_request, rule_for_request as grant_rule_for_request,
 };
 use crate::auth::request_body_safety::RequestBodySafetyStageInput;
-use crate::error_body::AuthenticationFailure;
-use crate::state::ServerState;
+use crate::{error_body::AuthenticationFailure, state::ServerState};
 use axum::body::{Body, Bytes};
 use axum::extract::State;
 use axum::http::{HeaderMap, Request, header};
@@ -136,9 +133,7 @@ fn stage_input(
         AuthBackend::AuthEndUsers => Ok(StageInput::AuthEndUsers(Box::new(
             auth_end_users::stage_input(request, authenticated)?,
         ))),
-        AuthBackend::AuthPolicySupport => Ok(StageInput::AuthPolicySupport(Box::new(
-            auth_policy_support::stage_input(request, authenticated, body)?,
-        ))),
+        AuthBackend::AuthPolicySupport => auth_policy_support::stage(request, authenticated, body),
     }
 }
 

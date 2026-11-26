@@ -25,30 +25,30 @@ pub fn team_obj_from_token(
     token: &UserAPIKeyAuth,
 ) -> Result<LiteLLMTeamTableCachedObj, TeamFromTokenError> {
     let base = team_identity_from_token(token)?;
+    let spend = token.view.team_spend;
     let model_max_budget = token
         .view
         .team_model_max_budget
         .as_ref()
         .map(|payload| payload.0.clone());
+    let fields = TeamFields {
+        base,
+        spend,
+        max_parallel_requests: None,
+        budget_reset_at: None,
+        model_id: None,
+        model_spend: Nullable(Some(BTreeMap::new())),
+        model_max_budget: Nullable(model_max_budget),
+        policies: None,
+        allow_team_guardrail_config: Nullable(Some(false)),
+        litellm_model_table: None,
+        object_permission: None,
+        object_permission_id: token.view.team_object_permission_id.clone(),
+        updated_at: None,
+        created_at: None,
+    };
     Ok(LiteLLMTeamTableCachedObj {
-        team: LiteLLMTeamTable {
-            fields: TeamFields {
-                base,
-                spend: token.view.team_spend,
-                max_parallel_requests: None,
-                budget_reset_at: None,
-                model_id: None,
-                model_spend: Nullable(Some(BTreeMap::new())),
-                model_max_budget: Nullable(model_max_budget),
-                policies: None,
-                allow_team_guardrail_config: Nullable(Some(false)),
-                litellm_model_table: None,
-                object_permission: None,
-                object_permission_id: token.view.team_object_permission_id.clone(),
-                updated_at: None,
-                created_at: None,
-            },
-        },
+        team: LiteLLMTeamTable { fields },
         last_refreshed_at: None,
     })
 }

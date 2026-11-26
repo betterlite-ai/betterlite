@@ -1,40 +1,18 @@
 task: B888
 deviations:
-  - what: >-
-      A bundled route catalog that does not parse leaves the tool allowlist unenforced; betterlite logs
-      one startup error and answers no call types, so every route reads as not tool-capable.
-    why: >-
-      The catalog is compiled in and the core crate's tests parse the same bytes, so this state means a
-      broken build rather than a request fact; failing every request at auth time would replace that log
-      with an invented error no LiteLLM client sees.
+  - what: "A bundled route catalog that does not parse leaves the tool allowlist unenforced, with one startup error."
+    why: "The bytes are compiled in and the core crate parses the same fixture in its tests, so this is a broken build, not a request fact."
     link: ""
-  - what: >-
-      The centralized auth fetch debug lines carry the label and the error's rendered text as structured
-      fields, without LiteLLM's exception class name.
-    why: >-
-      betterlite logs typed errors through tracing instead of formatting Python type names; the label,
-      the failed/swallowed distinction and the error text all still reach the log.
+  - what: "The centralized auth fetch debug lines carry the label and the error text as structured fields, without LiteLLM's exception class name."
+    why: "betterlite logs typed errors through tracing instead of formatting Python type names; the failed/swallowed distinction is kept."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L2625-L2651
-  - what: >-
-      A token whose team_models list holds a non-string entry fails the team reconstruction with
-      NonStringModel instead of passing the entry into the cached team object.
-    why: >-
-      LiteLLM's _token_team_models returns the raw list and the cached object's declared type is list[str],
-      so a working setup never stores such an entry; betterlite reports the invalid row instead of
-      producing a team whose models do not type-check.
+  - what: "A token whose team_models list holds a non-string entry fails the team reconstruction with NonStringModel."
+    why: "The cached team's declared models type is list[str], so a working setup never stores such an entry."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L2654-L2673
 kept_bugs:
-  - what: >-
-      Only a literal false in team metadata guardrails.modify_guardrails denies guardrail modification;
-      the strings "false" or "0", the number 0 and other falsey values all allow it.
-    why: >-
-      LiteLLM's can_modify_guardrails compares against False without coercion, and a working setup stores
-      the boolean in YAML/JSON, so betterlite keeps the literal comparison rather than widening the denial.
+  - what: "Only a literal false in team metadata guardrails.modify_guardrails denies the modification; the strings \"false\" and \"0\" and the number 0 allow it."
+    why: "LiteLLM compares against False without coercion, and a working setup stores the boolean, so the literal comparison is kept."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_helpers.py#L13-L23
-  - what: >-
-      A token minted for the litellm-dashboard sentinel team vouches for its own team fields even when the
-      team row is provably absent (TeamNotFoundError), unlike every other team.
-    why: >-
-      LiteLLM documents that these keys exist solely for the UI and never have a team row, and other
-      checks confine them to UI routes, so denying them would break the dashboard without tightening access.
+  - what: "A litellm-dashboard sentinel key vouches for its team fields even when the team row is provably absent."
+    why: "LiteLLM documents these keys as UI-only and other checks confine them to UI routes, so denying them would break the dashboard."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L2676-L2703

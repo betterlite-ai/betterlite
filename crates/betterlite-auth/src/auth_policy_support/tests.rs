@@ -8,6 +8,7 @@ use betterlite_error::error::details::BudgetExceededDetails;
 use betterlite_error::proxy_exception::ProxyException;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
+use rstest::rstest;
 use rust_decimal::Decimal;
 
 use super::extract::{
@@ -110,55 +111,53 @@ async fn inherit(
     .unwrap();
 }
 
-#[test]
-fn guardrail_four_keys_three_locations() {
-    for request in [
-        r#"{"metadata":{"guardrails":false}}"#,
-        r#"{"metadata":{"disable_global_guardrails":false}}"#,
-        r#"{"metadata":{"disable_global_guardrail":false}}"#,
-        r#"{"metadata":{"opted_out_global_guardrails":false}}"#,
-        r#"{"litellm_metadata":{"guardrails":null}}"#,
-        r#"{"litellm_metadata":{"disable_global_guardrails":null}}"#,
-        r#"{"litellm_metadata":{"disable_global_guardrail":null}}"#,
-        r#"{"litellm_metadata":{"opted_out_global_guardrails":null}}"#,
-        r#"{"guardrails":[]}"#,
-        r#"{"disable_global_guardrails":{}}"#,
-        r#"{"disable_global_guardrail":""}"#,
-        r#"{"opted_out_global_guardrails":0}"#,
-    ] {
-        assert_guardrail_denied(request);
-    }
+#[rstest]
+#[case(r#"{"metadata":{"guardrails":false}}"#)]
+#[case(r#"{"metadata":{"disable_global_guardrails":false}}"#)]
+#[case(r#"{"metadata":{"disable_global_guardrail":false}}"#)]
+#[case(r#"{"metadata":{"opted_out_global_guardrails":false}}"#)]
+#[case(r#"{"litellm_metadata":{"guardrails":null}}"#)]
+#[case(r#"{"litellm_metadata":{"disable_global_guardrails":null}}"#)]
+#[case(r#"{"litellm_metadata":{"disable_global_guardrail":null}}"#)]
+#[case(r#"{"litellm_metadata":{"opted_out_global_guardrails":null}}"#)]
+#[case(r#"{"guardrails":[]}"#)]
+#[case(r#"{"disable_global_guardrails":{}}"#)]
+#[case(r#"{"disable_global_guardrail":""}"#)]
+#[case(r#"{"opted_out_global_guardrails":0}"#)]
+fn guardrail_four_keys_three_locations(#[case] request: &str) {
+    assert_guardrail_denied(request);
 }
 
-#[test]
-fn guardrail_false_and_null_count() {
-    for request in [
-        r#"{"metadata":{"disable_global_guardrails":false}}"#,
-        r#"{"metadata":{"disable_global_guardrails":null}}"#,
-        r#"{"litellm_metadata":{"disable_global_guardrails":false}}"#,
-        r#"{"litellm_metadata":{"disable_global_guardrails":null}}"#,
-        r#"{"opted_out_global_guardrails":false}"#,
-        r#"{"opted_out_global_guardrails":null}"#,
-    ] {
-        assert_guardrail_denied(request);
-    }
+#[rstest]
+#[case(r#"{"metadata":{"disable_global_guardrails":false}}"#)]
+#[case(r#"{"metadata":{"disable_global_guardrails":null}}"#)]
+#[case(r#"{"litellm_metadata":{"disable_global_guardrails":false}}"#)]
+#[case(r#"{"litellm_metadata":{"disable_global_guardrails":null}}"#)]
+#[case(r#"{"opted_out_global_guardrails":false}"#)]
+#[case(r#"{"opted_out_global_guardrails":null}"#)]
+fn guardrail_false_and_null_count(#[case] request: &str) {
+    assert_guardrail_denied(request);
 }
 
-#[test]
-fn guardrail_json_object_and_malformed() {
-    assert_guardrail_denied(r#"{"metadata":"{\"guardrails\":{\"modify_guardrails\":false}}"}"#);
-    assert_guardrail_denied(r#"{"litellm_metadata":"{\"disable_global_guardrail\":false}"}"#);
-    for ignored in [
-        r#"{"metadata":"{not json"}"#,
-        r#"{"metadata":"[1, 2]"}"#,
-        r#"{"metadata":"null"}"#,
-        r#"{"metadata":"17"}"#,
-        r#"{"metadata":"\"text\""}"#,
-        r#"{"metadata":17}"#,
-        r#"{"metadata":[]}"#,
-        r#"{"litellm_metadata":false}"#,
-    ] {
-        guardrail_modification_check(&body(ignored), Some(&denying_team())).unwrap();
+#[rstest]
+#[case(
+    r#"{"metadata":"{\"guardrails\":{\"modify_guardrails\":false}}"}"#,
+    true
+)]
+#[case(r#"{"litellm_metadata":"{\"disable_global_guardrail\":false}"}"#, true)]
+#[case(r#"{"metadata":"{not json"}"#, false)]
+#[case(r#"{"metadata":"[1, 2]"}"#, false)]
+#[case(r#"{"metadata":"null"}"#, false)]
+#[case(r#"{"metadata":"17"}"#, false)]
+#[case(r#"{"metadata":"\"text\""}"#, false)]
+#[case(r#"{"metadata":17}"#, false)]
+#[case(r#"{"metadata":[]}"#, false)]
+#[case(r#"{"litellm_metadata":false}"#, false)]
+fn guardrail_json_object_and_malformed(#[case] request: &str, #[case] denied: bool) {
+    if denied {
+        assert_guardrail_denied(request);
+    } else {
+        guardrail_modification_check(&body(request), Some(&denying_team())).unwrap();
     }
 }
 
@@ -193,15 +192,12 @@ fn modify_false_only_denies() {
     assert_eq!(exception.code, "403");
 }
 
-#[test]
-fn no_team_allows() {
-    for request in [
-        r#"{"metadata":{"guardrails":["pii"]}}"#,
-        r#"{"litellm_metadata":{"disable_global_guardrails":true}}"#,
-        r#"{"opted_out_global_guardrails":["pii"]}"#,
-    ] {
-        guardrail_modification_check(&body(request), None).unwrap();
-    }
+#[rstest]
+#[case(r#"{"metadata":{"guardrails":["pii"]}}"#)]
+#[case(r#"{"litellm_metadata":{"disable_global_guardrails":true}}"#)]
+#[case(r#"{"opted_out_global_guardrails":["pii"]}"#)]
+fn no_team_allows(#[case] request: &str) {
+    guardrail_modification_check(&body(request), None).unwrap();
 }
 
 #[test]
@@ -218,47 +214,47 @@ fn tool_key_overrides_team() {
     check(&permitted, Some(&token), None, ROUTE, &extractors).unwrap();
 }
 
-#[test]
-fn tool_empty_key_falls_back() {
+#[rstest]
+#[case("[]")]
+#[case(r#""not-a-list""#)]
+#[case("null")]
+#[case("5")]
+fn tool_empty_key_falls_back(#[case] key_allowed: &str) {
     let extractors = chat_extractors();
     let permitted = chat_request("team-tool");
     let refused = chat_request("other");
-    for key_allowed in ["[]", r#""not-a-list""#, "null", "5"] {
-        let token = tools_token(key_allowed, r#"["team-tool"]"#);
-        check(&permitted, Some(&token), None, ROUTE, &extractors).unwrap();
-        let denial = denial_of(check(&refused, Some(&token), None, ROUTE, &extractors));
-        assert_eq!(denial.error_type, "tool_access_denied");
-    }
+    let token = tools_token(key_allowed, r#"["team-tool"]"#);
+    check(&permitted, Some(&token), None, ROUTE, &extractors).unwrap();
+    let denial = denial_of(check(&refused, Some(&token), None, ROUTE, &extractors));
+    assert_eq!(denial.error_type, "tool_access_denied");
 }
 
-#[test]
-fn tool_bad_effective_allows() {
+#[rstest]
+#[case(r#""not-a-list""#, "5")]
+#[case(r#""not-a-list""#, "null")]
+#[case("[]", "null")]
+#[case("null", "{}")]
+#[case("{}", r#""text""#)]
+fn tool_bad_effective_allows(#[case] key_allowed: &str, #[case] team_allowed: &str) {
     let extractors = chat_extractors();
     let request = chat_request("any-tool");
-    for (key_allowed, team_allowed) in [
-        (r#""not-a-list""#, "5"),
-        (r#""not-a-list""#, "null"),
-        ("[]", "null"),
-        ("null", "{}"),
-        ("{}", r#""text""#),
-    ] {
-        let token = tools_token(key_allowed, team_allowed);
-        check(&request, Some(&token), None, ROUTE, &extractors).unwrap();
-    }
+    let token = tools_token(key_allowed, team_allowed);
+    check(&request, Some(&token), None, ROUTE, &extractors).unwrap();
     let bare = key(r#"{"token":"k"}"#);
     check(&request, Some(&bare), None, ROUTE, &extractors).unwrap();
     check(&request, None, None, ROUTE, &extractors).unwrap();
 }
 
-#[test]
-fn tool_route_skip() {
+#[rstest]
+#[case("/v1/unknown")]
+#[case("/embed")]
+#[case("")]
+fn tool_route_skip(#[case] skipped: &str) {
     let table = routes(&[("/embed", &["embedding"]), (ROUTE, &["completion"])]);
     let extractors = ToolNameExtractors::builtin(table);
     let token = tools_token(r#"["allowed"]"#, "null");
     let request = chat_request("other");
-    for route in ["/v1/unknown", "/embed", ""] {
-        check(&request, Some(&token), None, route, &extractors).unwrap();
-    }
+    check(&request, Some(&token), None, skipped, &extractors).unwrap();
     let denial = denial_of(check(&request, Some(&token), None, ROUTE, &extractors));
     assert_eq!(denial.error_type, "tool_access_denied");
 }
@@ -321,8 +317,16 @@ fn tool_team_argument_unused() {
     assert_eq!(denial.error_type, "tool_access_denied");
 }
 
-#[test]
-fn tool_all_eight_call_types() {
+#[rstest]
+#[case("/c")]
+#[case("/ac")]
+#[case("/r")]
+#[case("/ar")]
+#[case("/a")]
+#[case("/g")]
+#[case("/ag")]
+#[case("/m")]
+fn tool_all_eight_call_types(#[case] route: &str) {
     let table = routes(&[
         ("/c", &["completion"]),
         ("/ac", &["acompletion"]),
@@ -335,21 +339,19 @@ fn tool_all_eight_call_types() {
     ]);
     let extractors = ToolNameExtractors::builtin(table);
     let token = tools_token(r#"["x"]"#, "null");
-    for route in ["/c", "/ac", "/r", "/ar", "/a", "/g", "/ag", "/m"] {
-        let request = match route {
-            "/c" | "/ac" => r#"{"functions":[{"name":"x"}]}"#,
-            "/r" => r#"{"tools":[{"type":"function","name":"x"}]}"#,
-            "/ar" => r#"{"tools":[{"type":"custom","name":"x"}]}"#,
-            "/a" => r#"{"tools":[{"name":"x"}]}"#,
-            "/g" | "/ag" => r#"{"tools":[{"functionDeclarations":[{"name":"x"}]}]}"#,
-            "/m" => r#"{"name":"x"}"#,
-            _ => "{}",
-        };
-        check(&body(request), Some(&token), None, route, &extractors).unwrap();
-        let other = request.replace("\"x\"", "\"y\"");
-        let denial = denial_of(check(&body(&other), Some(&token), None, route, &extractors));
-        assert_eq!(denial.error_type, "tool_access_denied");
-    }
+    let request = match route {
+        "/c" | "/ac" => r#"{"functions":[{"name":"x"}]}"#,
+        "/r" => r#"{"tools":[{"type":"function","name":"x"}]}"#,
+        "/ar" => r#"{"tools":[{"type":"custom","name":"x"}]}"#,
+        "/a" => r#"{"tools":[{"name":"x"}]}"#,
+        "/g" | "/ag" => r#"{"tools":[{"functionDeclarations":[{"name":"x"}]}]}"#,
+        "/m" => r#"{"name":"x"}"#,
+        _ => "{}",
+    };
+    check(&body(request), Some(&token), None, route, &extractors).unwrap();
+    let other = request.replace("\"x\"", "\"y\"");
+    let denial = denial_of(check(&body(&other), Some(&token), None, route, &extractors));
+    assert_eq!(denial.error_type, "tool_access_denied");
 }
 
 #[test]
@@ -438,57 +440,43 @@ fn gemini_declarations() {
     assert_eq!(names, vec!["a".to_owned(), "b".to_owned(), "5".to_owned()]);
 }
 
-#[test]
-fn mcp_name_precedence() {
+#[rstest]
+#[case(r#"{"name":"a","mcp_tool_name":"b"}"#, vec!["a"])]
+#[case(r#"{"name":"","mcp_tool_name":"b"}"#, vec!["b"])]
+#[case(r#"{"name":null,"mcp_tool_name":"b"}"#, vec!["b"])]
+#[case(r#"{"mcp_tool_name":"b"}"#, vec!["b"])]
+#[case(r#"{"name":"a"}"#, vec!["a"])]
+#[case(r#"{"name":false,"mcp_tool_name":0}"#, vec![])]
+#[case(r#"{"name":5}"#, vec!["5"])]
+fn mcp_name_precedence(#[case] request: &str, #[case] expected: Vec<&str>) {
     let table = routes(&[("/mcp", &["call_mcp_tool"])]);
     let extractors = ToolNameExtractors::builtin(table);
-    let cases = [
-        (r#"{"name":"a","mcp_tool_name":"b"}"#, vec!["a"]),
-        (r#"{"name":"","mcp_tool_name":"b"}"#, vec!["b"]),
-        (r#"{"name":null,"mcp_tool_name":"b"}"#, vec!["b"]),
-        (r#"{"mcp_tool_name":"b"}"#, vec!["b"]),
-        (r#"{"name":"a"}"#, vec!["a"]),
-        (r#"{"name":false,"mcp_tool_name":0}"#, vec![]),
-        (r#"{"name":5}"#, vec!["5"]),
-    ];
-    for (request, expected) in cases {
-        let names = extract_request_tool_names("/mcp", &body(request), &extractors).unwrap();
-        let expected: Vec<String> = expected.into_iter().map(str::to_owned).collect();
-        assert_eq!(names, expected, "{request}");
-    }
+    let names = extract_request_tool_names("/mcp", &body(request), &extractors).unwrap();
+    let expected: Vec<String> = expected.into_iter().map(str::to_owned).collect();
+    assert_eq!(names, expected, "{request}");
 }
 
-#[test]
-fn anthropic_both_names() {
+#[rstest]
+#[case(r#"{"name":"flat"}"#, vec!["flat"])]
+#[case(
+    r#"{"type":"function","name":"flat","function":{"name":"fn"}}"#,
+    vec!["flat", "fn"]
+)]
+#[case(r#"{"type":"function","function":{"name":"fn"}}"#, vec!["fn"])]
+#[case(r#"{"name":"","type":"function","function":{"name":"fn"}}"#, vec!["fn"])]
+#[case(r#"{"type":"custom","function":{"name":"fn"}}"#, vec![])]
+#[case(r#"{"name":5}"#, vec![])]
+#[case(r#"{"function":{"name":"fn"}}"#, vec![])]
+fn anthropic_both_names(#[case] request: &str, #[case] expected: Vec<&str>) {
     let table = routes(&[("/anthropic", &["anthropic_messages"])]);
     let extractors = ToolNameExtractors::builtin(table);
-    let cases = [
-        (r#"{"name":"flat"}"#, vec!["flat"]),
-        (
-            r#"{"type":"function","name":"flat","function":{"name":"fn"}}"#,
-            vec!["flat", "fn"],
-        ),
-        (
-            r#"{"type":"function","function":{"name":"fn"}}"#,
-            vec!["fn"],
-        ),
-        (
-            r#"{"name":"","type":"function","function":{"name":"fn"}}"#,
-            vec!["fn"],
-        ),
-        (r#"{"type":"custom","function":{"name":"fn"}}"#, vec![]),
-        (r#"{"name":5}"#, vec![]),
-        (r#"{"function":{"name":"fn"}}"#, vec![]),
-    ];
-    for (request, expected) in cases {
-        let names = extract_request_tool_names("/anthropic", &body(request), &extractors).unwrap();
-        let expected: Vec<String> = expected.into_iter().map(str::to_owned).collect();
-        assert_eq!(names, expected, "{request}");
-    }
+    let names = extract_request_tool_names("/anthropic", &body(request), &extractors).unwrap();
+    let expected: Vec<String> = expected.into_iter().map(str::to_owned).collect();
+    assert_eq!(names, expected, "{request}");
     assert!(anthropic_tool_names(&Json::Null).is_empty());
     let mixed = body(r#"{"name":"flat","type":"function","function":"not-a-dict"}"#);
-    let names = anthropic_tool_names(&Json::Object(mixed));
-    assert_eq!(names, vec!["flat".to_owned()]);
+    let direct = anthropic_tool_names(&Json::Object(mixed));
+    assert_eq!(direct, vec!["flat".to_owned()]);
 }
 
 #[test]
@@ -507,35 +495,46 @@ fn extraction_falsey_names_and_wrong_objects() {
     assert!(other_names.is_empty());
 }
 
-#[test]
-fn extraction_noniterable_error() {
-    let extractors = chat_extractors();
-    for request in [r#"{"tools":5}"#, r#"{"tools":true}"#] {
-        assert!(matches!(
-            extract_request_tool_names(ROUTE, &body(request), &extractors),
-            Err(ExtractionError::NotIterable { field: "tools" })
-        ));
-    }
-    let table = routes(&[("/generate", &["generate_content"])]);
-    let gemini = ToolNameExtractors::builtin(table);
-    let declarations = body(r#"{"tools":[{"functionDeclarations":5}]}"#);
+#[rstest]
+#[case(ROUTE, r#"{"tools":5}"#, "tools")]
+#[case(ROUTE, r#"{"tools":true}"#, "tools")]
+#[case(
+    "/generate",
+    r#"{"tools":[{"functionDeclarations":5}]}"#,
+    "functionDeclarations"
+)]
+fn extraction_noniterable_error(
+    #[case] route: &str,
+    #[case] request: &str,
+    #[case] field: &'static str,
+) {
+    let extractors = if route == ROUTE {
+        chat_extractors()
+    } else {
+        let table = routes(&[("/generate", &["generate_content"])]);
+        ToolNameExtractors::builtin(table)
+    };
     assert!(matches!(
-        extract_request_tool_names("/generate", &declarations, &gemini),
-        Err(ExtractionError::NotIterable {
-            field: "functionDeclarations"
-        })
+        extract_request_tool_names(route, &body(request), &extractors),
+        Err(ExtractionError::NotIterable { field: found }) if found == field
     ));
-    for request in [
-        r#"{"tools":0}"#,
-        r#"{"tools":false}"#,
-        r#"{"tools":""}"#,
-        r#"{"tools":{}}"#,
-        r#"{"tools":{"a":1}}"#,
-        r#"{"tools":"text"}"#,
-    ] {
-        let names = extract_request_tool_names(ROUTE, &body(request), &extractors).unwrap();
-        assert!(names.is_empty());
-    }
+}
+
+#[rstest]
+#[case(r#"{"tools":0}"#)]
+#[case(r#"{"tools":false}"#)]
+#[case(r#"{"tools":""}"#)]
+#[case(r#"{"tools":{}}"#)]
+#[case(r#"{"tools":{"a":1}}"#)]
+#[case(r#"{"tools":"text"}"#)]
+fn extraction_falsey_values_empty(#[case] request: &str) {
+    let names = extract_request_tool_names(ROUTE, &body(request), &chat_extractors()).unwrap();
+    assert!(names.is_empty());
+}
+
+#[test]
+fn tool_check_wraps_extraction_error() {
+    let extractors = chat_extractors();
     let token = tools_token(r#"["allowed"]"#, "null");
     let scalar = body(r#"{"tools":5}"#);
     let rejected = check(&scalar, Some(&token), None, ROUTE, &extractors);
@@ -644,22 +643,19 @@ fn reconstructed_team_all_fields() {
     ));
 }
 
-#[test]
-fn dashboard_vouches_for_missing_team() {
+#[rstest]
+#[case(TeamLookupError::TeamNotFound {
+    team_id: "litellm-dashboard".to_owned(),
+})]
+#[case(TeamLookupError::NoDatabase)]
+#[case(TeamLookupError::NotInCache {
+    team_id: "litellm-dashboard".to_owned(),
+})]
+fn dashboard_vouches_for_missing_team(#[case] error: TeamLookupError) {
     assert_eq!(UI_TEAM_ID, "litellm-dashboard");
     let token = key(r#"{"token":"k","team_id":"litellm-dashboard"}"#);
     let outage = AllowRequestsOnOutage::Unsupported;
-    for error in [
-        TeamLookupError::TeamNotFound {
-            team_id: "litellm-dashboard".to_owned(),
-        },
-        TeamLookupError::NoDatabase,
-        TeamLookupError::NotInCache {
-            team_id: "litellm-dashboard".to_owned(),
-        },
-    ] {
-        assert!(token_can_vouch_for_team(&token, &error, &outage).unwrap());
-    }
+    assert!(token_can_vouch_for_team(&token, &error, &outage).unwrap());
 }
 
 #[test]
@@ -688,25 +684,22 @@ fn missing_team_never_vouches() {
     assert!(!no_team_id.unwrap());
 }
 
-#[test]
-fn nonempty_team_models_bypass_outage_setting() {
+#[rstest]
+#[case(TeamLookupError::TeamUnavailable {
+    team_id: "t1".to_owned(),
+    cause: Box::new(TeamFailure::Throttled),
+})]
+#[case(TeamLookupError::NoDatabase)]
+#[case(TeamLookupError::NotInCache {
+    team_id: "t1".to_owned(),
+})]
+#[case(TeamLookupError::AliasNotFound {
+    team_alias: "a".to_owned(),
+})]
+fn nonempty_team_models_bypass_outage_setting(#[case] error: TeamLookupError) {
     let token = key(r#"{"token":"k","team_id":"t1","team_models":["gpt-4"]}"#);
-    for error in [
-        TeamLookupError::TeamUnavailable {
-            team_id: "t1".to_owned(),
-            cause: Box::new(TeamFailure::Throttled),
-        },
-        TeamLookupError::NoDatabase,
-        TeamLookupError::NotInCache {
-            team_id: "t1".to_owned(),
-        },
-        TeamLookupError::AliasNotFound {
-            team_alias: "a".to_owned(),
-        },
-    ] {
-        let vouched = token_can_vouch_for_team(&token, &error, &AllowRequestsOnOutage::Unsupported);
-        assert!(vouched.unwrap());
-    }
+    let vouched = token_can_vouch_for_team(&token, &error, &AllowRequestsOnOutage::Unsupported);
+    assert!(vouched.unwrap());
 }
 
 #[test]
@@ -745,27 +738,24 @@ async fn org_id_inherits_first() {
     assert_eq!(existing.view.token.org_id.as_deref(), Some("o2"));
 }
 
+#[rstest]
+#[case(r#"{"token":"k","organization_alias":""}"#)]
+#[case(r#"{"token":"k","organization_max_budget":0}"#)]
+#[case(r#"{"token":"k","organization_tpm_limit":0}"#)]
+#[case(r#"{"token":"k","organization_rpm_limit":0}"#)]
+#[case(r#"{"token":"k","organization_metadata":{}}"#)]
 #[tokio::test]
-async fn any_populated_org_field_skips() {
+async fn any_populated_org_field_skips(#[case] fields: &str) {
     let world = org_world();
     world.seed(org_row(
         r#"{"organization_id":"o1","organization_alias":"Acme","budget_id":"b1","created_by":"admin","updated_by":"admin"}"#,
     ));
     let lookup = org_lookup(&world);
     let team_row = team(r#"{"team_id":"t1","organization_id":"o1"}"#);
-    let populated = [
-        r#"{"token":"k","organization_alias":""}"#,
-        r#"{"token":"k","organization_max_budget":0}"#,
-        r#"{"token":"k","organization_tpm_limit":0}"#,
-        r#"{"token":"k","organization_rpm_limit":0}"#,
-        r#"{"token":"k","organization_metadata":{}}"#,
-    ];
-    for fields in populated {
-        let mut token = key(fields);
-        inherit(&mut token, &lookup, Some(&team_row)).await;
-        assert_eq!(token.view.token.org_id.as_deref(), Some("o1"), "{fields}");
-        assert!(token.view.organization_alias.is_none(), "{fields}");
-    }
+    let mut token = key(fields);
+    inherit(&mut token, &lookup, Some(&team_row)).await;
+    assert_eq!(token.view.token.org_id.as_deref(), Some("o1"), "{fields}");
+    assert!(token.view.organization_alias.is_none(), "{fields}");
     assert_eq!(world.reads(), 0);
 }
 

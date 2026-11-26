@@ -9,20 +9,14 @@ use crate::auth_team_lookup::error::TeamLookupError;
 
 // the exceptions _safe_fetch re-raises: LiteLLM's HTTPException, ProxyException and BudgetExceededError
 pub trait FetchFailure: fmt::Display {
-    fn is_auth_failure(&self) -> bool;
-}
-
-impl FetchFailure for ProxyException {
     fn is_auth_failure(&self) -> bool {
         true
     }
 }
 
-impl FetchFailure for EndUserBudgetExceeded {
-    fn is_auth_failure(&self) -> bool {
-        true
-    }
-}
+impl FetchFailure for ProxyException {}
+
+impl FetchFailure for EndUserBudgetExceeded {}
 
 impl FetchFailure for TeamLookupError {
     fn is_auth_failure(&self) -> bool {

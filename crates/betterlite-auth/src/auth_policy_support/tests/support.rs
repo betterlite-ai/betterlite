@@ -138,6 +138,7 @@ impl<S: tracing::Subscriber> tracing_subscriber::layer::Layer<S> for Logs {
 #[derive(Default)]
 pub(crate) struct OrgWorld {
     cached: Mutex<BTreeMap<String, OrganizationTable>>,
+    projects: Mutex<BTreeMap<String, String>>,
     rows: Mutex<Vec<OrganizationTable>>,
     reads: AtomicUsize,
 }
@@ -179,44 +180,33 @@ pub(crate) fn org_row(fields: &str) -> OrganizationTable {
     serde_json::from_str(fields).expect("the organization fixture decodes")
 }
 
+type CacheRead<T> = Result<Option<T>, AuthCacheError>;
+type CacheWrite = Result<(), AuthCacheError>;
+
 #[async_trait]
 impl OrgCache for OrgWorld {
-    async fn read_org(
-        &self,
-        key: &str,
-        _local_only: bool,
-    ) -> Result<Option<OrganizationTable>, AuthCacheError> {
-        Ok(self
-            .cached
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .get(key)
-            .cloned())
+    async fn read_org(&self, key: &str, _local_only: bool) -> CacheRead<OrganizationTable> {
+        let cached = self.cached.lock().unwrap_or_else(PoisonError::into_inner);
+        Ok(cached.get(key).cloned())
     }
 
-    async fn write_org(
-        &self,
-        key: &str,
-        org: &OrganizationTable,
-        _ttl: f64,
-    ) -> Result<(), AuthCacheError> {
-        self.cached
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .insert(key.to_owned(), org.clone());
+    async fn write_org(&self, key: &str, org: &OrganizationTable, _ttl: f64) -> CacheWrite {
+        let mut cached = self.cached.lock().unwrap_or_else(PoisonError::into_inner);
+        cached.insert(key.to_owned(), org.clone());
         Ok(())
     }
 
-    async fn read_project(&self, _key: &str) -> Result<Option<CachedProject>, AuthCacheError> {
-        Ok(None)
+    async fn read_project(&self, key: &str) -> CacheRead<CachedProject> {
+        let projects = self.projects.lock().unwrap_or_else(PoisonError::into_inner);
+        Ok(projects
+            .get(key)
+            .and_then(|text| serde_json::from_str(text).ok()))
     }
 
-    async fn write_project(
-        &self,
-        _key: &str,
-        _project: &CachedProject,
-        _ttl: f64,
-    ) -> Result<(), AuthCacheError> {
+    async fn write_project(&self, key: &str, project: &CachedProject, _ttl: f64) -> CacheWrite {
+        let text = serde_json::to_string(project).unwrap_or_default();
+        let mut projects = self.projects.lock().unwrap_or_else(PoisonError::into_inner);
+        projects.insert(key.to_owned(), text);
         Ok(())
     }
 

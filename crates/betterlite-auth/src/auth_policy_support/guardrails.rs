@@ -30,8 +30,8 @@ pub fn guardrail_modification_check(
     request_body: &JsonObject,
     team: Option<&LiteLLMTeamTable>,
 ) -> Result<(), GuardrailCheckError> {
-    let modifies = metadata_requested_modification(request_body.get("metadata"))?
-        || metadata_requested_modification(request_body.get("litellm_metadata"))?
+    let modifies = metadata_modifies(request_body.get("metadata"))?
+        || metadata_modifies(request_body.get("litellm_metadata"))?
         || GUARDRAIL_MODIFICATION_KEYS
             .iter()
             .any(|key| request_body.contains_key(*key));
@@ -45,7 +45,7 @@ pub fn guardrail_modification_check(
 }
 
 // a dict counts, a JSON-string object counts, and malformed or non-object containers are ignored
-fn metadata_requested_modification(container: Option<&Json>) -> Result<bool, SafetyError> {
+fn metadata_modifies(container: Option<&Json>) -> Result<bool, SafetyError> {
     let Some(fields) = metadata::coerce(container)? else {
         return Ok(false);
     };
