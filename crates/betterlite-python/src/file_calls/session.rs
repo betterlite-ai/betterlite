@@ -1,15 +1,17 @@
 use std::sync::Arc;
 
 use betterlite_core::api::file_http_upload::service::Mode;
-use betterlite_core::api::file_provider_read::ReadEntry;
 use pyo3::prelude::*;
 use pyo3_async_runtimes::tokio::{future_into_py, get_runtime};
 
 use self::core::FileCallCore;
-use super::convert::{parse_create, parse_delete, parse_list, parse_retrieve};
+use super::convert::{Call, parse_create, parse_delete, parse_list, parse_retrieve};
 
 mod core;
 mod tests;
+
+type Blobs = Vec<Vec<u8>>;
+type Spawned<'py> = PyResult<Bound<'py, PyAny>>;
 
 #[pyclass(module = "betterlite._native")]
 pub(crate) struct NativeFileCallSession {
@@ -26,79 +28,59 @@ impl NativeFileCallSession {
         })
     }
 
-    fn create(&self, py: Python<'_>, payload: &str, blobs: Vec<Vec<u8>>) -> PyResult<String> {
-        let mode = Mode::Sync;
-        let mut blobs = blobs;
-        let input = parse_create(payload, &mut blobs, mode)?;
-        let core = Arc::clone(&self.core);
-        py.detach(move || get_runtime().block_on(core.create(&input, mode)))
+    fn create(&self, py: Python<'_>, payload: &str, blobs: Blobs) -> PyResult<String> {
+        let mut owned = blobs;
+        let input = parse_create(payload, &mut owned, Mode::Sync)?;
+        run_blocking(py, &self.core, Call::Create(Box::new(input)))
     }
 
-    fn acreate<'py>(
-        &self,
-        py: Python<'py>,
-        payload: &str,
-        blobs: Vec<Vec<u8>>,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let mode = Mode::Asynchronous;
-        let mut blobs = blobs;
-        let input = parse_create(payload, &mut blobs, mode)?;
-        let core = Arc::clone(&self.core);
-        future_into_py(py, async move { core.create(&input, mode).await })
+    fn acreate<'py>(&self, py: Python<'py>, payload: &str, blobs: Blobs) -> Spawned<'py> {
+        let mut owned = blobs;
+        let input = parse_create(payload, &mut owned, Mode::Asynchronous)?;
+        run_spawned(py, &self.core, Call::Create(Box::new(input)))
     }
 
-    fn delete(&self, py: Python<'_>, payload: &str, _blobs: Vec<Vec<u8>>) -> PyResult<String> {
+    fn delete(&self, py: Python<'_>, payload: &str, _blobs: Blobs) -> PyResult<String> {
         let input = parse_delete(payload)?;
-        let core = Arc::clone(&self.core);
-        py.detach(move || get_runtime().block_on(core.delete(&input, Mode::Sync)))
+        run_blocking(py, &self.core, Call::Delete(Box::new(input)))
     }
 
-    fn adelete<'py>(
-        &self,
-        py: Python<'py>,
-        payload: &str,
-        _blobs: Vec<Vec<u8>>,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let mode = Mode::Asynchronous;
+    fn adelete<'py>(&self, py: Python<'py>, payload: &str, _blobs: Blobs) -> Spawned<'py> {
         let input = parse_delete(payload)?;
-        let core = Arc::clone(&self.core);
-        future_into_py(py, async move { core.delete(&input, mode).await })
+        run_spawned(py, &self.core, Call::Delete(Box::new(input)))
     }
 
-    fn retrieve(&self, py: Python<'_>, payload: &str, _blobs: Vec<Vec<u8>>) -> PyResult<String> {
+    fn retrieve(&self, py: Python<'_>, payload: &str, _blobs: Blobs) -> PyResult<String> {
         let call = parse_retrieve(payload)?;
-        let core = Arc::clone(&self.core);
-        py.detach(move || get_runtime().block_on(core.retrieve(&call, ReadEntry::Sync)))
+        run_blocking(py, &self.core, Call::Retrieve(call))
     }
 
-    fn aretrieve<'py>(
-        &self,
-        py: Python<'py>,
-        payload: &str,
-        _blobs: Vec<Vec<u8>>,
-    ) -> PyResult<Bound<'py, PyAny>> {
+    fn aretrieve<'py>(&self, py: Python<'py>, payload: &str, _blobs: Blobs) -> Spawned<'py> {
         let call = parse_retrieve(payload)?;
-        let core = Arc::clone(&self.core);
-        future_into_py(
-            py,
-            async move { core.retrieve(&call, ReadEntry::Async).await },
-        )
+        run_spawned(py, &self.core, Call::Retrieve(call))
     }
 
-    fn list(&self, py: Python<'_>, payload: &str, _blobs: Vec<Vec<u8>>) -> PyResult<String> {
+    fn list(&self, py: Python<'_>, payload: &str, _blobs: Blobs) -> PyResult<String> {
         let call = parse_list(payload)?;
-        let core = Arc::clone(&self.core);
-        py.detach(move || get_runtime().block_on(core.list(&call, ReadEntry::Sync)))
+        run_blocking(py, &self.core, Call::List(call))
     }
 
-    fn alist<'py>(
-        &self,
-        py: Python<'py>,
-        payload: &str,
-        _blobs: Vec<Vec<u8>>,
-    ) -> PyResult<Bound<'py, PyAny>> {
+    fn alist<'py>(&self, py: Python<'py>, payload: &str, _blobs: Blobs) -> Spawned<'py> {
         let call = parse_list(payload)?;
-        let core = Arc::clone(&self.core);
-        future_into_py(py, async move { core.list(&call, ReadEntry::Async).await })
+        run_spawned(py, &self.core, Call::List(call))
     }
+}
+
+// the type has one inherent impl, so the two ways a call runs are free functions beside it
+fn run_blocking(py: Python<'_>, core: &Arc<FileCallCore>, call: Call) -> PyResult<String> {
+    let core = Arc::clone(core);
+    py.detach(move || get_runtime().block_on(core.call(&call, Mode::Sync)))
+}
+
+fn run_spawned<'py>(py: Python<'py>, core: &Arc<FileCallCore>, call: Call) -> Spawned<'py> {
+    let core = Arc::clone(core);
+    future_into_py(
+        py,
+        async move { core.call(&call, Mode::Asynchronous).await },
+    )
 }

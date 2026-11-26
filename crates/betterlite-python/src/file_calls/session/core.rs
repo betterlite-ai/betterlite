@@ -10,14 +10,17 @@ use betterlite_config::sections::resource_sdk_settings::{Raw, RawSettings, Setti
 use betterlite_config::types::ProxyTrust;
 use betterlite_core::api::file_http_upload::service::Mode;
 use betterlite_core::api::file_provider_read::target::{FileListing, ReadAnswer, ReadOperation};
-use betterlite_core::api::file_provider_read::{ReadContext, ReadEntry};
+use betterlite_core::api::file_provider_read::{
+    FileProviderRead, ReadContext, ReadEntry, ReadKwargs,
+};
 use betterlite_core::api::file_provider_write::service::FileWrite;
-use betterlite_core::api::file_provider_write::{DeleteInput, UploadInput};
+use betterlite_core::api::file_provider_write::{DeleteInput, FileWriteError, UploadInput};
 use betterlite_core::api::resource_sdk_settings::ResourceSdkSettings;
 use betterlite_env::EnvError;
 use betterlite_http::error::HttpError;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::catalog::{BundledCatalog, ModelCatalog};
+use betterlite_models::controls::call_params::TrustedCredentials;
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
@@ -30,8 +33,8 @@ use serde::Deserialize;
 use serde::Serialize;
 use uuid::Uuid;
 
-use crate::file_calls::convert::{ConvertError, ListCall, RetrieveCall};
-use crate::file_calls::dispatch::FileCallDispatch;
+use crate::file_calls::convert::{Call, ConvertError};
+use crate::file_calls::dispatch::{DispatchError, FileCallDispatch};
 use crate::file_calls::error::{read_failure, write_failure};
 
 #[derive(Debug, Default, Deserialize)]
@@ -70,6 +73,17 @@ pub(crate) struct FileCallCore {
     registry: JSONProviderRegistry,
     policies: ProviderPolicies,
     globals: GlobalCredentials,
+}
+
+enum WriteInput<'a> {
+    Upload(&'a UploadInput<(), ()>),
+    Delete(&'a DeleteInput<(), ()>),
+}
+
+#[derive(Clone, Copy)]
+enum AnswerKind {
+    File,
+    Page,
 }
 
 impl FileCallCore {
@@ -132,11 +146,40 @@ impl FileCallCore {
         }
     }
 
-    pub(crate) async fn create(
-        &self,
-        input: &UploadInput<(), ()>,
-        mode: Mode,
-    ) -> Result<String, PyErr> {
+    pub(crate) async fn call(&self, call: &Call, mode: Mode) -> Result<String, PyErr> {
+        match call {
+            Call::Create(input) => self.write(WriteInput::Upload(input), mode).await,
+            Call::Delete(input) => self.write(WriteInput::Delete(input), mode).await,
+            Call::Retrieve(read) => {
+                let operation = ReadOperation::Retrieve {
+                    file_id: &read.file_id,
+                };
+                self.read(
+                    mode,
+                    operation,
+                    &read.kwargs,
+                    &read.trusted,
+                    AnswerKind::File,
+                )
+                .await
+            }
+            Call::List(read) => {
+                let operation = ReadOperation::List {
+                    purpose: read.purpose.as_deref(),
+                };
+                self.read(
+                    mode,
+                    operation,
+                    &read.kwargs,
+                    &read.trusted,
+                    AnswerKind::Page,
+                )
+                .await
+            }
+        }
+    }
+
+    async fn write(&self, input: WriteInput<'_>, mode: Mode) -> Result<String, PyErr> {
         let resolution = self.resolution();
         let service = FileWrite {
             providers: self.dispatch(),
@@ -145,37 +188,19 @@ impl FileCallCore {
             clock: || Utc::now().fixed_offset(),
             call_ids: Uuid::new_v4,
         };
-        let object = service
-            .create_file(mode, input)
-            .await
-            .map_err(|error| PyErr::from(write_failure(&error)))?;
-        answer_text(&object)
+        match input {
+            WriteInput::Upload(upload) => write_answer(service.create_file(mode, upload).await),
+            WriteInput::Delete(delete) => write_answer(service.delete_file(mode, delete).await),
+        }
     }
 
-    pub(crate) async fn delete(
+    async fn read(
         &self,
-        input: &DeleteInput<(), ()>,
         mode: Mode,
-    ) -> Result<String, PyErr> {
-        let resolution = self.resolution();
-        let service = FileWrite {
-            providers: self.dispatch(),
-            settings: ResourceSdkSettings::from(&self.settings),
-            resolution: &resolution,
-            clock: || Utc::now().fixed_offset(),
-            call_ids: Uuid::new_v4,
-        };
-        let deleted = service
-            .delete_file(mode, input)
-            .await
-            .map_err(|error| PyErr::from(write_failure(&error)))?;
-        answer_text(&deleted)
-    }
-
-    pub(crate) async fn retrieve(
-        &self,
-        call: &RetrieveCall,
-        entry: ReadEntry,
+        operation: ReadOperation<'_>,
+        kwargs: &ReadKwargs,
+        trusted: &TrustedCredentials,
+        kind: AnswerKind,
     ) -> Result<String, PyErr> {
         let service = FileProviderRead {
             dispatch: self.dispatch(),
@@ -184,59 +209,42 @@ impl FileCallCore {
             call_ids: Uuid::new_v4,
         };
         let context: ReadContext<'_, ()> = ReadContext {
-            trusted: Some(&call.trusted),
+            trusted: Some(trusted),
             client: None,
             logger: None,
         };
         let answer = service
-            .run(
-                entry,
-                ReadOperation::Retrieve {
-                    file_id: &call.file_id,
-                },
-                &call.kwargs,
-                context,
-            )
+            .run(entry_of(mode), operation, kwargs, context)
             .await
             .map_err(|error| PyErr::from(read_failure(&error)))?;
-        match answer {
-            ReadAnswer::File(object) => answer_text(&object),
-            ReadAnswer::Listing(_) => Err(PyRuntimeError::new_err(
+        match (kind, answer) {
+            (AnswerKind::File, ReadAnswer::File(object)) => answer_text(&object),
+            (AnswerKind::Page, ReadAnswer::Listing(FileListing::Page(page))) => answer_text(&page),
+            (AnswerKind::File, ReadAnswer::Listing(_)) => Err(PyRuntimeError::new_err(
                 "file_retrieve answered with a file list",
+            )),
+            (
+                AnswerKind::Page,
+                ReadAnswer::File(_) | ReadAnswer::Listing(FileListing::Files(_)),
+            ) => Err(PyRuntimeError::new_err(
+                "file_list answered with another reply kind",
             )),
         }
     }
+}
 
-    pub(crate) async fn list(&self, call: &ListCall, entry: ReadEntry) -> Result<String, PyErr> {
-        let service = FileProviderRead {
-            dispatch: self.dispatch(),
-            settings: self.settings.clone(),
-            clock: || Utc::now().fixed_offset(),
-            call_ids: Uuid::new_v4,
-        };
-        let context: ReadContext<'_, ()> = ReadContext {
-            trusted: Some(&call.trusted),
-            client: None,
-            logger: None,
-        };
-        let answer = service
-            .run(
-                entry,
-                ReadOperation::List {
-                    purpose: call.purpose.as_deref(),
-                },
-                &call.kwargs,
-                context,
-            )
-            .await
-            .map_err(|error| PyErr::from(read_failure(&error)))?;
-        match answer {
-            ReadAnswer::Listing(FileListing::Page(page)) => answer_text(&page),
-            ReadAnswer::File(_) | ReadAnswer::Listing(FileListing::Files(_)) => Err(
-                PyRuntimeError::new_err("file_list answered with another reply kind"),
-            ),
-        }
+const fn entry_of(mode: Mode) -> ReadEntry {
+    match mode {
+        Mode::Sync => ReadEntry::Sync,
+        Mode::Asynchronous => ReadEntry::Async,
     }
+}
+
+fn write_answer<T: Serialize>(
+    answer: Result<T, FileWriteError<DispatchError>>,
+) -> Result<String, PyErr> {
+    let value = answer.map_err(|error| PyErr::from(write_failure(&error)))?;
+    answer_text(&value)
 }
 
 fn answer_text<T: Serialize>(value: &T) -> Result<String, PyErr> {

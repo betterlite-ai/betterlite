@@ -119,42 +119,35 @@ fn read_timeout(value: &JsonValue) -> Result<ReadTimeout, ConvertError> {
     }
     plain_read_timeout(value)
         .map(ReadTimeout::Plain)
-        .ok_or(ConvertError::TimeoutShapes(TIMEOUT_SHAPES))
+        .map_err(|_error| ConvertError::TimeoutShapes(TIMEOUT_SHAPES))
 }
 
+// the write inputs take the same timeout the read inputs declare, converted by the core's own TryFrom impls
 fn write_timeout(value: &JsonValue) -> Result<WriteTimeout, ConvertError> {
-    if let JsonValue::Object(_) = value {
-        let text = serde_json::to_string(value).map_err(ConvertError::Phases)?;
-        let phases: StructuredTimeout =
-            serde_json::from_str(&text).map_err(ConvertError::Phases)?;
-        return Ok(WriteTimeout::Structured(phases));
+    match read_timeout(value)? {
+        ReadTimeout::Structured(phases) => StructuredTimeout::try_from(&phases)
+            .map(WriteTimeout::Structured)
+            .map_err(|_error| ConvertError::TimeoutShapes(TIMEOUT_SHAPES)),
+        ReadTimeout::Plain(plain) => TimeoutValue::try_from(&plain)
+            .map(WriteTimeout::Value)
+            .map_err(|_error| ConvertError::TimeoutShapes(TIMEOUT_SHAPES)),
     }
-    plain_write_timeout(value)
-        .map(WriteTimeout::Value)
-        .ok_or(ConvertError::TimeoutShapes(TIMEOUT_SHAPES))
 }
 
 fn plain_read_timeout(value: &JsonValue) -> Result<ReadTimeoutValue, ConvertError> {
-    match value {
-        JsonValue::Number(number) => Ok(ReadTimeoutValue::Number(number.clone())),
-        JsonValue::Text(text) => Ok(ReadTimeoutValue::Text(text.clone())),
-        JsonValue::Null | JsonValue::Bool(_) | JsonValue::Array(_) | JsonValue::Object(_) => {
-            Err(ConvertError::TimeoutShapes(REQUEST_TIMEOUT_SHAPES))
-        }
+    if let JsonValue::Number(number) = value {
+        return Ok(ReadTimeoutValue::Number(number.clone()));
     }
+    if let JsonValue::Text(text) = value {
+        return Ok(ReadTimeoutValue::Text(text.clone()));
+    }
+    Err(ConvertError::TimeoutShapes(REQUEST_TIMEOUT_SHAPES))
 }
 
 fn plain_write_timeout(value: &JsonValue) -> Result<TimeoutValue, ConvertError> {
-    match value {
-        JsonValue::Number(number) => number
-            .as_f64()
-            .map(TimeoutValue::Number)
-            .ok_or(ConvertError::TimeoutShapes(REQUEST_TIMEOUT_SHAPES)),
-        JsonValue::Text(text) => Ok(TimeoutValue::String(text.clone())),
-        JsonValue::Null | JsonValue::Bool(_) | JsonValue::Array(_) | JsonValue::Object(_) => {
-            Err(ConvertError::TimeoutShapes(REQUEST_TIMEOUT_SHAPES))
-        }
-    }
+    let plain = plain_read_timeout(value)?;
+    TimeoutValue::try_from(&plain)
+        .map_err(|_error| ConvertError::TimeoutShapes(REQUEST_TIMEOUT_SHAPES))
 }
 
 // Python SDK keyword credentials are trusted call settings, not gateway request credentials.

@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use betterlite_core::api::file_http_upload::service::Mode;
 use betterlite_core::api::file_provider_read::ReadKwargs;
 use betterlite_core::api::file_provider_write::{DeleteInput, UploadInput};
@@ -10,7 +12,7 @@ use betterlite_sdk::call_setup::RequestMap;
 use pyo3::PyErr;
 use pyo3::exceptions::PyValueError;
 
-use self::params::{read_kwargs, write_params};
+use self::params::{ParamsWire, read_kwargs, write_params};
 use self::wire::{CreateWire, DeleteWire, ExpiresAfterWire, ListWire, RetrieveWire};
 
 mod params;
@@ -29,6 +31,14 @@ pub(crate) struct ListCall {
     pub(crate) purpose: Option<String>,
     pub(crate) kwargs: ReadKwargs,
     pub(crate) trusted: TrustedCredentials,
+}
+
+// one parsed request of any of the four calls, so the session's sync and async paths share one entry
+pub(crate) enum Call {
+    Create(Box<UploadInput<(), ()>>),
+    Delete(Box<DeleteInput<(), ()>>),
+    Retrieve(RetrieveCall),
+    List(ListCall),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -92,28 +102,45 @@ pub(crate) fn parse_delete(text: &str) -> Result<DeleteInput<(), ()>, ConvertErr
     })
 }
 
+// the read wires differ only in file_id and purpose, and the rest of the mapping is the same
+macro_rules! read_call {
+    ($call:ident, $wire:expr, { $($own:ident: $value:expr),* $(,)? }) => {{
+        let (kwargs, trusted) = read_parts(
+            $wire.custom_llm_provider,
+            $wire.params,
+            $wire.extra_headers,
+            $wire.extra_body,
+        )?;
+        Ok($call {
+            $($own: $value,)*
+            kwargs,
+            trusted,
+        })
+    }};
+}
+
 pub(crate) fn parse_retrieve(text: &str) -> Result<RetrieveCall, ConvertError> {
     let wire: RetrieveWire = serde_json::from_str(text)?;
-    let provider = named_provider(wire.custom_llm_provider)?;
-    let (kwargs, trusted) =
-        read_kwargs(wire.params, provider, wire.extra_headers, wire.extra_body)?;
-    Ok(RetrieveCall {
+    read_call!(RetrieveCall, wire, {
         file_id: wire.file_id,
-        kwargs,
-        trusted,
     })
 }
 
 pub(crate) fn parse_list(text: &str) -> Result<ListCall, ConvertError> {
     let wire: ListWire = serde_json::from_str(text)?;
-    let provider = named_provider(wire.custom_llm_provider)?;
-    let (kwargs, trusted) =
-        read_kwargs(wire.params, provider, wire.extra_headers, wire.extra_body)?;
-    Ok(ListCall {
+    read_call!(ListCall, wire, {
         purpose: wire.purpose,
-        kwargs,
-        trusted,
     })
+}
+
+fn read_parts(
+    provider: Option<Option<String>>,
+    params: ParamsWire,
+    extra_headers: Option<BTreeMap<String, String>>,
+    extra_body: Option<BTreeMap<String, String>>,
+) -> Result<(ReadKwargs, TrustedCredentials), ConvertError> {
+    let provider = named_provider(provider)?;
+    read_kwargs(params, provider, extra_headers, extra_body)
 }
 
 // the upload's bytes arrive in a blob, and files_from_payload moves them out of it

@@ -1,14 +1,18 @@
 use std::collections::BTreeMap;
 
+use betterlite_azure::azure_files::client::Opened;
 use betterlite_azure::azure_files::error::AzureFilesError;
 use betterlite_azure::azure_files::{
     Operation as AzureOperation, Reply as AzureReply, call as azure_call,
 };
+use betterlite_azure::endpoints::projection::LiteLlmParams;
 use betterlite_config::sections::azure_endpoints::Settings as EndpointSettings;
 use betterlite_core::api::file_provider_read::target::{
     CompatibleRead, FileListing, FileReadDispatch, ReadAnswer, ReadOperation, ReadTarget,
 };
-use betterlite_core::api::file_provider_write::{DeleteTarget, FileWriteProviders, UploadTarget};
+use betterlite_core::api::file_provider_write::{
+    DeleteTarget, FileWriteProviders, ProviderCall, UploadTarget,
+};
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_openai::files::FilesApi;
@@ -20,7 +24,7 @@ use betterlite_provider::api::file_provider_selection::{
 
 use self::azure::{azure_answer, open_azure};
 use self::clients::{
-    compatible_client, delete_litellm_params, is_asynchronous, openai_client, settings,
+    ClientSource, delete_litellm_params, is_asynchronous, openai_client, settings,
     write_litellm_params,
 };
 
@@ -46,6 +50,85 @@ pub(crate) struct FileCallDispatch {
     pub(crate) endpoints: EndpointSettings,
 }
 
+enum WriteCall<'a> {
+    Upload(UploadTarget<'a, FileCallDispatch>),
+    Delete(DeleteTarget<'a, FileCallDispatch>),
+}
+
+enum WriteReply {
+    Object(FileObject),
+    Deleted(FileDeleted),
+}
+
+impl FileCallDispatch {
+    // the azure handler takes its client arguments the same way for upload and delete
+    fn open_provider(
+        &self,
+        call: &ProviderCall,
+        params: LiteLlmParams,
+    ) -> Result<Opened, AzureFilesError> {
+        open_azure(
+            self,
+            settings(
+                call.api_key.clone(),
+                call.api_base.clone(),
+                call.api_version.clone(),
+            ),
+            is_asynchronous(call.mode),
+            params,
+        )
+    }
+
+    async fn send(&self, call: WriteCall<'_>) -> Result<WriteReply, DispatchError> {
+        match call {
+            WriteCall::Upload(UploadTarget::OpenAi { call, data }) => {
+                let client = openai_client(ClientSource::Provider(&call))?;
+                let object = self.openai.create_file(&client, &data).await?;
+                Ok(WriteReply::Object(object))
+            }
+            WriteCall::Upload(UploadTarget::Azure { call, data, params }) => {
+                let opened =
+                    self.open_provider(&call, write_litellm_params(params, call.timeout))?;
+                let reply =
+                    azure_call(&opened, &self.client, AzureOperation::Create(&data)).await?;
+                azure_write(reply)
+            }
+            WriteCall::Upload(UploadTarget::Config(upload)) => Err(DispatchError::Unbuilt {
+                config: upload.config.class_name(),
+            }),
+            WriteCall::Delete(DeleteTarget::OpenAi { call, file_id }) => {
+                let client = openai_client(ClientSource::Provider(&call))?;
+                let deleted = self.openai.delete_file(&client, file_id).await?;
+                Ok(WriteReply::Deleted(deleted))
+            }
+            WriteCall::Delete(DeleteTarget::Azure {
+                call,
+                file_id,
+                params,
+                ..
+            }) => {
+                let client_params = delete_litellm_params(&params, call.timeout, call.max_retries);
+                let opened = self.open_provider(&call, client_params)?;
+                let reply =
+                    azure_call(&opened, &self.client, AzureOperation::Delete(file_id)).await?;
+                azure_write(reply)
+            }
+            WriteCall::Delete(DeleteTarget::Config(delete)) => Err(DispatchError::Unbuilt {
+                config: delete.config.class_name(),
+            }),
+        }
+    }
+}
+
+// the azure handler answers create_file and delete_file with an object or a deleted marker
+fn azure_write(reply: AzureReply) -> Result<WriteReply, DispatchError> {
+    match reply {
+        AzureReply::Object(object) => Ok(WriteReply::Object(object)),
+        AzureReply::Deleted(deleted) => Ok(WriteReply::Deleted(deleted)),
+        AzureReply::Content(_) | AzureReply::Page(_) => Err(DispatchError::Reply),
+    }
+}
+
 impl FileWriteProviders for FileCallDispatch {
     type Config = FileProviderConfig;
     type Logger = ();
@@ -57,71 +140,16 @@ impl FileWriteProviders for FileCallDispatch {
     }
 
     async fn upload(&self, target: UploadTarget<'_, Self>) -> Result<FileObject, DispatchError> {
-        match target {
-            UploadTarget::OpenAi { call, data } => {
-                let client = openai_client(&call)?;
-                Ok(self.openai.create_file(&client, &data).await?)
-            }
-            UploadTarget::Azure {
-                call: provider,
-                data,
-                params,
-            } => {
-                let opened = open_azure(
-                    self,
-                    settings(
-                        provider.api_key.clone(),
-                        provider.api_base.clone(),
-                        provider.api_version.clone(),
-                    ),
-                    is_asynchronous(provider.mode),
-                    write_litellm_params(params),
-                )?;
-                match azure_call(&opened, &self.client, AzureOperation::Create(&data)).await? {
-                    AzureReply::Object(object) => Ok(object),
-                    AzureReply::Content(_) | AzureReply::Page(_) | AzureReply::Deleted(_) => {
-                        Err(DispatchError::Reply)
-                    }
-                }
-            }
-            UploadTarget::Config(upload) => Err(DispatchError::Unbuilt {
-                config: upload.config.class_name(),
-            }),
+        match self.send(WriteCall::Upload(target)).await? {
+            WriteReply::Object(object) => Ok(object),
+            WriteReply::Deleted(_) => Err(DispatchError::Reply),
         }
     }
 
     async fn delete(&self, target: DeleteTarget<'_, Self>) -> Result<FileDeleted, DispatchError> {
-        match target {
-            DeleteTarget::OpenAi { call, file_id } => {
-                let client = openai_client(&call)?;
-                Ok(self.openai.delete_file(&client, file_id).await?)
-            }
-            DeleteTarget::Azure {
-                call: provider,
-                file_id,
-                params,
-                ..
-            } => {
-                let opened = open_azure(
-                    self,
-                    settings(
-                        provider.api_key.clone(),
-                        provider.api_base.clone(),
-                        provider.api_version.clone(),
-                    ),
-                    is_asynchronous(provider.mode),
-                    delete_litellm_params(&params, provider.timeout, provider.max_retries),
-                )?;
-                match azure_call(&opened, &self.client, AzureOperation::Delete(file_id)).await? {
-                    AzureReply::Deleted(deleted) => Ok(deleted),
-                    AzureReply::Object(_) | AzureReply::Content(_) | AzureReply::Page(_) => {
-                        Err(DispatchError::Reply)
-                    }
-                }
-            }
-            DeleteTarget::Config(delete) => Err(DispatchError::Unbuilt {
-                config: delete.config.class_name(),
-            }),
+        match self.send(WriteCall::Delete(target)).await? {
+            WriteReply::Deleted(deleted) => Ok(deleted),
+            WriteReply::Object(_) => Err(DispatchError::Reply),
         }
     }
 }
@@ -156,7 +184,7 @@ async fn compatible_answer(
     read: &CompatibleRead,
     operation: ReadOperation<'_>,
 ) -> Result<ReadAnswer, DispatchError> {
-    let client = compatible_client(read)?;
+    let client = openai_client(ClientSource::Compatible(read))?;
     match operation {
         ReadOperation::Retrieve { file_id } => Ok(ReadAnswer::File(Box::new(
             openai.retrieve_file(&client, file_id).await?,

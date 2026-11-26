@@ -23,7 +23,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use super::super::dispatch::DispatchError;
 use super::super::dispatch::clients::{
     deadline, delete_litellm_params, is_asynchronous, read_litellm_params, settings,
-    write_deadline, write_litellm_params,
+    write_litellm_params,
 };
 use super::super::error::{Failure, azure_failure, files_failure, read_failure, write_failure};
 use super::super::register;
@@ -456,7 +456,13 @@ fn error_retrieve_an_unknown_field_is_refused() {
 fn request_azure_upload_params_carry_the_trusted_credentials() {
     let mut blobs = blobs();
     let input = parse_create(CREATE, &mut blobs, Mode::Sync).unwrap();
-    let params = write_litellm_params(&input.params);
+    let resolved = StructuredTimeout {
+        connect: Some(1.0_f64),
+        read: Some(7.0_f64),
+        write: None,
+        pool: None,
+    };
+    let params = write_litellm_params(&input.params, FineTuningTimeout::Structured(resolved));
     assert_eq!(
         params
             .azure_ad_token
@@ -485,7 +491,7 @@ fn request_azure_upload_params_carry_the_trusted_credentials() {
     );
     assert_eq!(params.auth.azure_scope.as_deref(), Some("scope"));
     assert_eq!(params.max_retries, Some(4_i64));
-    assert_eq!(params.timeout, Some(2.5_f64));
+    assert_eq!(params.timeout, Some(7.0_f64));
 }
 
 #[test]
@@ -640,47 +646,6 @@ fn request_phase_deadline(#[case] text: &str, #[case] expected: f64) {
     assert_eq!(
         deadline(FineTuningTimeout::Seconds(expected)),
         Some(Duration::try_from_secs_f64(expected).unwrap())
-    );
-}
-
-#[test]
-fn request_write_deadline_reads_each_shape() {
-    assert_eq!(write_deadline(None), None);
-    assert_eq!(
-        write_deadline(Some(&WriteTimeout::Value(TimeoutValue::Number(2.5_f64)))),
-        Some(2.5_f64)
-    );
-    assert_eq!(
-        write_deadline(Some(&WriteTimeout::Value(TimeoutValue::String(
-            String::from("3")
-        )))),
-        Some(3.0_f64)
-    );
-    assert_eq!(
-        write_deadline(Some(&WriteTimeout::Value(TimeoutValue::String(
-            String::from("soon")
-        )))),
-        None
-    );
-    let phases = StructuredTimeout {
-        connect: Some(1.5_f64),
-        read: Some(2.0_f64),
-        write: None,
-        pool: None,
-    };
-    assert_eq!(
-        write_deadline(Some(&WriteTimeout::Structured(phases))),
-        Some(2.0_f64)
-    );
-    let empty = StructuredTimeout {
-        connect: None,
-        read: None,
-        write: None,
-        pool: None,
-    };
-    assert_eq!(
-        write_deadline(Some(&WriteTimeout::Structured(empty))),
-        Some(600.0_f64)
     );
 }
 

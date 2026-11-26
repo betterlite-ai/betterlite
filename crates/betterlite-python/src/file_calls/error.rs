@@ -73,25 +73,28 @@ pub(crate) fn write_failure(error: &FileWriteError<DispatchError>) -> Failure {
 
 pub(crate) fn read_failure(error: &FileReadError<DispatchError>) -> Failure {
     match error {
-        FileReadError::Timeout(_) | FileReadError::UnknownProvider { .. } => {
-            Failure::Value(error.to_string())
-        }
+        FileReadError::Dispatch(source) => return dispatch_failure(source),
         FileReadError::Unsupported { provider, .. } => {
-            Failure::Payload(Box::new(unsupported_read(error, provider)))
+            return Failure::Payload(Box::new(unsupported_read(error, provider)));
         }
-        FileReadError::Dispatch(source) => dispatch_failure(source),
+        FileReadError::Timeout(_) | FileReadError::UnknownProvider { .. } => {}
     }
+    Failure::Value(error.to_string())
 }
 
 fn dispatch_failure(error: &DispatchError) -> Failure {
     match error {
         DispatchError::Files(source) => files_failure(source),
         DispatchError::Azure(source) => azure_failure(source),
-        DispatchError::Unbuilt { config } => Failure::Unsupported(format!(
-            "the {config} file call is not implemented in this build"
-        )),
+        DispatchError::Unbuilt { config } => unbuilt_failure(config),
         DispatchError::Reply => Failure::Runtime(error.to_string()),
     }
+}
+
+fn unbuilt_failure(config: &str) -> Failure {
+    Failure::Unsupported(format!(
+        "the {config} file call is not implemented in this build"
+    ))
 }
 
 fn rejected_write(error: &FileWriteError<DispatchError>, rejected: &BadRequest<'_>) -> Failure {
@@ -118,21 +121,16 @@ fn unsupported_read(error: &FileReadError<DispatchError>, provider: &str) -> Fil
 }
 
 pub(crate) fn files_failure(error: &FilesError) -> Failure {
-    match error {
-        FilesError::Status(status) => Failure::Payload(Box::new(status_payload(status))),
-        FilesError::Transport { .. } => {
-            payload("APIConnectionError", error.to_string(), Some(500), None)
-        }
-        FilesError::Decode { .. } | FilesError::Body { .. } => {
-            payload("Exception", error.to_string(), None, None)
-        }
-        FilesError::NotInitialized
-        | FilesError::NotAsync
-        | FilesError::EmptyValue { .. }
-        | FilesError::DotSegment { .. }
-        | FilesError::BaseUrl { .. }
-        | FilesError::Header { .. } => Failure::Value(error.to_string()),
+    if let FilesError::Status(status) = error {
+        return Failure::Payload(Box::new(status_payload(status)));
     }
+    if let FilesError::Transport { .. } = error {
+        return payload("APIConnectionError", error.to_string(), Some(500), None);
+    }
+    if let FilesError::Decode { .. } | FilesError::Body { .. } = error {
+        return payload("Exception", error.to_string(), None, None);
+    }
+    Failure::Value(error.to_string())
 }
 
 fn payload(
