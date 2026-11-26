@@ -45,10 +45,7 @@ pub fn resolve_probe_parameters(
     request: &RealtimeProbeRequest,
     merged: &JsonObject,
 ) -> Result<ResolvedProbeParameters, RealtimeProbeError> {
-    let named_key = request
-        .api_key
-        .as_ref()
-        .map(|key| key.expose_secret().as_str());
+    let named_key = request.api_key.as_ref().map(|key| key.expose_secret());
     Ok(ResolvedProbeParameters {
         api_key: resolved_text(named_key, merged, API_KEY_KEY)?.map(SecretString::from),
         api_base: resolved_text(request.api_base.as_deref(), merged, API_BASE_KEY)?,

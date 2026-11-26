@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use betterlite_azure::realtime::connect::{RealtimeConnectSettings, prepare_connection};
 use betterlite_azure::realtime::protocol::GA_PROTOCOL;
 use betterlite_config::tls::Verification;
@@ -82,7 +84,9 @@ fn is_configured(value: &Json) -> bool {
     match value {
         Json::Null => false,
         Json::Bool(flag) => *flag,
-        Json::Number(number) => number.as_f64().is_some_and(|parsed| parsed != 0.0_f64),
+        Json::Number(number) => number
+            .as_f64()
+            .is_some_and(|parsed| parsed.partial_cmp(&0.0_f64) != Some(Ordering::Equal)),
         Json::Text(text) => !text.is_empty(),
         Json::List(items) => !items.is_empty(),
         Json::Object(fields) => !fields.is_empty(),
