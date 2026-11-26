@@ -738,6 +738,7 @@ def test_request_timeout_budget(timeout: httpx.Timeout, seconds: float | None) -
     budget = RequestBudget()
     budget.consume_fields(fields)
     payload = to_call_payload(fields)
-    assert payload.text == json.dumps({"timeout": seconds})
+    expected: dict[str, JsonValue] = {"timeout": seconds}
+    assert payload.text == json.dumps(expected)
     assert budget.remaining == WIRE_LIMIT - len(payload.text)
     assert payload.blobs == []
