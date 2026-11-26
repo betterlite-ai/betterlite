@@ -317,7 +317,7 @@ def test_sandbox_signature(ours: inspect.Signature, reference: inspect.Signature
 
 def test_providers_calls_native() -> None:
     providers = supported_decisions_providers()
-    assert isinstance(providers, tuple)
+    assert len(set(providers)) == len(providers)
     assert providers == PROVIDERS
 
 
