@@ -541,6 +541,17 @@ fn extra_update_field_403() {
 }
 
 #[test]
+fn update_fields_checked_before_the_method() {
+    // LiteLLM checks /user/update's fields in the management branch, whatever the method says
+    assert_auth_error(
+        viewer_body("/user/update", "GET", r#"{"max_budget":5}"#),
+        "403",
+    );
+    // and a body on any other management route is not /user/update's to reject
+    viewer_body("/team/team-1", "GET", r#"{"max_budget":5}"#).unwrap();
+}
+
+#[test]
 fn each_early_blocked_route() {
     let management = management_routes();
     for template in EARLY_BLOCKED_ROUTES {
