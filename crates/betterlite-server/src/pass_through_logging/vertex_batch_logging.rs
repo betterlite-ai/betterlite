@@ -13,6 +13,7 @@ use serde::Serialize;
 use crate::pass_through_logging::anthropic_batch::{
     BatchLoggingResponse, ManagedBatchRegistry, ResponseIds, RouterModelIds,
 };
+use crate::pass_through_logging::background_tasks::BackgroundTasks;
 
 mod error;
 mod job;
@@ -30,6 +31,7 @@ pub struct VertexBatchLogging {
     router: Option<Arc<dyn RouterModelIds>>,
     registry: Option<Arc<dyn ManagedBatchRegistry>>,
     ids: Arc<dyn ResponseIds>,
+    background: BackgroundTasks,
 }
 
 #[derive(Clone, Copy)]
@@ -85,11 +87,13 @@ impl VertexBatchLogging {
         router: Option<Arc<dyn RouterModelIds>>,
         registry: Option<Arc<dyn ManagedBatchRegistry>>,
         ids: Arc<dyn ResponseIds>,
+        background: BackgroundTasks,
     ) -> Self {
         Self {
             router,
             registry,
             ids,
+            background,
         }
     }
 
@@ -131,7 +135,7 @@ impl VertexBatchLogging {
             request_metadata,
             is_batch_create,
         );
-        if let Err(error) = registration::spawn(registry, request) {
+        if let Err(error) = registration::spawn(&self.background, registry, request) {
             tracing::error!("Error storing batch managed object: {error}");
         }
     }

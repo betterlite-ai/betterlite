@@ -16,6 +16,7 @@ use crate::auth::auth_request_policy::{self, AuthRequestPolicyStageInput};
 use crate::auth::auth_resource_grants::{self, ResourceGrantStageInput};
 use crate::auth::auth_tag_budgets::TagBudgetStageInput;
 use crate::auth::request_body_safety::{self, RequestBodySafetyStageInput};
+use crate::auth::team_budget_admission::TeamBudgetStageInput;
 use crate::auth::virtual_key_routes::{self, VirtualKeyRouteStageInput};
 use crate::error_body::AuthenticationFailure;
 
@@ -30,6 +31,7 @@ pub enum AuthBackend {
     AuthResourceGrants,
     AuthTagBudgets,
     AuthKeyBudgets,
+    TeamBudgetAdmission,
     AuthOrgLookup,
     AuthEndUsers,
 }
@@ -45,6 +47,7 @@ pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
     AuthBackend::AuthResourceGrants,
     AuthBackend::AuthTagBudgets,
     AuthBackend::AuthKeyBudgets,
+    AuthBackend::TeamBudgetAdmission,
     AuthBackend::AuthOrgLookup,
     AuthBackend::AuthEndUsers,
 ];
@@ -60,6 +63,7 @@ pub enum StageInput {
     AuthResourceGrants(Box<ResourceGrantStageInput>),
     AuthTagBudgets(Box<TagBudgetStageInput>),
     AuthKeyBudgets(Box<KeyBudgetStageInput>),
+    TeamBudgetAdmission(Box<TeamBudgetStageInput>),
     AuthOrgLookup(Box<OrgStageInput>),
     AuthEndUsers(Box<EndUserStageInput>),
 }
@@ -94,6 +98,7 @@ pub(crate) enum StageFailure {
     RequestBodySafety(Box<ProxyException>),
     VirtualKeyRoutes(Box<ProxyException>),
     KeyBudgets(Box<ProxyException>),
+    TeamBudgets(Box<ProxyException>),
     OrgLookup(Box<ProxyException>),
     EndUsers(Box<ProxyException>),
 }
@@ -131,6 +136,13 @@ pub(crate) fn dispatch(
                 return Err(StageFailure::from(AuthenticationFailure::Missing));
             };
             // the reads ran while the stage input was assembled, so the budget failures already surfaced there
+            Ok(stage.context.clone())
+        }
+        AuthBackend::TeamBudgetAdmission => {
+            let StageInput::TeamBudgetAdmission(stage) = input else {
+                return Err(StageFailure::from(AuthenticationFailure::Missing));
+            };
+            // the member scope and budget checks ran in the prefetch, so only the identity is left
             Ok(stage.context.clone())
         }
         AuthBackend::AuthOrgLookup => {

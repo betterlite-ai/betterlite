@@ -13,6 +13,7 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_server::pass_through_logging::anthropic_batch::{
     AnthropicBatchLogging, BatchCreationInput, BatchLoggingKwargs, ResponseIds,
 };
+use betterlite_server::pass_through_logging::background_tasks::BackgroundTasks;
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -46,7 +47,8 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let logging = AnthropicBatchLogging::new(None, None, Arc::new(FixedIds));
+        let logging =
+            AnthropicBatchLogging::new(None, None, Arc::new(FixedIds), BackgroundTasks::default());
         let mut call_log = logging_state(input.start_time)?;
         let batch_input = BatchCreationInput {
             status_code: input.status_code,

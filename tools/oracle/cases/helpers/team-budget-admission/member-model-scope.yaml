@@ -1,0 +1,89 @@
+kind: helper
+name: team-budget-admission-member-model-scope
+call:
+  team_budget_admission:
+    calls:
+      # a model outside the member allowlist is the 403 team_model_access_denied
+      - function: admit
+        team:
+          team_id: team-1
+        token:
+          token: sk-member
+          user_id: user-1
+          team_id: team-1
+        membership:
+          user_id: user-1
+          team_id: team-1
+          litellm_budget_table:
+            allowed_models: [gpt-4o]
+        model: claude-3
+        spends: []
+        now: "2026-06-01T12:00:00Z"
+      # a listed model passes
+      - function: admit
+        team:
+          team_id: team-1
+        token:
+          token: sk-member
+          user_id: user-1
+          team_id: team-1
+        membership:
+          user_id: user-1
+          team_id: team-1
+          litellm_budget_table:
+            allowed_models: [gpt-4o]
+        model: gpt-4o
+        spends: []
+        now: "2026-06-01T12:00:00Z"
+      # a key alias that resolves to a listed model passes
+      - function: admit
+        team:
+          team_id: team-1
+        token:
+          token: sk-alias
+          user_id: user-1
+          team_id: team-1
+          aliases:
+            my-alias: gpt-4o
+        membership:
+          user_id: user-1
+          team_id: team-1
+          litellm_budget_table:
+            allowed_models: [gpt-4o]
+        model: my-alias
+        spends: []
+        now: "2026-06-01T12:00:00Z"
+      # an empty allowlist inherits the team scope
+      - function: admit
+        team:
+          team_id: team-1
+        token:
+          token: sk-member
+          user_id: user-1
+          team_id: team-1
+        membership:
+          user_id: user-1
+          team_id: team-1
+          litellm_budget_table:
+            allowed_models: []
+        model: claude-3
+        spends: []
+        now: "2026-06-01T12:00:00Z"
+      # a request without a model never reaches the member scope
+      - function: admit
+        team:
+          team_id: team-1
+        token:
+          token: sk-member
+          user_id: user-1
+          team_id: team-1
+        membership:
+          user_id: user-1
+          team_id: team-1
+          litellm_budget_table:
+            allowed_models: [gpt-4o]
+        spends: []
+        now: "2026-06-01T12:00:00Z"
+env: {}
+compare:
+  ignore: []

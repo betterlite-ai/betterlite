@@ -46,7 +46,7 @@ use super::fetch::{
 };
 use super::poll::{PollClock, PollSleepFuture, PollSleeper};
 use super::records::TinyfishRun;
-use super::tasks::BillingTasks;
+use crate::pass_through_logging::background_tasks::BackgroundTasks;
 
 struct NoopDispatch;
 
@@ -520,7 +520,7 @@ fn build_fixture(
             sleeper: port_sleeper,
             clock: Arc::new(FixedSuccessClock),
             payload,
-            tasks: BillingTasks {
+            tasks: BackgroundTasks {
                 tasks: tasks.clone(),
             },
         },

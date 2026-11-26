@@ -177,6 +177,7 @@ fn raised_exception(failure: &StageFailure) -> Option<ProxyException> {
         | StageFailure::RequestBodySafety(exception)
         | StageFailure::VirtualKeyRoutes(exception)
         | StageFailure::KeyBudgets(exception)
+        | StageFailure::TeamBudgets(exception)
         | StageFailure::OrgLookup(exception)
         | StageFailure::EndUsers(exception) => Some((**exception).clone()),
         StageFailure::Authentication(authentication) => match **authentication {

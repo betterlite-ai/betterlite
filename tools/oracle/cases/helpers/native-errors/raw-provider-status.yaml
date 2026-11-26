@@ -1,0 +1,34 @@
+kind: helper
+name: native-errors-raw-provider-status
+call:
+  native_error:
+    kind: raw
+    model: command-r
+    custom_llm_provider: cohere
+    error_str: "unrecognized failure"
+    status_code: 498
+calls:
+  - native_error:
+      kind: raw
+      model: command-r
+      custom_llm_provider: cohere
+      error_str: "invalid api token"
+      status_code: 400
+  - native_error:
+      kind: raw
+      model: command-r
+      custom_llm_provider: cohere
+      error_str: "invalid api token"
+      status_code: 500
+      status_code_is_synthesized: true
+  # 418 is unmapped by replicate's own status chain, so LiteLLM answers 418 only because
+  # type(original_exception).__name__ is ModelError; without the name it answers 500
+  - native_error:
+      kind: raw
+      model: replicate/some-model
+      custom_llm_provider: replicate
+      error_str: "generic failure"
+      status_code: 418
+      exception_type: ModelError
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,78 @@
+kind: helper
+name: team-budget-admission-team-soft-alert
+call:
+  team_budget_admission:
+    calls:
+      # the row's spend at the soft budget alerts the team's own recipients
+      - function: soft
+        team:
+          team_id: team-1
+          spend: 5.0
+          soft_budget: 5.0
+          max_budget: 10.0
+          metadata:
+            soft_budget_alerting_emails: [ops@example.com]
+        token:
+          token: sk-team
+          user_id: user-1
+          team_id: token-team
+          team_alias: Token alias
+          org_id: token-org
+          key_alias: team-key
+        spends: []
+        now: "2026-06-01T12:00:00Z"
+      # without a token the crossing is only logged
+      - function: soft
+        team:
+          team_id: team-1
+          spend: 5.0
+          soft_budget: 5.0
+          metadata:
+            soft_budget_alerting_emails: [ops@example.com]
+        spends: []
+        now: "2026-06-01T12:00:00Z"
+      # without recipients the alert is skipped with a second log line
+      - function: soft
+        team:
+          team_id: team-1
+          spend: 6.5
+          soft_budget: 5.0
+        token:
+          token: sk-team
+          user_id: user-1
+          team_id: team-1
+        spends: []
+        now: "2026-06-01T12:00:00Z"
+      # under the soft budget nothing happens
+      - function: soft
+        team:
+          team_id: team-1
+          spend: 4.99
+          soft_budget: 5.0
+          metadata:
+            soft_budget_alerting_emails: [ops@example.com]
+        token:
+          token: sk-team
+          user_id: user-1
+          team_id: team-1
+        spends: []
+        now: "2026-06-01T12:00:00Z"
+      # the soft check reads the row's spend and never the counter, and a hard denial still lets its alert out
+      - function: admit
+        team:
+          team_id: team-1
+          spend: 5.0
+          soft_budget: 5.0
+          max_budget: 8.0
+          metadata:
+            soft_budget_alerting_emails: [ops@example.com]
+        token:
+          token: sk-team
+          user_id: user-1
+          team_id: team-1
+        membership: null
+        spends: [9.0]
+        now: "2026-06-01T12:00:00Z"
+env: {}
+compare:
+  ignore: []

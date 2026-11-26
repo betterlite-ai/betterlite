@@ -19,6 +19,7 @@ description: >-
 scope:
   paths:
   - crates/betterlite-python/python/betterlite/a2a_protocol/client.py
+  - crates/betterlite-python/python/betterlite/a2a_protocol/main.py
   - crates/betterlite-python/tests/test_a2a_client_flow.py
   - docs/deviations/B10106.yaml
   lint_tables: false

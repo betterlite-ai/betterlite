@@ -1,0 +1,34 @@
+kind: helper
+name: team-budget-admission-seed
+call:
+  team_budget_admission:
+    calls:
+      - function: admit
+        team:
+          team_id: team-seed
+          spend: 6.0
+          soft_budget: 5.0
+          max_budget: 10.0
+          metadata:
+            soft_budget_alerting_emails: [seed@example.com]
+        token:
+          token: sk-seed
+          user_id: user-seed
+          team_id: team-seed
+        membership:
+          user_id: user-seed
+          team_id: team-seed
+          litellm_budget_table:
+            max_budget: 3.0
+        spends: [10.0, 3.0]
+        now: "2026-06-01T12:00:00Z"
+      - function: soft
+        team:
+          team_id: team-seed
+          spend: 6.0
+          soft_budget: 5.0
+        spends: []
+        now: "2026-06-01T12:00:00Z"
+env: {}
+compare:
+  ignore: []

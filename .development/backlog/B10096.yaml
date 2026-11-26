@@ -1,13 +1,13 @@
 id: B10096
 milestone: M7 observability
 title: Prometheus multiprocess writer
-status: todo
+status: done
 depends_on: [B10095, B10090, B3875]
 file: tasks/B10096-prometheus-multiprocess-writer.yaml
 covers: []
 parent: B111
 split_from: B10095
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3204

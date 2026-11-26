@@ -1,0 +1,13 @@
+kind: helper
+name: override-empty-keeps-url
+call:
+  b3622:
+    function: override_params
+    router_credentials:
+      litellm_params:
+        vertex_project: null
+        vertex_location: ""
+    project: url-project
+    location: us-central1
+env: {}
+compare: {ignore: []}

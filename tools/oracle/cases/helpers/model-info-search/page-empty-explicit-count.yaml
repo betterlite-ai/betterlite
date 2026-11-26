@@ -1,0 +1,39 @@
+kind: helper
+name: model-info-search-page-empty-explicit-count
+call:
+  model_info_search:
+    function: paginate
+    page: 2
+    size: 10
+    total_count: 50
+    search: e
+    models:
+      - {model_name: a}
+      - {model_name: b}
+calls:
+  - model_info_search:
+      function: paginate
+      page: 1
+      size: 10
+      total_count: 0
+      models:
+        - {model_name: a}
+        - {model_name: b}
+  - model_info_search:
+      function: paginate
+      page: 1
+      size: 2
+      total_count: 2
+      models:
+        - {model_name: a}
+        - {model_name: b}
+  - model_info_search:
+      function: paginate
+      page: 3
+      size: 2
+      total_count: 5
+      models:
+        - {model_name: a}
+        - {model_name: b}
+env: {}
+compare: {ignore: []}

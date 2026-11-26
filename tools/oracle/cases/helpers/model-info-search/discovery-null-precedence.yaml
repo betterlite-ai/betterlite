@@ -1,0 +1,41 @@
+kind: helper
+name: model-info-search-discovery-null-precedence
+call:
+  model_info_search:
+    function: enrich
+    model:
+      model_name: discovered
+      litellm_params:
+        model: openai/gpt-4o
+      model_info:
+        id: dep-1
+        created_at: null
+    catalog:
+      - model: openai/gpt-4o
+        info:
+          created_at: 111
+          max_tokens: 222
+    router:
+      discovered:
+        created_at: 333
+        owned_by: team
+calls:
+  - model_info_search:
+      function: enrich
+      model:
+        model_name: fixed
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: dep-2
+          created_at: 5
+          region: null
+      catalog:
+        - model: openai/gpt-4o
+          info:
+            region: us
+      router:
+        discovered:
+          created_at: 333
+env: {}
+compare: {ignore: []}

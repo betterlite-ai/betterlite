@@ -1,17 +1,36 @@
 #![cfg(test)]
 
+use std::fs;
+use std::sync::{Arc, Barrier, Mutex};
+use std::thread;
+
 use rstest::rstest;
 use rust_decimal::Decimal;
+use tempfile::TempDir;
 
 use crate::collector_factory::collector::{Collector as _, MetricValue};
+use crate::collector_registry::metric::binding;
 use crate::collector_registry::metric::sample::added;
 use crate::collector_registry::metric::{
     Bucket, BucketError, CollectorKind, PrometheusMetric, SeriesRemoval, prepare_buckets,
 };
 use crate::collector_registry::{CollectorRegistry, CollectorRegistryError};
+use crate::multiprocess::files::{DbEntry, decode_db_file};
+use crate::multiprocess::writer::MultiProcessWriter;
 
 fn finite(value: i64) -> MetricValue {
     MetricValue::Finite(Decimal::new(value, 0))
+}
+
+fn multiprocess_registry(directory: &TempDir, pid: u32) -> CollectorRegistry {
+    let writer = MultiProcessWriter::new(directory.path().to_path_buf(), pid)
+        .expect("a writer over the folder");
+    CollectorRegistry::multiprocess(writer)
+}
+
+fn written_entries(directory: &TempDir, name: &str) -> Vec<DbEntry> {
+    let bytes = fs::read(directory.path().join(name)).expect("the metric file");
+    decode_db_file(&bytes).expect("a readable metric file")
 }
 
 fn registry_with(collector: PrometheusMetric) -> CollectorRegistry {
@@ -509,4 +528,200 @@ fn adding_infinities_follows_the_ieee_rules() {
         added(MetricValue::NotANumber, finite(1)),
         MetricValue::NotANumber
     );
+}
+
+#[test]
+fn multiprocess_a_handle_kept_before_register_writes() {
+    let directory = TempDir::new().unwrap();
+    let registry = multiprocess_registry(&directory, 31);
+    let metric = PrometheusMetric::new(
+        CollectorKind::Counter,
+        "litellm_requests",
+        "Requests served",
+        &["model"],
+        Vec::new(),
+    );
+    let handle = metric.labels(&[("model", "gpt-4o")]);
+    registry.register(metric).unwrap();
+    handle.inc(finite(2));
+    let entries = written_entries(&directory, "counter_31.db");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].value.to_bits(), 2.0_f64.to_bits());
+}
+
+#[test]
+fn multiprocess_a_labels_handle_writes_its_series() {
+    let directory = TempDir::new().unwrap();
+    let registry = multiprocess_registry(&directory, 32);
+    registry
+        .register(PrometheusMetric::new(
+            CollectorKind::Gauge,
+            "litellm_in_flight",
+            "In flight",
+            &["model"],
+            Vec::new(),
+        ))
+        .unwrap();
+    let metric = registry.get("litellm_in_flight").unwrap();
+    metric.labels(&[("model", "a")]).inc(finite(1));
+    metric.labels(&[("model", "b")]).inc(finite(3));
+    let entries = written_entries(&directory, "gauge_all_32.db");
+    assert_eq!(entries.len(), 2);
+    assert_eq!(entries[0].value.to_bits(), 1.0_f64.to_bits());
+    assert_eq!(entries[1].value.to_bits(), 3.0_f64.to_bits());
+}
+
+#[test]
+fn multiprocess_an_unlabelled_metric_writes_zero_entries_at_register() {
+    let directory = TempDir::new().unwrap();
+    let registry = multiprocess_registry(&directory, 33);
+    let bounds = prepare_buckets(&[Bucket::Seconds(0.5)]).unwrap();
+    let metric = PrometheusMetric::new(
+        CollectorKind::Histogram,
+        "litellm_latency",
+        "Latency",
+        &[],
+        bounds,
+    );
+    assert!(!directory.path().join("histogram_33.db").exists());
+    registry.register(metric).unwrap();
+    let entries = written_entries(&directory, "histogram_33.db");
+    assert_eq!(entries.len(), 3);
+    assert!(
+        entries
+            .iter()
+            .all(|entry| entry.value.to_bits() == 0.0_f64.to_bits())
+    );
+}
+
+#[test]
+fn multiprocess_a_default_registry_writes_nothing() {
+    let directory = TempDir::new().unwrap();
+    let _writer = MultiProcessWriter::new(directory.path().to_path_buf(), 34).unwrap();
+    let registry = CollectorRegistry::default();
+    let metric = PrometheusMetric::new(
+        CollectorKind::Counter,
+        "litellm_requests",
+        "Requests served",
+        &[],
+        Vec::new(),
+    );
+    registry.register(metric.clone()).unwrap();
+    metric.inc(finite(1));
+    assert!(registry.multiprocess_dir().is_none());
+    assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 0);
+}
+
+#[test]
+fn multiprocess_a_second_writer_is_refused() {
+    let bound_folder = TempDir::new().unwrap();
+    let refused_folder = TempDir::new().unwrap();
+    let bound_registry = multiprocess_registry(&bound_folder, 35);
+    let metric = PrometheusMetric::new(
+        CollectorKind::Counter,
+        "litellm_requests",
+        "Requests served",
+        &[],
+        Vec::new(),
+    );
+    bound_registry.register(metric.clone()).unwrap();
+    let refused_registry = multiprocess_registry(&refused_folder, 35);
+    let error = refused_registry.register(metric).unwrap_err();
+    assert_eq!(
+        error,
+        CollectorRegistryError::MultiprocessBound {
+            name: "litellm_requests".to_owned(),
+            path: bound_folder.path().to_path_buf(),
+        }
+    );
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "the metric litellm_requests is already bound to the multiprocess writer in {}",
+            bound_folder.path().display()
+        )
+    );
+    assert_eq!(fs::read_dir(refused_folder.path()).unwrap().count(), 0);
+}
+
+#[test]
+fn multiprocess_binding_the_same_writer_again_is_fine() {
+    let directory = TempDir::new().unwrap();
+    let writer = Arc::new(MultiProcessWriter::new(directory.path().to_path_buf(), 36).unwrap());
+    let metric = PrometheusMetric::new(
+        CollectorKind::Counter,
+        "litellm_requests",
+        "Requests served",
+        &[],
+        Vec::new(),
+    );
+    binding::bind_writer(&metric, &writer).unwrap();
+    binding::bind_writer(&metric, &writer).unwrap();
+    assert!(metric.multiprocess.lock().unwrap().is_some());
+}
+
+#[test]
+fn multiprocess_a_removed_series_keeps_its_entry_and_continues() {
+    let directory = TempDir::new().unwrap();
+    let registry = multiprocess_registry(&directory, 37);
+    let metric = PrometheusMetric::new(
+        CollectorKind::Counter,
+        "litellm_requests",
+        "Requests served",
+        &["model"],
+        Vec::new(),
+    );
+    registry.register(metric.clone()).unwrap();
+    let handle = metric.labels(&[("model", "a")]);
+    handle.inc(finite(2));
+    handle.remove();
+    assert!(metric.series(&[Some("a".to_owned())]).is_none());
+    let kept = written_entries(&directory, "counter_37.db");
+    assert_eq!(kept.len(), 1);
+    assert_eq!(kept[0].value.to_bits(), 2.0_f64.to_bits());
+    metric.labels(&[("model", "a")]).inc(finite(3));
+    let continued = written_entries(&directory, "counter_37.db");
+    assert_eq!(continued.len(), 1);
+    assert_eq!(continued[0].value.to_bits(), 5.0_f64.to_bits());
+}
+
+#[test]
+fn multiprocess_dir_is_the_writers_folder() {
+    let directory = TempDir::new().unwrap();
+    let registry = multiprocess_registry(&directory, 38);
+    assert_eq!(registry.multiprocess_dir(), Some(directory.path()));
+}
+
+#[test]
+fn concurrent_registrations_of_one_name_leave_one_collector() {
+    const REGISTRATIONS: usize = 16;
+    let directory = TempDir::new().unwrap();
+    let registry = multiprocess_registry(&directory, 39);
+    let barrier = Barrier::new(REGISTRATIONS);
+    let outcomes = Mutex::new(Vec::with_capacity(REGISTRATIONS));
+    thread::scope(|scope| {
+        let mut spawned = Vec::with_capacity(REGISTRATIONS);
+        while spawned.len() < REGISTRATIONS {
+            spawned.push(scope.spawn(|| {
+                let metric = PrometheusMetric::new(
+                    CollectorKind::Counter,
+                    "litellm_shared",
+                    "Shared",
+                    &[],
+                    Vec::new(),
+                );
+                let _started = barrier.wait();
+                let outcome = registry.register(metric);
+                outcomes.lock().unwrap().push(outcome);
+            }));
+        }
+        assert_eq!(spawned.len(), REGISTRATIONS);
+    });
+    let results = outcomes.into_inner().unwrap();
+    let registered = results.iter().filter(|outcome| outcome.is_ok()).count();
+    let refused = results.iter().filter(|outcome| outcome.is_err()).count();
+    assert_eq!(registered, 1);
+    assert_eq!(refused, REGISTRATIONS.saturating_sub(1));
+    assert_eq!(registry.metrics().len(), 1);
+    assert_eq!(written_entries(&directory, "counter_39.db").len(), 1);
 }

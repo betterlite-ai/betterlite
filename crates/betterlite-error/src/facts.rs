@@ -51,6 +51,22 @@ pub struct ResponseFacts {
     pub request: Option<RequestFacts>,
 }
 
+impl ResponseFacts {
+    // BaseLLMException builds this response for every provider exception that carries a status, synthesized or not
+    #[must_use]
+    pub fn base_llm_exception(status_code: Option<u16>) -> Option<Self> {
+        let status = status_code?;
+        Some(Self {
+            status_code: status,
+            headers: BTreeMap::new(),
+            request: Some(RequestFacts {
+                method: "POST".to_owned(),
+                url: "https://docs.litellm.ai/docs".to_owned(),
+            }),
+        })
+    }
+}
+
 pub struct ExceptionCheckers;
 
 impl ExceptionCheckers {

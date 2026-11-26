@@ -10,6 +10,7 @@ use axum::http::{HeaderMap, Request, StatusCode, header};
 use axum::response::Response;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::request_root_paths;
+use betterlite_prometheus::collector_registry::CollectorRegistry;
 use futures_util::stream;
 use tokio::sync::Notify;
 use tokio::task::{AbortHandle, JoinSet};
@@ -40,6 +41,7 @@ pub(super) struct Harness {
     pub(super) router: Router,
     pub(super) stack: AdmissionStack,
     pub(super) gates: Arc<Gates>,
+    pub(super) registry: Arc<CollectorRegistry>,
 }
 
 type Answer = (StatusCode, HeaderMap, Bytes);
@@ -112,6 +114,20 @@ pub(super) fn gates(specs: &[(&str, Behavior)]) -> Gates {
 }
 
 pub(super) fn harness(source: &str, root_path: &str, configured: Gates) -> Harness {
+    harness_on(
+        Arc::new(CollectorRegistry::default()),
+        source,
+        root_path,
+        configured,
+    )
+}
+
+pub(super) fn harness_on(
+    registry: Arc<CollectorRegistry>,
+    source: &str,
+    root_path: &str,
+    configured: Gates,
+) -> Harness {
     let config = ConfigLoader {
         lookup: BTreeMap::new(),
     }
@@ -120,8 +136,9 @@ pub(super) fn harness(source: &str, root_path: &str, configured: Gates) -> Harne
     let stack = AdmissionStack {
         admission: Arc::new(AdmissionControl::from_settings(
             &config.sections.admission_control,
+            Arc::clone(&registry),
         )),
-        in_flight: Arc::new(InFlightRequests::default()),
+        in_flight: Arc::new(InFlightRequests::new(Arc::clone(&registry))),
     };
     let (router, gates) = application(
         &config.sections.request_root_paths,
@@ -133,6 +150,7 @@ pub(super) fn harness(source: &str, root_path: &str, configured: Gates) -> Harne
         router,
         stack,
         gates,
+        registry,
     }
 }
 

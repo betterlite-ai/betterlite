@@ -11,6 +11,7 @@ use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_server::pass_through_logging::anthropic_batch::{BatchLoggingResponse, ResponseIds};
+use betterlite_server::pass_through_logging::background_tasks::BackgroundTasks;
 use betterlite_server::pass_through_logging::vertex_batch_logging::{
     VertexBatchInput, VertexBatchLogged, VertexBatchLogging, VertexBatchState,
 };
@@ -84,7 +85,8 @@ impl Helper for Op {
         let mut call_log =
             LoggingState::new(init, setup, &redactor, String::new, || Duration::ZERO)
                 .or_value_error()?;
-        let logging = VertexBatchLogging::new(None, None, Arc::new(FixedIds));
+        let logging =
+            VertexBatchLogging::new(None, None, Arc::new(FixedIds), BackgroundTasks::default());
         let batch_input = VertexBatchInput {
             status_code: input.status_code,
             body: input.body.as_bytes(),

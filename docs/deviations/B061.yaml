@@ -1,0 +1,42 @@
+task: B061
+deviations:
+  - what: >-
+      The AES gate and the missing salt key surface as typed MigrationError variants with fixed
+      messages, where LiteLLM raises RuntimeError and its gate message echoes the configured
+      value through repr().
+    why: >-
+      betterlite returns typed errors and the HTTP route owner maps them onto its 500 envelope,
+      and docs/compatibility.md keeps Python repr out of betterlite's output, so the message names
+      the setting, the accepted value and the key sources instead of formatting the current object.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/credential_migration.py#L191-L208
+  - what: >-
+      A config, SSO or callback row whose stored JSON is larger than B1602's 1 MiB decode cap
+      fails the run with its InputTooLarge error, where LiteLLM's json.loads would parse a row of
+      any size.
+    why: >-
+      The task requires every row to go through B1602's decoder, and that decoder rejects a
+      column above MAX_MIGRATION_JSON_BYTES before parsing it. Raising the cap is B1602's call;
+      the walkers report its error instead of bypassing it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/credential_migration.py#L229-L231
+  - what: >-
+      Every migration store call runs under an acquisition deadline and a statement deadline,
+      and a call that overruns either fails with MigrationStoreError::Timeout naming the
+      operation, where LiteLLM's Prisma awaits carry no deadline of their own.
+    why: >-
+      A bounded input needs a deadline the operator sets; MigrationDeadlines defaults to ten
+      seconds to take a pooled connection and thirty seconds per statement or whole covered
+      scan, and a timed-out statement disposes its connection so the server drops the lock wait
+      instead of leaving the migration hung.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/credential_migration.py#L225
+kept_bugs:
+  - what: >-
+      Migrated team and verification-token metadata is stored as a JSON string instead of a JSON
+      object, so a later run skips the row and the attestation can report no residual legacy while
+      marked legacy ciphertext still sits inside that string.
+    why: >-
+      Prisma stores LiteLLM's json.dumps(metadata) as a Json-column string, and the walker skips a
+      row whose metadata is not a mapping (credential_migration.py#L352-L353); a setup that ran the
+      migration already has these rows in that shape, so betterlite writes the string and reads a
+      string back exactly as LiteLLM does instead of inventing an object form no LiteLLM run
+      produces.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/credential_migration.py#L398-L401

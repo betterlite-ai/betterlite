@@ -1,0 +1,30 @@
+kind: helper
+name: prometheus-writer-gauge-modes
+call:
+  b10096:
+    pid: 1002
+    metrics:
+      - {kind: gauge, name: litellm_queue_length, help: Queue length, labels: [], buckets: [], mode: all}
+      - {kind: gauge, name: litellm_in_flight, help: In flight, labels: [], buckets: [], mode: livesum}
+      - {kind: gauge, name: litellm_rows_remaining, help: Rows remaining, labels: [], buckets: [], mode: livemax}
+    updates:
+      - {metric: 0, labels: [], action: inc, value: 2}
+      - {metric: 1, labels: [], action: inc, value: 3}
+      - {metric: 2, labels: [], action: set, value: 7}
+    call: files
+    accept: ""
+env: {}
+compare:
+  ignore:
+    - pointer: /value/files/0/used
+      why: >-
+        serde_json writes the key compactly, so the entry lengths and the used length differ
+        from json.dumps (docs/deviations/B10096.yaml).
+    - pointer: /value/files/1/used
+      why: >-
+        serde_json writes the key compactly, so the entry lengths and the used length differ
+        from json.dumps (docs/deviations/B10096.yaml).
+    - pointer: /value/files/2/used
+      why: >-
+        serde_json writes the key compactly, so the entry lengths and the used length differ
+        from json.dumps (docs/deviations/B10096.yaml).
