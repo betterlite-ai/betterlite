@@ -34,34 +34,35 @@ impl Workers {
         live.push(thread);
     }
 
-    // The server drains the live threads with this, and the joins wait on a thread of their own, so no runtime thread is blocked; a canceled call leaves the drain stored for the next one.
+    // The server drains the live threads with this: the join runs on a thread of its own, so no runtime thread is blocked, and a canceled call leaves the drain stored for the next one.
     pub async fn shutdown(&self) -> Result<(), OverlayError> {
-        let mut drained = {
-            let mut stored = self.drain.lock().unwrap_or_else(PoisonError::into_inner);
-            match stored.as_ref().filter(|done| !*done.borrow()).cloned() {
-                Some(running) => running,
-                None => {
-                    let live = take(&mut *self.live.lock().unwrap_or_else(PoisonError::into_inner));
-                    let (finished, running) = watch::channel(false);
-                    let _joiner = thread::Builder::new()
-                        .name("config-overlay-join".to_owned())
-                        .spawn(move || {
-                            for thread in live {
-                                drop(thread.join());
-                            }
-                            let _sent = finished.send(true);
-                        })
-                        .map_err(|source| OverlayError::WorkerStart { source })?;
-                    *stored = Some(running.clone());
-                    running
-                }
-            }
-        };
+        let mut stored = self.drain.lock().unwrap_or_else(PoisonError::into_inner);
+        if (*stored).as_ref().is_none_or(|done| *done.borrow()) {
+            let live = take(&mut *self.live.lock().unwrap_or_else(PoisonError::into_inner));
+            *stored = Some(start_drain(live)?);
+        }
+        let mut drained = (*stored).clone().ok_or(OverlayError::WorkerUnavailable)?;
+        drop(stored);
         while !*drained.borrow() {
             let changed = drained.changed().await;
             changed.map_err(|_closed| OverlayError::WorkerUnavailable)?;
         }
         Ok(())
+    }
+
+    // Every live handle joins here, and the drain it returns reports true once the last one is done.
+    fn start_drain(live: Vec<JoinHandle<()>>) -> Result<watch::Receiver<bool>, OverlayError> {
+        let (finished, running) = watch::channel(false);
+        let _joiner = thread::Builder::new()
+            .name("config-overlay-join".to_owned())
+            .spawn(move || {
+                for thread in live {
+                    drop(thread.join());
+                }
+                let _sent = finished.send(true);
+            })
+            .map_err(|source| OverlayError::WorkerStart { source })?;
+        Ok(running)
     }
 }
 
