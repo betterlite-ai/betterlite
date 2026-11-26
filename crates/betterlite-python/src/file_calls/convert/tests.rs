@@ -85,6 +85,12 @@ fn request_create_reads_every_field_the_call_takes() {
             .map(String::as_str),
         Some("n")
     );
+}
+
+#[test]
+fn request_create_params() {
+    let mut blobs = blobs();
+    let input = parse_create(CREATE, &mut blobs, Mode::Sync).unwrap();
     assert_eq!(
         input.params.api_base.as_deref(),
         Some("http://127.0.0.1:1/v1")
@@ -137,6 +143,17 @@ fn request_create_with_only_its_required_fields_takes_the_defaults() {
     assert_eq!(input.custom_llm_provider, None);
     assert_eq!(input.extra_headers, None);
     assert_eq!(input.extra_body, None);
+}
+
+#[test]
+fn request_create_param_defaults() {
+    let mut blobs = blobs();
+    let input = parse_create(
+        r#"{"file":{"$file":{"blob":0}},"purpose":"batch"}"#,
+        &mut blobs,
+        Mode::Sync,
+    )
+    .unwrap();
     assert_eq!(input.params.api_base, None);
     assert!(input.params.api_key.is_none());
     assert_eq!(input.params.timeout, None);
@@ -304,6 +321,11 @@ fn request_retrieve_reads_every_field_the_call_takes() {
     );
     assert_eq!(call.kwargs.api_version.as_deref(), Some("2024-01-01"));
     assert_eq!(call.kwargs.organization.as_deref(), Some("org-1"));
+}
+
+#[test]
+fn request_retrieve_params() {
+    let call = parse_retrieve(RETRIEVE).unwrap();
     let Some(ReadTimeout::Plain(ReadTimeoutValue::Number(number))) = call.kwargs.timeout else {
         panic!("the timeout is not the number it was given");
     };
@@ -322,6 +344,11 @@ fn request_retrieve_reads_every_field_the_call_takes() {
     assert_eq!(call.kwargs.after, None);
     assert_eq!(call.kwargs.limit, None);
     assert_eq!(call.kwargs.order, None);
+}
+
+#[test]
+fn request_retrieve_credentials() {
+    let call = parse_retrieve(RETRIEVE).unwrap();
     let values = call.trusted.values;
     assert_eq!(values.len(), 7);
     assert_eq!(values["azure_ad_token"].expose_secret(), "token");
@@ -483,6 +510,19 @@ fn request_azure_upload_params_carry_the_trusted_credentials() {
             .map(SecretString::expose_secret),
         Some("secret")
     );
+    assert_eq!(params.max_retries, Some(4_i64));
+    assert_eq!(params.timeout, Some(7.0_f64));
+}
+
+#[test]
+fn request_azure_user_credentials() {
+    let mut blobs = blobs();
+    let input = parse_create(CREATE, &mut blobs, Mode::Sync).unwrap();
+    let params = litellm_params(
+        input.params.credentials.as_ref(),
+        input.params.max_retries,
+        FineTuningTimeout::Seconds(7.0_f64),
+    );
     assert_eq!(params.auth.azure_username.as_deref(), Some("user"));
     assert_eq!(
         params
@@ -530,6 +570,10 @@ fn request_azure_delete_params_carry_the_resolved_timeout_and_the_credentials() 
     );
     assert_eq!(structured.timeout, Some(2.0_f64));
     assert_eq!(structured.max_retries, None);
+}
+
+#[test]
+fn request_azure_param_defaults() {
     let empty = litellm_params(
         None,
         None,
@@ -571,6 +615,10 @@ fn request_azure_read_params_carry_the_resolved_timeout_and_retries() {
     assert!(params.azure_ad_token.is_none());
     assert_eq!(params.auth.tenant_id, None);
     assert!(params.auth.client_secret.is_none());
+}
+
+#[test]
+fn request_azure_phase_fallbacks() {
     let connect_only = StructuredTimeout {
         connect: Some(1.0_f64),
         read: None,
@@ -601,6 +649,10 @@ fn request_azure_read_params_carry_the_resolved_timeout_and_retries() {
         read_litellm_params(&azure_read(FineTuningTimeout::Structured(pool_only))).timeout,
         Some(4.0_f64)
     );
+}
+
+#[test]
+fn request_azure_read_retries() {
     let seconds = read_litellm_params(&azure_read(FineTuningTimeout::Seconds(2.5_f64)));
     assert_eq!(seconds.timeout, Some(2.5_f64));
     let retried = read_litellm_params(&AzureRead {

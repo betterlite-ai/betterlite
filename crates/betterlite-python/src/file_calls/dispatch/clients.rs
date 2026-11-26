@@ -12,7 +12,7 @@ use betterlite_openai::files::error::FilesError;
 use betterlite_openai::files::{ClientArgs, FilesClient, get_openai_client, select_client};
 use secrecy::{ExposeSecret as _, SecretString};
 
-pub(crate) fn settings(
+pub(crate) const fn settings(
     api_key: Option<SecretString>,
     api_base: Option<String>,
     api_version: Option<String>,

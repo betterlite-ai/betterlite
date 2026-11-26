@@ -79,12 +79,6 @@ enum WriteInput<'input> {
     Delete(&'input DeleteInput<(), ()>),
 }
 
-#[derive(Clone, Copy)]
-enum AnswerKind {
-    File,
-    Page,
-}
-
 impl FileCallCore {
     pub(crate) fn build(text: &str) -> Result<Self, SessionError> {
         let wire: SessionWire = serde_json::from_str(text).map_err(SessionError::Json)?;
@@ -153,27 +147,15 @@ impl FileCallCore {
                 let operation = ReadOperation::Retrieve {
                     file_id: &read.file_id,
                 };
-                self.read(
-                    mode,
-                    operation,
-                    &read.kwargs,
-                    &read.trusted,
-                    AnswerKind::File,
-                )
-                .await
+                self.read(mode, operation, &read.kwargs, &read.trusted)
+                    .await
             }
             Call::List(read) => {
                 let operation = ReadOperation::List {
                     purpose: read.purpose.as_deref(),
                 };
-                self.read(
-                    mode,
-                    operation,
-                    &read.kwargs,
-                    &read.trusted,
-                    AnswerKind::Page,
-                )
-                .await
+                self.read(mode, operation, &read.kwargs, &read.trusted)
+                    .await
             }
         }
     }
@@ -213,7 +195,6 @@ impl FileCallCore {
         operation: ReadOperation<'_>,
         kwargs: &ReadKwargs,
         trusted: &TrustedCredentials,
-        kind: AnswerKind,
     ) -> Result<String, PyErr> {
         let service = FileProviderRead {
             dispatch: self.dispatch(),
@@ -230,18 +211,20 @@ impl FileCallCore {
             .run(entry_of(mode), operation, kwargs, context)
             .await
             .map_err(|error| PyErr::from(read_failure(&error)))?;
-        let serialized = match (kind, answer) {
-            (AnswerKind::File, ReadAnswer::File(object)) => serde_json::to_string(&object),
-            (AnswerKind::Page, ReadAnswer::Listing(FileListing::Page(page))) => {
+        let serialized = match (operation, answer) {
+            (ReadOperation::Retrieve { .. }, ReadAnswer::File(object)) => {
+                serde_json::to_string(&object)
+            }
+            (ReadOperation::List { .. }, ReadAnswer::Listing(FileListing::Page(page))) => {
                 serde_json::to_string(&page)
             }
-            (AnswerKind::File, ReadAnswer::Listing(_)) => {
+            (ReadOperation::Retrieve { .. }, ReadAnswer::Listing(_)) => {
                 return Err(PyRuntimeError::new_err(
                     "file_retrieve answered with a file list",
                 ));
             }
             (
-                AnswerKind::Page,
+                ReadOperation::List { .. },
                 ReadAnswer::File(_) | ReadAnswer::Listing(FileListing::Files(_)),
             ) => {
                 return Err(PyRuntimeError::new_err(

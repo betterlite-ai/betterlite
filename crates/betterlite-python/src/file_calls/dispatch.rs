@@ -47,11 +47,6 @@ pub(crate) struct FileCallDispatch {
     pub(crate) endpoints: EndpointSettings,
 }
 
-enum WriteCall<'call> {
-    Upload(UploadTarget<'call, FileCallDispatch>),
-    Delete(DeleteTarget<'call, FileCallDispatch>),
-}
-
 enum WriteReply {
     Object(FileObject),
     Deleted(FileDeleted),
@@ -76,14 +71,17 @@ impl FileCallDispatch {
         )
     }
 
-    async fn send(&self, call: WriteCall<'_>) -> Result<WriteReply, DispatchError> {
-        match call {
-            WriteCall::Upload(UploadTarget::OpenAi { call, data }) => {
+    async fn send_upload(
+        &self,
+        target: UploadTarget<'_, Self>,
+    ) -> Result<WriteReply, DispatchError> {
+        match target {
+            UploadTarget::OpenAi { call, data } => {
                 let client = openai_client(ClientSource::Provider(&call))?;
                 let object = self.openai.create_file(&client, &data).await?;
                 Ok(WriteReply::Object(object))
             }
-            WriteCall::Upload(UploadTarget::Azure { call, data, params }) => {
+            UploadTarget::Azure { call, data, params } => {
                 let opened = self.open_provider(
                     &call,
                     litellm_params(
@@ -96,20 +94,28 @@ impl FileCallDispatch {
                     azure_call(&opened, &self.client, AzureOperation::Create(&data)).await?;
                 azure_write(reply)
             }
-            WriteCall::Upload(UploadTarget::Config(upload)) => Err(DispatchError::Unbuilt {
+            UploadTarget::Config(upload) => Err(DispatchError::Unbuilt {
                 config: upload.config.class_name(),
             }),
-            WriteCall::Delete(DeleteTarget::OpenAi { call, file_id }) => {
+        }
+    }
+
+    async fn send_delete(
+        &self,
+        target: DeleteTarget<'_, Self>,
+    ) -> Result<WriteReply, DispatchError> {
+        match target {
+            DeleteTarget::OpenAi { call, file_id } => {
                 let client = openai_client(ClientSource::Provider(&call))?;
                 let deleted = self.openai.delete_file(&client, file_id).await?;
                 Ok(WriteReply::Deleted(deleted))
             }
-            WriteCall::Delete(DeleteTarget::Azure {
+            DeleteTarget::Azure {
                 call,
                 file_id,
                 params,
                 ..
-            }) => {
+            } => {
                 let client_params =
                     litellm_params(params.credentials, call.max_retries, call.timeout);
                 let opened = self.open_provider(&call, client_params)?;
@@ -117,7 +123,7 @@ impl FileCallDispatch {
                     azure_call(&opened, &self.client, AzureOperation::Delete(file_id)).await?;
                 azure_write(reply)
             }
-            WriteCall::Delete(DeleteTarget::Config(delete)) => Err(DispatchError::Unbuilt {
+            DeleteTarget::Config(delete) => Err(DispatchError::Unbuilt {
                 config: delete.config.class_name(),
             }),
         }
@@ -144,14 +150,14 @@ impl FileWriteProviders for FileCallDispatch {
     }
 
     async fn upload(&self, target: UploadTarget<'_, Self>) -> Result<FileObject, DispatchError> {
-        match self.send(WriteCall::Upload(target)).await? {
+        match self.send_upload(target).await? {
             WriteReply::Object(object) => Ok(object),
             WriteReply::Deleted(_) => Err(DispatchError::Reply),
         }
     }
 
     async fn delete(&self, target: DeleteTarget<'_, Self>) -> Result<FileDeleted, DispatchError> {
-        match self.send(WriteCall::Delete(target)).await? {
+        match self.send_delete(target).await? {
             WriteReply::Deleted(deleted) => Ok(deleted),
             WriteReply::Object(_) => Err(DispatchError::Reply),
         }

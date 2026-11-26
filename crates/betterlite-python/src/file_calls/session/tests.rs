@@ -55,17 +55,17 @@ fn a_malformed_payload_is_a_value_error() {
     Python::initialize();
     Python::attach(|py| {
         let session = NativeFileCallSession::new(ENVIRONMENT).unwrap();
-        let error = session.create(py, "not a call", Vec::new()).err().unwrap();
-        assert!(error.is_instance_of::<PyValueError>(py));
-        let error = session.delete(py, "not a call", Vec::new()).err().unwrap();
-        assert!(error.is_instance_of::<PyValueError>(py));
-        let error = session
+        let create_error = session.create(py, "not a call", Vec::new()).err().unwrap();
+        assert!(create_error.is_instance_of::<PyValueError>(py));
+        let delete_error = session.delete(py, "not a call", Vec::new()).err().unwrap();
+        assert!(delete_error.is_instance_of::<PyValueError>(py));
+        let retrieve_error = session
             .retrieve(py, "not a call", Vec::new())
             .err()
             .unwrap();
-        assert!(error.is_instance_of::<PyValueError>(py));
-        let error = session.list(py, "not a call", Vec::new()).err().unwrap();
-        assert!(error.is_instance_of::<PyValueError>(py));
+        assert!(retrieve_error.is_instance_of::<PyValueError>(py));
+        let list_error = session.list(py, "not a call", Vec::new()).err().unwrap();
+        assert!(list_error.is_instance_of::<PyValueError>(py));
     });
 }
 

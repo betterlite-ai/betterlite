@@ -1,6 +1,7 @@
 use betterlite_core::api::file_http_upload::service::Mode;
 use betterlite_core::api::file_provider_read::ReadKwargs;
 use betterlite_core::api::file_provider_write::{DeleteInput, UploadInput};
+use betterlite_error::facts::presence::Field;
 use betterlite_models::controls::call_params::TrustedCredentials;
 use betterlite_models::decisions::Json;
 use betterlite_openai::files::records::{ExpiresAfter, FileUpload};
@@ -72,16 +73,20 @@ pub(crate) fn parse_create(
     mode: Mode,
 ) -> Result<UploadInput<(), ()>, ConvertError> {
     let wire: CreateWire = serde_json::from_str(text)?;
-    if mode == Mode::Asynchronous && wire.custom_llm_provider == Some(None) {
+    if mode == Mode::Asynchronous && wire.custom_llm_provider == Field::Null {
         return Err(ConvertError::Provider(String::from("None")));
     }
     let file = file_upload(wire.file, blobs)?;
-    let expires_after = wire.expires_after.map(expires_after).transpose()?;
+    let expires_after = wire.expires_after.as_ref().map(expires_after).transpose()?;
     Ok(UploadInput {
         file,
         purpose: wire.purpose,
         expires_after,
-        custom_llm_provider: wire.custom_llm_provider,
+        custom_llm_provider: match wire.custom_llm_provider {
+            Field::Missing => None,
+            Field::Null => Some(None),
+            Field::Value(name) => Some(Some(name)),
+        },
         extra_headers: wire.extra_headers,
         extra_body: wire.extra_body,
         params: write_params(&wire.params)?,
@@ -147,7 +152,7 @@ fn file_upload(value: Json, blobs: &mut [Vec<u8>]) -> Result<FileUpload, Convert
 }
 
 // FileExpiresAfter declares anchor Literal["created_at"], and the encoder always writes that anchor
-fn expires_after(wire: ExpiresAfterWire) -> Result<ExpiresAfter, ConvertError> {
+fn expires_after(wire: &ExpiresAfterWire) -> Result<ExpiresAfter, ConvertError> {
     if wire.anchor != "created_at" {
         return Err(ConvertError::Field("expires_after.anchor"));
     }
@@ -156,11 +161,11 @@ fn expires_after(wire: ExpiresAfterWire) -> Result<ExpiresAfter, ConvertError> {
     })
 }
 
-// an absent or null provider is the function's declared default; a null one the caller passed is LlmProviders(None)
-fn named_provider(provider: Option<Option<String>>) -> Result<Option<String>, ConvertError> {
+// Only an omitted provider takes the default; explicit null reaches LlmProviders(None).
+fn named_provider(provider: Field<String>) -> Result<Option<String>, ConvertError> {
     match provider {
-        None => Ok(None),
-        Some(None) => Err(ConvertError::Provider(String::from("None"))),
-        Some(Some(name)) => Ok(Some(name)),
+        Field::Missing => Ok(None),
+        Field::Null => Err(ConvertError::Provider(String::from("None"))),
+        Field::Value(name) => Ok(Some(name)),
     }
 }
