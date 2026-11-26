@@ -33,7 +33,6 @@ PROXY_MODULE: Final = "litellm.proxy.proxy_server"
 CALLER: Final = TypeAdapter(UserAPIKeyAuth)
 Outcome: TypeAlias = Literal["allow", "deny", "fail", "http"]
 Lookup: TypeAlias = Literal["loaded", "failed", "http"]
-Hook: TypeAlias = Literal["endpoints", "missing", "plain"]
 
 
 class HttpView(TypedDict):
@@ -49,7 +48,7 @@ class ContentView(TypedDict):
 
 class ManagedView(TypedDict):
     logging: NotRequired[bool]
-    hook: NotRequired[Hook]
+    hook: NotRequired[Literal["endpoints", "missing", "plain"]]
     router: NotRequired[bool]
 
 
@@ -79,15 +78,6 @@ class Effects:
         self.counted: list[JsonValue] = []
 
 
-class Content:
-    def __init__(self, content: bytes | str) -> None:
-        self.content = content
-
-
-class PlainHook:
-    pass
-
-
 class ScriptedFetch:
     def __init__(self, view: ContentView, effects: Effects) -> None:
         self.view = view
@@ -95,7 +85,7 @@ class ScriptedFetch:
 
     async def afile_content(
         self, file_id: str, user_api_key_dict: JsonValue, **fetch_kwargs: JsonValue
-    ) -> Content:
+    ) -> SimpleNamespace:
         recorded: dict[str, JsonValue] = {
             "kind": "provider",
             "file_id": file_id,
@@ -105,15 +95,15 @@ class ScriptedFetch:
         self.effects.fetched.append(recorded)
         return self.delivered()
 
-    def delivered(self) -> Content:
+    def delivered(self) -> SimpleNamespace:
         http = self.view.get("http")
         if http is not None:
             raise HTTPException(status_code=http["status"], detail=http.get("detail"))
         not_bytes = self.view.get("not_bytes")
         if not_bytes is not None:
-            return Content(not_bytes)
+            return SimpleNamespace(content=not_bytes)
         contents = self.view.get("contents")
-        return Content(b"" if contents is None else contents.encode())
+        return SimpleNamespace(content=b"" if contents is None else contents.encode())
 
 
 class ManagedHook:
@@ -126,7 +116,7 @@ class ManagedHook:
         litellm_parent_otel_span: JsonValue,
         llm_router: Router,
         **data: JsonValue,
-    ) -> Content:
+    ) -> SimpleNamespace:
         del litellm_parent_otel_span, llm_router, data
         recorded: dict[str, JsonValue] = {"kind": "managed", "file_id": file_id, "caller": True}
         self.fetch.effects.fetched.append(recorded)
@@ -161,7 +151,7 @@ class ScriptedCache:
         if self.lookup == "failed":
             raise RuntimeError("the team cache could not be read")
         if self.lookup == "http":
-            raise HTTPException(status_code=401, detail={"error": "passed through"})
+            raise HTTPException(status_code=401, detail="passed through")
         return None
 
 
@@ -237,7 +227,7 @@ def hook_value(managed: ManagedView, fetch: ScriptedFetch) -> BaseFileEndpoints 
     if hook == "missing":
         return None
     if hook == "plain":
-        return cast(BaseFileEndpoints, PlainHook())  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L1164
+        return cast(BaseFileEndpoints, SimpleNamespace())  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L1164
     BaseFileEndpoints.register(ManagedHook)
     return cast(BaseFileEndpoints, ManagedHook(fetch))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/files/transformation.py#L242
 
@@ -251,7 +241,8 @@ def install(call: Input) -> Effects:
     managed = ManagedView() if managed_view is None else managed_view
     access = AccessView() if access_view is None else access_view
     fetch = ScriptedFetch(content, effects)
-    logging_obj = None if managed.get("logging") is False else FakeLogging(hook_value(managed, fetch))
+    logging_off = managed.get("logging") is False
+    logging_obj = None if logging_off else FakeLogging(hook_value(managed, fetch))
     router = None if managed.get("router") is False else Router(model_list=[])
     lookup = access.get("team")
     cache = UserApiKeyCache() if lookup is None or lookup == "loaded" else ScriptedCache(lookup)
@@ -266,19 +257,9 @@ def install(call: Input) -> Effects:
         proxy.prisma_client = FakePrisma(FakeDatabase(rows))
     sys.modules[PROXY_MODULE] = proxy
     counter = ScriptedCounter(call.get("tokens"), effects.counted)
-    batch_utils.token_counter = cast(Callable[..., int], counter)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/batch_utils.py#L627
+    batch_utils.token_counter = cast(Callable[..., int], counter)  # type: ignore[attr-defined, explicit-any, misc]  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/batch_utils.py#L627
     litellm.afile_content = fetch.afile_content
     return effects
-
-
-def usage_view(usage: BatchFileUsage) -> JsonValue:
-    view: dict[str, JsonValue] = {
-        "total_tokens": usage.total_tokens,
-        "request_count": usage.request_count,
-        "output_tokens": usage.output_tokens,
-        "per_model_usage": JSON.validate_python(usage.per_model_usage),
-    }
-    return JSON.validate_python(view)
 
 
 def answer(call: Input, hook: BatchRateLimiter) -> JsonValue:
@@ -289,8 +270,8 @@ def answer(call: Input, hook: BatchRateLimiter) -> JsonValue:
     provider_name: Literal["openai", "azure", "vertex_ai"] = "openai"
     if provider is not None:
         provider_name = provider
-    usage = asyncio.run(
-        hook.count_input_file_usage(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L843
+    usage: BatchFileUsage = asyncio.run(
+        hook.count_input_file_usage(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L843
             file_id=call["file_id"],
             custom_llm_provider=provider_name,
             user_api_key_dict=caller,
@@ -298,8 +279,14 @@ def answer(call: Input, hook: BatchRateLimiter) -> JsonValue:
             descriptors=call.get("descriptors"),
         )
     )
+    usage_view: dict[str, JsonValue] = {
+        "total_tokens": usage.total_tokens,
+        "request_count": usage.request_count,
+        "output_tokens": usage.output_tokens,
+        "per_model_usage": JSON.validate_python(usage.per_model_usage),
+    }
     report: dict[str, JsonValue] = {
-        "usage": usage_view(usage),
+        "usage": usage_view,
         "fetched": effects.fetched,
         "counted": effects.counted,
     }
