@@ -25,7 +25,29 @@ pub fn requested_optional_params(
     call: &mut VideoGenerationRequest,
     // ast-grep-ignore: no-long-names
 ) -> Result<VideoCreateOptionalRequestParams, VideoGenerationCallError> {
-    // the options as the dict LiteLLM builds them, before they are narrowed to the typed struct
+    let mut params = requested_params(call)?;
+    let reference = match params.shift_remove(INPUT_REFERENCE) {
+        None => call.input_reference.clone(),
+        Some(value) => Some(supplied_media(value)?),
+    };
+    // ast-grep-ignore: no-long-names
+    Ok(VideoCreateOptionalRequestParams {
+        input_reference: reference,
+        image: params.shift_remove("image"),
+        parameters: take(&mut params, "parameters", MAP)?,
+        model: take(&mut params, "model", STRING)?,
+        resolution: take(&mut params, "resolution", STRING)?,
+        seconds: take(&mut params, "seconds", STRING)?,
+        size: take(&mut params, "size", STRING)?,
+        characters: take(&mut params, CHARACTERS, "a list of string maps")?,
+        user: take(&mut params, "user", STRING)?,
+        extra_headers: take(&mut params, "extra_headers", TEXT_MAP)?,
+        extra_body: take(&mut params, EXTRA_BODY, TEXT_MAP)?,
+    })
+}
+
+// the options as LiteLLM's dict builds them, before they are narrowed to the typed struct
+fn requested_params(call: &mut VideoGenerationRequest) -> Result<Params, VideoGenerationCallError> {
     let loose_extra_body = call.kwargs.shift_remove(EXTRA_BODY);
     // local_vars.update(kwargs): every loose keyword lands over the named arguments, nulls included
     let mut optional = named_params(call);
@@ -48,7 +70,7 @@ pub fn requested_optional_params(
     }
     // last, so no timeout reaches the provider as an option
     optional.shift_remove(TIMEOUT);
-    typed_options(optional, call)
+    Ok(optional)
 }
 
 // get_optional_params_video_generation: the provider's map, then the extra_body entries over it key by key
@@ -115,32 +137,6 @@ fn merge_extra_body(merged: &mut Params, candidate: &Json) {
             merged.insert(name.clone(), value.clone());
         }
     }
-}
-
-// the requested options narrowed to VideoCreateOptionalRequestParams: a declared field the value cannot fill is refused by name
-fn typed_options(
-    mut params: Params,
-    call: &VideoGenerationRequest,
-    // ast-grep-ignore: no-long-names
-) -> Result<VideoCreateOptionalRequestParams, VideoGenerationCallError> {
-    let reference = match params.shift_remove(INPUT_REFERENCE) {
-        None => call.input_reference.clone(),
-        Some(value) => Some(supplied_media(value)?),
-    };
-    // ast-grep-ignore: no-long-names
-    Ok(VideoCreateOptionalRequestParams {
-        input_reference: reference,
-        image: params.shift_remove("image"),
-        parameters: take(&mut params, "parameters", MAP)?,
-        model: take(&mut params, "model", STRING)?,
-        resolution: take(&mut params, "resolution", STRING)?,
-        seconds: take(&mut params, "seconds", STRING)?,
-        size: take(&mut params, "size", STRING)?,
-        characters: take(&mut params, CHARACTERS, "a list of string maps")?,
-        user: take(&mut params, "user", STRING)?,
-        extra_headers: take(&mut params, "extra_headers", TEXT_MAP)?,
-        extra_body: take(&mut params, EXTRA_BODY, TEXT_MAP)?,
-    })
 }
 
 // FileTypes as the JSON a caller can hand in: a path or URL, or a list of them
