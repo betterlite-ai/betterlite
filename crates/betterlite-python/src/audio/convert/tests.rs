@@ -111,7 +111,7 @@ fn request_tuple_type_wins() {
 #[test]
 fn request_file_argument_takes_a_marker() {
     let call = wire(r#"{"file":{"$file":{"name":"clip.wav","blob":0}}}"#);
-    assert!(bare_string_file(&call.arguments).is_ok());
+    bare_string_file(&call.arguments).unwrap();
 }
 
 #[test]
@@ -240,7 +240,7 @@ fn error_no_files_never_reads_a_path() {
     assert_eq!(error.kind(), io::ErrorKind::NotFound);
     assert!(matches!(
         NoFiles.open(Path::new("clip.wav")),
-        Err(error) if error.kind() == io::ErrorKind::NotFound
+        Err(open_error) if open_error.kind() == io::ErrorKind::NotFound
     ));
 }
 

@@ -83,6 +83,6 @@ fn request_timeout_reads_the_environment() {
     );
     assert_eq!(
         session(BTreeMap::new()).request_timeout(),
-        Duration::from_secs(6000)
+        Duration::from_mins(100)
     );
 }

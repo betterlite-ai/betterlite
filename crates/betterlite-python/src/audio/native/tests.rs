@@ -9,6 +9,12 @@ use indexmap::IndexMap;
 
 const SETTINGS: &str = "{}";
 
+#[derive(serde::Deserialize)]
+struct Header {
+    status_code: u16,
+    headers: IndexMap<String, String>,
+}
+
 #[test]
 fn register_adds_the_audio_classes() {
     Python::initialize();
@@ -25,10 +31,14 @@ fn native_audio_session_rejects_a_malformed_payload() {
     Python::initialize();
     Python::attach(|py| {
         let session = NativeAudioSession::new(SETTINGS).unwrap();
-        assert!(session.transcription(py, "not json", Vec::new()).is_err());
-        assert!(session.atranscription(py, "not json", Vec::new()).is_err());
-        assert!(session.speech(py, "not json", Vec::new()).is_err());
-        assert!(session.aspeech(py, "not json", Vec::new()).is_err());
+        session
+            .transcription(py, "not json", Vec::new())
+            .unwrap_err();
+        session
+            .atranscription(py, "not json", Vec::new())
+            .unwrap_err();
+        session.speech(py, "not json", Vec::new()).unwrap_err();
+        session.aspeech(py, "not json", Vec::new()).unwrap_err();
     });
 }
 
@@ -44,7 +54,7 @@ fn request_speech_answer_preserves_audio_and_headers() {
     .unwrap();
 
     assert_eq!(result.0, [0, 1, 255]);
-    let header: serde_json::Value = serde_json::from_str(&result.1).unwrap();
-    assert_eq!(header["status_code"], 206);
-    assert_eq!(header["headers"]["content-type"], "audio/mpeg");
+    let header: Header = serde_json::from_str(&result.1).unwrap();
+    assert_eq!(header.status_code, 206);
+    assert_eq!(header.headers.get("content-type").unwrap(), "audio/mpeg");
 }

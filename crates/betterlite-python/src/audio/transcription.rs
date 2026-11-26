@@ -39,7 +39,10 @@ struct Prepared {
     options: IndexMap<String, Json>,
 }
 
-#[expect(clippy::too_many_lines)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the provider call lifecycle together"
+)]
 pub(crate) async fn run(
     session: &AudioSession,
     call: AudioCallWire,
@@ -147,10 +150,7 @@ fn transcription_connection(
     model: &str,
 ) -> Result<TranscriptionConnection, CallFailure> {
     let credentials = session.credentials(&call.settings, &call.arguments)?;
-    let api_key = credentials
-        .api_key
-        .clone()
-        .ok_or_else(|| missing_key(model))?;
+    let api_key = credentials.api_key.ok_or_else(|| missing_key(model))?;
     let request_timeout = timeout(&call.arguments)?;
     let retries = max_retries(&call.arguments)?.unwrap_or(DEFAULT_MAX_RETRIES);
     Ok(TranscriptionConnection {
@@ -163,7 +163,6 @@ fn transcription_connection(
     })
 }
 
-#[expect(clippy::too_many_lines)]
 fn hidden_params(
     reply: &TranscriptionReply,
     processed: &ProcessedAudioFile,
@@ -199,16 +198,11 @@ fn hidden_params(
                 duration_number(Some(found))?,
             );
         }
-    } else {
-        match reply.duration {
-            StoredDuration::Known(found) => {
-                hidden.insert(
-                    String::from("audio_transcription_duration"),
-                    duration_number(found)?,
-                );
-            }
-            StoredDuration::Absent => {}
-        }
+    } else if let StoredDuration::Known(found) = reply.duration {
+        hidden.insert(
+            String::from("audio_transcription_duration"),
+            duration_number(found)?,
+        );
     }
     if let Some(found) = Number::from_f64(response_ms) {
         hidden.insert(String::from("_response_ms"), Json::Number(found));

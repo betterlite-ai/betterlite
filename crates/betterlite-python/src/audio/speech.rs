@@ -23,7 +23,10 @@ struct Prepared {
     connection: SpeechConnection,
 }
 
-#[expect(clippy::too_many_lines)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the provider call lifecycle together"
+)]
 pub(crate) async fn run(
     session: &AudioSession,
     call: SpeechCallWire,
@@ -107,7 +110,6 @@ fn speech_connection(
     let credentials = session.credentials(&call.settings, &call.arguments)?;
     let api_key = credentials
         .api_key
-        .clone()
         .ok_or_else(|| missing_key(&values.model))?;
     Ok(SpeechConnection {
         api_key: Some(api_key),
