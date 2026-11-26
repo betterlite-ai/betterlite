@@ -113,6 +113,7 @@ fn assert_wire(wire: &FakeTransport) {
         panic!("the config requests JSON");
     };
     let decoded: Params = serde_json::from_slice(body).unwrap();
+    drop(requests);
     assert_eq!(decoded, params(&[("size", text("480x854"))]));
 }
 
@@ -134,6 +135,7 @@ fn assert_transform(config: &TestingConfig) {
         ])
     );
     assert_eq!(call.headers, headers(&[("x-probe", "generation")]));
+    drop(calls);
 }
 
 #[test]
@@ -237,6 +239,7 @@ async fn adapter_selects_the_client_and_maps_config_failure() {
         *clients,
         vec![(ClientKind::Asynchronous, Some(false), "openai".to_owned())]
     );
+    drop(clients);
     assert_transform(&config);
 }
 
