@@ -210,18 +210,18 @@ class ChecksModule(ModuleType):
     async def get_team_membership(
         self, user_id: str, team_id: str, **_context: JsonValue
     ) -> LiteLLM_TeamMembership | None:
-        record = blank("lookup_membership", team_id=team_id)
+        record = blank("lookup_membership", team=team_id)
         record["user_id"] = user_id
         self.journal.append(record)
         return resolve_row(self.membership, MEMBERSHIPS)
 
 
 def blank(
-    call: str, model: str | None = None, models: list[str] | None = None, team_id: str | None = None,
+    call: str, model: str | None = None, models: list[str] | None = None, team: str | None = None,
 ) -> CallJson:
     return CallJson(
         call=call, object_type=None, model=model, models=[] if models is None else models,
-        team_model_aliases={}, team_id=team_id, user_id=None, user_id_upsert=None, project_id=None,
+        team_model_aliases={}, team_id=team, user_id=None, user_id_upsert=None, project_id=None,
     )
 
 
@@ -243,7 +243,7 @@ def resolve_row(script: LookupScript, rows: TypeAdapter[Row]) -> Row | None:
 
 
 def install_proxy(
-    *, present: bool, database: bool, general_settings: dict[str, JsonValue] | None
+    *, present: bool, database: bool, general_settings: dict[str, JsonValue] | None = None
 ) -> None:
     if not present:
         sys.modules[PROXY_MODULE] = ModuleType(PROXY_MODULE)
@@ -254,8 +254,8 @@ def install_proxy(
 def settings_answer(input_value: SettingsCall) -> list[JsonValue]:
     outcomes: list[JsonValue] = []
     for scenario in input_value["scenarios"]:
-        general_settings = scenario["general_settings"]
-        install_proxy(present=general_settings is not None, database=False, general_settings=general_settings)
+        settings = scenario["general_settings"]
+        install_proxy(present=settings is not None, database=False, general_settings=settings)
         outcome: dict[str, JsonValue] = {"model": READ_MODEL(), "max_tokens": READ_TOKENS()}
         outcomes.append(outcome)
     return outcomes
@@ -274,7 +274,7 @@ def access_answer(input_value: AccessCall) -> list[JsonValue]:
         for scenario in input_value["scenarios"]:
             fields = scenario["principal"]
             principal = None if fields is None else PRINCIPALS.validate_python(fields)
-            install_proxy(present=scenario["proxy"], database=scenario["database"], general_settings=None)
+            install_proxy(present=scenario["proxy"], database=scenario["database"])
             journal: list[CallJson] = []
             sys.modules[CHECKS_MODULE] = ChecksModule(scenario, journal)
             diagnostics.lines = []
