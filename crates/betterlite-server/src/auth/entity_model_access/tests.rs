@@ -19,15 +19,15 @@ use secrecy::SecretString;
 use tower::ServiceExt as _;
 
 use super::{EntityModelRule, EntityModelStageInput};
-use crate::auth::team_budget_admission::TeamBudgetRule;
-
-mod members;
 use crate::auth::auth_identity::{
     AuthBackend, AuthContext, INSTALLED_STAGES, StageFailure, StageInput, dispatch,
 };
 use crate::auth::prefetch_stage;
+use crate::auth::team_budget_admission::TeamBudgetRule;
 use crate::routes;
 use crate::routes::tests::state_for;
+
+mod members;
 
 // a recognized route, so the auth chain runs before the marking handler
 const MODEL_ROUTE: &str = "/v1/files";

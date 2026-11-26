@@ -826,3 +826,13 @@ async fn matcher_other_error_propagates() {
         EntityModelAccessError::RecurseDepth { .. }
     ));
 }
+
+#[tokio::test]
+async fn absent_team_is_unrestricted() {
+    let setup = Setup::new();
+    let context = setup.context();
+    let aliases = empty_aliases();
+    can_team_access_model(&one("claude"), &team_access(None, &aliases, None), &context)
+        .await
+        .unwrap();
+}
