@@ -347,6 +347,19 @@ async fn list_query_validation_precedes_the_handler() {
     );
     assert_eq!(0, database.loads());
     assert!(registry_of(&state).store_by_id("vs_stale").is_some());
+    // the deviation: an i64 cannot hold the page, so it is the same 422 at query.page
+    let (huge_status, _huge_headers, huge_body) = call(
+        &state,
+        &admin(),
+        Method::GET,
+        "/vector_store/list?page=9223372036854775808",
+        "",
+    )
+    .await;
+    assert_eq!(StatusCode::UNPROCESSABLE_ENTITY, huge_status);
+    let huge_issue = list(at(&huge_body, "detail")).first().expect("one issue");
+    assert_eq!(vec!["query".to_owned(), "page".to_owned()], loc(huge_issue));
+    assert_eq!(0, database.loads());
 }
 
 #[tokio::test]
@@ -567,6 +580,35 @@ async fn info_cached_metadata_with_invalid_json_is_the_catch_all() {
     );
 }
 
+// the deviation: text that parses to a non-object is our own 500, not the response model's validation error
+#[tokio::test]
+async fn info_cached_metadata_text_that_is_not_an_object_is_the_catch_all() {
+    let state = build(Setup {
+        database: Some(FakeDatabase::new(Vec::new())),
+        registry: Some(vec![cached("vs_a", "\"5\"")]),
+        world: World::default(),
+        privileges: false,
+        settings: FeatureSettings::default(),
+    });
+    let (logs, _guard) = capture_logs(tracing::Level::ERROR);
+    let (status, _headers, body) = call(
+        &state,
+        &admin(),
+        Method::POST,
+        INFO_PATH,
+        r#"{"vector_store_id":"vs_a"}"#,
+    )
+    .await;
+    assert_eq!(StatusCode::INTERNAL_SERVER_ERROR, status);
+    assert_eq!(
+        "the stored vector store metadata is not a JSON object",
+        text(at(&body, "detail"))
+    );
+    assert!(logs.contents().contains(
+        "Error getting vector store info: the stored vector store metadata is not a JSON object"
+    ));
+}
+
 #[tokio::test]
 async fn info_cached_blank_and_absent_fields_follow_the_model() {
     let stored = parsed(
@@ -733,6 +775,31 @@ async fn info_database_row_keeps_blank_fields() {
     assert_eq!("", text(at(table, "updated_at")));
     assert_eq!("", text(at(table, "team_id")));
     assert_eq!("", text(at(table, "user_id")));
+}
+
+// the deviation: a stored non-object params is served after redaction, not refused by the response model
+#[tokio::test]
+async fn info_database_params_that_are_not_an_object_are_served_as_stored() {
+    let odd = parsed(
+        r#"{"vector_store_id":"vs_params","custom_llm_provider":"openai","litellm_params":7}"#,
+    );
+    let state = build(Setup {
+        database: Some(FakeDatabase::new(vec![odd])),
+        registry: None,
+        world: World::default(),
+        privileges: false,
+        settings: FeatureSettings::default(),
+    });
+    let (status, _headers, body) = call(
+        &state,
+        &admin(),
+        Method::POST,
+        INFO_PATH,
+        r#"{"vector_store_id":"vs_params"}"#,
+    )
+    .await;
+    assert_eq!(StatusCode::OK, status);
+    assert_eq!(7, number(at(at(&body, "vector_store"), "litellm_params")));
 }
 
 // the deviation: a database row's non-object metadata is served as stored, not refused by the response model
