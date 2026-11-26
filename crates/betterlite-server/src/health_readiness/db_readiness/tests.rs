@@ -182,7 +182,7 @@ fn stall_replaces_only_a_connected_status(
     #[case] stalled: bool,
     #[case] expected: DbStatus,
 ) {
-    let fixture = fixture_with(FakeProbe::healthy(), stalled, HealthSettings::default());
+    let fixture = fixture_with(FakeProbe::healthy(), stalled, &HealthSettings::default());
     assert_eq!(fixture.db.readiness_db_status(status), expected);
 }
 
