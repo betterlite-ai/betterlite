@@ -7,7 +7,7 @@ use betterlite_models::decisions::Json;
 
 use super::super::cache::{POSITIVE_TTL_SECONDS, ValidationCache};
 use super::super::existence::{
-    EndUserExistence, EndUserObjectExistence, ExistenceError, UserExistence, UserProbe,
+    EndUserExistence as _, EndUserObjectExistence, ExistenceError, UserExistence, UserProbe,
 };
 use super::super::resolve::{DatabaseLookups, EndUserIdResolver};
 use super::support::{
