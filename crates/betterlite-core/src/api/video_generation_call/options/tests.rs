@@ -57,15 +57,16 @@ fn removes_null_and_owned_entries() {
     call.kwargs.insert("size".to_owned(), Json::Null);
     call.kwargs.insert("seed".to_owned(), Json::Null);
 
-    let params = requested_params(&mut call).unwrap();
+    let params = requested_params(&mut call);
     assert_eq!(params, Params::from([("seconds".to_owned(), text("8"))]));
 
-    let mut call = request();
-    call.seconds = Some("8".to_owned());
-    call.kwargs
+    let mut nullable_call = request();
+    nullable_call.seconds = Some("8".to_owned());
+    nullable_call
+        .kwargs
         .insert("mock_response".to_owned(), text("mocked"));
-    call.kwargs.insert("size".to_owned(), Json::Null);
-    let options = requested_optional_params(&mut call).unwrap();
+    nullable_call.kwargs.insert("size".to_owned(), Json::Null);
+    let options = requested_optional_params(&mut nullable_call).unwrap();
     assert_eq!(
         options,
         VideoCreateOptionalRequestParams {
@@ -178,7 +179,7 @@ fn the_timeout_goes_last_and_the_loose_map_loses_extra_body() {
     call.kwargs
         .insert("timeout".to_owned(), Json::Number(Number::from(9_u64)));
 
-    let params = requested_params(&mut call).unwrap();
+    let params = requested_params(&mut call);
     assert!(!params.contains_key("timeout"));
     assert!(!call.kwargs.contains_key("extra_body"));
     assert_eq!(

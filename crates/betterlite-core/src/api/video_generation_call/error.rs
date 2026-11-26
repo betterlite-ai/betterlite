@@ -192,25 +192,35 @@ where
             status_code: Some(carried.status_code),
             status_code_is_synthesized: carried.status_code_is_synthesized,
         },
-        VideoTransportError::Config(source) => {
-            let facts = config.error_facts(source);
-            VideoGenerationCallError::Transport {
-                message: facts.message,
-                status_code: facts.status_code,
-                status_code_is_synthesized: false,
-            }
-        }
-        VideoTransportError::Client(_) | VideoTransportError::Logging(_) => {
-            VideoGenerationCallError::Transport {
-                message: error.to_string(),
-                status_code: None,
-                status_code_is_synthesized: false,
-            }
-        }
+        VideoTransportError::Config(source) => config_error(source, config),
+        VideoTransportError::Client(_) | VideoTransportError::Logging(_) => local_error(error),
         VideoTransportError::Field(field) => VideoGenerationCallError::FieldType {
             field: field.field,
             expected: field.expected,
         },
+    }
+}
+
+fn config_error<Config>(source: &Config::Error, config: &Config) -> VideoGenerationCallError
+where
+    Config: VideoHttpConfig,
+{
+    let facts = config.error_facts(source);
+    VideoGenerationCallError::Transport {
+        message: facts.message,
+        status_code: facts.status_code,
+        status_code_is_synthesized: false,
+    }
+}
+
+fn local_error<Config>(error: &VideoTransportError<Config::Error>) -> VideoGenerationCallError
+where
+    Config: VideoHttpConfig,
+{
+    VideoGenerationCallError::Transport {
+        message: error.to_string(),
+        status_code: None,
+        status_code_is_synthesized: false,
     }
 }
 

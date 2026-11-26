@@ -44,7 +44,7 @@ use crate::api::videos_http_transport::client::{
 use crate::api::videos_http_transport::video_config::{Headers, Params};
 
 pub(crate) const VIDEO_ID: &str = "video-1";
-pub(crate) const REQUEST_TIMEOUT: Duration = Duration::from_secs(6000);
+pub(crate) const REQUEST_TIMEOUT: Duration = Duration::from_mins(100);
 pub(crate) const MOCK_JSON: &str = r#"{"id":"mock-1","object":"video","status":"completed"}"#;
 
 #[derive(Clone, Default)]
@@ -158,7 +158,6 @@ fn logged(state: &LoggingState) -> Logged {
 pub(crate) enum Outcome {
     Answers,
     FieldType,
-    Suspended,
     NeverAnswers,
 }
 
@@ -272,9 +271,6 @@ where
                     expected: "a string",
                 },
             ))),
-            Outcome::Suspended => Box::pin(future_ready::<
-                Result<VideoObject, VideoGenerationCallError>,
-            >(Err(VideoGenerationCallError::Suspended))),
             Outcome::NeverAnswers => {
                 Box::pin(never_ready::<Result<VideoObject, VideoGenerationCallError>>())
             }
@@ -484,10 +480,7 @@ impl Bench {
 pub(crate) fn failed(
     work: Result<Box<VideoObject>, VideoGenerationFailure>,
 ) -> VideoGenerationFailure {
-    let Err(error) = work else {
-        panic!("the call fails");
-    };
-    error
+    work.unwrap_err()
 }
 
 pub(crate) fn video(id: &str) -> VideoObject {

@@ -92,7 +92,14 @@ where
             extra_headers: prepared.extra_headers,
             extra_body: prepared.extra_body,
             timeout: prepared.timeout,
-            client: supplied_client::<Providers::Source>(client, is_async),
+            client: client.map(|transport| SuppliedClient {
+                kind: if is_async {
+                    ClientKind::Asynchronous
+                } else {
+                    ClientKind::Sync
+                },
+                transport,
+            }),
         };
         let handler_environment = GenerationHandlerEnvironment {
             config: prepared.config,
@@ -216,24 +223,6 @@ where
             )),
         }
     }
-}
-
-// async_call tells the handler which kind of transport the future it builds will need
-fn supplied_client<'call, Source>(
-    client: Option<&'call Source::Client>,
-    is_async: bool,
-) -> Option<SuppliedClient<'call, Source::Client>>
-where
-    Source: ClientSource,
-{
-    client.map(|transport| SuppliedClient {
-        kind: if is_async {
-            ClientKind::Asynchronous
-        } else {
-            ClientKind::Sync
-        },
-        transport,
-    })
 }
 
 enum Polled<Output> {

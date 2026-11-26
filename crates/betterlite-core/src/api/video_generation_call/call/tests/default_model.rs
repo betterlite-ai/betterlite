@@ -9,9 +9,18 @@ fn the_default_model_resolves_to_openai_and_sets_create_video() {
     let object = bench.run(request()).expect("the call answers");
     assert_eq!(object.id, VIDEO_ID);
     let inner = handled(&bench.journal);
+    assert_resolved_video(&inner);
+    assert_provider_mapping(&bench);
+    assert_logged_defaults(&bench, &inner);
+}
+
+fn assert_resolved_video(inner: &super::support::Handled) {
     assert_eq!(inner.model, "sora-2");
     assert_eq!(inner.custom_llm_provider, "openai");
     assert_eq!(inner.prompt, "a prompt");
+}
+
+fn assert_provider_mapping(bench: &Bench) {
     assert_eq!(
         lookups(&bench.journal),
         vec!["OpenAIVideoConfig".to_owned()]
@@ -20,6 +29,9 @@ fn the_default_model_resolves_to_openai_and_sets_create_video() {
     assert_eq!(mapped.len(), 1_usize);
     assert_eq!(mapped[0].model, "sora-2");
     assert!(mapped[0].drop_params);
+}
+
+fn assert_logged_defaults(bench: &Bench, inner: &super::support::Handled) {
     assert_eq!(bench.fixture.state.call_type, CALL_TYPE);
     assert_eq!(bench.fixture.state.model, "sora-2");
     assert_eq!(inner.logged.model, "sora-2");

@@ -25,7 +25,7 @@ pub fn requested_optional_params(
     call: &mut VideoGenerationRequest,
     // ast-grep-ignore: no-long-names
 ) -> Result<VideoCreateOptionalRequestParams, VideoGenerationCallError> {
-    let mut params = requested_params(call)?;
+    let mut params = requested_params(call);
     let reference = match params.shift_remove(INPUT_REFERENCE) {
         None => call.input_reference.clone(),
         Some(value) => Some(supplied_media(value)?),
@@ -47,7 +47,7 @@ pub fn requested_optional_params(
 }
 
 // the options as LiteLLM's dict builds them, before they are narrowed to the typed struct
-fn requested_params(call: &mut VideoGenerationRequest) -> Result<Params, VideoGenerationCallError> {
+fn requested_params(call: &mut VideoGenerationRequest) -> Params {
     let loose_extra_body = call.kwargs.shift_remove(EXTRA_BODY);
     // local_vars.update(kwargs): every loose keyword lands over the named arguments, nulls included
     let mut optional = named_params(call);
@@ -75,7 +75,7 @@ fn requested_params(call: &mut VideoGenerationRequest) -> Result<Params, VideoGe
     }
     // last, so no timeout reaches the provider as an option
     optional.shift_remove(TIMEOUT);
-    Ok(optional)
+    optional
 }
 
 // get_optional_params_video_generation: the provider's map, then the extra_body entries over it key by key
