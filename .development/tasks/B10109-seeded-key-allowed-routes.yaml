@@ -1,5 +1,5 @@
 id: B10109
-title: A seeded virtual key's allowed_routes admits and denies routes over HTTP
+title: Seeded virtual keys prove route and model grants over HTTP
 description: >-
   B883 builds the allowed_routes check of a virtual key in crates/betterlite-server/src/auth/virtual_key_routes.rs, and
   its proof stops at the production stages and a static-denial HTTP case. Its review asked for a case where a seeded
@@ -12,18 +12,24 @@ description: >-
   seeded key row carry allowed_routes in KeyRow, and insert it in seed_sql.rs. Then add HTTP cases under
   tools/oracle/cases/auth/virtual-key-routes/ that seed a key with allowed_routes [/v1/models]: GET /v1/models answers
   200, and POST /chat/completions answers LiteLLM's 403 before any upstream call.
+
+
+  B886 builds the model grant checks for keys, teams, organizations, projects and users in crates/betterlite-server/src/auth/entity_model_access.rs, and its HTTP cases move here for the same reason: they need a seeded virtual key, and the fixture seeds no key, team or user model lists, member allowed_models or project rows. Seed those as schema.prisma declares them: models on LiteLLM_VerificationToken, LiteLLM_TeamTable, LiteLLM_UserTable and LiteLLM_ProjectTable, and a member's allowed_models on the LiteLLM_BudgetTable row its LiteLLM_TeamMembership points to. Then add HTTP cases under tools/oracle/cases/auth/entity-model-access/ where each grant (key, team, organization, project, user) denies a model at POST /chat/completions with LiteLLM's answer and no upstream request, and one where a permitted model reaches the upstream. Include a key whose access groups replace its own models and a team whose access groups add to its list, since B886 keeps those two apart.
 scope:
   paths:
   - tools/postgres-fixture/fixtures/baseline.sql
   - tools/postgres-fixture/src/seed.rs
   - tools/postgres-fixture/src/seed_sql.rs
   - tools/oracle/cases/auth/virtual-key-routes/**
+  - tools/oracle/cases/auth/entity-model-access/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L513
   why: The allowed_routes column of LiteLLM_VerificationToken.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L587-L652
   why: How a key's allowed_routes admits a route.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L4957-L5100
+  why: How the key and resolved-model grants deny a model.
 dod:
 - text: >-
     The fixture's LiteLLM_VerificationToken has allowed_routes, a seeded key row may set it, and the fixture's own tests
@@ -31,6 +37,10 @@ dod:
   proof: [fixture-tests]
 - text: >-
     The allowed and denied route cases pass against LiteLLM, and the denied one shows no upstream request.
+  proof: [oracle]
+- text: >-
+    The key, team, organization, project and user model denial cases, the permitted model case, and the key and
+    team access group cases pass against LiteLLM, and no denied request reaches the upstream.
   proof: [oracle]
 checks:
   optional: []
@@ -41,13 +51,20 @@ checks:
 oracle_cases:
 - tools/oracle/cases/auth/virtual-key-routes/allowed-route.yaml
 - tools/oracle/cases/auth/virtual-key-routes/denied-route.yaml
+- tools/oracle/cases/auth/entity-model-access/key-model-denial.yaml
+- tools/oracle/cases/auth/entity-model-access/team-model-denial.yaml
+- tools/oracle/cases/auth/entity-model-access/org-model-denial.yaml
+- tools/oracle/cases/auth/entity-model-access/project-model-denial.yaml
+- tools/oracle/cases/auth/entity-model-access/user-model-denial.yaml
+- tools/oracle/cases/auth/entity-model-access/permitted-model.yaml
+- tools/oracle/cases/auth/entity-model-access/access-group-replace-and-union.yaml
 deviations: []
 out_of_scope:
-- The route check itself (B883) and key authentication (B052). This task only seeds the column and adds the cases.
+- The route check (B883), the model grant checks (B886) and key authentication (B052). This task only seeds the fixture and adds the cases.
 pitfalls:
 - Every case seeds through KeyRow, so the new field defaults to an empty list and an older case needs no change.
 - A database case needs POSTGRES_TEST_URL when run by hand; nextest starts its own server.
 review_level: standard
 budget:
-  max_changed_lines: 300
+  max_changed_lines: 700
   max_new_expects: 0
