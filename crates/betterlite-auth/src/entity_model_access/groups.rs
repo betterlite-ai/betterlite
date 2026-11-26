@@ -48,11 +48,11 @@ impl GroupResources {
     // _get_resources_from_access_groups: an unreadable group contributes nothing to the expansion
     pub async fn load(lookup: Option<&TeamLookup>, ids: &[String]) -> Self {
         let mut groups = BTreeMap::new();
-        let Some(lookup) = lookup else {
+        let Some(team_lookup) = lookup else {
             return Self { groups };
         };
         for id in ids {
-            let Ok(table) = get_access_object(lookup, id, false).await else {
+            let Ok(table) = get_access_object(team_lookup, id, false).await else {
                 continue;
             };
             groups.insert(
@@ -87,45 +87,35 @@ pub async fn authorized_resources(
     lookup: Option<&TeamLookup>,
     kind: ResourceKind,
 ) -> Vec<String> {
-    let Some(token) = token else {
+    let Some(key) = token else {
         return Vec::new();
     };
-    let ids = token
-        .view
-        .token
-        .access_group_ids
-        .clone()
-        .unwrap_or_default();
-    if ids.is_empty() {
-        return Vec::new();
-    }
-    let Some(lookup) = lookup else {
+    let ids = key.view.token.access_group_ids.clone().unwrap_or_default();
+    let Some(team_lookup) = lookup else {
         return Vec::new();
     };
     // the key's own team wins; the supplied team object only answers when the key names none
-    let key_team_id = token
+    let key_team_id = key
         .view
         .token
         .team_id
         .as_deref()
         .or_else(|| team.map(|row| row.fields.base.team_id.as_str()));
-    let key_hash = token
-        .view
-        .token
-        .token
-        .as_ref()
-        .map(|secret| secret.expose_secret().to_owned());
+    let token_hash = key.view.token.token.clone();
     let mut resources: Vec<String> = Vec::new();
     for id in &ids {
-        let Ok(group) = get_access_object(lookup, id, false).await else {
+        let Ok(group) = get_access_object(team_lookup, id, false).await else {
             continue;
         };
-        let team_authorized = key_team_id
-            .is_some_and(|team_id| group.assigned_team_ids.iter().any(|held| held == team_id));
-        let key_authorized = key_hash
-            .as_ref()
-            .is_some_and(|hash| group.assigned_key_ids.iter().any(|held| held == hash));
-        if team_authorized || key_authorized {
+        let by_team = key_team_id
+            .is_some_and(|held| group.assigned_team_ids.iter().any(|value| value == held));
+        let by_key = token_hash.as_ref().is_some_and(|secret| {
+            group
+                .assigned_key_ids
+                .iter()
+                .any(|held| held == secret.expose_secret())
+        });
+        if by_team || by_key {
             resources.extend(kind.column(&group).iter().cloned());
         }
     }
@@ -157,8 +147,8 @@ pub async fn key_access_group_grants_model(
     match can_object_call_model(model, &grant, ModelAccessObject::Key, context, 0) {
         ModelAccessDecision::Allowed => Ok(true),
         ModelAccessDecision::Denied(_) => Ok(false),
-        ModelAccessDecision::RecurseDepthExceeded { model } => {
-            Err(EntityModelAccessError::RecurseDepth { model })
+        ModelAccessDecision::RecurseDepthExceeded { model: received } => {
+            Err(EntityModelAccessError::RecurseDepth { model: received })
         }
     }
 }

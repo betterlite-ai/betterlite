@@ -5,13 +5,14 @@ use betterlite_auth::auth_model_patterns::decision::ModelAccessContext;
 use betterlite_auth::auth_model_patterns::pattern::UnresolvedProviderInference;
 use betterlite_auth::auth_model_patterns::user_model::can_user_call_model;
 use betterlite_auth::auth_request_models::RequestedModels;
+use betterlite_auth::auth_team_lookup::lookup::TeamLookup;
 use betterlite_auth::entity_model_access::error::EntityModelAccessError;
 use betterlite_auth::entity_model_access::groups::{ResourceKind, authorized_resources};
 use betterlite_auth::entity_model_access::key::can_key_call_model;
 use betterlite_auth::entity_model_access::org::can_org_access_model;
 use betterlite_auth::entity_model_access::project::can_project_access_model;
 use betterlite_auth::entity_model_access::resolved::{ResolvedDeps, can_key_call_resolved_model};
-use betterlite_auth::entity_model_access::team::can_team_access_model;
+use betterlite_auth::entity_model_access::team::{TeamAccessRequest, can_team_access_model};
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::identity_rows::user::LiteLLMUserTable;
@@ -113,7 +114,6 @@ async fn step_value(step: &Step) -> Result<Value, Box<HelperError>> {
     let lookup = step.database.then(|| team_lookup(&fixture));
     let model = RequestedModels::One(step.model.clone());
     let team: Option<LiteLLMTeamTable> = row(step.team.as_ref())?;
-    let aliases = &step.aliases;
     let targets = &step.alias_targets;
     match step.function {
         Function::Key => {
@@ -121,21 +121,10 @@ async fn step_value(step: &Step) -> Result<Value, Box<HelperError>> {
             let outcome = can_key_call_model(&model, &token, &context(), lookup.as_ref()).await;
             Ok(decision_value(outcome))
         }
-        Function::Team => {
-            let outcome = can_team_access_model(
-                &model,
-                team.as_ref(),
-                aliases,
-                targets,
-                &context(),
-                lookup.as_ref(),
-            )
-            .await;
-            Ok(decision_value(outcome))
-        }
+        Function::Team => team_value(step, &model, team.as_ref(), lookup.as_ref()).await,
         Function::Org => {
             let org: Option<OrganizationTable> = row(step.org.as_ref())?;
-            let outcome = can_org_access_model(&model, org.as_ref(), aliases, &context());
+            let outcome = can_org_access_model(&model, org.as_ref(), &step.aliases, &context());
             Ok(decision_value(outcome))
         }
         Function::Project => {
@@ -143,20 +132,7 @@ async fn step_value(step: &Step) -> Result<Value, Box<HelperError>> {
             let outcome = can_project_access_model(&model, project.as_ref(), targets, &context());
             Ok(decision_value(outcome))
         }
-        Function::Resolved => {
-            let token = token(step)?;
-            let context = context();
-            let projects = step.database.then(|| project_lookup(&fixture));
-            let member = admission(&fixture, &context);
-            let deps = ResolvedDeps {
-                teams: lookup.as_ref(),
-                projects: projects.as_ref(),
-                admission: Some(&member),
-                now: 0.0_f64,
-            };
-            let outcome = can_key_call_resolved_model(&model, &token, &context, &deps).await;
-            Ok(decision_value(outcome))
-        }
+        Function::Resolved => resolved_value(step, &model, &fixture, lookup.as_ref()).await,
         Function::Resources => {
             let token = token(step)?;
             let mut resources =
@@ -174,7 +150,43 @@ async fn step_value(step: &Step) -> Result<Value, Box<HelperError>> {
     }
 }
 
-fn context() -> ModelAccessContext<'static> {
+async fn team_value(
+    step: &Step,
+    model: &RequestedModels,
+    team: Option<&LiteLLMTeamTable>,
+    lookup: Option<&TeamLookup>,
+) -> Result<Value, Box<HelperError>> {
+    let request = TeamAccessRequest {
+        team,
+        team_aliases: &step.aliases,
+        key_aliases: &step.alias_targets,
+        lookup,
+    };
+    let outcome = can_team_access_model(model, &request, &context()).await;
+    Ok(decision_value(outcome))
+}
+
+async fn resolved_value(
+    step: &Step,
+    model: &RequestedModels,
+    fixture: &Arc<Fixture>,
+    lookup: Option<&TeamLookup>,
+) -> Result<Value, Box<HelperError>> {
+    let token = token(step)?;
+    let context = context();
+    let projects = step.database.then(|| project_lookup(fixture));
+    let member = admission(fixture, &context);
+    let deps = ResolvedDeps {
+        teams: lookup,
+        projects: projects.as_ref(),
+        admission: Some(&member),
+        now: 0.0_f64,
+    };
+    let outcome = can_key_call_resolved_model(model, &token, &context, &deps).await;
+    Ok(decision_value(outcome))
+}
+
+const fn context() -> ModelAccessContext<'static> {
     ModelAccessContext {
         view: None,
         global_model_aliases: &NO_ALIASES,
@@ -217,10 +229,7 @@ fn error_value(error: &EntityModelAccessError) -> Value {
     let Some(denial) = error.denial() else {
         return json!({
             "class": class_name(error),
-            "status": Value::Null,
-            "type": Value::Null,
-            "param": Value::Null,
-            "code": Value::Null,
+            "status": Value::Null, "type": Value::Null, "param": Value::Null, "code": Value::Null,
             "message": error.to_string(),
         });
     };
@@ -235,7 +244,7 @@ fn error_value(error: &EntityModelAccessError) -> Value {
     })
 }
 
-fn class_name(error: &EntityModelAccessError) -> &'static str {
+const fn class_name(error: &EntityModelAccessError) -> &'static str {
     match error {
         EntityModelAccessError::Denied(_) => "ModelAccessDeniedProxyException",
         EntityModelAccessError::RecurseDepth { .. } => "Exception",

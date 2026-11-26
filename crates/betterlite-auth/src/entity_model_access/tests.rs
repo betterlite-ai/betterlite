@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use betterlite_db::team_rows::team::LiteLLMTeamTable;
 use betterlite_error::proxy_error_types::ProxyErrorTypes;
 use betterlite_error::proxy_exception::model_access_denied::ModelAccessDeniedProxyException;
 use chrono::Utc;
@@ -10,6 +11,7 @@ use rstest::rstest;
 
 use crate::auth_model_patterns::access_groups::{AccessGroupError, AccessGroupLookup};
 use crate::auth_request_models::RequestedModels;
+use crate::auth_team_lookup::lookup::TeamLookup;
 use crate::resolved_key::auth::UserAPIKeyAuth;
 
 use super::error::EntityModelAccessError;
@@ -20,7 +22,7 @@ use super::key::can_key_call_model;
 use super::org::can_org_access_model;
 use super::project::can_project_access_model;
 use super::resolved::{ResolvedDeps, can_key_call_resolved_model};
-use super::team::can_team_access_model;
+use super::team::{TeamAccessRequest, can_team_access_model};
 
 mod support;
 
@@ -79,8 +81,21 @@ fn assert_denial(error: &EntityModelAccessError, kind: ProxyErrorTypes) {
     assert!(!exception.message.contains("models="));
 }
 
-fn empty_aliases() -> BTreeMap<String, String> {
+const fn empty_aliases() -> BTreeMap<String, String> {
     BTreeMap::new()
+}
+
+const fn team_access<'a>(
+    team: Option<&'a LiteLLMTeamTable>,
+    aliases: &'a BTreeMap<String, String>,
+    lookup: Option<&'a TeamLookup>,
+) -> TeamAccessRequest<'a> {
+    TeamAccessRequest {
+        team,
+        team_aliases: aliases,
+        key_aliases: aliases,
+        lookup,
+    }
 }
 
 async fn resolved_with(
@@ -206,21 +221,15 @@ async fn team_groups_union_preserves_order() {
     let aliases = empty_aliases();
     can_team_access_model(
         &one("claude"),
-        Some(&team),
-        &aliases,
-        &aliases,
+        &team_access(Some(&team), &aliases, Some(&lookup)),
         &context,
-        Some(&lookup),
     )
     .await
     .unwrap();
     let refused = can_team_access_model(
         &one("other"),
-        Some(&team),
-        &aliases,
-        &aliases,
+        &team_access(Some(&team), &aliases, Some(&lookup)),
         &context,
-        Some(&lookup),
     )
     .await
     .unwrap_err();
@@ -250,11 +259,8 @@ async fn only_proxy_exception_falls_back() {
     let aliases = empty_aliases();
     let team_refused = can_team_access_model(
         &one("claude"),
-        Some(&team),
-        &aliases,
-        &aliases,
+        &team_access(Some(&team), &aliases, Some(&lookup)),
         &context,
-        Some(&lookup),
     )
     .await
     .unwrap_err();
@@ -298,11 +304,8 @@ async fn entity_denial_type_matrix() {
     let team = team_row(TEAM_TWO);
     let team_refused = can_team_access_model(
         &one("claude"),
-        Some(&team),
-        &aliases,
-        &aliases,
+        &team_access(Some(&team), &aliases, Some(&lookup)),
         &context,
-        Some(&lookup),
     )
     .await
     .unwrap_err();
@@ -453,13 +456,19 @@ async fn resolved_default_db_argument() {
             .iter()
             .any(|event| event.contains("access_group_id:ag-team"))
     );
-    // with no database both checks fall back to the plain grants and the original denial stands
+}
+
+#[tokio::test]
+async fn resolved_offline_falls_back_to_plain_grants() {
+    let setup = Setup::new();
+    let context = setup.context();
     let offline = ResolvedDeps {
         teams: None,
         projects: None,
         admission: None,
         now: 0.0,
     };
+    // with no database both checks fall back to the plain grants and the original denial stands
     let key_refused =
         can_key_call_resolved_model(&one("claude"), &token(TOKEN_GROUPS), &context, &offline)
             .await
@@ -469,6 +478,7 @@ async fn resolved_default_db_argument() {
         ProxyErrorTypes::KeyModelAccessDenied.to_string()
     );
     // without a lookup the team is rebuilt from the key, whose empty team_models grant every model
+    let team_token = token(r#"{"token":"hash-1","team_id":"team-1","config":{"rpm":1}}"#);
     can_key_call_resolved_model(&one("claude"), &team_token, &context, &offline)
         .await
         .unwrap();
@@ -542,16 +552,16 @@ async fn member_check_requires_live_team() {
     );
     assert!(internal(&refused).contains("Team member not allowed to access model"));
     // a key without a user never reaches the member scope
-    let script = Arc::new(Script::new().with_team(team_row(TEAM_ONE)).with_membership(
+    let without_user = Arc::new(Script::new().with_team(team_row(TEAM_ONE)).with_membership(
         "user-1",
         "team-1",
         MEMBER_DENYING,
     ));
-    resolved_with(&script, &token(TOKEN_TEAM), &one("gpt-4o"))
+    resolved_with(&without_user, &token(TOKEN_TEAM), &one("gpt-4o"))
         .await
         .unwrap();
     assert!(
-        !script
+        !without_user
             .reads()
             .iter()
             .any(|event| event.contains("read membership"))

@@ -61,34 +61,28 @@ pub fn key_grant(token: &UserAPIKeyAuth) -> ModelGrantPattern {
 pub fn fallback_team(
     token: &UserAPIKeyAuth,
 ) -> Result<LiteLLMTeamTableCachedObj, EntityModelAccessError> {
-    let view = &token.view;
-    let Some(team_id) = view.token.team_id.clone() else {
+    let Some(team_id) = token.view.token.team_id.clone() else {
         return Err(EntityModelAccessError::TeamRow(Box::new(
             TeamRowError::MissingTeamId,
         )));
     };
-    let models: Vec<JsonData> = text_models(&view.team_models)
+    let models = text_models(&token.view.team_models)
         .into_iter()
-        .map(JsonData::String)
-        .collect();
+        .map(JsonData::String);
     let mut row = BTreeMap::new();
     row.insert("team_id".to_owned(), JsonData::String(team_id));
-    row.insert("models".to_owned(), JsonData::Array(models));
-    row.insert("blocked".to_owned(), JsonData::Bool(view.team_blocked));
-    if let Some(team_alias) = &view.team_alias {
-        row.insert(
-            "team_alias".to_owned(),
-            JsonData::String(team_alias.clone()),
-        );
+    row.insert("models".to_owned(), JsonData::Array(models.collect()));
+    let blocked = JsonData::Bool(token.view.team_blocked);
+    row.insert("blocked".to_owned(), blocked);
+    if let Some(alias) = &token.view.team_alias {
+        row.insert("team_alias".to_owned(), JsonData::String(alias.clone()));
     }
-    if let Some(metadata) = &view.team_metadata {
+    if let Some(metadata) = &token.view.team_metadata {
         row.insert("metadata".to_owned(), JsonData::Object(metadata.0.clone()));
     }
-    if let Some(permission_id) = &view.team_object_permission_id {
-        row.insert(
-            "object_permission_id".to_owned(),
-            JsonData::String(permission_id.clone()),
-        );
+    if let Some(id) = &token.view.team_object_permission_id {
+        let value = JsonData::String(id.clone());
+        row.insert("object_permission_id".to_owned(), value);
     }
     if let Some(permission) = &token.extra.team_object_permission {
         let wire = serde_json::to_value(permission).map_err(|source| {

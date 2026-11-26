@@ -21,8 +21,8 @@ pub async fn can_key_call_model(
     let grant = key_grant(token);
     let denial = match can_object_call_model(model, &grant, ModelAccessObject::Key, context, 0) {
         ModelAccessDecision::Allowed => return Ok(()),
-        ModelAccessDecision::RecurseDepthExceeded { model } => {
-            return Err(EntityModelAccessError::RecurseDepth { model });
+        ModelAccessDecision::RecurseDepthExceeded { model: received } => {
+            return Err(EntityModelAccessError::RecurseDepth { model: received });
         }
         ModelAccessDecision::Denied(denial) => denial,
     };

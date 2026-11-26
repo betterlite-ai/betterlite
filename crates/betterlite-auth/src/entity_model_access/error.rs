@@ -24,7 +24,6 @@ pub enum EntityModelAccessError {
 }
 
 impl EntityModelAccessError {
-    #[must_use]
     pub fn gate(decision: ModelAccessDecision) -> Result<(), Self> {
         match decision {
             ModelAccessDecision::Allowed => Ok(()),

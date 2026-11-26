@@ -312,13 +312,18 @@ impl DurationParser for Script {
 
 #[must_use]
 pub(crate) fn team_lookup(script: &Arc<Script>) -> TeamLookup {
+    let cache: Arc<dyn TeamCache> = Arc::<Script>::clone(script);
+    let permission_cache: Arc<dyn ObjectPermissionCache> = Arc::<Script>::clone(script);
+    let store: Arc<dyn TeamStore> = Arc::<Script>::clone(script);
+    let permission_reader: Arc<dyn ObjectPermissionStore> = Arc::<Script>::clone(script);
+    let permission_writer: Arc<dyn ObjectPermissionStore> = Arc::<Script>::clone(script);
     TeamLookup {
-        cache: Arc::clone(script),
-        permission_cache: Arc::clone(script),
+        cache,
+        permission_cache,
         database: Some(TeamDatabase {
-            store: Arc::clone(script),
-            permission_reader: Arc::clone(script),
-            permission_writer: Arc::clone(script),
+            store,
+            permission_reader,
+            permission_writer,
         }),
         provisioner: None,
         cadence: Arc::new(Cadence::new(1024, Arc::new(WallClock))),
@@ -328,15 +333,17 @@ pub(crate) fn team_lookup(script: &Arc<Script>) -> TeamLookup {
 
 #[must_use]
 pub(crate) fn project_lookup(script: &Arc<Script>) -> OrgLookup {
+    let store: Arc<dyn OrgStore> = Arc::<Script>::clone(script);
+    let cache: Arc<dyn OrgCache> = Arc::<Script>::clone(script);
     OrgLookup {
-        store: Some(Arc::clone(script)),
-        cache: Arc::clone(script),
+        store: Some(store),
+        cache,
         in_memory_ttl: 60.0,
     }
 }
 
 #[must_use]
-pub(crate) fn admission<'deps>(
+pub(crate) const fn admission<'deps>(
     script: &'deps Script,
     models: &'deps ModelAccessContext<'deps>,
     now: DateTime<Utc>,
@@ -360,7 +367,7 @@ pub(crate) struct Setup {
 
 impl Setup {
     #[must_use]
-    pub(crate) fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self {
             aliases: BTreeMap::new(),
             max_depth: 100,

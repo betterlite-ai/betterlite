@@ -139,7 +139,7 @@ pub(super) fn project_lookup(fixture: &Arc<Fixture>) -> OrgLookup {
     }
 }
 
-pub(super) fn admission<'deps>(
+pub(super) const fn admission<'deps>(
     fixture: &'deps Fixture,
     models: &'deps ModelAccessContext<'deps>,
 ) -> TeamAdmission<'deps> {

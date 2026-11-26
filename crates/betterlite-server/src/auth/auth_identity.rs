@@ -115,20 +115,12 @@ pub(crate) fn dispatch(
     master_key: &SecretString,
 ) -> Result<AuthContext, StageFailure> {
     match backend {
-        AuthBackend::MasterKey => master_key_stage(input, master_key)
-            .map_err(|failure| StageFailure::Authentication(Box::new(failure))),
+        AuthBackend::MasterKey => master_key_stage(input, master_key).map_err(StageFailure::from),
         AuthBackend::AuthRequestPolicy => auth_request_policy_stage(input),
         AuthBackend::RequestBodySafety => auth_request_body_safety_stage(input),
-        AuthBackend::AuthRequestModels => auth_request_models_stage(input)
-            .map_err(|failure| StageFailure::Authentication(Box::new(failure))),
+        AuthBackend::AuthRequestModels => auth_request_models_stage(input),
         AuthBackend::AuthModelPatterns => auth_model_patterns_stage(input),
-        AuthBackend::EntityModelAccess => {
-            let StageInput::EntityModelAccess(stage) = input else {
-                return Err(StageFailure::from(AuthenticationFailure::Missing));
-            };
-            // the grant checks ran in the prefetch, so only the identity is left
-            Ok(stage.context.clone())
-        }
+        AuthBackend::EntityModelAccess => entity_model_access_stage(input),
         AuthBackend::AuthResourceGrants => auth_resource_grants_stage(input),
         AuthBackend::AuthTagBudgets => {
             let StageInput::AuthTagBudgets(stage) = input else {
@@ -168,6 +160,14 @@ pub(crate) fn dispatch(
     }
 }
 
+fn entity_model_access_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
+    let StageInput::EntityModelAccess(stage) = input else {
+        return Err(StageFailure::from(AuthenticationFailure::Missing));
+    };
+    // the grant checks ran in the prefetch, so only the identity is left
+    Ok(stage.context.clone())
+}
+
 fn auth_request_policy_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
     let StageInput::AuthRequestPolicy(stage) = input else {
         return Err(StageFailure::from(AuthenticationFailure::Missing));
@@ -195,15 +195,15 @@ fn auth_model_patterns_stage(input: &StageInput) -> Result<AuthContext, StageFai
     };
     run_stage(stage).map_err(|rejection| StageFailure::ModelAccess(Box::new(rejection)))
 }
-fn auth_request_models_stage(input: &StageInput) -> Result<AuthContext, AuthenticationFailure> {
+fn auth_request_models_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
     let StageInput::AuthRequestModels(stage) = input else {
-        return Err(AuthenticationFailure::Missing);
+        return Err(StageFailure::from(AuthenticationFailure::Missing));
     };
     match resolve(stage) {
         Ok(_) => Ok(stage.context.clone()),
         Err(error) => {
             tracing::debug!(error = %error, "the request model stage failed");
-            Err(AuthenticationFailure::Missing)
+            Err(StageFailure::from(AuthenticationFailure::Missing))
         }
     }
 }

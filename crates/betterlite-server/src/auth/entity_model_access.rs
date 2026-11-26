@@ -49,25 +49,19 @@ pub struct EntityModelRule {
 
 impl fmt::Debug for EntityModelRule {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let team_id = self
+            .key
+            .as_ref()
+            .and_then(|key| key.view.token.team_id.as_ref());
+        let org_id = self
+            .org
+            .as_ref()
+            .and_then(|org| org.organization_id.as_ref());
         f.debug_struct("EntityModelRule")
-            .field(
-                "key_team_id",
-                &self
-                    .key
-                    .as_ref()
-                    .and_then(|token| token.view.token.team_id.as_ref()),
-            )
+            .field("key_team_id", &team_id)
             .field("has_user", &self.user.is_some())
-            .field(
-                "org_id",
-                &self
-                    .org
-                    .as_ref()
-                    .and_then(|org| org.organization_id.as_ref()),
-            )
+            .field("org_id", &org_id)
             .field("model", &self.model)
-            .field("has_teams", &self.teams.is_some())
-            .field("has_projects", &self.projects.is_some())
             .finish_non_exhaustive()
     }
 }
@@ -109,25 +103,21 @@ pub(crate) async fn prefetch(stage: &EntityModelStageInput) -> Result<(), Entity
     let Some(rule) = stage.rule.as_deref() else {
         return Ok(());
     };
-    let provider: &dyn ProviderInference = rule.provider.as_deref().unwrap_or(&UNRESOLVED_PROVIDER);
     let context = ModelAccessContext {
         view: rule.view.as_deref(),
         global_model_aliases: &rule.global_model_aliases,
         compaction: None,
-        provider,
+        provider: rule.provider.as_deref().unwrap_or(&UNRESOLVED_PROVIDER),
         max_recurse_depth: stage.max_recurse_depth,
     };
     let aliases = rule
         .key
         .as_ref()
         .and_then(|token| token.view.team_model_aliases.as_ref())
-        .map(|payload| key_model_aliases(&payload.0))
-        .unwrap_or_default();
-    let targets = rule
-        .key
-        .as_ref()
-        .map(|token| key_model_aliases(&token.view.token.aliases.0))
-        .unwrap_or_default();
+        .map_or_else(BTreeMap::new, |payload| key_model_aliases(&payload.0));
+    let targets = rule.key.as_ref().map_or_else(BTreeMap::new, |token| {
+        key_model_aliases(&token.view.token.aliases.0)
+    });
     EntityModelAccessError::gate(can_user_call_model(
         &rule.model,
         rule.user.as_ref(),
