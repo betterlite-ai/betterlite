@@ -88,6 +88,12 @@ if [[ -z "${LAND_ONLY}" ]]; then
         grant=1
         break
       fi
+      # Claude workers are off for good (Max, 11-26), so a ladder left with only Claude rungs takes a grant onto its last rung, Codex, instead of waiting for the anthropic mark
+      if grep -q -E '(\(|; )anthropic is ' "${L}/availability-${id}.log" && ! grep -q -E "(\(|; )openai (is |can't)" "${L}/availability-${id}.log"; then
+        say "only Claude rungs are left on its worker ladder, so ${run} takes a grant and starts on Codex"
+        grant=1
+        break
+      fi
       if [[ -z "${waiting}" ]]; then
         say "waiting: every runner left on its worker ladder is unavailable; a grant moves its next start to another vendor"
         waiting=1

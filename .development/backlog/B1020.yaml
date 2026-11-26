@@ -1,14 +1,14 @@
 id: B1020
 milestone: M5 api families
 title: File credentials
-status: todo
+status: done
 depends_on: [B171, B303, B1019, B732, B886, B844, B10047, B759, B9964, B10060]
 file: tasks/B1020-file-credentials.yaml
 covers:
   - "litellm/proxy/openai_files_endpoints/common_utils.py"
 parent: B087
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3256
