@@ -1,0 +1,28 @@
+task: B743
+deviations:
+  - what: >-
+      The header document betterlite decodes before resolving the client network (Forwarded and
+      X-Forwarded-* values, the Host header and the configured ranges) is bounded at 1048576 bytes
+      and JSON depth 64; a request past either limit fails the auth stage with the public 401
+      auth_error translation instead of reaching the network functions.
+    why: >-
+      This task owns the outside-byte decoder for those headers. LiteLLM hands the header text and
+      the configured ranges to pure functions with no byte limit of their own, and a request the
+      gateway itself refuses stays a 401 from the auth path rather than reaching a route.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/network.py#L26-L38
+kept_bugs:
+  - what: >-
+      is_trusted_proxy and is_internal_ip compare the address exactly as parsed and never unmap an
+      IPv4-mapped IPv6 one, while ip_in_networks checks both the address and its unmapped form.
+    why: >-
+      A direct peer or chain entry written as ::ffff:10.1.2.3 is not matched against 10.0.0.0/8 by
+      these two functions in LiteLLM; a working setup sees fail-closed answers there, so betterlite
+      copies the difference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/ip_address_utils.py#L100-L111
+  - what: >-
+      With mcp_xff_num_trusted_hops unset, get_mcp_client_ip returns the whole X-Forwarded-For
+      header text, not one address.
+    why: >-
+      This is LiteLLM's legacy leftmost-XFF path; a working setup with a comma chain sees that exact
+      string reach the access-control comparison, so betterlite copies it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L78-L87
