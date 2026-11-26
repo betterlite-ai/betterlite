@@ -16,11 +16,11 @@ use super::grant::entity_grant;
 use super::groups::GroupResources;
 
 // the row, alias maps and group lookup a team grant reads, shared by the first check and its retry
-pub struct TeamAccessRequest<'a> {
-    pub team: Option<&'a LiteLLMTeamTable>,
-    pub team_aliases: &'a BTreeMap<String, String>,
-    pub key_aliases: &'a BTreeMap<String, String>,
-    pub lookup: Option<&'a TeamLookup>,
+pub struct TeamAccessRequest<'request> {
+    pub team: Option<&'request LiteLLMTeamTable>,
+    pub team_aliases: &'request BTreeMap<String, String>,
+    pub key_aliases: &'request BTreeMap<String, String>,
+    pub lookup: Option<&'request TeamLookup>,
 }
 
 // can_team_access_model: the team's grant first, then its access groups unioned onto the team models

@@ -9,7 +9,7 @@ use betterlite_error::proxy_exception::model_access_denied::ModelAccessDeniedPro
 use chrono::Utc;
 use rstest::rstest;
 
-use crate::auth_model_patterns::access_groups::{AccessGroupError, AccessGroupLookup};
+use crate::auth_model_patterns::access_groups::{AccessGroupError, AccessGroupLookup as _};
 use crate::auth_request_models::RequestedModels;
 use crate::auth_team_lookup::lookup::TeamLookup;
 use crate::resolved_key::auth::UserAPIKeyAuth;
@@ -85,11 +85,11 @@ const fn empty_aliases() -> BTreeMap<String, String> {
     BTreeMap::new()
 }
 
-const fn team_access<'a>(
-    team: Option<&'a LiteLLMTeamTable>,
-    aliases: &'a BTreeMap<String, String>,
-    lookup: Option<&'a TeamLookup>,
-) -> TeamAccessRequest<'a> {
+const fn team_access<'request>(
+    team: Option<&'request LiteLLMTeamTable>,
+    aliases: &'request BTreeMap<String, String>,
+    lookup: Option<&'request TeamLookup>,
+) -> TeamAccessRequest<'request> {
     TeamAccessRequest {
         team,
         team_aliases: aliases,
