@@ -74,7 +74,7 @@ def text_field(values: Mapping[str, JsonValue], name: str) -> str | None:
     match values.get(name):
         case str() as text:
             return text
-        case object():
+        case None | bool() | int() | float() | list() | dict():
             return None
 
 
@@ -104,7 +104,7 @@ def azure_protocol(scenario: Scenario, merged: Mapping[str, JsonValue]) -> str:
     match configured:
         case str() as text:
             return text
-        case object():
+        case None | bool() | int() | float() | list() | dict():
             return GA_PROTOCOL
 
 
@@ -177,9 +177,7 @@ def vertex_answer(scenario: Scenario, merged: dict[str, JsonValue], base: str | 
     if token is None:
         token = ""
     config = VertexAIRealtimeConfig(access_token=token, project=project, location=region)
-    headers = {"Authorization": f"Bearer {token}"}
-    if project:
-        headers["x-goog-user-project"] = project
+    headers: dict[str, str] = config.validate_environment(headers={}, model=model, api_key=None)
     view = empty_view("vertex_ai")
     view["api_base"] = base
     view["url"] = config.get_complete_url(api_base=base, model=model)

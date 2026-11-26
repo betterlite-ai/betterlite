@@ -8,6 +8,7 @@ use betterlite_auth::auth_model_lists::credential::{CredentialEntry, CredentialS
 use betterlite_config::tls::Verification;
 use betterlite_models::catalog::{ModelCatalog, UnknownFields};
 use betterlite_models::decisions::Json;
+use betterlite_models::lookup::info::ModelInfoError;
 use betterlite_models::metadata::identity::Mode;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_openai::openai_base_config::Headers;
@@ -19,7 +20,7 @@ use crate::api::realtime_connect::token::{
 };
 
 use super::azure::AzureAdTokens;
-use super::metadata::{ModelInfoFailure, RealtimeModelInfo, RealtimeModelMetadata};
+use super::metadata::{RealtimeModelInfo, RealtimeModelMetadata};
 use super::vertex::{
     VertexProbeConfig, VertexProbeEndpoint, VertexProbeParameters, VertexProbeTarget,
     VertexTokenSource,
@@ -118,7 +119,7 @@ impl RealtimeProbeDialer for RecordingDialer {
 }
 
 struct StaticMetadata {
-    entries: BTreeMap<String, Result<Option<RealtimeModelInfo>, ModelInfoFailure>>,
+    entries: BTreeMap<String, Result<Option<RealtimeModelInfo>, ()>>,
 }
 
 impl StaticMetadata {
@@ -147,10 +148,7 @@ impl StaticMetadata {
     }
 
     fn failing(mut self, model: &str) -> Self {
-        let failure = ModelInfoFailure {
-            message: String::from("get_model_info raised"),
-        };
-        self.entries.insert(model.to_owned(), Err(failure));
+        self.entries.insert(model.to_owned(), Err(()));
         self
     }
 }
@@ -159,10 +157,26 @@ impl RealtimeModelMetadata for StaticMetadata {
     fn model_info(
         &self,
         model: &str,
-        _custom_llm_provider: &str,
-    ) -> Result<Option<RealtimeModelInfo>, ModelInfoFailure> {
-        self.entries.get(model).cloned().unwrap_or(Ok(None))
+        custom_llm_provider: &str,
+    ) -> Result<Option<RealtimeModelInfo>, ModelInfoError> {
+        self.entries
+            .get(model)
+            .cloned()
+            .unwrap_or(Ok(None))
+            .map_err(|()| ModelInfoError::Unmapped {
+                model: model.to_owned(),
+                provider: custom_llm_provider.to_owned(),
+            })
     }
+}
+
+#[test]
+fn realtime_probe_metadata_keeps_typed_error() {
+    let metadata = catalog(
+        br#"{"fallback_generalizations":{"rules":[{"name":"bad-mode","pattern":"broken","model_info":{"mode":42}}]}}"#,
+    );
+    let error = metadata.model_info("broken", "azure").unwrap_err();
+    assert!(matches!(error, ModelInfoError::Generalization(_)));
 }
 
 #[derive(Default)]

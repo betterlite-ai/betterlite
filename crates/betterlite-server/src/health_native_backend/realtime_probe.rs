@@ -4,6 +4,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use betterlite_auth::auth_model_lists::credential::CredentialSnapshot;
 use betterlite_config::sections::vertex_credential_sources::VertexSettings;
+use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
 use betterlite_config::tls::Verification;
 use betterlite_core::api::realtime_connection_plan::azure::AzureAdTokens;
 use betterlite_core::api::realtime_connection_plan::metadata::RealtimeModelMetadata;
@@ -22,6 +23,7 @@ use betterlite_sdk::call_wrapper::error::plain_error;
 use betterlite_vertex::credential_sources::getters::VertexParams;
 use betterlite_vertex::endpoint_target::region::select_region;
 use betterlite_vertex::vertex_live::policy::VertexLivePolicy;
+use secrecy::ExposeSecret as _;
 
 use super::seams::RealtimeProbeCall;
 use crate::health_probe_modes::calls::{HealthProbeReply, RealtimeCall};
@@ -119,7 +121,14 @@ impl VertexProbeConfig for VertexLiveProbe {
             location: vertex
                 .safe_get_vertex_ai_location(&self.settings)
                 .map(str::to_owned),
-            credentials: credential_document(params),
+            credentials: credential_document(params).or_else(|| {
+                self.settings.credentials.as_ref().map(|configured| {
+                    Json::Text(match configured {
+                        ConfiguredCredentials::Text(value) => value.expose_secret().to_owned(),
+                        ConfiguredCredentials::Source(source) => source.document(),
+                    })
+                })
+            }),
         }
     }
 

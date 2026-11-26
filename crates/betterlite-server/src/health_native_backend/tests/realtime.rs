@@ -1,7 +1,10 @@
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use betterlite_auth::auth_model_lists::credential::CredentialSnapshot;
+use betterlite_config::sections::Section as _;
+use betterlite_config::sections::vertex_credential_sources::Raw as VertexRaw;
 use betterlite_config::sections::vertex_credential_sources::VertexSettings;
 use betterlite_config::tls::Verification;
 use betterlite_core::api::realtime_connect::token::{
@@ -17,6 +20,7 @@ use betterlite_core::api::realtime_connection_plan::{
 use betterlite_models::catalog::ModelCatalog;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
+use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::super::realtime_probe::{RealtimeProbe, VertexLiveProbe};
@@ -114,6 +118,7 @@ async fn vertex_live_probe_reads_its_parameters() {
         "europe-west4"
     );
     assert_eq!(probe.region("gemini-live-model", None), "us-central1");
+    assert_eq!(probe.parameters(&JsonObject::new()).credentials, None);
     let credentials: Json =
         serde_json::from_str("{\"type\": \"service_account\"}").expect("the test JSON parses");
     let parameters = probe.parameters(&mode_parameters(&[
@@ -132,6 +137,31 @@ async fn vertex_live_probe_reads_its_parameters() {
         .expect("the scripted token resolves");
     assert_eq!(token.expose_secret(), "probe-token");
     assert_eq!(project, "probe-project");
+}
+
+#[rstest]
+#[case::path("/credentials/vertex.json", "/credentials/vertex.json")]
+#[case::document(
+    r#"{"type":"service_account","private_key":"test-key","client_email":"probe@example.test","project_id":"env-project"}"#,
+    r#"{"type":"service_account","project_id":"env-project","private_key_id":"","private_key":"test-key","client_email":"probe@example.test","universe_domain":null}"#
+)]
+fn vertex_probe_uses_env_credentials(#[case] configured: &str, #[case] expected: &str) {
+    let environment =
+        BTreeMap::from([(String::from("VERTEXAI_CREDENTIALS"), configured.to_owned())]);
+    let probe = VertexLiveProbe {
+        catalog: Arc::new(ModelCatalog::default()),
+        settings: VertexRaw::default().convert(&environment).unwrap(),
+        tokens: Arc::new(ScriptedTokens),
+    };
+    assert_eq!(
+        probe.parameters(&JsonObject::new()).credentials,
+        Some(text(expected))
+    );
+    let deployment = mode_parameters(&[("vertex_ai_credentials", text("deployment.json"))]);
+    assert_eq!(
+        probe.parameters(&deployment).credentials,
+        Some(text("deployment.json"))
+    );
 }
 
 // B1365's Live config turns the resolved parameters into the BidiGenerateContent endpoint
