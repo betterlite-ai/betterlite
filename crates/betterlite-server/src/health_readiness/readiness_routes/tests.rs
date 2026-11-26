@@ -17,7 +17,7 @@ use betterlite_prometheus::collector_registry::CollectorRegistry;
 use rstest::rstest;
 use secrecy::SecretString;
 use serde::Deserialize;
-use tokio::time::sleep;
+use tokio::time::{Instant, sleep};
 
 use super::AdmissionCounters;
 use crate::admission_control::in_flight::InFlightRequests;
@@ -286,10 +286,27 @@ async fn drain_route_needs_no_token_when_none_is_configured() {
     world.settings.drain.enabled = true;
     world.in_flight = Arc::new(FakeInFlight::new(1));
     let router = world.router(AllowRequestsOnOutage::Unsupported);
+    let started = Instant::now();
     let (status, _, body) = send(&router, Method::GET, "/health/drain", None).await;
     assert_eq!(status, StatusCode::OK);
     let parsed: DrainBody = parse(&body);
     assert_eq!(parsed.drained_requests, 0);
+    // the route counts its own request as drained instead of waiting out the timeout
+    assert_eq!(started.elapsed(), Duration::ZERO);
+}
+
+#[tokio::test(start_paused = true)]
+async fn drain_route_waits_the_configured_graceful_timeout() {
+    let mut world = World::default().with_in_flight(Arc::new(FakeInFlight::new(2)));
+    world.settings.drain.enabled = true;
+    world.settings.graceful_shutdown_timeout = Duration::from_secs(1);
+    let router = world.router(AllowRequestsOnOutage::Unsupported);
+    let started = Instant::now();
+    let (status, _, body) = send(&router, Method::GET, "/health/drain", None).await;
+    assert_eq!(status, StatusCode::OK);
+    let parsed: DrainBody = parse(&body);
+    assert_eq!(parsed.drained_requests, 0);
+    assert_eq!(started.elapsed(), Duration::from_secs(1));
 }
 
 #[rstest]
@@ -500,6 +517,18 @@ async fn backlog_route_still_needs_the_master_key() {
 async fn details_route_still_needs_the_master_key() {
     let router = layered_router(ProbeLayer::MasterKey);
     let (status, _, body) = send(&router, Method::GET, "/health/readiness/details", None).await;
+    assert_ne!(status, StatusCode::OK);
+    assert_ne!(String::from_utf8(body).unwrap(), "reached");
+}
+
+#[rstest]
+#[case::license("/health/license")]
+#[case::settings("/settings")]
+#[case::active_callbacks("/active/callbacks")]
+#[tokio::test]
+async fn license_route_and_the_settings_routes_need_the_master_key(#[case] path: &str) {
+    let router = layered_router(ProbeLayer::MasterKey);
+    let (status, _, body) = send(&router, Method::GET, path, None).await;
     assert_ne!(status, StatusCode::OK);
     assert_ne!(String::from_utf8(body).unwrap(), "reached");
 }
