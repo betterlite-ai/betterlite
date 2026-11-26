@@ -1,0 +1,49 @@
+kind: helper
+name: summary-model-access-membership-lookup-is-fail-closed
+call:
+  summary_model_access:
+    action: access
+    summary_model: sum
+    scenarios:
+      - principal: {user_id: user-1, team_id: team-1, team_model_aliases: {sum: team-model}}
+        proxy: true
+        database: true
+        checks: scripted
+        outcomes: []
+        user: {kind: missing}
+        project: {kind: missing}
+        membership: {kind: missing}
+      - principal: {user_id: user-1, team_id: team-1, team_model_aliases: {sum: team-model}}
+        proxy: true
+        database: true
+        checks: scripted
+        outcomes: []
+        user: {kind: missing}
+        project: {kind: missing}
+        membership: {kind: found, row: {user_id: user-1, team_id: team-1}}
+      - principal: {user_id: user-1, team_id: team-1, team_model_aliases: {sum: team-model}}
+        proxy: true
+        database: true
+        checks: scripted
+        outcomes: []
+        user: {kind: missing}
+        project: {kind: missing}
+        membership: {kind: found, row: {user_id: user-1, team_id: team-1, litellm_budget_table: {allowed_models: []}}}
+      - principal: {user_id: user-1, team_id: team-1, project_id: project-1, team_model_aliases: {sum: team-model}}
+        proxy: true
+        database: true
+        checks: scripted
+        outcomes: []
+        user: {kind: missing}
+        project: {kind: found, row: {project_id: project-1, models: [team-model]}}
+        membership: {kind: found, row: {user_id: user-1, team_id: team-1, litellm_budget_table: {allowed_models: [member-model]}}}
+      - principal: {user_id: user-1, team_id: team-1, team_model_aliases: {sum: team-model}}
+        proxy: true
+        database: true
+        checks: scripted
+        outcomes: []
+        user: {kind: missing}
+        project: {kind: missing}
+        membership: {kind: failed}
+env: {}
+compare: {ignore: []}

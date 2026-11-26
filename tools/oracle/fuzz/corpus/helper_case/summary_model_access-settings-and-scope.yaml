@@ -1,0 +1,22 @@
+kind: helper
+name: summary-model-access-settings-and-scope-seed
+call:
+  summary_model_access:
+    action: settings
+    scenarios:
+      - general_settings: {context_management_summary_model: " ", context_management_summary_max_tokens: 2}
+calls:
+  - summary_model_access:
+      action: access
+      summary_model: sum
+      scenarios:
+        - principal: {models: [key-model], team_model_aliases: {sum: team-model}, team_id: team-1, user_id: user-1}
+          proxy: true
+          database: true
+          checks: scripted
+          outcomes: [allow, deny]
+          user: {kind: found, row: {user_id: user-1, models: [key-model]}}
+          project: {kind: missing}
+          membership: {kind: missing}
+env: {}
+compare: {ignore: []}
