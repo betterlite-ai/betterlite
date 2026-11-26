@@ -6,21 +6,36 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
+use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::rag::document::ingest::RAGIngestOCROptions;
+use betterlite_config::tls::Verification;
+use betterlite_config::types::ProxyTrust;
 use betterlite_core::rag::ingestion::config::IngestionOptions;
 use betterlite_core::rag::ingestion::ocr::{
     OcrDocumentKind, OcrError, OcrOperation, OcrRequest, OcrResponse,
 };
 use betterlite_core::rag::ingestion::upload::{FetchedResponse, UrlFetch, UrlFetchError};
 use betterlite_core::rag::ingestion::{IngestionPorts, IngestionState};
+use betterlite_http::proxy::ProxiedClient;
+use betterlite_http::user_url::fetch::UserUrlFetcher;
+use betterlite_http::user_url::validate::{SystemResolver, UrlValidator};
 use betterlite_ocr::json::Object;
+use betterlite_ocr::ocr_auth::{
+    AwsRequestSigner, AwsSigningRequest, AzureTokenSource, VertexAccessToken, VertexTokenSource,
+};
+use betterlite_ocr::ocr_config::PreparedOcrRequest;
+use betterlite_ocr::ocr_config::connection::OcrSourced;
 use betterlite_ocr::ocr_document::OcrDocument as NativeDocument;
 use betterlite_ocr::ocr_error::OcrError as NativeOcrError;
+use betterlite_ocr::ocr_error::OcrSecretError;
+use betterlite_ocr::ocr_http::{OcrClient, SecretSource};
 use betterlite_ocr::ocr_input::{LiteLLMOcrRequest, OcrDocumentInput};
 use betterlite_ocr::ocr_provider::OcrConfigKind;
+use betterlite_ocr::ocr_settings::OcrSettings;
 use betterlite_ocr::response::{OCRPage, OCRResponse};
+use secrecy::SecretString;
 
-use super::{OcrBackend, OcrCall};
+use super::{NativeOcr, OcrBackend, OcrCall};
 use crate::credentials::registry::CredentialRegistry;
 use crate::rag_step_ports::credential::CredentialLookup as RegistryCredentialLookup;
 
@@ -66,6 +81,75 @@ impl UrlFetch for NoFetch {
         Err(UrlFetchError::Failed {
             message: "the OCR state never fetches a file".to_owned(),
         })
+    }
+}
+
+struct NoSecrets;
+
+impl SecretSource for NoSecrets {
+    fn secret(&self, _name: &str) -> Result<Option<SecretString>, OcrSecretError> {
+        Ok(None)
+    }
+}
+
+struct NoAzure;
+
+#[async_trait]
+impl AzureTokenSource for NoAzure {
+    async fn token(
+        &self,
+        _request: &PreparedOcrRequest,
+    ) -> Result<Option<OcrSourced<SecretString>>, NativeOcrError> {
+        Ok(None)
+    }
+}
+
+struct NoAws;
+
+#[async_trait]
+impl AwsRequestSigner for NoAws {
+    async fn sign(
+        &self,
+        _request: &AwsSigningRequest<'_>,
+    ) -> Result<Vec<(String, String)>, NativeOcrError> {
+        Ok(Vec::new())
+    }
+}
+
+struct NoVertex;
+
+#[async_trait]
+impl VertexTokenSource for NoVertex {
+    async fn token(
+        &self,
+        _request: &PreparedOcrRequest,
+    ) -> Result<VertexAccessToken, NativeOcrError> {
+        Err(NativeOcrError::Unsupported("vertex access tokens"))
+    }
+}
+
+fn ocr_client() -> OcrClient {
+    let policy = Arc::new(
+        ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new())
+            .expect("the policy resolves"),
+    );
+    OcrClient {
+        provider_http: ProxiedClient::outbound(&policy).expect("the client builds"),
+        polling_http: ProxiedClient::outbound(&policy).expect("the client builds"),
+        document_http: ProxiedClient::outbound(&policy).expect("the client builds"),
+        document_fetcher: UserUrlFetcher {
+            validator: UrlValidator::new(
+                SystemResolver,
+                &["127.0.0.1".to_owned()],
+                &Verification::Enabled,
+            ),
+            validation: true,
+        },
+        settings: OcrSettings::default(),
+        secrets: Arc::new(NoSecrets),
+        azure: Arc::new(NoAzure),
+        aws: Arc::new(NoAws),
+        vertex: Arc::new(NoVertex),
     }
 }
 
@@ -236,4 +320,23 @@ async fn ocr_call_reports_a_native_operation_failure() {
         }
     );
     assert_eq!(backend.requests.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn native_ocr_runs_the_provider_operation_and_reports_its_error() {
+    let backend = NativeOcr { client: ocr_client };
+    let request = LiteLLMOcrRequest::new(
+        "mistral/mistral-ocr-latest",
+        OcrDocumentInput::Document(NativeDocument::ImageUrl {
+            image_url: "data:image/png;base64,cG5n".to_owned(),
+            extra: BTreeMap::new(),
+        }),
+        None,
+        Object::new(),
+    )
+    .expect("the native request builds");
+    let error = OcrBackend::aocr(&backend, request)
+        .await
+        .expect_err("the client holds no Mistral API key");
+    assert!(matches!(error, NativeOcrError::Auth(_)));
 }
