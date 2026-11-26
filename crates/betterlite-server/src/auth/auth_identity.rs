@@ -131,13 +131,7 @@ pub(crate) fn dispatch(
         AuthBackend::AuthVirtualKeyRoutes => auth_virtual_key_routes_stage(input),
         AuthBackend::AuthRequestModels => auth_request_models_stage(input),
         AuthBackend::AuthModelPatterns => auth_model_patterns_stage(input),
-        AuthBackend::AuthModelGrants => {
-            let StageInput::AuthModelGrants(stage) = input else {
-                return Err(StageFailure::from(AuthenticationFailure::Missing));
-            };
-            // the agent and caller checks ran in the prefetch, so only the identity is left
-            Ok(stage.context.clone())
-        }
+        AuthBackend::AuthModelGrants => auth_model_grants_stage(input),
         AuthBackend::EntityModelAccess => entity_model_access_stage(input),
         AuthBackend::AuthResourceGrants => auth_resource_grants_stage(input),
         AuthBackend::AuthTagBudgets => {
@@ -168,13 +162,7 @@ pub(crate) fn dispatch(
             // the request-scoped lookup ran in the prefetch, so only the identity is left
             Ok(stage.context.clone())
         }
-        AuthBackend::AuthEndUsers => {
-            let StageInput::AuthEndUsers(stage) = input else {
-                return Err(StageFailure::from(AuthenticationFailure::Missing));
-            };
-            // the lookup and the budget check ran in the prefetch, so only the identity is left
-            Ok(stage.context.clone())
-        }
+        AuthBackend::AuthEndUsers => auth_end_users_stage(input),
     }
 }
 
@@ -183,6 +171,22 @@ fn entity_model_access_stage(input: &StageInput) -> Result<AuthContext, StageFai
         return Err(StageFailure::from(AuthenticationFailure::Missing));
     };
     // the grant checks ran in the prefetch, so only the identity is left
+    Ok(stage.context.clone())
+}
+
+fn auth_model_grants_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
+    let StageInput::AuthModelGrants(stage) = input else {
+        return Err(StageFailure::from(AuthenticationFailure::Missing));
+    };
+    // the agent and caller checks ran in the prefetch, so only the identity is left
+    Ok(stage.context.clone())
+}
+
+fn auth_end_users_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
+    let StageInput::AuthEndUsers(stage) = input else {
+        return Err(StageFailure::from(AuthenticationFailure::Missing));
+    };
+    // the lookup and the budget check ran in the prefetch, so only the identity is left
     Ok(stage.context.clone())
 }
 

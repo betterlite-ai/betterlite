@@ -98,11 +98,8 @@ fn config_with_master_key(master_key: &str) -> Config {
 }
 
 fn master_context(master_key: &SecretString) -> AuthContext {
-    match dispatch(
-        AuthBackend::MasterKey,
-        &StageInput::MasterKey(Some(master_key.clone())),
-        master_key,
-    ) {
+    let input = StageInput::MasterKey(Some(master_key.clone()));
+    match dispatch(AuthBackend::MasterKey, &input, master_key) {
         Ok(context) => context,
         Err(StageFailure::Authentication(_)) => {
             panic!("the master key stage authenticates")

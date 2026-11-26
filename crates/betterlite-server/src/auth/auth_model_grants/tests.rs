@@ -197,7 +197,13 @@ async fn stage_is_registered() {
         prefetch_stage(refused).await,
         Err(StageFailure::ModelAccess(_))
     ));
+}
 
+#[tokio::test]
+async fn missing_source_is_initialization_error() {
+    let master_key = SecretString::from("secret-master-key".to_owned());
+    let context = master_context(&master_key);
+    let config = config_with_master_key();
     // a configured agent key without the installed source is an initialization error, not an empty ceiling
     let mut request = Request::builder()
         .method("POST")
@@ -213,7 +219,11 @@ async fn stage_is_registered() {
         prefetch_stage(staged).await,
         Err(StageFailure::ModelGrants(_))
     ));
+}
 
+#[tokio::test]
+async fn wrong_stage_is_authentication_failure() {
+    let master_key = SecretString::from("secret-master-key".to_owned());
     let wrong_stage = StageInput::MasterKey(Some(master_key.clone()));
     assert!(matches!(
         dispatch(AuthBackend::AuthModelGrants, &wrong_stage, &master_key),
