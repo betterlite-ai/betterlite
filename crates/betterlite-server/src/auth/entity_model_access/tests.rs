@@ -80,7 +80,7 @@ fn rule(models: &str) -> Arc<EntityModelRule> {
         global_model_aliases: BTreeMap::new(),
         teams: None,
         projects: None,
-        now: || 0.0,
+        now: || 0.0_f64,
     })
 }
 

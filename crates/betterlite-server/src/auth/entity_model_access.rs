@@ -111,11 +111,11 @@ pub(crate) async fn prefetch(stage: &EntityModelStageInput) -> Result<(), Entity
         provider: rule.provider.as_deref().unwrap_or(&UNRESOLVED_PROVIDER),
         max_recurse_depth: stage.max_recurse_depth,
     };
-    let grant = rule.key.as_ref().map(key_grant);
-    let aliases = grant
+    let access = rule.key.as_ref().map(key_grant);
+    let aliases = access
         .as_ref()
         .map_or_else(BTreeMap::new, |grant| grant.team_model_aliases.clone());
-    let targets = grant
+    let targets = access
         .as_ref()
         .map_or_else(BTreeMap::new, |grant| grant.key_model_aliases.clone());
     EntityModelAccessError::gate(can_user_call_model(
