@@ -713,8 +713,7 @@ fn passthrough_grant_truthiness(#[case] value: JsonData, #[case] allowed: bool) 
         team_metadata: Some(&team),
         ..RouteCaller::absent()
     };
-    // a falsy key grant falls back to the team list, while a truthy value that is not iterable
-    // wins over the team grant and denies rather than raising
+    // a falsy key grant falls back to the team list; a truthy non-iterable one wins and denies
     assert_eq!(
         check_passthrough_route_access("/team-pass", &caller),
         allowed
