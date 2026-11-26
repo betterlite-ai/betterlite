@@ -81,22 +81,20 @@ pub(super) fn agent_token(fields: &str) -> UserAPIKeyAuth {
 }
 
 pub(super) fn context() -> ModelAccessContext<'static> {
-    ModelAccessContext {
-        view: None,
-        global_model_aliases: &EMPTY_ALIASES,
-        compaction: None,
-        provider: &UNRESOLVED,
-        max_recurse_depth: 100,
-    }
+    context_with_depth(100)
 }
 
 pub(super) fn shallow_context() -> ModelAccessContext<'static> {
+    context_with_depth(0)
+}
+
+fn context_with_depth(max_recurse_depth: i64) -> ModelAccessContext<'static> {
     ModelAccessContext {
         view: None,
         global_model_aliases: &EMPTY_ALIASES,
         compaction: None,
         provider: &UNRESOLVED,
-        max_recurse_depth: 0,
+        max_recurse_depth,
     }
 }
 
@@ -176,13 +174,8 @@ pub(super) struct CaseMemberships {
 
 impl CaseMemberships {
     pub(super) fn allowed(models: &str) -> Self {
-        let membership = if models.is_empty() {
-            None
-        } else {
-            Some(models.to_owned())
-        };
         Self {
-            membership,
+            membership: Some(models.to_owned()).filter(|models| !models.is_empty()),
             asked: Mutex::new(Vec::new()),
         }
     }
@@ -230,7 +223,6 @@ pub(super) fn admission<'deps>(
 }
 
 // the port the state installs, scripted per step so every collaborator's answer is explicit
-#[derive(Default)]
 pub(super) struct Script {
     pub(super) policy: Option<String>,
     pub(super) managed: Vec<AgentAccessGroupCeiling>,
@@ -243,7 +235,7 @@ pub(super) struct Script {
     pub(super) team_fails: bool,
     pub(super) user: Option<String>,
     pub(super) user_fails: bool,
-    events: Mutex<Vec<String>>,
+    pub(super) events: Mutex<Vec<String>>,
 }
 
 impl Script {
@@ -263,6 +255,47 @@ impl Script {
 
     fn lookup_failure() -> AgentCallerError {
         AgentCallerError::Record(AuthError::NonStringApiKey)
+    }
+
+    fn lookup(&self, slot: CallerSlot) -> Result<Option<&str>, AgentCallerError> {
+        self.record(slot.event().to_owned());
+        if self.slot_fails(slot) {
+            return Err(Script::lookup_failure());
+        }
+        Ok(self.slot_text(slot))
+    }
+
+    fn slot_fails(&self, slot: CallerSlot) -> bool {
+        match slot {
+            CallerSlot::Auth => self.caller_fails,
+            CallerSlot::Team => self.team_fails,
+            CallerSlot::User => self.user_fails,
+        }
+    }
+
+    fn slot_text(&self, slot: CallerSlot) -> Option<&str> {
+        match slot {
+            CallerSlot::Auth => self.caller.as_deref(),
+            CallerSlot::Team => self.team.as_deref(),
+            CallerSlot::User => self.user.as_deref(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+enum CallerSlot {
+    Auth,
+    Team,
+    User,
+}
+
+impl CallerSlot {
+    fn event(self) -> &'static str {
+        match self {
+            Self::Auth => "caller_auth",
+            Self::Team => "caller_team",
+            Self::User => "caller_user",
+        }
     }
 }
 
@@ -301,33 +334,21 @@ impl AgentAccessSource for Script {
         &self,
         _auth: &UserAPIKeyAuth,
     ) -> Result<Option<UserAPIKeyAuth>, AgentCallerError> {
-        self.record("caller_auth".to_owned());
-        if self.caller_fails {
-            return Err(Script::lookup_failure());
-        }
-        Ok(self.caller.as_deref().map(token))
+        Ok(self.lookup(CallerSlot::Auth)?.map(token))
     }
 
     async fn caller_team(
         &self,
         _auth: &UserAPIKeyAuth,
     ) -> Result<Option<LiteLLMTeamTableCachedObj>, AgentCallerError> {
-        self.record("caller_team".to_owned());
-        if self.team_fails {
-            return Err(Script::lookup_failure());
-        }
-        Ok(self.team.as_deref().map(looked_up_team))
+        Ok(self.lookup(CallerSlot::Team)?.map(looked_up_team))
     }
 
     async fn caller_user(
         &self,
         _auth: &UserAPIKeyAuth,
     ) -> Result<Option<LiteLLMUserTable>, AgentCallerError> {
-        self.record("caller_user".to_owned());
-        if self.user_fails {
-            return Err(Script::lookup_failure());
-        }
-        Ok(self.user.as_deref().map(looked_up_user))
+        Ok(self.lookup(CallerSlot::User)?.map(looked_up_user))
     }
 }
 
@@ -378,10 +399,10 @@ impl<Inner: Subscriber> Layer<Inner> for WarningLines {
     }
 }
 
-pub(super) fn captured(
-    runtime: &Runtime,
-    future: impl Future<Output = bool>,
-) -> (bool, Vec<String>) {
+pub(super) fn captured<F>(runtime: &Runtime, future: F) -> (bool, Vec<String>)
+where
+    F: Future<Output = bool>,
+{
     let lines = WarningLines::default();
     let subscriber = tracing_subscriber::registry().with(lines.clone());
     let allowed = with_default(subscriber, || runtime.block_on(future));

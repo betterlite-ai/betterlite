@@ -6,8 +6,8 @@ use axum::body::Body;
 use axum::http::Request;
 use betterlite_auth::auth_errors::conversion::{AuthFailure, as_proxy_exception};
 use betterlite_auth::auth_model_grants::access_source::AgentAccessSource;
-use betterlite_auth::auth_model_grants::caller::check_agent_caller_model_access;
-use betterlite_auth::auth_model_grants::ceiling::check_agent_access_group_model_access;
+use betterlite_auth::auth_model_grants::caller::check_agent_caller;
+use betterlite_auth::auth_model_grants::ceiling::check_agent_ceiling;
 use betterlite_auth::auth_model_grants::error::AgentModelGrantsError;
 use betterlite_auth::auth_model_patterns::decision::ModelAccessContext;
 use betterlite_auth::auth_model_patterns::pattern::{
@@ -119,19 +119,19 @@ pub(crate) async fn prefetch(
         max_recurse_depth: stage.max_recurse_depth,
     };
     let source = stage.source.as_deref();
-    check_agent_access_group_model_access(&rule.model, token, source, &context).await?;
+    check_agent_ceiling(&rule.model, token, source, &context).await?;
     let admission = rule.member_checks.admission(&context);
-    check_agent_caller_model_access(&rule.model, token, source, &admission, &context).await
+    check_agent_caller(&rule.model, token, source, &admission, &context).await
 }
 
 // the agent and caller denials keep B747's response fields; a lookup failure is an authentication error
 fn stage_failure(error: AgentModelGrantsError) -> StageFailure {
     match error {
         AgentModelGrantsError::Denied(denial) => {
-            StageFailure::ModelAccess(Box::new(ModelAccessRejection::Denied(denial)))
+            entity_failure(EntityModelAccessError::Denied(denial))
         }
         AgentModelGrantsError::RecurseDepth { model } => {
-            StageFailure::ModelAccess(Box::new(ModelAccessRejection::RecurseDepth { model }))
+            entity_failure(EntityModelAccessError::RecurseDepth { model })
         }
         AgentModelGrantsError::Entity(entity) => entity_failure(*entity),
         AgentModelGrantsError::Ceiling(groups) => {

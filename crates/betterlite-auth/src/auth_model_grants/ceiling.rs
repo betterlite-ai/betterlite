@@ -16,7 +16,7 @@ use super::error::AgentModelGrantsError;
 use super::requested;
 
 // _check_agent_access_group_model_access: a falsey model, token or agent id skips; every ceiling must allow
-pub async fn check_agent_access_group_model_access(
+pub async fn check_agent_ceiling(
     model: &RequestedModels,
     token: Option<&UserAPIKeyAuth>,
     source: Option<&dyn AgentAccessSource>,
@@ -87,12 +87,12 @@ pub async fn check_agent_access_group_model_access(
 }
 
 // the client sees the safe model-access message; the group diagnostic stays on the exception
-// ast-grep-ignore: no-long-names
 fn no_models_denial(
     model: &RequestedModels,
     agent_id: &str,
     // ast-grep-ignore: no-long-names
 ) -> ModelAccessDeniedProxyException {
+    // ast-grep-ignore: no-long-names
     ModelAccessDeniedProxyException::new(
         model_denied_client_message(&requested::requested_text(model)),
         format!("agent {agent_id} access groups grant no models"),

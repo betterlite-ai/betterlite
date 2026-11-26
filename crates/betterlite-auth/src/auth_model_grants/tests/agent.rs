@@ -1,5 +1,10 @@
-use crate::auth_model_grants::caller::check_agent_caller_model_access;
-use crate::auth_model_grants::ceiling::check_agent_access_group_model_access;
+use std::sync::Mutex;
+
+use rstest::rstest;
+
+use crate::auth_model_grants::access_source::AgentAccessSource;
+use crate::auth_model_grants::caller::check_agent_caller;
+use crate::auth_model_grants::ceiling::check_agent_ceiling;
 use crate::auth_model_grants::error::AgentModelGrantsError;
 use crate::auth_model_patterns::denial::model_denied_client_message;
 use crate::auth_request_models::RequestedModels;
@@ -11,36 +16,46 @@ use super::support::{
     admission, agent_token, ceiling, context, denial_of, one, shallow_context, token,
 };
 
+#[rstest]
+#[case::falsey_none(RequestedModels::None, Some(AGENT_KEY), true)]
+#[case::empty_model(RequestedModels::One(String::new()), Some(AGENT_KEY), true)]
+#[case::empty_many(RequestedModels::Many(Vec::new()), Some(AGENT_KEY), true)]
+#[case::no_token(RequestedModels::One("gpt-4o".to_owned()), None, true)]
+#[case::plain_key(
+    RequestedModels::One("gpt-4o".to_owned()),
+    Some(r#"{"token":"sk-plain"}"#),
+    true
+)]
+#[case::empty_agent_id(
+    RequestedModels::One("gpt-4o".to_owned()),
+    Some(r#"{"token":"sk","agent_id":""}"#),
+    true
+)]
+#[case::falsey_without_source(RequestedModels::None, Some(AGENT_KEY), false)]
 #[tokio::test]
-async fn missing_model_token_agent_skips() {
-    let script = Script::default();
-    let context = context();
-    let agent = token(AGENT_KEY);
-    // a falsey model, a missing token or a missing/empty agent id returns before any lookup
-    for model in [
-        RequestedModels::None,
-        RequestedModels::One(String::new()),
-        RequestedModels::Many(Vec::new()),
-    ] {
-        check_agent_access_group_model_access(&model, Some(&agent), Some(&script), &context)
-            .await
-            .unwrap();
-    }
-    check_agent_access_group_model_access(&one("gpt-4o"), None, Some(&script), &context)
-        .await
-        .unwrap();
-    for fields in [r#"{"token":"sk-plain"}"#, r#"{"token":"sk","agent_id":""}"#] {
-        check_agent_access_group_model_access(
-            &one("gpt-4o"),
-            Some(&token(fields)),
-            Some(&script),
-            &context,
-        )
-        .await
-        .unwrap();
-    }
-    // without a source a falsey model still skips rather than failing
-    check_agent_access_group_model_access(&RequestedModels::None, Some(&agent), None, &context)
+async fn missing_model_token_agent_skips(
+    #[case] model: RequestedModels,
+    #[case] fields: Option<&'static str>,
+    #[case] with_source: bool,
+) {
+    let script = Script {
+        policy: None,
+        managed: Vec::new(),
+        managed_fails: false,
+        unmanaged: None,
+        unmanaged_fails: false,
+        caller: None,
+        caller_fails: false,
+        team: None,
+        team_fails: false,
+        user: None,
+        user_fails: false,
+        events: Mutex::new(Vec::new()),
+    };
+    let key = fields.map(token);
+    let as_source: &dyn AgentAccessSource = &script;
+    let source = with_source.then_some(as_source);
+    check_agent_ceiling(&model, key.as_ref(), source, &context())
         .await
         .unwrap();
     assert!(script.events().is_empty());
@@ -51,7 +66,7 @@ async fn missing_source_fails_agent_requests() {
     let context = context();
     let agent = token(AGENT_KEY);
     assert!(matches!(
-        check_agent_access_group_model_access(&one("gpt-4o"), Some(&agent), None, &context).await,
+        check_agent_ceiling(&one("gpt-4o"), Some(&agent), None, &context).await,
         Err(AgentModelGrantsError::Unavailable)
     ));
 }
@@ -62,10 +77,18 @@ async fn managed_beats_unmanaged() {
     let script = Script {
         policy: Some(POLICY.to_owned()),
         managed: vec![ceiling(&["gpt-4o"])],
+        managed_fails: false,
         unmanaged: Some(ceiling(&[])),
-        ..Script::default()
+        unmanaged_fails: false,
+        caller: None,
+        caller_fails: false,
+        team: None,
+        team_fails: false,
+        user: None,
+        user_fails: false,
+        events: Mutex::new(Vec::new()),
     };
-    check_agent_access_group_model_access(
+    check_agent_ceiling(
         &one("gpt-4o"),
         Some(&token(AGENT_KEY)),
         Some(&script),
@@ -78,8 +101,21 @@ async fn managed_beats_unmanaged() {
 
 #[tokio::test]
 async fn unmanaged_none_unrestricted() {
-    let script = Script::default();
-    check_agent_access_group_model_access(
+    let script = Script {
+        policy: None,
+        managed: Vec::new(),
+        managed_fails: false,
+        unmanaged: None,
+        unmanaged_fails: false,
+        caller: None,
+        caller_fails: false,
+        team: None,
+        team_fails: false,
+        user: None,
+        user_fails: false,
+        events: Mutex::new(Vec::new()),
+    };
+    check_agent_ceiling(
         &one("private-model"),
         Some(&token(AGENT_KEY)),
         Some(&script),
@@ -98,9 +134,18 @@ async fn empty_ceiling_denies_403() {
     let script = Script {
         policy: Some(POLICY.to_owned()),
         managed: vec![ceiling(&[])],
-        ..Script::default()
+        managed_fails: false,
+        unmanaged: None,
+        unmanaged_fails: false,
+        caller: None,
+        caller_fails: false,
+        team: None,
+        team_fails: false,
+        user: None,
+        user_fails: false,
+        events: Mutex::new(Vec::new()),
     };
-    let error = check_agent_access_group_model_access(
+    let error = check_agent_ceiling(
         &one("secret-model"),
         Some(&token(AGENT_KEY)),
         Some(&script),
@@ -110,7 +155,7 @@ async fn empty_ceiling_denies_403() {
     .unwrap_err();
     let internal = denial_of(error, "agent_model_access_denied");
     assert_eq!(internal, "agent agent-1 access groups grant no models");
-    let AgentModelGrantsError::Denied(denial) = check_agent_access_group_model_access(
+    let AgentModelGrantsError::Denied(denial) = check_agent_ceiling(
         &one("secret-model"),
         Some(&token(AGENT_KEY)),
         Some(&script),
@@ -131,10 +176,19 @@ async fn all_ceilings_intersect() {
     let script = Script {
         policy: Some(POLICY.to_owned()),
         managed: vec![ceiling(&["gpt-4o"]), ceiling(&["other-model"])],
-        ..Script::default()
+        managed_fails: false,
+        unmanaged: None,
+        unmanaged_fails: false,
+        caller: None,
+        caller_fails: false,
+        team: None,
+        team_fails: false,
+        user: None,
+        user_fails: false,
+        events: Mutex::new(Vec::new()),
     };
     // the first ceiling allows, so the denial can only come from the second one
-    let error = check_agent_access_group_model_access(
+    let error = check_agent_ceiling(
         &one("gpt-4o"),
         Some(&token(AGENT_KEY)),
         Some(&script),
@@ -148,9 +202,18 @@ async fn all_ceilings_intersect() {
     let both_allow = Script {
         policy: Some(POLICY.to_owned()),
         managed: vec![ceiling(&["gpt-4o"]), ceiling(&["gpt-4o", "other-model"])],
-        ..Script::default()
+        managed_fails: false,
+        unmanaged: None,
+        unmanaged_fails: false,
+        caller: None,
+        caller_fails: false,
+        team: None,
+        team_fails: false,
+        user: None,
+        user_fails: false,
+        events: Mutex::new(Vec::new()),
     };
-    check_agent_access_group_model_access(
+    check_agent_ceiling(
         &one("gpt-4o"),
         Some(&token(AGENT_KEY)),
         Some(&both_allow),
@@ -165,10 +228,19 @@ async fn team_alias_before_ceiling() {
     let script = Script {
         policy: Some(POLICY.to_owned()),
         managed: vec![ceiling(&["gpt-4o"])],
-        ..Script::default()
+        managed_fails: false,
+        unmanaged: None,
+        unmanaged_fails: false,
+        caller: None,
+        caller_fails: false,
+        team: None,
+        team_fails: false,
+        user: None,
+        user_fails: false,
+        events: Mutex::new(Vec::new()),
     };
     // the alias resolves to gpt-4o before the ceiling sees the name
-    check_agent_access_group_model_access(
+    check_agent_ceiling(
         &one("alias"),
         Some(&token(AGENT_ALIAS_KEY)),
         Some(&script),
@@ -178,7 +250,7 @@ async fn team_alias_before_ceiling() {
     .unwrap();
     // without the alias map the same request denies, so the resolution is what allowed it
     assert!(matches!(
-        check_agent_access_group_model_access(
+        check_agent_ceiling(
             &one("alias"),
             Some(&token(AGENT_TEAM_KEY)),
             Some(&script),
@@ -194,9 +266,18 @@ async fn sorted_models_and_key_aliases() {
     let sorted = Script {
         policy: Some(POLICY.to_owned()),
         managed: vec![ceiling(&["z-model", "a-model"])],
-        ..Script::default()
+        managed_fails: false,
+        unmanaged: None,
+        unmanaged_fails: false,
+        caller: None,
+        caller_fails: false,
+        team: None,
+        team_fails: false,
+        user: None,
+        user_fails: false,
+        events: Mutex::new(Vec::new()),
     };
-    let error = check_agent_access_group_model_access(
+    let error = check_agent_ceiling(
         &one("missing-model"),
         Some(&token(AGENT_KEY)),
         Some(&sorted),
@@ -213,10 +294,19 @@ async fn sorted_models_and_key_aliases() {
     let aliased = Script {
         policy: Some(POLICY.to_owned()),
         managed: vec![ceiling(&["gpt-4o"])],
-        ..Script::default()
+        managed_fails: false,
+        unmanaged: None,
+        unmanaged_fails: false,
+        caller: None,
+        caller_fails: false,
+        team: None,
+        team_fails: false,
+        user: None,
+        user_fails: false,
+        events: Mutex::new(Vec::new()),
     };
     // the ceiling holds only the target; the key alias rewrites the request onto it
-    check_agent_access_group_model_access(
+    check_agent_ceiling(
         &one("fast"),
         Some(&token(AGENT_MODEL_ALIAS_KEY)),
         Some(&aliased),
@@ -230,11 +320,20 @@ async fn sorted_models_and_key_aliases() {
 async fn ceiling_lookup_error_propagates() {
     let managed = Script {
         policy: Some(POLICY.to_owned()),
+        managed: Vec::new(),
         managed_fails: true,
-        ..Script::default()
+        unmanaged: None,
+        unmanaged_fails: false,
+        caller: None,
+        caller_fails: false,
+        team: None,
+        team_fails: false,
+        user: None,
+        user_fails: false,
+        events: Mutex::new(Vec::new()),
     };
     assert!(matches!(
-        check_agent_access_group_model_access(
+        check_agent_ceiling(
             &one("gpt-4o"),
             Some(&token(AGENT_KEY)),
             Some(&managed),
@@ -244,11 +343,21 @@ async fn ceiling_lookup_error_propagates() {
         Err(AgentModelGrantsError::Ceiling(_))
     ));
     let unmanaged = Script {
+        policy: None,
+        managed: Vec::new(),
+        managed_fails: false,
+        unmanaged: None,
         unmanaged_fails: true,
-        ..Script::default()
+        caller: None,
+        caller_fails: false,
+        team: None,
+        team_fails: false,
+        user: None,
+        user_fails: false,
+        events: Mutex::new(Vec::new()),
     };
     assert!(matches!(
-        check_agent_access_group_model_access(
+        check_agent_ceiling(
             &one("gpt-4o"),
             Some(&token(AGENT_KEY)),
             Some(&unmanaged),
@@ -264,10 +373,19 @@ async fn ceiling_recurse_depth_propagates() {
     let script = Script {
         policy: Some(POLICY.to_owned()),
         managed: vec![ceiling(&["gpt-4o"])],
-        ..Script::default()
+        managed_fails: false,
+        unmanaged: None,
+        unmanaged_fails: false,
+        caller: None,
+        caller_fails: false,
+        team: None,
+        team_fails: false,
+        user: None,
+        user_fails: false,
+        events: Mutex::new(Vec::new()),
     };
     assert!(matches!(
-        check_agent_access_group_model_access(
+        check_agent_ceiling(
             &one("gpt-4o"),
             Some(&token(AGENT_KEY)),
             Some(&script),
@@ -281,14 +399,23 @@ async fn ceiling_recurse_depth_propagates() {
 #[tokio::test]
 async fn caller_absent_skips() {
     let script = Script {
+        policy: None,
+        managed: Vec::new(),
+        managed_fails: false,
+        unmanaged: None,
+        unmanaged_fails: false,
         caller: Some(CALLER_KEY.to_owned()),
+        caller_fails: false,
         team: Some(DENYING_TEAM.to_owned()),
-        ..Script::default()
+        team_fails: false,
+        user: None,
+        user_fails: false,
+        events: Mutex::new(Vec::new()),
     };
     let memberships = CaseMemberships::default();
     let context = context();
     let admission = admission(&memberships, &context);
-    check_agent_caller_model_access(
+    check_agent_caller(
         &one("gpt-4o"),
         Some(&token(AGENT_KEY)),
         Some(&script),
@@ -301,33 +428,36 @@ async fn caller_absent_skips() {
     assert!(memberships.asked().is_empty());
 }
 
+#[rstest]
+#[case::falsey_none(RequestedModels::None, true)]
+#[case::empty_model(RequestedModels::One(String::new()), true)]
+#[case::empty_many(RequestedModels::Many(Vec::new()), true)]
+#[case::no_token(RequestedModels::One("gpt-4o".to_owned()), false)]
 #[tokio::test]
-async fn caller_falsey_model_and_token_skip() {
+async fn caller_falsey_model_and_token_skip(
+    #[case] model: RequestedModels,
+    #[case] with_token: bool,
+) {
     let context = context();
     let memberships = CaseMemberships::default();
     let admission = admission(&memberships, &context);
-    // the token carries a caller identity, so only the falsey model can skip before the lookup
+    // the token carries a caller identity, so only a falsey model or a missing token can skip
     let denying = Script {
+        policy: None,
+        managed: Vec::new(),
+        managed_fails: false,
+        unmanaged: None,
+        unmanaged_fails: false,
         caller: Some(CALLER_KEY.to_owned()),
+        caller_fails: false,
+        team: None,
+        team_fails: false,
         user: Some(r#"{"user_id":"caller-1","models":["other-model"]}"#.to_owned()),
-        ..Script::default()
+        user_fails: false,
+        events: Mutex::new(Vec::new()),
     };
-    for model in [
-        RequestedModels::None,
-        RequestedModels::One(String::new()),
-        RequestedModels::Many(Vec::new()),
-    ] {
-        check_agent_caller_model_access(
-            &model,
-            Some(&agent_token(AGENT_KEY)),
-            Some(&denying),
-            &admission,
-            &context,
-        )
-        .await
-        .unwrap();
-    }
-    check_agent_caller_model_access(&one("gpt-4o"), None, Some(&denying), &admission, &context)
+    let key = with_token.then_some(agent_token(AGENT_KEY));
+    check_agent_caller(&model, key.as_ref(), Some(&denying), &admission, &context)
         .await
         .unwrap();
     assert!(denying.events().is_empty());
@@ -340,8 +470,21 @@ async fn unresolved_caller_allows() {
     let context = context();
     let memberships = CaseMemberships::default();
     let admission = admission(&memberships, &context);
-    let script = Script::default();
-    check_agent_caller_model_access(
+    let script = Script {
+        policy: None,
+        managed: Vec::new(),
+        managed_fails: false,
+        unmanaged: None,
+        unmanaged_fails: false,
+        caller: None,
+        caller_fails: false,
+        team: None,
+        team_fails: false,
+        user: None,
+        user_fails: false,
+        events: Mutex::new(Vec::new()),
+    };
+    check_agent_caller(
         &one("gpt-4o"),
         Some(&agent_token(AGENT_KEY)),
         Some(&script),
@@ -361,11 +504,20 @@ async fn caller_key_aliases_forwarded() {
     let caller_admission = admission(&memberships, &context);
     // the team and the member allowlist both name gpt-4o, so only the agent key's alias allows "fast"
     let script = Script {
+        policy: None,
+        managed: Vec::new(),
+        managed_fails: false,
+        unmanaged: None,
+        unmanaged_fails: false,
         caller: Some(CALLER_KEY.to_owned()),
+        caller_fails: false,
         team: Some(ALLOWING_TEAM.to_owned()),
-        ..Script::default()
+        team_fails: false,
+        user: None,
+        user_fails: false,
+        events: Mutex::new(Vec::new()),
     };
-    check_agent_caller_model_access(
+    check_agent_caller(
         &one("fast"),
         Some(&agent_token(AGENT_MODEL_ALIAS_KEY)),
         Some(&script),
@@ -378,11 +530,20 @@ async fn caller_key_aliases_forwarded() {
 
     // without a caller team the user's own models decide through the same alias map
     let user_script = Script {
+        policy: None,
+        managed: Vec::new(),
+        managed_fails: false,
+        unmanaged: None,
+        unmanaged_fails: false,
         caller: Some(CALLER_KEY.to_owned()),
+        caller_fails: false,
+        team: None,
+        team_fails: false,
         user: Some(r#"{"user_id":"caller-1","models":["gpt-4o"]}"#.to_owned()),
-        ..Script::default()
+        user_fails: false,
+        events: Mutex::new(Vec::new()),
     };
-    check_agent_caller_model_access(
+    check_agent_caller(
         &one("fast"),
         Some(&agent_token(AGENT_MODEL_ALIAS_KEY)),
         Some(&user_script),
@@ -402,13 +563,22 @@ async fn caller_team_before_membership() {
     let context = context();
     // the team grant allows, then the member scope decides
     let script = Script {
+        policy: None,
+        managed: Vec::new(),
+        managed_fails: false,
+        unmanaged: None,
+        unmanaged_fails: false,
         caller: Some(CALLER_KEY.to_owned()),
+        caller_fails: false,
         team: Some(ALLOWING_TEAM.to_owned()),
-        ..Script::default()
+        team_fails: false,
+        user: None,
+        user_fails: false,
+        events: Mutex::new(Vec::new()),
     };
     let memberships = CaseMemberships::allowed(ALLOWING_MEMBER);
     let admission = admission(&memberships, &context);
-    check_agent_caller_model_access(
+    check_agent_caller(
         &one("gpt-4o"),
         Some(&agent_token(AGENT_KEY)),
         Some(&script),
@@ -422,13 +592,22 @@ async fn caller_team_before_membership() {
 
     // a team denial ends the check without asking the member source or the user
     let denying = Script {
+        policy: None,
+        managed: Vec::new(),
+        managed_fails: false,
+        unmanaged: None,
+        unmanaged_fails: false,
         caller: Some(CALLER_KEY.to_owned()),
+        caller_fails: false,
         team: Some(DENYING_TEAM.to_owned()),
-        ..Script::default()
+        team_fails: false,
+        user: None,
+        user_fails: false,
+        events: Mutex::new(Vec::new()),
     };
     let memberships = CaseMemberships::allowed(ALLOWING_MEMBER);
     let admission = admission(&memberships, &context);
-    let error = check_agent_caller_model_access(
+    let error = check_agent_caller(
         &one("gpt-4o"),
         Some(&agent_token(AGENT_KEY)),
         Some(&denying),
@@ -451,16 +630,26 @@ async fn caller_team_before_membership() {
     assert!(!denying.events().contains(&"caller_user".to_owned()));
 
     // the member scope denies when the team grant passes but the member allowlist does not
+    let member_denying = Script {
+        policy: None,
+        managed: Vec::new(),
+        managed_fails: false,
+        unmanaged: None,
+        unmanaged_fails: false,
+        caller: Some(CALLER_KEY.to_owned()),
+        caller_fails: false,
+        team: Some(ALLOWING_TEAM.to_owned()),
+        team_fails: false,
+        user: None,
+        user_fails: false,
+        events: Mutex::new(Vec::new()),
+    };
     let memberships = CaseMemberships::allowed(DENYING_MEMBER);
     let admission = admission(&memberships, &context);
-    let error = check_agent_caller_model_access(
+    let error = check_agent_caller(
         &one("gpt-4o"),
         Some(&agent_token(AGENT_KEY)),
-        Some(&Script {
-            caller: Some(CALLER_KEY.to_owned()),
-            team: Some(ALLOWING_TEAM.to_owned()),
-            ..Script::default()
-        }),
+        Some(&member_denying),
         &admission,
         &context,
     )
@@ -482,15 +671,23 @@ async fn caller_team_before_membership() {
 #[tokio::test]
 async fn caller_team_skips_user() {
     let script = Script {
+        policy: None,
+        managed: Vec::new(),
+        managed_fails: false,
+        unmanaged: None,
+        unmanaged_fails: false,
         caller: Some(CALLER_KEY.to_owned()),
+        caller_fails: false,
         team: Some(ALLOWING_TEAM.to_owned()),
+        team_fails: false,
         user: Some(r#"{"user_id":"caller-1","models":["other-model"]}"#.to_owned()),
-        ..Script::default()
+        user_fails: false,
+        events: Mutex::new(Vec::new()),
     };
     let memberships = CaseMemberships::allowed(ALLOWING_MEMBER);
     let context = context();
     let admission = admission(&memberships, &context);
-    check_agent_caller_model_access(
+    check_agent_caller(
         &one("gpt-4o"),
         Some(&agent_token(AGENT_KEY)),
         Some(&script),
@@ -506,13 +703,22 @@ async fn caller_team_skips_user() {
 async fn caller_user_fallback() {
     let context = context();
     let script = Script {
+        policy: None,
+        managed: Vec::new(),
+        managed_fails: false,
+        unmanaged: None,
+        unmanaged_fails: false,
         caller: Some(CALLER_KEY.to_owned()),
+        caller_fails: false,
+        team: None,
+        team_fails: false,
         user: Some(r#"{"user_id":"caller-1","models":["gpt-4o"]}"#.to_owned()),
-        ..Script::default()
+        user_fails: false,
+        events: Mutex::new(Vec::new()),
     };
     let memberships = CaseMemberships::default();
     let admission = admission(&memberships, &context);
-    check_agent_caller_model_access(
+    check_agent_caller(
         &one("gpt-4o"),
         Some(&agent_token(AGENT_KEY)),
         Some(&script),
@@ -527,11 +733,20 @@ async fn caller_user_fallback() {
     );
 
     let denying = Script {
+        policy: None,
+        managed: Vec::new(),
+        managed_fails: false,
+        unmanaged: None,
+        unmanaged_fails: false,
         caller: Some(CALLER_KEY.to_owned()),
+        caller_fails: false,
+        team: None,
+        team_fails: false,
         user: Some(r#"{"user_id":"caller-1","models":["other-model"]}"#.to_owned()),
-        ..Script::default()
+        user_fails: false,
+        events: Mutex::new(Vec::new()),
     };
-    let error = check_agent_caller_model_access(
+    let error = check_agent_caller(
         &one("gpt-4o"),
         Some(&agent_token(AGENT_KEY)),
         Some(&denying),
@@ -555,13 +770,23 @@ async fn caller_user_fallback() {
 #[tokio::test]
 async fn missing_caller_user_skips() {
     let script = Script {
+        policy: None,
+        managed: Vec::new(),
+        managed_fails: false,
+        unmanaged: None,
+        unmanaged_fails: false,
         caller: Some(CALLER_KEY.to_owned()),
-        ..Script::default()
+        caller_fails: false,
+        team: None,
+        team_fails: false,
+        user: None,
+        user_fails: false,
+        events: Mutex::new(Vec::new()),
     };
     let memberships = CaseMemberships::default();
     let context = context();
     let admission = admission(&memberships, &context);
-    check_agent_caller_model_access(
+    check_agent_caller(
         &one("gpt-4o"),
         Some(&agent_token(AGENT_KEY)),
         Some(&script),
@@ -573,38 +798,76 @@ async fn missing_caller_user_skips() {
     assert!(script.events().contains(&"caller_user".to_owned()));
 }
 
+#[derive(Clone, Copy, Debug)]
+enum CallerLookup {
+    Auth,
+    Team,
+    User,
+}
+
+#[rstest]
+#[case::caller_auth(CallerLookup::Auth)]
+#[case::caller_team(CallerLookup::Team)]
+#[case::caller_user(CallerLookup::User)]
 #[tokio::test]
-async fn caller_lookup_error_propagates() {
+async fn caller_lookup_error_propagates(#[case] step: CallerLookup) {
     let context = context();
     let memberships = CaseMemberships::default();
     let admission = admission(&memberships, &context);
-    for script in [
-        Script {
+    let script = match step {
+        CallerLookup::Auth => Script {
+            policy: None,
+            managed: Vec::new(),
+            managed_fails: false,
+            unmanaged: None,
+            unmanaged_fails: false,
+            caller: None,
             caller_fails: true,
-            ..Script::default()
+            team: None,
+            team_fails: false,
+            user: None,
+            user_fails: false,
+            events: Mutex::new(Vec::new()),
         },
-        Script {
+        CallerLookup::Team => Script {
+            policy: None,
+            managed: Vec::new(),
+            managed_fails: false,
+            unmanaged: None,
+            unmanaged_fails: false,
             caller: Some(CALLER_KEY.to_owned()),
+            caller_fails: false,
+            team: None,
             team_fails: true,
-            ..Script::default()
+            user: None,
+            user_fails: false,
+            events: Mutex::new(Vec::new()),
         },
-        Script {
+        CallerLookup::User => Script {
+            policy: None,
+            managed: Vec::new(),
+            managed_fails: false,
+            unmanaged: None,
+            unmanaged_fails: false,
             caller: Some(CALLER_KEY.to_owned()),
+            caller_fails: false,
+            team: None,
+            team_fails: false,
+            user: None,
             user_fails: true,
-            ..Script::default()
+            events: Mutex::new(Vec::new()),
         },
-    ] {
-        let error = check_agent_caller_model_access(
-            &one("gpt-4o"),
-            Some(&agent_token(AGENT_KEY)),
-            Some(&script),
-            &admission,
-            &context,
-        )
-        .await
-        .unwrap_err();
-        assert!(matches!(error, AgentModelGrantsError::Caller(_)));
-    }
+    };
+    let error = check_agent_caller(
+        &one("gpt-4o"),
+        Some(&agent_token(AGENT_KEY)),
+        Some(&script),
+        &admission,
+        &context,
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(error, AgentModelGrantsError::Caller(_)));
 }
 
 #[tokio::test]
@@ -613,7 +876,7 @@ async fn missing_source_fails_callers() {
     let memberships = CaseMemberships::default();
     let admission = admission(&memberships, &context);
     assert!(matches!(
-        check_agent_caller_model_access(
+        check_agent_caller(
             &one("gpt-4o"),
             Some(&agent_token(AGENT_KEY)),
             None,

@@ -1,5 +1,4 @@
-// ast-grep-ignore: no-long-names
-use betterlite_error::proxy_exception::model_access_denied::ModelAccessDeniedProxyException;
+use betterlite_error::proxy_exception::model_access_denied::ModelAccessDeniedProxyException; // ast-grep-ignore: no-long-names
 
 use crate::agent_access_groups::error::AccessGroupsError;
 use crate::agent_caller::error::AgentCallerError;

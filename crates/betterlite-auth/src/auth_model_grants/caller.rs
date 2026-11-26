@@ -16,7 +16,7 @@ use super::error::AgentModelGrantsError;
 use super::requested;
 
 // _check_agent_caller_model_access: the invoking team's grant then its member scope, else the invoking user
-pub async fn check_agent_caller_model_access(
+pub async fn check_agent_caller(
     model: &RequestedModels,
     token: Option<&UserAPIKeyAuth>,
     source: Option<&dyn AgentAccessSource>,

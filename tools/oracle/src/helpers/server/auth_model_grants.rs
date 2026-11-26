@@ -4,8 +4,8 @@ mod script;
 use std::collections::BTreeMap;
 
 use betterlite_auth::auth_model_grants::access_source::AgentAccessSource;
-use betterlite_auth::auth_model_grants::caller::check_agent_caller_model_access;
-use betterlite_auth::auth_model_grants::ceiling::check_agent_access_group_model_access;
+use betterlite_auth::auth_model_grants::caller::check_agent_caller;
+use betterlite_auth::auth_model_grants::ceiling::check_agent_ceiling;
 use betterlite_auth::auth_model_grants::error::AgentModelGrantsError;
 use betterlite_auth::auth_model_grants::fallback::RouterFallbackAccessCheck;
 use betterlite_auth::auth_model_grants::source_adapter::user_api_key_auth_from_request;
@@ -86,13 +86,11 @@ async fn agent_value(step: &Step, effects: &Effects) -> HelperResult {
     let source: &dyn AgentAccessSource = &script;
     let model = RequestedModels::One(step.model.clone());
     let access = context();
-    let ceiling =
-        check_agent_access_group_model_access(&model, token.as_ref(), Some(source), &access).await;
+    let ceiling = check_agent_ceiling(&model, token.as_ref(), Some(source), &access).await;
     let outcome = match ceiling {
         Ok(()) => {
             let member = admission(&access);
-            check_agent_caller_model_access(&model, token.as_ref(), Some(source), &member, &access)
-                .await
+            check_agent_caller(&model, token.as_ref(), Some(source), &member, &access).await
         }
         Err(error) => Err(error),
     };
