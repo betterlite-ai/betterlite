@@ -1,0 +1,40 @@
+kind: helper
+name: virtual-key-routes-agent-registry-compatibility
+call:
+  virtual_key_routes:
+    function: should_call_route
+    route: /v1/agents
+    method: POST
+    key:
+      allowed_routes: [llm_api_routes]
+calls:
+  - virtual_key_routes:
+      function: should_call_route
+      route: /v1/agents/agent-a/kill_switch
+      method: POST
+      key:
+        allowed_routes: [llm_api_routes]
+  - virtual_key_routes:
+      function: should_call_route
+      route: /v1/agents/agent-a
+      method: GET
+      key:
+        allowed_routes: [llm_api_routes]
+  - virtual_key_routes:
+      function: should_call_route
+      route: /v1/agents/agent-a/kill_switch
+      method: POST
+      key:
+        allowed_routes: [llm_api_routes]
+      registrations:
+        - {endpoint_id: pass-agents, route_type: subpath, path: /v1/agents, auth: true}
+  - virtual_key_routes:
+      function: should_call_route
+      route: /v1/agents/agent-a/unknown
+      method: POST
+      key:
+        allowed_routes: [llm_api_routes]
+      registrations:
+        - {endpoint_id: pass-agents, route_type: subpath, path: /v1/agents, auth: true}
+env: {}
+compare: {ignore: []}

@@ -73,3 +73,9 @@ pub trait OcrProbeCall: Send + Sync {
 pub trait EvaluationProbeCall: Send + Sync {
     async fn evaluate(&self, call: EvaluationCall) -> Result<HealthProbeReply, HealthProbeError>;
 }
+
+// B3338's avideo_generation; VideoGenerationProbe is its production implementation
+#[async_trait]
+pub trait VideoGenerationProbeCall: Send + Sync {
+    async fn generate(&self, call: ProbeCall) -> Result<HealthProbeReply, HealthProbeError>;
+}

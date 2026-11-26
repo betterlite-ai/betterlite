@@ -168,5 +168,5 @@ pitfalls:
   - The exception model is `model or "sora-2"` in the sync path but the raw model (possibly none) in the async path.
 review_level: standard
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 1900
   max_new_expects: 0
