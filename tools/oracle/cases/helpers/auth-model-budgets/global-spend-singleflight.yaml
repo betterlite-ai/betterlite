@@ -1,0 +1,33 @@
+kind: helper
+name: auth-model-budgets-global-spend-singleflight
+call:
+  auth_model_budgets:
+    calls:
+      - function: global_spend
+        max_budget: 5.0
+        spend: 12.5
+        tokens: [key-a, key-b]
+        admin_name: admin
+      - function: global_spend
+        max_budget: 5.0
+        spend: 0.0
+        tokens: [key-zero]
+        admin_name: admin
+      - function: global_spend
+        max_budget: 5.0
+        tokens: [key-missing]
+        admin_name: admin
+      - function: global_spend
+        max_budget: 0.0
+        spend: 12.5
+        tokens: [key-off]
+        admin_name: admin
+      - function: global_spend
+        max_budget: 5.0
+        spend: 3.5
+        tokens: [key-nodb]
+        admin_name: admin
+        database: false
+env: {}
+compare:
+  ignore: []

@@ -3811,6 +3811,7 @@ dependencies = [
  "betterlite-analytics",
  "betterlite-auth",
  "betterlite-backend",
+ "betterlite-cache",
  "betterlite-config",
  "betterlite-context",
  "betterlite-core",

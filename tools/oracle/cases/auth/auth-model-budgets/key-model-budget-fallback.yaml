@@ -1,0 +1,31 @@
+kind: helper
+name: auth-model-budgets-auth-key-model-budget-fallback
+call:
+  auth_model_budgets:
+    calls:
+      - function: key_fallback
+        token:
+          token: sk-a
+          models: [gpt-4, gpt-3.5]
+        model_name: gpt-4
+        request_model: gpt-4
+        request_data:
+          model: gpt-4
+          temperature: 0.2
+        failing: true
+        fallback: gpt-3.5
+      - function: key_fallback
+        token:
+          token: sk-b
+          models: [gpt-4, gpt-3.5]
+        model_name: gpt-4
+        request_model: gpt-4
+        request_data:
+          model: gpt-4
+        path_params:
+          model: gpt-4
+        failing: false
+        fallback: gpt-3.5
+env: {}
+compare:
+  ignore: []
