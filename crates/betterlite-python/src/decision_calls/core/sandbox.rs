@@ -1,0 +1,92 @@
+use std::sync::PoisonError;
+
+use betterlite_models::decisions::Json;
+use betterlite_models::sandbox_dispatch::sandbox_tool_entries;
+use betterlite_provider::sandbox_dispatch::request::SandboxContainer;
+
+use super::super::convert::{Arguments, CallWire, ConvertError, encode};
+use super::super::error::SessionFailure;
+use super::super::sandbox::container::{container_answer, container_of};
+use super::super::sandbox::run::run_request;
+use super::super::sandbox::{create_request, delete_request, network_policy, tool_answer};
+use super::{CODE_INTERPRETER, CREATE, DELETE, RUN, SessionCore, secret_lookup};
+
+pub(super) fn register_tools(
+    core: &SessionCore,
+    wire: &CallWire,
+) -> Result<String, SessionFailure> {
+    let arguments = &wire.arguments;
+    let entries = sandbox_tool_entries(arguments.tools.clone())?;
+    let environment = arguments.environment.clone().unwrap_or_default();
+    let lookup = secret_lookup();
+    let mut tools = core.tools.lock().unwrap_or_else(PoisonError::into_inner);
+    tools.register(&entries, &lookup, &environment)?;
+    drop(tools);
+    encode(&Json::Null).map_err(SessionFailure::from)
+}
+
+pub(super) fn resolve_tool(core: &SessionCore, wire: &CallWire) -> Result<String, SessionFailure> {
+    let tools = core.tools.lock().unwrap_or_else(PoisonError::into_inner);
+    let found = wire
+        .arguments
+        .name
+        .as_deref()
+        .and_then(|name| tools.tools.get(name));
+    tool_answer(found).map_err(SessionFailure::from)
+}
+
+pub(super) async fn sandbox_call(
+    core: &SessionCore,
+    wire: &CallWire,
+) -> Result<String, SessionFailure> {
+    match wire.operation.as_str() {
+        CREATE => {
+            let container = create_on(core, &wire.arguments).await?;
+            container_answer(&container).map_err(SessionFailure::from)
+        }
+        RUN => {
+            let container = container_of(&wire.arguments)?;
+            let mut request = run_request(&wire.arguments, &container)?;
+            let result = core.sandbox().arun_code(&mut request).await?;
+            encode(&result).map_err(SessionFailure::from)
+        }
+        DELETE => {
+            let container = container_of(&wire.arguments)?;
+            let mut request = delete_request(&wire.arguments, &container);
+            let answer = core.sandbox().adelete_sandbox(&mut request).await?;
+            encode(&answer).map_err(SessionFailure::from)
+        }
+        CODE_INTERPRETER => code_interpreter(core, wire).await,
+        other => Err(SessionFailure::from(ConvertError::Operation {
+            operation: other.to_owned(),
+        })),
+    }
+}
+
+async fn create_on(
+    core: &SessionCore,
+    arguments: &Arguments,
+) -> Result<SandboxContainer, SessionFailure> {
+    let policy = network_policy(arguments.network_policy.as_ref())?;
+    let mut request = create_request(arguments, policy.as_deref())?;
+    core.sandbox()
+        .acreate_sandbox(&mut request)
+        .await
+        .map_err(SessionFailure::from)
+}
+
+async fn code_interpreter(core: &SessionCore, wire: &CallWire) -> Result<String, SessionFailure> {
+    let container = create_on(core, &wire.arguments).await?;
+    let outcome = async {
+        let mut request = run_request(&wire.arguments, &container)?;
+        core.sandbox()
+            .arun_code(&mut request)
+            .await
+            .map_err(SessionFailure::from)
+    }
+    .await;
+    let mut request = delete_request(&wire.arguments, &container);
+    // LiteLLM logs the failed cleanup and still answers with the run's result
+    let _cleanup = core.sandbox().adelete_sandbox(&mut request).await;
+    encode(&outcome?).map_err(SessionFailure::from)
+}

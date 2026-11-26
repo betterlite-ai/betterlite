@@ -1,0 +1,25 @@
+kind: helper
+name: bedrock-other-canvas-edits-canvas-edit-contract
+call:
+  bedrock_other_canvas_edits:
+    model_cost: {}
+    calls:
+      - function: multipart
+      - function: url
+      - function: supported_params
+      - function: environment
+        headers: null
+      - function: environment
+        headers: {}
+      - function: environment
+        headers: {Content-Type: application/x-amz-json-1.1, content-type: text/plain}
+      - function: error_class
+        message: the model is sad
+        status: 400
+        headers: {x-amzn-errortype: ValidationException}
+      - function: error_class
+        message: no headers
+        status: 503
+        headers: {}
+env: {}
+compare: {ignore: []}
