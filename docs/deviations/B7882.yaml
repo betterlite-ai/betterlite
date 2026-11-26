@@ -1,5 +1,8 @@
 task: B7882
 deviations:
+  - what: Failed GET responses report the byte count when their body or a header value is not UTF-8, while retaining the provider status.
+    why: Lossy text decoding would hide invalid bytes. The adapter follows the shared video transport's diagnostic behavior instead of substituting replacement characters.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L8682-L8708
   - what: An input_reference given as a path or an open file is uploaded with its basename as the multipart filename.
     why: The shared payload layer reads a Path and preserves its bytes instead of losing the file; the pinned LiteLLM comparison sends no input_reference part for a Path. Open binary files are sent by both implementations, with betterlite using the basename and LiteLLM using the full image.name.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/transformation.py#L574-L586

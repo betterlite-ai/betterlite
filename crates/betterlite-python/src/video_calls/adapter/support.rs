@@ -1,5 +1,6 @@
 use std::error::Error as StdError;
 use std::fmt::Display;
+use std::str::from_utf8;
 
 use betterlite_core::api::video_remix_list_transport::error::ConfigFailure;
 use betterlite_core::api::video_status_transport::error::ProviderFailure;
@@ -77,12 +78,18 @@ pub(super) fn check_response(response: &UpstreamResponse) -> Result<(), Provider
         .headers
         .iter()
         .map(|(name, value)| {
-            let text = String::from_utf8_lossy(value.as_bytes()).into_owned();
+            let text = from_utf8(value.as_bytes()).map_or_else(
+                |_| format!("{} bytes that are not UTF-8", value.as_bytes().len()),
+                ToOwned::to_owned,
+            );
             (name.as_str().to_owned(), text)
         })
         .collect();
     Err(ProviderFailure {
-        message: String::from_utf8_lossy(&response.body).into_owned(),
+        message: from_utf8(&response.body).map_or_else(
+            |_| format!("{} bytes that are not UTF-8", response.body.len()),
+            ToOwned::to_owned,
+        ),
         status_code: Some(response.status),
         headers: Some(headers),
     })

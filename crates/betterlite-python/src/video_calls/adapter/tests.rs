@@ -103,33 +103,32 @@ fn transform_errors_keep_message() {
 }
 
 #[rstest]
-#[case::below_success(199)]
-#[case::redirect(300)]
-#[case::unauthorized(401)]
-#[case::missing(404)]
-fn response_status_keeps_facts(#[case] status: u16) {
+#[case::below_success(199, b"provider rejected", "provider rejected")]
+#[case::redirect(300, b"provider rejected", "provider rejected")]
+#[case::unauthorized(401, b"provider rejected", "provider rejected")]
+#[case::missing(404, b"provider rejected", "provider rejected")]
+#[case::invalid_utf8(401, b"\xff", "1 bytes that are not UTF-8")]
+#[case::unicode(404, "caf\u{e9}".as_bytes(), "caf\u{e9}")]
+fn response_status_keeps_facts(#[case] status: u16, #[case] body: &[u8], #[case] text: &str) {
     let mut headers = HeaderMap::new();
-    headers.insert("x-request-id", HeaderValue::from_static("request-123"));
+    headers.insert("x-request-id", HeaderValue::from_bytes(body).unwrap());
     let response = UpstreamResponse {
         status,
         headers,
-        body: b"provider rejected".to_vec(),
+        body: body.to_vec(),
     };
     let failure = super::support::check_response(&response).unwrap_err();
     assert_eq!(failure.status_code, Some(status));
-    assert_eq!(failure.message, "provider rejected");
-    assert_eq!(
-        failure.headers.unwrap().get("x-request-id").unwrap(),
-        "request-123"
-    );
+    assert_eq!(failure.message, text);
+    assert_eq!(failure.headers.unwrap().get("x-request-id").unwrap(), text);
     let adapter = config();
     let error = adapter
         .transform_video_content_response(&response, &mut VideoLogging::default())
         .unwrap_err();
     let facts = adapter.error_facts(&error);
     assert_eq!(facts.status_code, Some(status));
-    assert_eq!(facts.message, "provider rejected");
-    assert_eq!(facts.headers.get("x-request-id").unwrap(), "request-123");
+    assert_eq!(facts.message, text);
+    assert_eq!(facts.headers.get("x-request-id").unwrap(), text);
 }
 
 #[rstest]
