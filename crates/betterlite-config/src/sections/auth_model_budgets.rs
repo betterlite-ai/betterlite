@@ -24,13 +24,6 @@ impl Default for Settings {
     }
 }
 
-impl Settings {
-    #[must_use]
-    pub fn global_spend_enabled(&self) -> bool {
-        self.max_budget > Decimal::ZERO
-    }
-}
-
 #[derive(Debug, Default, Deserialize)]
 pub struct Raw {
     #[serde(default)]

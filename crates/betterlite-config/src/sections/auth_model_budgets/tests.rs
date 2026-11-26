@@ -27,7 +27,7 @@ fn amount(text: &str) -> Decimal {
 fn max_budget_default_zero() {
     let absent = load("litellm_settings: {}", &[]).expect("an empty section loads");
     assert_eq!(absent.max_budget, Decimal::ZERO);
-    assert!(!absent.global_spend_enabled());
+    assert!(absent.max_budget <= Decimal::ZERO);
     let unset = load("model_list: []", &[]).expect("a config without the key loads");
     assert_eq!(unset, Settings::default());
 }
@@ -40,11 +40,11 @@ litellm_settings:
     let loaded = load(source, &[("PROXY_MAX_BUDGET", "250.50")])
         .expect("the environment resolves the ceiling");
     assert_eq!(loaded.max_budget, amount("250.50"));
-    assert!(loaded.global_spend_enabled());
+    assert!(loaded.max_budget > Decimal::ZERO);
     let literal =
         load("litellm_settings:\n  max_budget: 100.0", &[]).expect("a literal ceiling loads");
     assert_eq!(literal.max_budget, amount("100.0"));
-    assert!(literal.global_spend_enabled());
+    assert!(literal.max_budget > Decimal::ZERO);
 }
 
 // get_global_proxy_spend gates on `litellm.max_budget > 0`, so these values never read the aggregate
@@ -57,7 +57,7 @@ fn zero_negative_and_nan_skip_read(#[case] value: &str) {
     let source = format!("litellm_settings:\n  max_budget: {value}");
     let loaded = load(&source, &[]).expect("a non-positive ceiling still loads");
     assert_eq!(loaded.max_budget, Decimal::ZERO, "{value}");
-    assert!(!loaded.global_spend_enabled(), "{value}");
+    assert!(loaded.max_budget <= Decimal::ZERO, "{value}");
 }
 
 #[rstest]

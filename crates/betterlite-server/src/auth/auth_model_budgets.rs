@@ -8,9 +8,7 @@ use betterlite_auth::auth_errors::conversion::{AuthFailure, as_proxy_exception};
 use betterlite_auth::auth_model_budgets::checks::{
     check_team_model_budget, check_user_model_budget,
 };
-use betterlite_auth::auth_model_budgets::fallback::{
-    KeyBudgetError, check_key_model_budget_with_fallback,
-};
+use betterlite_auth::auth_model_budgets::fallback::{KeyBudgetError, check_key_budget_fallback};
 use betterlite_auth::auth_model_budgets::limits::{
     KeyModelBudgetLimiter, TeamModelBudgetLimiter, UserModelBudgetLimiter,
 };
@@ -162,7 +160,7 @@ pub(crate) async fn prefetch(stage: &ModelBudgetStageInput) -> Result<(), Box<Pr
         max_recurse_depth: rule.max_recurse_depth,
     };
     let mut views = BodyViews::new(stage.body.as_deref(), rule.path_params.clone());
-    check_key_model_budget_with_fallback(
+    check_key_budget_fallback(
         limiter,
         auth,
         model_name,
@@ -173,7 +171,7 @@ pub(crate) async fn prefetch(stage: &ModelBudgetStageInput) -> Result<(), Box<Pr
     )
     .await
     .map_err(|error| Box::new(key_budget_exception(&error)))?;
-    let applied = views.into_body();
+    let applied = views.serialized_body.map(Bytes::from);
     *rule.applied.lock().unwrap_or_else(PoisonError::into_inner) = applied;
     Ok(())
 }
@@ -196,10 +194,6 @@ impl BodyViews {
             serialized_body: None,
             path_params,
         }
-    }
-
-    fn into_body(self) -> Option<Bytes> {
-        self.serialized_body.map(Bytes::from)
     }
 
     fn mirror(&mut self, target: fn(&mut Self) -> Option<&mut JsonObject>) {

@@ -1,8 +1,8 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use axum::Router;
@@ -14,6 +14,7 @@ use betterlite_auth::auth_model_budgets::checks::ModelMaxBudget;
 use betterlite_auth::auth_model_budgets::limits::UserModelBudgetLimiter;
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_config::loader::ConfigLoader;
+use betterlite_config::sections::database_reencryption::DEFAULT_RECURSE_DEPTH;
 use betterlite_config::types::Config;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_error::error::ErrorClass;
@@ -93,8 +94,15 @@ fn failing_rule() -> Arc<ModelBudgetRule> {
             r#"{"token":"sk-model-budget","user_id":"u1","user_model_max_budget":{"gpt-4":1.0}}"#,
         )),
         models: vec!["gpt-4".to_owned()],
+        model_name: None,
+        request_model: None,
         user_limiter: Some(Arc::new(DenyingUserLimiter)),
-        ..ModelBudgetRule::default()
+        team_limiter: None,
+        key_limiter: None,
+        global_model_aliases: BTreeMap::new(),
+        max_recurse_depth: DEFAULT_RECURSE_DEPTH,
+        path_params: None,
+        applied: Mutex::new(None),
     })
 }
 
@@ -148,7 +156,7 @@ async fn stage_is_registered() {
     let state = state_for(&with_settings);
     let settings = Arc::clone(&state.auth_model_budgets.settings);
     assert_eq!(settings.max_budget, Decimal::new(125, 1));
-    assert!(settings.global_spend_enabled());
+    assert!(settings.max_budget > Decimal::ZERO);
 
     // the rule's debug output names the type and never the token it resolved
     let debugged = failing_rule();
