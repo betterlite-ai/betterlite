@@ -65,8 +65,8 @@ fn request(config: &Config) -> Request<Body> {
         .expect("the request builds")
 }
 
-#[tokio::test]
-async fn stage_is_registered() {
+#[test]
+fn stage_is_registered() {
     let position = INSTALLED_STAGES
         .iter()
         .position(|stage| *stage == AuthBackend::TrustedNetwork)
@@ -82,7 +82,6 @@ async fn stage_is_registered() {
     );
 
     let config = proxy_config();
-    let master_key = SecretString::from(MASTER_KEY.to_owned());
     let authenticated = master_context();
     let incoming = request(&config);
     let resolver = resolver_for(&incoming);
@@ -100,6 +99,24 @@ async fn stage_is_registered() {
     };
     assert_eq!(stage.peer.as_deref(), Some(PROXY_PEER));
     assert_eq!(stage.document.x_forwarded_for.as_deref(), Some(CLIENT_IP));
+}
+
+#[tokio::test]
+async fn stage_resolves_the_client_network() {
+    let config = proxy_config();
+    let master_key = SecretString::from(MASTER_KEY.to_owned());
+    let authenticated = master_context();
+    let incoming = request(&config);
+    let resolver = resolver_for(&incoming);
+    let Ok(staged) = stage_input(
+        AuthBackend::TrustedNetwork,
+        &incoming,
+        Some(&authenticated),
+        &resolver,
+        None,
+    ) else {
+        panic!("the production constructor builds the network stage input");
+    };
     let Ok(prefetched) = prefetch_stage(staged).await else {
         panic!("the network stage has no prefetch to fail");
     };

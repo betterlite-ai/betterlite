@@ -115,13 +115,11 @@ pub(crate) fn dispatch(
     master_key: &SecretString,
 ) -> Result<AuthContext, StageFailure> {
     match backend {
-        AuthBackend::MasterKey => master_key_stage(input, master_key)
-            .map_err(|failure| StageFailure::Authentication(Box::new(failure))),
+        AuthBackend::MasterKey => master_key_stage(input, master_key),
         AuthBackend::TrustedNetwork => trusted_network_stage(input),
         AuthBackend::AuthRequestPolicy => auth_request_policy_stage(input),
         AuthBackend::RequestBodySafety => auth_request_body_safety_stage(input),
-        AuthBackend::AuthRequestModels => auth_request_models_stage(input)
-            .map_err(|failure| StageFailure::Authentication(Box::new(failure))),
+        AuthBackend::AuthRequestModels => auth_request_models_stage(input),
         AuthBackend::AuthModelPatterns => auth_model_patterns_stage(input),
         AuthBackend::AuthResourceGrants => auth_resource_grants_stage(input),
         AuthBackend::AuthTagBudgets => {
@@ -196,15 +194,15 @@ fn auth_model_patterns_stage(input: &StageInput) -> Result<AuthContext, StageFai
     };
     run_stage(stage).map_err(|rejection| StageFailure::ModelAccess(Box::new(rejection)))
 }
-fn auth_request_models_stage(input: &StageInput) -> Result<AuthContext, AuthenticationFailure> {
+fn auth_request_models_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
     let StageInput::AuthRequestModels(stage) = input else {
-        return Err(AuthenticationFailure::Missing);
+        return Err(StageFailure::from(AuthenticationFailure::Missing));
     };
     match resolve(stage) {
         Ok(_) => Ok(stage.context.clone()),
         Err(error) => {
             tracing::debug!(error = %error, "the request model stage failed");
-            Err(AuthenticationFailure::Missing)
+            Err(StageFailure::from(AuthenticationFailure::Missing))
         }
     }
 }
@@ -212,9 +210,9 @@ fn auth_request_models_stage(input: &StageInput) -> Result<AuthContext, Authenti
 fn master_key_stage(
     input: &StageInput,
     master_key: &SecretString,
-) -> Result<AuthContext, AuthenticationFailure> {
+) -> Result<AuthContext, StageFailure> {
     let StageInput::MasterKey(presented) = input else {
-        return Err(AuthenticationFailure::Missing);
+        return Err(StageFailure::from(AuthenticationFailure::Missing));
     };
     let matched = presented.as_ref().is_some_and(|key| {
         !key.expose_secret().is_empty()
@@ -249,7 +247,7 @@ fn master_key_stage(
         Some(key) if !key.expose_secret().is_empty() => AuthenticationFailure::Invalid,
         Some(_) | None => AuthenticationFailure::Missing,
     };
-    Err(failure)
+    Err(StageFailure::from(failure))
 }
 
 mod tests;
