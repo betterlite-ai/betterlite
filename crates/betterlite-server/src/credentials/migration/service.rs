@@ -117,10 +117,10 @@ where
 }
 
 // check_encryption attests every location read-only and never requires the AES write gate.
-pub async fn check_encryption<S: MigrationStore>(
-    store: &S,
-    cipher: &DbCipher,
-) -> Result<MigrationReport, S::Error> {
+pub async fn check_encryption<S>(store: &S, cipher: &DbCipher) -> Result<MigrationReport, S::Error>
+where
+    S: MigrationStore,
+{
     let mut report = store.scan_covered(cipher).await?;
     let walkers = Walkers { store, cipher };
     let team = walkers

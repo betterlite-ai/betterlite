@@ -55,12 +55,15 @@ impl<S: MigrationStore> Walkers<'_, S> {
         Ok(report)
     }
 
-    pub(super) async fn callback_vars<T: CallbackTransform>(
+    pub(super) async fn callback_vars<T>(
         &self,
         table: CallbackTable,
         transform: &T,
         dry_run: bool,
-    ) -> Result<LocationReport, S::Error> {
+    ) -> Result<LocationReport, S::Error>
+    where
+        T: CallbackTransform,
+    {
         let mut report = empty_report(table.location());
         for row in self.store.callback_rows(table).await? {
             let Some(metadata) = row.metadata.as_ref() else {
@@ -144,10 +147,10 @@ fn migrate_field(
     Ok(FieldOutcome::Migrated)
 }
 
-fn count_outcome<S: MigrationStore>(
-    report: &mut LocationReport,
-    outcome: FieldOutcome,
-) -> Result<(), S::Error> {
+fn count_outcome<S>(report: &mut LocationReport, outcome: FieldOutcome) -> Result<(), S::Error>
+where
+    S: MigrationStore,
+{
     match outcome {
         FieldOutcome::Skipped => Ok(()),
         FieldOutcome::AlreadyV2 => report
@@ -211,9 +214,10 @@ fn classify_row(metadata: &MigrationJson, cipher: &DbCipher) -> Result<RowCounts
 }
 
 // A JSON-string row is decoded once with B1602's decoder; a non-object result is ignored and invalid JSON propagates.
-fn mapping<S: MigrationStore>(
-    stored: MigrationJson,
-) -> Result<Option<BTreeMap<String, MigrationJson>>, S::Error> {
+fn mapping<S>(stored: MigrationJson) -> Result<Option<BTreeMap<String, MigrationJson>>, S::Error>
+where
+    S: MigrationStore,
+{
     let decoded = match stored {
         MigrationJson::Object(settings) => return Ok(Some(settings)),
         MigrationJson::String(text) => {

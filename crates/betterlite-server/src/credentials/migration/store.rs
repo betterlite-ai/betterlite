@@ -23,17 +23,17 @@ impl CallbackTable {
 
 // A settings row the walkers read as a mapping: a named LiteLLM_Config value with the fields the source visits, or the SSO row.
 #[derive(Debug, Clone, Copy)]
-pub enum SettingsRow<'a> {
+pub enum SettingsRow<'row> {
     Config {
-        param_name: &'a str,
-        fields: &'a [&'a str],
+        param_name: &'row str,
+        fields: &'row [&'row str],
     },
     Sso,
 }
 
-impl<'a> SettingsRow<'a> {
+impl<'row> SettingsRow<'row> {
     #[must_use]
-    pub const fn location(self) -> &'a str {
+    pub const fn location(self) -> &'row str {
         match self {
             Self::Config { param_name, .. } => param_name,
             Self::Sso => "sso_config",

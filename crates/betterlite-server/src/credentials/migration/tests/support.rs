@@ -47,7 +47,8 @@ fn text_value(text: &str) -> StoredValue<()> {
 pub(super) fn sealed(algorithm: Algorithm, key: &str, text: &str) -> String {
     match cipher(algorithm, Some(key)).encrypt_value(text_value(text), None) {
         Ok(StoredValue::Text(ciphertext)) => ciphertext.expose_secret().to_owned(),
-        Ok(StoredValue::Other(())) | Err(error) => panic!("the fixture seals a string: {error}"),
+        Ok(StoredValue::Other(())) => panic!("the fixture seals something other than a string"),
+        Err(error) => panic!("the fixture seals a string: {error}"),
     }
 }
 
@@ -174,7 +175,10 @@ pub(super) fn report(locations: Vec<LocationReport>) -> MigrationReport {
     MigrationReport { locations }
 }
 
-pub(super) fn location_of<'a>(report: &'a MigrationReport, name: &str) -> &'a LocationReport {
+pub(super) fn location_of<'report>(
+    report: &'report MigrationReport,
+    name: &str,
+) -> &'report LocationReport {
     report
         .locations
         .iter()

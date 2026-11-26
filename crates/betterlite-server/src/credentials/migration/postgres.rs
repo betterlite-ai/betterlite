@@ -103,11 +103,13 @@ impl MigrationStore for PostgresMigrationStore<'_> {
         value: &MigrationJson,
     ) -> Result<(), MigrationStoreError> {
         let text = serde_json::to_string(value).map_err(ScanError::from)?;
-        let params: Vec<&(dyn ToSql + Sync)> = match row {
-            SettingsRow::Config { param_name, .. } => vec![&param_name, &text],
-            SettingsRow::Sso => vec![&text],
-        };
-        self.write(save_settings_sql(row), &params).await?;
+        let sql = save_settings_sql(row);
+        match row {
+            SettingsRow::Config { param_name, .. } => {
+                self.write(sql, &[&param_name, &text]).await?
+            }
+            SettingsRow::Sso => self.write(sql, &[&text]).await?,
+        }
         Ok(())
     }
 
