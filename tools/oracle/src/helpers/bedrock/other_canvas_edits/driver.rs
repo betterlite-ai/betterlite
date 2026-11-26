@@ -116,7 +116,7 @@ fn selection_answer(call: &ModelsCall, model_cost: &ParamMap, catalog: &Catalog)
             Err(error) => json!({"error": error.to_string()}),
         })
         .collect();
-    Value::Array(selected)
+    json!({"selected": selected})
 }
 
 fn options_of(options: &ImageParams) -> CanvasEditOptions {
