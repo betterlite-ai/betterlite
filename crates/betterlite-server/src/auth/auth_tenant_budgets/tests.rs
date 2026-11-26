@@ -90,13 +90,11 @@ fn stage_is_registered() {
     let tenant = INSTALLED_STAGES
         .iter()
         .position(|stage| *stage == AuthBackend::AuthTenantBudgets);
-    let team = INSTALLED_STAGES
+    let organization = INSTALLED_STAGES
         .iter()
-        .position(|stage| *stage == AuthBackend::TeamBudgetAdmission);
-    assert!(
-        tenant > team,
-        "the tenant checks run after the team admission: {INSTALLED_STAGES:?}"
-    );
+        .position(|stage| *stage == AuthBackend::OrganizationRoutePolicy)
+        .expect("the organization policy is registered");
+    assert_eq!(tenant, Some(organization.saturating_add(1)));
     // LiteLLM runs the checks only when a database is configured
     let without = state_for(&config_with_master_key());
     assert!(!without.auth_tenant_budgets.database);
