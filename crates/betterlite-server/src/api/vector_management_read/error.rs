@@ -48,7 +48,10 @@ impl ManagementReadError {
             Self::Feature(error) => {
                 let status = error.status_code();
                 let detail = match error {
-                    FeatureAccessError::Disabled(feature) => convert(feature.denial()),
+                    FeatureAccessError::Disabled(feature) => {
+                        let text = serde_json::to_string(&feature.denial()).unwrap_or_default();
+                        serde_json::from_str(&text).ok()
+                    }
                     FeatureAccessError::Privileges(_never) => None,
                 };
                 (status, detail)
@@ -60,18 +63,14 @@ impl ManagementReadError {
             Self::Management(error) => match error.http() {
                 Some((status, detail)) => (
                     StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
-                    convert(detail),
+                    serde_json::from_str(&serde_json::to_string(&detail).unwrap_or_default()).ok(),
                 ),
                 None => (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Some(DecisionJson::Text(error.to_string())),
                 ),
             },
-            Self::Metadata(error) => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Some(DecisionJson::Text(error.to_string())),
-            ),
-            Self::MetadataShape | Self::Internal { .. } | Self::Json(_) => (
+            Self::Metadata(_) | Self::MetadataShape | Self::Internal { .. } | Self::Json(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Some(DecisionJson::Text(self.to_string())),
             ),
@@ -120,13 +119,4 @@ impl IntoResponse for ManagementReadError {
             }
         }
     }
-}
-
-// serde_json has no conversion from the arbitrary JSON value into the keyed decision tree
-fn convert<T>(value: T) -> Option<DecisionJson>
-where
-    T: Serialize,
-{
-    let text = serde_json::to_string(&value).ok()?;
-    serde_json::from_str(&text).ok()
 }
