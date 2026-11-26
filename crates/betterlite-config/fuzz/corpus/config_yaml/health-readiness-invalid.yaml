@@ -1,0 +1,5 @@
+general_settings:
+  enable_drain_endpoint: true
+  drain_endpoint_token: pre-stop-secret
+litellm_settings:
+  request_timeout: not-a-number
