@@ -1,0 +1,27 @@
+task: B1656
+deviations:
+  - what: >-
+      Settings writes can succeed without an audit row when the bounded audit queue is full; the
+      omission is warned and counted.
+    why: >-
+      The source's detached audit task is submitted through B065's owned bounded delivery service,
+      which drops a record rather than growing without limit or failing a committed save.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L1057-L1066
+  - what: >-
+      A config whose litellm_settings section is null is read as an empty mapping, so the update
+      replaces it with the selected block and succeeds.
+    why: >-
+      LiteLLM calls config.get("litellm_settings", {}).get(settings_key) without the `or {}` its
+      read path has, so a stored null section raises AttributeError and answers the unhandled 500;
+      null takes the documented default instead of failing a write the operator can complete.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L1040
+kept_bugs:
+  - what: >-
+      An array item that is a $ref resolves to {"enum": [...]} only, dropping the referenced
+      definition's type, description and every other key, while a direct items mapping reaches the
+      response whole.
+    why: >-
+      The LiteLLM UI reads that shape to render its multi-select dropdowns, and a caller of the get
+      routes sees the enum-only entry, so betterlite keeps the lossy resolution the deployments
+      already consume.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L730-L741
