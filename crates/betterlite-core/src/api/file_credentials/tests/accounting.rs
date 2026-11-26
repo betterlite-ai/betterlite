@@ -11,13 +11,11 @@ use super::support::{Catalog, Log, LookupCall, credentials, lookup_calls, object
 
 #[test]
 fn deployment_accounting_hints_stamp_the_resolved_model_info() {
-    let catalog = Catalog {
-        resolved: credentials(&[(
-            "d1",
-            r#"{"id":"d1","db_model":false,"member_auto_router":false,"team_id":"t"}"#,
-        )]),
-        ..Catalog::default()
-    };
+    let mut catalog = Catalog::new(&Log::default());
+    catalog.resolved = credentials(&[(
+        "d1",
+        r#"{"id":"d1","db_model":false,"member_auto_router":false,"team_id":"t"}"#,
+    )]);
     let mut data = object(r#"{"x":1,"litellm_metadata":{"keep":1,"model_info":{"old":true}}}"#);
     add_deployment_model_info(&mut data, Some(&catalog), "d1").unwrap();
     assert_eq!(
@@ -40,10 +38,8 @@ fn deployment_accounting_hints_keep_data_when_no_deployment_resolves() {
 
 #[test]
 fn deployment_accounting_hints_reject_non_object_metadata() {
-    let catalog = Catalog {
-        resolved: credentials(&[("d1", r#"{"id":"d1"}"#)]),
-        ..Catalog::default()
-    };
+    let mut catalog = Catalog::new(&Log::default());
+    catalog.resolved = credentials(&[("d1", r#"{"id":"d1"}"#)]);
     let mut data = object(r#"{"litellm_metadata":"text"}"#);
     let failure = add_deployment_model_info(&mut data, Some(&catalog), "d1").unwrap_err();
     assert!(matches!(failure, AccountingError::MetadataNotObject));
@@ -53,14 +49,11 @@ fn deployment_accounting_hints_reject_non_object_metadata() {
 #[test]
 fn deployment_accounting_hints_internal_credentials_install_the_snapshot() {
     let events = Log::default();
-    let catalog = Catalog {
-        credentials: credentials(&[(
-            "d1",
-            r#"{"api_key":"k1","api_base":"https://one","vertex_credentials":{"type":"service_account"},"model":"m1"}"#,
-        )]),
-        events: events.clone(),
-        ..Catalog::default()
-    };
+    let mut catalog = Catalog::new(&events);
+    catalog.credentials = credentials(&[(
+        "d1",
+        r#"{"api_key":"k1","api_base":"https://one","vertex_credentials":{"type":"service_account"},"model":"m1"}"#,
+    )]);
     let mut data = object(r#"{"x":1}"#);
     let snapshot = add_internal_model_credentials(&mut data, Some(&catalog), Some("d1")).unwrap();
     let values: BTreeMap<&str, &str> = snapshot
@@ -89,11 +82,8 @@ fn deployment_accounting_hints_internal_credentials_install_the_snapshot() {
 #[test]
 fn deployment_accounting_hints_internal_credentials_skip_missing_inputs() {
     let events = Log::default();
-    let catalog = Catalog {
-        credentials: credentials(&[("d1", r#"{"api_key":"k1"}"#)]),
-        events: events.clone(),
-        ..Catalog::default()
-    };
+    let mut catalog = Catalog::new(&events);
+    catalog.credentials = credentials(&[("d1", r#"{"api_key":"k1"}"#)]);
     let mut data = object(&format!(
         r#"{{"x":1,"{TRUSTED_CREDENTIALS_KEY}":{{"api_key":"caller"}}}}"#
     ));
@@ -114,10 +104,8 @@ fn deployment_accounting_hints_internal_credentials_skip_missing_inputs() {
 
 #[test]
 fn deployment_accounting_hints_internal_credentials_swallow_a_lookup_error() {
-    let failing = Catalog {
-        fail_lookup: true,
-        ..Catalog::default()
-    };
+    let mut failing = Catalog::new(&Log::default());
+    failing.fail_lookup = true;
     let mut data = object(r#"{"x":1}"#);
     let before = data.clone();
     assert!(add_internal_model_credentials(&mut data, Some(&failing), Some("d1")).is_none());
@@ -127,10 +115,8 @@ fn deployment_accounting_hints_internal_credentials_swallow_a_lookup_error() {
 
 #[test]
 fn deployment_accounting_hints_internal_credentials_replace_a_caller_snapshot() {
-    let catalog = Catalog {
-        credentials: credentials(&[("d1", r#"{"api_key":"k1"}"#)]),
-        ..Catalog::default()
-    };
+    let mut catalog = Catalog::new(&Log::default());
+    catalog.credentials = credentials(&[("d1", r#"{"api_key":"k1"}"#)]);
     let mut data = object(&format!(
         r#"{{"x":1,"{TRUSTED_CREDENTIALS_KEY}":{{"api_key":"caller"}}}}"#
     ));

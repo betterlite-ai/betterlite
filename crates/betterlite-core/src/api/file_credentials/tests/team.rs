@@ -4,9 +4,7 @@ use betterlite_auth::auth_model_lists::credential::CredentialSnapshot;
 use indexmap::IndexMap;
 use rstest::rstest;
 
-use crate::api::file_credentials::team::{
-    apply_team_provider_credentials, get_team_provider_credentials,
-};
+use crate::api::file_credentials::team::{apply_team_credentials, get_team_provider_credentials};
 
 use super::support::{
     Catalog, Log, LookupCall, NoProviders, ScriptedProviders, credentials, expansion, locked,
@@ -72,15 +70,13 @@ fn team_credential_search_restricted_key_skips_a_row_it_cannot_use() {
 #[test]
 fn team_credential_search_checks_the_public_name_not_the_model_name() {
     let events = Log::default();
-    let catalog = Catalog {
-        deployments: vec![row(
-            "internal-a",
-            r#"{"id":"d1","team_id":"t","team_public_model_name":"a"}"#,
-        )],
-        credentials: credentials(&[("d1", r#"{"api_key":"k1","custom_llm_provider":"openai"}"#)]),
-        events: events.clone(),
-        ..Catalog::default()
-    };
+    let mut catalog = Catalog::new(&events);
+    catalog.deployments = vec![row(
+        "internal-a",
+        r#"{"id":"d1","team_id":"t","team_public_model_name":"a"}"#,
+    )];
+    catalog.credentials =
+        credentials(&[("d1", r#"{"api_key":"k1","custom_llm_provider":"openai"}"#)]);
     let providers = NoProviders;
     let snapshot = CredentialSnapshot::default();
     let found = get_team_provider_credentials(
@@ -132,15 +128,12 @@ fn team_credential_search_skips_other_teams_missing_ids_and_other_providers() {
 #[test]
 fn provider_grant_fallback_tries_the_expanded_key_models_first() {
     let events = Log::default();
-    let catalog = Catalog {
-        model_names: vec!["gpt-4o".to_owned()],
-        credentials: credentials(&[(
-            "gpt-4o",
-            r#"{"api_key":"kg","custom_llm_provider":"openai"}"#,
-        )]),
-        events: events.clone(),
-        ..Catalog::default()
-    };
+    let mut catalog = Catalog::new(&events);
+    catalog.model_names = vec!["gpt-4o".to_owned()];
+    catalog.credentials = credentials(&[(
+        "gpt-4o",
+        r#"{"api_key":"kg","custom_llm_provider":"openai"}"#,
+    )]);
     let providers = NoProviders;
     let snapshot = CredentialSnapshot::default();
     let found = get_team_provider_credentials(
@@ -166,14 +159,11 @@ fn provider_grant_fallback_tries_the_expanded_key_models_first() {
 #[test]
 fn provider_grant_fallback_uses_the_team_models_without_key_models() {
     let events = Log::default();
-    let catalog = Catalog {
-        credentials: credentials(&[(
-            "claude-x",
-            r#"{"api_key":"kc","custom_llm_provider":"anthropic"}"#,
-        )]),
-        events: events.clone(),
-        ..Catalog::default()
-    };
+    let mut catalog = Catalog::new(&events);
+    catalog.credentials = credentials(&[(
+        "claude-x",
+        r#"{"api_key":"kc","custom_llm_provider":"anthropic"}"#,
+    )]);
     let providers = NoProviders;
     let snapshot = CredentialSnapshot::default();
     let found = get_team_provider_credentials(
@@ -202,15 +192,12 @@ fn provider_grant_fallback_uses_the_team_models_without_key_models() {
 #[test]
 fn provider_grant_fallback_reads_all_proxy_models_as_the_team_scoped_list() {
     let events = Log::default();
-    let catalog = Catalog {
-        model_names: vec!["gpt-4o".to_owned()],
-        credentials: credentials(&[(
-            "gpt-4o",
-            r#"{"api_key":"kg","custom_llm_provider":"openai"}"#,
-        )]),
-        events: events.clone(),
-        ..Catalog::default()
-    };
+    let mut catalog = Catalog::new(&events);
+    catalog.model_names = vec!["gpt-4o".to_owned()];
+    catalog.credentials = credentials(&[(
+        "gpt-4o",
+        r#"{"api_key":"kg","custom_llm_provider":"openai"}"#,
+    )]);
     let providers = NoProviders;
     let snapshot = CredentialSnapshot::default();
     let found = get_team_provider_credentials(
@@ -238,19 +225,16 @@ fn provider_grant_fallback_reads_all_proxy_models_as_the_team_scoped_list() {
 #[case::all_team("all-team-models")]
 fn provider_grant_fallback_sentinels_do_not_narrow_the_team(#[case] sentinel: &str) {
     let events = Log::default();
-    let catalog = Catalog {
-        model_names: vec!["proxy-model".to_owned()],
-        deployments: vec![row(
-            "public-x",
-            r#"{"id":"d1","team_id":"t","team_public_model_name":"public-x"}"#,
-        )],
-        credentials: credentials(&[(
-            "d1",
-            r#"{"api_key":"k-byok","custom_llm_provider":"openai"}"#,
-        )]),
-        events: events.clone(),
-        ..Catalog::default()
-    };
+    let mut catalog = Catalog::new(&events);
+    catalog.model_names = vec!["proxy-model".to_owned()];
+    catalog.deployments = vec![row(
+        "public-x",
+        r#"{"id":"d1","team_id":"t","team_public_model_name":"public-x"}"#,
+    )];
+    catalog.credentials = credentials(&[(
+        "d1",
+        r#"{"api_key":"k-byok","custom_llm_provider":"openai"}"#,
+    )]);
     let providers = NoProviders;
     let snapshot = CredentialSnapshot::default();
     let found = get_team_provider_credentials(
@@ -271,19 +255,16 @@ fn provider_grant_fallback_sentinels_do_not_narrow_the_team(#[case] sentinel: &s
 #[test]
 fn provider_grant_fallback_key_sentinel_does_not_narrow_the_team() {
     let events = Log::default();
-    let catalog = Catalog {
-        model_names: vec!["proxy-model".to_owned()],
-        deployments: vec![row(
-            "public-x",
-            r#"{"id":"d1","team_id":"t","team_public_model_name":"public-x"}"#,
-        )],
-        credentials: credentials(&[(
-            "d1",
-            r#"{"api_key":"k-byok","custom_llm_provider":"openai"}"#,
-        )]),
-        events: events.clone(),
-        ..Catalog::default()
-    };
+    let mut catalog = Catalog::new(&events);
+    catalog.model_names = vec!["proxy-model".to_owned()];
+    catalog.deployments = vec![row(
+        "public-x",
+        r#"{"id":"d1","team_id":"t","team_public_model_name":"public-x"}"#,
+    )];
+    catalog.credentials = credentials(&[(
+        "d1",
+        r#"{"api_key":"k-byok","custom_llm_provider":"openai"}"#,
+    )]);
     let providers = NoProviders;
     let snapshot = CredentialSnapshot::default();
     let found = get_team_provider_credentials(
@@ -304,16 +285,13 @@ fn provider_grant_fallback_key_sentinel_does_not_narrow_the_team() {
 #[test]
 fn provider_grant_fallback_expands_access_groups() {
     let events = Log::default();
-    let catalog = Catalog {
-        model_names: vec!["gpt-4o".to_owned()],
-        access_groups: IndexMap::from([("group-a".to_owned(), vec!["gpt-4o".to_owned()])]),
-        credentials: credentials(&[(
-            "gpt-4o",
-            r#"{"api_key":"kg","custom_llm_provider":"openai"}"#,
-        )]),
-        events: events.clone(),
-        ..Catalog::default()
-    };
+    let mut catalog = Catalog::new(&events);
+    catalog.model_names = vec!["gpt-4o".to_owned()];
+    catalog.access_groups = IndexMap::from([("group-a".to_owned(), vec!["gpt-4o".to_owned()])]);
+    catalog.credentials = credentials(&[(
+        "gpt-4o",
+        r#"{"api_key":"kg","custom_llm_provider":"openai"}"#,
+    )]);
     let providers = NoProviders;
     let snapshot = CredentialSnapshot::default();
     let found = get_team_provider_credentials(
@@ -332,14 +310,11 @@ fn provider_grant_fallback_expands_access_groups() {
 #[test]
 fn provider_grant_fallback_expands_wildcards() {
     let events = Log::default();
-    let catalog = Catalog {
-        credentials: credentials(&[(
-            "openai/gpt-4o",
-            r#"{"api_key":"kw","custom_llm_provider":"openai"}"#,
-        )]),
-        events: events.clone(),
-        ..Catalog::default()
-    };
+    let mut catalog = Catalog::new(&events);
+    catalog.credentials = credentials(&[(
+        "openai/gpt-4o",
+        r#"{"api_key":"kw","custom_llm_provider":"openai"}"#,
+    )]);
     let providers = ScriptedProviders {
         provider: "openai".to_owned(),
         models: vec!["gpt-4o".to_owned()],
@@ -373,19 +348,16 @@ fn provider_grant_fallback_expands_wildcards() {
 #[test]
 fn provider_grant_fallback_empty_expanded_set_leaves_the_team_unrestrained() {
     let events = Log::default();
-    let catalog = Catalog {
-        access_groups: IndexMap::from([("empty-group".to_owned(), Vec::new())]),
-        deployments: vec![row(
-            "public-x",
-            r#"{"id":"d1","team_id":"t","team_public_model_name":"public-x"}"#,
-        )],
-        credentials: credentials(&[(
-            "d1",
-            r#"{"api_key":"k-byok","custom_llm_provider":"openai"}"#,
-        )]),
-        events: events.clone(),
-        ..Catalog::default()
-    };
+    let mut catalog = Catalog::new(&events);
+    catalog.access_groups = IndexMap::from([("empty-group".to_owned(), Vec::new())]);
+    catalog.deployments = vec![row(
+        "public-x",
+        r#"{"id":"d1","team_id":"t","team_public_model_name":"public-x"}"#,
+    )];
+    catalog.credentials = credentials(&[(
+        "d1",
+        r#"{"api_key":"k-byok","custom_llm_provider":"openai"}"#,
+    )]);
     let providers = NoProviders;
     let snapshot = CredentialSnapshot::default();
     let found = get_team_provider_credentials(
@@ -408,14 +380,11 @@ fn provider_grant_fallback_without_a_match_yields_none() {
     let events = Log::default();
     let providers = NoProviders;
     let snapshot = CredentialSnapshot::default();
-    let catalog = Catalog {
-        credentials: credentials(&[(
-            "other",
-            r#"{"api_key":"ko","custom_llm_provider":"anthropic"}"#,
-        )]),
-        events: events.clone(),
-        ..Catalog::default()
-    };
+    let mut catalog = Catalog::new(&events);
+    catalog.credentials = credentials(&[(
+        "other",
+        r#"{"api_key":"ko","custom_llm_provider":"anthropic"}"#,
+    )]);
     let identity = principal(&["other"], &[], None);
     assert_eq!(
         get_team_provider_credentials(
@@ -442,22 +411,19 @@ fn provider_grant_fallback_without_a_match_yields_none() {
 #[test]
 fn provider_grant_fallback_apply_merges_the_provider_credentials() {
     let events = Log::default();
-    let catalog = Catalog {
-        deployments: vec![row(
-            "a",
-            r#"{"id":"d1","team_id":"t","team_public_model_name":"a"}"#,
-        )],
-        credentials: credentials(&[(
-            "d1",
-            r#"{"api_key":"k1","api_base":"https://one","custom_llm_provider":"openai","model":"m1"}"#,
-        )]),
-        events: events.clone(),
-        ..Catalog::default()
-    };
+    let mut catalog = Catalog::new(&events);
+    catalog.deployments = vec![row(
+        "a",
+        r#"{"id":"d1","team_id":"t","team_public_model_name":"a"}"#,
+    )];
+    catalog.credentials = credentials(&[(
+        "d1",
+        r#"{"api_key":"k1","api_base":"https://one","custom_llm_provider":"openai","model":"m1"}"#,
+    )]);
     let providers = NoProviders;
     let snapshot = CredentialSnapshot::default();
     let mut data = object(r#"{"model":"a","purpose":"batch"}"#);
-    apply_team_provider_credentials(
+    apply_team_credentials(
         &mut data,
         Some(&catalog),
         &principal(&[], &[], Some("t")),
@@ -476,13 +442,10 @@ fn provider_grant_fallback_apply_leaves_data_untouched() {
     let events = Log::default();
     let providers = NoProviders;
     let snapshot = CredentialSnapshot::default();
-    let catalog = Catalog {
-        events: events.clone(),
-        ..Catalog::default()
-    };
+    let catalog = Catalog::new(&events);
     let mut data = object(r#"{"model":"a","purpose":"batch"}"#);
     let before = data.clone();
-    apply_team_provider_credentials(
+    apply_team_credentials(
         &mut data,
         Some(&catalog),
         &principal(&[], &[], None),

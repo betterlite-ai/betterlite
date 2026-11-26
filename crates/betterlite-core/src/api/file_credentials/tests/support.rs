@@ -79,6 +79,22 @@ pub(super) struct Catalog {
     pub(super) fail_lookup: bool,
 }
 
+impl Catalog {
+    pub(super) fn new(events: &Log) -> Self {
+        Self {
+            model_names: Vec::new(),
+            access_groups: IndexMap::new(),
+            deployments: Vec::new(),
+            resolved: IndexMap::new(),
+            credentials: IndexMap::new(),
+            events: events.clone(),
+            lookups: Mutex::new(Vec::new()),
+            name_calls: Mutex::new(Vec::new()),
+            fail_lookup: false,
+        }
+    }
+}
+
 impl CredentialSource for Catalog {
     type Error = Fail;
 
@@ -140,23 +156,21 @@ pub(super) struct Denied {
     pub(super) detail: String,
 }
 
-impl Denied {
-    pub(super) fn forbidden() -> Self {
-        Self {
-            status: 403,
-            error_type: "team_model_access_denied".to_owned(),
-            param: Some("m".to_owned()),
-            code: Some("key_model_access_denied".to_owned()),
-            detail: "not allowed to call m".to_owned(),
-        }
-    }
-}
-
 #[derive(Default)]
 pub(super) struct Grants {
     pub(super) events: Log,
     pub(super) denial: Option<Denied>,
     pub(super) asked: Mutex<Vec<GrantAsked>>,
+}
+
+impl Grants {
+    pub(super) fn new(events: &Log) -> Self {
+        Self {
+            events: events.clone(),
+            denial: None,
+            asked: Mutex::new(Vec::new()),
+        }
+    }
 }
 
 #[async_trait]
@@ -175,13 +189,6 @@ impl ModelGrant<Catalog> for Grants {
             Some(denial) => Err(denial.clone()),
             None => Ok(()),
         }
-    }
-}
-
-pub(super) fn granted(events: &Log) -> Grants {
-    Grants {
-        events: events.clone(),
-        ..Grants::default()
     }
 }
 
@@ -263,43 +270,44 @@ pub(super) fn expansion<'context>(
 }
 
 pub(super) fn team_catalog(events: &Log) -> Catalog {
-    Catalog {
-        model_names: Vec::new(),
-        deployments: vec![
-            row(
-                "a",
-                r#"{"id":"d1","team_id":"t","team_public_model_name":"a"}"#,
-            ),
-            row(
-                "b",
-                r#"{"id":"d2","team_id":"t","team_public_model_name":"b"}"#,
-            ),
-            row(
-                "glob",
-                r#"{"id":"d3","team_id":"other","team_public_model_name":"glob"}"#,
-            ),
-            row("no-id", r#"{"team_id":"t"}"#),
-            row(
-                "anthropic-row",
-                r#"{"id":"d4","team_id":"t","team_public_model_name":"claude-x"}"#,
-            ),
-        ],
-        credentials: credentials(&[
-            (
-                "d1",
-                r#"{"api_key":"k1","api_base":"https://one","custom_llm_provider":"openai","model":"m1"}"#,
-            ),
-            (
-                "d2",
-                r#"{"api_key":"k2","api_base":"https://two","custom_llm_provider":"openai","model":"m2"}"#,
-            ),
-            ("d3", r#"{"api_key":"k3","custom_llm_provider":"openai"}"#),
-            (
-                "d4",
-                r#"{"api_key":"k4","custom_llm_provider":"anthropic"}"#,
-            ),
-        ]),
-        events: events.clone(),
-        ..Catalog::default()
-    }
+    let mut catalog = Catalog::new(events);
+    let deployments = [
+        (
+            "a",
+            r#"{"id":"d1","team_id":"t","team_public_model_name":"a"}"#,
+        ),
+        (
+            "b",
+            r#"{"id":"d2","team_id":"t","team_public_model_name":"b"}"#,
+        ),
+        (
+            "glob",
+            r#"{"id":"d3","team_id":"other","team_public_model_name":"glob"}"#,
+        ),
+        ("no-id", r#"{"team_id":"t"}"#),
+        (
+            "anthropic-row",
+            r#"{"id":"d4","team_id":"t","team_public_model_name":"claude-x"}"#,
+        ),
+    ];
+    catalog.deployments = deployments
+        .iter()
+        .map(|(name, info)| row(name, info))
+        .collect();
+    catalog.credentials = credentials(&[
+        (
+            "d1",
+            r#"{"api_key":"k1","api_base":"https://one","custom_llm_provider":"openai","model":"m1"}"#,
+        ),
+        (
+            "d2",
+            r#"{"api_key":"k2","api_base":"https://two","custom_llm_provider":"openai","model":"m2"}"#,
+        ),
+        ("d3", r#"{"api_key":"k3","custom_llm_provider":"openai"}"#),
+        (
+            "d4",
+            r#"{"api_key":"k4","custom_llm_provider":"anthropic"}"#,
+        ),
+    ]);
+    catalog
 }
