@@ -14,6 +14,7 @@ use crate::auth::auth_org_lookup::OrgStageInput;
 use crate::auth::auth_request_models::{RequestModelStageInput, resolve};
 use crate::auth::auth_request_policy::{self, AuthRequestPolicyStageInput};
 use crate::auth::auth_resource_grants::{self, ResourceGrantStageInput};
+use crate::auth::auth_route_policy::{self, RoutePolicyStageInput};
 use crate::auth::auth_tag_budgets::TagBudgetStageInput;
 use crate::auth::entity_model_access::EntityModelStageInput;
 use crate::auth::organization_route_policy::{self, OrganizationPolicyStageInput};
@@ -36,6 +37,7 @@ pub enum AuthBackend {
     AuthKeyBudgets,
     TeamBudgetAdmission,
     OrganizationRoutePolicy,
+    AuthRoutePolicy,
     AuthOrgLookup,
     AuthEndUsers,
 }
@@ -54,6 +56,7 @@ pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
     AuthBackend::AuthKeyBudgets,
     AuthBackend::TeamBudgetAdmission,
     AuthBackend::OrganizationRoutePolicy,
+    AuthBackend::AuthRoutePolicy,
     AuthBackend::AuthOrgLookup,
     AuthBackend::AuthEndUsers,
 ];
@@ -72,6 +75,7 @@ pub enum StageInput {
     AuthKeyBudgets(Box<KeyBudgetStageInput>),
     TeamBudgetAdmission(Box<TeamBudgetStageInput>),
     OrganizationRoutePolicy(Box<OrganizationPolicyStageInput>),
+    AuthRoutePolicy(Box<RoutePolicyStageInput>),
     AuthOrgLookup(Box<OrgStageInput>),
     AuthEndUsers(Box<EndUserStageInput>),
 }
@@ -109,6 +113,7 @@ pub(crate) enum StageFailure {
     KeyBudgets(Box<ProxyException>),
     TeamBudgets(Box<ProxyException>),
     OrganizationRoutePolicy(Box<ProxyException>),
+    AuthRoutePolicy(Box<ProxyException>),
     OrgLookup(Box<ProxyException>),
     EndUsers(Box<ProxyException>),
 }
@@ -134,6 +139,7 @@ impl StageInput {
             Self::AuthKeyBudgets(_) => AuthBackend::AuthKeyBudgets,
             Self::TeamBudgetAdmission(_) => AuthBackend::TeamBudgetAdmission,
             Self::OrganizationRoutePolicy(_) => AuthBackend::OrganizationRoutePolicy,
+            Self::AuthRoutePolicy(_) => AuthBackend::AuthRoutePolicy,
             Self::AuthOrgLookup(_) => AuthBackend::AuthOrgLookup,
             Self::AuthEndUsers(_) => AuthBackend::AuthEndUsers,
         }
@@ -172,6 +178,9 @@ pub(crate) fn dispatch(
         StageInput::TeamBudgetAdmission(stage) => Ok(stage.context.clone()),
         StageInput::OrganizationRoutePolicy(stage) => organization_route_policy::run_stage(stage)
             .map_err(StageFailure::OrganizationRoutePolicy),
+        StageInput::AuthRoutePolicy(stage) => {
+            auth_route_policy::run_stage(stage).map_err(StageFailure::AuthRoutePolicy)
+        }
         StageInput::AuthOrgLookup(stage) => Ok(stage.context.clone()),
         StageInput::AuthEndUsers(stage) => Ok(stage.context.clone()),
     }
