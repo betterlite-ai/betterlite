@@ -16,11 +16,14 @@ use betterlite_config::loader::ConfigLoader;
 use betterlite_config::types::Config;
 use betterlite_db::database_failures::deadline::DbLookupError;
 use betterlite_db::database_faults::{DbError, ErrorType};
+use secrecy::{ExposeSecret as _, SecretString};
 use tower::ServiceExt as _;
 
 use crate::auth::auth_identity::{AuthBackend, INSTALLED_STAGES};
 use crate::routes;
 use crate::routes::tests::state_for;
+
+use super::{KeyLookupStageInput, key_headers};
 
 const CHAT_ROUTE: &str = "/v1/chat/completions";
 const PRESENTED: &str = "sk-virtual-key";
@@ -147,4 +150,28 @@ async fn failure_stops_downstream() {
     assert!(body.contains("\"code\":\"503\""), "{body}");
     assert!(!reached);
     assert_eq!(outage.calls(), vec![PRESENTED.to_owned()]);
+}
+
+#[test]
+fn key_header_prefixes() {
+    let litellm = key_headers::parse_key_header("x-litellm-api-key", b"Bearer sk-litellm")
+        .map(|key| key.expose_secret().to_owned());
+    assert_eq!(litellm, Some("sk-litellm".to_owned()));
+    let authorization =
+        key_headers::parse_key_header(header::AUTHORIZATION.as_str(), b"Bearer sk-authorization")
+            .map(|key| key.expose_secret().to_owned());
+    assert_eq!(authorization, Some("sk-authorization".to_owned()));
+}
+
+#[test]
+fn stage_input_debug_redacts_keys() {
+    let input = KeyLookupStageInput {
+        presented: Some(SecretString::from("sk-presented-secret".to_owned())),
+        authenticator: None,
+        master_key: Some(SecretString::from("master-key-secret".to_owned())),
+    };
+    let text = format!("{input:?}");
+    assert!(text.contains("presented: true"));
+    assert!(!text.contains("sk-presented-secret"));
+    assert!(!text.contains("master-key-secret"));
 }

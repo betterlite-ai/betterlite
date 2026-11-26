@@ -1,14 +1,18 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
+use betterlite_cache::backend::memory::local::LocalMemoryOps;
+use betterlite_cache::dual_cache::{DualCache, DualCacheSettings, MAX_REDIS_BATCH_CACHE_SIZE};
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::database_failures::deadline::DbLookupError;
 use betterlite_db::database_faults::ErrorType;
 use betterlite_db::identity_rows::Payload;
 use rust_decimal::Decimal;
 
+use super::cache::KeyCache;
 use super::error::KeyLookupError;
 use super::jwt::{
     get_jwt_key_mapping_cache_keys_for_tokens, get_jwt_key_mapping_object,
@@ -17,8 +21,10 @@ use super::jwt::{
 use super::key_object::get_key_object;
 use super::reader::AUTH_RECONNECT_REASON;
 use super::session::resolve_object_permission_for_unresolvable_team;
-use super::{HashedKeyAuthenticator, KeyAuthenticator};
+use super::{HashedKeyAuthenticator, KeyAuthenticator, key_identity, key_roles, role_str};
+use crate::auth_cache::{AuthCache, WriteOptions, gateway_cache};
 use crate::auth_errors::conversion::as_proxy_exception;
+use crate::auth_identity::roles::Role;
 use crate::auth_prefetch::permission::lookup::PermissionError;
 use crate::identity_grants::denial::PublicDenial;
 use crate::user_roles::UserRole;
@@ -641,4 +647,109 @@ async fn unreadable_team_permission_error() {
         .await
         .unwrap_err();
     assert!(matches!(error, PermissionError::NoDatabase));
+}
+
+#[test]
+fn identity_and_roles_from_auth() {
+    let identity = key_identity(&auth_from_fields(KEY_ROW));
+    assert_eq!(identity.key_name.as_deref(), Some("key-1"));
+    assert_eq!(identity.user_id.as_deref(), Some("u1"));
+    assert_eq!(identity.team_id.as_deref(), Some("t1"));
+    assert!(identity.team_alias.is_none());
+    assert!(!identity.is_session_token);
+    let session = key_identity(&team_session_auth());
+    assert_eq!(session.user_role, Some(UserRole::InternalUser));
+    assert!(session.is_session_token);
+    assert!(key_roles(None).is_empty());
+    assert!(key_roles(Some(UserRole::InternalUser)).is_empty());
+    assert_eq!(
+        key_roles(Some(UserRole::ProxyAdmin)),
+        vec![Role::PlatformAdmin]
+    );
+    assert_eq!(role_str(UserRole::OrgAdmin), "org_admin");
+}
+
+#[tokio::test]
+async fn writer_reloads_present_permission() {
+    let row = r#"{"token":"hashed-key","object_permission_id":"op-1","object_permission":{"object_permission_id":"stale"}}"#;
+    let permissions = FakePermissions::new(vec![Ok(Some(permission_table()))]);
+    let lookups = lookups(
+        Some(reader(
+            FakeSource::new(vec![Ok(Some(view_from_text(row)))]),
+            None,
+        )),
+        FakeCache::new(None),
+        FakeWriter::new(false),
+        Some(Arc::clone(&permissions)),
+    );
+    let mut call = key_request("hashed-key");
+    call.check_db_only = true;
+    let auth = get_key_object(&lookups, &call).await.unwrap();
+    assert_eq!(
+        auth.view
+            .token
+            .object_permission
+            .as_ref()
+            .map(|table| table.object_permission_id.as_str()),
+        Some("op-1")
+    );
+    assert_eq!(permissions.calls(), vec![("op-1".to_owned(), true)]);
+}
+
+#[tokio::test]
+async fn team_model_aliases_payload() {
+    let users = FakeUsers(UserAnswer::Found(Box::new(user_row(
+        r#"{"user_id":"u1","teams":["t1"]}"#,
+    ))));
+    let teams = FakeTeams(Some(team_row(
+        r#"{"team_id":"t1","litellm_model_table":{"created_by":"c","updated_by":"u","model_aliases":{"dev":"gpt-4"}}}"#,
+    )));
+    let auth = refresh(&team_session_auth(), &users, &teams, &FakeMembers(None))
+        .await
+        .unwrap();
+    assert_eq!(
+        auth.view.team_model_aliases,
+        Some(Payload(BTreeMap::from([(
+            "dev".to_owned(),
+            JsonData::String("gpt-4".to_owned())
+        )])))
+    );
+}
+
+type TestCache = AuthCache<DualCache<LocalMemoryOps>>;
+
+fn local_cache() -> TestCache {
+    let memory = || {
+        Arc::new(
+            LocalMemoryOps::new(1024, Arc::new(|| 0.0_f64)).expect("the local memory tier builds"),
+        )
+    };
+    let settings = DualCacheSettings {
+        default_in_memory_ttl: Some(30.0_f64),
+        default_redis_ttl: None,
+        batch_cache_expiry: None,
+        max_redis_batch_cache_size: MAX_REDIS_BATCH_CACHE_SIZE,
+        redis_delete_chunk_size: MAX_REDIS_BATCH_CACHE_SIZE,
+    };
+    gateway_cache(memory(), memory(), None, settings, 45.0_f64)
+}
+
+#[tokio::test]
+async fn key_cache_round_trip() {
+    let cache = local_cache();
+    let stored = auth_from_fields(KEY_ROW);
+    let hashed_token = "a".repeat(64);
+    cache
+        .async_set(
+            Some(hashed_token.as_str()),
+            &stored,
+            WriteOptions::default(),
+        )
+        .await
+        .expect("the key write");
+    let found = KeyCache::read_key(&cache, &hashed_token)
+        .await
+        .expect("the stored key");
+    assert_eq!(found.view.token.key_name.as_deref(), Some("key-1"));
+    assert!(KeyCache::read_key(&cache, &"b".repeat(64)).await.is_none());
 }
