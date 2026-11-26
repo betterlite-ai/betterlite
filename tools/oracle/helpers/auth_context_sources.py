@@ -126,7 +126,7 @@ class FixtureRouter(Router):
         return candidate_id in self.model_ids
 
     @override
-    def get_candidate_model_ids_for_route(
+    def get_candidate_model_ids_for_route(  # ast-grep-ignore: no-long-names  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11478
         self, model: str, team_id: str | None = None
     ) -> frozenset[str]:
         del team_id
