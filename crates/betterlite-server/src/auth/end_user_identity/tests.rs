@@ -12,7 +12,6 @@ use axum::http::{Request, StatusCode, header};
 use axum::routing::post;
 use betterlite_auth::auth_cache::payload::PayloadError;
 use betterlite_auth::auth_cache::{AuthCacheError, WriteTtl};
-use betterlite_auth::auth_end_users::{EndUserFailure, EndUserLookup};
 use betterlite_auth::auth_identity::records::SourceKey;
 use betterlite_auth::end_user_identity::cache::ValidationCache;
 use betterlite_auth::end_user_identity::existence::{
@@ -31,7 +30,7 @@ use secrecy::SecretString;
 use tower::ServiceExt as _;
 
 use super::{EndUserIdentityRule, EndUserIdentityStageInput, prefetch, stage_input};
-use crate::auth::auth_end_users::EndUserRule;
+use crate::auth::auth_end_users::{EndUserFailure, EndUserLookup, EndUserRule};
 use crate::auth::auth_identity::{
     AuthBackend, AuthContext, INSTALLED_STAGES, StageFailure, StageInput, dispatch,
 };
