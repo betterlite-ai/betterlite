@@ -155,7 +155,7 @@ fn headers_json(pairs: &[(String, String)]) -> Value {
     Value::Object(
         pairs
             .iter()
-            .map(|(name, value)| (Value::String(name.clone()), Value::String(value.clone())))
+            .map(|(name, value)| (name.clone(), Value::String(value.clone())))
             .collect(),
     )
 }
