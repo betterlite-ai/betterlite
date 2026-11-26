@@ -330,7 +330,7 @@ pub(super) struct RotationCall {
 
 #[derive(Debug, thiserror::Error)]
 #[error("the fake rotation failed")]
-pub(super) struct RotationFailure;
+pub(super) struct RotationError;
 
 #[derive(Default)]
 pub(super) struct FakeRotation {
@@ -348,13 +348,13 @@ impl FakeRotation {
 }
 
 impl SameKeyRotation for FakeRotation {
-    type Error = RotationFailure;
+    type Error = RotationError;
 
     fn reencrypt_same_key(
         &mut self,
         key: &SecretString,
         actor: Option<&str>,
-    ) -> impl Future<Output = Result<(), RotationFailure>> + Send {
+    ) -> impl Future<Output = Result<(), RotationError>> + Send {
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -363,7 +363,7 @@ impl SameKeyRotation for FakeRotation {
                 actor: actor.map(str::to_owned),
             });
         if self.failure {
-            return ready(Err(RotationFailure));
+            return ready(Err(RotationError));
         }
         ready(Ok(()))
     }

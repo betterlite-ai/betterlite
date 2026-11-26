@@ -18,9 +18,9 @@ use super::super::error::MigrationError;
 use super::super::postgres::{MigrationStoreError, PostgresMigrationStore};
 use super::super::service::{Migration, check_encryption};
 use super::support::{
-    FakeRotation, RotationCall, RotationFailure, SALT_KEY, callback_settings_metadata,
-    callback_text, callback_vars_metadata, cipher, field_text, json, legacy, location_of, marked,
-    object, open, secret, v2,
+    FakeRotation, RotationCall, RotationError, SALT_KEY, callback_settings_metadata, callback_text,
+    callback_vars_metadata, cipher, field_text, json, legacy, location_of, marked, object, open,
+    secret, v2,
 };
 
 const SCHEMA: &str = r#"
@@ -310,7 +310,7 @@ async fn real_run(
     rotation: &mut FakeRotation,
     cipher: &DbCipher,
     actor: Option<&str>,
-) -> Result<MigrationReport, MigrationError<MigrationStoreError, RotationFailure>> {
+) -> Result<MigrationReport, MigrationError<MigrationStoreError, RotationError>> {
     let store = harness.migration_store();
     let mut service = Migration {
         store: &store,
