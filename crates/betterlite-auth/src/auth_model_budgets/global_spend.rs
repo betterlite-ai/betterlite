@@ -1,13 +1,11 @@
-use std::error::Error;
 use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use betterlite_cache::backend::Ttl;
+use betterlite_cache::backend::{BackendError, CacheBackend, Ttl};
 use betterlite_cache::coordinator::{
     AsyncCacheProtocol, CoordinatorError, EventDrivenCacheCoordinator,
 };
-use betterlite_config::sections::auth_model_budgets::Settings;
 use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_db::budget_reset_policy::cache_invalidation::GLOBAL_PROXY_SPEND_CACHE_KEY;
 use betterlite_db::database_failures::deadline::{DbLookupError, LookupRequest, bounded_db_lookup};
@@ -15,21 +13,24 @@ use betterlite_db::database_failures::gate::{DbLookupStallTracker, SystemClock};
 use rust_decimal::Decimal;
 use tokio_util::task::TaskTracker;
 
+use super::rows::SpendReadError;
 use crate::model_budget_values::amount_text::amount_from_text;
 
 pub const GLOBAL_SPEND_LOG_PREFIX: &str = "[GLOBAL SPEND]";
 pub const PROXY_BUDGET_LOOKUP: &str = "proxy_budget";
 pub const COORDINATOR_WAIT: Duration = Duration::from_secs(30);
 
-// B8481 wires the row read over B723's user repository at user_id=litellm-proxy-budget
+// PostgresStore reads B723's aggregate user without creating or updating it
 #[async_trait]
 pub trait ProxyBudgetRows: Send + Sync {
-    async fn find_proxy_budget(&self) -> Result<Option<Decimal>, DbLookupError>;
+    async fn find_proxy_budget(&self) -> Result<Option<Decimal>, SpendReadError>;
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("the global spend cache failed")]
-pub struct GlobalSpendCacheError(#[source] pub Box<dyn Error + Send + Sync>);
+pub enum GlobalSpendCacheError {
+    #[error(transparent)]
+    Backend(#[from] BackendError),
+}
 
 #[async_trait]
 pub trait GlobalSpendCache: Send + Sync {
@@ -44,8 +45,30 @@ pub trait GlobalSpendCache: Send + Sync {
     ) -> Result<(), GlobalSpendCacheError>;
 }
 
+#[async_trait]
+impl<Cache: CacheBackend> GlobalSpendCache for Cache {
+    async fn async_get_cache(
+        &self,
+        key: &str,
+    ) -> Result<Option<CacheValue>, GlobalSpendCacheError> {
+        CacheBackend::async_get_cache(self, key)
+            .await
+            .map_err(GlobalSpendCacheError::Backend)
+    }
+    async fn async_set_cache(
+        &self,
+        key: &str,
+        value: CacheValue,
+        ttl: Ttl,
+    ) -> Result<(), GlobalSpendCacheError> {
+        CacheBackend::async_set_cache(self, key, value, ttl)
+            .await
+            .map_err(GlobalSpendCacheError::Backend)
+    }
+}
+
 pub type GlobalSpendResult =
-    Result<Option<Decimal>, CoordinatorError<GlobalSpendCacheError, DbLookupError>>;
+    Result<Option<Decimal>, CoordinatorError<GlobalSpendCacheError, SpendReadError>>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProxyBudgetAlert {
@@ -83,7 +106,7 @@ pub struct GlobalSpendFetcher {
 // _fetch_global_spend_with_event_coordination: the coordinator runs the bounded read once and caches the null too
 async fn fetch(fetcher: &GlobalSpendFetcher) -> GlobalSpendResult {
     let rows = Arc::clone(&fetcher.rows);
-    let lookup = async move { rows.find_proxy_budget().await };
+    let lookup = async move { Ok::<_, DbLookupError>(rows.find_proxy_budget().await) };
     let request = LookupRequest {
         name: PROXY_BUDGET_LOOKUP,
         deadline_seconds: None,
@@ -92,7 +115,9 @@ async fn fetch(fetcher: &GlobalSpendFetcher) -> GlobalSpendResult {
     };
     let tasks = &fetcher.tasks;
     let load = move || async move {
-        let spend = bounded_db_lookup(lookup, request, tasks).await?;
+        let spend = bounded_db_lookup(lookup, request, tasks)
+            .await
+            .map_err(SpendReadError::Deadline)??;
         Ok(match spend {
             Some(amount) => CacheValue::Text(amount.to_string()),
             None => CacheValue::Null,
@@ -108,7 +133,7 @@ async fn fetch(fetcher: &GlobalSpendFetcher) -> GlobalSpendResult {
 
 // get_global_proxy_spend: no database or no positive ceiling reads nothing, and a null row schedules no alert
 pub async fn get_global_proxy_spend(
-    settings: &Settings,
+    max_budget: Decimal,
     fetcher: Option<&GlobalSpendFetcher>,
     admin_name: &str,
     token: &str,
@@ -116,7 +141,7 @@ pub async fn get_global_proxy_spend(
     let Some(fetcher) = fetcher else {
         return Ok(None);
     };
-    if settings.max_budget <= Decimal::ZERO {
+    if max_budget <= Decimal::ZERO {
         return Ok(None);
     }
     let spend = fetch(fetcher).await?;
@@ -124,7 +149,7 @@ pub async fn get_global_proxy_spend(
         fetcher.alerts.schedule(ProxyBudgetAlert {
             admin_name: admin_name.to_owned(),
             token: token.to_owned(),
-            max_budget: settings.max_budget,
+            max_budget,
             spend: known,
             event_group: EventGroup::Proxy,
         });
@@ -155,12 +180,12 @@ impl AsyncCacheProtocol for CachePort<'_> {
 fn stored_spend(value: &CacheValue) -> Option<Decimal> {
     match value {
         CacheValue::Text(text) => amount_from_text(text),
+        CacheValue::Integer(value) => Some(Decimal::from(*value)),
+        CacheValue::Float(value) => Decimal::from_f64_retain(*value),
         CacheValue::Credential(_)
         | CacheValue::Bytes(_)
         | CacheValue::Null
         | CacheValue::Boolean(_)
-        | CacheValue::Integer(_)
-        | CacheValue::Float(_)
         | CacheValue::Array(_)
         | CacheValue::Object(_) => None,
     }

@@ -54,7 +54,7 @@ pub mod trusted_network;
 pub mod virtual_key_routes;
 
 use std::collections::BTreeSet;
-use std::sync::Arc;
+use std::sync::{Arc, PoisonError};
 
 use betterlite_auth::auth_request_models::MODEL_ROUTING_HEADER_NAME;
 use betterlite_auth::auth_request_models::catalog::{EmptyCatalog, RequestModelResolver};
@@ -62,7 +62,7 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 
 use crate::auth::auth_identity::{AuthBackend, AuthContext, StageFailure, StageInput};
-use crate::auth::auth_model_budgets::ModelBudgetRule;
+use crate::auth::auth_model_budgets::body_views::SharedViews;
 use crate::auth::auth_model_patterns::{
     ModelPatternStageInput, max_recurse_depth_for_request, rule_for_request,
 };
@@ -80,7 +80,7 @@ use axum::response::Response;
 use secrecy::SecretString;
 pub(crate) async fn authenticate(
     State(master_key_state): State<Option<SecretString>>,
-    request: Request<Body>,
+    mut request: Request<Body>,
     next: Next,
     failure_response: fn(&StageFailure) -> Response,
 ) -> Response {
@@ -93,10 +93,11 @@ pub(crate) async fn authenticate(
     let Some(master_key) = master_key_state.as_ref() else {
         return next.run(request).await;
     };
+    request.extensions_mut().insert(SharedViews::default());
     let pipeline = auth_stage_loop::run_stages(request, master_key, failure_response);
     match Box::pin(pipeline).await {
-        Ok((staged, authenticated, body)) => {
-            let body = rewritten_body(&staged, body);
+        Ok((mut staged, authenticated, body)) => {
+            let body = rewritten_body(&mut staged, body);
             auth_stage_loop::forward(staged, authenticated, body, next).await
         }
         Err(response) => *response,
@@ -104,13 +105,25 @@ pub(crate) async fn authenticate(
 }
 
 // a per-model budget fallback rewrites the buffered body, which every downstream handler parses in place of the client's
-fn rewritten_body(request: &Request<Body>, body: Option<Bytes>) -> Option<Bytes> {
-    let original = body?;
-    request
+fn rewritten_body(request: &mut Request<Body>, body: Option<Bytes>) -> Option<Bytes> {
+    let snapshots = request
         .extensions()
-        .get::<Arc<ModelBudgetRule>>()
-        .and_then(|rule| rule.applied_body())
-        .or(Some(original))
+        .get::<SharedViews>()
+        .and_then(|shared| {
+            shared
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone()
+        });
+    let Some(views) = snapshots else {
+        return body;
+    };
+    if let Some(parsed) = views.parsed_body.clone() {
+        request.extensions_mut().insert(parsed);
+    }
+    let rewritten = views.serialized_body.clone().map(Bytes::from).or(body);
+    request.extensions_mut().insert(views);
+    rewritten
 }
 
 fn stage_input(

@@ -164,8 +164,8 @@ impl Default for Harness {
 
 impl Harness {
     pub(crate) fn lookup(&self) -> UserLookup {
-        let cache: Arc<dyn UserCache> = Arc::clone(&self.cache);
-        let store: Arc<dyn UserStore> = Arc::clone(&self.store);
+        let cache: Arc<dyn UserCache> = Arc::<FakeCache>::clone(&self.cache);
+        let store: Arc<dyn UserStore> = Arc::<FakeStore>::clone(&self.store);
         let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the patterns compile");
         UserLookup {
             cache,

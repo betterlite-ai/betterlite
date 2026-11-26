@@ -51,19 +51,14 @@ impl Section for Raw {
 
 // LiteLLM tests `max_budget > 0` on the float, so NaN, -inf and every non-positive value disable the read while +inf keeps it on
 fn parse_budget(text: &str, path: &str) -> Result<Decimal, ConfigError> {
-    let value = match text.trim() {
-        "NaN" | "-inf" => return Ok(Decimal::ZERO),
-        "inf" => return Ok(Decimal::MAX),
+    match text.trim() {
+        "NaN" | "-inf" => Ok(Decimal::ZERO),
+        "inf" => Ok(Decimal::MAX),
         trimmed => trimmed
             .parse::<Decimal>()
             .map_err(|_source| ConfigError::InvalidScalar {
                 path: path.to_owned(),
                 value: false,
-            })?,
-    };
-    Ok(if value > Decimal::ZERO {
-        value
-    } else {
-        Decimal::ZERO
-    })
+            }),
+    }
 }

@@ -16,7 +16,8 @@ pub async fn read_user_model_max_budget(
     lookup: Option<&UserLookup>,
     user_id: Option<&str>,
 ) -> Option<ModelMaxBudget> {
-    let (Some(lookup), Some(user_id)) = (lookup, user_id) else {
+    let (Some(lookup), Some(user_id)) = (lookup.filter(|source| source.store.is_some()), user_id)
+    else {
         return None;
     };
     let request = UserLookupRequest {

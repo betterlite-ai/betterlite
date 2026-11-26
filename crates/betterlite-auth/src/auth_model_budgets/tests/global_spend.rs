@@ -2,13 +2,13 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use crate::auth_model_budgets::rows::SpendReadError;
 use async_trait::async_trait;
-use betterlite_cache::backend::Ttl;
+use betterlite_cache::backend::{BackendError, CacheBackend, CacheResult, Ttl};
 use betterlite_cache::coordinator::{CoordinatorError, EventDrivenCacheCoordinator};
 use betterlite_config::sections::auth_model_budgets::Settings;
 use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_db::budget_reset_policy::cache_invalidation::GLOBAL_PROXY_SPEND_CACHE_KEY;
-use betterlite_db::database_failures::deadline::DbLookupError;
 use betterlite_db::database_failures::gate::{DbLookupStallTracker, SystemClock};
 use rust_decimal::Decimal;
 use tokio::sync::Semaphore;
@@ -49,15 +49,16 @@ impl FakeRows {
     }
 
     async fn wait_until_started(&self) {
-        tokio::time::timeout(Duration::from_secs(1), self.started.acquire())
+        let _permit = tokio::time::timeout(Duration::from_secs(1), self.started.acquire())
             .await
-            .expect("the leader starts its load");
+            .expect("the leader starts its load")
+            .expect("the semaphore stays open");
     }
 }
 
 #[async_trait]
 impl ProxyBudgetRows for FakeRows {
-    async fn find_proxy_budget(&self) -> Result<Option<Decimal>, DbLookupError> {
+    async fn find_proxy_budget(&self) -> Result<Option<Decimal>, SpendReadError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         self.started.add_permits(1);
         if self.gated {
@@ -75,7 +76,7 @@ impl ProxyBudgetRows for FakeRows {
 }
 
 #[derive(Default)]
-struct FakeCache {
+pub(super) struct FakeCache {
     stored: Mutex<Option<CacheValue>>,
     writes: Mutex<Vec<(String, CacheValue)>>,
 }
@@ -105,8 +106,8 @@ impl GlobalSpendCache for FakeCache {
 }
 
 #[derive(Default)]
-struct Alerts {
-    scheduled: Mutex<Vec<ProxyBudgetAlert>>,
+pub(super) struct Alerts {
+    pub(super) scheduled: Mutex<Vec<ProxyBudgetAlert>>,
 }
 
 impl ProxyBudgetAlertSink for Alerts {
@@ -115,7 +116,7 @@ impl ProxyBudgetAlertSink for Alerts {
     }
 }
 
-fn fetcher(
+fn make_fetcher(
     rows: Arc<FakeRows>,
     cache: Arc<FakeCache>,
     alerts: Arc<Alerts>,
@@ -147,7 +148,7 @@ async fn global_spend_singleflight() {
     let rows = Arc::new(FakeRows::gated(Decimal::new(125, 1)));
     let cache = Arc::new(FakeCache::default());
     let alerts = Arc::new(Alerts::default());
-    let fetcher = fetcher(
+    let fetcher = make_fetcher(
         Arc::clone(&rows),
         Arc::clone(&cache),
         Arc::clone(&alerts),
@@ -155,11 +156,11 @@ async fn global_spend_singleflight() {
         Duration::from_secs(5),
     );
     let settings = enabled_settings();
-    let leader = get_global_proxy_spend(&settings, Some(&fetcher), "admin", "key-a");
+    let leader = get_global_proxy_spend(settings.max_budget, Some(&fetcher), "admin", "key-a");
     let follower = async {
         rows.wait_until_started().await;
         rows.release.add_permits(1);
-        get_global_proxy_spend(&settings, Some(&fetcher), "admin", "key-b").await
+        get_global_proxy_spend(settings.max_budget, Some(&fetcher), "admin", "key-b").await
     };
     let (first, second) = tokio::join!(leader, follower);
     let expected = Some(Decimal::new(125, 1));
@@ -177,7 +178,7 @@ async fn global_spend_exact_keys_and_bound() {
     let rows = Arc::new(FakeRows::new(Some(Decimal::new(35, 1))));
     let cache = Arc::new(FakeCache::default());
     let alerts = Arc::new(Alerts::default());
-    let fetcher = fetcher(
+    let fetcher = make_fetcher(
         Arc::clone(&rows),
         Arc::clone(&cache),
         Arc::clone(&alerts),
@@ -185,7 +186,7 @@ async fn global_spend_exact_keys_and_bound() {
         Duration::from_secs(5),
     );
     let settings = enabled_settings();
-    let spend = get_global_proxy_spend(&settings, Some(&fetcher), "admin", "key")
+    let spend = get_global_proxy_spend(settings.max_budget, Some(&fetcher), "admin", "key")
         .await
         .unwrap();
     assert_eq!(spend, Some(Decimal::new(35, 1)));
@@ -199,15 +200,15 @@ async fn global_spend_exact_keys_and_bound() {
         delay: Some(Duration::from_secs(5)),
         ..FakeRows::new(None)
     });
-    let cache = Arc::new(FakeCache::default());
-    let fetcher = fetcher(
+    let slow_cache = Arc::new(FakeCache::default());
+    let slow_fetcher = make_fetcher(
         Arc::clone(&slow),
-        Arc::clone(&cache),
+        Arc::clone(&slow_cache),
         Arc::clone(&alerts),
         0.05,
         Duration::from_secs(5),
     );
-    let error = get_global_proxy_spend(&settings, Some(&fetcher), "admin", "key")
+    let error = get_global_proxy_spend(settings.max_budget, Some(&slow_fetcher), "admin", "key")
         .await
         .unwrap_err();
     let CoordinatorError::Load { key, source } = error else {
@@ -219,7 +220,7 @@ async fn global_spend_exact_keys_and_bound() {
         message.contains("proxy_budget lookup did not answer within 0.05s"),
         "{message}"
     );
-    assert!(cache.writes.lock().unwrap().is_empty());
+    assert!(slow_cache.writes.lock().unwrap().is_empty());
 }
 
 #[tokio::test]
@@ -227,7 +228,7 @@ async fn global_missing_row_no_alert() {
     let rows = Arc::new(FakeRows::new(None));
     let cache = Arc::new(FakeCache::default());
     let alerts = Arc::new(Alerts::default());
-    let fetcher = fetcher(
+    let fetcher = make_fetcher(
         Arc::clone(&rows),
         Arc::clone(&cache),
         Arc::clone(&alerts),
@@ -236,13 +237,13 @@ async fn global_missing_row_no_alert() {
     );
     let settings = Settings::default();
     assert_eq!(
-        get_global_proxy_spend(&settings, Some(&fetcher), "admin", "key")
+        get_global_proxy_spend(settings.max_budget, Some(&fetcher), "admin", "key")
             .await
             .unwrap(),
         None
     );
     assert_eq!(
-        get_global_proxy_spend(&settings, None, "admin", "key")
+        get_global_proxy_spend(settings.max_budget, None, "admin", "key")
             .await
             .unwrap(),
         None
@@ -251,9 +252,14 @@ async fn global_missing_row_no_alert() {
     assert!(cache.writes.lock().unwrap().is_empty());
     assert!(alerts.scheduled.lock().unwrap().is_empty());
     // a positive ceiling reads the row once and caches the null it found
-    let spend = get_global_proxy_spend(&enabled_settings(), Some(&fetcher), "admin", "key")
-        .await
-        .unwrap();
+    let spend = get_global_proxy_spend(
+        enabled_settings().max_budget,
+        Some(&fetcher),
+        "admin",
+        "key",
+    )
+    .await
+    .unwrap();
     assert_eq!(spend, None);
     assert_eq!(rows.calls.load(Ordering::SeqCst), 1);
     assert_eq!(*cache.stored.lock().unwrap(), Some(CacheValue::Null));
@@ -265,16 +271,21 @@ async fn global_zero_spend_alert_payload() {
     let rows = Arc::new(FakeRows::new(Some(Decimal::ZERO)));
     let cache = Arc::new(FakeCache::default());
     let alerts = Arc::new(Alerts::default());
-    let fetcher = fetcher(
+    let fetcher = make_fetcher(
         Arc::clone(&rows),
         Arc::clone(&cache),
         Arc::clone(&alerts),
         5.0,
         Duration::from_secs(5),
     );
-    let spend = get_global_proxy_spend(&enabled_settings(), Some(&fetcher), "admin", "key")
-        .await
-        .unwrap();
+    let spend = get_global_proxy_spend(
+        enabled_settings().max_budget,
+        Some(&fetcher),
+        "admin",
+        "key",
+    )
+    .await
+    .unwrap();
     assert_eq!(spend, Some(Decimal::ZERO));
     let scheduled = alerts.scheduled.lock().unwrap();
     assert_eq!(
@@ -296,7 +307,7 @@ async fn global_load_error_releases_waiters() {
     let cache = Arc::new(FakeCache::default());
     let alerts = Arc::new(Alerts::default());
     // the leader's read outlives its bound, and the waiter's own wait bound is longer
-    let fetcher = fetcher(
+    let fetcher = make_fetcher(
         Arc::clone(&rows),
         Arc::clone(&cache),
         Arc::clone(&alerts),
@@ -304,10 +315,10 @@ async fn global_load_error_releases_waiters() {
         Duration::from_secs(2),
     );
     let settings = enabled_settings();
-    let leader = get_global_proxy_spend(&settings, Some(&fetcher), "admin", "key-a");
+    let leader = get_global_proxy_spend(settings.max_budget, Some(&fetcher), "admin", "key-a");
     let follower = async {
         rows.wait_until_started().await;
-        get_global_proxy_spend(&settings, Some(&fetcher), "admin", "key-b").await
+        get_global_proxy_spend(settings.max_budget, Some(&fetcher), "admin", "key-b").await
     };
     let (first, second) = tokio::join!(leader, follower);
     let error = first.unwrap_err();
@@ -316,4 +327,79 @@ async fn global_load_error_releases_waiters() {
     assert_eq!(second.unwrap(), None);
     assert!(alerts.scheduled.lock().unwrap().is_empty());
     assert!(cache.writes.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn cached_numeric_spend_skips_database() {
+    for (value, expected) in [
+        (CacheValue::Integer(0), Some(Decimal::ZERO)),
+        (CacheValue::Float(1.5), Some(Decimal::new(15, 1))),
+        (
+            CacheValue::Text("2.25".to_owned()),
+            Some(Decimal::new(225, 2)),
+        ),
+        (CacheValue::Boolean(false), None),
+        (CacheValue::Text("invalid".to_owned()), None),
+    ] {
+        let rows = Arc::new(FakeRows::new(Some(Decimal::TEN)));
+        let cache = Arc::new(FakeCache::default());
+        *cache.stored.lock().unwrap() = Some(value);
+        let alerts = Arc::new(Alerts::default());
+        let fetcher = make_fetcher(
+            Arc::clone(&rows),
+            cache,
+            Arc::clone(&alerts),
+            5.0,
+            Duration::from_secs(5),
+        );
+        let spend = get_global_proxy_spend(Decimal::ONE, Some(&fetcher), "owner", "key")
+            .await
+            .unwrap();
+        assert_eq!(spend, expected);
+        assert_eq!(rows.calls.load(Ordering::SeqCst), 0);
+        assert_eq!(
+            alerts.scheduled.lock().unwrap().len(),
+            usize::from(expected.is_some())
+        );
+    }
+}
+
+struct FailedWrite;
+
+#[async_trait]
+impl CacheBackend for FailedWrite {
+    fn default_ttl(&self) -> i64 {
+        60
+    }
+    async fn async_get_cache(&self, _key: &str) -> CacheResult<Option<CacheValue>> {
+        Ok(None)
+    }
+    async fn async_set_cache(&self, _key: &str, _value: CacheValue, _ttl: Ttl) -> CacheResult<()> {
+        Err(BackendError::Unsupported("failed-write"))
+    }
+}
+
+#[tokio::test]
+async fn cache_backend_failure_propagates_without_alert() {
+    let rows = Arc::new(FakeRows::new(Some(Decimal::ONE)));
+    let alerts = Arc::new(Alerts::default());
+    let mut fetcher = make_fetcher(
+        rows,
+        Arc::new(FakeCache::default()),
+        Arc::clone(&alerts),
+        5.0,
+        Duration::from_secs(1),
+    );
+    fetcher.cache = Arc::new(FailedWrite);
+    let error = get_global_proxy_spend(Decimal::TEN, Some(&fetcher), "admin", "key")
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        CoordinatorError::Cache {
+            source: GlobalSpendCacheError::Backend(BackendError::Unsupported("failed-write")),
+            ..
+        }
+    ));
+    assert!(alerts.scheduled.lock().unwrap().is_empty());
 }

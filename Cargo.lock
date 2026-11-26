@@ -1568,9 +1568,13 @@ dependencies = [
 name = "betterlite-config"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "aws-credential-types",
  "aws-sigv4",
  "aws-smithy-runtime-api",
+ "betterlite-auth",
+ "betterlite-cache",
+ "betterlite-context",
  "betterlite-db",
  "betterlite-env",
  "betterlite-models",
@@ -1607,6 +1611,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-postgres",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
  "unicode-general-category",

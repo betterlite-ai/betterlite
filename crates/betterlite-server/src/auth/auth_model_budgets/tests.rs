@@ -1,8 +1,8 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use axum::Router;
@@ -12,11 +12,13 @@ use axum::http::{Request, StatusCode, header};
 use axum::routing::post;
 use betterlite_auth::auth_model_budgets::checks::ModelMaxBudget;
 use betterlite_auth::auth_model_budgets::limits::{KeyModelBudgetLimiter, UserModelBudgetLimiter};
+use betterlite_auth::auth_model_budgets::request_views::rewrite_model;
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::auth_model_budgets::Settings;
 use betterlite_config::sections::database_reencryption::DEFAULT_RECURSE_DEPTH;
 use betterlite_config::types::Config;
+use betterlite_core::api::request_body::ParsedBody;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_error::error::ErrorClass;
 use betterlite_error::error::details::BudgetExceededDetails;
@@ -26,6 +28,7 @@ use rust_decimal::Decimal;
 use secrecy::SecretString;
 use tower::ServiceExt as _;
 
+use super::body_views::{BodyViews, SharedViews};
 use super::{ModelBudgetRule, ModelBudgetStageInput, prefetch};
 use crate::auth::auth_identity::{
     AuthBackend, AuthContext, INSTALLED_STAGES, StageFailure, StageInput, dispatch,
@@ -34,7 +37,7 @@ use crate::auth::rewritten_body;
 use crate::routes;
 use crate::routes::tests::state_for;
 
-const MODEL_ROUTE: &str = "/v1/files";
+const MODEL_ROUTE: &str = "/v1/chat/completions";
 const MASTER_KEY: &str = "secret-master-key";
 
 fn config(source: &str) -> Config {
@@ -112,14 +115,12 @@ fn failing_rule() -> Arc<ModelBudgetRule> {
         )),
         models: vec!["gpt-4".to_owned()],
         model_name: None,
-        request_model: None,
         user_limiter: Some(Arc::new(DenyingUserLimiter::default())),
         team_limiter: None,
         key_limiter: None,
         global_model_aliases: BTreeMap::new(),
         max_recurse_depth: DEFAULT_RECURSE_DEPTH,
         path_params: None,
-        applied: Mutex::new(None),
     })
 }
 
@@ -174,6 +175,10 @@ async fn stage_is_registered() {
     let settings = Arc::clone(&state.auth_model_budgets.settings);
     assert_eq!(settings.max_budget, Decimal::new(125, 1));
     assert!(settings.max_budget > Decimal::ZERO);
+    let mut request = request_to(&Arc::new(AtomicBool::new(false)));
+    request.extensions_mut().insert(Arc::clone(&state));
+    let loaded = super::settings_for_request(&request);
+    assert_eq!(loaded.max_budget, Decimal::new(125, 1));
 
     // the rule's debug output names the type and never the token it resolved
     let debugged = failing_rule();
@@ -186,6 +191,7 @@ async fn stage_is_registered() {
         rule: failing_rule(),
         settings,
         body: None,
+        views: SharedViews::default(),
     };
     let input = StageInput::AuthModelBudgets(Box::new(stage));
     let Ok(forwarded) = dispatch(AuthBackend::AuthModelBudgets, &input, &master_key) else {
@@ -246,43 +252,209 @@ async fn prefetch_rewrites_the_body_for_the_authorized_fallback() {
         )),
         models: vec!["gpt-4".to_owned()],
         model_name: Some("gpt-4".to_owned()),
-        request_model: Some("gpt-4".to_owned()),
         user_limiter: None,
         team_limiter: None,
         key_limiter: Some(Arc::new(FallbackKeyLimiter)),
         global_model_aliases: BTreeMap::new(),
         max_recurse_depth: DEFAULT_RECURSE_DEPTH,
         path_params: Some(path_params),
-        applied: Mutex::new(None),
     });
     let stage = ModelBudgetStageInput {
         context: master_context(&master_key),
         rule: Arc::clone(&rule),
         settings: Arc::new(Settings::default()),
         body: Some(Bytes::from_static(b"{\"model\":\"gpt-4\"}")),
+        views: SharedViews::default(),
     };
     prefetch(&stage)
         .await
         .expect("the authorized fallback rewrites the body");
-    let applied = rule.applied_body().expect("the fallback body is recorded");
+    let views = stage.views.lock().unwrap().clone().unwrap();
+    let applied = views
+        .serialized_body
+        .expect("the fallback body is recorded");
     let body = String::from_utf8(applied.to_vec()).expect("the rewritten body is UTF-8");
     assert_eq!(body, "{\"model\":\"gpt-3.5\"}");
 }
 
 #[test]
 fn rewritten_body_prefers_the_recorded_fallback() {
-    let rule = failing_rule();
     let mut request = request_to(&Arc::new(AtomicBool::new(false)));
-    request.extensions_mut().insert(Arc::clone(&rule));
-    assert_eq!(rewritten_body(&request, None), None);
+    let shared = SharedViews::default();
+    request.extensions_mut().insert(Arc::clone(&shared));
+    assert_eq!(rewritten_body(&mut request, None), None);
     let original = Bytes::from_static(b"{\"model\":\"gpt-4\"}");
     assert_eq!(
-        rewritten_body(&request, Some(original.clone())),
-        Some(original)
+        rewritten_body(&mut request, Some(original.clone())),
+        Some(original.clone())
     );
-    *rule.applied.lock().unwrap() = Some(Bytes::from_static(b"{\"model\":\"gpt-3.5\"}"));
+    let mut views = BodyViews::new(Some(&original), None);
+    rewrite_model(&mut views, "gpt-3.5").unwrap();
+    *shared.lock().unwrap() = Some(views);
     assert_eq!(
-        rewritten_body(&request, Some(Bytes::from_static(b"{\"model\":\"gpt-4\"}"))),
+        rewritten_body(&mut request, Some(original)),
         Some(Bytes::from_static(b"{\"model\":\"gpt-3.5\"}"))
     );
+    let parsed = request.extensions().get::<ParsedBody>().unwrap();
+    assert_eq!(
+        serde_json::to_string(&parsed.visible()).unwrap(),
+        "{\"model\":\"gpt-3.5\"}"
+    );
+    let snapshots = request.extensions().get::<BodyViews>().unwrap();
+    assert_eq!(snapshots.request_data, snapshots.json_cache);
+}
+
+async fn echo_fallback(Extension(views): Extension<BodyViews>, body: Bytes) -> Bytes {
+    assert_eq!(views.request_data, views.json_cache);
+    assert_eq!(
+        serde_json::to_vec(&views.parsed_body.unwrap().visible()).unwrap(),
+        body
+    );
+    assert_eq!(
+        views.path_params.unwrap().get("model"),
+        Some(&Json::Text("gpt-3.5".to_owned()))
+    );
+    body
+}
+
+#[tokio::test]
+async fn fallback_reaches_downstream_with_all_snapshots() {
+    let mut rule = ModelBudgetRule::default();
+    rule.auth = Some(key(r#"{"models":["gpt-4","gpt-3.5"]}"#));
+    rule.model_name = Some("gpt-4".to_owned());
+    rule.key_limiter = Some(Arc::new(FallbackKeyLimiter));
+    rule.path_params = Some(BTreeMap::from([(
+        "model".to_owned(),
+        Json::Text("gpt-4".to_owned()),
+    )]));
+    let app = routes::router(
+        state_for(&config_with_master_key()),
+        Arc::new(AtomicBool::new(false)),
+        Router::new().route(MODEL_ROUTE, post(echo_fallback)),
+        Router::new(),
+    )
+    .layer(Extension(Arc::new(rule)));
+    for value in [1_i32, 2_i32] {
+        let mut request = request_to(&Arc::new(AtomicBool::new(false)));
+        *request.body_mut() = Body::from(format!(r#"{{"model":"gpt-4","value":{value}}}"#));
+        let response = app.clone().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = to_bytes(response.into_body(), 4096).await.unwrap();
+        assert_eq!(bytes, format!(r#"{{"model":"gpt-3.5","value":{value}}}"#));
+    }
+}
+
+#[tokio::test]
+async fn booted_chat_fallback_and_denial() {
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+    use tokio::net::{TcpListener, TcpStream};
+    use tokio::task::JoinSet;
+    use tokio::time::{Duration, timeout};
+    for (models, status) in [(r#"["gpt-4","gpt-3.5"]"#, "200"), (r#"["gpt-4"]"#, "422")] {
+        let rule = ModelBudgetRule {
+            auth: Some(key(&format!(r#"{{"models":{models}}}"#))),
+            models: vec!["gpt-4".to_owned()],
+            model_name: Some("gpt-4".to_owned()),
+            user_limiter: None,
+            team_limiter: None,
+            key_limiter: Some(Arc::new(FallbackKeyLimiter)),
+            global_model_aliases: BTreeMap::new(),
+            max_recurse_depth: DEFAULT_RECURSE_DEPTH,
+            path_params: Some(BTreeMap::from([(
+                "model".to_owned(),
+                Json::Text("gpt-4".to_owned()),
+            )])),
+        };
+        let app = routes::router(
+            state_for(&config_with_master_key()),
+            Arc::new(AtomicBool::new(false)),
+            Router::new().route(MODEL_ROUTE, post(echo_fallback)),
+            Router::new(),
+        )
+        .layer(Extension(Arc::new(rule)));
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let mut servers = JoinSet::new();
+        servers.spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let response = timeout(Duration::from_secs(5), async {
+            let mut connection = TcpStream::connect(address).await.unwrap();
+            let body = r#"{"model":"gpt-4"}"#;
+            let wire = format!("POST {MODEL_ROUTE} HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer {MASTER_KEY}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+            connection.write_all(wire.as_bytes()).await.unwrap();
+            let mut answer = String::new();
+            connection.take(8192).read_to_string(&mut answer).await.unwrap();
+            answer
+        }).await.unwrap();
+        servers.abort_all();
+        while servers.join_next().await.is_some() {}
+        assert!(
+            response.starts_with(&format!("HTTP/1.1 {status} ")),
+            "{response}"
+        );
+        if status == "200" {
+            assert!(response.ends_with(r#"{"model":"gpt-3.5"}"#), "{response}");
+        } else {
+            assert!(
+                response.contains(r#""type":"budget_exceeded""#),
+                "{response}"
+            );
+            assert!(!response.contains("gpt-3.5"), "{response}");
+        }
+    }
+}
+
+#[test]
+fn error_translation_preserves_fields_and_default_message() {
+    use betterlite_auth::auth_model_budgets::fallback::KeyBudgetError;
+    use betterlite_auth::auth_model_budgets::request_views::RewriteFailure;
+    let mut details = exceeded_details("key", "key");
+    details.message = None;
+    let exception = super::key_budget_exception(&KeyBudgetError::Budget(Box::new(details)));
+    assert_eq!(exception.code, "422");
+    assert_eq!(exception.error_type, "budget_exceeded");
+    assert_eq!(exception.param, None);
+    assert_eq!(
+        exception.message,
+        "Budget has been exceeded! Current cost: 6, Max budget: 5"
+    );
+    let other = super::key_budget_exception(&KeyBudgetError::Rewrite(RewriteFailure));
+    assert_eq!(other.code, "401");
+    assert_eq!(other.error_type, "auth_error");
+    assert_eq!(other.param.as_deref(), Some("None"));
+    assert!(other.message.contains("could not be serialized"));
+}
+
+#[test]
+fn fallback_does_not_create_a_path_model() {
+    let original = Bytes::from_static(b"{\"model\":\"gpt-4\"}");
+    let mut views = BodyViews::new(Some(&original), Some(JsonObject::new()));
+    rewrite_model(&mut views, "fallback").unwrap();
+    assert_eq!(views.path_params, Some(JsonObject::new()));
+    let mut absent = BodyViews::new(Some(&original), None);
+    rewrite_model(&mut absent, "fallback").unwrap();
+    assert_eq!(absent.path_params, None);
+}
+
+#[tokio::test]
+async fn slot_limiter_is_used_when_request_has_no_override() {
+    let mut state = state_for(&config_with_master_key());
+    Arc::get_mut(&mut state)
+        .unwrap()
+        .auth_model_budgets
+        .user_limiter = Some(Arc::new(DenyingUserLimiter::default()));
+    let mut rule = (*failing_rule()).clone();
+    rule.user_limiter = None;
+    let app = routes::router(
+        state,
+        Arc::new(AtomicBool::new(false)),
+        Router::new().route(MODEL_ROUTE, post(mark_called)),
+        Router::new(),
+    )
+    .layer(Extension(Arc::new(rule)));
+    let reached = Arc::new(AtomicBool::new(false));
+    let response = app.oneshot(request_to(&reached)).await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(!reached.load(Ordering::Acquire));
 }
