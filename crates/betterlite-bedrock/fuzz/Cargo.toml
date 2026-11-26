@@ -258,3 +258,10 @@ path = "fuzz_targets/bedrock_qwen_deepseek.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "bedrock_other_canvas_results"
+path = "fuzz_targets/bedrock_other_canvas_results.rs"
+test = false
+doc = false
+bench = false
