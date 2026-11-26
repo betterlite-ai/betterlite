@@ -98,49 +98,14 @@ fn config_with_master_key(master_key: &str) -> Config {
 }
 
 fn master_context(master_key: &SecretString) -> AuthContext {
-    match dispatch(
+    let Ok(context) = dispatch(
         AuthBackend::MasterKey,
         &StageInput::MasterKey(Some(master_key.clone())),
         master_key,
-    ) {
-        Ok(context) => context,
-        Err(StageFailure::Authentication(_)) => {
-            panic!("the master key stage authenticates")
-        }
-        Err(StageFailure::JwtKeys(_)) => {
-            panic!("the master key stage runs no JWKS lookup")
-        }
-        Err(StageFailure::ModelAccess(_)) => {
-            panic!("the master key stage reports no model access")
-        }
-        Err(StageFailure::AuthRequestPolicy(_)) => {
-            panic!("the master key stage runs no request policy check")
-        }
-        Err(StageFailure::ResourceGrants(_)) => {
-            panic!("the master key stage reports no resource grants")
-        }
-        Err(StageFailure::TagBudgets(_)) => {
-            panic!("the master key stage reports no tag budgets")
-        }
-        Err(StageFailure::RequestBodySafety(_)) => {
-            panic!("the master key stage runs no body safety check")
-        }
-        Err(StageFailure::VirtualKeyRoutes(_)) => {
-            panic!("the master key stage runs no virtual key route check")
-        }
-        Err(StageFailure::KeyBudgets(_)) => {
-            panic!("the master key stage runs no key budget check")
-        }
-        Err(StageFailure::TeamBudgets(_)) => {
-            panic!("the master key stage runs no team budget check")
-        }
-        Err(StageFailure::OrgLookup(_)) => {
-            panic!("the master key stage runs no organization lookup")
-        }
-        Err(StageFailure::EndUsers(_)) => {
-            panic!("the master key stage runs no end-user check")
-        }
-    }
+    ) else {
+        panic!("the master key stage authenticates");
+    };
+    context
 }
 
 fn stage_input(

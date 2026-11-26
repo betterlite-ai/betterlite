@@ -52,16 +52,6 @@ pub(super) struct Cache {
     pub(super) clock: Arc<StepClock>,
 }
 
-impl Cache {
-    pub(super) fn new(clock: Arc<StepClock>) -> Self {
-        Self {
-            entries: Mutex::new(BTreeMap::new()),
-            writes: Mutex::new(Vec::new()),
-            clock,
-        }
-    }
-}
-
 #[async_trait]
 impl KeyCache for Cache {
     async fn read_value(&self, key: &str) -> Result<Option<Json>, AuthCacheError> {
@@ -74,7 +64,9 @@ impl KeyCache for Cache {
             entries.remove(key);
             return Ok(None);
         }
-        Ok(Some(entry.value.clone()))
+        let value = entry.value.clone();
+        drop(entries);
+        Ok(Some(value))
     }
 
     async fn write_value(
@@ -84,21 +76,20 @@ impl KeyCache for Cache {
         ttl_seconds: f64,
     ) -> Result<(), AuthCacheError> {
         let now = *lock(&self.clock.now);
-        {
-            let mut entries = lock(&self.entries);
-            let expires_at = entries
-                .get(key)
-                .map(|entry| entry.expires_at)
-                .filter(|expires| now <= *expires)
-                .unwrap_or(now.add(ttl_seconds));
-            entries.insert(
-                key.to_owned(),
-                Entry {
-                    value: value.clone(),
-                    expires_at,
-                },
-            );
-        }
+        let mut entries = lock(&self.entries);
+        let expires_at = entries
+            .get(key)
+            .map(|entry| entry.expires_at)
+            .filter(|expires| now <= *expires)
+            .unwrap_or_else(|| now.add(ttl_seconds));
+        entries.insert(
+            key.to_owned(),
+            Entry {
+                value: value.clone(),
+                expires_at,
+            },
+        );
+        drop(entries);
         lock(&self.writes).push(Write {
             key: key.to_owned(),
             ttl: ttl_seconds,

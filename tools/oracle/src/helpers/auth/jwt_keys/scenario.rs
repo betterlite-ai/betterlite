@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::mem;
 use std::sync::{Arc, Mutex};
 
@@ -38,9 +39,9 @@ pub(super) fn answer(scenarios: &[Scenario]) -> HelperResult {
 
 async fn scenario_answer(scenario: &Scenario, levels: &Mutex<Vec<String>>) -> ScenarioAnswer {
     let Ok(settings) = JwtKeySettings::new(
-        scenario.settings.public_key_url.clone(),
-        scenario.settings.public_key_ttl,
-        scenario.settings.public_key_stale_ttl,
+        scenario.settings.url.clone(),
+        scenario.settings.ttl,
+        scenario.settings.stale_ttl,
         None,
         None,
     ) else {
@@ -50,7 +51,11 @@ async fn scenario_answer(scenario: &Scenario, levels: &Mutex<Vec<String>>) -> Sc
         };
     };
     let clock = Arc::new(StepClock::default());
-    let cache = Arc::new(Cache::new(Arc::clone(&clock)));
+    let cache = Arc::new(Cache {
+        entries: Mutex::new(BTreeMap::new()),
+        writes: Mutex::new(Vec::new()),
+        clock: Arc::clone(&clock),
+    });
     let http = Arc::new(Scripted::default());
     let cache_tier: Arc<dyn KeyCache> = Arc::<Cache>::clone(&cache);
     let http_source: Arc<dyn JwksHttp> = Arc::<Scripted>::clone(&http);
@@ -73,11 +78,11 @@ async fn scenario_answer(scenario: &Scenario, levels: &Mutex<Vec<String>>) -> Sc
 }
 
 // the fakes a step drives, so a step answers from one borrow instead of five
-struct Fixture<'a> {
-    clock: &'a StepClock,
-    cache: &'a Cache,
-    http: &'a Scripted,
-    levels: &'a Mutex<Vec<String>>,
+struct Fixture<'scenario> {
+    clock: &'scenario StepClock,
+    cache: &'scenario Cache,
+    http: &'scenario Scripted,
+    levels: &'scenario Mutex<Vec<String>>,
 }
 
 async fn step_answer(resolver: &JwksResolver, fixture: &Fixture<'_>, step: &Step) -> StepAnswer {

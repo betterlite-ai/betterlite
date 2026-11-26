@@ -16,9 +16,12 @@ pub(super) struct Scenario {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Settings {
-    pub(super) public_key_url: Option<String>,
-    pub(super) public_key_ttl: f64,
-    pub(super) public_key_stale_ttl: f64,
+    #[serde(rename = "public_key_url")]
+    pub(super) url: Option<String>,
+    #[serde(rename = "public_key_ttl")]
+    pub(super) ttl: f64,
+    #[serde(rename = "public_key_stale_ttl")]
+    pub(super) stale_ttl: f64,
 }
 
 #[derive(Deserialize)]
