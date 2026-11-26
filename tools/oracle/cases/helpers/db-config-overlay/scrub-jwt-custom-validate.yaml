@@ -1,0 +1,15 @@
+kind: helper
+name: db-config-overlay-scrub-jwt-custom-validate
+call:
+  b8379:
+    section: general_settings
+    row:
+      litellm_jwtauth:
+        custom_validate: s3://bucket/jwt.py
+        user_id_jwt_field: sub
+      custom_auth: gcs://bucket/auth.py
+      custom_sso: local.sso
+      max_parallel_requests: 4
+env: {}
+compare:
+  ignore: []

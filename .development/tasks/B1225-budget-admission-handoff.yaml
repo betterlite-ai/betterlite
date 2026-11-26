@@ -104,7 +104,10 @@ scope:
     - tools/oracle/cases/helpers/budget-admission-handoff/**
     - tools/oracle/fuzz/corpus/helper_case/budget-admission-handoff-*
     - crates/betterlite-server/src/auth.rs
-    - crates/betterlite-server/src/auth/**
+    - crates/betterlite-server/src/auth/auth_identity.rs
+    - crates/betterlite-server/src/auth/auth_errors.rs
+    - crates/betterlite-server/src/auth/failures.rs
+    - crates/betterlite-server/src/auth/auth_request_models/tests.rs
     - crates/betterlite-server/src/state/budget_admission_handoff.rs
     - crates/betterlite-server/src/state/budget_admission_handoff/**
     - tools/oracle/cases/auth/budget-admission-handoff/**

@@ -1,0 +1,47 @@
+kind: helper
+name: info-prefers-cached-record
+call:
+  b1070:
+    calls:
+      # a cache hit answers before the database and normalizes its blanks
+      - route: info
+        vector_store_id: vs_a
+        database:
+          - {vector_store_id: vs_a, custom_llm_provider: openai, vector_store_name: db-name, litellm_params: {api_key: db-secret}}
+        registry: &cached
+          - {vector_store_id: vs_a, custom_llm_provider: openai, vector_store_name: '', vector_store_description: '', vector_store_metadata: '{"tag": "x"}', created_at: "2024-01-02T03:04:05Z", updated_at: '', litellm_credential_name: cred-1, litellm_params: {api_key: sk-cached, region: us}, team_id: '', user_id: '', is_config: true}
+        caller: &admin {user_id: u1, user_role: proxy_admin, team_id: null}
+        disabled: false
+      # the database connection is required even when the record is cached
+      - route: info
+        vector_store_id: vs_a
+        database: null
+        registry: *cached
+        caller: *admin
+        disabled: false
+      # a teamless cached record is readable by an internal user, and a dict metadata stays a dict
+      - route: info
+        vector_store_id: vs_teamless
+        database: []
+        registry:
+          - {vector_store_id: vs_teamless, custom_llm_provider: openai, vector_store_metadata: {tag: y}}
+        caller: {user_id: u2, user_role: internal_user, team_id: null}
+        disabled: false
+      # metadata that is neither text nor an object becomes null
+      - route: info
+        vector_store_id: vs_a
+        database: []
+        registry:
+          - {vector_store_id: vs_a, custom_llm_provider: openai, vector_store_metadata: 7}
+        caller: *admin
+        disabled: false
+      # absent metadata is null too
+      - route: info
+        vector_store_id: vs_a
+        database: []
+        registry:
+          - {vector_store_id: vs_a, custom_llm_provider: openai}
+        caller: *admin
+        disabled: false
+env: {}
+compare: {ignore: []}

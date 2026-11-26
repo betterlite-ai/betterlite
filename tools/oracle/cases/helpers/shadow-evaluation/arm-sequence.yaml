@@ -1,0 +1,24 @@
+kind: helper
+name: shadow-evaluation-arm-sequence
+call:
+  b4085:
+    operation: pipeline
+    auth: null
+    team: null
+    key_spend: null
+    team_spend: null
+    database: true
+    pipeline_error: false
+    max_budget: null
+    job_spend: null
+    stats_spend: null
+    judge_reply: "tie"
+    arms:
+      - router: arm-router
+        shadow: reply
+      - router: arm-router-two
+        shadow: reply
+      - router: arm-router-three
+        shadow: reply
+env: {}
+compare: {ignore: []}

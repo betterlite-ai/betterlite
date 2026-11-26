@@ -1,0 +1,42 @@
+kind: helper
+name: settings-schema-reference-enum-versus-missing-definition
+call:
+  settings_schema:
+    settings_key: default_internal_user_params
+    config: {}
+    schema:
+      properties:
+        models:
+          type: array
+          items:
+            $ref: "#/$defs/ModelName"
+        budget_duration:
+          type: array
+          items:
+            $ref: "#/$defs/Missing"
+        teams:
+          type: array
+          items:
+            $ref: "#/$defs/NoEnum"
+        user_role:
+          type: array
+          items:
+            enum:
+              - a
+              - b
+            type: string
+      $defs:
+        ModelName:
+          enum:
+            - gpt-4o
+            - claude-3
+        NoEnum:
+          type: string
+    defaults:
+      user_role: internal_user_viewer
+      max_budget: null
+      budget_duration: null
+      models: null
+      teams: null
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,69 @@
+kind: helper
+name: management-read-auth-and-flags
+call:
+  b1070:
+    calls:
+      # the disable switch refuses an internal user before any repository work
+      - route: list
+        page: 1
+        page_size: 100
+        alias: false
+        database: []
+        registry: null
+        caller: &internal {user_id: u2, user_role: internal_user, team_id: null}
+        disabled: true
+      # info answers the flag first, before the database-connection 500
+      - route: info
+        vector_store_id: vs_a
+        database: null
+        registry: null
+        caller: *internal
+        disabled: true
+      # proxy admins bypass the switch
+      - route: list
+        page: 1
+        page_size: 100
+        alias: false
+        database:
+          - {vector_store_id: vs_a, custom_llm_provider: openai}
+        registry: null
+        caller: &admin {user_id: u1, user_role: proxy_admin, team_id: null}
+        disabled: true
+      # the view-only admin bypasses the switch but not the list visibility grant
+      - route: list
+        page: 1
+        page_size: 100
+        alias: false
+        database:
+          - {vector_store_id: vs_a, custom_llm_provider: openai}
+        registry: null
+        caller: &viewer {user_id: u3, user_role: proxy_admin_viewer, team_id: null}
+        disabled: true
+      - route: info
+        vector_store_id: vs_a
+        database:
+          - {vector_store_id: vs_a, custom_llm_provider: openai}
+        registry: null
+        caller: *viewer
+        disabled: true
+      # open flags: an internal user sees only the team-owned store
+      - route: list
+        page: 1
+        page_size: 100
+        alias: false
+        database:
+          - {vector_store_id: vs_team1, custom_llm_provider: openai, team_id: t1}
+          - {vector_store_id: vs_team2, custom_llm_provider: openai, team_id: t2}
+          - {vector_store_id: vs_open, custom_llm_provider: openai}
+        registry: null
+        caller: &team_internal {user_id: u4, user_role: internal_user, team_id: t1}
+        disabled: false
+      - route: info
+        vector_store_id: vs_team1
+        database:
+          - {vector_store_id: vs_team1, custom_llm_provider: openai, team_id: t1}
+        registry: null
+        caller: *team_internal
+        disabled: false
+env: {}
+compare: {ignore: []}

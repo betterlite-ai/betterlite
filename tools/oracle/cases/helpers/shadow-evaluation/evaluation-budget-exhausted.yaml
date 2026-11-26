@@ -1,0 +1,20 @@
+kind: helper
+name: shadow-evaluation-evaluation-budget-exhausted
+call:
+  b4085:
+    operation: pipeline
+    auth: null
+    team: null
+    key_spend: null
+    team_spend: null
+    database: true
+    pipeline_error: false
+    max_budget: 5.0
+    job_spend: 5.0
+    stats_spend: "2"
+    judge_reply: "tie"
+    arms:
+      - router: arm-router
+        shadow: reply
+env: {}
+compare: {ignore: []}

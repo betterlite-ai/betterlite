@@ -18,9 +18,9 @@ use secrecy::ExposeSecret as _;
 
 use super::deferred::not_built;
 use super::seams::{
-    BatchProbeCall, EmbeddingProbeCall, ImageEditProbeCall, ImageGenerationProbeCall, OcrProbeCall,
-    RerankProbeCall, ResponsesProbeCall, SpeechProbeCall, TextCompletionProbeCall,
-    TranscriptionProbeCall,
+    BatchProbeCall, EmbeddingProbeCall, EvaluationProbeCall, ImageEditProbeCall,
+    ImageGenerationProbeCall, OcrProbeCall, RerankProbeCall, ResponsesProbeCall, SpeechProbeCall,
+    TextCompletionProbeCall, TranscriptionProbeCall,
 };
 use crate::health_probe_modes::backend::{CheapestChatModels, HealthProbeBackend};
 use crate::health_probe_modes::calls::{
@@ -45,6 +45,7 @@ pub struct NativeHealthBackend {
     pub batch: Arc<dyn BatchProbeCall>,
     pub responses: Arc<dyn ResponsesProbeCall>,
     pub ocr: Arc<dyn OcrProbeCall>,
+    pub evaluation: Arc<dyn EvaluationProbeCall>,
     pub prices: Arc<dyn PriceLookup + Send + Sync>,
     pub model_sets: Arc<ProviderModelSets>,
 }
@@ -131,11 +132,8 @@ impl HealthProbeBackend for NativeHealthBackend {
         self.ocr.ocr(call).await
     }
 
-    async fn evaluation(
-        &self,
-        _call: EvaluationCall,
-    ) -> Result<HealthProbeReply, HealthProbeError> {
-        Err(not_built("evaluation"))
+    async fn evaluation(&self, call: EvaluationCall) -> Result<HealthProbeReply, HealthProbeError> {
+        self.evaluation.evaluate(call).await
     }
 }
 

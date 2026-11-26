@@ -1,0 +1,4 @@
+model_list:
+  - model_name: gpt
+general_settings:
+  master_key: os.environ/MASTER

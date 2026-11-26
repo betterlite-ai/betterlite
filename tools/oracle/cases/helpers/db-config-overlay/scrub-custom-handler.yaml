@@ -1,0 +1,22 @@
+kind: helper
+name: db-config-overlay-scrub-custom-handler
+call:
+  b8379:
+    section: litellm_settings
+    row:
+      custom_provider_map:
+        - provider: remote
+          custom_handler: s3://bucket/handler.py
+        - provider: local
+          custom_handler: local.handler
+      callbacks:
+        - s3://bucket/callback.py
+        - langfuse
+        - gcs://bucket/other.py
+      success_callback:
+        - langfuse
+      post_call_rules: gcs://bucket/rules.py
+      drop_params: true
+env: {}
+compare:
+  ignore: []

@@ -88,7 +88,10 @@ scope:
     - tools/oracle/cases/helpers/key-context/**
     - tools/oracle/fuzz/corpus/helper_case/key-context-*
     - crates/betterlite-server/src/auth.rs
-    - crates/betterlite-server/src/auth/**
+    - crates/betterlite-server/src/auth/auth_identity.rs
+    - crates/betterlite-server/src/auth/auth_errors.rs
+    - crates/betterlite-server/src/auth/failures.rs
+    - crates/betterlite-server/src/auth/auth_request_models/tests.rs
     - crates/betterlite-server/src/state/key_context.rs
     - crates/betterlite-server/src/state/key_context/**
     - tools/oracle/cases/auth/key-context/**

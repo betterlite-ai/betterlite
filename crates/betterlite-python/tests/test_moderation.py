@@ -8,6 +8,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import ClassVar, Final, Protocol
 
 import pytest
+from endpoint_server import APPLIED, CATEGORIES, HATE_SCORE, SCORES
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import TypedDict
 
@@ -30,42 +31,8 @@ INPUT_TEXT: Final = "hello"
 CATEGORY_COUNT: Final = 13
 # the provider keys with a slash or hyphen that the client body repeats beside its field names
 ALIAS_COUNT: Final = 8
-HATE_SCORE: Final = 0.01
 AUTH_TEXT: Final = "Incorrect API key provided: bad-key"
 MISSING_KEY_TEXT: Final = "no API key is set"
-CATEGORIES: Final[dict[str, JsonValue]] = {
-    "harassment": False,
-    "harassment/threatening": False,
-    "hate": False,
-    "hate/threatening": False,
-    "illicit": False,
-    "illicit/violent": False,
-    "self-harm": False,
-    "self-harm/instructions": False,
-    "self-harm/intent": False,
-    "sexual": False,
-    "sexual/minors": False,
-    "violence": False,
-    "violence/graphic": False,
-}
-APPLIED: Final[dict[str, JsonValue]] = {
-    name: ["text"] for name in CATEGORIES
-}
-SCORES: Final[dict[str, JsonValue]] = {
-    "harassment": HATE_SCORE,
-    "harassment/threatening": HATE_SCORE,
-    "hate": HATE_SCORE,
-    "hate/threatening": HATE_SCORE,
-    "illicit": HATE_SCORE,
-    "illicit/violent": HATE_SCORE,
-    "self-harm": HATE_SCORE,
-    "self-harm/instructions": HATE_SCORE,
-    "self-harm/intent": HATE_SCORE,
-    "sexual": HATE_SCORE,
-    "sexual/minors": HATE_SCORE,
-    "violence": HATE_SCORE,
-    "violence/graphic": HATE_SCORE,
-}
 AUTH_BODY: Final[dict[str, JsonValue]] = {
     "error": {
         "message": AUTH_TEXT,

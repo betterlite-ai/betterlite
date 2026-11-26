@@ -119,7 +119,10 @@ scope:
     - tools/oracle/cases/helpers/auth-common-checks/**
     - tools/oracle/fuzz/corpus/helper_case/auth-common-checks-*
     - crates/betterlite-server/src/auth.rs
-    - crates/betterlite-server/src/auth/**
+    - crates/betterlite-server/src/auth/auth_identity.rs
+    - crates/betterlite-server/src/auth/auth_errors.rs
+    - crates/betterlite-server/src/auth/failures.rs
+    - crates/betterlite-server/src/auth/auth_request_models/tests.rs
     - crates/betterlite-server/src/state/auth_common_checks.rs
     - crates/betterlite-server/src/state/auth_common_checks/**
     - tools/oracle/cases/auth/auth-common-checks/**

@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_error::error::ErrorClass;
-use betterlite_models::decisions::Json;
+use betterlite_models::decisions::{DecisionsJson, Json};
 use betterlite_ocr::json::{Json as OcrJson, Object as OcrObject};
 use betterlite_ocr::ocr_error::OcrError;
 use betterlite_sdk::call_wrapper::error::CallError;
@@ -29,7 +29,7 @@ use crate::health_probe_modes::evaluation::evaluation_call;
 use crate::health_probe_modes::logging::HealthProbeLogging;
 use crate::health_probe_modes::response::{HealthCheckResponse, health_check_response};
 
-mod support;
+pub(super) mod support;
 
 const OCR_ANSWER: &[u8] =
     br##"{"pages":[{"index":0,"markdown":"# Title"}],"usage_info":{"pages_processed":1}}"##;
@@ -409,20 +409,65 @@ async fn backend_realtime_reports_the_mode_as_not_built() {
 }
 
 #[tokio::test]
-async fn backend_evaluation_reports_the_mode_as_not_built() {
+async fn backend_evaluation_forwards_the_call() {
     let harness = Harness::new();
-    let probe_params = params(&[("model", text("eval-model"))]);
-    let call = evaluation_call(&probe_params, None, "openai").expect("the evaluation call builds");
+    harness.evaluation.reply(&HEALTHY_HEADERS);
+    let probe_params = params(&[
+        ("model", text("typesafe/gpt-4o")),
+        ("api_base", text("https://api.typesafe.ai/v1")),
+        ("custom_llm_provider", text("typesafe")),
+    ]);
+    let call = evaluation_call(&probe_params, Some("summarize"), "typesafe")
+        .expect("the evaluation call builds");
+    let reply = harness
+        .backend()
+        .evaluation(call)
+        .await
+        .expect("the evaluation owner answers");
+    assert_eq!(reply.hidden_headers, headers_map(&HEALTHY_HEADERS));
+    let recorded = harness.evaluation.take();
+    assert_eq!(recorded.params.model, "typesafe/gpt-4o");
+    assert_eq!(
+        recorded.params.state,
+        DecisionsJson::Text(String::from("summarize"))
+    );
+    assert_eq!(
+        recorded.params.custom_llm_provider.as_deref(),
+        Some("typesafe")
+    );
+    assert_eq!(
+        recorded.params.api_base.as_deref(),
+        Some("https://api.typesafe.ai/v1")
+    );
+    let questions =
+        serde_json::to_string(&recorded.params.questions).expect("the questions encode to JSON");
+    assert!(questions.contains(r#""reachable""#), "{questions}");
+    assert!(questions.contains(r#""noul""#), "{questions}");
+    assert!(recorded.logging.is_none());
+}
+
+#[tokio::test]
+async fn error_evaluation_keeps_the_owner_error_as_source() {
+    let harness = Harness::new();
+    harness.evaluation.fail("the evaluation owner is down");
+    let probe_params = params(&[("model", text("typesafe/gpt-4o"))]);
+    let call =
+        evaluation_call(&probe_params, None, "typesafe").expect("the evaluation call builds");
     let error = harness
         .backend()
         .evaluation(call)
         .await
-        .expect_err("the mode is not built");
+        .expect_err("the owner call fails");
+    assert_eq!(error.to_string(), "the evaluation owner is down");
+    let source = StdError::source(&error).expect("the owner error is the source");
     assert_eq!(
-        error.to_string(),
-        "the evaluation health check is not built"
+        source
+            .downcast_ref::<io::Error>()
+            .expect("the source is the owner's error")
+            .to_string(),
+        "the evaluation owner is down"
     );
-    assert_eq!(harness.owner.count(), 0);
+    assert_eq!(harness.evaluation.count(), 1);
 }
 
 #[test]

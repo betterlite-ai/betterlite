@@ -16,7 +16,11 @@ description: >-
 
 scope:
   paths:
+  - crates/betterlite-python/python/betterlite/__init__.py
+  - crates/betterlite-python/python/betterlite/main.py
+  - crates/betterlite-python/tests/endpoint_server.py
   - crates/betterlite-python/tests/test_endpoint_surface.py
+  - crates/betterlite-python/tests/test_moderation.py
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6196-L8330

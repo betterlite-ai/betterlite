@@ -1,0 +1,36 @@
+task: B7871
+deviations:
+  - what: "All four calls and their a-twins refuse a `client` keyword with `UnsupportedCallArgument` instead of forwarding the OpenAI or Azure client to the provider call."
+    why: A Python HTTP client cannot drive the call from Rust, so the shared payload layer raises for a client it cannot carry.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L184
+  - what: "`file_retrieve`, `file_delete` and `file_list` return the async call's coroutine when the caller passes `afile_retrieve=True`, `afile_delete=True` or `afile_list=True`; LiteLLM leaves those unknown keywords unread and returns the sync object."
+    why: The task requires every sync call to hand back its awaitable under the a-name flag, so a caller that passes the async twin's name gets a coroutine where LiteLLM would ignore the keyword.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L320-L340
+  - what: "`azure_ad_token_provider` raises `UnsupportedCallArgument`; token strings and the other Azure credential kwargs are forwarded. Client-secret and username/password token acquisition remain unavailable in this bridge."
+    why: Python callables cannot run inside the Rust transport and the shared Azure NoSources implementation supplies no OAuth token acquisition. Callers can supply azure_ad_token directly.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L611-L744
+  - what: "A call for a provider whose files config the Rust core has not built (gemini, vertex_ai, bedrock, manus, anthropic, mistral, xai) raises `NotImplementedError` naming the provider config class; LiteLLM runs that provider's file handler."
+    why: The provider handlers are other tasks' bridges; this task wires the OpenAI-compatible and Azure branches of the core's file dispatch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L232-L251
+  - what: "Structured httpx.Timeout values become one transport deadline: read, then connect, write, pool, or 600 seconds when all phases are unset."
+    why: The Rust SDK bridge accepts one deadline, following the existing tuning bridge; independent phase timers are unavailable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L204-L215
+  - what: "A deadline that expires, or any other transport failure, raises betterlite.APIConnectionError with status_code 500, where LiteLLM's OpenAI SDK call raises openai.APITimeoutError for a deadline and openai.APIConnectionError for a connection failure."
+    why: The shared native exception bridge carries one transport error kind, and changing it is outside B7871's scope; B7870 records the same difference for file_content.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L341-L355
+  - what: "The results are betterlite's own pydantic models, not the openai SDK's instances: `file_retrieve` and `afile_retrieve` answer `OpenAIFileObject`, `file_delete` answers `FileDeleted`, and `file_list`/`afile_list` answer `FilePage`, whose iteration is synchronous. LiteLLM's sync retrieve answers the SDK FileObject, its async retrieve builds OpenAIFileObject, and its list answers SyncCursorPage or AsyncCursorPage."
+    why: The records are parsed from the Rust answer text, and the SDK client objects do not cross into Python; the fields and model_dump_json output are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L765-L776
+  - what: "AuthenticationError, NotFoundError, PermissionDeniedError and UnprocessableEntityError have None for code, type and param, whereas the OpenAI exceptions LiteLLM re-raises retain the provider fields. The native cause retains those fields."
+    why: The shared Python exception converter passes no body for these classes; changing it is outside B7871's scope. test_error_matches_litellm pins the reference fields and the native payload as well as this difference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L293-L296
+  - what: "No success or failure callback runs from Python and no logging object is built for the call; LiteLLM's client decorator and provider branches emit the callbacks and build the call's Logging object."
+    why: The call and its logging run in the Rust core, which owns the call's logging object; the Python layer passes no logger_fn and builds no litellm_logging_obj.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L389-L403
+kept_bugs:
+  - what: "`create_file` called without `custom_llm_provider` raises ValueError 'None is not a valid LlmProviders' before any request, and so does an explicit null; only `acreate_file` defaults the provider to openai."
+    why: LiteLLM builds LlmProviders(None) on the sync path (L234), so a working setup either passes a provider or uses acreate_file; test_bytes_match_litellm and test_create_flag_coroutine pin the working shapes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L234-L236
+  - what: "`file_delete` keeps the declared provider when provider discovery from `model` raises, as LiteLLM's `except Exception: pass` does."
+    why: A working setup can pass a model the resolver does not know and rely on the default openai provider, so the fallback is copied rather than turned into an error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L522-L528
