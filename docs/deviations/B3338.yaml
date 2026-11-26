@@ -23,6 +23,13 @@ deviations:
       B198 passes the call context explicitly and betterlite has no per-call thread; an async caller uses
       avideo_generation and a sync caller uses video_generation.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L97-L119
+  - what: >-
+      LiteLLM exposes one video_generation whose avideo_generation overload flag only types the return value;
+      betterlite has two entry points, video_generation and avideo_generation, and no flag argument.
+    why: >-
+      The overloads change no runtime behavior, and two functions keep the async or sync call visible at the
+      call site.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L119-L161
 kept_bugs:
   - what: >-
       A timeout of 0 takes the configured request timeout instead of meaning no timeout, because
