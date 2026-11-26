@@ -168,14 +168,11 @@ fn application(config: &Config, reached: &Arc<AtomicBool>) -> Router {
 }
 
 fn oversize_request() -> Request<Body> {
-    Request::builder()
-        .method("POST")
-        .uri(MODEL_ROUTE)
-        .header(header::AUTHORIZATION, format!("Bearer {MASTER_KEY}"))
-        .header(header::CONTENT_TYPE, "application/json")
-        .header("x-forwarded-for", "a".repeat(OVERSIZE_HEADER))
-        .body(Body::from(r#"{"model":"gpt-4o","messages":[]}"#))
-        .expect("the request builds")
+    let mut incoming = request(&proxy_config());
+    let oversized = HeaderValue::from_bytes("a".repeat(OVERSIZE_HEADER).as_bytes())
+        .expect("the oversize header builds");
+    incoming.headers_mut().insert("x-forwarded-for", oversized);
+    incoming
 }
 
 #[tokio::test]

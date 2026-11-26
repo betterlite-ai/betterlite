@@ -6,15 +6,13 @@ use axum::body::Body;
 use axum::extract::ConnectInfo;
 use axum::http::{Request, header};
 use betterlite_auth::trusted_network::cidr::CidrRanges;
-use betterlite_auth::trusted_network::decode::{
-    DecodeError, TypedValue, decode_network_headers, encode_network_headers,
-};
+use betterlite_auth::trusted_network::decode::{DecodeError, TypedValue, decode_network_headers};
 use betterlite_auth::trusted_network::proxy_utils::proxy_config_from_ranges;
 use betterlite_auth::trusted_network::request::{NetworkRequest, resolve_network_context};
 use betterlite_auth::trusted_network::settings::TrustedNetworkSettings;
 use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExceptionInit};
 
-use crate::auth::auth_identity::{AuthContext, StageFailure};
+use crate::auth::auth_identity::{AuthContext, StageFailure, StageInput};
 use crate::error_body::AuthenticationFailure;
 use crate::state::ServerState;
 
@@ -35,7 +33,7 @@ pub struct TrustedNetworkStageInput {
 pub(crate) fn stage_input(
     request: &Request<Body>,
     authenticated: Option<&AuthContext>,
-) -> Result<TrustedNetworkStageInput, StageFailure> {
+) -> Result<StageInput, StageFailure> {
     let context = authenticated
         .cloned()
         .ok_or(AuthenticationFailure::Missing)?;
@@ -56,22 +54,24 @@ pub(crate) fn stage_input(
         trusted_proxy_ranges: settings.trusted_proxy_ranges.clone().map(CidrRanges::List),
         mcp_trusted_proxy_ranges: settings.mcp_trusted_proxy_ranges.clone(),
     };
-    Ok(TrustedNetworkStageInput {
-        context,
-        peer: request
-            .extensions()
-            .get::<ConnectInfo<SocketAddr>>()
-            .map(|connect_info| connect_info.0.ip().to_string()),
-        scheme: request.uri().scheme_str().unwrap_or_default().to_owned(),
-        document,
-    })
+    Ok(StageInput::TrustedNetwork(Box::new(
+        TrustedNetworkStageInput {
+            context,
+            peer: request
+                .extensions()
+                .get::<ConnectInfo<SocketAddr>>()
+                .map(|connect_info| connect_info.0.ip().to_string()),
+            scheme: request.uri().scheme_str().unwrap_or_default().to_owned(),
+            document,
+        },
+    )))
 }
 
 pub(crate) fn run_stage(
     stage: &TrustedNetworkStageInput,
 ) -> Result<AuthContext, Box<ProxyException>> {
-    let bytes = encode_network_headers(&stage.document)
-        .map_err(|error| Box::new(decode_failure(&error)))?;
+    let bytes = serde_json::to_vec(&stage.document)
+        .map_err(|error| Box::new(decode_failure(&DecodeError::Write(error))))?;
     let headers =
         decode_network_headers(&bytes).map_err(|error| Box::new(decode_failure(&error)))?;
     let config = proxy_config_from_ranges(headers.trusted_proxy_ranges.as_ref());

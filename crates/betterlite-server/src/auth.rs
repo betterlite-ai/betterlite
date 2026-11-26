@@ -111,9 +111,7 @@ fn stage_input(
 ) -> Result<StageInput, StageFailure> {
     match backend {
         AuthBackend::MasterKey => Ok(StageInput::MasterKey(extract_key(request.headers()))),
-        AuthBackend::TrustedNetwork => Ok(StageInput::TrustedNetwork(Box::new(
-            trusted_network::stage_input(request, authenticated)?,
-        ))),
+        AuthBackend::TrustedNetwork => trusted_network::stage_input(request, authenticated),
         AuthBackend::AuthRequestPolicy => Ok(StageInput::AuthRequestPolicy(Box::new(
             auth_request_policy::stage_input(request, authenticated, body)?,
         ))),
@@ -200,10 +198,8 @@ fn model_pattern_input(
 }
 
 fn resolver_for(request: &Request<Body>) -> Arc<RequestModelResolver> {
-    request
-        .extensions()
-        .get::<Arc<RequestModelResolver>>()
-        .map_or_else(default_resolver, Arc::clone)
+    let resolver = request.extensions().get::<Arc<RequestModelResolver>>();
+    resolver.map_or_else(default_resolver, Arc::clone)
 }
 
 // stage_input cannot await while holding the request borrow (Request<Body> is Send but not Sync), so the caller awaits the stage prefetch on the owned input
