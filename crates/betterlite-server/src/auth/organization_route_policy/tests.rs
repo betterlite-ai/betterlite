@@ -20,6 +20,7 @@ use super::{OrganizationPolicyStageInput, OrganizationRouteRule, stage_input};
 use crate::auth::auth_identity::{
     AuthBackend, AuthContext, INSTALLED_STAGES, StageFailure, StageInput, dispatch,
 };
+use crate::auth::auth_tag_budgets::{TagBudgetRule, TagBudgetStageInput};
 use crate::routes;
 use crate::routes::tests::state_for;
 
@@ -220,4 +221,22 @@ async fn admitted_request_reaches_downstream() {
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body, "reached");
     assert!(reached);
+}
+
+#[test]
+fn mismatched_prefetched_stage_is_rejected() {
+    let master_key = SecretString::from(MASTER_KEY.to_owned());
+    let input = StageInput::AuthTagBudgets(Box::new(TagBudgetStageInput {
+        context: master_context(&master_key),
+        rule: Arc::new(TagBudgetRule::default()),
+        database: false,
+    }));
+    assert!(matches!(
+        dispatch(AuthBackend::AuthKeyBudgets, &input, &master_key),
+        Err(StageFailure::Authentication(_))
+    ));
+    let Ok(context) = dispatch(AuthBackend::AuthTagBudgets, &input, &master_key) else {
+        panic!("matching prefetched stages preserve the caller");
+    };
+    assert_eq!(context.principal.subject, "master_key");
 }

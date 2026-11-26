@@ -455,6 +455,43 @@ fn null_membership_ids_ignored() {
 }
 
 #[test]
+fn duplicate_admin_membership() {
+    let caller = user(
+        None,
+        Some(vec![org_admin("org-a"), membership(Some("org-a"), None)]),
+    );
+    let request = organization_body("org-a");
+    assert_eq!(
+        check_organization_role(Some(&caller), INFO_ROUTE, &request),
+        Err(RoutePolicyError::NoRoleInOrganization {
+            organization_id: "org-a".to_owned(),
+        })
+    );
+    // The predicate accepts any admin membership; the route check uses the last role.
+    assert!(user_is_org_admin(&request, Some(&caller)));
+    assert_eq!(caller.organization_info().roles.get("org-a"), Some(&None));
+}
+
+#[test]
+fn empty_organization_id_is_present() {
+    let caller = user(None, Some(vec![org_admin("")]));
+    let request = organization_body("");
+    assert_eq!(
+        check_organization_role(Some(&caller), INFO_ROUTE, &request),
+        Ok(())
+    );
+    assert_eq!(
+        check_organization_role(Some(&caller), TEAM_CREATE_ROUTE, &request),
+        Ok(())
+    );
+    assert!(user_is_org_admin(&request, Some(&caller)));
+    assert_eq!(
+        caller.organization_info().organizations,
+        vec![String::new()]
+    );
+}
+
+#[test]
 fn all_candidate_organizations() {
     let both = user(None, Some(vec![org_admin("org-a"), org_admin("org-b")]));
     let one = user(None, Some(vec![org_admin("org-a")]));

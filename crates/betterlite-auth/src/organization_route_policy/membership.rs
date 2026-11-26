@@ -15,7 +15,7 @@ pub struct OrganizationMembership {
     pub user_role: Option<String>,
 }
 
-// LiteLLM_UserTable as the role checks read it; None memberships and Some(empty) both mean "no organization".
+// Organization routes distinguish missing memberships from an empty list.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct RouteUser {
