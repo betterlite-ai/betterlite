@@ -105,5 +105,5 @@ pitfalls:
 - "Ruff flags LiteLLM's own signatures here (PLR0913, PLR0917, ARG001). Put the noqa on the flagged line with the pinned LiteLLM link on the same line, one expect per line; don't add per-file-ignores to ruff.toml."
 review_level: standard
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2100
   max_new_expects: 5
