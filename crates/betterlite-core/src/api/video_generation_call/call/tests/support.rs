@@ -385,12 +385,12 @@ impl Resolver {
 }
 
 #[derive(Clone, Copy)]
-enum Invocation {
+pub(super) enum Invocation {
     Sync,
     Async,
 }
 
-enum Invoked {
+pub(super) enum Invoked {
     Ready(Box<VideoObject>),
     Pending,
 }
@@ -449,16 +449,7 @@ impl Bench {
         matches!(work, Invoked::Pending)
     }
 
-    pub(crate) async fn async_run(
-        &mut self,
-        request: VideoGenerationRequest,
-        client: Option<&FakeTransport>,
-    ) -> Result<VideoObject, VideoGenerationFailure> {
-        let work = self.invoke(request, client, Invocation::Async).await?;
-        Ok(*ready_object(work))
-    }
-
-    async fn invoke(
+    pub(super) async fn invoke(
         &mut self,
         request: VideoGenerationRequest,
         client: Option<&FakeTransport>,
@@ -495,7 +486,7 @@ fn settled<Output>(polled: Polled<Output>) -> Output {
     }
 }
 
-fn ready_object(work: Invoked) -> Box<VideoObject> {
+pub(super) fn ready_object(work: Invoked) -> Box<VideoObject> {
     match work {
         Invoked::Ready(object) => object,
         Invoked::Pending => {

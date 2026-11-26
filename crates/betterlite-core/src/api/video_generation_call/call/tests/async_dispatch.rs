@@ -1,7 +1,8 @@
 use betterlite_error::error::ErrorClass;
 
 use super::support::{
-    Bench, FakeTransport, Outcome, VIDEO_ID, handled, handles, lookups, request, text,
+    Bench, FakeTransport, Invocation, Outcome, VIDEO_ID, handled, handles, lookups, ready_object,
+    request, text,
 };
 use crate::api::video_generation_call::CALL_TYPE;
 use crate::api::video_generation_call::error::{VideoGenerationCallError, failure};
@@ -11,8 +12,9 @@ use crate::api::videos_http_transport::client::ClientKind;
 async fn the_async_entry_infers_the_provider_from_the_default_model() {
     let mut bench = Bench::new(Outcome::Answers);
     let object = bench
-        .async_run(request(), None)
+        .invoke(request(), None, Invocation::Async)
         .await
+        .map(ready_object)
         .expect("the async call answers");
     assert_eq!(object.id, VIDEO_ID);
     let inner = handled(&bench.journal);
@@ -33,8 +35,9 @@ async fn the_async_inference_reads_an_empty_model_as_the_default() {
     let mut call = request();
     call.model = Some(String::new());
     bench
-        .async_run(call, None)
+        .invoke(call, None, Invocation::Async)
         .await
+        .map(ready_object)
         .expect("the async call answers");
     let inner = handled(&bench.journal);
     assert_eq!(inner.model, "sora-2");
@@ -49,8 +52,9 @@ async fn the_inference_ignores_a_loose_api_base_but_the_handler_still_gets_it() 
     let mut call = request();
     call.kwargs.insert("api_base".to_owned(), text(api_base));
     bench
-        .async_run(call, None)
+        .invoke(call, None, Invocation::Async)
         .await
+        .map(ready_object)
         .expect("the async call answers");
     let inner = handled(&bench.journal);
     assert_eq!(inner.custom_llm_provider, "openai");
@@ -62,8 +66,9 @@ async fn a_supplied_client_reaches_the_async_handler() {
     let mut bench = Bench::new(Outcome::Answers);
     let transport = FakeTransport;
     bench
-        .async_run(request(), Some(&transport))
+        .invoke(request(), Some(&transport), Invocation::Async)
         .await
+        .map(ready_object)
         .expect("the async call answers");
     let inner = handled(&bench.journal);
     assert_eq!(inner.client, Some(ClientKind::Asynchronous));
@@ -76,8 +81,9 @@ async fn a_sync_path_failure_passes_through_the_mapping_it_already_got() {
     let mut call = request();
     call.custom_llm_provider = Some("anthropic".to_owned());
     let raised = bench
-        .async_run(call, None)
+        .invoke(call, None, Invocation::Async)
         .await
+        .map(ready_object)
         .expect_err("the provider is unsupported");
     assert_eq!(
         raised.error.to_string(),
@@ -95,8 +101,9 @@ async fn a_sync_path_failure_passes_through_the_mapping_it_already_got() {
 async fn a_pending_handler_failure_is_mapped_with_the_raw_model() {
     let mut bench = Bench::new(Outcome::FieldType);
     let raised = bench
-        .async_run(request(), None)
+        .invoke(request(), None, Invocation::Async)
         .await
+        .map(ready_object)
         .expect_err("the handler fails");
     let expected = failure(
         VideoGenerationCallError::FieldType {
