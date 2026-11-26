@@ -1,6 +1,7 @@
 use betterlite_models::decisions::Json;
 use rstest::rstest;
 
+use crate::auth_context_sources::alias::AliasResolver;
 use crate::auth_context_sources::router_alias::{
     RouterAliasInput, RouterAliasRewrite, RouterAliasState, resolve_router_alias,
 };
@@ -44,7 +45,13 @@ async fn router_marker_before_skip(
 ) {
     request.team_id = Some("team-one");
     let teams = teams_with_settings(ALIASES);
-    assert_eq!(resolve_router_alias(&request, &teams).await, expected);
+    assert_eq!(
+        resolve_router_alias(&request, &teams, |_, _| panic!(
+            "skipped requests never resolve aliases"
+        ))
+        .await,
+        expected
+    );
     assert!(teams.calls().is_empty());
 }
 
@@ -58,7 +65,7 @@ async fn passthrough_not_rewritten() {
         ..input(Some(&settings))
     };
     assert_eq!(
-        resolve_router_alias(&request_0, &passthrough).await,
+        resolve_router_alias(&request_0, &passthrough, group_alias).await,
         MARKED_ONLY
     );
     assert!(passthrough.calls().is_empty());
@@ -70,7 +77,7 @@ async fn passthrough_not_rewritten() {
         ..input(Some(&settings))
     };
     assert_eq!(
-        resolve_router_alias(&request_1, &routed).await,
+        resolve_router_alias(&request_1, &routed, group_alias).await,
         RouterAliasRewrite {
             marker_set: true,
             client_requested_model: Some("alias-one".to_owned()),
@@ -85,7 +92,7 @@ async fn passthrough_not_rewritten() {
         team_id: Some("team-one"),
         ..input(None)
     };
-    let rewrite = resolve_router_alias(&request_2, &from_team).await;
+    let rewrite = resolve_router_alias(&request_2, &from_team, group_alias).await;
     assert_eq!(rewrite.target, Some("group-one".to_owned()));
     assert_eq!(from_team.calls(), vec!["team-one".to_owned()]);
 }
@@ -100,7 +107,7 @@ async fn nonjson_not_rewritten() {
         ..input(Some(&settings))
     };
     assert_eq!(
-        resolve_router_alias(&unavailable, &teams).await,
+        resolve_router_alias(&unavailable, &teams, group_alias).await,
         MARKED_ONLY
     );
     assert!(teams.calls().is_empty());
@@ -109,28 +116,24 @@ async fn nonjson_not_rewritten() {
         team_id: Some("team-one"),
         ..input(Some(&settings))
     };
-    let rewrite = resolve_router_alias(&available, &teams).await;
+    let rewrite = resolve_router_alias(&available, &teams, group_alias).await;
     assert_eq!(rewrite.target, Some("group-one".to_owned()));
 }
 
 #[rstest]
-#[case::same_name(json(r#"{"model_group_alias": {"alias-one": "alias-one"}}"#))]
-#[case::empty_target(json(r#"{"model_group_alias": {"alias-one": ""}}"#))]
-#[case::number_target(json(r#"{"model_group_alias": {"alias-one": 7}}"#))]
-#[case::object_target(json(r#"{"model_group_alias": {"alias-one": {}}}"#))]
-#[case::object_empty_model(json(r#"{"model_group_alias": {"alias-one": {"model": ""}}}"#))]
-#[case::other_model(json(r#"{"model_group_alias": {"other-model": "group-one"}}"#))]
-#[case::no_alias_map(json(r#"{"num_retries": 3}"#))]
+#[case::same_name(|_, requested| Some(requested.to_owned()))]
+#[case::no_target(|_, _| None)]
 #[tokio::test]
-async fn alias_self_none_unchanged(#[case] candidate: Json) {
-    let request_3 = RouterAliasInput {
-        requested_model: Some("alias-one"),
-        ..input(Some(&candidate))
-    };
+async fn alias_self_none_unchanged(#[case] resolve: AliasResolver) {
+    let settings = json(ALIASES);
     assert_eq!(
-        resolve_router_alias(&request_3, &teams_with_settings(ALIASES)).await,
-        MARKED_ONLY,
-        "{candidate:?}"
+        resolve_router_alias(
+            &input(Some(&settings)),
+            &teams_with_settings(ALIASES),
+            resolve
+        )
+        .await,
+        MARKED_ONLY
     );
 }
 
@@ -142,7 +145,16 @@ async fn log_crlf_stripped() {
         requested_model: Some("bad\nname"),
         ..input(Some(&settings))
     };
-    let rewrite = resolve_router_alias(&request_4, &teams_with_settings(ALIASES)).await;
+    let rewrite = resolve_router_alias(
+        &request_4,
+        &teams_with_settings(ALIASES),
+        |aliases, requested| {
+            assert_eq!(requested, "bad\nname");
+            assert_eq!(aliases, Some(&json(r#"{"bad\nname":"target\r\nname"}"#)));
+            Some("target\r\nname".to_owned())
+        },
+    )
+    .await;
     assert_eq!(rewrite.target, Some("target\r\nname".to_owned()));
     let captured = logs.text();
     assert!(
@@ -158,7 +170,7 @@ async fn client_model_setdefault() {
     let settings = json(ALIASES);
     let fresh = input(Some(&settings));
     assert_eq!(
-        resolve_router_alias(&fresh, &teams)
+        resolve_router_alias(&fresh, &teams, group_alias)
             .await
             .client_requested_model,
         Some("alias-one".to_owned())
@@ -170,7 +182,15 @@ async fn client_model_setdefault() {
         client_requested_model: Some("earlier"),
         ..input(Some(&object_shape))
     };
-    let rewrite = resolve_router_alias(&earlier, &teams).await;
+    let rewrite = resolve_router_alias(&earlier, &teams, |aliases, requested| {
+        assert_eq!(requested, "alias-one");
+        assert_eq!(
+            aliases,
+            Some(&json(r#"{"alias-one":{"model":"group-one"}}"#))
+        );
+        Some("group-one".to_owned())
+    })
+    .await;
     assert_eq!(rewrite.client_requested_model, Some("earlier".to_owned()));
     assert_eq!(rewrite.target, Some("group-one".to_owned()));
 
@@ -178,9 +198,17 @@ async fn client_model_setdefault() {
     let unchanged = json(r#"{"model_group_alias": {"alias-one": "alias-one"}}"#);
     let request_5 = input(Some(&unchanged));
     assert_eq!(
-        resolve_router_alias(&request_5, &teams)
-            .await
-            .client_requested_model,
+        resolve_router_alias(&request_5, &teams, |_, requested| Some(
+            requested.to_owned()
+        ))
+        .await
+        .client_requested_model,
         None
     );
+}
+
+fn group_alias(aliases: Option<&Json>, requested: &str) -> Option<String> {
+    assert_eq!(requested, "alias-one");
+    assert_eq!(aliases, Some(&json(r#"{"alias-one":"group-one"}"#)));
+    Some("group-one".to_owned())
 }

@@ -1,6 +1,6 @@
 use betterlite_models::decisions::Json;
 
-use super::alias::resolve_model_group_alias;
+use super::alias::AliasResolver;
 use super::router_settings::{TeamRouterSettings, hierarchical_router_settings};
 
 pub const RESOLVED_MARKER: &str = "litellm.model_group_alias_resolved";
@@ -36,6 +36,7 @@ pub struct RouterAliasRewrite {
 pub async fn resolve_router_alias(
     input: &RouterAliasInput<'_>,
     teams: &dyn TeamRouterSettings,
+    resolve: AliasResolver,
 ) -> RouterAliasRewrite {
     match input.state {
         RouterAliasState::Ineligible { already_resolved } => {
@@ -54,7 +55,7 @@ pub async fn resolve_router_alias(
         }
         RouterAliasState::Fresh => {}
     }
-    let Some((requested, target)) = rewrite_target(input, teams).await else {
+    let Some((requested, target)) = rewrite_target(input, teams, resolve).await else {
         return RouterAliasRewrite {
             marker_set: true,
             client_requested_model: None,
@@ -72,6 +73,7 @@ pub async fn resolve_router_alias(
 async fn rewrite_target(
     input: &RouterAliasInput<'_>,
     teams: &dyn TeamRouterSettings,
+    resolve: AliasResolver,
 ) -> Option<(String, String)> {
     if input.passthrough {
         return None;
@@ -82,7 +84,7 @@ async fn rewrite_target(
     }
     let settings =
         hierarchical_router_settings(input.key_router_settings, input.team_id, teams).await?;
-    let target = resolve_model_group_alias(settings.get("model_group_alias"), requested)?;
+    let target = resolve(settings.get("model_group_alias"), requested)?;
     if target == requested {
         return None;
     }

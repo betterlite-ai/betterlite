@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+mod aliases;
 mod rewrites;
 
 use std::collections::{BTreeMap, BTreeSet};

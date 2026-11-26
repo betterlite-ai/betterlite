@@ -15,6 +15,7 @@ use super::auth_request_models::RequestModelStageInput;
 use super::model_stage_input;
 use crate::error_body::AuthenticationFailure;
 
+pub mod alias;
 pub mod rewrite;
 mod selection;
 mod tests;

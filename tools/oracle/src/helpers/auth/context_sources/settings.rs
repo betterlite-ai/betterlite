@@ -12,6 +12,7 @@ use betterlite_auth::route_match::classifier::is_llm_api_route;
 use betterlite_auth::route_match::templates::RouteValue;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_models::model_registration::JsonObject;
+use betterlite_server::auth::auth_context_sources::alias::resolve_model_group_alias;
 use serde_json::{Value, json};
 
 use super::{Input, LookupMode};
@@ -91,7 +92,7 @@ pub(super) async fn alias_rewrite(input: &Input) -> Value {
         team_id: input.team_id.as_deref(),
         client_requested_model: input.client_requested_model.as_deref(),
     };
-    let rewrite = resolve_router_alias(&alias_input, &NO_TEAMS).await;
+    let rewrite = resolve_router_alias(&alias_input, &NO_TEAMS, resolve_model_group_alias).await;
     json!({
         "marker_set": rewrite.marker_set,
         "client_requested_model": rewrite.client_requested_model.or_else(|| input.client_requested_model.clone()),

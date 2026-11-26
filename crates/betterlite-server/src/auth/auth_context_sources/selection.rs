@@ -13,6 +13,7 @@ use betterlite_error::proxy_exception::ProxyException;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 
+use super::alias::resolve_model_group_alias;
 use super::rewrite::{Markers, RewriteRule};
 use crate::state::ServerState;
 
@@ -102,6 +103,7 @@ async fn apply_alias(
             client_requested_model: markers.client_model.as_deref(),
         },
         rule,
+        resolve_model_group_alias,
     )
     .await;
     markers.resolved = alias.marker_set;

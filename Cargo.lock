@@ -2797,6 +2797,7 @@ dependencies = [
  "betterlite-redact",
  "betterlite-redis",
  "betterlite-secrets",
+ "betterlite-server",
  "chrono",
  "hex",
  "indexmap 2.14.2",
