@@ -24,6 +24,9 @@ request:
       - {role: user, content: Say hello.}
     user: 42
     stream: false
+database:
+  seed:
+    users: [{user_id: known-user}]
 upstream:
   - status: 200
     headers: {content-type: application/json, x-request-id: upstream-request-end-user-numeric}
