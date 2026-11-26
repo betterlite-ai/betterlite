@@ -64,9 +64,14 @@ fn setup_with_stall(
     sources: FakeSources,
     stalled: bool,
 ) -> Setup {
-    let probe = Arc::new(probe);
+    let shared_probe = Arc::new(probe);
     let stall = Arc::new(FakeStall { stalled });
-    let db = db_readiness(&probe, &stall, availability, &HealthSettings::default());
+    let db = db_readiness(
+        &shared_probe,
+        &stall,
+        availability,
+        &HealthSettings::default(),
+    );
     Setup {
         db,
         sources: Arc::new(sources),
@@ -101,14 +106,16 @@ async fn call_plain(setup: &Setup) -> (StatusCode, Vec<u8>) {
 
 #[tokio::test]
 async fn details_body_reports_every_field() {
-    let mut sources = FakeSources::default();
-    sources.callbacks = vec!["langfuse".to_owned()];
-    sources.cache = Ok(Some(CacheReport::Semantic {
-        cache_type: "redis_semantic".to_owned(),
-        index_info: "{\"num_docs\": 1}".to_owned(),
-    }));
-    sources.level = "DEBUG".to_owned();
-    sources.version = "1.2.3".to_owned();
+    let sources = FakeSources {
+        callbacks: vec!["langfuse".to_owned()],
+        cache: Ok(Some(CacheReport::Semantic {
+            cache_type: "redis_semantic".to_owned(),
+            index_info: "{\"num_docs\": 1}".to_owned(),
+        })),
+        level: "DEBUG".to_owned(),
+        version: "1.2.3".to_owned(),
+        ..FakeSources::default()
+    };
     let mut probe = FakeProbe::healthy();
     probe.census = WorkerCensus::Workers(2);
     let setup = setup(probe, AllowRequestsOnOutage::Unsupported, sources);
@@ -148,8 +155,10 @@ async fn details_cache_is_null_without_a_cache() {
 
 #[tokio::test]
 async fn details_cache_keeps_a_plain_type() {
-    let mut sources = FakeSources::default();
-    sources.cache = Ok(Some(CacheReport::Plain("local".to_owned())));
+    let sources = FakeSources {
+        cache: Ok(Some(CacheReport::Plain("local".to_owned()))),
+        ..FakeSources::default()
+    };
     let setup = setup(
         FakeProbe::healthy(),
         AllowRequestsOnOutage::Unsupported,
@@ -230,8 +239,10 @@ async fn details_stalled_database_flips_to_503() {
 
 #[tokio::test]
 async fn details_source_failure_is_503_service_unhealthy() {
-    let mut sources = FakeSources::default();
-    sources.cache = Err("cache exploded".to_owned());
+    let sources = FakeSources {
+        cache: Err("cache exploded".to_owned()),
+        ..FakeSources::default()
+    };
     let setup = setup(
         FakeProbe::healthy(),
         AllowRequestsOnOutage::Unsupported,
@@ -250,8 +261,10 @@ async fn details_source_failure_is_503_service_unhealthy() {
 #[case::warning("WARNING", false)]
 #[tokio::test]
 async fn details_is_detailed_debug_at_debug_or_below(#[case] level: &str, #[case] expected: bool) {
-    let mut sources = FakeSources::default();
-    sources.level = level.to_owned();
+    let sources = FakeSources {
+        level: level.to_owned(),
+        ..FakeSources::default()
+    };
     let setup = setup(
         FakeProbe::healthy(),
         AllowRequestsOnOutage::Unsupported,
@@ -281,8 +294,10 @@ async fn details_env_login_warning_is_off_when_env_login_is_disabled() {
 
 #[tokio::test]
 async fn details_env_login_warning_is_off_when_sso_blocks_login_and_is_ready() {
-    let mut sources = FakeSources::default();
-    sources.sso = true;
+    let sources = FakeSources {
+        sso: true,
+        ..FakeSources::default()
+    };
     let setup = setup(
         FakeProbe::healthy(),
         AllowRequestsOnOutage::Unsupported,

@@ -22,20 +22,23 @@ struct Fixture {
     db: DbReadiness,
 }
 
-fn fixture_with(probe: FakeProbe, stalled: bool, settings: HealthSettings) -> Fixture {
-    let probe = Arc::new(probe);
+fn fixture_with(probe: FakeProbe, stalled: bool, settings: &HealthSettings) -> Fixture {
+    let shared_probe = Arc::new(probe);
     let stall = Arc::new(FakeStall { stalled });
     let db = db_readiness(
-        &probe,
+        &shared_probe,
         &stall,
         AllowRequestsOnOutage::Unsupported,
-        &settings,
+        settings,
     );
-    Fixture { probe, db }
+    Fixture {
+        probe: shared_probe,
+        db,
+    }
 }
 
 fn fixture(probe: FakeProbe) -> Fixture {
-    fixture_with(probe, false, HealthSettings::default())
+    fixture_with(probe, false, &HealthSettings::default())
 }
 
 #[tokio::test(start_paused = true)]
@@ -186,16 +189,20 @@ fn stall_replaces_only_a_connected_status(
 #[tokio::test(start_paused = true)]
 async fn no_redis_warning_is_off_when_redis_is_configured() {
     let fixture = fixture(FakeProbe::unconfigured());
-    let mut sources = FakeSources::default();
-    sources.redis = true;
+    let sources = FakeSources {
+        redis: true,
+        ..FakeSources::default()
+    };
     assert!(!fixture.db.show_no_redis_warning(&sources).await);
 }
 
 #[tokio::test(start_paused = true)]
 async fn no_redis_warning_is_off_when_the_flag_disables_it() {
-    let mut settings = HealthSettings::default();
-    settings.disable_no_redis_warning = true;
-    let fixture = fixture_with(FakeProbe::unconfigured(), false, settings);
+    let settings = HealthSettings {
+        disable_no_redis_warning: true,
+        ..HealthSettings::default()
+    };
+    let fixture = fixture_with(FakeProbe::unconfigured(), false, &settings);
     assert!(
         !fixture
             .db

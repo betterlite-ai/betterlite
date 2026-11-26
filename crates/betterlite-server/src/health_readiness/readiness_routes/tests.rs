@@ -58,10 +58,14 @@ struct DetailBody {
 
 #[derive(Debug, Deserialize)]
 struct BacklogBody {
-    in_flight_requests: u64,
-    admitted_requests: u64,
-    queued_requests: u64,
-    rejected_requests: u64,
+    #[serde(rename = "in_flight_requests")]
+    in_flight: u64,
+    #[serde(rename = "admitted_requests")]
+    admitted: u64,
+    #[serde(rename = "queued_requests")]
+    queued: u64,
+    #[serde(rename = "rejected_requests")]
+    rejected: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -164,10 +168,12 @@ async fn public_readiness_reports_healthy_and_not_connected_without_a_database()
 
 #[tokio::test]
 async fn public_readiness_answers_503_for_an_unreachable_database() {
-    let mut world = World::default();
-    world.probe = Arc::new(FakeProbe::scripted(vec![ProbeAnswer::Fail(
-        ErrorType::Data,
-    )]));
+    let world = World {
+        probe: Arc::new(FakeProbe::scripted(vec![ProbeAnswer::Fail(
+            ErrorType::Data,
+        )])),
+        ..World::default()
+    };
     let router = world.router(AllowRequestsOnOutage::Unsupported);
     let (status, _, body) = send(&router, Method::GET, "/health/readiness", None).await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
@@ -177,10 +183,12 @@ async fn public_readiness_answers_503_for_an_unreachable_database() {
 
 #[tokio::test]
 async fn public_readiness_keeps_200_when_requests_are_allowed_on_outage() {
-    let mut world = World::default();
-    world.probe = Arc::new(FakeProbe::scripted(vec![ProbeAnswer::Fail(
-        ErrorType::Data,
-    )]));
+    let world = World {
+        probe: Arc::new(FakeProbe::scripted(vec![ProbeAnswer::Fail(
+            ErrorType::Data,
+        )])),
+        ..World::default()
+    };
     let router = world.router(AllowRequestsOnOutage::Boolean(true));
     let (status, _, body) = send(&router, Method::GET, "/health/readiness", None).await;
     assert_eq!(status, StatusCode::OK);
@@ -190,9 +198,11 @@ async fn public_readiness_keeps_200_when_requests_are_allowed_on_outage() {
 
 #[tokio::test]
 async fn public_readiness_reports_a_stalled_database_as_unavailable() {
-    let mut world = World::default();
-    world.probe = Arc::new(FakeProbe::healthy());
-    world.stall = Arc::new(FakeStall { stalled: true });
+    let world = World {
+        probe: Arc::new(FakeProbe::healthy()),
+        stall: Arc::new(FakeStall { stalled: true }),
+        ..World::default()
+    };
     let router = world.router(AllowRequestsOnOutage::Unsupported);
     let (status, _, body) = send(&router, Method::GET, "/health/readiness", None).await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
@@ -202,23 +212,25 @@ async fn public_readiness_reports_a_stalled_database_as_unavailable() {
 
 #[tokio::test]
 async fn backlog_returns_in_flight_and_admission_counters() {
-    let mut world = World::default();
-    world.in_flight = Arc::new(FakeInFlight::new(7));
-    world.admission = Arc::new(FakeAdmission {
-        stats: AdmissionCounters {
-            admitted: 11,
-            queued: 2,
-            rejected: 3,
-        },
-    });
+    let world = World {
+        in_flight: Arc::new(FakeInFlight::new(7)),
+        admission: Arc::new(FakeAdmission {
+            stats: AdmissionCounters {
+                admitted: 11,
+                queued: 2,
+                rejected: 3,
+            },
+        }),
+        ..World::default()
+    };
     let router = world.router(AllowRequestsOnOutage::Unsupported);
     let (status, _, body) = send(&router, Method::GET, "/health/backlog", None).await;
     assert_eq!(status, StatusCode::OK);
     let parsed: BacklogBody = parse(&body);
-    assert_eq!(parsed.in_flight_requests, 7);
-    assert_eq!(parsed.admitted_requests, 11);
-    assert_eq!(parsed.queued_requests, 2);
-    assert_eq!(parsed.rejected_requests, 3);
+    assert_eq!(parsed.in_flight, 7);
+    assert_eq!(parsed.admitted, 11);
+    assert_eq!(parsed.queued, 2);
+    assert_eq!(parsed.rejected, 3);
 }
 
 #[tokio::test]
@@ -324,9 +336,10 @@ async fn license_route_answers_the_community_body() {
 }
 
 fn listing(names: CallbackNames) -> World {
-    let mut world = World::default();
-    world.callbacks = Arc::new(FakeCallbacks { names });
-    world
+    World {
+        callbacks: Arc::new(FakeCallbacks { names }),
+        ..World::default()
+    }
 }
 
 fn names() -> CallbackNames {
@@ -425,9 +438,16 @@ async fn auth_layer(
     request: Request,
     next: Next,
 ) -> Response {
-    authenticate(State(master_key), request, next, stage_failure_response).await
+    Box::pin(authenticate(
+        State(master_key),
+        request,
+        next,
+        stage_failure_response,
+    ))
+    .await
 }
 
+#[derive(Clone, Copy)]
 enum ProbeLayer {
     MasterKey,
     RouteAdmission,
