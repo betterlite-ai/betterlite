@@ -129,6 +129,9 @@ fn stage_input(
         AuthBackend::TeamBudgetAdmission => {
             team_budget_admission::stage_input(request, authenticated)
         }
+        AuthBackend::OrganizationRoutePolicy => {
+            organization_route_policy::stage_input(request, authenticated, body)
+        }
         AuthBackend::AuthOrgLookup => Ok(StageInput::AuthOrgLookup(Box::new(
             auth_org_lookup::stage_input(request, authenticated)?,
         ))),
@@ -214,6 +217,7 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
         | StageInput::AuthRequestModels(_)
         | StageInput::AuthModelPatterns(_)
         | StageInput::AuthResourceGrants(_)
+        | StageInput::OrganizationRoutePolicy(_)
         | StageInput::AuthPolicySupport(_)) => Ok(other),
     }
 }
