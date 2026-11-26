@@ -1,5 +1,6 @@
 use super::convert::{ConvertError, Operation, Reference, Requests, VideoCallWire, parse, request};
 use super::error::RunError;
+use super::operations::remix_list;
 use super::operations::{self, Mode};
 use super::session::VideoSession;
 use pyo3::prelude::*;
@@ -85,28 +86,28 @@ impl NativeVideoSession {
     // video_remix: its transport blocks the thread itself, so no runtime may be entered around it
     fn remix(&self, py: Python<'_>, payload: &str, mut blobs: Blobs) -> PyResult<String> {
         let (wire, requests, _reference) = parsed(Operation::Remix, payload, &mut blobs)?;
-        let outcome = py.detach(|| operations::remix(&self.session, requests, &wire));
+        let outcome = py.detach(|| remix_list::remix(&self.session, requests, &wire));
         encoded(outcome)
     }
 
     fn aremix(&self, py: Python<'_>, payload: &str, mut blobs: Blobs) -> Pending {
         let (wire, requests, _reference) = parsed(Operation::Remix, payload, &mut blobs)?;
         let session = Arc::clone(&self.session);
-        let future = async move { encoded(operations::aremix(&session, requests, &wire).await) };
+        let future = async move { encoded(remix_list::aremix(&session, requests, &wire).await) };
         future_into_py(py, future).map(Bound::unbind)
     }
 
     // video_list: the page as the provider sent it, or the objects a mock_response named
     fn list(&self, py: Python<'_>, payload: &str, mut blobs: Blobs) -> PyResult<String> {
         let (wire, requests, _reference) = parsed(Operation::List, payload, &mut blobs)?;
-        let outcome = py.detach(|| operations::list(&self.session, requests, &wire));
+        let outcome = py.detach(|| remix_list::list(&self.session, requests, &wire));
         encoded(outcome)
     }
 
     fn alist(&self, py: Python<'_>, payload: &str, mut blobs: Blobs) -> Pending {
         let (wire, requests, _reference) = parsed(Operation::List, payload, &mut blobs)?;
         let session = Arc::clone(&self.session);
-        let future = async move { encoded(operations::alist(&session, requests, &wire).await) };
+        let future = async move { encoded(remix_list::alist(&session, requests, &wire).await) };
         future_into_py(py, future).map(Bound::unbind)
     }
 }
