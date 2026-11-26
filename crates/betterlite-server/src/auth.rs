@@ -203,12 +203,7 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
                 .map_err(StageFailure::OrgLookup)?;
             Ok(StageInput::AuthOrgLookup(stage))
         }
-        StageInput::AuthEndUserIdentity(mut stage) => {
-            end_user_identity::prefetch(&mut stage)
-                .await
-                .map_err(StageFailure::EndUserIdentity)?;
-            Ok(StageInput::AuthEndUserIdentity(stage))
-        }
+        StageInput::AuthEndUserIdentity(stage) => end_user_identity::prefetched(stage).await,
         StageInput::AuthEndUsers(stage) => {
             auth_end_users::prefetch(&stage)
                 .await

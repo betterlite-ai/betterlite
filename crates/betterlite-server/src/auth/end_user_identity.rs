@@ -10,7 +10,7 @@ use betterlite_auth::end_user_identity::resolve::{
 use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExceptionInit};
 use betterlite_logging::end_user::extraction::{IdSettings, request_end_user_id};
 
-use crate::auth::auth_identity::AuthContext;
+use crate::auth::auth_identity::{AuthContext, StageFailure, StageInput};
 use crate::auth::request_body_safety::request_object;
 use crate::error_body::AuthenticationFailure;
 use crate::state::ServerState;
@@ -98,6 +98,15 @@ pub(crate) async fn prefetch(
     };
     stage.context.principal.end_user = resolved.map(|id| EndUserIdentity { id });
     Ok(())
+}
+
+pub(crate) async fn prefetched(
+    mut stage: Box<EndUserIdentityStageInput>,
+) -> Result<StageInput, StageFailure> {
+    prefetch(&mut stage)
+        .await
+        .map_err(StageFailure::EndUserIdentity)?;
+    Ok(StageInput::AuthEndUserIdentity(stage))
 }
 
 // LiteLLM lets a cache failure escape the auth path as an unhandled internal server error.

@@ -132,10 +132,10 @@ fn resolver(
         validate_end_user_id_in_db: true,
         max_end_user_budget_id: None,
         lookups: Some(DatabaseLookups {
-            end_users: Arc::clone(&end_users),
+            end_users: Arc::<ScriptedExistence>::clone(&end_users),
             users,
         }),
-        cache: Arc::clone(cache),
+        cache: Arc::<ScriptedCache>::clone(cache),
     };
     (Arc::new(identity), end_users)
 }

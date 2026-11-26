@@ -127,48 +127,45 @@ pub(crate) fn dispatch(
             .map_err(|failure| StageFailure::Authentication(Box::new(failure))),
         AuthBackend::AuthModelPatterns => auth_model_patterns_stage(input),
         AuthBackend::AuthResourceGrants => auth_resource_grants_stage(input),
-        AuthBackend::AuthTagBudgets => {
-            let StageInput::AuthTagBudgets(stage) = input else {
-                return Err(StageFailure::from(AuthenticationFailure::Missing));
-            };
-            // the batch reads ran while this stage's input was assembled, so only the identity is left
-            Ok(stage.context.clone())
+        // these six stages read their probes while the input was assembled, so only the identity is left
+        AuthBackend::AuthTagBudgets
+        | AuthBackend::AuthKeyBudgets
+        | AuthBackend::TeamBudgetAdmission
+        | AuthBackend::AuthOrgLookup
+        | AuthBackend::AuthEndUserIdentity
+        | AuthBackend::AuthEndUsers => prefetched_identity(backend, input),
+    }
+}
+
+// a prefetched stage hands back the identity its prefetch installed, and only for its own input
+fn prefetched_identity(
+    backend: AuthBackend,
+    input: &StageInput,
+) -> Result<AuthContext, StageFailure> {
+    let (installed, context) = match input {
+        StageInput::AuthTagBudgets(stage) => (AuthBackend::AuthTagBudgets, &stage.context),
+        StageInput::AuthKeyBudgets(stage) => (AuthBackend::AuthKeyBudgets, &stage.context),
+        StageInput::TeamBudgetAdmission(stage) => {
+            (AuthBackend::TeamBudgetAdmission, &stage.context)
         }
-        AuthBackend::AuthKeyBudgets => {
-            let StageInput::AuthKeyBudgets(stage) = input else {
-                return Err(StageFailure::from(AuthenticationFailure::Missing));
-            };
-            // the reads ran while the stage input was assembled, so the budget failures already surfaced there
-            Ok(stage.context.clone())
+        StageInput::AuthOrgLookup(stage) => (AuthBackend::AuthOrgLookup, &stage.context),
+        StageInput::AuthEndUserIdentity(stage) => {
+            (AuthBackend::AuthEndUserIdentity, &stage.context)
         }
-        AuthBackend::TeamBudgetAdmission => {
-            let StageInput::TeamBudgetAdmission(stage) = input else {
-                return Err(StageFailure::from(AuthenticationFailure::Missing));
-            };
-            // the member scope and budget checks ran in the prefetch, so only the identity is left
-            Ok(stage.context.clone())
+        StageInput::AuthEndUsers(stage) => (AuthBackend::AuthEndUsers, &stage.context),
+        StageInput::MasterKey(_)
+        | StageInput::AuthRequestPolicy(_)
+        | StageInput::RequestBodySafety(_)
+        | StageInput::AuthRequestModels(_)
+        | StageInput::AuthModelPatterns(_)
+        | StageInput::AuthResourceGrants(_) => {
+            return Err(StageFailure::from(AuthenticationFailure::Missing));
         }
-        AuthBackend::AuthOrgLookup => {
-            let StageInput::AuthOrgLookup(stage) = input else {
-                return Err(StageFailure::from(AuthenticationFailure::Missing));
-            };
-            // the request-scoped lookup ran in the prefetch, so only the identity is left
-            Ok(stage.context.clone())
-        }
-        AuthBackend::AuthEndUserIdentity => {
-            let StageInput::AuthEndUserIdentity(stage) = input else {
-                return Err(StageFailure::from(AuthenticationFailure::Missing));
-            };
-            // the validation ran in the prefetch, so only the identity is left
-            Ok(stage.context.clone())
-        }
-        AuthBackend::AuthEndUsers => {
-            let StageInput::AuthEndUsers(stage) = input else {
-                return Err(StageFailure::from(AuthenticationFailure::Missing));
-            };
-            // the lookup and the budget check ran in the prefetch, so only the identity is left
-            Ok(stage.context.clone())
-        }
+    };
+    if installed == backend {
+        Ok(context.clone())
+    } else {
+        Err(StageFailure::from(AuthenticationFailure::Missing))
     }
 }
 
