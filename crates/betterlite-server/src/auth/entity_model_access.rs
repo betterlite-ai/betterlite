@@ -6,7 +6,6 @@ use axum::body::Body;
 use axum::http::Request;
 use betterlite_auth::auth_errors::conversion::{AuthFailure, as_proxy_exception};
 use betterlite_auth::auth_model_patterns::decision::ModelAccessContext;
-use betterlite_auth::auth_model_patterns::grant::key_model_aliases;
 use betterlite_auth::auth_model_patterns::pattern::{
     ProviderInference, UnresolvedProviderInference,
 };
@@ -17,6 +16,7 @@ use betterlite_auth::auth_org_lookup::organization::OrgLookup;
 use betterlite_auth::auth_request_models::RequestedModels;
 use betterlite_auth::auth_team_lookup::lookup::TeamLookup;
 use betterlite_auth::entity_model_access::error::EntityModelAccessError;
+use betterlite_auth::entity_model_access::grant::key_grant;
 use betterlite_auth::entity_model_access::org::can_org_access_model;
 use betterlite_auth::entity_model_access::resolved::{ResolvedDeps, can_key_call_resolved_model};
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
@@ -52,7 +52,8 @@ impl fmt::Debug for EntityModelRule {
         let team_id = self
             .key
             .as_ref()
-            .and_then(|key| key.view.token.team_id.as_ref());
+            .map(key_grant)
+            .and_then(|grant| grant.team_id);
         let org_id = self
             .org
             .as_ref()
@@ -110,14 +111,13 @@ pub(crate) async fn prefetch(stage: &EntityModelStageInput) -> Result<(), Entity
         provider: rule.provider.as_deref().unwrap_or(&UNRESOLVED_PROVIDER),
         max_recurse_depth: stage.max_recurse_depth,
     };
-    let aliases = rule
-        .key
+    let grant = rule.key.as_ref().map(key_grant);
+    let aliases = grant
         .as_ref()
-        .and_then(|token| token.view.team_model_aliases.as_ref())
-        .map_or_else(BTreeMap::new, |payload| key_model_aliases(&payload.0));
-    let targets = rule.key.as_ref().map_or_else(BTreeMap::new, |token| {
-        key_model_aliases(&token.view.token.aliases.0)
-    });
+        .map_or_else(BTreeMap::new, |grant| grant.team_model_aliases.clone());
+    let targets = grant
+        .as_ref()
+        .map_or_else(BTreeMap::new, |grant| grant.key_model_aliases.clone());
     EntityModelAccessError::gate(can_user_call_model(
         &rule.model,
         rule.user.as_ref(),
