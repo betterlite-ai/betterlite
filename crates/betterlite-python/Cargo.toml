@@ -25,6 +25,7 @@ betterlite-core = { path = "../betterlite-core" }
 betterlite-cost = { path = "../betterlite-cost" }
 betterlite-env = { path = "../betterlite-env" }
 betterlite-error = { path = "../betterlite-error" }
+betterlite-foundry = { path = "../betterlite-foundry" }
 betterlite-guardrails = { path = "../betterlite-guardrails" }
 betterlite-http = { path = "../betterlite-http" }
 betterlite-logging = { path = "../betterlite-logging" }
@@ -38,6 +39,7 @@ betterlite-redact = { path = "../betterlite-redact" }
 betterlite-redis = { path = "../betterlite-redis" }
 betterlite-router = { path = "../betterlite-router" }
 betterlite-sdk = { path = "../betterlite-sdk" }
+betterlite-secret-managers = { path = "../betterlite-secret-managers" }
 betterlite-secrets = { path = "../betterlite-secrets" }
 betterlite-streaming = { path = "../betterlite-streaming" }
 betterlite-tokenizer = { path = "../betterlite-tokenizer" }
