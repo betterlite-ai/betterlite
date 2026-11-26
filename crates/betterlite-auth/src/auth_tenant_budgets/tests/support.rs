@@ -373,7 +373,7 @@ pub(crate) fn organization(alias: &str, spend: f64, max_budget: Option<f64>) -> 
 pub(crate) fn team(organization_id: Option<&str>) -> LiteLLMTeamTable {
     let mut row: LiteLLMTeamTable =
         serde_json::from_str(r#"{"team_id":"team-1"}"#).expect("the team row decodes");
-    row.fields.organization_id = organization_id.map(str::to_owned);
+    row.fields.base.organization_id = organization_id.map(str::to_owned);
     row
 }
 
