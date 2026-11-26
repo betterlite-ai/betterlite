@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use betterlite_models::decisions::Json;
 use rstest::rstest;
 
+use crate::canvas_results::reply_fields::DeclaredKey;
 use crate::canvas_results::{CanvasReplyBody, decode_canvas_reply};
 
 #[rstest]
@@ -28,6 +29,6 @@ fn replays_the_bedrock_other_canvas_results_corpus(
                 Json::Text("d29ybGQ=".to_owned()),
             ]))
         );
-        assert!(fields.errors.is_none());
+        assert!(matches!(&fields.errors, DeclaredKey::Absent));
     }
 }

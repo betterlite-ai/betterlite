@@ -1,3 +1,5 @@
+pub mod reply_fields;
+
 use betterlite_logging::langfuse_assembly::usage::cost_value;
 use betterlite_models::call_helpers::headers::AdditionalHeaders;
 use betterlite_models::decisions::Json;
@@ -8,9 +10,10 @@ use betterlite_openai::api::image_contracts::records::{
     ImageData, ImageHttpResponse, ImageResponse, ImageUsage,
 };
 use rust_decimal::Decimal;
-use serde::Deserialize;
 use serde_json::Error as JsonError;
 use thiserror::Error;
+
+use self::reply_fields::{CanvasReplyFields, DeclaredKey};
 
 use crate::canvas_edits::environment::get_error_class;
 use crate::canvas_edits::error::CanvasEditError;
@@ -27,15 +30,6 @@ const IMAGE_FIELD: &str = "images";
 // B068 get_model_info hands over the model's bedrock metadata record; an unmapped model has none
 pub trait ModelPriceLookup {
     fn price_record(&self, model: &str) -> Option<PriceRecord>;
-}
-
-// The keys a Nova Canvas reply body declares; other keys carry nothing the transform reads.
-#[derive(Debug, Deserialize)]
-pub struct CanvasReplyFields {
-    pub images: Option<Json>,
-    pub errors: Option<Json>,
-    pub message: Option<Json>,
-    pub error: Option<Json>,
 }
 
 // A parsed body: the object shape the transform reads, or a value of another shape kept as the text a non-200 message prints.
@@ -225,7 +219,7 @@ fn reject_error_fields(
     if !images_empty {
         return Ok(());
     }
-    if let Some(errors) = &fields.errors {
+    if let DeclaredKey::Present(errors) = &fields.errors {
         return Err(provider_reply_error(
             upstream,
             format!("{ERROR_PREFIX}: {}", text_of(errors)),
