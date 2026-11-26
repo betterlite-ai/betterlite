@@ -1,12 +1,14 @@
 #![cfg(test)]
 
-use std::sync::PoisonError;
+use std::sync::{Arc, PoisonError};
 
+use betterlite_http::interactions::base::clients::HttpClients;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use secrecy::SecretString;
 
 use super::super::convert::{CallWire, ConvertError, parse};
 use super::super::error::SessionFailure;
+use super::decisions::decision_deps;
 use super::{SessionCore, azure_ai};
 
 fn globals() -> GlobalCredentials {
@@ -68,6 +70,25 @@ fn core_sandbox_uses_the_session_environment() {
             .map(String::as_str),
         Some("sk-env")
     );
+}
+
+#[test]
+fn core_decision_dependencies_preserve_global_settings() {
+    let core: SessionCore = SessionCore::build(r#"{"environment":{}}"#).unwrap();
+    let wire: CallWire = parse(
+        r#"{"settings":{"api_base":"https://global.example","drop_params":true},"arguments":{"model":"gpt-4o"}}"#,
+    )
+    .unwrap();
+    let globals = wire.settings.global_credentials();
+    let resolution = core.resolution(&globals);
+    let env = core.pre_post_env();
+    let mut clients = HttpClients::new(core.tls.clone(), Arc::clone(&core.proxy));
+    let deps = decision_deps(&wire, &resolution, &env, &mut clients);
+    assert_eq!(
+        deps.prepare.globals.api_base.as_deref(),
+        Some("https://global.example")
+    );
+    assert!(deps.prepare.global_drop_params);
 }
 
 #[test]
