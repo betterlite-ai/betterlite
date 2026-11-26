@@ -97,7 +97,7 @@ class ScriptedLimiter:
     async def is_user_within_model_budget(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L391-L395
         self,
         user_id: str,
-        user_model_max_budget: Mapping[str, object],
+        user_model_max_budget: Mapping[str, object],  # ast-grep-ignore: no-loose-types  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L313-L315
         model: str,
     ) -> bool:
         self.seen.append({"user_id": user_id, "model": model, "budget": OBJECT.validate_python(user_model_max_budget)})  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L391-L395
@@ -106,8 +106,8 @@ class ScriptedLimiter:
     async def is_team_within_model_budget(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L409-L414
         self,
         team_id: str,
-        team_model_max_budget: Mapping[str, object],
-        key_model_max_budget: Mapping[str, object] | None,
+        team_model_max_budget: Mapping[str, object],  # ast-grep-ignore: no-loose-types  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L319-L325
+        key_model_max_budget: Mapping[str, object] | None,  # ast-grep-ignore: no-loose-types  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L319-L325
         model: str,
     ) -> bool:
         key: JsonValue = None if key_model_max_budget is None else OBJECT.validate_python(key_model_max_budget)  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L407
@@ -235,7 +235,7 @@ def end_user_call(call: Call) -> JsonValue:
         params = call.get("params")
         if params is None:
             raise ValueError("an end user update call names the params")
-        updated = user_api_key_auth.update_valid_token_with_end_user_params(auth_of(call), params)  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L710-L726
+        updated = user_api_key_auth.update_valid_token_with_end_user_params(auth_of(call), params)  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L710-L726
         model_max_budget = cast("JsonValue", updated.end_user_model_max_budget)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3315
         end_user_id = updated.end_user_id
         values = {
@@ -283,13 +283,16 @@ async def answer_for(call: Call) -> JsonValue:
             return await global_spend_call(call)
 
 
+async def answer_calls(calls: list[Call]) -> JsonValue:
+    answers: list[JsonValue] = []
+    for call in calls:
+        try:
+            answers.append({"ok": True, "value": await answer_for(call)})
+        except Exception:  # noqa: BLE001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L417-L488
+            answers.append({"ok": False})
+    return answers
+
+
 def run(input_value: Input) -> JsonValue:
-    async def answer_calls() -> JsonValue:
-        answers: list[JsonValue] = []
-        for call in input_value["calls"]:
-            try:
-                answers.append({"ok": True, "value": await answer_for(call)})
-            except Exception:  # noqa: BLE001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L417-L488
-                answers.append({"ok": False})
-        return answers
-    return asyncio.run(answer_calls())
+    with asyncio.Runner() as runner:
+        return runner.run(answer_calls(input_value["calls"]))
