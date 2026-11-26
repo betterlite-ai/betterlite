@@ -51,6 +51,7 @@ impl OrgCache for FakeOrg {
         let serialized = serde_json::to_string(org).map_err(PayloadError::Json)?;
         let mut stored = self.cached.lock().unwrap_or_else(PoisonError::into_inner);
         *stored = Some(serialized);
+        drop(stored);
         Ok(())
     }
 
