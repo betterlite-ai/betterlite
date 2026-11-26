@@ -8,17 +8,16 @@ import time
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from enum import IntEnum
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from types import ModuleType, TracebackType
-from typing import ClassVar, Final, Protocol, Self, TypeAlias, TypeVar
+from types import ModuleType
+from typing import ClassVar, Final, Protocol, TypeAlias, TypeVar
 
 import httpx
 import httpx2
 import pytest
 from litellm.constants import DEFAULT_SSL_CIPHERS as REFERENCE_SSL_CIPHERS
+from litellm.constants import request_timeout as reference_request_timeout
 from pydantic import ConfigDict, JsonValue, TypeAdapter, ValidationError
-from typing_extensions import override
 
 import betterlite
 import betterlite._core_helpers as helpers_package
@@ -54,7 +53,8 @@ from betterlite._core_helpers import (
     set_provider_response_headers_in_hidden_params,
     set_response_cost_in_hidden_params,
 )
-from betterlite._core_helpers.budget_http import DEFAULT_SSL_CIPHERS
+from betterlite._core_helpers.budget_http import DEFAULT_SSL_CIPHERS, ssl_configuration
+from betterlite._core_helpers.test_server import JSON_TYPE, RecordingServer
 from betterlite._core_helpers.values import PythonValue, object_fields, text_of
 from betterlite._cost import completion_cost, cost_per_token, response_cost_calculator
 from betterlite._model_info import get_max_tokens, get_model_info, get_provider_info
@@ -73,11 +73,11 @@ from betterlite.budget_manager import (
     HOURS_IN_A_DAY,
     BudgetManager,
     ModuleClient,
+    module_level_client,
 )
 from betterlite.types.utils.choices import map_finish_reason as parts_map_finish_reason
 from betterlite.types.utils.response import ModelResponse, ModelResponseStream
 
-JSON_TYPE: Final = "application/json"
 IPV4_BIND: Final = "0.0.0.0"  # noqa: S104  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1697
 PROJECT: Final = "proj"
 CREATED_AT: Final = 1000.0
@@ -222,6 +222,7 @@ class BudgetShape(Protocol):
 LITELLM: ModuleType = importlib.import_module("litellm")
 BETTERLITE: ModuleType = betterlite
 LITELLM_HELPERS: CallModule = importlib.import_module("litellm.litellm_core_utils.core_helpers")
+LITELLM_HTTP: CallModule = importlib.import_module("litellm.llms.custom_httpx.http_handler")
 LITELLM_ERRORS: CallModule = importlib.import_module("litellm.exceptions")
 LITELLM_RESPONSES: TypedModule[ReferenceResponse] = importlib.import_module("litellm")
 LITELLM_BUDGET: TypedModule[BudgetShape] = importlib.import_module("litellm.budget_manager")
@@ -405,65 +406,6 @@ def join_saves(marker: set[threading.Thread]) -> None:
     for thread in set(threading.enumerate()) - marker:
         if not thread.daemon:
             thread.join(timeout=10)
-
-
-class RecordingServer(ThreadingHTTPServer):
-    def __init__(self) -> None:
-        super().__init__(("127.0.0.1", 0), RecordingHandler)
-        self.replies: dict[str, JsonValue] = {}
-        self.statuses: dict[str, int] = {}
-        self.locations: dict[str, str] = {}
-        self.requests: list[dict[str, JsonValue]] = []
-        RecordingHandler.owner = self
-        self.thread: threading.Thread = threading.Thread(target=self.serve_forever, daemon=True)
-        self.thread.start()
-
-    @property
-    def url(self) -> str:
-        return f"http://127.0.0.1:{self.server_port}"
-
-    @override
-    def __enter__(self) -> Self:
-        return self
-
-    @override
-    def __exit__(
-        self,
-        _exc_type: type[BaseException] | None,
-        _exc_value: BaseException | None,
-        _traceback: TracebackType | None,
-    ) -> None:
-        self.shutdown()
-        self.server_close()
-        self.thread.join()
-
-
-class RecordingHandler(BaseHTTPRequestHandler):
-    owner: ClassVar[RecordingServer]
-
-    def do_POST(self) -> None:
-        declared = self.headers.get("Content-Length")
-        body = b"" if declared is None else self.rfile.read(int(declared))
-        parsed: JsonValue = None if not body else JSON_ADAPTER.validate_json(body)
-        recorded: dict[str, JsonValue] = {
-            "path": self.path, "content_type": self.headers.get("Content-Type"),
-            "agent": self.headers.get("User-Agent"), "cookie": self.headers.get("Cookie"),
-            "body": parsed,
-        }
-        self.owner.requests.append(recorded)
-        location = self.owner.locations.get(self.path)
-        status = self.owner.statuses.get(self.path)
-        if status is None:
-            status = 200 if location is None else 307
-        payload = json.dumps(self.owner.replies[self.path]).encode() if location is None else b""
-        self.send_response(status)
-        if location is not None:
-            self.send_header("Location", location)
-        self.send_header("content-type", JSON_TYPE)
-        self.send_header("content-length", str(len(payload)))
-        self.send_header("set-cookie", "session=b166")
-        self.end_headers()
-        self.wfile.write(payload)
 
 
 def test_helper_scalars() -> None:
@@ -821,6 +763,11 @@ def test_budget_duration_lifecycle(
     assert "duration" not in ours.user_dict[BOB]
     assert ours.get_current_cost(BOB) == reference.get_current_cost(BOB) != ZERO_COST
     join_saves(marker)
+
+
+def test_budget_durations(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    patch_costs(monkeypatch)
+    monkeypatch.chdir(tmp_path)
     reference = LITELLM_BUDGET.BudgetManager(PROJECT)
     ours = BudgetManager(PROJECT)
     marker = set(threading.enumerate())
@@ -912,10 +859,49 @@ def test_budget_hosted_calls() -> None:
             assert ours_raised.value.response.status_code == status
 
 
-def test_budget_hosted_transport(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_budget_hosted_transport() -> None:
+    with RecordingServer() as server:
+        server.replies.update({
+            GET_BUDGET: HOSTED_REPLY, MOVED_GET: HOSTED_REPLY, SET_BUDGET: SAVED_REPLY,
+        })
+        server.locations[GET_BUDGET] = MOVED_GET
+        reference = LITELLM_BUDGET.BudgetManager(PROJECT, HOSTED, server.url)
+        ours = BudgetManager(PROJECT, HOSTED, server.url)
+        assert ours.get_total_budget(ALICE) == reference.get_total_budget(ALICE) == BUDGET
+        assert reference.save_data() == ours.save_data() == SAVED_REPLY
+    requests = server.requests
+    assert [request["path"] for request in requests] == [
+        GET_BUDGET, MOVED_GET, GET_BUDGET, MOVED_GET, SET_BUDGET, SET_BUDGET]
+    assert [request["body"] for request in requests] == [
+        {"project_name": PROJECT}] * 4 + [SAVE_BODY] * 2
+    ours_agent = module_level_client.client.headers["user-agent"]
+    reference_agent = requests[0]["agent"]
+    assert [request["agent"] for request in requests] == [
+        reference_agent, reference_agent, ours_agent, ours_agent, reference_agent, ours_agent]
+    assert [request["content_type"] for request in requests] == [JSON_TYPE] * 6
+    assert [request["cookie"] for request in requests] == [None] * 6
+
+
+def test_budget_client_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    timeout = module_level_client.timeout
+    assert (timeout.connect, timeout.read, timeout.write, timeout.pool) == (
+        reference_request_timeout,) * 4
+    assert module_level_client.client.follow_redirects
+    assert module_level_client.ssl_options
     monkeypatch.setenv("REQUEST_TIMEOUT", "1234")
-    timeout = ModuleClient().timeout
-    assert (timeout.connect, timeout.read, timeout.write, timeout.pool) == (1234.0,) * 4
+    monkeypatch.delenv("SSL_VERIFY", raising=False)
+    # ast-grep-ignore: no-string-mocking
+    monkeypatch.setattr(BETTERLITE, "ssl_verify", False)
+    monkeypatch.setenv("LITELLM_USER_AGENT", "b166-agent/1")
+    configured = ModuleClient()
+    with configured.client:
+        timeout = configured.timeout
+        assert (timeout.connect, timeout.read, timeout.write, timeout.pool) == (1234.0,) * 4
+        assert configured.ssl_options is False
+        assert configured.client.headers["user-agent"] == "b166-agent/1"
+
+
+def test_budget_ipv4_http2(monkeypatch: pytest.MonkeyPatch) -> None:
     cases = ((True, "false", False), (False, "true", True), (True, "true", True))
     for force_ipv4, flag, enabled in cases:
         # ast-grep-ignore: no-string-mocking
@@ -938,21 +924,32 @@ def test_budget_hosted_transport(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_budget_tls_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     assert DEFAULT_SSL_CIPHERS == REFERENCE_SSL_CIPHERS
+    for module in (BETTERLITE, LITELLM):
+        # ast-grep-ignore: no-string-mocking
+        monkeypatch.setattr(module, "ssl_verify", True)
     monkeypatch.setenv("SSL_VERIFY", "false")
-    assert ModuleClient().ssl_options is False
-    explicit = ModuleClient(ssl_verify=True)
-    assert explicit.ssl_options is not False
-    explicit.client.close()
+    assert ssl_configuration() is LITELLM_HTTP.get_ssl_configuration() is False
+    assert ssl_configuration(ssl_verify=True) is not False
     monkeypatch.delenv("SSL_VERIFY")
     monkeypatch.setenv("SSL_SECURITY_LEVEL", "BOGUS")
     with pytest.raises(ssl.SSLError):
+        LITELLM_HTTP.get_ssl_configuration()
+    with pytest.raises(ssl.SSLError):
         ModuleClient()
+    monkeypatch.delenv("SSL_SECURITY_LEVEL")
+    for module in (BETTERLITE, LITELLM):
+        # ast-grep-ignore: no-string-mocking
+        monkeypatch.setattr(module, "ssl_security_level", "BOGUS")
+    with pytest.raises(ssl.SSLError):
+        LITELLM_HTTP.get_ssl_configuration()
+    with pytest.raises(ssl.SSLError):
+        ssl_configuration()
     monkeypatch.setenv("SSL_SECURITY_LEVEL", "DEFAULT@SECLEVEL=1")
     curves = SettingRecorder()
     # ast-grep-ignore: no-string-mocking
-    monkeypatch.setattr("ssl.SSLContext.set_ecdh_curve", curves)
+    monkeypatch.setattr(ssl.SSLContext, "set_ecdh_curve", curves)
     monkeypatch.setenv("SSL_ECDH_CURVE", "curve-b166")
-    assert ModuleClient().ssl_options is not False
+    assert ssl_configuration() is not False
     assert curves.values == ["curve-b166"]
 
 
