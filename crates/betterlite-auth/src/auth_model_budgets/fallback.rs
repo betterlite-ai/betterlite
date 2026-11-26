@@ -26,6 +26,7 @@ pub enum KeyBudgetError {
     Rewrite(RewriteFailure),
 }
 
+#[derive(Clone, Copy)]
 pub struct KeyBudgetCall<'a> {
     pub limiter: &'a dyn KeyModelBudgetLimiter,
     pub token: &'a UserAPIKeyAuth,
