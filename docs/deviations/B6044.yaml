@@ -3,8 +3,7 @@ deviations:
   - what: >-
       betterlite.rerank and betterlite.arerank use cohere, cohere v2, infinity, jina_ai, voyage and nvidia_nim.
       azure_ai, hosted_vllm, huggingface, deepinfra, vertex_ai, fireworks_ai, watsonx, dashscope, qwencloud,
-      qwen_ai_platform, together_ai and bedrock raise "the {provider} rerank handler is not wired into betterlite"
-      as an APIConnectionError with status 500 before sending a request.
+      qwen_ai_platform, together_ai and bedrock raise "the {provider} rerank handler is not wired into betterlite" as an APIConnectionError with status 500 before sending a request.
     why: >-
       Provider tasks own the unwired handlers; this session supports wired families and rejects other providers before a Cohere-shaped body can reach an incompatible endpoint.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L145-L162
