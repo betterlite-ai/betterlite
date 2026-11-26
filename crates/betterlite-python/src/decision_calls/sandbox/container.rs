@@ -7,7 +7,7 @@ use betterlite_provider::sandbox_dispatch::request::SandboxContainer;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::super::convert::{Answer, Arguments, ConvertError, encode};
-use super::{secret_json, text_json};
+use super::secret_json;
 
 // The created container as LiteLLM's ContainerHandle dumps, with the tokens LiteLLM keeps private.
 pub(crate) fn container_answer(container: &SandboxContainer) -> Result<String, ConvertError> {
@@ -130,7 +130,13 @@ fn e2b_hidden(handle: &ContainerHandle) -> HiddenParams {
             secret_json(params.traffic_access_token.as_ref()),
         ),
         ("api_key", secret_json(params.api_key.as_ref())),
-        ("api_base", text_json(params.api_base.as_deref())),
+        (
+            "api_base",
+            params
+                .api_base
+                .as_ref()
+                .map_or(Json::Null, |base| Json::Text(base.clone())),
+        ),
     ])
 }
 
@@ -141,7 +147,10 @@ fn opensandbox_hidden(handle: &SandboxHandle) -> HiddenParams {
         .as_deref()
         .or(handle.container.domain.as_deref());
     let mut hidden = hidden_map(&[
-        ("api_base", text_json(api_base)),
+        (
+            "api_base",
+            api_base.map_or(Json::Null, |base| Json::Text(base.to_owned())),
+        ),
         ("api_key", secret_json(params.api_key.as_ref())),
     ]);
     hidden.insert(
