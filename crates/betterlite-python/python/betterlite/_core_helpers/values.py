@@ -4,6 +4,7 @@ from decimal import Decimal
 from typing import Final, TypeAlias
 
 from pydantic import TypeAdapter, ValidationError
+from typing_extensions import TypeIs
 
 from betterlite.types.utils.base import Dumpable
 
@@ -27,11 +28,24 @@ PythonValue: TypeAlias = (  # type: ignore[explicit-any]  # https://github.com/B
 _TEXT: Final[TypeAdapter[str]] = TypeAdapter(str)
 
 
+def is_container(value: PythonValue) -> TypeIs[dict[str, PythonValue] | list[PythonValue]]:
+    match value:
+        case dict() | list():
+            return True
+        case bool() | int() | float() | str() | BaseException() | date() | Decimal():
+            return False
+        case Dumpable() | Iterator() | Sequence() | Mapping() | Callable() | None:
+            return False
+
+
 def object_fields(value: PythonValue) -> dict[str, PythonValue] | None:
-    # ast-grep-ignore: no-isinstance
-    if isinstance(value, dict):
-        return value
-    return None
+    if not is_container(value):
+        return None
+    match value:
+        case dict():
+            return value
+        case list():
+            return None
 
 
 def text_of(value: PythonValue) -> str | None:

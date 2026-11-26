@@ -6,7 +6,7 @@ from typing import Final
 
 from pydantic import JsonValue
 
-from betterlite._core_helpers.values import PythonValue, object_fields
+from betterlite._core_helpers.values import PythonValue, is_container
 from betterlite.types.utils.base import Dumpable
 
 _SKIPPED_NAMES: Final = frozenset({"Logging", "LiteLLMLoggingObj", "Router"})
@@ -27,12 +27,12 @@ def _filtered_value(
     name = type(data).__name__
     if name in _SKIPPED_NAMES:
         return None
-    fields = object_fields(data)
-    if fields is not None:
-        return _kept_fields(fields, max_depth, ancestors)
-    # ast-grep-ignore: no-isinstance
-    if isinstance(data, list):
-        return _kept_items(data, max_depth, ancestors)
+    if is_container(data):
+        match data:
+            case dict():
+                return _kept_fields(data, max_depth, ancestors)
+            case list():
+                return _kept_items(data, max_depth, ancestors)
     return data
 
 
