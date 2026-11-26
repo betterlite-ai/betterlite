@@ -4,9 +4,16 @@ from dataclasses import dataclass
 from typing import Final
 
 import betterlite
+from betterlite._completion.arguments import TimeoutValues
 from betterlite._completion.errors import UnsupportedCallArgument
 from betterlite._endpoints import CallValue
-from betterlite._endpoints.payload import PathValue, Readable, is_file_tuple, is_json_container
+from betterlite._endpoints.payload import (
+    PathValue,
+    Readable,
+    is_file_tuple,
+    is_json_container,
+    timeout_seconds,
+)
 
 MAX_REQUEST_BYTES: Final = 8 * 1024 * 1024
 MAX_HEADERS: Final = 256
@@ -53,6 +60,8 @@ class RequestBudget:
                 if value.bit_length() > self.remaining * 4:
                     raise ValueError(f"rerank request exceeds {MAX_REQUEST_BYTES} bytes")
                 self.charge(len(json.dumps(value)))
+            case TimeoutValues():
+                self.consume_scalar(timeout_seconds(value), field)
             case bytes() | bytearray() | PathValue() | Readable():
                 raise UnsupportedCallArgument(field)
             case object():

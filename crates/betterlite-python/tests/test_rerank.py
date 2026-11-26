@@ -11,13 +11,14 @@ from pathlib import Path
 from types import TracebackType
 from typing import ClassVar, Final, Protocol, SupportsIndex, TypedDict
 
+import httpx
 import pytest
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
 
 import betterlite
 from betterlite._completion.errors import UnsupportedCallArgument
-from betterlite._endpoints import CallValue
+from betterlite._endpoints import CallValue, to_call_payload
 from betterlite._endpoints.payload import Readable
 from betterlite._rerank import main as rerank_module
 from betterlite._rerank.limits import (
@@ -240,12 +241,13 @@ def test_signature_matches_litellm() -> None:
     assert inspect.iscoroutinefunction(arerank)
 
 
-def test_call_keeps_order() -> None:
+@pytest.mark.parametrize("timeout", [None, httpx.Timeout(10)])
+def test_call_keeps_order(timeout: httpx.Timeout | None) -> None:
     with closing(RerankServer()) as server:
         outcome = rerank(
             model=MODEL, query=QUERY, documents=DOCUMENTS_TEXT,
             custom_llm_provider=PROVIDER, api_base=server.url, api_key=GOOD_KEY,
-            litellm_call_id=CALL_ID,
+            litellm_call_id=CALL_ID, timeout=timeout,
         )
         call = server.calls[-1]
         response = response_of(outcome)
@@ -268,12 +270,14 @@ def test_call_keeps_order() -> None:
     assert "litellm_overhead_time_ms" not in hidden
 
 
-def test_call_async_arerank() -> None:
+@pytest.mark.parametrize("timeout", [None, httpx.Timeout(10)])
+def test_call_async_arerank(timeout: httpx.Timeout | None) -> None:
     with closing(RerankServer()) as server:
         response = asyncio.run(
             arerank(
                 model=MODEL, query=QUERY, documents=DOCUMENTS_TEXT,
                 custom_llm_provider=PROVIDER, api_base=server.url, api_key=GOOD_KEY,
+                timeout=timeout,
             )
         )
         call = server.calls[-1]
@@ -717,3 +721,23 @@ def test_request_files_refused(entry: str, placement: str, extra: CallValue) -> 
     with ValidationGuard(), pytest.raises(UnsupportedCallArgument) as refused:
         size_probe(entry, QUERY, [], value)
     assert refused.value.argument == ("extra" if placement == "direct" else "payload")
+
+
+@pytest.mark.parametrize(
+    ("timeout", "seconds"),
+    [
+        (httpx.Timeout(10), 10),
+        (httpx.Timeout(None), None),
+        (httpx.Timeout(0), 0),
+        (httpx.Timeout(connect=1.0, read=2.0, write=3.0, pool=400.0), 400.0),
+    ],
+    ids=["uniform", "unset", "zero", "phases"],
+)
+def test_request_timeout_budget(timeout: httpx.Timeout, seconds: float | None) -> None:
+    fields: dict[str, CallValue] = {"timeout": timeout}
+    budget = RequestBudget()
+    budget.consume_fields(fields)
+    payload = to_call_payload(fields)
+    assert payload.text == json.dumps({"timeout": seconds})
+    assert budget.remaining == WIRE_LIMIT - len(payload.text)
+    assert payload.blobs == []
