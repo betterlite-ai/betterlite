@@ -19,3 +19,5 @@ fn aws_credential(value: &str) -> Option<String> {
     let captures = bearer.captures(value).or_else(|| plain.captures(value))?;
     captures.get(1).map(|token| token.as_str().to_owned())
 }
+
+mod tests;
