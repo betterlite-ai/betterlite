@@ -41,3 +41,13 @@ fn malformed_mock_keeps_model() {
     };
     assert_eq!(error.model.as_deref(), Some("caller-model"));
 }
+
+#[test]
+fn timeout_error_preserves_source() {
+    use crate::video_calls::error::SessionError;
+    use std::error::Error as _;
+
+    let source = Duration::try_from_secs_f64(-1.0).unwrap_err();
+    let failure = SessionError::RequestTimeout(source);
+    assert!(failure.source().is_some());
+}

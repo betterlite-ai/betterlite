@@ -1,11 +1,6 @@
 use std::io::Error as IoError;
 use std::time::TryFromFloatSecsError;
 
-use betterlite_core::api::video_content_call::VideoContentRequest;
-use betterlite_core::api::video_generation_call::VideoGenerationRequest;
-use betterlite_core::api::video_list_call::VideoListCall;
-use betterlite_core::api::video_remix_call::VideoRemixCall;
-use betterlite_core::api::video_status_call::VideoStatusRequest;
 use betterlite_models::decisions::Json;
 use betterlite_openai::videos::error::VideoError;
 use betterlite_sdk::call_files::{CallFile, CallFilesError, files_from_payload};
@@ -16,10 +11,10 @@ use serde::Deserialize;
 use thiserror::Error;
 
 pub(crate) mod fields;
-mod requests;
+pub(crate) mod requests;
 mod tests;
 
-use self::fields::{STRING, failed, meta, number, params, text, texts};
+use self::fields::failed;
 
 const INPUT_REFERENCE: &str = "input_reference";
 
@@ -76,28 +71,6 @@ pub(crate) enum ConvertError {
         #[from]
         source: IoError,
     },
-    #[error("the native call asked for a different video operation")]
-    Kind,
-}
-
-// which of the ten functions the payload belongs to: each names one request type of the core call layer
-#[derive(Debug, Clone, Copy)]
-pub(crate) enum Operation {
-    Generate,
-    Content,
-    Remix,
-    List,
-    Status,
-}
-
-// the one request the operation asked for, so one parser serves all five payload shapes
-#[derive(Default)]
-pub(crate) struct Requests {
-    pub(crate) generation: Option<VideoGenerationRequest>,
-    pub(crate) content: Option<VideoContentRequest>,
-    pub(crate) remix: Option<VideoRemixCall>,
-    pub(crate) list: Option<VideoListCall>,
-    pub(crate) status: Option<VideoStatusRequest>,
 }
 
 pub(crate) fn parse(
@@ -197,37 +170,3 @@ const STATUS_NAMED: [&str; 6] = [
     "extra_query",
     "extra_body",
 ];
-
-pub(crate) fn request(
-    operation: Operation,
-    wire: &VideoCallWire,
-    media: Option<Reference>,
-) -> Result<Requests, ConvertError> {
-    let arguments = &wire.arguments;
-    let mut requests = Requests::default();
-    match operation {
-        Operation::Generate => requests.generation = Some(requests::generation(arguments, media)?),
-        Operation::Remix => {
-            requests.remix = Some(VideoRemixCall {
-                video_id: text(arguments, "video_id")?.ok_or_else(|| failed("video_id", STRING))?,
-                prompt: text(arguments, "prompt")?.ok_or_else(|| failed("prompt", STRING))?,
-                custom_llm_provider: text(arguments, "custom_llm_provider")?,
-                api_key: text(arguments, "api_key")?.map(SecretString::from),
-                api_base: text(arguments, "api_base")?,
-                api_version: text(arguments, "api_version")?,
-                extra_headers: texts(arguments, "extra_headers")?,
-                extra_query: params(arguments, "extra_query")?,
-                extra_body: params(arguments, "extra_body")?,
-                mock_response: arguments.get("mock_response").cloned(),
-                litellm_metadata: meta(arguments, "litellm_metadata")?,
-                litellm_call_id: text(arguments, "litellm_call_id")?,
-                user: text(arguments, "user")?,
-                timeout: number(arguments, "timeout")?,
-                extra: loose(arguments, &REMIX_NAMED),
-            });
-        }
-        Operation::List => requests.list = Some(requests::list(arguments)?),
-        Operation::Content | Operation::Status => return requests::read(operation, arguments),
-    }
-    Ok(requests)
-}

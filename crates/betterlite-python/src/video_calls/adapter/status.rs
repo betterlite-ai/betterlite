@@ -8,6 +8,7 @@ use betterlite_core::api::video_status_transport::records::{
 use betterlite_openai::videos::config::complete_url;
 use betterlite_openai::videos::segment::path_url;
 use betterlite_openai::videos::status::status_response;
+use http::header::{HeaderName, HeaderValue};
 
 use super::OpenAiVideoConfig;
 use super::support::provider_failure;
@@ -24,6 +25,18 @@ impl VideoStatusConfig for OpenAiVideoConfig {
         &self,
         request: VideoEnvironment<'_>,
     ) -> Result<Headers, ProviderFailure> {
+        for (name, value) in request.headers {
+            HeaderName::from_bytes(name.as_bytes()).map_err(|source| ProviderFailure {
+                message: format!("invalid header name {name:?}: {source}"),
+                status_code: Some(500),
+                headers: None,
+            })?;
+            HeaderValue::from_str(value).map_err(|source| ProviderFailure {
+                message: format!("invalid header value for {name:?}: {source}"),
+                status_code: Some(500),
+                headers: None,
+            })?;
+        }
         Ok(self.headers(request.headers, request.api_key, request.litellm_params))
     }
 

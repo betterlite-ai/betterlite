@@ -73,3 +73,42 @@ fn status_error_facts() {
     );
     assert!(!error.status_code_is_synthesized);
 }
+
+#[test]
+fn status_headers_preserve_values() {
+    let session = VideoSession::build(r#"{"environment":{}}"#).unwrap();
+    let request = StatusRequest {
+        method: StatusMethod::Get,
+        url: "http://example.test/status".to_owned(),
+        headers: IndexMap::from([
+            ("X-Note".to_owned(), "first".to_owned()),
+            ("x-note".to_owned(), "second".to_owned()),
+        ]),
+        body: None,
+    };
+    let headers = super::header_map(&session.client, &request).unwrap();
+    let values: Vec<_> = headers
+        .get_all("x-note")
+        .iter()
+        .map(|value| value.to_str().unwrap())
+        .collect();
+    assert_eq!(values, ["first", "second"]);
+}
+
+#[test]
+fn status_headers_reject_invalid_values() {
+    let session = VideoSession::build(r#"{"environment":{}}"#).unwrap();
+    let adapter = config(&session, &SettingsWire::default(), None);
+    for (name, value) in [("x-note", "line1\nline2"), ("bad name", "value")] {
+        let request = StatusRequest {
+            method: StatusMethod::Get,
+            url: "http://example.test/status".to_owned(),
+            headers: IndexMap::from([(name.to_owned(), value.to_owned())]),
+            body: None,
+        };
+        let failure = super::header_map(&session.client, &request).unwrap_err();
+        let mapped = StatusConverter.convert(&adapter, StatusFailure::Send(&failure));
+        assert_eq!(mapped.status_code, 500);
+        assert!(mapped.status_code_is_synthesized);
+    }
+}

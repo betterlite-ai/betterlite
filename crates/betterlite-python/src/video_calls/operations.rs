@@ -1,8 +1,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use betterlite_core::api::video_content_call::VideoContentCaller;
 use betterlite_core::api::video_content_call::handler::ContentTransportHandler;
+use betterlite_core::api::video_content_call::{VideoContentCaller, VideoContentRequest};
 use betterlite_core::api::video_generation_call::call::{
     GenerationCallEnvironment, VideoGenerationCaller, mock_video_response,
 };
@@ -12,12 +12,12 @@ use betterlite_core::api::video_generation_call::error::{
 use betterlite_core::api::video_generation_call::handler::TransportGenerationHandler;
 use betterlite_core::api::video_generation_call::{DEFAULT_MODEL, VideoGenerationRequest};
 use betterlite_core::api::video_records::VideoObject;
-use betterlite_core::api::video_status_call::VideoStatusCaller;
+use betterlite_core::api::video_status_call::{VideoStatusCaller, VideoStatusRequest};
 use betterlite_core::api::video_status_transport::handler::VideoStatusHandler;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 
 use super::clients::{NativeSource, StatusConverter, StatusFactories};
-use super::convert::{ConvertError, Reference, Requests, VideoCallWire, drop_params};
+use super::convert::{Reference, VideoCallWire, drop_params};
 use super::error::{RunError, SessionError};
 use super::providers::OpenAiProviders;
 use super::session::{SilentSink, VideoSession, config, logging, pre_post};
@@ -36,23 +36,23 @@ pub(crate) enum Mode {
 }
 
 // One call's native payload, taken apart as its operation reads it
-pub(crate) type Parsed = (VideoCallWire, Requests, Option<Reference>);
+pub(crate) type Parsed<Request> = (VideoCallWire, Request, Option<Reference>);
 
 // One call, as every operation takes it: the session it runs on and the payload Python sent
-pub(crate) struct Input {
+pub(crate) struct Input<Request> {
     pub(crate) session: Arc<VideoSession>,
     wire: VideoCallWire,
-    requests: Requests,
+    request: Request,
     reference: Option<Reference>,
 }
 
-impl Input {
-    pub(crate) fn new(session: Arc<VideoSession>, parsed: Parsed) -> Self {
-        let (wire, requests, reference) = parsed;
+impl<Request> Input<Request> {
+    pub(crate) fn new(session: Arc<VideoSession>, parsed: Parsed<Request>) -> Self {
+        let (wire, request, reference) = parsed;
         Self {
             session,
             wire,
-            requests,
+            request,
             reference,
         }
     }
@@ -80,11 +80,14 @@ fn request_timeout(session: &VideoSession) -> Result<Duration, RunError> {
 }
 
 // video_generation and avideo_generation: the sync entry's own mock check, then the async call both entries end in
-pub(crate) async fn generate(input: Input, mode: Mode) -> Result<VideoObject, RunError> {
+pub(crate) async fn generate(
+    input: Input<VideoGenerationRequest>,
+    mode: Mode,
+) -> Result<VideoObject, RunError> {
     let Input {
         session,
         wire,
-        requests,
+        request,
         reference,
     } = input;
     let caller = VideoGenerationCaller {
@@ -98,7 +101,6 @@ pub(crate) async fn generate(input: Input, mode: Mode) -> Result<VideoObject, Ru
     let sink = SilentSink;
     let env = pre_post(&sink, &caller.redactor);
     let resolution = session.resolution();
-    let request = requests.generation.ok_or(ConvertError::Kind)?;
     let environment = GenerationCallEnvironment {
         logging: &mut state,
         env: &env,
@@ -137,11 +139,11 @@ fn mock_object(
 }
 
 // video_content and avideo_content: the provider comes from the video id, and the bytes are the answer
-pub(crate) async fn content(input: Input) -> Result<Vec<u8>, RunError> {
+pub(crate) async fn content(input: Input<VideoContentRequest>) -> Result<Vec<u8>, RunError> {
     let Input {
         session,
         wire,
-        requests,
+        request,
         ..
     } = input;
     let caller = VideoContentCaller {
@@ -151,7 +153,6 @@ pub(crate) async fn content(input: Input) -> Result<Vec<u8>, RunError> {
         request_timeout: request_timeout(&session)?,
     };
     let mut state = logging(&caller.redactor, CONTENT_CALL_TYPE)?;
-    let request = requests.content.ok_or(ConvertError::Kind)?;
     caller
         .avideo_content(request, None, &mut state)
         .await
@@ -159,11 +160,11 @@ pub(crate) async fn content(input: Input) -> Result<Vec<u8>, RunError> {
 }
 
 // video_status and avideo_status: the mock, the provider, the logging update and the retrieve handler
-pub(crate) async fn status(input: Input) -> Result<VideoObject, RunError> {
+pub(crate) async fn status(input: Input<VideoStatusRequest>) -> Result<VideoObject, RunError> {
     let Input {
         session,
         wire,
-        requests,
+        request,
         ..
     } = input;
     let factories = StatusFactories {
@@ -185,7 +186,6 @@ pub(crate) async fn status(input: Input) -> Result<VideoObject, RunError> {
         redactor: call_redactor,
         request_timeout: request_timeout(&session)?,
     };
-    let request = requests.status.ok_or(ConvertError::Kind)?;
     caller
         .avideo_status(request, None, &mut state)
         .await

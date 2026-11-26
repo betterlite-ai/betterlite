@@ -36,7 +36,7 @@ pub(crate) enum SessionError {
     #[error("the request timeout is not usable: {0}")]
     Timeout(#[from] TimeoutError),
     #[error("REQUEST_TIMEOUT is not a usable number of seconds: {0}")]
-    RequestTimeout(TryFromFloatSecsError),
+    RequestTimeout(#[source] TryFromFloatSecsError),
     #[error("{0}")]
     Unmapped(String),
 }

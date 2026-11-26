@@ -1,13 +1,15 @@
-use betterlite_core::api::video_list_call::{VideoListReply, avideo_list, video_list};
+use betterlite_core::api::video_list_call::{
+    VideoListCall, VideoListReply, avideo_list, video_list,
+};
 use betterlite_core::api::video_records::VideoObject;
 use betterlite_core::api::video_remix_call::shared::VideoCallDeps;
-use betterlite_core::api::video_remix_call::{avideo_remix, video_remix};
+use betterlite_core::api::video_remix_call::{VideoRemixCall, avideo_remix, video_remix};
 use betterlite_core::api::video_remix_list_transport::VideoRemixListTransport;
 use betterlite_logging::logging_pre_post::env::PrePostEnv;
 use betterlite_logging::logging_state::LoggingState;
 
 use super::super::clients::NativeSource;
-use super::super::convert::{ConvertError, VideoCallWire};
+use super::super::convert::VideoCallWire;
 use super::super::error::RunError;
 use super::super::providers::OpenAiProviders;
 use super::super::session::{VideoSession, logging, pre_post};
@@ -71,15 +73,15 @@ impl<'session, Call> Wiring<'session, Call> {
 }
 
 // video_remix: the transport's blocking client answers on this thread, so the call runs here and is never awaited
-pub(crate) fn remix(input: Input) -> Result<VideoObject, RunError> {
-    let call = input.requests.remix.ok_or(ConvertError::Kind)?;
+pub(crate) fn remix(input: Input<VideoRemixCall>) -> Result<VideoObject, RunError> {
+    let call = input.request;
     let mut wiring = Wiring::new(&input.session, &input.wire, REMIX_CALL_TYPE, call)?;
     video_remix(remix_request::build(wiring.parts())).map_err(RunError::from)
 }
 
 // avideo_remix: the mock, then the async handler's future awaited here
-pub(crate) async fn aremix(input: Input) -> Result<VideoObject, RunError> {
-    let call = input.requests.remix.ok_or(ConvertError::Kind)?;
+pub(crate) async fn aremix(input: Input<VideoRemixCall>) -> Result<VideoObject, RunError> {
+    let call = input.request;
     let mut wiring = Wiring::new(&input.session, &input.wire, REMIX_CALL_TYPE, call)?;
     avideo_remix(remix_request::build(wiring.parts()))
         .await
@@ -87,15 +89,15 @@ pub(crate) async fn aremix(input: Input) -> Result<VideoObject, RunError> {
 }
 
 // video_list: openai unless the caller named a provider, and the page or the mock's objects as the answer
-pub(crate) fn list(input: Input) -> Result<VideoListReply, RunError> {
-    let call = input.requests.list.ok_or(ConvertError::Kind)?;
+pub(crate) fn list(input: Input<VideoListCall>) -> Result<VideoListReply, RunError> {
+    let call = input.request;
     let mut wiring = Wiring::new(&input.session, &input.wire, LIST_CALL_TYPE, call)?;
     video_list(list_request::build(wiring.parts())).map_err(RunError::from)
 }
 
 // avideo_list: its provider inference reads the empty model, as LiteLLM's async list does
-pub(crate) async fn alist(input: Input) -> Result<VideoListReply, RunError> {
-    let call = input.requests.list.ok_or(ConvertError::Kind)?;
+pub(crate) async fn alist(input: Input<VideoListCall>) -> Result<VideoListReply, RunError> {
+    let call = input.request;
     let mut wiring = Wiring::new(&input.session, &input.wire, LIST_CALL_TYPE, call)?;
     let request = list_request::build(wiring.parts());
     avideo_list(request, &input.session.resolution())

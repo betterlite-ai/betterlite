@@ -26,7 +26,7 @@ use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
 use betterlite_models::identity::provider_id::ProviderId;
 use http::Method;
-use http::header::{HeaderMap, HeaderName, HeaderValue};
+use http::header::HeaderMap;
 use pyo3_async_runtimes::tokio::get_runtime;
 use url::Url;
 
@@ -124,7 +124,6 @@ impl StatusClient {
             StatusMethod::Get => Method::GET,
             StatusMethod::Post => Method::POST,
         };
-        // the adapter's transforms and validate_environment refused every value this cannot carry
         let body = match &request.body {
             Some(params) => {
                 let encoded =
@@ -138,7 +137,7 @@ impl StatusClient {
                 method,
                 url,
                 query: Vec::new(),
-                headers: header_map(&request.headers),
+                headers: header_map(&self.0, request)?,
                 body,
                 deadline: self.0.limits.read_timeout,
             })
@@ -148,19 +147,16 @@ impl StatusClient {
     }
 }
 
-// validate_environment and the transforms reject names and values a HeaderMap cannot carry
-fn header_map(headers: &StatusHeaders) -> HeaderMap {
-    let mut map = HeaderMap::new();
-    for (name, value) in headers {
-        let Ok(header_name) = HeaderName::from_bytes(name.as_bytes()) else {
-            continue;
-        };
-        let Ok(header_value) = HeaderValue::from_str(value) else {
-            continue;
-        };
-        let _previous = map.insert(header_name, header_value);
+fn header_map(
+    client: &ProxiedClient,
+    request: &StatusRequest,
+) -> Result<HeaderMap, TransportError> {
+    let mut builder = client.client.request(Method::GET, &request.url);
+    for (name, value) in &request.headers {
+        builder = builder.header(name.as_str(), value.as_str());
     }
-    map
+    let built = builder.build().map_err(TransportError::Build)?;
+    Ok(built.headers().clone())
 }
 
 impl StatusSyncClient for StatusClient {

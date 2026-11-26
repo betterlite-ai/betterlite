@@ -26,47 +26,44 @@ use betterlite_core::api::video_remix_list_transport::records::{
     VideoListQuery, VideoRequestContext as RemixContext,
 };
 use betterlite_core::api::video_status_transport::config::VideoStatusConfig;
-use betterlite_core::api::video_status_transport::records::VideoRequestContext as StatusContext;
+use betterlite_core::api::video_status_transport::records::{
+    VideoEnvironment as StatusEnvironment, VideoRequestContext as StatusContext,
+};
 use betterlite_http::proxy::UpstreamResponse;
 
-use super::{
-    ConvertError, Operation, Reference, Requests, SettingsWire, VideoCallWire, drop_params, parse,
-    request,
-};
+use super::requests::Build;
+use super::{ConvertError, Reference, SettingsWire, VideoCallWire, drop_params, parse};
 
 fn wire(arguments: &str) -> VideoCallWire {
     let payload = format!("{{\"arguments\":{arguments}}}");
     parse(&payload, &mut []).unwrap().0
 }
 
-fn build(operation: Operation, arguments: &str) -> Result<Requests, ConvertError> {
-    request(operation, &wire(arguments), None)
+fn build<Request>(arguments: &str) -> Result<Request, ConvertError>
+where
+    Request: Build,
+{
+    Request::build(&wire(arguments).arguments, None)
 }
 
 fn generation(arguments: &str) -> VideoGenerationRequest {
-    build(Operation::Generate, arguments)
-        .unwrap()
-        .generation
-        .unwrap()
+    build(arguments).unwrap()
 }
 
 fn content(arguments: &str) -> VideoContentRequest {
-    build(Operation::Content, arguments)
-        .unwrap()
-        .content
-        .unwrap()
+    build(arguments).unwrap()
 }
 
 fn remix(arguments: &str) -> VideoRemixCall {
-    build(Operation::Remix, arguments).unwrap().remix.unwrap()
+    build(arguments).unwrap()
 }
 
 fn list(arguments: &str) -> VideoListCall {
-    build(Operation::List, arguments).unwrap().list.unwrap()
+    build(arguments).unwrap()
 }
 
 fn status(arguments: &str) -> VideoStatusRequest {
-    build(Operation::Status, arguments).unwrap().status.unwrap()
+    build(arguments).unwrap()
 }
 
 #[test]
@@ -153,10 +150,7 @@ fn request_generation_input_reference_bytes_carry_their_name() {
     let media = supplied.unwrap();
     assert_eq!(media.name.as_deref(), Some("ref.png"));
     assert_eq!(media.content, b"PNG".to_vec());
-    let request = request(Operation::Generate, &wire, Some(media))
-        .unwrap()
-        .generation
-        .unwrap();
+    let request = VideoGenerationRequest::build(&wire.arguments, Some(media)).unwrap();
     assert_eq!(
         request.input_reference,
         Some(SuppliedMedia::Bytes(b"PNG".to_vec()))
@@ -171,10 +165,7 @@ fn request_generation_default_file_name_is_unnamed() {
     let media = supplied.unwrap();
     assert_eq!(media.name, None);
     assert_eq!(media.content, b"PNG".to_vec());
-    let request = request(Operation::Generate, &wire, Some(media))
-        .unwrap()
-        .generation
-        .unwrap();
+    let request = VideoGenerationRequest::build(&wire.arguments, Some(media)).unwrap();
     assert_eq!(
         request.input_reference,
         Some(SuppliedMedia::Bytes(b"PNG".to_vec()))
@@ -268,7 +259,11 @@ fn request_remix_metadata_reaches_the_call() {
 fn request_list_arguments_reach_the_call() {
     let request = list(
         r#"{"after": "video_1", "limit": 3, "order": "asc", "api_key": "sk-1",
-            "timeout": 5, "custom_llm_provider": "openai"}"#,
+            "timeout": 5, "custom_llm_provider": "openai", "extra_query":{"x-extra":"1"}}"#,
+    );
+    assert_eq!(
+        request.extra_query.as_ref().unwrap().get("x-extra"),
+        Some(&Json::Text("1".to_owned()))
     );
     assert_eq!(request.after.as_deref(), Some("video_1"));
     assert_eq!(request.limit, Some(3));
@@ -317,14 +312,14 @@ fn request_drop_params_reads_the_argument_or_the_settings() {
 
 #[test]
 fn error_generation_without_a_prompt_names_the_field() {
-    let error = build(Operation::Generate, "{}").err().unwrap();
+    let error = build::<VideoGenerationRequest>("{}").err().unwrap();
     assert!(matches!(error, ConvertError::Field { .. }));
     assert_eq!(error.to_string(), "prompt must be a string");
 }
 
 #[test]
 fn error_generation_seconds_of_the_wrong_type_names_the_field() {
-    let error = build(Operation::Generate, r#"{"prompt": "p", "seconds": true}"#)
+    let error = build::<VideoGenerationRequest>(r#"{"prompt": "p", "seconds": true}"#)
         .err()
         .unwrap();
     assert_eq!(error.to_string(), "seconds must be a string");
@@ -332,25 +327,21 @@ fn error_generation_seconds_of_the_wrong_type_names_the_field() {
 
 #[test]
 fn error_timeout_that_is_not_a_number_names_the_field() {
-    let error = build(
-        Operation::Content,
-        r#"{"video_id": "v", "timeout": "soon"}"#,
-    )
-    .err()
-    .unwrap();
+    let error = build::<VideoContentRequest>(r#"{"video_id": "v", "timeout": "soon"}"#)
+        .err()
+        .unwrap();
     assert_eq!(error.to_string(), "timeout must be a number of seconds");
 }
 
 #[test]
 fn error_list_limit_that_is_not_an_integer_names_the_field() {
-    let error = build(Operation::List, r#"{"limit": 1.5}"#).err().unwrap();
+    let error = build::<VideoListCall>(r#"{"limit": 1.5}"#).err().unwrap();
     assert_eq!(error.to_string(), "limit must be an integer");
 }
 
 #[test]
 fn error_header_value_that_is_not_a_string_names_the_field() {
-    let error = build(
-        Operation::Remix,
+    let error = build::<VideoRemixCall>(
         r#"{"video_id": "v", "prompt": "p", "extra_headers": {"x-one": 1}}"#,
     )
     .err()
@@ -588,26 +579,28 @@ fn request_adapter_builds_list_urls() {
     };
     let params = Params::new();
     let headers = IndexMap::new();
-    let context = VideoRequestContext {
-        api_base: "https://api.example/v1/videos",
-        litellm_params: &params,
-        headers: &headers,
-    };
     let (list_url, list_params) = VideoRemixListConfig::transform_video_list_request(
         &config,
         VideoListQuery {
             after: Some("video_1"),
             limit: Some(3),
             order: Some("asc"),
-            extra_query: None,
+            extra_query: Some(&IndexMap::from([(
+                "x-extra".to_owned(),
+                Json::Text("1".to_owned()),
+            )])),
         },
         RemixContext {
-            api_base: context.api_base,
-            litellm_params: context.litellm_params,
-            headers: context.headers,
+            api_base: "https://api.example/v1/videos",
+            litellm_params: &params,
+            headers: &headers,
         },
     )
     .unwrap();
+    assert_eq!(
+        list_params.get("x-extra"),
+        Some(&Json::Text("1".to_owned()))
+    );
     assert_eq!(list_url, "https://api.example/v1/videos");
     assert!(matches!(list_params.get("after"), Some(Json::Text(value)) if value == "video_1"));
     assert!(
@@ -665,4 +658,42 @@ fn request_drop_params_defaults() {
     assert!(!drop_params(&wire("{}")).unwrap());
     assert!(!drop_params(&wire(r#"{"drop_params":null}"#)).unwrap());
     assert!(!drop_params(&wire(r#"{"drop_params":false}"#)).unwrap());
+}
+
+#[test]
+fn request_module_keys_reach_credentials() {
+    let session = VideoSession::build(r#"{"environment":{}}"#).unwrap();
+    for payload in [
+        r#"{"settings":{"api_key":"global-key"}}"#,
+        r#"{"settings":{"openai_key":"global-key"}}"#,
+    ] {
+        let (wire, _reference) = parse(payload, &mut []).unwrap();
+        let config = session_config(&session, &wire.settings, None);
+        let headers = config.headers(&IndexMap::new(), None, None);
+        assert_eq!(
+            headers.get("Authorization").map(String::as_str),
+            Some("Bearer global-key")
+        );
+    }
+}
+
+#[test]
+fn error_status_headers_name_the_rejected_header() {
+    let session = VideoSession::build(r#"{"environment":{}}"#).unwrap();
+    let config = session_config(&session, &SettingsWire::default(), None);
+    for (name, value) in [("bad name", "value"), ("x-note", "line1\nline2")] {
+        let headers = IndexMap::from([(name.to_owned(), value.to_owned())]);
+        let failure = VideoStatusConfig::validate_environment(
+            &config,
+            StatusEnvironment {
+                headers: &headers,
+                model: "",
+                api_key: None,
+                litellm_params: None,
+            },
+        )
+        .unwrap_err();
+        assert!(failure.message.contains(name));
+        assert_eq!(failure.status_code, Some(500));
+    }
 }

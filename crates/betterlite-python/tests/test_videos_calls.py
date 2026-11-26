@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import ClassVar, Final, NamedTuple, Protocol, TypeAlias, TypeVar, runtime_checkable
 from urllib.parse import parse_qsl, urlsplit
 
+import betterlite
 import pytest
 from batch_server import parameter_rows
 from pydantic import JsonValue, TypeAdapter
@@ -18,7 +19,7 @@ from typing_extensions import TypedDict
 from betterlite._completion.errors import ERROR_PAYLOAD, UnsupportedCallArgument
 from betterlite._endpoints.payload import CallValue
 from betterlite._native import NativeVideoError
-from betterlite.exceptions import AuthenticationError, NotFoundError
+from betterlite.exceptions import AuthenticationError, InternalServerError, NotFoundError
 
 HOST: Final = "127.0.0.1"
 OK: Final = 200
@@ -591,7 +592,9 @@ def test_content_variant_calls() -> None:
 
 
 def test_list_query_calls() -> None:
-    arguments: dict[str, CallValue] = {"after": AFTER, "limit": LIMIT, "order": ORDER}
+    arguments: dict[str, CallValue] = {
+        "after": AFTER, "limit": LIMIT, "order": ORDER, "extra_query": {"x-extra": "1"},
+    }
     with closing(VideoServer()) as server:
         swapped = compared(server, OURS.video_list, REFERENCE.video_list, arguments)
         asynchronous = asyncio.run(
@@ -601,7 +604,9 @@ def test_list_query_calls() -> None:
     assert base_path(swapped.ours_call) == base_path(swapped.reference_call)
     assert base_path(swapped.ours_call) == VIDEOS_PATH
     assert query_of(swapped.ours_call) == query_of(swapped.reference_call)
-    assert query_of(swapped.ours_call) == LIST_QUERY
+    assert query_of(swapped.ours_call) == {**LIST_QUERY, "x-extra": "1"}
+    assert query_of(asynchronous.ours_call) == query_of(asynchronous.reference_call)
+    assert query_of(asynchronous.ours_call) == {**LIST_QUERY, "x-extra": "1"}
     assert page_dump(swapped.ours) == page_dump(swapped.reference)
     assert page_dump(asynchronous.ours) == page_dump(swapped.reference)
 
@@ -684,3 +689,36 @@ def test_unsupported_objects() -> None:
     with pytest.raises(UnsupportedCallArgument, match="shared_session"):
         asyncio.run(awaited(OURS_ASYNC.avideo_generation(
             prompt=PROMPT, shared_session="session")))
+
+
+@pytest.mark.parametrize("headers", [{"x-note": "line1\nline2"}, {"bad name": "value"}])
+def test_status_invalid_headers_error(headers: dict[str, str]) -> None:
+    with closing(VideoServer()) as server:
+        values = endpoint_values(server, video_id=VIDEO_ID, extra_headers=headers)
+        with pytest.raises(InternalServerError) as made:
+            OURS.video_status(**values)
+        with pytest.raises(InternalServerError) as asynchronous:
+            asyncio.run(awaited(OURS_ASYNC.avideo_status(**values)))
+        for error in [made.value, asynchronous.value]:
+            assert error.status_code == 500
+            assert error.code is None
+            payload = ERROR_PAYLOAD.validate_json(str(native_cause(error)))
+            assert payload["type"] == "InternalServerError"
+        assert server.calls == []
+
+
+@pytest.mark.parametrize("key_name", ["api_key", "openai_key"])
+def test_module_key_calls(key_name: str) -> None:
+    previous_api = betterlite.api_key
+    previous_openai = betterlite.openai_key
+    try:
+        betterlite.api_key = GOOD_KEY if key_name == "api_key" else None
+        betterlite.openai_key = GOOD_KEY if key_name == "openai_key" else None
+        with closing(VideoServer()) as server:
+            OURS.video_generation(
+                prompt=PROMPT, model=MODEL, api_base=server.url, custom_llm_provider=PROVIDER)
+            recorded = {name.lower(): value for name, value in server.last()["headers"].items()}
+            assert recorded["authorization"] == f"Bearer {GOOD_KEY}"
+    finally:
+        betterlite.api_key = previous_api
+        betterlite.openai_key = previous_openai
