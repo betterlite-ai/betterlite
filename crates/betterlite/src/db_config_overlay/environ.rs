@@ -39,7 +39,7 @@ impl Workers {
         let mut stored = self.drain.lock().unwrap_or_else(PoisonError::into_inner);
         if (*stored).as_ref().is_none_or(|done| *done.borrow()) {
             let live = take(&mut *self.live.lock().unwrap_or_else(PoisonError::into_inner));
-            *stored = Some(start_drain(live)?);
+            *stored = Some(Self::start_drain(live)?);
         }
         let mut drained = (*stored).clone().ok_or(OverlayError::WorkerUnavailable)?;
         drop(stored);
