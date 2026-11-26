@@ -9,7 +9,7 @@ pub const DEFAULT_SUMMARY_MAX_TOKENS: u64 = 4096;
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub struct Raw {
-    general_settings: RawGeneralSettings,
+    general_settings: Option<RawGeneralSettings>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -77,16 +77,17 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
+        let general_settings = self.general_settings.unwrap_or_default();
         Ok(Settings {
             // ast-grep-ignore: no-long-names
             context_management_summary_model: summary_model(
                 // ast-grep-ignore: no-long-names
-                self.general_settings.context_management_summary_model,
+                general_settings.context_management_summary_model,
             ),
             // ast-grep-ignore: no-long-names
             context_management_summary_max_tokens: summary_max_tokens(
                 // ast-grep-ignore: no-long-names
-                self.general_settings.context_management_summary_max_tokens,
+                general_settings.context_management_summary_max_tokens,
             ),
         })
     }

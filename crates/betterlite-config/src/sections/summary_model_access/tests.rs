@@ -22,6 +22,7 @@ fn settings(source: &str, variables: &[(&str, &str)]) -> Settings {
 // the loader rejects a general_settings key no section claims, so every case here proves the key is supported
 #[rstest]
 #[case::absent("general_settings: {}\n", None, DEFAULT_SUMMARY_MAX_TOKENS)]
+#[case::null_section("general_settings: null\n", None, DEFAULT_SUMMARY_MAX_TOKENS)]
 #[case::explicit_null(
     "general_settings:\n  context_management_summary_model: null\n",
     None,
