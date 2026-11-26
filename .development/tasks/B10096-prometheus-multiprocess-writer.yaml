@@ -43,6 +43,7 @@ scope:
     - tools/oracle/src/helpers/prometheus/b10096.rs
     - tools/oracle/src/helpers/prometheus/b10096/**
     - tools/oracle/src/helpers/prometheus/Cargo.toml
+    - crates/betterlite-logging/src/prometheus_exporter/tests/duplicates.rs
   lint_tables: false
 references:
   - url: https://github.com/prometheus/client_python/blob/v0.20.0/prometheus_client/values.py#L39-L125
@@ -139,5 +140,5 @@ pitfalls:
   - "Take the writer's lock inside the samples lock in update, never the other way round, and never while holding the registry lock."
 review_level: standard
 budget:
-  max_changed_lines: 1400
+  max_changed_lines: 1450
   max_new_expects: 0

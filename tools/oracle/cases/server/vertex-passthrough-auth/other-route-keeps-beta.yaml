@@ -1,0 +1,11 @@
+kind: helper
+name: other-route-keeps-beta
+call:
+  b3622:
+    function: upstream_headers
+    endpoint: "v1/projects/p/locations/us-central1/publishers/anthropic/models/claude:count-tokens:rawPredict"
+    headers:
+      anthropic-beta: beta-1
+      content-type: application/json
+env: {}
+compare: {ignore: []}

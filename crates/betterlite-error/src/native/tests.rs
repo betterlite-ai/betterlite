@@ -174,6 +174,78 @@ fn native_errors_native_error_tests_behavior(
     );
 }
 
+// a provider HTTP error carries BaseLLMException's response, so Cohere's 498 branch answers 498 and not BadRequest's 400 default
+#[test]
+fn raw_status_cohere_498() {
+    let input = raw("cohere", "unrecognized failure", Some(498));
+    let class =
+        dispatch_native(&input, &input.error_str).expect("cohere classifies its 498 branch");
+    let ErrorClass::BadRequest(details) = class else {
+        panic!("expected BadRequest, got {class:?}");
+    };
+    assert_eq!(details.status.0, 498);
+}
+
+// the "invalid api token" branch passes the same response, so AuthenticationError answers 400 and not its 401 default
+#[test]
+fn raw_status_cohere_400_invalid_api_token() {
+    let input = raw("cohere", "invalid api token", Some(400));
+    let class = dispatch_native(&input, &input.error_str)
+        .expect("cohere classifies its invalid token branch");
+    let ErrorClass::Authentication(details) = class else {
+        panic!("expected Authentication, got {class:?}");
+    };
+    assert_eq!(details.status.0, 400);
+}
+
+// BaseLLMException builds its response whatever the status, so a synthesized 500 reaches the class like any other status
+#[test]
+fn raw_status_synthesized_cohere_invalid_token_answers_500() {
+    let mut input = raw("cohere", "invalid api token", Some(500));
+    input.status_code_is_synthesized = true;
+    let class = dispatch_native(&input, &input.error_str)
+        .expect("cohere classifies its invalid token branch");
+    let ErrorClass::Authentication(details) = class else {
+        panic!("expected Authentication, got {class:?}");
+    };
+    assert_eq!(details.status.0, 500);
+}
+
+// every response-reading branch gets the same facts, so the other providers answer the provider's status too
+#[test]
+fn raw_status_huggingface_context_window() {
+    let input = raw("huggingface", "length limit exceeded", Some(413));
+    let class = dispatch_native(&input, &input.error_str)
+        .expect("huggingface classifies its context window branch");
+    let ErrorClass::ContextWindowExceeded(details) = class else {
+        panic!("expected ContextWindowExceeded, got {class:?}");
+    };
+    assert_eq!(details.status.0, 413);
+}
+
+#[test]
+fn raw_status_ai21_context_window() {
+    let mut input = raw("ai21", "boom", Some(429));
+    input.message = Some("Prompt has too many tokens".to_owned());
+    let class = dispatch_native(&input, &input.error_str)
+        .expect("ai21 classifies its context window branch");
+    let ErrorClass::ContextWindowExceeded(details) = class else {
+        panic!("expected ContextWindowExceeded, got {class:?}");
+    };
+    assert_eq!(details.status.0, 429);
+}
+
+#[test]
+fn raw_status_openai_like_authorization_denied() {
+    let input = raw("predibase", "authorization denied for", Some(429));
+    let class = dispatch_native(&input, &input.error_str)
+        .expect("openai-like classifies its authorization branch");
+    let ErrorClass::Authentication(details) = class else {
+        panic!("expected Authentication, got {class:?}");
+    };
+    assert_eq!(details.status.0, 429);
+}
+
 #[test]
 fn ai21_elif_arm_still_classifies_when_called_directly_even_though_dispatch_never_reaches_it() {
     let mut input = raw("ai21", "boom", Some(401));

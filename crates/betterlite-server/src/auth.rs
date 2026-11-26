@@ -127,6 +127,9 @@ fn stage_input(
         AuthBackend::AuthKeyBudgets => Ok(StageInput::AuthKeyBudgets(Box::new(
             auth_key_budgets::stage_input(request, authenticated)?,
         ))),
+        AuthBackend::TeamBudgetAdmission => {
+            team_budget_admission::stage_input(request, authenticated)
+        }
         AuthBackend::AuthOrgLookup => Ok(StageInput::AuthOrgLookup(Box::new(
             auth_org_lookup::stage_input(request, authenticated)?,
         ))),
@@ -215,6 +218,7 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
                 .map_err(StageFailure::KeyBudgets)?;
             Ok(StageInput::AuthKeyBudgets(stage))
         }
+        StageInput::TeamBudgetAdmission(stage) => team_budget_admission::prefetched(stage).await,
         StageInput::AuthOrgLookup(stage) => {
             auth_org_lookup::prefetch(&stage)
                 .await
@@ -261,16 +265,12 @@ fn model_stage_input(
     context: AuthContext,
     resolver: &Arc<RequestModelResolver>,
 ) -> RequestModelStageInput {
-    let route = request.uri().path().to_owned();
-    let headers = headers_json(request.headers());
-    let query = query_json(request.uri().query());
-    let body = JsonObject::new();
     RequestModelStageInput {
         context,
-        route,
-        body,
-        headers: Some(headers),
-        query: Some(query),
+        route: request.uri().path().to_owned(),
+        body: JsonObject::new(),
+        headers: Some(headers_json(request.headers())),
+        query: Some(query_json(request.uri().query())),
         endpoint_marker: None,
         path_params: BTreeSet::new(),
         team_id: None,

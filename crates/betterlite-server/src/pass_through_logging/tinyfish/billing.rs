@@ -22,7 +22,7 @@ use super::payload::build_logging_payload;
 use super::poll::{PollClock, PollSleeper};
 use super::records::{TinyfishRun, parse_run};
 use super::sse::{mark_sse_poller_spawned, run_id_from_sse_lines};
-use super::tasks::BillingTasks;
+use crate::pass_through_logging::background_tasks::BackgroundTasks;
 
 // The base and the rate travel with each billing call, so a proxy restart is not needed to move either.
 #[derive(Clone, Debug)]
@@ -66,7 +66,7 @@ pub struct BillingDeps {
     pub sleeper: Arc<dyn PollSleeper>,
     pub clock: Arc<dyn SuccessClock>,
     pub payload: Arc<dyn RunPayload>,
-    pub tasks: BillingTasks,
+    pub tasks: BackgroundTasks,
 }
 
 pub struct TinyfishRunBilling {

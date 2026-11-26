@@ -4,9 +4,8 @@ pub mod merge;
 pub mod writer;
 
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-// the multiprocess folder, the files in it and the keys they hold, as prometheus_client reports them
 #[derive(Debug, thiserror::Error)]
 pub enum MultiprocessError {
     #[error("env PROMETHEUS_MULTIPROC_DIR is not set or not a directory")]
@@ -29,6 +28,19 @@ pub enum MultiprocessError {
         #[source]
         source: io::Error,
     },
+    #[error("cannot write {}: {source}", path.display())]
+    Write {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("cannot encode the metric key: {source}")]
+    Key {
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("the metric key {key} has no entry in its file")]
+    MissingKey { key: String },
     #[error("Read beyond file size detected, file is corrupted.")]
     Corrupted,
     #[error("the file stops before the entry at offset {offset}")]
@@ -48,4 +60,12 @@ pub enum MultiprocessError {
     InvalidFileName { path: PathBuf },
     #[error("the bucket bound {bound} is not a float")]
     InvalidBucketBound { bound: String },
+}
+
+pub(crate) fn check_directory(path: &Path) -> Result<(), MultiprocessError> {
+    if path.is_dir() {
+        Ok(())
+    } else {
+        Err(MultiprocessError::MissingDirectory)
+    }
 }

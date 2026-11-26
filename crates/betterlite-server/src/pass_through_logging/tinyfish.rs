@@ -6,7 +6,6 @@ pub mod poll;
 pub mod records;
 pub mod settings;
 pub mod sse;
-pub mod tasks;
 
 use std::time::Duration;
 
@@ -37,6 +36,9 @@ pub const TINYFISH_ENVELOPE_FIELDS: [&str; 3] = ["custom_body", "stream", "query
 pub const TINYFISH_TIMEOUT_SECONDS: f64 = 1500.0;
 
 pub(crate) const TINYFISH_PROVIDER: &str = "tinyfish";
+// A poller cancelled before it writes its spend row leaves the run unbilled, so the tracker warns with these words.
+pub(crate) const BILLING_CANCELLED_WARNING: &str =
+    "TinyFish passthrough: billing poller cancelled mid-poll; the run may go unbilled";
 
 #[must_use]
 pub fn resolve_tinyfish_api_base() -> String {

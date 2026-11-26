@@ -4,7 +4,7 @@ use rust_decimal::prelude::ToPrimitive as _;
 
 use crate::collector_factory::collector::MetricValue;
 
-use super::Bucket;
+use super::{Bucket, MISSING_LABEL};
 
 // one label set's samples: the running total, the observation count, the cumulative bucket counts and when the series was created
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -53,6 +53,17 @@ pub fn added(left: MetricValue, right: MetricValue) -> MetricValue {
     }
 }
 
+// a MetricValue as the double the text renderer writes and the multiprocess files hold
+#[must_use]
+pub fn value_of(value: MetricValue) -> f64 {
+    match value {
+        MetricValue::Finite(number) => number.to_f64().unwrap_or(f64::NAN),
+        MetricValue::PositiveInfinity => f64::INFINITY,
+        MetricValue::NegativeInfinity => f64::NEG_INFINITY,
+        MetricValue::NotANumber => f64::NAN,
+    }
+}
+
 // prometheus_client counts an observation in every bucket whose upper bound it does not exceed
 #[must_use]
 pub fn within(value: MetricValue, bound: Bucket) -> bool {
@@ -64,4 +75,11 @@ pub fn within(value: MetricValue, bound: Bucket) -> bool {
         MetricValue::NegativeInfinity => true,
         MetricValue::NotANumber => false,
     }
+}
+
+pub(crate) fn label_key(label_values: &[Option<String>]) -> Vec<String> {
+    label_values
+        .iter()
+        .map(|value| value.clone().unwrap_or_else(|| MISSING_LABEL.to_owned()))
+        .collect()
 }

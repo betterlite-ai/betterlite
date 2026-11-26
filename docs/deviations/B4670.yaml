@@ -1,0 +1,15 @@
+task: B4670
+deviations:
+  - what: Every read goes through the CeilingReads port that Ceilings<R> receives at construction, including the two admission marks, which arrive through a small AdmissionMarkReads port because betterlite-auth keeps mcp_admitted_user_subject and mcp_explicit_grants_only pub(crate) and skip_serializing, so no public view exposes them.
+    why: betterlite has no module-level state and passes its dependencies in; the observable results are the same, and the port is where the admission layer hands the marks over.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L3205-L3265
+  - what: Lists LiteLLM builds from a Python set (the org, user, agent, tool permission and toolset unions, the tool intersections and the access group ceiling) come back de-duplicated in first-seen order.
+    why: Python's set order is not stable between processes, so no client can rely on it; the members are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L2928-L2931
+  - what: LiteLLM's None and [] server returns are the CeilingServers enum, its (list, bool) tuples are Capped and tool lists are Option<Vec<String>>, so the sentinels live in the types.
+    why: Rust has no truthiness-based reading of an empty list, and the types keep "no ceiling", "unresolved" and "empty list" apart the way LiteLLM's sentinels do.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L1773-L1801
+  - what: Only agent_capped_servers has oracle cases; every other function is covered by Rust tests with a fake CeilingReads.
+    why: the other functions read proxy_server globals (prisma_client, the user api key cache, global_mcp_server_manager), which a helper adapter cannot drive; their HTTP cases arrive with the routes that wire them.
+    link: ""
+kept_bugs: []

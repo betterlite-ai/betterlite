@@ -1,5 +1,7 @@
 pub mod classify;
+pub mod config_section;
 pub mod error;
+pub mod gate;
 pub mod log;
 pub mod run;
 mod tests;

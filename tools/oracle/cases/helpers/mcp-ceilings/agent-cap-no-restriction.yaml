@@ -1,0 +1,9 @@
+kind: helper
+name: mcp-ceilings-agent-cap-no-restriction
+call:
+  b4670:
+    allowed: [srv-a, srv-b]
+    agent_servers: []
+    access_group_servers: null
+env: {}
+compare: {ignore: []}

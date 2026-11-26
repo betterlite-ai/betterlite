@@ -1,0 +1,24 @@
+kind: helper
+name: override-projection-audit-redacts-every-value
+call:
+  override_projection:
+    function: audit
+    kind: hashicorp_vault
+    config:
+      vault_addr: "https://vault.example.com:8200"
+      vault_token: hunter2-token
+      vault_namespace: null
+      nested:
+        token: hunter2
+      count: 3
+calls:
+  - override_projection:
+      function: audit
+      kind: hashicorp_vault
+      config: {}
+  - override_projection:
+      function: audit
+      kind: cyberark
+      config: null
+env: {}
+compare: {ignore: []}

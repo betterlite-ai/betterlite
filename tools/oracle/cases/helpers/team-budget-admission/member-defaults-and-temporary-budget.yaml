@@ -1,0 +1,118 @@
+kind: helper
+name: team-budget-admission-member-defaults-and-temporary-budget
+call:
+  team_budget_admission:
+    calls:
+      # a member without a budget row is capped by the positive team default
+      - function: admit
+        team:
+          team_id: team-1
+          metadata:
+            team_member_budget_id: team-default
+        token:
+          token: sk-member
+          user_id: user-1
+          team_id: team-1
+        membership:
+          user_id: user-1
+          team_id: team-1
+          spend: 1.5
+        default_budget:
+          budget_id: team-default
+          max_budget: 7.0
+        spends: [6.99]
+        now: "2026-06-01T12:00:00Z"
+      # a zero team default is no cap, so nothing is read
+      - function: admit
+        team:
+          team_id: team-1
+          metadata:
+            team_member_budget_id: team-default
+        token:
+          token: sk-member
+          user_id: user-1
+          team_id: team-1
+        membership:
+          user_id: user-1
+          team_id: team-1
+          spend: 1.5
+        default_budget:
+          budget_id: team-default
+          max_budget: 0.0
+        spends: []
+        now: "2026-06-01T12:00:00Z"
+      # no membership row at all still takes the team default with a zero fallback
+      - function: admit
+        team:
+          team_id: team-1
+          metadata:
+            team_member_budget_id: team-default
+        token:
+          token: sk-member
+          user_id: user-1
+          team_id: team-1
+        membership: null
+        default_budget:
+          budget_id: team-default
+          max_budget: 7.0
+        spends: [7.0]
+        now: "2026-06-01T12:00:00Z"
+      # a null member maximum falls back to the default plus the member's active increase
+      - function: admit
+        team:
+          team_id: team-1
+          metadata:
+            team_member_budget_id: team-default
+        token:
+          token: sk-member
+          user_id: user-1
+          team_id: team-1
+        membership:
+          user_id: user-1
+          team_id: team-1
+          litellm_budget_table:
+            max_budget: null
+            temp_budget_increase: 5.0
+            temp_budget_expiry: "2026-06-02T00:00:00Z"
+        default_budget:
+          budget_id: team-default
+          max_budget: 7.0
+        spends: [11.99]
+        now: "2026-06-01T12:00:00Z"
+      # an increase that expires exactly now no longer applies
+      - function: admit
+        team:
+          team_id: team-1
+        token:
+          token: sk-member
+          user_id: user-1
+          team_id: team-1
+        membership:
+          user_id: user-1
+          team_id: team-1
+          litellm_budget_table:
+            max_budget: 10.0
+            temp_budget_increase: 5.0
+            temp_budget_expiry: "2026-06-01T12:00:00Z"
+        spends: [10.0]
+        now: "2026-06-01T12:00:00Z"
+      # one second before expiry the increase still raises the cap
+      - function: admit
+        team:
+          team_id: team-1
+        token:
+          token: sk-member
+          user_id: user-1
+          team_id: team-1
+        membership:
+          user_id: user-1
+          team_id: team-1
+          litellm_budget_table:
+            max_budget: 10.0
+            temp_budget_increase: 5.0
+            temp_budget_expiry: "2026-06-01T12:00:01Z"
+        spends: [10.0]
+        now: "2026-06-01T12:00:00Z"
+env: {}
+compare:
+  ignore: []

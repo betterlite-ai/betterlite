@@ -37,8 +37,8 @@ impl CounterBatch for SpendCounterScope {
     }
 }
 
-// SpendCounterReseed warms through its own trait, so the dyn CounterBatch stands in for one there
-impl ActiveSpendBatch for Arc<dyn CounterBatch> {
+// SpendCounterReseed warms through its own trait, so the dyn CounterBatch stands in for one there, and one impl for every batch region keeps the seeding chain provable in a Send future (rust-lang/rust#130113)
+impl ActiveSpendBatch for Arc<dyn CounterBatch + '_> {
     async fn read(
         &self,
         counter_key: &str,

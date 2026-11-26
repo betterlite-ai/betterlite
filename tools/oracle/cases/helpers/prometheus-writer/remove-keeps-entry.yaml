@@ -1,0 +1,20 @@
+kind: helper
+name: prometheus-writer-remove-keeps-entry
+call:
+  b10096:
+    pid: 1005
+    metrics:
+      - {kind: counter, name: litellm_requests, help: Requests served, labels: [model], buckets: [], mode: all}
+    updates:
+      - {metric: 0, labels: [gpt-4o], action: inc, value: 2}
+      - {metric: 0, labels: [gpt-4o], action: remove, value: 0}
+      - {metric: 0, labels: [gpt-4o], action: inc, value: 3}
+    call: files
+    accept: ""
+env: {}
+compare:
+  ignore:
+    - pointer: /value/files/0/used
+      why: >-
+        serde_json writes the key compactly, so the entry lengths and the used length differ
+        from json.dumps (docs/deviations/B10096.yaml).

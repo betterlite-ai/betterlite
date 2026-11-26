@@ -1,0 +1,49 @@
+kind: helper
+name: model-info-search-wildcard-literal-filter
+call:
+  model_info_search:
+    function: matches_filters
+    exclude_auto_routers: null
+    access_group: null
+    wildcard_only: true
+    models:
+      - model_name: gpt-*
+        litellm_params:
+          model: auto_router/semantic
+      - model_name: gpt-4o
+      - model_name: only-wildcard
+      - model_name: "*"
+calls:
+  - model_info_search:
+      function: matches_filters
+      wildcard_only: false
+      models:
+        - model_name: gpt-*
+          litellm_params:
+            model: auto_router/semantic
+        - model_name: gpt-4o
+        - model_name: only-wildcard
+        - model_name: "*"
+  - model_info_search:
+      function: matches_filters
+      exclude_auto_routers: true
+      wildcard_only: true
+      models:
+        - model_name: gpt-*
+          litellm_params:
+            model: auto_router/semantic
+        - model_name: gpt-4o
+        - model_name: only-wildcard
+        - model_name: "*"
+  - model_info_search:
+      function: matches_filters
+      wildcard_only: null
+      models:
+        - model_name: gpt-*
+          litellm_params:
+            model: auto_router/semantic
+        - model_name: gpt-4o
+        - model_name: only-wildcard
+        - model_name: "*"
+env: {}
+compare: {ignore: []}

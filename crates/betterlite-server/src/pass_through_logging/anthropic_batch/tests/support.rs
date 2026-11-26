@@ -35,6 +35,7 @@ use crate::pass_through_logging::anthropic_batch::{
     BatchRegistrant, BatchRegistration, ManagedBatchRegistry, RegistryError, ResponseIds,
     RouterModelIds,
 };
+use crate::pass_through_logging::background_tasks::BackgroundTasks;
 
 pub(crate) const BATCH_ID: &str = "msgbatch_1";
 pub(crate) const MODEL: &str = "claude-x";
@@ -328,7 +329,7 @@ pub(crate) fn handler_with_ids(
     registry_port: Option<Arc<dyn ManagedBatchRegistry>>,
     ids: Arc<dyn ResponseIds>,
 ) -> AnthropicBatchLogging {
-    AnthropicBatchLogging::new(router_port, registry_port, ids)
+    AnthropicBatchLogging::new(router_port, registry_port, ids, BackgroundTasks::default())
 }
 
 pub(crate) fn run(

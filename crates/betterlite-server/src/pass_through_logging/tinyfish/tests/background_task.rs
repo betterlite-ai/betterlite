@@ -4,7 +4,7 @@ use super::billing::AsyncRun;
 use super::support::{
     ScriptedReply, dispatch_handle, fixture, json, kwargs, shared_logging_object, start_time,
 };
-use super::tasks::BillingTasks;
+use crate::pass_through_logging::background_tasks::BackgroundTasks;
 
 const PENDING_BODY: &str = r#"{"run_id": "run-1", "status": "PENDING"}"#;
 const COMPLETED_BODY: &str = r#"{"run_id": "run-1", "status": "COMPLETED", "num_of_steps": 3}"#;
@@ -69,7 +69,7 @@ async fn shutdown_waits_for_a_running_poller() {
         start_time: start_time(),
     });
 
-    BillingTasks {
+    BackgroundTasks {
         tasks: fixture.tasks.clone(),
     }
     .shutdown()

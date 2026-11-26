@@ -1,0 +1,1 @@
+{"litellm_embedding_config":{"api_key":"secret","api_base":"https://api.example.com/v1"},"vertex_credentials":{}}
