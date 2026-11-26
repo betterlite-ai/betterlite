@@ -94,14 +94,13 @@ impl RecordingDialer {
         *self.failure.lock().unwrap() = Some(error);
     }
 
-    fn only(&self) -> ProbeConnection {
+    // the newest handshake; a test that asserts a count reads count() instead
+    fn last(&self) -> ProbeConnection {
         let connections = self.connections.lock().unwrap();
-        assert_eq!(
-            connections.len(),
-            1,
-            "the probe opens exactly one connection"
-        );
-        connections[0].clone()
+        connections
+            .last()
+            .expect("the probe opens a connection")
+            .clone()
     }
 
     fn count(&self) -> usize {
@@ -350,7 +349,7 @@ async fn realtime_probe_stored_precedence() {
     named.api_version = Some(String::from("named-version"));
     named.realtime_protocol = Some(String::from("beta"));
     probe.run(&named, &base).await.unwrap();
-    let connection = dialer.only();
+    let connection = dialer.last();
     assert_eq!(
         connection.url,
         "wss://named.test/openai/realtime?api-version=named-version&deployment=realtime-a"
@@ -369,7 +368,7 @@ async fn realtime_probe_stored_precedence() {
     );
     merged.realtime_protocol = Some(String::from("beta"));
     probe.run(&merged, &base).await.unwrap();
-    let connection = dialer.only();
+    let connection = dialer.last();
     assert_eq!(
         connection.url,
         "wss://stored.test/openai/realtime?api-version=stored-version&deployment=realtime-a"
@@ -415,7 +414,7 @@ async fn realtime_probe_explicit_none_erases_a_stored_value() {
     );
     request.realtime_protocol = Some(String::from("beta"));
     probe.run(&request, &settings()).await.unwrap();
-    let connection = dialer.only();
+    let connection = dialer.last();
     assert_eq!(
         connection.url, "/openai/realtime?api-version=2024-10-01-preview&deployment=realtime-a",
         "an explicit None erases the stored value and the defaults apply"
@@ -450,7 +449,7 @@ async fn realtime_probe_credential_name_lookup_rules() {
     );
     probe.run(&empty_name, &settings()).await.unwrap();
     assert_eq!(
-        dialer.only().url,
+        dialer.last().url,
         "wss://empty-name.test/v1/realtime?model=realtime-a",
         "an empty string still reaches the credential accessor"
     );
@@ -464,7 +463,7 @@ async fn realtime_probe_credential_name_lookup_rules() {
     );
     probe.run(&non_string, &settings()).await.unwrap();
     assert_eq!(
-        dialer.only().url,
+        dialer.last().url,
         "wss://api.openai.com/v1/realtime?model=realtime-a",
         "a non-string credential name performs no lookup"
     );
@@ -488,13 +487,13 @@ async fn realtime_probe_openai_auth_headers() {
     let absent = probe_request("openai", MODEL, JsonObject::new());
     probe.run(&absent, &settings()).await.unwrap();
     assert!(
-        dialer.only().headers.is_empty(),
+        dialer.last().headers.is_empty(),
         "an absent key sends no auth header"
     );
     let empty = probe_request("openai", MODEL, params(&[("api_key", text(""))]));
     probe.run(&empty, &settings()).await.unwrap();
     assert_eq!(
-        dialer.only().headers,
+        dialer.last().headers,
         Headers::from([(String::from("Authorization"), String::from("Bearer "))]),
         "an empty key still sends a Bearer header"
     );
@@ -538,7 +537,7 @@ async fn realtime_probe_azure_resolves_ad_from_the_merged_parameters() {
         "the accessor reads the merged map"
     );
     assert_eq!(
-        dialer.only().headers,
+        dialer.last().headers,
         Headers::from([(
             String::from("Authorization"),
             String::from("Bearer resolved-ad-token")
@@ -570,39 +569,39 @@ async fn realtime_probe_azure_protocol() {
     let transcription = probe_request("azure", MODEL, JsonObject::new());
     probe.run(&transcription, &base).await.unwrap();
     assert_eq!(
-        dialer.only().url,
+        dialer.last().url,
         "/openai/v1/realtime?intent=transcription",
         "a transcription model supplies only intent=transcription with the default base"
     );
     let endpoint_model = probe_request("azure", "endpoint-model", JsonObject::new());
     probe.run(&endpoint_model, &base).await.unwrap();
     assert_eq!(
-        dialer.only().url,
+        dialer.last().url,
         "/openai/v1/realtime?intent=transcription"
     );
     let other = probe_request("azure", "other-endpoint", JsonObject::new());
     probe.run(&other, &base).await.unwrap();
     assert_eq!(
-        dialer.only().url,
+        dialer.last().url,
         "/openai/v1/realtime?model=other-endpoint"
     );
     let failing = probe_request("azure", "failing-model", JsonObject::new());
     probe.run(&failing, &base).await.unwrap();
     assert_eq!(
-        dialer.only().url,
+        dialer.last().url,
         "/openai/v1/realtime?model=failing-model",
         "a failing metadata lookup is not a transcription model"
     );
 
-    // named, then model parameters, then the environment
+    // named, then model parameters, then the environment; MODEL is transcription-only, so intent rides along
     let mut named = probe_request("azure", MODEL, params(&[("realtime_protocol", text("GA"))]));
     named.realtime_protocol = Some(String::from("beta"));
     let mut ga_environment = settings();
     ga_environment.azure_realtime_protocol = Some(String::from("GA"));
     probe.run(&named, &ga_environment).await.unwrap();
     assert_eq!(
-        dialer.only().url,
-        "/openai/realtime?api-version=2024-10-01-preview&deployment=realtime-a",
+        dialer.last().url,
+        "/openai/realtime?api-version=2024-10-01-preview&deployment=realtime-a&intent=transcription",
         "the named protocol wins over the model parameters"
     );
 
@@ -611,8 +610,8 @@ async fn realtime_probe_azure_protocol() {
     let model_ga = probe_request("azure", MODEL, params(&[("realtime_protocol", text("GA"))]));
     probe.run(&model_ga, &beta_environment).await.unwrap();
     assert_eq!(
-        dialer.only().url,
-        "/openai/v1/realtime?model=realtime-a",
+        dialer.last().url,
+        "/openai/v1/realtime?intent=transcription",
         "the model protocol wins over the environment"
     );
 
@@ -623,23 +622,80 @@ async fn realtime_probe_azure_protocol() {
     );
     probe.run(&non_string, &beta_environment).await.unwrap();
     assert_eq!(
-        dialer.only().url,
-        "/openai/v1/realtime?model=realtime-a",
+        dialer.last().url,
+        "/openai/v1/realtime?intent=transcription",
         "a truthy non-string model protocol suppresses the environment and falls back to GA"
     );
 
     let plain = probe_request("azure", MODEL, JsonObject::new());
     probe.run(&plain, &beta_environment).await.unwrap();
     assert_eq!(
-        dialer.only().url,
-        "/openai/realtime?api-version=2024-10-01-preview&deployment=realtime-a",
+        dialer.last().url,
+        "/openai/realtime?api-version=2024-10-01-preview&deployment=realtime-a&intent=transcription",
         "the environment supplies beta when nothing else is configured"
     );
     probe.run(&plain, &settings()).await.unwrap();
     assert_eq!(
-        dialer.only().url,
-        "/openai/v1/realtime?model=realtime-a",
+        dialer.last().url,
+        "/openai/v1/realtime?intent=transcription",
         "no configured string gives GA"
+    );
+
+    // a falsy configured value falls through to the next truthy one
+    let mut empty_named = probe_request("azure", MODEL, JsonObject::new());
+    empty_named.realtime_protocol = Some(String::new());
+    probe.run(&empty_named, &beta_environment).await.unwrap();
+    assert_eq!(
+        dialer.last().url,
+        "/openai/realtime?api-version=2024-10-01-preview&deployment=realtime-a&intent=transcription",
+        "an empty named protocol is absent, so the environment applies"
+    );
+    let empty_list = probe_request(
+        "azure",
+        MODEL,
+        params(&[("realtime_protocol", Json::List(Vec::new()))]),
+    );
+    probe.run(&empty_list, &beta_environment).await.unwrap();
+    assert_eq!(
+        dialer.last().url,
+        "/openai/realtime?api-version=2024-10-01-preview&deployment=realtime-a&intent=transcription",
+        "an empty list is falsy"
+    );
+    let truthy_list = probe_request(
+        "azure",
+        MODEL,
+        params(&[("realtime_protocol", Json::List(vec![text("GA")]))]),
+    );
+    probe.run(&truthy_list, &beta_environment).await.unwrap();
+    assert_eq!(
+        dialer.last().url,
+        "/openai/v1/realtime?intent=transcription",
+        "a non-empty list is truthy and is not a string"
+    );
+    let empty_object = probe_request(
+        "azure",
+        MODEL,
+        params(&[("realtime_protocol", Json::Object(JsonObject::new()))]),
+    );
+    probe.run(&empty_object, &beta_environment).await.unwrap();
+    assert_eq!(
+        dialer.last().url,
+        "/openai/realtime?api-version=2024-10-01-preview&deployment=realtime-a&intent=transcription",
+        "an empty object is falsy"
+    );
+    let truthy_object = probe_request(
+        "azure",
+        MODEL,
+        params(&[(
+            "realtime_protocol",
+            Json::Object(JsonObject::from([(String::from("value"), text("GA"))])),
+        )]),
+    );
+    probe.run(&truthy_object, &beta_environment).await.unwrap();
+    assert_eq!(
+        dialer.last().url,
+        "/openai/v1/realtime?intent=transcription",
+        "a non-empty object is truthy and is not a string"
     );
 }
 
@@ -661,7 +717,7 @@ async fn realtime_probe_openai_and_xai_defaults() {
     let mut openai = probe_request("openai", MODEL, JsonObject::new());
     openai.api_key = Some(SecretString::from("openai-key"));
     probe.run(&openai, &settings()).await.unwrap();
-    let connection = dialer.only();
+    let connection = dialer.last();
     assert_eq!(
         connection.url, "wss://api.openai.com/v1/realtime?model=realtime-a",
         "OpenAI always supplies query model, even for a transcription-named model"
@@ -676,7 +732,7 @@ async fn realtime_probe_openai_and_xai_defaults() {
     let xai = probe_request("xai", MODEL, JsonObject::new());
     probe.run(&xai, &settings()).await.unwrap();
     assert_eq!(
-        dialer.only().url,
+        dialer.last().url,
         "wss://api.x.ai/v1/realtime?model=realtime-a"
     );
 }
@@ -733,7 +789,7 @@ async fn realtime_probe_vertex_and_failures() {
     assert_eq!(targets[0].access_token.expose_secret(), "oauth-token");
     assert_eq!(vertex.configured_regions(), vec![None]);
     assert_eq!(
-        dialer.only().headers,
+        dialer.last().headers,
         Headers::from([(
             String::from("Authorization"),
             String::from("Bearer oauth-token")
@@ -767,8 +823,10 @@ async fn realtime_probe_vertex_and_failures() {
         .run(&live, &settings())
         .await
         .expect_err("a refused handshake propagates instead of returning false");
-    assert!(matches!(refused, RealtimeProbeError::Dial(_)));
-    assert_eq!(refused.status(), None);
+    match refused {
+        RealtimeProbeError::Dial(error) => assert_eq!(error.status, None),
+        other => panic!("a refused handshake is a dial error, got {other:?}"),
+    }
     dialer.fail(ProbeDialError::new(
         "InvalidStatus",
         String::from("HTTP 503"),
@@ -812,11 +870,11 @@ async fn realtime_probe_connection_settings() {
         verification: &Verification::Enabled,
     };
     enabled.run(&request, &explicit).await.unwrap();
-    let connection = dialer.only();
+    let connection = dialer.last();
     assert_eq!(connection.ssl, RealtimeSsl::Shared(Verification::Enabled));
     assert_eq!(connection.max_size, 1024);
     enabled.run(&request, &settings()).await.unwrap();
-    assert_eq!(dialer.only().max_size, 16 * 1024 * 1024);
+    assert_eq!(dialer.last().max_size, 16 * 1024 * 1024);
 
     let disabled = Probe {
         stored: &stored,
@@ -827,13 +885,40 @@ async fn realtime_probe_connection_settings() {
         verification: &Verification::Disabled,
     };
     disabled.run(&request, &settings()).await.unwrap();
-    assert_eq!(dialer.only().ssl, RealtimeSsl::Insecure);
+    assert_eq!(dialer.last().ssl, RealtimeSsl::Insecure);
     let mut plaintext = probe_request("openai", MODEL, JsonObject::new());
     plaintext.api_base = Some(String::from("http://provider.test"));
     disabled.run(&plaintext, &settings()).await.unwrap();
     assert_eq!(
-        dialer.only().ssl,
+        dialer.last().ssl,
         RealtimeSsl::Disabled,
         "a plaintext URL passes no TLS context"
+    );
+}
+
+// the impl B2225's probe reads through when the metadata comes from the model catalog
+#[test]
+fn realtime_probe_catalog_metadata_reads_mode_and_endpoints() {
+    let catalog = catalog(
+        br#"{"vertex_ai/chirp_2": {"litellm_provider": "vertex_ai", "mode": "audio_transcription", "supported_endpoints": ["/v1/audio/transcriptions", "/v1/realtime"]}, "openai/gpt-realtime": {"litellm_provider": "openai", "mode": "realtime"}}"#,
+    );
+    let chirp = catalog
+        .model_info("chirp_2", "vertex_ai")
+        .unwrap()
+        .expect("the catalog maps chirp_2");
+    assert_eq!(chirp.mode, Some(Mode::AudioTranscription));
+    assert_eq!(
+        chirp.supported_endpoints,
+        vec!["/v1/audio/transcriptions", "/v1/realtime"]
+    );
+    let live = catalog
+        .model_info("gpt-realtime", "openai")
+        .unwrap()
+        .expect("the catalog maps gpt-realtime");
+    assert_eq!(live.mode, Some(Mode::Realtime));
+    assert!(live.supported_endpoints.is_empty());
+    assert_eq!(
+        catalog.model_info("missing-model", "vertex_ai").unwrap(),
+        None
     );
 }
