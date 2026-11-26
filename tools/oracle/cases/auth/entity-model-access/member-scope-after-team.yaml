@@ -1,0 +1,41 @@
+kind: helper
+name: entity-model-access-auth-member-scope-after-team
+call:
+  entity_model_access:
+    steps:
+      - function: resolved
+        model: claude
+        database: true
+        token: {token: hash-1, team_id: team-1, user_id: user-1}
+        cache:
+          "team_id:team-1": {team_id: team-1, models: [claude, gpt-4o]}
+          "team_membership:user-1:team-1": {user_id: user-1, team_id: team-1, budget_id: budget-1, litellm_budget_table: {allowed_models: [claude]}}
+      - function: resolved
+        model: claude
+        database: true
+        token: {token: hash-1, team_id: team-1, user_id: user-1}
+        cache:
+          "team_id:team-1": {team_id: team-1, models: [claude, gpt-4o]}
+          "team_membership:user-1:team-1": {user_id: user-1, team_id: team-1, budget_id: budget-1, litellm_budget_table: {allowed_models: [gpt-4o]}}
+      - function: resolved
+        model: claude
+        database: true
+        token: {token: hash-1, team_id: team-1}
+        cache:
+          "team_id:team-1": {team_id: team-1, models: [claude, gpt-4o]}
+          "team_membership:user-1:team-1": {user_id: user-1, team_id: team-1, budget_id: budget-1, litellm_budget_table: {allowed_models: [gpt-4o]}}
+      - function: resolved
+        model: claude
+        database: false
+        token: {token: hash-1, team_id: team-1, team_models: [claude], user_id: user-1}
+        cache:
+          "team_membership:user-1:team-1": {user_id: user-1, team_id: team-1, budget_id: budget-1, litellm_budget_table: {allowed_models: [gpt-4o]}}
+      - function: resolved
+        model: fast
+        database: true
+        token: {token: hash-1, team_id: team-1, user_id: user-1, team_model_aliases: {fast: claude}}
+        cache:
+          "team_id:team-1": {team_id: team-1, models: [claude]}
+          "team_membership:user-1:team-1": {user_id: user-1, team_id: team-1, budget_id: budget-1, litellm_budget_table: {allowed_models: [claude]}}
+env: {}
+compare: {ignore: []}
