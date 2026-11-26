@@ -28,7 +28,7 @@ const SIZE_ROWS: [(&str, &str); 15] = [
     (r#"{"n": null}"#, NO_CONFIG),
 ];
 
-const GENERATION_ROWS: [(&str, Option<&str>); 10] = [
+const GENERATION_ROWS: [(&str, Option<&str>); 16] = [
     (r#"{"size": "10x20", "width": 5}"#, Some(r#"{"width":5}"#)),
     (r#"{"size": "10x20", "height": 7}"#, Some(r#"{"height":7}"#)),
     (
@@ -42,6 +42,30 @@ const GENERATION_ROWS: [(&str, Option<&str>); 10] = [
     (
         r#"{"imageGenerationConfig": {"width": 1}, "width": 9, "seed": 6}"#,
         Some(r#"{"width":9,"seed":6}"#),
+    ),
+    (
+        r#"{"width": 9, "imageGenerationConfig": {"width": 1}}"#,
+        Some(r#"{"width":9}"#),
+    ),
+    (
+        r#"{"height": 9, "imageGenerationConfig": {"height": 1}}"#,
+        Some(r#"{"height":9}"#),
+    ),
+    (
+        r#"{"numberOfImages": 9, "imageGenerationConfig": {"numberOfImages": 1}}"#,
+        Some(r#"{"numberOfImages":9}"#),
+    ),
+    (
+        r#"{"quality": "premium", "imageGenerationConfig": {"quality": "standard"}}"#,
+        Some(r#"{"quality":"premium"}"#),
+    ),
+    (
+        r#"{"cfgScale": 9.5, "imageGenerationConfig": {"cfgScale": 1.5}}"#,
+        Some(r#"{"cfgScale":9.5}"#),
+    ),
+    (
+        r#"{"seed": 6, "imageGenerationConfig": {"seed": 1}}"#,
+        Some(r#"{"seed":6}"#),
     ),
     (
         r#"{"imageGenerationConfig": {"seed": 1}}"#,

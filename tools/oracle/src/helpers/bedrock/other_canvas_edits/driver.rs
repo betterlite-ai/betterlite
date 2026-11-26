@@ -45,7 +45,7 @@ pub(super) fn observe(call: &Call, model_cost: &ParamMap, catalog: &Catalog) -> 
                     match answer {
                         Ok(ImageEditConfig::Stability) => json!({"config": "stability"}),
                         Ok(ImageEditConfig::NovaCanvas) => json!({"config": "nova_canvas"}),
-                        Err(error) => json!({"ok": false, "error": {"status": error.status()}}),
+                        Err(error) => refusal(&error),
                     }
                 })
                 .collect();
@@ -64,14 +64,14 @@ fn map_answer(call: &MapCall) -> Value {
                 .map(IgnoredResponseFormat::message);
             json!({"mapped": mapped.options, "message": message})
         }
-        Err(error) => json!({"ok": false, "error": {"status": error.status()}}),
+        Err(error) => refusal(&error),
     }
 }
 
 fn transform_answer(call: &TransformCall) -> Value {
     let mut options = match CanvasEditOptions::from_params(&call.options) {
         Ok(options) => options,
-        Err(error) => return json!({"ok": false, "error": {"status": error.status()}}),
+        Err(error) => return refusal(&error),
     };
     if let Some(mask) = &call.mask {
         options.mask = Some(image_input(mask));
@@ -84,15 +84,28 @@ fn transform_answer(call: &TransformCall) -> Value {
     };
     match transform_image_edit_request(&request) {
         Ok(prepared) => json!({"body": prepared.body, "files": prepared.files.len()}),
-        Err(error) => json!({"ok": false, "error": {"status": error.status()}}),
+        Err(error) => refusal(&error),
     }
 }
 
 fn url_answer() -> Value {
     match ImageEditConfig::NovaCanvas.complete_url() {
         Ok(url) => json!({"url": url}),
-        Err(error) => json!({"ok": false, "error": {"status": error.status()}}),
+        Err(error) => refusal(&error),
     }
+}
+
+// A refusal compares the four stable error fields; none of these LiteLLM errors carries a type, param or code
+fn refusal(error: &CanvasEditError) -> Value {
+    json!({
+        "ok": false,
+        "error": {
+            "status": error.status(),
+            "type": null,
+            "param": null,
+            "code": null,
+        },
+    })
 }
 
 fn error_answer(call: &ErrorClassCall) -> Value {

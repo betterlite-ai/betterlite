@@ -23,6 +23,13 @@ litellm.suppress_debug_info = True
 
 MODEL: Final = "amazon.nova-canvas-v1:0"
 NO_HEADERS: Final[dict[str, str]] = {}
+# These refusals are a bare ValueError or NotImplementedError, which carry none of the four stable error fields
+REFUSAL: Final[dict[str, JsonValue]] = {
+    "status": None,
+    "type": None,
+    "param": None,
+    "code": None,
+}
 
 Media: TypeAlias = bytes | str | tuple[int, int]
 MAPPED: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
@@ -164,7 +171,7 @@ def url_answer() -> JsonValue:
     try:
         url = CONFIG.get_complete_url(MODEL, None, {})
     except NotImplementedError:
-        return {"ok": False, "error": {"status": None}}
+        return {"ok": False, "error": REFUSAL}
     return {"url": url}
 
 
@@ -189,7 +196,7 @@ def transform_answer(call: TransformCall) -> JsonValue:
             MODEL, call["prompt"], image, optional, GenericLiteLLMParams(), NO_HEADERS
         )
     except ValueError:
-        return {"ok": False, "error": {"status": None}}
+        return {"ok": False, "error": REFUSAL}
     return {"body": MAPPED.validate_python(body), "files": len(files)}
 
 
@@ -214,7 +221,7 @@ def selected(model: str) -> JsonValue:
     try:
         config = edit_config_for(model)
     except ValueError:
-        return {"ok": False, "error": {"status": None}}
+        return {"ok": False, "error": REFUSAL}
     match config:
         case NovaConfig():
             return {"config": "nova_canvas"}

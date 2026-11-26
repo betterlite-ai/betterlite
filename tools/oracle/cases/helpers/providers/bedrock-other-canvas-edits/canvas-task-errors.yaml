@@ -44,5 +44,10 @@ call:
         image: {kind: bytes, data: img}
         mask: null
         options: {taskType: STYLE}
+      - function: transform
+        prompt: cat
+        image: null
+        mask: null
+        options: {}
 env: {}
 compare: {ignore: []}

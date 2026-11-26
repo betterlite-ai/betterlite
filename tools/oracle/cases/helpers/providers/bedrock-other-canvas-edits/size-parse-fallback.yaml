@@ -49,6 +49,36 @@ call:
         prompt: cat
         image: {kind: bytes, data: img}
         mask: null
+        options: {imageGenerationConfig: {width: 1}, width: 9}
+      - function: transform
+        prompt: cat
+        image: {kind: bytes, data: img}
+        mask: null
+        options: {imageGenerationConfig: {height: 1}, height: 9}
+      - function: transform
+        prompt: cat
+        image: {kind: bytes, data: img}
+        mask: null
+        options: {imageGenerationConfig: {numberOfImages: 1}, numberOfImages: 9}
+      - function: transform
+        prompt: cat
+        image: {kind: bytes, data: img}
+        mask: null
+        options: {imageGenerationConfig: {quality: standard}, quality: premium}
+      - function: transform
+        prompt: cat
+        image: {kind: bytes, data: img}
+        mask: null
+        options: {imageGenerationConfig: {cfgScale: 1.5}, cfgScale: 9.5}
+      - function: transform
+        prompt: cat
+        image: {kind: bytes, data: img}
+        mask: null
+        options: {imageGenerationConfig: {seed: 1}, seed: 6}
+      - function: transform
+        prompt: cat
+        image: {kind: bytes, data: img}
+        mask: null
         options: {imageGenerationConfig: [1]}
       - function: transform
         prompt: cat
