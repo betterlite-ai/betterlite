@@ -57,3 +57,25 @@ fn native_session_answers_a_sandbox_tool_registration_with_null() {
     .unwrap();
     assert_eq!(answer, "null");
 }
+
+#[test]
+fn native_async_session_answers_a_sandbox_tool_registration_with_null() {
+    Python::initialize();
+    let answer = Python::attach(|py| -> PyResult<String> {
+        let session = NativeDecisionSession {
+            core: Arc::new(SessionCore::build(r#"{"environment":{}}"#)?),
+            error_type: PyErr::new_type(py, c"probe.NativeDecisionError", None, None, None)?,
+        };
+        let blobs = py.None().into_bound(py).into_any();
+        let awaitable = session.acall(
+            py,
+            r#"{"operation": "register_tools", "arguments": {"tools": [], "environment": {}}}"#,
+            &blobs,
+        )?;
+        py.import("asyncio")?
+            .call_method1("run", (awaitable,))?
+            .extract()
+    })
+    .unwrap();
+    assert_eq!(answer, "null");
+}
