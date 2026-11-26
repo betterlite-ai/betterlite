@@ -139,7 +139,11 @@ pub(crate) fn rows(input: &Input) -> Result<Rows, Box<HelperError>> {
         user: input.user.as_ref().map(user_row).transpose()?,
         project: input.project.as_ref().map(project_row).transpose()?,
         org: input.org.as_ref().map(org_row).transpose()?,
-        membership: input.membership.as_ref().map(membership_row).transpose()?,
+        membership: input
+            .membership
+            .as_ref()
+            .map(|membership| serde_json::from_value(membership_json(membership)))
+            .transpose()?,
     })
 }
 
@@ -179,10 +183,6 @@ fn org_row(org: &Org) -> Result<OrganizationTable, Box<HelperError>> {
         "models": org.models,
     });
     Ok(serde_json::from_value(row)?)
-}
-
-fn membership_row(membership: &Membership) -> Result<LiteLLMTeamMembership, Box<HelperError>> {
-    Ok(serde_json::from_value(membership_json(membership))?)
 }
 
 fn membership_json(membership: &Membership) -> Value {
