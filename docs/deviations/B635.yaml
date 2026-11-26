@@ -1,0 +1,9 @@
+task: B635
+deviations:
+  - what: A size whose numbers are written in non-ASCII decimal digits, such as "١٠x٢٠", leaves width and height unset, where Python's int() reads every Unicode decimal digit and LiteLLM sets the converted values.
+    why: The size fallback reads its numbers through the crate's existing Python int() port, which accepts ASCII digits and PEP 515 underscores only; a working Nova Canvas request writes its size in ASCII digits.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_edit/amazon_nova_canvas_image_edit_transformation.py#L327-L332
+  - what: A size component larger than a 64-bit integer leaves width and height unset, where Python's int() converts it and LiteLLM sets the huge values.
+    why: The crate's Python int() port answers an i64 and reports a longer literal as unparseable, while Python's int() has no such limit; docs/compatibility.md keeps out-of-range numbers out of the port.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_edit/amazon_nova_canvas_image_edit_transformation.py#L327-L332
+kept_bugs: []
