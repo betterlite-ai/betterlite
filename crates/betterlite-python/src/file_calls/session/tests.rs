@@ -189,6 +189,28 @@ fn a_missing_file_is_the_family_exception_naming_not_found() {
 }
 
 #[test]
+fn a_deadline_that_expires_is_the_connection_failure() {
+    Python::initialize();
+    let serving = serve(
+        reply("200 OK", &[("content-type", "application/json")], CREATED),
+        Duration::from_millis(200),
+    )
+    .unwrap();
+    let socket = serving.address;
+    Python::attach(|py| {
+        let session = NativeFileCallSession::new(ENVIRONMENT).unwrap();
+        let payload = format!(
+            r#"{{"file_id":"file-abc","custom_llm_provider":"openai","params":{{"api_base":"http://{socket}/v1","api_key":"sk-test","timeout":0.01}}}}"#
+        );
+        let error = session.retrieve(py, &payload, Vec::new()).err().unwrap();
+        assert!(error.is_instance_of::<NativeFileCallError>(py));
+        assert!(error.to_string().contains(r#""type":"APIConnectionError""#));
+        assert!(error.to_string().contains(r#""status_code":500"#));
+    });
+    serving.finish().unwrap();
+}
+
+#[test]
 fn a_rejected_create_provider_is_the_family_exception_naming_bad_request() {
     Python::initialize();
     Python::attach(|py| {

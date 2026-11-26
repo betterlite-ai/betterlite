@@ -600,6 +600,17 @@ def test_error_token_provider_refused() -> None:  # ast-grep-ignore: no-long-nam
         file_retrieve(file_id=FILE_ID, azure_ad_token_provider=GOOD_KEY)
 
 
+def test_error_a_client_is_refused() -> None:
+    with pytest.raises(UnsupportedCallArgument, match="client"):
+        create_file(file=PAYLOAD, purpose="batch", client="client")
+    with pytest.raises(UnsupportedCallArgument, match="client"):
+        file_retrieve(file_id=FILE_ID, client="client")
+    with pytest.raises(UnsupportedCallArgument, match="client"):
+        file_delete(file_id=FILE_ID, client="client")
+    with pytest.raises(UnsupportedCallArgument, match="client"):
+        file_list(client="client")
+
+
 def test_package_exports() -> None:
     assert tuple(files_package.__all__) == EXPECTED_EXPORTS
     assert tuple(files_main.__all__) == EXPECTED_EXPORTS
