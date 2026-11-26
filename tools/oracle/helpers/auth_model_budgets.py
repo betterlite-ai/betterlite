@@ -5,7 +5,6 @@ from typing import Final, Literal, Required, TypedDict, cast
 
 import litellm
 from litellm.exceptions import BudgetExceededError
-from litellm.models.budget import LiteLLM_BudgetTable
 from litellm.proxy._types import CallInfo, LiteLLM_UserTable, UserAPIKeyAuth
 from litellm.proxy.auth import user_api_key_auth
 from litellm.proxy.common_utils import http_parsing_utils
@@ -15,6 +14,7 @@ from litellm.proxy.utils import PrismaClient, ProxyLogging
 from pydantic import JsonValue, TypeAdapter
 from starlette.requests import Request
 from typing_extensions import override
+from auth_model_budgets.end_user import auth_of, end_user_apply_call, end_user_update_call
 
 # an unmapped model prints a provider banner on stdout, which carries the oracle's JSON line
 litellm.suppress_debug_info = True
@@ -49,13 +49,6 @@ def verdict(*, failing: bool, entity_type: str, entity_id: str) -> bool:
     if not failing:
         return True
     raise BudgetExceededError(current_cost=12.5, max_budget=10.0, message="Budget has been exceeded!", llm_provider="openai", entity_type=entity_type, entity_id=entity_id)  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L998-L1010
-
-
-def auth_of(call: Call) -> UserAPIKeyAuth:
-    token = call.get("token")
-    if token is None:
-        raise ValueError("the call names the token fields")
-    return UserAPIKeyAuth.model_validate(token)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3356
 
 
 def denial_record(denied: BudgetExceededError) -> JsonValue:
@@ -212,57 +205,6 @@ async def budget_call(call: Call, entity: Literal["user", "team"]) -> JsonValue:
     except BudgetExceededError as denied:
         error = denial_record(denied)
     return {"calls": list(limiter.seen), "error": error}
-
-
-def end_user_result(
-    end_user_id: JsonValue,
-    tpm: JsonValue,
-    rpm: JsonValue,
-    tpd: JsonValue,
-    max_budget: JsonValue,
-    model_max_budget: JsonValue,
-) -> JsonValue:
-    return {
-        "end_user_id": end_user_id,
-        "tpm": tpm,
-        "rpm": rpm,
-        "tpd": tpd,
-        "max_budget": max_budget,
-        "model_max_budget": model_max_budget,
-    }
-
-
-def end_user_apply_call(call: Call) -> JsonValue:
-    budget = call.get("budget")
-    if budget is None:
-        raise ValueError("an end user apply call names the budget table")
-    budget_info = LiteLLM_BudgetTable.model_validate(budget)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/budget.py#L16
-    limits: dict[str, JsonValue] = {}
-    user_api_key_auth._apply_budget_limits_to_end_user_params(limits, budget_info, call.get("end_user_id"))  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L613-L641
-    return end_user_result(
-        limits.get("end_user_id"),
-        limits.get("end_user_tpm_limit"),
-        limits.get("end_user_rpm_limit"),
-        limits.get("end_user_tpd_limit"),
-        limits.get("end_user_max_budget"),
-        limits.get("end_user_model_max_budget"),
-    )
-
-
-def end_user_update_call(call: Call) -> JsonValue:
-    params = call.get("params")
-    if params is None:
-        raise ValueError("an end user update call names the params")
-    updated = user_api_key_auth.update_valid_token_with_end_user_params(auth_of(call), params)  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L710-L726
-    model_max_budget = cast("dict[str, JsonValue] | None", updated.end_user_model_max_budget)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3315
-    return end_user_result(
-        updated.end_user_id,
-        updated.end_user_tpm_limit,
-        updated.end_user_rpm_limit,
-        updated.end_user_tpd_limit,
-        updated.end_user_max_budget,
-        model_max_budget,
-    )
 
 
 async def global_spend_call(call: Call) -> JsonValue:
