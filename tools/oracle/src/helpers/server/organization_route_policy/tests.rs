@@ -11,7 +11,6 @@ use rstest::rstest;
 fn matches_the_pinned_organization_route_policy(
     #[base_dir = "../../.."]
     #[files("cases/helpers/organization-route-policy/*.yaml")]
-    #[files("cases/auth/organization-route-policy/*.yaml")]
     path: PathBuf,
 ) {
     let source = fs::read_to_string(path).expect("case file");

@@ -165,6 +165,9 @@ oracle_cases:
   - tools/oracle/cases/helpers/organization-route-policy/organization-create-role-error.yaml
   - tools/oracle/cases/helpers/organization-route-policy/org-admin-route-error-params.yaml
   - tools/oracle/cases/helpers/organization-route-policy/patch-template-enrichment.yaml
+  - tools/oracle/cases/helpers/organization-route-policy/team-create-one-membership.yaml
+  - tools/oracle/cases/helpers/organization-route-policy/auth-org-admin-team-scope.yaml
+  - tools/oracle/cases/helpers/organization-route-policy/auth-cross-org-denied.yaml
 deviations: []
 out_of_scope:
   - B867 owns the org-admin route allowlist; B757 owns public auth exception handling. Callers supply the team-org lookup.
