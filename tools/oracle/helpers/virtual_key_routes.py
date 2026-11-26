@@ -66,10 +66,10 @@ def run(input_value: Input) -> Answer:
 
 def call_route(route: str, method: str | None, key: UserAPIKeyAuth) -> Answer:
     try:
-        allowed = RouteChecks.should_call_route(
+        allowed = RouteChecks.should_call_route(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L94-L102
             route=route, valid_token=key, request=request_for(method)
         )
-    except HTTPException as raised:
+    except HTTPException as raised:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L207-L210
         return refusal(raised)
     return {"allowed": allowed, "error": None}
 
@@ -95,7 +95,7 @@ def jwt_grant(route: str, settings: list[str] | None) -> Answer:
 
 
 def refusal(raised: HTTPException) -> Answer:
-    exception = auth_exception_handler._as_proxy_exception(raised)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L80
+    exception = auth_exception_handler._as_proxy_exception(raised)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L80
     return {"allowed": False, "error": denial_of(exception)}
 
 
@@ -117,7 +117,7 @@ def request_for(method: str | None) -> Request | None:
 
 def caller_key(fields: KeyFields | None) -> UserAPIKeyAuth:
     if fields is None:
-        return UserAPIKeyAuth.model_construct()
+        return UserAPIKeyAuth.model_construct()  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3356
     values: dict[str, JsonValue] = {}
     routes = fields.get("allowed_routes")
     if routes is not None:
@@ -128,7 +128,7 @@ def caller_key(fields: KeyFields | None) -> UserAPIKeyAuth:
     team_metadata = fields.get("team_metadata")
     if team_metadata is not None:
         values["team_metadata"] = team_metadata
-    return UserAPIKeyAuth.model_construct(**values)
+    return UserAPIKeyAuth.model_construct(_fields_set=None, **values)  # type: ignore[misc, arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3356
 
 
 def register(registrations: list[Registration] | None) -> None:
@@ -149,7 +149,7 @@ def register(registrations: list[Registration] | None) -> None:
 def add_route(app: FastAPI, registration: Registration, *, protected: bool) -> None:
     methods = registration.get("methods")
     if registration["route_type"] == "exact":
-        init_helpers.add_exact_path_route(  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L2957-L2973
+        init_helpers.add_exact_path_route(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L2957-L2973
             app=app,
             path=registration["path"],
             target=PASSTHROUGH_TARGET,
@@ -163,7 +163,7 @@ def add_route(app: FastAPI, registration: Registration, *, protected: bool) -> N
             auth=protected,
         )
         return
-    init_helpers.add_subpath_route(  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3040-L3056
+    init_helpers.add_subpath_route(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3040-L3056
         app=app,
         path=registration["path"],
         target=PASSTHROUGH_TARGET,
