@@ -129,11 +129,6 @@ dod:
       - oracle
       - helper-python
       - helper-case-corpus
-  - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
-      against the real MIT server.
-    proof:
-      - oracle
-      - behavior-tests
   - text: The real server constructor invokes the production auth stage and its failures stop downstream
       execution.
     proof:
@@ -167,12 +162,9 @@ oracle_cases:
   - tools/oracle/cases/helpers/entity-model-access/key-and-team-group-retry.yaml
   - tools/oracle/cases/helpers/entity-model-access/resolved-check-order.yaml
   - tools/oracle/cases/helpers/entity-model-access/resource-owner-matrix.yaml
-  - tools/oracle/cases/auth/entity-model-access/no-default-models-key-error.yaml
-  - tools/oracle/cases/auth/entity-model-access/member-scope-after-team.yaml
-  - tools/oracle/cases/auth/entity-model-access/org-denial.yaml
-  - tools/oracle/cases/auth/entity-model-access/key-resolved-target.yaml
-  - tools/oracle/cases/auth/entity-model-access/user-model-denial.yaml
-  - tools/oracle/cases/auth/entity-model-access/project-model-denial.yaml
+  - tools/oracle/cases/helpers/entity-model-access/no-default-models-key-error.yaml
+  - tools/oracle/cases/helpers/entity-model-access/member-scope-after-team.yaml
+  - tools/oracle/cases/helpers/entity-model-access/user-model-denial.yaml
 deviations: []
 out_of_scope:
   - 'litellm/proxy/auth/auth_checks.py: B732 owns effective_user_role (L1298-L1302), _get_user_role (L1305-L1310),
@@ -289,6 +281,7 @@ out_of_scope:
     repository-wide identifier search finds only this definition.'
   - 'litellm/proxy/auth/auth_checks.py: B10051 owns can_user_call_model (L5269-L5297); this task calls it.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+  - "HTTP cases where a key, team, organization, project or user grant denies a model at a real inference endpoint. Until B052 (with B2326, B738 and B755) installs key authentication, every non-master bearer gets 401 at the master stage, and the postgres fixture seeds no key, team or user model lists, member allowed_models or project rows, so those cases come with B10109 after B052. The proof here is the helper cases, the behavior tests and failure_stops_downstream."
 pitfalls:
   - 'The oracle helper for this task is pre-registered as entity_model_access in the server group. Replace the stub Op in tools/oracle/src/helpers/server/entity_model_access.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/entity_model_access.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Key-group fallback replaces the key allowlist, while team-group fallback unions with the team's existing list.
