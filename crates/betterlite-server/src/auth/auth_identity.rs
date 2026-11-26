@@ -15,6 +15,7 @@ use crate::auth::auth_request_models::{RequestModelStageInput, resolve};
 use crate::auth::auth_request_policy::{self, AuthRequestPolicyStageInput};
 use crate::auth::auth_resource_grants::{self, ResourceGrantStageInput};
 use crate::auth::auth_tag_budgets::TagBudgetStageInput;
+use crate::auth::model_grant_intersection::GrantStageInput;
 use crate::auth::request_body_safety::{self, RequestBodySafetyStageInput};
 use crate::auth::team_budget_admission::TeamBudgetStageInput;
 use crate::error_body::AuthenticationFailure;
@@ -32,6 +33,7 @@ pub enum AuthBackend {
     TeamBudgetAdmission,
     AuthOrgLookup,
     AuthEndUsers,
+    ModelGrantIntersection,
 }
 
 // B052 owns the final stage order; the master-key stage authenticates before the model stages run.
@@ -47,6 +49,7 @@ pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
     AuthBackend::TeamBudgetAdmission,
     AuthBackend::AuthOrgLookup,
     AuthBackend::AuthEndUsers,
+    AuthBackend::ModelGrantIntersection,
 ];
 
 #[derive(Clone, Debug)]
@@ -62,6 +65,7 @@ pub enum StageInput {
     TeamBudgetAdmission(Box<TeamBudgetStageInput>),
     AuthOrgLookup(Box<OrgStageInput>),
     AuthEndUsers(Box<EndUserStageInput>),
+    ModelGrantIntersection(Box<GrantStageInput>),
 }
 
 #[derive(Clone, Debug)]
@@ -96,6 +100,7 @@ pub(crate) enum StageFailure {
     TeamBudgets(Box<ProxyException>),
     OrgLookup(Box<ProxyException>),
     EndUsers(Box<ProxyException>),
+    ModelGrants(Box<ProxyException>),
 }
 
 impl From<AuthenticationFailure> for StageFailure {
@@ -151,6 +156,13 @@ pub(crate) fn dispatch(
                 return Err(StageFailure::from(AuthenticationFailure::Missing));
             };
             // the lookup and the budget check ran in the prefetch, so only the identity is left
+            Ok(stage.context.clone())
+        }
+        AuthBackend::ModelGrantIntersection => {
+            let StageInput::ModelGrantIntersection(stage) = input else {
+                return Err(StageFailure::from(AuthenticationFailure::Missing));
+            };
+            // the allowlist walk and the attribution ran in the prefetch, so only the identity is left
             Ok(stage.context.clone())
         }
     }

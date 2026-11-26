@@ -136,6 +136,9 @@ fn stage_input(
         AuthBackend::AuthEndUsers => Ok(StageInput::AuthEndUsers(Box::new(
             auth_end_users::stage_input(request, authenticated)?,
         ))),
+        AuthBackend::ModelGrantIntersection => Ok(StageInput::ModelGrantIntersection(Box::new(
+            model_grant_intersection::stage_input(request, authenticated)?,
+        ))),
     }
 }
 
@@ -230,6 +233,12 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
                 .await
                 .map_err(StageFailure::EndUsers)?;
             Ok(StageInput::AuthEndUsers(stage))
+        }
+        StageInput::ModelGrantIntersection(stage) => {
+            model_grant_intersection::prefetch(&stage)
+                .await
+                .map_err(StageFailure::ModelGrants)?;
+            Ok(StageInput::ModelGrantIntersection(stage))
         }
         other @ (StageInput::MasterKey(_)
         | StageInput::AuthRequestPolicy(_)

@@ -21,7 +21,8 @@ pub(crate) fn stage_failure_response(failure: &StageFailure) -> Response {
         | StageFailure::KeyBudgets(exception)
         | StageFailure::TeamBudgets(exception)
         | StageFailure::OrgLookup(exception)
-        | StageFailure::EndUsers(exception) => denial_response(exception),
+        | StageFailure::EndUsers(exception)
+        | StageFailure::ModelGrants(exception) => denial_response(exception),
     }
 }
 
