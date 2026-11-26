@@ -65,7 +65,7 @@ use crate::health_native_backend::evaluation::EvaluationSetup;
 use crate::health_native_backend::seams::{
     BatchProbeCall, EmbeddingProbeCall, EvaluationProbeCall, ImageEditProbeCall,
     ImageGenerationProbeCall, OcrProbeCall, RerankProbeCall, ResponsesProbeCall, SpeechProbeCall,
-    TextCompletionProbeCall, TranscriptionProbeCall,
+    TextCompletionProbeCall, TranscriptionProbeCall, VideoGenerationProbeCall,
 };
 use crate::health_native_backend::wiring::{HealthEntryDeps, build_health_check_entry};
 use crate::health_probe_modes::calls::{
@@ -410,6 +410,13 @@ impl OcrProbeCall for FakeOwner {
     }
 }
 
+#[async_trait]
+impl VideoGenerationProbeCall for FakeOwner {
+    async fn generate(&self, call: ProbeCall) -> Result<HealthProbeReply, HealthProbeError> {
+        self.finish(OwnerCall::mode("video_generation", call))
+    }
+}
+
 pub(super) struct FakeEvaluation {
     calls: Mutex<Vec<EvaluationCall>>,
     headers: Mutex<BTreeMap<String, String>>,
@@ -636,6 +643,8 @@ impl Harness {
         let batch: Arc<dyn BatchProbeCall> = Arc::<FakeOwner>::clone(&self.owner);
         let responses: Arc<dyn ResponsesProbeCall> = Arc::<FakeOwner>::clone(&self.owner);
         let ocr: Arc<dyn OcrProbeCall> = Arc::<FakeOwner>::clone(&self.owner);
+        let video_generation: Arc<dyn VideoGenerationProbeCall> =
+            Arc::<FakeOwner>::clone(&self.owner);
         let evaluation: Arc<dyn EvaluationProbeCall> =
             Arc::<FakeEvaluation>::clone(&self.evaluation);
         let prices: Arc<dyn PriceLookup + Send + Sync> = Arc::<FakePrices>::clone(&self.prices);
@@ -651,6 +660,7 @@ impl Harness {
             batch,
             responses,
             ocr,
+            video_generation,
             evaluation,
             prices,
             model_sets: Arc::clone(&self.model_sets),

@@ -1,0 +1,53 @@
+kind: helper
+name: virtual-key-routes-empty-and-legacy-grants
+call:
+  virtual_key_routes:
+    function: should_call_route
+    route: /team-pass
+    method: POST
+    key:
+      allowed_routes: []
+    registrations:
+      - {endpoint_id: pass-a, route_type: exact, path: /team-pass, auth: true}
+calls:
+  - virtual_key_routes:
+      function: should_call_route
+      route: /team-pass
+      method: POST
+      key:
+        allowed_routes: null
+        metadata:
+          password_reset_required: true
+      registrations:
+        - {endpoint_id: pass-a, route_type: exact, path: /team-pass, auth: true}
+  - virtual_key_routes:
+      function: passthrough_access
+      route: /team-pass
+      key:
+        metadata:
+          allowed_passthrough_routes: []
+        team_metadata:
+          allowed_passthrough_routes: [/team-pass]
+  - virtual_key_routes:
+      function: passthrough_access
+      route: /team-pass
+      key:
+        metadata:
+          allowed_passthrough_routes: null
+        team_metadata:
+          allowed_passthrough_routes: null
+  - virtual_key_routes:
+      function: passthrough_access
+      route: /team-pass
+      key:
+        metadata:
+          allowed_passthrough_routes: /team-pass
+  - virtual_key_routes:
+      function: passthrough_access
+      route: /team-pass
+      key:
+        metadata:
+          allowed_passthrough_routes:
+            /team-pass: null
+env: {}
+compare: {ignore: []}
