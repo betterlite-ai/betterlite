@@ -62,7 +62,7 @@ struct RowSpec<'row> {
     sample: &'row ShadowSample<'row>,
 }
 
-impl<'row> RowSpec<'row> {
+impl RowSpec<'_> {
     fn attempt(&self) -> ShadowAttemptRow {
         ShadowAttemptRow {
             job_id: self.job.id.clone(),
@@ -122,10 +122,10 @@ impl<'row> RowSpec<'row> {
     fn shadow_failure(&self, failure: ArmFailure) -> ShadowAttemptRow {
         match failure {
             ArmFailure::Raised(message) => self.pipeline(&message, None),
-            ArmFailure::Failed(failure) => ShadowAttemptRow {
-                shadow_cost: failure.cost,
-                shadow_classifier_cost: failure.classifier_cost,
-                error: Some(failure.error),
+            ArmFailure::Failed(failed) => ShadowAttemptRow {
+                shadow_cost: failed.cost,
+                shadow_classifier_cost: failed.classifier_cost,
+                error: Some(failed.error),
                 ..self.attempt()
             },
         }
@@ -137,10 +137,7 @@ impl<'row> RowSpec<'row> {
             "shadow_eval: pipeline failed for {}: {message}",
             self.sample.request_id
         );
-        let base = match shadow {
-            Some(shadow) => self.billed(shadow),
-            None => self.attempt(),
-        };
+        let base = shadow.map_or_else(|| self.attempt(), |billed| self.billed(billed));
         ShadowAttemptRow {
             error: Some(format!("pipeline error: {message}")),
             ..base

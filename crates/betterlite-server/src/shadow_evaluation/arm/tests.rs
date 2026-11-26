@@ -16,7 +16,7 @@ use betterlite_models::resolution::ResolutionContext;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 
-use super::{ArmFailure, AttemptDeps, RouterCalls, run_shadow_arm};
+use super::{ArmCalls, ArmFailure, AttemptDeps, RouterCalls, run_shadow_arm};
 use crate::judge_targets::call::JudgeCall;
 use crate::judge_targets::error::JudgeDispatchError;
 use crate::judge_targets::router::JudgeRouter;

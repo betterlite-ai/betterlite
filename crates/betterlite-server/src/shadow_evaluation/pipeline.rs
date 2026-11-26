@@ -22,7 +22,7 @@ pub trait FunnelRecorder: Send + Sync {
 
 impl FunnelRecorder for FunnelQueue {
     fn record(&self, job_id: &str, stage: FunnelStage) {
-        FunnelQueue::record(self, job_id, stage);
+        Self::record(self, job_id, stage);
     }
 }
 
@@ -65,7 +65,7 @@ pub async fn run_shadow_eval<Database, Counter>(
         deps.funnel.record(&job.id, FunnelStage::Withheld);
         return;
     }
-    if !budget_allows(job, deps).await {
+    if !budget_allows(job, deps.spend).await {
         deps.funnel.record(&job.id, FunnelStage::Withheld);
         return;
     }
@@ -80,20 +80,13 @@ pub async fn run_shadow_eval<Database, Counter>(
 }
 
 // the evaluation budget is read once before the loop: a cap crossed mid-loop overshoots by the remaining arms, like the samples already in flight
-async fn budget_allows<Database, Counter>(
-    job: &ActiveShadowEvalJob,
-    deps: &PipelineDeps<'_, Database, Counter>,
-) -> bool {
+async fn budget_allows(job: &ActiveShadowEvalJob, spend: &dyn JobSpendReader) -> bool {
     let Some(max_budget) = job.max_budget else {
         return true;
     };
     let counter_key = job_spend_counter_key(&job.id);
-    match deps
-        .spend
-        .read_spend(&counter_key, job.spend, max_budget)
-        .await
-    {
-        Ok(spend) => spend < max_budget,
+    match spend.read_spend(&counter_key, job.spend, max_budget).await {
+        Ok(current) => current < max_budget,
         Err(error) => {
             tracing::warn!(
                 "shadow_eval: budget unverifiable for {}, sample skipped: {error}",

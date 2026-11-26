@@ -132,17 +132,27 @@ async fn key_gate(
     }
 }
 
+// the team's cache-only row: an absent or unreadable team is not an over-budget signal
+async fn cached_team_row(
+    deps: &AdvisoryDeps<'_>,
+    team_id: &str,
+) -> Option<LiteLLMTeamTableCachedObj> {
+    match deps.teams.cached_team(team_id).await {
+        Ok(team) => Some(team),
+        Err(error) => {
+            tracing::debug!("shadow_eval: budget read failed: {error}");
+            None
+        }
+    }
+}
+
 async fn team_is_over_budget(
     auth: &UserAPIKeyAuth,
     team_id: &str,
     deps: &AdvisoryDeps<'_>,
 ) -> bool {
-    let team = match deps.teams.cached_team(team_id).await {
-        Ok(team) => team,
-        Err(error) => {
-            tracing::debug!("shadow_eval: budget read failed: {error}");
-            return false;
-        }
+    let Some(team) = cached_team_row(deps, team_id).await else {
+        return false;
     };
     let aliases = BTreeMap::new();
     let models = ModelAccessContext {
@@ -162,12 +172,11 @@ async fn team_is_over_budget(
         models: &models,
         now: deps.now,
     };
-    let no_models = RequestedModels::None;
     let request = TeamRequest {
         team: Some(&team.team),
         token: Some(auth),
         user_email: None,
-        model: &no_models,
+        model: &RequestedModels::None,
         membership: Membership::Unloaded,
     };
     match team_max_budget_check(&admission, &request).await {
@@ -185,10 +194,10 @@ fn caller_auth(metadata: &IndexMap<String, Json>) -> Option<UserAPIKeyAuth> {
     let Json::Object(fields) = metadata.get("user_api_key_auth")? else {
         return None;
     };
-    let fields: BTreeMap<String, JsonData> = serde_json::to_value(fields)
+    let decoded: BTreeMap<String, JsonData> = serde_json::to_value(fields)
         .and_then(serde_json::from_value)
         .ok()?;
-    UserAPIKeyAuth::construct(AuthInput::Dict(fields)).ok()
+    UserAPIKeyAuth::construct(AuthInput::Dict(decoded)).ok()
 }
 
 #[derive(Deserialize)]
