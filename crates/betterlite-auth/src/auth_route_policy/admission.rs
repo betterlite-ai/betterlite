@@ -33,8 +33,7 @@ const MCP_API_PREFIX: &str = "/v1/mcp/";
 const MCP_REST_PREFIX: &str = "/mcp-rest/";
 const UNKNOWN: &str = "unknown";
 
-// everything RouteChecks.non_proxy_admin_allowed_routes_check reads: the route, the caller's key and user row,
-// and the configuration and registrations that grant access.
+// the non-admin chain reads the route, the caller's key and user row, and the config and registrations that grant access
 #[derive(Debug)]
 pub struct RoutePolicyInput<'a> {
     pub route: &'a str,
@@ -48,8 +47,7 @@ pub struct RoutePolicyInput<'a> {
     pub team_allowed_routes: &'a [String],
 }
 
-// auth_checks._is_api_route_allowed: the token must exist even for a proxy admin, and only a live user row
-// with role proxy_admin skips the non-admin chain.
+// auth_checks._is_api_route_allowed: the token must exist even for an admin, and only a live proxy_admin row skips the chain
 pub fn is_api_route_allowed(input: &RoutePolicyInput<'_>) -> Result<(), Box<ProxyException>> {
     let role = get_user_role(input.user);
     let Some(token) = input.token else {
@@ -58,10 +56,10 @@ pub fn is_api_route_allowed(input: &RoutePolicyInput<'_>) -> Result<(), Box<Prox
     if is_user_proxy_admin(input.user) {
         return Ok(());
     }
-    non_proxy_admin_allowed_routes_check(input, role, token)
+    non_admin_route_check(input, role, token)
 }
 
-fn non_proxy_admin_allowed_routes_check(
+fn non_admin_route_check(
     input: &RoutePolicyInput<'_>,
     role: Option<UserRole>,
     token: &UserAPIKeyAuth,
@@ -184,8 +182,7 @@ fn passthrough_or_service_account(
             && check_route_access(input.route, TEAM_SERVICE_ACCOUNT_ROUTES))
 }
 
-// the last resort: every entry is an exact route, a prefix or a trailing-wildcard pattern, and no entry at
-// all is the same refusal as an unmatched list
+// the last resort: an entry is an exact route, a prefix or a trailing-wildcard pattern, and no entry at all is the same refusal
 fn allowed_routes_fallback(
     input: &RoutePolicyInput<'_>,
     caller: &RouteCaller<'_>,

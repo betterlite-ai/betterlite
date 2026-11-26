@@ -23,8 +23,7 @@ use crate::state::ServerState;
 
 mod tests;
 
-// what the auth service resolved for the request: the key it authenticated and that key owner's live row.
-// Without a key the master key is LiteLLM's synthetic proxy admin, so the stage has no policy to apply.
+// the key the auth service authenticated and its owner's live row; without one the master key leaves the stage without a policy
 #[derive(Clone, Debug, Default)]
 pub struct AuthRoutePolicyRule {
     pub token: Option<UserAPIKeyAuth>,

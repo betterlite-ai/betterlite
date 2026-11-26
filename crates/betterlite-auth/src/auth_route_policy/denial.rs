@@ -5,7 +5,7 @@ use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExce
 const AUTH_ERROR: &str = "auth_error";
 const PARAM_NONE: &str = "None";
 const UNAUTHORIZED: i64 = 401;
-const FORBIDDEN: i64 = 403;
+pub(crate) const FORBIDDEN: i64 = 403;
 
 // betterlite's own wording: the same status, type, param and code LiteLLM answers, the message names the caller
 #[must_use]
@@ -69,12 +69,7 @@ pub(crate) fn viewer_update_param(route: &str, param: &str) -> Box<ProxyExceptio
     )
 }
 
-#[must_use]
-pub(crate) fn viewer_route(route: &str) -> Box<ProxyException> {
-    exception(format!("an admin viewer may not call {route}"), FORBIDDEN)
-}
-
-fn exception(message: String, status: i64) -> Box<ProxyException> {
+pub(crate) fn exception(message: String, status: i64) -> Box<ProxyException> {
     let init = ProxyExceptionInit {
         message,
         error_type: AUTH_ERROR.to_owned(),

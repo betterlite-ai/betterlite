@@ -7,6 +7,7 @@ use betterlite_db::identity_rows::user::LiteLLMUserTable;
 use betterlite_db::user_repository::projection::user_record_to_model;
 use betterlite_error::proxy_exception::ProxyException;
 use betterlite_models::model_registration::JsonObject;
+use rstest::rstest;
 
 use crate::management_routes::management_routes;
 use crate::pass_through_registry::{
@@ -270,15 +271,17 @@ fn llm_before_viewer_check() {
     policy.run().unwrap();
 }
 
-#[test]
-fn info_handler_deferral() {
-    for route in ["/key/info", "/v2/user/info", "/model/info", "/team/info"] {
-        let policy = Policy::new(route)
-            .with_method("GET")
-            .with_user(INTERNAL_ROW)
-            .with_token(INTERNAL_TOKEN);
-        policy.run().unwrap();
-    }
+#[rstest]
+#[case::key_info("/key/info")]
+#[case::v2_user_info("/v2/user/info")]
+#[case::model_info("/model/info")]
+#[case::team_info("/team/info")]
+fn info_handler_deferral(#[case] route: &str) {
+    let policy = Policy::new(route)
+        .with_method("GET")
+        .with_user(INTERNAL_ROW)
+        .with_token(INTERNAL_TOKEN);
+    policy.run().unwrap();
 }
 
 #[test]
@@ -291,16 +294,16 @@ fn other_user_info_403() {
     assert_auth_error(policy.run(), "403");
 }
 
-#[test]
-fn empty_user_id_passes() {
-    for query in ["", "user-1"] {
-        let policy = Policy::new("/user/info")
-            .with_method("GET")
-            .with_query(query)
-            .with_user(INTERNAL_ROW)
-            .with_token(INTERNAL_TOKEN);
-        policy.run().unwrap();
-    }
+#[rstest]
+#[case::empty("")]
+#[case::own("user-1")]
+fn empty_user_id_passes(#[case] query: &str) {
+    let policy = Policy::new("/user/info")
+        .with_method("GET")
+        .with_query(query)
+        .with_user(INTERNAL_ROW)
+        .with_token(INTERNAL_TOKEN);
+    policy.run().unwrap();
     let absent = Policy::new("/user/info")
         .with_method("GET")
         .with_user(INTERNAL_ROW)
@@ -332,15 +335,15 @@ fn spend_permission_required() {
     granted.run().unwrap();
 }
 
-#[test]
-fn internal_user_routes() {
-    for route in ["/search_tools/list", "/search_tools/ui/available_providers"] {
-        let policy = Policy::new(route)
-            .with_method("GET")
-            .with_user(INTERNAL_ROW)
-            .with_token(INTERNAL_TOKEN);
-        policy.run().unwrap();
-    }
+#[rstest]
+#[case::search_tools("/search_tools/list")]
+#[case::search_tools_ui("/search_tools/ui/available_providers")]
+fn internal_user_routes(#[case] route: &str) {
+    let policy = Policy::new(route)
+        .with_method("GET")
+        .with_user(INTERNAL_ROW)
+        .with_token(INTERNAL_TOKEN);
+    policy.run().unwrap();
     let customer = Policy::new("/search_tools/list")
         .with_method("GET")
         .with_user(CUSTOMER_ROW)
@@ -374,15 +377,15 @@ fn org_admin_body_scope() {
     assert_auth_error(absent.run(), "401");
 }
 
-#[test]
-fn internal_viewer_routes() {
-    for route in ["/spend/keys", "/compliance/gdpr"] {
-        let policy = Policy::new(route)
-            .with_method("GET")
-            .with_user(WATCHER_ROW)
-            .with_token(r#"{"user_id":"watcher-1"}"#);
-        policy.run().unwrap();
-    }
+#[rstest]
+#[case::spend_keys("/spend/keys")]
+#[case::compliance_gdpr("/compliance/gdpr")]
+fn internal_viewer_routes(#[case] route: &str) {
+    let policy = Policy::new(route)
+        .with_method("GET")
+        .with_user(WATCHER_ROW)
+        .with_token(r#"{"user_id":"watcher-1"}"#);
+    policy.run().unwrap();
     let elsewhere = Policy::new("/user/new")
         .with_method("POST")
         .with_user(WATCHER_ROW)
@@ -404,15 +407,15 @@ fn self_managed_routes() {
     policy.run().unwrap();
 }
 
-#[test]
-fn mcp_prefix_deferral() {
-    for route in ["/v1/mcp/server", "/mcp-rest/tools"] {
-        let policy = Policy::new(route)
-            .with_method("POST")
-            .with_user(CUSTOMER_ROW)
-            .with_token(BUYER_TOKEN);
-        policy.run().unwrap();
-    }
+#[rstest]
+#[case::mcp_server("/v1/mcp/server")]
+#[case::mcp_rest("/mcp-rest/tools")]
+fn mcp_prefix_deferral(#[case] route: &str) {
+    let policy = Policy::new(route)
+        .with_method("POST")
+        .with_user(CUSTOMER_ROW)
+        .with_token(BUYER_TOKEN);
+    policy.run().unwrap();
 }
 
 #[test]
@@ -427,27 +430,24 @@ fn team_service_account_routes() {
     assert_auth_error(user_owned.run(), "401");
 }
 
-#[test]
-fn explicit_allowed_route_match() {
+#[rstest]
+#[case::exact("/internal-models", true)]
+#[case::child("/internal-models/one", true)]
+#[case::wildcard("/scim/v2/Users", true)]
+#[case::exact_route("/exact/route", true)]
+#[case::sibling("/internal-models-extra", false)]
+#[case::other_version("/scim/v3/Users", false)]
+#[case::other_exact("/exact/other", false)]
+fn explicit_allowed_route_match(#[case] route: &str, #[case] allowed: bool) {
     let token =
         r#"{"user_id":"user-1","allowed_routes":["/internal-models","/scim/v2/*","/exact/route"]}"#;
-    for route in [
-        "/internal-models",
-        "/internal-models/one",
-        "/scim/v2/Users",
-        "/exact/route",
-    ] {
-        let policy = Policy::new(route)
-            .with_method("GET")
-            .with_user(INTERNAL_ROW)
-            .with_token(token);
+    let policy = Policy::new(route)
+        .with_method("GET")
+        .with_user(INTERNAL_ROW)
+        .with_token(token);
+    if allowed {
         policy.run().unwrap();
-    }
-    for route in ["/internal-models-extra", "/scim/v3/Users", "/exact/other"] {
-        let policy = Policy::new(route)
-            .with_method("GET")
-            .with_user(INTERNAL_ROW)
-            .with_token(token);
+    } else {
         assert_auth_error(policy.run(), "401");
     }
 }
@@ -461,18 +461,15 @@ fn empty_allowed_routes_401() {
     assert_auth_error(policy.run(), "401");
 }
 
-#[test]
-fn absent_allowed_routes_401() {
-    for token in [
-        INTERNAL_TOKEN,
-        r#"{"user_id":"user-1","allowed_routes":null}"#,
-    ] {
-        let policy = Policy::new("/internal-models/one")
-            .with_method("GET")
-            .with_user(INTERNAL_ROW)
-            .with_token(token);
-        assert_auth_error(policy.run(), "401");
-    }
+#[rstest]
+#[case::absent(INTERNAL_TOKEN)]
+#[case::null(r#"{"user_id":"user-1","allowed_routes":null}"#)]
+fn absent_allowed_routes_401(#[case] token: &str) {
+    let policy = Policy::new("/internal-models/one")
+        .with_method("GET")
+        .with_user(INTERNAL_ROW)
+        .with_token(token);
+    assert_auth_error(policy.run(), "401");
 }
 
 #[test]
@@ -551,44 +548,94 @@ fn update_fields_checked_before_the_method() {
     viewer_body("/team/team-1", "GET", r#"{"max_budget":5}"#).unwrap();
 }
 
-#[test]
-fn each_early_blocked_route() {
+#[rstest]
+#[case::user_new("/user/new")]
+#[case::management_users_bulk("/management/v1/users/bulk")]
+#[case::user_delete("/user/delete")]
+#[case::management_users_bulk_delete("/management/v1/users/bulk_delete")]
+#[case::user_bulk_update("/user/bulk_update")]
+#[case::team_new("/team/new")]
+#[case::management_team_members_bulk_delete("/management/v1/teams/{team_id}/members/bulk_delete")]
+#[case::management_team_members_bulk_update("/management/v1/teams/{team_id}/members/bulk_update")]
+#[case::team_update("/team/update")]
+#[case::team_delete("/team/delete")]
+#[case::team_block("/team/block")]
+#[case::team_unblock("/team/unblock")]
+#[case::team_permissions_update("/team/permissions_update")]
+#[case::team_permissions_bulk_update("/team/permissions_bulk_update")]
+#[case::model_new("/model/new")]
+#[case::model_update("/model/update")]
+#[case::model_delete("/model/delete")]
+#[case::jwt_key_mapping_new("/jwt/key/mapping/new")]
+#[case::jwt_key_mapping_update("/jwt/key/mapping/update")]
+#[case::jwt_key_mapping_delete("/jwt/key/mapping/delete")]
+#[case::key_generate("/key/generate")]
+#[case::key_update("/key/update")]
+#[case::key_delete("/key/delete")]
+#[case::key_regenerate("/key/regenerate")]
+#[case::key_service_account_generate("/key/service-account/generate")]
+#[case::key_block("/key/block")]
+#[case::key_unblock("/key/unblock")]
+#[case::key_bulk_update("/key/bulk_update")]
+#[case::team_key_bulk_update("/team/key/bulk_update")]
+fn each_early_blocked_route(#[case] template: &str) {
+    assert!(EARLY_BLOCKED_ROUTES.contains(&template));
     let management = management_routes();
-    for template in EARLY_BLOCKED_ROUTES {
-        let route = template.replace("{team_id}", "team-1");
-        if check_route_access(&route, management.as_slice()) {
-            assert_auth_error(viewer(&route, Some("GET")), "403");
-        } else {
-            viewer(&route, Some("GET")).unwrap();
-        }
-    }
-}
-
-#[test]
-fn each_late_blocked_route() {
-    for template in LATE_BLOCKED_WRITE_ROUTES {
-        let route = template.replace("{team_id}", "team-1");
-        assert_auth_error(viewer(&route, Some("POST")), "403");
-    }
-}
-
-#[test]
-fn regenerate_and_reset_suffixes() {
-    for suffix in EARLY_BLOCKED_KEY_SUFFIXES {
-        let route = format!("/key/key-1{suffix}");
+    let route = template.replace("{team_id}", "team-1");
+    if check_route_access(&route, management.as_slice()) {
         assert_auth_error(viewer(&route, Some("GET")), "403");
-        assert_auth_error(viewer(&route, Some("POST")), "403");
+    } else {
+        viewer(&route, Some("GET")).unwrap();
     }
+}
+
+#[rstest]
+#[case::user_new("/user/new")]
+#[case::management_users_bulk("/management/v1/users/bulk")]
+#[case::user_delete("/user/delete")]
+#[case::management_users_bulk_delete("/management/v1/users/bulk_delete")]
+#[case::user_bulk_update("/user/bulk_update")]
+#[case::team_new("/team/new")]
+#[case::management_team_members_bulk_delete("/management/v1/teams/{team_id}/members/bulk_delete")]
+#[case::management_team_members_bulk_update("/management/v1/teams/{team_id}/members/bulk_update")]
+#[case::team_update("/team/update")]
+#[case::team_delete("/team/delete")]
+#[case::model_new("/model/new")]
+#[case::model_update("/model/update")]
+#[case::model_delete("/model/delete")]
+#[case::key_generate("/key/generate")]
+#[case::key_delete("/key/delete")]
+#[case::key_update("/key/update")]
+#[case::key_regenerate("/key/regenerate")]
+#[case::key_service_account_generate("/key/service-account/generate")]
+#[case::key_block("/key/block")]
+#[case::key_unblock("/key/unblock")]
+#[case::team_key_bulk_update("/team/key/bulk_update")]
+fn each_late_blocked_route(#[case] template: &str) {
+    assert!(LATE_BLOCKED_WRITE_ROUTES.contains(&template));
+    let route = template.replace("{team_id}", "team-1");
+    assert_auth_error(viewer(&route, Some("POST")), "403");
+}
+
+#[rstest]
+#[case::regenerate("/regenerate")]
+#[case::reset_spend("/reset_spend")]
+fn regenerate_and_reset_suffixes(#[case] suffix: &str) {
+    assert!(EARLY_BLOCKED_KEY_SUFFIXES.contains(&suffix));
+    let route = format!("/key/key-1{suffix}");
+    assert_auth_error(viewer(&route, Some("GET")), "403");
+    assert_auth_error(viewer(&route, Some("POST")), "403");
     let late = format!("/key/key-1{LATE_BLOCKED_KEY_SUFFIX}");
     assert_auth_error(viewer(&late, Some("PATCH")), "403");
     viewer("/team/regenerate", Some("GET")).unwrap();
 }
 
-#[test]
-fn safe_get_head_options() {
-    for method in ["GET", "HEAD", "OPTIONS"] {
-        viewer("/team/team-1", Some(method)).unwrap();
-    }
+#[rstest]
+#[case::get("GET")]
+#[case::head("HEAD")]
+#[case::options("OPTIONS")]
+fn safe_get_head_options(#[case] method: &str) {
+    viewer("/team/team-1", Some(method)).unwrap();
 }
 
 #[test]
@@ -631,17 +678,13 @@ fn empty_short_mask() {
     assert_eq!(mask_user_id("éééé"), "***");
 }
 
-#[test]
-fn five_to_eight_all_masked() {
-    let cases = [
-        ("abcde", "*****"),
-        ("abcdef", "******"),
-        ("abcdefg", "*******"),
-        ("abcdefgh", "********"),
-    ];
-    for (user_id, masked) in cases {
-        assert_eq!(mask_user_id(user_id), masked);
-    }
+#[rstest]
+#[case::five("abcde", "*****")]
+#[case::six("abcdef", "******")]
+#[case::seven("abcdefg", "*******")]
+#[case::eight("abcdefgh", "********")]
+fn five_to_eight_all_masked(#[case] user_id: &str, #[case] masked: &str) {
+    assert_eq!(mask_user_id(user_id), masked);
 }
 
 #[test]
@@ -660,60 +703,52 @@ fn unknown_identity_masked() {
         .run()
         .expect_err("the fallback denies an unknown route");
     assert!(exception.message.contains("Your role=unknown"));
-    assert!(exception.message.contains("Your user_id=someon*******wn"));
+    let masked = mask_user_id("someone-unknown");
+    assert!(
+        exception
+            .message
+            .contains(&format!("Your user_id={masked}"))
+    );
 }
 
-#[test]
-fn admin_default_groups() {
+#[rstest]
+#[case::key_generate("/key/generate", true)]
+#[case::team_info("/team/info", true)]
+#[case::spend_logs("/global/spend/logs", true)]
+#[case::chat_completions("/v1/chat/completions", false)]
+fn admin_default_groups(#[case] route: &str, #[case] allowed: bool) {
     let routes = owned(&ADMIN_DEFAULT_ROUTES);
-    for route in ["/key/generate", "/team/info", "/global/spend/logs"] {
-        assert!(allowed_routes_check(
-            UserRole::ProxyAdmin,
-            route,
-            &routes,
-            None
-        ));
-    }
-    assert!(!allowed_routes_check(
-        UserRole::ProxyAdmin,
-        "/v1/chat/completions",
-        &routes,
-        None
-    ));
+    assert_eq!(
+        allowed_routes_check(UserRole::ProxyAdmin, route, &routes, None),
+        allowed
+    );
 }
 
-#[test]
-fn team_default_groups() {
+#[rstest]
+#[case::chat_completions("/v1/chat/completions", true)]
+#[case::key_info("/key/info", true)]
+#[case::mcp_tools("/mcp/tools", true)]
+#[case::messages("/v1/messages", true)]
+#[case::key_generate("/key/generate", false)]
+fn team_default_groups(#[case] route: &str, #[case] allowed: bool) {
     let routes = owned(&TEAM_DEFAULT_ROUTES);
-    for route in [
-        "/v1/chat/completions",
-        "/key/info",
-        "/mcp/tools",
-        "/v1/messages",
-    ] {
-        assert!(allowed_routes_check(
-            UserRole::Team,
-            route,
-            &routes,
-            Some(routes.as_slice())
-        ));
-    }
-    assert!(!allowed_routes_check(
-        UserRole::Team,
-        "/key/generate",
-        &routes,
-        Some(routes.as_slice())
-    ));
+    assert_eq!(
+        allowed_routes_check(UserRole::Team, route, &routes, Some(routes.as_slice())),
+        allowed
+    );
 }
 
-#[test]
-fn team_none_two_group_fallback() {
-    for route in ["/v1/chat/completions", "/key/info"] {
-        assert!(allowed_routes_check(UserRole::Team, route, &[], None));
-    }
-    for route in ["/mcp/tools", "/v1/messages", "/key/generate"] {
-        assert!(!allowed_routes_check(UserRole::Team, route, &[], None));
-    }
+#[rstest]
+#[case::chat_completions("/v1/chat/completions", true)]
+#[case::key_info("/key/info", true)]
+#[case::mcp_tools("/mcp/tools", false)]
+#[case::messages("/v1/messages", false)]
+#[case::key_generate("/key/generate", false)]
+fn team_none_two_group_fallback(#[case] route: &str, #[case] allowed: bool) {
+    assert_eq!(
+        allowed_routes_check(UserRole::Team, route, &[], None),
+        allowed
+    );
 }
 
 #[test]
@@ -733,24 +768,21 @@ fn empty_routes_deny() {
     ));
 }
 
-#[test]
-fn other_role_denied() {
+#[rstest]
+#[case::proxy_admin_viewer(UserRole::ProxyAdminViewer)]
+#[case::org_admin(UserRole::OrgAdmin)]
+#[case::internal_user(UserRole::InternalUser)]
+#[case::internal_user_viewer(UserRole::InternalUserViewer)]
+#[case::customer(UserRole::Customer)]
+fn other_role_denied(#[case] role: UserRole) {
     let routes = owned(&ADMIN_DEFAULT_ROUTES);
     let team = owned(&TEAM_DEFAULT_ROUTES);
-    for role in [
-        UserRole::ProxyAdminViewer,
-        UserRole::OrgAdmin,
-        UserRole::InternalUser,
-        UserRole::InternalUserViewer,
-        UserRole::Customer,
-    ] {
-        assert!(!allowed_routes_check(
-            role,
-            "/key/info",
-            &routes,
-            Some(team.as_slice())
-        ));
-    }
+    assert!(!allowed_routes_check(
+        role,
+        "/key/info",
+        &routes,
+        Some(team.as_slice())
+    ));
 }
 
 #[test]

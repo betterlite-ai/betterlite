@@ -1,7 +1,6 @@
 use std::collections::BTreeSet;
 
-// Starlette's compile_path: the escaped literal text must match in place and every placeholder takes what its
-// convertor's regex takes, so the matched route has to consume the template whole.
+// Starlette's compile_path: literal text matches in place, each placeholder takes what its convertor's regex takes, and the route must consume the template whole
 #[must_use]
 pub(crate) fn template_matches(template: &str, route: &str) -> bool {
     match parse(template) {
@@ -33,22 +32,25 @@ impl Convertor {
                 Some(without) => !without.contains('\n'),
                 None => !candidate.contains('\n'),
             },
-            Self::Int => digits(candidate),
+            Self::Int => {
+                !candidate.is_empty() && candidate.bytes().all(|byte| byte.is_ascii_digit())
+            }
             Self::Float => float(candidate),
             Self::Uuid => uuid(candidate),
         }
     }
 }
 
-fn digits(candidate: &str) -> bool {
-    !candidate.is_empty() && candidate.bytes().all(|byte| byte.is_ascii_digit())
-}
-
 // [0-9]+(\.[0-9]+)?
 fn float(candidate: &str) -> bool {
     match candidate.split_once('.') {
-        Some((whole, fraction)) => digits(whole) && digits(fraction),
-        None => digits(candidate),
+        Some((whole, fraction)) => {
+            !whole.is_empty()
+                && whole.bytes().all(|byte| byte.is_ascii_digit())
+                && !fraction.is_empty()
+                && fraction.bytes().all(|byte| byte.is_ascii_digit())
+        }
+        None => !candidate.is_empty() && candidate.bytes().all(|byte| byte.is_ascii_digit()),
     }
 }
 
@@ -72,8 +74,7 @@ fn uuid(candidate: &str) -> bool {
     rest.is_empty()
 }
 
-// Starlette's PARAM_REGEX: {name} or {name:convertor}, where a name starts with a letter or underscore; a brace
-// group that is neither stays literal text, and a convertor Starlette does not know fails the whole path
+// Starlette's PARAM_REGEX: a name starts with a letter or underscore, a brace group that is not a placeholder stays literal text, and an unknown convertor fails the path
 fn parse(template: &str) -> Option<Vec<Piece<'_>>> {
     let mut pieces = Vec::new();
     let mut literal_start = 0;

@@ -1,4 +1,3 @@
-// RouteChecks._PROXY_ADMIN_VIEW_ONLY_BLOCKED_ROUTES: management writes a view-only admin may never call
 pub(crate) const EARLY_BLOCKED_ROUTES: &[&str] = &[
     "/user/new",
     "/management/v1/users/bulk",

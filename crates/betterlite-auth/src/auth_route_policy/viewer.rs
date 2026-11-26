@@ -20,8 +20,7 @@ const SESSION_LOGOUT: &str = "/session/logout";
 const DEFAULT_METHOD: &str = "GET";
 const KEY_ROUTE_PREFIX: &str = "/key/";
 
-// RouteChecks._check_proxy_admin_viewer_access: inference routes cost money, safe verbs read, and every
-// other write needs an explicit allowance.
+// RouteChecks._check_proxy_admin_viewer_access: inference routes cost money, safe verbs read, and every other write needs an explicit allowance
 pub fn check_access(
     route: &str,
     method: Option<&str>,
@@ -31,7 +30,10 @@ pub fn check_access(
         return Err(denial::viewer_llm_route(route));
     }
     if management_route_denied(route, body)? {
-        return Err(denial::viewer_route(route));
+        return Err(denial::exception(
+            format!("an admin viewer may not call {route}"),
+            denial::FORBIDDEN,
+        ));
     }
     if SAFE_HTTP_METHODS.contains(&method.unwrap_or(DEFAULT_METHOD)) {
         return Ok(());
@@ -43,14 +45,20 @@ pub fn check_access(
         return Ok(());
     }
     if late_denied(route) {
-        return Err(denial::viewer_route(route));
+        return Err(denial::exception(
+            format!("an admin viewer may not call {route}"),
+            denial::FORBIDDEN,
+        ));
     }
     if check_route_access(route, &admin_viewer_routes())
         || check_route_access(route, GLOBAL_SPEND_TRACKING_ROUTES)
     {
         return Ok(());
     }
-    Err(denial::viewer_route(route))
+    Err(denial::exception(
+        format!("an admin viewer may not call {route}"),
+        denial::FORBIDDEN,
+    ))
 }
 
 // the management branch that runs before the method decides: email-only updates and the early deny table
@@ -72,8 +80,7 @@ fn early_denied(route: &str) -> bool {
     blocked_key_suffix(route, &EARLY_BLOCKED_KEY_SUFFIXES)
 }
 
-// every entry here is also in the early table, and every route it could still catch reaches the same 403 at
-// the end of check_access, so no test can tell this check from its negation
+// every entry here is also in the early table, and every route it could still catch reaches the same 403 at the end, so no test can tell this check from its negation
 #[cfg_attr(test, mutants::skip)]
 fn late_denied(route: &str) -> bool {
     if check_route_access(route, LATE_BLOCKED_WRITE_ROUTES) {

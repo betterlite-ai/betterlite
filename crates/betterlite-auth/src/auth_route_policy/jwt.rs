@@ -34,8 +34,7 @@ pub fn allowed_routes_check(
     }
 }
 
-// _allowed_routes_check: a group name is expanded and every template matched as Starlette would; anything
-// else is only an exact route or a trailing-wildcard prefix
+// _allowed_routes_check: a group name expands to Starlette templates; anything else is an exact route or a trailing-wildcard prefix
 fn allows_entry(entry: &str, route: &str) -> bool {
     let routes = get_actual_routes(&[entry]);
     if routes.len() == 1 && routes.first().is_some_and(|only| only.as_str() == entry) {
