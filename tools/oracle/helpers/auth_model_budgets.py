@@ -1,7 +1,7 @@
 import asyncio
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Final, Literal, TypedDict, cast
+from typing import Final, Literal, Required, TypedDict, cast
 
 import litellm
 from litellm.exceptions import BudgetExceededError
@@ -23,10 +23,10 @@ OBJECT: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonVal
 
 
 class Call(TypedDict, total=False):
-    function: Literal[
+    function: Required[Literal[
         "key_fallback", "user_budget", "team_budget",
         "end_user_apply", "end_user_update", "global_spend",
-    ]
+    ]]
     token: dict[str, JsonValue] | None
     models: list[str] | None
     model_name: str | None
@@ -63,9 +63,9 @@ def denial_record(denied: BudgetExceededError) -> JsonValue:
 
 
 def views(request: Request) -> tuple[JsonValue, JsonValue, JsonValue]:
-    parsed = cast("dict[str, JsonValue] | None", http_parsing_utils._safe_get_request_parsed_body(request=request))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L303
+    parsed = cast("dict[str, JsonValue] | None", http_parsing_utils._safe_get_request_parsed_body(request=request))  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L303
     cached = cast("dict[str, JsonValue]", request._json)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L484
-    return (None if parsed is None else parsed.get("model"), cached.get("model"), OBJECT.validate_json(request._body).get("model"))  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L483-L485
+    return (None if parsed is None else parsed.get("model"), cached.get("model"), OBJECT.validate_json(request._body).get("model"))  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L483-L485
 
 
 @dataclass
@@ -76,9 +76,9 @@ class ScriptedLimiter:
     calls: list[str] = field(default_factory=list)
     seen: list[JsonValue] = field(default_factory=list)
 
-    async def is_key_within_model_budget(self, user_api_key_dict: UserAPIKeyAuth, model: str) -> bool:  # noqa: ARG002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L450-L453
+    async def is_key_within_model_budget(self, user_api_key_dict: UserAPIKeyAuth, model: str) -> bool:  # noqa: ARG002, E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L450-L453
         self.calls.append(f"key:{model}")
-        return verdict(failing=self.failing, entity_type="key", entity_id="hashed-key")  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L450-L453
+        return verdict(failing=self.failing, entity_type="key", entity_id="hashed-key")  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L450-L453
 
     async def get_fallback_model_within_budget(  # ast-grep-ignore: no-long-names
         self, user_api_key_dict: UserAPIKeyAuth, model: str
@@ -168,8 +168,9 @@ async def key_fallback_call(call: Call) -> JsonValue:
         raise ValueError("a key fallback call names the model and the request data")
     limiter = ScriptedLimiter(failing=bool(call.get("failing")), fallback=call.get("fallback"))
     params = call.get("path_params")
-    request = Request({"type": "http", "path_params": params})
-    request._json = {}  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L484
+    scope: dict[str, JsonValue] = {"type": "http", "path_params": params}
+    request = Request(scope)
+    request._json = dict[str, JsonValue]()  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L484
     request._body = b"{}"  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L485
     error: JsonValue = None
     try:
@@ -219,7 +220,7 @@ def end_user_apply_call(call: Call) -> JsonValue:
         raise ValueError("an end user apply call names the budget table")
     budget_info = LiteLLM_BudgetTable.model_validate(budget)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/budget.py#L16
     limits: dict[str, JsonValue] = {}
-    user_api_key_auth._apply_budget_limits_to_end_user_params(limits, budget_info, call.get("end_user_id"))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L613-L641
+    user_api_key_auth._apply_budget_limits_to_end_user_params(limits, budget_info, call.get("end_user_id"))  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L613-L641
     return {
         "end_user_id": limits.get("end_user_id"),
         "tpm": limits.get("end_user_tpm_limit"),
@@ -241,7 +242,7 @@ def end_user_update_call(call: Call) -> JsonValue:
         "rpm": updated.end_user_rpm_limit,
         "tpd": updated.end_user_tpd_limit,
         "max_budget": updated.end_user_max_budget,
-        "model_max_budget": cast("dict[str, JsonValue] | None", updated.end_user_model_max_budget),  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3315
+        "model_max_budget": cast("dict[str, JsonValue] | None", updated.end_user_model_max_budget),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3315
     }
 
 
