@@ -614,14 +614,14 @@ def test_speech_identity_headers(monkeypatch: pytest.MonkeyPatch) -> None:
         )
         assert header_of(server.calls[-1], "openai-organization") is None
         assert header_of(server.calls[-1], "openai-project") is None
-        payload = json.dumps({
+        payload: dict[str, JsonValue] = {
             "settings": {"organization": "org-setting", "project": "project-setting"},
             "arguments": {
                 "model": TTS_MODEL, "input": "hello", "voice": "alloy",
                 "api_base": server.url, "api_key": GOOD_KEY,
             },
-        })
-        NativeAudioSession("{}").speech(payload, [])
+        }
+        NativeAudioSession("{}").speech(json.dumps(payload), [])
         assert header_of(server.calls[-1], "openai-organization") is None
         assert header_of(server.calls[-1], "openai-project") is None
         monkeypatch.setenv("OPENAI_ORG_ID", "org-sdk")
