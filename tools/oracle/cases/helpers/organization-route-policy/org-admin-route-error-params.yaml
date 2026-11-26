@@ -1,0 +1,48 @@
+kind: helper
+name: organization-route-policy-auth-org-admin-route-error-params
+call:
+  organization_route_policy:
+    calls:
+      # /organization/info: no memberships is the not-a-member refusal
+      - function: role_check
+        user: {user_role: internal_user, organization_memberships: null}
+        route: /organization/info
+        request: {organization_id: org-a}
+      # /organization/delete: a member who passes no organization_id
+      - function: role_check
+        user:
+          user_role: internal_user
+          organization_memberships:
+            - {organization_id: org-a, user_role: org_admin}
+        route: /organization/delete
+      # /organization/member_add: a member with no role in the selected organization
+      - function: role_check
+        user:
+          user_role: internal_user
+          organization_memberships:
+            - {organization_id: org-a, user_role: org_admin}
+        route: /organization/member_add
+        request: {organization_id: org-b}
+      # /organization/member_update: a role that is not org_admin on the selected organization
+      - function: role_check
+        user:
+          user_role: internal_user
+          organization_memberships:
+            - {organization_id: org-a, user_role: internal_user}
+        route: /organization/member_update
+        request: {organization_id: org-a}
+      # /organization/member_delete: the selected organization's org admin passes
+      - function: role_check
+        user:
+          user_role: internal_user
+          organization_memberships:
+            - {organization_id: org-a, user_role: org_admin}
+        route: /organization/member_delete
+        request: {organization_id: org-a}
+      # a trailing slash is a different route, so no organization check runs
+      - function: role_check
+        user: {user_role: internal_user, organization_memberships: null}
+        route: /organization/info/
+        request: {organization_id: org-a}
+env: {}
+compare: {ignore: []}

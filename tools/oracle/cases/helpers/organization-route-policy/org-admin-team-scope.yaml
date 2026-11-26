@@ -1,0 +1,39 @@
+kind: helper
+name: organization-route-policy-org-admin-team-scope
+call:
+  organization_route_policy:
+    calls:
+      # an org admin's team create is scoped to the organization they administer
+      - function: role_check
+        user:
+          user_role: internal_user
+          organization_memberships:
+            - {organization_id: org-a, user_role: org_admin}
+            - {organization_id: org-b, user_role: org_admin}
+        route: /team/new
+        request: {organization_id: org-b}
+      - function: role_check
+        user:
+          user_role: internal_user
+          organization_memberships:
+            - {organization_id: org-a, user_role: org_admin}
+            - {organization_id: org-b, user_role: org_admin}
+        route: /organization/member_add
+        request: {organization_id: org-a}
+      # every org admin membership the user holds is one entry, and the pinned order decides
+      - function: org_info
+        user:
+          user_role: internal_user
+          organization_memberships:
+            - {organization_id: org-a, user_role: org_admin}
+            - {organization_id: org-b, user_role: internal_user}
+      - function: role_check
+        user:
+          user_role: internal_user
+          organization_memberships:
+            - {organization_id: org-a, user_role: org_admin}
+            - {organization_id: org-b, user_role: internal_user}
+        route: /organization/delete
+        request: {organization_id: org-b}
+env: {}
+compare: {ignore: []}

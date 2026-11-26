@@ -1,0 +1,53 @@
+kind: helper
+name: organization_route_policy_seed
+call:
+  organization_route_policy:
+    calls:
+      - function: role_check
+        user:
+          user_role: internal_user
+          organization_memberships:
+            - {organization_id: org-a, user_role: org_admin}
+            - {organization_id: org-b, user_role: null}
+        route: /organization/info
+        request: {organization_id: org-a}
+      - function: role_check
+        user:
+          user_role: internal_user
+          organization_memberships:
+            - {organization_id: org-a, user_role: org_admin}
+        route: /organization/info
+        request: {organization_id: org-b}
+      - function: role_check
+        user: {user_role: proxy_admin}
+        route: /organization/new
+      - function: role_check
+        user:
+          user_role: internal_user
+          organization_memberships:
+            - {organization_id: org-a, user_role: org_admin}
+        route: /team/new
+      - function: org_info
+        user:
+          user_role: internal_user
+          organization_memberships:
+            - {organization_id: org-a, user_role: org_admin}
+            - {organization_id: org-a, user_role: internal_user}
+            - {organization_id: null, user_role: org_admin}
+      - function: org_admin
+        user:
+          user_role: internal_user
+          organization_memberships:
+            - {organization_id: org-a, user_role: org_admin}
+        request: {organization_id: org-a, organizations: [org-a, org-b]}
+      - function: team_context
+        route: /team/update
+        request: {team_id: team-1, organization_id: null}
+        team_organization_id: org-team
+      - function: team_context
+        route: /team/team-1
+        request: {organization_id: org-caller}
+        route_template: "/team/{team_id}"
+        team_organization_id: org-team
+env: {}
+compare: {ignore: []}

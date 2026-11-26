@@ -190,7 +190,7 @@ if [[ -z "${LAND_ONLY}" ]]; then
       fi
       reason="${reason} after ${reruns} ${kind} reruns"
     fi
-    if [[ -n "${reason}" ]] && [[ -d "${worktree}" ]] && unblock_note=$(bash "${P}/unblock.sh" "${id}" "${worktree}" "${reason}"); then
+    if [[ -n "${reason}" ]] && [[ -d "${worktree}" ]] && unblock_note=$(GATE_SHARED_BUILDS=${worktrees}/tmp/gate bash "${P}/unblock.sh" "${id}" "${worktree}" "${reason}"); then
       say "unblocked by a rule: ${unblock_note}"
       GRANT=1 exec bash "${P}/dispatch-flow.sh" "${id}" "${run}u" "${unblock_note}"
     fi

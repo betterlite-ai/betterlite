@@ -1,0 +1,36 @@
+kind: helper
+name: virtual-key-routes-key-team-precedence
+call:
+  virtual_key_routes:
+    function: passthrough_access
+    route: /team-pass
+    key:
+      metadata:
+        allowed_passthrough_routes: [/other]
+      team_metadata:
+        allowed_passthrough_routes: [/team-pass]
+calls:
+  - virtual_key_routes:
+      function: passthrough_access
+      route: /team-pass
+      key:
+        metadata:
+          allowed_passthrough_routes: []
+        team_metadata:
+          allowed_passthrough_routes: [/team-pass]
+  - virtual_key_routes:
+      function: passthrough_access
+      route: /team-pass
+      key:
+        metadata:
+          allowed_passthrough_routes: [/team-pass]
+        team_metadata:
+          allowed_passthrough_routes: [/other]
+  - virtual_key_routes:
+      function: passthrough_access
+      route: /team-pass/child
+      key:
+        metadata:
+          allowed_passthrough_routes: [/team-pass]
+env: {}
+compare: {ignore: []}
