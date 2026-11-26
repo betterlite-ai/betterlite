@@ -221,7 +221,10 @@ async fn team_project_errors_escape() {
         error,
         IntersectionError::Project(OrgLookupError::NoDatabase)
     ));
-    // A membership read failure escapes after the team row has been loaded.
+}
+
+#[tokio::test]
+async fn membership_error_escapes() {
     let token = grant_token(&[("team_id", text("team-1")), ("user_id", text("u1"))]);
     let world = World::new()
         .with_team(Ok(team_row("team-1", &[], None)))

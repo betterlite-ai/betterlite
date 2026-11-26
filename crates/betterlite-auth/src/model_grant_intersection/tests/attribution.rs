@@ -62,26 +62,29 @@ async fn attribution_five_list_order() {
 
 #[tokio::test]
 async fn key_org_before_team_org() {
-    let world = World::new().with_org(Ok(Some(organization_row("key-org", &["key-group"]))));
-    let token = grant_token(&[
+    let key_world = World::new().with_org(Ok(Some(organization_row("key-org", &["key-group"]))));
+    let key_token = grant_token(&[
         ("models", list(&["*"])),
         ("user_id", text("u1")),
         ("org_id", text("key-org")),
     ]);
-    let team = team_row("team-1", &[], Some("team-org"));
+    let key_team = team_row("team-1", &[], Some("team-org"));
     let lists = granted_model_lists(AttributionRequest {
-        token: &token,
-        team: Some(&team),
+        token: &key_token,
+        team: Some(&key_team),
         project: None,
         membership: None,
         membership_loaded: true,
-        sources: &world,
+        sources: &key_world,
     })
     .await
     .unwrap();
     assert_eq!(lists[4], owned(&["key-group"]));
-    assert_eq!(world.effects(), vec![Effect::Org("key-org".to_owned())]);
-    // With no key organization, attribution falls back to the team's organization.
+    assert_eq!(key_world.effects(), vec![Effect::Org("key-org".to_owned())]);
+}
+
+#[tokio::test]
+async fn team_org_fallback() {
     let world = World::new().with_org(Ok(Some(organization_row("team-org", &["team-group"]))));
     let token = grant_token(&[("models", list(&["*"]))]);
     let team = team_row("team-1", &[], Some("team-org"));
@@ -97,6 +100,10 @@ async fn key_org_before_team_org() {
     .unwrap();
     assert_eq!(lists[4], owned(&["team-group"]));
     assert_eq!(world.effects(), vec![Effect::Org("team-org".to_owned())]);
+}
+
+#[tokio::test]
+async fn empty_key_org_is_explicit() {
     let world = World::new().with_org(Ok(None));
     let token = grant_token(&[("models", list(&["*"])), ("org_id", text(""))]);
     let team = team_row("team-1", &[], Some("team-org"));
@@ -112,6 +119,10 @@ async fn key_org_before_team_org() {
     .unwrap();
     assert_eq!(lists[4], Vec::<String>::new());
     assert_eq!(world.effects(), vec![Effect::Org(String::new())]);
+}
+
+#[tokio::test]
+async fn missing_org_skips_lookup() {
     let world = World::new();
     let team = team_row("team-1", &[], None);
     let token = grant_token(&[("models", list(&["*"]))]);

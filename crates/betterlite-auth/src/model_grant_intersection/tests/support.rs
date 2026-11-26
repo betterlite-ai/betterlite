@@ -1,7 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::io::Error as IoError;
-use std::mem;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -28,12 +27,6 @@ use crate::model_grant_intersection::sources::{GrantSources, ServingFailure, Ser
 use crate::model_grant_intersection::token::GrantToken;
 use crate::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 
-// One scripted answer per source; Unused fails a test whose walk reached a source it did not script.
-pub(super) enum Script<Row, Failure> {
-    Answer(Result<Row, Failure>),
-    Unused,
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum Effect {
     Team(String),
@@ -54,12 +47,13 @@ pub(super) enum Effect {
 type ServingMap = BTreeMap<String, BTreeSet<String>>;
 
 pub(super) struct World {
-    pub(super) team: Mutex<Script<LiteLLMTeamTableCachedObj, TeamLookupError>>,
-    pub(super) user: Mutex<Script<Option<LiteLLMUserTable>, UserLookupError>>,
-    pub(super) project: Mutex<Script<Option<CachedProject>, OrgLookupError>>,
-    pub(super) org: Mutex<Script<Option<OrganizationTable>, OrgLookupError>>,
-    pub(super) membership: Mutex<Script<Option<LiteLLMTeamMembership>, MembershipLoadError>>,
-    pub(super) registry: Mutex<Script<Option<BTreeSet<String>>, RegistryError>>,
+    pub(super) team: Mutex<Option<Result<LiteLLMTeamTableCachedObj, TeamLookupError>>>,
+    pub(super) user: Mutex<Option<Result<Option<LiteLLMUserTable>, UserLookupError>>>,
+    pub(super) project: Mutex<Option<Result<Option<CachedProject>, OrgLookupError>>>,
+    pub(super) org: Mutex<Option<Result<Option<OrganizationTable>, OrgLookupError>>>,
+    pub(super) membership:
+        Mutex<Option<Result<Option<LiteLLMTeamMembership>, MembershipLoadError>>>,
+    pub(super) registry: Mutex<Option<Result<Option<BTreeSet<String>>, RegistryError>>>,
     pub(super) serving: Mutex<Option<Result<ServingMap, ()>>>,
     effects: Mutex<Vec<Effect>>,
 }
@@ -67,12 +61,12 @@ pub(super) struct World {
 impl World {
     pub(super) const fn new() -> Self {
         Self {
-            team: Mutex::new(Script::Unused),
-            user: Mutex::new(Script::Unused),
-            project: Mutex::new(Script::Unused),
-            org: Mutex::new(Script::Unused),
-            membership: Mutex::new(Script::Unused),
-            registry: Mutex::new(Script::Unused),
+            team: Mutex::new(None),
+            user: Mutex::new(None),
+            project: Mutex::new(None),
+            org: Mutex::new(None),
+            membership: Mutex::new(None),
+            registry: Mutex::new(None),
             serving: Mutex::new(None),
             effects: Mutex::new(Vec::new()),
         }
@@ -82,7 +76,7 @@ impl World {
         self,
         answer: Result<LiteLLMTeamTableCachedObj, TeamLookupError>,
     ) -> Self {
-        *self.team.lock().unwrap() = Script::Answer(answer);
+        *self.team.lock().unwrap() = Some(answer);
         self
     }
 
@@ -90,7 +84,7 @@ impl World {
         self,
         answer: Result<Option<LiteLLMUserTable>, UserLookupError>,
     ) -> Self {
-        *self.user.lock().unwrap() = Script::Answer(answer);
+        *self.user.lock().unwrap() = Some(answer);
         self
     }
 
@@ -98,7 +92,7 @@ impl World {
         self,
         answer: Result<Option<CachedProject>, OrgLookupError>,
     ) -> Self {
-        *self.project.lock().unwrap() = Script::Answer(answer);
+        *self.project.lock().unwrap() = Some(answer);
         self
     }
 
@@ -106,7 +100,7 @@ impl World {
         self,
         answer: Result<Option<OrganizationTable>, OrgLookupError>,
     ) -> Self {
-        *self.org.lock().unwrap() = Script::Answer(answer);
+        *self.org.lock().unwrap() = Some(answer);
         self
     }
 
@@ -114,7 +108,7 @@ impl World {
         self,
         answer: Result<Option<LiteLLMTeamMembership>, MembershipLoadError>,
     ) -> Self {
-        *self.membership.lock().unwrap() = Script::Answer(answer);
+        *self.membership.lock().unwrap() = Some(answer);
         self
     }
 
@@ -122,7 +116,7 @@ impl World {
         self,
         answer: Result<Option<BTreeSet<String>>, RegistryError>,
     ) -> Self {
-        *self.registry.lock().unwrap() = Script::Answer(answer);
+        *self.registry.lock().unwrap() = Some(answer);
         self
     }
 
@@ -140,26 +134,21 @@ impl World {
         self
     }
 
-    fn watched<Row, Failure>(
-        &self,
-        effect: Effect,
-        script: &Mutex<Script<Row, Failure>>,
-    ) -> Result<Row, Failure> {
-        self.effects.lock().unwrap().push(effect);
+    fn watched<Answer>(&self, effect: Effect, script: &Mutex<Option<Answer>>) -> Answer {
+        self.effects.lock().expect("effects lock").push(effect);
         play(script)
     }
 
     pub(super) fn effects(&self) -> Vec<Effect> {
-        self.effects.lock().unwrap().clone()
+        self.effects.lock().expect("effects lock").clone()
     }
 }
 
-fn play<Row, Failure>(script: &Mutex<Script<Row, Failure>>) -> Result<Row, Failure> {
-    let taken = mem::replace(&mut *script.lock().unwrap(), Script::Unused);
-    match taken {
-        Script::Answer(answer) => answer,
-        Script::Unused => panic!("a source ran that the test did not script"),
-    }
+fn play<Answer>(script: &Mutex<Option<Answer>>) -> Answer {
+    let mut pending = script.lock().expect("script lock");
+    pending
+        .take()
+        .expect("a source ran that the test did not script")
 }
 
 #[async_trait]
