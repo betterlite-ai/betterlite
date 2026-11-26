@@ -3,9 +3,7 @@ use betterlite_db::team_rows::membership::LiteLLMTeamMembership;
 use tracing::debug;
 
 use crate::auth_prefetch::rows::CachedProject;
-use crate::model_grant_intersection::collect::{
-    MatchedRequest, collect_matched_model_access_groups,
-};
+use crate::model_grant_intersection::collect::{MatchedRequest, collect_matched_groups};
 use crate::model_grant_intersection::sources::{GrantSources, ServingGroups};
 use crate::model_grant_intersection::token::GrantToken;
 use crate::resolved_key::auth::UserAPIKeyAuth;
@@ -23,7 +21,7 @@ pub struct StampRequest<'request> {
 }
 
 // stamp_matched_model_access_groups: best-effort attribution; a failure leaves any existing stamp untouched.
-pub async fn stamp_matched_model_access_groups(request: StampRequest<'_>) -> Vec<String> {
+pub async fn stamp_matched_groups(request: StampRequest<'_>) -> Vec<String> {
     let StampRequest {
         models,
         auth,
@@ -38,7 +36,7 @@ pub async fn stamp_matched_model_access_groups(request: StampRequest<'_>) -> Vec
         return Vec::new();
     };
     let token = GrantToken::of(auth);
-    let collected = collect_matched_model_access_groups(MatchedRequest {
+    let collected = collect_matched_groups(MatchedRequest {
         models,
         token: Some(&token),
         team,

@@ -1,5 +1,5 @@
 use crate::model_grant_intersection::stamp::{
-    StampRequest, matched_model_access_groups, stamp_matched_model_access_groups,
+    StampRequest, matched_model_access_groups, stamp_matched_groups,
 };
 use crate::model_grant_intersection::tests::support::{
     Logs, World, auth_object, group_set, list, owned, text,
@@ -15,7 +15,7 @@ async fn matched_group_stamping() {
     let first = World::new()
         .with_registry(Ok(Some(group_set(&["tier-a"]))))
         .with_serving(&[("gpt-4o", &["tier-a", "tier-b"])]);
-    let matched = stamp_matched_model_access_groups(StampRequest {
+    let matched = stamp_matched_groups(StampRequest {
         models: Some(&models),
         auth: Some(&mut auth),
         team: None,
@@ -35,7 +35,7 @@ async fn matched_group_stamping() {
     let second = World::new()
         .with_registry(Ok(Some(group_set(&["tier-b"]))))
         .with_serving(&[("gpt-4o", &["tier-a", "tier-b"])]);
-    let matched = stamp_matched_model_access_groups(StampRequest {
+    let matched = stamp_matched_groups(StampRequest {
         models: Some(&models),
         auth: Some(&mut auth),
         team: None,
@@ -61,7 +61,7 @@ async fn stamp_exception_debug_drop() {
     auth.extra.matched_model_access_groups = Some(owned(&["previous"]));
     let models = owned(&["gpt-4o"]);
     let world = World::new().with_registry(Ok(None)).with_broken_router();
-    let matched = stamp_matched_model_access_groups(StampRequest {
+    let matched = stamp_matched_groups(StampRequest {
         models: Some(&models),
         auth: Some(&mut auth),
         team: None,
@@ -93,7 +93,7 @@ async fn empty_stamp_keeps_previous() {
     let world = World::new()
         .with_registry(Ok(Some(group_set(&["tier-a"]))))
         .with_serving(&[("gpt-4o", &["tier-a"])]);
-    let matched = stamp_matched_model_access_groups(StampRequest {
+    let matched = stamp_matched_groups(StampRequest {
         models: Some(&models),
         auth: Some(&mut auth),
         team: None,
@@ -114,7 +114,7 @@ async fn empty_stamp_keeps_previous() {
     let other = World::new()
         .with_registry(Ok(Some(group_set(&["tier-a"]))))
         .with_serving(&[("gpt-4o", &["tier-a"])]);
-    let matched = stamp_matched_model_access_groups(StampRequest {
+    let matched = stamp_matched_groups(StampRequest {
         models: Some(&models),
         auth: Some(&mut fresh),
         team: None,
@@ -129,7 +129,7 @@ async fn empty_stamp_keeps_previous() {
     assert!(matched_model_access_groups(&fresh).is_empty());
 
     let untouched = World::new();
-    let matched = stamp_matched_model_access_groups(StampRequest {
+    let matched = stamp_matched_groups(StampRequest {
         models: Some(&models),
         auth: None,
         team: None,

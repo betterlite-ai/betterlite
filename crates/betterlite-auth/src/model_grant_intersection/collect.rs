@@ -23,7 +23,7 @@ pub struct MatchedRequest<'request> {
 }
 
 // collect_matched_model_access_groups: the budgeted groups named on a granted allowlist that serve the request.
-pub async fn collect_matched_model_access_groups(
+pub async fn collect_matched_groups(
     request: MatchedRequest<'_>,
 ) -> Result<Vec<String>, IntersectionError> {
     let (Some(models), Some(token), Some(groups), Some(sources)) = (

@@ -9,9 +9,7 @@ use betterlite_auth::model_grant_intersection::enforced::{
     EnforcedRequest, enforced_model_allowlists,
 };
 use betterlite_auth::model_grant_intersection::sources::{GrantSources, ServingGroups};
-use betterlite_auth::model_grant_intersection::stamp::{
-    StampRequest, stamp_matched_model_access_groups,
-};
+use betterlite_auth::model_grant_intersection::stamp::{StampRequest, stamp_matched_groups};
 use betterlite_auth::model_grant_intersection::token::GrantToken;
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 use betterlite_db::team_rows::archived::LiteLLMTeamTableCachedObj;
@@ -124,7 +122,7 @@ async fn stamped(
     sources: &dyn GrantSources,
 ) -> Vec<String> {
     let mut stamped = key.clone();
-    stamp_matched_model_access_groups(StampRequest {
+    stamp_matched_groups(StampRequest {
         models: rule.models.as_deref(),
         auth: Some(&mut stamped),
         team: rule.team.as_ref(),

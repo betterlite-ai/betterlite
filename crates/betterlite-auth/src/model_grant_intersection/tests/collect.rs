@@ -2,9 +2,7 @@ use std::collections::BTreeSet;
 
 use rstest::rstest;
 
-use crate::model_grant_intersection::collect::{
-    MatchedRequest, collect_matched_model_access_groups,
-};
+use crate::model_grant_intersection::collect::{MatchedRequest, collect_matched_groups};
 use crate::model_grant_intersection::error::IntersectionError;
 use crate::model_grant_intersection::tests::support::{
     Effect, World, grant_token, group_set, list, membership_row, owned, registry_failure, team_row,
@@ -37,7 +35,7 @@ async fn layered_grant_intersection() {
     let token = grant_token(&[("models", list(&["tier-a"])), ("team_id", text("team-1"))]);
     let team = team_row("team-1", &["tier-b"], None);
     let models = owned(&["gpt-4o"]);
-    let matched = collect_matched_model_access_groups(MatchedRequest {
+    let matched = collect_matched_groups(MatchedRequest {
         team: Some(&team),
         ..collect_request(&world, Some(&token), Some(&models))
     })
@@ -63,7 +61,7 @@ async fn member_narrowing() {
     ]);
     let team = team_row("team-1", &["*"], None);
     let models = owned(&["claude-sonnet"]);
-    let matched = collect_matched_model_access_groups(MatchedRequest {
+    let matched = collect_matched_groups(MatchedRequest {
         team: Some(&team),
         ..collect_request(&world, Some(&token), Some(&models))
     })
@@ -97,7 +95,7 @@ async fn missing_collection_inputs() {
             ..collect_request(&world, Some(&token), Some(&models))
         },
     ] {
-        let matched = collect_matched_model_access_groups(case).await.unwrap();
+        let matched = collect_matched_groups(case).await.unwrap();
         assert!(matched.is_empty());
     }
     assert!(world.effects().is_empty());
@@ -110,10 +108,9 @@ async fn empty_registry_short_circuit() {
         .with_serving(&[("gpt-4o", &["tier-a"])]);
     let token = grant_token(&[("models", list(&["tier-a"]))]);
     let models = owned(&["gpt-4o"]);
-    let matched =
-        collect_matched_model_access_groups(collect_request(&world, Some(&token), Some(&models)))
-            .await
-            .unwrap();
+    let matched = collect_matched_groups(collect_request(&world, Some(&token), Some(&models)))
+        .await
+        .unwrap();
     assert!(matched.is_empty());
     assert_eq!(world.effects(), vec![Effect::Registry]);
 }
@@ -125,10 +122,9 @@ async fn unknown_registry_all_covering() {
         .with_serving(&[("gpt-4o", &["tier-a", "tier-b", "free-tier"])]);
     let token = grant_token(&[("models", list(&["tier-a"]))]);
     let models = owned(&["gpt-4o"]);
-    let matched =
-        collect_matched_model_access_groups(collect_request(&world, Some(&token), Some(&models)))
-            .await
-            .unwrap();
+    let matched = collect_matched_groups(collect_request(&world, Some(&token), Some(&models)))
+        .await
+        .unwrap();
     assert_eq!(matched, owned(&["tier-a"]));
 }
 
@@ -139,10 +135,9 @@ async fn team_scoped_group_union() {
         .with_serving(&[("m1", &["g1"]), ("m2", &["g2"])]);
     let token = grant_token(&[("models", list(&["g1", "g2"])), ("team_id", text("team-1"))]);
     let models = owned(&["m1", "m2"]);
-    let matched =
-        collect_matched_model_access_groups(collect_request(&world, Some(&token), Some(&models)))
-            .await
-            .unwrap();
+    let matched = collect_matched_groups(collect_request(&world, Some(&token), Some(&models)))
+        .await
+        .unwrap();
     assert_eq!(matched, owned(&["g1", "g2"]));
     assert_eq!(
         world.effects(),
@@ -167,10 +162,9 @@ async fn group_name_must_be_granted() {
         .with_serving(&[("gpt-4o", &["tier-a"])]);
     let token = grant_token(&[("models", list(&["gpt-4o"]))]);
     let models = owned(&["gpt-4o"]);
-    let matched =
-        collect_matched_model_access_groups(collect_request(&world, Some(&token), Some(&models)))
-            .await
-            .unwrap();
+    let matched = collect_matched_groups(collect_request(&world, Some(&token), Some(&models)))
+        .await
+        .unwrap();
     assert!(matched.is_empty());
 }
 
@@ -185,10 +179,9 @@ async fn wildcard_no_attribution(#[case] key_models: &[&str]) {
         .with_serving(&[("gpt-4o", &["tier-a"])]);
     let token = grant_token(&[("models", list(key_models))]);
     let models = owned(&["gpt-4o"]);
-    let matched =
-        collect_matched_model_access_groups(collect_request(&world, Some(&token), Some(&models)))
-            .await
-            .unwrap();
+    let matched = collect_matched_groups(collect_request(&world, Some(&token), Some(&models)))
+        .await
+        .unwrap();
     assert!(matched.is_empty());
 }
 
@@ -200,7 +193,7 @@ async fn matched_sorted_deduplicated() {
     let token = grant_token(&[("models", list(&["tier-b", "tier-a"]))]);
     let team = team_row("team-1", &["tier-a"], None);
     let models = owned(&["gpt-4o"]);
-    let matched = collect_matched_model_access_groups(MatchedRequest {
+    let matched = collect_matched_groups(MatchedRequest {
         team: Some(&team),
         ..collect_request(&world, Some(&token), Some(&models))
     })
@@ -215,18 +208,16 @@ async fn collection_errors_escape() {
     let models = owned(&["gpt-4o"]);
 
     let world = World::new().with_registry(Err(registry_failure()));
-    let error =
-        collect_matched_model_access_groups(collect_request(&world, Some(&token), Some(&models)))
-            .await
-            .unwrap_err();
+    let error = collect_matched_groups(collect_request(&world, Some(&token), Some(&models)))
+        .await
+        .unwrap_err();
     assert!(matches!(error, IntersectionError::Registry(_)));
     assert_eq!(error.http_status(), None);
 
     let world = World::new().with_registry(Ok(None)).with_broken_router();
-    let error =
-        collect_matched_model_access_groups(collect_request(&world, Some(&token), Some(&models)))
-            .await
-            .unwrap_err();
+    let error = collect_matched_groups(collect_request(&world, Some(&token), Some(&models)))
+        .await
+        .unwrap_err();
     assert!(matches!(error, IntersectionError::Groups(_)));
     assert_eq!(error.http_status(), None);
 }
