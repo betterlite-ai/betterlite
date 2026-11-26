@@ -175,7 +175,7 @@ pub(super) struct CaseMemberships {
 impl CaseMemberships {
     pub(super) fn allowed(models: &str) -> Self {
         Self {
-            membership: Some(models.to_owned()).filter(|models| !models.is_empty()),
+            membership: Some(models.to_owned()).filter(|entry| !entry.is_empty()),
             asked: Mutex::new(Vec::new()),
         }
     }
@@ -222,19 +222,25 @@ pub(super) fn admission<'deps>(
     }
 }
 
+// the steps a scripted case can make fail, one variant per collaborator
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum Failing {
+    Managed,
+    Unmanaged,
+    Caller,
+    Team,
+    User,
+}
+
 // the port the state installs, scripted per step so every collaborator's answer is explicit
 pub(super) struct Script {
     pub(super) policy: Option<String>,
     pub(super) managed: Vec<AgentAccessGroupCeiling>,
-    pub(super) managed_fails: bool,
     pub(super) unmanaged: Option<AgentAccessGroupCeiling>,
-    pub(super) unmanaged_fails: bool,
     pub(super) caller: Option<String>,
-    pub(super) caller_fails: bool,
     pub(super) team: Option<String>,
-    pub(super) team_fails: bool,
     pub(super) user: Option<String>,
-    pub(super) user_fails: bool,
+    pub(super) fails: Vec<Failing>,
     pub(super) events: Mutex<Vec<String>>,
 }
 
@@ -244,15 +250,11 @@ impl Script {
         Self {
             policy: None,
             managed: Vec::new(),
-            managed_fails: false,
             unmanaged: None,
-            unmanaged_fails: false,
             caller: None,
-            caller_fails: false,
             team: None,
-            team_fails: false,
             user: None,
-            user_fails: false,
+            fails: Vec::new(),
             events: Mutex::new(Vec::new()),
         }
     }
@@ -278,16 +280,16 @@ impl Script {
     fn lookup(&self, slot: CallerSlot) -> Result<Option<&str>, AgentCallerError> {
         self.record(slot.event().to_owned());
         if self.slot_fails(slot) {
-            return Err(Script::lookup_failure());
+            return Err(Self::lookup_failure());
         }
         Ok(self.slot_text(slot))
     }
 
     fn slot_fails(&self, slot: CallerSlot) -> bool {
         match slot {
-            CallerSlot::Auth => self.caller_fails,
-            CallerSlot::Team => self.team_fails,
-            CallerSlot::User => self.user_fails,
+            CallerSlot::Auth => self.fails.contains(&Failing::Caller),
+            CallerSlot::Team => self.fails.contains(&Failing::Team),
+            CallerSlot::User => self.fails.contains(&Failing::User),
         }
     }
 
@@ -331,7 +333,7 @@ impl AgentAccessSource for Script {
         _policy: &AgentResponse,
     ) -> Result<Vec<AgentAccessGroupCeiling>, AccessGroupsError> {
         self.record("managed_ceilings".to_owned());
-        if self.managed_fails {
+        if self.fails.contains(&Failing::Managed) {
             return Err(access_groups_failure());
         }
         Ok(self.managed.clone())
@@ -342,7 +344,7 @@ impl AgentAccessSource for Script {
         agent_id: &str,
     ) -> Result<Option<AgentAccessGroupCeiling>, AccessGroupsError> {
         self.record(format!("unmanaged_ceiling:{agent_id}"));
-        if self.unmanaged_fails {
+        if self.fails.contains(&Failing::Unmanaged) {
             return Err(access_groups_failure());
         }
         Ok(self.unmanaged.clone())

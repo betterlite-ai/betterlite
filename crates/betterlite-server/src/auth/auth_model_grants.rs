@@ -83,7 +83,7 @@ pub(crate) fn stage_input(
         .extensions()
         .get::<Arc<ServerState>>()
         .and_then(|state| state.auth_model_grants.source.clone());
-    Ok(StageInput::AgentModelGrants(Box::new(
+    Ok(StageInput::AuthModelGrants(Box::new(
         AgentModelGrantsStageInput {
             context,
             rule,
@@ -97,7 +97,7 @@ pub(crate) async fn prefetched(
     stage: Box<AgentModelGrantsStageInput>,
 ) -> Result<StageInput, StageFailure> {
     prefetch(&stage).await.map_err(stage_failure)?;
-    Ok(StageInput::AgentModelGrants(stage))
+    Ok(StageInput::AuthModelGrants(stage))
 }
 
 // the agent's own ceiling first, then what the invoking caller's key and team may reach

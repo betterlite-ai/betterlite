@@ -10,8 +10,8 @@ use crate::entity_model_access::error::EntityModelAccessError;
 
 use super::support::{
     AGENT_ALIAS_KEY, AGENT_KEY, AGENT_MODEL_ALIAS_KEY, AGENT_TEAM_KEY, ALLOWING_MEMBER,
-    ALLOWING_TEAM, CALLER_KEY, CaseMemberships, DENYING_MEMBER, DENYING_TEAM, POLICY, Script,
-    admission, agent_token, ceiling, context, denial_of, one, shallow_context, token,
+    ALLOWING_TEAM, CALLER_KEY, CaseMemberships, DENYING_MEMBER, DENYING_TEAM, Failing, POLICY,
+    Script, admission, agent_token, ceiling, context, denial_of, one, shallow_context, token,
 };
 
 #[rstest]
@@ -230,7 +230,7 @@ async fn sorted_models_and_key_aliases() {
 async fn ceiling_lookup_error_propagates() {
     let managed = Script {
         policy: Some(POLICY.to_owned()),
-        managed_fails: true,
+        fails: vec![Failing::Managed],
         ..Script::plain()
     };
     assert!(matches!(
@@ -244,7 +244,7 @@ async fn ceiling_lookup_error_propagates() {
         Err(AgentModelGrantsError::Ceiling(_))
     ));
     let unmanaged = Script {
-        unmanaged_fails: true,
+        fails: vec![Failing::Unmanaged],
         ..Script::plain()
     };
     assert!(matches!(
@@ -605,17 +605,17 @@ async fn caller_lookup_error_propagates(#[case] step: CallerLookup) {
     let admission = admission(&memberships, &context);
     let script = match step {
         CallerLookup::Auth => Script {
-            caller_fails: true,
+            fails: vec![Failing::Caller],
             ..Script::plain()
         },
         CallerLookup::Team => Script {
             caller: Some(CALLER_KEY.to_owned()),
-            team_fails: true,
+            fails: vec![Failing::Team],
             ..Script::plain()
         },
         CallerLookup::User => Script {
             caller: Some(CALLER_KEY.to_owned()),
-            user_fails: true,
+            fails: vec![Failing::User],
             ..Script::plain()
         },
     };

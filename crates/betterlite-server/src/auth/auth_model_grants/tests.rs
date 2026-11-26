@@ -336,7 +336,7 @@ fn debug_reports_the_wired_source() {
         }),
         &context,
     );
-    let StageInput::AgentModelGrants(stage) = staged else {
+    let StageInput::AuthModelGrants(stage) = staged else {
         panic!("the agent grant stage input builds");
     };
     let rendered = format!("{stage:?}");
