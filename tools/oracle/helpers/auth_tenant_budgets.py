@@ -16,6 +16,7 @@ from litellm.proxy.auth import auth_checks
 from litellm.proxy.common_utils.user_api_key_cache import UserApiKeyCache
 from litellm.proxy.utils import PrismaClient, ProxyLogging
 from litellm.types.proxy.model_access_group_budget import ModelAccessGroupBudget
+from opentelemetry.trace import Span
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
 
@@ -106,7 +107,7 @@ async def scripted_org_object(  # noqa: PLR0913, PLR0917  # https://github.com/B
     org_id: str,
     prisma_client: PrismaClient | None,
     user_api_key_cache: UserApiKeyCache,
-    parent_otel_span: JsonValue = None,
+    parent_otel_span: Span | None = None,
     proxy_logging_obj: ProxyLogging | None = None,
     include_budget_table: bool = False,  # noqa: FBT001, FBT002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L4107-L4130
 ) -> LiteLLM_OrganizationTable | None:
@@ -123,7 +124,7 @@ async def scripted_tag_objects(  # https://github.com/BerriAI/litellm/blob/d665d
     tag_names: Sequence[str],
     prisma_client: PrismaClient | None,
     user_api_key_cache: UserApiKeyCache,
-    parent_otel_span: JsonValue = None,
+    parent_otel_span: Span | None = None,
     proxy_logging_obj: ProxyLogging | None = None,
 ) -> dict[str, LiteLLM_TagTable]:
     del prisma_client, user_api_key_cache, parent_otel_span, proxy_logging_obj
