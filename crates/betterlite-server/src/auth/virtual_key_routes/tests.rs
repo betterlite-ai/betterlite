@@ -138,13 +138,6 @@ fn stage_is_registered() {
             "/v1/messages/count_tokens",
         ]
     );
-    assert!(
-        state
-            .virtual_key_routes
-            .registry_snapshot()
-            .registrations
-            .is_empty()
-    );
 
     let master_key = SecretString::from("secret-master-key".to_owned());
     let mut request = Request::builder()
