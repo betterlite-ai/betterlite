@@ -23,10 +23,7 @@ use betterlite_provider::api::file_provider_selection::{
 };
 
 use self::azure::{azure_answer, open_azure};
-use self::clients::{
-    ClientSource, delete_litellm_params, is_asynchronous, openai_client, settings,
-    write_litellm_params,
-};
+use self::clients::{ClientSource, is_asynchronous, litellm_params, openai_client, settings};
 
 mod azure;
 pub(super) mod clients;
@@ -87,8 +84,14 @@ impl FileCallDispatch {
                 Ok(WriteReply::Object(object))
             }
             WriteCall::Upload(UploadTarget::Azure { call, data, params }) => {
-                let opened =
-                    self.open_provider(&call, write_litellm_params(params, call.timeout))?;
+                let opened = self.open_provider(
+                    &call,
+                    litellm_params(
+                        params.credentials.as_ref(),
+                        params.max_retries,
+                        call.timeout,
+                    ),
+                )?;
                 let reply =
                     azure_call(&opened, &self.client, AzureOperation::Create(&data)).await?;
                 azure_write(reply)
@@ -107,7 +110,8 @@ impl FileCallDispatch {
                 params,
                 ..
             }) => {
-                let client_params = delete_litellm_params(&params, call.timeout, call.max_retries);
+                let client_params =
+                    litellm_params(params.credentials, call.max_retries, call.timeout);
                 let opened = self.open_provider(&call, client_params)?;
                 let reply =
                     azure_call(&opened, &self.client, AzureOperation::Delete(file_id)).await?;

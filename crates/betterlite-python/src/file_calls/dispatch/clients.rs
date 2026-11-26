@@ -5,7 +5,7 @@ use betterlite_azure::azure_urls::AuthParams;
 use betterlite_azure::endpoints::projection::LiteLlmParams;
 use betterlite_core::api::file_http_upload::service::Mode;
 use betterlite_core::api::file_provider_read::target::{AzureRead, CompatibleRead};
-use betterlite_core::api::file_provider_write::{DeleteParams, ProviderCall, WriteParams};
+use betterlite_core::api::file_provider_write::ProviderCall;
 use betterlite_core::api::resource_sdk_settings::timeout::{FineTuningTimeout, StructuredTimeout};
 use betterlite_models::controls::call_params::TrustedCredentials;
 use betterlite_openai::files::error::FilesError;
@@ -84,34 +84,16 @@ pub(crate) fn deadline(timeout: FineTuningTimeout) -> Option<Duration> {
 }
 
 // base_llm_http_handler.create_file hands the azure handler the timeout it resolved from timeout or request_timeout
-pub(crate) fn write_litellm_params(
-    params: &WriteParams<(), ()>,
-    timeout: FineTuningTimeout,
-) -> LiteLlmParams {
-    LiteLlmParams {
-        azure_ad_token: params
-            .credentials
-            .as_ref()
-            .and_then(|trusted| trusted.values.get("azure_ad_token"))
-            .cloned(),
-        auth: auth_params(params.credentials.as_ref()),
-        max_retries: params.max_retries,
-        timeout: Some(seconds_of(timeout)),
-    }
-}
-
-// azure's delete_file method gets litellm_params too, but its timeout is the one the call resolved
-pub(crate) fn delete_litellm_params(
-    params: &DeleteParams<'_>,
-    timeout: FineTuningTimeout,
+pub(crate) fn litellm_params(
+    credentials: Option<&TrustedCredentials>,
     max_retries: Option<i64>,
+    timeout: FineTuningTimeout,
 ) -> LiteLlmParams {
     LiteLlmParams {
-        azure_ad_token: params
-            .credentials
+        azure_ad_token: credentials
             .and_then(|trusted| trusted.values.get("azure_ad_token"))
             .cloned(),
-        auth: auth_params(params.credentials),
+        auth: auth_params(credentials),
         max_retries,
         timeout: Some(seconds_of(timeout)),
     }
