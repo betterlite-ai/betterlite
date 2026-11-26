@@ -6,8 +6,7 @@ deviations:
       qwen_ai_platform, together_ai and bedrock raise "the {provider} rerank handler is not wired into betterlite"
       as an APIConnectionError with status 500 before sending a request.
     why: >-
-      Those handlers live in provider tasks outside this task's scope. The session wires every family the
-      provider crate can already send; other providers fail rather than send a cohere-shaped body to an endpoint that would misread it.
+      Provider tasks own the unwired handlers; this session supports wired families and rejects other providers before a Cohere-shaped body can reach an incompatible endpoint.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L145-L162
   - what: >-
       RerankResponse._hidden_params carries custom_llm_provider beside litellm_call_id, api_base, model_id,
