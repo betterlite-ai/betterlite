@@ -3,11 +3,13 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
 use betterlite_core::api::realtime_backend_transport::dial::RealtimeSsl;
-use betterlite_core::api::realtime_connect::token::{VertexAccessTokenSource, VertexTokenError};
+use betterlite_core::api::realtime_connect::token::{
+    VertexAccessTokenSource, VertexTokenError, VertexTokenFuture,
+};
 use betterlite_core::api::realtime_connection_plan::azure::AzureAdTokens;
 use betterlite_core::api::realtime_connection_plan::vertex::{
     VertexProbeConfig, VertexProbeEndpoint, VertexProbeParameters, VertexProbeTarget,
-    VertexTokenFuture, VertexTokenSource,
+    VertexTokenSource,
 };
 use betterlite_core::api::realtime_connection_plan::{
     ProbeConnection, ProbeDialError, RealtimeProbeDialer, RealtimeProbeError,
