@@ -35,7 +35,7 @@ struct ValidationBody {
 
 impl IntoResponse for QueryError {
     fn into_response(self) -> Response {
-        let Self::NotAnInteger { name, source: _ } = self;
+        let Self::NotAnInteger { name, .. } = self;
         let body = ValidationBody {
             detail: [Issue {
                 kind: "int_parsing",
