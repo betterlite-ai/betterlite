@@ -2,11 +2,13 @@
 
 use betterlite_auth::auth_key_budgets::alerts::BudgetAlertKind;
 use betterlite_auth::auth_key_budgets::money::Money;
+use betterlite_auth::budget_primitives::window_start::DurationParser;
 use betterlite_auth::team_budget_admission::alerts::TeamAlertKind;
+use betterlite_auth::team_budget_admission::sources::MembershipSource;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
-use super::{AdvisoryDeps, key_or_team_over_budget};
+use super::{AdvisoryDeps, NoDurations, NoMemberships, key_or_team_over_budget};
 use crate::shadow_evaluation::tests::{
     Alerts, SpendFake, SpendRead, SpendScript, TeamAnswer, TeamsFake, add_field, decimal,
     hook_metadata, json, key_auth, now, team_row,
@@ -274,4 +276,14 @@ async fn an_invalid_temporary_increase_is_not_over_budget() {
     let metadata = hook_metadata(auth);
     assert!(!key_or_team_over_budget(&metadata, &harness.deps()).await);
     assert!(harness.spend.reads().is_empty());
+}
+
+#[tokio::test]
+async fn the_budgetless_suppliers_answer_no_duration_and_no_membership() {
+    assert_eq!(NoDurations.seconds("30d", now()), None);
+    let error = NoMemberships
+        .team_membership("user-1", "team-1")
+        .await
+        .unwrap_err();
+    assert_eq!(error.to_string(), "No db connected");
 }

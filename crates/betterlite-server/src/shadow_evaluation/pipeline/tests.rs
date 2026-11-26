@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use betterlite_db::shadow_tables::funnel::FunnelQueue;
 use betterlite_db::shadow_tables::rows::{AttemptOutcome, FunnelStage};
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
@@ -349,4 +350,32 @@ async fn a_failed_arm_does_not_silence_the_next() {
             (spend_key("job-1"), decimal("1.75")),
         ]
     );
+}
+
+#[tokio::test]
+async fn the_production_funnel_queue_counts_a_withheld_sample() {
+    let job = eval_job("job-1", &["router-a"], None);
+    let fixture = SampleFixture::new();
+    let attempts = Attempts::new();
+    let counter = SpendLog::new();
+    let calls = CallsFake::new(Vec::new(), Vec::new());
+    let funnel = FunnelQueue::default();
+    let spend = SpendFake::new(
+        SpendScript::Value(decimal("1")),
+        SpendScript::Value(decimal("0")),
+    );
+    let teams = TeamsFake::new(TeamAnswer::NoDatabase);
+    let alerts = Alerts::default();
+    let advisory = advisory_deps(&spend, &teams, &alerts);
+    let job_spend = JobSpendFake::new(SpendAnswer::Spend(Decimal::ZERO));
+    let deps: PipelineDeps<'_, Attempts, SpendLog> = PipelineDeps {
+        database: None,
+        counter: &counter,
+        funnel: &funnel,
+        advisory: &advisory,
+        spend: &job_spend,
+        calls: &calls,
+    };
+    run_shadow_eval(&job, &fixture.sample(), &deps).await;
+    assert_eq!(funnel.pending_events(), 1_i64);
 }
