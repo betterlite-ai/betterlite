@@ -32,7 +32,10 @@ impl InFlightRequests {
         Self {
             current: AtomicU64::new(0),
             registry,
-            gauge: Mutex::new(Registration::empty()),
+            gauge: Mutex::new(Registration {
+                attempted: false,
+                built: None,
+            }),
         }
     }
 

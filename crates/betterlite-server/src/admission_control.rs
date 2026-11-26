@@ -74,7 +74,10 @@ impl AdmissionControl {
             rejected_queue_full: AtomicU64::new(0),
             rejected_queue_timeout: AtomicU64::new(0),
             registry,
-            registration: Mutex::new(Registration::empty()),
+            registration: Mutex::new(Registration {
+                attempted: false,
+                built: None,
+            }),
         }
     }
 

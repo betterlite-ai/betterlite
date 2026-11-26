@@ -38,18 +38,11 @@ pub(super) struct AdmissionMetrics {
 // a layer builds its metrics on its first event and never retries a refused registration
 #[derive(Debug)]
 pub(super) struct Registration<T> {
-    attempted: bool,
-    built: Option<T>,
+    pub(super) attempted: bool,
+    pub(super) built: Option<T>,
 }
 
 impl<T: Clone> Registration<T> {
-    pub(super) const fn empty() -> Self {
-        Self {
-            attempted: false,
-            built: None,
-        }
-    }
-
     pub(super) fn once<F>(&mut self, build: F) -> Option<T>
     where
         F: FnOnce() -> Option<T>,

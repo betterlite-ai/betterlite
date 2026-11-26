@@ -1,4 +1,5 @@
 use std::fs;
+use std::path::Path;
 use std::sync::Arc;
 
 use axum::http::StatusCode;
@@ -60,6 +61,13 @@ fn child_is_absent(registry: &CollectorRegistry, reason: &str) -> bool {
         .is_none()
 }
 
+fn livesum_bits(path: &Path) -> u64 {
+    let entries = decode_db_file(&fs::read(path).unwrap()).unwrap();
+    assert_eq!(entries.len(), 1);
+    assert!(entries[0].key.contains(IN_FLIGHT));
+    entries[0].value.to_bits()
+}
+
 async fn harness_after_one_request() -> Harness {
     let harness = harness(ONE_SLOT, "", gates(&[("/only", Behavior::Immediate)]));
     let mut requests = Requests::default();
@@ -78,20 +86,20 @@ async fn no_metric_exists_before_the_first_request() {
 }
 
 #[rstest]
-#[case::in_flight(IN_FLIGHT, IN_FLIGHT_HELP, 0)]
-#[case::admitted(ADMITTED, "Number of requests admitted by this worker", 0)]
-#[case::queued(QUEUED, "Number of requests queued by this worker", 0)]
-#[case::rejected(REJECTED, "Number of requests rejected by this worker", 1)]
+#[case::in_flight(IN_FLIGHT, IN_FLIGHT_HELP, &[])]
+#[case::admitted(ADMITTED, "Number of requests admitted by this worker", &[])]
+#[case::queued(QUEUED, "Number of requests queued by this worker", &[])]
+#[case::rejected(REJECTED, "Number of requests rejected by this worker", &["reason"])]
 #[tokio::test]
 async fn the_metrics_match_the_litellm_definitions(
     #[case] name: &str,
     #[case] help: &str,
-    #[case] labels: usize,
+    #[case] label_names: &[&str],
 ) {
     let harness = harness_after_one_request().await;
     let metric = harness.registry.get(name).expect("a registered metric");
     assert_eq!(metric.description.help, help);
-    assert_eq!(metric.description.label_names.len(), labels);
+    assert_eq!(metric.description.label_names, label_names);
 }
 
 #[rstest]
@@ -303,14 +311,14 @@ async fn the_in_flight_gauge_reaches_the_livesum_file() {
         Arc::clone(&registry),
         "general_settings: {}",
         "",
-        gates(&[("/only", Behavior::Immediate)]),
+        gates(&[("/hold", Behavior::Hold)]),
     );
-    let mut requests = Requests::default();
-    requests.start(&harness.router, "/only");
-    assert_eq!(requests.complete("/only").await.0, StatusCode::OK);
     let path = directory.path().join("gauge_livesum_4242.db");
-    let entries = decode_db_file(&fs::read(&path).unwrap()).unwrap();
-    assert_eq!(entries.len(), 1);
-    assert!(entries[0].key.contains(IN_FLIGHT));
-    assert_eq!(entries[0].value.to_bits(), 0.0_f64.to_bits());
+    let mut requests = Requests::default();
+    requests.start(&harness.router, "/hold");
+    await_started(&harness.gates, "/hold").await;
+    assert_eq!(livesum_bits(&path), 1.0_f64.to_bits());
+    harness.gates.get("/hold").unwrap().release.notify_one();
+    assert_eq!(requests.complete("/hold").await.0, StatusCode::OK);
+    assert_eq!(livesum_bits(&path), 0.0_f64.to_bits());
 }
