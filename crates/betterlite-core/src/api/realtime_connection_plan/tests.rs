@@ -217,7 +217,7 @@ struct FakeVertex {
     catalog: Arc<ModelCatalog>,
     region: String,
     parameters: VertexProbeParameters,
-    tokens: Arc<ScriptedTokens>,
+    tokens: Arc<VertexTokenSource>,
     endpoint: VertexProbeEndpoint,
     targets: Mutex<Vec<VertexProbeTarget>>,
     configured_regions: Mutex<Vec<Option<String>>>,

@@ -111,7 +111,7 @@ const fn default_timeout() -> f64 {
 }
 
 const fn default_max_message_size() -> usize {
-    16_777_216_usize
+    0x0100_0000_usize
 }
 
 // the `or` default: an absent or empty value takes the default

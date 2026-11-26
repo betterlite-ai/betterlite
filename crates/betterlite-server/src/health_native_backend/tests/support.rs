@@ -335,10 +335,6 @@ impl FakeOwner {
             .expect("a recorded owner call")
     }
 
-    pub(super) fn count(&self) -> usize {
-        self.calls.lock().unwrap().len()
-    }
-
     fn finish(&self, call: OwnerCall) -> Result<HealthProbeReply, HealthProbeError> {
         self.calls
             .lock()

@@ -72,7 +72,7 @@ impl AzureAdTokens for ScriptedAzure {
 pub(super) struct ScriptedVertex {
     catalog: Arc<ModelCatalog>,
     location: Option<String>,
-    source: Arc<ScriptedTokens>,
+    source: Arc<VertexTokenSource>,
 }
 
 impl ScriptedVertex {
