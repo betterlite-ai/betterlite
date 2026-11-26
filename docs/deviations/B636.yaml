@@ -1,0 +1,37 @@
+task: B636
+deviations:
+  - what: >-
+      A model record without output_cost_per_image attaches a 0.0 response-cost header, where LiteLLM attaches no
+      header at all. get_model_info fills every known cost key with None first, so the
+      .get("output_cost_per_image", 0) default never fires and the None value suppresses the header.
+    why: >-
+      The task names this exact distinction: a missing value is zero and an explicit null suppresses the header.
+      The Rust model record keeps absent and null apart, so the declared default applies to the absent key. No
+      working Nova Canvas setup depends on a zero-cost header being absent, and the oracle cannot compare the two
+      implementations on a model the cost map has no price for.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_edit/amazon_nova_canvas_image_edit_transformation.py#L456-L464
+  - what: >-
+      A price whose conversion is not a finite Decimal, such as "inf" or a multiplication that overflows, leaves
+      the response-cost header off, where LiteLLM's float() accepts it and writes Infinity into a header that
+      standard JSON cannot represent.
+    why: >-
+      The header is JSON, where Infinity and NaN have no form, and no working setup prices an image at a
+      non-finite amount.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_edit/amazon_nova_canvas_image_edit_transformation.py#L460-L462
+  - what: >-
+      The response-cost header is the exact decimal product of the price and the retained image count, where
+      LiteLLM multiplies Python floats: a price of 0.07 with three images writes 0.21000000000000002 there and
+      0.21 here.
+    why: >-
+      betterlite's price records and cost pipeline are exact decimals end to end, and no working setup reads the
+      rounding tail of a float product. Matching Python's binary rounding would add a second arithmetic beside
+      the shared cost service for digits the JSON contract already leaves open.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_edit/amazon_nova_canvas_image_edit_transformation.py#L460-L462
+kept_bugs:
+  - what: >-
+      An errors key raises even when its value is null, false or an empty list, and a truthy images container
+      suppresses both the errors and the message/error branch even when every entry in it is later skipped.
+    why: >-
+      Working Nova Canvas success responses carry images and failures carry an errors object, so this presence
+      check and container check are the contract those setups already see.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_edit/amazon_nova_canvas_image_edit_transformation.py#L411-L430
