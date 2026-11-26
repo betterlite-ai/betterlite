@@ -12,7 +12,7 @@ use self::support::{
     flags_blocked, flags_blocked_team_admins, flags_open, internal, memory_store, parsed,
     registry_of, team_store, ui_session, viewer,
 };
-use super::{LIST_PATH, V1_LIST_PATH};
+use super::{INFO_PATH, LIST_PATH, V1_LIST_PATH};
 use crate::api::vector_management_boundaries::redaction::REDACTED_BY_LITELM;
 
 fn at<'value>(value: &'value Json, key: &str) -> &'value Json {
