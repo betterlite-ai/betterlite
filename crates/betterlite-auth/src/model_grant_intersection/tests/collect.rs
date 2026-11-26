@@ -70,6 +70,11 @@ async fn member_narrowing() {
     assert_eq!(matched, owned(&["claude-tier"]));
 }
 
+async fn assert_missing_input_collects_nothing(case: MatchedRequest<'_>) {
+    let matched = collect_matched_groups(case).await.unwrap();
+    assert!(matched.is_empty());
+}
+
 #[tokio::test]
 async fn missing_collection_inputs() {
     let world = World::new()
@@ -77,27 +82,26 @@ async fn missing_collection_inputs() {
         .with_serving(&[("gpt-4o", &["tier-a"])]);
     let token = grant_token(&[("models", list(&["tier-a"]))]);
     let models = owned(&["gpt-4o"]);
-    for case in [
-        MatchedRequest {
-            models: None,
-            ..collect_request(&world, Some(&token), Some(&models))
-        },
-        MatchedRequest {
-            token: None,
-            ..collect_request(&world, Some(&token), Some(&models))
-        },
-        MatchedRequest {
-            groups: None,
-            ..collect_request(&world, Some(&token), Some(&models))
-        },
-        MatchedRequest {
-            sources: None,
-            ..collect_request(&world, Some(&token), Some(&models))
-        },
-    ] {
-        let matched = collect_matched_groups(case).await.unwrap();
-        assert!(matched.is_empty());
-    }
+    assert_missing_input_collects_nothing(MatchedRequest {
+        models: None,
+        ..collect_request(&world, Some(&token), Some(&models))
+    })
+    .await;
+    assert_missing_input_collects_nothing(MatchedRequest {
+        token: None,
+        ..collect_request(&world, Some(&token), Some(&models))
+    })
+    .await;
+    assert_missing_input_collects_nothing(MatchedRequest {
+        groups: None,
+        ..collect_request(&world, Some(&token), Some(&models))
+    })
+    .await;
+    assert_missing_input_collects_nothing(MatchedRequest {
+        sources: None,
+        ..collect_request(&world, Some(&token), Some(&models))
+    })
+    .await;
     assert!(world.effects().is_empty());
 }
 

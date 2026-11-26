@@ -121,6 +121,18 @@ async fn team_suppresses_user_lookup() {
     );
 }
 
+async fn assert_user_failure_escapes(answer: UserLookupError) {
+    let token = grant_token(&[("user_id", text("u1"))]);
+    let world = World::new().with_user(Err(answer));
+    let outcome = enforced_model_allowlists(EnforcedRequest {
+        token: &token,
+        sources: Some(&world),
+        now: 0.0,
+    })
+    .await;
+    assert!(matches!(outcome, Err(IntersectionError::User(_))));
+}
+
 #[tokio::test]
 async fn user_not_found_only_suppressed() {
     let token = grant_token(&[("user_id", text("u1"))]);
@@ -134,21 +146,10 @@ async fn user_not_found_only_suppressed() {
     .unwrap();
     assert_eq!(lists[3], Vec::<String>::new());
 
-    for answer in [
-        UserLookupError::NoDatabase,
-        user_read_failure(),
-        UserLookupError::Unavailable(unavailable()),
-        UserLookupError::PreLookup(unavailable()),
-    ] {
-        let world = World::new().with_user(Err(answer));
-        let outcome = enforced_model_allowlists(EnforcedRequest {
-            token: &token,
-            sources: Some(&world),
-            now: 0.0,
-        })
-        .await;
-        assert!(matches!(outcome, Err(IntersectionError::User(_))));
-    }
+    assert_user_failure_escapes(UserLookupError::NoDatabase).await;
+    assert_user_failure_escapes(user_read_failure()).await;
+    assert_user_failure_escapes(UserLookupError::Unavailable(unavailable())).await;
+    assert_user_failure_escapes(UserLookupError::PreLookup(unavailable())).await;
 }
 
 #[tokio::test]
