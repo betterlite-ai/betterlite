@@ -73,7 +73,7 @@ pub fn ip_in_networks(client_ip: Option<&str>, networks: &[IpNet]) -> bool {
 }
 
 // network._unmapped: an IPv6 address in ::ffff:0:0/96 becomes the IPv4 address it embeds.
-fn unmapped(address: IpAddr) -> IpAddr {
+const fn unmapped(address: IpAddr) -> IpAddr {
     match address {
         IpAddr::V4(_) => address,
         IpAddr::V6(ipv6) => match ipv6.to_ipv4_mapped() {

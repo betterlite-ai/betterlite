@@ -629,15 +629,13 @@ fn requires_a_trusted_direct_peer() {
 fn rejects_a_peer_outside_the_ranges() {
     let mut configured = defaults();
     configured.trusted_proxy_ranges = Some(CidrRanges::List(list(&["10.0.0.0/8"])));
-    assert!(
-        require_trusted_proxy_request(
-            &request(Some("10.0.0.5")),
-            &configured,
-            "Custom UI SSO",
-            TRUSTED_PROXY_RANGES_KEY,
-        )
-        .is_ok()
-    );
+    require_trusted_proxy_request(
+        &request(Some("10.0.0.5")),
+        &configured,
+        "Custom UI SSO",
+        TRUSTED_PROXY_RANGES_KEY,
+    )
+    .expect("a peer inside the configured ranges passes");
     let error = require_trusted_proxy_request(
         &request(Some("203.0.113.9")),
         &configured,
@@ -649,8 +647,12 @@ fn rejects_a_peer_outside_the_ranges() {
         error,
         TrustedProxyRequirementError::Untrusted {
             feature: "Custom UI SSO".to_owned(),
-            direct: "203.0.113.9".to_owned(),
+            direct: "'203.0.113.9'".to_owned(),
         }
+    );
+    assert_eq!(
+        error.to_string(),
+        "Custom UI SSO only accepts identity headers from configured trusted proxy ranges. Direct client IP '203.0.113.9' is not trusted."
     );
 }
 
@@ -672,6 +674,10 @@ fn missing_peer_is_untrusted() {
             direct: "None".to_owned(),
         }
     );
+    assert_eq!(
+        error.to_string(),
+        "Custom UI SSO only accepts identity headers from configured trusted proxy ranges. Direct client IP None is not trusted."
+    );
 }
 
 #[test]
@@ -691,15 +697,13 @@ fn unparsable_ranges_and_mcp_setting() {
     // the MCP setting name reads the MCP ranges
     let mut mcp = defaults();
     mcp.mcp_trusted_proxy_ranges = Some(list(&["10.0.0.0/8"]));
-    assert!(
-        require_trusted_proxy_request(
-            &request(Some("10.0.0.5")),
-            &mcp,
-            "OAuth2 proxy auth",
-            MCP_TRUSTED_PROXY_RANGES_KEY,
-        )
-        .is_ok()
-    );
+    require_trusted_proxy_request(
+        &request(Some("10.0.0.5")),
+        &mcp,
+        "OAuth2 proxy auth",
+        MCP_TRUSTED_PROXY_RANGES_KEY,
+    )
+    .expect("the MCP range setting configures the requirement");
 }
 
 #[test]
