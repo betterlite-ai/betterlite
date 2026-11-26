@@ -17,11 +17,14 @@ pub(crate) struct OpenAiProviders {
     pub(crate) source: NativeSource,
 }
 
-impl OpenAiProviders {
-    // only the OpenAI tag has an adapter here; another provider's config belongs to its own task
-    fn openai(&self, tag: &VideoConfigTag) -> bool {
-        matches!(tag, VideoConfigTag::OpenAi)
-    }
+// what a content and a status call select between, named so each trait method stays one line
+type ContentFound<'a> = Selection<'a, OpenAiProviders>;
+type StatusFound<'a> = Option<&'a StatusConfig<'a, StatusFactories>>;
+
+// the tag a provider id names, when it is the one tag this family builds a config for
+fn openai_tag(provider: ProviderId) -> Result<Option<VideoConfigTag>, VideoSelectionError> {
+    Ok(get_provider_video_config(None, provider)?
+        .filter(|tag| matches!(tag, VideoConfigTag::OpenAi)))
 }
 
 impl VideoGenerationProviders for OpenAiProviders {
@@ -29,7 +32,7 @@ impl VideoGenerationProviders for OpenAiProviders {
     type Source = NativeSource;
 
     fn video_config(&self, tag: &VideoConfigTag) -> Option<(&Self::Config, &Self::Source)> {
-        if self.openai(tag) {
+        if matches!(tag, VideoConfigTag::OpenAi) {
             return Some((&self.config, &self.source));
         }
         None
@@ -40,34 +43,22 @@ impl VideoContentProviders for OpenAiProviders {
     type Config = OpenAiVideoConfig;
     type Source = NativeSource;
 
-    fn video_config(
-        &self,
-        provider: ProviderId,
-    ) -> Result<Selection<'_, Self>, VideoSelectionError> {
-        let found = get_provider_video_config(None, provider)?;
-        Ok(found
-            .filter(|tag| self.openai(tag))
-            .map(|_tag| (&self.config, &self.source)))
+    fn video_config(&self, provider: ProviderId) -> Result<ContentFound<'_>, VideoSelectionError> {
+        Ok(openai_tag(provider)?.map(|_tag| (&self.config, &self.source)))
     }
 }
 
 impl VideoStatusProviders for OpenAiProviders {
     type Factories = StatusFactories;
 
-    fn video_config(
-        &self,
-        provider: ProviderId,
-    ) -> Result<Option<&StatusConfig<'_, Self::Factories>>, VideoSelectionError> {
-        let found = get_provider_video_config(None, provider)?;
-        Ok(found
-            .filter(|tag| self.openai(tag))
-            .map(|_tag| &self.config as &StatusConfig<'_, StatusFactories>))
+    fn video_config(&self, provider: ProviderId) -> Result<StatusFound<'_>, VideoSelectionError> {
+        Ok(openai_tag(provider)?.map(|_tag| &self.config as &StatusConfig<'_, StatusFactories>))
     }
 }
 
 impl VideoConfigLookup for OpenAiProviders {
     fn video_config(&self, tag: &VideoConfigTag) -> Option<&dyn VideoRemixListConfig> {
-        if self.openai(tag) {
+        if matches!(tag, VideoConfigTag::OpenAi) {
             return Some(&self.config as &dyn VideoRemixListConfig);
         }
         None

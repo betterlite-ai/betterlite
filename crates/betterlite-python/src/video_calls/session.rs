@@ -21,7 +21,7 @@ use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
-use betterlite_redact::secret::Redactor;
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::Utc;
 use indexmap::IndexMap;
 use serde::Deserialize;
@@ -47,6 +47,9 @@ pub(crate) struct VideoSession {
     pub(crate) registry: JSONProviderRegistry,
     pub(crate) client: ProxiedClient,
     pub(crate) request_timeout_seconds: f64,
+    // the redactor and the sink the remix and list calls write through, owned here so a call site can lend them out
+    pub(crate) redactor: Redactor,
+    pub(crate) sink: SilentSink,
 }
 
 impl VideoSession {
@@ -56,6 +59,7 @@ impl VideoSession {
         let environment = wire.environment.unwrap_or_else(process_environment);
         let client = outbound_client(&environment)?;
         let request_timeout = RequestTimeout::resolve(&environment)?;
+        let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)?;
         Ok(Self {
             catalog: BundledCatalog::default().get(),
             known_model_names: BTreeSet::new(),
@@ -64,6 +68,8 @@ impl VideoSession {
             client,
             request_timeout_seconds: request_timeout.seconds,
             environment,
+            redactor,
+            sink: SilentSink,
         })
     }
 

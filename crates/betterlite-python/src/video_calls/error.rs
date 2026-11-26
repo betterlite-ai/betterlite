@@ -140,40 +140,20 @@ impl From<VideoCallFailure> for RunError {
 // The public content entry maps every failure; an unmapped one is a ValueError that never got that far
 impl From<VideoContentCallError> for RunError {
     fn from(error: VideoContentCallError) -> Self {
-        match error {
-            VideoContentCallError::Mapped { class, .. } => {
-                Self::Call(CallFailure::from_class(&class))
-            }
-            other @ (VideoContentCallError::Unsupported { .. }
-            | VideoContentCallError::Selection(_)
-            | VideoContentCallError::UnknownProvider { .. }
-            | VideoContentCallError::FieldType { .. }
-            | VideoContentCallError::Logging(_)
-            | VideoContentCallError::Suspended) => {
-                Self::Session(SessionError::Unmapped(other.to_string()))
-            }
-        }
+        let VideoContentCallError::Mapped { class, .. } = &error else {
+            return Self::Session(SessionError::Unmapped(error.to_string()));
+        };
+        Self::Call(CallFailure::from_class(class))
     }
 }
 
 // The public status entry maps every failure; an unmapped one is a ValueError that never got that far
 impl From<VideoStatusCallError> for RunError {
     fn from(error: VideoStatusCallError) -> Self {
-        match error {
-            VideoStatusCallError::Mapped { class, .. } => {
-                Self::Call(CallFailure::from_class(&class))
-            }
-            other @ (VideoStatusCallError::Unsupported { .. }
-            | VideoStatusCallError::Selection(_)
-            | VideoStatusCallError::UnknownProvider { .. }
-            | VideoStatusCallError::FieldType { .. }
-            | VideoStatusCallError::Logging(_)
-            | VideoStatusCallError::MockJson { .. }
-            | VideoStatusCallError::MockModel { .. }
-            | VideoStatusCallError::Suspended) => {
-                Self::Session(SessionError::Unmapped(other.to_string()))
-            }
-        }
+        let VideoStatusCallError::Mapped { class, .. } = &error else {
+            return Self::Session(SessionError::Unmapped(error.to_string()));
+        };
+        Self::Call(CallFailure::from_class(class))
     }
 }
 

@@ -268,6 +268,13 @@ def sent_parts(call: RecordedCall) -> dict[str, Part]:
     return parts
 
 
+def objects_dump(value: list[DumpedObject]) -> list[dict[str, JsonValue]]:
+    return [
+        JSON_RECORD.validate_json(item.model_dump_json())
+        for item in value
+    ]
+
+
 def answer_dump(value: VideoResult) -> Answer:
     match value:
         case DumpedObject():
@@ -277,13 +284,13 @@ def answer_dump(value: VideoResult) -> Answer:
         case dict() as page:
             return page
         case list() as items:
-            return [JSON_RECORD.validate_json(item.model_dump_json()) for item in items]
+            return objects_dump(items)
 
 
 def rows_dump(value: VideoResult) -> list[dict[str, JsonValue]]:
     match value:
         case list() as items:
-            return [JSON_RECORD.validate_json(item.model_dump_json()) for item in items]
+            return objects_dump(items)
         case DumpedObject() | bytes() | dict():
             raise AssertionError("the list call did not answer with objects")
 
@@ -327,8 +334,9 @@ ResultT = TypeVar("ResultT")
 
 
 async def awaited(awaitable: Awaitable[ResultT]) -> ResultT:
-    answer = await awaitable
-    return answer
+    match await awaitable:
+        case result:
+            return result
 
 
 def endpoint_values(server: "VideoServer", **arguments: CallValue) -> dict[str, CallValue]:
@@ -666,9 +674,9 @@ def test_unsupported_objects() -> None:
             call(prompt=PROMPT, video_id=VIDEO_ID, client="client")
     with pytest.raises(UnsupportedCallArgument, match="client"):
         OURS.video_list(client="client")
-    for call in ASYNC_CALLS.values():
+    for async_call in ASYNC_CALLS.values():
         with pytest.raises(UnsupportedCallArgument, match="client"):
-            asyncio.run(awaited(call(prompt=PROMPT, video_id=VIDEO_ID, client="client")))
+            asyncio.run(awaited(async_call(prompt=PROMPT, video_id=VIDEO_ID, client="client")))
     with pytest.raises(UnsupportedCallArgument, match="client"):
         asyncio.run(awaited(OURS_ASYNC.avideo_list(client="client")))
     with pytest.raises(UnsupportedCallArgument, match="shared_session"):

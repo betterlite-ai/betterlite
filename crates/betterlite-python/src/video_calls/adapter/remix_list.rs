@@ -11,13 +11,18 @@ use betterlite_openai::error::ProviderError;
 use betterlite_openai::videos::VideoOptions;
 use betterlite_openai::videos::config::complete_url;
 use betterlite_openai::videos::error::get_error_class;
-use betterlite_openai::videos::list::{list_request, list_response};
-use betterlite_openai::videos::remix::{remix_request, remix_response};
 
 use super::OpenAiVideoConfig;
-use super::support::config_failure;
 use crate::video_calls::convert::ConvertError;
 use crate::video_calls::convert::fields::json;
+
+mod list;
+mod remix;
+
+// what a request transform hands the transport, and what a reply turns into
+type Rendered = Result<(String, Params), ConfigFailure>;
+type VideoConverted = Result<VideoObject, ConfigFailure>;
+type PageConverted = Result<Params, ConfigFailure>;
 
 // LiteLLM's OpenAIVideoConfig over the remix and list transport: the four transforms and the error class
 impl VideoRemixListConfig for OpenAiVideoConfig {
@@ -40,45 +45,24 @@ impl VideoRemixListConfig for OpenAiVideoConfig {
         prompt: &str,
         extra_body: Option<&Params>,
         context: VideoRequestContext<'_>,
-    ) -> Result<(String, Params), ConfigFailure> {
-        let extra = options(extra_body).map_err(config_failure)?;
-        let (url, data) =
-            remix_request(video_id, prompt, context.api_base, &extra).map_err(config_failure)?;
-        Ok((url, json(&data).map_err(config_failure)?))
+    ) -> Rendered {
+        remix::transformed(video_id, prompt, extra_body, context)
     }
 
-    fn transform_video_remix_response(
-        &self,
-        reply: VideoReply<'_>,
-    ) -> Result<VideoObject, ConfigFailure> {
-        let video = remix_response(&reply.raw_response.body, reply.custom_llm_provider)
-            .map_err(config_failure)?;
-        json(&video).map_err(config_failure)
+    fn transform_video_remix_response(&self, reply: VideoReply<'_>) -> VideoConverted {
+        remix::converted(reply)
     }
 
     fn transform_video_list_request(
         &self,
         query: VideoListQuery<'_>,
         context: VideoRequestContext<'_>,
-    ) -> Result<(String, Params), ConfigFailure> {
-        let extra = options(query.extra_query).map_err(config_failure)?;
-        let (url, data) = list_request(
-            context.api_base,
-            query.after,
-            query.limit,
-            query.order,
-            &extra,
-        );
-        Ok((url, json(&data).map_err(config_failure)?))
+    ) -> Rendered {
+        list::transformed(query, context)
     }
 
-    fn transform_video_list_response(
-        &self,
-        reply: VideoReply<'_>,
-    ) -> Result<Params, ConfigFailure> {
-        let list = list_response(&reply.raw_response.body, reply.custom_llm_provider)
-            .map_err(config_failure)?;
-        json(&list).map_err(config_failure)
+    fn transform_video_list_response(&self, reply: VideoReply<'_>) -> PageConverted {
+        list::converted(reply)
     }
 
     // get_error_class: the headers' text values, through B525's own error class

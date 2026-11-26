@@ -157,12 +157,14 @@ def video_content(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litel
 
 
 async def avideo_content(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L383
-    video_id: CallValue, timeout: CallValue = None, custom_llm_provider: CallValue = None, variant: CallValue = None,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L383
+    video_id: CallValue, timeout: CallValue = None,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L383
+    custom_llm_provider: CallValue = None, variant: CallValue = None,
     extra_headers: CallValue = None, extra_query: CallValue = None, extra_body: CallValue = None,
     **kwargs: CallValue) -> bytes:
-    return await avideo_bytes(NativeVideoSession("{}").acontent, {**kwargs, **dict(zip(
-        CONTENT_NAMES, (video_id, timeout, custom_llm_provider, variant, extra_headers,
-                        extra_query, extra_body), strict=False))})
+    values = (video_id, timeout, custom_llm_provider, variant, extra_headers, extra_query,
+              extra_body)
+    named: dict[str, CallValue] = {**kwargs, **dict(zip(CONTENT_NAMES, values, strict=False))}
+    return await avideo_bytes(NativeVideoSession("{}").acontent, named)
 
 
 def video_remix(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L557
