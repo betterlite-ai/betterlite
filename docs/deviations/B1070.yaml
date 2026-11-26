@@ -1,0 +1,41 @@
+task: B1070
+deviations:
+  - what: >-
+      page and page_size are read as signed 64-bit integers in plain decimal, so a value outside that range,
+      or one spelled with surrounding whitespace or underscore separators, answers the FastAPI int-parsing
+      422 at query.page or query.page_size. LiteLLM's FastAPI int parameter accepts those spellings and any
+      magnitude, then computes total_pages in unbounded Python arithmetic.
+    why: >-
+      betterlite parses query integers into the 64-bit type its JSON and its page fields carry, so a page
+      beyond i64 has no response shape it could be echoed in; other betterlite query readers parse the same
+      way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/management_endpoints.py#L356-L360
+  - what: >-
+      The info route serves a database row whose vector_store_metadata column holds JSON that is neither an object
+      nor null as stored with a 200, where LiteLLM's response model declares dict[str, Any] | None and FastAPI
+      answers a 500 while serializing the row. A cached record whose metadata is a string that is not valid JSON,
+      or that parses to anything but an object or null, answers the 500 with betterlite's own message in place of
+      the Python exception text.
+    why: >-
+      Error messages are betterlite's own, as docs/compatibility.md says, and the read routes serve the stored
+      column as the database returned it instead of failing the whole answer on a value JSONB accepts; the
+      declared object type is still what both routes emit for well-formed rows.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/management_endpoints.py#L532-L538
+  - what: >-
+      The list route serves a database row whose vector_store_metadata column holds a JSON number, list or boolean
+      as stored with a 200, where LiteLLM's LiteLLM_ManagedVectorStore declares that field as
+      dict[str, Any] | str | None and FastAPI answers a 500 while serializing the list response. A JSON string
+      metadata is listed by both, since the declared type allows it, and null by both.
+    why: >-
+      The JSONB column is served as stored, as on the info route above; the declared types are still what both
+      routes emit for values a vector store row normally holds.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/vector_stores.py#L25-L57
+  - what: >-
+      A stored litellm_params value that is neither a JSON object nor null, such as a string, number or list, is
+      served after redaction with a 200, where LiteLLM declares dict[str, Any] | None on the same response models
+      and answers a 500 while serializing the row.
+    why: >-
+      The JSONB column is served as the database returned it with only credential values replaced, the same choice
+      the metadata column gets above; the declared object type is still what both routes emit for well-formed rows.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/managed_files.py#L52-L64
+kept_bugs: []
