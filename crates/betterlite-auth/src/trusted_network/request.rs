@@ -208,8 +208,8 @@ pub fn resolve_network_context(
     }
 }
 
-// urllib.parse.urlparse(url).scheme: the prefix before ':' when it is a scheme, case folded.
-fn url_scheme(url: &str) -> &str {
+// urllib.parse.urlparse(url).scheme: the text before ':' when urlparse reads a scheme there, as written.
+pub(crate) fn url_scheme(url: &str) -> &str {
     let Some((scheme, _)) = url.split_once(':') else {
         return "";
     };

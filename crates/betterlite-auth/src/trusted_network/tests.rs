@@ -31,7 +31,7 @@ use crate::trusted_network::proxy_utils::{
 use crate::trusted_network::request::{
     NetworkRequest, TrustedHopCount, client_ip_from_xff, get_mcp_client_ip,
     is_request_from_trusted_proxy, is_request_https, resolve_client_ip, resolve_network_context,
-    resolve_num_trusted_hops,
+    resolve_num_trusted_hops, url_scheme,
 };
 use crate::trusted_network::settings::{TrustedNetworkSettings, TrustedProxyConfig};
 
@@ -563,6 +563,19 @@ fn https_forwarded_trust() {
         &with_proto(Some("10.0.0.5"), "https", "http"),
         &disabled
     ));
+}
+
+#[test]
+fn url_scheme_reads_the_scheme_prefix() {
+    assert_eq!(url_scheme("https://gateway.example/"), "https");
+    assert_eq!(url_scheme("HTTPS://gateway.example"), "HTTPS");
+    assert_eq!(url_scheme("http+unix://sock"), "http+unix");
+    assert_eq!(url_scheme("gateway.example:443"), "gateway.example");
+    // urlparse reads no scheme when the first character is not a letter or a later one is not scheme text
+    assert_eq!(url_scheme("1https://gateway.example"), "");
+    assert_eq!(url_scheme("ht!tps://gateway.example"), "");
+    assert_eq!(url_scheme(":nothing"), "");
+    assert_eq!(url_scheme("no-scheme-at-all"), "");
 }
 
 #[test]
