@@ -4,7 +4,7 @@ mod script;
 use std::collections::BTreeMap;
 
 use betterlite_auth::auth_model_grants::access_source::AgentAccessSource;
-use betterlite_auth::auth_model_grants::caller::check_agent_caller;
+use betterlite_auth::auth_model_grants::caller::{CallerChecks, check_agent_caller};
 use betterlite_auth::auth_model_grants::ceiling::check_agent_ceiling;
 use betterlite_auth::auth_model_grants::error::AgentModelGrantsError;
 use betterlite_auth::auth_model_grants::fallback::RouterFallbackAccessCheck;
@@ -90,7 +90,12 @@ async fn agent_value(step: &Step, effects: &Effects) -> HelperResult {
     let outcome = match ceiling {
         Ok(()) => {
             let member = admission(&access);
-            check_agent_caller(&model, token.as_ref(), Some(source), &member, &access).await
+            let checks = CallerChecks {
+                teams: None,
+                admission: &member,
+                context: &access,
+            };
+            check_agent_caller(&model, token.as_ref(), Some(source), &checks).await
         }
         Err(error) => Err(error),
     };

@@ -15,6 +15,7 @@ use betterlite_auth::agent_access_groups::error::AccessGroupsError;
 use betterlite_auth::agent_caller::error::AgentCallerError;
 use betterlite_auth::agent_policy::AgentResponse;
 use betterlite_auth::auth_model_grants::access_source::AgentAccessSource;
+use betterlite_auth::auth_model_grants::error::AgentModelGrantsError;
 use betterlite_auth::auth_model_patterns::denial::model_denied_client_message;
 use betterlite_auth::auth_request_models::RequestedModels;
 use betterlite_auth::auth_team_lookup::error::{TeamFailure, TeamLookupError};
@@ -318,57 +319,53 @@ async fn failure_stops_downstream() {
 
 #[test]
 fn missing_access_group_keeps_http_status() {
-    let missing_group = AccessGroupsError::Read {
+    let group_error = AccessGroupsError::Read {
         access_group_id: "group-1".to_owned(),
         source: Box::new(TeamLookupError::AccessGroupNotFound {
             access_group_id: "group-1".to_owned(),
         }),
     };
-    let StageFailure::ModelGrants(missing_group) = stage_failure(
-        betterlite_auth::auth_model_grants::error::AgentModelGrantsError::Ceiling(Box::new(
-            missing_group,
-        )),
-    ) else {
+    let StageFailure::ModelGrants(exception) =
+        stage_failure(AgentModelGrantsError::Ceiling(Box::new(group_error)))
+    else {
         panic!("missing access groups preserve their HTTP status");
     };
-    assert_eq!(missing_group.code, "404");
-    assert_eq!(missing_group.error_type, "auth_error");
-    assert_eq!(missing_group.param.as_deref(), Some("None"));
+    assert_eq!(exception.code, "404");
+    assert_eq!(exception.error_type, "auth_error");
+    assert_eq!(exception.param.as_deref(), Some("None"));
 }
 
 #[test]
 fn unavailable_access_policy_keeps_http_status() {
-    let unavailable = AccessGroupsError::Read {
+    let policy_error = AccessGroupsError::Read {
         access_group_id: "group-1".to_owned(),
         source: Box::new(TeamLookupError::AccessPolicyUnavailable {
             access_group_id: "group-1".to_owned(),
             cause: Box::new(TeamFailure::Throttled),
         }),
     };
-    let StageFailure::ModelGrants(unavailable) = stage_failure(
-        betterlite_auth::auth_model_grants::error::AgentModelGrantsError::Ceiling(Box::new(
-            unavailable,
-        )),
-    ) else {
+    let StageFailure::ModelGrants(exception) =
+        stage_failure(AgentModelGrantsError::Ceiling(Box::new(policy_error)))
+    else {
         panic!("unavailable access policies preserve their HTTP status");
     };
-    assert_eq!(unavailable.code, "503");
+    assert_eq!(exception.code, "503");
 }
 
 #[test]
 fn missing_caller_team_keeps_http_status() {
-    let caller = AgentCallerError::Team {
+    let caller_error = AgentCallerError::Team {
         team_id: "missing-team".to_owned(),
         source: Box::new(TeamLookupError::TeamNotFound {
             team_id: "missing-team".to_owned(),
         }),
     };
-    let StageFailure::ModelGrants(caller) = stage_failure(
-        betterlite_auth::auth_model_grants::error::AgentModelGrantsError::Caller(Box::new(caller)),
-    ) else {
+    let StageFailure::ModelGrants(exception) =
+        stage_failure(AgentModelGrantsError::Caller(Box::new(caller_error)))
+    else {
         panic!("missing caller teams preserve their HTTP status");
     };
-    assert_eq!(caller.code, "404");
+    assert_eq!(exception.code, "404");
 }
 
 #[test]
