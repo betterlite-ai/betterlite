@@ -332,19 +332,26 @@ async fn caller_falsey_model_and_token_skip() {
         .unwrap();
     assert!(denying.events().is_empty());
     assert!(memberships.asked().is_empty());
+}
 
+#[tokio::test]
+async fn unresolved_caller_allows() {
     // a caller identity the source cannot resolve allows without asking for a team or a user
-    let unresolved = Script::default();
+    let context = context();
+    let memberships = CaseMemberships::default();
+    let admission = admission(&memberships, &context);
+    let script = Script::default();
     check_agent_caller_model_access(
         &one("gpt-4o"),
         Some(&agent_token(AGENT_KEY)),
-        Some(&unresolved),
+        Some(&script),
         &admission,
         &context,
     )
     .await
     .unwrap();
-    assert_eq!(unresolved.events(), ["caller_auth"]);
+    assert_eq!(script.events(), ["caller_auth"]);
+    assert!(memberships.asked().is_empty());
 }
 
 #[tokio::test]
