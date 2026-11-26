@@ -1,4 +1,5 @@
-use std::time::{Duration, TryFromFloatSecsError};
+use std::io::Error as IoError;
+use std::time::TryFromFloatSecsError;
 
 use betterlite_core::api::bfl::edit::media::SuppliedMedia;
 use betterlite_core::api::video_content_call::VideoContentRequest;
@@ -7,6 +8,7 @@ use betterlite_core::api::video_list_call::VideoListCall;
 use betterlite_core::api::video_remix_call::VideoRemixCall;
 use betterlite_core::api::video_status_call::VideoStatusRequest;
 use betterlite_models::decisions::Json;
+use betterlite_openai::videos::error::VideoError;
 use betterlite_sdk::call_files::{CallFile, CallFilesError, files_from_payload};
 use betterlite_sdk::call_setup::RequestMap;
 use indexmap::IndexMap;
@@ -14,13 +16,12 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use thiserror::Error;
 
-use self::fields::{
-    duration, integer, metadata, number, params, required_text, seconds_value, secret, text,
-    text_map,
-};
-
 pub(crate) mod fields;
 mod tests;
+
+use self::fields::{
+    INTEGER, duration, failed, meta, number, params, required_text, seconds, text, texts,
+};
 
 const INPUT_REFERENCE: &str = "input_reference";
 
@@ -53,6 +54,11 @@ pub(crate) enum ConvertError {
         #[from]
         source: serde_json::Error,
     },
+    #[error("the answer could not be written as JSON: {source}")]
+    Encode {
+        #[source]
+        source: serde_json::Error,
+    },
     #[error("{name} must be {expected}")]
     Field {
         name: String,
@@ -65,6 +71,35 @@ pub(crate) enum ConvertError {
     },
     #[error(transparent)]
     Files(#[from] CallFilesError),
+    #[error(transparent)]
+    Video(#[from] VideoError),
+    #[error("the video reference could not be read: {source}")]
+    Io {
+        #[from]
+        source: IoError,
+    },
+    #[error("the native call asked for a different video operation")]
+    Kind,
+}
+
+// which of the ten functions the payload belongs to: each names one request type of the core call layer
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum Operation {
+    Generate,
+    Content,
+    Remix,
+    List,
+    Status,
+}
+
+// the one request the operation asked for, so one parser serves all five payload shapes
+#[derive(Default)]
+pub(crate) struct Requests {
+    pub(crate) generation: Option<VideoGenerationRequest>,
+    pub(crate) content: Option<VideoContentRequest>,
+    pub(crate) remix: Option<VideoRemixCall>,
+    pub(crate) list: Option<VideoListCall>,
+    pub(crate) status: Option<VideoStatusRequest>,
 }
 
 pub(crate) fn parse(
@@ -89,12 +124,22 @@ fn reference(file: &CallFile) -> Reference {
 }
 
 // the loose keywords LiteLLM's **kwargs takes, minus the named arguments the call hands over on their own
-pub(crate) fn loose(arguments: &RequestMap, named: &[&str]) -> IndexMap<String, Json> {
+fn loose(arguments: &RequestMap, named: &[&str]) -> IndexMap<String, Json> {
     arguments
         .iter()
         .filter(|(name, _value)| !named.contains(&name.as_str()))
         .map(|(name, value)| (name.clone(), value.clone()))
         .collect()
+}
+
+// timeout or REQUEST_TIMEOUT: an explicit null or zero takes the request timeout further down
+pub(crate) fn drop_params(wire: &VideoCallWire) -> Result<bool, ConvertError> {
+    let given = match wire.arguments.get("drop_params") {
+        None | Some(Json::Null) => false,
+        Some(Json::Bool(value)) => *value,
+        Some(_) => return Err(failed("drop_params", "a boolean")),
+    };
+    Ok(given || wire.settings.drop_params.unwrap_or(false))
 }
 
 const GENERATION_NAMED: [&str; 11] = [
@@ -111,28 +156,6 @@ const GENERATION_NAMED: [&str; 11] = [
     "extra_body",
 ];
 
-pub(crate) fn generation_request(
-    wire: &VideoCallWire,
-    media: Option<Reference>,
-) -> Result<(VideoGenerationRequest, Option<Reference>), ConvertError> {
-    let arguments = &wire.arguments;
-    let mut request = VideoGenerationRequest::new(required_text(arguments, "prompt")?);
-    request.model = text(arguments, "model")?;
-    request.seconds = seconds_value(arguments, "seconds")?;
-    request.size = text(arguments, "size")?;
-    request.user = text(arguments, "user")?;
-    request.timeout = number(arguments, "timeout")?;
-    request.custom_llm_provider = text(arguments, "custom_llm_provider")?;
-    request.extra_headers = text_map(arguments, "extra_headers")?;
-    request.extra_query = params(arguments, "extra_query")?;
-    request.extra_body = params(arguments, "extra_body")?;
-    request.input_reference = media
-        .as_ref()
-        .map(|reference| SuppliedMedia::Bytes(reference.content.clone()));
-    request.kwargs = loose(arguments, &GENERATION_NAMED);
-    Ok((request, media))
-}
-
 const CONTENT_NAMED: [&str; 7] = [
     "video_id",
     "timeout",
@@ -142,20 +165,6 @@ const CONTENT_NAMED: [&str; 7] = [
     "extra_query",
     "extra_body",
 ];
-
-pub(crate) fn content_request(wire: &VideoCallWire) -> Result<VideoContentRequest, ConvertError> {
-    let arguments = &wire.arguments;
-    Ok(VideoContentRequest {
-        video_id: required_text(arguments, "video_id")?,
-        timeout: duration(number(arguments, "timeout")?)?,
-        custom_llm_provider: text(arguments, "custom_llm_provider")?,
-        variant: text(arguments, "variant")?,
-        extra_headers: text_map(arguments, "extra_headers")?,
-        extra_query: params(arguments, "extra_query")?,
-        extra_body: params(arguments, "extra_body")?,
-        kwargs: loose(arguments, &CONTENT_NAMED),
-    })
-}
 
 const REMIX_NAMED: [&str; 8] = [
     "video_id",
@@ -167,27 +176,6 @@ const REMIX_NAMED: [&str; 8] = [
     "extra_body",
     "api_key",
 ];
-
-pub(crate) fn remix_request(wire: &VideoCallWire) -> Result<VideoRemixCall, ConvertError> {
-    let arguments = &wire.arguments;
-    Ok(VideoRemixCall {
-        video_id: required_text(arguments, "video_id")?,
-        prompt: required_text(arguments, "prompt")?,
-        custom_llm_provider: text(arguments, "custom_llm_provider")?,
-        api_key: secret(arguments, "api_key")?,
-        api_base: text(arguments, "api_base")?,
-        api_version: text(arguments, "api_version")?,
-        extra_headers: text_map(arguments, "extra_headers")?,
-        extra_query: params(arguments, "extra_query")?,
-        extra_body: params(arguments, "extra_body")?,
-        mock_response: arguments.get("mock_response").cloned(),
-        litellm_metadata: metadata(arguments, "litellm_metadata")?,
-        litellm_call_id: text(arguments, "litellm_call_id")?,
-        user: text(arguments, "user")?,
-        timeout: number(arguments, "timeout")?,
-        extra: loose(arguments, &REMIX_NAMED),
-    })
-}
 
 const LIST_NAMED: [&str; 11] = [
     "after",
@@ -203,28 +191,6 @@ const LIST_NAMED: [&str; 11] = [
     "prompt",
 ];
 
-pub(crate) fn list_request(wire: &VideoCallWire) -> Result<VideoListCall, ConvertError> {
-    let arguments = &wire.arguments;
-    Ok(VideoListCall {
-        after: text(arguments, "after")?,
-        limit: integer(arguments, "limit")?,
-        order: text(arguments, "order")?,
-        custom_llm_provider: text(arguments, "custom_llm_provider")?,
-        api_key: secret(arguments, "api_key")?,
-        api_base: text(arguments, "api_base")?,
-        api_version: text(arguments, "api_version")?,
-        extra_headers: text_map(arguments, "extra_headers")?,
-        extra_query: params(arguments, "extra_query")?,
-        extra_body: params(arguments, "extra_body")?,
-        mock_response: arguments.get("mock_response").cloned(),
-        litellm_metadata: metadata(arguments, "litellm_metadata")?,
-        litellm_call_id: text(arguments, "litellm_call_id")?,
-        user: text(arguments, "user")?,
-        timeout: number(arguments, "timeout")?,
-        extra: loose(arguments, &LIST_NAMED),
-    })
-}
-
 const STATUS_NAMED: [&str; 6] = [
     "video_id",
     "timeout",
@@ -234,16 +200,99 @@ const STATUS_NAMED: [&str; 6] = [
     "extra_body",
 ];
 
-pub(crate) fn status_request(wire: &VideoCallWire) -> Result<VideoStatusRequest, ConvertError> {
+pub(crate) fn request(
+    operation: Operation,
+    wire: &VideoCallWire,
+    media: Option<Reference>,
+) -> Result<Requests, ConvertError> {
     let arguments = &wire.arguments;
-    Ok(VideoStatusRequest {
-        video_id: required_text(arguments, "video_id")?,
-        // `timeout or REQUEST_TIMEOUT`: an explicit null takes the request timeout, not the 600 default
-        timeout: Some(duration(number(arguments, "timeout")?)?.unwrap_or(Duration::ZERO)),
-        custom_llm_provider: text(arguments, "custom_llm_provider")?,
-        extra_headers: text_map(arguments, "extra_headers")?,
-        extra_query: params(arguments, "extra_query")?,
-        extra_body: params(arguments, "extra_body")?,
-        kwargs: loose(arguments, &STATUS_NAMED),
-    })
+    let mut requests = Requests::default();
+    match operation {
+        Operation::Generate => {
+            let mut generation = VideoGenerationRequest::new(required_text(arguments, "prompt")?);
+            generation.model = text(arguments, "model")?;
+            generation.seconds = seconds(arguments, "seconds")?;
+            generation.size = text(arguments, "size")?;
+            generation.user = text(arguments, "user")?;
+            generation.timeout = number(arguments, "timeout")?;
+            generation.custom_llm_provider = text(arguments, "custom_llm_provider")?;
+            generation.extra_headers = texts(arguments, "extra_headers")?;
+            generation.extra_query = params(arguments, "extra_query")?;
+            generation.extra_body = params(arguments, "extra_body")?;
+            generation.input_reference = media
+                .as_ref()
+                .map(|reference| SuppliedMedia::Bytes(reference.content.clone()));
+            generation.kwargs = loose(arguments, &GENERATION_NAMED);
+            requests.generation = Some(generation);
+        }
+        Operation::Content => {
+            requests.content = Some(VideoContentRequest {
+                video_id: required_text(arguments, "video_id")?,
+                timeout: duration(number(arguments, "timeout")?)?,
+                custom_llm_provider: text(arguments, "custom_llm_provider")?,
+                variant: text(arguments, "variant")?,
+                extra_headers: texts(arguments, "extra_headers")?,
+                extra_query: params(arguments, "extra_query")?,
+                extra_body: params(arguments, "extra_body")?,
+                kwargs: loose(arguments, &CONTENT_NAMED),
+            });
+        }
+        Operation::Remix => {
+            requests.remix = Some(VideoRemixCall {
+                video_id: required_text(arguments, "video_id")?,
+                prompt: required_text(arguments, "prompt")?,
+                custom_llm_provider: text(arguments, "custom_llm_provider")?,
+                api_key: text(arguments, "api_key")?.map(SecretString::from),
+                api_base: text(arguments, "api_base")?,
+                api_version: text(arguments, "api_version")?,
+                extra_headers: texts(arguments, "extra_headers")?,
+                extra_query: params(arguments, "extra_query")?,
+                extra_body: params(arguments, "extra_body")?,
+                mock_response: arguments.get("mock_response").cloned(),
+                litellm_metadata: meta(arguments, "litellm_metadata")?,
+                litellm_call_id: text(arguments, "litellm_call_id")?,
+                user: text(arguments, "user")?,
+                timeout: number(arguments, "timeout")?,
+                extra: loose(arguments, &REMIX_NAMED),
+            });
+        }
+        Operation::List => {
+            requests.list = Some(VideoListCall {
+                after: text(arguments, "after")?,
+                limit: match arguments.get("limit") {
+                    None | Some(Json::Null) => None,
+                    Some(Json::Number(value)) => {
+                        Some(value.as_i64().ok_or_else(|| failed("limit", INTEGER))?)
+                    }
+                    Some(_) => return Err(failed("limit", INTEGER)),
+                },
+                order: text(arguments, "order")?,
+                custom_llm_provider: text(arguments, "custom_llm_provider")?,
+                api_key: text(arguments, "api_key")?.map(SecretString::from),
+                api_base: text(arguments, "api_base")?,
+                api_version: text(arguments, "api_version")?,
+                extra_headers: texts(arguments, "extra_headers")?,
+                extra_query: params(arguments, "extra_query")?,
+                extra_body: params(arguments, "extra_body")?,
+                mock_response: arguments.get("mock_response").cloned(),
+                litellm_metadata: meta(arguments, "litellm_metadata")?,
+                litellm_call_id: text(arguments, "litellm_call_id")?,
+                user: text(arguments, "user")?,
+                timeout: number(arguments, "timeout")?,
+                extra: loose(arguments, &LIST_NAMED),
+            });
+        }
+        Operation::Status => {
+            requests.status = Some(VideoStatusRequest {
+                video_id: required_text(arguments, "video_id")?,
+                timeout: Some(duration(number(arguments, "timeout")?)?.unwrap_or_default()),
+                custom_llm_provider: text(arguments, "custom_llm_provider")?,
+                extra_headers: texts(arguments, "extra_headers")?,
+                extra_query: params(arguments, "extra_query")?,
+                extra_body: params(arguments, "extra_body")?,
+                kwargs: loose(arguments, &STATUS_NAMED),
+            });
+        }
+    }
+    Ok(requests)
 }

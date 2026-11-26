@@ -1,7 +1,6 @@
 mod support;
 
 use std::collections::BTreeMap;
-use std::io::Error as IoError;
 
 use betterlite_core::api::video_generation_call::providers::VideoGenerationConfig;
 // ast-grep-ignore: no-long-names
@@ -18,13 +17,13 @@ use betterlite_openai::videos::config::{
 };
 use betterlite_openai::videos::content::content_request;
 use betterlite_openai::videos::create::{VideoCreate, create_request, create_response};
-use betterlite_openai::videos::error::VideoError;
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
-use thiserror::Error;
 
-use self::support::{file_part, json, params_key};
+use self::support::{file_part, params_key};
+use super::convert::ConvertError;
 use super::convert::Reference;
+use super::convert::fields::json;
 
 // LiteLLM's OpenAIVideoConfig over B525's free functions: the same identity every video operation reads
 pub(crate) struct OpenAiVideoConfig {
@@ -36,12 +35,13 @@ pub(crate) struct OpenAiVideoConfig {
 
 impl OpenAiVideoConfig {
     // validate_environment: api_key, then the params' key, then litellm.api_key, litellm.openai_key and OPENAI_API_KEY
-    fn credentials(
+    pub(crate) fn headers(
         &self,
+        given: &IndexMap<String, String>,
         api_key: Option<&SecretString>,
         params: Option<&IndexMap<String, Json>>,
-    ) -> VideoCredentials {
-        VideoCredentials {
+    ) -> IndexMap<String, String> {
+        let credentials = VideoCredentials {
             api_key: api_key.cloned(),
             params_api_key: params.and_then(params_key),
             global_api_key: self.global_api_key.clone(),
@@ -51,20 +51,12 @@ impl OpenAiVideoConfig {
                 .get("OPENAI_API_KEY")
                 .filter(|value| !value.is_empty())
                 .map(|value| SecretString::from(value.clone())),
-        }
-    }
-
-    pub(crate) fn headers(
-        &self,
-        given: &IndexMap<String, String>,
-        api_key: Option<&SecretString>,
-        params: Option<&IndexMap<String, Json>>,
-    ) -> IndexMap<String, String> {
+        };
         let input = given
             .iter()
             .map(|(name, value)| (name.clone(), SecretString::from(value.clone())))
             .collect();
-        validate_environment(input, &self.credentials(api_key, params))
+        validate_environment(input, &credentials)
             .into_iter()
             .map(|(name, value)| (name, value.expose_secret().to_owned()))
             .collect()
@@ -77,7 +69,7 @@ impl OpenAiVideoConfig {
         prompt: &str,
         optional_params: &Params,
         api_base: &str,
-    ) -> Result<(Params, RequestFiles, String), AdapterError> {
+    ) -> Result<(Params, RequestFiles, String), ConvertError> {
         let options: VideoCreate = json(optional_params)?;
         let media = self
             .reference
@@ -96,24 +88,8 @@ impl OpenAiVideoConfig {
     }
 }
 
-#[derive(Debug, Error)]
-pub(crate) enum AdapterError {
-    #[error(transparent)]
-    Video(#[from] VideoError),
-    #[error("the video options are not the expected JSON: {source}")]
-    Json {
-        #[from]
-        source: serde_json::Error,
-    },
-    #[error("the video reference could not be read: {source}")]
-    Io {
-        #[from]
-        source: IoError,
-    },
-}
-
 impl VideoHttpConfig for OpenAiVideoConfig {
-    type Error = AdapterError;
+    type Error = ConvertError;
 
     fn validate_environment(&self, request: VideoEnvironment<'_>) -> Headers {
         self.headers(request.headers, request.api_key, request.litellm_params)

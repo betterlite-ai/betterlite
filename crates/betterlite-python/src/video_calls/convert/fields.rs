@@ -4,13 +4,18 @@ use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
 use betterlite_sdk::call_setup::RequestMap;
 use indexmap::IndexMap;
-use secrecy::SecretString;
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 
-use super::{ConvertError, SettingsWire};
+use super::ConvertError;
 
-const TIMEOUT: &str = "a number of seconds";
-const STRING: &str = "a string";
-const INTEGER: &str = "an integer";
+pub(super) type Params = IndexMap<String, Json>;
+pub(super) type TextMap = IndexMap<String, String>;
+pub(super) type Metadata = IndexMap<String, JsonValue>;
+
+pub(super) const TIMEOUT: &str = "a number of seconds";
+pub(super) const STRING: &str = "a string";
+pub(super) const INTEGER: &str = "an integer";
 const MAP: &str = "a map";
 const TEXT_MAP: &str = "a map of strings";
 
@@ -37,27 +42,11 @@ pub(super) fn required_text(arguments: &RequestMap, name: &str) -> Result<String
 }
 
 // the OpenAI API types seconds as a string, and an integer is sent as given rather than formatted
-pub(super) fn seconds_value(
-    arguments: &RequestMap,
-    name: &str,
-) -> Result<Option<String>, ConvertError> {
-    match arguments.get(name) {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Text(value)) => Ok(Some(value.clone())),
-        Some(Json::Number(value)) => Ok(Some(value.to_string())),
-        Some(_) => Err(failed(name, STRING)),
+pub(super) fn seconds(arguments: &RequestMap, name: &str) -> Result<Option<String>, ConvertError> {
+    if let Some(Json::Number(value)) = arguments.get(name) {
+        return Ok(Some(value.to_string()));
     }
-}
-
-pub(super) fn integer(arguments: &RequestMap, name: &str) -> Result<Option<i64>, ConvertError> {
-    match arguments.get(name) {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Number(value)) => value
-            .as_i64()
-            .map(Some)
-            .ok_or_else(|| failed(name, INTEGER)),
-        Some(_) => Err(failed(name, INTEGER)),
-    }
+    text(arguments, name)
 }
 
 pub(super) fn number(arguments: &RequestMap, name: &str) -> Result<Option<f64>, ConvertError> {
@@ -71,50 +60,6 @@ pub(super) fn number(arguments: &RequestMap, name: &str) -> Result<Option<f64>, 
     }
 }
 
-pub(super) fn text_map(
-    arguments: &RequestMap,
-    name: &str,
-) -> Result<Option<IndexMap<String, String>>, ConvertError> {
-    match arguments.get(name) {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Object(entries)) => entries
-            .iter()
-            .map(|(key, value)| match value {
-                Json::Text(text) => Ok((key.clone(), text.clone())),
-                Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-                    Err(failed(name, TEXT_MAP))
-                }
-            })
-            .collect::<Result<_, _>>()
-            .map(Some),
-        Some(_) => Err(failed(name, TEXT_MAP)),
-    }
-}
-
-pub(super) fn params(
-    arguments: &RequestMap,
-    name: &str,
-) -> Result<Option<IndexMap<String, Json>>, ConvertError> {
-    match arguments.get(name) {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Object(entries)) => Ok(Some(entries.clone())),
-        Some(_) => Err(failed(name, MAP)),
-    }
-}
-
-pub(super) fn metadata(
-    arguments: &RequestMap,
-    name: &str,
-) -> Result<Option<IndexMap<String, JsonValue>>, ConvertError> {
-    let Some(value) = params(arguments, name)? else {
-        return Ok(None);
-    };
-    let encoded = serde_json::to_value(value).map_err(|source| ConvertError::Json { source })?;
-    serde_json::from_value(encoded)
-        .map(Some)
-        .map_err(|source| ConvertError::Json { source })
-}
-
 pub(super) fn duration(value: Option<f64>) -> Result<Option<Duration>, ConvertError> {
     value
         .map(|seconds| {
@@ -123,25 +68,40 @@ pub(super) fn duration(value: Option<f64>) -> Result<Option<Duration>, ConvertEr
         .transpose()
 }
 
-// timeout or REQUEST_TIMEOUT: an explicit null or zero takes the request timeout further down
-pub(crate) fn drop_params(
-    arguments: &RequestMap,
-    settings: &SettingsWire,
-) -> Result<bool, ConvertError> {
-    let given = match arguments.get("drop_params") {
-        None | Some(Json::Null) => None,
-        Some(Json::Bool(value)) => Some(*value),
-        Some(_) => return Err(failed("drop_params", "a boolean")),
-    };
-    Ok(given.unwrap_or(false) || settings.drop_params.unwrap_or(false))
+pub(super) fn params(arguments: &RequestMap, name: &str) -> Result<Option<Params>, ConvertError> {
+    match arguments.get(name) {
+        None | Some(Json::Null) => Ok(None),
+        Some(Json::Object(entries)) => Ok(Some(entries.clone())),
+        Some(_) => Err(failed(name, MAP)),
+    }
 }
 
-pub(super) fn secret(
-    arguments: &RequestMap,
-    name: &str,
-) -> Result<Option<SecretString>, ConvertError> {
-    match text(arguments, name)? {
-        Some(value) => Ok(Some(SecretString::from(value))),
-        None => Ok(None),
-    }
+pub(super) fn texts(arguments: &RequestMap, name: &str) -> Result<Option<TextMap>, ConvertError> {
+    let Some(entries) = params(arguments, name)? else {
+        return Ok(None);
+    };
+    let pairs = entries.into_iter().map(|(key, value)| match value {
+        Json::Text(text) => Ok((key, text)),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+            Err(failed(name, TEXT_MAP))
+        }
+    });
+    pairs.collect::<Result<TextMap, _>>().map(Some)
+}
+
+pub(super) fn meta(arguments: &RequestMap, name: &str) -> Result<Option<Metadata>, ConvertError> {
+    let Some(value) = params(arguments, name)? else {
+        return Ok(None);
+    };
+    json(&value).map(Some)
+}
+
+// B525's wire types and this crate's own records are the same JSON, so each conversion is one round trip
+pub(crate) fn json<T, V>(value: &V) -> Result<T, ConvertError>
+where
+    T: DeserializeOwned,
+    V: Serialize,
+{
+    let encoded = serde_json::to_value(value).map_err(|source| ConvertError::Json { source })?;
+    serde_json::from_value(encoded).map_err(|source| ConvertError::Json { source })
 }

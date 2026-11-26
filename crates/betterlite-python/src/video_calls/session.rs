@@ -27,6 +27,7 @@ use indexmap::IndexMap;
 use serde::Deserialize;
 use uuid::Uuid;
 
+use super::adapter::OpenAiVideoConfig;
 use super::convert::{ConvertError, Reference, SettingsWire};
 use super::error::{RunError, SessionError};
 use crate::completion::setup::outbound_client;
@@ -84,8 +85,8 @@ pub(crate) fn config(
     session: &VideoSession,
     settings: &SettingsWire,
     reference: Option<Reference>,
-) -> super::adapter::OpenAiVideoConfig {
-    super::adapter::OpenAiVideoConfig {
+) -> OpenAiVideoConfig {
+    OpenAiVideoConfig {
         environment: session.environment.clone(),
         global_api_key: settings.api_key.clone(),
         openai_key: settings.openai_key.clone(),

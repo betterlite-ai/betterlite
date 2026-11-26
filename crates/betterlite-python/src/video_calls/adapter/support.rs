@@ -9,20 +9,8 @@ use betterlite_openai::openai_video_identifiers::multipart::{MediaBody, Multipar
 use betterlite_openai::videos::error::VideoError;
 use indexmap::IndexMap;
 use secrecy::SecretString;
-use serde::Serialize;
-use serde::de::DeserializeOwned;
 
-use super::AdapterError;
-
-// B525's wire types and this crate's params are the same JSON, so each conversion is one round trip
-pub(super) fn json<T, V>(value: &V) -> Result<T, AdapterError>
-where
-    T: DeserializeOwned,
-    V: Serialize,
-{
-    let encoded = serde_json::to_value(value)?;
-    serde_json::from_value(encoded).map_err(AdapterError::from)
-}
+use crate::video_calls::convert::ConvertError;
 
 pub(super) fn params_key(params: &IndexMap<String, Json>) -> Option<SecretString> {
     match params.get("api_key")? {
@@ -31,10 +19,11 @@ pub(super) fn params_key(params: &IndexMap<String, Json>) -> Option<SecretString
     }
 }
 
+// the multipart entry B525 built, with the caller's own file name when the payload knew one
 pub(super) fn file_part(
     part: MultipartPart<'_>,
     name: Option<String>,
-) -> Result<RequestFile, AdapterError> {
+) -> Result<RequestFile, ConvertError> {
     let MultipartPart {
         field,
         filename,
