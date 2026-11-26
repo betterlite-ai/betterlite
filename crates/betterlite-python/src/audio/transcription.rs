@@ -203,6 +203,8 @@ fn hidden_params(
             String::from("audio_transcription_duration"),
             duration_number(found)?,
         );
+    } else {
+        // Positional async files keep an absent handler duration absent.
     }
     if let Some(found) = Number::from_f64(response_ms) {
         hidden.insert(String::from("_response_ms"), Json::Number(found));

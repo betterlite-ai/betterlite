@@ -203,3 +203,22 @@ fn request_hidden_params_take_the_async_duration() {
         Some(Json::Number(value)) if value.as_f64() == Some(0.3_f64)
     ));
 }
+
+#[test]
+fn request_hidden_params_omit_absent_async_duration() {
+    let request = AudioCallWire {
+        arguments: RequestMap::new(),
+        settings: AudioSettings::default(),
+        atranscription: true,
+        file_from_kwargs: false,
+    };
+    let hidden = hidden_params(
+        &reply(r#"{"text":"hello"}"#),
+        &processed(),
+        1.0_f64,
+        &request,
+        "whisper-1",
+    )
+    .unwrap();
+    assert_eq!(hidden.get("audio_transcription_duration"), None);
+}
