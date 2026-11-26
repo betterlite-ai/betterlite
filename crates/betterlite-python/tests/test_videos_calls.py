@@ -646,7 +646,7 @@ def test_error_matches_litellm() -> None:
     assert payload["status_code"] == UNAUTHORIZED
 
 
-@pytest.mark.parametrize("operation", ("status", "content"))
+@pytest.mark.parametrize("operation", ["status", "content"])
 def test_read_error_calls(operation: str) -> None:
     with closing(VideoServer()) as server, pytest.raises(AuthenticationError) as made:
         SYNC_CALLS[operation](
