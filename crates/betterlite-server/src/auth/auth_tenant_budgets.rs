@@ -31,8 +31,7 @@ use crate::state::ServerState;
 
 mod tests;
 
-// what the auth service resolved before this stage: the caller, its team and project, the groups it matched, and the
-// collaborators the four checks read
+// what the auth service resolved before this stage: the caller, its team and project, the groups it matched and the collaborators
 #[derive(Default)]
 pub struct TenantBudgetRule {
     pub auth: Option<UserAPIKeyAuth>,

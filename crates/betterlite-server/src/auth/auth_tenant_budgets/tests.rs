@@ -66,6 +66,23 @@ fn master_context(master_key: &SecretString) -> AuthContext {
     context
 }
 
+// the tenant stage's rule with every collaborator empty, so each test names only what it wires
+fn rule() -> TenantBudgetRule {
+    TenantBudgetRule {
+        auth: None,
+        team: None,
+        project: None,
+        matched_model_access_groups: Vec::new(),
+        organizations: None,
+        cache: None,
+        tags: None,
+        groups: None,
+        reader: None,
+        alerts: None,
+        applied: Mutex::new(None),
+    }
+}
+
 #[test]
 fn stage_is_registered() {
     assert!(INSTALLED_STAGES.contains(&AuthBackend::AuthTenantBudgets));
@@ -128,15 +145,17 @@ impl SpendReader for ScriptedReader {
 
 struct TagWorld {
     tags: BTreeMap<String, TagTable>,
+    broken: bool,
 }
 
 impl TagWorld {
-    fn new(tags: Vec<TagTable>) -> Arc<Self> {
+    fn new(tags: Vec<TagTable>, broken: bool) -> Arc<Self> {
         Arc::new(Self {
             tags: tags
                 .into_iter()
                 .map(|row| (row.tag_name.clone(), row))
                 .collect(),
+            broken,
         })
     }
 }
@@ -144,6 +163,11 @@ impl TagWorld {
 #[async_trait]
 impl TagBudgetCache for TagWorld {
     async fn read_tag(&self, _key: &str) -> Result<Option<TagTable>, PayloadError> {
+        if self.broken {
+            return Err(PayloadError::Json(serde_json::Error::io(
+                std::io::Error::other("the cache read failed"),
+            )));
+        }
         Ok(None)
     }
 
@@ -242,16 +266,15 @@ async fn run_request(
 
 #[tokio::test]
 async fn failure_stops_downstream() {
-    let world = TagWorld::new(vec![tag("over", 0, 10)]);
+    let world = TagWorld::new(vec![tag("over", 0, 10)], false);
     let reader = ScriptedReader::new(vec![Decimal::from(20_i64)]);
     let cache: Arc<dyn TagBudgetCache> = Arc::clone(&world);
     let rows: Arc<dyn BudgetRows<TagTable>> = world;
-    let rule = Arc::new(TenantBudgetRule {
-        reader: Some(reader),
-        cache: Some(cache),
-        tags: Some(rows),
-        ..TenantBudgetRule::default()
-    });
+    let mut wired = rule();
+    wired.reader = Some(reader);
+    wired.cache = Some(cache);
+    wired.tags = Some(rows);
+    let rule = Arc::new(wired);
     let (status, body, reached) =
         run_request(&config_with_database(), rule, r#"{"tags":["over"]}"#).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
@@ -265,16 +288,15 @@ async fn failure_stops_downstream() {
     assert!(!reached);
 
     // without a database the tag check never reads, so the same request reaches the handler
-    let world = TagWorld::new(vec![tag("over", 0, 10)]);
+    let world = TagWorld::new(vec![tag("over", 0, 10)], false);
     let reader = ScriptedReader::new(vec![Decimal::from(20_i64)]);
     let cache: Arc<dyn TagBudgetCache> = Arc::clone(&world);
     let rows: Arc<dyn BudgetRows<TagTable>> = world;
-    let rule = Arc::new(TenantBudgetRule {
-        reader: Some(reader),
-        cache: Some(cache),
-        tags: Some(rows),
-        ..TenantBudgetRule::default()
-    });
+    let mut wired = rule();
+    wired.reader = Some(reader);
+    wired.cache = Some(cache);
+    wired.tags = Some(rows);
+    let rule = Arc::new(wired);
     let (status, _body, reached) =
         run_request(&config_with_master_key(), rule, r#"{"tags":["over"]}"#).await;
     assert_eq!(status, StatusCode::OK);
@@ -295,11 +317,10 @@ fn checked_key() -> UserAPIKeyAuth {
 #[test]
 fn debug_names_the_slots_and_never_the_token() {
     let key = checked_key();
-    let rule = TenantBudgetRule {
-        auth: Some(key.clone()),
-        applied: Mutex::new(Some(key)),
-        ..TenantBudgetRule::default()
-    };
+    let mut wired = rule();
+    wired.auth = Some(key.clone());
+    wired.applied = Mutex::new(Some(key));
+    let rule = wired;
     let rendered = format!("{rule:?}");
     assert!(rendered.contains("has_auth: true"), "{rendered}");
     assert!(rendered.contains("has_applied: true"), "{rendered}");
@@ -309,10 +330,9 @@ fn debug_names_the_slots_and_never_the_token() {
 #[tokio::test]
 async fn prefetch_records_the_checked_key() {
     let master_key = SecretString::from(MASTER_KEY.to_owned());
-    let rule = Arc::new(TenantBudgetRule {
-        auth: Some(checked_key()),
-        ..TenantBudgetRule::default()
-    });
+    let mut wired = rule();
+    wired.auth = Some(checked_key());
+    let rule = Arc::new(wired);
     let stage = TenantBudgetStageInput {
         context: master_context(&master_key),
         rule: Arc::clone(&rule),
@@ -326,49 +346,15 @@ async fn prefetch_records_the_checked_key() {
     assert_eq!(fields["token"], json!("sk-checked"));
 }
 
-// a cache whose tag probe fails, which is the only batch failure that answers 401
-struct BrokenTags;
-
-#[async_trait]
-impl TagBudgetCache for BrokenTags {
-    async fn read_tag(&self, _key: &str) -> Result<Option<TagTable>, PayloadError> {
-        Err(PayloadError::Json(serde_json::Error::io(
-            std::io::Error::other("the cache read failed"),
-        )))
-    }
-
-    async fn read_group(&self, _key: &str) -> Result<Option<ModelAccessGroupBudget>, PayloadError> {
-        Ok(None)
-    }
-
-    async fn read_registry(&self, _key: &str) -> Result<Option<Json>, AuthCacheError> {
-        Ok(None)
-    }
-
-    async fn write(
-        &self,
-        _key: &str,
-        _value: CachedValue<'_>,
-        _ttl: f64,
-    ) -> Result<(), AuthCacheError> {
-        Ok(())
-    }
-
-    fn management_ttl(&self) -> f64 {
-        60.0
-    }
-}
-
 #[tokio::test]
 async fn tag_lookup_failure_answers_unauthorized() {
-    let world = TagWorld::new(Vec::new());
+    let world = TagWorld::new(Vec::new(), true);
+    let cache: Arc<dyn TagBudgetCache> = Arc::clone(&world);
     let rows: Arc<dyn BudgetRows<TagTable>> = world;
-    let cache: Arc<dyn TagBudgetCache> = Arc::new(BrokenTags);
-    let rule = Arc::new(TenantBudgetRule {
-        cache: Some(cache),
-        tags: Some(rows),
-        ..TenantBudgetRule::default()
-    });
+    let mut wired = rule();
+    wired.cache = Some(cache);
+    wired.tags = Some(rows);
+    let rule = Arc::new(wired);
     let (status, body, reached) =
         run_request(&config_with_database(), rule, r#"{"tags":["broken"]}"#).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
@@ -382,14 +368,13 @@ async fn tag_lookup_failure_answers_unauthorized() {
 
 #[tokio::test]
 async fn missing_reader_is_unavailable() {
-    let world = TagWorld::new(vec![tag("t", 0, 10)]);
+    let world = TagWorld::new(vec![tag("t", 0, 10)], false);
     let cache: Arc<dyn TagBudgetCache> = Arc::clone(&world);
     let rows: Arc<dyn BudgetRows<TagTable>> = world;
-    let rule = Arc::new(TenantBudgetRule {
-        cache: Some(cache),
-        tags: Some(rows),
-        ..TenantBudgetRule::default()
-    });
+    let mut wired = rule();
+    wired.cache = Some(cache);
+    wired.tags = Some(rows);
+    let rule = Arc::new(wired);
     let (status, body, reached) =
         run_request(&config_with_database(), rule, r#"{"tags":["t"]}"#).await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
