@@ -46,7 +46,10 @@ where
         checks: proxy.checks,
         repositories: proxy.repositories,
     };
-    Ok(!scope.denied().await)
+    // source order, stopping at the first denial so a denied scope prevents the later lookups
+    let denied =
+        scope.key_and_team() || scope.user().await || scope.project().await || scope.member().await;
+    Ok(!denied)
 }
 
 // the UserAPIKeyAuth fields _check_summary_model_access reads, taken from the principal's serde form
@@ -75,11 +78,6 @@ where
     Checks: SummaryModelChecks,
     Repositories: SummaryAccessRepositories,
 {
-    // the scopes run in source order and stop at the first denial, so a denied scope prevents the later lookups
-    async fn denied(&self) -> bool {
-        self.key_and_team() || self.user().await || self.project().await || self.member().await
-    }
-
     // empty key and team allowlists skip their check, and an empty-string id still looks its object up
     fn key_and_team(&self) -> bool {
         let key_models = text_models(self.fields.models.as_deref().unwrap_or_default());

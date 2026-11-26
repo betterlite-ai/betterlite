@@ -13,9 +13,7 @@ use betterlite_core::api::summary_model_access::access::{
 };
 use betterlite_core::api::summary_model_access::checks::SummaryModelChecks;
 use betterlite_core::api::summary_model_access::repositories::SummaryAccessRepositories;
-use betterlite_core::api::summary_model_access::settings::{
-    read_summary_max_tokens, read_summary_model_setting,
-};
+use betterlite_core::api::summary_model_access::settings::read_summary_settings;
 use betterlite_db::budget_permission_rows::JsonData;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -122,24 +120,18 @@ impl Helper for Op {
     }
 }
 
-// the two readers over the settings the proxy decoded, or their fallbacks without a proxy
+// the readers over the settings the proxy decoded, or their fallbacks without a proxy
 fn settings_outcome(
     scenario: &SettingsScenario,
 ) -> Result<(Option<String>, u64), Box<HelperError>> {
     let Some(general_settings) = &scenario.general_settings else {
-        return Ok((
-            read_summary_model_setting(None),
-            read_summary_max_tokens(None),
-        ));
+        return Ok(read_summary_settings(None));
     };
     // the section's own view of general_settings, so the adapter holds no second YAML decoder
     let document = json!({ "general_settings": general_settings });
     let raw: Raw = serde_json::from_value(document).or_value_error()?;
     let settings = Section::convert(raw, &BTreeMap::<String, String>::new()).or_config_error()?;
-    Ok((
-        read_summary_model_setting(Some(&settings)),
-        read_summary_max_tokens(Some(&settings)),
-    ))
+    Ok(read_summary_settings(Some(&settings)))
 }
 
 async fn access_outcome(

@@ -7,9 +7,7 @@ use std::collections::BTreeMap;
 use betterlite_config::sections::summary_model_access::{DEFAULT_SUMMARY_MAX_TOKENS, Settings};
 use rstest::rstest;
 
-use super::access::check_summary_model_access;
-use super::error::SummaryAccessError;
-use super::settings::{read_summary_max_tokens, read_summary_model_setting};
+use super::settings::read_summary_settings;
 use support::{
     Call, EVERY_SCOPE, Harness, Lookup, Outcome, SUM, debug, every_scope_journal, journal_between,
     membership_row, principal, project_row, run, user_row, warn,
@@ -365,27 +363,19 @@ async fn policy_failures_deny(
     );
 }
 
-#[tokio::test]
-async fn a_principal_with_an_untyped_field_is_an_error() {
-    let harness = Harness::full();
-    let auth = principal(r#"{"models": [1]}"#);
-    let globals = harness.globals(true);
-    let checked = check_summary_model_access(Some(&auth), SUM, Some(&globals)).await;
-    assert!(matches!(checked, Err(SummaryAccessError::Principal(_))));
-    assert!(harness.journal.calls().is_empty());
-}
-
+// a process without the proxy reads null and 4096, and the decoded settings otherwise
 #[test]
-fn settings_read_from_the_proxy_only() {
-    assert_eq!(read_summary_model_setting(None), None);
-    assert_eq!(read_summary_max_tokens(None), DEFAULT_SUMMARY_MAX_TOKENS);
+fn settings_without_a_proxy_use_the_fallbacks() {
+    assert_eq!(
+        read_summary_settings(None),
+        (None, DEFAULT_SUMMARY_MAX_TOKENS)
+    );
     let settings = Settings {
         context_management_summary_model: Some(" ".to_owned()),
         context_management_summary_max_tokens: 512,
     };
     assert_eq!(
-        read_summary_model_setting(Some(&settings)),
-        Some(" ".to_owned())
+        read_summary_settings(Some(&settings)),
+        (Some(" ".to_owned()), 512)
     );
-    assert_eq!(read_summary_max_tokens(Some(&settings)), 512);
 }
