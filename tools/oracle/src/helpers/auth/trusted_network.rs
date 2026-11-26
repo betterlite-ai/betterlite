@@ -106,7 +106,9 @@ impl Helper for Op {
         let feature = scenario.feature_name.as_str();
         let setting_name = scenario.setting_name.as_str();
         match scenario.kind {
-            Kind::NormalizeCidrRanges => Ok(json!(normalize_cidr_ranges(ranges))),
+            Kind::NormalizeCidrRanges | Kind::GetTrustedProxyCidrs => {
+                Ok(json!(normalize_cidr_ranges(ranges)))
+            }
             Kind::ParseTrustedProxyRanges => Ok(json!(rendered(&texts))),
             Kind::ParseInternalNetworks => Ok(json!(rendered(&inside))),
             Kind::ParseTrustedProxyNetworks => Ok(json!(rendered(&proxies))),
@@ -119,7 +121,6 @@ impl Helper for Op {
             Kind::GetMcpClientIp => Ok(json!(get_mcp_client_ip(&request, &settings))),
             Kind::ResolveClientIp => Ok(resolved_client(&request, &settings)),
             Kind::ResolveNetworkContext => Ok(resolved_context(&request, &settings)),
-            Kind::GetTrustedProxyCidrs => Ok(json!(normalize_cidr_ranges(ranges))),
             Kind::RequireTrustedProxyRequest => {
                 require_trusted(&request, &settings, feature, setting_name)
             }
@@ -175,7 +176,10 @@ fn resolved_context(request: &NetworkRequest<'_>, settings: &TrustedNetworkSetti
 }
 
 // Python renders a parsed network with str(), the same "address/prefix" text ipnet prints
-fn rendered<N: Display>(networks: &[N]) -> Vec<String> {
+fn rendered<N>(networks: &[N]) -> Vec<String>
+where
+    N: Display,
+{
     let mut texts = Vec::with_capacity(networks.len());
     for network in networks {
         texts.push(network.to_string());
