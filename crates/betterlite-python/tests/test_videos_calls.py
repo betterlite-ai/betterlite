@@ -25,6 +25,7 @@ HOST: Final = "127.0.0.1"
 OK: Final = 200
 UNAUTHORIZED: Final = 401
 NOT_FOUND: Final = 404
+INTERNAL_ERROR: Final = 500
 GOOD_KEY: Final = "sk-test"
 BAD_KEY: Final = "bad-key"
 PROVIDER: Final = "openai"
@@ -652,15 +653,14 @@ def test_error_matches_litellm() -> None:
 
 
 @pytest.mark.parametrize("operation", ["status", "content"])
-@pytest.mark.parametrize("asynchronous", [False, True])
-def test_read_error_calls(operation: str, *, asynchronous: bool) -> None:
-    with closing(VideoServer()) as server, pytest.raises(AuthenticationError) as made:
+def test_read_error_calls(operation: str) -> None:
+    with closing(VideoServer()) as server:
         values = endpoint_values(server, video_id=VIDEO_ID, api_key=BAD_KEY)
-        if asynchronous:
-            asyncio.run(awaited(ASYNC_CALLS[operation](**values)))
-        else:
+        with pytest.raises(AuthenticationError) as synchronous:
             SYNC_CALLS[operation](**values)
-    assert made.value.status_code == UNAUTHORIZED
+        with pytest.raises(AuthenticationError) as asynchronous:
+            asyncio.run(awaited(ASYNC_CALLS[operation](**values)))
+    assert synchronous.value.status_code == asynchronous.value.status_code == UNAUTHORIZED
 
 
 def test_content_missing_calls() -> None:
@@ -703,14 +703,14 @@ def test_status_headers_error(headers: dict[str, str]) -> None:
         with pytest.raises(InternalServerError) as asynchronous:
             asyncio.run(awaited(OURS_ASYNC.avideo_status(**values)))
         for error in [made.value, asynchronous.value]:
-            assert error.status_code == 500
+            assert error.status_code == INTERNAL_ERROR
             assert error.code is None
             payload = ERROR_PAYLOAD.validate_json(str(native_cause(error)))
             assert payload["type"] == "InternalServerError"
         assert server.calls == []
 
 
-@pytest.fixture
+@pytest.fixture(name="_module_key")
 def _module_key(key_name: str) -> Iterator[None]:
     previous_api = betterlite.api_key
     previous_openai = betterlite.openai_key

@@ -16,8 +16,7 @@ use super::{
     STATUS_NAMED, loose,
 };
 
-// The core request records are flat. Share their common field parsing while
-// constructing each concrete record directly, without optional request slots.
+// Flat core request records require common fields to be expanded into each constructor.
 macro_rules! read_request {
     ($arguments:ident, $named:ident, $($field:ident: $value:expr,)*) => {
         Ok(Self {
