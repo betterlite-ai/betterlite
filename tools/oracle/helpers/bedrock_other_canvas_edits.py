@@ -23,7 +23,7 @@ litellm.suppress_debug_info = True
 
 MODEL: Final = "amazon.nova-canvas-v1:0"
 NO_HEADERS: Final[dict[str, str]] = {}
-# These refusals are a bare ValueError or NotImplementedError, which carry none of the four stable error fields
+# A bare ValueError or NotImplementedError carries none of the four stable error fields
 REFUSAL: Final[dict[str, JsonValue]] = {
     "status": None,
     "type": None,
