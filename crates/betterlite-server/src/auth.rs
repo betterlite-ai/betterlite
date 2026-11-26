@@ -101,7 +101,6 @@ pub(crate) async fn authenticate(
         Err(response) => *response,
     }
 }
-
 fn stage_input(
     backend: AuthBackend,
     request: &Request<Body>,
@@ -203,7 +202,6 @@ fn resolver_for(request: &Request<Body>) -> Arc<RequestModelResolver> {
         .get::<Arc<RequestModelResolver>>()
         .map_or_else(default_resolver, Arc::clone)
 }
-
 // stage_input cannot await while holding the request borrow (Request<Body> is Send but not Sync), so the caller awaits the stage prefetch on the owned input
 pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, StageFailure> {
     match input {
