@@ -248,11 +248,10 @@ async fn a_future_temporary_increase_raises_the_advisory_limit() {
         SpendScript::Value(decimal("0")),
     );
     let mut auth = key_auth(Some("10"), "12", None);
-    add_field(&mut auth, "temp_budget_increase", json("5"));
     add_field(
         &mut auth,
-        "temp_budget_expiry",
-        Json::Text("2099-01-01T00:00:00Z".to_owned()),
+        "metadata",
+        json(r#"{"temp_budget_increase":5,"temp_budget_expiry":"2099-01-01T00:00:00Z"}"#),
     );
     let metadata = hook_metadata(auth);
     assert!(!key_or_team_over_budget(&metadata, &harness.deps()).await);
@@ -273,11 +272,10 @@ async fn an_expired_temporary_increase_is_not_applied() {
         SpendScript::Value(decimal("0")),
     );
     let mut auth = key_auth(Some("10"), "12", None);
-    add_field(&mut auth, "temp_budget_increase", json("5"));
     add_field(
         &mut auth,
-        "temp_budget_expiry",
-        Json::Text("2000-01-01T00:00:00Z".to_owned()),
+        "metadata",
+        json(r#"{"temp_budget_increase":5,"temp_budget_expiry":"2000-01-01T00:00:00Z"}"#),
     );
     let metadata = hook_metadata(auth);
     assert!(key_or_team_over_budget(&metadata, &harness.deps()).await);
@@ -300,13 +298,8 @@ async fn an_invalid_temporary_increase_is_not_over_budget() {
     let mut auth = key_auth(Some("10"), "12", None);
     add_field(
         &mut auth,
-        "temp_budget_increase",
-        Json::Text("five".to_owned()),
-    );
-    add_field(
-        &mut auth,
-        "temp_budget_expiry",
-        Json::Text("2099-01-01T00:00:00Z".to_owned()),
+        "metadata",
+        json(r#"{"temp_budget_increase":"five","temp_budget_expiry":"2099-01-01T00:00:00Z"}"#),
     );
     let metadata = hook_metadata(auth);
     assert!(!key_or_team_over_budget(&metadata, &harness.deps()).await);
