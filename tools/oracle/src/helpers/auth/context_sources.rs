@@ -6,7 +6,8 @@ use betterlite_auth::auth_context_sources::claude::{
     AliasMap, ClaudeNameSources, RouterNames, claude_code_requested_group,
 };
 use betterlite_auth::auth_context_sources::router_alias::{
-    RouterAliasInput, RouterAliasRewrite, resolve_router_settings_model_group_alias,
+    RouterAliasInput, RouterAliasRewrite, RouterAliasState,
+    resolve_router_settings_model_group_alias,
 };
 use betterlite_auth::auth_context_sources::router_settings::{
     TeamRouterSettings, hierarchical_router_settings,
@@ -351,10 +352,16 @@ fn json_data(value: &Json) -> JsonData {
 }
 
 async fn router_alias_answer(input: &Input) -> Value {
+    let already_resolved = matches!(input.marker.unwrap_or_default(), MarkerState::Resolved);
+    let eligible = matches!(input.route_class.unwrap_or_default(), RouteClass::LlmApi)
+        && matches!(input.router.unwrap_or_default(), RouterState::Available);
+    let state = match (eligible, already_resolved) {
+        (false, _) => RouterAliasState::Ineligible { already_resolved },
+        (true, true) => RouterAliasState::Resolved,
+        (true, false) => RouterAliasState::Fresh,
+    };
     let alias_input = RouterAliasInput {
-        route_is_llm_api: matches!(input.route_class.unwrap_or_default(), RouteClass::LlmApi),
-        router_available: matches!(input.router.unwrap_or_default(), RouterState::Available),
-        already_resolved: matches!(input.marker.unwrap_or_default(), MarkerState::Resolved),
+        state,
         passthrough: matches!(
             input.dispatch.unwrap_or_default(),
             DispatchState::Passthrough

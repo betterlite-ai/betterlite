@@ -1,7 +1,8 @@
 use betterlite_models::decisions::Json;
 
 use crate::auth_context_sources::router_alias::{
-    RouterAliasInput, RouterAliasRewrite, resolve_router_settings_model_group_alias,
+    RouterAliasInput, RouterAliasRewrite, RouterAliasState,
+    resolve_router_settings_model_group_alias,
 };
 
 use super::support::{FakeTeams, Logs, TeamAnswer, json, team_columns};
@@ -15,9 +16,7 @@ const MARKED_ONLY: RouterAliasRewrite = RouterAliasRewrite {
 
 fn input<'request>(settings: Option<&'request Json>) -> RouterAliasInput<'request> {
     RouterAliasInput {
-        route_is_llm_api: true,
-        router_available: true,
-        already_resolved: false,
+        state: RouterAliasState::Fresh,
         passthrough: false,
         requested_model: Some("alias-one"),
         raw_body_available: true,
@@ -35,7 +34,9 @@ fn teams_with_settings(settings: &str) -> FakeTeams {
 async fn router_marker_before_skip() {
     let teams = teams_with_settings(ALIASES);
     let outside_route = RouterAliasInput {
-        route_is_llm_api: false,
+        state: RouterAliasState::Ineligible {
+            already_resolved: false,
+        },
         team_id: Some("team-one"),
         ..input(None)
     };
@@ -45,7 +46,9 @@ async fn router_marker_before_skip() {
     );
 
     let without_router = RouterAliasInput {
-        router_available: false,
+        state: RouterAliasState::Ineligible {
+            already_resolved: false,
+        },
         team_id: Some("team-one"),
         ..input(None)
     };
@@ -56,7 +59,7 @@ async fn router_marker_before_skip() {
 
     // a marked request never reaches the settings read again
     let marked = RouterAliasInput {
-        already_resolved: true,
+        state: RouterAliasState::Resolved,
         team_id: Some("team-one"),
         ..input(None)
     };
@@ -156,10 +159,8 @@ async fn nonjson_not_rewritten() {
     assert_eq!(rewrite.target, Some("group-one".to_owned()));
 }
 
-#[tokio::test]
-async fn alias_self_none_unchanged() {
-    let teams = teams_with_settings(ALIASES);
-    let cases = [
+fn alias_self_cases() -> Vec<(Json, &'static str)> {
+    vec![
         (
             json(r#"{"model_group_alias": {"alias-one": "alias-one"}}"#),
             "alias-one",
@@ -185,8 +186,13 @@ async fn alias_self_none_unchanged() {
             "alias-one",
         ),
         (json(r#"{"num_retries": 3}"#), "alias-one"),
-    ];
-    for (candidate, model) in cases {
+    ]
+}
+
+#[tokio::test]
+async fn alias_self_none_unchanged() {
+    let teams = teams_with_settings(ALIASES);
+    for (candidate, model) in alias_self_cases() {
         let request = RouterAliasInput {
             requested_model: Some(model),
             ..input(Some(&candidate))

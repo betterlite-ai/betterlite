@@ -48,7 +48,10 @@ fn sso_env_absent_and_empty() {
         absent.minimum_custom_key_length,
         DEFAULT_MINIMUM_CUSTOM_KEY_LENGTH
     );
+}
 
+#[test]
+fn sso_env_empty_strings_kept() {
     let empty = load(&[
         (MICROSOFT_CLIENT_ID_VARIABLE, ""),
         (GOOGLE_CLIENT_ID_VARIABLE, ""),

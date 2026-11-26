@@ -166,6 +166,20 @@ fn alias_normalization() {
     );
     let uppercase = format!("claude-router-{}", hex::encode(GROUP).to_uppercase());
     assert_eq!(claude_code_requested_group(&uppercase, &names), None);
+}
+
+#[test]
+fn alias_canonical_decoding_only() {
+    let global_aliases = BTreeMap::new();
+    let router = FakeRouter::default();
+    let names = ClaudeNameSources {
+        global_aliases: &global_aliases,
+        key_aliases: None,
+        team_model_aliases: None,
+        hierarchical_model_group_alias: None,
+        router: Some(&router),
+        team_id: None,
+    };
     // hex of "group-one[1m]" decodes to a name no route owns
     assert_eq!(
         claude_code_requested_group(&encoded("group-one[1m]"), &names),

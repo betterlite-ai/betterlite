@@ -6,10 +6,16 @@ use super::router_settings::{TeamRouterSettings, hierarchical_router_settings};
 pub const MODEL_GROUP_ALIAS_RESOLVED_MARKER: &str = "litellm.model_group_alias_resolved";
 pub const CLIENT_REQUESTED_MODEL_SCOPE_KEY: &str = "litellm.client_requested_model";
 
+// Where the request stands before the rewrite: an ineligible route still reports the marker it found.
+#[derive(Clone, Copy, Debug)]
+pub enum RouterAliasState {
+    Ineligible { already_resolved: bool },
+    Resolved,
+    Fresh,
+}
+
 pub struct RouterAliasInput<'request> {
-    pub route_is_llm_api: bool,
-    pub router_available: bool,
-    pub already_resolved: bool,
+    pub state: RouterAliasState,
     pub passthrough: bool,
     pub requested_model: Option<&'request str>,
     pub raw_body_available: bool,
@@ -32,19 +38,22 @@ pub async fn resolve_router_settings_model_group_alias(
     input: &RouterAliasInput<'_>,
     teams: &dyn TeamRouterSettings,
 ) -> RouterAliasRewrite {
-    if !input.route_is_llm_api || !input.router_available {
-        return RouterAliasRewrite {
-            marker_set: input.already_resolved,
-            client_requested_model: None,
-            target: None,
-        };
-    }
-    if input.already_resolved {
-        return RouterAliasRewrite {
-            marker_set: true,
-            client_requested_model: None,
-            target: None,
-        };
+    match input.state {
+        RouterAliasState::Ineligible { already_resolved } => {
+            return RouterAliasRewrite {
+                marker_set: already_resolved,
+                client_requested_model: None,
+                target: None,
+            };
+        }
+        RouterAliasState::Resolved => {
+            return RouterAliasRewrite {
+                marker_set: true,
+                client_requested_model: None,
+                target: None,
+            };
+        }
+        RouterAliasState::Fresh => {}
     }
     let Some((requested, target)) = rewrite_target(input, teams).await else {
         return RouterAliasRewrite {
