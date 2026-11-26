@@ -1,5 +1,6 @@
 use betterlite_db::team_rows::archived::LiteLLMTeamTableCachedObj;
 use betterlite_db::team_rows::team::LiteLLMTeamTable;
+use betterlite_error::proxy_error_types::ProxyErrorTypes;
 
 use crate::auth_model_patterns::ALL_TEAM_MODELS;
 use crate::auth_model_patterns::decision::ModelAccessContext;
@@ -85,7 +86,11 @@ pub async fn can_key_call_resolved_model(
         .await;
         if let Err(error) = checked {
             // only team_model_access_denied can be overridden; every other exception escapes
-            if !error.is_team_denial() {
+            let team_denial = error.denial().is_some_and(|denial| {
+                denial.as_proxy_exception().error_type
+                    == ProxyErrorTypes::TeamModelAccessDenied.to_string()
+            });
+            if !team_denial {
                 return Err(error);
             }
             let grants = key_access_group_grants_model(

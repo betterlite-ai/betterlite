@@ -1,5 +1,4 @@
 use betterlite_db::team_rows::decoder::TeamRowError;
-use betterlite_error::proxy_error_types::ProxyErrorTypes;
 // ast-grep-ignore: no-long-names
 use betterlite_error::proxy_exception::model_access_denied::ModelAccessDeniedProxyException;
 
@@ -58,14 +57,5 @@ impl EntityModelAccessError {
                 None
             }
         }
-    }
-
-    // ProxyException.type is what the override in can_key_call_resolved_model compares
-    #[must_use]
-    pub fn is_team_denial(&self) -> bool {
-        self.denial().is_some_and(|denial| {
-            denial.as_proxy_exception().error_type
-                == ProxyErrorTypes::TeamModelAccessDenied.to_string()
-        })
     }
 }
