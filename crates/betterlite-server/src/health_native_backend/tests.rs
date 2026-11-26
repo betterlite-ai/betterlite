@@ -393,24 +393,44 @@ async fn backend_video_generation_forwards_the_call() {
 }
 
 #[tokio::test]
-async fn backend_realtime_reports_the_mode_as_not_built() {
+async fn backend_realtime_forwards_the_call() {
     let harness = Harness::new();
+    harness.owner.reply(&HEALTHY_HEADERS);
+    let parameters = mode_parameters(&[("model", text("gpt-4o-realtime-preview"))]);
     let call = RealtimeCall {
         model: String::from("gpt-4o-realtime-preview"),
         custom_llm_provider: String::from("openai"),
-        api_base: None,
-        api_key: None,
-        api_version: None,
-        model_params: mode_parameters(&[("model", text("gpt-4o-realtime-preview"))]),
+        api_base: Some(String::from("https://api.openai.com/")),
+        api_key: Some(SecretString::from("sk-realtime")),
+        api_version: Some(String::from("2024-10-01-preview")),
+        model_params: parameters.clone(),
         logging: None,
     };
-    let error = harness
+    let reply = harness
         .backend()
         .realtime(call)
         .await
-        .expect_err("the mode is not built");
-    assert_eq!(error.to_string(), "the realtime health check is not built");
-    assert_eq!(harness.owner.count(), 0);
+        .expect("the probe answers");
+    assert_eq!(reply.hidden_headers, headers_map(&HEALTHY_HEADERS));
+    let OwnerCall::Realtime {
+        model,
+        custom_llm_provider,
+        api_base,
+        api_version,
+        parameters: recorded,
+        api_key,
+        logging,
+    } = harness.owner.take()
+    else {
+        panic!("a realtime call");
+    };
+    assert_eq!(model, "gpt-4o-realtime-preview");
+    assert_eq!(custom_llm_provider, "openai");
+    assert_eq!(api_base.as_deref(), Some("https://api.openai.com/"));
+    assert_eq!(api_version.as_deref(), Some("2024-10-01-preview"));
+    assert_eq!(recorded, parameters);
+    assert_eq!(api_key.as_deref(), Some("sk-realtime"));
+    assert!(!logging);
 }
 
 #[tokio::test]

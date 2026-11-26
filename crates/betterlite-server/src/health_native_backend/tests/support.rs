@@ -64,12 +64,13 @@ use crate::health_native_backend::backend::NativeHealthBackend;
 use crate::health_native_backend::evaluation::EvaluationSetup;
 use crate::health_native_backend::seams::{
     BatchProbeCall, EmbeddingProbeCall, EvaluationProbeCall, ImageEditProbeCall,
-    ImageGenerationProbeCall, OcrProbeCall, RerankProbeCall, ResponsesProbeCall, SpeechProbeCall,
-    TextCompletionProbeCall, TranscriptionProbeCall, VideoGenerationProbeCall,
+    ImageGenerationProbeCall, OcrProbeCall, RealtimeProbeCall, RerankProbeCall, ResponsesProbeCall,
+    SpeechProbeCall, TextCompletionProbeCall, TranscriptionProbeCall, VideoGenerationProbeCall,
 };
 use crate::health_native_backend::wiring::{HealthEntryDeps, build_health_check_entry};
 use crate::health_probe_modes::calls::{
     AudioTranscriptionCall, EvaluationCall, HealthProbeReply, ImageEditCall, OcrCall, ProbeCall,
+    RealtimeCall,
 };
 use crate::health_probe_modes::error::HealthProbeError;
 use crate::health_probe_modes::logging::ProbeLogging;
@@ -220,6 +221,15 @@ pub(super) enum OwnerCall {
         api_key: Option<String>,
         logging: bool,
     },
+    Realtime {
+        model: String,
+        custom_llm_provider: String,
+        api_base: Option<String>,
+        api_version: Option<String>,
+        parameters: IndexMap<String, Json>,
+        api_key: Option<String>,
+        logging: bool,
+    },
 }
 
 impl OwnerCall {
@@ -260,12 +270,25 @@ impl OwnerCall {
         }
     }
 
+    fn realtime(call: RealtimeCall) -> Self {
+        Self::Realtime {
+            model: call.model,
+            custom_llm_provider: call.custom_llm_provider,
+            api_base: call.api_base,
+            api_version: call.api_version,
+            parameters: call.model_params,
+            api_key: call.api_key.map(|key| key.expose_secret().to_owned()),
+            logging: call.logging.is_some(),
+        }
+    }
+
     pub(super) fn mode_name(&self) -> &'static str {
         match self {
             Self::Mode { mode, .. } => mode,
             Self::Transcription { .. } => "audio_transcription",
             Self::ImageEdit { .. } => "image_edit",
             Self::Ocr { .. } => "ocr",
+            Self::Realtime { .. } => "realtime",
         }
     }
 
@@ -274,7 +297,8 @@ impl OwnerCall {
             Self::Mode { parameters, .. }
             | Self::Transcription { parameters, .. }
             | Self::ImageEdit { parameters, .. }
-            | Self::Ocr { parameters, .. } => parameters,
+            | Self::Ocr { parameters, .. }
+            | Self::Realtime { parameters, .. } => parameters,
         }
     }
 }
@@ -414,6 +438,13 @@ impl OcrProbeCall for FakeOwner {
 impl VideoGenerationProbeCall for FakeOwner {
     async fn generate(&self, call: ProbeCall) -> Result<HealthProbeReply, HealthProbeError> {
         self.finish(OwnerCall::mode("video_generation", call))
+    }
+}
+
+#[async_trait]
+impl RealtimeProbeCall for FakeOwner {
+    async fn probe(&self, call: RealtimeCall) -> Result<HealthProbeReply, HealthProbeError> {
+        self.finish(OwnerCall::realtime(call))
     }
 }
 
@@ -645,6 +676,7 @@ impl Harness {
         let ocr: Arc<dyn OcrProbeCall> = Arc::<FakeOwner>::clone(&self.owner);
         let video_generation: Arc<dyn VideoGenerationProbeCall> =
             Arc::<FakeOwner>::clone(&self.owner);
+        let realtime_probe: Arc<dyn RealtimeProbeCall> = Arc::<FakeOwner>::clone(&self.owner);
         let evaluation: Arc<dyn EvaluationProbeCall> =
             Arc::<FakeEvaluation>::clone(&self.evaluation);
         let prices: Arc<dyn PriceLookup + Send + Sync> = Arc::<FakePrices>::clone(&self.prices);
@@ -661,6 +693,7 @@ impl Harness {
             responses,
             ocr,
             video_generation,
+            realtime_probe,
             evaluation,
             prices,
             model_sets: Arc::clone(&self.model_sets),
