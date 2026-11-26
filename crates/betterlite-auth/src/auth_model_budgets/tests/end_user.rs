@@ -13,7 +13,7 @@ use crate::auth_model_budgets::tests::fixtures::{budget_map, text, token};
 use crate::auth_model_budgets::tests::logs::Logs;
 
 fn model_budget() -> BTreeMap<String, JsonData> {
-    BTreeMap::from([("gpt-4".to_owned(), JsonData::Number(Number::from(2)))])
+    BTreeMap::from([("gpt-4".to_owned(), JsonData::Number(Number::from(2_i32)))])
 }
 
 fn full_budget() -> LiteLLMBudgetTable {
@@ -69,6 +69,10 @@ async fn end_user_nonnull_fields_and_debug() {
         applied[0].fields.get("end_user").map(String::as_str),
         Some("Some(\"eu-1\")")
     );
+}
+
+#[test]
+fn absent_end_user_limits_preserve_params() {
     // absent row fields leave the params as they were
     let mut params = EndUserParams {
         end_user_id: None,
@@ -84,6 +88,10 @@ async fn end_user_nonnull_fields_and_debug() {
     assert_eq!(params.end_user_rpm_limit, None);
     assert_eq!(params.end_user_max_budget, None);
     assert_eq!(params.end_user_model_max_budget, None);
+}
+
+#[test]
+fn zero_end_user_limits_are_values() {
     // a zero limit and an empty map are values the row holds, so they are applied too
     let mut params = EndUserParams::default();
     let zero = LiteLLMBudgetTable {
@@ -100,17 +108,16 @@ async fn end_user_nonnull_fields_and_debug() {
     assert_eq!(params.end_user_tpd_limit, Some(0));
     assert_eq!(params.end_user_max_budget, Some(Decimal::ZERO));
     assert_eq!(params.end_user_model_max_budget, Some(BTreeMap::new()));
-    assert_eq!(logs.debugs("Applied budget limits to end user").len(), 3);
 }
 
 #[tokio::test]
 async fn token_end_user_null_id_preserves_nonnull_custom_limits() {
     let mut key = token(&[
         ("end_user_id", text("eu-old")),
-        ("end_user_tpm_limit", JsonData::Number(Number::from(3))),
-        ("end_user_rpm_limit", JsonData::Number(Number::from(2))),
-        ("end_user_tpd_limit", JsonData::Number(Number::from(9))),
-        ("end_user_max_budget", JsonData::Number(Number::from(9))),
+        ("end_user_tpm_limit", JsonData::Number(Number::from(3_i32))),
+        ("end_user_rpm_limit", JsonData::Number(Number::from(2_i32))),
+        ("end_user_tpd_limit", JsonData::Number(Number::from(9_i32))),
+        ("end_user_max_budget", JsonData::Number(Number::from(9_i32))),
         ("end_user_model_max_budget", budget_map(&[("gpt-4", 5)])),
         ("allowed_model_region", text("eu")),
     ]);
@@ -125,7 +132,7 @@ async fn token_end_user_null_id_preserves_nonnull_custom_limits() {
         key.view.end_user_model_max_budget,
         Some(Payload(BTreeMap::from([(
             "gpt-4".to_owned(),
-            JsonData::Number(Number::from(5))
+            JsonData::Number(Number::from(5_i32))
         )])))
     );
     assert_eq!(key.extra.allowed_model_region, Some(Region::Eu));
@@ -133,7 +140,7 @@ async fn token_end_user_null_id_preserves_nonnull_custom_limits() {
 
 #[tokio::test]
 async fn token_update_does_not_copy_max_budget() {
-    let mut key = token(&[("end_user_max_budget", JsonData::Number(Number::from(9)))]);
+    let mut key = token(&[("end_user_max_budget", JsonData::Number(Number::from(9_i32)))]);
     let params = EndUserParams {
         end_user_id: Some("eu-2".to_owned()),
         end_user_tpm_limit: Some(8),

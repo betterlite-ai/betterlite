@@ -27,11 +27,11 @@ pub enum KeyBudgetError {
 }
 
 #[derive(Clone, Copy)]
-pub struct KeyBudgetCall<'a> {
-    pub limiter: &'a dyn KeyModelBudgetLimiter,
-    pub token: &'a UserAPIKeyAuth,
-    pub model_name: &'a str,
-    pub request_model: Option<&'a str>,
+pub struct KeyBudgetCall<'call> {
+    pub limiter: &'call dyn KeyModelBudgetLimiter,
+    pub token: &'call UserAPIKeyAuth,
+    pub model_name: &'call str,
+    pub request_model: Option<&'call str>,
 }
 
 pub async fn check_key_budget_fallback(
@@ -54,11 +54,11 @@ pub async fn check_key_budget_fallback(
     if request_model != Some(model_name) {
         return Err(KeyBudgetError::Budget(exceeded));
     }
-    let fallback = limiter
+    let selected = limiter
         .fallback_model_within_budget(token, model_name)
         .await
         .map_err(|error| KeyBudgetError::Limiter(Box::new(error)))?;
-    let Some(fallback) = fallback else {
+    let Some(fallback) = selected else {
         return Err(KeyBudgetError::Budget(exceeded));
     };
     if let Err(error) = authorize_fallback(&fallback, token, context, lookup).await {

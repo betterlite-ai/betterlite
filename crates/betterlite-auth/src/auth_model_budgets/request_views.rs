@@ -1,4 +1,4 @@
-pub trait ModelRewrite {
+pub trait ModelRewrite: Send {
     fn set_request_model(&mut self, model: &str);
 
     fn refresh_parsed_body(&mut self);

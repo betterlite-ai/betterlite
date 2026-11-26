@@ -47,7 +47,10 @@ async fn user_lookup_skip_no_upsert_and_debug_failure() {
     let found = read_user_model_max_budget(Some(&lookup), Some("u2"))
         .await
         .expect("the row carries a map");
-    assert_eq!(found.get("gpt-4"), Some(&JsonData::Number(Number::from(5))));
+    assert_eq!(
+        found.get("gpt-4"),
+        Some(&JsonData::Number(Number::from(5_i32)))
+    );
     assert!(harness.store.creates.lock().unwrap().is_empty());
 }
 
@@ -105,10 +108,11 @@ async fn user_and_team_models_ordered_duplicates() {
             .as_ref()
             .is_some_and(|budget| budget.len() == 1)
     }));
+    drop(team_seen);
     let seen_budget = user.seen.lock().unwrap()[0].1.clone();
     assert_eq!(
         seen_budget,
-        BTreeMap::from([("gpt-4".to_owned(), JsonData::Number(Number::from(5))),])
+        BTreeMap::from([("gpt-4".to_owned(), JsonData::Number(Number::from(5_i32))),])
     );
 }
 
@@ -123,12 +127,12 @@ async fn team_key_override_map_passthrough() {
     check_team_model_budget(&team, &key, &["gpt-4".to_owned()])
         .await
         .unwrap();
-    let expected = BTreeMap::from([("gpt-4".to_owned(), JsonData::Number(Number::from(7)))]);
+    let expected = BTreeMap::from([("gpt-4".to_owned(), JsonData::Number(Number::from(7_i32)))]);
     let seen = team.seen.lock().unwrap();
     assert_eq!(seen[0].key_budget, Some(expected));
     assert_eq!(
         seen[0].budget,
-        BTreeMap::from([("gpt-4".to_owned(), JsonData::Number(Number::from(6)))])
+        BTreeMap::from([("gpt-4".to_owned(), JsonData::Number(Number::from(6_i32)))])
     );
 }
 
@@ -166,8 +170,10 @@ async fn user_and_team_errors_propagate() {
 
 #[tokio::test]
 async fn absent_database_skips_even_a_cached_user() {
-    let mut harness = Harness::default();
-    harness.with_store = false;
+    let harness = Harness {
+        with_store: false,
+        ..Harness::default()
+    };
     *harness.cache.cached.lock().unwrap() = Some(
         serde_json::from_str(r#"{"user_id":"cached","model_max_budget":{"gpt-4":3}}"#).unwrap(),
     );

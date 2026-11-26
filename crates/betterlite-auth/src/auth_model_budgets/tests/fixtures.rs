@@ -11,6 +11,9 @@ use rust_decimal::Decimal;
 use serde_json::Number;
 
 use crate::auth_model_budgets::checks::ModelMaxBudget;
+use crate::auth_model_budgets::fallback::{
+    KeyBudgetCall, KeyBudgetError, check_key_budget_fallback,
+};
 use crate::auth_model_budgets::limits::{
     KeyModelBudgetLimiter, TeamModelBudgetLimiter, UserModelBudgetLimiter,
 };
@@ -20,11 +23,11 @@ use crate::auth_model_patterns::pattern::UnresolvedProviderInference;
 use crate::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 
 pub(crate) fn token(fields: &[(&str, JsonData)]) -> UserAPIKeyAuth {
-    let fields: BTreeMap<String, JsonData> = fields
+    let values: BTreeMap<String, JsonData> = fields
         .iter()
         .map(|(name, value)| ((*name).to_owned(), value.clone()))
         .collect();
-    UserAPIKeyAuth::construct(AuthInput::Dict(fields)).expect("the key fixture constructs")
+    UserAPIKeyAuth::construct(AuthInput::Dict(values)).expect("the key fixture constructs")
 }
 
 pub(crate) fn text(value: &str) -> JsonData {
@@ -74,11 +77,11 @@ pub(crate) fn other_error() -> ErrorClass {
 }
 
 fn outcome(failure: &Mutex<Option<ErrorClass>>, within: bool) -> Result<bool, ErrorClass> {
-    if let Some(error) = failure
+    let pending = failure
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
-        .take()
-    {
+        .take();
+    if let Some(error) = pending {
         return Err(error);
     }
     Ok(within)
@@ -257,6 +260,16 @@ impl Default for RecordingRewrite {
 }
 
 impl RecordingRewrite {
+    pub(crate) fn models(&self) -> [Option<String>; 5] {
+        [
+            self.request_model.lock().unwrap().clone(),
+            self.parsed_body.lock().unwrap().clone(),
+            self.json_cache.lock().unwrap().clone(),
+            self.serialized_body.lock().unwrap().clone(),
+            self.path_model.lock().unwrap().clone(),
+        ]
+    }
+
     fn current(&self) -> String {
         self.request_model
             .lock()
@@ -277,11 +290,6 @@ impl RecordingRewrite {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
-    }
-
-    pub(crate) fn without_path(mut self) -> Self {
-        self.path_exists = false;
-        self
     }
 
     pub(crate) fn failing_serialization(mut self) -> Self {
@@ -372,4 +380,25 @@ impl Access {
             max_recurse_depth: self.depth,
         }
     }
+}
+
+pub(crate) async fn key_check(
+    limiter: &ScriptedKeyLimiter,
+    key: &UserAPIKeyAuth,
+    request: &mut RecordingRewrite,
+    access: &Access,
+    request_model: Option<&str>,
+) -> Result<(), KeyBudgetError> {
+    check_key_budget_fallback(
+        KeyBudgetCall {
+            limiter,
+            token: key,
+            model_name: "gpt-4",
+            request_model,
+        },
+        request,
+        &access.context(),
+        None,
+    )
+    .await
 }

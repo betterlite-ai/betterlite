@@ -27,7 +27,7 @@ pub trait ProxyBudgetRows: Send + Sync {
 }
 
 pub type GlobalSpendResult =
-    Result<Option<Decimal>, CoordinatorError<BackendError, SpendReadError>>;
+    Result<Option<Decimal>, Box<CoordinatorError<BackendError, SpendReadError>>>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProxyBudgetAlert {
@@ -77,10 +77,10 @@ async fn fetch(fetcher: &GlobalSpendFetcher) -> GlobalSpendResult {
         let spend = bounded_db_lookup(lookup, request, tasks)
             .await
             .map_err(SpendReadError::Deadline)??;
-        Ok(match spend {
-            Some(amount) => CacheValue::Text(amount.to_string()),
-            None => CacheValue::Null,
-        })
+        Ok::<_, SpendReadError>(spend.map_or_else(
+            || CacheValue::Null,
+            |amount| CacheValue::Text(amount.to_string()),
+        ))
     };
     let cache = CachePort(fetcher.cache.as_ref());
     let cached = fetcher
@@ -93,11 +93,11 @@ async fn fetch(fetcher: &GlobalSpendFetcher) -> GlobalSpendResult {
 // get_global_proxy_spend: no database or no positive ceiling reads nothing, and a null row schedules no alert
 pub async fn get_global_proxy_spend(
     max_budget: Decimal,
-    fetcher: Option<&GlobalSpendFetcher>,
+    source: Option<&GlobalSpendFetcher>,
     admin_name: &str,
     token: &str,
 ) -> GlobalSpendResult {
-    let Some(fetcher) = fetcher else {
+    let Some(fetcher) = source else {
         return Ok(None);
     };
     if max_budget <= Decimal::ZERO {
@@ -139,8 +139,8 @@ impl AsyncCacheProtocol for CachePort<'_> {
 fn stored_spend(value: &CacheValue) -> Option<Decimal> {
     match value {
         CacheValue::Text(text) => amount_from_text(text),
-        CacheValue::Integer(value) => Some(Decimal::from(*value)),
-        CacheValue::Float(value) => Decimal::from_f64_retain(*value),
+        CacheValue::Integer(integer) => Some(Decimal::from(*integer)),
+        CacheValue::Float(float) => Decimal::from_f64_retain(*float),
         CacheValue::Credential(_)
         | CacheValue::Bytes(_)
         | CacheValue::Null

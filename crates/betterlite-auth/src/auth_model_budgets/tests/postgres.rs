@@ -4,7 +4,6 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use betterlite_cache::coordinator::EventDrivenCacheCoordinator;
-use betterlite_config::sections::auth_model_budgets::Settings;
 use betterlite_db::database_failures::gate::{DbLookupStallTracker, SystemClock};
 use betterlite_db::database_replica::availability::Availability;
 use betterlite_db::migration_ledger::baseline::{PACKAGED_CATALOGS, catalog_statements};
@@ -29,8 +28,7 @@ struct Environment {
     url: Option<String>,
 }
 
-#[tokio::test]
-async fn postgres_spend_missing_zero_and_user_no_upsert() {
+async fn database() -> (PostgresFixture, Pool) {
     let url = Environment::parse_from(["model-budget-tests"])
         .url
         .map(SecretString::from);
@@ -43,31 +41,30 @@ async fn postgres_spend_missing_zero_and_user_no_upsert() {
         .max_size(4)
         .build()
         .unwrap();
-    let store = PostgresStore {
-        pool: Some(pool.clone()),
-    };
-    let tracker = Arc::new(DbLookupStallTracker {
-        clock: SystemClock,
-        last_hit: Mutex::new(None),
-    });
-    let alerts = Arc::new(Alerts::default());
-    let fetcher = GlobalSpendFetcher {
+    (fixture, pool)
+}
+
+fn spend_fetcher(store: &PostgresStore, alerts: &Arc<Alerts>) -> GlobalSpendFetcher {
+    GlobalSpendFetcher {
         rows: Arc::new(store.clone()),
         cache: Arc::new(FakeCache::default()),
         coordinator: EventDrivenCacheCoordinator::new(
             "[GLOBAL SPEND]".to_owned(),
             Duration::from_secs(5),
         ),
-        tracker: Arc::clone(&tracker),
+        tracker: Arc::new(DbLookupStallTracker {
+            clock: SystemClock,
+            last_hit: Mutex::new(None),
+        }),
         tasks: TaskTracker::new(),
         default_deadline_seconds: 5.0,
-        alerts: Arc::<Alerts>::clone(&alerts),
-    };
-    let settings = Settings {
-        max_budget: Decimal::ONE,
-    };
+        alerts: Arc::<Alerts>::clone(alerts),
+    }
+}
+
+async fn check_spend(fetcher: &GlobalSpendFetcher, store: &PostgresStore, alerts: &Alerts) {
     assert_eq!(
-        get_global_proxy_spend(settings.max_budget, Some(&fetcher), "admin", "token")
+        get_global_proxy_spend(Decimal::ONE, Some(fetcher), "admin", "token")
             .await
             .unwrap(),
         None
@@ -76,25 +73,32 @@ async fn postgres_spend_missing_zero_and_user_no_upsert() {
     let client = store.session().await.unwrap();
     client.batch_execute("INSERT INTO \"LiteLLM_UserTable\" (user_id, spend, model_max_budget) VALUES ('litellm-proxy-budget', 0, '{}'), ('u1', 0, '{\"model\":3}')").await.unwrap();
     assert_eq!(
-        get_global_proxy_spend(settings.max_budget, Some(&fetcher), "admin", "token")
+        get_global_proxy_spend(Decimal::ONE, Some(fetcher), "admin", "token")
             .await
             .unwrap(),
         Some(Decimal::ZERO)
     );
     assert_eq!(alerts.scheduled.lock().unwrap().len(), 1);
+}
+
+async fn check_users(store: &PostgresStore) {
     let mut lookup = Harness::default().lookup();
     lookup.store = Some(Arc::new(DatabaseUserStore {
         reader: store.clone(),
-        writer: store,
+        writer: store.clone(),
         availability: Arc::new(Availability::default()),
         default_deadline_seconds: 5.0,
-        tracker,
+        tracker: Arc::new(DbLookupStallTracker {
+            clock: SystemClock,
+            last_hit: Mutex::new(None),
+        }),
         tasks: TaskTracker::new(),
     }));
     assert_eq!(
         read_user_model_max_budget(Some(&lookup), Some("missing")).await,
         None
     );
+    let client = store.session().await.unwrap();
     let count: i64 = client
         .query_one(
             "SELECT count(*) FROM \"LiteLLM_UserTable\" WHERE user_id = 'missing'",
@@ -108,13 +112,24 @@ async fn postgres_spend_missing_zero_and_user_no_upsert() {
         .await
         .unwrap();
     assert_eq!(serde_json::to_string(&budget).unwrap(), r#"{"model":3}"#);
-    fetcher.tasks.close();
-    fetcher.tasks.wait().await;
     lookup.tasks.close();
     lookup.tasks.wait().await;
-    drop(client);
-    drop(lookup);
+}
+
+#[tokio::test]
+async fn postgres_spend_missing_zero_and_user_no_upsert() {
+    let (fixture, pool) = database().await;
+    let store = PostgresStore {
+        pool: Some(pool.clone()),
+    };
+    let alerts = Arc::new(Alerts::default());
+    let fetcher = spend_fetcher(&store, &alerts);
+    check_spend(&fetcher, &store, &alerts).await;
+    check_users(&store).await;
+    fetcher.tasks.close();
+    fetcher.tasks.wait().await;
     drop(fetcher);
+    drop(store);
     pool.close();
     fixture.close_async().await.unwrap();
 }

@@ -1,8 +1,11 @@
 #![cfg(test)]
 
+use axum::response::Response;
 use std::collections::BTreeMap;
+use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use tokio_util::task::TaskTracker;
 
 use async_trait::async_trait;
 use axum::Router;
@@ -322,10 +325,7 @@ async fn echo_fallback(Extension(views): Extension<BodyViews>, body: Bytes) -> B
 #[case::second(2_i32)]
 #[tokio::test]
 async fn fallback_reaches_downstream_with_all_snapshots(#[case] value: i32) {
-    let mut rule = ModelBudgetRule::default();
-    rule.auth = Some(key(r#"{"models":["gpt-4","gpt-3.5"]}"#));
-    rule.model_name = Some("gpt-4".to_owned());
-    rule.key_limiter = Some(Arc::new(FallbackKeyLimiter));
+    let mut rule = fallback_rule(r#"["gpt-4","gpt-3.5"]"#);
     rule.path_params = Some(BTreeMap::from([(
         "model".to_owned(),
         Json::Text("gpt-4".to_owned()),
@@ -350,24 +350,11 @@ async fn fallback_reaches_downstream_with_all_snapshots(#[case] value: i32) {
 #[case::denied(r#"["gpt-4"]"#, "422")]
 #[tokio::test]
 async fn booted_chat_fallback_and_denial(#[case] models: &str, #[case] status: &str) {
-    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
-    use tokio::net::{TcpListener, TcpStream};
-    use tokio::task::JoinSet;
-    use tokio::time::{Duration, timeout};
-    let rule = ModelBudgetRule {
-        auth: Some(key(&format!(r#"{{"models":{models}}}"#))),
-        models: vec!["gpt-4".to_owned()],
-        model_name: Some("gpt-4".to_owned()),
-        user_limiter: None,
-        team_limiter: None,
-        key_limiter: Some(Arc::new(FallbackKeyLimiter)),
-        global_model_aliases: BTreeMap::new(),
-        max_recurse_depth: DEFAULT_RECURSE_DEPTH,
-        path_params: Some(BTreeMap::from([(
-            "model".to_owned(),
-            Json::Text("gpt-4".to_owned()),
-        )])),
-    };
+    let mut rule = fallback_rule(models);
+    rule.path_params = Some(BTreeMap::from([(
+        "model".to_owned(),
+        Json::Text("gpt-4".to_owned()),
+    )]));
     let app = routes::router(
         state_for(&config_with_master_key()),
         Arc::new(AtomicBool::new(false)),
@@ -375,23 +362,7 @@ async fn booted_chat_fallback_and_denial(#[case] models: &str, #[case] status: &
         Router::new(),
     )
     .layer(Extension(Arc::new(rule)));
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = listener.local_addr().unwrap();
-    let mut servers = JoinSet::new();
-    servers.spawn(async move {
-        axum::serve(listener, app).await.unwrap();
-    });
-    let response = timeout(Duration::from_secs(5), async {
-        let mut connection = TcpStream::connect(address).await.unwrap();
-        let body = r#"{"model":"gpt-4"}"#;
-        let wire = format!("POST {MODEL_ROUTE} HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer {MASTER_KEY}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
-        connection.write_all(wire.as_bytes()).await.unwrap();
-        let mut answer = String::new();
-        connection.take(8192).read_to_string(&mut answer).await.unwrap();
-        answer
-    }).await.unwrap();
-    servers.abort_all();
-    while servers.join_next().await.is_some() {}
+    let response = exchange(app).await;
     assert!(
         response.starts_with(&format!("HTTP/1.1 {status} ")),
         "{response}"
@@ -484,10 +455,7 @@ async fn production_chat_sends_authorized_fallback_to_provider(
     #[case] expected_status: StatusCode,
     #[case] expected_models: Vec<&str>,
 ) {
-    use crate::server::{application as server_application, chat_setup::chat_executor};
-    use rand::{SeedableRng as _, rngs::StdRng};
     use tokio::{net::TcpListener, task::JoinSet};
-    use tokio_util::task::TaskTracker;
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let sent = Arc::new(Mutex::new(Vec::new()));
@@ -499,37 +467,8 @@ async fn production_chat_sends_authorized_fallback_to_provider(
         axum::serve(listener, provider).await.unwrap();
     });
     let tasks = TaskTracker::new();
-    let app = {
-        let source = format!(
-            "general_settings: {{master_key: {MASTER_KEY}}}\nmodel_list:\n  - {{model_name: gpt-3.5, litellm_params: {{model: openai/fallback-wire, api_key: dummy, api_base: 'http://{address}/v1'}}}}\n"
-        );
-        let loaded = config(&source);
-        let executor = chat_executor(&loaded, &BTreeMap::new(), StdRng::seed_from_u64(1)).unwrap();
-        server_application(&loaded, executor, Arc::new(AtomicBool::new(false)), &tasks).unwrap()
-    };
-    let rule = ModelBudgetRule {
-        auth: Some(key(&format!(r#"{{"models":{models}}}"#))),
-        models: vec!["gpt-4".to_owned()],
-        model_name: Some("gpt-4".to_owned()),
-        key_limiter: Some(Arc::new(FallbackKeyLimiter)),
-        user_limiter: None,
-        team_limiter: None,
-        global_model_aliases: BTreeMap::new(),
-        max_recurse_depth: DEFAULT_RECURSE_DEPTH,
-        path_params: None,
-    };
-    let request = Request::post(MODEL_ROUTE)
-        .header(header::AUTHORIZATION, format!("Bearer {MASTER_KEY}"))
-        .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(
-            r#"{"model":"gpt-4","messages":[{"role":"user","content":"hi"}]}"#,
-        ))
-        .unwrap();
-    let response = app
-        .layer(Extension(Arc::new(rule)))
-        .oneshot(request)
-        .await
-        .unwrap();
+    let app = chat_app(address, &tasks, models);
+    let response = call_chat(app).await;
     assert_eq!(response.status(), expected_status);
     if expected_status == StatusCode::OK {
         assert_eq!(
@@ -550,4 +489,63 @@ async fn production_chat_sends_authorized_fallback_to_provider(
     servers.shutdown().await;
     tasks.close();
     tasks.wait().await;
+}
+
+async fn exchange(app: Router) -> String {
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+    use tokio::net::{TcpListener, TcpStream};
+    use tokio::task::JoinSet;
+    use tokio::time::{Duration, timeout};
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let mut servers = JoinSet::new();
+    servers.spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    let response = timeout(Duration::from_secs(5), async {
+        let mut connection = TcpStream::connect(address).await.unwrap();
+        let body = r#"{"model":"gpt-4"}"#;
+        let wire = format!("POST {MODEL_ROUTE} HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer {MASTER_KEY}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+        connection.write_all(wire.as_bytes()).await.unwrap();
+        let mut answer = String::new();
+        connection.take(8192).read_to_string(&mut answer).await.unwrap();
+        answer
+    }).await.unwrap();
+    servers.abort_all();
+    while servers.join_next().await.is_some() {}
+    response
+}
+
+fn fallback_rule(models: &str) -> ModelBudgetRule {
+    ModelBudgetRule {
+        auth: Some(key(&format!(r#"{{"models":{models}}}"#))),
+        models: vec!["gpt-4".to_owned()],
+        model_name: Some("gpt-4".to_owned()),
+        key_limiter: Some(Arc::new(FallbackKeyLimiter)),
+        ..ModelBudgetRule::default()
+    }
+}
+
+fn chat_app(address: SocketAddr, tasks: &TaskTracker, models: &str) -> Router {
+    use crate::server::{application as server_application, chat_setup::chat_executor};
+    use rand::{SeedableRng as _, rngs::StdRng};
+    let source = format!(
+        "general_settings: {{master_key: {MASTER_KEY}}}\nmodel_list:\n  - {{model_name: gpt-3.5, litellm_params: {{model: openai/fallback-wire, api_key: dummy, api_base: 'http://{address}/v1'}}}}\n"
+    );
+    let loaded = config(&source);
+    let executor = chat_executor(&loaded, &BTreeMap::new(), StdRng::seed_from_u64(1)).unwrap();
+    server_application(&loaded, executor, Arc::new(AtomicBool::new(false)), tasks)
+        .unwrap()
+        .layer(Extension(Arc::new(fallback_rule(models))))
+}
+
+async fn call_chat(app: Router) -> Response {
+    let request = Request::post(MODEL_ROUTE)
+        .header(header::AUTHORIZATION, format!("Bearer {MASTER_KEY}"))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(
+            r#"{"model":"gpt-4","messages":[{"role":"user","content":"hi"}]}"#,
+        ))
+        .unwrap();
+    app.oneshot(request).await.unwrap()
 }

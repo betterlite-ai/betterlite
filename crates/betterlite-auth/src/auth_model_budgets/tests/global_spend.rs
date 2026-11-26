@@ -12,6 +12,7 @@ use betterlite_db::budget_reset_policy::cache_invalidation::GLOBAL_PROXY_SPEND_C
 use betterlite_db::database_failures::gate::{DbLookupStallTracker, SystemClock};
 use rust_decimal::Decimal;
 use tokio::sync::Semaphore;
+use tokio::time::{sleep, timeout};
 use tokio_util::task::TaskTracker;
 
 use crate::auth_model_budgets::global_spend::{
@@ -48,7 +49,7 @@ impl FakeRows {
     }
 
     async fn wait_until_started(&self) {
-        let _permit = tokio::time::timeout(Duration::from_secs(1), self.started.acquire())
+        let _permit = timeout(Duration::from_secs(1), self.started.acquire())
             .await
             .expect("the leader starts its load")
             .expect("the semaphore stays open");
@@ -68,7 +69,7 @@ impl ProxyBudgetRows for FakeRows {
                 .expect("the test releases the load");
         }
         if let Some(delay) = self.delay {
-            tokio::time::sleep(delay).await;
+            sleep(delay).await;
         }
         Ok(self.spend)
     }
@@ -166,7 +167,7 @@ async fn global_spend_singleflight() {
     assert_eq!(first.unwrap(), expected);
     assert_eq!(second.unwrap(), expected);
     assert_eq!(rows.calls.load(Ordering::SeqCst), 1);
-    let scheduled = alerts.scheduled.lock().unwrap();
+    let scheduled = alerts.scheduled.lock().unwrap().clone();
     assert_eq!(scheduled.len(), 2);
     let tokens: Vec<&str> = scheduled.iter().map(|alert| alert.token.as_str()).collect();
     assert_eq!(tokens, vec!["key-a", "key-b"]);
@@ -189,11 +190,15 @@ async fn global_spend_exact_keys_and_bound() {
         .await
         .unwrap();
     assert_eq!(spend, Some(Decimal::new(35, 1)));
-    let writes = cache.writes.lock().unwrap();
+    let writes = cache.writes.lock().unwrap().clone();
     assert_eq!(writes.len(), 1);
     assert_eq!(writes[0].0, GLOBAL_PROXY_SPEND_CACHE_KEY);
     assert_eq!(writes[0].1, CacheValue::Text("3.5".to_owned()));
-    drop(writes);
+    assert_spend_deadline(&alerts).await;
+}
+
+async fn assert_spend_deadline(alerts: &Arc<Alerts>) {
+    let settings = enabled_settings();
     // a read slower than the bound fails as a load error that names the lookup and the bound
     let slow = Arc::new(FakeRows {
         delay: Some(Duration::from_secs(5)),
@@ -203,14 +208,14 @@ async fn global_spend_exact_keys_and_bound() {
     let slow_fetcher = make_fetcher(
         Arc::clone(&slow),
         Arc::clone(&slow_cache),
-        Arc::clone(&alerts),
+        Arc::clone(alerts),
         0.05,
         Duration::from_secs(5),
     );
     let error = get_global_proxy_spend(settings.max_budget, Some(&slow_fetcher), "admin", "key")
         .await
         .unwrap_err();
-    let CoordinatorError::Load { key, source } = error else {
+    let CoordinatorError::Load { key, source } = *error else {
         panic!("a slow global spend read is a load failure");
     };
     assert_eq!(key, GLOBAL_PROXY_SPEND_CACHE_KEY);
@@ -286,9 +291,9 @@ async fn global_zero_spend_alert_payload() {
     .await
     .unwrap();
     assert_eq!(spend, Some(Decimal::ZERO));
-    let scheduled = alerts.scheduled.lock().unwrap();
+    let scheduled = alerts.scheduled.lock().unwrap().clone();
     assert_eq!(
-        *scheduled,
+        scheduled,
         vec![ProxyBudgetAlert {
             admin_name: "admin".to_owned(),
             token: "key".to_owned(),
@@ -321,7 +326,7 @@ async fn global_load_error_releases_waiters() {
     };
     let (first, second) = tokio::join!(leader, follower);
     let error = first.unwrap_err();
-    assert!(matches!(error, CoordinatorError::Load { .. }));
+    assert!(matches!(*error, CoordinatorError::Load { .. }));
     // the failed load signals its waiters instead of leaving them to time out
     assert_eq!(second.unwrap(), None);
     assert!(alerts.scheduled.lock().unwrap().is_empty());
@@ -392,7 +397,7 @@ async fn cache_backend_failure_propagates_without_alert() {
         .await
         .unwrap_err();
     assert!(matches!(
-        error,
+        *error,
         CoordinatorError::Cache {
             source: BackendError::Unsupported("failed-write"),
             ..
@@ -424,7 +429,7 @@ async fn cache_backend_read_failure_stops_database() {
     let error = get_global_proxy_spend(Decimal::TEN, Some(&fetcher), "admin", "key")
         .await
         .unwrap_err();
-    assert!(matches!(error, CoordinatorError::Cache { .. }));
+    assert!(matches!(*error, CoordinatorError::Cache { .. }));
     assert_eq!(rows.calls.load(Ordering::SeqCst), 0);
     assert!(alerts.scheduled.lock().unwrap().is_empty());
 }
