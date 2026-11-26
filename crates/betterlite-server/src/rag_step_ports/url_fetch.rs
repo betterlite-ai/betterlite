@@ -10,6 +10,7 @@ mod tests;
 pub type UrlFetch = HttpUrlFetch<SystemResolver>;
 
 // B5082's fetch, with the RAG download bound, under the user URL policy the checks read
+#[must_use]
 pub fn ssrf_checked(client: ProxiedClient, settings: &Settings) -> UrlFetch {
     UrlFetch {
         client,

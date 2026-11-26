@@ -99,18 +99,18 @@ async fn url_fetch_returns_the_bytes_filename_and_content_type() {
     let url = format!("http://{address}/files/report.pdf");
     let state = ingestion_state(ssrf_checked(client(), &settings(true, &["127.0.0.1"])));
     let reply = b"HTTP/1.1 200 OK\r\nContent-Type: application/pdf; charset=binary\r\nContent-Length: 5\r\nConnection: close\r\n\r\nhello";
-    let (uploaded, ()) = tokio::join!(
+    let (result, ()) = tokio::join!(
         state.upload(None, Some(&url), None),
         serve_once(listener, reply)
     );
-    let uploaded = uploaded.expect("the upload succeeds");
-    assert_eq!(uploaded.filename.as_deref(), Some("report.pdf"));
-    assert_eq!(uploaded.file_content.as_deref(), Some(b"hello".as_slice()));
+    let file = result.expect("the upload succeeds");
+    assert_eq!(file.filename.as_deref(), Some("report.pdf"));
+    assert_eq!(file.file_content.as_deref(), Some(b"hello".as_slice()));
     assert_eq!(
-        uploaded.content_type.as_deref(),
+        file.content_type.as_deref(),
         Some("application/pdf; charset=binary")
     );
-    assert!(uploaded.existing_file_id.is_none());
+    assert!(file.existing_file_id.is_none());
 }
 
 #[tokio::test]
@@ -139,8 +139,8 @@ async fn url_fetch_skips_the_ssrf_check_when_the_policy_turns_validation_off() {
     let url = format!("http://{address}/plain.txt");
     let port = ssrf_checked(client(), &settings(false, &[]));
     let reply = b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: close\r\n\r\nlocal";
-    let (fetched, ()) = tokio::join!(port.fetch(&url), serve_once(listener, reply));
-    let fetched = fetched.expect("the unvalidated fetch reaches the local listener");
-    assert_eq!(fetched.status, 200);
-    assert_eq!(fetched.body, b"local");
+    let (answer, ()) = tokio::join!(port.fetch(&url), serve_once(listener, reply));
+    let response = answer.expect("the unvalidated fetch reaches the local listener");
+    assert_eq!(response.status, 200);
+    assert_eq!(response.body, b"local");
 }
