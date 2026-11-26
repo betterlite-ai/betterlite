@@ -4,7 +4,9 @@ use std::iter::once;
 use betterlite_config::sections::Section as _;
 use betterlite_config::sections::includes::ConfigMap;
 use betterlite_config::sections::secret_manager_bootstrap::Raw as BootstrapRaw;
-use betterlite_config::sections::settings::{DbRow, JsonValue, Section, SettingsStore};
+use betterlite_config::sections::settings::{
+    DbRow, FieldSource, JsonValue, Section, SettingsStore,
+};
 use betterlite_secret_managers::secret_lookup::SecretLookup;
 use betterlite_server::proxy_config_state::snapshot::ConfigWithBaseline;
 
@@ -14,6 +16,7 @@ use super::environ::{
 use super::error::OverlayError;
 use super::pass_through::endpoints_beside_db;
 use super::rows::apply_db_rows;
+use super::scrub::{DbOwnedValues, scrub_resolved_db_values};
 use super::source::ConfigSource;
 use super::state::{
     OverlayDatabase, OverlayState, PASS_THROUGH_ENDPOINTS, STORE_SECTIONS, settings_mapping,
@@ -25,6 +28,7 @@ const GENERAL_SETTINGS: &str = "general_settings";
 pub struct PendingReload {
     config: ConfigMap,
     lookup: SecretLookup,
+    owned: Vec<(Section, DbOwnedValues)>,
 }
 
 // _load_yaml_settings_stores: every store takes the file values, and the serving pass-through list stays
@@ -75,9 +79,14 @@ pub fn prepare_reload(
     env: &BTreeMap<String, String>,
 ) -> Result<PendingReload, OverlayError> {
     let config = resolved_config(state, file_config);
+    let owned = db_owned_values(state);
     initialize_secret_manager(state, &config, source, env)?;
     let lookup = owned_secret_lookup(&state.secrets.lookup);
-    Ok(PendingReload { config, lookup })
+    Ok(PendingReload {
+        config,
+        lookup,
+        owned,
+    })
 }
 
 // _check_for_os_environ_vars, off the runtime since a manager read blocks and the lookup is already owned
@@ -86,8 +95,12 @@ pub async fn resolve_reload(
     environment: BTreeMap<String, String>,
     workers: &Workers,
 ) -> Result<ResolvedConfig, OverlayError> {
-    let PendingReload { config, lookup } = pending;
-    off_runtime(workers, move || {
+    let PendingReload {
+        config,
+        lookup,
+        owned,
+    } = pending;
+    let resolved = off_runtime(workers, move || {
         let mut values = config;
         let outcome = Resolver {
             lookup: &lookup,
@@ -96,7 +109,10 @@ pub async fn resolve_reload(
         .resolve_entries(values.values_mut(), 0);
         outcome.map(|()| (values, lookup.oidc_cache))
     })
-    .await?
+    .await?;
+    let (mut values, oidc_cache) = resolved?;
+    scrub_resolved_db_values(&mut values, &owned);
+    Ok((values, oidc_cache))
 }
 
 pub fn finish_reload(state: &mut OverlayState, resolved: ResolvedConfig) -> ConfigWithBaseline {
@@ -146,6 +162,34 @@ fn resolved_config(state: &OverlayState, file_config: &ConfigMap) -> ConfigMap {
         config.insert(section.name().to_owned(), resolved);
     }
     config
+}
+
+// which values a resolved section still takes from a database row, so the scrub covers them again once their references resolve
+fn db_owned_values(state: &OverlayState) -> Vec<(Section, DbOwnedValues)> {
+    let mut owned = Vec::new();
+    for section in STORE_SECTIONS {
+        let Some(store) = state.config.settings_store(section) else {
+            continue;
+        };
+        let keys: Vec<String> = store
+            .iter()
+            .filter(|(key, _)| *key != PASS_THROUGH_ENDPOINTS)
+            .filter(|(key, _)| store.resolution(*key).source() == FieldSource::Db)
+            .map(|(key, _)| key.to_owned())
+            .collect();
+        let pass_through_entries = store
+            .db_value(PASS_THROUGH_ENDPOINTS)
+            .and_then(JsonValue::as_array)
+            .map_or(0, Vec::len);
+        owned.push((
+            section,
+            DbOwnedValues {
+                keys,
+                pass_through_entries,
+            },
+        ));
+    }
+    owned
 }
 
 // _initialize_secret_manager_from_raw_config: the manager comes up before the references it may hold are resolved
