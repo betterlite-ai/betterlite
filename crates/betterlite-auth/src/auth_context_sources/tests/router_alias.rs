@@ -14,6 +14,8 @@ const MARKED_ONLY: RouterAliasRewrite = RouterAliasRewrite {
     client_requested_model: None,
     target: None,
 };
+const SAME_ALIAS: AliasResolver = |_, requested| Some(requested.to_owned());
+const NO_ALIAS: AliasResolver = |_, _| None;
 
 fn input(settings: Option<&Json>) -> RouterAliasInput<'_> {
     RouterAliasInput {
@@ -121,8 +123,8 @@ async fn nonjson_not_rewritten() {
 }
 
 #[rstest]
-#[case::same_name(|_, requested| Some(requested.to_owned()))]
-#[case::no_target(|_, _| None)]
+#[case::same_name(SAME_ALIAS)]
+#[case::no_target(NO_ALIAS)]
 #[tokio::test]
 async fn alias_self_none_unchanged(#[case] resolve: AliasResolver) {
     let settings = json(ALIASES);
