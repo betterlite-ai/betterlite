@@ -46,7 +46,7 @@ pub async fn get_and_validate_existing_key(
             },
         });
     };
-    decode_key(None, row.0.clone()).await
+    decode_key(None, row.clone()).await
 }
 
 // the identifier the read starts from: a token is one unique row, an alias asks for two

@@ -119,7 +119,11 @@ impl KeyReassignmentError {
             Self::AliasNotFound { .. } => (ProxyErrorTypes::NotFoundError, "key_alias", 404),
             Self::AliasAmbiguous { .. } => (ProxyErrorTypes::BadRequestError, "key_alias", 400),
             Self::MissingKeyIdentifier => (ProxyErrorTypes::BadRequestError, "key", 400),
-            Self::KeyTable(_)
+            // the three delegated variants already returned; naming them keeps the match exhaustive
+            Self::KeyPatch(_)
+            | Self::TeamAccess(_)
+            | Self::ModelAccess(_)
+            | Self::KeyTable(_)
             | Self::KeyQuery(_)
             | Self::KeyDecode(_)
             | Self::ObjectPermission(_)
