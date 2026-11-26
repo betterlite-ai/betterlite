@@ -8,6 +8,7 @@ use async_trait::async_trait;
 use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::http::{HeaderMap, HeaderName, Method, Request, StatusCode};
+use axum::response::Response;
 use betterlite_config::sections::aiohttp_transport_toggle::Settings as AiohttpSettings;
 use betterlite_config::sections::env_credential_login::Settings as EnvLoginSettings;
 use betterlite_config::sections::health_readiness::Settings as HealthSettings;
@@ -362,6 +363,19 @@ pub(crate) async fn send(
         .await
         .expect("the body is readable");
     (status, headers, body.to_vec())
+}
+
+// the response is returned unread, so a body-held in-flight guard is still counting
+pub(crate) async fn send_unread(router: &Router, method: Method, path: &str) -> Response {
+    let request = Request::builder()
+        .method(method)
+        .uri(path)
+        .body(Body::empty())
+        .expect("the request builds");
+    Router::clone(router)
+        .oneshot(request)
+        .await
+        .expect("the router answers")
 }
 
 pub(crate) fn parse<Parsed: DeserializeOwned>(body: &[u8]) -> Parsed {

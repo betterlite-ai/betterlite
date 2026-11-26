@@ -47,7 +47,8 @@ async fn db_connected_is_cached_for_fifteen_seconds() {
     let cached = fixture.db.check().await;
     assert_eq!(cached.status, DbStatus::Connected);
     assert_eq!(fixture.probe.health_calls.load(Ordering::Acquire), 1);
-    advance(Duration::from_millis(200)).await;
+    // exactly fifteen seconds old is no longer cacheable, as LiteLLM's strict comparison says
+    advance(Duration::from_millis(100)).await;
     let expired = fixture.db.check().await;
     assert_eq!(expired.status, DbStatus::Disconnected);
     assert_eq!(fixture.probe.health_calls.load(Ordering::Acquire), 2);

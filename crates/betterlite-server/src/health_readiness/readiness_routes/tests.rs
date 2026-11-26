@@ -10,21 +10,27 @@ use axum::http::{Method, StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::Response;
 use axum::routing::get;
+use betterlite_config::sections::admission_control::{Limits, Settings as AdmissionSettings};
 use betterlite_db::database_availability::policy::AllowRequestsOnOutage;
 use betterlite_db::database_faults::ErrorType;
+use betterlite_prometheus::collector_registry::CollectorRegistry;
 use rstest::rstest;
 use secrecy::SecretString;
 use serde::Deserialize;
 use tokio::time::sleep;
 
 use super::AdmissionCounters;
+use crate::admission_control::in_flight::InFlightRequests;
+use crate::admission_control::{AdmissionControl, AdmissionStack};
 use crate::auth::authenticate;
 use crate::auth::failures::stage_failure_response;
 use crate::auth::route_match::stage;
 use crate::health_readiness::callback_listing::CallbackNames;
+use crate::health_readiness::readiness_routes::AdmissionCounter;
+use crate::health_readiness::shutdown_state::InFlightCounter;
 use crate::health_readiness::tests::support::{
     FakeAdmission, FakeCallbacks, FakeInFlight, FakeProbe, FakeStall, ProbeAnswer, World,
-    header_text, parse, send,
+    header_text, parse, send, send_unread,
 };
 
 #[derive(Debug, Deserialize)]
@@ -560,4 +566,43 @@ async fn public_unlisted_route_is_not_admitted() {
     assert_eq!(status, StatusCode::NOT_FOUND);
     let parsed: DetailBody = parse(&body);
     assert_eq!(parsed.detail, "Not Found");
+}
+
+fn admission_stack(limits: Option<Limits>) -> AdmissionStack {
+    let registry = Arc::new(CollectorRegistry::default());
+    let settings = AdmissionSettings { limits };
+    AdmissionStack {
+        admission: Arc::new(AdmissionControl::from_settings(
+            &settings,
+            Arc::clone(&registry),
+        )),
+        in_flight: Arc::new(InFlightRequests::new(registry)),
+    }
+}
+
+#[tokio::test]
+async fn backlog_counts_the_real_admission_stats() {
+    let stack = admission_stack(Some(Limits {
+        max_in_flight_requests: 0,
+        max_queued_requests: 0,
+        queue_timeout: Duration::ZERO,
+    }));
+    let router = stack.wrap(Router::new().route("/probe", get(reached)));
+    let (status, _, _) = send(&router, Method::GET, "/probe", None).await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    let counters = stack.admission.counters();
+    assert_eq!(counters.admitted, 0);
+    assert_eq!(counters.queued, 0);
+    assert_eq!(counters.rejected, 1);
+}
+
+#[tokio::test]
+async fn shutdown_counts_real_in_flight_requests() {
+    let stack = admission_stack(None);
+    let router = stack.wrap(Router::new().route("/probe", get(reached)));
+    let response = send_unread(&router, Method::GET, "/probe").await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(stack.in_flight.in_flight_requests(), 1);
+    drop(response);
+    assert_eq!(stack.in_flight.in_flight_requests(), 0);
 }
