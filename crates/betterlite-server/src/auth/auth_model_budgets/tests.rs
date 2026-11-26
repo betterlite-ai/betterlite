@@ -317,8 +317,11 @@ async fn echo_fallback(Extension(views): Extension<BodyViews>, body: Bytes) -> B
     body
 }
 
+#[rstest::rstest]
+#[case::first(1_i32)]
+#[case::second(2_i32)]
 #[tokio::test]
-async fn fallback_reaches_downstream_with_all_snapshots() {
+async fn fallback_reaches_downstream_with_all_snapshots(#[case] value: i32) {
     let mut rule = ModelBudgetRule::default();
     rule.auth = Some(key(r#"{"models":["gpt-4","gpt-3.5"]}"#));
     rule.model_name = Some("gpt-4".to_owned());
@@ -334,74 +337,73 @@ async fn fallback_reaches_downstream_with_all_snapshots() {
         Router::new(),
     )
     .layer(Extension(Arc::new(rule)));
-    for value in [1_i32, 2_i32] {
-        let mut request = request_to(&Arc::new(AtomicBool::new(false)));
-        *request.body_mut() = Body::from(format!(r#"{{"model":"gpt-4","value":{value}}}"#));
-        let response = app.clone().oneshot(request).await.unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-        let bytes = to_bytes(response.into_body(), 4096).await.unwrap();
-        assert_eq!(bytes, format!(r#"{{"model":"gpt-3.5","value":{value}}}"#));
-    }
+    let mut request = request_to(&Arc::new(AtomicBool::new(false)));
+    *request.body_mut() = Body::from(format!(r#"{{"model":"gpt-4","value":{value}}}"#));
+    let response = app.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = to_bytes(response.into_body(), 4096).await.unwrap();
+    assert_eq!(bytes, format!(r#"{{"model":"gpt-3.5","value":{value}}}"#));
 }
 
+#[rstest::rstest]
+#[case::allowed(r#"["gpt-4","gpt-3.5"]"#, "200")]
+#[case::denied(r#"["gpt-4"]"#, "422")]
 #[tokio::test]
-async fn booted_chat_fallback_and_denial() {
+async fn booted_chat_fallback_and_denial(#[case] models: &str, #[case] status: &str) {
     use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
     use tokio::net::{TcpListener, TcpStream};
     use tokio::task::JoinSet;
     use tokio::time::{Duration, timeout};
-    for (models, status) in [(r#"["gpt-4","gpt-3.5"]"#, "200"), (r#"["gpt-4"]"#, "422")] {
-        let rule = ModelBudgetRule {
-            auth: Some(key(&format!(r#"{{"models":{models}}}"#))),
-            models: vec!["gpt-4".to_owned()],
-            model_name: Some("gpt-4".to_owned()),
-            user_limiter: None,
-            team_limiter: None,
-            key_limiter: Some(Arc::new(FallbackKeyLimiter)),
-            global_model_aliases: BTreeMap::new(),
-            max_recurse_depth: DEFAULT_RECURSE_DEPTH,
-            path_params: Some(BTreeMap::from([(
-                "model".to_owned(),
-                Json::Text("gpt-4".to_owned()),
-            )])),
-        };
-        let app = routes::router(
-            state_for(&config_with_master_key()),
-            Arc::new(AtomicBool::new(false)),
-            Router::new().route(MODEL_ROUTE, post(echo_fallback)),
-            Router::new(),
-        )
-        .layer(Extension(Arc::new(rule)));
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        let mut servers = JoinSet::new();
-        servers.spawn(async move {
-            axum::serve(listener, app).await.unwrap();
-        });
-        let response = timeout(Duration::from_secs(5), async {
-            let mut connection = TcpStream::connect(address).await.unwrap();
-            let body = r#"{"model":"gpt-4"}"#;
-            let wire = format!("POST {MODEL_ROUTE} HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer {MASTER_KEY}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
-            connection.write_all(wire.as_bytes()).await.unwrap();
-            let mut answer = String::new();
-            connection.take(8192).read_to_string(&mut answer).await.unwrap();
-            answer
-        }).await.unwrap();
-        servers.abort_all();
-        while servers.join_next().await.is_some() {}
+    let rule = ModelBudgetRule {
+        auth: Some(key(&format!(r#"{{"models":{models}}}"#))),
+        models: vec!["gpt-4".to_owned()],
+        model_name: Some("gpt-4".to_owned()),
+        user_limiter: None,
+        team_limiter: None,
+        key_limiter: Some(Arc::new(FallbackKeyLimiter)),
+        global_model_aliases: BTreeMap::new(),
+        max_recurse_depth: DEFAULT_RECURSE_DEPTH,
+        path_params: Some(BTreeMap::from([(
+            "model".to_owned(),
+            Json::Text("gpt-4".to_owned()),
+        )])),
+    };
+    let app = routes::router(
+        state_for(&config_with_master_key()),
+        Arc::new(AtomicBool::new(false)),
+        Router::new().route(MODEL_ROUTE, post(echo_fallback)),
+        Router::new(),
+    )
+    .layer(Extension(Arc::new(rule)));
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let mut servers = JoinSet::new();
+    servers.spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    let response = timeout(Duration::from_secs(5), async {
+        let mut connection = TcpStream::connect(address).await.unwrap();
+        let body = r#"{"model":"gpt-4"}"#;
+        let wire = format!("POST {MODEL_ROUTE} HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer {MASTER_KEY}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+        connection.write_all(wire.as_bytes()).await.unwrap();
+        let mut answer = String::new();
+        connection.take(8192).read_to_string(&mut answer).await.unwrap();
+        answer
+    }).await.unwrap();
+    servers.abort_all();
+    while servers.join_next().await.is_some() {}
+    assert!(
+        response.starts_with(&format!("HTTP/1.1 {status} ")),
+        "{response}"
+    );
+    if status == "200" {
+        assert!(response.ends_with(r#"{"model":"gpt-3.5"}"#), "{response}");
+    } else {
         assert!(
-            response.starts_with(&format!("HTTP/1.1 {status} ")),
+            response.contains(r#""type":"budget_exceeded""#),
             "{response}"
         );
-        if status == "200" {
-            assert!(response.ends_with(r#"{"model":"gpt-3.5"}"#), "{response}");
-        } else {
-            assert!(
-                response.contains(r#""type":"budget_exceeded""#),
-                "{response}"
-            );
-            assert!(!response.contains("gpt-3.5"), "{response}");
-        }
+        assert!(!response.contains("gpt-3.5"), "{response}");
     }
 }
 
@@ -473,8 +475,15 @@ async fn mock_provider(
     r#"{"id":"c1","object":"chat.completion","created":7,"model":"fallback-wire","choices":[{"index":0,"message":{"role":"assistant","content":"hello"},"finish_reason":"stop"}]}"#
 }
 
+#[rstest::rstest]
+#[case::allowed(r#"["gpt-4","gpt-3.5"]"#, StatusCode::OK, vec!["fallback-wire"])]
+#[case::denied(r#"["gpt-4"]"#, StatusCode::UNPROCESSABLE_ENTITY, vec![])]
 #[tokio::test]
-async fn production_chat_sends_authorized_fallback_to_provider() {
+async fn production_chat_sends_authorized_fallback_to_provider(
+    #[case] models: &str,
+    #[case] expected_status: StatusCode,
+    #[case] expected_models: Vec<&str>,
+) {
     use crate::server::{application as server_application, chat_setup::chat_executor};
     use rand::{SeedableRng as _, rngs::StdRng};
     use tokio::{net::TcpListener, task::JoinSet};
@@ -490,59 +499,54 @@ async fn production_chat_sends_authorized_fallback_to_provider() {
         axum::serve(listener, provider).await.unwrap();
     });
     let tasks = TaskTracker::new();
-    for (models, expected_status) in [
-        (r#"["gpt-4","gpt-3.5"]"#, StatusCode::OK),
-        (r#"["gpt-4"]"#, StatusCode::UNPROCESSABLE_ENTITY),
-    ] {
-        let app = {
-            let source = format!(
-                "general_settings: {{master_key: {MASTER_KEY}}}\nmodel_list:\n  - {{model_name: gpt-3.5, litellm_params: {{model: openai/fallback-wire, api_key: dummy, api_base: 'http://{address}/v1'}}}}\n"
-            );
-            let loaded = config(&source);
-            let executor =
-                chat_executor(&loaded, &BTreeMap::new(), StdRng::seed_from_u64(1)).unwrap();
-            server_application(&loaded, executor, Arc::new(AtomicBool::new(false)), &tasks).unwrap()
-        };
-        let rule = ModelBudgetRule {
-            auth: Some(key(&format!(r#"{{"models":{models}}}"#))),
-            models: vec!["gpt-4".to_owned()],
-            model_name: Some("gpt-4".to_owned()),
-            key_limiter: Some(Arc::new(FallbackKeyLimiter)),
-            user_limiter: None,
-            team_limiter: None,
-            global_model_aliases: BTreeMap::new(),
-            max_recurse_depth: DEFAULT_RECURSE_DEPTH,
-            path_params: None,
-        };
-        let request = Request::post(MODEL_ROUTE)
-            .header(header::AUTHORIZATION, format!("Bearer {MASTER_KEY}"))
-            .header(header::CONTENT_TYPE, "application/json")
-            .body(Body::from(
-                r#"{"model":"gpt-4","messages":[{"role":"user","content":"hi"}]}"#,
-            ))
-            .unwrap();
-        let response = app
-            .layer(Extension(Arc::new(rule)))
-            .oneshot(request)
-            .await
-            .unwrap();
-        assert_eq!(response.status(), expected_status);
-        if expected_status == StatusCode::OK {
-            assert_eq!(
-                response.headers().get("x-litellm-model-group").unwrap(),
-                "gpt-3.5"
-            );
-        }
-        let bytes = to_bytes(response.into_body(), 8192).await.unwrap();
-        if expected_status == StatusCode::UNPROCESSABLE_ENTITY {
-            assert!(
-                String::from_utf8(bytes.to_vec())
-                    .unwrap()
-                    .contains("budget_exceeded")
-            );
-        }
-        assert_eq!(*sent.lock().unwrap(), ["fallback-wire"]);
+    let app = {
+        let source = format!(
+            "general_settings: {{master_key: {MASTER_KEY}}}\nmodel_list:\n  - {{model_name: gpt-3.5, litellm_params: {{model: openai/fallback-wire, api_key: dummy, api_base: 'http://{address}/v1'}}}}\n"
+        );
+        let loaded = config(&source);
+        let executor = chat_executor(&loaded, &BTreeMap::new(), StdRng::seed_from_u64(1)).unwrap();
+        server_application(&loaded, executor, Arc::new(AtomicBool::new(false)), &tasks).unwrap()
+    };
+    let rule = ModelBudgetRule {
+        auth: Some(key(&format!(r#"{{"models":{models}}}"#))),
+        models: vec!["gpt-4".to_owned()],
+        model_name: Some("gpt-4".to_owned()),
+        key_limiter: Some(Arc::new(FallbackKeyLimiter)),
+        user_limiter: None,
+        team_limiter: None,
+        global_model_aliases: BTreeMap::new(),
+        max_recurse_depth: DEFAULT_RECURSE_DEPTH,
+        path_params: None,
+    };
+    let request = Request::post(MODEL_ROUTE)
+        .header(header::AUTHORIZATION, format!("Bearer {MASTER_KEY}"))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(
+            r#"{"model":"gpt-4","messages":[{"role":"user","content":"hi"}]}"#,
+        ))
+        .unwrap();
+    let response = app
+        .layer(Extension(Arc::new(rule)))
+        .oneshot(request)
+        .await
+        .unwrap();
+    assert_eq!(response.status(), expected_status);
+    if expected_status == StatusCode::OK {
+        assert_eq!(
+            response.headers().get("x-litellm-model-group").unwrap(),
+            "gpt-3.5"
+        );
     }
+    let bytes = to_bytes(response.into_body(), 8192).await.unwrap();
+    if expected_status == StatusCode::UNPROCESSABLE_ENTITY {
+        assert!(
+            String::from_utf8(bytes.to_vec())
+                .unwrap()
+                .contains("budget_exceeded")
+        );
+    }
+    assert_eq!(*sent.lock().unwrap(), expected_models);
+
     servers.shutdown().await;
     tasks.close();
     tasks.wait().await;

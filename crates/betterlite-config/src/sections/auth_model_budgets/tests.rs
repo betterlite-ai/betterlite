@@ -2,11 +2,11 @@
 
 use async_trait::async_trait;
 use betterlite_auth::auth_model_budgets::global_spend::{
-    GlobalSpendCache, GlobalSpendCacheError, GlobalSpendFetcher, ProxyBudgetAlert,
-    ProxyBudgetAlertSink, ProxyBudgetRows, get_global_proxy_spend,
+    GlobalSpendFetcher, ProxyBudgetAlert, ProxyBudgetAlertSink, ProxyBudgetRows,
+    get_global_proxy_spend,
 };
 use betterlite_auth::auth_model_budgets::rows::SpendReadError;
-use betterlite_cache::backend::Ttl;
+use betterlite_cache::backend::{BackendError, CacheBackend, Ttl};
 use betterlite_cache::coordinator::EventDrivenCacheCoordinator;
 use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_db::database_failures::gate::{DbLookupStallTracker, SystemClock};
@@ -111,11 +111,11 @@ impl ProxyBudgetRows for Reads {
 }
 
 #[async_trait]
-impl GlobalSpendCache for Reads {
-    async fn async_get_cache(
-        &self,
-        _key: &str,
-    ) -> Result<Option<CacheValue>, GlobalSpendCacheError> {
+impl CacheBackend for Reads {
+    fn default_ttl(&self) -> i64 {
+        60
+    }
+    async fn async_get_cache(&self, _key: &str) -> Result<Option<CacheValue>, BackendError> {
         Ok(None)
     }
     async fn async_set_cache(
@@ -123,7 +123,7 @@ impl GlobalSpendCache for Reads {
         _key: &str,
         _value: CacheValue,
         _ttl: Ttl,
-    ) -> Result<(), GlobalSpendCacheError> {
+    ) -> Result<(), BackendError> {
         Ok(())
     }
 }
@@ -161,19 +161,17 @@ async fn observed_reads(settings: Settings) -> usize {
     reads.0.load(Ordering::Relaxed)
 }
 
+#[rstest]
+#[case::null("litellm_settings:\n  max_budget: null", vec![])]
+#[case::empty_env("litellm_settings:\n  max_budget: os.environ/BUDGET", vec![("BUDGET", "")])]
 #[tokio::test]
-async fn max_budget_null_and_empty_env_default() {
-    for (source, variables) in [
-        ("litellm_settings:\n  max_budget: null", vec![]),
-        (
-            "litellm_settings:\n  max_budget: os.environ/BUDGET",
-            vec![("BUDGET", "")],
-        ),
-    ] {
-        let settings = load(source, &variables).unwrap();
-        assert_eq!(settings.max_budget, Decimal::ZERO);
-        assert_eq!(observed_reads(settings).await, 0);
-    }
+async fn max_budget_null_and_empty_env_default(
+    #[case] source: &str,
+    #[case] variables: Vec<(&str, &str)>,
+) {
+    let settings = load(source, &variables).unwrap();
+    assert_eq!(settings.max_budget, Decimal::ZERO);
+    assert_eq!(observed_reads(settings).await, 0);
 }
 
 #[test]

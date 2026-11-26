@@ -7,8 +7,7 @@ use super::support::Failure;
 use async_trait::async_trait;
 use betterlite_auth::auth_model_budgets::checks::ModelMaxBudget;
 use betterlite_auth::auth_model_budgets::global_spend::{
-    GlobalSpendCache, GlobalSpendCacheError, ProxyBudgetAlert, ProxyBudgetAlertSink,
-    ProxyBudgetRows,
+    ProxyBudgetAlert, ProxyBudgetAlertSink, ProxyBudgetRows,
 };
 use betterlite_auth::auth_model_budgets::limits::{
     KeyModelBudgetLimiter, TeamModelBudgetLimiter, UserModelBudgetLimiter,
@@ -16,7 +15,7 @@ use betterlite_auth::auth_model_budgets::limits::{
 use betterlite_auth::auth_model_budgets::request_views::{ModelRewrite, RewriteFailure};
 use betterlite_auth::auth_model_budgets::rows::SpendReadError;
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
-use betterlite_cache::backend::Ttl;
+use betterlite_cache::backend::{BackendError, CacheBackend, Ttl};
 use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_error::error::ErrorClass;
@@ -259,11 +258,11 @@ pub(super) struct SpendCache {
 }
 
 #[async_trait]
-impl GlobalSpendCache for SpendCache {
-    async fn async_get_cache(
-        &self,
-        _key: &str,
-    ) -> Result<Option<CacheValue>, GlobalSpendCacheError> {
+impl CacheBackend for SpendCache {
+    fn default_ttl(&self) -> i64 {
+        60
+    }
+    async fn async_get_cache(&self, _key: &str) -> Result<Option<CacheValue>, BackendError> {
         Ok(self
             .stored
             .lock()
@@ -276,7 +275,7 @@ impl GlobalSpendCache for SpendCache {
         _key: &str,
         value: CacheValue,
         _ttl: Ttl,
-    ) -> Result<(), GlobalSpendCacheError> {
+    ) -> Result<(), BackendError> {
         *self.stored.lock().unwrap_or_else(PoisonError::into_inner) = Some(value);
         Ok(())
     }

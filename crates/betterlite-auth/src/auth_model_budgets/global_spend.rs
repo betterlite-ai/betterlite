@@ -26,49 +26,8 @@ pub trait ProxyBudgetRows: Send + Sync {
     async fn find_proxy_budget(&self) -> Result<Option<Decimal>, SpendReadError>;
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum GlobalSpendCacheError {
-    #[error(transparent)]
-    Backend(#[from] BackendError),
-}
-
-#[async_trait]
-pub trait GlobalSpendCache: Send + Sync {
-    async fn async_get_cache(&self, key: &str)
-    -> Result<Option<CacheValue>, GlobalSpendCacheError>;
-
-    async fn async_set_cache(
-        &self,
-        key: &str,
-        value: CacheValue,
-        ttl: Ttl,
-    ) -> Result<(), GlobalSpendCacheError>;
-}
-
-#[async_trait]
-impl<Cache: CacheBackend> GlobalSpendCache for Cache {
-    async fn async_get_cache(
-        &self,
-        key: &str,
-    ) -> Result<Option<CacheValue>, GlobalSpendCacheError> {
-        CacheBackend::async_get_cache(self, key)
-            .await
-            .map_err(GlobalSpendCacheError::Backend)
-    }
-    async fn async_set_cache(
-        &self,
-        key: &str,
-        value: CacheValue,
-        ttl: Ttl,
-    ) -> Result<(), GlobalSpendCacheError> {
-        CacheBackend::async_set_cache(self, key, value, ttl)
-            .await
-            .map_err(GlobalSpendCacheError::Backend)
-    }
-}
-
 pub type GlobalSpendResult =
-    Result<Option<Decimal>, CoordinatorError<GlobalSpendCacheError, SpendReadError>>;
+    Result<Option<Decimal>, CoordinatorError<BackendError, SpendReadError>>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProxyBudgetAlert {
@@ -95,7 +54,7 @@ pub trait ProxyBudgetAlertSink: Send + Sync {
 
 pub struct GlobalSpendFetcher {
     pub rows: Arc<dyn ProxyBudgetRows>,
-    pub cache: Arc<dyn GlobalSpendCache>,
+    pub cache: Arc<dyn CacheBackend>,
     pub coordinator: EventDrivenCacheCoordinator,
     pub tracker: Arc<DbLookupStallTracker<SystemClock>>,
     pub tasks: TaskTracker,
@@ -157,11 +116,11 @@ pub async fn get_global_proxy_spend(
     Ok(spend)
 }
 
-struct CachePort<'cache>(&'cache dyn GlobalSpendCache);
+struct CachePort<'cache>(&'cache dyn CacheBackend);
 
 #[async_trait]
 impl AsyncCacheProtocol for CachePort<'_> {
-    type Error = GlobalSpendCacheError;
+    type Error = BackendError;
 
     async fn async_get_cache(&self, key: &str) -> Result<Option<CacheValue>, Self::Error> {
         self.0.async_get_cache(key).await

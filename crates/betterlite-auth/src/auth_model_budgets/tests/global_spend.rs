@@ -15,9 +15,8 @@ use tokio::sync::Semaphore;
 use tokio_util::task::TaskTracker;
 
 use crate::auth_model_budgets::global_spend::{
-    EventGroup, GLOBAL_SPEND_LOG_PREFIX, GlobalSpendCache, GlobalSpendCacheError,
-    GlobalSpendFetcher, ProxyBudgetAlert, ProxyBudgetAlertSink, ProxyBudgetRows,
-    get_global_proxy_spend,
+    EventGroup, GLOBAL_SPEND_LOG_PREFIX, GlobalSpendFetcher, ProxyBudgetAlert,
+    ProxyBudgetAlertSink, ProxyBudgetRows, get_global_proxy_spend,
 };
 
 struct FakeRows {
@@ -82,11 +81,11 @@ pub(super) struct FakeCache {
 }
 
 #[async_trait]
-impl GlobalSpendCache for FakeCache {
-    async fn async_get_cache(
-        &self,
-        _key: &str,
-    ) -> Result<Option<CacheValue>, GlobalSpendCacheError> {
+impl CacheBackend for FakeCache {
+    fn default_ttl(&self) -> i64 {
+        60
+    }
+    async fn async_get_cache(&self, _key: &str) -> Result<Option<CacheValue>, BackendError> {
         Ok(self.stored.lock().unwrap().clone())
     }
 
@@ -95,7 +94,7 @@ impl GlobalSpendCache for FakeCache {
         key: &str,
         value: CacheValue,
         _ttl: Ttl,
-    ) -> Result<(), GlobalSpendCacheError> {
+    ) -> Result<(), BackendError> {
         self.writes
             .lock()
             .unwrap()
@@ -329,39 +328,37 @@ async fn global_load_error_releases_waiters() {
     assert!(cache.writes.lock().unwrap().is_empty());
 }
 
+#[rstest::rstest]
+#[case::zero(CacheValue::Integer(0), Some(Decimal::ZERO))]
+#[case::float(CacheValue::Float(1.5), Some(Decimal::new(15, 1)))]
+#[case::text(CacheValue::Text("2.25".to_owned()), Some(Decimal::new(225, 2)))]
+#[case::boolean(CacheValue::Boolean(false), None)]
+#[case::invalid(CacheValue::Text("invalid".to_owned()), None)]
 #[tokio::test]
-async fn cached_numeric_spend_skips_database() {
-    for (value, expected) in [
-        (CacheValue::Integer(0), Some(Decimal::ZERO)),
-        (CacheValue::Float(1.5), Some(Decimal::new(15, 1))),
-        (
-            CacheValue::Text("2.25".to_owned()),
-            Some(Decimal::new(225, 2)),
-        ),
-        (CacheValue::Boolean(false), None),
-        (CacheValue::Text("invalid".to_owned()), None),
-    ] {
-        let rows = Arc::new(FakeRows::new(Some(Decimal::TEN)));
-        let cache = Arc::new(FakeCache::default());
-        *cache.stored.lock().unwrap() = Some(value);
-        let alerts = Arc::new(Alerts::default());
-        let fetcher = make_fetcher(
-            Arc::clone(&rows),
-            cache,
-            Arc::clone(&alerts),
-            5.0,
-            Duration::from_secs(5),
-        );
-        let spend = get_global_proxy_spend(Decimal::ONE, Some(&fetcher), "owner", "key")
-            .await
-            .unwrap();
-        assert_eq!(spend, expected);
-        assert_eq!(rows.calls.load(Ordering::SeqCst), 0);
-        assert_eq!(
-            alerts.scheduled.lock().unwrap().len(),
-            usize::from(expected.is_some())
-        );
-    }
+async fn cached_numeric_spend_skips_database(
+    #[case] value: CacheValue,
+    #[case] expected: Option<Decimal>,
+) {
+    let rows = Arc::new(FakeRows::new(Some(Decimal::TEN)));
+    let cache = Arc::new(FakeCache::default());
+    *cache.stored.lock().unwrap() = Some(value);
+    let alerts = Arc::new(Alerts::default());
+    let fetcher = make_fetcher(
+        Arc::clone(&rows),
+        cache,
+        Arc::clone(&alerts),
+        5.0,
+        Duration::from_secs(5),
+    );
+    let spend = get_global_proxy_spend(Decimal::ONE, Some(&fetcher), "owner", "key")
+        .await
+        .unwrap();
+    assert_eq!(spend, expected);
+    assert_eq!(rows.calls.load(Ordering::SeqCst), 0);
+    assert_eq!(
+        alerts.scheduled.lock().unwrap().len(),
+        usize::from(expected.is_some())
+    );
 }
 
 struct FailedWrite;
@@ -397,7 +394,7 @@ async fn cache_backend_failure_propagates_without_alert() {
     assert!(matches!(
         error,
         CoordinatorError::Cache {
-            source: GlobalSpendCacheError::Backend(BackendError::Unsupported("failed-write")),
+            source: BackendError::Unsupported("failed-write"),
             ..
         }
     ));

@@ -179,20 +179,15 @@ async fn absent_database_skips_even_a_cached_user() {
     assert!(harness.cache.writes.lock().unwrap().is_empty());
 }
 
+#[rstest::rstest]
+#[case::no_identity(vec![("team_model_max_budget", budget_map(&[("model", 1)]))])]
+#[case::no_budget(vec![("team_id", text("team"))])]
+#[case::empty_budget(vec![("team_id", text("team")), ("team_model_max_budget", objects())])]
 #[tokio::test]
-async fn team_missing_identity_or_budget_skips() {
+async fn team_missing_identity_or_budget_skips(#[case] fields: Vec<(&str, JsonData)>) {
     let limiter = ScriptedTeamLimiter::default();
-    for fields in [
-        vec![("team_model_max_budget", budget_map(&[("gpt-4", 5)]))],
-        vec![("team_id", text("t1"))],
-        vec![
-            ("team_id", text("t1")),
-            ("team_model_max_budget", objects()),
-        ],
-    ] {
-        check_team_model_budget(&limiter, &token(&fields), &["gpt-4".to_owned()])
-            .await
-            .unwrap();
-    }
+    check_team_model_budget(&limiter, &token(&fields), &["model".to_owned()])
+        .await
+        .unwrap();
     assert!(limiter.seen.lock().unwrap().is_empty());
 }
