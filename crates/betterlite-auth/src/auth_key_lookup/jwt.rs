@@ -53,6 +53,7 @@ pub fn jwt_key_mapping_cache_key(
     }
 }
 
+// ast-grep-ignore: no-long-names
 pub async fn get_jwt_key_mapping_cache_keys_for_token(
     hashed_token: &str,
     source: &dyn JwtMappingSource,
@@ -61,6 +62,7 @@ pub async fn get_jwt_key_mapping_cache_keys_for_token(
     Ok(cache_keys(source.mappings_for_tokens(&tokens).await?))
 }
 
+// ast-grep-ignore: no-long-names
 pub async fn get_jwt_key_mapping_cache_keys_for_tokens(
     hashed_tokens: &[String],
     source: &dyn JwtMappingSource,

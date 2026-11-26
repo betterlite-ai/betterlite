@@ -103,7 +103,7 @@ fn alias_payload(aliases: ModelAliasMap) -> Payload {
     )
 }
 
-// _resolve_object_permission_for_unresolvable_team: only a missing id or database answer None.
+// ast-grep-ignore: no-long-names - _resolve_object_permission_for_unresolvable_team: only a missing id or database answer None.
 pub async fn resolve_object_permission_for_unresolvable_team(
     object_permission_id: Option<&str>,
     lookups: &KeyLookups,

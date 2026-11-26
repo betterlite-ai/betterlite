@@ -18,7 +18,9 @@ use super::error::{KeyLookupError, PARKED_FAULT, transport_fault};
 // The bounded lookup's name and the reconnect reason LiteLLM passes for a key read.
 pub const KEY_LOOKUP: &str = "key";
 pub const AUTH_RECONNECT_REASON: &str = "auth_get_key_object_lookup_failure";
+// ast-grep-ignore: no-long-names
 pub const DEFAULT_RECONNECT_TIMEOUT_SECONDS: f64 = 2.0;
+// ast-grep-ignore: no-long-names
 pub const DEFAULT_RECONNECT_LOCK_TIMEOUT_SECONDS: f64 = 0.1;
 
 // B2320's get_data branch, reached by the caller with the supplied hash and the requested table.

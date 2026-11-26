@@ -110,7 +110,13 @@ fn stage_input(
     body: Option<&Bytes>,
 ) -> Result<StageInput, StageFailure> {
     match backend {
-        AuthBackend::MasterKey => Ok(StageInput::MasterKey(extract_key(request.headers()))),
+        AuthBackend::AuthKeyLookup => Ok(StageInput::AuthKeyLookup(Box::new(
+            auth_key_lookup::stage_input(request),
+        ))),
+        AuthBackend::MasterKey => match authenticated {
+            Some(context) => Ok(StageInput::Authenticated(Box::new(context.clone()))),
+            None => Ok(StageInput::MasterKey(extract_key(request.headers()))),
+        },
         AuthBackend::AuthRequestPolicy => Ok(StageInput::AuthRequestPolicy(Box::new(
             auth_request_policy::stage_input(request, authenticated, body)?,
         ))),
@@ -204,8 +210,15 @@ fn resolver_for(request: &Request<Body>) -> Arc<RequestModelResolver> {
 }
 
 // stage_input cannot await while holding the request borrow (Request<Body> is Send but not Sync), so the caller awaits the stage prefetch on the owned input
-pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, StageFailure> {
+pub(crate) async fn prefetch_stage(
+    input: StageInput,
+    master_key: &SecretString,
+) -> Result<StageInput, StageFailure> {
     match input {
+        StageInput::AuthKeyLookup(stage) => {
+            let context = auth_key_lookup::prefetch(&stage, master_key).await?;
+            Ok(StageInput::Authenticated(Box::new(context)))
+        }
         StageInput::AuthTagBudgets(stage) => {
             auth_tag_budgets::prefetch(&stage)
                 .await
@@ -231,7 +244,8 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
                 .map_err(StageFailure::EndUsers)?;
             Ok(StageInput::AuthEndUsers(stage))
         }
-        other @ (StageInput::MasterKey(_)
+        other @ (StageInput::Authenticated(_)
+        | StageInput::MasterKey(_)
         | StageInput::AuthRequestPolicy(_)
         | StageInput::RequestBodySafety(_)
         | StageInput::AuthRequestModels(_)

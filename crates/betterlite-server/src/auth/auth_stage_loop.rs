@@ -46,7 +46,7 @@ pub(crate) async fn run_stages(
             body.as_ref(),
         );
         match async {
-            let prefetched = prefetch_stage(staged?).await?;
+            let prefetched = prefetch_stage(staged?, master_key).await?;
             dispatch(*backend, &prefetched, master_key)
         }
         .await
