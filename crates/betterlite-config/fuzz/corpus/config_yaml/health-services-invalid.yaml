@@ -1,0 +1,4 @@
+general_settings:
+  alerting:
+    - slack
+  alert_types: not_a_list
