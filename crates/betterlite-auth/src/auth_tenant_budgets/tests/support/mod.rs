@@ -21,7 +21,7 @@ use crate::auth_cache::payload::PayloadError;
 use crate::auth_key_budgets::money::Money;
 use crate::auth_key_budgets::spend::{SpendReadError, SpendReader};
 use crate::auth_org_lookup::organization::OrgLookup;
-use crate::auth_org_lookup::ports::{OrgCache, OrgStore, StoreAnswer};
+use crate::auth_org_lookup::ports::{OrgCache, OrgStore};
 use crate::auth_prefetch::rows::CachedProject;
 use crate::auth_tag_budgets::cache::{CachedValue, TagBudgetCache};
 use crate::auth_tag_budgets::groups::ModelAccessGroupBudget;
@@ -30,6 +30,10 @@ use crate::auth_tenant_budgets::TenantSources;
 use crate::auth_tenant_budgets::alerts::{TenantAlert, TenantAlertSink};
 use crate::current_spend::SpendQuery;
 use crate::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
+
+mod org_world;
+
+pub(crate) use org_world::OrgWorld;
 
 // the query one spend read carried, as the counter sees it
 #[derive(Clone, Debug, PartialEq)]
@@ -217,12 +221,13 @@ impl BudgetRows<ModelAccessGroupBudgetRow> for TagWorld {
             .group_batches
             .lock()
             .unwrap_or_else(PoisonError::into_inner) += 1;
-        Ok(self
-            .groups
-            .values()
-            .filter(|group| names.contains(&group.access_group_name))
-            .cloned()
-            .collect())
+        let mut found = Vec::new();
+        for name in names {
+            if let Some(group) = self.groups.get(&name) {
+                found.push(group.clone());
+            }
+        }
+        Ok(found)
     }
 
     async fn registry_rows(
@@ -230,85 +235,6 @@ impl BudgetRows<ModelAccessGroupBudgetRow> for TagWorld {
         _take: i64,
     ) -> Result<Vec<ModelAccessGroupBudgetRow>, TagBudgetRowsFailure> {
         Ok(self.groups.values().cloned().collect())
-    }
-}
-
-// the B879 store and cache over one seeded row; a None row is the database answer that get_org_object raises NotFound for
-#[derive(Default)]
-pub(crate) struct OrgWorld {
-    pub(crate) found: Option<String>,
-    pub(crate) lookups: Mutex<Vec<(String, bool)>>,
-}
-
-impl OrgWorld {
-    pub(crate) fn with_row(row: &OrganizationTable) -> Self {
-        Self {
-            found: Some(serde_json::to_string(row).expect("the organization row serializes")),
-            lookups: Mutex::new(Vec::new()),
-        }
-    }
-
-    pub(crate) fn lookups(&self) -> Vec<(String, bool)> {
-        self.lookups
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
-}
-
-#[async_trait]
-impl OrgCache for OrgWorld {
-    async fn read_org(
-        &self,
-        _key: &str,
-        _local_only: bool,
-    ) -> Result<Option<OrganizationTable>, AuthCacheError> {
-        Ok(None)
-    }
-
-    async fn write_org(
-        &self,
-        _key: &str,
-        _org: &OrganizationTable,
-        _ttl: f64,
-    ) -> Result<(), AuthCacheError> {
-        Ok(())
-    }
-
-    async fn read_project(&self, _key: &str) -> Result<Option<CachedProject>, AuthCacheError> {
-        Ok(None)
-    }
-
-    async fn write_project(
-        &self,
-        _key: &str,
-        _project: &CachedProject,
-        _ttl: f64,
-    ) -> Result<(), AuthCacheError> {
-        Ok(())
-    }
-
-    fn management_ttl(&self) -> f64 {
-        60.0
-    }
-}
-
-#[async_trait]
-impl OrgStore for OrgWorld {
-    async fn find_org(&self, org_id: &str, include_budget: bool) -> StoreAnswer<Option<String>> {
-        self.lookups
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push((org_id.to_owned(), include_budget));
-        Ok(self.found.clone())
-    }
-
-    async fn find_by_alias(&self, _org_alias: &str) -> StoreAnswer<Vec<String>> {
-        Ok(Vec::new())
-    }
-
-    async fn find_project(&self, _project_id: &str) -> StoreAnswer<Option<String>> {
-        Ok(None)
     }
 }
 
@@ -335,7 +261,7 @@ pub(crate) fn lookup(world: &Arc<OrgWorld>) -> OrgLookup {
     }
 }
 
-pub(crate) fn token(fields: impl Serialize) -> UserAPIKeyAuth {
+pub(crate) fn token<T: Serialize>(fields: T) -> UserAPIKeyAuth {
     let value = serde_json::to_value(fields).expect("the token fields encode");
     let decoded: JsonData = serde_json::from_value(value).expect("the token fields decode");
     let JsonData::Object(map) = decoded else {

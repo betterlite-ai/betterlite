@@ -3,25 +3,16 @@ use secrecy::ExposeSecret as _;
 use crate::auth_key_budgets::money::Money;
 use crate::auth_tenant_budgets::TenantAdmission;
 use crate::auth_tenant_budgets::TenantSources;
-use crate::auth_tenant_budgets::error::TenantBudgetError;
-use crate::auth_tenant_budgets::tags::{
-    group_ceiling_applies, group_denies, max_budget_check, model_access_group_max_budget_check,
-    names_need_a_database, tag_denies,
+use crate::auth_tenant_budgets::access_groups::{
+    access_group_max_budget_check, group_ceiling_applies, group_denies,
 };
+use crate::auth_tenant_budgets::error::TenantBudgetError;
+use crate::auth_tenant_budgets::tags::{max_budget_check, tag_denies};
 use crate::current_spend::CurrentSpendError;
 
 use super::support::{
     Recorder, ScriptedSpend, TagWorld, decimal, group, number, tag, tenant_sources,
 };
-
-#[test]
-fn names_need_a_database_needs_both() {
-    let names = ["t".to_owned()];
-    assert!(!names_need_a_database(false, &names));
-    assert!(!names_need_a_database(true, &[]));
-    assert!(!names_need_a_database(false, &[]));
-    assert!(names_need_a_database(true, &names));
-}
 
 #[tokio::test]
 async fn no_db_or_names_skips() {
@@ -41,14 +32,14 @@ async fn no_db_or_names_skips() {
     max_budget_check(&names, &without_database, &admission)
         .await
         .expect("tags are read only from a database");
-    model_access_group_max_budget_check(&groups, &without_database, &admission)
+    access_group_max_budget_check(&groups, &without_database, &admission)
         .await
         .expect("groups are read only from a database");
     let with_database = tenant_sources(&world, true);
     max_budget_check(&[], &with_database, &admission)
         .await
         .expect("a request without tags skips the batch read");
-    model_access_group_max_budget_check(&[], &with_database, &admission)
+    access_group_max_budget_check(&[], &with_database, &admission)
         .await
         .expect("a request without access groups skips the batch read");
     let without_collaborators: TenantSources<'_> = TenantSources {
@@ -61,7 +52,7 @@ async fn no_db_or_names_skips() {
     max_budget_check(&names, &without_collaborators, &admission)
         .await
         .expect("an absent cache skips the tag check");
-    model_access_group_max_budget_check(&groups, &without_collaborators, &admission)
+    access_group_max_budget_check(&groups, &without_collaborators, &admission)
         .await
         .expect("an absent cache skips the group check");
     assert_eq!(world.batches(), (0, 0));
@@ -100,7 +91,7 @@ async fn missing_budget_rows_skip() {
         "g-no-table".to_owned(),
         "g-no-ceiling".to_owned(),
     ];
-    model_access_group_max_budget_check(&groups, &sources, &admission)
+    access_group_max_budget_check(&groups, &sources, &admission)
         .await
         .expect("an access group without a budget row or ceiling is not priced");
     assert_eq!(world.batches(), (1, 1));
@@ -134,7 +125,7 @@ async fn authoritative_fallbacks_and_counter_names() {
         alerts: Some(&recorder),
     };
     let sources = tenant_sources(&groups_world, true);
-    model_access_group_max_budget_check(&["g1".to_owned()], &sources, &admission)
+    access_group_max_budget_check(&["g1".to_owned()], &sources, &admission)
         .await
         .expect("the group spend stays below its ceiling");
     let reads = group_reader.reads();
@@ -270,7 +261,7 @@ async fn group_nonpositive_skips_and_equality_denies() {
         reader: &reader,
         alerts: Some(&recorder),
     };
-    model_access_group_max_budget_check(
+    access_group_max_budget_check(
         &["zero".to_owned(), "negative".to_owned()],
         &sources,
         &admission,
@@ -278,7 +269,7 @@ async fn group_nonpositive_skips_and_equality_denies() {
     .await
     .expect("a nonpositive group ceiling is not enforced");
     assert!(reader.reads().is_empty());
-    let error = model_access_group_max_budget_check(&["equal".to_owned()], &sources, &admission)
+    let error = access_group_max_budget_check(&["equal".to_owned()], &sources, &admission)
         .await
         .expect_err("a group spend equal to its ceiling denies");
     let TenantBudgetError::Denied(denial) = error else {
@@ -286,7 +277,7 @@ async fn group_nonpositive_skips_and_equality_denies() {
     };
     assert_eq!(denial.entity_type, "model_access_group");
     assert_eq!(denial.max_budget, decimal("10"));
-    model_access_group_max_budget_check(&["below".to_owned()], &sources, &admission)
+    access_group_max_budget_check(&["below".to_owned()], &sources, &admission)
         .await
         .expect("a cent below the group ceiling passes");
 
@@ -319,16 +310,15 @@ async fn only_matched_groups_checked() {
         reader: &reader,
         alerts: Some(&recorder),
     };
-    model_access_group_max_budget_check(&["matched".to_owned()], &sources, &admission)
+    access_group_max_budget_check(&["matched".to_owned()], &sources, &admission)
         .await
         .expect("an over-budget group the request matched nothing in is not priced");
     let reads = reader.reads();
     assert_eq!(reads.len(), 1);
     assert_eq!(reads[0].counter_key, "spend:model_access_group:matched");
-    let error =
-        model_access_group_max_budget_check(&["unmatched".to_owned()], &sources, &admission)
-            .await
-            .expect_err("the same group denies once the request matches it");
+    let error = access_group_max_budget_check(&["unmatched".to_owned()], &sources, &admission)
+        .await
+        .expect_err("the same group denies once the request matches it");
     let TenantBudgetError::Denied(denial) = error else {
         panic!("an access group denial is a BudgetExceededError");
     };
@@ -362,7 +352,7 @@ async fn counter_failure_propagates() {
         reader: &failing_groups,
         alerts: Some(&recorder),
     };
-    let error = model_access_group_max_budget_check(&["g".to_owned()], &sources, &admission)
+    let error = access_group_max_budget_check(&["g".to_owned()], &sources, &admission)
         .await
         .expect_err("an unverifiable group counter fails the request");
     let TenantBudgetError::Spend(CurrentSpendError::Unverifiable { counter_key }) = error else {

@@ -28,11 +28,27 @@ async fn project_absent_budget_and_nonfinite_skip() {
     max_budget_check(&missing, None, &admission)
         .await
         .expect("an absent ceiling skips");
-    for cap in [Money::Nan, Money::PositiveInfinity, Money::NegativeInfinity] {
-        max_budget_guard("proj-1", decimal("100"), Some(cap), None, &admission)
-            .await
-            .expect("a nonfinite ceiling skips before the read");
-    }
+    max_budget_guard("proj-1", decimal("100"), Some(Money::Nan), None, &admission)
+        .await
+        .expect("a NaN ceiling skips before the read");
+    max_budget_guard(
+        "proj-1",
+        decimal("100"),
+        Some(Money::PositiveInfinity),
+        None,
+        &admission,
+    )
+    .await
+    .expect("a positive infinity ceiling skips before the read");
+    max_budget_guard(
+        "proj-1",
+        decimal("100"),
+        Some(Money::NegativeInfinity),
+        None,
+        &admission,
+    )
+    .await
+    .expect("a negative infinity ceiling skips before the read");
     assert!(reader.reads().is_empty());
     assert!(recorder.take().is_empty());
 }

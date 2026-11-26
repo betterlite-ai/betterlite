@@ -4,12 +4,11 @@ use secrecy::ExposeSecret as _;
 use serde_json::json;
 
 use crate::auth_tenant_budgets::TenantAdmission;
+use crate::auth_tenant_budgets::access_groups::access_group_max_budget_check as group_check;
 use crate::auth_tenant_budgets::error::TenantBudgetError;
 use crate::auth_tenant_budgets::organization::max_budget_check as organization_check;
 use crate::auth_tenant_budgets::project::max_budget_check as project_check;
-use crate::auth_tenant_budgets::tags::{
-    max_budget_check as tag_check, model_access_group_max_budget_check as group_check,
-};
+use crate::auth_tenant_budgets::tags::max_budget_check as tag_check;
 
 use super::support::{
     OrgWorld, Recorder, ScriptedSpend, TagWorld, decimal, group, lookup, number,

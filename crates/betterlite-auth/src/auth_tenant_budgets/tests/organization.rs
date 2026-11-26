@@ -132,6 +132,7 @@ async fn org_snapshot_before_missing_ceiling_return() {
             max_budget: None,
         })
     );
+    assert_eq!(world.writes(), vec!["org_id:org-1:with_budget".to_owned()]);
     assert!(reader.reads().is_empty());
 }
 

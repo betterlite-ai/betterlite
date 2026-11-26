@@ -230,7 +230,10 @@ fn assert_denial(
     assert_eq!(denial.max_budget, decimal(max_budget));
 }
 
-async fn project_denial(admitted: &Admitted) {
+#[tokio::test]
+async fn project_denial_at_the_stored_ceiling() {
+    let admitted = Admitted::provision().await;
+    admitted.seed().await;
     let project = admitted.project("p-spent").await;
     let reader = ScriptedSpend::new(vec![number(10.0)]);
     let recorder = Recorder::default();
@@ -258,9 +261,13 @@ async fn project_denial(admitted: &Admitted) {
     assert_eq!(reads[0].max_budget, Some(decimal("10")));
     assert!(!reads[0].fallback_authoritative);
     assert_eq!(recorder.take()[0].kind, TenantAlertKind::ProjectBudget);
+    admitted.close().await;
 }
 
-async fn organization_denial(admitted: &Admitted) {
+#[tokio::test]
+async fn organization_denial_at_the_stored_ceiling() {
+    let admitted = Admitted::provision().await;
+    admitted.seed().await;
     let reader = ScriptedSpend::new(vec![number(20.0)]);
     let recorder = Recorder::default();
     let admission = TenantAdmission {
@@ -287,9 +294,13 @@ async fn organization_denial(admitted: &Admitted) {
     assert_eq!(reads[0].max_budget, Some(decimal("20")));
     assert!(!reads[0].fallback_authoritative);
     assert_eq!(recorder.take()[0].kind, TenantAlertKind::OrganizationBudget);
+    admitted.close().await;
 }
 
-async fn team_organization_denial(admitted: &Admitted) {
+#[tokio::test]
+async fn team_organization_denial_reaches_the_stored_ceiling() {
+    let admitted = Admitted::provision().await;
+    admitted.seed().await;
     let reader = ScriptedSpend::new(vec![number(20.5)]);
     let admission = TenantAdmission {
         reader: &reader,
@@ -310,9 +321,13 @@ async fn team_organization_denial(admitted: &Admitted) {
         .expect_err("a team's organization id reaches the same stored ceiling");
     assert_denial(error, "organization", "o-spent", "20.5", "20");
     assert_eq!(reader.reads()[0].fallback_spend, decimal("2"));
+    admitted.close().await;
 }
 
-async fn tag_denial(admitted: &Admitted) {
+#[tokio::test]
+async fn tag_denial_a_cent_over_the_stored_ceiling() {
+    let admitted = Admitted::provision().await;
+    admitted.seed().await;
     let reader = ScriptedSpend::new(vec![number(5.01)]);
     let recorder = Recorder::default();
     let admission = TenantAdmission {
@@ -340,9 +355,13 @@ async fn tag_denial(admitted: &Admitted) {
     assert_eq!(reads[0].max_budget, Some(decimal("5")));
     assert!(reads[0].fallback_authoritative);
     assert!(recorder.take().is_empty());
+    admitted.close().await;
 }
 
-async fn tag_equality_allows(admitted: &Admitted) {
+#[tokio::test]
+async fn tag_equality_allows_the_stored_ceiling() {
+    let admitted = Admitted::provision().await;
+    admitted.seed().await;
     let reader = ScriptedSpend::new(vec![number(100.0)]);
     let admission = TenantAdmission {
         reader: &reader,
@@ -362,9 +381,13 @@ async fn tag_equality_allows(admitted: &Admitted) {
         .await
         .expect("a tag spend equal to the stored ceiling stays allowed");
     assert_eq!(reader.reads().len(), 1);
+    admitted.close().await;
 }
 
-async fn unpriced_tag_skips(admitted: &Admitted) {
+#[tokio::test]
+async fn unpriced_tag_skips_the_counter() {
+    let admitted = Admitted::provision().await;
+    admitted.seed().await;
     let reader = ScriptedSpend::new(vec![]);
     let admission = TenantAdmission {
         reader: &reader,
@@ -384,9 +407,13 @@ async fn unpriced_tag_skips(admitted: &Admitted) {
         .await
         .expect("a stored budget table without a ceiling skips the tag counter");
     assert!(reader.reads().is_empty());
+    admitted.close().await;
 }
 
-async fn group_denial(admitted: &Admitted) {
+#[tokio::test]
+async fn group_denial_at_the_stored_ceiling() {
+    let admitted = Admitted::provision().await;
+    admitted.seed().await;
     let reader = ScriptedSpend::new(vec![number(4.0)]);
     let recorder = Recorder::default();
     let admission = TenantAdmission {
@@ -414,9 +441,13 @@ async fn group_denial(admitted: &Admitted) {
     assert_eq!(reads[0].max_budget, Some(decimal("4")));
     assert!(reads[0].fallback_authoritative);
     assert!(recorder.take().is_empty());
+    admitted.close().await;
 }
 
-async fn group_under_the_ceiling(admitted: &Admitted) {
+#[tokio::test]
+async fn group_spend_below_the_stored_ceiling() {
+    let admitted = Admitted::provision().await;
+    admitted.seed().await;
     let reader = ScriptedSpend::new(vec![number(99.99)]);
     let admission = TenantAdmission {
         reader: &reader,
@@ -436,9 +467,13 @@ async fn group_under_the_ceiling(admitted: &Admitted) {
         .await
         .expect("a group spend below its stored ceiling passes");
     assert_eq!(reader.reads()[0].max_budget, Some(decimal("100")));
+    admitted.close().await;
 }
 
-async fn missing_organization_skips(admitted: &Admitted) {
+#[tokio::test]
+async fn missing_organization_row_skips() {
+    let admitted = Admitted::provision().await;
+    admitted.seed().await;
     let reader = ScriptedSpend::new(vec![]);
     let admission = TenantAdmission {
         reader: &reader,
@@ -457,9 +492,13 @@ async fn missing_organization_skips(admitted: &Admitted) {
         .await
         .expect("a missing organization row skips the check");
     assert!(reader.reads().is_empty());
+    admitted.close().await;
 }
 
-async fn unpriced_organization_skips(admitted: &Admitted) {
+#[tokio::test]
+async fn unpriced_organization_skips_the_counter() {
+    let admitted = Admitted::provision().await;
+    admitted.seed().await;
     let reader = ScriptedSpend::new(vec![]);
     let admission = TenantAdmission {
         reader: &reader,
@@ -478,9 +517,13 @@ async fn unpriced_organization_skips(admitted: &Admitted) {
         .await
         .expect("a stored organization budget without a ceiling skips the counter");
     assert!(reader.reads().is_empty());
+    admitted.close().await;
 }
 
-async fn unpriced_project_skips(admitted: &Admitted) {
+#[tokio::test]
+async fn unpriced_project_skips_the_counter() {
+    let admitted = Admitted::provision().await;
+    admitted.seed().await;
     let project = admitted.project("p-plain").await;
     let reader = ScriptedSpend::new(vec![number(1000.0)]);
     let admission = TenantAdmission {
@@ -500,9 +543,13 @@ async fn unpriced_project_skips(admitted: &Admitted) {
         .await
         .expect("a project without a stored budget row skips the check");
     assert!(reader.reads().is_empty());
+    admitted.close().await;
 }
 
-async fn missing_tag_does_not_hide_group_denial(admitted: &Admitted) {
+#[tokio::test]
+async fn missing_tag_does_not_hide_the_group_denial() {
+    let admitted = Admitted::provision().await;
+    admitted.seed().await;
     let reader = ScriptedSpend::new(vec![number(4.0)]);
     let admission = TenantAdmission {
         reader: &reader,
@@ -526,30 +573,5 @@ async fn missing_tag_does_not_hide_group_denial(admitted: &Admitted) {
     let reads = reader.reads();
     assert_eq!(reads.len(), 1);
     assert_eq!(reads[0].counter_key, "spend:model_access_group:group-spent");
-}
-
-#[tokio::test]
-async fn separately_exhausted_entity_budgets() {
-    let admitted = Admitted::provision().await;
-    admitted.seed().await;
-    project_denial(&admitted).await;
-    organization_denial(&admitted).await;
-    team_organization_denial(&admitted).await;
-    tag_denial(&admitted).await;
-    tag_equality_allows(&admitted).await;
-    unpriced_tag_skips(&admitted).await;
-    group_denial(&admitted).await;
-    group_under_the_ceiling(&admitted).await;
-    admitted.close().await;
-}
-
-#[tokio::test]
-async fn missing_rows_do_not_mask_another_entity() {
-    let admitted = Admitted::provision().await;
-    admitted.seed().await;
-    missing_organization_skips(&admitted).await;
-    unpriced_organization_skips(&admitted).await;
-    unpriced_project_skips(&admitted).await;
-    missing_tag_does_not_hide_group_denial(&admitted).await;
     admitted.close().await;
 }
