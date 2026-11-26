@@ -45,7 +45,7 @@ impl Helper for Op {
         for scenario in &input.scenarios {
             let probe = Probe::new(scenario)?;
             let (branch, connection) = probe.health(&runtime)?;
-            answered.push(probe.answer(&branch, connection));
+            answered.push(probe.answer(&branch, connection.as_ref()));
         }
         Ok(json!({ "scenarios": answered }))
     }
@@ -229,7 +229,7 @@ impl<'case> Probe<'case> {
     }
 
     // the resolved plan plus the one handshake; the Azure fields answer only for an Azure scenario
-    fn answer(&self, branch: &str, connection: Option<ProbeConnection>) -> Value {
+    fn answer(&self, branch: &str, connection: Option<&ProbeConnection>) -> Value {
         let provider = self.scenario.custom_llm_provider.as_str();
         let is_azure = provider == AZURE_PROVIDER;
         let protocol = is_azure.then(|| {
