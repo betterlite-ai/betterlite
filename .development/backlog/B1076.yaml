@@ -1,7 +1,7 @@
 id: B1076
 milestone: M5 api families
 title: Vector file routes
-status: blocked
+status: todo
 depends_on: [B004, B1072, B1073, B1075, B732, B1061, B10014, B003]
 file: tasks/B1076-vector-file-routes.yaml
 covers:
@@ -11,5 +11,5 @@ parent: B090
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, vector store API can wait"
+blocked_reason: null
 pr: null

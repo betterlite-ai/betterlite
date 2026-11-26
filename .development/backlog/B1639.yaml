@@ -1,7 +1,7 @@
 id: B1639
 milestone: M4 keys, spend and management
 title: Apply SCIM user patches and export the shared member-path parser
-status: blocked
+status: todo
 depends_on: [B003, B1100, B202, B171, B723, B860, B1630, B1632, B1633, B1634, B1635, B1637, B1644, B878, B052, B9941, B9942, B8610]
 file: tasks/B1639-scim-user-patch.yaml
 covers:
@@ -10,5 +10,5 @@ parent: B064
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, SCIM provisioning can wait for a first release"
+blocked_reason: null
 pr: null

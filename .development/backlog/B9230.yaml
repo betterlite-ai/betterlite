@@ -1,7 +1,7 @@
 id: B9230
 milestone: M3 providers
 title: Regional chat HTTP parity
-status: blocked
+status: todo
 depends_on: [B8312, B024, B004, B005, B8633]
 file: tasks/B9230-regional-chat-http.yaml
 covers: []
@@ -9,5 +9,5 @@ parent: B043
 split_from: B043
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): niche, regional hosts GigaChat DashScope Volcengine parity"
+blocked_reason: null
 pr: null

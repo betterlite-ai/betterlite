@@ -1,7 +1,7 @@
 id: B9766
 milestone: M10 admin ui
 title: Cover memory editing and workflow timeline requests from the dashboard
-status: blocked
+status: todo
 depends_on: [B860, B9942, B8541, B8770, B3159, B3160]
 file: tasks/B9766-dashboard-memory-workflow-requests.yaml
 covers:
@@ -10,5 +10,5 @@ parent: B149
 split_from: B149
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, admin UI pages for MCP agents and vector stores wait on those features"
+blocked_reason: null
 pr: null

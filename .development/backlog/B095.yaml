@@ -1,7 +1,7 @@
 id: B095
 milestone: M5 api families
 title: Skills API
-status: blocked
+status: todo
 depends_on: [B732, B858, B1134, B1502, B1504, B1506, B3394, B3395]
 file: tasks/B095-skills-hook-wiring.yaml
 covers:
@@ -12,5 +12,5 @@ parent: null
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, Skills API is new and can wait"
+blocked_reason: null
 pr: null

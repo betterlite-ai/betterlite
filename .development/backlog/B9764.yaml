@@ -1,7 +1,7 @@
 id: B9764
 milestone: M10 admin ui
 title: Cover skill registration and search-tool forms through the proxy
-status: blocked
+status: todo
 depends_on: [B860, B9942, B992, B993, B3275, B8673, B8275, B8634, B8021, B9735]
 file: tasks/B9764-dashboard-skill-search-requests.yaml
 covers:
@@ -11,5 +11,5 @@ parent: B149
 split_from: B149
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, admin UI pages for MCP agents and vector stores wait on those features"
+blocked_reason: null
 pr: null

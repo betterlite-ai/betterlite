@@ -1,7 +1,7 @@
 id: B9010
 milestone: M7 observability
 title: Prompt preview and dotprompt upload routes
-status: blocked
+status: todo
 depends_on: [B4050, B4051, B4052, B2460, B1100, B1101, B1087, B884, B8610, B8802, B8633]
 file: tasks/B9010-prompt-tools.yaml
 covers:
@@ -10,5 +10,5 @@ parent: B117
 split_from: B117
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, prompt management can wait"
+blocked_reason: null
 pr: null
