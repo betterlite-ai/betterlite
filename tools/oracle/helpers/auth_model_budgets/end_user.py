@@ -18,6 +18,7 @@ def end_user_apply_call(call: Call) -> JsonValue:
         params, budget_info, call.get("end_user_id")
     )
     return {
+        "end_user_id": params.get("end_user_id"),
         "tpm": params.get("end_user_tpm_limit"),
         "rpm": params.get("end_user_rpm_limit"),
         "tpd": params.get("end_user_tpd_limit"),

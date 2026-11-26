@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::mem;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
@@ -22,6 +21,7 @@ use betterlite_db::database_failures::deadline::DbLookupError;
 use betterlite_error::error::ErrorClass;
 use betterlite_error::error::details::BudgetExceededDetails;
 use rust_decimal::Decimal;
+use serde_json::{Value, json};
 use tokio::sync::Semaphore;
 use tokio::time::timeout;
 
@@ -45,6 +45,13 @@ pub(super) struct ScriptedKeyLimiter {
 }
 
 impl ScriptedKeyLimiter {
+    fn record(&self, entry: String) {
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(entry);
+    }
+
     pub(super) fn calls(&self) -> Vec<String> {
         self.calls
             .lock()
@@ -60,10 +67,7 @@ impl KeyModelBudgetLimiter for ScriptedKeyLimiter {
         _token: &UserAPIKeyAuth,
         model: &str,
     ) -> Result<bool, ErrorClass> {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(format!("key:{model}"));
+        self.record(format!("key:{model}"));
         if self.failing {
             return Err(budget_exceeded("key", "hashed-key"));
         }
@@ -90,12 +94,36 @@ pub(super) struct SeenUser {
     pub(super) budget: ModelMaxBudget,
 }
 
+// a model over its cap with the entity the BudgetExceededError names
+fn refusal(
+    failing_models: &[String],
+    model: &str,
+    entity_type: &str,
+    entity_id: &str,
+) -> Result<bool, ErrorClass> {
+    if failing_models.iter().any(|name| name == model) {
+        return Err(budget_exceeded(entity_type, entity_id));
+    }
+    Ok(true)
+}
+
 pub(super) struct ScriptedUserLimiter {
     pub(super) failing_models: Vec<String>,
     pub(super) seen: Mutex<Vec<SeenUser>>,
 }
 
 impl ScriptedUserLimiter {
+    fn record(&self, user_id: &str, budget: &ModelMaxBudget, model: &str) {
+        self.seen
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(SeenUser {
+                user_id: user_id.to_owned(),
+                model: model.to_owned(),
+                budget: budget.clone(),
+            });
+    }
+
     pub(super) fn seen(&self) -> Vec<SeenUser> {
         self.seen
             .lock()
@@ -112,36 +140,18 @@ impl UserModelBudgetLimiter for ScriptedUserLimiter {
         user_model_max_budget: &ModelMaxBudget,
         model: &str,
     ) -> Result<bool, ErrorClass> {
-        self.seen
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(SeenUser {
-                user_id: user_id.to_owned(),
-                model: model.to_owned(),
-                budget: user_model_max_budget.clone(),
-            });
-        if self.failing_models.iter().any(|name| name == model) {
-            return Err(budget_exceeded("user", user_id));
-        }
-        Ok(true)
+        self.record(user_id, user_model_max_budget, model);
+        refusal(&self.failing_models, model, "user", user_id)
     }
-}
-
-#[derive(Clone)]
-pub(super) struct SeenTeam {
-    pub(super) team_id: String,
-    pub(super) model: String,
-    pub(super) team_budget: ModelMaxBudget,
-    pub(super) key_budget: Option<ModelMaxBudget>,
 }
 
 pub(super) struct ScriptedTeamLimiter {
     pub(super) failing_models: Vec<String>,
-    pub(super) seen: Mutex<Vec<SeenTeam>>,
+    pub(super) seen: Mutex<Vec<Value>>,
 }
 
 impl ScriptedTeamLimiter {
-    pub(super) fn seen(&self) -> Vec<SeenTeam> {
+    pub(super) fn seen(&self) -> Vec<Value> {
         self.seen
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -158,19 +168,17 @@ impl TeamModelBudgetLimiter for ScriptedTeamLimiter {
         key_model_max_budget: Option<&ModelMaxBudget>,
         model: &str,
     ) -> Result<bool, ErrorClass> {
+        let record = json!({
+            "team_id": team_id,
+            "model": model,
+            "team_budget": JsonData::Object(team_model_max_budget.clone()),
+            "key_budget": key_model_max_budget.map(|budget| JsonData::Object(budget.clone())),
+        });
         self.seen
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(SeenTeam {
-                team_id: team_id.to_owned(),
-                model: model.to_owned(),
-                team_budget: team_model_max_budget.clone(),
-                key_budget: key_model_max_budget.cloned(),
-            });
-        if self.failing_models.iter().any(|name| name == model) {
-            return Err(budget_exceeded("team", team_id));
-        }
-        Ok(true)
+            .push(record);
+        refusal(&self.failing_models, model, "team", team_id)
     }
 }
 
@@ -224,11 +232,9 @@ pub(super) struct SpendRows {
 
 impl SpendRows {
     pub(super) async fn wait_until_started(&self) {
-        let _started = timeout(Duration::from_secs(1), self.started.acquire()).await;
-    }
-
-    pub(super) fn calls(&self) -> usize {
-        self.calls.load(Ordering::SeqCst)
+        timeout(Duration::from_secs(1), self.started.acquire())
+            .await
+            .expect("the leader starts its load");
     }
 }
 
@@ -275,13 +281,7 @@ impl GlobalSpendCache for SpendCache {
 
 #[derive(Default)]
 pub(super) struct AlertRecorder {
-    alerts: Mutex<Vec<ProxyBudgetAlert>>,
-}
-
-impl AlertRecorder {
-    pub(super) fn take(&self) -> Vec<ProxyBudgetAlert> {
-        mem::take(&mut *self.alerts.lock().unwrap_or_else(PoisonError::into_inner))
-    }
+    pub(super) alerts: Mutex<Vec<ProxyBudgetAlert>>,
 }
 
 impl ProxyBudgetAlertSink for AlertRecorder {

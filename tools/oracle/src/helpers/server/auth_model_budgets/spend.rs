@@ -1,5 +1,6 @@
-use std::sync::atomic::AtomicUsize;
-use std::sync::{Arc, Mutex};
+use std::mem;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_auth::auth_model_budgets::global_spend::{
     COORDINATOR_WAIT, GLOBAL_SPEND_LOG_PREFIX, GlobalSpendFetcher, ProxyBudgetAlert,
@@ -8,14 +9,13 @@ use betterlite_auth::auth_model_budgets::global_spend::{
 use betterlite_cache::coordinator::EventDrivenCacheCoordinator;
 use betterlite_config::sections::auth_model_budgets::Settings;
 use betterlite_db::database_failures::gate::{DbLookupStallTracker, SystemClock};
-use rust_decimal::Decimal;
 use serde_json::{Value, json};
 use tokio::sync::Semaphore;
 use tokio_util::task::TaskTracker;
 
 use super::Call;
 use super::doubles::{AlertRecorder, SpendCache, SpendRows};
-use super::support::{Failure, decimal_json, option_json};
+use super::support::{Failure, decimal_json};
 
 // get_global_proxy_spend: one read per cache miss, the null row is cached too, and only a known spend alerts
 pub(super) async fn global_spend_value(call: &Call) -> Result<Value, Failure> {
@@ -25,7 +25,7 @@ pub(super) async fn global_spend_value(call: &Call) -> Result<Value, Failure> {
         "spend": first,
         "second": second,
         "alerts": spend_case.alerts_json(),
-        "reads": spend_case.rows.calls(),
+        "reads": spend_case.rows.calls.load(Ordering::SeqCst),
     }))
 }
 
@@ -42,8 +42,9 @@ impl SpendCase {
             .tokens
             .clone()
             .ok_or(Failure::Missing("the call tokens"))?;
+        let max_budget = call.max_budget.ok_or(Failure::Missing("the max budget"))?;
         let rows = Arc::new(SpendRows {
-            spend: spend_of(call)?,
+            spend: call.spend,
             gated: tokens.len() > 1,
             started: Semaphore::new(0),
             release: Semaphore::new(0),
@@ -66,7 +67,7 @@ impl SpendCase {
             alerts: Arc::clone(&alerts),
         };
         Ok(Self {
-            settings: settings_of(call)?,
+            settings: Settings { max_budget },
             fetcher,
             rows,
             alerts,
@@ -96,14 +97,18 @@ impl SpendCase {
             get_global_proxy_spend(&self.settings, fetcher, admin, follower_token).await
         };
         let (leader_result, follower_result) = tokio::join!(leader, follower);
-        let first = option_json(leader_result.map_err(|_error| Failure::Coordinator)?);
-        let second = option_json(follower_result.map_err(|_error| Failure::Coordinator)?);
+        let first = leader_result
+            .map_err(|_error| Failure::Coordinator)?
+            .map_or(Value::Null, decimal_json);
+        let second = follower_result
+            .map_err(|_error| Failure::Coordinator)?
+            .map_or(Value::Null, decimal_json);
         Ok((first, second))
     }
 
     fn alerts_json(&self) -> Vec<Value> {
-        self.alerts
-            .take()
+        let alerts = mem::take(&mut *self.alerts.lock().unwrap_or_else(PoisonError::into_inner));
+        alerts
             .into_iter()
             .map(|alert| {
                 json!({
@@ -130,22 +135,5 @@ async fn token_spend(
     let spend = get_global_proxy_spend(settings, fetcher, admin, token)
         .await
         .map_err(|_error| Failure::Coordinator)?;
-    Ok(option_json(spend))
-}
-
-fn settings_of(call: &Call) -> Result<Settings, Failure> {
-    let max_budget = call.max_budget.ok_or(Failure::Missing("the max budget"))?;
-    Ok(Settings {
-        max_budget: Decimal::from_f64_retain(max_budget)
-            .ok_or(Failure::Missing("a finite max budget"))?,
-    })
-}
-
-fn spend_of(call: &Call) -> Result<Option<Decimal>, Failure> {
-    match call.spend {
-        Some(value) => Ok(Some(
-            Decimal::from_f64_retain(value).ok_or(Failure::Missing("a finite spend"))?,
-        )),
-        None => Ok(None),
-    }
+    Ok(spend.map_or(Value::Null, decimal_json))
 }

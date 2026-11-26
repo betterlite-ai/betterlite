@@ -12,6 +12,7 @@ mod support;
 use std::collections::BTreeMap;
 
 use betterlite_db::budget_permission_rows::JsonData;
+use rust_decimal::Decimal;
 use serde::Deserialize;
 use serde_json::Value;
 use tokio::runtime::Builder;
@@ -44,8 +45,8 @@ struct Call {
     budget: Option<BTreeMap<String, JsonData>>,
     params: Option<BTreeMap<String, JsonData>>,
     end_user_id: Option<String>,
-    max_budget: Option<f64>,
-    spend: Option<f64>,
+    max_budget: Option<Decimal>,
+    spend: Option<Decimal>,
     database: Option<bool>,
     admin_name: Option<String>,
     tokens: Option<Vec<String>>,
