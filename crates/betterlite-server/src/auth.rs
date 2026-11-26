@@ -69,6 +69,7 @@ use crate::auth::auth_request_models::{CoreDecoders, RequestModelStageInput, res
 use crate::auth::auth_resource_grants::{
     ResourceGrantStageInput, database_for_request, rule_for_request as grant_rule_for_request,
 };
+use crate::auth::route_match::PUBLIC_HEALTH_PATHS;
 use crate::auth::virtual_key_routes::stage_input as virtual_key_route_stage_input;
 use crate::error_body::AuthenticationFailure;
 use axum::body::{Body, Bytes};
@@ -83,10 +84,7 @@ pub(crate) async fn authenticate(
     next: Next,
     failure_response: fn(&StageFailure) -> Response,
 ) -> Response {
-    if matches!(
-        request.uri().path(),
-        "/health/liveliness" | "/health/liveness" | "/health/readiness"
-    ) {
+    if PUBLIC_HEALTH_PATHS.contains(&request.uri().path()) {
         return next.run(request).await;
     }
     let Some(master_key) = master_key_state.as_ref() else {
@@ -130,6 +128,9 @@ fn stage_input(
         ))),
         AuthBackend::TeamBudgetAdmission => {
             team_budget_admission::stage_input(request, authenticated)
+        }
+        AuthBackend::OrganizationRoutePolicy => {
+            organization_route_policy::stage_input(request, authenticated, body)
         }
         AuthBackend::AuthOrgLookup => Ok(StageInput::AuthOrgLookup(Box::new(
             auth_org_lookup::stage_input(request, authenticated)?,
@@ -214,7 +215,8 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
         | StageInput::AuthVirtualKeyRoutes(_)
         | StageInput::AuthRequestModels(_)
         | StageInput::AuthModelPatterns(_)
-        | StageInput::AuthResourceGrants(_)) => Ok(other),
+        | StageInput::AuthResourceGrants(_)
+        | StageInput::OrganizationRoutePolicy(_)) => Ok(other),
     }
 }
 
