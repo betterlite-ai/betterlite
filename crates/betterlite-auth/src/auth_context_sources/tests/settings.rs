@@ -39,24 +39,28 @@ async fn settings_key_before_team() {
     assert!(teams.calls().is_empty());
 }
 
+#[rstest]
+#[case::null(json("null"))]
+#[case::empty_object(json("{}"))]
+#[case::empty_string(json(r#""""#))]
+#[case::empty_list(json("[]"))]
+#[case::number(json("3"))]
+#[case::empty_object_text(json(r#""{}""#))]
+#[case::invalid_yaml(json(r#""not: [valid""#))]
 #[tokio::test]
-async fn empty_key_falls_back() {
+async fn empty_key_falls_back(#[case] empty: Json) {
     let teams = FakeTeams::new(TeamAnswer::Settings(team_columns(TEAM_ALIASES)));
-    for empty in [
-        json("null"),
-        json("{}"),
-        json(r#""""#),
-        json("[]"),
-        json("3"),
-        json(r#""{}""#),
-        json(r#""not: [valid""#),
-    ] {
-        let resolved = hierarchical_router_settings(Some(&empty), Some("team-one"), &teams).await;
-        assert_eq!(resolved, Some(object(TEAM_ALIASES)));
-    }
+    let resolved = hierarchical_router_settings(Some(&empty), Some("team-one"), &teams).await;
+    assert_eq!(resolved, Some(object(TEAM_ALIASES)), "{empty:?}");
+    assert_eq!(teams.calls(), vec!["team-one".to_owned()]);
+}
+
+#[tokio::test]
+async fn missing_key_falls_back() {
+    let teams = FakeTeams::new(TeamAnswer::Settings(team_columns(TEAM_ALIASES)));
     let resolved = hierarchical_router_settings(None, Some("team-one"), &teams).await;
     assert_eq!(resolved, Some(object(TEAM_ALIASES)));
-    assert_eq!(teams.calls().len(), 8);
+    assert_eq!(teams.calls(), vec!["team-one".to_owned()]);
 }
 
 #[tokio::test]
@@ -119,18 +123,19 @@ fn settings_yaml_json_nonempty_object() {
         parse_router_settings_value(Some(&json_text)),
         Some(object(KEY_ALIASES))
     );
-    for unusable in [
-        json("true"),
-        json("3"),
-        json("[1]"),
-        json(r#""[]""#),
-        json(r#""3""#),
-        json(r#""""#),
-        json(r#""{}""#),
-        json(r#""not: [valid""#),
-    ] {
-        assert_eq!(parse_router_settings_value(Some(&unusable)), None);
-    }
+}
+
+#[rstest]
+#[case::true_value(json("true"))]
+#[case::number(json("3"))]
+#[case::list(json("[1]"))]
+#[case::empty_list_text(json(r#""[]""#))]
+#[case::number_text(json(r#""3""#))]
+#[case::empty_text(json(r#""""#))]
+#[case::empty_object_text(json(r#""{}""#))]
+#[case::invalid_yaml(json(r#""not: [valid""#))]
+fn unusable_settings_value_is_none(#[case] value: Json) {
+    assert_eq!(parse_router_settings_value(Some(&value)), None, "{value:?}");
 }
 
 fn nested(lists: usize) -> String {
@@ -314,6 +319,10 @@ async fn team_settings_through_b737() {
 fn replays_the_auth_context_sources_corpus(
     #[files("fuzz/corpus/auth_context_sources/*")] path: PathBuf,
 ) {
-    let bytes = read(path).expect("the corpus file is readable");
-    drop(decode_router_settings(&bytes));
+    let bytes = read(&path).expect("the corpus file is readable");
+    let decoded = decode_router_settings(&bytes);
+    assert!(
+        decoded.is_none_or(|settings| !settings.is_empty()),
+        "{path:?}"
+    );
 }

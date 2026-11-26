@@ -3,8 +3,8 @@ use betterlite_models::decisions::Json;
 use super::alias::resolve_model_group_alias;
 use super::router_settings::{TeamRouterSettings, hierarchical_router_settings};
 
-pub const MODEL_GROUP_ALIAS_RESOLVED_MARKER: &str = "litellm.model_group_alias_resolved";
-pub const CLIENT_REQUESTED_MODEL_SCOPE_KEY: &str = "litellm.client_requested_model";
+pub const RESOLVED_MARKER: &str = "litellm.model_group_alias_resolved";
+pub const CLIENT_MODEL_KEY: &str = "litellm.client_requested_model";
 
 // Where the request stands before the rewrite: an ineligible route still reports the marker it found.
 #[derive(Clone, Copy, Debug)]
@@ -32,9 +32,8 @@ pub struct RouterAliasRewrite {
     pub target: Option<String>,
 }
 
-// _resolve_router_settings_model_group_alias up to the request mutation: the marker names the request
-// before any early return, so a retry never gets a second rewrite opportunity.
-pub async fn resolve_router_settings_model_group_alias(
+// _resolve_router_settings_model_group_alias up to the mutation: the marker is set before any early return.
+pub async fn resolve_router_alias(
     input: &RouterAliasInput<'_>,
     teams: &dyn TeamRouterSettings,
 ) -> RouterAliasRewrite {

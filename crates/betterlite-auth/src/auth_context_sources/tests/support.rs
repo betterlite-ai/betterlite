@@ -79,6 +79,20 @@ pub(crate) struct FakeRouter {
 
 impl FakeRouter {
     #[must_use]
+    pub(crate) fn new(
+        alias_groups: BTreeSet<String>,
+        model_ids: BTreeSet<String>,
+        candidates: BTreeMap<String, Vec<String>>,
+    ) -> Self {
+        Self {
+            alias_groups,
+            model_ids,
+            candidates,
+            asked: Mutex::new(Vec::new()),
+        }
+    }
+
+    #[must_use]
     pub(crate) fn asked(&self) -> Vec<String> {
         self.asked
             .lock()

@@ -43,97 +43,50 @@ impl From<&Settings> for SsoConfiguration {
     }
 }
 
+// One setting counts when it is present and not empty, the rule every provider shares.
+fn filled(value: Option<&str>) -> bool {
+    match value {
+        Some(text) => !text.is_empty(),
+        None => false,
+    }
+}
+
 // has_user_setup_sso: presence, not readiness, because the UI only decides whether to show the button.
 #[must_use]
 pub fn has_user_setup_sso(configuration: &SsoConfiguration) -> bool {
     configuration.microsoft_client_id.is_some()
         || configuration.google_client_id.is_some()
         || configuration.generic_client_id.is_some()
-        || configuration
-            .saml_idp_metadata_url
-            .as_deref()
-            .is_some_and(|url| !url.is_empty())
-        || configuration
-            .saml_idp_metadata_xml
-            .as_deref()
-            .is_some_and(|xml| !xml.is_empty())
+        || filled(configuration.saml_idp_metadata_url.as_deref())
+        || filled(configuration.saml_idp_metadata_xml.as_deref())
 }
 
-// Every provider is checked on its own, so an incomplete one can never mask a complete one.
+// Each provider is checked on its own, so an incomplete one can never mask a complete one.
 #[must_use]
-pub fn is_sso_provider_fully_configured(
-    configuration: &SsoConfiguration,
-    runtime: SsoRuntime,
-) -> bool {
-    is_google_ready(configuration)
-        || is_microsoft_ready(configuration)
-        || is_generic_oauth_ready(configuration)
-        || is_saml_ready(configuration, runtime)
-}
-
-// _is_google_ready: a client id without its secret cannot complete a sign-in.
-fn is_google_ready(configuration: &SsoConfiguration) -> bool {
-    configuration
-        .google_client_id
-        .as_deref()
-        .is_some_and(|id| !id.is_empty())
+pub fn is_provider_configured(configuration: &SsoConfiguration, runtime: SsoRuntime) -> bool {
+    let google = filled(configuration.google_client_id.as_deref())
         && configuration
             .google_client_secret
             .as_ref()
-            .is_some_and(|secret| !secret.expose_secret().is_empty())
-}
-
-// _is_microsoft_ready: the tenant is as required as the secret.
-fn is_microsoft_ready(configuration: &SsoConfiguration) -> bool {
-    configuration
-        .microsoft_client_id
-        .as_deref()
-        .is_some_and(|id| !id.is_empty())
+            .is_some_and(|secret| !secret.expose_secret().is_empty());
+    let microsoft = filled(configuration.microsoft_client_id.as_deref())
         && configuration
             .microsoft_client_secret
             .as_ref()
             .is_some_and(|secret| !secret.expose_secret().is_empty())
-        && configuration
-            .microsoft_tenant
-            .as_deref()
-            .is_some_and(|tenant| !tenant.is_empty())
-}
-
-// _is_generic_oauth_ready: all three endpoints join the id and secret.
-fn is_generic_oauth_ready(configuration: &SsoConfiguration) -> bool {
-    configuration
-        .generic_client_id
-        .as_deref()
-        .is_some_and(|id| !id.is_empty())
+        && filled(configuration.microsoft_tenant.as_deref());
+    let generic = filled(configuration.generic_client_id.as_deref())
         && configuration
             .generic_client_secret
             .as_ref()
             .is_some_and(|secret| !secret.expose_secret().is_empty())
-        && configuration
-            .generic_authorization_endpoint
-            .as_deref()
-            .is_some_and(|endpoint| !endpoint.is_empty())
-        && configuration
-            .generic_token_endpoint
-            .as_deref()
-            .is_some_and(|endpoint| !endpoint.is_empty())
-        && configuration
-            .generic_userinfo_endpoint
-            .as_deref()
-            .is_some_and(|endpoint| !endpoint.is_empty())
-}
-
-// _is_saml_ready: metadata alone is not ready without the runtime B063 installs.
-fn is_saml_ready(configuration: &SsoConfiguration, runtime: SsoRuntime) -> bool {
-    let metadata = configuration
-        .saml_idp_metadata_url
-        .as_deref()
-        .is_some_and(|url| !url.is_empty())
-        || configuration
-            .saml_idp_metadata_xml
-            .as_deref()
-            .is_some_and(|xml| !xml.is_empty());
-    metadata && runtime.saml_available
+        && filled(configuration.generic_authorization_endpoint.as_deref())
+        && filled(configuration.generic_token_endpoint.as_deref())
+        && filled(configuration.generic_userinfo_endpoint.as_deref());
+    let saml = runtime.saml_available
+        && (filled(configuration.saml_idp_metadata_url.as_deref())
+            || filled(configuration.saml_idp_metadata_xml.as_deref()));
+    google || microsoft || generic || saml
 }
 
 // abbreviate_api_key: the last four characters are enough to match a key in a log, and nothing more.

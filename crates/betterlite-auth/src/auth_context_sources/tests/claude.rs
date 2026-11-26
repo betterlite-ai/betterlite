@@ -4,6 +4,7 @@ use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::identity_rows::Payload;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
+use rstest::rstest;
 
 use crate::auth_context_sources::claude::{
     AliasMap, CLAUDE_MODEL_ROUTES, ClaudeNameSources, ClaudeNormalization,
@@ -189,60 +190,39 @@ fn alias_canonical_decoding_only() {
     assert_eq!(claude_code_requested_group("unknown-group", &names), None);
 }
 
+#[rstest]
+#[case::messages("/messages", true)]
+#[case::v1_messages("/v1/messages", true)]
+#[case::chat_completions("/chat/completions", true)]
+#[case::v1_chat_completions("/v1/chat/completions", true)]
+#[case::responses("/responses", true)]
+#[case::v1_responses("/v1/responses", true)]
+#[case::embeddings("/v1/embeddings", false)]
+#[case::models("/v1/models", false)]
+#[case::messages_trailing_slash("/messages/", false)]
+#[case::v1_messages_trailing_slash("/v1/messages/", false)]
 #[tokio::test]
-async fn claude_six_routes_only() {
-    let requested = encoded(GROUP);
-    for route in CLAUDE_MODEL_ROUTES {
-        let router = FakeRouter {
-            model_ids: set_of(&[GROUP]),
-            ..FakeRouter::default()
-        };
-        let outcome = ClaudeFixture::new(&requested)
-            .route(route)
-            .run(Some(&router))
-            .await;
-        assert_eq!(
-            outcome,
-            ClaudeNormalization {
-                normalized: true,
-                source: Some(GROUP.to_owned()),
-            },
-            "{route}"
-        );
-        assert!(!router.asked().is_empty(), "{route}");
-    }
-    for route in [
-        "/v1/embeddings",
-        "/v1/models",
-        "/messages/",
-        "/v1/messages/",
-    ] {
-        let router = FakeRouter {
-            model_ids: set_of(&[GROUP]),
-            ..FakeRouter::default()
-        };
-        let outcome = ClaudeFixture::new(&requested)
-            .route(route)
-            .run(Some(&router))
-            .await;
-        assert_eq!(
-            outcome,
-            ClaudeNormalization {
-                normalized: false,
-                source: None,
-            },
-            "{route}"
-        );
-        assert!(router.asked().is_empty(), "{route}");
-    }
+async fn claude_six_routes_only(#[case] route: &str, #[case] eligible: bool) {
+    assert_eq!(CLAUDE_MODEL_ROUTES.contains(&route), eligible, "{route}");
+    let router = FakeRouter::new(BTreeSet::new(), set_of(&[GROUP]), BTreeMap::new());
+    let outcome = ClaudeFixture::new(&encoded(GROUP))
+        .route(route)
+        .run(Some(&router))
+        .await;
+    assert_eq!(
+        outcome,
+        ClaudeNormalization {
+            normalized: eligible,
+            source: eligible.then(|| GROUP.to_owned()),
+        },
+        "{route}"
+    );
+    assert_eq!(router.asked().is_empty(), !eligible, "{route}");
 }
 
 #[tokio::test]
 async fn claude_marker_skip() {
-    let router = FakeRouter {
-        model_ids: set_of(&[GROUP]),
-        ..FakeRouter::default()
-    };
+    let router = FakeRouter::new(BTreeSet::new(), set_of(&[GROUP]), BTreeMap::new());
     let outcome = ClaudeFixture::new(&encoded(GROUP))
         .normalized()
         .run(Some(&router))
@@ -259,10 +239,7 @@ async fn claude_marker_skip() {
 
 #[tokio::test]
 async fn claude_body_identity() {
-    let router = FakeRouter {
-        model_ids: set_of(&[GROUP]),
-        ..FakeRouter::default()
-    };
+    let router = FakeRouter::new(BTreeSet::new(), set_of(&[GROUP]), BTreeMap::new());
     let listed = format!(r#"{{"model": ["{0}", "{0}"]}}"#, encoded(GROUP));
     let outcome = ClaudeFixture::from_body(&listed).run(Some(&router)).await;
     assert_eq!(
@@ -297,48 +274,29 @@ async fn claude_body_identity() {
     );
 }
 
+#[rstest]
+#[case::lowercase_suffix("group-one[1m]", true, Some(GROUP))]
+#[case::uppercase_suffix("group-one[1M]", true, Some(GROUP))]
+#[case::text_after_suffix("group-one[1m]x", false, None)]
+#[case::uppercase_prefix("Claude-Router-666f6f", false, None)]
+#[case::prefix_before_name("[1m]group-one", false, None)]
+#[case::space_in_suffix("group-one[1 m]", false, None)]
+#[case::unconfigured_suffix("unconfigured[1m]", true, None)]
 #[tokio::test]
-async fn claude_prefix_suffix_case() {
-    let router = FakeRouter {
-        model_ids: set_of(&[GROUP]),
-        ..FakeRouter::default()
-    };
-    for model in ["group-one[1m]", "group-one[1M]"] {
-        let outcome = ClaudeFixture::new(model).run(Some(&router)).await;
-        assert_eq!(
-            outcome,
-            ClaudeNormalization {
-                normalized: true,
-                source: Some(GROUP.to_owned()),
-            },
-            "{model}"
-        );
-    }
-    for model in [
-        "group-one[1m]x",
-        "Claude-Router-666f6f",
-        "[1m]group-one",
-        "group-one[1 m]",
-    ] {
-        let outcome = ClaudeFixture::new(model).run(Some(&router)).await;
-        assert_eq!(
-            outcome,
-            ClaudeNormalization {
-                normalized: false,
-                source: None,
-            },
-            "{model}"
-        );
-    }
-    let outcome = ClaudeFixture::new("unconfigured[1m]")
-        .run(Some(&router))
-        .await;
+async fn claude_prefix_suffix_case(
+    #[case] model: &str,
+    #[case] normalized: bool,
+    #[case] source: Option<&str>,
+) {
+    let router = FakeRouter::new(BTreeSet::new(), set_of(&[GROUP]), BTreeMap::new());
+    let outcome = ClaudeFixture::new(model).run(Some(&router)).await;
     assert_eq!(
         outcome,
         ClaudeNormalization {
-            normalized: true,
-            source: None,
-        }
+            normalized,
+            source: source.map(str::to_owned),
+        },
+        "{model}"
     );
 }
 
@@ -358,14 +316,23 @@ async fn claude_marks_unresolved() {
     assert!(!router.asked().is_empty());
 }
 
+async fn assert_router_names_group(router: FakeRouter) {
+    let outcome = ClaudeFixture::new(&encoded(GROUP)).run(Some(&router)).await;
+    assert_eq!(
+        outcome,
+        ClaudeNormalization {
+            normalized: true,
+            source: Some(GROUP.to_owned()),
+        }
+    );
+    assert!(!router.asked().is_empty());
+}
+
 #[tokio::test]
 async fn claude_alias_order() {
     let requested = encoded(GROUP);
     // a route that owns the view id itself needs no rewrite and never reaches the router
-    let router = FakeRouter {
-        model_ids: set_of(&[GROUP]),
-        ..FakeRouter::default()
-    };
+    let router = FakeRouter::new(BTreeSet::new(), set_of(&[GROUP]), BTreeMap::new());
     let mut fixture = ClaudeFixture::new(&requested);
     fixture
         .global_aliases
@@ -435,28 +402,22 @@ async fn claude_alias_order() {
     );
 
     // and finally the router's own model group aliases, model ids and candidate ids
-    for router in [
-        FakeRouter {
-            alias_groups: set_of(&[GROUP]),
-            ..FakeRouter::default()
-        },
-        FakeRouter {
-            model_ids: set_of(&[GROUP]),
-            ..FakeRouter::default()
-        },
-        FakeRouter {
-            candidates: BTreeMap::from([(GROUP.to_owned(), vec!["deployment-id".to_owned()])]),
-            ..FakeRouter::default()
-        },
-    ] {
-        let outcome = ClaudeFixture::new(&requested).run(Some(&router)).await;
-        assert_eq!(
-            outcome,
-            ClaudeNormalization {
-                normalized: true,
-                source: Some(GROUP.to_owned()),
-            }
-        );
-        assert!(!router.asked().is_empty());
-    }
+    assert_router_names_group(FakeRouter::new(
+        set_of(&[GROUP]),
+        BTreeSet::new(),
+        BTreeMap::new(),
+    ))
+    .await;
+    assert_router_names_group(FakeRouter::new(
+        BTreeSet::new(),
+        set_of(&[GROUP]),
+        BTreeMap::new(),
+    ))
+    .await;
+    assert_router_names_group(FakeRouter::new(
+        BTreeSet::new(),
+        BTreeSet::new(),
+        BTreeMap::from([(GROUP.to_owned(), vec!["deployment-id".to_owned()])]),
+    ))
+    .await;
 }

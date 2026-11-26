@@ -7,21 +7,7 @@ use secrecy::SecretString;
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::sections::Section;
 
-pub const DEFAULT_MINIMUM_CUSTOM_KEY_LENGTH: i64 = 16;
-
-pub const MICROSOFT_CLIENT_ID_VARIABLE: &str = "MICROSOFT_CLIENT_ID";
-pub const GOOGLE_CLIENT_ID_VARIABLE: &str = "GOOGLE_CLIENT_ID";
-pub const GENERIC_CLIENT_ID_VARIABLE: &str = "GENERIC_CLIENT_ID";
-pub const SAML_IDP_METADATA_URL_VARIABLE: &str = "SAML_IDP_METADATA_URL";
-pub const SAML_IDP_METADATA_XML_VARIABLE: &str = "SAML_IDP_METADATA_XML";
-pub const GOOGLE_CLIENT_SECRET_VARIABLE: &str = "GOOGLE_CLIENT_SECRET";
-pub const MICROSOFT_CLIENT_SECRET_VARIABLE: &str = "MICROSOFT_CLIENT_SECRET";
-pub const MICROSOFT_TENANT_VARIABLE: &str = "MICROSOFT_TENANT";
-pub const GENERIC_CLIENT_SECRET_VARIABLE: &str = "GENERIC_CLIENT_SECRET";
-pub const GENERIC_AUTHORIZATION_ENDPOINT_VARIABLE: &str = "GENERIC_AUTHORIZATION_ENDPOINT";
-pub const GENERIC_TOKEN_ENDPOINT_VARIABLE: &str = "GENERIC_TOKEN_ENDPOINT";
-pub const GENERIC_USERINFO_ENDPOINT_VARIABLE: &str = "GENERIC_USERINFO_ENDPOINT";
-pub const MINIMUM_CUSTOM_KEY_LENGTH_VARIABLE: &str = "MINIMUM_CUSTOM_KEY_LENGTH";
+pub const DEFAULT_MINIMUM_KEY_LENGTH: i64 = 16;
 
 // None means the variable is unset; Some("") means it is set to an empty string, as os.getenv reads it.
 #[derive(Debug, Default, serde::Deserialize)]
@@ -44,26 +30,6 @@ pub struct Settings {
     pub minimum_custom_key_length: i64,
 }
 
-impl Default for Settings {
-    fn default() -> Self {
-        Self {
-            microsoft_client_id: None,
-            google_client_id: None,
-            generic_client_id: None,
-            saml_idp_metadata_url: None,
-            saml_idp_metadata_xml: None,
-            google_client_secret: None,
-            microsoft_client_secret: None,
-            microsoft_tenant: None,
-            generic_client_secret: None,
-            generic_authorization_endpoint: None,
-            generic_token_endpoint: None,
-            generic_userinfo_endpoint: None,
-            minimum_custom_key_length: DEFAULT_MINIMUM_CUSTOM_KEY_LENGTH,
-        }
-    }
-}
-
 impl Section for Raw {
     type Settings = Settings;
 
@@ -71,30 +37,30 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        let minimum_custom_key_length = match lookup.lookup(MINIMUM_CUSTOM_KEY_LENGTH_VARIABLE) {
-            None => DEFAULT_MINIMUM_CUSTOM_KEY_LENGTH,
-            Some(text) => number::<i64>(MINIMUM_CUSTOM_KEY_LENGTH_VARIABLE, &text)?
-                .unwrap_or(DEFAULT_MINIMUM_CUSTOM_KEY_LENGTH),
+        let minimum_custom_key_length = match lookup.lookup("MINIMUM_CUSTOM_KEY_LENGTH") {
+            None => DEFAULT_MINIMUM_KEY_LENGTH,
+            Some(text) => number::<i64>("MINIMUM_CUSTOM_KEY_LENGTH", &text)?
+                .unwrap_or(DEFAULT_MINIMUM_KEY_LENGTH),
         };
         Ok(Settings {
-            microsoft_client_id: lookup.lookup(MICROSOFT_CLIENT_ID_VARIABLE),
-            google_client_id: lookup.lookup(GOOGLE_CLIENT_ID_VARIABLE),
-            generic_client_id: lookup.lookup(GENERIC_CLIENT_ID_VARIABLE),
-            saml_idp_metadata_url: lookup.lookup(SAML_IDP_METADATA_URL_VARIABLE),
-            saml_idp_metadata_xml: lookup.lookup(SAML_IDP_METADATA_XML_VARIABLE),
+            microsoft_client_id: lookup.lookup("MICROSOFT_CLIENT_ID"),
+            google_client_id: lookup.lookup("GOOGLE_CLIENT_ID"),
+            generic_client_id: lookup.lookup("GENERIC_CLIENT_ID"),
+            saml_idp_metadata_url: lookup.lookup("SAML_IDP_METADATA_URL"),
+            saml_idp_metadata_xml: lookup.lookup("SAML_IDP_METADATA_XML"),
             google_client_secret: lookup
-                .lookup(GOOGLE_CLIENT_SECRET_VARIABLE)
+                .lookup("GOOGLE_CLIENT_SECRET")
                 .map(SecretString::from),
             microsoft_client_secret: lookup
-                .lookup(MICROSOFT_CLIENT_SECRET_VARIABLE)
+                .lookup("MICROSOFT_CLIENT_SECRET")
                 .map(SecretString::from),
-            microsoft_tenant: lookup.lookup(MICROSOFT_TENANT_VARIABLE),
+            microsoft_tenant: lookup.lookup("MICROSOFT_TENANT"),
             generic_client_secret: lookup
-                .lookup(GENERIC_CLIENT_SECRET_VARIABLE)
+                .lookup("GENERIC_CLIENT_SECRET")
                 .map(SecretString::from),
-            generic_authorization_endpoint: lookup.lookup(GENERIC_AUTHORIZATION_ENDPOINT_VARIABLE),
-            generic_token_endpoint: lookup.lookup(GENERIC_TOKEN_ENDPOINT_VARIABLE),
-            generic_userinfo_endpoint: lookup.lookup(GENERIC_USERINFO_ENDPOINT_VARIABLE),
+            generic_authorization_endpoint: lookup.lookup("GENERIC_AUTHORIZATION_ENDPOINT"),
+            generic_token_endpoint: lookup.lookup("GENERIC_TOKEN_ENDPOINT"),
+            generic_userinfo_endpoint: lookup.lookup("GENERIC_USERINFO_ENDPOINT"),
             minimum_custom_key_length,
         })
     }

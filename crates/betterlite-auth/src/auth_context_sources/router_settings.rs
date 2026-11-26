@@ -53,23 +53,11 @@ fn settings_object(parsed: Json) -> Option<JsonObject> {
 
 // The same container count safe_json_loads enforces, so the YAML and JSON paths share one bound.
 fn json_depth(value: &Json) -> usize {
-    let mut pending = vec![(value, 0_usize)];
-    let mut deepest = 0;
-    while let Some((node, depth)) = pending.pop() {
-        let next = depth.saturating_add(1);
-        match node {
-            Json::Object(entries) => {
-                pending.extend(entries.values().map(|entry| (entry, next)));
-                deepest = deepest.max(next);
-            }
-            Json::List(items) => {
-                pending.extend(items.iter().map(|item| (item, next)));
-                deepest = deepest.max(next);
-            }
-            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => {}
-        }
+    match value {
+        Json::Object(entries) => 1 + entries.values().map(json_depth).max().unwrap_or(0),
+        Json::List(items) => 1 + items.iter().map(json_depth).max().unwrap_or(0),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => 0,
     }
-    deepest
 }
 
 // _parse_router_settings_value: a dictionary is used as given, a string goes through the decoder.
