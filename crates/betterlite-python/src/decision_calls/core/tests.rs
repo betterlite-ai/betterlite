@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::sync::PoisonError;
 
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;

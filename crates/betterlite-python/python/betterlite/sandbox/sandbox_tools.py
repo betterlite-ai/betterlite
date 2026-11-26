@@ -16,7 +16,7 @@ OBJECT: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonVal
 
 
 def register_sandbox_tools(tools: list[dict[str, JsonValue]]) -> None:
-    environment: JsonValue = JSON.validate_python(dict(os.environ))
+    environment: JsonValue = JSON.validate_python(os.environ.copy())
     entries: JsonValue = JSON.validate_python(tools)
     arguments: dict[str, CallValue] = {"environment": environment, "tools": entries}
     call_native(

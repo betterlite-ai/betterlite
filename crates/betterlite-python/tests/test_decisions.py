@@ -365,7 +365,7 @@ def test_state_calls_systemone() -> None:
             api_base=server.url,
             custom_llm_provider="azure_ai",
         )
-        call = server.calls[-1]
+    call = server.calls[-1]
     view = SYSTEMONE_VIEW.validate_json(response.model_dump_json())
     assert call["path"] == SYSTEMONE_PATH
     assert call["body"]["state"] == SYSTEMONE_STATE
@@ -569,7 +569,7 @@ def test_rejected_decision_error() -> None:
 
 
 def test_systemone_input_error() -> None:
-    with pytest.raises(BadRequestError, match="litellm.decisions") as raised:
+    with pytest.raises(BadRequestError, match=r"litellm\.decisions") as raised:
         systemone(
             model=SYSTEMONE_MODEL,
             input=INPUT_TEXT,

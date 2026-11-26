@@ -21,6 +21,8 @@ from betterlite._endpoints import (
 from betterlite._native import (
     NativeDecisionError,
     NativeDecisionSession,
+)
+from betterlite._native import (
     supported_decisions_providers as provider_names,
 )
 from betterlite.types.decisions import (
