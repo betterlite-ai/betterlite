@@ -69,6 +69,7 @@ use crate::auth::auth_resource_grants::{
     ResourceGrantStageInput, database_for_request, rule_for_request as grant_rule_for_request,
 };
 use crate::auth::request_body_safety::RequestBodySafetyStageInput;
+use crate::auth::route_match::PUBLIC_HEALTH_PATHS;
 use crate::error_body::AuthenticationFailure;
 use crate::state::ServerState;
 use axum::body::{Body, Bytes};
@@ -84,10 +85,7 @@ pub(crate) async fn authenticate(
     next: Next,
     failure_response: fn(&StageFailure) -> Response,
 ) -> Response {
-    if matches!(
-        request.uri().path(),
-        "/health/liveliness" | "/health/liveness" | "/health/readiness"
-    ) {
+    if PUBLIC_HEALTH_PATHS.contains(&request.uri().path()) {
         return next.run(request).await;
     }
     let Some(master_key) = master_key_state.as_ref() else {
