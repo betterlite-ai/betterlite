@@ -25,8 +25,7 @@ deviations:
     why: >-
       The grant is metadata JSON, not a typed field, and there is no LiteLLM answer to reproduce for a
       value it cannot iterate. Denying is the fail-closed answer for the same protected route.
-      falsy_grants_fall_back_to_the_team_list and non_iterable_truthy_grants_deny prove the fallback and
-      the denial.
+      passthrough_grant_truthiness proves the fallback and the denial on the same caller.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L753-L760
 kept_bugs:
   - what: >-

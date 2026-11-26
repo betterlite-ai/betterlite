@@ -695,29 +695,17 @@ fn method_filtered_registration_is_unprotected() {
 }
 
 #[rstest]
-#[case(JsonData::String(String::new()))]
-#[case(object(&[]))]
-#[case(JsonData::Bool(false))]
-#[case(JsonData::Number(serde_json::Number::from(0_i32)))]
-#[case(JsonData::Null)]
-fn falsy_grants_fall_back_to_the_team_list(#[case] value: JsonData) {
-    let team = payload(&[("allowed_passthrough_routes", strings(&["/team-pass"]))]);
-    let key = payload(&[("allowed_passthrough_routes", value)]);
-    let caller = RouteCaller {
-        metadata: Some(&key),
-        team_metadata: Some(&team),
-        ..RouteCaller::absent()
-    };
-    assert!(check_passthrough_route_access("/team-pass", &caller));
-}
-
-#[rstest]
-#[case(JsonData::Bool(true))]
-#[case(JsonData::Number(serde_json::Number::from(5_i32)))]
+#[case(JsonData::String(String::new()), true)]
+#[case(object(&[]), true)]
+#[case(JsonData::Bool(false), true)]
+#[case(JsonData::Number(serde_json::Number::from(0_i32)), true)]
+#[case(JsonData::Null, true)]
+#[case(JsonData::Bool(true), false)]
+#[case(JsonData::Number(serde_json::Number::from(5_i32)), false)]
 #[case(JsonData::Number(
     serde_json::Number::from_f64(0.5).expect("a finite number")
-))]
-fn non_iterable_truthy_grants_deny(#[case] value: JsonData) {
+), false)]
+fn passthrough_grant_truthiness(#[case] value: JsonData, #[case] allowed: bool) {
     let team = payload(&[("allowed_passthrough_routes", strings(&["/team-pass"]))]);
     let key = payload(&[("allowed_passthrough_routes", value)]);
     let caller = RouteCaller {
@@ -725,8 +713,12 @@ fn non_iterable_truthy_grants_deny(#[case] value: JsonData) {
         team_metadata: Some(&team),
         ..RouteCaller::absent()
     };
-    // the truthy key value wins over the team grant and denies, rather than raising
-    assert!(!check_passthrough_route_access("/team-pass", &caller));
+    // a falsy key grant falls back to the team list, while a truthy value that is not iterable
+    // wins over the team grant and denies rather than raising
+    assert_eq!(
+        check_passthrough_route_access("/team-pass", &caller),
+        allowed
+    );
 }
 
 #[test]
