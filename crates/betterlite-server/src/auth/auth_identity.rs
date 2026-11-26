@@ -9,6 +9,7 @@ use subtle::ConstantTimeEq as _;
 
 use crate::auth::auth_end_users::EndUserStageInput;
 use crate::auth::auth_key_budgets::KeyBudgetStageInput;
+use crate::auth::auth_model_budgets::ModelBudgetStageInput;
 use crate::auth::auth_model_patterns::{ModelAccessRejection, ModelPatternStageInput, run_stage};
 use crate::auth::auth_org_lookup::OrgStageInput;
 use crate::auth::auth_request_models::{RequestModelStageInput, resolve};
@@ -33,6 +34,7 @@ pub enum AuthBackend {
     AuthResourceGrants,
     AuthTagBudgets,
     AuthKeyBudgets,
+    AuthModelBudgets,
     TeamBudgetAdmission,
     AuthOrgLookup,
     AuthEndUsers,
@@ -53,6 +55,7 @@ pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
     AuthBackend::TeamBudgetAdmission,
     AuthBackend::AuthOrgLookup,
     AuthBackend::AuthEndUsers,
+    AuthBackend::AuthModelBudgets,
 ];
 
 #[derive(Clone, Debug)]
@@ -67,6 +70,7 @@ pub enum StageInput {
     AuthResourceGrants(Box<ResourceGrantStageInput>),
     AuthTagBudgets(Box<TagBudgetStageInput>),
     AuthKeyBudgets(Box<KeyBudgetStageInput>),
+    AuthModelBudgets(Box<ModelBudgetStageInput>),
     TeamBudgetAdmission(Box<TeamBudgetStageInput>),
     AuthOrgLookup(Box<OrgStageInput>),
     AuthEndUsers(Box<EndUserStageInput>),
@@ -103,6 +107,7 @@ pub(crate) enum StageFailure {
     RequestBodySafety(Box<ProxyException>),
     VirtualKeyRoutes(Box<ProxyException>),
     KeyBudgets(Box<ProxyException>),
+    ModelBudgets(Box<ProxyException>),
     TeamBudgets(Box<ProxyException>),
     OrgLookup(Box<ProxyException>),
     EndUsers(Box<ProxyException>),
@@ -140,6 +145,13 @@ pub(crate) fn dispatch(
                 return Err(StageFailure::from(AuthenticationFailure::Missing));
             };
             // the reads ran while the stage input was assembled, so the budget failures already surfaced there
+            Ok(stage.context.clone())
+        }
+        AuthBackend::AuthModelBudgets => {
+            let StageInput::AuthModelBudgets(stage) = input else {
+                return Err(StageFailure::from(AuthenticationFailure::Missing));
+            };
+            // the model budget checks and any fallback rewrite ran in the prefetch, so only the identity is left
             Ok(stage.context.clone())
         }
         AuthBackend::TeamBudgetAdmission => {

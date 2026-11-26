@@ -128,6 +128,9 @@ fn master_context(master_key: &SecretString) -> AuthContext {
         Err(StageFailure::KeyBudgets(_)) => {
             panic!("the master key stage runs no key budget check")
         }
+        Err(StageFailure::ModelBudgets(_)) => {
+            panic!("the master key stage runs no model budget check")
+        }
         Err(StageFailure::TeamBudgets(_)) => {
             panic!("the master key stage runs no team budget check")
         }

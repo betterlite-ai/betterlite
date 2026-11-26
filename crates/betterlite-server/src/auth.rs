@@ -62,6 +62,7 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 
 use crate::auth::auth_identity::{AuthBackend, AuthContext, StageFailure, StageInput};
+use crate::auth::auth_model_budgets::ModelBudgetRule;
 use crate::auth::auth_model_patterns::{
     ModelPatternStageInput, max_recurse_depth_for_request, rule_for_request,
 };
@@ -95,10 +96,21 @@ pub(crate) async fn authenticate(
     let pipeline = auth_stage_loop::run_stages(request, master_key, failure_response);
     match Box::pin(pipeline).await {
         Ok((staged, authenticated, body)) => {
+            let body = rewritten_body(&staged, body);
             auth_stage_loop::forward(staged, authenticated, body, next).await
         }
         Err(response) => *response,
     }
+}
+
+// a per-model budget fallback rewrites the buffered body, which every downstream handler parses in place of the client's
+fn rewritten_body(request: &Request<Body>, body: Option<Bytes>) -> Option<Bytes> {
+    let original = body?;
+    request
+        .extensions()
+        .get::<Arc<ModelBudgetRule>>()
+        .and_then(|rule| rule.applied_body())
+        .or(Some(original))
 }
 
 fn stage_input(
@@ -127,6 +139,9 @@ fn stage_input(
         ))),
         AuthBackend::AuthKeyBudgets => Ok(StageInput::AuthKeyBudgets(Box::new(
             auth_key_budgets::stage_input(request, authenticated)?,
+        ))),
+        AuthBackend::AuthModelBudgets => Ok(StageInput::AuthModelBudgets(Box::new(
+            auth_model_budgets::stage_input(request, authenticated, body)?,
         ))),
         AuthBackend::TeamBudgetAdmission => {
             team_budget_admission::stage_input(request, authenticated)
@@ -193,6 +208,12 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
                 .await
                 .map_err(StageFailure::KeyBudgets)?;
             Ok(StageInput::AuthKeyBudgets(stage))
+        }
+        StageInput::AuthModelBudgets(stage) => {
+            auth_model_budgets::prefetch(&stage)
+                .await
+                .map_err(StageFailure::ModelBudgets)?;
+            Ok(StageInput::AuthModelBudgets(stage))
         }
         StageInput::TeamBudgetAdmission(stage) => team_budget_admission::prefetched(stage).await,
         StageInput::AuthOrgLookup(stage) => {
