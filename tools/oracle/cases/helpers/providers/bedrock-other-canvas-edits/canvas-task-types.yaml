@@ -8,17 +8,17 @@ call:
         prompt: cat
         image: {kind: bytes, data: img}
         mask: {kind: text, text: m}
-        options: {taskType: BACKGROUND_REMOVAL, negativeText: n, width: 8}
+        options: {taskType: BACKGROUND_REMOVAL, negativeText: 'n', width: 8}
       - function: transform
         prompt: cat
         image: {kind: bytes, data: img}
         mask: {kind: text, text: m}
-        options: {taskType: IMAGE_VARIATION, maskPrompt: mp, negativeText: n, similarityStrength: 0.5}
+        options: {taskType: IMAGE_VARIATION, maskPrompt: mp, negativeText: 'n', similarityStrength: 0.5}
       - function: transform
         prompt: cat
         image: {kind: bytes, data: img}
         mask: {kind: text, text: m}
-        options: {taskType: OUTPAINTING, maskPrompt: mp, negativeText: n, outPaintingMode: DEFAULT}
+        options: {taskType: OUTPAINTING, maskPrompt: mp, negativeText: 'n', outPaintingMode: DEFAULT}
       - function: transform
         prompt: cat
         image: {kind: bytes, data: img}
@@ -43,12 +43,12 @@ call:
         prompt: cat
         image: {kind: bytes, data: img}
         mask: null
-        options: {negativeText: n, similarityStrength: 0.25}
+        options: {negativeText: 'n', similarityStrength: 0.25}
       - function: transform
         prompt: cat
         image: {kind: bytes, data: img}
         mask: null
-        options: {taskType: '   ', negativeText: n}
+        options: {taskType: '   ', negativeText: 'n'}
       - function: transform
         prompt: cat
         image: {kind: bytes, data: img}
