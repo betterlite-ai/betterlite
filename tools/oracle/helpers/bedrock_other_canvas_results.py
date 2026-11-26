@@ -6,7 +6,7 @@ import litellm
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.bedrock.common_utils import BedrockError
 from litellm.llms.bedrock.image_edit.amazon_nova_canvas_image_edit_transformation import (
-    BedrockAmazonNovaCanvasImageEditConfig as NovaConfig,
+    get_bedrock_image_edit_config_for_model as edit_config_for,
 )
 from litellm.router_utils.add_retry_fallback_headers import get_hidden_params_dict
 from litellm.types.utils import ImageResponse
@@ -15,6 +15,7 @@ from pydantic import JsonValue, TypeAdapter
 litellm.suppress_debug_info = True
 
 COST_HEADER: Final = "llm_provider-x-litellm-response-cost"
+NOVA_MODEL: Final = "amazon.nova-canvas-v1:0"
 
 
 class ResponseCall(TypedDict):
@@ -71,6 +72,6 @@ def response_answer(call: ResponseCall, config: EditConfig) -> JsonValue:
 
 
 def run(input_value: Input) -> JsonValue:
+    config = edit_config_for(NOVA_MODEL)
     litellm.model_cost = input_value["model_cost"]
-    config: EditConfig = NovaConfig()
     return [response_answer(call, config) for call in input_value["calls"]]
