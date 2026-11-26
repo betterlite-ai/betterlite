@@ -177,7 +177,7 @@ def vertex_answer(scenario: Scenario, merged: dict[str, JsonValue], base: str | 
     if token is None:
         token = ""
     config = VertexAIRealtimeConfig(access_token=token, project=project, location=region)
-    headers: dict[str, str] = config.validate_environment(headers={}, model=model, api_key=None)
+    headers: dict[str, str] = config.validate_environment(headers={}, model=model, api_key=None)  # type: ignore[misc]  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/realtime/transformation.py#L78-L83
     view = empty_view("vertex_ai")
     view["api_base"] = base
     view["url"] = config.get_complete_url(api_base=base, model=model)
