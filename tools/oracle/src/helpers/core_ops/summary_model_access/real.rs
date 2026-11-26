@@ -126,9 +126,9 @@ impl SummaryModelChecks for RealChecks<'_> {
         match granted {
             Ok(()) => Ok(()),
             Err(EntityModelAccessError::Denied(_)) => Err(PolicyFailure::Denied),
-            Err(EntityModelAccessError::RecurseDepth { model }) => {
+            Err(EntityModelAccessError::RecurseDepth { model: depth_model }) => {
                 Err(PolicyFailure::Unexpected(RealFailure::RecurseDepth {
-                    model,
+                    model: depth_model,
                 }))
             }
             Err(

@@ -32,19 +32,19 @@ where
     Checks: SummaryModelChecks,
     Repositories: SummaryAccessRepositories,
 {
-    let (Some(principal), Some(proxy)) = (principal, proxy) else {
+    let (Some(auth), Some(globals)) = (principal, proxy) else {
         return Ok(true);
     };
-    let fields: AccessFields = serde_json::to_value(principal)
+    let fields: AccessFields = serde_json::to_value(auth)
         .and_then(serde_json::from_value)
         .map_err(SummaryAccessError::Principal)?;
     let scope = Scope {
         model: summary_model,
         fields: &fields,
-        database: proxy.database,
-        router: proxy.router,
-        checks: proxy.checks,
-        repositories: proxy.repositories,
+        database: globals.database,
+        router: globals.router,
+        checks: globals.checks,
+        repositories: globals.repositories,
     };
     // source order, stopping at the first denial so a denied scope prevents the later lookups
     let denied =
@@ -115,8 +115,8 @@ where
             return false;
         };
         // the summary request reads the row without ever upserting it
-        let user = match self.repositories.user(user_id, false).await {
-            Ok(user) => user,
+        let loaded = match self.repositories.user(user_id, false).await {
+            Ok(row) => row,
             Err(failure) => {
                 tracing::debug!(
                     "compact_20260112: user object lookup failed for summary_model={model} access \
@@ -125,7 +125,7 @@ where
                 None
             }
         };
-        let Some(user) = user else {
+        let Some(user) = loaded else {
             return false;
         };
         let outcome = self.checks.user_call(self.router, model, &user);
@@ -138,8 +138,8 @@ where
         let Some(project_id) = self.fields.project_id.as_deref().filter(|_| self.database) else {
             return false;
         };
-        let project = match self.repositories.project(project_id).await {
-            Ok(project) => project,
+        let loaded = match self.repositories.project(project_id).await {
+            Ok(row) => row,
             Err(failure) => {
                 tracing::debug!(
                     "compact_20260112: project object lookup failed for summary_model={model} \
@@ -148,7 +148,7 @@ where
                 None
             }
         };
-        let Some(project) = project.filter(|project| !project.models.is_empty()) else {
+        let Some(project) = loaded.filter(|row| !row.models.is_empty()) else {
             return false;
         };
         let outcome = self.checks.project_call(self.router, model, &project);
@@ -164,8 +164,8 @@ where
         ) else {
             return false;
         };
-        let membership = match self.repositories.membership(user_id, team_id).await {
-            Ok(membership) => membership,
+        let loaded = match self.repositories.membership(user_id, team_id).await {
+            Ok(row) => row,
             Err(failure) => {
                 tracing::warn!(
                     "compact_20260112: team membership lookup failed for summary_model={model} \
@@ -174,7 +174,7 @@ where
                 return true;
             }
         };
-        let Some(membership) = membership else {
+        let Some(membership) = loaded else {
             return false;
         };
         let allowed_models = member_allowed_models(&membership);

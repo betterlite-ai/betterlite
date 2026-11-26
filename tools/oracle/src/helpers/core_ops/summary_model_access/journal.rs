@@ -18,7 +18,7 @@ pub(super) struct CallRecord {
 }
 
 impl CallRecord {
-    pub(super) fn new(call: &'static str) -> Self {
+    pub(super) const fn new(call: &'static str) -> Self {
         Self {
             call,
             object_type: None,

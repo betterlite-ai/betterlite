@@ -56,10 +56,10 @@ pub(super) fn project_row(models: &[&str]) -> ProjectTable {
 
 // None is a membership without a budget table, and an empty slice is an empty allowlist
 pub(super) fn membership_row(allowed: Option<&[&str]>) -> LiteLLMTeamMembership {
-    let Some(allowed) = allowed else {
+    let Some(models) = allowed else {
         return serde_json::from_str(r#"{"user_id": "user-1", "team_id": "team-1"}"#).unwrap();
     };
-    let listed = serde_json::to_string(allowed).unwrap();
+    let listed = serde_json::to_string(models).unwrap();
     serde_json::from_str(&format!(
         r#"{{"user_id": "user-1", "team_id": "team-1", "litellm_budget_table": {{"allowed_models": {listed}}}}}"#
     ))
@@ -91,26 +91,27 @@ pub(super) enum Call {
     LookupMembership(String, String),
 }
 
+fn object_call(
+    object_type: &'static str,
+    models: &[&str],
+    aliases: &BTreeMap<String, String>,
+) -> Call {
+    Call::Object {
+        object_type,
+        model: SUM.to_owned(),
+        models: models.iter().map(|name| (*name).to_owned()).collect(),
+        team_model_aliases: aliases.clone(),
+        team_id: Some("team-1".to_owned()),
+        router: true,
+    }
+}
+
 // the calls one open-every-scope run makes, in source order
 pub(super) fn every_scope_journal() -> Vec<Call> {
     let aliases = BTreeMap::from([(SUM.to_owned(), "team-model".to_owned())]);
     vec![
-        Call::Object {
-            object_type: "key",
-            model: SUM.to_owned(),
-            models: vec!["key-model".to_owned()],
-            team_model_aliases: aliases.clone(),
-            team_id: Some("team-1".to_owned()),
-            router: true,
-        },
-        Call::Object {
-            object_type: "team",
-            model: SUM.to_owned(),
-            models: vec!["team-model".to_owned()],
-            team_model_aliases: aliases.clone(),
-            team_id: Some("team-1".to_owned()),
-            router: true,
-        },
+        object_call("key", &["key-model"], &aliases),
+        object_call("team", &["team-model"], &aliases),
         // the summary check reads the user row and never creates one
         Call::LookupUser("user-1".to_owned(), false),
         Call::User {
@@ -125,14 +126,7 @@ pub(super) fn every_scope_journal() -> Vec<Call> {
             router: true,
         },
         Call::LookupMembership("user-1".to_owned(), "team-1".to_owned()),
-        Call::Object {
-            object_type: "team",
-            model: SUM.to_owned(),
-            models: vec!["member-model".to_owned()],
-            team_model_aliases: aliases,
-            team_id: Some("team-1".to_owned()),
-            router: true,
-        },
+        object_call("team", &["member-model"], &aliases),
     ]
 }
 
