@@ -203,14 +203,16 @@ fn url_scheme(url: &str) -> &str {
         return "";
     };
     let mut characters = scheme.chars();
-    let valid = characters
+    if !characters
         .next()
         .is_some_and(|first| first.is_ascii_alphabetic())
-        && characters.all(|character| {
-            character.is_ascii_alphanumeric() || matches!(character, '+' | '-' | '.')
-        });
-    if valid {
-        return scheme;
+    {
+        return "";
     }
-    ""
+    if !characters
+        .all(|character| character.is_ascii_alphanumeric() || matches!(character, '+' | '-' | '.'))
+    {
+        return "";
+    }
+    scheme
 }

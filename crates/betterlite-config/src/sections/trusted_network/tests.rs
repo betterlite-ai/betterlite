@@ -130,4 +130,8 @@ fn invalid_value_fallback() {
             if variable == "NO_SUCH_RANGES"
                 && path == "general_settings.mcp_trusted_proxy_ranges[0]"
     ));
+
+    // one hop is the smallest value the boundary accepts; zero and below are refused above
+    let one_hop = load("general_settings:\n  mcp_xff_num_trusted_hops: 1\n", &[]).unwrap();
+    assert_eq!(one_hop.mcp_xff_num_trusted_hops, Some(1));
 }

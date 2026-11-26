@@ -438,6 +438,10 @@ fn request_from_trusted_proxy_gating() {
     assert!(!is_request_from_trusted_proxy(&peer_inside, &settings));
     settings.mcp_trusted_proxy_ranges = Some(list(&["10.0.0.0/8"]));
     assert!(is_request_from_trusted_proxy(&peer_inside, &settings));
+    // the toggle still decides on its own, even with the ranges configured
+    settings.use_x_forwarded_for = false;
+    assert!(!is_request_from_trusted_proxy(&peer_inside, &settings));
+    settings.use_x_forwarded_for = true;
     assert!(!is_request_from_trusted_proxy(
         &request(Some("203.0.113.9")),
         &settings
@@ -445,6 +449,46 @@ fn request_from_trusted_proxy_gating() {
     assert!(!is_request_from_trusted_proxy(&request(None), &settings));
     settings.mcp_trusted_proxy_ranges = Some(list(&["nope"]));
     assert!(!is_request_from_trusted_proxy(&peer_inside, &settings));
+}
+
+#[test]
+fn logs_only_the_ignored_header_and_unconfigured_ranges() {
+    let logs = Logs::default();
+    let subscriber = Registry::default().with(logs.clone());
+    let guard = subscriber::set_default(subscriber);
+    // a header while the toggle is off: the direct peer answers and the drop is logged
+    assert_eq!(
+        get_mcp_client_ip(&forwarded(Some("10.0.0.5"), "203.0.113.7"), &defaults()),
+        Some("10.0.0.5".to_owned())
+    );
+    let trusted = mcp_settings(&["10.0.0.0/8"]);
+    // trusted with configured ranges: the header is used and nothing is logged
+    assert_eq!(
+        get_mcp_client_ip(&forwarded(Some("10.0.0.5"), "203.0.113.7"), &trusted),
+        Some("203.0.113.7".to_owned())
+    );
+    // an empty range list is as untrusted as a missing one, and says so
+    assert!(!is_request_from_trusted_proxy(
+        &request(Some("10.0.0.5")),
+        &mcp_settings(&[])
+    ));
+    assert!(is_request_from_trusted_proxy(
+        &request(Some("10.0.0.5")),
+        &trusted
+    ));
+    drop(guard);
+    let events = logs
+        .0
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone();
+    assert_eq!(
+        events,
+        vec![
+            "DEBUG received an X-Forwarded-For header with use_x_forwarded_for disabled; the direct peer is used for MCP access control".to_owned(),
+            "DEBUG mcp_trusted_proxy_ranges is not configured, so X-Forwarded-* headers are not trusted".to_owned(),
+        ]
+    );
 }
 
 #[test]

@@ -65,7 +65,10 @@ pub fn ip_in_networks(client_ip: Option<&str>, networks: &[IpNet]) -> bool {
     let Some(client_ip) = client_ip else {
         return false;
     };
-    if client_ip.is_empty() || networks.is_empty() {
+    if client_ip.is_empty() {
+        return false;
+    }
+    if networks.is_empty() {
         return false;
     }
     let Ok(address) = client_ip.trim().parse::<IpAddr>() else {

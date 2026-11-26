@@ -51,7 +51,10 @@ pub fn is_trusted_proxy(proxy_ip: Option<&str>, trusted_networks: &[IpNet]) -> b
     let Some(proxy_ip) = proxy_ip else {
         return false;
     };
-    if proxy_ip.is_empty() || trusted_networks.is_empty() {
+    if proxy_ip.is_empty() {
+        return false;
+    }
+    if trusted_networks.is_empty() {
         return false;
     }
     let Ok(address) = proxy_ip.trim().parse::<IpAddr>() else {
