@@ -164,12 +164,14 @@ fn model_pattern_input(
             return Err(StageFailure::from(AuthenticationFailure::Missing));
         }
     };
+    let rule = rule_for_request(request);
+    let depth = max_recurse_depth_for_request(request);
     Ok(StageInput::AuthModelPatterns(Box::new(
         ModelPatternStageInput {
             context,
             requested,
-            rule: rule_for_request(request),
-            max_recurse_depth: max_recurse_depth_for_request(request),
+            rule,
+            max_recurse_depth: depth,
         },
     )))
 }
