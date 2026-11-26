@@ -116,11 +116,11 @@ const INSERT_TOKEN: &str = "INSERT INTO \"LiteLLM_VerificationToken\" (token, me
      VALUES ($1, ($2::text)::jsonb, TIMESTAMP '2000-01-01 00:00:00')";
 
 #[derive(Clone, Copy)]
-struct Row<'a> {
-    table: &'a str,
-    column: &'a str,
-    key_column: &'a str,
-    key: &'a str,
+struct Row<'row> {
+    table: &'row str,
+    column: &'row str,
+    key_column: &'row str,
+    key: &'row str,
 }
 
 const ENVIRONMENT_VARIABLES: Row<'static> = Row {
