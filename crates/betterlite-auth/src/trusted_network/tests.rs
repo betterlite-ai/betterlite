@@ -88,7 +88,7 @@ fn proxy_config(texts: &[&str]) -> TrustedProxyConfig {
     }
 }
 
-fn request<'request>(peer: Option<&'request str>) -> NetworkRequest<'request> {
+fn request(peer: Option<&str>) -> NetworkRequest<'_> {
     NetworkRequest {
         peer,
         x_forwarded_for: None,
@@ -773,33 +773,23 @@ fn decodes_and_encodes_the_header_document() {
 
 #[test]
 fn decoder_rejects_bad_documents() {
-    assert!(matches!(
-        decode_network_headers(b"not json"),
-        Err(DecodeError::Json(_))
-    ));
+    let malformed: [&[u8]; 6] = [
+        b"not json",
+        br#"{"host":1}"#,
+        br#"{"x_forwarded_for":{"a":1}}"#,
+        br#"{"trusted_proxy_ranges":5}"#,
+        br#"{"mcp_trusted_proxy_ranges":"10.0.0.0/8"}"#,
+        br#"{"mcp_trusted_proxy_ranges":["10.0.0.0/8",7]}"#,
+    ];
+    for bytes in malformed {
+        assert!(matches!(
+            decode_network_headers(bytes),
+            Err(DecodeError::Json(_))
+        ));
+    }
     assert!(matches!(
         decode_network_headers(b"[]"),
         Err(DecodeError::NotAnObject)
-    ));
-    assert!(matches!(
-        decode_network_headers(br#"{"host":1}"#),
-        Err(DecodeError::Json(_))
-    ));
-    assert!(matches!(
-        decode_network_headers(br#"{"x_forwarded_for":{"a":1}}"#),
-        Err(DecodeError::Json(_))
-    ));
-    assert!(matches!(
-        decode_network_headers(br#"{"trusted_proxy_ranges":5}"#),
-        Err(DecodeError::Json(_))
-    ));
-    assert!(matches!(
-        decode_network_headers(br#"{"mcp_trusted_proxy_ranges":"10.0.0.0/8"}"#),
-        Err(DecodeError::Json(_))
-    ));
-    assert!(matches!(
-        decode_network_headers(br#"{"mcp_trusted_proxy_ranges":["10.0.0.0/8",7]}"#),
-        Err(DecodeError::Json(_))
     ));
     match decode_network_headers(br#"{"host":"h","nope":"x"}"#) {
         Err(DecodeError::UnknownField { field }) => assert_eq!(field, "nope"),

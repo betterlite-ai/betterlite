@@ -43,9 +43,10 @@ pub fn parse_normalized(texts: &[String], setting_name: &str) -> Vec<IpNet> {
         if cidr.is_empty() {
             continue;
         }
-        match network_from_text(cidr) {
-            Some(network) => networks.push(network),
-            None => warn!("Invalid CIDR in {setting_name}: {cidr}, skipping"),
+        if let Some(network) = network_from_text(cidr) {
+            networks.push(network);
+        } else {
+            warn!("Invalid CIDR in {setting_name}: {cidr}, skipping");
         }
     }
     networks

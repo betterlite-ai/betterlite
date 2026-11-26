@@ -4,7 +4,7 @@ use thiserror::Error;
 
 use crate::trusted_network::cidr::CidrRanges;
 
-pub const MAX_NETWORK_HEADER_BYTES: usize = 1_048_576;
+pub const MAX_NETWORK_HEADER_BYTES: usize = 0x0010_0000;
 pub const MAX_NETWORK_HEADER_DEPTH: usize = 64;
 
 const FIELD_NAMES: [&str; 5] = [

@@ -26,7 +26,7 @@ const MODEL_ROUTE: &str = "/v1/files";
 const MASTER_KEY: &str = "secret-master-key";
 const PROXY_PEER: &str = "10.0.0.5";
 const CLIENT_IP: &str = "203.0.113.7";
-const OVERSIZE_HEADER: usize = 1_048_577;
+const OVERSIZE_HEADER: usize = 0x0010_0001;
 
 fn config_with(settings: &str) -> Config {
     ConfigLoader {

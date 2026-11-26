@@ -137,7 +137,7 @@ fn trusted_settings(given: &Settings) -> TrustedNetworkSettings {
     }
 }
 
-fn network_request<'request>(input: &'request Input) -> NetworkRequest<'request> {
+fn network_request(input: &Input) -> NetworkRequest<'_> {
     NetworkRequest {
         peer: input.peer.as_deref(),
         x_forwarded_for: input.headers.x_forwarded_for.as_deref(),

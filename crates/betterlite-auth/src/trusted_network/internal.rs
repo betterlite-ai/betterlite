@@ -95,9 +95,10 @@ pub fn is_internal_ip(client_ip: Option<&str>, internal_networks: Option<&[IpNet
 fn parse_verbatim(texts: &[String], setting_name: &str) -> Vec<IpNet> {
     let mut networks = Vec::with_capacity(texts.len());
     for text in texts {
-        match network_from_text(text) {
-            Some(network) => networks.push(network),
-            None => warn!("Invalid CIDR in {setting_name}: {text}, skipping"),
+        if let Some(network) = network_from_text(text) {
+            networks.push(network);
+        } else {
+            warn!("Invalid CIDR in {setting_name}: {text}, skipping");
         }
     }
     networks
