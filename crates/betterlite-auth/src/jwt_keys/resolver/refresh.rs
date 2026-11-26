@@ -1,0 +1,129 @@
+use betterlite_models::decisions::Json;
+
+use super::super::errors::KeyError;
+use super::{
+    JWKS_UNREACHABLE_BACKOFF_SECONDS, JwksResolver, Refresh, STALE_CACHE_KEY_PREFIX,
+    STALE_WRITTEN_AT_CACHE_KEY_PREFIX, UNREACHABLE_CACHE_KEY_PREFIX,
+};
+
+impl JwksResolver {
+    // _refresh_or_serve_stale: only an unreachable IdP unlocks the last-known-good copy, and only inside
+    // ttl + stale_ttl measured from when it was written with the settings in force right now.
+    pub(super) async fn refresh_or_serve_stale(
+        &self,
+        cache_key: &str,
+        ttl: f64,
+        refresh: Refresh<'_>,
+        log_context: &str,
+    ) -> Result<Json, KeyError> {
+        let stale_ttl = self.settings.public_key_stale_ttl;
+        let unreachable = match self
+            .refresh_or_record_outage(cache_key, ttl, stale_ttl, refresh)
+            .await
+        {
+            Ok(value) => return Ok(value),
+            Err(error @ KeyError::Unreachable { .. }) => error,
+            Err(other) => return Err(other),
+        };
+        if stale_ttl <= 0.0_f64 {
+            return Err(unreachable);
+        }
+        let stale = self
+            .cache
+            .get(&format!("{STALE_CACHE_KEY_PREFIX}{cache_key}"))
+            .await?
+            .filter(|value| !matches!(value, Json::Null));
+        let age = self.stale_copy_age(cache_key).await?;
+        let Some(stale) = stale else {
+            return Err(unreachable);
+        };
+        let Some(age) = age else {
+            return Err(unreachable);
+        };
+        let lifetime = ttl + stale_ttl;
+        if age > lifetime {
+            return Err(unreachable);
+        }
+        let remaining = (lifetime - age).max(0.0_f64);
+        tracing::warn!(
+            target: "LiteLLM Proxy",
+            "JWT Auth: identity provider unreachable, authenticating {log_context} against a stale JWKS copy \
+             of {cache_key} (last refreshed {age:.0}s ago, stops being trusted in {remaining:.0}s). \
+             Refresh failed: {unreachable}"
+        );
+        Ok(stale)
+    }
+
+    // _refresh_or_record_outage: a failed refresh is remembered for 30 seconds so an outage costs one fetch
+    // per window; a successful one writes fresh, then stale, then the wall-clock write time, in that order.
+    async fn refresh_or_record_outage(
+        &self,
+        cache_key: &str,
+        ttl: f64,
+        stale_ttl: f64,
+        refresh: Refresh<'_>,
+    ) -> Result<Json, KeyError> {
+        let unreachable_key = format!("{UNREACHABLE_CACHE_KEY_PREFIX}{cache_key}");
+        if let Some(previous) = self
+            .cache
+            .get(&unreachable_key)
+            .await?
+            .filter(|value| !matches!(value, Json::Null))
+        {
+            let message = match previous {
+                Json::Text(message) => message,
+                Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+                    "a previous JWKS fetch failed".to_owned()
+                }
+            };
+            return Err(KeyError::Unreachable { message });
+        }
+        let refreshed = match self.refresh_now(refresh).await {
+            Ok(value) => value,
+            Err(KeyError::Unreachable { message }) => {
+                self.cache
+                    .set(
+                        &unreachable_key,
+                        &Json::Text(message.clone()),
+                        JWKS_UNREACHABLE_BACKOFF_SECONDS,
+                    )
+                    .await?;
+                return Err(KeyError::Unreachable { message });
+            }
+            Err(other) => return Err(other),
+        };
+        self.cache.set(cache_key, &refreshed, ttl).await?;
+        if stale_ttl > 0.0_f64 {
+            let lifetime = ttl + stale_ttl;
+            self.cache
+                .set(
+                    &format!("{STALE_CACHE_KEY_PREFIX}{cache_key}"),
+                    &refreshed,
+                    lifetime,
+                )
+                .await?;
+            let written_at =
+                serde_json::Number::from_f64(self.clock.now()).map_or(Json::Null, Json::Number);
+            self.cache
+                .set(
+                    &format!("{STALE_WRITTEN_AT_CACHE_KEY_PREFIX}{cache_key}"),
+                    &written_at,
+                    lifetime,
+                )
+                .await?;
+        }
+        Ok(refreshed)
+    }
+
+    // _stale_copy_age: only a numeric epoch counts, and Python's bool is an int, so true is the epoch 1.0.
+    async fn stale_copy_age(&self, cache_key: &str) -> Result<Option<f64>, KeyError> {
+        let written_at_key = format!("{STALE_WRITTEN_AT_CACHE_KEY_PREFIX}{cache_key}");
+        let written_at = self.cache.get(&written_at_key).await?;
+        let epoch = match written_at {
+            Some(Json::Number(number)) => number.as_f64(),
+            Some(Json::Bool(flag)) => Some(if flag { 1.0_f64 } else { 0.0_f64 }),
+            Some(Json::Null | Json::Text(_) | Json::List(_) | Json::Object(_)) | None => None,
+        };
+        Ok(epoch.map(|written| self.clock.now() - written))
+    }
+}

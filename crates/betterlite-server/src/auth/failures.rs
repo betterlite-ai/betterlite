@@ -14,7 +14,8 @@ pub(crate) fn stage_failure_response(failure: &StageFailure) -> Response {
     match failure {
         StageFailure::Authentication(authentication) => authentication_error(authentication),
         StageFailure::ModelAccess(rejection) => rejection_response(rejection),
-        StageFailure::AuthRequestPolicy(exception)
+        StageFailure::JwtKeys(exception)
+        | StageFailure::AuthRequestPolicy(exception)
         | StageFailure::ResourceGrants(exception)
         | StageFailure::TagBudgets(exception)
         | StageFailure::RequestBodySafety(exception)

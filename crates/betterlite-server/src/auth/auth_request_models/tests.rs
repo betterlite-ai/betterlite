@@ -107,6 +107,9 @@ fn master_context(master_key: &SecretString) -> AuthContext {
         Err(StageFailure::Authentication(_)) => {
             panic!("the master key stage authenticates")
         }
+        Err(StageFailure::JwtKeys(_)) => {
+            panic!("the master key stage runs no JWKS lookup")
+        }
         Err(StageFailure::ModelAccess(_)) => {
             panic!("the master key stage reports no model access")
         }

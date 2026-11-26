@@ -15,12 +15,14 @@ use crate::auth::auth_request_models::{RequestModelStageInput, resolve};
 use crate::auth::auth_request_policy::{self, AuthRequestPolicyStageInput};
 use crate::auth::auth_resource_grants::{self, ResourceGrantStageInput};
 use crate::auth::auth_tag_budgets::TagBudgetStageInput;
+use crate::auth::jwt_keys::{self, JwtKeyStageInput};
 use crate::auth::request_body_safety::{self, RequestBodySafetyStageInput};
 use crate::auth::team_budget_admission::TeamBudgetStageInput;
 use crate::error_body::AuthenticationFailure;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AuthBackend {
+    JwtKeys,
     MasterKey,
     AuthRequestPolicy,
     RequestBodySafety,
@@ -34,8 +36,10 @@ pub enum AuthBackend {
     AuthEndUsers,
 }
 
-// B052 owns the final stage order; the master-key stage authenticates before the model stages run.
+// B052 owns the final stage order; the JWT key fetch runs before the master-key comparison it sits before in
+// LiteLLM, and the master-key stage authenticates before the model stages run.
 pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
+    AuthBackend::JwtKeys,
     AuthBackend::MasterKey,
     AuthBackend::AuthRequestPolicy,
     AuthBackend::RequestBodySafety,
@@ -51,6 +55,7 @@ pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
 
 #[derive(Clone, Debug)]
 pub enum StageInput {
+    JwtKeys(Box<JwtKeyStageInput>),
     MasterKey(Option<SecretString>),
     AuthRequestPolicy(Box<AuthRequestPolicyStageInput>),
     RequestBodySafety(Box<RequestBodySafetyStageInput>),
@@ -86,6 +91,7 @@ pub trait BudgetAdmission {
 }
 
 pub(crate) enum StageFailure {
+    JwtKeys(Box<ProxyException>),
     Authentication(Box<AuthenticationFailure>),
     ModelAccess(Box<ModelAccessRejection>),
     AuthRequestPolicy(Box<ProxyException>),
@@ -110,6 +116,7 @@ pub(crate) fn dispatch(
     master_key: &SecretString,
 ) -> Result<AuthContext, StageFailure> {
     match backend {
+        AuthBackend::JwtKeys => jwt_keys::run_stage(input),
         AuthBackend::MasterKey => master_key_stage(input, master_key)
             .map_err(|failure| StageFailure::Authentication(Box::new(failure))),
         AuthBackend::AuthRequestPolicy => auth_request_policy_stage(input),

@@ -171,7 +171,8 @@ impl FailureContext {
 
 fn raised_exception(failure: &StageFailure) -> Option<ProxyException> {
     match failure {
-        StageFailure::AuthRequestPolicy(exception)
+        StageFailure::JwtKeys(exception)
+        | StageFailure::AuthRequestPolicy(exception)
         | StageFailure::ResourceGrants(exception)
         | StageFailure::TagBudgets(exception)
         | StageFailure::RequestBodySafety(exception)

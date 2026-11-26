@@ -110,6 +110,7 @@ fn stage_input(
     body: Option<&Bytes>,
 ) -> Result<StageInput, StageFailure> {
     match backend {
+        AuthBackend::JwtKeys => Ok(jwt_keys::stage_input(request)),
         AuthBackend::MasterKey => Ok(StageInput::MasterKey(extract_key(request.headers()))),
         AuthBackend::AuthRequestPolicy => Ok(StageInput::AuthRequestPolicy(Box::new(
             auth_request_policy::stage_input(request, authenticated, body)?,
@@ -206,6 +207,7 @@ fn resolver_for(request: &Request<Body>) -> Arc<RequestModelResolver> {
 // stage_input cannot await while holding the request borrow (Request<Body> is Send but not Sync), so the caller awaits the stage prefetch on the owned input
 pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, StageFailure> {
     match input {
+        StageInput::JwtKeys(stage) => jwt_keys::prefetched(*stage).await,
         StageInput::AuthTagBudgets(stage) => {
             auth_tag_budgets::prefetch(&stage)
                 .await
