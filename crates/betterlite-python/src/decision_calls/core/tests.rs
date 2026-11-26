@@ -48,6 +48,29 @@ fn core_policy_trusts_proxy_headers_for_logging() {
 }
 
 #[test]
+fn core_sandbox_uses_the_session_environment() {
+    let core: SessionCore =
+        SessionCore::build(r#"{"environment":{"E2B_API_KEY":"sk-env"}}"#).unwrap();
+    let sandbox = core.sandbox();
+    assert_eq!(
+        sandbox
+            .e2b
+            .environment
+            .get("E2B_API_KEY")
+            .map(String::as_str),
+        Some("sk-env")
+    );
+    assert_eq!(
+        sandbox
+            .opensandbox
+            .environment
+            .get("E2B_API_KEY")
+            .map(String::as_str),
+        Some("sk-env")
+    );
+}
+
+#[test]
 fn core_answers_an_unknown_operation_with_the_operation_it_got() {
     let core: SessionCore = SessionCore::build("{}").unwrap();
     let wire: CallWire = parse(r#"{"operation": "chat"}"#).unwrap();
@@ -84,6 +107,21 @@ fn core_registers_and_resolves_sandbox_tools() {
             .unwrap();
     assert_eq!(core.call(&cleared).unwrap(), "null");
     assert_eq!(core.call(&resolve).unwrap(), "null");
+}
+
+#[test]
+fn core_resolves_sandbox_tool_credentials_from_session_environment() {
+    let core: SessionCore =
+        SessionCore::build(r#"{"environment":{"E2B_API_KEY":"sk-from-env"}}"#).unwrap();
+    let register: CallWire = parse(
+        r#"{"operation":"register_tools","arguments":{"environment":{"E2B_API_KEY":"sk-from-env"},"tools":[{"sandbox_tool_name":"env-tool","litellm_params":{"sandbox_provider":"e2b","api_key":"os.environ/E2B_API_KEY"}}]}}"#,
+    )
+    .unwrap();
+    assert_eq!(core.call(&register).unwrap(), "null");
+    let resolve: CallWire =
+        parse(r#"{"operation":"resolve_tool","arguments":{"name":"env-tool"}}"#).unwrap();
+    let answer = core.call(&resolve).unwrap();
+    assert!(answer.contains(r#""api_key":"sk-from-env""#));
 }
 
 #[test]
@@ -140,6 +178,19 @@ async fn core_answers_a_run_with_no_container_as_a_conversion_failure() {
     assert!(matches!(
         failure,
         SessionFailure::Invalid(ConvertError::Container)
+    ));
+}
+
+#[tokio::test]
+async fn core_runs_a_valid_handle_and_propagates_the_missing_provider_key() {
+    let core: SessionCore = SessionCore::build(r#"{"environment":{}}"#).unwrap();
+    let wire: CallWire = parse(
+        r#"{"operation":"run_code","arguments":{"provider":"e2b","code":"print(1)","container":{"id":"sbx-1","provider":"e2b","hidden_params":{"envd_access_token":"envd","traffic_access_token":"traffic","api_base":"not a url"}}}}"#,
+    )
+    .unwrap();
+    assert!(matches!(
+        core.acall(&wire).await,
+        Err(SessionFailure::Raised(_))
     ));
 }
 
