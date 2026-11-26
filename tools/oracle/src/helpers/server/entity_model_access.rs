@@ -121,7 +121,7 @@ async fn step_value(step: &Step) -> Result<Value, Box<HelperError>> {
             let outcome = can_key_call_model(&model, &token, &context(), lookup.as_ref()).await;
             Ok(decision_value(outcome))
         }
-        Function::Team => team_value(step, &model, team.as_ref(), lookup.as_ref()).await,
+        Function::Team => Ok(team_value(step, &model, team.as_ref(), lookup.as_ref()).await),
         Function::Org => {
             let org: Option<OrganizationTable> = row(step.org.as_ref())?;
             let outcome = can_org_access_model(&model, org.as_ref(), &step.aliases, &context());
@@ -155,7 +155,7 @@ async fn team_value(
     model: &RequestedModels,
     team: Option<&LiteLLMTeamTable>,
     lookup: Option<&TeamLookup>,
-) -> Result<Value, Box<HelperError>> {
+) -> Value {
     let request = TeamAccessRequest {
         team,
         team_aliases: &step.aliases,
@@ -163,7 +163,7 @@ async fn team_value(
         lookup,
     };
     let outcome = can_team_access_model(model, &request, &context()).await;
-    Ok(decision_value(outcome))
+    decision_value(outcome)
 }
 
 async fn resolved_value(
