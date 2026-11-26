@@ -285,8 +285,9 @@ fn stage_uses_the_server_tracker() {
     let context = master_context(&master_key);
     let mut request = stage_request(&[], "{}");
     request.extensions_mut().insert(tasks.clone());
-    let stage = stage_input(&request, Some(&context), None)
-        .expect("the authenticated request builds its stage input");
+    let Ok(stage) = stage_input(&request, Some(&context), None) else {
+        panic!("the authenticated request builds its stage input");
+    };
     let inherited = stage.tasks.expect("the server tracker reaches the stage");
     assert!(TaskTracker::ptr_eq(&tasks, &inherited));
     let pending = inherited.token();
@@ -307,6 +308,30 @@ fn the_rule_debug_names_the_wired_resolver() {
     let debug = format!("{rule:?}");
     assert!(debug.contains("EndUserIdResolver"), "{debug}");
     assert!(!debug.contains("ScriptedCache"), "{debug}");
+}
+
+#[test]
+fn stage_debug_hides_server_state() {
+    let master_key = SecretString::from("secret-master-key".to_owned());
+    let context = master_context(&master_key);
+    let mut request = stage_request(&[], "{}");
+    request
+        .extensions_mut()
+        .insert(state_for(&config_with_database(false)));
+    request.extensions_mut().insert(TaskTracker::new());
+    let Ok(mut stage) = stage_input(&request, Some(&context), None) else {
+        panic!("the authenticated request builds its stage input");
+    };
+    let wired = format!("{stage:?}");
+    assert!(wired.contains("EndUserIdentityStageInput"), "{wired}");
+    assert!(wired.contains("state: true"), "{wired}");
+    assert!(wired.contains("tasks: true"), "{wired}");
+    assert!(!wired.contains("ServerState"), "{wired}");
+    stage.state = None;
+    stage.tasks = None;
+    let detached = format!("{stage:?}");
+    assert!(detached.contains("state: false"), "{detached}");
+    assert!(detached.contains("tasks: false"), "{detached}");
 }
 
 #[test]
@@ -725,8 +750,10 @@ async fn disabled_validation_without_id_clears_a_preseeded_budget_id() {
     request
         .extensions_mut()
         .insert(end_user_rule(&lookup, Some("unrelated-user")));
-    let mut stage = auth_end_users::stage_input(&request, Some(&master_context(&master_key)))
-        .expect("the budget stage input is built");
+    let Ok(mut stage) = auth_end_users::stage_input(&request, Some(&master_context(&master_key)))
+    else {
+        panic!("the budget stage input is built");
+    };
     assert_eq!(stage.rule.end_user_id.as_deref(), Some("unrelated-user"));
     prefetch_budget(&mut stage)
         .await

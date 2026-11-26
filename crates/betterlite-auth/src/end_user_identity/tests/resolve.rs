@@ -6,7 +6,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use betterlite_models::decisions::Json;
 use rstest::rstest;
-use tokio::time::sleep;
+use tokio::time::{sleep, timeout};
 
 use super::super::cache::{NEGATIVE_TTL_SECONDS, POSITIVE_TTL_SECONDS, ValidationCache};
 use super::super::existence::{EndUserExistence, ExistenceError, UserExistence, UserProbe};
@@ -85,7 +85,7 @@ async fn stalled_session_acquisition_is_bounded_by_the_probe_deadline() {
         }),
         cache: Arc::new(ScriptedCache::new()),
     };
-    let result = tokio::time::timeout(
+    let result = timeout(
         Duration::from_millis(200),
         identity.resolve(&request(Some("ghost"), None)),
     )

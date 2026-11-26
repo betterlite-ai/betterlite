@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::fmt;
 use std::sync::Arc;
 use tokio_util::task::TaskTracker;
 
@@ -26,7 +27,7 @@ pub struct EndUserIdentityRule {
     pub resolver: Option<Arc<EndUserIdResolver>>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct EndUserIdentityStageInput {
     pub context: AuthContext,
     pub raw_end_user_id: Option<String>,
@@ -106,7 +107,7 @@ pub(crate) async fn prefetch(
         .resolver
         .as_deref()
         .or(production_resolver.as_deref());
-    let resolved = match resolver {
+    let validated_id = match resolver {
         Some(resolver) if stage.database => resolver
             .resolve(&ResolveRequest {
                 raw_end_user_id: stage.raw_end_user_id.as_deref(),
@@ -117,7 +118,7 @@ pub(crate) async fn prefetch(
         // no database client is LiteLLM's prisma_client None, where the supplied id passes through
         Some(_) | None => stage.raw_end_user_id.clone(),
     };
-    stage.context.principal.end_user = resolved.map(|id| EndUserIdentity { id });
+    stage.context.principal.end_user = validated_id.map(|id| EndUserIdentity { id });
     Ok(())
 }
 
@@ -175,4 +176,18 @@ fn exception(error: &ResolveError) -> ProxyException {
         openai_code: None,
         provider_specific_fields: BTreeMap::new(),
     })
+}
+
+impl fmt::Debug for EndUserIdentityStageInput {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("EndUserIdentityStageInput")
+            .field("context", &self.context)
+            .field("raw_end_user_id", &self.raw_end_user_id)
+            .field("rule", &self.rule)
+            .field("database", &self.database)
+            .field("state", &self.state.is_some())
+            .field("tasks", &self.tasks.is_some())
+            .finish()
+    }
 }
