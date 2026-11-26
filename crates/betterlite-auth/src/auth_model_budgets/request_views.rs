@@ -1,4 +1,3 @@
-// _check_key_model_budget_with_fallback rewrites four request snapshots in a fixed order
 pub trait ModelRewrite {
     fn set_request_model(&mut self, model: &str);
 
@@ -16,6 +15,7 @@ pub trait ModelRewrite {
 #[error("the rewritten request body could not be serialized")]
 pub struct RewriteFailure;
 
+// _check_key_model_budget_with_fallback rewrites four request snapshots in a fixed order
 pub fn rewrite_model(request: &mut dyn ModelRewrite, model: &str) -> Result<(), RewriteFailure> {
     request.set_request_model(model);
     request.refresh_parsed_body();

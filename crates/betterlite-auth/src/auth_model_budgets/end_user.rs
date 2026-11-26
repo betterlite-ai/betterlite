@@ -19,7 +19,7 @@ pub struct EndUserParams {
 }
 
 // _apply_budget_limits_to_end_user_params: a nonnull row field wins even when it is zero or an empty map
-pub fn apply_budget_limits_to_end_user_params(
+pub fn apply_end_user_limits(
     params: &mut EndUserParams,
     budget: &LiteLLMBudgetTable,
     end_user_id: Option<&str>,
@@ -42,8 +42,8 @@ pub fn apply_budget_limits_to_end_user_params(
     tracing::debug!(end_user = ?end_user_id, "Applied budget limits to end user");
 }
 
-// update_valid_token_with_end_user_params: the id is always assigned, the other fields only when the row had them
-pub fn update_valid_token_with_end_user_params(token: &mut UserAPIKeyAuth, params: &EndUserParams) {
+// LiteLLM's update_valid_token_with_end_user_params: the id is always assigned, the other fields only when they came
+pub fn update_end_user_token(token: &mut UserAPIKeyAuth, params: &EndUserParams) {
     token.view.end_user_id.clone_from(&params.end_user_id);
     if let Some(tpm_limit) = params.end_user_tpm_limit {
         token.view.end_user_tpm_limit = Some(tpm_limit);

@@ -26,7 +26,7 @@ pub enum KeyBudgetError {
     Rewrite(RewriteFailure),
 }
 
-pub async fn check_key_model_budget_with_fallback(
+pub async fn check_key_budget_fallback(
     limiter: &dyn KeyModelBudgetLimiter,
     token: &UserAPIKeyAuth,
     model_name: &str,

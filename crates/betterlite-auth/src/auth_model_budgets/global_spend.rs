@@ -116,7 +116,7 @@ pub async fn get_global_proxy_spend(
     let Some(fetcher) = fetcher else {
         return Ok(None);
     };
-    if !settings.global_spend_enabled() {
+    if settings.max_budget <= Decimal::ZERO {
         return Ok(None);
     }
     let spend = fetch(fetcher).await?;

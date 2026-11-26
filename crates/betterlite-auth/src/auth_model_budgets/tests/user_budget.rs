@@ -89,16 +89,22 @@ async fn user_and_team_models_ordered_duplicates() {
     check_team_model_budget(&team, &key, &models).await.unwrap();
     assert_eq!(
         *user.calls.lock().unwrap(),
-        vec!["u1:a".to_owned(), "u1:b".to_owned(), "u1:a".to_owned()]
-    );
-    assert_eq!(
-        *team.calls.lock().unwrap(),
         vec![
-            "t1:a:1".to_owned(),
-            "t1:b:1".to_owned(),
-            "t1:a:1".to_owned()
+            ("u1".to_owned(), "a".to_owned()),
+            ("u1".to_owned(), "b".to_owned()),
+            ("u1".to_owned(), "a".to_owned())
         ]
     );
+    let team_seen = team.seen.lock().unwrap();
+    let team_models: Vec<&str> = team_seen.iter().map(|seen| seen.model.as_str()).collect();
+    assert_eq!(team_models, vec!["a", "b", "a"]);
+    assert!(team_seen.iter().all(|seen| seen.team_id == "t1"));
+    assert!(team_seen.iter().all(|seen| seen.budget.len() == 1));
+    assert!(team_seen.iter().all(|seen| {
+        seen.key_budget
+            .as_ref()
+            .is_some_and(|budget| budget.len() == 1)
+    }));
     let seen_budget = user.seen.lock().unwrap()[0].1.clone();
     assert_eq!(
         seen_budget,
@@ -118,19 +124,19 @@ async fn team_key_override_map_passthrough() {
         .await
         .unwrap();
     let expected = BTreeMap::from([("gpt-4".to_owned(), JsonData::Number(Number::from(7)))]);
-    assert_eq!(team.key_budgets.lock().unwrap()[0], Some(expected));
+    let seen = team.seen.lock().unwrap();
+    assert_eq!(seen[0].key_budget, Some(expected));
+    assert_eq!(
+        seen[0].budget,
+        BTreeMap::from([("gpt-4".to_owned(), JsonData::Number(Number::from(6)))])
+    );
 }
 
 #[tokio::test]
 async fn limiter_false_return_is_not_denial() {
-    let user = ScriptedUserLimiter {
-        within: false,
-        ..ScriptedUserLimiter::default()
-    };
-    let team = ScriptedTeamLimiter {
-        within: false,
-        ..ScriptedTeamLimiter::default()
-    };
+    // both default fixtures answer Ok(false), and a false answer is not a denial
+    let user = ScriptedUserLimiter::default();
+    let team = ScriptedTeamLimiter::default();
     let key = token(&[
         ("user_id", text("u1")),
         ("team_id", text("t1")),
@@ -141,7 +147,7 @@ async fn limiter_false_return_is_not_denial() {
     check_user_model_budget(&user, &key, &models).await.unwrap();
     check_team_model_budget(&team, &key, &models).await.unwrap();
     assert_eq!(user.calls.lock().unwrap().len(), 1);
-    assert_eq!(team.calls.lock().unwrap().len(), 1);
+    assert_eq!(team.seen.lock().unwrap().len(), 1);
 }
 
 #[tokio::test]

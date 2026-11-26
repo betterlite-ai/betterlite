@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::ops::AsyncFnMut;
 
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_error::error::ErrorClass;
@@ -36,25 +37,33 @@ pub async fn read_user_model_max_budget(
     }
 }
 
+async fn check_each_model<Check>(models: &[String], mut check: Check) -> Result<(), ErrorClass>
+where
+    Check: AsyncFnMut(&str) -> Result<(), ErrorClass>,
+{
+    for model in models {
+        check(model.as_str()).await?;
+    }
+    Ok(())
+}
+
 // _check_user_model_budget: every model in order, including duplicates, and the limiter's bool is not a verdict
 pub async fn check_user_model_budget(
     limiter: &dyn UserModelBudgetLimiter,
     token: &UserAPIKeyAuth,
     models: &[String],
 ) -> Result<(), ErrorClass> {
-    let Some(user_id) = token.view.token.user_id.as_deref() else {
-        return Ok(());
-    };
-    let Some(budget) = token.extra.user_model_max_budget.as_ref() else {
-        return Ok(());
-    };
-    if budget.0.is_empty() {
-        return Ok(());
-    }
-    for model in models {
-        limiter
-            .is_user_within_model_budget(user_id, &budget.0, model)
-            .await?;
+    if let (Some(user_id), Some(budget)) = (
+        token.view.token.user_id.as_deref(),
+        token.extra.user_model_max_budget.as_ref(),
+    ) && !budget.0.is_empty()
+    {
+        return check_each_model(models, async |model| {
+            limiter
+                .is_user_within_model_budget(user_id, &budget.0, model)
+                .await
+        })
+        .await;
     }
     Ok(())
 }
@@ -65,20 +74,20 @@ pub async fn check_team_model_budget(
     token: &UserAPIKeyAuth,
     models: &[String],
 ) -> Result<(), ErrorClass> {
-    let Some(team_id) = token.view.token.team_id.as_deref() else {
-        return Ok(());
-    };
-    let Some(budget) = token.view.team_model_max_budget.as_ref() else {
+    let key_budget = &token.view.token.model_max_budget.0;
+    let (Some(team_id), Some(budget)) = (
+        token.view.token.team_id.as_deref(),
+        token.view.team_model_max_budget.as_ref(),
+    ) else {
         return Ok(());
     };
     if budget.0.is_empty() {
         return Ok(());
     }
-    let key_budget = &token.view.token.model_max_budget.0;
-    for model in models {
+    check_each_model(models, async |model| {
         limiter
             .is_team_within_model_budget(team_id, &budget.0, Some(key_budget), model)
-            .await?;
-    }
-    Ok(())
+            .await
+    })
+    .await
 }

@@ -73,7 +73,17 @@ pub(crate) fn other_error() -> ErrorClass {
     }))
 }
 
-#[derive(Default)]
+fn outcome(failure: &Mutex<Option<ErrorClass>>, within: bool) -> Result<bool, ErrorClass> {
+    if let Some(error) = failure
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .take()
+    {
+        return Err(error);
+    }
+    Ok(within)
+}
+
 pub(crate) struct ScriptedKeyLimiter {
     pub(crate) failing: Mutex<Vec<String>>,
     pub(crate) failure: Mutex<Option<ErrorClass>>,
@@ -83,6 +93,38 @@ pub(crate) struct ScriptedKeyLimiter {
     pub(crate) fallback_calls: Mutex<Vec<String>>,
 }
 
+impl Default for ScriptedKeyLimiter {
+    fn default() -> Self {
+        Self::new(&[], None)
+    }
+}
+
+impl ScriptedKeyLimiter {
+    // every field is named here, so this constructor also holds the default values
+    pub(crate) fn new(failing: &[&str], fallback: Option<&str>) -> Self {
+        Self {
+            failing: Mutex::new(failing.iter().map(ToString::to_string).collect()),
+            failure: Mutex::new(None),
+            within: false,
+            fallback: Mutex::new(fallback.map(str::to_owned)),
+            key_calls: Mutex::new(Vec::new()),
+            fallback_calls: Mutex::new(Vec::new()),
+        }
+    }
+
+    pub(crate) fn with_fallback(mut self, fallback: &str) -> Self {
+        self.fallback = Mutex::new(Some(fallback.to_owned()));
+        self
+    }
+
+    fn record(calls: &Mutex<Vec<String>>, model: &str) {
+        calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(model.to_owned());
+    }
+}
+
 #[async_trait]
 impl KeyModelBudgetLimiter for ScriptedKeyLimiter {
     async fn is_key_within_model_budget(
@@ -90,18 +132,7 @@ impl KeyModelBudgetLimiter for ScriptedKeyLimiter {
         _token: &UserAPIKeyAuth,
         model: &str,
     ) -> Result<bool, ErrorClass> {
-        self.key_calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(model.to_owned());
-        if let Some(error) = self
-            .failure
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .take()
-        {
-            return Err(error);
-        }
+        Self::record(&self.key_calls, model);
         let failing = self
             .failing
             .lock()
@@ -111,7 +142,7 @@ impl KeyModelBudgetLimiter for ScriptedKeyLimiter {
         if failing {
             return Err(budget_error());
         }
-        Ok(self.within)
+        outcome(&self.failure, self.within)
     }
 
     async fn fallback_model_within_budget(
@@ -119,24 +150,35 @@ impl KeyModelBudgetLimiter for ScriptedKeyLimiter {
         _token: &UserAPIKeyAuth,
         model: &str,
     ) -> Result<Option<String>, ErrorClass> {
-        self.fallback_calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(model.to_owned());
-        Ok(self
+        let fallback = self
             .fallback
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .clone())
+            .clone();
+        Self::record(&self.fallback_calls, model);
+        Ok(fallback)
     }
 }
 
 #[derive(Default)]
 pub(crate) struct ScriptedUserLimiter {
-    pub(crate) calls: Mutex<Vec<String>>,
+    pub(crate) calls: Mutex<Vec<(String, String)>>,
     pub(crate) seen: Mutex<Vec<(String, ModelMaxBudget)>>,
     pub(crate) failure: Mutex<Option<ErrorClass>>,
     pub(crate) within: bool,
+}
+
+impl ScriptedUserLimiter {
+    fn record(&self, user_id: &str, budget: &ModelMaxBudget, model: &str) {
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push((user_id.to_owned(), model.to_owned()));
+        self.seen
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push((user_id.to_owned(), budget.clone()));
+    }
 }
 
 #[async_trait]
@@ -147,30 +189,21 @@ impl UserModelBudgetLimiter for ScriptedUserLimiter {
         user_model_max_budget: &ModelMaxBudget,
         model: &str,
     ) -> Result<bool, ErrorClass> {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(format!("{user_id}:{model}"));
-        self.seen
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push((user_id.to_owned(), user_model_max_budget.clone()));
-        if let Some(error) = self
-            .failure
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .take()
-        {
-            return Err(error);
-        }
-        Ok(self.within)
+        self.record(user_id, user_model_max_budget, model);
+        outcome(&self.failure, self.within)
     }
+}
+
+pub(crate) struct SeenTeam {
+    pub(crate) team_id: String,
+    pub(crate) model: String,
+    pub(crate) budget: ModelMaxBudget,
+    pub(crate) key_budget: Option<ModelMaxBudget>,
 }
 
 #[derive(Default)]
 pub(crate) struct ScriptedTeamLimiter {
-    pub(crate) calls: Mutex<Vec<String>>,
-    pub(crate) key_budgets: Mutex<Vec<Option<ModelMaxBudget>>>,
+    pub(crate) seen: Mutex<Vec<SeenTeam>>,
     pub(crate) failure: Mutex<Option<ErrorClass>>,
     pub(crate) within: bool,
 }
@@ -184,23 +217,16 @@ impl TeamModelBudgetLimiter for ScriptedTeamLimiter {
         key_model_max_budget: Option<&ModelMaxBudget>,
         model: &str,
     ) -> Result<bool, ErrorClass> {
-        self.calls
+        self.seen
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(format!("{team_id}:{model}:{}", team_model_max_budget.len()));
-        self.key_budgets
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(key_model_max_budget.cloned());
-        if let Some(error) = self
-            .failure
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .take()
-        {
-            return Err(error);
-        }
-        Ok(self.within)
+            .push(SeenTeam {
+                team_id: team_id.to_owned(),
+                model: model.to_owned(),
+                budget: team_model_max_budget.clone(),
+                key_budget: key_model_max_budget.cloned(),
+            });
+        outcome(&self.failure, self.within)
     }
 }
 
@@ -251,6 +277,16 @@ impl RecordingRewrite {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
+    }
+
+    pub(crate) fn without_path(mut self) -> Self {
+        self.path_exists = false;
+        self
+    }
+
+    pub(crate) fn failing_serialization(mut self) -> Self {
+        self.fail_serialization = true;
+        self
     }
 }
 
@@ -313,15 +349,20 @@ pub(crate) struct Access {
 
 impl Default for Access {
     fn default() -> Self {
-        Self {
-            aliases: BTreeMap::new(),
-            provider: UnresolvedProviderInference,
-            depth: DEFAULT_RECURSE_DEPTH,
-        }
+        Self::with_depth(DEFAULT_RECURSE_DEPTH)
     }
 }
 
 impl Access {
+    // every field is named here, so this constructor also holds the default values
+    pub(crate) fn with_depth(depth: i64) -> Self {
+        Self {
+            aliases: BTreeMap::new(),
+            provider: UnresolvedProviderInference,
+            depth,
+        }
+    }
+
     pub(crate) fn context(&self) -> ModelAccessContext<'_> {
         ModelAccessContext {
             view: None,

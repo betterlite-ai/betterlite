@@ -7,7 +7,7 @@ use rust_decimal::Decimal;
 use serde_json::Number;
 
 use crate::auth_model_budgets::end_user::{
-    EndUserParams, apply_budget_limits_to_end_user_params, update_valid_token_with_end_user_params,
+    EndUserParams, apply_end_user_limits, update_end_user_token,
 };
 use crate::auth_model_budgets::tests::fixtures::{budget_map, text, token};
 use crate::auth_model_budgets::tests::logs::Logs;
@@ -55,7 +55,7 @@ async fn end_user_nonnull_fields_and_debug() {
     let logs = Logs::default();
     let _guard = logs.install();
     let mut params = EndUserParams::default();
-    apply_budget_limits_to_end_user_params(&mut params, &full_budget(), Some("eu-1"));
+    apply_end_user_limits(&mut params, &full_budget(), Some("eu-1"));
     assert_eq!(params.end_user_tpm_limit, Some(100));
     assert_eq!(params.end_user_rpm_limit, Some(5));
     assert_eq!(params.end_user_tpd_limit, Some(1000));
@@ -71,10 +71,15 @@ async fn end_user_nonnull_fields_and_debug() {
     );
     // absent row fields leave the params as they were
     let mut params = EndUserParams {
+        end_user_id: None,
         end_user_tpm_limit: Some(7),
-        ..EndUserParams::default()
+        end_user_rpm_limit: None,
+        end_user_tpd_limit: None,
+        end_user_max_budget: None,
+        end_user_model_max_budget: None,
+        allowed_model_region: None,
     };
-    apply_budget_limits_to_end_user_params(&mut params, &empty_budget(), None);
+    apply_end_user_limits(&mut params, &empty_budget(), None);
     assert_eq!(params.end_user_tpm_limit, Some(7));
     assert_eq!(params.end_user_rpm_limit, None);
     assert_eq!(params.end_user_max_budget, None);
@@ -86,7 +91,7 @@ async fn end_user_nonnull_fields_and_debug() {
         model_max_budget: Some(BTreeMap::new()),
         ..empty_budget()
     };
-    apply_budget_limits_to_end_user_params(&mut params, &zero, Some("eu-2"));
+    apply_end_user_limits(&mut params, &zero, Some("eu-2"));
     assert_eq!(params.end_user_tpm_limit, Some(0));
     assert_eq!(params.end_user_model_max_budget, Some(BTreeMap::new()));
     assert_eq!(logs.debugs("Applied budget limits to end user").len(), 3);
@@ -104,7 +109,7 @@ async fn token_end_user_null_id_preserves_nonnull_custom_limits() {
         ("allowed_model_region", text("eu")),
     ]);
     let params = EndUserParams::default();
-    update_valid_token_with_end_user_params(&mut key, &params);
+    update_end_user_token(&mut key, &params);
     assert_eq!(key.view.end_user_id, None);
     assert_eq!(key.view.end_user_tpm_limit, Some(3));
     assert_eq!(key.view.end_user_rpm_limit, Some(2));
@@ -132,7 +137,7 @@ async fn token_update_does_not_copy_max_budget() {
         end_user_model_max_budget: Some(model_budget()),
         allowed_model_region: Some(Region::Us),
     };
-    update_valid_token_with_end_user_params(&mut key, &params);
+    update_end_user_token(&mut key, &params);
     assert_eq!(key.view.end_user_id, Some("eu-2".to_owned()));
     assert_eq!(key.view.end_user_tpm_limit, Some(8));
     assert_eq!(key.view.end_user_rpm_limit, Some(6));
