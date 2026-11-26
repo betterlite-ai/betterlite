@@ -57,17 +57,17 @@ fn assert_settled_org_denial(
 #[tokio::test]
 async fn project_denial_stops_the_settled_scopes() {
     let world = TagWorld::new(
-        vec![tag_with_budget("t", 100.0, Some(1.0_f64))],
-        vec![group_with_budget("g", 100.0, Some(1.0_f64))],
+        vec![tag_with_budget("t", 100.0_f64, Some(1.0_f64))],
+        vec![group_with_budget("g", 100.0_f64, Some(1.0_f64))],
     );
-    let reader = ScriptedSpend::new(vec![number(11.0)]);
+    let reader = ScriptedSpend::new(vec![number(11.0_f64)]);
     let recorder = Recorder::default();
     let admission = admission(&reader, &recorder);
     let mut token = token(TokenFields {
         token: "sk",
         org_id: Some("org-1"),
     });
-    let projected = project(10.0, Some((Some(10.0_f64), None)));
+    let projected = project(10.0_f64, Some((Some(10.0_f64), None)));
     let names = ["t".to_owned()];
     let groups = ["g".to_owned()];
     let sources = tenant_sources(&world, true);
@@ -92,12 +92,16 @@ async fn project_denial_stops_the_settled_scopes() {
 #[tokio::test]
 async fn organization_denial_wins_the_settled_scopes() {
     let world = TagWorld::new(
-        vec![tag_with_budget("t", 9.0, Some(9.0))],
-        vec![group_with_budget("g", 9.0, Some(9.0))],
+        vec![tag_with_budget("t", 9.0_f64, Some(9.0_f64))],
+        vec![group_with_budget("g", 9.0_f64, Some(9.0_f64))],
     );
-    let org = Arc::new(OrgWorld::with_row(&organization("acme", 3.0, Some(10.0))));
+    let org = Arc::new(OrgWorld::with_row(&organization(
+        "acme",
+        3.0_f64,
+        Some(10.0_f64),
+    )));
     let lookup = lookup(&org);
-    let reader = ScriptedSpend::new(vec![number(10.0), number(10.0), number(10.0)]);
+    let reader = ScriptedSpend::new(vec![number(10.0_f64), number(10.0_f64), number(10.0_f64)]);
     let recorder = Recorder::default();
     let admission = admission(&reader, &recorder);
     let mut token = token(TokenFields {
@@ -128,10 +132,10 @@ async fn organization_denial_wins_the_settled_scopes() {
 #[tokio::test]
 async fn tag_denial_beats_the_group_denial() {
     let world = TagWorld::new(
-        vec![tag_with_budget("t", 9.0, Some(9.0))],
-        vec![group_with_budget("g", 0.0, Some(1.0))],
+        vec![tag_with_budget("t", 9.0_f64, Some(9.0_f64))],
+        vec![group_with_budget("g", 0.0_f64, Some(1.0_f64))],
     );
-    let reader = ScriptedSpend::new(vec![number(10.0), number(2.0)]);
+    let reader = ScriptedSpend::new(vec![number(10.0_f64), number(2.0_f64)]);
     let recorder = Recorder::default();
     let admission = admission(&reader, &recorder);
     let mut token = token(TokenFields {

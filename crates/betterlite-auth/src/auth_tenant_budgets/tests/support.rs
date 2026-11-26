@@ -277,10 +277,10 @@ where
 }
 
 #[derive(Serialize)]
-pub(crate) struct TokenFields<'a> {
-    pub(crate) token: &'a str,
+pub(crate) struct TokenFields<'fields> {
+    pub(crate) token: &'fields str,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) org_id: Option<&'a str>,
+    pub(crate) org_id: Option<&'fields str>,
 }
 
 pub(crate) fn number(value: f64) -> JsonData {
