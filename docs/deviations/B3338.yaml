@@ -1,0 +1,33 @@
+task: B3338
+deviations:
+  - what: >-
+      A provider with no video config, a provider B3332 cannot build, an unknown provider name and a
+      model get_llm_provider refuses are answered as a 400 BadRequest that names the provider or model;
+      LiteLLM raises a ValueError (or lets get_llm_provider's own error through) and a proxy caller sees
+      whatever class its exception_type gives the wrapped error.
+    why: >-
+      B185/B186 give these failures the class a caller can act on, and a model or provider the caller
+      named wrongly is a 400 rather than a server fault.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L213-L217
+  - what: >-
+      A timeout that is not a usable duration (negative, NaN, or too large for a Duration) is refused
+      before the handler runs; LiteLLM hands it to the HTTP client and fails wherever that client does.
+    why: >-
+      betterlite types the request timeout as a std Duration, and a value its type cannot hold is an error
+      that names it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L255-L258
+  - what: >-
+      avideo_generation runs the sync path in the caller's task with the explicit call context instead of
+      copying contextvars into a worker thread, and there is no sync call that returns a coroutine.
+    why: >-
+      B198 passes the call context explicitly and betterlite has no per-call thread; an async caller uses
+      avideo_generation and a sync caller uses video_generation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L97-L119
+kept_bugs:
+  - what: >-
+      A timeout of 0 takes the configured request timeout instead of meaning no timeout, because
+      `timeout or DEFAULT_REQUEST_TIMEOUT` treats 0 as unset.
+    why: >-
+      LiteLLM's `or` is what a working setup gets, so a zero normalized into the config never reaches a
+      provider as a zero timeout.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L257
