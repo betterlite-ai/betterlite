@@ -324,6 +324,14 @@ async fn stale_warning_does_not_extend_life() {
         "serving stale must not rewrite the copy or its timestamp"
     );
 
+    assert!(
+        capture
+            .messages()
+            .iter()
+            .any(|message| message.contains("last refreshed 4100s ago")
+                && message.contains("stops being trusted in 100s"))
+    );
+
     // the age is measured from the original write, not from the stale serve, so just past the window it fails
     drop(capture);
     fixture.clock.advance(101.0);

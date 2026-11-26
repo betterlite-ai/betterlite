@@ -110,23 +110,50 @@ async fn discovery_status_parse_missing_uri_errors(#[case] body: &str) {
     assert!(fixture.cache.writes().is_empty());
 }
 
-#[tokio::test(flavor = "current_thread")]
-async fn jwks_status_parse_log_and_keys_envelope() {
-    // a JWKS status names the status and the body
-    let status = new_resolver_fixture(
+#[rstest]
+#[case::status(500_u16, "upstream broke", None)]
+#[case::malformed(200_u16, "{", None)]
+#[case::envelope(
+    200_u16,
+    r#"{"keys":[{"kid":"a","n":"one"}]}"#,
+    Some(r#"{"kid":"a","n":"one"}"#)
+)]
+#[tokio::test]
+async fn jwks_status_parse_log_and_keys_envelope(
+    #[case] status: u16,
+    #[case] body: &str,
+    #[case] expected: Option<&str>,
+) {
+    let fixture = new_resolver_fixture(
         settings(Some(JWKS_URL), 600.0, 3600.0),
         1_000.0,
-        vec![ScriptedHttp::text(500, "upstream broke")],
+        vec![ScriptedHttp::text(status, body)],
     );
-    let error = status.resolver.get_public_key(Some("a")).await.unwrap_err();
-    assert!(matches!(
-        &error,
-        KeyError::JwksStatus {
-            status: 500,
-            body,
-            ..
-        } if body == "upstream broke"
-    ));
+    let capture = LevelCapture::new();
+    let result = fixture.resolver.get_public_key(Some("a")).await;
+    match expected {
+        Some(selected) => {
+            assert_eq!(result.unwrap(), json(selected));
+            assert_eq!(fixture.cache.writes()[0].value, keys(&[json(selected)]));
+        }
+        None => {
+            let error = result.unwrap_err();
+            if status == 500 {
+                assert!(
+                    matches!(&error, KeyError::JwksStatus { status: 500, body: response, .. } if response == body)
+                );
+            } else {
+                assert!(matches!(error, KeyError::JwksParse { .. }));
+                assert!(capture.levels().contains(&Level::ERROR));
+                assert!(
+                    capture
+                        .messages()
+                        .iter()
+                        .any(|message| message.contains("Original Response: {"))
+                );
+            }
+        }
+    }
 }
 
 #[tokio::test]
@@ -282,33 +309,44 @@ async fn http_error_no_transport_retry() {
 }
 
 #[rstest]
-#[case::empty("")]
-#[case::spaces("   ")]
-#[case::commas(" , , ")]
+#[case::empty("", 0_usize)]
+#[case::spaces("   ", 0_usize)]
+#[case::commas(" , , ", 0_usize)]
+#[case::ordered(" https://b.example.com/keys , , https://a.example.com/keys ", 2_usize)]
 #[tokio::test]
-async fn absent_empty_and_ordered_url_list(#[case] raw: &str) {
-    // absent is a hard failure before any fetch
+async fn absent_empty_and_ordered_url_list(#[case] raw: &str, #[case] request_count: usize) {
     let absent = new_resolver_fixture(settings(None, 600.0, 3600.0), 1_000.0, Vec::new());
-    let error = absent.resolver.get_public_key(None).await.unwrap_err();
-    assert!(matches!(error, KeyError::MissingUrl));
+    let missing = absent.resolver.get_public_key(None).await.unwrap_err();
+    assert!(matches!(missing, KeyError::MissingUrl));
     assert_eq!(
-        error.to_string(),
+        missing.to_string(),
         "Missing JWT Public Key URL from environment."
     );
     assert!(absent.http.requests().is_empty());
-
-    // empty is an empty list, which is no URL to try
-    let empty = new_resolver_fixture(settings(Some(raw), 600.0, 3600.0), 1_000.0, Vec::new());
-    let error2 = empty.resolver.get_public_key(None).await.unwrap_err();
-    assert!(matches!(
-        &error2,
-        KeyError::NoMatchingKey { keys, kid: None } if keys == "[]"
-    ));
-    assert_eq!(
-        error2.to_string(),
-        "No matching public key found. keys=[], kid=None"
+    let fixture = new_resolver_fixture(
+        settings(Some(raw), 600.0, 3600.0),
+        1_000.0,
+        vec![
+            ScriptedHttp::answer(&keys(&[key("b")])),
+            ScriptedHttp::answer(&keys(&[key("a")])),
+        ],
     );
-    assert!(empty.http.requests().is_empty());
+    let result = fixture.resolver.get_public_key(Some("a")).await;
+    if request_count == 0 {
+        let error = result.unwrap_err();
+        assert!(matches!(&error, KeyError::NoMatchingKey { keys, .. } if keys == "[]"));
+        assert_eq!(
+            error.to_string(),
+            "No matching public key found. keys=[], kid=a"
+        );
+    } else {
+        assert_eq!(result.unwrap(), key("a"));
+        assert_eq!(
+            fixture.http.requests(),
+            vec!["https://b.example.com/keys", "https://a.example.com/keys"]
+        );
+    }
+    assert_eq!(fixture.http.requests().len(), request_count);
 }
 
 #[tokio::test]
