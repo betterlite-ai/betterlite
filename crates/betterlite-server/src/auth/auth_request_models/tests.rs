@@ -122,6 +122,9 @@ fn master_context(master_key: &SecretString) -> AuthContext {
         Err(StageFailure::RequestBodySafety(_)) => {
             panic!("the master key stage runs no body safety check")
         }
+        Err(StageFailure::VirtualKeyRoutes(_)) => {
+            panic!("the master key stage runs no virtual key route check")
+        }
         Err(StageFailure::KeyBudgets(_)) => {
             panic!("the master key stage runs no key budget check")
         }
