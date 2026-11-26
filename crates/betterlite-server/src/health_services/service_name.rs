@@ -1,4 +1,3 @@
-// LiteLLM's accepted list in its check order, so the 400 message names them the same way
 pub const SERVICE_NAMES: [&str; 22] = [
     "slack_budget_alerts",
     "email",

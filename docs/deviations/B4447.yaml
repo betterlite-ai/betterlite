@@ -25,6 +25,6 @@ kept_bugs:
   - what: Only seven alert types have their own Slack test message; every other type, spend_reports included, sends "Budget Alert test alert", and the initial "default test message" is never sent.
     why: The message map is what a working Slack setup receives for those types today.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L495-L511
-  - what: The handler logs "Exception occured", misspelled.
+  - what: The handler's error line keeps LiteLLM's misspelling of "occurred".
     why: Log matchers and dashboards built against LiteLLM key on that line.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L595-L597

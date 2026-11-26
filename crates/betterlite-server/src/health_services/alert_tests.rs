@@ -8,7 +8,9 @@ use secrecy::SecretString;
 
 use crate::failure_hook::ports::Clock;
 use crate::health_services::service_name::ServiceName;
-use crate::health_services::service_probes::{Caller, ServiceError, ServiceTestError};
+use crate::health_services::service_probes::{
+    Caller, ServiceError, ServiceTestError, proxy_admin_gate,
+};
 use crate::health_services::service_routes::{ServiceBody, SlackBody, SuccessBody};
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -17,6 +19,17 @@ pub struct UserBudgetAlert {
     pub user_id: Option<String>,
     pub key_alias: Option<String>,
     pub team_id: Option<String>,
+}
+
+impl From<&Caller> for UserBudgetAlert {
+    fn from(caller: &Caller) -> Self {
+        Self {
+            token: caller.token.clone(),
+            user_id: caller.user_id.clone(),
+            key_alias: caller.key_alias.clone(),
+            team_id: caller.team_id.clone(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -68,19 +81,14 @@ pub async fn webhook(
     caller: &Caller,
     setup: &AlertSetup<'_>,
 ) -> Result<Option<ServiceBody>, ServiceError> {
-    if !caller.proxy_admin {
-        return Err(ServiceError::Rejection {
-            status: StatusCode::FORBIDDEN,
-            detail: "Only proxy admins can trigger the webhook test alert.".to_owned(),
-        });
-    }
-    let alert = UserBudgetAlert {
-        token: caller.token.clone(),
-        user_id: caller.user_id.clone(),
-        key_alias: caller.key_alias.clone(),
-        team_id: caller.team_id.clone(),
-    };
-    setup.actions.send_user_budget_test(&alert).await?;
+    proxy_admin_gate(
+        caller,
+        "Only proxy admins can trigger the webhook test alert.",
+    )?;
+    setup
+        .actions
+        .send_user_budget_test(&UserBudgetAlert::from(caller))
+        .await?;
     Ok(None)
 }
 

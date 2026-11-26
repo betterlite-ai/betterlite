@@ -71,6 +71,16 @@ impl Caller {
     }
 }
 
+pub fn proxy_admin_gate(caller: &Caller, detail: &str) -> Result<(), ServiceError> {
+    if caller.proxy_admin {
+        return Ok(());
+    }
+    Err(ServiceError::Rejection {
+        status: StatusCode::FORBIDDEN,
+        detail: detail.to_owned(),
+    })
+}
+
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 struct KeyAlertFields {
@@ -209,12 +219,10 @@ async fn newrelic(
     caller: &Caller,
     ports: &Probes<'_>,
 ) -> Result<Option<ServiceBody>, ServiceError> {
-    if !caller.proxy_admin {
-        return Err(ServiceError::Rejection {
-            status: StatusCode::FORBIDDEN,
-            detail: "Only proxy admins can trigger the New Relic test event.".to_owned(),
-        });
-    }
+    proxy_admin_gate(
+        caller,
+        "Only proxy admins can trigger the New Relic test event.",
+    )?;
     let status = ports.checks.newrelic().await?;
     Ok(Some(health_reply(
         status,
@@ -226,12 +234,10 @@ async fn pointfive(
     caller: &Caller,
     ports: &Probes<'_>,
 ) -> Result<Option<ServiceBody>, ServiceError> {
-    if !caller.proxy_admin {
-        return Err(ServiceError::Rejection {
-            status: StatusCode::FORBIDDEN,
-            detail: "Only proxy admins can trigger the PointFive liveness ping.".to_owned(),
-        });
-    }
+    proxy_admin_gate(
+        caller,
+        "Only proxy admins can trigger the PointFive liveness ping.",
+    )?;
     match ports.checks.pointfive().await {
         Ok(status) => Ok(Some(pointfive_reply(status))),
         Err(setup) => Ok(Some(ServiceBody::Health(HealthBody {

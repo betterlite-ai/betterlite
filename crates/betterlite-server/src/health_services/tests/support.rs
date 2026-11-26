@@ -241,56 +241,48 @@ impl FakeChecks {
     }
 }
 
-fn check_answer(
-    result: &Result<IntegrationHealthStatus, String>,
-) -> Result<IntegrationHealthStatus, ServiceTestError> {
-    match result {
-        Ok(status) => Ok(status.clone()),
-        Err(message) => Err(ServiceTestError {
-            message: message.clone(),
-        }),
-    }
-}
-
-fn pointfive_answer(
-    result: &Result<IntegrationHealthStatus, String>,
-) -> Result<IntegrationHealthStatus, PointFiveSetupError> {
-    match result {
-        Ok(status) => Ok(status.clone()),
-        Err(message) => Err(PointFiveSetupError {
-            message: message.clone(),
-        }),
-    }
-}
-
 #[async_trait]
 impl IntegrationChecks for FakeChecks {
     async fn datadog(&self) -> Result<IntegrationHealthStatus, ServiceTestError> {
-        check_answer(&self.datadog)
+        self.datadog
+            .clone()
+            .map_err(|message| ServiceTestError { message })
     }
 
     async fn datadog_metrics(&self) -> Result<IntegrationHealthStatus, ServiceTestError> {
-        check_answer(&self.datadog_metrics)
+        self.datadog_metrics
+            .clone()
+            .map_err(|message| ServiceTestError { message })
     }
 
     async fn arize(&self) -> Result<IntegrationHealthStatus, ServiceTestError> {
-        check_answer(&self.arize)
+        self.arize
+            .clone()
+            .map_err(|message| ServiceTestError { message })
     }
 
     async fn galileo(&self) -> Result<IntegrationHealthStatus, ServiceTestError> {
-        check_answer(&self.galileo)
+        self.galileo
+            .clone()
+            .map_err(|message| ServiceTestError { message })
     }
 
     async fn newrelic(&self) -> Result<IntegrationHealthStatus, ServiceTestError> {
-        check_answer(&self.newrelic)
+        self.newrelic
+            .clone()
+            .map_err(|message| ServiceTestError { message })
     }
 
     async fn sqs(&self) -> Result<IntegrationHealthStatus, ServiceTestError> {
-        check_answer(&self.sqs)
+        self.sqs
+            .clone()
+            .map_err(|message| ServiceTestError { message })
     }
 
     async fn pointfive(&self) -> Result<IntegrationHealthStatus, PointFiveSetupError> {
-        pointfive_answer(&self.pointfive)
+        self.pointfive
+            .clone()
+            .map_err(|message| PointFiveSetupError { message })
     }
 
     async fn langfuse_auth_check(&self) -> Result<Option<String>, ServiceTestError> {
@@ -526,6 +518,7 @@ impl Clock for FakeClock {
     }
 }
 
+#[derive(Default)]
 pub(crate) struct World {
     pub(crate) mock: Arc<FakeMock>,
     pub(crate) checks: Arc<FakeChecks>,
@@ -534,20 +527,6 @@ pub(crate) struct World {
     pub(crate) clock: Arc<FakeClock>,
     pub(crate) settings: Settings,
     pub(crate) alerting: Vec<String>,
-}
-
-impl Default for World {
-    fn default() -> Self {
-        Self {
-            mock: Arc::new(FakeMock::default()),
-            checks: Arc::new(FakeChecks::default()),
-            alerts: Arc::new(FakeAlerts::default()),
-            callbacks: Arc::new(FakeCallbacks::default()),
-            clock: Arc::new(FakeClock::default()),
-            settings: Settings::default(),
-            alerting: Vec::new(),
-        }
-    }
 }
 
 impl World {
