@@ -86,57 +86,77 @@ pub fn failure(
 ) -> VideoGenerationFailure {
     let message = error.to_string();
     let provider_name = provider.unwrap_or_default();
-    let class = match &error {
-        // docs/compatibility.md: a value the declared type cannot hold is a 400 that names the field
+    let class = failure_class(&error, &message, model, provider_name, redactor);
+    VideoGenerationFailure { error, class }
+}
+
+fn failure_class(
+    error: &VideoGenerationCallError,
+    message: &str,
+    model: Option<&str>,
+    provider: &str,
+    redactor: &Redactor,
+) -> ErrorClass {
+    match error {
         VideoGenerationCallError::FieldType { field, expected } => {
-            let context = ErrorContext {
-                message: format!("{field} must be {expected}"),
-                model: model.map(str::to_owned),
-                provider: Some(provider_name.to_owned()),
-                max_retries: None,
-                num_retries: None,
-                body_type: None,
-                body_param: Some((*field).to_owned()),
-                body_code: None,
-            };
-            ErrorClass::BadRequest(Box::new(ResponseDetails::with_status(context, None)))
+            field_type_class(field, expected, model, provider)
         }
         VideoGenerationCallError::Resolution(_) => {
-            resolution_class(&message, model, provider_name, redactor)
+            resolution_class(message, model, provider, redactor)
         }
-        // the provider or model is the caller's input and the call can never succeed, so these are 400s alike
         VideoGenerationCallError::Unsupported { .. }
         | VideoGenerationCallError::ConfigMissing { .. }
         | VideoGenerationCallError::Selection(_)
         | VideoGenerationCallError::UnknownProvider { .. } => {
-            provider_class(&message, model, provider_name)
+            provider_class(message, model, provider)
         }
-        // the local text exception_type gives these: a ValueError with no status
         VideoGenerationCallError::Mock(_)
         | VideoGenerationCallError::Timeout { .. }
         | VideoGenerationCallError::Logging(_)
-        | VideoGenerationCallError::Suspended => dispatch(
-            &DispatchInput::Raw(Box::new(raw_exception(
-                &message,
-                model,
-                provider_name,
-                VALUE_ERROR,
-            ))),
-            redactor,
-        ),
+        | VideoGenerationCallError::Suspended => {
+            local_exception_class(message, model, provider, redactor)
+        }
         VideoGenerationCallError::Transport {
             status_code,
             status_code_is_synthesized,
             ..
         } => transport_class(
-            &message,
+            message,
             model,
-            provider_name,
+            provider,
             (*status_code, *status_code_is_synthesized),
             redactor,
         ),
+    }
+}
+
+fn field_type_class(
+    field: &str,
+    expected: &str,
+    model: Option<&str>,
+    provider: &str,
+) -> ErrorClass {
+    let context = ErrorContext {
+        message: format!("{field} must be {expected}"),
+        model: model.map(str::to_owned),
+        provider: Some(provider.to_owned()),
+        max_retries: None,
+        num_retries: None,
+        body_type: None,
+        body_param: Some(field.to_owned()),
+        body_code: None,
     };
-    VideoGenerationFailure { error, class }
+    ErrorClass::BadRequest(Box::new(ResponseDetails::with_status(context, None)))
+}
+
+fn local_exception_class(
+    message: &str,
+    model: Option<&str>,
+    provider: &str,
+    redactor: &Redactor,
+) -> ErrorClass {
+    let raw = raw_exception(message, model, provider, VALUE_ERROR);
+    dispatch(&DispatchInput::Raw(Box::new(raw)), redactor)
 }
 
 // get_llm_provider wraps its failures: the original model is appended and the class is a 400
