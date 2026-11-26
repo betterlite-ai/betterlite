@@ -60,6 +60,24 @@ pub struct TeamBudgetRule {
     pub clock: fn() -> DateTime<Utc>,
 }
 
+impl TeamBudgetRule {
+    pub(crate) fn admission<'deps>(
+        &'deps self,
+        models: &'deps ModelAccessContext<'deps>,
+    ) -> TeamAdmission<'deps> {
+        TeamAdmission {
+            reader: self.reader.as_deref().unwrap_or(&Unconfigured),
+            memberships: self.memberships.as_deref().unwrap_or(&Unconfigured),
+            defaults: self.defaults.as_deref().unwrap_or(&Unconfigured),
+            member_alerts: self.member_alerts.as_deref(),
+            team_alerts: self.team_alerts.as_deref(),
+            durations: self.durations.as_deref().unwrap_or(&Unconfigured),
+            models,
+            now: (self.clock)(),
+        }
+    }
+}
+
 impl Default for TeamBudgetRule {
     fn default() -> Self {
         Self {
@@ -144,16 +162,7 @@ pub(crate) async fn prefetch(stage: &TeamBudgetStageInput) -> Result<(), Box<Pro
         provider,
         max_recurse_depth: stage.max_recurse_depth,
     };
-    let admission = TeamAdmission {
-        reader: rule.reader.as_deref().unwrap_or(&Unconfigured),
-        memberships: rule.memberships.as_deref().unwrap_or(&Unconfigured),
-        defaults: rule.defaults.as_deref().unwrap_or(&Unconfigured),
-        member_alerts: rule.member_alerts.as_deref(),
-        team_alerts: rule.team_alerts.as_deref(),
-        durations: rule.durations.as_deref().unwrap_or(&Unconfigured),
-        models: &models,
-        now: (rule.clock)(),
-    };
+    let admission = rule.admission(&models);
     let request = TeamRequest {
         team: rule.team.as_ref(),
         token: rule.auth.as_ref(),

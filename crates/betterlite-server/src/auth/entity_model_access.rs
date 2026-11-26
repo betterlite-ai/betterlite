@@ -26,7 +26,7 @@ use betterlite_error::proxy_exception::ProxyException;
 
 use crate::auth::auth_identity::{AuthContext, StageFailure, StageInput};
 use crate::auth::auth_model_patterns::{ModelAccessRejection, max_recurse_depth_for_request};
-use crate::auth::team_budget_admission::team_budget_exception;
+use crate::auth::team_budget_admission::{TeamBudgetRule, team_budget_exception};
 use crate::error_body::AuthenticationFailure;
 
 mod tests;
@@ -44,6 +44,7 @@ pub struct EntityModelRule {
     pub global_model_aliases: BTreeMap<String, String>,
     pub teams: Option<Arc<TeamLookup>>,
     pub projects: Option<Arc<OrgLookup>>,
+    pub member_checks: Arc<TeamBudgetRule>,
     pub now: fn() -> f64,
 }
 
@@ -126,11 +127,11 @@ pub(crate) async fn prefetch(stage: &EntityModelStageInput) -> Result<(), Entity
     ))?;
     can_org_access_model(&rule.model, rule.org.as_ref(), &aliases, &context)?;
     if let Some(token) = rule.key.as_ref() {
-        // the pipeline's budget stage already ran the member scope, so this stage owns none
+        let admission = rule.member_checks.admission(&context);
         let deps = ResolvedDeps {
             teams: rule.teams.as_deref(),
             projects: rule.projects.as_deref(),
-            admission: None,
+            admission: Some(&admission),
             now: (rule.now)(),
         };
         can_key_call_resolved_model(&rule.model, token, &context, &deps).await?;

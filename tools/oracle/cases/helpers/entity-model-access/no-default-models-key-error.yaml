@@ -1,5 +1,5 @@
 kind: helper
-name: entity-model-access-auth-no-default-models-key-error
+name: entity-model-access-no-default-models-key-error
 call:
   entity_model_access:
     steps:

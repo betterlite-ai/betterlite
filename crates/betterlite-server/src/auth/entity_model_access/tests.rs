@@ -19,6 +19,9 @@ use secrecy::SecretString;
 use tower::ServiceExt as _;
 
 use super::{EntityModelRule, EntityModelStageInput};
+use crate::auth::team_budget_admission::TeamBudgetRule;
+
+mod members;
 use crate::auth::auth_identity::{
     AuthBackend, AuthContext, INSTALLED_STAGES, StageFailure, StageInput, dispatch,
 };
@@ -80,6 +83,7 @@ fn rule(models: &str) -> Arc<EntityModelRule> {
         global_model_aliases: BTreeMap::new(),
         teams: None,
         projects: None,
+        member_checks: Arc::new(TeamBudgetRule::default()),
         now: || 0.0_f64,
     })
 }
@@ -197,4 +201,23 @@ async fn failure_stops_downstream() {
     .await;
     assert_eq!(allowed_status, StatusCode::OK);
     assert!(allowed_reached);
+}
+
+#[tokio::test]
+async fn live_member_scope_stops_downstream() {
+    let (grants, reads) = members::rule_with_member(true);
+    let (status, body, reached) = run_request(&config_with_master_key(), grants).await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+    assert!(body.contains("team_model_access_denied"), "{body}");
+    assert!(!reached);
+    assert!(reads.load(Ordering::Acquire));
+}
+
+#[tokio::test]
+async fn fallback_team_skips_member_scope() {
+    let (grants, reads) = members::rule_with_member(false);
+    let (status, body, reached) = run_request(&config_with_master_key(), grants).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(reached);
+    assert!(!reads.load(Ordering::Acquire));
 }

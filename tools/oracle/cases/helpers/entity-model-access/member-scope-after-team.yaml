@@ -1,5 +1,5 @@
 kind: helper
-name: entity-model-access-auth-member-scope-after-team
+name: entity-model-access-member-scope-after-team
 call:
   entity_model_access:
     steps:

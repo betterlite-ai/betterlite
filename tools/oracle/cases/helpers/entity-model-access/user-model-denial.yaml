@@ -1,5 +1,5 @@
 kind: helper
-name: entity-model-access-auth-user-model-denial
+name: entity-model-access-user-model-denial
 call:
   entity_model_access:
     steps:
