@@ -9,7 +9,7 @@ description: >-
   segments "edits" and "extensions" are static paths, so axum matches them before /videos/{video_id}, and a GET on them answers 405
   (see deviations).
 
-  Both handlers build a data map and run B8801's PreCall step on it (keep `Arc<dyn PreCall<UserAPIKeyAuth>>` in the route state, built with B8802's `app::inference::pre_call_step(state)` in routes(state); B8804 swaps the step in the core route modules and lands first, so never build `PreCallStep::standalone`) and hand it to B004's common request processor with a fixed route type and model=None. They also pass
+  Both handlers build a data map and run B8801's PreCall step on it (keep `Arc<dyn PreCall<UserAPIKeyAuth>>` in the route state and build it here with B8802's `app::inference::pre_call_step(state)` in routes(state); this construction needs no B8804 adapter and must never use `PreCallStep::standalone`) and hand it to B004's common request processor with a fixed route type and model=None. They also pass
   the server's user_model, user_temperature, user_request_timeout, user_max_tokens, user_api_base and version. Every error from the
   processor goes through B004's handle-exception step, so the error envelope, status and the x-litellm-* headers are B004's.
 
