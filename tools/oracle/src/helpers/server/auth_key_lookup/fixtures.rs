@@ -21,7 +21,7 @@ use betterlite_db::database_faults::{DbError, ErrorType};
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use opentelemetry::trace::SpanContext;
 use rust_decimal::Decimal;
-use serde_json::Value;
+use serde_json::{Value, json};
 use tokio::sync::Mutex as AsyncMutex;
 use tokio_util::task::TaskTracker;
 
@@ -179,13 +179,13 @@ pub(super) fn read_fixture(input: &KeyObjectInput) -> Result<ReadFixture, Box<He
         calls: Mutex::new(Vec::new()),
     });
     let reconnect_calls: ReconnectCalls = Arc::new(Mutex::new(Vec::new()));
-    let reconnect = Some(Arc::new(AsyncMutex::new(Box::new(ScriptedReconnect {
+    let reconnect_client: Box<dyn DbReconnect + Send> = Box::new(ScriptedReconnect {
         timeout: input.reconnect.timeout,
         lock: input.reconnect.lock,
         answer: input.reconnect.answer,
         calls: Arc::clone(&reconnect_calls),
-    })
-        as Box<dyn DbReconnect + Send>)));
+    });
+    let reconnect = Some(Arc::new(AsyncMutex::new(reconnect_client)));
     Ok(ReadFixture {
         reader: Some(reader(Arc::clone(&source), reconnect)),
         source,
