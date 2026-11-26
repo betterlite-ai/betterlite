@@ -133,7 +133,7 @@ fn stage_failure(error: AgentModelGrantsError) -> StageFailure {
         AgentModelGrantsError::RecurseDepth { model } => {
             StageFailure::ModelAccess(Box::new(ModelAccessRejection::RecurseDepth { model }))
         }
-        AgentModelGrantsError::Entity(entity) => entity_failure(entity),
+        AgentModelGrantsError::Entity(entity) => entity_failure(*entity),
         AgentModelGrantsError::Ceiling(groups) => {
             StageFailure::ModelGrants(Box::new(lookup_exception(&groups.to_string())))
         }

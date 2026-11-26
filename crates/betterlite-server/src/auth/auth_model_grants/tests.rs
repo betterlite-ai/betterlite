@@ -153,7 +153,10 @@ fn staged_request(
     request
         .extensions_mut()
         .insert(state_with_source(config, source));
-    stage_input(&request, Some(context)).expect("the B732 constructor builds the stage input")
+    let Ok(staged) = stage_input(&request, Some(context)) else {
+        panic!("the B732 constructor builds the stage input");
+    };
+    staged
 }
 
 #[tokio::test]
@@ -203,7 +206,9 @@ async fn stage_is_registered() {
         .expect("the request builds");
     request.extensions_mut().insert(rule("claude"));
     request.extensions_mut().insert(state_for(&config));
-    let staged = stage_input(&request, Some(&context)).expect("the stage input builds");
+    let Ok(staged) = stage_input(&request, Some(&context)) else {
+        panic!("the stage input builds");
+    };
     assert!(matches!(
         prefetch_stage(staged).await,
         Err(StageFailure::ModelGrants(_))
@@ -297,4 +302,34 @@ async fn failure_stops_downstream() {
     .await;
     assert_eq!(allowed_status, StatusCode::OK, "{allowed_body}");
     assert!(allowed_reached);
+}
+
+#[test]
+fn debug_reports_the_key_without_it() {
+    let grants = rule("claude");
+    let rendered = format!("{grants:?}");
+    assert!(rendered.contains("has_key: true"), "{rendered}");
+    // the token is never rendered, so a log line cannot carry the key
+    assert!(!rendered.contains("sk-agent"), "{rendered}");
+}
+
+#[test]
+fn debug_reports_the_wired_source() {
+    let master_key = SecretString::from("secret-master-key".to_owned());
+    let context = master_context(&master_key);
+    let config = config_with_master_key();
+    let staged = staged_request(
+        &config,
+        &rule("claude"),
+        Arc::new(Unmanaged {
+            models: vec!["claude"],
+        }),
+        &context,
+    );
+    let StageInput::AgentModelGrants(stage) = staged else {
+        panic!("the agent grant stage input builds");
+    };
+    let rendered = format!("{stage:?}");
+    assert!(rendered.contains("has_source: true"), "{rendered}");
+    assert!(!rendered.contains("sk-agent"), "{rendered}");
 }
