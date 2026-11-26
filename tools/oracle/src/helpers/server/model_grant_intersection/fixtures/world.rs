@@ -36,16 +36,13 @@ pub(crate) struct Fixture {
 
 impl Fixture {
     pub(crate) fn build(input: &Input) -> Result<Self, Box<HelperError>> {
+        let rows = input::rows(input)?;
         Ok(Self {
-            team: input.team.as_ref().map(input::team_row).transpose()?,
-            user: input.user.as_ref().map(input::user_row).transpose()?,
-            project: input.project.as_ref().map(input::project_row).transpose()?,
-            org: input.org.as_ref().map(input::org_row).transpose()?,
-            membership: input
-                .membership
-                .as_ref()
-                .map(input::membership_row)
-                .transpose()?,
+            team: rows.team,
+            user: rows.user,
+            project: rows.project,
+            org: rows.org,
+            membership: rows.membership,
             registry: input
                 .registry
                 .as_ref()

@@ -167,7 +167,7 @@ fn key() -> UserAPIKeyAuth {
     UserAPIKeyAuth::construct(AuthInput::Dict(fields)).expect("the key fixture builds")
 }
 
-fn rule(sources: Arc<ScriptedSources>, recorder: Arc<Recorder>) -> Arc<GrantRule> {
+fn rule(sources: Option<Arc<ScriptedSources>>, recorder: Arc<Recorder>) -> Arc<GrantRule> {
     Arc::new(GrantRule {
         key: Some(key()),
         team: None,
@@ -175,21 +175,7 @@ fn rule(sources: Arc<ScriptedSources>, recorder: Arc<Recorder>) -> Arc<GrantRule
         membership: None,
         membership_loaded: false,
         models: Some(vec!["gpt-4o".to_owned()]),
-        sources: Some(sources),
-        groups: Some(Arc::new(ScriptedGroups)),
-        sink: Some(recorder),
-    })
-}
-
-fn unsourced_rule(recorder: Arc<Recorder>) -> Arc<GrantRule> {
-    Arc::new(GrantRule {
-        key: Some(key()),
-        team: None,
-        project: None,
-        membership: None,
-        membership_loaded: false,
-        models: Some(vec!["gpt-4o".to_owned()]),
-        sources: None,
+        sources,
         groups: Some(Arc::new(ScriptedGroups)),
         sink: Some(recorder),
     })
@@ -280,9 +266,9 @@ fn assert_dispatch_reaches_the_stage() {
     let stage = GrantStageInput {
         context: master_context(&master_key),
         rule: rule(
-            Arc::new(ScriptedSources {
+            Some(Arc::new(ScriptedSources {
                 team: TeamAnswer::Row,
-            }),
+            })),
             Arc::clone(&recorder),
         ),
         database: true,
@@ -313,9 +299,9 @@ async fn assert_request_records_the_walk() {
     let (status, _body, reached) = run_request(
         &config_with_database(),
         rule(
-            Arc::new(ScriptedSources {
+            Some(Arc::new(ScriptedSources {
                 team: TeamAnswer::Row,
-            }),
+            })),
             Arc::clone(&recorder),
         ),
     )
@@ -340,9 +326,9 @@ async fn assert_request_records_the_walk() {
     let (skip_status, _skip_body, skip_reached) = run_request(
         &config_with_master_key(),
         rule(
-            Arc::new(ScriptedSources {
+            Some(Arc::new(ScriptedSources {
                 team: TeamAnswer::Missing,
-            }),
+            })),
             Arc::clone(&skipped),
         ),
     )
@@ -359,11 +345,8 @@ async fn assert_request_records_the_walk() {
 
     // a database without the stage's sources skips the walk rather than failing the request
     let unwired = Arc::new(Recorder::default());
-    let (unwired_status, _unwired_body, unwired_reached) = run_request(
-        &config_with_database(),
-        unsourced_rule(Arc::clone(&unwired)),
-    )
-    .await;
+    let (unwired_status, _unwired_body, unwired_reached) =
+        run_request(&config_with_database(), rule(None, Arc::clone(&unwired))).await;
     assert_eq!(unwired_status, StatusCode::OK);
     assert!(unwired_reached);
     assert!(unwired.recorded().is_none());
@@ -383,9 +366,9 @@ async fn failure_stops_downstream() {
     let (status, body, reached) = run_request(
         &config_with_database(),
         rule(
-            Arc::new(ScriptedSources {
+            Some(Arc::new(ScriptedSources {
                 team: TeamAnswer::Missing,
-            }),
+            })),
             Arc::clone(&recorder),
         ),
     )
@@ -410,12 +393,18 @@ fn stage_clock_reads_the_wall_clock() {
 
 #[test]
 fn rule_debug_names_the_walk_inputs() {
-    let rule = GrantRule {
-        models: Some(vec!["gpt-4o".to_owned()]),
+    let grant_rule = GrantRule {
+        key: None,
+        team: None,
+        project: None,
+        membership: None,
         membership_loaded: true,
-        ..GrantRule::default()
+        models: Some(vec!["gpt-4o".to_owned()]),
+        sources: None,
+        groups: None,
+        sink: None,
     };
-    let rendered = format!("{rule:?}");
+    let rendered = format!("{grant_rule:?}");
     assert!(rendered.starts_with("GrantRule"), "{rendered}");
     assert!(rendered.contains("gpt-4o"), "{rendered}");
 }

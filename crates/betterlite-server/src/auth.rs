@@ -60,15 +60,15 @@ use betterlite_auth::auth_request_models::catalog::{EmptyCatalog, RequestModelRe
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 
-use crate::auth::auth_identity::{AuthBackend, AuthContext, StageFailure, StageInput};
+use crate::auth::auth_identity::{
+    AuthBackend, AuthContext, StageFailure, StageInput, resource_grant_stage_input,
+};
 use crate::auth::auth_model_patterns::{
     ModelPatternStageInput, max_recurse_depth_for_request, rule_for_request,
 };
 use crate::auth::auth_request_models::{CoreDecoders, RequestModelStageInput, resolve};
-use crate::auth::auth_resource_grants::{
-    ResourceGrantStageInput, database_for_request, rule_for_request as grant_rule_for_request,
-};
 use crate::auth::request_body_safety::RequestBodySafetyStageInput;
+use crate::auth::{auth_org_lookup, model_grant_intersection};
 use crate::error_body::AuthenticationFailure;
 use crate::state::ServerState;
 use axum::body::{Body, Bytes};
@@ -130,11 +130,15 @@ fn stage_input(
         AuthBackend::TeamBudgetAdmission => {
             team_budget_admission::stage_input(request, authenticated)
         }
-        AuthBackend::AuthOrgLookup => StageInput::org_lookup(request, authenticated),
+        AuthBackend::AuthOrgLookup => Ok(StageInput::AuthOrgLookup(Box::new(
+            auth_org_lookup::stage_input(request, authenticated)?,
+        ))),
         AuthBackend::AuthEndUsers => Ok(StageInput::AuthEndUsers(Box::new(
             auth_end_users::stage_input(request, authenticated)?,
         ))),
-        AuthBackend::ModelGrantIntersection => StageInput::model_grants(request, authenticated),
+        AuthBackend::ModelGrantIntersection => Ok(StageInput::ModelGrantIntersection(Box::new(
+            model_grant_intersection::stage_input(request, authenticated)?,
+        ))),
     }
 }
 
@@ -240,20 +244,6 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
     }
 }
 
-fn resource_grant_stage_input(
-    request: &Request<Body>,
-    authenticated: Option<&AuthContext>,
-) -> Result<StageInput, AuthenticationFailure> {
-    let context = authenticated
-        .cloned()
-        .ok_or(AuthenticationFailure::Missing)?;
-    let stage = ResourceGrantStageInput {
-        context,
-        rule: grant_rule_for_request(request),
-        database: database_for_request(request),
-    };
-    Ok(StageInput::AuthResourceGrants(Box::new(stage)))
-}
 fn default_resolver() -> Arc<RequestModelResolver> {
     Arc::new(RequestModelResolver {
         catalog: Arc::new(EmptyCatalog),

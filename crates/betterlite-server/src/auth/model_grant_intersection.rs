@@ -4,6 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::body::Body;
 use axum::http::Request;
+use betterlite_auth::auth_errors::conversion::as_proxy_exception;
 use betterlite_auth::auth_prefetch::rows::CachedProject;
 use betterlite_auth::model_grant_intersection::enforced::{
     EnforcedRequest, enforced_model_allowlists,
@@ -22,8 +23,7 @@ use crate::state::ServerState;
 
 mod tests;
 
-// What the request resolved before this stage: the key, the rows earlier stages loaded, the models it
-// asks for and the cache, database and router reads the walk needs.
+// The key, the earlier-stage rows, the requested models and the reads the walk needs.
 #[derive(Clone, Default)]
 pub struct GrantRule {
     pub key: Option<UserAPIKeyAuth>,
@@ -105,7 +105,10 @@ pub(crate) async fn prefetch(stage: &GrantStageInput) -> Result<(), Box<ProxyExc
         now: stage.now,
     })
     .await
-    .map_err(|error| Box::new(error.proxy_exception()))?;
+    .map_err(|error| {
+        let failure = error.as_auth_failure();
+        Box::new(as_proxy_exception(&failure).exception().clone())
+    })?;
     let matched = match sources {
         Some(sources) => stamped(key, rule, sources).await,
         None => Vec::new(),

@@ -10,5 +10,4 @@ pub mod sources;
 pub mod stamp;
 pub mod token;
 
-#[cfg(test)]
 mod tests;

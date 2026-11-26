@@ -1,8 +1,6 @@
 use std::error::Error;
 
-use betterlite_error::proxy_exception::ProxyException;
-
-use crate::auth_errors::conversion::{AuthFailure, as_proxy_exception};
+use crate::auth_errors::conversion::AuthFailure;
 use crate::auth_org_lookup::error::{OrgLookupError, as_auth_failure as org_auth_failure};
 use crate::auth_team_lookup::error::TeamLookupError;
 use crate::auth_user_lookup::error::UserLookupError;
@@ -50,12 +48,6 @@ impl IntersectionError {
                 }
             }
         }
-    }
-
-    #[must_use]
-    pub fn proxy_exception(&self) -> ProxyException {
-        let failure = self.as_auth_failure();
-        as_proxy_exception(&failure).exception().clone()
     }
 }
 

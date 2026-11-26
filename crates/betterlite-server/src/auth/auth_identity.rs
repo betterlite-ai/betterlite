@@ -12,7 +12,7 @@ use subtle::ConstantTimeEq as _;
 use crate::auth::auth_end_users::EndUserStageInput;
 use crate::auth::auth_key_budgets::KeyBudgetStageInput;
 use crate::auth::auth_model_patterns::{ModelAccessRejection, ModelPatternStageInput, run_stage};
-use crate::auth::auth_org_lookup::{self, OrgStageInput};
+use crate::auth::auth_org_lookup::OrgStageInput;
 use crate::auth::auth_request_models::{RequestModelStageInput, resolve};
 use crate::auth::auth_request_policy::{self, AuthRequestPolicyStageInput};
 use crate::auth::auth_resource_grants::{self, ResourceGrantStageInput};
@@ -76,23 +76,6 @@ pub struct AuthContext {
 }
 
 impl StageInput {
-    // the org lookup reads the request, so its input is built from the same borrowing arguments
-    pub(crate) fn org_lookup(
-        request: &Request<Body>,
-        authenticated: Option<&AuthContext>,
-    ) -> Result<Self, StageFailure> {
-        let stage = auth_org_lookup::stage_input(request, authenticated)?;
-        Ok(Self::AuthOrgLookup(Box::new(stage)))
-    }
-
-    pub(crate) fn model_grants(
-        request: &Request<Body>,
-        authenticated: Option<&AuthContext>,
-    ) -> Result<Self, StageFailure> {
-        let stage = model_grant_intersection::stage_input(request, authenticated)?;
-        Ok(Self::ModelGrantIntersection(Box::new(stage)))
-    }
-
     // the prefetch reads the cache, database and router, so the caller awaits it on the owned input
     pub(crate) async fn prefetch_model_grants(
         stage: Box<GrantStageInput>,
@@ -102,6 +85,21 @@ impl StageInput {
             .map_err(StageFailure::ModelGrants)?;
         Ok(Self::ModelGrantIntersection(stage))
     }
+}
+
+// the resource grant stage reads the request's rule and database switch, so its input is built here
+fn resource_grant_stage_input(
+    request: &Request<Body>,
+    authenticated: Option<&AuthContext>,
+) -> Result<StageInput, AuthenticationFailure> {
+    let stage = ResourceGrantStageInput {
+        context: authenticated
+            .cloned()
+            .ok_or(AuthenticationFailure::Missing)?,
+        rule: auth_resource_grants::rule_for_request(request),
+        database: auth_resource_grants::database_for_request(request),
+    };
+    Ok(StageInput::AuthResourceGrants(Box::new(stage)))
 }
 
 #[derive(Clone, Debug)]

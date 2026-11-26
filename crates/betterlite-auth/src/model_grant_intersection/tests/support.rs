@@ -138,6 +138,15 @@ impl World {
         self
     }
 
+    fn watched<Row, Failure>(
+        &self,
+        effect: Effect,
+        script: &Mutex<Script<Row, Failure>>,
+    ) -> Result<Row, Failure> {
+        self.effects.lock().unwrap().push(effect);
+        play(script)
+    }
+
     pub(super) fn effects(&self) -> Vec<Effect> {
         self.effects.lock().unwrap().clone()
     }
@@ -157,22 +166,14 @@ impl GrantSources for World {
         &self,
         team_id: &str,
     ) -> Result<LiteLLMTeamTableCachedObj, TeamLookupError> {
-        self.effects
-            .lock()
-            .unwrap()
-            .push(Effect::Team(team_id.to_owned()));
-        play(&self.team)
+        self.watched(Effect::Team(team_id.to_owned()), &self.team)
     }
 
     async fn user_object(
         &self,
         user_id: &str,
     ) -> Result<Option<LiteLLMUserTable>, UserLookupError> {
-        self.effects
-            .lock()
-            .unwrap()
-            .push(Effect::User(user_id.to_owned()));
-        play(&self.user)
+        self.watched(Effect::User(user_id.to_owned()), &self.user)
     }
 
     async fn project_object(
@@ -180,22 +181,14 @@ impl GrantSources for World {
         project_id: &str,
         _now: f64,
     ) -> Result<Option<CachedProject>, OrgLookupError> {
-        self.effects
-            .lock()
-            .unwrap()
-            .push(Effect::Project(project_id.to_owned()));
-        play(&self.project)
+        self.watched(Effect::Project(project_id.to_owned()), &self.project)
     }
 
     async fn organization(
         &self,
         org_id: &str,
     ) -> Result<Option<OrganizationTable>, OrgLookupError> {
-        self.effects
-            .lock()
-            .unwrap()
-            .push(Effect::Org(org_id.to_owned()));
-        play(&self.org)
+        self.watched(Effect::Org(org_id.to_owned()), &self.org)
     }
 
     async fn membership(
