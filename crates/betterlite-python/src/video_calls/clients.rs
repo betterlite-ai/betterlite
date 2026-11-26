@@ -220,3 +220,5 @@ impl ErrorConverter for StatusConverter {
         class
     }
 }
+
+mod tests;

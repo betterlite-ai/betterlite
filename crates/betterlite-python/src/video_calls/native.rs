@@ -119,3 +119,5 @@ fn encoded<T: Serialize>(outcome: Result<T, RunError>) -> PyResult<String> {
         Err(error) => Err(PyErr::from(error)),
     }
 }
+
+mod tests;

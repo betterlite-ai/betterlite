@@ -173,9 +173,9 @@ pub(crate) async fn status(input: Input) -> Result<VideoObject, RunError> {
         source: NativeSource::new(&session.environment, &session.client),
     };
     let converter = StatusConverter;
-    let redactor = redactor()?;
+    let call_redactor = redactor()?;
     let env_redactor = redactor()?;
-    let mut state = logging(&redactor, STATUS_CALL_TYPE)?;
+    let mut state = logging(&call_redactor, STATUS_CALL_TYPE)?;
     let sink = SilentSink;
     let env = pre_post(&sink, &env_redactor);
     let caller = VideoStatusCaller {
@@ -185,7 +185,7 @@ pub(crate) async fn status(input: Input) -> Result<VideoObject, RunError> {
             logging: &env,
             converter: &converter,
         },
-        redactor,
+        redactor: call_redactor,
         request_timeout: request_timeout(&session)?,
     };
     let request = requests.status.ok_or(ConvertError::Kind)?;
@@ -194,3 +194,5 @@ pub(crate) async fn status(input: Input) -> Result<VideoObject, RunError> {
         .await
         .map_err(RunError::from)
 }
+
+mod tests;

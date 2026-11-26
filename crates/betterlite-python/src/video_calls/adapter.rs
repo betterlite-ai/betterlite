@@ -14,9 +14,7 @@ use betterlite_core::api::videos_http_transport::video_config::{
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_models::decisions::Json;
 use betterlite_openai::openai_video_identifiers::multipart::MediaBody;
-use betterlite_openai::videos::config::{
-    MULTIPART_FORM_DATA, VideoCredentials, complete_url, validate_environment,
-};
+use betterlite_openai::videos::config::{VideoCredentials, complete_url, validate_environment};
 use betterlite_openai::videos::content::content_request;
 use betterlite_openai::videos::create::{VideoCreate, create_request, create_response};
 use indexmap::IndexMap;
@@ -107,7 +105,7 @@ impl VideoHttpConfig for OpenAiVideoConfig {
     }
 
     fn use_multipart_form_data(&self) -> bool {
-        MULTIPART_FORM_DATA
+        true
     }
 
     fn transform_video_create_request(
@@ -211,3 +209,5 @@ fn text_map(entries: &IndexMap<String, String>) -> Json {
             .collect(),
     )
 }
+
+mod tests;

@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::time::Duration;
 
 use betterlite_core::api::bfl::edit::media::SuppliedMedia;
@@ -13,12 +14,25 @@ use betterlite_core::api::videos_http_transport::video_config::{
     Params, VideoEnvironment, VideoHttpConfig, VideoLogging, VideoRequestContext,
 };
 use betterlite_models::decisions::Json;
-use betterlite_models::decisions::Json as JsonValue;
+use betterlite_sdk::call_files::CallFile;
 use indexmap::IndexMap;
 use secrecy::ExposeSecret as _;
-use std::collections::BTreeMap;
 
-use super::{ConvertError, Operation, Requests, VideoCallWire, drop_params, parse, request};
+use crate::video_calls::adapter::OpenAiVideoConfig;
+use crate::video_calls::session::{VideoSession, config as session_config};
+use betterlite_core::api::video_generation_call::providers::VideoGenerationConfig;
+use betterlite_core::api::video_remix_list_transport::config::VideoRemixListConfig;
+use betterlite_core::api::video_remix_list_transport::records::{
+    VideoListQuery, VideoRequestContext as RemixContext,
+};
+use betterlite_core::api::video_status_transport::config::VideoStatusConfig;
+use betterlite_core::api::video_status_transport::records::VideoRequestContext as StatusContext;
+use betterlite_http::proxy::UpstreamResponse;
+
+use super::{
+    ConvertError, Operation, Reference, Requests, SettingsWire, VideoCallWire, drop_params, parse,
+    request,
+};
 
 fn wire(arguments: &str) -> VideoCallWire {
     let payload = format!("{{\"arguments\":{arguments}}}");
@@ -174,7 +188,10 @@ fn request_content_arguments_reach_the_call() {
             "variant": "thumbnail", "extra_headers": {"x-one": "1"}}"#,
     );
     assert_eq!(request.video_id, "video_123");
-    assert_eq!(request.timeout, Some(Duration::from_secs_f64(2.5)));
+    assert_eq!(
+        request.timeout,
+        Some(Duration::try_from_secs_f64(2.5).unwrap())
+    );
     assert_eq!(request.custom_llm_provider.as_deref(), Some("openai"));
     assert_eq!(request.variant.as_deref(), Some("thumbnail"));
     assert_eq!(
@@ -231,7 +248,7 @@ fn request_remix_arguments_reach_the_call() {
             Json::Text(String::from("v")),
         )])))
     );
-    assert!(request.litellm_metadata.is_some());
+    assert_eq!(request.litellm_metadata.as_ref().unwrap().len(), 1);
     assert_eq!(request.litellm_call_id.as_deref(), Some("call-1"));
     assert_eq!(
         request.extra.get("litellm_trace_id"),
@@ -276,7 +293,7 @@ fn request_status_null_timeout_takes_the_request_timeout() {
 fn request_status_given_timeout_is_kept() {
     assert_eq!(
         status(r#"{"video_id": "v", "timeout": 12.5}"#).timeout,
-        Some(Duration::from_secs_f64(12.5))
+        Some(Duration::try_from_secs_f64(12.5).unwrap())
     );
 }
 
@@ -357,7 +374,7 @@ fn error_payload_that_is_not_json_is_reported() {
 
 #[test]
 fn request_adapter_emits_openai_video_headers_and_urls() {
-    let config = crate::video_calls::adapter::OpenAiVideoConfig {
+    let config = OpenAiVideoConfig {
         environment: BTreeMap::from([("OPENAI_API_KEY".to_owned(), "env-key".to_owned())]),
         global_api_key: None,
         openai_key: None,
@@ -365,20 +382,22 @@ fn request_adapter_emits_openai_video_headers_and_urls() {
     };
     let params = Params::new();
     let given = IndexMap::from([("x-custom".to_owned(), "value".to_owned())]);
-    let headers = config.validate_environment(VideoEnvironment {
-        headers: &given,
-        model: "openai/sora-2",
-        api_key: None,
-        litellm_params: None,
-    });
+    let headers = VideoHttpConfig::validate_environment(
+        &config,
+        VideoEnvironment {
+            headers: &given,
+            model: "openai/sora-2",
+            api_key: None,
+            litellm_params: None,
+        },
+    );
     assert_eq!(headers.get("x-custom").map(String::as_str), Some("value"));
     assert_eq!(
         headers.get("Authorization").map(String::as_str),
         Some("Bearer env-key")
     );
     assert_eq!(
-        config
-            .get_complete_url("m", Some("https://api.example/v1"), &params)
+        VideoHttpConfig::get_complete_url(&config, "m", Some("https://api.example/v1"), &params)
             .unwrap(),
         "https://api.example/v1/videos"
     );
@@ -387,7 +406,7 @@ fn request_adapter_emits_openai_video_headers_and_urls() {
 
 #[test]
 fn request_adapter_transforms_generation_content_and_bytes() {
-    let config = crate::video_calls::adapter::OpenAiVideoConfig {
+    let config = OpenAiVideoConfig {
         environment: BTreeMap::new(),
         global_api_key: None,
         openai_key: None,
@@ -407,14 +426,8 @@ fn request_adapter_transforms_generation_content_and_bytes() {
         .transform_video_create_request("sora-2", "prompt", &params, context)
         .unwrap();
     assert_eq!(base, "https://api.example/v1/videos");
-    assert_eq!(
-        fields.get("model"),
-        Some(&JsonValue::Text("sora-2".to_owned()))
-    );
-    assert_eq!(
-        fields.get("prompt"),
-        Some(&JsonValue::Text("prompt".to_owned()))
-    );
+    assert_eq!(fields.get("model"), Some(&Json::Text("sora-2".to_owned())));
+    assert_eq!(fields.get("prompt"), Some(&Json::Text("prompt".to_owned())));
     assert_eq!(files.len(), 1);
     assert_eq!(files[0].field, "input_reference");
     assert_eq!(files[0].filename.as_deref(), Some("source.png"));
@@ -427,7 +440,7 @@ fn request_adapter_transforms_generation_content_and_bytes() {
         "https://api.example/v1/videos/video_123/content?variant=thumbnail"
     );
     assert!(query.is_empty());
-    let upstream = betterlite_http::proxy::UpstreamResponse {
+    let upstream = UpstreamResponse {
         status: 200,
         headers: http::HeaderMap::new(),
         body: b"video-bytes".to_vec(),
@@ -442,7 +455,7 @@ fn request_adapter_transforms_generation_content_and_bytes() {
 
 #[test]
 fn request_adapter_maps_generation_options_without_dropping_values() {
-    let config = crate::video_calls::adapter::OpenAiVideoConfig {
+    let config = OpenAiVideoConfig {
         environment: BTreeMap::new(),
         global_api_key: None,
         openai_key: None,
@@ -450,10 +463,10 @@ fn request_adapter_maps_generation_options_without_dropping_values() {
     };
     let options = VideoCreateOptionalRequestParams {
         input_reference: None,
-        image: Some(JsonValue::Text("image".to_owned())),
+        image: Some(Json::Text("image".to_owned())),
         parameters: Some(IndexMap::from([(
             "quality".to_owned(),
-            JsonValue::Text("high".to_owned()),
+            Json::Text("high".to_owned()),
         )])),
         model: Some("sora-2".to_owned()),
         resolution: Some("720p".to_owned()),
@@ -464,33 +477,24 @@ fn request_adapter_maps_generation_options_without_dropping_values() {
         extra_headers: Some(IndexMap::from([("x-one".to_owned(), "one".to_owned())])),
         extra_body: Some(IndexMap::from([("watermark".to_owned(), "yes".to_owned())])),
     };
-    let mapped = betterlite_core::api::video_generation_call::providers::VideoGenerationConfig::map_openai_params(&config, &options, "model", false);
-    for (key, value) in [
-        ("model", "sora-2"),
-        ("resolution", "720p"),
-        ("seconds", "8"),
-        ("size", "portrait"),
-        ("user", "user-1"),
-    ] {
-        assert_eq!(mapped.get(key), Some(&JsonValue::Text(value.to_owned())));
-    }
+    let mapped = VideoGenerationConfig::map_openai_params(&config, &options, "model", false);
+    assert_eq!(mapped.get("model"), Some(&Json::Text("sora-2".to_owned())));
     assert_eq!(
-        mapped.get("image"),
-        Some(&JsonValue::Text("image".to_owned()))
+        mapped.get("resolution"),
+        Some(&Json::Text("720p".to_owned()))
     );
+    assert_eq!(mapped.get("seconds"), Some(&Json::Text("8".to_owned())));
+    assert_eq!(mapped.get("size"), Some(&Json::Text("portrait".to_owned())));
+    assert_eq!(mapped.get("user"), Some(&Json::Text("user-1".to_owned())));
+    assert_eq!(mapped.get("image"), Some(&Json::Text("image".to_owned())));
     assert!(
-        matches!(mapped.get("extra_body"), Some(JsonValue::Object(values)) if values.get("watermark") == Some(&JsonValue::Text("yes".to_owned())))
+        matches!(mapped.get("extra_body"), Some(Json::Object(values)) if values.get("watermark") == Some(&Json::Text("yes".to_owned())))
     );
 }
 
 #[test]
 fn request_adapter_builds_status_and_remix_urls() {
-    use betterlite_core::api::video_remix_list_transport::config::{
-        VideoListQuery, VideoRemixListConfig,
-    };
-    use betterlite_core::api::video_status_transport::config::VideoStatusConfig;
-
-    let config = crate::video_calls::adapter::OpenAiVideoConfig {
+    let config = OpenAiVideoConfig {
         environment: BTreeMap::new(),
         global_api_key: None,
         openai_key: None,
@@ -506,7 +510,7 @@ fn request_adapter_builds_status_and_remix_urls() {
     let (status_url, status_params) = VideoStatusConfig::transform_video_status_retrieve_request(
         &config,
         "video_123",
-        betterlite_core::api::video_status_transport::records::VideoRequestContext {
+        StatusContext {
             api_base: context.api_base,
             litellm_params: context.litellm_params,
             headers: context.headers,
@@ -520,7 +524,7 @@ fn request_adapter_builds_status_and_remix_urls() {
         "video_123",
         "remix prompt",
         None,
-        betterlite_core::api::video_remix_list_transport::records::VideoRequestContext {
+        RemixContext {
             api_base: context.api_base,
             litellm_params: context.litellm_params,
             headers: context.headers,
@@ -529,7 +533,7 @@ fn request_adapter_builds_status_and_remix_urls() {
     .unwrap();
     assert_eq!(remix_url, "https://api.example/v1/videos/video_123/remix");
     assert!(
-        matches!(remix_params.get("prompt"), Some(JsonValue::Text(value)) if value == "remix prompt")
+        matches!(remix_params.get("prompt"), Some(Json::Text(value)) if value == "remix prompt")
     );
     let (list_url, list_params) = VideoRemixListConfig::transform_video_list_request(
         &config,
@@ -539,7 +543,7 @@ fn request_adapter_builds_status_and_remix_urls() {
             order: Some("asc"),
             extra_query: None,
         },
-        betterlite_core::api::video_remix_list_transport::records::VideoRequestContext {
+        RemixContext {
             api_base: context.api_base,
             litellm_params: context.litellm_params,
             headers: context.headers,
@@ -547,16 +551,16 @@ fn request_adapter_builds_status_and_remix_urls() {
     )
     .unwrap();
     assert_eq!(list_url, "https://api.example/v1/videos");
-    assert!(matches!(list_params.get("after"), Some(JsonValue::Text(value)) if value == "video_1"));
+    assert!(matches!(list_params.get("after"), Some(Json::Text(value)) if value == "video_1"));
     assert!(
-        matches!(list_params.get("limit"), Some(JsonValue::Number(value)) if value.as_i64() == Some(3))
+        matches!(list_params.get("limit"), Some(Json::Number(value)) if value.as_i64() == Some(3))
     );
-    assert!(matches!(list_params.get("order"), Some(JsonValue::Text(value)) if value == "asc"));
+    assert!(matches!(list_params.get("order"), Some(Json::Text(value)) if value == "asc"));
 }
 
 #[test]
 fn request_video_session_uses_the_supplied_environment() {
-    let session = crate::video_calls::session::VideoSession::build(
+    let session = VideoSession::build(
         r#"{"environment":{"OPENAI_API_KEY":"test-key","REQUEST_TIMEOUT":"42"}}"#,
     )
     .unwrap();
@@ -571,13 +575,36 @@ fn request_video_session_uses_the_supplied_environment() {
     assert!(session.known_model_names.is_empty());
     assert!(session.custom_providers.is_empty());
     let resolution = session.resolution();
+    assert_eq!(
+        resolution
+            .environment
+            .get("OPENAI_API_KEY")
+            .map(String::as_str),
+        Some("test-key")
+    );
     assert!(resolution.known_model_names.is_empty());
     assert!(resolution.custom_providers.is_empty());
-    let config =
-        crate::video_calls::session::config(&session, &super::SettingsWire::default(), None);
+    let config = session_config(&session, &SettingsWire::default(), None);
     let headers = config.headers(&IndexMap::new(), None, None);
     assert_eq!(
         headers.get("Authorization").map(String::as_str),
         Some("Bearer test-key")
     );
+}
+
+#[test]
+fn request_empty_reference_name() {
+    let file = CallFile {
+        name: String::new(),
+        bytes: b"png".to_vec(),
+        content_type: None,
+    };
+    assert_eq!(super::reference(&file).name, None);
+}
+
+#[test]
+fn request_drop_params_defaults() {
+    assert!(!drop_params(&wire("{}")).unwrap());
+    assert!(!drop_params(&wire(r#"{"drop_params":null}"#)).unwrap());
+    assert!(!drop_params(&wire(r#"{"drop_params":false}"#)).unwrap());
 }
