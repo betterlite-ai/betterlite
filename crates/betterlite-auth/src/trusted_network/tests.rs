@@ -467,6 +467,11 @@ fn logs_only_the_ignored_header_and_unconfigured_ranges() {
         get_mcp_client_ip(&forwarded(Some("10.0.0.5"), "203.0.113.7"), &trusted),
         Some("203.0.113.7".to_owned())
     );
+    // the toggle on with no header has nothing to drop, so it adds no error line either
+    assert_eq!(
+        get_mcp_client_ip(&request(Some("10.0.0.5")), &trusted),
+        Some("10.0.0.5".to_owned())
+    );
     // an empty range list is as untrusted as a missing one, and says so on every call
     assert!(!is_request_from_trusted_proxy(
         &request(Some("10.0.0.5")),
