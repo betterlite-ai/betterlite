@@ -125,7 +125,7 @@ fn restore_body(request: &mut Request<Body>, bytes: Bytes, rewritten: Option<Vec
     if rewritten.is_some() {
         request.headers_mut().remove(header::CONTENT_LENGTH);
     }
-    *request.body_mut() = Body::from(rewritten.unwrap_or_else(|| bytes.to_vec()));
+    *request.body_mut() = rewritten.map_or_else(|| Body::from(bytes), Body::from);
 }
 
 async fn rewrite(
