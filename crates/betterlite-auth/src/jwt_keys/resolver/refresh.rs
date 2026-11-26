@@ -62,34 +62,55 @@ impl JwksResolver {
         refresh: Refresh<'_>,
     ) -> Result<Json, KeyError> {
         let unreachable_key = format!("{UNREACHABLE_CACHE_KEY_PREFIX}{cache_key}");
-        if let Some(previous) = self
-            .cache
-            .get(&unreachable_key)
-            .await?
-            .filter(|value| !matches!(value, Json::Null))
-        {
-            let message = match previous {
-                Json::Text(message) => message,
-                Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-                    "a previous JWKS fetch failed".to_owned()
-                }
-            };
+        if let Some(message) = self.stored_outage(&unreachable_key).await? {
             return Err(KeyError::Unreachable { message });
         }
         let refreshed = match self.refresh_now(refresh).await {
             Ok(value) => value,
             Err(KeyError::Unreachable { message }) => {
-                self.cache
-                    .set(
-                        &unreachable_key,
-                        &Json::Text(message.clone()),
-                        UNREACHABLE_BACKOFF_SECONDS,
-                    )
-                    .await?;
-                return Err(KeyError::Unreachable { message });
+                return self.record_outage(&unreachable_key, message).await;
             }
             Err(other) => return Err(other),
         };
+        self.store_refreshed(cache_key, ttl, stale_ttl, refreshed)
+            .await
+    }
+
+    // a marker from an earlier outage answers for its 30 s; a stored non-text marker still counts as one
+    async fn stored_outage(&self, key: &str) -> Result<Option<String>, KeyError> {
+        let previous = self
+            .cache
+            .get(key)
+            .await?
+            .filter(|value| !matches!(value, Json::Null));
+        Ok(previous.map(|value| match value {
+            Json::Text(message) => message,
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+                "a previous JWKS fetch failed".to_owned()
+            }
+        }))
+    }
+
+    // the marker write can fail too, and that failure is the answer then, as LiteLLM's set_cache raises
+    async fn record_outage(&self, key: &str, message: String) -> Result<Json, KeyError> {
+        self.cache
+            .set(
+                key,
+                &Json::Text(message.clone()),
+                UNREACHABLE_BACKOFF_SECONDS,
+            )
+            .await?;
+        Err(KeyError::Unreachable { message })
+    }
+
+    // a success writes fresh, stale, then time, so a failure leaves the entries written before it
+    async fn store_refreshed(
+        &self,
+        cache_key: &str,
+        ttl: f64,
+        stale_ttl: f64,
+        refreshed: Json,
+    ) -> Result<Json, KeyError> {
         self.cache.set(cache_key, &refreshed, ttl).await?;
         if stale_ttl > 0.0_f64 {
             let lifetime = ttl + stale_ttl;

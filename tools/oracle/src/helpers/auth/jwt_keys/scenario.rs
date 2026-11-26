@@ -54,27 +54,34 @@ async fn scenario_answer(
     let http_source: Arc<dyn JwksHttp> = Arc::<Scripted>::clone(&http);
     let wall_clock: Arc<dyn Clock> = Arc::<StepClock>::clone(&clock);
     let resolver = JwksResolver::new(Arc::new(settings), cache_tier, http_source, wall_clock);
+    let fixture = Fixture {
+        clock: clock.as_ref(),
+        cache: cache.as_ref(),
+        http: http.as_ref(),
+        levels,
+    };
     let mut steps = Vec::with_capacity(scenario.steps.len());
     for step in &scenario.steps {
-        steps.push(step_answer(&resolver, &clock, &cache, &http, levels, step).await);
+        steps.push(step_answer(&resolver, &fixture, step).await);
     }
     Ok(json!({"settings_error": false, "steps": steps}))
 }
 
-async fn step_answer(
-    resolver: &JwksResolver,
-    clock: &StepClock,
-    cache: &Cache,
-    http: &Scripted,
-    levels: &Mutex<Vec<String>>,
-    step: &Step,
-) -> Value {
-    *lock(&clock.now) = step.now;
-    lock(&http.replies).extend(step.http.iter().cloned());
-    let requested = lock(&http.requests).len();
-    let slept = lock(&clock.sleeps).len();
-    let written = lock(&cache.writes).len();
-    let noticed = lock(levels).len();
+// the fakes a step drives, so a step answers from one borrow instead of five
+struct Fixture<'a> {
+    clock: &'a StepClock,
+    cache: &'a Cache,
+    http: &'a Scripted,
+    levels: &'a Mutex<Vec<String>>,
+}
+
+async fn step_answer(resolver: &JwksResolver, fixture: &Fixture<'_>, step: &Step) -> Value {
+    *lock(&fixture.clock.now) = step.now;
+    lock(&fixture.http.replies).extend(step.http.iter().cloned());
+    let requested = lock(&fixture.http.requests).len();
+    let slept = lock(&fixture.clock.sleeps).len();
+    let written = lock(&fixture.cache.writes).len();
+    let noticed = lock(fixture.levels).len();
     let kid = step.kid.as_deref();
     let outcome = if step.concurrent {
         let (first, second) =
@@ -90,10 +97,10 @@ async fn step_answer(
     json!({
         "value": value,
         "error": error,
-        "requests": lock(&http.requests).iter().skip(requested).cloned().collect::<Vec<String>>(),
-        "sleeps": lock(&clock.sleeps).iter().skip(slept).copied().collect::<Vec<f64>>(),
-        "writes": lock(&cache.writes).iter().skip(written).cloned().collect::<Vec<Value>>(),
-        "warnings": lock(levels).iter().skip(noticed).cloned().collect::<Vec<String>>(),
+        "requests": lock(&fixture.http.requests).iter().skip(requested).cloned().collect::<Vec<String>>(),
+        "sleeps": lock(&fixture.clock.sleeps).iter().skip(slept).copied().collect::<Vec<f64>>(),
+        "writes": lock(&fixture.cache.writes).iter().skip(written).cloned().collect::<Vec<Value>>(),
+        "warnings": lock(fixture.levels).iter().skip(noticed).cloned().collect::<Vec<String>>(),
     })
 }
 
