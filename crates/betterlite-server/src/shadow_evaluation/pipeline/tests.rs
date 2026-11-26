@@ -10,8 +10,8 @@ use super::{PipelineDeps, run_shadow_eval};
 use crate::shadow_evaluation::advisory_budget::AdvisoryDeps;
 use crate::shadow_evaluation::tests::{
     Alerts, Answer, Attempts, CallsFake, FunnelLog, JobSpendFake, JobSpendRead, SampleFixture,
-    SpendAnswer, SpendFake, SpendLog, SpendScript, TeamAnswer, TeamsFake, call_failure, decimal,
-    eval_job, hook_metadata, judge_verdict, key_auth, now, shadow_reply,
+    SpendAnswer, SpendFake, SpendLog, SpendScript, TeamAnswer, TeamsFake, add_field, call_failure,
+    decimal, eval_job, hook_metadata, json, judge_verdict, key_auth, now, shadow_reply,
 };
 
 fn advisory_deps<'deps>(
@@ -24,6 +24,7 @@ fn advisory_deps<'deps>(
         teams,
         key_alerts: Some(alerts),
         team_alerts: Some(alerts),
+        throttle_pct: None,
         now: now(),
     }
 }
@@ -103,6 +104,48 @@ async fn an_over_budget_caller_withholds_before_the_job_budget_read() {
     assert!(job_spend.reads().is_empty());
     assert!(calls.shadow_calls().is_empty());
     assert!(attempts.rows().is_empty());
+}
+
+#[tokio::test]
+async fn a_throttled_over_budget_key_runs_the_sampled_arms() {
+    let job = eval_job("job-1", &["router-a"], None);
+    let mut fixture = SampleFixture::new();
+    let mut auth = key_auth(Some("1"), "1", None);
+    add_field(
+        &mut auth,
+        "metadata",
+        json(r#"{"throttle_on_budget_exceeded":true}"#),
+    );
+    add_field(&mut auth, "tpm_limit", json("100"));
+    fixture.parent_metadata = hook_metadata(auth);
+    let attempts = Attempts::new();
+    let counter = SpendLog::new();
+    let calls = CallsFake::new(
+        vec![Answer::Reply(shadow_reply())],
+        vec![Answer::Reply(judge_verdict("shadow"))],
+    );
+    let funnel = FunnelLog::new();
+    let spend = SpendFake::new(
+        SpendScript::Value(decimal("1")),
+        SpendScript::Value(decimal("0")),
+    );
+    let teams = TeamsFake::new(TeamAnswer::NoDatabase);
+    let alerts = Alerts::default();
+    let mut advisory = advisory_deps(&spend, &teams, &alerts);
+    advisory.throttle_pct = Some(0.5_f64);
+    let job_spend = JobSpendFake::new(SpendAnswer::Unreadable);
+    let deps = PipelineDeps {
+        database: Some(&attempts),
+        counter: &counter,
+        funnel: &funnel,
+        advisory: &advisory,
+        spend: &job_spend,
+        calls: &calls,
+    };
+    run_shadow_eval(&job, &fixture.sample(), &deps).await;
+    assert!(funnel.events().is_empty());
+    assert_eq!(calls.shadow_targets(), vec!["router-a".to_owned()]);
+    assert_eq!(attempts.rows().len(), 1);
 }
 
 #[tokio::test]

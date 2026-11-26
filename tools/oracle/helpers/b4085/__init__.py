@@ -42,6 +42,11 @@ litellm.suppress_debug_info = True
 
 
 async def evaluate(call: Input) -> JsonValue:
+    litellm.budget_exceeded_throttle_percentage = None
+    if "litellm_settings" in call:
+        litellm.budget_exceeded_throttle_percentage = call["litellm_settings"][
+            "budget_exceeded_throttle_percentage"
+        ]
     jobs = JobTable([job_record(call)])
     events: list[str] = []
     writes: list[str] = []

@@ -1,7 +1,7 @@
 import asyncio
 import sys
 from types import ModuleType
-from typing import Final, Literal, TypedDict
+from typing import Final, Literal, NotRequired, TypedDict
 
 from litellm.caching.in_memory_cache import InMemoryCache
 from litellm.models.team import LiteLLM_TeamTableCachedObj
@@ -31,6 +31,13 @@ class AuthInput(TypedDict):
     spend: float
     max_budget: float | None
     team_id: str | None
+    metadata: NotRequired[dict[str, JsonValue]]
+    tpm_limit: NotRequired[int | None]
+    rpm_limit: NotRequired[int | None]
+
+
+class LiteLLMSettings(TypedDict):
+    budget_exceeded_throttle_percentage: float | None
 
 
 class TeamInput(TypedDict):
@@ -47,6 +54,7 @@ class ArmInput(TypedDict):
 class Input(TypedDict):
     operation: Literal["pipeline"]
     auth: AuthInput | None
+    litellm_settings: NotRequired[LiteLLMSettings]
     key_spend: float | None
     team: TeamInput | None
     team_spend: float | None
@@ -203,6 +211,9 @@ def litellm_metadata(call: Input) -> dict[str, JsonValue | UserAPIKeyAuth]:
             spend=auth["spend"],
             max_budget=auth["max_budget"],
             team_id=auth["team_id"],
+            metadata=auth["metadata"] if "metadata" in auth else None,
+            tpm_limit=auth["tpm_limit"] if "tpm_limit" in auth else None,
+            rpm_limit=auth["rpm_limit"] if "rpm_limit" in auth else None,
         )
     return metadata
 

@@ -33,6 +33,7 @@ struct Harness {
     spend: SpendFake,
     teams: TeamsFake,
     alerts: Alerts,
+    throttle_pct: Option<f64>,
 }
 
 impl Harness {
@@ -41,6 +42,7 @@ impl Harness {
             spend: SpendFake::new(key, team),
             teams: TeamsFake::new(TeamAnswer::NoDatabase),
             alerts: Alerts::default(),
+            throttle_pct: None,
         }
     }
 
@@ -50,6 +52,7 @@ impl Harness {
             teams: &self.teams,
             key_alerts: Some(&self.alerts),
             team_alerts: Some(&self.alerts),
+            throttle_pct: self.throttle_pct,
             now: now(),
         }
     }
@@ -108,6 +111,23 @@ async fn a_key_at_its_limit_is_over_budget_and_skips_the_team() {
     assert_eq!(alerts[0].kind, BudgetAlertKind::TokenBudget);
     assert_eq!(alerts[0].spend, decimal("10"));
     assert_eq!(alerts[0].max_budget, Some(Money::Finite(decimal("10"))));
+}
+
+#[tokio::test]
+async fn an_opted_in_over_budget_key_is_allowed_when_throttle_is_configured() {
+    let mut harness = Harness::new(SpendScript::Value(decimal("10")), SpendScript::Unreadable);
+    harness.throttle_pct = Some(0.5_f64);
+    let mut auth = key_auth(Some("10"), "10", None);
+    add_field(
+        &mut auth,
+        "metadata",
+        json(r#"{"throttle_on_budget_exceeded":true}"#),
+    );
+    add_field(&mut auth, "tpm_limit", json("100"));
+    let metadata = hook_metadata(auth);
+    assert!(!key_or_team_over_budget(&metadata, &harness.deps()).await);
+    assert_eq!(harness.spend.reads().len(), 1);
+    assert!(harness.teams.lookups().is_empty());
 }
 
 #[tokio::test]

@@ -51,6 +51,7 @@ pub(crate) fn pipeline(call: &PipelineCall) -> HelperResult {
         teams: &teams,
         key_alerts: None,
         team_alerts: None,
+        throttle_pct: call.litellm_settings.throttle_pct,
         now: DateTime::<Utc>::UNIX_EPOCH,
     };
     let deps = PipelineDeps {
@@ -144,6 +145,21 @@ fn metadata(call: &PipelineCall) -> Result<IndexMap<String, Json>, Box<HelperErr
         }
         if let Some(team_id) = &auth.team_id {
             record.insert("team_id".to_owned(), Json::Text(team_id.clone()));
+        }
+        if let Some(fields) = &auth.metadata {
+            record.insert("metadata".to_owned(), Json::Object(fields.clone()));
+        }
+        if let Some(tpm_limit) = auth.tpm_limit {
+            record.insert(
+                "tpm_limit".to_owned(),
+                Json::Number(Number::from(tpm_limit)),
+            );
+        }
+        if let Some(rpm_limit) = auth.rpm_limit {
+            record.insert(
+                "rpm_limit".to_owned(),
+                Json::Number(Number::from(rpm_limit)),
+            );
         }
         fields.insert("user_api_key_auth".to_owned(), Json::Object(record));
     }

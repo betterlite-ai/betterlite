@@ -47,6 +47,7 @@ pub struct AdvisoryDeps<'deps> {
     pub teams: &'deps dyn CachedTeams,
     pub key_alerts: Option<&'deps dyn BudgetAlertSink>,
     pub team_alerts: Option<&'deps dyn TeamAlertSink>,
+    pub throttle_pct: Option<f64>,
     pub now: DateTime<Utc>,
 }
 
@@ -118,7 +119,7 @@ async fn key_gate(
         durations: &NO_SOURCES,
         global_alert_emails: None,
         alert_fraction: Money::Finite(Decimal::ZERO),
-        throttle_pct: None,
+        throttle_pct: deps.throttle_pct,
         now: deps.now,
         user_email: None,
     };
