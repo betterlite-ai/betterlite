@@ -16,7 +16,7 @@ use betterlite_error::proxy_exception::ProxyException;
 use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::HelperResult;
 
-use super::fixture_support::{FakeOrg, org_fields, team_fields};
+use super::fixtures::{FakeOrg, org_fields, team_fields};
 use super::{Failure, Input, Lookup, invalid, proxy_denial, required_token, runtime, team_obj};
 
 pub(super) fn team_from_token(input: &Input) -> HelperResult {
