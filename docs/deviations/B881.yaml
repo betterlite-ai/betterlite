@@ -3,7 +3,4 @@ deviations:
   - what: Router-settings YAML or JSON text longer than 1048576 bytes or nested deeper than 64 levels is treated as invalid settings and falls back to the team.
     why: The external settings text is an untrusted boundary, and settings_size_depth_limits proves the fallback still reads the team.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7646-L7671
-  - what: A key's router_settings are read as the stored JSON mapping, so a key-level model_group_alias resolves before the team's.
-    why: LiteLLM types the authenticated key's router_settings as UpdateRouterConfig, which _parse_router_settings_value does not recognise as a dict, so the documented key-first branch never resolves from a validated token.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7702-L7705
 kept_bugs: []
