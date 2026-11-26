@@ -39,7 +39,7 @@ enum LookupMode {
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
-struct Input {
+pub(crate) struct Input {
     function: Function,
     scenarios: Vec<sso::SsoScenario>,
     api_key: Option<String>,
@@ -58,13 +58,27 @@ struct Input {
     team_settings: Option<BTreeMap<String, JsonData>>,
     team_lookup: Option<LookupMode>,
     route: String,
-    router_available: bool,
-    marker_set: bool,
-    passthrough: bool,
+    #[serde(flatten)]
+    routing: RoutingState,
+    #[serde(flatten)]
+    body: BodyState,
     requested_model: Option<String>,
-    raw_body_available: bool,
     settings: Option<Json>,
     client_requested_model: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct RoutingState {
+    router_available: bool,
+    marker_set: bool,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct BodyState {
+    passthrough: bool,
+    raw_body_available: bool,
 }
 
 impl Helper for Op {

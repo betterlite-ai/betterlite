@@ -154,13 +154,7 @@ pub(crate) fn dispatch(
             // the member scope and budget checks ran in the prefetch, so only the identity is left
             Ok(stage.context.clone())
         }
-        AuthBackend::AuthOrgLookup => {
-            let StageInput::AuthOrgLookup(stage) = input else {
-                return Err(StageFailure::from(AuthenticationFailure::Missing));
-            };
-            // the request-scoped lookup ran in the prefetch, so only the identity is left
-            Ok(stage.context.clone())
-        }
+        AuthBackend::AuthOrgLookup => auth_org_lookup_stage(input),
         AuthBackend::AuthEndUsers => {
             let StageInput::AuthEndUsers(stage) = input else {
                 return Err(StageFailure::from(AuthenticationFailure::Missing));
@@ -170,6 +164,14 @@ pub(crate) fn dispatch(
         }
         AuthBackend::AuthContextSources => auth_context_sources_stage(input),
     }
+}
+
+fn auth_org_lookup_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
+    let StageInput::AuthOrgLookup(stage) = input else {
+        return Err(StageFailure::from(AuthenticationFailure::Missing));
+    };
+    // The request-scoped lookup ran in prefetch; only the identity remains.
+    Ok(stage.context.clone())
 }
 
 fn auth_context_sources_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {

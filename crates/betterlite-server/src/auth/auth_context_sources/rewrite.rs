@@ -3,7 +3,7 @@ use std::mem;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use axum::body::Body;
+use axum::body::{Body, Bytes};
 use axum::http::{Request, header};
 use axum::response::Response;
 use betterlite_auth::auth_context_sources::router_settings::TeamRouterSettings;
@@ -11,7 +11,9 @@ use betterlite_auth::auth_team_lookup::error::TeamLookupError;
 use betterlite_auth::route_match::classifier::is_llm_api_route;
 use betterlite_auth::route_match::templates::RouteValue;
 use betterlite_core::api::api_boundaries::ApiLimits;
-use betterlite_core::api::request_body::{RequestBodyInput, rewrite_request_model};
+use betterlite_core::api::request_body::{
+    RequestBodyInput, RequestBodyResult, rewrite_request_model,
+};
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
@@ -93,28 +95,37 @@ async fn buffered(
             BufferError::Unreadable(_reason) => unreadable_body_response(),
         })
     })?;
-    let mut input = RequestBodyInput::default();
-    input.route_path = request.uri().path().to_owned();
-    input.method = request.method().to_string();
-    input.headers = request
-        .headers()
-        .iter()
-        .filter_map(|(name, value)| {
-            value
-                .to_str()
-                .ok()
-                .map(|text| (name.to_string(), text.to_owned()))
-        })
-        .collect();
-    input.body = bytes.to_vec();
+    let mut input = RequestBodyInput {
+        route_path: request.uri().path().to_owned(),
+        method: request.method().to_string(),
+        headers: request
+            .headers()
+            .iter()
+            .filter_map(|(name, value)| {
+                value
+                    .to_str()
+                    .ok()
+                    .map(|text| (name.to_string(), text.to_owned()))
+            })
+            .collect(),
+        body: bytes.to_vec(),
+        query_params: BTreeMap::new(),
+        client_requested_model: None,
+        cached_body: None,
+        form_fields: None,
+    };
     let rewritten = rewrite(&mut request, state, &mut input)
         .await
         .map_err(|failure| Box::new(failure_response(&failure)))?;
+    restore_body(&mut request, bytes, rewritten);
+    Ok(request)
+}
+
+fn restore_body(request: &mut Request<Body>, bytes: Bytes, rewritten: Option<Vec<u8>>) {
     if rewritten.is_some() {
         request.headers_mut().remove(header::CONTENT_LENGTH);
     }
     *request.body_mut() = Body::from(rewritten.unwrap_or_else(|| bytes.to_vec()));
-    Ok(request)
 }
 
 async fn rewrite(
@@ -129,16 +140,12 @@ async fn rewrite(
     ) else {
         return Ok(None);
     };
-    let rule = request
-        .extensions()
+    let extensions = request.extensions();
+    let rule = extensions
         .get::<Arc<RewriteRule>>()
         .map(Arc::clone)
         .unwrap_or_default();
-    let mut markers = request
-        .extensions()
-        .get::<Markers>()
-        .cloned()
-        .unwrap_or_default();
+    let mut markers = extensions.get::<Markers>().cloned().unwrap_or_default();
     let headers = headers_json(request.headers());
     let query = query_json(request.uri().query());
     let raw_available = decoded.raw_json_body(input).is_some();
@@ -158,14 +165,24 @@ async fn rewrite(
         },
     )
     .await
-    .map_err(|error| StageFailure::AuthContextSources(Box::new(error)))?;
+    .map_err(StageFailure::AuthContextSources)?;
     request.extensions_mut().insert(markers);
+    Ok(cache_rewrite(request, input, decoded, target))
+}
+
+fn cache_rewrite(
+    request: &mut Request<Body>,
+    input: &mut RequestBodyInput,
+    decoded: RequestBodyResult,
+    target: Option<String>,
+) -> Option<Vec<u8>> {
     input.cached_body = decoded.parsed_body;
     let Some(model) = target else {
-        return Ok(None);
+        request.extensions_mut().insert(input.clone());
+        return None;
     };
     let rewritten = rewrite_request_model(&decoded.body, Some(input), &model);
     input.cached_body = rewritten.cached_body;
     request.extensions_mut().insert(input.clone());
-    Ok(rewritten.raw_json_body)
+    rewritten.raw_json_body
 }

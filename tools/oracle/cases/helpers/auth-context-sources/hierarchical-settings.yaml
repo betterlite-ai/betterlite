@@ -38,5 +38,93 @@ calls:
       team_settings: {model_group_alias: {team-alias: team-group}}
       team_id: team-one
       team_lookup: absent
+  - auth_context_sources:
+      function: router_alias
+      route: /chat/completions
+      router_available: true
+      marker_set: false
+      passthrough: false
+      requested_model: alias-one
+      raw_body_available: true
+      settings: {model_group_alias: {alias-one: group-one}}
+      client_requested_model: null
+      team_id: null
+  - auth_context_sources:
+      function: router_alias
+      route: /chat/completions
+      router_available: true
+      marker_set: false
+      passthrough: false
+      requested_model: alias-one
+      raw_body_available: true
+      settings: {model_group_alias: {alias-one: group-one}}
+      client_requested_model: client-choice
+      team_id: null
+  - auth_context_sources:
+      function: router_alias
+      route: /chat/completions
+      router_available: true
+      marker_set: false
+      passthrough: false
+      requested_model: alias-one
+      raw_body_available: false
+      settings: {model_group_alias: {alias-one: group-one}}
+      client_requested_model: null
+      team_id: null
+  - auth_context_sources:
+      function: router_alias
+      route: /chat/completions
+      router_available: true
+      marker_set: false
+      passthrough: true
+      requested_model: alias-one
+      raw_body_available: true
+      settings: {model_group_alias: {alias-one: group-one}}
+      client_requested_model: null
+      team_id: null
+  - auth_context_sources:
+      function: router_alias
+      route: /chat/completions
+      router_available: true
+      marker_set: true
+      passthrough: false
+      requested_model: alias-one
+      raw_body_available: true
+      settings: {model_group_alias: {alias-one: group-one}}
+      client_requested_model: null
+      team_id: null
+  - auth_context_sources:
+      function: router_alias
+      route: /chat/completions
+      router_available: true
+      marker_set: false
+      passthrough: false
+      requested_model: alias-one
+      raw_body_available: true
+      settings: {model_group_alias: {alias-one: alias-one}}
+      client_requested_model: null
+      team_id: null
+  - auth_context_sources:
+      function: router_alias
+      route: /chat/completions
+      router_available: false
+      marker_set: false
+      passthrough: false
+      requested_model: alias-one
+      raw_body_available: true
+      settings: {model_group_alias: {alias-one: group-one}}
+      client_requested_model: null
+      team_id: null
+  - auth_context_sources:
+      function: router_alias
+      route: /chat/completions
+      router_available: true
+      marker_set: false
+      passthrough: false
+      requested_model: null
+      raw_body_available: true
+      settings: {model_group_alias: {alias-one: group-one}}
+      client_requested_model: null
+      team_id: null
 env: {}
 compare: {ignore: []}

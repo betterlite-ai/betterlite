@@ -5,29 +5,19 @@ use axum::http::Request;
 use betterlite_auth::auth_context_sources::context::{
     ModelContext, context_failure, get_model_from_request_context,
 };
-use betterlite_auth::auth_request_models::catalog::{
-    Collaborators, EmptyCatalog, RequestModelResolver,
-};
+use betterlite_auth::auth_request_models::catalog::{Collaborators, RequestModelResolver};
 use betterlite_auth::auth_request_models::sources::DispatchContext;
 use betterlite_error::proxy_exception::ProxyException;
 use betterlite_models::model_registration::JsonObject;
 
 use super::auth_identity::{AuthContext, StageFailure, StageInput};
-use super::auth_request_models::{CoreDecoders, RequestModelStageInput};
+use super::auth_request_models::RequestModelStageInput;
 use super::model_stage_input;
 use crate::error_body::AuthenticationFailure;
 
 pub mod rewrite;
 mod selection;
 mod tests;
-
-// The empty catalog a request that carries no resolver of its own reads the model context through.
-pub(crate) fn default_resolver() -> Arc<RequestModelResolver> {
-    Arc::new(RequestModelResolver {
-        catalog: Arc::new(EmptyCatalog),
-        decoders: Arc::new(CoreDecoders),
-    })
-}
 
 // The stage input builder: the request body joins the model context because the sources read it.
 pub(crate) fn stage_input(

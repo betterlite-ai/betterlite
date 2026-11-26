@@ -29,7 +29,7 @@ pub(super) async fn select_model(
     rule: &RewriteRule,
     markers: &mut Markers,
     input: Selection<'_>,
-) -> Result<Option<String>, ProxyException> {
+) -> Result<Option<String>, Box<ProxyException>> {
     let slot = &state.auth_context_sources;
     let collaborators = Collaborators {
         catalog: Some(state.auth_request_models.resolver.catalog.as_ref()),
@@ -62,7 +62,7 @@ pub(super) async fn select_model(
         rule,
     )
     .await
-    .map_err(|error| context_failure(&error))?;
+    .map_err(|error| Box::new(context_failure(&error)))?;
     Ok(apply_alias(rule, markers, input, claude).await)
 }
 

@@ -238,6 +238,18 @@ async fn claude_marker_skip() {
 }
 
 #[tokio::test]
+async fn claude_requires_router() {
+    let outcome = ClaudeFixture::new(&encoded(GROUP)).run(None).await;
+    assert_eq!(
+        outcome,
+        ClaudeNormalization {
+            normalized: false,
+            source: None
+        }
+    );
+}
+
+#[tokio::test]
 async fn claude_body_identity() {
     let router = FakeRouter::new(BTreeSet::new(), set_of(&[GROUP]), BTreeMap::new());
     let listed = format!(r#"{{"model": ["{0}", "{0}"]}}"#, encoded(GROUP));

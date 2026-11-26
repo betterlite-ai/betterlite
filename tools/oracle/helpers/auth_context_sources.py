@@ -238,7 +238,13 @@ def build_request(
     path_params: dict[str, str] = {}
     if call["passthrough"]:
         path_params["endpoint"] = "provider"
-    scope: dict[str, ScopeValue] = {"headers": [], "path_params": path_params}
+    scope: dict[str, ScopeValue] = {
+        "type": "http",
+        "method": "POST",
+        "path": call["route"],
+        "headers": [],
+        "path_params": path_params,
+    }
     if call["raw_body_available"]:
         scope["parsed_body"] = (tuple(body), body)
     if call["marker_set"]:

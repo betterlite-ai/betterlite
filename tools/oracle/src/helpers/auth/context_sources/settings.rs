@@ -51,10 +51,12 @@ fn team_answer(input: &Input) -> TeamAnswer {
     if matches!(input.team_lookup.unwrap_or_default(), LookupMode::Error) {
         return TeamAnswer::Failed;
     }
-    match &input.team_settings {
-        Some(columns) => TeamAnswer::Columns(columns.clone()),
-        None => TeamAnswer::Missing,
-    }
+    input
+        .team_settings
+        .as_ref()
+        .map_or(TeamAnswer::Missing, |columns| {
+            TeamAnswer::Columns(columns.clone())
+        })
 }
 
 pub(super) async fn resolved_settings(input: &Input) -> Option<JsonObject> {
@@ -71,8 +73,8 @@ pub(super) async fn resolved_settings(input: &Input) -> Option<JsonObject> {
 
 fn router_state(input: &Input) -> RouterAliasState {
     let route = RouteValue::Text(input.route.as_str());
-    let routed = is_llm_api_route(&route) && input.router_available;
-    match (routed, input.marker_set) {
+    let routed = is_llm_api_route(&route) && input.routing.router_available;
+    match (routed, input.routing.marker_set) {
         (false, already_resolved) => RouterAliasState::Ineligible { already_resolved },
         (true, true) => RouterAliasState::Resolved,
         (true, false) => RouterAliasState::Fresh,
@@ -82,9 +84,9 @@ fn router_state(input: &Input) -> RouterAliasState {
 pub(super) async fn alias_rewrite(input: &Input) -> Value {
     let alias_input = RouterAliasInput {
         state: router_state(input),
-        passthrough: input.passthrough,
+        passthrough: input.body.passthrough,
         requested_model: input.requested_model.as_deref(),
-        raw_body_available: input.raw_body_available,
+        raw_body_available: input.body.raw_body_available,
         key_router_settings: input.settings.as_ref(),
         team_id: input.team_id.as_deref(),
         client_requested_model: input.client_requested_model.as_deref(),

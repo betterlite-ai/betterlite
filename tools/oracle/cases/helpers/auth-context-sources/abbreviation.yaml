@@ -12,12 +12,12 @@ calls:
       minimum_custom_key_length: 16
   - auth_context_sources:
       function: abbreviate
-      api_key: sk-1234567890abcdef
-      minimum_custom_key_length: 0
+      api_key: "0123456789abcde"
+      minimum_custom_key_length: 16
   - auth_context_sources:
       function: abbreviate
-      api_key: sk-1234567890abcdef
-      minimum_custom_key_length: 17
+      api_key: "0123456789abcdef"
+      minimum_custom_key_length: 16
 env:
   MINIMUM_CUSTOM_KEY_LENGTH: "16"
 compare: {ignore: []}

@@ -57,7 +57,7 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use betterlite_auth::auth_request_models::MODEL_ROUTING_HEADER_NAME;
-use betterlite_auth::auth_request_models::catalog::RequestModelResolver;
+use betterlite_auth::auth_request_models::catalog::{EmptyCatalog, RequestModelResolver};
 use betterlite_core::api::request_body::RequestBodyInput;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
@@ -66,7 +66,7 @@ use crate::auth::auth_identity::{AuthBackend, AuthContext, StageFailure, StageIn
 use crate::auth::auth_model_patterns::{
     ModelPatternStageInput, max_recurse_depth_for_request, rule_for_request,
 };
-use crate::auth::auth_request_models::{RequestModelStageInput, resolve};
+use crate::auth::auth_request_models::{CoreDecoders, RequestModelStageInput, resolve};
 use crate::auth::auth_resource_grants::{
     ResourceGrantStageInput, database_for_request, rule_for_request as grant_rule_for_request,
 };
@@ -185,7 +185,15 @@ fn resolver_for(request: &Request<Body>) -> Arc<RequestModelResolver> {
     request
         .extensions()
         .get::<Arc<RequestModelResolver>>()
-        .map_or_else(auth_context_sources::default_resolver, Arc::clone)
+        .map_or_else(
+            || {
+                Arc::new(RequestModelResolver {
+                    catalog: Arc::new(EmptyCatalog),
+                    decoders: Arc::new(CoreDecoders),
+                })
+            },
+            Arc::clone,
+        )
 }
 
 // stage_input cannot await while holding the request borrow (Request<Body> is Send but not Sync), so the caller awaits the stage prefetch on the owned input
