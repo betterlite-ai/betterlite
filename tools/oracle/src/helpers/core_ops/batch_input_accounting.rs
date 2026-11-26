@@ -8,12 +8,12 @@ use betterlite_core::api::batch_limit_descriptors::BatchLimitDescriptors;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use tokio::runtime::Builder;
 
+use self::access::ScriptedAccess;
 use self::input::Input;
 use self::report::{failure, record_report};
-use self::scripted::{
-    LiteLlmLimiter, NoCredentials, ScriptedAccess, ScriptedCounter, ScriptedFiles,
-};
+use self::scripted::{LiteLlmLimiter, NoCredentials, ScriptedCounter, ScriptedFiles};
 
+mod access;
 mod input;
 mod report;
 mod scripted;
@@ -25,7 +25,9 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         let files = ScriptedFiles::new(input.content.clone(), input.managed.clone());
-        let access = ScriptedAccess::new(input.access.clone());
+        let access = ScriptedAccess {
+            script: input.access.clone(),
+        };
         let counter = ScriptedCounter::new(input.tokens.clone());
         let service: BatchLimitDescriptors<LiteLlmLimiter, NoCredentials> = BatchLimitDescriptors {
             settings: Settings::default(),

@@ -6,8 +6,7 @@ use async_trait::async_trait;
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 use betterlite_core::api::batch_input_accounting::error::{BatchHttpError, BatchManagedFileError};
 use betterlite_core::api::batch_input_accounting::ports::{
-    BatchAccessCheck, BatchFileFetch, BatchFileRequest, BatchFileSource, BatchKeyGrant,
-    BatchModelAccess, BatchTeamLookup,
+    BatchFileFetch, BatchFileRequest, BatchFileSource,
 };
 use betterlite_core::api::batch_limit_counters::rejections::PROJECT_OTPM_DESCRIPTOR_KEY;
 use betterlite_core::api::batch_limit_descriptors::descriptors::BatchLimitDescriptor;
@@ -22,7 +21,7 @@ use betterlite_tokenizer::count::error::CountError;
 use betterlite_tokenizer::count::request::TokenRequest;
 use serde_json::{Value, json};
 
-use super::input::{AccessScript, ContentScript, Hook, Lookup, ManagedScript, Outcome};
+use super::input::{ContentScript, Hook, ManagedScript};
 
 pub(super) struct ScriptedFiles {
     content: ContentScript,
@@ -30,17 +29,10 @@ pub(super) struct ScriptedFiles {
     pub(super) fetched: Mutex<Vec<Value>>,
 }
 
-pub(super) struct ScriptedAccess {
-    script: AccessScript,
-}
-
 pub(super) struct ScriptedCounter {
     answers: Mutex<VecDeque<Option<i64>>>,
     pub(super) counted: Mutex<Vec<Value>>,
 }
-
-// The team the fake lookup returns: the models the team is allowed to call
-pub(super) struct TeamModels(pub(super) Vec<String>);
 
 pub(super) struct LiteLlmLimiter;
 
@@ -132,97 +124,6 @@ impl BatchFileSource for ScriptedFiles {
             self.record(request);
         }
         Ok(outcome)
-    }
-}
-
-fn http_denial() -> BatchHttpError {
-    let mut detail = JsonObject::new();
-    detail.insert("error".to_owned(), Json::Text("passed through".to_owned()));
-    BatchHttpError {
-        status: 401,
-        detail: Json::Object(detail),
-    }
-}
-
-impl ScriptedAccess {
-    pub(super) const fn new(script: AccessScript) -> Self {
-        Self { script }
-    }
-
-    fn listed(&self, model: &str, allowed: &[String]) -> BatchAccessCheck {
-        if allowed.is_empty() || allowed.iter().any(|name| name == "*" || name == model) {
-            BatchAccessCheck::Allowed
-        } else {
-            BatchAccessCheck::Denied {
-                message: self.script.message.clone(),
-            }
-        }
-    }
-
-    fn key_check(&self) -> BatchAccessCheck {
-        match self.script.key {
-            Outcome::Allow => BatchAccessCheck::Allowed,
-            Outcome::Deny => BatchAccessCheck::Denied {
-                message: self.script.message.clone(),
-            },
-            Outcome::Fail => BatchAccessCheck::Failed {
-                message: self.script.message.clone(),
-            },
-            Outcome::Http => BatchAccessCheck::Http(http_denial()),
-        }
-    }
-}
-
-#[async_trait]
-impl BatchModelAccess for ScriptedAccess {
-    type Team = TeamModels;
-    type Error = Infallible;
-
-    fn database_available(&self) -> bool {
-        self.script.database
-    }
-
-    async fn team(&self, _team_id: &str) -> Result<BatchTeamLookup<TeamModels>, Infallible> {
-        Ok(match self.script.team {
-            Lookup::Loaded => BatchTeamLookup::Loaded(TeamModels(self.script.team_models.clone())),
-            Lookup::Failed => BatchTeamLookup::Failed,
-            Lookup::Http => BatchTeamLookup::Http(http_denial()),
-        })
-    }
-
-    async fn team_can_access(
-        &self,
-        model: &str,
-        _caller: &UserAPIKeyAuth,
-        team: &TeamModels,
-    ) -> Result<BatchAccessCheck, Infallible> {
-        Ok(self.listed(model, &team.0))
-    }
-
-    async fn key_group_grants(
-        &self,
-        _model: &str,
-        _caller: &UserAPIKeyAuth,
-        _team: &TeamModels,
-    ) -> Result<BatchKeyGrant, Infallible> {
-        Ok(BatchKeyGrant::Denied)
-    }
-
-    async fn member_can_access(
-        &self,
-        _model: &str,
-        _caller: &UserAPIKeyAuth,
-        _team: &TeamModels,
-    ) -> Result<BatchAccessCheck, Infallible> {
-        Ok(BatchAccessCheck::Allowed)
-    }
-
-    async fn key_can_call(
-        &self,
-        _model: &str,
-        _caller: &UserAPIKeyAuth,
-    ) -> Result<BatchAccessCheck, Infallible> {
-        Ok(self.key_check())
     }
 }
 
