@@ -185,21 +185,21 @@ fn model_pattern_input(
             return Err(StageFailure::from(AuthenticationFailure::Missing));
         }
     };
-    let rule = rule_for_request(request);
-    let depth = max_recurse_depth_for_request(request);
     Ok(StageInput::AuthModelPatterns(Box::new(
         ModelPatternStageInput {
             context,
             requested,
-            rule,
-            max_recurse_depth: depth,
+            rule: rule_for_request(request),
+            max_recurse_depth: max_recurse_depth_for_request(request),
         },
     )))
 }
 
 fn resolver_for(request: &Request<Body>) -> Arc<RequestModelResolver> {
-    let resolver = request.extensions().get::<Arc<RequestModelResolver>>();
-    resolver.map_or_else(default_resolver, Arc::clone)
+    request
+        .extensions()
+        .get::<Arc<RequestModelResolver>>()
+        .map_or_else(default_resolver, Arc::clone)
 }
 
 // stage_input cannot await while holding the request borrow (Request<Body> is Send but not Sync), so the caller awaits the stage prefetch on the owned input
