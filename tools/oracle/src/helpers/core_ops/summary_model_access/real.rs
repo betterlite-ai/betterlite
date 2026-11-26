@@ -58,6 +58,24 @@ fn decision(granted: ModelAccessDecision) -> Result<(), PolicyFailure<RealFailur
     }
 }
 
+// the user and project checks differ only in the allowlist and the matcher they call
+macro_rules! real_listed_check {
+    (
+        $method:ident,
+        ($($argument:ident: $argument_type:ty),* $(,)?),
+        $record:expr,
+        $answer:expr $(,)?
+    ) => {
+        fn $method(
+            &self,
+            $($argument: $argument_type,)*
+        ) -> Result<(), PolicyFailure<RealFailure>> {
+            self.journal.record($record);
+            $answer
+        }
+    };
+}
+
 impl SummaryModelChecks for RealChecks<'_> {
     type Failure = RealFailure;
 
@@ -90,40 +108,36 @@ impl SummaryModelChecks for RealChecks<'_> {
         ))
     }
 
-    fn user_call(
-        &self,
-        router: Option<&dyn ModelAccessView>,
-        model: &str,
-        user: &LiteLLMUserTable,
-    ) -> Result<(), PolicyFailure<RealFailure>> {
-        self.journal.record(CallRecord {
+    real_listed_check!(
+        user_call,
+        (router: Option<&dyn ModelAccessView>, model: &str, user: &LiteLLMUserTable),
+        CallRecord {
             model: Some(model.to_owned()),
             models: user_models(user),
             ..CallRecord::new("user")
-        });
+        },
         decision(can_user_call_model(
             &RequestedModels::One(model.to_owned()),
             Some(user),
             &NO_ALIASES,
             &context(router),
-        ))
-    }
+        )),
+    );
 
-    fn project_call(
-        &self,
-        router: Option<&dyn ModelAccessView>,
-        model: &str,
-        project: &ProjectTable,
-    ) -> Result<(), PolicyFailure<RealFailure>> {
-        self.journal.record(CallRecord {
+    real_listed_check!(
+        project_call,
+        (router: Option<&dyn ModelAccessView>, model: &str, project: &ProjectTable),
+        CallRecord {
             model: Some(model.to_owned()),
             models: project.models.clone(),
             ..CallRecord::new("project")
-        });
-        let requested = RequestedModels::One(model.to_owned());
-        let granted =
-            can_project_access_model(&requested, Some(project), &NO_ALIASES, &context(router));
-        match granted {
+        },
+        match can_project_access_model(
+            &RequestedModels::One(model.to_owned()),
+            Some(project),
+            &NO_ALIASES,
+            &context(router),
+        ) {
             Ok(()) => Ok(()),
             Err(EntityModelAccessError::Denied(_)) => Err(PolicyFailure::Denied),
             Err(EntityModelAccessError::RecurseDepth { model: depth_model }) => {
@@ -136,6 +150,6 @@ impl SummaryModelChecks for RealChecks<'_> {
                 | EntityModelAccessError::Project(_)
                 | EntityModelAccessError::TeamRow(_)),
             ) => Err(PolicyFailure::Unexpected(RealFailure::Entity(other))),
-        }
-    }
+        },
+    );
 }

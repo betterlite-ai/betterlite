@@ -197,52 +197,58 @@ const fn verdict(outcome: Outcome) -> Result<(), PolicyFailure<Broken>> {
     }
 }
 
+// the three fake checks differ only in what they journal, so one macro writes all three
+macro_rules! journaled_check {
+    (
+        $method:ident,
+        ($($argument:ident: $argument_type:ty),* $(,)?),
+        $record:expr $(,)?
+    ) => {
+        fn $method(
+            &self,
+            $($argument: $argument_type,)*
+        ) -> Result<(), PolicyFailure<Broken>> {
+            self.journal.record($record);
+            verdict(self.next())
+        }
+    };
+}
+
 impl SummaryModelChecks for FakeChecks {
     type Failure = Broken;
 
-    fn object_call(
-        &self,
-        router: Option<&dyn ModelAccessView>,
-        call: &ObjectCall<'_>,
-    ) -> Result<(), PolicyFailure<Broken>> {
-        self.journal.record(Call::Object {
+    journaled_check!(
+        object_call,
+        (router: Option<&dyn ModelAccessView>, call: &ObjectCall<'_>),
+        Call::Object {
             object_type: model_access_object_name(call.object_type),
             model: call.model.to_owned(),
             models: call.models.to_vec(),
             team_model_aliases: call.team_model_aliases.clone(),
             team_id: call.team_id.map(str::to_owned),
             router: router.is_some(),
-        });
-        verdict(self.next())
-    }
+        },
+    );
 
-    fn user_call(
-        &self,
-        router: Option<&dyn ModelAccessView>,
-        model: &str,
-        user: &LiteLLMUserTable,
-    ) -> Result<(), PolicyFailure<Broken>> {
-        self.journal.record(Call::User {
+    journaled_check!(
+        user_call,
+        (router: Option<&dyn ModelAccessView>, model: &str, user: &LiteLLMUserTable),
+        Call::User {
             model: model.to_owned(),
             user_models: user_models(user),
             router: router.is_some(),
-        });
-        verdict(self.next())
-    }
+        },
+    );
 
-    fn project_call(
-        &self,
-        router: Option<&dyn ModelAccessView>,
-        model: &str,
-        project: &ProjectTable,
-    ) -> Result<(), PolicyFailure<Broken>> {
-        self.journal.record(Call::Project {
+    journaled_check!(
+        project_call,
+        (router: Option<&dyn ModelAccessView>, model: &str, project: &ProjectTable),
+        Call::Project {
             model: model.to_owned(),
             project_models: project.models.clone(),
             router: router.is_some(),
-        });
-        verdict(self.next())
-    }
+        },
+    );
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -273,51 +279,55 @@ impl FakeRepositories {
     }
 }
 
+// each fake lookup differs only in its row type and journal entry, so one macro writes all three
+macro_rules! fake_lookup {
+    (
+        $method:ident,
+        ($($argument:ident: $argument_type:ty),* $(,)?),
+        $row:ty,
+        $lookup:ident,
+        $record:expr $(,)?
+    ) => {
+        fn $method(
+            &self,
+            $($argument: $argument_type,)*
+        ) -> impl Future<Output = Result<Option<$row>, Offline>> + Send {
+            self.journal.record($record);
+            ready(match &self.$lookup {
+                Lookup::Found(row) => Ok(Some(row.clone())),
+                Lookup::Missing => Ok(None),
+                Lookup::Failed => Err(Offline),
+            })
+        }
+    };
+}
+
 impl SummaryAccessRepositories for FakeRepositories {
     type Failure = Offline;
 
-    fn user(
-        &self,
-        user_id: &str,
-        user_id_upsert: bool,
-    ) -> impl Future<Output = Result<Option<LiteLLMUserTable>, Offline>> + Send {
-        self.journal
-            .record(Call::LookupUser(user_id.to_owned(), user_id_upsert));
-        ready(match &self.user {
-            Lookup::Found(row) => Ok(Some(row.clone())),
-            Lookup::Missing => Ok(None),
-            Lookup::Failed => Err(Offline),
-        })
-    }
+    fake_lookup!(
+        user,
+        (user_id: &str, user_id_upsert: bool),
+        LiteLLMUserTable,
+        user,
+        Call::LookupUser(user_id.to_owned(), user_id_upsert),
+    );
 
-    fn project(
-        &self,
-        project_id: &str,
-    ) -> impl Future<Output = Result<Option<ProjectTable>, Offline>> + Send {
-        self.journal
-            .record(Call::LookupProject(project_id.to_owned()));
-        ready(match &self.project {
-            Lookup::Found(row) => Ok(Some(row.clone())),
-            Lookup::Missing => Ok(None),
-            Lookup::Failed => Err(Offline),
-        })
-    }
+    fake_lookup!(
+        project,
+        (project_id: &str),
+        ProjectTable,
+        project,
+        Call::LookupProject(project_id.to_owned()),
+    );
 
-    fn membership(
-        &self,
-        user_id: &str,
-        team_id: &str,
-    ) -> impl Future<Output = Result<Option<LiteLLMTeamMembership>, Offline>> + Send {
-        self.journal.record(Call::LookupMembership(
-            user_id.to_owned(),
-            team_id.to_owned(),
-        ));
-        ready(match &self.membership {
-            Lookup::Found(row) => Ok(Some(row.clone())),
-            Lookup::Missing => Ok(None),
-            Lookup::Failed => Err(Offline),
-        })
-    }
+    fake_lookup!(
+        membership,
+        (user_id: &str, team_id: &str),
+        LiteLLMTeamMembership,
+        membership,
+        Call::LookupMembership(user_id.to_owned(), team_id.to_owned()),
+    );
 }
 
 pub(super) struct Harness {

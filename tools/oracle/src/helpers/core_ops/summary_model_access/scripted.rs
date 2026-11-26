@@ -91,6 +91,24 @@ impl<'run> Scripted<'run> {
     }
 }
 
+// the user and project checks differ only in which allowlist they record, so one macro writes both
+macro_rules! scripted_check {
+    (
+        $method:ident,
+        ($($argument:ident: $argument_type:ty),* $(,)?),
+        $record:expr $(,)?
+    ) => {
+        fn $method(
+            &self,
+            _router: Option<&dyn ModelAccessView>,
+            $($argument: $argument_type,)*
+        ) -> Result<(), PolicyFailure<BrokenCheck>> {
+            self.journal.record($record);
+            self.verdict()
+        }
+    };
+}
+
 impl SummaryModelChecks for Scripted<'_> {
     type Failure = BrokenCheck;
 
@@ -110,72 +128,81 @@ impl SummaryModelChecks for Scripted<'_> {
         self.verdict()
     }
 
-    fn user_call(
-        &self,
-        _router: Option<&dyn ModelAccessView>,
-        model: &str,
-        user: &LiteLLMUserTable,
-    ) -> Result<(), PolicyFailure<BrokenCheck>> {
-        self.journal.record(CallRecord {
+    scripted_check!(
+        user_call,
+        (model: &str, user: &LiteLLMUserTable),
+        CallRecord {
             model: Some(model.to_owned()),
             models: user_models(user),
             ..CallRecord::new("user")
-        });
-        self.verdict()
-    }
+        },
+    );
 
-    fn project_call(
-        &self,
-        _router: Option<&dyn ModelAccessView>,
-        model: &str,
-        project: &ProjectTable,
-    ) -> Result<(), PolicyFailure<BrokenCheck>> {
-        self.journal.record(CallRecord {
+    scripted_check!(
+        project_call,
+        (model: &str, project: &ProjectTable),
+        CallRecord {
             model: Some(model.to_owned()),
             models: project.models.clone(),
             ..CallRecord::new("project")
-        });
-        self.verdict()
-    }
+        },
+    );
+}
+
+// the three lookups differ only in their row type and journal fields, so one macro writes all three
+macro_rules! scripted_lookup {
+    (
+        $method:ident,
+        ($($argument:ident: $argument_type:ty),* $(,)?),
+        $row:ty,
+        $lookup:ident,
+        $record:expr $(,)?
+    ) => {
+        fn $method(
+            &self,
+            $($argument: $argument_type,)*
+        ) -> impl Future<Output = Result<Option<$row>, Offline>> + Send {
+            self.journal.record($record);
+            ready(self.$lookup.answer())
+        }
+    };
 }
 
 impl SummaryAccessRepositories for Scripted<'_> {
     type Failure = Offline;
 
-    fn user(
-        &self,
-        user_id: &str,
-        user_id_upsert: bool,
-    ) -> impl Future<Output = Result<Option<LiteLLMUserTable>, Offline>> + Send {
-        self.journal.record(CallRecord {
+    scripted_lookup!(
+        user,
+        (user_id: &str, user_id_upsert: bool),
+        LiteLLMUserTable,
+        user,
+        CallRecord {
             user_id: Some(user_id.to_owned()),
             user_id_upsert: Some(user_id_upsert),
             ..CallRecord::new("lookup_user")
-        });
-        ready(self.user.answer())
-    }
+        },
+    );
 
-    fn project(
-        &self,
-        project_id: &str,
-    ) -> impl Future<Output = Result<Option<ProjectTable>, Offline>> + Send {
-        self.journal.record(CallRecord {
+    scripted_lookup!(
+        project,
+        (project_id: &str),
+        ProjectTable,
+        project,
+        CallRecord {
             project_id: Some(project_id.to_owned()),
             ..CallRecord::new("lookup_project")
-        });
-        ready(self.project.answer())
-    }
+        },
+    );
 
-    fn membership(
-        &self,
-        user_id: &str,
-        team_id: &str,
-    ) -> impl Future<Output = Result<Option<LiteLLMTeamMembership>, Offline>> + Send {
-        self.journal.record(CallRecord {
+    scripted_lookup!(
+        membership,
+        (user_id: &str, team_id: &str),
+        LiteLLMTeamMembership,
+        membership,
+        CallRecord {
             user_id: Some(user_id.to_owned()),
             team_id: Some(team_id.to_owned()),
             ..CallRecord::new("lookup_membership")
-        });
-        ready(self.membership.answer())
-    }
+        },
+    );
 }

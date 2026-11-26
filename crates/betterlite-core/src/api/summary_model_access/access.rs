@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::future::Future;
 
 use betterlite_auth::auth_model_patterns::denial::model_access_object_name;
 use betterlite_auth::auth_model_patterns::grant::key_model_aliases;
@@ -108,51 +109,60 @@ where
         false
     }
 
+    // a failed read skips the scope, with the exception's text logged as compact.py does
+    async fn loaded<Row, Lookup>(&self, scope: &str, lookup: Lookup) -> Option<Row>
+    where
+        Lookup: Future<Output = Result<Option<Row>, Repositories::Failure>>,
+    {
+        let model = self.model;
+        match lookup.await {
+            Ok(row) => row,
+            Err(failure) => {
+                tracing::debug!(
+                    "compact_20260112: {scope} object lookup failed for summary_model={model} access \
+                     check; skipping {scope}-level scope: {failure}"
+                );
+                None
+            }
+        }
+    }
+
     // a failed user read skips the user scope, and the lookup needs a database and an id, empty string included
     async fn user(&self) -> bool {
-        let model = self.model;
         let Some(user_id) = self.fields.user_id.as_deref().filter(|_| self.database) else {
             return false;
         };
         // the summary request reads the row without ever upserting it
-        let loaded = match self.repositories.user(user_id, false).await {
-            Ok(row) => row,
-            Err(failure) => {
-                tracing::debug!(
-                    "compact_20260112: user object lookup failed for summary_model={model} access \
-                     check; skipping user-level scope: {failure}"
-                );
-                None
-            }
-        };
+        let loaded = self
+            .loaded("user", self.repositories.user(user_id, false))
+            .await;
         let Some(user) = loaded else {
             return false;
         };
-        let outcome = self.checks.user_call(self.router, model, &user);
-        self.denies(outcome, "user")
+        self.denies(
+            self.checks.user_call(self.router, self.model, &user),
+            "user",
+        )
     }
 
     // a missing project or an empty project allowlist skips the project scope
     async fn project(&self) -> bool {
-        let model = self.model;
         let Some(project_id) = self.fields.project_id.as_deref().filter(|_| self.database) else {
             return false;
         };
-        let loaded = match self.repositories.project(project_id).await {
-            Ok(row) => row,
-            Err(failure) => {
-                tracing::debug!(
-                    "compact_20260112: project object lookup failed for summary_model={model} \
-                     access check; skipping project-level scope: {failure}"
-                );
-                None
-            }
-        };
-        let Some(project) = loaded.filter(|row| !row.models.is_empty()) else {
+        let Some(project) = self
+            .loaded("project", self.repositories.project(project_id))
+            .await
+        else {
             return false;
         };
-        let outcome = self.checks.project_call(self.router, model, &project);
-        self.denies(outcome, "project")
+        if project.models.is_empty() {
+            return false;
+        }
+        self.denies(
+            self.checks.project_call(self.router, self.model, &project),
+            "project",
+        )
     }
 
     // a failed membership read denies, because a member whose limits cannot be read must not lose them

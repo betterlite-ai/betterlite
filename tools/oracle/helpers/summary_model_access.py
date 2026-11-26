@@ -3,7 +3,7 @@ import logging
 import sys
 from collections.abc import Mapping
 from types import ModuleType
-from typing import Final, Literal, TypeAlias, TypeVar, TypedDict
+from typing import Final, Literal, NotRequired, TypeAlias, TypedDict, TypeVar
 
 from litellm.llms.anthropic.pass_through.context_management.editors import compact
 from litellm.models.project import LiteLLM_ProjectTable
@@ -12,7 +12,7 @@ from litellm.models.user import LiteLLM_UserTable
 from litellm.proxy._types import ProxyException, UserAPIKeyAuth
 from litellm.proxy.auth import auth_checks
 from pydantic import JsonValue, TypeAdapter
-from typing_extensions import NotRequired, override
+from typing_extensions import override
 
 PROXY_MODULE: Final = "litellm.proxy.proxy_server"
 CHECKS_MODULE: Final = "litellm.proxy.auth.auth_checks"
@@ -24,7 +24,6 @@ PROJECT_CHECK: Final = auth_checks.can_project_access_model  # https://github.co
 USER_CHECK: Final = auth_checks.can_user_call_model  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L5269
 
 
-# a scripted user row's allowlist, read as this view because LiteLLM_UserTable.models is untyped
 class UserRowJson(TypedDict):
     models: NotRequired[list[str]]
 
@@ -108,12 +107,11 @@ class Diagnostics(logging.Handler):
     @override
     def emit(self, record: logging.LogRecord) -> None:
         message = record.getMessage()
-        if not message.startswith("compact_20260112:"):
-            return
-        if record.levelno == logging.DEBUG:
-            self.lines.append(JSON.validate_python({"level": "debug", "message": message}))
-        elif record.levelno >= logging.WARNING:
-            self.lines.append(JSON.validate_python({"level": "warning", "message": message}))
+        recorded = record.levelno == logging.DEBUG or record.levelno >= logging.WARNING
+        if recorded and message.startswith("compact_20260112:"):
+            level = "debug" if record.levelno == logging.DEBUG else "warning"
+            entry: dict[str, JsonValue] = {"level": level, "message": message}
+            self.lines.append(JSON.validate_python(entry))
 
 
 class ChecksModule(ModuleType):
@@ -212,17 +210,18 @@ class ChecksModule(ModuleType):
     async def get_team_membership(
         self, user_id: str, team_id: str, **_context: JsonValue
     ) -> LiteLLM_TeamMembership | None:
-        record = blank("lookup_membership")
+        record = blank("lookup_membership", team_id=team_id)
         record["user_id"] = user_id
-        record["team_id"] = team_id
         self.journal.append(record)
         return resolve_row(self.membership, MEMBERSHIPS)
 
 
-def blank(call: str, model: str | None = None, models: list[str] | None = None) -> CallJson:
+def blank(
+    call: str, model: str | None = None, models: list[str] | None = None, team_id: str | None = None,
+) -> CallJson:
     return CallJson(
         call=call, object_type=None, model=model, models=[] if models is None else models,
-        team_model_aliases={}, team_id=None, user_id=None, user_id_upsert=None, project_id=None,
+        team_model_aliases={}, team_id=team_id, user_id=None, user_id_upsert=None, project_id=None,
     )
 
 
@@ -252,12 +251,11 @@ def install_proxy(
     sys.modules[PROXY_MODULE] = ProxyModule(database=database, general_settings=general_settings)
 
 
-def settings_answer(input_value: SettingsCall) -> list[dict[str, JsonValue]]:
-    outcomes: list[dict[str, JsonValue]] = []
+def settings_answer(input_value: SettingsCall) -> list[JsonValue]:
+    outcomes: list[JsonValue] = []
     for scenario in input_value["scenarios"]:
         general_settings = scenario["general_settings"]
-        present = general_settings is not None
-        install_proxy(present=present, database=False, general_settings=general_settings)
+        install_proxy(present=general_settings is not None, database=False, general_settings=general_settings)
         outcome: dict[str, JsonValue] = {"model": READ_MODEL(), "max_tokens": READ_TOKENS()}
         outcomes.append(outcome)
     return outcomes
@@ -276,17 +274,17 @@ def access_answer(input_value: AccessCall) -> list[JsonValue]:
         for scenario in input_value["scenarios"]:
             fields = scenario["principal"]
             principal = None if fields is None else PRINCIPALS.validate_python(fields)
-            present = scenario["proxy"]
-            install_proxy(present=present, database=scenario["database"], general_settings=None)
+            install_proxy(present=scenario["proxy"], database=scenario["database"], general_settings=None)
             journal: list[CallJson] = []
             sys.modules[CHECKS_MODULE] = ChecksModule(scenario, journal)
             diagnostics.lines = []
             allowed = asyncio.run(CHECK(principal, input_value["summary_model"], None))
-            outcomes.append(
-                JSON.validate_python(
-                    {"allowed": allowed, "calls": journal, "diagnostics": diagnostics.lines}
-                )
-            )
+            outcome: dict[str, JsonValue] = {
+                "allowed": allowed,
+                "calls": JSON.validate_python(journal),
+                "diagnostics": JSON.validate_python(diagnostics.lines),
+            }
+            outcomes.append(JSON.validate_python(outcome))
     finally:
         logger.setLevel(level)
         logger.handlers = detached
@@ -295,5 +293,7 @@ def access_answer(input_value: AccessCall) -> list[JsonValue]:
 
 def run(input_value: Input) -> JsonValue:
     if input_value["action"] == "settings":
-        return JSON.validate_python({"outcomes": settings_answer(input_value)})
-    return JSON.validate_python({"outcomes": access_answer(input_value)})
+        answer: dict[str, JsonValue] = {"outcomes": settings_answer(input_value)}
+    else:
+        answer = {"outcomes": access_answer(input_value)}
+    return JSON.validate_python(answer)
