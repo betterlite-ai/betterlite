@@ -189,7 +189,8 @@ pub async fn ms_teams(setup: &AlertSetup<'_>) -> Result<Option<ServiceBody>, Ser
     }
     Ok(Some(ServiceBody::Success(SuccessBody {
         status: "success",
-        message: "Mock MS Teams Alert sent, verify MS Teams Alert Received in your channel",
+        message: "Mock MS Teams Alert sent, verify MS Teams Alert Received in your channel"
+            .to_owned(),
     })))
 }
 
@@ -223,7 +224,7 @@ pub async fn email(
     let _sent = setup.actions.send_test_email(&event).await?;
     Ok(Some(ServiceBody::Success(SuccessBody {
         status: "success",
-        message: "Mock Email Alert sent, verify Email Alert Received",
+        message: "Mock Email Alert sent, verify Email Alert Received".to_owned(),
     })))
 }
 

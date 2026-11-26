@@ -48,7 +48,10 @@ pub(crate) struct Reply {
 }
 
 impl Reply {
-    pub(crate) fn json<T: DeserializeOwned>(&self) -> T {
+    pub(crate) fn json<T>(&self) -> T
+    where
+        T: DeserializeOwned,
+    {
         serde_json::from_slice(&self.body).expect("the response body is the documented JSON")
     }
 

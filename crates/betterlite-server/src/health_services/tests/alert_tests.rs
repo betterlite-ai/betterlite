@@ -197,8 +197,8 @@ async fn alert_slack_sends_every_type_when_no_active_list_is_set() {
 }
 
 #[rstest]
-#[case::without_database(false, &[] as &[&str])]
-#[case::with_database(true, &["monthly", "weekly"] as &[&str])]
+#[case::without_database(false, &[])]
+#[case::with_database(true, &["monthly", "weekly"])]
 #[tokio::test(start_paused = true)]
 async fn alert_slack_sends_spend_reports_only_with_a_database(
     #[case] has_database: bool,

@@ -11,7 +11,7 @@ use crate::health_readiness::callback_listing::CallbackEntry;
 use crate::health_services::alert_tests::{self, AlertSetup};
 use crate::health_services::callback_id::get_callback_identifier;
 use crate::health_services::mock_requests::{MOCK_REQUEST, MockRequests};
-use crate::health_services::service_name::ServiceName;
+use crate::health_services::service_name::{Kind, ServiceName};
 use crate::health_services::service_routes::{HealthBody, ServiceBody, SuccessBody};
 
 // every injected failure becomes the endpoint's 500 "Authentication Error, <text>"
@@ -142,54 +142,33 @@ async fn branch(
     caller: &Caller,
     ports: &Probes<'_>,
 ) -> Result<Option<ServiceBody>, ServiceError> {
-    match service {
-        ServiceName::OpenMeter | ServiceName::Braintrust | ServiceName::GenericApi => {
-            mock_request(service, ports).await
-        }
-        ServiceName::Datadog => Ok(Some(health_reply(
+    match service.kind() {
+        Kind::Mock => mock_request(service, ports).await,
+        Kind::Langfuse => langfuse(ports).await,
+        Kind::Datadog => Ok(Some(health_reply(
             ports.checks.datadog().await?,
             "Datadog is healthy",
         ))),
-        ServiceName::DatadogMetrics => Ok(Some(health_reply(
+        Kind::DatadogMetrics => Ok(Some(health_reply(
             ports.checks.datadog_metrics().await?,
             "Datadog Metrics is healthy",
         ))),
-        ServiceName::Arize => Ok(Some(health_reply(
+        Kind::Arize => Ok(Some(health_reply(
             ports.checks.arize().await?,
             "Arize is healthy",
         ))),
-        ServiceName::Galileo => Ok(Some(health_reply(
+        Kind::Galileo => Ok(Some(health_reply(
             ports.checks.galileo().await?,
             "Galileo is healthy",
         ))),
-        ServiceName::Sqs => sqs_reply(ports.checks.sqs().await),
-        ServiceName::NewRelic => {
-            proxy_admin_gate(
-                caller,
-                "Only proxy admins can trigger the New Relic test event.",
-            )?;
-            newrelic(ports).await
-        }
-        ServiceName::PointFive => {
-            proxy_admin_gate(
-                caller,
-                "Only proxy admins can trigger the PointFive liveness ping.",
-            )?;
-            pointfive(ports).await
-        }
-        ServiceName::Langfuse => langfuse(ports).await,
-        ServiceName::Webhook => alert_tests::webhook(caller, &ports.alerts).await,
-        ServiceName::Slack | ServiceName::SlackBudgetAlerts => {
-            alert_tests::slack(service, &ports.alerts).await
-        }
-        ServiceName::MsTeams => alert_tests::ms_teams(&ports.alerts).await,
-        ServiceName::Email => alert_tests::email(caller, &ports.alerts).await,
-        ServiceName::Otel
-        | ServiceName::CustomCallbackApi
-        | ServiceName::Langsmith
-        | ServiceName::LangfuseOtel
-        | ServiceName::DatadogLlmObservability
-        | ServiceName::Signoz => Ok(None),
+        Kind::Sqs => sqs_reply(ports.checks.sqs().await),
+        Kind::NewRelic => newrelic(caller, ports).await,
+        Kind::PointFive => pointfive(caller, ports).await,
+        Kind::Webhook => alert_tests::webhook(caller, &ports.alerts).await,
+        Kind::Slack => alert_tests::slack(service, &ports.alerts).await,
+        Kind::MsTeams => alert_tests::ms_teams(&ports.alerts).await,
+        Kind::Email => alert_tests::email(caller, &ports.alerts).await,
+        Kind::NoReply => Ok(None),
     }
 }
 
@@ -227,7 +206,14 @@ fn sqs_reply(
     })))
 }
 
-async fn newrelic(ports: &Probes<'_>) -> Result<Option<ServiceBody>, ServiceError> {
+async fn newrelic(
+    caller: &Caller,
+    ports: &Probes<'_>,
+) -> Result<Option<ServiceBody>, ServiceError> {
+    proxy_admin_gate(
+        caller,
+        "Only proxy admins can trigger the New Relic test event.",
+    )?;
     let status = ports.checks.newrelic().await?;
     Ok(Some(health_reply(
         status,
@@ -235,7 +221,14 @@ async fn newrelic(ports: &Probes<'_>) -> Result<Option<ServiceBody>, ServiceErro
     )))
 }
 
-async fn pointfive(ports: &Probes<'_>) -> Result<Option<ServiceBody>, ServiceError> {
+async fn pointfive(
+    caller: &Caller,
+    ports: &Probes<'_>,
+) -> Result<Option<ServiceBody>, ServiceError> {
+    proxy_admin_gate(
+        caller,
+        "Only proxy admins can trigger the PointFive liveness ping.",
+    )?;
     match ports.checks.pointfive().await {
         Ok(status) => Ok(Some(pointfive_reply(status))),
         Err(setup) => Ok(Some(ServiceBody::Health(HealthBody {

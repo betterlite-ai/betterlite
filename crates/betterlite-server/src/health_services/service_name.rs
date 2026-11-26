@@ -71,6 +71,25 @@ pub enum ServiceName {
     Sqs,
 }
 
+// each accepted name runs one probe branch, so the dispatch matches the kind instead of restating the 22 names
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Kind {
+    Mock,
+    Langfuse,
+    Datadog,
+    DatadogMetrics,
+    Arize,
+    Galileo,
+    Sqs,
+    NewRelic,
+    PointFive,
+    Webhook,
+    Slack,
+    MsTeams,
+    Email,
+    NoReply,
+}
+
 impl ServiceName {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
@@ -97,6 +116,31 @@ impl ServiceName {
             Self::PointFive => "pointfive",
             Self::Signoz => "signoz",
             Self::Sqs => "sqs",
+        }
+    }
+
+    #[must_use]
+    pub const fn kind(self) -> Kind {
+        match self {
+            Self::OpenMeter | Self::Braintrust | Self::GenericApi => Kind::Mock,
+            Self::Langfuse => Kind::Langfuse,
+            Self::Datadog => Kind::Datadog,
+            Self::DatadogMetrics => Kind::DatadogMetrics,
+            Self::Arize => Kind::Arize,
+            Self::Galileo => Kind::Galileo,
+            Self::Sqs => Kind::Sqs,
+            Self::NewRelic => Kind::NewRelic,
+            Self::PointFive => Kind::PointFive,
+            Self::Webhook => Kind::Webhook,
+            Self::Slack | Self::SlackBudgetAlerts => Kind::Slack,
+            Self::MsTeams => Kind::MsTeams,
+            Self::Email => Kind::Email,
+            Self::Otel
+            | Self::CustomCallbackApi
+            | Self::Langsmith
+            | Self::LangfuseOtel
+            | Self::DatadogLlmObservability
+            | Self::Signoz => Kind::NoReply,
         }
     }
 }
