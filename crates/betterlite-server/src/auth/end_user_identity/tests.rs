@@ -12,18 +12,26 @@ use axum::http::{Request, StatusCode, header};
 use axum::routing::post;
 use betterlite_auth::auth_cache::payload::PayloadError;
 use betterlite_auth::auth_cache::{AuthCacheError, WriteTtl};
+use betterlite_auth::auth_end_users::{EndUserFailure, EndUserLookup};
+use betterlite_auth::auth_identity::records::SourceKey;
 use betterlite_auth::end_user_identity::cache::ValidationCache;
 use betterlite_auth::end_user_identity::existence::{
     EndUserExistence, ExistenceError, UserExistence, UserProbe,
 };
 use betterlite_auth::end_user_identity::resolve::{DatabaseLookups, EndUserIdResolver};
+use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::types::Config;
+use betterlite_db::budget_permission_rows::JsonData;
+use betterlite_db::identity_rows::PydanticBool;
+use betterlite_db::identity_rows::end_user::LiteLLMEndUserTable;
 use betterlite_models::decisions::Json;
+use rust_decimal::Decimal;
 use secrecy::SecretString;
 use tower::ServiceExt as _;
 
 use super::{EndUserIdentityRule, EndUserIdentityStageInput, prefetch, stage_input};
+use crate::auth::auth_end_users::EndUserRule;
 use crate::auth::auth_identity::{
     AuthBackend, AuthContext, INSTALLED_STAGES, StageFailure, StageInput, dispatch,
 };
@@ -149,16 +157,13 @@ fn config_with_master_key() -> Config {
 }
 
 fn config_with_database() -> Config {
-    let mut lookup = BTreeMap::<String, String>::new();
-    lookup.insert(
-        "DATABASE_URL".to_owned(),
-        "postgresql://user:password@localhost:5432/betterlite".to_owned(),
-    );
-    ConfigLoader { lookup }
-        .load(
-            "general_settings:\n  master_key: secret-master-key\nlitellm_settings:\n  validate_end_user_id_in_db: true\n",
-        )
-        .expect("the test config loads")
+    ConfigLoader {
+        lookup: BTreeMap::<String, String>::new(),
+    }
+    .load(
+        "general_settings:\n  master_key: secret-master-key\n  database_url: postgresql://user:password@127.0.0.1:1/betterlite\nlitellm_settings:\n  validate_end_user_id_in_db: true\n",
+    )
+    .expect("the test config loads")
 }
 
 fn master_context(master_key: &SecretString) -> AuthContext {
@@ -303,7 +308,8 @@ async fn mark_called(
 
 async fn run_request(
     config: &Config,
-    rule: Arc<EndUserIdentityRule>,
+    identity_rule: Option<Arc<EndUserIdentityRule>>,
+    end_user_rule: Option<Arc<EndUserRule>>,
     end_user_id: &str,
 ) -> (StatusCode, String, Option<String>) {
     let seen = Seen::default();
@@ -315,13 +321,18 @@ async fn run_request(
         .body(Body::empty())
         .expect("the request builds");
     request.extensions_mut().insert(seen.clone());
-    let application = routes::router(
+    let mut application = routes::router(
         state_for(config),
         Arc::new(AtomicBool::new(false)),
         Router::new().route(MODEL_ROUTE, post(mark_called)),
         Router::new(),
-    )
-    .layer(Extension(rule));
+    );
+    if let Some(rule) = identity_rule {
+        application = application.layer(Extension(rule));
+    }
+    if let Some(rule) = end_user_rule {
+        application = application.layer(Extension(rule));
+    }
     let response = application
         .oneshot(request)
         .await
@@ -342,7 +353,8 @@ async fn failure_stops_downstream() {
     let rule = Arc::new(EndUserIdentityRule {
         resolver: Some(identity),
     });
-    let (status, body, seen) = run_request(&config_with_database(), rule, "ghost").await;
+    let (status, body, seen) =
+        run_request(&config_with_database(), Some(rule), None, "ghost").await;
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
     assert!(
         body.contains("\"type\":\"internal_server_error\""),
@@ -365,7 +377,8 @@ async fn resolved_id_reaches_the_downstream_handler() {
     let rule = Arc::new(EndUserIdentityRule {
         resolver: Some(identity),
     });
-    let (status, _body, seen) = run_request(&config_with_database(), rule, "alice").await;
+    let (status, _body, seen) =
+        run_request(&config_with_database(), Some(rule), None, "alice").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(seen.as_deref(), Some("alice"));
     assert_eq!(existence.calls(), vec!["alice".to_owned()]);
@@ -417,4 +430,177 @@ fn end_user_id(context: &AuthContext) -> Option<&str> {
         .end_user
         .as_ref()
         .map(|end_user| end_user.id.as_str())
+}
+
+// the production resolver the state builds, reached through the real server constructor with no test rule
+#[tokio::test]
+async fn production_validation_drops_an_unknown_id() {
+    let (status, body, seen) = run_request(&config_with_database(), None, None, "ghost-b880").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(seen.is_none(), "the unknown id never reaches the handler");
+
+    // the same id without a database passes through, so the drop above is the validation
+    let (_, _, passthrough) =
+        run_request(&config_with_master_key(), None, None, "ghost-b880").await;
+    assert_eq!(passthrough.as_deref(), Some("ghost-b880"));
+}
+
+fn key_with_end_user_budget(budget_id: &str) -> UserAPIKeyAuth {
+    let fields: BTreeMap<String, JsonData> = serde_json::from_str(&format!(
+        r#"{{"api_key": "sk-test", "metadata": {{"end_user_budget_id": "{budget_id}"}}}}"#
+    ))
+    .expect("the key fixture is JSON");
+    UserAPIKeyAuth::construct(AuthInput::Dict(fields)).expect("the key fixture constructs")
+}
+
+fn keyed_context(master_key: &SecretString, budget_id: &str) -> AuthContext {
+    let mut context = master_context(master_key);
+    context.principal.source_key = SourceKey(Some(key_with_end_user_budget(budget_id)));
+    context
+}
+
+#[tokio::test]
+async fn key_budget_id_keeps_an_unknown_id() {
+    let master_key = SecretString::from("secret-master-key".to_owned());
+    let cache = ScriptedCache::new(false);
+    let (kept_resolver, _kept_existence) = resolver(false, &cache);
+    let mut kept = EndUserIdentityStageInput {
+        context: keyed_context(&master_key, "budget-key"),
+        raw_end_user_id: Some("ghost".to_owned()),
+        rule: Arc::new(EndUserIdentityRule {
+            resolver: Some(kept_resolver),
+        }),
+        database: true,
+    };
+    prefetch(&mut kept).await.expect("the end-user validation");
+    assert_eq!(end_user_id(&kept.context), Some("ghost"));
+
+    // the same unknown id without a key budget is dropped
+    let (dropped_resolver, _dropped_existence) = resolver(false, &cache);
+    let mut dropped = EndUserIdentityStageInput {
+        context: master_context(&master_key),
+        raw_end_user_id: Some("ghost".to_owned()),
+        rule: Arc::new(EndUserIdentityRule {
+            resolver: Some(dropped_resolver),
+        }),
+        database: true,
+    };
+    prefetch(&mut dropped)
+        .await
+        .expect("the end-user validation");
+    assert_eq!(end_user_id(&dropped.context), None);
+}
+
+#[derive(Debug, Default)]
+struct ScriptedEndUserLookup {
+    lookups: Mutex<Vec<String>>,
+    checks: Mutex<Vec<String>>,
+}
+
+impl ScriptedEndUserLookup {
+    fn lookups(&self) -> Vec<String> {
+        self.lookups.lock().expect("the lookup calls").clone()
+    }
+
+    fn checks(&self) -> Vec<String> {
+        self.checks.lock().expect("the budget checks").clone()
+    }
+}
+
+fn end_user_row() -> LiteLLMEndUserTable {
+    LiteLLMEndUserTable {
+        user_id: "alice".to_owned(),
+        blocked: PydanticBool(false),
+        alias: None,
+        spend: Decimal::from(0_i64),
+        allowed_model_region: None,
+        default_model: None,
+        budget_id: None,
+        litellm_budget_table: None,
+        object_permission_id: None,
+        object_permission: None,
+    }
+}
+
+#[async_trait]
+impl EndUserLookup for ScriptedEndUserLookup {
+    async fn end_user_object(
+        &self,
+        end_user_id: &str,
+        _key_end_user_budget_id: Option<&str>,
+        _token_end_user_max_budget: Option<Decimal>,
+    ) -> Result<Option<LiteLLMEndUserTable>, EndUserFailure> {
+        self.lookups
+            .lock()
+            .expect("the lookup calls")
+            .push(end_user_id.to_owned());
+        Ok(Some(end_user_row()))
+    }
+
+    async fn check_budget(
+        &self,
+        end_user: &LiteLLMEndUserTable,
+        route: &str,
+    ) -> Result<(), EndUserFailure> {
+        self.checks
+            .lock()
+            .expect("the budget checks")
+            .push(format!("{} {route}", end_user.user_id));
+        Ok(())
+    }
+}
+
+fn end_user_rule(
+    lookup: &Arc<ScriptedEndUserLookup>,
+    end_user_id: Option<&str>,
+) -> Arc<EndUserRule> {
+    Arc::new(EndUserRule {
+        end_user_id: end_user_id.map(str::to_owned),
+        key_end_user_budget_id: Some("budget-key".to_owned()),
+        token_end_user_max_budget: None,
+        lookup: Some(Arc::<ScriptedEndUserLookup>::clone(lookup)),
+    })
+}
+
+#[tokio::test]
+async fn the_end_user_budget_stage_reads_the_validated_id() {
+    let cache = ScriptedCache::new(false);
+    let (identity, _existence) = resolver(true, &cache);
+    let lookup = Arc::new(ScriptedEndUserLookup::default());
+    let (status, body, seen) = run_request(
+        &config_with_database(),
+        Some(Arc::new(EndUserIdentityRule {
+            resolver: Some(identity),
+        })),
+        Some(end_user_rule(&lookup, None)),
+        "alice",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(seen.as_deref(), Some("alice"));
+    assert_eq!(lookup.lookups(), vec!["alice".to_owned()]);
+    assert_eq!(lookup.checks(), vec!["alice /v1/files".to_owned()]);
+}
+
+#[tokio::test]
+async fn a_dropped_id_clears_a_preseeded_end_user_lookup() {
+    let cache = ScriptedCache::new(false);
+    let (identity, _existence) = resolver(false, &cache);
+    let lookup = Arc::new(ScriptedEndUserLookup::default());
+    let (status, body, seen) = run_request(
+        &config_with_database(),
+        Some(Arc::new(EndUserIdentityRule {
+            resolver: Some(identity),
+        })),
+        Some(end_user_rule(&lookup, Some("stale"))),
+        "ghost",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(seen.is_none());
+    assert!(
+        lookup.lookups().is_empty(),
+        "the dropped id never reaches the budget lookup"
+    );
+    assert!(lookup.checks().is_empty());
 }
