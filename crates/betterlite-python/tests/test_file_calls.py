@@ -520,6 +520,27 @@ def test_create_flag_coroutine() -> None:
     assert dumped(made) == dumped(direct) == FILE_RECORD
 
 
+def test_create_provider_none_matches_litellm() -> None:
+    with FileCallServer() as server:
+        with pytest.raises(ValueError, match="is not a valid LlmProviders") as reference:
+            REFERENCE.create_file(
+                file=PAYLOAD,
+                purpose="batch",
+                custom_llm_provider=None,
+                api_base=server.url,
+                api_key=GOOD_KEY,
+            )
+        with pytest.raises(ValueError, match="is not a valid LlmProviders"):
+            create_file(
+                file=PAYLOAD,
+                purpose="batch",
+                custom_llm_provider=None,
+                api_base=server.url,
+                api_key=GOOD_KEY,
+            )
+    assert "None" in str(reference.value)
+
+
 def test_retrieve_matches_litellm() -> None:
     with FileCallServer() as server:
         reference = REFERENCE.file_retrieve(
