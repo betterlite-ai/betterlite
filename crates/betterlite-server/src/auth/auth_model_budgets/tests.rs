@@ -276,7 +276,7 @@ async fn prefetch_rewrites_the_body_for_the_authorized_fallback() {
     let applied = views
         .serialized_body
         .expect("the fallback body is recorded");
-    let body = String::from_utf8(applied.to_vec()).expect("the rewritten body is UTF-8");
+    let body = String::from_utf8(applied).expect("the rewritten body is UTF-8");
     assert_eq!(body, "{\"model\":\"gpt-3.5\"}");
 }
 

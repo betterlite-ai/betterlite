@@ -82,7 +82,7 @@ pub struct ModelBudgetStageInput {
     pub rule: Arc<ModelBudgetRule>,
     pub settings: Arc<Settings>,
     pub body: Option<Bytes>,
-    pub views: SharedViews,
+    pub(crate) views: SharedViews,
 }
 
 // the authentication service inserts the rule once it resolved the caller's key; without one the stage is inert
@@ -210,7 +210,26 @@ fn key_budget_exception(error: &KeyBudgetError) -> ProxyException {
 fn failure_exception(error: &ErrorClass) -> ProxyException {
     match error {
         ErrorClass::BudgetExceeded(details) => budget_exception(details),
-        other => other_exception(&class_message(other)),
+        other @ (ErrorClass::Authentication(_)
+        | ErrorClass::NotFound(_)
+        | ErrorClass::PermissionDenied(_)
+        | ErrorClass::BadRequest(_)
+        | ErrorClass::UnprocessableEntity(_)
+        | ErrorClass::Timeout(_)
+        | ErrorClass::RateLimit(_)
+        | ErrorClass::ContextWindowExceeded(_)
+        | ErrorClass::ContentPolicyViolation(_)
+        | ErrorClass::ServiceUnavailable(_)
+        | ErrorClass::BadGateway(_)
+        | ErrorClass::InternalServer(_)
+        | ErrorClass::Api(_)
+        | ErrorClass::ApiConnection(_)
+        | ErrorClass::ApiResponseValidation(_)
+        | ErrorClass::JsonSchemaValidation(_)
+        | ErrorClass::UnsupportedParams(_)
+        | ErrorClass::GuardrailRaised(_)
+        | ErrorClass::MidStreamFallback(_)
+        | ErrorClass::Unclassified(_)) => other_exception(&class_message(other)),
     }
 }
 

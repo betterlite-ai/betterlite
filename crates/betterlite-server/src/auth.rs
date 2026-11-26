@@ -97,8 +97,8 @@ pub(crate) async fn authenticate(
     let pipeline = auth_stage_loop::run_stages(request, master_key, failure_response);
     match Box::pin(pipeline).await {
         Ok((mut staged, authenticated, body)) => {
-            let body = rewritten_body(&mut staged, body);
-            auth_stage_loop::forward(staged, authenticated, body, next).await
+            let rewritten = rewritten_body(&mut staged, body);
+            auth_stage_loop::forward(staged, authenticated, rewritten, next).await
         }
         Err(response) => *response,
     }
