@@ -16,7 +16,7 @@ from typing import ClassVar, Final, Protocol, Self, TypeAlias, TypeVar
 import httpx
 import httpx2
 import pytest
-from litellm.constants import DEFAULT_SSL_CIPHERS as reference_ssl_ciphers
+from litellm.constants import DEFAULT_SSL_CIPHERS as REFERENCE_SSL_CIPHERS
 from pydantic import ConfigDict, JsonValue, TypeAdapter, ValidationError
 from typing_extensions import override
 
@@ -73,7 +73,6 @@ from betterlite.budget_manager import (
     HOURS_IN_A_DAY,
     BudgetManager,
     ModuleClient,
-    module_level_client,
 )
 from betterlite.types.utils.choices import map_finish_reason as parts_map_finish_reason
 from betterlite.types.utils.response import ModelResponse, ModelResponseStream
@@ -180,6 +179,7 @@ USAGE_DATA: Final[dict[str, JsonValue]] = {
 EXCEPTION_ADAPTER: Final[TypeAdapter[BaseException]] = TypeAdapter(
     BaseException, config=ConfigDict(arbitrary_types_allowed=True)
 )
+NUMERIC_ADAPTER = TypeAdapter(int | float, config=ConfigDict(strict=True))
 HOSTED_DATA: Final[JsonValue] = {ALICE: {"total_budget": BUDGET}}
 JSON_ADAPTER: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 HOSTED_REPLY: Final[dict[str, JsonValue]] = {"status": "ok", "data": HOSTED_DATA}
@@ -833,8 +833,8 @@ def test_budget_duration_lifecycle(
     first = ours.create_budget(BUDGET, "erin", "daily")
     second = ours.create_budget(BUDGET, "frank", "daily")
     for record in (first, second):
-        assert record["created_at"] > 0
-        assert record["last_updated_at"] > 0
+        assert NUMERIC_ADAPTER.validate_python(record["created_at"]) > 0
+        assert NUMERIC_ADAPTER.validate_python(record["last_updated_at"]) > 0
         assert record["created_at"] == record["last_updated_at"]
     assert first["created_at"] == second["created_at"] != CREATED_AT
     join_saves(marker)
@@ -932,11 +932,12 @@ def test_budget_hosted_transport(monkeypatch: pytest.MonkeyPatch) -> None:
         options = TransportRecorder.calls[-1]
         assert options["http2"] is enabled
         transports = [item for item in TransportRecorder.calls if "local_address" in item]
-        assert transports == ([{"local_address": IPV4_BIND, "http2": enabled}] if force_ipv4 else [])  # noqa: E501
+        expected = [{"local_address": IPV4_BIND, "http2": enabled}] if force_ipv4 else []
+        assert transports == expected
 
 
 def test_budget_tls_settings(monkeypatch: pytest.MonkeyPatch) -> None:
-    assert DEFAULT_SSL_CIPHERS == reference_ssl_ciphers
+    assert DEFAULT_SSL_CIPHERS == REFERENCE_SSL_CIPHERS
     monkeypatch.setenv("SSL_VERIFY", "false")
     assert ModuleClient().ssl_options is False
     explicit = ModuleClient(ssl_verify=True)
