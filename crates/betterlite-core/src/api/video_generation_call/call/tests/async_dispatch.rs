@@ -28,6 +28,21 @@ async fn the_async_entry_infers_the_provider_from_the_default_model() {
 }
 
 #[tokio::test]
+async fn the_async_inference_reads_an_empty_model_as_the_default() {
+    let mut bench = Bench::new(Outcome::Answers);
+    let mut call = request();
+    call.model = Some(String::new());
+    bench
+        .async_run(call, None)
+        .await
+        .expect("the async call answers");
+    let inner = handled(&bench.journal);
+    assert_eq!(inner.model, "sora-2");
+    assert_eq!(inner.custom_llm_provider, "openai");
+    assert!(inner.is_async);
+}
+
+#[tokio::test]
 async fn the_inference_ignores_a_loose_api_base_but_the_handler_still_gets_it() {
     let api_base = "https://api.groq.com/openai/v1";
     let mut bench = Bench::new(Outcome::Answers);

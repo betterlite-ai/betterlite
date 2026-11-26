@@ -86,6 +86,24 @@ fn a_mock_that_is_not_json_is_an_api_connection_error() {
 }
 
 #[test]
+fn an_empty_model_in_a_bad_mock_is_named_as_the_default() {
+    let mut bench = Bench::new(Outcome::Answers);
+    let mut call = request();
+    call.model = Some(String::new());
+    call.kwargs
+        .insert("mock_response".to_owned(), text("{not json"));
+    let raised = failed(bench.run(call));
+    let ErrorClass::ApiConnection(context) = &raised.class else {
+        panic!(
+            "an invalid mock is an api connection error, got {:?}",
+            raised.class
+        );
+    };
+    assert_eq!(context.model.as_deref(), Some("sora-2"));
+    assert!(handles(&bench.journal).is_empty());
+}
+
+#[test]
 fn a_mock_without_the_required_fields_is_refused() {
     let mut bench = Bench::new(Outcome::Answers);
     let mut call = request();
