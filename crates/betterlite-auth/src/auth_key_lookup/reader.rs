@@ -67,11 +67,10 @@ impl KeyReader {
         };
         match bounded_db_lookup(read(call), request, &self.tasks).await {
             Ok(found) => Ok(found),
-            Err(error) if is_parked(&error) => {
+            Err(error) => {
                 let failure = parked.lock().unwrap_or_else(PoisonError::into_inner).take();
                 Err(failure.map_or_else(|| KeyLookupError::Lookup(error), KeyLookupError::Read))
             }
-            Err(error) => Err(KeyLookupError::Lookup(error)),
         }
     }
 }
@@ -149,13 +148,4 @@ fn park(parked: &Mutex<Option<KeyReadError>>, error: KeyReadError) -> DbLookupEr
         traceback_modules: Vec::new(),
         cause: None,
     })
-}
-
-fn is_parked(error: &DbLookupError) -> bool {
-    match error {
-        DbLookupError::Database(fault) => {
-            fault.error_type == ErrorType::Other && fault.message == PARKED_FAULT
-        }
-        DbLookupError::Deadline(_) | DbLookupError::Elapsed(_) | DbLookupError::Task(_) => false,
-    }
 }
