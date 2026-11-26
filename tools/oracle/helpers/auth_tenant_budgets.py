@@ -270,8 +270,8 @@ async def organization_call(call: Call, recorder: Recorder) -> JsonValue:
     install(reader)
     auth_checks.get_org_object = scripted_org_object  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L6337-L6345
     token = token_of(call)
-    denial = await settled(  # type: ignore[misc]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-        auth_checks._organization_max_budget_check(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L6302-L6398
+    denial = await settled(
+        auth_checks._organization_max_budget_check(  # type: ignore[misc]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L6302-L6398
             token,
             team_of(call),
             database_of(call),
@@ -292,8 +292,8 @@ async def tags_call(call: Call, recorder: Recorder) -> JsonValue:
     reader = CounterReads(call["spends"])
     install(reader)
     auth_checks.get_tag_objects_batch = scripted_tag_objects  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L6436-L6442
-    denial = await settled(  # type: ignore[misc]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-        auth_checks._tag_max_budget_check(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L6401-L6423
+    denial = await settled(
+        auth_checks._tag_max_budget_check(  # type: ignore[misc]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L6401-L6423
             request_body=request_body_of(call),
             prisma_client=database_of(call),
             user_api_key_cache=UserApiKeyCache(),
