@@ -17,6 +17,13 @@ chrono.workspace = true
 libfuzzer-sys = "0.4.9"
 
 [[bin]]
+name = "config_overlay"
+path = "fuzz_targets/config_overlay.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "crontab_trigger"
 path = "fuzz_targets/crontab_trigger.rs"
 test = false

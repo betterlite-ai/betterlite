@@ -6,10 +6,11 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use betterlite_config::proxy::ProxyPolicy;
-use betterlite_config::tls::Verification;
+use betterlite_config::tls::{TlsPolicy, Verification};
 use betterlite_config::types::ProxyTrust;
 use betterlite_error::error::ErrorClass;
 use betterlite_error::error::details::ResponseDetails;
+use betterlite_http::interactions::base::clients::HttpClients;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::user_url::fetch::UserUrlFetcher;
 use betterlite_http::user_url::validate::{SystemResolver, UrlValidator};
@@ -20,11 +21,15 @@ use betterlite_logging::logging_state::types::{
     CallbackPolicy, DynamicCallbacks, Messages, RequestLoggingFlags,
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
+use betterlite_models::catalog::ModelCatalog;
 use betterlite_models::decisions::Json;
+use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::price_lookup::{PriceLookup, PriceRecord, PricedModel};
+use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
+use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::provider_model_sets::ProviderModelSets;
 use betterlite_models::resolution::{
-    ProviderIdentity, ResolutionError, ResolutionRequest, ResolvedModel,
+    ProviderIdentity, ResolutionContext, ResolutionError, ResolutionRequest, ResolvedModel,
 };
 use betterlite_models::tiered_pricing::Scalar;
 use betterlite_ocr::ocr_auth::{
@@ -36,6 +41,8 @@ use betterlite_ocr::ocr_document::OcrDocument;
 use betterlite_ocr::ocr_error::{OcrError, OcrSecretError};
 use betterlite_ocr::ocr_http::{OcrClient, SecretSource};
 use betterlite_ocr::ocr_settings::OcrSettings;
+use betterlite_openai::credentials::LiteLlmGlobals;
+use betterlite_openai::decisions::call::azure::AzureAiConfig;
 use betterlite_redact::secret::Redactor;
 use betterlite_sdk::call_setup::RequestMap;
 use betterlite_sdk::call_setup::correlation::{CallOutcome, ChatStream};
@@ -54,14 +61,15 @@ use uuid::Uuid;
 use crate::health_check_entry::HealthCheckEntry;
 use crate::health_check_entry::ports::{CatalogMode, CatalogModes, ProviderResolver};
 use crate::health_native_backend::backend::NativeHealthBackend;
+use crate::health_native_backend::evaluation::EvaluationSetup;
 use crate::health_native_backend::seams::{
-    BatchProbeCall, EmbeddingProbeCall, ImageEditProbeCall, ImageGenerationProbeCall, OcrProbeCall,
-    RerankProbeCall, ResponsesProbeCall, SpeechProbeCall, TextCompletionProbeCall,
-    TranscriptionProbeCall,
+    BatchProbeCall, EmbeddingProbeCall, EvaluationProbeCall, ImageEditProbeCall,
+    ImageGenerationProbeCall, OcrProbeCall, RerankProbeCall, ResponsesProbeCall, SpeechProbeCall,
+    TextCompletionProbeCall, TranscriptionProbeCall,
 };
 use crate::health_native_backend::wiring::{HealthEntryDeps, build_health_check_entry};
 use crate::health_probe_modes::calls::{
-    AudioTranscriptionCall, HealthProbeReply, ImageEditCall, OcrCall, ProbeCall,
+    AudioTranscriptionCall, EvaluationCall, HealthProbeReply, ImageEditCall, OcrCall, ProbeCall,
 };
 use crate::health_probe_modes::error::HealthProbeError;
 use crate::health_probe_modes::logging::ProbeLogging;
@@ -402,6 +410,103 @@ impl OcrProbeCall for FakeOwner {
     }
 }
 
+pub(super) struct FakeEvaluation {
+    calls: Mutex<Vec<EvaluationCall>>,
+    headers: Mutex<BTreeMap<String, String>>,
+    failure: Mutex<Option<String>>,
+}
+
+impl FakeEvaluation {
+    fn new() -> Self {
+        Self {
+            calls: Mutex::new(Vec::new()),
+            headers: Mutex::new(BTreeMap::new()),
+            failure: Mutex::new(None),
+        }
+    }
+
+    pub(super) fn reply(&self, headers: &[(&str, &str)]) {
+        *self.headers.lock().unwrap() = headers_map(headers);
+    }
+
+    pub(super) fn fail(&self, message: &str) {
+        *self.failure.lock().unwrap() = Some(String::from(message));
+    }
+
+    pub(super) fn take(&self) -> EvaluationCall {
+        self.calls
+            .lock()
+            .unwrap()
+            .pop()
+            .expect("a recorded evaluation call")
+    }
+
+    pub(super) fn count(&self) -> usize {
+        self.calls.lock().unwrap().len()
+    }
+}
+
+#[async_trait]
+impl EvaluationProbeCall for FakeEvaluation {
+    async fn evaluate(&self, call: EvaluationCall) -> Result<HealthProbeReply, HealthProbeError> {
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(call);
+        let failure = self
+            .failure
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        if let Some(message) = failure {
+            return Err(owner_failure(message));
+        }
+        Ok(HealthProbeReply {
+            hidden_headers: self
+                .headers
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone(),
+        })
+    }
+}
+
+#[derive(Default)]
+pub(crate) struct EvalSetup {
+    catalog: ModelCatalog,
+    known: BTreeSet<String>,
+    custom: BTreeSet<String>,
+    variables: BTreeMap<String, String>,
+}
+
+impl EvaluationSetup for EvalSetup {
+    fn resolution(&self) -> ResolutionContext<'_> {
+        ResolutionContext {
+            catalog: &self.catalog,
+            known_model_names: &self.known,
+            custom_providers: &self.custom,
+            environment: &self.variables,
+            registry: JSONProviderRegistry::default(),
+            policies: ProviderPolicies::default(),
+            globals: GlobalCredentials::default(),
+        }
+    }
+
+    fn globals(&self) -> LiteLlmGlobals {
+        LiteLlmGlobals::default()
+    }
+
+    fn azure_ai(&self) -> AzureAiConfig {
+        AzureAiConfig {
+            complete_url: Box::new(|base: &str, _model: &str| base.to_owned()),
+        }
+    }
+
+    fn global_drop_params(&self) -> bool {
+        false
+    }
+}
+
 pub(super) struct FakePrices {
     entries: Mutex<BTreeMap<(String, String), PriceRecord>>,
     provider: Mutex<Option<String>>,
@@ -490,6 +595,7 @@ impl CatalogModes for FakeCatalog {
 pub(super) struct Harness {
     pub(super) chat: Arc<FakeChat>,
     pub(super) owner: Arc<FakeOwner>,
+    pub(super) evaluation: Arc<FakeEvaluation>,
     pub(super) prices: Arc<FakePrices>,
     model_sets: Arc<ProviderModelSets>,
 }
@@ -510,6 +616,7 @@ impl Harness {
         Self {
             chat: Arc::new(FakeChat::new()),
             owner: Arc::new(FakeOwner::new()),
+            evaluation: Arc::new(FakeEvaluation::new()),
             prices: Arc::new(FakePrices::new()),
             model_sets: Arc::new(model_sets),
         }
@@ -529,6 +636,8 @@ impl Harness {
         let batch: Arc<dyn BatchProbeCall> = Arc::<FakeOwner>::clone(&self.owner);
         let responses: Arc<dyn ResponsesProbeCall> = Arc::<FakeOwner>::clone(&self.owner);
         let ocr: Arc<dyn OcrProbeCall> = Arc::<FakeOwner>::clone(&self.owner);
+        let evaluation: Arc<dyn EvaluationProbeCall> =
+            Arc::<FakeEvaluation>::clone(&self.evaluation);
         let prices: Arc<dyn PriceLookup + Send + Sync> = Arc::<FakePrices>::clone(&self.prices);
         NativeHealthBackend {
             chat,
@@ -542,6 +651,7 @@ impl Harness {
             batch,
             responses,
             ocr,
+            evaluation,
             prices,
             model_sets: Arc::clone(&self.model_sets),
         }
@@ -567,13 +677,13 @@ impl Harness {
     }
 }
 
-pub(super) struct MockServer {
-    pub(super) base: String,
+pub(crate) struct MockServer {
+    pub(crate) base: String,
     tasks: JoinSet<Vec<String>>,
 }
 
 impl MockServer {
-    pub(super) async fn start(status: u16, body: &'static [u8]) -> Self {
+    pub(crate) async fn start(status: u16, body: &'static [u8]) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
             .expect("the mock server binds");
@@ -589,7 +699,7 @@ impl MockServer {
         }
     }
 
-    pub(super) async fn requests(mut self) -> Vec<String> {
+    pub(crate) async fn requests(mut self) -> Vec<String> {
         let joined = timeout(Duration::from_secs(10), self.tasks.join_next())
             .await
             .expect("the provider call arrives")
@@ -643,6 +753,20 @@ async fn read_request(socket: &mut TcpStream) -> String {
         .expect("the mock server reads the body");
     let body = String::from_utf8(bytes).expect("the request body is UTF-8");
     format!("{head}\r\n{body}")
+}
+
+pub(crate) fn http_clients() -> HttpClients {
+    let proxy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new())
+        .expect("the test proxy policy resolves");
+    let tls = TlsPolicy {
+        verification: Verification::Enabled,
+        ca_file: None,
+        certificate: None,
+        http2: false,
+        ecdh_curve: None,
+        user_agent: "betterlite-test/0".to_owned(),
+    };
+    HttpClients::new(tls, Arc::new(proxy))
 }
 
 pub(super) fn ocr_client() -> OcrClient {
@@ -777,7 +901,7 @@ pub(super) fn probe_call(parameters: IndexMap<String, Json>) -> ProbeCall {
     }
 }
 
-pub(super) fn params(entries: &[(&str, Json)]) -> HealthProbeParams {
+pub(crate) fn params(entries: &[(&str, Json)]) -> HealthProbeParams {
     let map = entries
         .iter()
         .map(|(key, value)| {
@@ -790,11 +914,11 @@ pub(super) fn params(entries: &[(&str, Json)]) -> HealthProbeParams {
     HealthProbeParams::from_map(map).expect("the test parameters parse")
 }
 
-pub(super) fn text(value: &str) -> Json {
+pub(crate) fn text(value: &str) -> Json {
     Json::Text(String::from(value))
 }
 
-pub(super) fn json(value: &str) -> Json {
+pub(crate) fn json(value: &str) -> Json {
     serde_json::from_str(value).expect("the test JSON parses")
 }
 
@@ -805,7 +929,7 @@ pub(super) fn document(source: &str) -> OcrDocument {
     }
 }
 
-pub(super) fn fixed_time() -> DateTime<FixedOffset> {
+pub(crate) fn fixed_time() -> DateTime<FixedOffset> {
     DateTime::parse_from_rfc3339(NOW).expect("the fixed time parses")
 }
 

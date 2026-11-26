@@ -1,0 +1,25 @@
+kind: helper
+name: db-config-overlay-scrub-guardrail-callbacks
+call:
+  b8379:
+    section: litellm_settings
+    row:
+      guardrails:
+        - presidio-v1:
+            callbacks:
+              - s3://bucket/guard.py
+              - presidio
+            default_on: true
+        - guardrail_name: remote-v2
+          litellm_params:
+            guardrail: gcs://bucket/guard.py
+            mode: pre_call
+        - guardrail_name: local-v2
+          litellm_params:
+            guardrail: presidio
+            mode: post_call
+      failure_callback:
+        - s3://bucket/failure.py
+env: {}
+compare:
+  ignore: []

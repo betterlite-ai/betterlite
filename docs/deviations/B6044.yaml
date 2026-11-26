@@ -1,0 +1,60 @@
+task: B6044
+deviations:
+  - what: >-
+      betterlite.rerank and betterlite.arerank use cohere, cohere v2, infinity, jina_ai, voyage and nvidia_nim.
+      azure_ai, hosted_vllm, huggingface, deepinfra, vertex_ai, fireworks_ai, watsonx, dashscope, qwencloud,
+      qwen_ai_platform, together_ai and bedrock raise "the {provider} rerank handler is not wired into betterlite" as an APIConnectionError with status 500 before sending a request.
+    why: >-
+      Provider tasks own the unwired handlers; this session supports wired families and rejects other providers before a Cohere-shaped body can reach an incompatible endpoint.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L145-L162
+  - what: >-
+      RerankResponse._hidden_params carries custom_llm_provider beside litellm_call_id, api_base, model_id,
+      response_cost, additional_headers, litellm_model_name, _response_ms and, on arerank,
+      litellm_overhead_time_ms. LiteLLM's set_hidden_params writes the other keys and no provider.
+    why: >-
+      The task requires the hidden params to hold the provider, and main.py prices the answer with it through
+      betterlite._cost_extra.rerank_cost; the extra key is additive and no declared field changes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/response_metadata.py#L124-L136
+  - what: >-
+      rerank(..., _is_async=True) returns a coroutine that awaits the arerank transport. LiteLLM reads only the
+      arerank kwarg for its async transport, and its rerank with arerank=True returns the handler's coroutine
+      unwrapped, so the caller gets an AttributeError that exception_type reports as an APIConnectionError.
+    why: >-
+      The task asks rerank for an async flag. betterlite routes the flag to its own arerank entry, which returns
+      a coroutine of RerankResponse, while arerank=True stays supported for callers that pass LiteLLM's kwarg.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L136
+  - what: >-
+      _hidden_params["api_base"] reports the caller's api_base, or a non-empty base_url alias, and stays null
+      when the caller passed neither. LiteLLM's get_api_base also resolves the provider's dynamic base
+      (NVIDIA_NIM_API_BASE, the openai and gemini defaults, model_alias_map) for the same field.
+    why: >-
+      The extra resolution would run get_llm_provider a second time for a private field no declared parameter
+      reads, and the request itself still uses the resolved base.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/get_api_base.py#L60-L92
+  - what: >-
+      A caller-supplied litellm_logging_obj in kwargs is ignored. LiteLLM's @client decorator builds that object
+      and rerank reads kwargs["litellm_logging_obj"] for its update_from_kwargs and post-call hooks.
+    why: >-
+      The Python package registers no callbacks, so betterlite builds its own LoggingState inside the native
+      call; a logging object built for LiteLLM's Python pipeline cannot drive the Rust one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L128
+  - what: >-
+      A caller-supplied client or shared_session in kwargs raises UnsupportedCallArgument. LiteLLM reads client
+      from kwargs and hands it to the provider handler, and passes shared_session through the same call.
+    why: >-
+      The request runs in Rust on the session's own outbound client, so a Python httpx client cannot be used.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L133
+  - what: >-
+      A non-None azure_ad_token_provider raises UnsupportedCallArgument for every provider. LiteLLM takes it into
+      GenericLiteLLMParams, whose model_config allows extra fields, and rerank never reads it again.
+    why: >-
+      The azure_ai rerank handler is not wired into betterlite, so no provider here could spend the token; the
+      refusal names the argument instead of silently dropping it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L137
+  - what: betterlite refuses a rerank request past 8 MiB of wire text, 100000 documents, 256 headers or 64 nesting levels with a ValueError.
+    why: LiteLLM sends whatever it is given; betterlite bounds the combined input before validation copies or serialization, checks header counts before walking their maps, and bounds recursion for nested or cyclic values.
+    link: ""
+  - what: File-valued rerank extras raise UnsupportedCallArgument before validation, copying, or reading their contents.
+    why: Rerank accepts JSON documents and options; refusing bytes, bytearrays, file tuples, paths, and streams prevents the shared multipart converter from bypassing its request budget.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L93-L117
+kept_bugs: []
