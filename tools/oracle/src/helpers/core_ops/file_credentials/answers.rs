@@ -115,6 +115,25 @@ fn team_answer(provider: &str, built: &Scenario<'_>) -> HelperResult {
     Ok(json!({"function": "team_credentials", "credentials": found, "lookups": lookups}))
 }
 
+fn apply_team_answer(
+    provider: &str,
+    key: &KeyInput,
+    data: &JsonObject,
+    router: Option<&RouterInput>,
+) -> HelperResult {
+    let built = scenario(key, router)?;
+    let mut merged = data.clone();
+    apply_team_credentials(
+        &mut merged,
+        built.catalog.as_ref(),
+        &built.identity,
+        provider,
+        &built.expansion.context(),
+    )
+    .map_err(|error| failure(error.to_string()))?;
+    Ok(json!({"function": "apply_team_credentials", "data": merged}))
+}
+
 fn internal_answer(model_id: Option<&str>, data: &JsonObject, router: &RouterInput) -> Value {
     let catalog = ScriptedCatalog::new(router);
     // a caller-supplied mapping under the internal key, which the Python side reports on a miss
@@ -170,19 +189,7 @@ pub(crate) fn answer(call: &Call) -> HelperResult {
             key,
             data,
             router,
-        } => {
-            let built = scenario(key, router.as_ref())?;
-            let mut merged = data.clone();
-            apply_team_credentials(
-                &mut merged,
-                built.catalog.as_ref(),
-                &built.identity,
-                provider,
-                &built.expansion.context(),
-            )
-            .map_err(|error| failure(error.to_string()))?;
-            Ok(json!({"function": "apply_team_credentials", "data": merged}))
-        }
+        } => apply_team_answer(provider, key, data, router.as_ref()),
         Call::InternalCredentials {
             model_id,
             data,
