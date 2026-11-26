@@ -1,0 +1,28 @@
+name: auth-route-policy-admission-branch-order
+config: |
+  general_settings:
+    master_key: oracle-master
+  model_list:
+    - model_name: route-policy-inference
+      litellm_params:
+        model: openai/route-policy-inference-upstream
+        api_base: "{{upstream}}"
+        api_key: oracle-key
+env: {}
+request:
+  method: POST
+  path: /v1/chat/completions
+  headers:
+    content-type: application/json
+    authorization: Bearer oracle-master
+  body:
+    model: route-policy-inference
+    messages:
+      - {role: user, content: Say hello.}
+    stream: false
+upstream: []
+compare:
+  headers: [content-type]
+  headers_present: []
+  upstream_headers: []
+  ignore: [{pointer: /error/message, why: betterlite writes its own message}]
