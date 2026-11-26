@@ -478,6 +478,27 @@ async fn list_skips_records_without_an_id_and_drops_undeclared_fields() {
     assert_eq!(None, field(extra, "vector_store_metadata"));
 }
 
+// the deviations reach the list too: non-object metadata and params are served as stored
+#[tokio::test]
+async fn list_serves_values_the_response_model_would_refuse() {
+    let odd = parsed(
+        r#"{"vector_store_id":"vs_odd","custom_llm_provider":"openai","vector_store_metadata":[1],"litellm_params":7}"#,
+    );
+    let state = build(Setup {
+        database: Some(FakeDatabase::new(vec![odd])),
+        registry: None,
+        world: World::default(),
+        privileges: false,
+        settings: FeatureSettings::default(),
+    });
+    let (status, _headers, body) = call(&state, &admin(), Method::GET, LIST_PATH, "").await;
+    assert_eq!(StatusCode::OK, status);
+    let item = listed(&body, "vs_odd");
+    assert_eq!(7, number(at(item, "litellm_params")));
+    let metadata = list(at(item, "vector_store_metadata"));
+    assert_eq!(1, number(metadata.first().expect("one item")));
+}
+
 #[tokio::test]
 async fn info_prefers_cached_record() {
     let stored = parsed(
