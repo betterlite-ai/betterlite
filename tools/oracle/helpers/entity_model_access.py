@@ -3,12 +3,13 @@ import sys
 from types import ModuleType
 from typing import Final, Literal, NotRequired, TypedDict
 
+import litellm
 from litellm.caching.in_memory_cache import InMemoryCache
 from litellm.models.organization import LiteLLM_OrganizationTable
 from litellm.models.project import LiteLLM_ProjectTable
 from litellm.models.team import LiteLLM_TeamTable
 from litellm.models.user import LiteLLM_UserTable
-from litellm.proxy._types import ModelAccessDeniedProxyException
+from litellm.proxy._types import ModelAccessDeniedProxyException as DeniedError
 from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.auth.auth_checks import (
     can_key_call_model,
@@ -117,35 +118,35 @@ def token(step: Step) -> UserAPIKeyAuth:
     row = step.get("token")
     if row is None:
         raise ValueError("the step needs a token")
-    return UserAPIKeyAuth.model_validate(row)
+    return TypeAdapter(UserAPIKeyAuth).validate_python(row)
 
 
 def team_row(step: Step) -> LiteLLM_TeamTable | None:
     row = step.get("team")
     if row is None:
         return None
-    return LiteLLM_TeamTable.model_validate(row)
+    return TypeAdapter(LiteLLM_TeamTable).validate_python(row)
 
 
 def org_row(step: Step) -> LiteLLM_OrganizationTable | None:
     row = step.get("org")
     if row is None:
         return None
-    return LiteLLM_OrganizationTable.model_validate(row)
+    return TypeAdapter(LiteLLM_OrganizationTable).validate_python(row)
 
 
 def project_row(step: Step) -> LiteLLM_ProjectTable:
     row = step.get("project")
     if row is None:
         raise ValueError("the project step needs a project row")
-    return LiteLLM_ProjectTable.model_validate(row)
+    return TypeAdapter(LiteLLM_ProjectTable).validate_python(row)
 
 
 def user_row(step: Step) -> LiteLLM_UserTable | None:
     row = step.get("user")
     if row is None:
         return None
-    return LiteLLM_UserTable.model_validate(row)
+    return TypeAdapter(LiteLLM_UserTable).validate_python(row)
 
 
 def resource_field(step: Step) -> ResourceField:
@@ -155,7 +156,7 @@ def resource_field(step: Step) -> ResourceField:
     return RESOURCE_FIELDS[name]
 
 
-def error_out(denial: ModelAccessDeniedProxyException) -> dict[str, JsonValue]:
+def error_out(denial: DeniedError) -> dict[str, JsonValue]:
     return {
         "class": type(denial).__name__,
         "status": int(denial.code),
@@ -232,14 +233,23 @@ async def run_step(step: Step) -> StepResult:
     sys.modules[PROXY_MODULE] = proxy_server
     try:
         resources = await call(step)
-    except ModelAccessDeniedProxyException as denial:
+    except DeniedError as denial:
         return {"allowed": False, "error": error_out(denial), "resources": None}
     return {"allowed": True, "error": None, "resources": resources}
 
 
 async def run_steps(steps: list[Step]) -> list[StepResult]:
-    return [await run_step(step) for step in steps]
+    results: list[StepResult] = []
+    for step in steps:
+        results.append(await run_step(step))
+    return results
 
 
 def run(input_value: Input) -> list[StepResult]:
-    return asyncio.run(run_steps(input_value["steps"]))
+    saved_suppress = litellm.suppress_debug_info
+    # stops get_llm_provider printing its provider hint to stdout, the helper's reply channel
+    litellm.suppress_debug_info = True
+    try:
+        return asyncio.run(run_steps(input_value["steps"]))
+    finally:
+        litellm.suppress_debug_info = saved_suppress
