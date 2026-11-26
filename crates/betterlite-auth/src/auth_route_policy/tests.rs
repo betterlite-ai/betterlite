@@ -913,6 +913,8 @@ fn template_int_and_float_convertors() {
     assert!(template_matches("/x/{value:float}", "/x/7.5"));
     assert!(!template_matches("/x/{value:float}", "/x/7."));
     assert!(!template_matches("/x/{value:float}", "/x/.5"));
+    assert!(!template_matches("/x/{value:float}", "/x/seven"));
+    assert!(!template_matches("/x/{value:float}", "/x/"));
     assert!(!template_matches("/x/{value:float}", "/x/7.5.6"));
 }
 
