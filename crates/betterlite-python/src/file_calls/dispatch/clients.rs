@@ -10,7 +10,7 @@ use betterlite_core::api::resource_sdk_settings::timeout::{FineTuningTimeout, St
 use betterlite_models::controls::call_params::TrustedCredentials;
 use betterlite_openai::files::error::FilesError;
 use betterlite_openai::files::{ClientArgs, FilesClient, get_openai_client, select_client};
-use secrecy::ExposeSecret as _;
+use secrecy::{ExposeSecret as _, SecretString};
 
 pub(crate) fn settings(
     api_key: Option<SecretString>,
@@ -26,9 +26,9 @@ pub(crate) fn settings(
 
 // the two call shapes the files client is built from, the write inputs and the read inputs
 #[derive(Clone, Copy)]
-pub(super) enum ClientSource<'a> {
-    Provider(&'a ProviderCall),
-    Compatible(&'a CompatibleRead),
+pub(super) enum ClientSource<'source> {
+    Provider(&'source ProviderCall),
+    Compatible(&'source CompatibleRead),
 }
 
 // get_openai_client then the files wrapper's own client check, as OpenAIFilesAPI makes them
@@ -137,7 +137,7 @@ fn auth_params(credentials: Option<&TrustedCredentials>) -> AuthParams {
         azure_password: trusted
             .values
             .get("azure_password")
-            .map(|secret| secret.expose_secret().to_owned()),
+            .map(|secret| SecretString::from(secret.expose_secret().to_owned())),
         azure_scope: trusted
             .values
             .get("azure_scope")

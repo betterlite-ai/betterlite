@@ -47,9 +47,9 @@ pub(crate) struct FileCallDispatch {
     pub(crate) endpoints: EndpointSettings,
 }
 
-enum WriteCall<'a> {
-    Upload(UploadTarget<'a, FileCallDispatch>),
-    Delete(DeleteTarget<'a, FileCallDispatch>),
+enum WriteCall<'call> {
+    Upload(UploadTarget<'call, FileCallDispatch>),
+    Delete(DeleteTarget<'call, FileCallDispatch>),
 }
 
 enum WriteReply {

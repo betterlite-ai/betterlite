@@ -8,7 +8,7 @@ use betterlite_core::api::file_http_upload::service::Mode;
 use betterlite_core::api::file_provider_read::error::{FileReadError, ReadFunction};
 use betterlite_core::api::file_provider_read::target::{AzureRead, ReadMode};
 use betterlite_core::api::file_provider_read::{Kwarg, ReadProvider};
-use betterlite_core::api::file_provider_write::{DeleteParams, FileWriteError, WriteTimeout};
+use betterlite_core::api::file_provider_write::{FileWriteError, WriteTimeout};
 use betterlite_core::api::fine_tuning_read::{ReadTimeout, ReadTimeoutValue};
 use betterlite_core::api::resource_sdk_settings::timeout::{
     FineTuningTimeout, StructuredTimeout, TimeoutError, TimeoutValue,
@@ -22,8 +22,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 use super::super::dispatch::DispatchError;
 use super::super::dispatch::clients::{
-    deadline, delete_litellm_params, is_asynchronous, read_litellm_params, settings,
-    write_litellm_params,
+    deadline, is_asynchronous, litellm_params, read_litellm_params, settings,
 };
 use super::super::error::{Failure, azure_failure, files_failure, read_failure, write_failure};
 use super::super::register;
@@ -139,7 +138,7 @@ fn request_create_with_only_its_required_fields_takes_the_defaults() {
     assert_eq!(input.extra_headers, None);
     assert_eq!(input.extra_body, None);
     assert_eq!(input.params.api_base, None);
-    assert_eq!(input.params.api_key, None);
+    assert!(input.params.api_key.is_none());
     assert_eq!(input.params.timeout, None);
     assert_eq!(input.params.request_timeout, None);
     assert_eq!(input.params.max_retries, None);
@@ -462,7 +461,11 @@ fn request_azure_upload_params_carry_the_trusted_credentials() {
         write: None,
         pool: None,
     };
-    let params = write_litellm_params(&input.params, FineTuningTimeout::Structured(resolved));
+    let params = litellm_params(
+        input.params.credentials.as_ref(),
+        input.params.max_retries,
+        FineTuningTimeout::Structured(resolved),
+    );
     assert_eq!(
         params
             .azure_ad_token
@@ -499,12 +502,11 @@ fn request_azure_delete_params_carry_the_resolved_timeout_and_the_credentials() 
     let mut blobs = blobs();
     let create = parse_create(CREATE, &mut blobs, Mode::Sync).unwrap();
     let credentials = create.params.credentials.as_ref().unwrap();
-    let delete = DeleteParams {
-        api_key: None,
-        api_base: None,
-        credentials: Some(credentials),
-    };
-    let params = delete_litellm_params(&delete, FineTuningTimeout::Seconds(2.5_f64), Some(4_i64));
+    let params = litellm_params(
+        Some(credentials),
+        Some(4_i64),
+        FineTuningTimeout::Seconds(2.5_f64),
+    );
     assert_eq!(params.timeout, Some(2.5_f64));
     assert_eq!(params.max_retries, Some(4_i64));
     assert_eq!(
@@ -521,26 +523,25 @@ fn request_azure_delete_params_carry_the_resolved_timeout_and_the_credentials() 
         write: None,
         pool: None,
     };
-    let structured = delete_litellm_params(&delete, FineTuningTimeout::Structured(phases), None);
+    let structured = litellm_params(
+        Some(credentials),
+        None,
+        FineTuningTimeout::Structured(phases),
+    );
     assert_eq!(structured.timeout, Some(2.0_f64));
     assert_eq!(structured.max_retries, None);
-    let absent = DeleteParams {
-        api_key: None,
-        api_base: None,
-        credentials: None,
-    };
-    let empty = delete_litellm_params(
-        &absent,
+    let empty = litellm_params(
+        None,
+        None,
         FineTuningTimeout::Structured(StructuredTimeout {
             connect: None,
             read: None,
             write: None,
             pool: None,
         }),
-        None,
     );
     assert_eq!(empty.timeout, Some(600.0_f64));
-    assert_eq!(empty.azure_ad_token, None);
+    assert!(empty.azure_ad_token.is_none());
     assert_eq!(empty.auth.tenant_id, None);
 }
 
@@ -567,9 +568,9 @@ fn request_azure_read_params_carry_the_resolved_timeout_and_retries() {
     };
     let params = read_litellm_params(&azure_read(FineTuningTimeout::Structured(all_phases)));
     assert_eq!(params.timeout, Some(2.0_f64));
-    assert_eq!(params.azure_ad_token, None);
+    assert!(params.azure_ad_token.is_none());
     assert_eq!(params.auth.tenant_id, None);
-    assert_eq!(params.auth.client_secret, None);
+    assert!(params.auth.client_secret.is_none());
     let connect_only = StructuredTimeout {
         connect: Some(1.0_f64),
         read: None,

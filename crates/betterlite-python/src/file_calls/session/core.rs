@@ -75,9 +75,9 @@ pub(crate) struct FileCallCore {
     globals: GlobalCredentials,
 }
 
-enum WriteInput<'a> {
-    Upload(&'a UploadInput<(), ()>),
-    Delete(&'a DeleteInput<(), ()>),
+enum WriteInput<'input> {
+    Upload(&'input UploadInput<(), ()>),
+    Delete(&'input DeleteInput<(), ()>),
 }
 
 #[derive(Clone, Copy)]
@@ -240,15 +240,19 @@ const fn entry_of(mode: Mode) -> ReadEntry {
     }
 }
 
-fn write_answer<T: Serialize>(
-    answer: Result<T, FileWriteError<DispatchError>>,
-) -> Result<String, PyErr> {
+fn write_answer<T>(answer: Result<T, FileWriteError<DispatchError>>) -> Result<String, PyErr>
+where
+    T: Serialize,
+{
     answer
         .map_err(|error| PyErr::from(write_failure(&error)))
         .and_then(|value| answer_text(&value))
 }
 
-fn answer_text<T: Serialize>(value: &T) -> Result<String, PyErr> {
+fn answer_text<T>(value: &T) -> Result<String, PyErr>
+where
+    T: Serialize,
+{
     match serde_json::to_string(value) {
         Ok(text) => Ok(text),
         Err(source) => Err(PyErr::from(ConvertError::Answer(source))),
