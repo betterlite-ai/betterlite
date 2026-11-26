@@ -14,9 +14,9 @@ mod tests;
 
 // The tool registry hands back what LiteLLM's resolve_sandbox_tool answers with, or None.
 pub(crate) fn tool_answer(tool: Option<&SandboxTool>) -> Result<String, ConvertError> {
-    let answer = match tool {
-        None => Json::Null,
-        Some(found) => {
+    let answer = tool.map_or_else(
+        || Json::Null,
+        |found| {
             let mut fields = Extra::new();
             fields.insert(
                 String::from("sandbox_provider"),
@@ -28,8 +28,8 @@ pub(crate) fn tool_answer(tool: Option<&SandboxTool>) -> Result<String, ConvertE
                 text_json(found.api_base.as_deref()),
             );
             Json::Object(fields)
-        }
-    };
+        },
+    );
     encode(&answer)
 }
 
@@ -68,15 +68,15 @@ pub(crate) fn delete_request<'call>(
     arguments: &'call Arguments,
     container: &'call SandboxContainer,
 ) -> DeleteSandbox<'call> {
-    let container = SandboxContainerRef::Container(container);
+    let container_ref = SandboxContainerRef::Container(container);
     DeleteSandbox {
         api_base: arguments.api_base.as_deref(),
         call: sandbox_call(arguments),
-        container,
+        container: container_ref,
     }
 }
 
-pub(crate) fn network_policy(value: &Option<Json>) -> Result<Option<Box<RawValue>>, ConvertError> {
+pub(crate) fn network_policy(value: Option<&Json>) -> Result<Option<Box<RawValue>>, ConvertError> {
     let Some(policy) = value else {
         return Ok(None);
     };
@@ -103,8 +103,5 @@ fn secret_json(value: Option<&SecretString>) -> Json {
 }
 
 fn text_json(value: Option<&str>) -> Json {
-    match value {
-        Some(text) => Json::Text(text.to_owned()),
-        None => Json::Null,
-    }
+    value.map_or_else(|| Json::Null, |text| Json::Text(text.to_owned()))
 }

@@ -74,36 +74,38 @@ pub(crate) fn native_error(
 }
 
 impl From<DecisionsEntryError> for SessionFailure {
-    fn from(error: DecisionsEntryError) -> Self {
-        Self::Raised(Box::new(NativeDecisionPayload::from_class(&error.class())))
+    fn from(failure: DecisionsEntryError) -> Self {
+        Self::Raised(Box::new(NativeDecisionPayload::from_class(
+            &failure.class(),
+        )))
     }
 }
 
 impl From<SandboxRegistryError> for SessionFailure {
-    fn from(error: SandboxRegistryError) -> Self {
+    fn from(failure: SandboxRegistryError) -> Self {
         Self::Raised(Box::new(NativeDecisionPayload::from_class(&plain_error(
-            &error.to_string(),
+            &failure.to_string(),
         ))))
     }
 }
 
 // LiteLLM raises builtins for the sandbox's own misuse, whose names the exception table cannot build
 impl From<SandboxToolEntryError> for SessionFailure {
-    fn from(error: SandboxToolEntryError) -> Self {
+    fn from(failure: SandboxToolEntryError) -> Self {
         Self::Raised(Box::new(NativeDecisionPayload::builtin(
             VALUE_ERROR,
-            error.to_string(),
+            failure.to_string(),
         )))
     }
 }
 
 impl From<SandboxLifecycleError> for SessionFailure {
-    fn from(error: SandboxLifecycleError) -> Self {
-        if let Some((kind, message)) = litellm_builtin(&error) {
+    fn from(failure: SandboxLifecycleError) -> Self {
+        if let Some((kind, message)) = litellm_builtin(&failure) {
             return Self::Raised(Box::new(NativeDecisionPayload::builtin(kind, message)));
         }
         Self::Raised(Box::new(NativeDecisionPayload::from_class(&plain_error(
-            &error.to_string(),
+            &failure.to_string(),
         ))))
     }
 }
@@ -117,28 +119,26 @@ fn litellm_builtin(error: &SandboxLifecycleError) -> Option<(&'static str, Strin
         SandboxLifecycleError::ContainerHandleRequired { .. } => {
             Some((VALUE_ERROR, String::from(E2B_BARE_ID)))
         }
-        SandboxLifecycleError::E2b(error) => {
-            e2b_message(error).map(|message| (VALUE_ERROR, String::from(message)))
+        SandboxLifecycleError::E2b(e2b_error) => {
+            e2b_message(e2b_error).map(|message| (VALUE_ERROR, String::from(message)))
         }
-        SandboxLifecycleError::OpenSandbox(LifecycleError::Sandbox(error)) => {
-            opensandbox_builtin(error)
+        SandboxLifecycleError::OpenSandbox(LifecycleError::Sandbox(sandbox_error)) => {
+            opensandbox_builtin(sandbox_error)
         }
         SandboxLifecycleError::Logging(_) | SandboxLifecycleError::OpenSandbox(_) => None,
     }
 }
 
-fn e2b_message(error: &E2bError) -> Option<&'static str> {
-    if let E2bError::MissingApiKey = error {
-        return Some(E2B_MISSING_KEY);
+const fn e2b_message(failure: &E2bError) -> Option<&'static str> {
+    match failure {
+        E2bError::MissingApiKey => Some(E2B_MISSING_KEY),
+        E2bError::MissingAccessToken => Some(E2B_BARE_ID),
+        _ => None,
     }
-    if let E2bError::MissingAccessToken = error {
-        return Some(E2B_BARE_ID);
-    }
-    None
 }
 
-fn opensandbox_builtin(error: &OpenSandboxError) -> Option<(&'static str, String)> {
-    if let OpenSandboxError::MissingApiBase { variable } = error {
+fn opensandbox_builtin(failure: &OpenSandboxError) -> Option<(&'static str, String)> {
+    if let OpenSandboxError::MissingApiBase { variable } = failure {
         return Some((
             VALUE_ERROR,
             format!("OpenSandbox api_base is required. Pass api_base or set {variable}."),
@@ -147,7 +147,7 @@ fn opensandbox_builtin(error: &OpenSandboxError) -> Option<(&'static str, String
     if let OpenSandboxError::NotRunning {
         sandbox_id,
         timeout,
-    } = error
+    } = failure
     {
         return Some((
             TIMEOUT_ERROR,
@@ -161,7 +161,7 @@ fn opensandbox_builtin(error: &OpenSandboxError) -> Option<(&'static str, String
         sandbox_id,
         timeout,
         ..
-    } = error
+    } = failure
     {
         return Some((
             TIMEOUT_ERROR,

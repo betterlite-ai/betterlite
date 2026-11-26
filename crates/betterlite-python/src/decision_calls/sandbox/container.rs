@@ -178,8 +178,8 @@ fn headers(value: Option<&Json>) -> BTreeMap<String, SecretString> {
         return BTreeMap::new();
     };
     let mut headers = BTreeMap::new();
-    for (name, value) in fields {
-        if let Some(found) = text(Some(value)) {
+    for (name, header_value) in fields {
+        if let Some(found) = text(Some(header_value)) {
             headers.insert(name.clone(), SecretString::from(found.as_str()));
         }
     }

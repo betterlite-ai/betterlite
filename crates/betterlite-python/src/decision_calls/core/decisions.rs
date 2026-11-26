@@ -10,11 +10,16 @@ use super::super::convert::{CallWire, decisions_answer, response_answer};
 use super::super::error::SessionFailure;
 use super::{SessionCore, azure_ai};
 
+#[derive(Clone, Copy)]
 pub(super) enum DecisionFormat {
     Decisions,
     SystemOne,
 }
 
+#[expect(
+    clippy::multiple_inherent_impls,
+    reason = "operation methods stay beside their operation modules"
+)]
 impl SessionCore {
     pub(super) fn sync_decision(
         &self,

@@ -9,7 +9,7 @@ use betterlite_models::sandbox::HiddenParams as SandboxHiddenParams;
 use betterlite_provider::opensandbox::lifecycle::SandboxHandle;
 use betterlite_provider::sandbox_dispatch::registry::SandboxTool;
 use betterlite_provider::sandbox_dispatch::request::{SandboxContainer, SandboxContainerRef};
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 use serde_json::Number;
 use serde_json::value::RawValue;
 
@@ -67,7 +67,7 @@ fn create_request_carries_every_provider_field() {
         String::from("mode"),
         Json::Text(String::from("allow")),
     )])));
-    let raw = network_policy(&policy).unwrap();
+    let raw = network_policy(policy.as_ref()).unwrap();
     let request = create_request(&arguments, raw.as_deref()).unwrap();
     assert_eq!(request.call.provider, "opensandbox");
     assert_eq!(
@@ -102,7 +102,7 @@ fn create_request_carries_every_provider_field() {
     assert_eq!(entrypoint.len(), 2);
     assert_eq!(entrypoint[1], "main.py");
     assert_eq!(
-        request.network_policy.map(RawValue::get),
+        request.network_policy.as_deref().map(RawValue::get),
         Some(r#"{"mode":"allow"}"#)
     );
     assert!(request.secure_access);
@@ -122,7 +122,7 @@ fn create_request_leaves_the_provider_defaults_alone() {
     assert_eq!(request.timeout, None);
     assert_eq!(request.allow_internet_access, None);
     assert_eq!(request.metadata, None);
-    assert_eq!(request.network_policy, None);
+    assert!(request.network_policy.is_none());
     assert!(!request.secure_access);
     assert!(!request.use_server_proxy);
     assert_eq!(request.ready_timeout, None);
@@ -182,10 +182,10 @@ fn delete_request_needs_only_the_container() {
 
 #[test]
 fn network_policy_encodes_the_caller_json() {
-    assert_eq!(network_policy(&None).unwrap(), None);
+    assert!(network_policy(None).unwrap().is_none());
     let policy = Some(Json::List(vec![Json::Number(Number::from(1_u32))]));
     assert_eq!(
-        network_policy(&policy)
+        network_policy(policy.as_ref())
             .unwrap()
             .map(|raw| raw.get().to_owned()),
         Some(String::from("[1]"))

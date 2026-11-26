@@ -12,30 +12,33 @@ use super::super::sandbox::run::run_request;
 use super::super::sandbox::{create_request, delete_request, network_policy, tool_answer};
 use super::{SessionCore, secret_lookup};
 
+#[expect(
+    clippy::multiple_inherent_impls,
+    reason = "operation methods stay beside their operation modules"
+)]
 impl SessionCore {
     pub(super) fn register_tools(&self, wire: &CallWire) -> Result<String, SessionFailure> {
         let arguments = &wire.arguments;
         let entries = sandbox_tool_entries(arguments.tools.clone())?;
         let environment = arguments.environment.clone().unwrap_or_default();
         let lookup = secret_lookup();
-        self.tools
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .register(&entries, &lookup, &environment)?;
+        let mut tools = self.tools.lock().unwrap_or_else(PoisonError::into_inner);
+        tools.register(&entries, &lookup, &environment)?;
         encode(&Json::Null).map_err(SessionFailure::from)
     }
 
     pub(super) fn resolve_tool(&self, wire: &CallWire) -> Result<String, SessionFailure> {
         let tools = self.tools.lock().unwrap_or_else(PoisonError::into_inner);
-        let found = match wire.arguments.name.as_deref() {
-            Some(name) => tools.tools.get(name),
-            None => None,
-        };
+        let found = wire
+            .arguments
+            .name
+            .as_deref()
+            .map_or(None, |name| tools.tools.get(name));
         tool_answer(found).map_err(SessionFailure::from)
     }
 
     pub(super) async fn create_sandbox(&self, wire: &CallWire) -> Result<String, SessionFailure> {
-        let policy = network_policy(&wire.arguments.network_policy)?;
+        let policy = network_policy(wire.arguments.network_policy.as_ref())?;
         let mut request = create_request(&wire.arguments, policy.as_deref())?;
         let sandbox = self.sandbox();
         let container = sandbox
@@ -59,7 +62,7 @@ impl SessionCore {
     }
 
     pub(super) async fn code_interpreter(&self, wire: &CallWire) -> Result<String, SessionFailure> {
-        let policy = network_policy(&wire.arguments.network_policy)?;
+        let policy = network_policy(wire.arguments.network_policy.as_ref())?;
         let mut create = create_request(&wire.arguments, policy.as_deref())?;
         let sandbox = self.sandbox();
         let container = sandbox

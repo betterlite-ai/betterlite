@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
+use std::time::Instant as OidcInstant;
 
 use betterlite_config::loader::startup::process_environment;
 use betterlite_config::proxy::ProxyPolicy;
@@ -214,8 +215,8 @@ struct FixedClock;
 
 #[cfg_attr(test, mutants::skip)]
 impl OidcClock for FixedClock {
-    fn now(&self) -> std::time::Instant {
-        std::time::Instant::now()
+    fn now(&self) -> OidcInstant {
+        OidcInstant::now()
     }
 
     fn unix_seconds(&self) -> i64 {

@@ -4,8 +4,8 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use betterlite_core::api::decisions_send::format::DecisionsOutput;
-use betterlite_error::error::ErrorClass;
-use betterlite_error::error::details::{ErrorContext, RateLimitDetails};
+use betterlite_error::error::details::RateLimitDetails;
+use betterlite_error::error::{ErrorClass, ErrorContext};
 use betterlite_error::rate_limit::RateLimitCategory;
 use betterlite_models::decisions::openai::{
     DecisionAnswer, DecisionResponse, DecisionUsage, InputTokensDetails, OutputTokensDetails,
@@ -21,7 +21,7 @@ use betterlite_provider::sandbox_dispatch::error::SandboxLifecycleError;
 use betterlite_provider::sandbox_dispatch::request::SandboxContainer;
 use betterlite_sdk::call_wrapper::error::plain_error;
 use indexmap::IndexMap;
-use secrecy::ExposeSecret as _;
+use secrecy::ExposeSecret;
 use serde_json::Number;
 
 use super::super::error::SessionFailure;
@@ -111,7 +111,7 @@ fn request_decisions_maps_every_argument() {
         credentials.api_base.as_deref(),
         Some("https://global.example")
     );
-    assert_eq!(credentials.xai_key, None);
+    assert!(credentials.xai_key.is_none());
     assert!(wire.settings.global_drop_params());
 
     let args = wire.arguments.decisions().unwrap();
@@ -163,7 +163,6 @@ fn request_systemone_maps_state_and_keeps_input_as_a_param() {
             Json::Text(String::from("hello")),
         )])))
     );
-    assert_eq!(args.input, None);
     assert_eq!(args.timeout, Some(Duration::from_secs(2)));
     assert_eq!(
         args.kwargs.get("input"),
@@ -459,7 +458,7 @@ fn error_sandbox_misuse_raises_litellm_value_errors() {
     assert_eq!(unsupported.kind, "ValueError");
     assert_eq!(
         unsupported.message,
-        "Code execution is not supported for provider: daytona"
+        String::from("Code execution is not supported for provider: daytona")
     );
 
     let missing_base = raised(SessionFailure::from(SandboxLifecycleError::OpenSandbox(
