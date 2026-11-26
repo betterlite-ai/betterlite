@@ -214,6 +214,24 @@ async def budget_call(call: Call, entity: Literal["user", "team"]) -> JsonValue:
     return {"calls": list(limiter.seen), "error": error}
 
 
+def end_user_result(
+    end_user_id: JsonValue,
+    tpm: JsonValue,
+    rpm: JsonValue,
+    tpd: JsonValue,
+    max_budget: JsonValue,
+    model_max_budget: JsonValue,
+) -> JsonValue:
+    return {
+        "end_user_id": end_user_id,
+        "tpm": tpm,
+        "rpm": rpm,
+        "tpd": tpd,
+        "max_budget": max_budget,
+        "model_max_budget": model_max_budget,
+    }
+
+
 def end_user_apply_call(call: Call) -> JsonValue:
     budget = call.get("budget")
     if budget is None:
@@ -221,14 +239,14 @@ def end_user_apply_call(call: Call) -> JsonValue:
     budget_info = LiteLLM_BudgetTable.model_validate(budget)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/budget.py#L16
     limits: dict[str, JsonValue] = {}
     user_api_key_auth._apply_budget_limits_to_end_user_params(limits, budget_info, call.get("end_user_id"))  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L613-L641
-    return {
-        "end_user_id": limits.get("end_user_id"),
-        "tpm": limits.get("end_user_tpm_limit"),
-        "rpm": limits.get("end_user_rpm_limit"),
-        "tpd": limits.get("end_user_tpd_limit"),
-        "max_budget": limits.get("end_user_max_budget"),
-        "model_max_budget": limits.get("end_user_model_max_budget"),
-    }
+    return end_user_result(
+        limits.get("end_user_id"),
+        limits.get("end_user_tpm_limit"),
+        limits.get("end_user_rpm_limit"),
+        limits.get("end_user_tpd_limit"),
+        limits.get("end_user_max_budget"),
+        limits.get("end_user_model_max_budget"),
+    )
 
 
 def end_user_update_call(call: Call) -> JsonValue:
@@ -237,14 +255,14 @@ def end_user_update_call(call: Call) -> JsonValue:
         raise ValueError("an end user update call names the params")
     updated = user_api_key_auth.update_valid_token_with_end_user_params(auth_of(call), params)  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L710-L726
     model_max_budget = cast("dict[str, JsonValue] | None", updated.end_user_model_max_budget)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3315
-    return {
-        "end_user_id": updated.end_user_id,
-        "tpm": updated.end_user_tpm_limit,
-        "rpm": updated.end_user_rpm_limit,
-        "tpd": updated.end_user_tpd_limit,
-        "max_budget": updated.end_user_max_budget,
-        "model_max_budget": model_max_budget,
-    }
+    return end_user_result(
+        updated.end_user_id,
+        updated.end_user_tpm_limit,
+        updated.end_user_rpm_limit,
+        updated.end_user_tpd_limit,
+        updated.end_user_max_budget,
+        model_max_budget,
+    )
 
 
 async def global_spend_call(call: Call) -> JsonValue:
