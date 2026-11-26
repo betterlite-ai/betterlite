@@ -2,7 +2,7 @@ use thiserror::Error;
 use tracing::warn;
 
 use crate::trusted_network::cidr::{
-    CidrRanges, ip_in_networks, normalize_cidr_ranges, parse_trusted_proxy_ranges,
+    CidrRanges, ip_in_networks, normalize_cidr_ranges, parse_normalized,
 };
 use crate::trusted_network::request::NetworkRequest;
 use crate::trusted_network::settings::{TrustedNetworkSettings, TrustedProxyConfig};
@@ -10,19 +10,7 @@ use crate::trusted_network::settings::{TrustedNetworkSettings, TrustedProxyConfi
 pub const TRUSTED_PROXY_RANGES_KEY: &str = "trusted_proxy_ranges";
 pub const MCP_TRUSTED_PROXY_RANGES_KEY: &str = "mcp_trusted_proxy_ranges";
 
-// trusted_proxy_utils.get_trusted_proxy_cidrs: the operator's ranges, normalized to strings.
-#[must_use]
-pub fn get_trusted_proxy_cidrs(settings: &TrustedNetworkSettings) -> Vec<String> {
-    normalize_cidr_ranges(settings.trusted_proxy_ranges.as_ref())
-}
-
 // user_api_key_auth._resolve_request_principal: X-Forwarded-For is trusted exactly when ranges are configured.
-#[must_use]
-pub fn principal_proxy_config(settings: &TrustedNetworkSettings) -> TrustedProxyConfig {
-    proxy_config_from_ranges(settings.trusted_proxy_ranges.as_ref())
-}
-
-// The same rule for callers that hold the decoded ranges instead of the resolved settings.
 #[must_use]
 pub fn proxy_config_from_ranges(configured: Option<&CidrRanges>) -> TrustedProxyConfig {
     let trusted_proxy_cidrs = normalize_cidr_ranges(configured);
@@ -59,7 +47,7 @@ pub fn require_trusted_proxy_request(
             .map(CidrRanges::List),
         _ => None,
     };
-    let networks = parse_trusted_proxy_ranges(configured.as_ref(), setting_name);
+    let networks = parse_normalized(&normalize_cidr_ranges(configured.as_ref()), setting_name);
     if networks.is_empty() {
         return Err(TrustedProxyRequirementError::NotConfigured {
             feature: feature_name.to_owned(),

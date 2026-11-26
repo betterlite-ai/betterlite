@@ -1,15 +1,15 @@
 use betterlite_auth::trusted_network::cidr::{
-    CidrRanges, ip_in_networks, normalize_cidr_ranges, parse_trusted_proxy_ranges,
+    CidrRanges, ip_in_networks, normalize_cidr_ranges, parse_normalized,
 };
 use betterlite_auth::trusted_network::internal::{
     is_internal_ip, is_trusted_proxy, parse_internal_networks, parse_trusted_proxy_networks,
 };
 use betterlite_auth::trusted_network::proxy_utils::{
-    get_trusted_proxy_cidrs, principal_proxy_config, require_trusted_proxy_request,
+    proxy_config_from_ranges, require_trusted_proxy_request,
 };
 use betterlite_auth::trusted_network::request::{
-    NetworkRequest, extract_client_ip_from_xff_hops, get_mcp_client_ip,
-    is_request_from_trusted_proxy, is_request_https, resolve_client_ip, resolve_network_context,
+    NetworkRequest, client_ip_from_xff, get_mcp_client_ip, is_request_from_trusted_proxy,
+    is_request_https, resolve_client_ip, resolve_network_context,
 };
 use betterlite_auth::trusted_network::settings::TrustedNetworkSettings;
 use serde::Deserialize;
@@ -94,7 +94,7 @@ impl Helper for Op {
         let request = network_request(input);
         let scenario = &input.scenario;
         let ranges = input.settings.trusted_proxy_ranges.as_ref();
-        let texts = parse_trusted_proxy_ranges(ranges, TRUSTED_PROXY);
+        let texts = parse_normalized(&normalize_cidr_ranges(ranges), TRUSTED_PROXY);
         let proxies =
             parse_trusted_proxy_networks(input.settings.mcp_trusted_proxy_ranges.as_deref());
         let inside = parse_internal_networks(input.settings.mcp_internal_ip_ranges.as_deref());
@@ -113,11 +113,11 @@ impl Helper for Op {
             Kind::IsInternalIp => Ok(json!(is_internal_ip(client, Some(&inside)))),
             Kind::TrustedRequest => Ok(json!(is_request_from_trusted_proxy(&request, &settings))),
             Kind::IsRequestHttps => Ok(json!(is_request_https(&request, &settings))),
-            Kind::ExtractHops => Ok(json!(extract_client_ip_from_xff_hops(xff, hops))),
+            Kind::ExtractHops => Ok(json!(client_ip_from_xff(xff, hops))),
             Kind::GetMcpClientIp => Ok(json!(get_mcp_client_ip(&request, &settings))),
             Kind::ResolveClientIp => Ok(resolved_client(&request, &settings)),
             Kind::ResolveNetworkContext => Ok(resolved_context(&request, &settings)),
-            Kind::GetTrustedProxyCidrs => Ok(json!(get_trusted_proxy_cidrs(&settings))),
+            Kind::GetTrustedProxyCidrs => Ok(json!(normalize_cidr_ranges(ranges))),
             Kind::RequireTrustedProxyRequest => {
                 require_trusted(&request, &settings, feature, setting_name)
             }
@@ -157,16 +157,13 @@ fn require_trusted(
 }
 
 fn resolved_client(request: &NetworkRequest<'_>, settings: &TrustedNetworkSettings) -> Value {
-    let config = principal_proxy_config(settings);
-    let (client_ip, via_trusted_proxy) = resolve_client_ip(request, &config);
-    json!({
-        "client_ip": client_ip,
-        "via_trusted_proxy": via_trusted_proxy,
-    })
+    let config = proxy_config_from_ranges(settings.trusted_proxy_ranges.as_ref());
+    let (client_ip, via) = resolve_client_ip(request, &config);
+    json!({ "client_ip": client_ip, "via_trusted_proxy": via })
 }
 
 fn resolved_context(request: &NetworkRequest<'_>, settings: &TrustedNetworkSettings) -> Value {
-    let config = principal_proxy_config(settings);
+    let config = proxy_config_from_ranges(settings.trusted_proxy_ranges.as_ref());
     let context = resolve_network_context(request, &config);
     json!({
         "client_ip": context.client_ip,

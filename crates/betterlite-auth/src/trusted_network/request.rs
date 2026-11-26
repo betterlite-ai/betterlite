@@ -1,7 +1,9 @@
+use std::net::IpAddr;
+
 use tracing::{error, warn};
 
 use crate::auth_identity::records::NetworkContext;
-use crate::trusted_network::cidr::{ip_in_networks, is_valid_ip, parse_normalized};
+use crate::trusted_network::cidr::{ip_in_networks, parse_normalized};
 use crate::trusted_network::internal::{is_trusted_proxy, parse_trusted_proxy_networks};
 use crate::trusted_network::settings::{TrustedNetworkSettings, TrustedProxyConfig};
 
@@ -40,7 +42,7 @@ pub fn resolve_num_trusted_hops(configured: Option<i64>) -> TrustedHopCount {
 
 // IPAddressUtils.extract_client_ip_from_xff_hops: the Nth entry from the right, never the spoofable left end.
 #[must_use]
-pub fn extract_client_ip_from_xff_hops(xff_header: &str, num_trusted_hops: i64) -> Option<String> {
+pub fn client_ip_from_xff(xff_header: &str, num_trusted_hops: i64) -> Option<String> {
     if num_trusted_hops < 1 {
         return None;
     }
@@ -54,7 +56,7 @@ pub fn extract_client_ip_from_xff_hops(xff_header: &str, num_trusted_hops: i64) 
         return None;
     }
     let candidate = entries.get(entries.len().checked_sub(count)?)?;
-    if is_valid_ip(candidate) {
+    if candidate.parse::<IpAddr>().is_ok() {
         return Some((*candidate).to_owned());
     }
     None
@@ -135,7 +137,7 @@ pub fn get_mcp_client_ip(
         match resolve_num_trusted_hops(settings.mcp_xff_num_trusted_hops) {
             TrustedHopCount::Invalid => return Some(String::new()),
             TrustedHopCount::Count(count) => {
-                let Some(client_ip) = extract_client_ip_from_xff_hops(forwarded_for, count) else {
+                let Some(client_ip) = client_ip_from_xff(forwarded_for, count) else {
                     warn!(
                         hops = count,
                         "X-Forwarded-For chain has fewer than mcp_xff_num_trusted_hops entries or an invalid address; failing closed"
@@ -172,7 +174,7 @@ pub fn resolve_client_ip(
     let forwarded = request.x_forwarded_for.unwrap_or_default();
     let hops: Vec<&str> = forwarded.split(',').map(str::trim).collect();
     for hop in hops.iter().rev() {
-        if is_valid_ip(hop) && !ip_in_networks(Some(*hop), &networks) {
+        if hop.parse::<IpAddr>().is_ok() && !ip_in_networks(Some(*hop), &networks) {
             return (Some((*hop).to_owned()), true);
         }
     }

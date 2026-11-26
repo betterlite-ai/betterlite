@@ -34,17 +34,9 @@ pub fn normalize_cidr_ranges(configured: Option<&CidrRanges>) -> Vec<String> {
     }
 }
 
-// network.parse_trusted_proxy_ranges: an entry that is not an address or CIDR range is skipped with a warning.
-#[must_use]
-pub fn parse_trusted_proxy_ranges(
-    configured: Option<&CidrRanges>,
-    setting_name: &str,
-) -> Vec<IpNet> {
-    parse_normalized(&normalize_cidr_ranges(configured), setting_name)
-}
-
 // network.parse_trusted_proxy_ranges applied to an already normalized list, as resolve_client_ip does.
-pub(crate) fn parse_normalized(texts: &[String], setting_name: &str) -> Vec<IpNet> {
+#[must_use]
+pub fn parse_normalized(texts: &[String], setting_name: &str) -> Vec<IpNet> {
     let mut networks = Vec::with_capacity(texts.len());
     for text in texts {
         let cidr = text.trim();
@@ -78,11 +70,6 @@ pub fn ip_in_networks(client_ip: Option<&str>, networks: &[IpNet]) -> bool {
     networks
         .iter()
         .any(|network| network.contains(&address) || network.contains(&unmapped))
-}
-
-// network._is_valid_ip
-pub(crate) fn is_valid_ip(value: &str) -> bool {
-    value.parse::<IpAddr>().is_ok()
 }
 
 // network._unmapped: an IPv6 address in ::ffff:0:0/96 becomes the IPv4 address it embeds.

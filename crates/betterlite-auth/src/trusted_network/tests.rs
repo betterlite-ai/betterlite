@@ -14,11 +14,11 @@ use tracing_subscriber::{Layer, Registry};
 
 use crate::auth_identity::records::NetworkContext;
 use crate::trusted_network::cidr::{
-    CidrRanges, ip_in_networks, normalize_cidr_ranges, parse_normalized, parse_trusted_proxy_ranges,
+    CidrRanges, ip_in_networks, normalize_cidr_ranges, parse_normalized,
 };
 use crate::trusted_network::decode::{
     DecodeError, MAX_NETWORK_HEADER_BYTES, MAX_NETWORK_HEADER_DEPTH, TypedValue,
-    decode_network_headers, encode_network_headers,
+    decode_network_headers,
 };
 use crate::trusted_network::internal::{
     DEFAULT_INTERNAL_CIDRS, default_internal_networks, is_internal_ip, is_trusted_proxy,
@@ -26,10 +26,10 @@ use crate::trusted_network::internal::{
 };
 use crate::trusted_network::proxy_utils::{
     MCP_TRUSTED_PROXY_RANGES_KEY, TRUSTED_PROXY_RANGES_KEY, TrustedProxyRequirementError,
-    get_trusted_proxy_cidrs, principal_proxy_config, require_trusted_proxy_request,
+    proxy_config_from_ranges, require_trusted_proxy_request,
 };
 use crate::trusted_network::request::{
-    NetworkRequest, TrustedHopCount, extract_client_ip_from_xff_hops, get_mcp_client_ip,
+    NetworkRequest, TrustedHopCount, client_ip_from_xff, get_mcp_client_ip,
     is_request_from_trusted_proxy, is_request_https, resolve_client_ip, resolve_network_context,
     resolve_num_trusted_hops,
 };
@@ -103,11 +103,8 @@ fn forwarded<'request>(
     x_forwarded_for: &'request str,
 ) -> NetworkRequest<'request> {
     NetworkRequest {
-        peer,
         x_forwarded_for: Some(x_forwarded_for),
-        x_forwarded_proto: None,
-        host: None,
-        scheme: "",
+        ..request(peer)
     }
 }
 
@@ -116,13 +113,14 @@ fn with_proto<'request>(
     x_forwarded_proto: &'request str,
     scheme: &'request str,
 ) -> NetworkRequest<'request> {
-    NetworkRequest {
-        peer,
-        x_forwarded_for: None,
-        x_forwarded_proto: Some(x_forwarded_proto),
-        host: None,
-        scheme,
-    }
+    let mut incoming = request(peer);
+    incoming.x_forwarded_proto = Some(x_forwarded_proto);
+    incoming.scheme = scheme;
+    incoming
+}
+
+fn parsed_ranges(configured: Option<&CidrRanges>) -> Vec<IpNet> {
+    parse_normalized(&normalize_cidr_ranges(configured), "trusted_proxy_ranges")
 }
 
 fn mcp_settings(texts: &[&str]) -> TrustedNetworkSettings {
@@ -149,12 +147,9 @@ fn normalizes_text_and_list_ranges() {
 
 #[test]
 fn parses_networks_like_ipaddress() {
-    let parsed = parse_trusted_proxy_ranges(
-        Some(&CidrRanges::Text(
-            "10.1.2.3/8, 10.0.0.0/255.0.0.0, 192.168.1.1, 2001:db8::/32".to_owned(),
-        )),
-        "trusted_proxy_ranges",
-    );
+    let parsed = parsed_ranges(Some(&CidrRanges::Text(
+        "10.1.2.3/8, 10.0.0.0/255.0.0.0, 192.168.1.1, 2001:db8::/32".to_owned(),
+    )));
     assert_eq!(
         rendered(&parsed),
         list(&[
@@ -164,8 +159,8 @@ fn parses_networks_like_ipaddress() {
             "2001:db8::/32"
         ])
     );
-    assert!(parse_trusted_proxy_ranges(None, "trusted_proxy_ranges").is_empty());
-    assert!(parse_trusted_proxy_ranges(Some(&CidrRanges::List(Vec::new())), "x").is_empty());
+    assert!(parsed_ranges(None).is_empty());
+    assert!(parsed_ranges(Some(&CidrRanges::List(Vec::new()))).is_empty());
 }
 
 #[test]
@@ -173,10 +168,11 @@ fn invalid_cidr_warning() {
     let logs = Logs::default();
     let subscriber = Registry::default().with(logs.clone());
     let guard = subscriber::set_default(subscriber);
-    let parsed = parse_trusted_proxy_ranges(
-        Some(&CidrRanges::List(list(&["not-a-cidr", " 10.0.0.0/8 ", ""]))),
-        "trusted_proxy_ranges",
-    );
+    let parsed = parsed_ranges(Some(&CidrRanges::List(list(&[
+        "not-a-cidr",
+        " 10.0.0.0/8 ",
+        "",
+    ]))));
     drop(guard);
     let events = logs
         .0
@@ -410,21 +406,21 @@ fn hop_count_setting_branches() {
 #[test]
 fn extract_hops_from_the_right() {
     assert_eq!(
-        extract_client_ip_from_xff_hops(" 1.2.3.4 , 5.6.7.8 ", 1),
+        client_ip_from_xff(" 1.2.3.4 , 5.6.7.8 ", 1),
         Some("5.6.7.8".to_owned())
     );
     assert_eq!(
-        extract_client_ip_from_xff_hops("1.2.3.4, 5.6.7.8", 2),
+        client_ip_from_xff("1.2.3.4, 5.6.7.8", 2),
         Some("1.2.3.4".to_owned())
     );
     assert_eq!(
-        extract_client_ip_from_xff_hops("1.2.3.4, , 5.6.7.8", 2),
+        client_ip_from_xff("1.2.3.4, , 5.6.7.8", 2),
         Some("1.2.3.4".to_owned())
     );
-    assert_eq!(extract_client_ip_from_xff_hops("1.2.3.4", 2), None);
-    assert_eq!(extract_client_ip_from_xff_hops("1.2.3.4", 0), None);
-    assert_eq!(extract_client_ip_from_xff_hops("1.2.3.4, nope", 1), None);
-    assert_eq!(extract_client_ip_from_xff_hops("", 1), None);
+    assert_eq!(client_ip_from_xff("1.2.3.4", 2), None);
+    assert_eq!(client_ip_from_xff("1.2.3.4", 0), None);
+    assert_eq!(client_ip_from_xff("1.2.3.4, nope", 1), None);
+    assert_eq!(client_ip_from_xff("", 1), None);
 }
 
 #[test]
@@ -549,23 +545,24 @@ fn https_forwarded_trust() {
 
 #[test]
 fn principal_config_trusts_only_configured_ranges() {
-    assert!(get_trusted_proxy_cidrs(&defaults()).is_empty());
+    let plain = defaults();
+    assert!(normalize_cidr_ranges(plain.trusted_proxy_ranges.as_ref()).is_empty());
     let mut configured = defaults();
     configured.trusted_proxy_ranges = Some(CidrRanges::Text(
         " 10.0.0.0/8 , ,192.168.0.0/16 ".to_owned(),
     ));
     assert_eq!(
-        get_trusted_proxy_cidrs(&configured),
+        normalize_cidr_ranges(configured.trusted_proxy_ranges.as_ref()),
         list(&["10.0.0.0/8", "192.168.0.0/16"])
     );
-    let config = principal_proxy_config(&configured);
+    let config = proxy_config_from_ranges(configured.trusted_proxy_ranges.as_ref());
     assert!(config.use_forwarded_for);
     assert_eq!(
         config.trusted_proxy_cidrs,
         list(&["10.0.0.0/8", "192.168.0.0/16"])
     );
     configured.trusted_proxy_ranges = Some(CidrRanges::Text(" , ".to_owned()));
-    let empty = principal_proxy_config(&configured);
+    let empty = proxy_config_from_ranges(configured.trusted_proxy_ranges.as_ref());
     assert!(!empty.use_forwarded_for);
     assert!(empty.trusted_proxy_cidrs.is_empty());
 }
@@ -700,7 +697,7 @@ fn decodes_and_encodes_the_header_document() {
         trusted_proxy_ranges: Some(CidrRanges::List(list(&["10.0.0.0/8"]))),
         mcp_trusted_proxy_ranges: Some(list(&["10.0.0.0/8"])),
     };
-    let bytes = encode_network_headers(&value).unwrap();
+    let bytes = serde_json::to_vec(&value).unwrap();
     assert_eq!(decode_network_headers(&bytes).unwrap(), value);
     assert_eq!(
         decode_network_headers(b"{}").unwrap(),
@@ -711,10 +708,8 @@ fn decodes_and_encodes_the_header_document() {
         None
     );
     assert_eq!(
-        encode_network_headers(&TypedValue::default())
-            .unwrap()
-            .as_slice(),
-        b"{}".as_slice()
+        serde_json::to_vec(&TypedValue::default()).unwrap(),
+        b"{}".to_vec()
     );
     let text = decode_network_headers(br#"{"trusted_proxy_ranges":"10.0.0.0/8, 192.168.0.0/16"}"#)
         .unwrap();
@@ -736,23 +731,23 @@ fn decoder_rejects_bad_documents() {
     ));
     assert!(matches!(
         decode_network_headers(br#"{"host":1}"#),
-        Err(DecodeError::NotText { .. })
+        Err(DecodeError::Json(_))
     ));
     assert!(matches!(
         decode_network_headers(br#"{"x_forwarded_for":{"a":1}}"#),
-        Err(DecodeError::NotText { .. })
+        Err(DecodeError::Json(_))
     ));
     assert!(matches!(
         decode_network_headers(br#"{"trusted_proxy_ranges":5}"#),
-        Err(DecodeError::NotRanges { .. })
+        Err(DecodeError::Json(_))
     ));
     assert!(matches!(
         decode_network_headers(br#"{"mcp_trusted_proxy_ranges":"10.0.0.0/8"}"#),
-        Err(DecodeError::NotRanges { .. })
+        Err(DecodeError::Json(_))
     ));
     assert!(matches!(
         decode_network_headers(br#"{"mcp_trusted_proxy_ranges":["10.0.0.0/8",7]}"#),
-        Err(DecodeError::NotText { .. })
+        Err(DecodeError::Json(_))
     ));
     match decode_network_headers(br#"{"host":"h","nope":"x"}"#) {
         Err(DecodeError::UnknownField { field }) => assert_eq!(field, "nope"),
@@ -787,7 +782,7 @@ fn native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso
     let inside = format!("{{\"host\":{open_inside}{close_inside}}}");
     assert!(matches!(
         decode_network_headers(inside.as_bytes()),
-        Err(DecodeError::NotText { .. })
+        Err(DecodeError::Json(_))
     ));
     let open_over = "[".repeat(MAX_NETWORK_HEADER_DEPTH);
     let close_over = "]".repeat(MAX_NETWORK_HEADER_DEPTH);
@@ -802,5 +797,8 @@ fn native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso
 #[rstest]
 fn replays_the_trusted_network_corpus(#[files("fuzz/corpus/trusted_network/*")] path: PathBuf) {
     let bytes = fs::read(path).expect("the corpus seed is readable");
-    drop(decode_network_headers(&bytes));
+    if let Ok(value) = decode_network_headers(&bytes) {
+        let encoded = serde_json::to_vec(&value).expect("an accepted seed encodes");
+        decode_network_headers(&encoded).expect("an accepted seed decodes again");
+    }
 }

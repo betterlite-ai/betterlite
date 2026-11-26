@@ -108,7 +108,8 @@ def build_request(input_value: Input) -> Request:
 
 def proxy_config(input_value: Input) -> TrustedProxyConfig:
     ranges = input_value["settings"]["trusted_proxy_ranges"]
-    cidrs = get_trusted_proxy_cidrs(general_settings={"trusted_proxy_ranges": ranges})
+    general_settings: dict[str, str | list[str] | None] = {"trusted_proxy_ranges": ranges}
+    cidrs = get_trusted_proxy_cidrs(general_settings=general_settings)
     return TrustedProxyConfig(use_forwarded_for=bool(cidrs), trusted_proxy_cidrs=cidrs)
 
 
@@ -201,18 +202,20 @@ def context_answer(input_value: Input) -> Outcome:
 
 def cidrs_answer(input_value: Input) -> Outcome:
     ranges = input_value["settings"]["trusted_proxy_ranges"]
-    return get_trusted_proxy_cidrs(general_settings={"trusted_proxy_ranges": ranges})
+    general_settings: dict[str, str | list[str] | None] = {"trusted_proxy_ranges": ranges}
+    return get_trusted_proxy_cidrs(general_settings=general_settings)
 
 
 def require_answer(input_value: Input) -> Outcome:
     settings = input_value["settings"]
     scenario = input_value["scenario"]
+    general_settings: dict[str, str | list[str] | None] = {
+        "trusted_proxy_ranges": settings["trusted_proxy_ranges"],
+        "mcp_trusted_proxy_ranges": settings["mcp_trusted_proxy_ranges"],
+    }
     require_trusted_proxy_request(
         request=build_request(input_value),
-        general_settings={
-            "trusted_proxy_ranges": settings["trusted_proxy_ranges"],
-            "mcp_trusted_proxy_ranges": settings["mcp_trusted_proxy_ranges"],
-        },
+        general_settings=general_settings,
         feature_name=scenario["feature_name"],
         setting_name=scenario["setting_name"],
     )
