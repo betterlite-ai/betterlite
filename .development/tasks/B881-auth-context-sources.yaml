@@ -102,6 +102,7 @@ description: >-
   B1100 registers state/auth_context_sources.rs as a stub slot, so fill only crates/betterlite-server/src/state/auth_context_sources.rs and leave state.rs as it is.
 scope:
   paths:
+    - "deny.toml"
     - "crates/betterlite-server/src/pre_call_step/router_branch.rs"
     - crates/betterlite-auth/src/auth_context_sources.rs
     - crates/betterlite-auth/src/auth_context_sources/**
