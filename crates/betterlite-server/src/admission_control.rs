@@ -163,7 +163,7 @@ impl AdmissionControl {
         decrement(counter);
         if let Some(metrics) = self.metrics() {
             gauge
-                .metric(metrics)
+                .metric(&metrics)
                 .inc(MetricValue::Finite(Decimal::NEGATIVE_ONE));
         }
     }

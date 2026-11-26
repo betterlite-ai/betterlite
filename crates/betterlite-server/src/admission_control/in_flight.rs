@@ -14,9 +14,14 @@ use rust_decimal::Decimal;
 use super::body::GuardedBody;
 use super::metrics::Registration;
 
+#[derive(Debug, Clone, Copy)]
+pub struct InFlightStats {
+    pub current: u64,
+}
+
 #[derive(Debug)]
 pub struct InFlightRequests {
-    pub current: AtomicU64,
+    current: AtomicU64,
     registry: Arc<CollectorRegistry>,
     gauge: Mutex<Registration<PrometheusMetric>>,
 }
@@ -28,6 +33,13 @@ impl InFlightRequests {
             current: AtomicU64::new(0),
             registry,
             gauge: Mutex::new(Registration::empty()),
+        }
+    }
+
+    #[must_use]
+    pub fn stats(&self) -> InFlightStats {
+        InFlightStats {
+            current: self.current.load(Ordering::Acquire),
         }
     }
 

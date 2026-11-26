@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 use std::str;
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use axum::Router;
@@ -133,7 +132,7 @@ impl Driver {
                     admitted: snapshot.admitted,
                     queued: snapshot.queued,
                     rejected_total: snapshot.rejected_total,
-                    in_flight: self.in_flight.current.load(Ordering::Acquire),
+                    in_flight: self.in_flight.stats().current,
                 });
             }
         }

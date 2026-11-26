@@ -1,6 +1,5 @@
 use std::fs;
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
 
 use axum::http::StatusCode;
 use betterlite_prometheus::collector_factory::collector::MetricValue;
@@ -276,7 +275,7 @@ async fn a_second_layer_logs_the_refused_registration_and_keeps_counting() {
     let guard = set_default(subscriber);
     requests.start(&second.router, "/two");
     await_started(&second.gates, "/two").await;
-    assert_eq!(second.stack.in_flight.current.load(Ordering::Acquire), 1);
+    assert_eq!(second.stack.in_flight.stats().current, 1);
     assert_eq!(second.stack.admission.stats().admitted, 1);
     drop(guard);
     let written = fs::read_to_string(log.path()).unwrap();
@@ -290,7 +289,7 @@ async fn a_second_layer_logs_the_refused_registration_and_keeps_counting() {
     );
     second.gates.get("/two").unwrap().release.notify_one();
     assert_eq!(requests.complete("/two").await.0, StatusCode::OK);
-    assert_eq!(second.stack.in_flight.current.load(Ordering::Acquire), 0);
+    assert_eq!(second.stack.in_flight.stats().current, 0);
     assert_eq!(second.stack.admission.stats().admitted, 0);
     assert_eq!(gauge(&first.registry, IN_FLIGHT), zero());
 }

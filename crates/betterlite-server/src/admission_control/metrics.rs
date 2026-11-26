@@ -50,7 +50,10 @@ impl<T: Clone> Registration<T> {
         }
     }
 
-    pub(super) fn once<F: FnOnce() -> Option<T>>(&mut self, build: F) -> Option<T> {
+    pub(super) fn once<F>(&mut self, build: F) -> Option<T>
+    where
+        F: FnOnce() -> Option<T>,
+    {
         if !self.attempted {
             self.attempted = true;
             self.built = build();
