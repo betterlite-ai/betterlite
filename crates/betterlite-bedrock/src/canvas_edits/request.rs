@@ -139,10 +139,10 @@ fn take_nested(options: &mut CanvasEditOptions) -> IndexMap<String, Json> {
 }
 
 fn take_json(options: &mut CanvasEditOptions, name: &str) -> Result<Option<Json>, CanvasEditError> {
-    match take_value(options, name) {
-        None => Ok(None),
-        Some(value) => value.to_json().map(Some).ok_or_else(|| field_error(name)),
-    }
+    take_value(options, name).map_or_else(
+        || Ok(None),
+        |value| value.to_json().map(Some).ok_or_else(|| field_error(name)),
+    )
 }
 
 fn task_text(prompt: Option<&str>, task_type: Option<&str>) -> Result<String, CanvasEditError> {

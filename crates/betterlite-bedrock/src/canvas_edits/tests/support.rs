@@ -69,9 +69,9 @@ pub(super) fn image(content: &str) -> CanvasImageInput {
     CanvasImageInput::Bytes(content.as_bytes().to_vec())
 }
 
-pub(super) type Prompt<'a> = Option<&'a str>;
-pub(super) type Source<'a> = Option<&'a CanvasImageInput>;
-pub(super) type Edits<'a> = &'a CanvasEditOptions;
+pub(super) type Prompt<'prompt> = Option<&'prompt str>;
+pub(super) type Source<'source> = Option<&'source CanvasImageInput>;
+pub(super) type Edits<'edits> = &'edits CanvasEditOptions;
 
 pub(super) fn prepared(
     prompt: Prompt<'_>,

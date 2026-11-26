@@ -115,14 +115,14 @@ fn mask_requirements(source: &CanvasImageInput) {
         error.to_string(),
         "OUTPAINTING requires either a mask image or a mask prompt. Pass mask=<file> or maskPrompt=<str> in the request."
     );
-    let error = refused(
+    let inpaint_error = refused(
         Some("cat"),
         Some(source),
         &options_json(r#"{"taskType": "INPAINTING"}"#),
     );
-    assert!(matches!(error, CanvasEditError::InPaintingMask));
+    assert!(matches!(inpaint_error, CanvasEditError::InPaintingMask));
     assert!(
-        error
+        inpaint_error
             .to_string()
             .starts_with("Amazon Nova Canvas INPAINTING requires either maskPrompt or maskImage")
     );
@@ -130,35 +130,38 @@ fn mask_requirements(source: &CanvasImageInput) {
 
 // Only the four task names pass, compared exactly: padding and casing are refused, not trimmed.
 fn unsupported_task_types(source: &CanvasImageInput) {
-    let error = refused(
+    let style_error = refused(
         Some("cat"),
         Some(source),
         &options_json(r#"{"taskType": "STYLE"}"#),
     );
     assert!(
-        matches!(&error, CanvasEditError::UnsupportedTaskType { task_type } if task_type == "STYLE")
+        matches!(&style_error, CanvasEditError::UnsupportedTaskType { task_type } if task_type == "STYLE")
     );
     assert_eq!(
-        error.to_string(),
-        "Unsupported Amazon Nova Canvas taskType: 'STYLE'. Use BACKGROUND_REMOVAL, OUTPAINTING, IMAGE_VARIATION, INPAINTING, or omit taskType for automatic routing (mask → INPAINTING, else IMAGE_VARIATION)."
+        style_error.to_string(),
+        "Unsupported Amazon Nova Canvas taskType: 'STYLE'. Use BACKGROUND_REMOVAL, OUTPAINTING, IMAGE_VARIATION, INPAINTING, or omit taskType for automatic routing (mask \u{2192} INPAINTING, else IMAGE_VARIATION)."
     );
     for padded in [" INPAINTING ", "inpainting", "IMAGE_VARIATION "] {
-        let error = refused(
+        let padded_error = refused(
             Some("cat"),
             Some(source),
             &options_json(&format!(r#"{{"taskType": "{padded}"}}"#)),
         );
         assert!(
-            matches!(error, CanvasEditError::UnsupportedTaskType { .. }),
+            matches!(padded_error, CanvasEditError::UnsupportedTaskType { .. }),
             "{padded}"
         );
     }
-    let error = refused(
+    let unprompted_error = refused(
         None,
         Some(source),
         &options_json(r#"{"taskType": "STYLE"}"#),
     );
-    assert!(matches!(error, CanvasEditError::UnsupportedTaskType { .. }));
+    assert!(matches!(
+        unprompted_error,
+        CanvasEditError::UnsupportedTaskType { .. }
+    ));
 }
 
 // A painted task needs its prompt before the body looks at a mask.
@@ -200,28 +203,28 @@ fn empty_mask_prompt_is_present() {
 
 // A value the transform does not declare for a field is refused by name, never coerced.
 fn wrong_type_names_the_field(source: &CanvasImageInput) {
-    let error = refused(
+    let bad_mask = refused(
         Some("cat"),
         Some(source),
         &options_json(r#"{"mask": {"x": 1}}"#),
     );
-    assert!(matches!(&error, CanvasEditError::Field { field } if field == "mask"));
+    assert!(matches!(&bad_mask, CanvasEditError::Field { field } if field == "mask"));
     assert_eq!(
-        error.to_string(),
+        bad_mask.to_string(),
         "the mask value has a type the Nova Canvas transform does not declare"
     );
-    let error = refused(
+    let wrong_task_type = refused(
         Some("cat"),
         Some(source),
         &options_json(r#"{"taskType": 7}"#),
     );
-    assert!(matches!(&error, CanvasEditError::Field { field } if field == "taskType"));
-    let error = refused(
+    assert!(matches!(&wrong_task_type, CanvasEditError::Field { field } if field == "taskType"));
+    let bad_width = refused(
         Some("cat"),
         Some(source),
         &with_bytes(options_json(r#"{"width": 5}"#), "width", b"5"),
     );
-    assert!(matches!(&error, CanvasEditError::Field { field } if field == "width"));
+    assert!(matches!(&bad_width, CanvasEditError::Field { field } if field == "width"));
 }
 
 pub(super) fn image_bytes_base64() {
@@ -266,8 +269,8 @@ fn missing_image_is_refused(given: &CanvasEditOptions) {
         options_json(r#"{"taskType": "INPAINTING"}"#),
         with_bytes(given.clone(), "mask", b"m"),
     ] {
-        let error = refused(None, None, &options);
-        assert!(matches!(error, CanvasEditError::MissingImage));
+        let no_image_error = refused(None, None, &options);
+        assert!(matches!(no_image_error, CanvasEditError::MissingImage));
     }
 }
 
@@ -281,14 +284,14 @@ pub(super) fn tuple_file_rejection() {
         error.to_string(),
         "Nova Canvas image edit does not support tuple FileTypes. Pass a file-like object, bytes, or a base64-encoded string."
     );
-    let error = refused(Some("cat"), Some(&source), &with_tuple(given, "mask"));
-    assert!(matches!(error, CanvasEditError::TupleFileType));
-    let error = refused(
+    let mask_error = refused(Some("cat"), Some(&source), &with_tuple(given, "mask"));
+    assert!(matches!(mask_error, CanvasEditError::TupleFileType));
+    let tuple_task_error = refused(
         Some("cat"),
         Some(&tuple),
         &options_json(r#"{"taskType": "STYLE"}"#),
     );
-    assert!(matches!(error, CanvasEditError::TupleFileType));
+    assert!(matches!(tuple_task_error, CanvasEditError::TupleFileType));
     assert_eq!(
         body(
             Some("cat"),

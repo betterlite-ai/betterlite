@@ -107,9 +107,18 @@ fn error_answer(call: &ErrorClassCall) -> Value {
             "message": detail.error.message,
             "headers_present": detail.error.headers.is_some(),
         }),
-        other => json!({
-            "status": other.status(),
-            "message": other.to_string(),
+        CanvasEditError::MissingImage
+        | CanvasEditError::TupleFileType
+        | CanvasEditError::OutPaintingMask
+        | CanvasEditError::InPaintingMask
+        | CanvasEditError::UnsupportedTaskType { .. }
+        | CanvasEditError::MissingPrompt { .. }
+        | CanvasEditError::Field { .. }
+        | CanvasEditError::UnsupportedModel { .. }
+        | CanvasEditError::CompleteUrl
+        | CanvasEditError::Header(_) => json!({
+            "status": error.status(),
+            "message": error.to_string(),
             "headers_present": false,
         }),
     }

@@ -20,7 +20,8 @@ fn default_headers() -> BTreeMap<String, String> {
 }
 
 fn environment_contract() {
-    assert!(!USE_MULTIPART_FORM_DATA);
+    let multipart = USE_MULTIPART_FORM_DATA;
+    assert!(!multipart);
     assert_eq!(validate_environment(None), default_headers());
     assert_eq!(
         validate_environment(Some(BTreeMap::new())),
@@ -36,11 +37,14 @@ fn environment_contract() {
         ("Content-Type".to_owned(), "application/json".to_owned()),
     ]);
     assert_eq!(validate_environment(Some(given)), expected);
-    let given = BTreeMap::from([(
+    let content_type = BTreeMap::from([(
         "Content-Type".to_owned(),
         "application/x-amz-json-1.1".to_owned(),
     )]);
-    assert_eq!(validate_environment(Some(given.clone())), given);
+    assert_eq!(
+        validate_environment(Some(content_type.clone())),
+        content_type
+    );
 }
 
 fn error_class_contract() {
@@ -64,16 +68,19 @@ fn error_class_contract() {
     assert_eq!(detail.error.headers.as_deref(), Some(headers.as_slice()));
     assert_eq!(detail.headers, Some(ErrorHeaders::Http(headers.clone())));
     assert_eq!(detail.response_headers, headers);
-    let error = get_error_class("no headers".to_owned(), 503, Vec::new());
+    let without_headers = get_error_class("no headers".to_owned(), 503, Vec::new());
     let CanvasEditError::Provider {
-        status,
-        error: detail,
-    } = &error
+        status: status_code,
+        error: no_header_error,
+    } = &without_headers
     else {
         panic!("expected a provider error");
     };
-    assert_eq!(*status, 503);
-    assert_eq!(detail.headers, Some(ErrorHeaders::Http(Vec::new())));
+    assert_eq!(*status_code, 503);
+    assert_eq!(
+        no_header_error.headers,
+        Some(ErrorHeaders::Http(Vec::new()))
+    );
 }
 
 fn complete_url_contract() {
@@ -94,18 +101,18 @@ fn complete_url_contract() {
 
 pub(super) fn canvas_edit_selector() {
     let cost = catalog();
-    let chosen = config_for(&cost, IN_PAINT).expect("the inpaint model routes to stability");
-    assert_eq!(chosen, ImageEditConfig::Stability);
-    let chosen = config_for(&model_cost("{}"), "stability.stable-image-upscale-1:0")
+    let in_paint = config_for(&cost, IN_PAINT).expect("the inpaint model routes to stability");
+    assert_eq!(in_paint, ImageEditConfig::Stability);
+    let upscale = config_for(&model_cost("{}"), "stability.stable-image-upscale-1:0")
         .expect("stability detection needs no catalog");
-    assert_eq!(chosen, ImageEditConfig::Stability);
+    assert_eq!(upscale, ImageEditConfig::Stability);
     for model in [
         CANVAS_MODEL,
         "CANVAS-FIXTURE-PLAIN",
         "x/canvas-fixture-suffix",
     ] {
-        let chosen = config_for(&cost, model).expect("the catalog flag routes to nova canvas");
-        assert_eq!(chosen, ImageEditConfig::NovaCanvas, "{model}");
+        let routed = config_for(&cost, model).expect("the catalog flag routes to nova canvas");
+        assert_eq!(routed, ImageEditConfig::NovaCanvas, "{model}");
     }
     let error =
         config_for(&cost, "amazon.nova-canvas-v1:0").expect_err("an unmarked model is refused");
@@ -117,12 +124,15 @@ pub(super) fn canvas_edit_selector() {
         "Unsupported Bedrock image-edit model: 'amazon.nova-canvas-v1:0'. Use a stability.* image-edit model id or add supports_nova_canvas_image_edit in model_prices for this id."
     );
     assert_eq!(error.status(), None);
-    let error = config_for(&model_cost("{}"), "").expect_err("an empty model is refused");
+    let empty_model_error =
+        config_for(&model_cost("{}"), "").expect_err("an empty model is refused");
     assert_eq!(
-        error.to_string(),
+        empty_model_error.to_string(),
         "Unsupported Bedrock image-edit model: ''. Use a stability.* image-edit model id or add supports_nova_canvas_image_edit in model_prices for this id."
     );
-    let error =
+    let unmarked_error =
         config_for(&model_cost("{}"), CANVAS_MODEL).expect_err("a spelling alone is not enough");
-    assert!(matches!(&error, CanvasEditError::UnsupportedModel { model } if model == CANVAS_MODEL));
+    assert!(
+        matches!(&unmarked_error, CanvasEditError::UnsupportedModel { model } if model == CANVAS_MODEL)
+    );
 }

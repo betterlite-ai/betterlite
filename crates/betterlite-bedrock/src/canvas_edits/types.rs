@@ -5,7 +5,7 @@ use indexmap::IndexMap;
 pub type CanvasEditOptions = IndexMap<String, CanvasEditValue>;
 
 // A Python option value: JSON, bytes already read from a file or SDK object, or a tuple FileTypes.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CanvasEditValue {
     Json(Json),
     Bytes(Vec<u8>),
