@@ -4,7 +4,9 @@ use betterlite_auth::auth_key_budgets::alerts::BudgetAlertKind;
 use betterlite_auth::auth_key_budgets::money::Money;
 use betterlite_auth::budget_primitives::window_start::DurationParser as _;
 use betterlite_auth::team_budget_admission::alerts::TeamAlertKind;
-use betterlite_auth::team_budget_admission::sources::MembershipSource as _;
+use betterlite_auth::team_budget_admission::sources::{
+    DefaultBudgetSource as _, MembershipSource as _,
+};
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
@@ -286,4 +288,6 @@ async fn the_budgetless_suppliers_answer_no_duration_and_no_membership() {
         .await
         .unwrap_err();
     assert_eq!(error.to_string(), "No db connected");
+    let default = NoSources.team_member_default("budget-1").await;
+    assert!(default.is_ok_and(|budget| budget.is_none()));
 }
