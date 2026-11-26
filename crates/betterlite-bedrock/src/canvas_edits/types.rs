@@ -132,7 +132,7 @@ pub struct VariationParams {
 }
 
 // The nested config keeps the caller's other keys; the six top-level values overwrite their own key.
-#[derive(Debug, Default, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImageGenerationConfig {
     #[serde(flatten)]

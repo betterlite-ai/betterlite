@@ -138,7 +138,12 @@ pub(super) fn quality_map() {
             r#"{"_x":1,"mask":"m","width":1,"height":2,"numberOfImages":3,"taskType":"INPAINTING","imageGenerationConfig":{"a":1},"quality":"premium"}"#
         )
     );
-    // A supported name stays under drop_params even when its value is not the declared dict.
+    drop_params_rows();
+    unknown_options_stay_out_of_body();
+}
+
+// A supported name stays under drop_params even when its value is not the declared dict.
+fn drop_params_rows() {
     assert_eq!(
         mapped(r#"{"imageGenerationConfig": [1], "user": "u"}"#, true),
         json(r#"{"imageGenerationConfig":[1]}"#)
@@ -147,7 +152,6 @@ pub(super) fn quality_map() {
         mapped(r#"{"imageGenerationConfig": null, "user": "u"}"#, true),
         json(r#"{"imageGenerationConfig":null}"#)
     );
-    unknown_options_stay_out_of_body();
 }
 
 // Only the named task keys reach the wire body, so a retained custom option changes nothing.
