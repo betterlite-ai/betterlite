@@ -1,14 +1,17 @@
-use std::sync::Arc;
+#![cfg(test)]
+
 use std::sync::atomic::Ordering;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use betterlite_config::sections::health_readiness::Settings as HealthSettings;
 use betterlite_db::database_availability::policy::AllowRequestsOnOutage;
+use betterlite_db::database_failures::gate::{DbLookupStallTracker, SystemClock};
 use betterlite_db::database_faults::ErrorType;
 use rstest::rstest;
 use tokio::time::{Instant, advance};
 
-use super::{DbReadiness, DbStatus};
+use super::{DbReadiness, DbStatus, StallTracker};
 use crate::health_readiness::tests::support::{
     FakeProbe, FakeSources, FakeStall, ProbeAnswer, ReconnectAnswer, WorkerCensus, capture_logs,
     db_readiness,
@@ -210,6 +213,25 @@ async fn no_redis_warning_stays_on_without_a_database() {
             .show_no_redis_warning(&FakeSources::default())
             .await
     );
+}
+
+#[test]
+fn stall_tracker_is_not_stalled_before_any_lookup() {
+    let tracker = DbLookupStallTracker {
+        clock: SystemClock,
+        last_hit: Mutex::new(None),
+    };
+    assert!(!tracker.stalled_within_window(f64::MAX));
+}
+
+#[test]
+fn stall_tracker_is_stalled_within_the_window_after_a_lookup() {
+    let tracker = DbLookupStallTracker {
+        clock: SystemClock,
+        last_hit: Mutex::new(None),
+    };
+    tracker.record_hit();
+    assert!(tracker.stalled_within_window(60.0));
 }
 
 #[rstest]

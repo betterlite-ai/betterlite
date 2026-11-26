@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use betterlite_logging::registry::identity::CallbackIdentity;
 use indexmap::IndexMap;
 
