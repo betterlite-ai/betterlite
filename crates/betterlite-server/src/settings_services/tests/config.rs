@@ -54,12 +54,12 @@ fn settings_block_refuses_a_non_object_litellm_settings_or_block() {
             field: "litellm_settings".to_owned(),
         })
     );
-    let config = values(&[(
+    let string_block = values(&[(
         "litellm_settings",
         json!({"default_internal_user_params": "internal"}),
     )]);
     assert_eq!(
-        settings_block(&config, SETTING.as_str()),
+        settings_block(&string_block, SETTING.as_str()),
         Err(SettingsConfigError::NotAnObject {
             field: SETTING.as_str().to_owned(),
         })

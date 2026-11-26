@@ -56,7 +56,7 @@ async fn publishes_the_pruned_settings_and_answers_the_caller_message() {
         json!({
             "message": "Internal user settings updated successfully",
             "status": "success",
-            "settings": {"user_role": "internal_user_viewer", "models": ["a"]},
+            "settings": {"user_role": "internal_user_viewer", "models": ["a"]}
         })
     );
     let published = harness.published();
@@ -136,7 +136,7 @@ async fn null_values_are_pruned_recursively_and_list_positions_stay() {
         json!({
             "message": "Internal user settings updated successfully",
             "status": "success",
-            "settings": {"models": ["a", null], "teams": [{"team_id": "t"}]},
+            "settings": {"models": ["a", null], "teams": [{"team_id": "t"}]}
         })
     );
     assert_eq!(harness.published()[0].1, stored);
@@ -204,7 +204,7 @@ async fn reload_database_unavailable_answers_503_and_leaves_nothing_behind() {
                 "message": "Service Unavailable, the authentication database is temporarily unreachable. Please retry shortly.",
                 "type": "no_db_connection",
                 "param": "None",
-                "code": "503",
+                "code": "503"
             }
         })
     );
@@ -229,7 +229,7 @@ async fn reload_failure_answers_500_and_leaves_nothing_behind() {
         json!({
             "error": {
                 "message": "Internal server error",
-                "type": "internal_server_error",
+                "type": "internal_server_error"
             }
         })
     );
@@ -299,7 +299,7 @@ async fn config_owned_setting_answers_400_after_publishing() {
                 "keys": ["default_internal_user_params"],
                 "section": "litellm_settings",
                 "stored_database_values_ignored": [],
-                "resolution": "edit /etc/betterlite/config.yaml to change it, or remove it from the file to let the database own it",
+                "resolution": "edit /etc/betterlite/config.yaml to change it, or remove it from the file to let the database own it"
             }
         })
     );

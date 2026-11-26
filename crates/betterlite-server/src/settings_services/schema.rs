@@ -14,9 +14,9 @@ pub struct SchemaNode {
     #[serde(rename = "enum")]
     pub enum_values: Option<Vec<JsonValue>>,
     #[serde(rename = "anyOf")]
-    pub any_of: Option<Vec<SchemaNode>>,
+    pub any_of: Option<Vec<Self>>,
     pub items: Option<SchemaItems>,
-    pub properties: Option<BTreeMap<String, SchemaNode>>,
+    pub properties: Option<BTreeMap<String, Self>>,
     #[serde(flatten)]
     pub passthrough: BTreeMap<String, JsonValue>,
 }

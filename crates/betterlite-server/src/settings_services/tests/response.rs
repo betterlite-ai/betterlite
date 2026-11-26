@@ -20,7 +20,7 @@ fn sso_settings_flat_the_common_response_beside_its_provenance() {
         json!({
             "values": {"user_role": "internal_user_viewer"},
             "field_schema": {"description": "", "properties": {}},
-            "provenance": {"user_role": "db"},
+            "provenance": {"user_role": "db"}
         })
     );
 }

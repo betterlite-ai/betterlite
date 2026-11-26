@@ -86,8 +86,8 @@ fn pruned_values(values: BTreeMap<String, JsonValue>) -> BTreeMap<String, JsonVa
 
 fn prune_null_value(value: JsonValue) -> JsonValue {
     match value {
-        JsonValue::Object(entries) => {
-            let entries = entries.into_iter().collect();
+        JsonValue::Object(object) => {
+            let entries = object.into_iter().collect();
             JsonValue::Object(pruned_values(entries).into_iter().collect())
         }
         JsonValue::Array(items) => {

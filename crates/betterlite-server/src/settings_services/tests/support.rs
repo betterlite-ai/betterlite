@@ -28,7 +28,7 @@ use crate::settings_services::service::{
 // JSON for the tests through serde_json's parser, so no banned object path and no inferred literal type reaches the lint table
 macro_rules! json {
     ($($part:tt)*) => {
-        serde_json::from_str::<JsonValue>(stringify!($($part)*)).unwrap()
+        $crate::settings_services::tests::support::parse_json(stringify!($($part)*))
     };
 }
 pub(crate) use json;
@@ -96,7 +96,10 @@ pub(crate) fn schema(raw: &str) -> RootSchema {
     root_schema(&serde_json::from_str::<JsonValue>(raw).unwrap()).unwrap()
 }
 
-pub(crate) fn as_json<T: serde::Serialize>(value: &T) -> JsonValue {
+pub(crate) fn as_json<T>(value: &T) -> JsonValue
+where
+    T: serde::Serialize,
+{
     serde_json::to_value(value).unwrap()
 }
 

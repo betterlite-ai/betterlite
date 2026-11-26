@@ -8,7 +8,10 @@ use super::schema::{
 
 // _get_settings_with_schema's response: the record's dumped values and the pinned schema's descriptions for the UI
 #[must_use]
-pub fn settings_with_schema<R: SettingsRecord + ?Sized>(record: &R) -> SettingsResponse {
+pub fn settings_with_schema<R>(record: &R) -> SettingsResponse
+where
+    R: SettingsRecord + ?Sized,
+{
     let root = record.schema();
     SettingsResponse {
         values: record.values(),
