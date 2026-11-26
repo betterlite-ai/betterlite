@@ -1,3 +1,1 @@
-litellm_settings:
-  api_base: https://probe.example/v1
-  api_key: sk-probe-settings
+litellm_settings: {}

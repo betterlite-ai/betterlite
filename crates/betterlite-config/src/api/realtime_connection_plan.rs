@@ -13,16 +13,6 @@ pub struct RealtimeProbeSettings {
     pub max_message_size_bytes: usize,
 }
 
-impl Default for RealtimeProbeSettings {
-    fn default() -> Self {
-        Self {
-            connection: RealtimeConnectionSettings::default(),
-            max_message_size_bytes:
-                crate::sections::openai_realtime::DEFAULT_MAX_MESSAGE_SIZE_BYTES,
-        }
-    }
-}
-
 // The whole config loads once, so an unsupported key fails here as it does for every other section.
 pub fn load_settings<L>(source: &str, lookup: L) -> Result<RealtimeProbeSettings, ConfigError>
 where
