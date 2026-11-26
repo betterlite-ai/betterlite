@@ -1,0 +1,49 @@
+kind: helper
+name: entity-model-access-key-and-team-group-retry
+call:
+  entity_model_access:
+    steps:
+      - function: key
+        model: claude
+        database: true
+        token: {token: hash-1, models: [gpt-4o], access_group_ids: [ag-key]}
+        cache:
+          "access_group_id:ag-key": {access_group_id: ag-key, access_group_name: key group, access_model_names: [claude]}
+      - function: key
+        model: gpt-4o
+        database: true
+        token: {token: hash-1, models: [gpt-4o], access_group_ids: [ag-key]}
+        cache:
+          "access_group_id:ag-key": {access_group_id: ag-key, access_group_name: key group, access_model_names: [claude]}
+      - function: key
+        model: claude
+        database: true
+        token: {token: hash-1, models: [gpt-4o], access_group_ids: [ag-empty]}
+        cache:
+          "access_group_id:ag-empty": {access_group_id: ag-empty, access_group_name: empty group}
+      - function: key
+        model: claude
+        database: true
+        token: {token: hash-1, models: [gpt-4o], access_group_ids: [ag-gone]}
+      - function: key
+        model: claude
+        database: false
+        token: {token: hash-1, models: [gpt-4o], access_group_ids: [ag-key]}
+      - function: team
+        model: claude
+        database: true
+        team: {team_id: team-1, models: [gpt-4o], access_group_ids: [ag-team]}
+        cache:
+          "access_group_id:ag-team": {access_group_id: ag-team, access_group_name: team group, access_model_names: [claude, gpt-4o]}
+      - function: team
+        model: other
+        database: true
+        team: {team_id: team-1, models: [gpt-4o], access_group_ids: [ag-team]}
+        cache:
+          "access_group_id:ag-team": {access_group_id: ag-team, access_group_name: team group, access_model_names: [claude, gpt-4o]}
+      - function: team
+        model: claude
+        database: true
+        team: {team_id: team-2, models: [gpt-4o]}
+env: {}
+compare: {ignore: []}

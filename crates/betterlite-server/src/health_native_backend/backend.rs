@@ -20,7 +20,7 @@ use super::deferred::not_built;
 use super::seams::{
     BatchProbeCall, EmbeddingProbeCall, EvaluationProbeCall, ImageEditProbeCall,
     ImageGenerationProbeCall, OcrProbeCall, RerankProbeCall, ResponsesProbeCall, SpeechProbeCall,
-    TextCompletionProbeCall, TranscriptionProbeCall,
+    TextCompletionProbeCall, TranscriptionProbeCall, VideoGenerationProbeCall,
 };
 use crate::health_probe_modes::backend::{CheapestChatModels, HealthProbeBackend};
 use crate::health_probe_modes::calls::{
@@ -46,6 +46,7 @@ pub struct NativeHealthBackend {
     pub responses: Arc<dyn ResponsesProbeCall>,
     pub ocr: Arc<dyn OcrProbeCall>,
     pub evaluation: Arc<dyn EvaluationProbeCall>,
+    pub video_generation: Arc<dyn VideoGenerationProbeCall>,
     pub prices: Arc<dyn PriceLookup + Send + Sync>,
     pub model_sets: Arc<ProviderModelSets>,
 }
@@ -107,9 +108,9 @@ impl HealthProbeBackend for NativeHealthBackend {
 
     async fn video_generation(
         &self,
-        _call: ProbeCall,
+        call: ProbeCall,
     ) -> Result<HealthProbeReply, HealthProbeError> {
-        Err(not_built("video_generation"))
+        self.video_generation.generate(call).await
     }
 
     async fn rerank(&self, call: ProbeCall) -> Result<HealthProbeReply, HealthProbeError> {

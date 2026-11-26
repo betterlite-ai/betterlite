@@ -44,24 +44,16 @@ description: >-
 
 
   Compare the pure membership projections, role checks and all-requested-organizations predicate under
-  B856 Management::auth, seeding B171 helper_case. Native tests cover asynchronous context lookup and
-  booted HTTP cases cover integration through this stage's own StageFailure variant rendered by B749's
+  B856 Management::auth, seeding B171 helper_case. Native tests cover asynchronous context lookup, and
+  B10110's booted HTTP cases cover integration through this stage's own StageFailure variant rendered by B749's
   denial_response, which preserves these B8410 ProxyException fields as LiteLLM's auth exception
   handler passes a ProxyException through unchanged. This module takes typed membership rows and does not fetch them itself.
 
 
-  The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
-  with an invalid model after auth, or the named management route). Install this production stage through
-  B732 server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
-  and the complete error type/param/code. A successful auth branch must reach the downstream route response
-  rather than manufacture a helper success. Pin the source exception translation from auth_exception_handler
-  before choosing fixtures.
-
-
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+  Install this production stage through B732 server state and prove the policy with the helper cases and
+  behavior tests. An organization error needs a non-admin caller with memberships, and until B052
+  authenticates virtual keys every bearer but the master key gets 401 at the master stage, so the HTTP
+  organization cases come with B10110 after B052, B870 and B754.
 
 
   This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
@@ -136,11 +128,6 @@ dod:
       - oracle
       - helper-python
       - helper-case-corpus
-  - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
-      against the real MIT server.
-    proof:
-      - oracle
-      - behavior-tests
   - text: The real server constructor invokes the production auth stage and its failures stop downstream
       execution.
     proof:
@@ -174,16 +161,18 @@ oracle_cases:
   - tools/oracle/cases/helpers/organization-route-policy/all-requested-organizations.yaml
   - tools/oracle/cases/helpers/organization-route-policy/one-org-team-create-requires-id.yaml
   - tools/oracle/cases/helpers/organization-route-policy/no-user-and-proxy-admin.yaml
-  - tools/oracle/cases/auth/organization-route-policy/org-admin-team-scope.yaml
-  - tools/oracle/cases/auth/organization-route-policy/caller-org-context-retained.yaml
-  - tools/oracle/cases/auth/organization-route-policy/cross-org-denied.yaml
-  - tools/oracle/cases/auth/organization-route-policy/organization-create-role-error.yaml
-  - tools/oracle/cases/auth/organization-route-policy/org-admin-route-error-params.yaml
-  - tools/oracle/cases/auth/organization-route-policy/team-create-one-membership.yaml
-  - tools/oracle/cases/auth/organization-route-policy/patch-template-enrichment.yaml
+  - tools/oracle/cases/helpers/organization-route-policy/caller-org-context-retained.yaml
+  - tools/oracle/cases/helpers/organization-route-policy/organization-create-role-error.yaml
+  - tools/oracle/cases/helpers/organization-route-policy/org-admin-route-error-params.yaml
+  - tools/oracle/cases/helpers/organization-route-policy/patch-template-enrichment.yaml
+  - tools/oracle/cases/helpers/organization-route-policy/team-create-one-membership.yaml
+  - tools/oracle/cases/helpers/organization-route-policy/auth-org-admin-team-scope.yaml
+  - tools/oracle/cases/helpers/organization-route-policy/auth-cross-org-denied.yaml
 deviations: []
 out_of_scope:
   - B867 owns the org-admin route allowlist; B757 owns public auth exception handling. Callers supply the team-org lookup.
+  - B052 and B870 resolve the caller's user and organization memberships, and B754 calls this stage with them and the team-org lookup; until then real requests reach the stage with user None.
+  - HTTP organization cases with seeded non-admin keys come with B10110 after B052, B870 and B754.
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as organization_route_policy in the server group. Replace the stub Op in tools/oracle/src/helpers/server/organization_route_policy.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/organization_route_policy.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'

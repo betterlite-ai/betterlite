@@ -171,12 +171,15 @@ impl FailureContext {
 
 fn raised_exception(failure: &StageFailure) -> Option<ProxyException> {
     match failure {
-        StageFailure::AuthRequestPolicy(exception)
+        StageFailure::EntityModelAccess(exception)
+        | StageFailure::AuthRequestPolicy(exception)
         | StageFailure::ResourceGrants(exception)
         | StageFailure::TagBudgets(exception)
         | StageFailure::RequestBodySafety(exception)
+        | StageFailure::VirtualKeyRoutes(exception)
         | StageFailure::KeyBudgets(exception)
         | StageFailure::TeamBudgets(exception)
+        | StageFailure::OrganizationRoutePolicy(exception)
         | StageFailure::OrgLookup(exception)
         | StageFailure::EndUserIdentity(exception)
         | StageFailure::EndUsers(exception) => Some((**exception).clone()),

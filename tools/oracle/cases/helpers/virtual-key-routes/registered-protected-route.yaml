@@ -1,0 +1,33 @@
+kind: helper
+name: virtual-key-routes-registered-protected-route
+call:
+  virtual_key_routes:
+    function: should_call_route
+    route: /team-pass
+    method: POST
+    key:
+      allowed_routes: [openai_routes]
+      metadata: {}
+    registrations:
+      - {endpoint_id: pass-a, route_type: exact, path: /team-pass, methods: [POST], auth: true}
+calls:
+  - virtual_key_routes:
+      function: auth_enforced
+      route: /team-pass
+      method: POST
+      registrations:
+        - {endpoint_id: pass-a, route_type: exact, path: /team-pass, methods: [POST], auth: true}
+  - virtual_key_routes:
+      function: auth_enforced
+      route: /team-pass
+      method: GET
+      registrations:
+        - {endpoint_id: pass-a, route_type: exact, path: /team-pass, methods: [POST], auth: true}
+  - virtual_key_routes:
+      function: auth_enforced
+      route: /open-pass
+      method: POST
+      registrations:
+        - {endpoint_id: pass-b, route_type: exact, path: /open-pass, auth: false}
+env: {}
+compare: {ignore: []}

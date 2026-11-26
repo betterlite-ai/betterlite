@@ -1,0 +1,31 @@
+kind: helper
+name: organization-route-policy-auth-organization-create-role-error
+call:
+  organization_route_policy:
+    calls:
+      # only the proxy admin role may create an organization, and the refusal names the role that was passed
+      - function: role_check
+        user: {user_role: internal_user}
+        route: /organization/new
+      - function: role_check
+        user: {user_role: org_admin}
+        route: /organization/new
+      - function: role_check
+        user: {user_role: null}
+        route: /organization/new
+      # a caller with no user object, and the proxy admin itself, both pass
+      - function: role_check
+        route: /organization/new
+      - function: role_check
+        user: {user_role: proxy_admin}
+        route: /organization/new
+      - function: role_check
+        user: {user_role: proxy_admin, organization_memberships: null}
+        route: /organization/new
+      # any other route leaves an ordinary user alone at this stage
+      - function: role_check
+        user: {user_role: internal_user, organization_memberships: null}
+        route: /v1/chat/completions
+        request: {model: gpt-4}
+env: {}
+compare: {ignore: []}
