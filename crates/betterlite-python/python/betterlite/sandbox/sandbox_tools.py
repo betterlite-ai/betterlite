@@ -38,4 +38,11 @@ def resolve_sandbox_tool(name: str) -> dict[str, JsonValue] | None:
 
 
 def clear_sandbox_tools() -> None:
-    register_sandbox_tools([])
+    environment: JsonValue = JSON.validate_python(os.environ.copy())
+    entries: JsonValue = JSON.validate_python([])
+    arguments: dict[str, CallValue] = {"environment": environment, "tools": entries}
+    call_native(
+        SESSION.call,
+        to_call_payload({"operation": REGISTER, "arguments": arguments}),
+        NativeDecisionError,
+    )

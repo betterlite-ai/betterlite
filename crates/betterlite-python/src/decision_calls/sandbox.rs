@@ -25,7 +25,10 @@ pub(crate) fn tool_answer(tool: Option<&SandboxTool>) -> Result<String, ConvertE
             fields.insert(String::from("api_key"), secret_json(found.api_key.as_ref()));
             fields.insert(
                 String::from("api_base"),
-                text_json(found.api_base.as_deref()),
+                found
+                    .api_base
+                    .as_deref()
+                    .map_or_else(|| Json::Null, |text| Json::Text(text.to_owned())),
             );
             Json::Object(fields)
         },
@@ -100,8 +103,4 @@ fn secret_json(value: Option<&SecretString>) -> Json {
     value.map_or(Json::Null, |secret| {
         Json::Text(secret.expose_secret().to_owned())
     })
-}
-
-fn text_json(value: Option<&str>) -> Json {
-    value.map_or_else(|| Json::Null, |text| Json::Text(text.to_owned()))
 }

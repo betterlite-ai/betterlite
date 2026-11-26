@@ -309,12 +309,16 @@ def test_systemone_signature() -> None:
     ],
 )
 def test_sandbox_signature(ours: inspect.Signature, reference: inspect.Signature) -> None:
+    ours_names = tuple(ours.parameters)
+    reference_names = tuple(reference.parameters)
+    assert ours_names == reference_names
     assert parameter_rows(ours) == parameter_rows(reference)
 
 
-# ast-grep-ignore: no-one-line-functions - the provider list is the whole check
 def test_providers_calls_native() -> None:
-    assert supported_decisions_providers() == PROVIDERS
+    providers = supported_decisions_providers()
+    assert isinstance(providers, tuple)
+    assert providers == PROVIDERS
 
 
 def test_decisions_calls_openai() -> None:
