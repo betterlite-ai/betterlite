@@ -14,6 +14,7 @@ call:
       canvas-fixture-off: {litellm_provider: amazon, supports_nova_canvas_image_edit: false}
       canvas-fixture-text: {litellm_provider: amazon, supports_nova_canvas_image_edit: 'true'}
       canvas-fixture-null: null
+      stability.stable-image-inpaint-v1:0: {litellm_provider: bedrock, supports_nova_canvas_image_edit: true}
     calls:
       - function: eligibility
         models:
@@ -27,6 +28,7 @@ call:
           - canvas-fixture-dated-2024-01-01
           - canvas-fixture-dated
           - canvas-fixture-mixed
+          - stability.stable-image-inpaint-v1:0
       - function: eligibility
         models:
           - ''

@@ -16,7 +16,6 @@ use betterlite_bedrock::canvas_edits::types::{
 use betterlite_bedrock::model_routes::ParamMap;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_catalog_keys::ModelCostKeys;
-use betterlite_openai::api::image_contracts::records::ImageParams;
 use serde_json::{Value, json};
 
 use super::fixture::Catalog;
@@ -49,7 +48,7 @@ pub(super) fn observe(call: &Call, model_cost: &ParamMap, catalog: &Catalog) -> 
                     match answer {
                         Ok(ImageEditConfig::Stability) => json!({"config": "stability"}),
                         Ok(ImageEditConfig::NovaCanvas) => json!({"config": "nova_canvas"}),
-                        Err(error) => json!({"error": error.to_string()}),
+                        Err(error) => json!({"ok": false, "error": {"status": error.status()}}),
                     }
                 })
                 .collect();
@@ -59,35 +58,38 @@ pub(super) fn observe(call: &Call, model_cost: &ParamMap, catalog: &Catalog) -> 
 }
 
 fn map_answer(call: &MapCall) -> Value {
-    let mapped = map_openai_params(&options_of(&call.options), call.drop_params);
-    json!({
-        "mapped": rendered(&mapped.options),
-        "message": mapped.ignored_response_format.as_ref().map(IgnoredResponseFormat::message),
-    })
+    let mapped = map_openai_params(
+        &CanvasEditOptions::from_params(&call.options),
+        call.drop_params,
+    );
+    let message = mapped
+        .ignored_response_format
+        .as_ref()
+        .map(IgnoredResponseFormat::message);
+    json!({"mapped": mapped.options, "message": message})
 }
 
 fn transform_answer(call: &TransformCall) -> Value {
-    let mut options = options_of(&call.options);
+    let mut options = CanvasEditOptions::from_params(&call.options);
     if let Some(mask) = &call.mask {
-        options.insert("mask".to_owned(), mask_value(mask));
+        options.mask = Some(mask_value(mask));
     }
-    let mapped = map_openai_params(&options, call.drop_params);
     let image = call.image.as_ref().map(image_input);
     let request = CanvasEditRequestInput {
         prompt: call.prompt.as_deref(),
         image: image.as_ref(),
-        options: &mapped.options,
+        options: &options,
     };
     match transform_image_edit_request(&request) {
         Ok(prepared) => json!({"body": prepared.body, "files": prepared.files.len()}),
-        Err(error) => json!({"error": error.to_string()}),
+        Err(error) => json!({"ok": false, "error": {"status": error.status()}}),
     }
 }
 
 fn url_answer() -> Value {
     match ImageEditConfig::NovaCanvas.complete_url() {
         Ok(url) => json!({"url": url}),
-        Err(error) => json!({"error": error.to_string()}),
+        Err(error) => json!({"ok": false, "error": {"status": error.status()}}),
     }
 }
 
@@ -136,22 +138,6 @@ fn eligibility_answer(call: &ModelsCall, model_cost: &ParamMap, catalog: &Catalo
         ));
     }
     json!({"eligible": eligible})
-}
-
-fn options_of(options: &ImageParams) -> CanvasEditOptions {
-    options
-        .iter()
-        .map(|(name, value)| (name.clone(), CanvasEditValue::from(value.clone())))
-        .collect()
-}
-
-fn rendered(options: &CanvasEditOptions) -> Json {
-    Json::Object(
-        options
-            .iter()
-            .filter_map(|(name, value)| value.to_json().map(|json| (name.clone(), json)))
-            .collect(),
-    )
 }
 
 fn image_input(spec: &FileSpec) -> CanvasImageInput {

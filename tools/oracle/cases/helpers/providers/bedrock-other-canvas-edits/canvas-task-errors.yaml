@@ -9,48 +9,40 @@ call:
         image: {kind: bytes, data: img}
         mask: null
         options: {taskType: OUTPAINTING}
-        drop_params: false
       - function: transform
         prompt: cat
         image: {kind: bytes, data: img}
         mask: null
         options: {taskType: INPAINTING}
-        drop_params: false
       - function: transform
         prompt: cat
         image: {kind: bytes, data: img}
         mask: null
         options: {taskType: STYLE}
-        drop_params: false
       - function: transform
         prompt: cat
         image: {kind: bytes, data: img}
         mask: null
         options: {taskType: ' INPAINTING '}
-        drop_params: false
       - function: transform
         prompt: cat
         image: {kind: bytes, data: img}
         mask: null
         options: {taskType: inpainting, mask: m}
-        drop_params: false
       - function: transform
         prompt: cat
         image: {kind: bytes, data: img}
         mask: null
         options: {taskType: INPAINTING, maskPrompt: ''}
-        drop_params: false
       - function: transform
         prompt: cat
         image: {kind: bytes, data: img}
         mask: null
         options: {taskType: OUTPAINTING, maskPrompt: ''}
-        drop_params: false
       - function: transform
         prompt: null
         image: {kind: bytes, data: img}
         mask: null
         options: {taskType: STYLE}
-        drop_params: false
 env: {}
 compare: {ignore: []}

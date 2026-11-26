@@ -46,8 +46,6 @@ pub(crate) struct TransformCall {
     pub(crate) mask: Option<FileSpec>,
     #[serde(default)]
     pub(crate) options: ImageParams,
-    #[serde(default)]
-    pub(crate) drop_params: bool,
 }
 
 // The wheel reads a file-like value before this code sees it, so an image arrives as bytes.

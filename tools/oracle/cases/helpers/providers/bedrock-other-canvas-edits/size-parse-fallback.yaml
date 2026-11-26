@@ -33,30 +33,30 @@ call:
         image: {kind: bytes, data: img}
         mask: null
         options: {size: 10x20}
-        drop_params: false
       - function: transform
         prompt: cat
         image: {kind: bytes, data: img}
         mask: null
         options: {size: 10x20, width: 5}
-        drop_params: false
+      - function: transform
+        prompt: cat
+        image: {kind: bytes, data: img}
+        mask: null
+        options: {size: 10x20, height: 7}
       - function: transform
         prompt: cat
         image: {kind: bytes, data: img}
         mask: null
         options: {imageGenerationConfig: {seed: 1}, width: 9}
-        drop_params: false
       - function: transform
         prompt: cat
         image: {kind: bytes, data: img}
         mask: null
         options: {imageGenerationConfig: [1]}
-        drop_params: false
       - function: transform
         prompt: cat
         image: {kind: bytes, data: img}
         mask: null
         options: {taskType: BACKGROUND_REMOVAL, width: 8}
-        drop_params: false
 env: {}
 compare: {ignore: []}

@@ -9,7 +9,6 @@ call:
         image: {kind: bytes, data: img}
         mask: {kind: text, text: m}
         options: {taskType: INPAINTING, maskPrompt: mp}
-        drop_params: false
       - function: map
         options: {size: 10x20, n: 2}
         drop_params: false

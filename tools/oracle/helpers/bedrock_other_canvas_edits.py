@@ -63,7 +63,6 @@ class TransformCall(TypedDict):
     image: FileSpec | None
     mask: FileSpec | None
     options: dict[str, JsonValue]
-    drop_params: bool
 
 
 class EnvironmentCall(TypedDict):
@@ -164,8 +163,8 @@ def file_value(spec: FileSpec) -> Media:
 def url_answer() -> JsonValue:
     try:
         url = CONFIG.get_complete_url(MODEL, None, {})
-    except NotImplementedError as error:
-        return {"error": str(error)}
+    except NotImplementedError:
+        return {"ok": False, "error": {"status": None}}
     return {"url": url}
 
 
@@ -181,8 +180,7 @@ def map_answer(call: MapCall) -> JsonValue:
 def transform_answer(call: TransformCall) -> JsonValue:
     image_spec = call["image"]
     image = None if image_spec is None else file_value(image_spec)
-    mapped = CONFIG.map_openai_params(call["options"], MODEL, call["drop_params"])
-    optional: dict[str, JsonValue | Media] = dict(mapped)
+    optional: dict[str, JsonValue | Media] = dict(call["options"])
     mask_spec = call["mask"]
     if mask_spec is not None:
         optional["mask"] = file_value(mask_spec)
@@ -190,8 +188,8 @@ def transform_answer(call: TransformCall) -> JsonValue:
         body, files = CONFIG.transform_image_edit_request(
             MODEL, call["prompt"], image, optional, GenericLiteLLMParams(), NO_HEADERS
         )
-    except ValueError as error:
-        return {"error": str(error)}
+    except ValueError:
+        return {"ok": False, "error": {"status": None}}
     return {"body": MAPPED.validate_python(body), "files": len(files)}
 
 
@@ -212,27 +210,11 @@ def error_answer(call: ErrorClassCall) -> JsonValue:
     }
 
 
-def model_config(model: str) -> BaseImageEditConfig | None:
-    try:
-        return edit_config_for(model)
-    except ValueError:
-        return None
-
-
-def eligible(model: str) -> bool:
-    config = model_config(model)
-    match config:
-        case NovaConfig():
-            return True
-        case BaseImageEditConfig() | None:
-            return False
-
-
 def selected(model: str) -> JsonValue:
     try:
         config = edit_config_for(model)
-    except ValueError as error:
-        return {"error": str(error)}
+    except ValueError:
+        return {"ok": False, "error": {"status": None}}
     match config:
         case NovaConfig():
             return {"config": "nova_canvas"}
@@ -240,6 +222,15 @@ def selected(model: str) -> JsonValue:
             return {"config": "stability"}
         case BaseImageEditConfig():
             return {"config": "other"}
+
+
+def eligibility_answer(call: ModelsCall) -> JsonValue:
+    eligible: list[JsonValue] = []
+    for model in call["models"]:
+        eligible.append(
+            NovaConfig._is_nova_canvas_image_edit_model(model)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_edit/amazon_nova_canvas_image_edit_transformation.py#L223-L230
+        )
+    return {"eligible": eligible}
 
 
 def call_value(call: Call) -> JsonValue:
@@ -263,7 +254,7 @@ def call_value(call: Call) -> JsonValue:
         case "error_class":
             answer = error_answer(call)
         case "eligibility":
-            answer = {"eligible": [eligible(model) for model in call["models"]]}
+            answer = eligibility_answer(call)
         case "selection":
             answer = {"selected": [selected(model) for model in call["models"]]}
     return answer
