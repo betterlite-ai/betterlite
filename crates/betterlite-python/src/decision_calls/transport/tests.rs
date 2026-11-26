@@ -47,7 +47,7 @@ fn outbound_preserves_request_fields_and_uses_the_read_deadline() {
     assert_eq!(outbound.deadline, Duration::from_secs(3));
     assert!(matches!(
         outbound.body,
-        RequestBody::Json(body) if body == b"{\"code\":\"print(1)\"}"
+        RequestBody::Json(body) if body.as_slice() == b"{\"code\":\"print(1)\"}"
     ));
 }
 
