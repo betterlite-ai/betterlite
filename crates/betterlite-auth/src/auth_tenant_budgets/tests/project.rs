@@ -1,3 +1,4 @@
+use rstest::rstest;
 use secrecy::ExposeSecret as _;
 use tracing::Level;
 
@@ -82,63 +83,33 @@ async fn project_counter_key_and_fallback() {
     assert_eq!(reads[1].fallback_spend, decimal("4.5"));
 }
 
+#[rstest]
+#[case::below(9.99_f64, 10.0_f64, false)]
+#[case::equality(10.0_f64, 10.0_f64, true)]
+#[case::zero(0.0_f64, 0.0_f64, true)]
+#[case::positive_spend_at_zero(0.01_f64, 0.0_f64, true)]
 #[tokio::test]
-async fn project_equality_and_zero_deny() {
-    let below = ScriptedSpend::new(vec![number(9.99_f64)]);
-    let below_recorder = Recorder::default();
-    let below_admission = admission(&below, &below_recorder);
-    max_budget_check(
-        &project(9.99_f64, Some((Some(10.0_f64), None))),
-        None,
-        &below_admission,
-    )
-    .await
-    .expect("a cent below the ceiling passes");
-    assert_eq!(below.reads().len(), 1);
-    equality_denies().await;
-    zero_denies().await;
-    zero_ceiling_denies_spend().await;
-}
-
-async fn equality_denies() {
-    let reader = ScriptedSpend::new(vec![number(10.0_f64)]);
+async fn project_equality_and_zero_deny(
+    #[case] spend: f64,
+    #[case] ceiling: f64,
+    #[case] denied: bool,
+) {
+    let reader = ScriptedSpend::new(vec![number(spend)]);
     let recorder = Recorder::default();
     let admission = admission(&reader, &recorder);
-    let error = max_budget_check(
-        &project(10.0_f64, Some((Some(10.0_f64), None))),
+    let outcome = max_budget_check(
+        &project(spend, Some((Some(ceiling), None))),
         None,
         &admission,
     )
     .await;
-    assert!(matches!(error, Err(TenantBudgetError::Denied(_))));
-}
-
-async fn zero_denies() {
-    let reader = ScriptedSpend::new(vec![number(0.0_f64)]);
-    let recorder = Recorder::default();
-    let admission = admission(&reader, &recorder);
-    let error = max_budget_check(
-        &project(0.0_f64, Some((Some(0.0_f64), None))),
-        None,
-        &admission,
-    )
-    .await;
-    assert!(matches!(error, Err(TenantBudgetError::Denied(_))));
-}
-
-async fn zero_ceiling_denies_spend() {
-    let reader = ScriptedSpend::new(vec![number(0.01_f64)]);
-    let recorder = Recorder::default();
-    let admission = admission(&reader, &recorder);
-    let error = max_budget_guard(
-        "proj-1",
-        decimal("0.01"),
-        Some(Money::Finite(decimal("0"))),
-        None,
-        &admission,
-    )
-    .await;
-    assert!(matches!(error, Err(TenantBudgetError::Denied(_))));
+    if denied {
+        assert!(matches!(outcome, Err(TenantBudgetError::Denied(_))));
+    } else {
+        outcome.expect("a cent below the ceiling passes");
+    }
+    assert_eq!(reader.reads().len(), 1);
+    assert!(recorder.take().is_empty());
 }
 
 #[tokio::test]
