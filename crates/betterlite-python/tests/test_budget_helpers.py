@@ -947,7 +947,7 @@ def test_budget_tls_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SSL_SECURITY_LEVEL", "DEFAULT@SECLEVEL=1")
     curves = SettingRecorder()
     # ast-grep-ignore: no-string-mocking
-    monkeypatch.setattr(ssl.SSLContext, "set_ecdh_curve", curves)
+    monkeypatch.setattr("ssl.SSLContext.set_ecdh_curve", curves)
     monkeypatch.setenv("SSL_ECDH_CURVE", "curve-b166")
     assert ssl_configuration() is not False
     assert curves.values == ["curve-b166"]
