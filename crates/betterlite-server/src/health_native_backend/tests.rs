@@ -29,6 +29,7 @@ use crate::health_probe_modes::evaluation::evaluation_call;
 use crate::health_probe_modes::logging::HealthProbeLogging;
 use crate::health_probe_modes::response::{HealthCheckResponse, health_check_response};
 
+mod realtime;
 pub(super) mod support;
 
 const OCR_ANSWER: &[u8] =
