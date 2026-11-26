@@ -217,11 +217,10 @@ fn registered_routes_reach_the_stage() {
     request.extensions_mut().insert(state);
     let master_key = SecretString::from("secret-master-key".to_owned());
     let context = master_context(&master_key);
-    let StageInput::AuthVirtualKeyRoutes(stage) = stage_input(&request, Some(&context)).unwrap()
-    else {
+    let Ok(StageInput::AuthVirtualKeyRoutes(input)) = stage_input(&request, Some(&context)) else {
         panic!("the virtual key route constructor builds its own stage input");
     };
-    let registration = stage
+    let registration = input
         .registry
         .get_registered("/team-pass", Some("POST"))
         .unwrap();
