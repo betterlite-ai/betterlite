@@ -1,0 +1,32 @@
+name: auth-jwt-keys-jwks-unavailable-503
+native_feature_eligibility: true
+# betterlite refuses general_settings.enable_jwt_auth until B10006, so only the LiteLLM child's root sets it
+config: |
+  general_settings:
+    master_key: oracle-master
+config_files:
+  litellm.yaml: |
+    general_settings:
+      master_key: oracle-master
+      enable_jwt_auth: true
+env:
+  # nothing listens on port 1, so every fetch is a transport failure
+  JWT_PUBLIC_KEY_URL: "http://127.0.0.1:1/jwks"
+request:
+  method: POST
+  path: /v1/chat/completions
+  headers:
+    content-type: application/json
+    authorization: Bearer eyJhbGciOiJSUzI1NiIsImtpZCI6InVua25vd24iLCJ0eXAiOiJKV1QifQ.eyJzdWIiOiJvcmFjbGUiLCJpc3MiOiJodHRwczovL2lkcC5leGFtcGxlLmNvbSJ9.c2ln
+  body:
+    model: oracle-model
+    messages:
+      - {role: user, content: hi}
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore:
+    - pointer: /error/message
+      why: betterlite writes its own message
