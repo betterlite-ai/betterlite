@@ -63,11 +63,8 @@ struct ScriptedMappings {
 
 impl ScriptedMappings {
     fn single_where(&self) -> Value {
-        let Some(tokens) = self.tokens() else {
-            return Value::Null;
-        };
-        tokens
-            .first()
+        self.tokens()
+            .and_then(|tokens| tokens.into_iter().next())
             .map_or(Value::Null, |token| json!({"token": token}))
     }
 
