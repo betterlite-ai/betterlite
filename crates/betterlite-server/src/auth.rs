@@ -56,7 +56,7 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use betterlite_auth::auth_request_models::MODEL_ROUTING_HEADER_NAME;
-use betterlite_auth::auth_request_models::catalog::{EmptyCatalog, RequestModelResolver};
+use betterlite_auth::auth_request_models::catalog::RequestModelResolver;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 
@@ -64,7 +64,7 @@ use crate::auth::auth_identity::{AuthBackend, AuthContext, StageFailure, StageIn
 use crate::auth::auth_model_patterns::{
     ModelPatternStageInput, max_recurse_depth_for_request, rule_for_request,
 };
-use crate::auth::auth_request_models::{CoreDecoders, RequestModelStageInput, resolve};
+use crate::auth::auth_request_models::{RequestModelStageInput, resolve};
 use crate::auth::auth_resource_grants::{
     ResourceGrantStageInput, database_for_request, rule_for_request as grant_rule_for_request,
 };
@@ -136,26 +136,10 @@ fn stage_input(
         AuthBackend::AuthEndUsers => Ok(StageInput::AuthEndUsers(Box::new(
             auth_end_users::stage_input(request, authenticated)?,
         ))),
-        AuthBackend::AuthContextSources => Ok(StageInput::AuthContextSources(Box::new(
-            auth_context_sources_stage_input(request, authenticated, resolver, body)?,
-        ))),
+        AuthBackend::AuthContextSources => {
+            auth_context_sources::stage_input(request, authenticated, resolver, body)
+        }
     }
-}
-
-fn auth_context_sources_stage_input(
-    request: &Request<Body>,
-    authenticated: Option<&AuthContext>,
-    resolver: &Arc<RequestModelResolver>,
-    body: Option<&Bytes>,
-) -> Result<RequestModelStageInput, StageFailure> {
-    let context = authenticated
-        .cloned()
-        .ok_or(AuthenticationFailure::Missing)?;
-    let mut stage = model_stage_input(request, context, resolver);
-    stage.body = body
-        .and_then(|bytes| serde_json::from_slice::<JsonObject>(bytes).ok())
-        .unwrap_or_default();
-    Ok(stage)
 }
 
 fn safety_stage_input(
@@ -219,7 +203,7 @@ fn resolver_for(request: &Request<Body>) -> Arc<RequestModelResolver> {
     request
         .extensions()
         .get::<Arc<RequestModelResolver>>()
-        .map_or_else(default_resolver, Arc::clone)
+        .map_or_else(auth_context_sources::default_resolver, Arc::clone)
 }
 
 // stage_input cannot await while holding the request borrow (Request<Body> is Send but not Sync), so the caller awaits the stage prefetch on the owned input
@@ -255,8 +239,8 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
         | StageInput::RequestBodySafety(_)
         | StageInput::AuthRequestModels(_)
         | StageInput::AuthModelPatterns(_)
-        | StageInput::AuthResourceGrants(_)
-        | StageInput::AuthContextSources(_)) => Ok(other),
+        | StageInput::AuthContextSources(_)
+        | StageInput::AuthResourceGrants(_)) => Ok(other),
     }
 }
 
@@ -273,12 +257,6 @@ fn resource_grant_stage_input(
         database: database_for_request(request),
     };
     Ok(StageInput::AuthResourceGrants(Box::new(stage)))
-}
-fn default_resolver() -> Arc<RequestModelResolver> {
-    Arc::new(RequestModelResolver {
-        catalog: Arc::new(EmptyCatalog),
-        decoders: Arc::new(CoreDecoders),
-    })
 }
 fn model_stage_input(
     request: &Request<Body>,

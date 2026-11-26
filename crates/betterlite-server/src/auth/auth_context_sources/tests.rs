@@ -85,14 +85,15 @@ fn stage_is_registered() {
         .body(Body::from(r#"{"model": "gpt-4"}"#))
         .expect("the request builds");
     let body = Bytes::from_static(br#"{"model": "gpt-4"}"#);
-    let input = stage_input(
+    let Ok(input) = stage_input(
         AuthBackend::AuthContextSources,
         &request,
         Some(&master_context(&master_key)),
         &app.auth_request_models.resolver,
         Some(&body),
-    )
-    .unwrap_or_else(|| panic!("the request context stage input builds"));
+    ) else {
+        panic!("the request context stage input builds")
+    };
     let StageInput::AuthContextSources(stage) = &input else {
         panic!("the input carries the request model stage")
     };
