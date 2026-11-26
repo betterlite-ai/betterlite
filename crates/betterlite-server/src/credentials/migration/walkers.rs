@@ -8,7 +8,7 @@ use betterlite_db::encryption_scan::{
 use secrecy::ExposeSecret as _;
 
 use super::callback::CallbackTransform;
-use super::store::{CallbackTable, MigrationStore, SettingsRow};
+use super::store::{CallbackRow, CallbackTable, MigrationStore, SettingsRow};
 
 pub(super) struct Walkers<'run, S> {
     pub(super) store: &'run S,
@@ -21,25 +21,23 @@ impl<S: MigrationStore> Walkers<'_, S> {
         row: SettingsRow<'_>,
         dry_run: bool,
     ) -> Result<LocationReport, S::Error> {
-        let mut report = empty_report(row.location());
+        let mut report = LocationReport {
+            location: row.location().to_owned(),
+            scanned: 0,
+            migrated: 0,
+            already_v2: 0,
+            plaintext: 0,
+            undecryptable: 0,
+            legacy: 0,
+        };
         let Some(stored) = self.store.settings_row(row).await? else {
             return Ok(report);
         };
         let Some(mut settings) = mapping::<S>(stored)? else {
             return Ok(report);
         };
-        let fields: Vec<String> = match row {
-            SettingsRow::Config { fields, .. } => {
-                fields.iter().map(|field| (*field).to_owned()).collect()
-            }
-            SettingsRow::Sso => settings
-                .keys()
-                .filter(|field| nonempty_string(&settings, (*field).as_str()))
-                .cloned()
-                .collect(),
-        };
         let mut changed = false;
-        for field in fields {
+        for field in row_fields(row, &settings) {
             let outcome = migrate_field(&mut settings, &field, self.cipher, dry_run)
                 .map_err(S::Error::from)?;
             if matches!(outcome, FieldOutcome::Migrated) {
@@ -64,36 +62,58 @@ impl<S: MigrationStore> Walkers<'_, S> {
     where
         T: CallbackTransform + Sync,
     {
-        let mut report = empty_report(table.location());
+        let mut report = LocationReport {
+            location: table.location().to_owned(),
+            scanned: 0,
+            migrated: 0,
+            already_v2: 0,
+            plaintext: 0,
+            undecryptable: 0,
+            legacy: 0,
+        };
         for row in self.store.callback_rows(table).await? {
-            let Some(metadata) = row.metadata.as_ref() else {
-                continue;
-            };
-            let counts = classify_row(metadata, self.cipher).map_err(S::Error::from)?;
-            checked_add(&mut report.scanned, counts.scanned).map_err(S::Error::from)?;
-            checked_add(&mut report.already_v2, counts.already_v2).map_err(S::Error::from)?;
-            checked_add(&mut report.plaintext, counts.plaintext).map_err(S::Error::from)?;
-            if counts.legacy == 0 {
-                continue;
-            }
-            if dry_run {
-                checked_add(&mut report.legacy, counts.legacy).map_err(S::Error::from)?;
-                continue;
-            }
-            let Ok(re_encrypted) = transform.reencrypt(metadata, self.cipher) else {
-                tracing::warn!(
-                    "Skipping {} callback_vars (transform failed)",
-                    table.location()
-                );
-                checked_add(&mut report.undecryptable, counts.legacy).map_err(S::Error::from)?;
-                continue;
-            };
-            checked_add(&mut report.migrated, counts.legacy).map_err(S::Error::from)?;
-            self.store
-                .save_callback_metadata(table, &row.key, &re_encrypted)
+            self.migrate_callback_row(table, transform, &row, dry_run, &mut report)
                 .await?;
         }
         Ok(report)
+    }
+
+    // A row's legacy total comes from classification alone, so it holds even when the transform later fails.
+    async fn migrate_callback_row<T>(
+        &self,
+        table: CallbackTable,
+        transform: &T,
+        row: &CallbackRow,
+        dry_run: bool,
+        report: &mut LocationReport,
+    ) -> Result<(), S::Error>
+    where
+        T: CallbackTransform + Sync,
+    {
+        let Some(metadata) = row.metadata.as_ref() else {
+            return Ok(());
+        };
+        let counts = classify_row(metadata, self.cipher).map_err(S::Error::from)?;
+        checked_add(&mut report.scanned, counts.scanned).map_err(S::Error::from)?;
+        checked_add(&mut report.already_v2, counts.already_v2).map_err(S::Error::from)?;
+        checked_add(&mut report.plaintext, counts.plaintext).map_err(S::Error::from)?;
+        if counts.legacy == 0 {
+            return Ok(());
+        }
+        if dry_run {
+            return checked_add(&mut report.legacy, counts.legacy).map_err(S::Error::from);
+        }
+        let Ok(re_encrypted) = transform.reencrypt(metadata, self.cipher) else {
+            tracing::warn!(
+                "Skipping {} callback_vars (transform failed)",
+                table.location()
+            );
+            return checked_add(&mut report.undecryptable, counts.legacy).map_err(S::Error::from);
+        };
+        checked_add(&mut report.migrated, counts.legacy).map_err(S::Error::from)?;
+        self.store
+            .save_callback_metadata(table, &row.key, &re_encrypted)
+            .await
     }
 }
 
@@ -166,6 +186,20 @@ where
             checked_add(&mut report.scanned, 1).map_err(S::Error::from)?;
             checked_add(&mut report.migrated, 1).map_err(S::Error::from)
         }
+    }
+}
+
+// Config rows migrate their listed keys; SSO migrates every non-empty string field it holds.
+fn row_fields(row: SettingsRow<'_>, settings: &BTreeMap<String, MigrationJson>) -> Vec<String> {
+    match row {
+        SettingsRow::Config { fields, .. } => {
+            fields.iter().map(|field| (*field).to_owned()).collect()
+        }
+        SettingsRow::Sso => settings
+            .keys()
+            .filter(|field| nonempty_string(settings, field.as_str()))
+            .cloned()
+            .collect(),
     }
 }
 
@@ -245,16 +279,4 @@ fn checked_add(counter: &mut u64, amount: u64) -> Result<(), ScanError> {
         .checked_add(amount)
         .ok_or(ScanError::CounterOverflow)?;
     Ok(())
-}
-
-fn empty_report(location: &str) -> LocationReport {
-    LocationReport {
-        location: location.to_owned(),
-        scanned: 0,
-        migrated: 0,
-        already_v2: 0,
-        plaintext: 0,
-        undecryptable: 0,
-        legacy: 0,
-    }
 }
