@@ -99,7 +99,10 @@ fn failure_class(
 ) -> ErrorClass {
     match error {
         VideoGenerationCallError::FieldType { field, expected } => {
-            field_type_class(field, expected, model, provider)
+            ErrorClass::BadRequest(Box::new(ResponseDetails::with_status(
+                field_type_context(field, expected, model, provider),
+                None,
+            )))
         }
         VideoGenerationCallError::Resolution(_) => {
             resolution_class(message, model, provider, redactor)
@@ -114,7 +117,7 @@ fn failure_class(
         | VideoGenerationCallError::Timeout { .. }
         | VideoGenerationCallError::Logging(_)
         | VideoGenerationCallError::Suspended => {
-            local_exception_class(message, model, provider, redactor)
+            exception_class(message, model, provider, VALUE_ERROR, None, false, redactor)
         }
         VideoGenerationCallError::Transport {
             status_code,
@@ -130,13 +133,13 @@ fn failure_class(
     }
 }
 
-fn field_type_class(
+fn field_type_context(
     field: &str,
     expected: &str,
     model: Option<&str>,
     provider: &str,
-) -> ErrorClass {
-    let context = ErrorContext {
+) -> ErrorContext {
+    ErrorContext {
         message: format!("{field} must be {expected}"),
         model: model.map(str::to_owned),
         provider: Some(provider.to_owned()),
@@ -145,18 +148,7 @@ fn field_type_class(
         body_type: None,
         body_param: Some(field.to_owned()),
         body_code: None,
-    };
-    ErrorClass::BadRequest(Box::new(ResponseDetails::with_status(context, None)))
-}
-
-fn local_exception_class(
-    message: &str,
-    model: Option<&str>,
-    provider: &str,
-    redactor: &Redactor,
-) -> ErrorClass {
-    let raw = raw_exception(message, model, provider, VALUE_ERROR);
-    dispatch(&DispatchInput::Raw(Box::new(raw)), redactor)
+    }
 }
 
 // get_llm_provider wraps its failures: the original model is appended and the class is a 400
@@ -166,13 +158,19 @@ fn resolution_class(
     provider: &str,
     redactor: &Redactor,
 ) -> ErrorClass {
-    let text = format!(
+    let message = format!(
         "GetLLMProvider Exception - {message}\n\noriginal model: {}",
         model.unwrap_or("None")
     );
-    let mut raw = raw_exception(&text, model, provider, BAD_REQUEST);
-    raw.status_code = Some(400);
-    dispatch(&DispatchInput::Raw(Box::new(raw)), redactor)
+    exception_class(
+        &message,
+        model,
+        provider,
+        BAD_REQUEST,
+        Some(400),
+        false,
+        redactor,
+    )
 }
 
 fn provider_class(message: &str, model: Option<&str>, provider: &str) -> ErrorClass {
@@ -191,9 +189,37 @@ fn transport_class(
     status: (Option<u16>, bool),
     redactor: &Redactor,
 ) -> ErrorClass {
-    let mut raw = raw_exception(message, model, provider, "");
-    raw.status_code = status.0;
-    raw.status_code_is_synthesized = status.1;
+    let (status_code, status_code_is_synthesized) = status;
+    exception_class(
+        message,
+        model,
+        provider,
+        "",
+        status_code,
+        status_code_is_synthesized,
+        redactor,
+    )
+}
+
+fn exception_class(
+    message: &str,
+    model: Option<&str>,
+    provider: &str,
+    exception_type: &str,
+    status_code: Option<u16>,
+    status_code_is_synthesized: bool,
+    redactor: &Redactor,
+) -> ErrorClass {
+    let raw = RawException {
+        model: model.unwrap_or_default().to_owned(),
+        custom_llm_provider: provider.to_owned(),
+        error_str: message.to_owned(),
+        status_code,
+        status_code_is_synthesized,
+        message: Some(message.to_owned()),
+        body: None,
+        exception_type: exception_type.to_owned(),
+    };
     dispatch(&DispatchInput::Raw(Box::new(raw)), redactor)
 }
 
@@ -243,23 +269,5 @@ where
         message: error.to_string(),
         status_code: None,
         status_code_is_synthesized: false,
-    }
-}
-
-fn raw_exception(
-    message: &str,
-    model: Option<&str>,
-    provider: &str,
-    exception_type: &str,
-) -> RawException {
-    RawException {
-        model: model.unwrap_or_default().to_owned(),
-        custom_llm_provider: provider.to_owned(),
-        error_str: message.to_owned(),
-        status_code: None,
-        status_code_is_synthesized: false,
-        message: Some(message.to_owned()),
-        body: None,
-        exception_type: exception_type.to_owned(),
     }
 }
