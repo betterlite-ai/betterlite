@@ -24,18 +24,6 @@ pub enum ToolNameExtractor {
     Responses,
 }
 
-impl ToolNameExtractor {
-    fn extract(self, data: &JsonObject) -> Result<Vec<String>, ExtractionError> {
-        match self {
-            Self::AnthropicBody => anthropic_body_tool_names(data),
-            Self::Chat => chat_tool_names(data),
-            Self::Gemini => gemini_tool_names(data),
-            Self::Mcp => Ok(mcp_tool_names(data)),
-            Self::Responses => responses_tool_names(data),
-        }
-    }
-}
-
 #[derive(Clone, Debug)]
 pub struct ToolNameExtractors {
     pub routes: Arc<dyn ToolRouteCallTypes>,
@@ -88,14 +76,20 @@ pub fn extract_request_tool_names(
     extractors: &ToolNameExtractors,
 ) -> Result<Vec<String>, ExtractionError> {
     for source_name in extractors.routes.call_types_for_route(route) {
-        if let Some(extractor) = extractors.standalone.get(source_name.as_str()) {
-            return extractor.extract(data);
-        }
-        if let Some(handler) = extractors.handlers.get(source_name.as_str()) {
-            let names = handler.extract(data)?;
-            if !names.is_empty() {
-                return Ok(names);
-            }
+        let standalone = extractors.standalone.get(source_name.as_str());
+        let handler = extractors.handlers.get(source_name.as_str());
+        let Some(extractor) = standalone.or(handler) else {
+            continue;
+        };
+        let names = match *extractor {
+            ToolNameExtractor::AnthropicBody => anthropic_body_tool_names(data),
+            ToolNameExtractor::Chat => chat_tool_names(data),
+            ToolNameExtractor::Gemini => gemini_tool_names(data),
+            ToolNameExtractor::Mcp => Ok(mcp_tool_names(data)),
+            ToolNameExtractor::Responses => responses_tool_names(data),
+        }?;
+        if !names.is_empty() || standalone.is_some() {
+            return Ok(names);
         }
     }
     Ok(Vec::new())
