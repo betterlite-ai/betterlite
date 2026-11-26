@@ -65,16 +65,16 @@ where
 #[tokio::test]
 async fn all_budget_error_fields_and_default_422() {
     let recorder = Recorder::default();
-    let project_reader = ScriptedSpend::new(vec![number(11.0)]);
+    let project_reader = ScriptedSpend::new(vec![number(11.0_f64)]);
     let project_admission = admission(&project_reader, &recorder);
-    let project_value = project_row(11.0, Some((Some(10.0), None)));
+    let project_value = project_row(11.0_f64, Some((Some(10.0_f64), None)));
     let project_future = project_check(&project_value, None, &project_admission);
     denial_of(project_future, "project", "proj-1", "11", "10").await;
 
-    let org_row = organization_row("acme", 3.0, Some(10.0));
+    let org_row = organization_row("acme", 3.0_f64, Some(10.0_f64));
     let org_world = Arc::new(OrgWorld::with_row(&org_row));
     let org_lookup = lookup(&org_world);
-    let org_reader = ScriptedSpend::new(vec![number(10.0)]);
+    let org_reader = ScriptedSpend::new(vec![number(10.0_f64)]);
     let org_admission = admission(&org_reader, &recorder);
     let mut org_token = token(json!({"token": "sk-org", "org_id": "org-1"}));
     let org_team = team(None);
@@ -86,18 +86,21 @@ async fn all_budget_error_fields_and_default_422() {
     );
     denial_of(org_future, "organization", "org-1", "10", "10").await;
 
-    let tag_world = TagWorld::new(vec![tag_with_budget("t", 0.0, Some(10.0))], vec![]);
+    let tag_world = TagWorld::new(vec![tag_with_budget("t", 0.0_f64, Some(10.0_f64))], vec![]);
     let tag_sources = tenant_sources(&tag_world, true);
     let tag_names = ["t".to_owned()];
-    let tag_reader = ScriptedSpend::new(vec![number(10.01)]);
+    let tag_reader = ScriptedSpend::new(vec![number(10.01_f64)]);
     let tag_admission = admission(&tag_reader, &recorder);
     let tag_future = tag_check(&tag_names, &tag_sources, &tag_admission);
     denial_of(tag_future, "tag", "t", "10.01", "10").await;
 
-    let group_world = TagWorld::new(vec![], vec![group_with_budget("g", 10.0, Some(10.0))]);
+    let group_world = TagWorld::new(
+        vec![],
+        vec![group_with_budget("g", 10.0_f64, Some(10.0_f64))],
+    );
     let group_sources = tenant_sources(&group_world, true);
     let group_names = ["g".to_owned()];
-    let group_reader = ScriptedSpend::new(vec![number(10.0)]);
+    let group_reader = ScriptedSpend::new(vec![number(10.0_f64)]);
     let group_admission = admission(&group_reader, &recorder);
     let group_future = group_check(&group_names, &group_sources, &group_admission);
     denial_of(group_future, "model_access_group", "g", "10", "10").await;
