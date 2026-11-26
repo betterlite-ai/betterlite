@@ -205,6 +205,7 @@ async fn job_spend_below_the_cap_runs_every_arm() {
     };
     run_shadow_eval(&job, &fixture.sample(), &deps).await;
     assert!(funnel.events().is_empty());
+    assert_eq!(job_spend.reads().len(), 1);
     assert_eq!(
         calls.shadow_targets(),
         vec!["router-a".to_owned(), "router-b".to_owned()]

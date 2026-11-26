@@ -471,6 +471,7 @@ pub(crate) struct ShadowCallLog {
     pub(crate) target_model: String,
     pub(crate) messages: Vec<Json>,
     pub(crate) shadow_params: IndexMap<String, Json>,
+    pub(crate) parent_metadata: IndexMap<String, Json>,
 }
 
 impl ShadowCallLog {
@@ -479,6 +480,7 @@ impl ShadowCallLog {
             target_model: request.target_model.to_owned(),
             messages: request.messages.to_vec(),
             shadow_params: request.shadow_params.clone(),
+            parent_metadata: request.parent_metadata.clone(),
         }
     }
 }
@@ -486,20 +488,11 @@ impl ShadowCallLog {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct JudgeCallLog {
     pub(crate) judge_model: String,
+    pub(crate) messages: Vec<Json>,
     pub(crate) real_text: String,
     pub(crate) shadow_text: String,
     pub(crate) tools: Json,
-}
-
-impl JudgeCallLog {
-    fn of(request: &JudgeRequest<'_>) -> Self {
-        Self {
-            judge_model: request.judge_model.to_owned(),
-            real_text: request.real_text.to_owned(),
-            shadow_text: request.shadow_text.to_owned(),
-            tools: request.tools.clone(),
-        }
-    }
+    pub(crate) parent_metadata: IndexMap<String, Json>,
 }
 
 pub(crate) struct CallsFake {
@@ -562,10 +555,15 @@ impl ArmCalls for CallsFake {
     }
 
     async fn judge(&self, request: &JudgeRequest<'_>) -> ArmStage<JudgeVerdict> {
-        self.judge_calls
-            .lock()
-            .unwrap()
-            .push(JudgeCallLog::of(request));
+        let log = JudgeCallLog {
+            judge_model: request.judge_model.to_owned(),
+            messages: request.messages.to_vec(),
+            real_text: request.real_text.to_owned(),
+            shadow_text: request.shadow_text.to_owned(),
+            tools: request.tools.clone(),
+            parent_metadata: request.parent_metadata.clone(),
+        };
+        self.judge_calls.lock().unwrap().push(log);
         Self::next(&self.judge_answers, "judge")
     }
 }

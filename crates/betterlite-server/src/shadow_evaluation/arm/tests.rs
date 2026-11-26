@@ -46,7 +46,14 @@ fn reverse(job: &mut ActiveShadowEvalJob) {
 #[tokio::test]
 async fn a_successful_arm_records_the_verdict_and_bills_every_leg() {
     let job = eval_job("job-1", &[ARM], None);
-    let fixture = SampleFixture::new();
+    let mut fixture = SampleFixture::new();
+    fixture
+        .shadow_params
+        .insert("temperature".to_owned(), json("0.2"));
+    fixture.parent_metadata.insert(
+        "user_api_key_team_id".to_owned(),
+        Json::Text("team-1".to_owned()),
+    );
     let calls = CallsFake::new(
         vec![Answer::Reply(shadow_reply())],
         vec![Answer::Reply(judge_verdict("shadow"))],
@@ -85,12 +92,16 @@ async fn a_successful_arm_records_the_verdict_and_bills_every_leg() {
     assert_eq!(shadow_calls.len(), 1);
     assert_eq!(shadow_calls[0].target_model, ARM);
     assert_eq!(shadow_calls[0].messages, fixture.messages);
+    assert_eq!(shadow_calls[0].shadow_params, fixture.shadow_params);
+    assert_eq!(shadow_calls[0].parent_metadata, fixture.parent_metadata);
     let judge_calls = calls.judge_calls();
     assert_eq!(judge_calls.len(), 1);
     assert_eq!(judge_calls[0].judge_model, "judge-model");
     assert_eq!(judge_calls[0].real_text, "real answer");
     assert_eq!(judge_calls[0].shadow_text, "shadow answer");
     assert_eq!(judge_calls[0].tools, Json::Null);
+    assert_eq!(judge_calls[0].messages, fixture.messages);
+    assert_eq!(judge_calls[0].parent_metadata, fixture.parent_metadata);
 }
 
 #[tokio::test]
