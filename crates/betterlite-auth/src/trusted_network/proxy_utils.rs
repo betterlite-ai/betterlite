@@ -61,10 +61,9 @@ pub fn require_trusted_proxy_request(
             "rejected identity headers from an untrusted direct client"
         );
         // the message embeds Python's repr of the peer: quoted for a host string, bare None when absent
-        let direct = match request.peer {
-            Some(host) => format!("'{host}'"),
-            None => "None".to_owned(),
-        };
+        let direct = request
+            .peer
+            .map_or_else(|| "None".to_owned(), |host| format!("'{host}'"));
         return Err(TrustedProxyRequirementError::Untrusted {
             feature: feature_name.to_owned(),
             direct,
