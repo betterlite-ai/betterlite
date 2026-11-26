@@ -683,7 +683,7 @@ fn empty_short_mask() {
     assert_eq!(mask_user_id(""), "***");
     assert_eq!(mask_user_id("a"), "***");
     assert_eq!(mask_user_id("abcd"), "***");
-    assert_eq!(mask_user_id("éééé"), "***");
+    assert_eq!(mask_user_id("\u{e9}\u{e9}\u{e9}\u{e9}"), "***");
 }
 
 #[rstest]
@@ -699,7 +699,10 @@ fn five_to_eight_all_masked(#[case] user_id: &str, #[case] masked: &str) {
 fn long_id_six_two_visible() {
     assert_eq!(mask_user_id("abcdefghi"), "abcdef*hi");
     assert_eq!(mask_user_id("alice-long-id"), "alice-*****id");
-    assert_eq!(mask_user_id("ééééééééé"), "éééééé*éé");
+    assert_eq!(
+        mask_user_id("\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}"),
+        "\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}*\u{e9}\u{e9}"
+    );
 }
 
 #[test]
@@ -966,5 +969,5 @@ fn template_placeholders_and_literals() {
     assert!(template_matches("/x/{value:}", "/x/{value:}"));
     assert!(!template_matches("/x/{value:}", "/x/7"));
     assert!(template_matches("/x/{literal", "/x/{literal"));
-    assert!(!template_matches("{a:int}{b:int}", "1é"));
+    assert!(!template_matches("{a:int}{b:int}", "1\u{e9}"));
 }

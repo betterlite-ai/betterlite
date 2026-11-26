@@ -92,7 +92,7 @@ pub(crate) fn run_stage(stage: &RoutePolicyStageInput) -> Result<AuthContext, Bo
         .0
         .as_ref()
         .or(stage.token.as_ref());
-    let Some(token) = token else {
+    let Some(caller) = token else {
         return Ok(stage.context.clone());
     };
     let input = RoutePolicyInput {
@@ -100,7 +100,7 @@ pub(crate) fn run_stage(stage: &RoutePolicyStageInput) -> Result<AuthContext, Bo
         method: stage.method.as_deref(),
         user_id_query: stage.user_id_query.as_deref(),
         body: &stage.body,
-        token: Some(token),
+        token: Some(caller),
         user: stage.user.as_ref(),
         registry: &stage.registry,
         admin_only_routes: &stage.admin_only_routes,

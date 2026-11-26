@@ -35,16 +35,16 @@ const UNKNOWN: &str = "unknown";
 
 // the non-admin chain reads the route, the caller's key and user row, and the config and registrations that grant access
 #[derive(Debug)]
-pub struct RoutePolicyInput<'a> {
-    pub route: &'a str,
-    pub method: Option<&'a str>,
-    pub user_id_query: Option<&'a str>,
-    pub body: &'a JsonObject,
-    pub token: Option<&'a UserAPIKeyAuth>,
-    pub user: Option<&'a LiteLLMUserTable>,
-    pub registry: &'a PassThroughRegistry,
-    pub admin_only_routes: &'a [String],
-    pub team_allowed_routes: &'a [String],
+pub struct RoutePolicyInput<'request> {
+    pub route: &'request str,
+    pub method: Option<&'request str>,
+    pub user_id_query: Option<&'request str>,
+    pub body: &'request JsonObject,
+    pub token: Option<&'request UserAPIKeyAuth>,
+    pub user: Option<&'request LiteLLMUserTable>,
+    pub registry: &'request PassThroughRegistry,
+    pub admin_only_routes: &'request [String],
+    pub team_allowed_routes: &'request [String],
 }
 
 // auth_checks._is_api_route_allowed: the token must exist even for an admin, and only a live proxy_admin row skips the chain

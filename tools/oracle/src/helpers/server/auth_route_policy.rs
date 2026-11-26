@@ -80,52 +80,58 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let token = caller_key(input.token.as_ref())?;
-        let user = user_row(input.user.as_ref())?;
-        let registry = PassThroughRegistry {
-            root_path: String::new(),
-            registrations: Vec::new(),
-        };
-        let team_allowed_routes = input.team_allowed_routes.as_deref().unwrap_or_default();
-        let method = input.method.as_deref().map(str::to_uppercase);
-        Ok(match input.function {
-            Function::RouteAllowed => {
-                let policy = RoutePolicyInput {
-                    route: &input.route,
-                    method: method.as_deref(),
-                    user_id_query: input.user_id_query.as_deref(),
-                    body: &input.body,
-                    token: token.as_ref(),
-                    user: user.as_ref(),
-                    registry: &registry,
-                    admin_only_routes: &input.admin_only_routes,
-                    team_allowed_routes,
-                };
-                answer(is_api_route_allowed(&policy))
-            }
-            Function::ViewerAccess => {
-                answer(check_access(&input.route, method.as_deref(), &input.body))
-            }
-            Function::MaskedUserId => json!({"masked": mask_user_id(&input.masked)}),
-            Function::JwtAllowedRoutes => {
-                let role = input
-                    .role
-                    .ok_or("jwt_allowed_routes needs a role")
-                    .or_value_error()?;
-                let allowed = allowed_routes_check(
-                    role,
-                    &input.route,
-                    &input.admin_allowed_routes,
-                    input.team_allowed_routes.as_deref(),
-                );
-                json!({"allowed": allowed, "error": Value::Null})
-            }
-        })
+        match input.function {
+            Function::RouteAllowed => route_allowed(input),
+            Function::ViewerAccess => Ok(viewer_access(input)),
+            Function::MaskedUserId => Ok(json!({"masked": mask_user_id(&input.masked)})),
+            Function::JwtAllowedRoutes => jwt_allowed_routes(input),
+        }
     }
 }
 
-fn caller_key(fields: Option<&KeyFields>) -> Result<Option<UserAPIKeyAuth>, Box<HelperError>> {
-    let Some(fields) = fields else {
+fn route_allowed(input: &Input) -> HelperResult {
+    let token = caller_key(input.token.as_ref())?;
+    let user = user_row(input.user.as_ref())?;
+    let registry = PassThroughRegistry {
+        root_path: String::new(),
+        registrations: Vec::new(),
+    };
+    let method = input.method.as_deref().map(str::to_uppercase);
+    let policy = RoutePolicyInput {
+        route: &input.route,
+        method: method.as_deref(),
+        user_id_query: input.user_id_query.as_deref(),
+        body: &input.body,
+        token: token.as_ref(),
+        user: user.as_ref(),
+        registry: &registry,
+        admin_only_routes: &input.admin_only_routes,
+        team_allowed_routes: input.team_allowed_routes.as_deref().unwrap_or_default(),
+    };
+    Ok(answer(is_api_route_allowed(&policy)))
+}
+
+fn viewer_access(input: &Input) -> Value {
+    let method = input.method.as_deref().map(str::to_uppercase);
+    answer(check_access(&input.route, method.as_deref(), &input.body))
+}
+
+fn jwt_allowed_routes(input: &Input) -> HelperResult {
+    let role = input
+        .role
+        .ok_or("jwt_allowed_routes needs a role")
+        .or_value_error()?;
+    let allowed = allowed_routes_check(
+        role,
+        &input.route,
+        &input.admin_allowed_routes,
+        input.team_allowed_routes.as_deref(),
+    );
+    Ok(json!({"allowed": allowed, "error": Value::Null}))
+}
+
+fn caller_key(source: Option<&KeyFields>) -> Result<Option<UserAPIKeyAuth>, Box<HelperError>> {
+    let Some(fields) = source else {
         return Ok(None);
     };
     let mut dict = BTreeMap::new();
@@ -148,8 +154,8 @@ fn caller_key(fields: Option<&KeyFields>) -> Result<Option<UserAPIKeyAuth>, Box<
     Ok(Some(token))
 }
 
-fn user_row(fields: Option<&UserFields>) -> Result<Option<LiteLLMUserTable>, Box<HelperError>> {
-    let Some(fields) = fields else {
+fn user_row(source: Option<&UserFields>) -> Result<Option<LiteLLMUserTable>, Box<HelperError>> {
+    let Some(fields) = source else {
         return Ok(None);
     };
     let row = json!({

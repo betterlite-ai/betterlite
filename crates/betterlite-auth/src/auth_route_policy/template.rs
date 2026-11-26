@@ -85,38 +85,57 @@ fn parse(template: &str) -> Option<Vec<Piece<'_>>> {
         else {
             continue;
         };
-        let name_width = identifier_width(rest);
-        let Some(after_name) = rest.get(name_width..).filter(|_| name_width > 0) else {
-            continue;
-        };
-        let (width, convertor) = match after_name.strip_prefix(':') {
-            Some(converted) => {
-                let Some((width, name)) = converted_group(converted, name_width) else {
-                    continue;
-                };
-                let Some(convertor) = convertor_of(name) else {
-                    return None;
-                };
-                (width, convertor)
+        match group(rest) {
+            Group::Placeholder { width, convertor } => {
+                pieces.push(Piece {
+                    literal: template.get(literal_start..index)?,
+                    convertor: Some(convertor),
+                });
+                literal_start = index.saturating_add(width);
             }
-            None => {
-                if !after_name.starts_with('}') {
-                    continue;
-                }
-                (name_width.saturating_add(2), Convertor::Text)
-            }
-        };
-        pieces.push(Piece {
-            literal: template.get(literal_start..index)?,
-            convertor: Some(convertor),
-        });
-        literal_start = index.saturating_add(width);
+            Group::Literal => {}
+            Group::Unknown => return None,
+        }
     }
     pieces.push(Piece {
         literal: template.get(literal_start..)?,
         convertor: None,
     });
     Some(pieces)
+}
+
+// what the brace group right after a "{" amounts to
+enum Group {
+    Placeholder { width: usize, convertor: Convertor },
+    Literal,
+    Unknown,
+}
+
+fn group(rest: &str) -> Group {
+    let name_width = identifier_width(rest);
+    if name_width == 0 {
+        return Group::Literal;
+    }
+    let Some(after_name) = rest.get(name_width..) else {
+        return Group::Literal;
+    };
+    let Some(converted) = after_name.strip_prefix(':') else {
+        if !after_name.starts_with('}') {
+            return Group::Literal;
+        }
+        let width = name_width.saturating_add(2);
+        return Group::Placeholder {
+            width,
+            convertor: Convertor::Text,
+        };
+    };
+    let Some((width, name)) = converted_group(converted, name_width) else {
+        return Group::Literal;
+    };
+    match convertor_of(name) {
+        Some(convertor) => Group::Placeholder { width, convertor },
+        None => Group::Unknown,
+    }
 }
 
 // the width of "{name:convertor}" and the convertor's name, or None when the group is not a placeholder at all
