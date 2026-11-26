@@ -1,12 +1,31 @@
 #![cfg(test)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+use std::future::{Future, ready as future_ready};
 use std::sync::{Arc, PoisonError};
 use std::time::Duration;
 
-use betterlite_core::api::video_records::VideoObject;
+use betterlite_core::api::video_generation_call::call::{
+    PendingVideoGeneration, VideoGenerationCaller,
+};
+use betterlite_core::api::video_generation_call::error::VideoGenerationCallError;
+use betterlite_core::api::video_generation_call::handler::{
+    GenerationHandlerEnvironment, GenerationHandlerRequest, VideoGenerationHandling,
+};
+use betterlite_core::api::video_generation_call::providers::{
+    VideoGenerationConfig, VideoGenerationProviders,
+};
+use betterlite_core::api::video_records::{VideoCreateOptionalRequestParams, VideoObject};
 use betterlite_core::api::video_remix_call::config::DEFAULT_TIMEOUT_SECONDS;
-use betterlite_core::api::videos_http_transport::video_config::{Headers, Params};
+use betterlite_core::api::video_selection::VideoConfigTag;
+use betterlite_core::api::videos_http_transport::client::{
+    ClientError, ClientRequest, ClientSource, VideoRequest, VideoTransport,
+};
+use betterlite_core::api::videos_http_transport::video_config::{
+    Headers, Params, RequestFiles, VideoHttpConfig, VideoLogging, VideoReply, VideoRequestContext,
+};
+use betterlite_http::proxy::UpstreamResponse;
+use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
 };
@@ -14,14 +33,25 @@ use betterlite_logging::logging_state::types::{
     CallbackPolicy, DynamicCallbacks, RequestLoggingFlags,
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
+use betterlite_models::catalog::ModelCatalog;
 use betterlite_models::decisions::Json;
+use betterlite_models::json_provider_registry::JSONProviderRegistry;
+use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
+use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
+use betterlite_models::resolution::ResolutionContext;
 use betterlite_redact::secret::Redactor;
 use chrono::{DateTime, FixedOffset};
+use http::HeaderMap;
 use indexmap::IndexMap;
 use secrecy::SecretString;
 use serde_json::Number;
+use thiserror::Error;
 
-use super::{generation_reply, generation_request, restore_logging, take_logging};
+use super::{
+    VideoGenerationProbe, VideoGenerationSetup, generation_reply, generation_request,
+    restore_logging, take_logging,
+};
+use crate::health_native_backend::seams::VideoGenerationProbeCall;
 use crate::health_probe_modes::calls::ProbeCall;
 use crate::health_probe_modes::error::HealthProbeError;
 use crate::health_probe_modes::logging::{HealthProbeLogging, ProbeLogging};
@@ -230,4 +260,188 @@ fn a_call_without_a_logging_object_takes_the_placeholder() {
     let (taken, restored) = take_logging(&call, state("placeholder"));
     assert_eq!(taken.model, "placeholder");
     assert_eq!(restored, None);
+}
+
+// the production probe over a fake caller and handler, so generate's own wiring is what the test reads
+fn video_probe() -> VideoGenerationProbe<FakeProviders, FakeHandler, FakeSetup> {
+    VideoGenerationProbe {
+        caller: VideoGenerationCaller {
+            providers: FakeProviders {
+                config: FakeConfig,
+                source: FakeSource,
+            },
+            handler: FakeHandler,
+            redactor: Redactor::new(16).expect("the test redactor builds"),
+            request_timeout: Duration::from_secs(600),
+            drop_params: true,
+        },
+        setup: FakeSetup {
+            catalog: ModelCatalog::default(),
+            names: BTreeSet::new(),
+            environment: BTreeMap::new(),
+        },
+        clock: fixed_time,
+    }
+}
+
+#[tokio::test]
+async fn generate_answers_with_the_hidden_headers_of_the_object() {
+    let owner = video_probe();
+    let call = probe(&[
+        ("prompt", text("a prompt")),
+        ("model", text("sora-2")),
+        ("custom_llm_provider", text("openai")),
+    ]);
+    let reply = owner.generate(call).await.expect("the probe answers");
+    assert_eq!(
+        reply.hidden_headers,
+        BTreeMap::from([(String::from("x-ms-region"), String::from("westeurope"))])
+    );
+}
+
+struct FakeSetup {
+    catalog: ModelCatalog,
+    names: BTreeSet<String>,
+    environment: BTreeMap<String, String>,
+}
+
+impl VideoGenerationSetup for FakeSetup {
+    fn resolution(&self) -> ResolutionContext<'_> {
+        ResolutionContext {
+            catalog: &self.catalog,
+            known_model_names: &self.names,
+            custom_providers: &self.names,
+            environment: &self.environment,
+            registry: JSONProviderRegistry::default(),
+            policies: ProviderPolicies::default(),
+            globals: GlobalCredentials::default(),
+        }
+    }
+}
+
+struct FakeProviders {
+    config: FakeConfig,
+    source: FakeSource,
+}
+
+impl VideoGenerationProviders for FakeProviders {
+    type Config = FakeConfig;
+    type Source = FakeSource;
+
+    fn video_config(&self, _tag: &VideoConfigTag) -> Option<(&FakeConfig, &FakeSource)> {
+        Some((&self.config, &self.source))
+    }
+}
+
+struct FakeHandler;
+
+impl<Config, Source> VideoGenerationHandling<Config, Source> for FakeHandler
+where
+    Config: VideoGenerationConfig,
+    Source: ClientSource,
+{
+    fn handle<'call, 'env>(
+        &'call self,
+        _environment: GenerationHandlerEnvironment<'call, 'env, Config, Source>,
+        _request: GenerationHandlerRequest<'call, Source>,
+        _is_async: bool,
+    ) -> PendingVideoGeneration<'call> {
+        let mut object = VideoObject::new(String::from("video-1"), String::from("completed"));
+        object.hidden_params.insert(
+            "headers".to_owned(),
+            Json::Object(header("x-ms-region", "westeurope")),
+        );
+        Box::pin(future_ready::<Result<VideoObject, VideoGenerationCallError>>(Ok(object)))
+    }
+}
+
+struct FakeSource;
+
+impl ClientSource for FakeSource {
+    type Client = FakeTransport;
+
+    fn client(&self, _request: ClientRequest<'_>) -> Result<FakeTransport, ClientError> {
+        Ok(FakeTransport)
+    }
+}
+
+struct FakeTransport;
+
+impl VideoTransport for FakeTransport {
+    fn send(
+        &self,
+        _request: VideoRequest,
+    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
+        future_ready(Ok(UpstreamResponse {
+            status: 200,
+            headers: HeaderMap::new(),
+            body: Vec::new(),
+        }))
+    }
+}
+
+#[derive(Debug, Error)]
+#[error("the fake video config performs no transport work")]
+struct FakeConfigError;
+
+struct FakeConfig;
+
+impl VideoGenerationConfig for FakeConfig {
+    fn map_openai_params(
+        &self,
+        _options: &VideoCreateOptionalRequestParams,
+        _model: &str,
+        _drop_params: bool,
+    ) -> Params {
+        Params::new()
+    }
+}
+
+impl VideoHttpConfig for FakeConfig {
+    type Error = FakeConfigError;
+
+    fn get_complete_url(
+        &self,
+        _model: &str,
+        _api_base: Option<&str>,
+        _litellm_params: &Params,
+    ) -> Result<String, FakeConfigError> {
+        Ok(String::from("http://health.test/videos"))
+    }
+
+    fn transform_video_create_request(
+        &self,
+        _model: &str,
+        _prompt: &str,
+        _optional_params: &Params,
+        _context: VideoRequestContext<'_>,
+    ) -> Result<(Params, RequestFiles, String), FakeConfigError> {
+        Err(FakeConfigError)
+    }
+
+    fn transform_video_create_response(
+        &self,
+        _model: &str,
+        _reply: VideoReply<'_>,
+        _request_data: Option<&Params>,
+    ) -> Result<VideoObject, FakeConfigError> {
+        Err(FakeConfigError)
+    }
+
+    fn transform_video_content_request(
+        &self,
+        _video_id: &str,
+        _variant: Option<&str>,
+        _context: VideoRequestContext<'_>,
+    ) -> Result<(String, Params), FakeConfigError> {
+        Err(FakeConfigError)
+    }
+
+    fn transform_video_content_response(
+        &self,
+        _raw_response: &UpstreamResponse,
+        _logging_obj: &mut VideoLogging,
+    ) -> Result<Vec<u8>, FakeConfigError> {
+        Err(FakeConfigError)
+    }
 }
