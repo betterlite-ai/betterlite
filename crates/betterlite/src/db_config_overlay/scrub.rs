@@ -1,5 +1,6 @@
 use std::mem;
 
+use betterlite_config::sections::includes::ConfigMap;
 use betterlite_config::sections::settings::{JsonValue, Section};
 use betterlite_pyhost::json_values::JsonObject;
 
@@ -156,5 +157,61 @@ fn refuse_pass_through_targets(fields: &mut JsonObject) {
         tracing::warn!(
             "Refused remote-URL target from DB-overlay general_settings.pass_through_endpoints (path={path}): {target}"
         );
+    }
+}
+
+// the keys a resolved section still owes to a database row, and the leading pass-through entries the row supplied
+pub struct DbOwnedValues {
+    pub keys: Vec<String>,
+    pub pass_through_entries: usize,
+}
+
+// _prepared_db_settings_values again after _check_for_os_environ_vars: a database value that resolved to a remote module is refused
+pub fn scrub_resolved_db_values(config: &mut ConfigMap, owned: &[(Section, DbOwnedValues)]) {
+    for (section, db_owned) in owned {
+        let Some(JsonValue::Object(fields)) = config.get_mut(section.name()) else {
+            continue;
+        };
+        let mut stored = JsonObject::new();
+        for key in &db_owned.keys {
+            if let Some(value) = fields.get(key) {
+                stored.insert(key.clone(), value.clone());
+            }
+        }
+        if let Some(entries) = fields
+            .get(PASS_THROUGH_ENDPOINTS)
+            .and_then(JsonValue::as_array)
+        {
+            let prefix = entries
+                .iter()
+                .take(db_owned.pass_through_entries)
+                .cloned()
+                .collect::<Vec<JsonValue>>();
+            stored.insert(PASS_THROUGH_ENDPOINTS.to_owned(), JsonValue::Array(prefix));
+        }
+        let JsonValue::Object(scrubbed) =
+            scrub_remote_modules(*section, &JsonValue::Object(stored))
+        else {
+            continue;
+        };
+        for (key, scrubbed_value) in scrubbed {
+            if key == PASS_THROUGH_ENDPOINTS {
+                replace_resolved_prefix(fields, scrubbed_value);
+            } else {
+                fields.insert(key, scrubbed_value);
+            }
+        }
+    }
+}
+
+// the scrub nulls a refused pass-through target in place, so each database entry replaces the resolved one at its index
+fn replace_resolved_prefix(fields: &mut JsonObject, scrubbed: JsonValue) {
+    let (JsonValue::Array(cleaned), Some(JsonValue::Array(resolved))) =
+        (scrubbed, fields.get_mut(PASS_THROUGH_ENDPOINTS))
+    else {
+        return;
+    };
+    for (resolved_entry, cleaned_entry) in resolved.iter_mut().zip(cleaned) {
+        *resolved_entry = cleaned_entry;
     }
 }
