@@ -115,12 +115,10 @@ pub(crate) fn dispatch(
     master_key: &SecretString,
 ) -> Result<AuthContext, StageFailure> {
     match backend {
-        AuthBackend::MasterKey => master_key_stage(input, master_key)
-            .map_err(|failure| StageFailure::Authentication(Box::new(failure))),
+        AuthBackend::MasterKey => Ok(master_key_stage(input, master_key)?),
         AuthBackend::AuthRequestPolicy => auth_request_policy_stage(input),
         AuthBackend::RequestBodySafety => auth_request_body_safety_stage(input),
-        AuthBackend::AuthRequestModels => auth_request_models_stage(input)
-            .map_err(|failure| StageFailure::Authentication(Box::new(failure))),
+        AuthBackend::AuthRequestModels => Ok(auth_request_models_stage(input)?),
         AuthBackend::AuthModelPatterns => auth_model_patterns_stage(input),
         AuthBackend::AuthResourceGrants => auth_resource_grants_stage(input),
         AuthBackend::AuthTagBudgets => {

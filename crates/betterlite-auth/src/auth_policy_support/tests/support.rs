@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::fmt::Debug;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -9,7 +10,9 @@ use betterlite_db::team_rows::team::LiteLLMTeamTable;
 use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExceptionInit};
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
-use tracing_subscriber::layer::SubscriberExt as _;
+use tracing::field::{Field, Visit};
+use tracing::subscriber::{DefaultGuard, set_default};
+use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 
 use crate::auth_cache::AuthCacheError;
 use crate::auth_org_lookup::organization::OrgLookup;
@@ -84,8 +87,8 @@ pub(crate) struct Logs {
 }
 
 impl Logs {
-    pub(crate) fn install(&self) -> tracing::subscriber::DefaultGuard {
-        tracing::subscriber::set_default(tracing_subscriber::registry().with(self.clone()))
+    pub(crate) fn install(&self) -> DefaultGuard {
+        set_default(tracing_subscriber::registry().with(self.clone()))
     }
 
     pub(crate) fn seen(&self) -> Vec<String> {
@@ -99,26 +102,22 @@ impl Logs {
 #[derive(Default)]
 struct Message(String);
 
-impl tracing::field::Visit for Message {
-    fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+impl Visit for Message {
+    fn record_str(&mut self, field: &Field, value: &str) {
         if field.name() == "message" {
             self.0 = value.to_owned();
         }
     }
 
-    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+    fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
         if field.name() == "message" {
             self.0 = format!("{value:?}");
         }
     }
 }
 
-impl<S: tracing::Subscriber> tracing_subscriber::layer::Layer<S> for Logs {
-    fn on_event(
-        &self,
-        event: &tracing::Event<'_>,
-        _context: tracing_subscriber::layer::Context<'_, S>,
-    ) {
+impl<S: tracing::Subscriber> Layer<S> for Logs {
+    fn on_event(&self, event: &tracing::Event<'_>, _context: Context<'_, S>) {
         if !event
             .metadata()
             .target()
@@ -194,6 +193,7 @@ impl OrgCache for OrgWorld {
     async fn write_org(&self, key: &str, org: &OrganizationTable, _ttl: f64) -> CacheWrite {
         let mut cached = self.cached.lock().unwrap_or_else(PoisonError::into_inner);
         cached.insert(key.to_owned(), org.clone());
+        drop(cached);
         Ok(())
     }
 
@@ -208,6 +208,7 @@ impl OrgCache for OrgWorld {
         let text = serde_json::to_string(project).unwrap_or_default();
         let mut projects = self.projects.lock().unwrap_or_else(PoisonError::into_inner);
         projects.insert(key.to_owned(), text);
+        drop(projects);
         Ok(())
     }
 

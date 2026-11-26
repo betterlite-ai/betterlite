@@ -466,8 +466,8 @@ fn mcp_name_precedence(#[case] request: &str, #[case] expected: Vec<&str>) {
     let table = routes(&[("/mcp", &["call_mcp_tool"])]);
     let extractors = ToolNameExtractors::builtin(table);
     let names = extract_request_tool_names("/mcp", &body(request), &extractors).unwrap();
-    let expected: Vec<String> = expected.into_iter().map(str::to_owned).collect();
-    assert_eq!(names, expected, "{request}");
+    let wanted: Vec<String> = expected.into_iter().map(str::to_owned).collect();
+    assert_eq!(names, wanted, "{request}");
 }
 
 #[rstest]
@@ -485,8 +485,8 @@ fn anthropic_both_names(#[case] request: &str, #[case] expected: Vec<&str>) {
     let table = routes(&[("/anthropic", &["anthropic_messages"])]);
     let extractors = ToolNameExtractors::builtin(table);
     let names = extract_request_tool_names("/anthropic", &body(request), &extractors).unwrap();
-    let expected: Vec<String> = expected.into_iter().map(str::to_owned).collect();
-    assert_eq!(names, expected, "{request}");
+    let wanted: Vec<String> = expected.into_iter().map(str::to_owned).collect();
+    assert_eq!(names, wanted, "{request}");
     assert!(anthropic_tool_names(&Json::Null).is_empty());
     let mixed = body(r#"{"name":"flat","type":"function","function":"not-a-dict"}"#);
     let direct = anthropic_tool_names(&Json::Object(mixed));
@@ -642,15 +642,30 @@ fn reconstructed_team_all_fields() {
     );
     let cached = team_obj_from_token(&token).unwrap();
     let fields = &cached.team.fields;
-    assert_eq!(fields.base.team_id, "t1");
-    assert_eq!(fields.base.max_budget, Some(Decimal::new(10, 0)));
-    assert_eq!(fields.base.soft_budget, Some(Decimal::new(5, 0)));
-    assert_eq!(fields.spend, Some(Decimal::new(15, 1)));
-    assert_eq!(fields.base.tpm_limit, Some(10));
-    assert_eq!(fields.base.rpm_limit, Some(20));
-    assert_eq!(fields.base.tpd_limit, Some(30));
+    assert_eq!(
+        (
+            fields.base.team_id.as_str(),
+            fields.base.max_budget,
+            fields.base.soft_budget,
+            fields.spend,
+        ),
+        (
+            "t1",
+            Some(Decimal::new(10, 0)),
+            Some(Decimal::new(5, 0)),
+            Some(Decimal::new(15, 1)),
+        )
+    );
+    assert_eq!(
+        (
+            fields.base.tpm_limit,
+            fields.base.rpm_limit,
+            fields.base.tpd_limit,
+        ),
+        (Some(10), Some(20), Some(30))
+    );
     assert!(fields.base.blocked);
-    assert_eq!(fields.base.models, vec!["gpt-4".to_owned()]);
+    assert_eq!(fields.base.models, ["gpt-4".to_owned()]);
     assert_eq!(fields.object_permission_id.as_deref(), Some("perm"));
     let metadata = fields.base.metadata.as_ref().expect("team metadata");
     assert!(metadata.contains_key("k"));
@@ -662,9 +677,14 @@ fn reconstructed_team_all_fields() {
     assert!(model_max_budget.contains_key("gpt-4"));
     assert_eq!(fields.model_spend, Nullable(Some(BTreeMap::new())));
     assert_eq!(fields.allow_team_guardrail_config, Nullable(Some(false)));
-    assert!(fields.base.organization_id.is_none());
-    assert!(fields.base.team_alias.is_none());
-    assert!(cached.last_refreshed_at.is_none());
+    assert_eq!(
+        (
+            fields.base.organization_id.is_none(),
+            fields.base.team_alias.is_none(),
+            cached.last_refreshed_at.is_none(),
+        ),
+        (true, true, true)
+    );
     assert!(matches!(
         team_obj_from_token(&key(r#"{"token":"k"}"#)),
         Err(TeamFromTokenError::MissingTeamId)
