@@ -1,3 +1,4 @@
+use std::mem::replace;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -233,16 +234,16 @@ fn take_logging(
         return (placeholder, None);
     };
     let mut guard = shared.lock().unwrap_or_else(PoisonError::into_inner);
-    let state = std::mem::replace(&mut *guard, placeholder);
+    let state = replace(&mut *guard, placeholder);
     drop(guard);
     (state, Some(shared))
 }
 
 fn restore_logging(shared: Option<Arc<Mutex<LoggingState>>>, state: LoggingState) {
-    let Some(shared) = shared else {
+    let Some(logging) = shared else {
         return;
     };
-    let mut guard = shared.lock().unwrap_or_else(PoisonError::into_inner);
+    let mut guard = logging.lock().unwrap_or_else(PoisonError::into_inner);
     *guard = state;
 }
 

@@ -183,8 +183,8 @@ fn generation_request_keeps_the_signature_timeout() {
     let request = generation_request(&absent).expect("the health arguments convert");
     assert_eq!(request.timeout, Some(DEFAULT_TIMEOUT_SECONDS));
     let null = probe(&[("prompt", text("a prompt")), ("timeout", Json::Null)]);
-    let request = generation_request(&null).expect("the health arguments convert");
-    assert_eq!(request.timeout, None);
+    let null_request = generation_request(&null).expect("the health arguments convert");
+    assert_eq!(null_request.timeout, None);
 }
 
 #[test]
@@ -256,8 +256,8 @@ fn the_call_swaps_the_shared_logging_state_out_and_back() {
     assert_eq!(current.model, "placeholder");
     drop(current);
     restore_logging(restored, state("updated"));
-    let current = shared.lock().unwrap_or_else(PoisonError::into_inner);
-    assert_eq!(current.model, "updated");
+    let updated = shared.lock().unwrap_or_else(PoisonError::into_inner);
+    assert_eq!(updated.model, "updated");
 }
 
 #[test]
