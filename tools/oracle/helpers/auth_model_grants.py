@@ -222,9 +222,7 @@ async def run_step(step: Step) -> StepResult:
 
 
 async def run_steps(steps: list[Step]) -> list[StepResult]:
-    results: list[StepResult] = []
-    for step in steps:
-        results.append(await run_step(step))
+    results: list[StepResult] = [await run_step(step) for step in steps]
     return results
 
 
