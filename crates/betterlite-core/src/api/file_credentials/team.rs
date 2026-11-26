@@ -234,15 +234,15 @@ pub fn get_team_provider_credentials<Catalog>(
 where
     Catalog: CredentialCatalog,
 {
-    let Some(catalog) = catalog else {
+    let Some(router) = catalog else {
         return Ok(None);
     };
-    let scope = team_scope(catalog, principal)?;
+    let scope = team_scope(router, principal)?;
     let team_id = scope.team_id.as_deref();
     let byok = match team_id {
         Some(team) => {
             let deployments =
-                catalog
+                router
                     .deployments()
                     .map_err(|source| TeamCredentialError::Catalog {
                         read: "deployments",
@@ -252,11 +252,11 @@ where
         }
         None => Vec::new(),
     };
-    if let Some(credentials) = first_provider_credentials(catalog, byok, team_id, provider)? {
+    if let Some(credentials) = first_provider_credentials(router, byok, team_id, provider)? {
         return Ok(Some(credentials));
     }
     let fallback = fallback_candidates(&scope, expansion)?;
-    first_provider_credentials(catalog, fallback, team_id, provider)
+    first_provider_credentials(router, fallback, team_id, provider)
 }
 
 // apply_team_credentials: a miss leaves data untouched, so the caller keeps its own fallback.

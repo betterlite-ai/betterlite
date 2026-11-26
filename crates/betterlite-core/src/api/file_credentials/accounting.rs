@@ -33,9 +33,8 @@ pub fn add_internal_model_credentials<Catalog>(
 where
     Catalog: CredentialCatalog,
 {
-    let model_id = model_id?;
-    let catalog = catalog?;
-    let Ok(Some(credentials)) = catalog.credentials_with_provider(model_id, None) else {
+    let router = catalog?;
+    let Ok(Some(credentials)) = router.credentials_with_provider(model_id?, None) else {
         return None;
     };
     // a snapshot replaces any caller-supplied value under the internal key, as LiteLLM overwrites it
@@ -52,11 +51,11 @@ pub fn add_deployment_model_info<Catalog>(
 where
     Catalog: CredentialCatalog,
 {
-    let Some(catalog) = catalog else {
+    let Some(router) = catalog else {
         return Ok(());
     };
     let Some(model_info) =
-        catalog
+        router
             .resolved_model_info(model_id)
             .map_err(|source| AccountingError::Catalog {
                 model_id: model_id.to_owned(),

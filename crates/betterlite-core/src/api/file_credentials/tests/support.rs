@@ -181,14 +181,13 @@ impl ModelGrant<Catalog> for Grants {
         self.events.push(format!("grant {}", request.model));
         locked(&self.asked).push(GrantAsked {
             model: request.model.to_owned(),
-            llm_model_list: request.llm_model_list.map(|list| list.to_vec()),
+            llm_model_list: request.llm_model_list.map(<[String]>::to_vec),
             subject: request.principal.subject.clone(),
             router_present: request.router.is_some(),
         });
-        match &self.denial {
-            Some(denial) => Err(denial.clone()),
-            None => Ok(()),
-        }
+        self.denial
+            .as_ref()
+            .map_or(Ok(()), |denial| Err(denial.clone()))
     }
 }
 

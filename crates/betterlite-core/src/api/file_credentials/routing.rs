@@ -62,8 +62,8 @@ pub async fn authorized_credentials<Catalog, Grants>(
     operation_context: &str,
 ) -> Result<JsonObject, AuthorizedCredentialsError<Grants::Error, Catalog::Error>>
 where
-    Catalog: CredentialCatalog,
-    Grants: ModelGrant<Catalog>,
+    Catalog: CredentialCatalog + Sync,
+    Grants: ModelGrant<Catalog> + Sync,
 {
     authorize_model_for_key(catalog, grants, model_id, principal)
         .await
@@ -80,8 +80,8 @@ pub async fn authorize_model_for_key<Catalog, Grants>(
     principal: &Principal,
 ) -> Result<(), Grants::Error>
 where
-    Catalog: CredentialCatalog,
-    Grants: ModelGrant<Catalog>,
+    Catalog: CredentialCatalog + Sync,
+    Grants: ModelGrant<Catalog> + Sync,
 {
     let request = GrantRequest {
         model: model_id,
@@ -109,8 +109,8 @@ pub async fn handle_model_based_routing<Catalog, Grants>(
     principal: &Principal,
 ) -> Result<RoutingOutcome, AuthorizedCredentialsError<Grants::Error, Catalog::Error>>
 where
-    Catalog: CredentialCatalog,
-    Grants: ModelGrant<Catalog>,
+    Catalog: CredentialCatalog + Sync,
+    Grants: ModelGrant<Catalog> + Sync,
 {
     let (model_from_id, model_from_param) =
         extract_model_from_sources(request.file_id, request.hints);
@@ -119,14 +119,15 @@ where
     } else {
         None
     };
-    let target = match embedded {
-        Some(model) => Some((
-            model,
-            EMBEDDED_OPERATION_CONTEXT,
-            Some(get_original_file_id(request.file_id)),
-        )),
-        None => model_from_param.map(|model| (model, DEFAULT_OPERATION_CONTEXT, None)),
-    };
+    let target = embedded
+        .map(|model| {
+            (
+                model,
+                EMBEDDED_OPERATION_CONTEXT,
+                Some(get_original_file_id(request.file_id)),
+            )
+        })
+        .or_else(|| model_from_param.map(|model| (model, DEFAULT_OPERATION_CONTEXT, None)));
     let Some((model, operation_context, original_file_id)) = target else {
         return Ok(RoutingOutcome::default());
     };

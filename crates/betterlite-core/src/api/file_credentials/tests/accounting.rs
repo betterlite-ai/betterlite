@@ -123,8 +123,5 @@ fn deployment_accounting_hints_internal_credentials_replace_a_caller_snapshot() 
     let snapshot = add_internal_model_credentials(&mut data, Some(&catalog), Some("d1")).unwrap();
     assert_eq!(data, object(r#"{"x":1}"#));
     assert_eq!(snapshot.values.len(), 1);
-    assert_eq!(
-        snapshot.values.get("api_key").unwrap().expose_secret(),
-        "k1"
-    );
+    assert_eq!(snapshot.values["api_key"].expose_secret(), "k1");
 }
