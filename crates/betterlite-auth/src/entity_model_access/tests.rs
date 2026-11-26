@@ -368,6 +368,52 @@ async fn all_team_models_skips_key() {
         error_type(&refused),
         ProxyErrorTypes::KeyModelAccessDenied.to_string()
     );
+    // with a team the sentinel inherits the key's team models, whose allowlist denies the request,
+    // so only the skipped key check leaves the team's own grant to decide
+    let script = Arc::new(Script::new().with_team(r#"{"team_id":"team-1","models":["claude"]}"#));
+    let lookup = team_lookup(&script);
+    let live = ResolvedDeps {
+        teams: Some(&lookup),
+        projects: None,
+        admission: None,
+        now: 0.0,
+    };
+    let inheriting = token(
+        r#"{"token":"hash-1","team_id":"team-1","team_models":["gpt-4o"],"models":["all-team-models"]}"#,
+    );
+    can_key_call_resolved_model(&one("claude"), &inheriting, &context, &live)
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn team_aliases_grant_their_name() {
+    let script = Arc::new(Script::new().with_team(TEAM_ONE));
+    let lookup = team_lookup(&script);
+    let setup = Setup::new();
+    let context = setup.context();
+    let deps = ResolvedDeps {
+        teams: Some(&lookup),
+        projects: None,
+        admission: None,
+        now: 0.0,
+    };
+    // a team alias grants the alias name itself, whatever target it names
+    let aliased =
+        token(r#"{"token":"hash-1","team_id":"team-1","team_model_aliases":{"fast":"claude"}}"#);
+    can_key_call_resolved_model(&one("fast"), &aliased, &context, &deps)
+        .await
+        .unwrap();
+    // a map that does not name the requested model leaves it to the team's allowlist
+    let unaliased =
+        token(r#"{"token":"hash-1","team_id":"team-1","team_model_aliases":{"other":"claude"}}"#);
+    let refused = can_key_call_resolved_model(&one("fast"), &unaliased, &context, &deps)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error_type(&refused),
+        ProxyErrorTypes::TeamModelAccessDenied.to_string()
+    );
 }
 
 #[tokio::test]
