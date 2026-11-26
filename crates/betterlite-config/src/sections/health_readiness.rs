@@ -130,32 +130,25 @@ fn drain_token<L>(
 where
     L: EnvironmentLookup,
 {
-    let configured = configured_token(configured, lookup)?;
-    let environment = lookup
+    // LiteLLM resolves an unset os.environ reference to None, which then falls through to the env var
+    let from_config = match configured {
+        Some(RawToken::Text(text)) => {
+            let unset = text
+                .strip_prefix("os.environ/")
+                .is_some_and(|variable| lookup.lookup(variable).is_none());
+            if unset {
+                None
+            } else {
+                let resolved = resolve_string(text, DRAIN_TOKEN_PATH, lookup)?;
+                Some(resolved).filter(|value| !value.is_empty())
+            }
+        }
+        Some(RawToken::Other(_)) | None => None,
+    };
+    let from_environment = lookup
         .lookup(DRAIN_TOKEN_VARIABLE)
         .filter(|value| !value.is_empty());
-    Ok(configured.or(environment).map(SecretString::from))
-}
-
-// LiteLLM resolves an unset os.environ reference to None, which then falls through to the env var
-fn configured_token<L>(
-    configured: Option<RawToken>,
-    lookup: &L,
-) -> Result<Option<String>, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let Some(RawToken::Text(text)) = configured else {
-        return Ok(None);
-    };
-    let unset = text
-        .strip_prefix("os.environ/")
-        .is_some_and(|variable| lookup.lookup(variable).is_none());
-    if unset {
-        return Ok(None);
-    }
-    let resolved = resolve_string(text, DRAIN_TOKEN_PATH, lookup)?;
-    Ok(Some(resolved).filter(|value| !value.is_empty()))
+    Ok(from_config.or(from_environment).map(SecretString::from))
 }
 
 // a malformed timeout must not keep the pod alive past terminationGracePeriodSeconds, so it falls back to 30 s

@@ -46,6 +46,12 @@ impl FakeInFlight {
     }
 }
 
+impl Default for FakeInFlight {
+    fn default() -> Self {
+        Self::new(0)
+    }
+}
+
 impl InFlightCounter for FakeInFlight {
     fn in_flight_requests(&self) -> u64 {
         self.count.load(Ordering::Acquire)
@@ -157,6 +163,12 @@ impl FakeProbe {
             .unwrap_or_else(PoisonError::into_inner)
             .pop_front()
             .unwrap_or(ReconnectAnswer::Report(true))
+    }
+}
+
+impl Default for FakeProbe {
+    fn default() -> Self {
+        Self::unconfigured()
     }
 }
 
@@ -292,6 +304,7 @@ pub(crate) fn db_readiness(
     )
 }
 
+#[derive(Default)]
 pub(crate) struct World {
     pub(crate) in_flight: Arc<FakeInFlight>,
     pub(crate) admission: Arc<FakeAdmission>,
@@ -303,18 +316,6 @@ pub(crate) struct World {
 }
 
 impl World {
-    pub(crate) fn new() -> Self {
-        Self {
-            in_flight: Arc::new(FakeInFlight::new(0)),
-            admission: Arc::new(FakeAdmission::default()),
-            probe: Arc::new(FakeProbe::unconfigured()),
-            stall: Arc::new(FakeStall::default()),
-            sources: Arc::new(FakeSources::default()),
-            callbacks: Arc::new(FakeCallbacks::default()),
-            settings: HealthSettings::default(),
-        }
-    }
-
     pub(crate) fn router(&self, availability: AllowRequestsOnOutage) -> Router {
         let db = Arc::new(db_readiness(
             &self.probe,

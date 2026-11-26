@@ -111,7 +111,7 @@ struct ListingBody {
 
 #[tokio::test]
 async fn public_readiness_reports_shutting_down_first() {
-    let mut world = World::new();
+    let mut world = World::default();
     world.settings.allow_public_details = true;
     world.settings.drain.enabled = true;
     world.probe = Arc::new(FakeProbe::healthy());
@@ -126,7 +126,7 @@ async fn public_readiness_reports_shutting_down_first() {
 
 #[tokio::test]
 async fn details_route_ignores_the_shutdown_flag() {
-    let mut world = World::new();
+    let mut world = World::default();
     world.settings.drain.enabled = true;
     world.probe = Arc::new(FakeProbe::healthy());
     let router = world.router(AllowRequestsOnOutage::Unsupported);
@@ -140,7 +140,7 @@ async fn details_route_ignores_the_shutdown_flag() {
 
 #[tokio::test]
 async fn public_readiness_serves_the_details_when_allowed() {
-    let mut world = World::new();
+    let mut world = World::default();
     world.settings.allow_public_details = true;
     world.probe = Arc::new(FakeProbe::healthy());
     let router = world.router(AllowRequestsOnOutage::Unsupported);
@@ -154,7 +154,7 @@ async fn public_readiness_serves_the_details_when_allowed() {
 
 #[tokio::test]
 async fn public_readiness_reports_healthy_and_not_connected_without_a_database() {
-    let router = World::new().router(AllowRequestsOnOutage::Unsupported);
+    let router = World::default().router(AllowRequestsOnOutage::Unsupported);
     let (status, _, body) = send(&router, Method::GET, "/health/readiness", None).await;
     assert_eq!(status, StatusCode::OK);
     let parsed: PublicBody = parse(&body);
@@ -164,7 +164,7 @@ async fn public_readiness_reports_healthy_and_not_connected_without_a_database()
 
 #[tokio::test]
 async fn public_readiness_answers_503_for_an_unreachable_database() {
-    let mut world = World::new();
+    let mut world = World::default();
     world.probe = Arc::new(FakeProbe::scripted(vec![ProbeAnswer::Fail(
         ErrorType::Data,
     )]));
@@ -177,7 +177,7 @@ async fn public_readiness_answers_503_for_an_unreachable_database() {
 
 #[tokio::test]
 async fn public_readiness_keeps_200_when_requests_are_allowed_on_outage() {
-    let mut world = World::new();
+    let mut world = World::default();
     world.probe = Arc::new(FakeProbe::scripted(vec![ProbeAnswer::Fail(
         ErrorType::Data,
     )]));
@@ -190,7 +190,7 @@ async fn public_readiness_keeps_200_when_requests_are_allowed_on_outage() {
 
 #[tokio::test]
 async fn public_readiness_reports_a_stalled_database_as_unavailable() {
-    let mut world = World::new();
+    let mut world = World::default();
     world.probe = Arc::new(FakeProbe::healthy());
     world.stall = Arc::new(FakeStall { stalled: true });
     let router = world.router(AllowRequestsOnOutage::Unsupported);
@@ -202,7 +202,7 @@ async fn public_readiness_reports_a_stalled_database_as_unavailable() {
 
 #[tokio::test]
 async fn backlog_returns_in_flight_and_admission_counters() {
-    let mut world = World::new();
+    let mut world = World::default();
     world.in_flight = Arc::new(FakeInFlight::new(7));
     world.admission = Arc::new(FakeAdmission {
         stats: AdmissionCounters {
@@ -223,7 +223,7 @@ async fn backlog_returns_in_flight_and_admission_counters() {
 
 #[tokio::test]
 async fn drain_route_is_404_when_disabled() {
-    let router = World::new().router(AllowRequestsOnOutage::Unsupported);
+    let router = World::default().router(AllowRequestsOnOutage::Unsupported);
     let (status, _, body) = send(&router, Method::GET, "/health/drain", None).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     let parsed: DetailBody = parse(&body);
@@ -235,7 +235,7 @@ async fn drain_route_is_404_when_disabled() {
 #[case::wrong(Some(("x-drain-token", "wrong-secret")))]
 #[tokio::test]
 async fn drain_route_rejects_a_missing_or_wrong_token(#[case] header_value: Option<(&str, &str)>) {
-    let mut world = World::new();
+    let mut world = World::default();
     world.settings.drain.enabled = true;
     world.settings.drain.token = Some(SecretString::from("pre-stop-secret".to_owned()));
     let router = world.router(AllowRequestsOnOutage::Unsupported);
@@ -249,7 +249,7 @@ async fn drain_route_rejects_a_missing_or_wrong_token(#[case] header_value: Opti
 
 #[tokio::test(start_paused = true)]
 async fn drain_route_accepts_the_configured_token_and_returns_the_drained_count() {
-    let mut world = World::new();
+    let mut world = World::default();
     world.settings.drain.enabled = true;
     world.settings.drain.token = Some(SecretString::from("pre-stop-secret".to_owned()));
     world.in_flight = Arc::new(FakeInFlight::new(3));
@@ -278,7 +278,7 @@ async fn drain_route_accepts_the_configured_token_and_returns_the_drained_count(
 
 #[tokio::test(start_paused = true)]
 async fn drain_route_needs_no_token_when_none_is_configured() {
-    let mut world = World::new();
+    let mut world = World::default();
     world.settings.drain.enabled = true;
     world.in_flight = Arc::new(FakeInFlight::new(1));
     let router = world.router(AllowRequestsOnOutage::Unsupported);
@@ -294,7 +294,7 @@ async fn drain_route_needs_no_token_when_none_is_configured() {
 #[case::liveness("/health/liveness")]
 #[tokio::test]
 async fn options_routes_answer_200_with_the_allow_headers(#[case] path: &str) {
-    let router = World::new().router(AllowRequestsOnOutage::Unsupported);
+    let router = World::default().router(AllowRequestsOnOutage::Unsupported);
     let (status, headers, body) = send(&router, Method::OPTIONS, path, None).await;
     assert_eq!(status, StatusCode::OK);
     assert!(body.is_empty());
@@ -311,7 +311,7 @@ async fn options_routes_answer_200_with_the_allow_headers(#[case] path: &str) {
 
 #[tokio::test]
 async fn license_route_answers_the_community_body() {
-    let router = World::new().router(AllowRequestsOnOutage::Unsupported);
+    let router = World::default().router(AllowRequestsOnOutage::Unsupported);
     let (status, _, body) = send(&router, Method::GET, "/health/license", None).await;
     assert_eq!(status, StatusCode::OK);
     let parsed: LicenseBody = parse(&body);
@@ -324,7 +324,7 @@ async fn license_route_answers_the_community_body() {
 }
 
 fn listing(names: CallbackNames) -> World {
-    let mut world = World::new();
+    let mut world = World::default();
     world.callbacks = Arc::new(FakeCallbacks { names });
     world
 }
@@ -428,19 +428,30 @@ async fn auth_layer(
     authenticate(State(master_key), request, next, stage_failure_response).await
 }
 
-fn guarded_router() -> Router {
-    Router::new()
+enum ProbeLayer {
+    MasterKey,
+    RouteAdmission,
+}
+
+fn layered_router(layer: ProbeLayer) -> Router {
+    let router = Router::new()
         .route("/health/readiness", get(reached).options(reached))
         .route("/health/liveliness", get(reached).options(reached))
         .route("/health/liveness", get(reached).options(reached))
         .route("/health/drain", get(reached))
         .route("/health/readiness/details", get(reached))
         .route("/health/backlog", get(reached))
-        .route("/other/path", get(reached))
-        .layer(middleware::from_fn_with_state(
+        .route("/health/license", get(reached))
+        .route("/settings", get(reached))
+        .route("/active/callbacks", get(reached))
+        .route("/unlisted/path", get(reached));
+    match layer {
+        ProbeLayer::MasterKey => router.layer(middleware::from_fn_with_state(
             Some(SecretString::from("sk-master".to_owned())),
             auth_layer,
-        ))
+        )),
+        ProbeLayer::RouteAdmission => router.layer(middleware::from_fn(stage)),
+    }
 }
 
 #[rstest]
@@ -450,7 +461,7 @@ fn guarded_router() -> Router {
 #[case::drain("/health/drain")]
 #[tokio::test]
 async fn public_health_paths_skip_master_key_auth(#[case] path: &str) {
-    let router = guarded_router();
+    let router = layered_router(ProbeLayer::MasterKey);
     let (status, _, body) = send(&router, Method::GET, path, None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(String::from_utf8(body).unwrap(), "reached");
@@ -462,7 +473,7 @@ async fn public_health_paths_skip_master_key_auth(#[case] path: &str) {
 #[case::liveness("/health/liveness")]
 #[tokio::test]
 async fn options_health_paths_skip_master_key_auth(#[case] path: &str) {
-    let router = guarded_router();
+    let router = layered_router(ProbeLayer::MasterKey);
     let (status, _, body) = send(&router, Method::OPTIONS, path, None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(String::from_utf8(body).unwrap(), "reached");
@@ -470,7 +481,7 @@ async fn options_health_paths_skip_master_key_auth(#[case] path: &str) {
 
 #[tokio::test]
 async fn backlog_route_still_needs_the_master_key() {
-    let router = guarded_router();
+    let router = layered_router(ProbeLayer::MasterKey);
     let (status, _, body) = send(&router, Method::GET, "/health/backlog", None).await;
     assert_ne!(status, StatusCode::OK);
     assert_ne!(String::from_utf8(body).unwrap(), "reached");
@@ -478,25 +489,10 @@ async fn backlog_route_still_needs_the_master_key() {
 
 #[tokio::test]
 async fn details_route_still_needs_the_master_key() {
-    let router = guarded_router();
+    let router = layered_router(ProbeLayer::MasterKey);
     let (status, _, body) = send(&router, Method::GET, "/health/readiness/details", None).await;
     assert_ne!(status, StatusCode::OK);
     assert_ne!(String::from_utf8(body).unwrap(), "reached");
-}
-
-fn admitted_router() -> Router {
-    Router::new()
-        .route("/health/readiness", get(reached).options(reached))
-        .route("/health/liveliness", get(reached).options(reached))
-        .route("/health/liveness", get(reached).options(reached))
-        .route("/health/drain", get(reached))
-        .route("/health/readiness/details", get(reached))
-        .route("/health/backlog", get(reached))
-        .route("/health/license", get(reached))
-        .route("/settings", get(reached))
-        .route("/active/callbacks", get(reached))
-        .route("/unlisted/path", get(reached))
-        .layer(middleware::from_fn(stage))
 }
 
 #[rstest]
@@ -506,7 +502,7 @@ fn admitted_router() -> Router {
 #[case::drain("/health/drain")]
 #[tokio::test]
 async fn public_health_paths_skip_route_admission(#[case] path: &str) {
-    let router = admitted_router();
+    let router = layered_router(ProbeLayer::RouteAdmission);
     let (status, _, body) = send(&router, Method::GET, path, None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(String::from_utf8(body).unwrap(), "reached");
@@ -518,7 +514,7 @@ async fn public_health_paths_skip_route_admission(#[case] path: &str) {
 #[case::liveness("/health/liveness")]
 #[tokio::test]
 async fn options_health_paths_skip_route_admission(#[case] path: &str) {
-    let router = admitted_router();
+    let router = layered_router(ProbeLayer::RouteAdmission);
     let (status, _, body) = send(&router, Method::OPTIONS, path, None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(String::from_utf8(body).unwrap(), "reached");
@@ -526,7 +522,7 @@ async fn options_health_paths_skip_route_admission(#[case] path: &str) {
 
 #[tokio::test]
 async fn backlog_route_passes_route_admission() {
-    let router = admitted_router();
+    let router = layered_router(ProbeLayer::RouteAdmission);
     let (status, _, body) = send(&router, Method::GET, "/health/backlog", None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(String::from_utf8(body).unwrap(), "reached");
@@ -534,7 +530,7 @@ async fn backlog_route_passes_route_admission() {
 
 #[tokio::test]
 async fn details_route_passes_route_admission() {
-    let router = admitted_router();
+    let router = layered_router(ProbeLayer::RouteAdmission);
     let (status, _, body) = send(&router, Method::GET, "/health/readiness/details", None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(String::from_utf8(body).unwrap(), "reached");
@@ -542,7 +538,7 @@ async fn details_route_passes_route_admission() {
 
 #[tokio::test]
 async fn license_route_passes_route_admission() {
-    let router = admitted_router();
+    let router = layered_router(ProbeLayer::RouteAdmission);
     let (status, _, body) = send(&router, Method::GET, "/health/license", None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(String::from_utf8(body).unwrap(), "reached");
@@ -553,7 +549,7 @@ async fn license_route_passes_route_admission() {
 #[case::active_callbacks("/active/callbacks")]
 #[tokio::test]
 async fn callbacks_routes_pass_route_admission(#[case] path: &str) {
-    let router = admitted_router();
+    let router = layered_router(ProbeLayer::RouteAdmission);
     let (status, _, body) = send(&router, Method::GET, path, None).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(String::from_utf8(body).unwrap(), "reached");
@@ -561,7 +557,7 @@ async fn callbacks_routes_pass_route_admission(#[case] path: &str) {
 
 #[tokio::test]
 async fn public_unlisted_route_is_not_admitted() {
-    let router = admitted_router();
+    let router = layered_router(ProbeLayer::RouteAdmission);
     let (status, _, body) = send(&router, Method::GET, "/unlisted/path", None).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     let parsed: DetailBody = parse(&body);
