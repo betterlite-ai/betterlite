@@ -224,4 +224,9 @@ pub(super) fn canvas_catalog_eligibility() {
         "canvas-fixture-scalar"
     ));
     assert!(!eligible(&model_cost(NO_CONFIG), "canvas-fixture-plain"));
+    // An empty base model adds no candidate, so the bedrock/ key below is never looked up for us.
+    assert!(!eligible(
+        &model_cost(r#"{"bedrock/": {"supports_nova_canvas_image_edit": true}}"#),
+        "us."
+    ));
 }
