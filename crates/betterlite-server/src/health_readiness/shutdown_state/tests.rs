@@ -115,16 +115,9 @@ async fn drain_wait_with_a_zero_timeout_never_goes_below_zero() {
 
 #[tokio::test(start_paused = true)]
 async fn drain_wait_never_returns_a_negative_count() {
-    let in_flight = Arc::new(FakeInFlight::new(1));
+    let in_flight = Arc::new(FakeInFlight::new(3));
     let shutdown = state(&in_flight, Duration::from_secs(30));
-    let counter = Arc::clone(&in_flight);
-    let (drained, ()) = tokio::join!(
-        shutdown.wait_for_drain(Some(Duration::from_secs(1)), false),
-        async move {
-            sleep(Duration::from_millis(300)).await;
-            counter.count.store(3, Ordering::Release);
-        }
-    );
+    let drained = shutdown.poll_drain(1, 0, Duration::from_secs(1)).await;
     assert_eq!(drained, 0);
 }
 
