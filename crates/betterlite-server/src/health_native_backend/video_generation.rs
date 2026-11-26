@@ -248,7 +248,7 @@ fn restore_logging(shared: Option<Arc<Mutex<LoggingState>>>, state: LoggingState
 
 fn generation_failure(error: VideoGenerationFailure) -> HealthProbeError {
     HealthProbeError::Backend {
-        class: error.class,
+        class: error.class.clone(),
         message: error.to_string(),
         source: Box::new(error),
     }

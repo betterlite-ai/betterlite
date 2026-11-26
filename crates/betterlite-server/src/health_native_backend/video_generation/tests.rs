@@ -8,7 +8,9 @@ use std::time::Duration;
 use betterlite_core::api::video_generation_call::call::{
     PendingVideoGeneration, VideoGenerationCaller,
 };
-use betterlite_core::api::video_generation_call::error::VideoGenerationCallError;
+use betterlite_core::api::video_generation_call::error::{
+    VideoGenerationCallError, VideoGenerationFailure,
+};
 use betterlite_core::api::video_generation_call::handler::{
     GenerationHandlerEnvironment, GenerationHandlerRequest, VideoGenerationHandling,
 };
@@ -246,7 +248,10 @@ fn the_call_swaps_the_shared_logging_state_out_and_back() {
     call.logging = Some(logging);
     let (taken, restored) = take_logging(&call, state("placeholder"));
     assert_eq!(taken.model, "stored");
-    assert_eq!(restored, Some(Arc::clone(&shared)));
+    assert!(Arc::ptr_eq(
+        restored.as_ref().expect("the shared state is retained"),
+        &shared
+    ));
     let current = shared.lock().unwrap_or_else(PoisonError::into_inner);
     assert_eq!(current.model, "placeholder");
     drop(current);
@@ -260,7 +265,7 @@ fn a_call_without_a_logging_object_takes_the_placeholder() {
     let call = probe(&[("prompt", text("a prompt"))]);
     let (taken, restored) = take_logging(&call, state("placeholder"));
     assert_eq!(taken.model, "placeholder");
-    assert_eq!(restored, None);
+    assert!(restored.is_none());
 }
 
 // the production probe over a fake caller and handler, so generate's own wiring is what the test reads
@@ -309,10 +314,20 @@ async fn generate_reports_a_handler_failure_as_the_backend_class() {
         ("custom_llm_provider", text("openai")),
     ]);
     let error = owner.generate(call).await.expect_err("the handler fails");
-    let HealthProbeError::Backend { class, message, .. } = error else {
+    let HealthProbeError::Backend {
+        class,
+        message,
+        source,
+    } = error
+    else {
         panic!("a handler failure keeps its class");
     };
     assert_eq!(message, "size must be a string");
+    let original = source
+        .downcast_ref::<VideoGenerationFailure>()
+        .expect("the original generation failure remains the source");
+    assert_eq!(original.to_string(), message);
+    assert_eq!(original.class, class);
     let ErrorClass::BadRequest(_) = class else {
         panic!("a handler failure keeps its 400 class");
     };

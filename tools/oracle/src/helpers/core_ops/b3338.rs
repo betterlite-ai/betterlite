@@ -80,7 +80,7 @@ impl Helper for Op {
             Input::Requested { call } => {
                 let mut request = call.request();
                 let options = requested_optional_params(&mut request).or_value_error()?;
-                serde_json::to_value(&typed_params(&options)).or_value_error()
+                serde_json::to_value(typed_params(&options)).or_value_error()
             }
             Input::Provider {
                 call,
@@ -97,10 +97,11 @@ impl Helper for Op {
                     "mock_response".to_owned(),
                     Json::Text(mock_response.clone()),
                 )]);
-                match mock_video_response(&kwargs).or_value_error()? {
-                    Some(object) => serde_json::to_value(&object).or_value_error(),
-                    None => Ok(Value::Null),
-                }
+                mock_video_response(&kwargs)
+                    .or_value_error()?
+                    .map_or(Ok(Value::Null), |object| {
+                        serde_json::to_value(&object).or_value_error()
+                    })
             }
         }
     }
