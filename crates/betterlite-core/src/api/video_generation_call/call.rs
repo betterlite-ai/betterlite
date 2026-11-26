@@ -12,13 +12,13 @@ use betterlite_models::decisions::Json;
 use betterlite_models::resolution::{ResolutionContext, ResolutionRequest, resolve};
 use betterlite_redact::secret::Redactor;
 
+use self::prepare::Prepared;
+use self::request::{Polled, build_handler_request, poll_once};
 use super::error::{VideoGenerationCallError, VideoGenerationFailure, failure};
 use super::handler::{
     GenerationHandlerEnvironment, GenerationHandlerRequest, VideoGenerationHandling,
 };
-use super::prepare::Prepared;
 use super::providers::VideoGenerationProviders;
-use super::request::{Polled, build_handler_request, poll_once};
 use super::{ASYNC_CALL, DEFAULT_MODEL, LOGGING_OBJECT, VideoGenerationRequest};
 use crate::api::video_records::VideoObject;
 use crate::api::video_remix_call::shared::{MockDecodeError, mock_answer};
