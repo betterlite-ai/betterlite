@@ -570,14 +570,16 @@ fn absent_auth_unprotected() {
     let auth = key_of(vec![("allowed_routes", strings(&["openai_routes"]))]);
     let caller = RouteCaller::of_key(&auth);
     let registry = registry_of(&[("pass-a", PassThroughRouteType::Exact, "/team-pass", None)]);
-    check_virtual_key_route(called("/team-pass", "POST"), &caller, &registry).unwrap();
-    let disabled = registry_of(&[(
-        "pass-a",
-        PassThroughRouteType::Exact,
-        "/team-pass",
-        Some(false),
-    )]);
-    check_virtual_key_route(called("/team-pass", "POST"), &caller, &disabled).unwrap();
+    // only an auth=true registration joins openai_routes, so an absent flag grants nothing there
+    let exception =
+        *check_virtual_key_route(called("/team-pass", "POST"), &caller, &registry).unwrap_err();
+    assert!(
+        assert_forbidden(&exception).starts_with("Virtual key is not allowed to call this route.")
+    );
+    // llm_api_routes reaches the registration itself, where an absent flag leaves it open
+    let llm_auth = key_of(vec![("allowed_routes", strings(&["llm_api_routes"]))]);
+    let llm_caller = RouteCaller::of_key(&llm_auth);
+    check_virtual_key_route(called("/team-pass", "POST"), &llm_caller, &registry).unwrap();
 }
 
 #[test]
