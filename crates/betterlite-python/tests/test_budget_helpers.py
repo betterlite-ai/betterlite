@@ -929,7 +929,9 @@ def test_budget_tls_settings(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(module, "ssl_verify", True)
     monkeypatch.setenv("SSL_VERIFY", "false")
     assert ssl_configuration() is LITELLM_HTTP.get_ssl_configuration() is False
-    assert ssl_configuration(ssl_verify=True) is not False
+    explicit = ModuleClient(ssl_verify=True)
+    with explicit.client:
+        assert explicit.ssl_options is not False
     monkeypatch.delenv("SSL_VERIFY")
     monkeypatch.setenv("SSL_SECURITY_LEVEL", "BOGUS")
     with pytest.raises(ssl.SSLError):
