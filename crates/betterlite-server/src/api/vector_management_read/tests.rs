@@ -12,6 +12,7 @@ use self::support::{
     flags_blocked, flags_blocked_team_admins, flags_open, internal, memory_store, parsed,
     registry_of, team_store, ui_session, viewer,
 };
+use super::state::VectorManagementReadState;
 use super::{INFO_PATH, LIST_PATH, V1_LIST_PATH};
 use crate::api::vector_management_boundaries::redaction::REDACTED_BY_LITELM;
 
@@ -176,9 +177,7 @@ async fn list_reconciliation_purges_and_syncs_the_registry() {
     assert!(captured.contains("Removed deleted vector store vs_stale from in-memory registry"));
 }
 
-fn assert_reconciled_registry(
-    state: &std::sync::Arc<super::state::VectorManagementReadState<FakeDatabase>>,
-) {
+fn assert_reconciled_registry(state: &std::sync::Arc<VectorManagementReadState<FakeDatabase>>) {
     let registry = registry_of(state);
     let stored: Vec<String> = registry
         .stores
