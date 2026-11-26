@@ -2,7 +2,7 @@ use crate::auth_request_models::RequestedModels;
 
 // Python's `if not model`: an empty string and an empty list are falsey, a list holding a name never is
 #[must_use]
-pub(crate) fn is_falsey(model: &RequestedModels) -> bool {
+pub(crate) const fn is_falsey(model: &RequestedModels) -> bool {
     match model {
         RequestedModels::None => true,
         RequestedModels::One(name) => name.is_empty(),

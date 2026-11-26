@@ -5,6 +5,7 @@ use betterlite_error::proxy_exception::ExceptionCode;
 // ast-grep-ignore: no-long-names
 use betterlite_error::proxy_exception::model_access_denied::ModelAccessDeniedProxyException;
 
+use crate::agent_access_groups::ceiling::AgentAccessGroupCeiling;
 use crate::auth_model_patterns::decision::{ModelAccessContext, can_object_call_model};
 use crate::auth_model_patterns::denial::model_denied_client_message;
 use crate::auth_model_patterns::grant::{ModelGrantPattern, key_model_aliases, resolve_team_alias};
@@ -25,10 +26,10 @@ pub async fn check_agent_ceiling(
     if requested::is_falsey(model) {
         return Ok(());
     }
-    let Some(token) = token else {
+    let Some(key) = token else {
         return Ok(());
     };
-    let Some(agent_id) = token
+    let Some(agent_id) = key
         .view
         .token
         .agent_id
@@ -37,19 +38,37 @@ pub async fn check_agent_ceiling(
     else {
         return Ok(());
     };
-    let Some(source) = source else {
+    let Some(access) = source else {
         return Err(AgentModelGrantsError::Unavailable);
     };
-    // the managed record wins; only an unmanaged agent asks the registry resolver
-    let managed = source.managed_policy(Some(token));
-    let ceilings = match managed {
-        Some(policy) => source.managed_ceilings(&policy).await?,
-        None => match source.unmanaged_ceiling(agent_id).await? {
-            Some(ceiling) => vec![ceiling],
-            None => Vec::new(),
-        },
+    let ceilings = ceilings_for(key, agent_id, access).await?;
+    check_every_ceiling(model, key, agent_id, &ceilings, context)
+}
+
+// the managed record wins; only an unmanaged agent asks the registry resolver, and no group means no ceiling
+async fn ceilings_for(
+    key: &UserAPIKeyAuth,
+    agent_id: &str,
+    access: &dyn AgentAccessSource,
+) -> Result<Vec<AgentAccessGroupCeiling>, AgentModelGrantsError> {
+    let Some(policy) = access.managed_policy(Some(key)) else {
+        return Ok(access
+            .unmanaged_ceiling(agent_id)
+            .await?
+            .map_or_else(Vec::new, |ceiling| vec![ceiling]));
     };
-    let team_aliases = token
+    Ok(access.managed_ceilings(&policy).await?)
+}
+
+// the team alias resolves once, then each ceiling's models are checked; an empty ceiling denies the request
+fn check_every_ceiling(
+    model: &RequestedModels,
+    key: &UserAPIKeyAuth,
+    agent_id: &str,
+    ceilings: &[AgentAccessGroupCeiling],
+    context: &ModelAccessContext<'_>,
+) -> Result<(), AgentModelGrantsError> {
+    let team_aliases = key
         .view
         .team_model_aliases
         .as_ref()
@@ -58,32 +77,41 @@ pub async fn check_agent_ceiling(
     let dispatched = resolve_team_alias(
         model,
         &team_aliases,
-        token.view.token.team_id.as_deref(),
+        key.view.token.team_id.as_deref(),
         context.view,
     );
-    let targets = key_model_aliases(&token.view.token.aliases.0);
     for ceiling in ceilings {
         if ceiling.models.is_empty() {
             return Err(AgentModelGrantsError::Denied(Box::new(no_models_denial(
                 model, agent_id,
             ))));
         }
-        let grant = ModelGrantPattern {
-            // the resolver returns a sorted set, which is the source's `sorted(ceiling.models)`
-            models: ceiling.models.iter().cloned().collect(),
-            team_model_aliases: BTreeMap::new(),
-            key_model_aliases: targets.clone(),
-            team_id: token.view.token.team_id.clone(),
-        };
-        AgentModelGrantsError::gate(can_object_call_model(
-            &dispatched,
-            &grant,
-            ModelAccessObject::Agent,
-            context,
-            0,
-        ))?;
+        check_ceiling(ceiling, &dispatched, key, context)?;
     }
     Ok(())
+}
+
+// _can_object_call_model with object_type agent: the ceiling's models and the key's own aliases
+fn check_ceiling(
+    ceiling: &AgentAccessGroupCeiling,
+    dispatched: &RequestedModels,
+    key: &UserAPIKeyAuth,
+    context: &ModelAccessContext<'_>,
+) -> Result<(), AgentModelGrantsError> {
+    let grant = ModelGrantPattern {
+        // the resolver returns a sorted set, which is the source's `sorted(ceiling.models)`
+        models: ceiling.models.iter().cloned().collect(),
+        team_model_aliases: BTreeMap::new(),
+        key_model_aliases: key_model_aliases(&key.view.token.aliases.0),
+        team_id: key.view.token.team_id.clone(),
+    };
+    AgentModelGrantsError::gate(can_object_call_model(
+        dispatched,
+        &grant,
+        ModelAccessObject::Agent,
+        context,
+        0,
+    ))
 }
 
 // the client sees the safe model-access message; the group diagnostic stays on the exception
