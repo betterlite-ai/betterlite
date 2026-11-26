@@ -83,11 +83,12 @@ def run(input_value: Input) -> Answer:
 
 
 def route_allowed(input_value: Input) -> RouteAnswer:
+    body: dict[str, JsonValue] = required(input_value.get("body"), "route_allowed", "body")
     try:
         allowed = auth_checks._is_api_route_allowed(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L1313-L1344
             route=required(input_value.get("route"), "route_allowed", "route"),
             request=request_for(input_value.get("method"), input_value.get("user_id_query")),
-            request_data=required(input_value.get("body"), "route_allowed", "body"),
+            request_data=body,
             valid_token=caller_key(input_value.get("token")),
             user_obj=user_row(input_value.get("user")),
         )
@@ -97,11 +98,12 @@ def route_allowed(input_value: Input) -> RouteAnswer:
 
 
 def viewer_access(input_value: Input) -> RouteAnswer:
+    body: dict[str, JsonValue] = required(input_value.get("body"), "viewer_access", "body")
     try:
         RouteChecks._check_proxy_admin_viewer_access(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L835-L940
             route=required(input_value.get("route"), "viewer_access", "route"),
             _user_role=LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY.value,
-            request_data=required(input_value.get("body"), "viewer_access", "body"),
+            request_data=body,
             request=request_for(input_value.get("method"), None),
         )
     except Exception as raised:  # noqa: BLE001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L80
