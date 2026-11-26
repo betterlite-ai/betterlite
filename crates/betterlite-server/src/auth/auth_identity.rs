@@ -13,6 +13,7 @@ use crate::auth::auth_end_users::EndUserStageInput;
 use crate::auth::auth_key_budgets::KeyBudgetStageInput;
 use crate::auth::auth_model_patterns::{ModelAccessRejection, ModelPatternStageInput, run_stage};
 use crate::auth::auth_org_lookup::OrgStageInput;
+use crate::auth::auth_policy_support::{self, AuthPolicySupportStageInput};
 use crate::auth::auth_request_models::{RequestModelStageInput, resolve};
 use crate::auth::auth_request_policy::{self, AuthRequestPolicyStageInput};
 use crate::auth::auth_resource_grants::{self, ResourceGrantStageInput};
@@ -41,6 +42,7 @@ pub enum AuthBackend {
     OrganizationRoutePolicy,
     AuthOrgLookup,
     AuthEndUsers,
+    AuthPolicySupport,
     ModelGrantIntersection,
 }
 
@@ -60,6 +62,7 @@ pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
     AuthBackend::OrganizationRoutePolicy,
     AuthBackend::AuthOrgLookup,
     AuthBackend::AuthEndUsers,
+    AuthBackend::AuthPolicySupport,
     AuthBackend::ModelGrantIntersection,
 ];
 
@@ -79,6 +82,7 @@ pub enum StageInput {
     OrganizationRoutePolicy(Box<OrganizationPolicyStageInput>),
     AuthOrgLookup(Box<OrgStageInput>),
     AuthEndUsers(Box<EndUserStageInput>),
+    AuthPolicySupport(Box<AuthPolicySupportStageInput>),
     ModelGrantIntersection(Box<GrantStageInput>),
 }
 
@@ -132,6 +136,7 @@ pub(crate) enum StageFailure {
     OrganizationRoutePolicy(Box<ProxyException>),
     OrgLookup(Box<ProxyException>),
     EndUsers(Box<ProxyException>),
+    AuthPolicySupport(Box<ProxyException>),
     ModelGrants(Box<ProxyException>),
 }
 
@@ -168,6 +173,7 @@ impl StageInput {
             Self::OrganizationRoutePolicy(_) => AuthBackend::OrganizationRoutePolicy,
             Self::AuthOrgLookup(_) => AuthBackend::AuthOrgLookup,
             Self::AuthEndUsers(_) => AuthBackend::AuthEndUsers,
+            Self::AuthPolicySupport(_) => AuthBackend::AuthPolicySupport,
             Self::ModelGrantIntersection(_) => AuthBackend::ModelGrantIntersection,
         }
     }
@@ -207,6 +213,9 @@ pub(crate) fn dispatch(
             .map_err(StageFailure::OrganizationRoutePolicy),
         StageInput::AuthOrgLookup(stage) => Ok(stage.context.clone()),
         StageInput::AuthEndUsers(stage) => Ok(stage.context.clone()),
+        StageInput::AuthPolicySupport(stage) => {
+            auth_policy_support::run_stage(stage).map_err(StageFailure::AuthPolicySupport)
+        }
         StageInput::ModelGrantIntersection(stage) => Ok(stage.context.clone()),
     }
 }

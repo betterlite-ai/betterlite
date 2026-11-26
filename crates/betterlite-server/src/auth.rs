@@ -53,13 +53,11 @@ pub mod team_budget_admission;
 pub mod trusted_network;
 pub mod virtual_key_routes;
 
-use std::collections::BTreeSet;
-use std::sync::Arc;
+use std::{collections::BTreeSet, sync::Arc};
 
 use betterlite_auth::auth_request_models::MODEL_ROUTING_HEADER_NAME;
 use betterlite_auth::auth_request_models::catalog::{EmptyCatalog, RequestModelResolver};
-use betterlite_models::decisions::Json;
-use betterlite_models::model_registration::JsonObject;
+use betterlite_models::{decisions::Json, model_registration::JsonObject};
 
 use crate::auth::auth_identity::{
     AuthBackend, AuthContext, StageFailure, StageInput, resource_grant_stage_input,
@@ -137,6 +135,7 @@ fn stage_input(
         AuthBackend::AuthEndUsers => Ok(StageInput::AuthEndUsers(Box::new(
             auth_end_users::stage_input(request, authenticated)?,
         ))),
+        AuthBackend::AuthPolicySupport => auth_policy_support::stage(request, authenticated, body),
         AuthBackend::ModelGrantIntersection => Ok(StageInput::ModelGrantIntersection(Box::new(
             model_grant_intersection::stage_input(request, authenticated)?,
         ))),
@@ -219,7 +218,8 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
         | StageInput::AuthRequestModels(_)
         | StageInput::AuthModelPatterns(_)
         | StageInput::AuthResourceGrants(_)
-        | StageInput::OrganizationRoutePolicy(_)) => Ok(other),
+        | StageInput::OrganizationRoutePolicy(_)
+        | StageInput::AuthPolicySupport(_)) => Ok(other),
     }
 }
 

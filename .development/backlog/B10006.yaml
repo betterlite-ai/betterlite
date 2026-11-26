@@ -1,7 +1,7 @@
 id: B10006
 milestone: M3 providers
 title: Custom Python providers and the legacy provider settings through the server
-status: blocked
+status: todo
 depends_on: [B044, B164, B165, B8043, B5653, B5657, B5658, B002, B010, B037, B172, B184, B500, B1500, B2487, B8613, B8610, B9990]
 file: tasks/B10006-legacy-provider-seam.yaml
 covers:
@@ -11,5 +11,5 @@ parent: null
 split_from: B044
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, custom Python providers and legacy provider settings through the server"
+blocked_reason: null
 pr: null

@@ -1,7 +1,7 @@
 id: B988
 milestone: M5 api families
 title: Messages mcp
-status: blocked
+status: todo
 depends_on: [B171, B948, B950, B982, B1087, B949, B002]
 file: tasks/B988-messages-mcp.yaml
 covers:
@@ -10,5 +10,5 @@ parent: B081
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, MCP in Messages waits on MCP"
+blocked_reason: null
 pr: null

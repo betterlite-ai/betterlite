@@ -1,7 +1,7 @@
 id: B119
 milestone: M7 observability
 title: Web search and code interpreter interception, agentic loops
-status: blocked
+status: todo
 depends_on: [B2419, B4110, B4117, B4119, B8294, B9820, B9823, B9825]
 file: tasks/B119-chat-provider-agentic-hooks.yaml
 covers:
@@ -15,5 +15,5 @@ parent: null
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, web search and code interpreter interception can wait"
+blocked_reason: null
 pr: null
