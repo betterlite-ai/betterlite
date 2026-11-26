@@ -23,7 +23,6 @@ use crate::auth::virtual_key_routes::{self, VirtualKeyRouteStageInput};
 use crate::error_body::AuthenticationFailure;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[repr(usize)]
 pub enum AuthBackend {
     MasterKey,
     AuthRequestPolicy,
@@ -55,6 +54,14 @@ pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
     AuthBackend::AuthKeyBudgets,
     AuthBackend::TeamBudgetAdmission,
     AuthBackend::OrganizationRoutePolicy,
+    AuthBackend::AuthOrgLookup,
+    AuthBackend::AuthEndUsers,
+];
+
+const PREFETCHED_CONTEXT_STAGES: &[AuthBackend] = &[
+    AuthBackend::AuthTagBudgets,
+    AuthBackend::AuthKeyBudgets,
+    AuthBackend::TeamBudgetAdmission,
     AuthBackend::AuthOrgLookup,
     AuthBackend::AuthEndUsers,
 ];
@@ -120,37 +127,43 @@ impl From<AuthenticationFailure> for StageFailure {
     }
 }
 
-type StageDispatcher = fn(&StageInput, &SecretString) -> Result<AuthContext, StageFailure>;
-
-const STAGE_DISPATCHERS: [StageDispatcher; 14] = [
-    master_key_dispatch,
-    auth_request_policy_stage,
-    auth_request_body_safety_stage,
-    auth_virtual_key_routes_stage,
-    auth_request_models_stage,
-    auth_model_patterns_stage,
-    entity_model_access_stage,
-    auth_resource_grants_stage,
-    prefetched_context,
-    prefetched_context,
-    prefetched_context,
-    org_route_policy_stage,
-    prefetched_context,
-    prefetched_context,
-];
-
 pub(crate) fn dispatch(
     backend: AuthBackend,
     input: &StageInput,
     master_key: &SecretString,
 ) -> Result<AuthContext, StageFailure> {
-    STAGE_DISPATCHERS[backend as usize](input, master_key)
+    if backend == AuthBackend::MasterKey {
+        return master_key_stage(input, master_key).map_err(StageFailure::from);
+    }
+    if backend == AuthBackend::AuthRequestPolicy {
+        return auth_request_policy_stage(input);
+    }
+    if backend == AuthBackend::RequestBodySafety {
+        return auth_request_body_safety_stage(input);
+    }
+    if backend == AuthBackend::AuthVirtualKeyRoutes {
+        return auth_virtual_key_routes_stage(input);
+    }
+    if backend == AuthBackend::AuthRequestModels {
+        return auth_request_models_stage(input);
+    }
+    if backend == AuthBackend::AuthModelPatterns {
+        return auth_model_patterns_stage(input);
+    }
+    if backend == AuthBackend::EntityModelAccess {
+        return entity_model_access_stage(input);
+    }
+    if backend == AuthBackend::AuthResourceGrants {
+        return auth_resource_grants_stage(input);
+    }
+    if PREFETCHED_CONTEXT_STAGES.contains(&backend) {
+        // These stages' reads ran while their inputs were assembled, so only identity remains.
+        return prefetched_context(input);
+    }
+    org_route_policy_stage(input)
 }
 
-fn prefetched_context(
-    input: &StageInput,
-    _master_key: &SecretString,
-) -> Result<AuthContext, StageFailure> {
+fn prefetched_context(input: &StageInput) -> Result<AuthContext, StageFailure> {
     match input {
         StageInput::AuthTagBudgets(stage) => Ok(stage.context.clone()),
         StageInput::AuthKeyBudgets(stage) => Ok(stage.context.clone()),
@@ -171,10 +184,7 @@ fn prefetched_context(
     }
 }
 
-fn entity_model_access_stage(
-    input: &StageInput,
-    _master_key: &SecretString,
-) -> Result<AuthContext, StageFailure> {
+fn entity_model_access_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
     let StageInput::EntityModelAccess(stage) = input else {
         return Err(StageFailure::from(AuthenticationFailure::Missing));
     };
@@ -182,69 +192,48 @@ fn entity_model_access_stage(
     Ok(stage.context.clone())
 }
 
-fn auth_request_policy_stage(
-    input: &StageInput,
-    _master_key: &SecretString,
-) -> Result<AuthContext, StageFailure> {
+fn auth_request_policy_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
     let StageInput::AuthRequestPolicy(stage) = input else {
         return Err(StageFailure::from(AuthenticationFailure::Missing));
     };
     auth_request_policy::run_stage(stage).map_err(StageFailure::AuthRequestPolicy)
 }
 
-fn auth_request_body_safety_stage(
-    input: &StageInput,
-    _master_key: &SecretString,
-) -> Result<AuthContext, StageFailure> {
+fn auth_request_body_safety_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
     let StageInput::RequestBodySafety(stage) = input else {
         return Err(StageFailure::from(AuthenticationFailure::Missing));
     };
     request_body_safety::run_stage(stage).map_err(StageFailure::RequestBodySafety)
 }
 
-fn auth_resource_grants_stage(
-    input: &StageInput,
-    _master_key: &SecretString,
-) -> Result<AuthContext, StageFailure> {
+fn auth_resource_grants_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
     let StageInput::AuthResourceGrants(stage) = input else {
         return Err(StageFailure::from(AuthenticationFailure::Missing));
     };
     auth_resource_grants::run_stage(stage).map_err(StageFailure::ResourceGrants)
 }
 
-fn org_route_policy_stage(
-    input: &StageInput,
-    _master_key: &SecretString,
-) -> Result<AuthContext, StageFailure> {
+fn org_route_policy_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
     let StageInput::OrganizationRoutePolicy(stage) = input else {
         return Err(StageFailure::from(AuthenticationFailure::Missing));
     };
     organization_route_policy::run_stage(stage).map_err(StageFailure::OrganizationRoutePolicy)
 }
 
-fn auth_virtual_key_routes_stage(
-    input: &StageInput,
-    _master_key: &SecretString,
-) -> Result<AuthContext, StageFailure> {
+fn auth_virtual_key_routes_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
     let StageInput::AuthVirtualKeyRoutes(stage) = input else {
         return Err(StageFailure::from(AuthenticationFailure::Missing));
     };
     virtual_key_routes::run_stage(stage).map_err(StageFailure::VirtualKeyRoutes)
 }
 
-fn auth_model_patterns_stage(
-    input: &StageInput,
-    _master_key: &SecretString,
-) -> Result<AuthContext, StageFailure> {
+fn auth_model_patterns_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
     let StageInput::AuthModelPatterns(stage) = input else {
         return Err(StageFailure::from(AuthenticationFailure::Missing));
     };
     run_stage(stage).map_err(|rejection| StageFailure::ModelAccess(Box::new(rejection)))
 }
-fn auth_request_models_stage(
-    input: &StageInput,
-    _master_key: &SecretString,
-) -> Result<AuthContext, StageFailure> {
+fn auth_request_models_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
     let StageInput::AuthRequestModels(stage) = input else {
         return Err(StageFailure::from(AuthenticationFailure::Missing));
     };
@@ -255,13 +244,6 @@ fn auth_request_models_stage(
             Err(StageFailure::from(AuthenticationFailure::Missing))
         }
     }
-}
-
-fn master_key_dispatch(
-    input: &StageInput,
-    master_key: &SecretString,
-) -> Result<AuthContext, StageFailure> {
-    master_key_stage(input, master_key).map_err(StageFailure::from)
 }
 
 fn master_key_stage(
