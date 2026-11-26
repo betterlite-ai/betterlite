@@ -26,5 +26,5 @@ calls:
       headers: {x_forwarded_for: null, x_forwarded_proto: null, host: null}
       peer: null
       scheme: http
-      settings: {proxy_base_url: null, use_x_forwarded_for: false, trusted_proxy_ranges: [fe80::/10], mcp_trusted_proxy_ranges: null, mcp_internal_ip_ranges: null, mcp_xff_num_trusted_hops: null}
+      settings: {proxy_base_url: null, use_x_forwarded_for: false, trusted_proxy_ranges: ["fe80::/10"], mcp_trusted_proxy_ranges: null, mcp_internal_ip_ranges: null, mcp_xff_num_trusted_hops: null}
       scenario: {kind: ip_in_networks, client_ip: "fe80::1%eth0/128", xff_header: "", num_trusted_hops: 0, feature_name: "", setting_name: ""}

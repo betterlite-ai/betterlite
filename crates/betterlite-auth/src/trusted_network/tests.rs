@@ -852,6 +852,16 @@ fn depth_scan_reads_brackets_in_strings_as_text() {
 }
 
 #[test]
+fn depth_counts_nesting_not_siblings() {
+    // 65 shallow arrays are siblings, not levels, so the document reaches the typed decoder
+    let document = format!("[{}[]]", "[],".repeat(MAX_NETWORK_HEADER_DEPTH));
+    assert!(matches!(
+        decode_network_headers(document.as_bytes()),
+        Err(DecodeError::Json(_))
+    ));
+}
+
+#[test]
 fn native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso() {
     const PREFIX: &[u8] = br#"{"host":""#;
     const SUFFIX: &[u8] = br#""}"#;
@@ -890,6 +900,13 @@ fn native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso
     let over = format!("{{\"host\":{open_over}{close_over}}}");
     assert!(matches!(
         decode_network_headers(over.as_bytes()),
+        Err(DecodeError::TooDeep { depth, limit })
+            if depth == OVER_DEPTH && limit == MAX_NETWORK_HEADER_DEPTH
+    ));
+    // an escaped backslash ends before the closing quote, so the brackets after it count as levels
+    let escaped_backslash = format!("{{\"host\":\"\\\\\",\"x\":{open_over}{close_over}}}");
+    assert!(matches!(
+        decode_network_headers(escaped_backslash.as_bytes()),
         Err(DecodeError::TooDeep { depth, limit })
             if depth == OVER_DEPTH && limit == MAX_NETWORK_HEADER_DEPTH
     ));
