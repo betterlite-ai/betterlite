@@ -146,8 +146,7 @@ fn failing_resolver() -> Arc<RequestModelResolver> {
 async fn failure_stops_downstream() {
     let config = config_with_master_key();
     let reached = Arc::new(AtomicBool::new(false));
-    // Exercise the installed auth pipeline on a catalog-reading route without the unrelated
-    // route-admission table, which does not expose the prediction endpoint yet.
+    // the route-admission table does not expose the prediction endpoint, so mount the installed auth stage alone
     let settings = AuthSettings {
         master_key: config.general_settings.master_key.clone(),
         routes: config.sections.auth_route_patterns.clone(),
