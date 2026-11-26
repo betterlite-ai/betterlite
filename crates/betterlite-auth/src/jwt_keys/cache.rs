@@ -7,17 +7,27 @@ use crate::auth_cache::{AuthCache, AuthCacheError, WriteOptions, WriteTtl};
 // The values JWTHandler stores are raw JSON: a keys list, a jwks_uri string and a numeric epoch.
 #[async_trait]
 pub trait KeyCache: Send + Sync {
-    async fn get(&self, key: &str) -> Result<Option<Json>, AuthCacheError>;
-    async fn set(&self, key: &str, value: &Json, ttl_seconds: f64) -> Result<(), AuthCacheError>;
+    async fn read_value(&self, key: &str) -> Result<Option<Json>, AuthCacheError>;
+    async fn write_value(
+        &self,
+        key: &str,
+        value: &Json,
+        ttl_seconds: f64,
+    ) -> Result<(), AuthCacheError>;
 }
 
 #[async_trait]
 impl<Tier: AuthCacheTier> KeyCache for AuthCache<Tier> {
-    async fn get(&self, key: &str) -> Result<Option<Json>, AuthCacheError> {
+    async fn read_value(&self, key: &str) -> Result<Option<Json>, AuthCacheError> {
         Ok(self.async_get(key, false).await)
     }
 
-    async fn set(&self, key: &str, value: &Json, ttl_seconds: f64) -> Result<(), AuthCacheError> {
+    async fn write_value(
+        &self,
+        key: &str,
+        value: &Json,
+        ttl_seconds: f64,
+    ) -> Result<(), AuthCacheError> {
         self.async_set(
             Some(key),
             value,

@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, VecDeque};
+use std::ops::Add as _;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
@@ -63,7 +64,7 @@ impl Cache {
 
 #[async_trait]
 impl KeyCache for Cache {
-    async fn get(&self, key: &str) -> Result<Option<Json>, AuthCacheError> {
+    async fn read_value(&self, key: &str) -> Result<Option<Json>, AuthCacheError> {
         let now = *lock(&self.clock.now);
         let mut entries = lock(&self.entries);
         let Some(entry) = entries.get(key) else {
@@ -76,7 +77,12 @@ impl KeyCache for Cache {
         Ok(Some(entry.value.clone()))
     }
 
-    async fn set(&self, key: &str, value: &Json, ttl_seconds: f64) -> Result<(), AuthCacheError> {
+    async fn write_value(
+        &self,
+        key: &str,
+        value: &Json,
+        ttl_seconds: f64,
+    ) -> Result<(), AuthCacheError> {
         let now = *lock(&self.clock.now);
         {
             let mut entries = lock(&self.entries);
@@ -84,7 +90,7 @@ impl KeyCache for Cache {
                 .get(key)
                 .map(|entry| entry.expires_at)
                 .filter(|expires| now <= *expires)
-                .unwrap_or(now + ttl_seconds);
+                .unwrap_or(now.add(ttl_seconds));
             entries.insert(
                 key.to_owned(),
                 Entry {

@@ -12,7 +12,7 @@ pub struct NoRegisteredAgents;
 
 impl AgentLookup for NoRegisteredAgents {
     fn get_agent_list(&self) -> Vec<AgentResponse> {
-        Vec::new()
+        vec![]
     }
 
     fn get_agent_by_id(&self, _agent_id: &str) -> Option<AgentResponse> {

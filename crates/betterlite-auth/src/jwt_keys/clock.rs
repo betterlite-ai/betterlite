@@ -1,6 +1,7 @@
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
+use tokio::time;
 
 // Wall-clock seconds since the epoch, because a stale copy is measured against the same clock Redis stored it with.
 #[async_trait]
@@ -20,6 +21,6 @@ impl Clock for SystemClock {
     }
 
     async fn sleep(&self, delay: Duration) {
-        tokio::time::sleep(delay).await;
+        time::sleep(delay).await;
     }
 }

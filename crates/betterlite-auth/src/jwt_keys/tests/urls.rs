@@ -5,12 +5,14 @@ use crate::jwt_keys::resolver::{
     STALE_WRITTEN_AT_PREFIX,
 };
 
-use super::support::{DISCOVERY_URL, JWKS_URL, ScriptedHttp, fixture, key, keys, settings};
+use super::support::{
+    DISCOVERY_URL, JWKS_URL, ScriptedHttp, key, keys, new_resolver_fixture, settings,
+};
 
 #[tokio::test]
 async fn discovery_substring_detection_and_exact_cache_keys() {
     // a plain JWKS URL is returned untouched, with no fetch
-    let plain = fixture(settings(None, 600.0, 3600.0), 1_000.0, Vec::new());
+    let plain = new_resolver_fixture(settings(None, 600.0, 3600.0), 1_000.0, Vec::new());
     assert_eq!(
         plain.resolver.resolve_jwks_url(JWKS_URL).await.unwrap(),
         JWKS_URL
@@ -22,7 +24,7 @@ async fn discovery_substring_detection_and_exact_cache_keys() {
     let discovery = format!("{DISCOVERY_URL}?tenant=a");
     let jwks = "https://idp.example.com/tenant-a/jwks";
     let document = format!(r#"{{"jwks_uri":"{jwks}"}}"#);
-    let looked_up = fixture(
+    let looked_up = new_resolver_fixture(
         settings(None, 600.0, 3600.0),
         1_000.0,
         vec![ScriptedHttp::text(200, &document)],
@@ -56,10 +58,15 @@ async fn discovery_substring_detection_and_exact_cache_keys() {
         .unwrap();
     assert_eq!(again, jwks);
     assert_eq!(looked_up.http.requests().len(), 1);
+}
 
+#[tokio::test]
+async fn discovery_marker_is_substring() {
+    let jwks = "https://idp.example.com/tenant-a/jwks";
+    let document = format!(r#"{{"jwks_uri":"{jwks}"}}"#);
     // the marker anywhere in the URL counts, including inside a query value
     let in_query = "https://idp.example.com/jwks?next=/.well-known/openid-configuration";
-    let elsewhere = fixture(
+    let elsewhere = new_resolver_fixture(
         settings(None, 600.0, 3600.0),
         1_000.0,
         vec![ScriptedHttp::text(200, &document)],
@@ -70,7 +77,7 @@ async fn discovery_substring_detection_and_exact_cache_keys() {
 
     // the detection is case sensitive
     let upper = "https://idp.example.com/.WELL-KNOWN/openid-configuration";
-    let untouched = fixture(settings(None, 600.0, 3600.0), 1_000.0, Vec::new());
+    let untouched = new_resolver_fixture(settings(None, 600.0, 3600.0), 1_000.0, Vec::new());
     assert_eq!(
         untouched.resolver.resolve_jwks_url(upper).await.unwrap(),
         upper
@@ -80,11 +87,11 @@ async fn discovery_substring_detection_and_exact_cache_keys() {
 
 #[tokio::test]
 async fn keys_cache_key_is_the_resolved_url() {
-    let jwks = "https://idp.example.com/realms/a/jwks?use=signing";
     let discovery = format!("{DISCOVERY_URL}?realm=a");
+    let jwks = "https://idp.example.com/realms/a/jwks?use=signing";
     let document = format!(r#"{{"jwks_uri":"{jwks}"}}"#);
-    let fixture = fixture(
-        settings(None, 600.0, 3600.0),
+    let fixture = new_resolver_fixture(
+        settings(Some(&discovery), 600.0, 3600.0),
         1_000.0,
         vec![
             ScriptedHttp::text(200, &document),

@@ -12,7 +12,7 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use thiserror::Error;
 
-pub const MAX_DOCUMENT_BYTES: usize = 1_048_576;
+pub const MAX_DOCUMENT_BYTES: usize = 0x0010_0000;
 pub const MAX_DOCUMENT_DEPTH: usize = 64;
 
 // OIDC discovery, JWKS and UserInfo documents are provider JSON betterlite navigates, never a modeled wire type

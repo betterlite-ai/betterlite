@@ -7,7 +7,7 @@ use betterlite_auth::auth_identity::records::{
     CredentialRef, NetworkContext, Principal, SourceKey,
 };
 use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType};
-use betterlite_auth::jwt_keys::errors::exception_for;
+use betterlite_auth::jwt_keys::errors::{KeyError, exception_for};
 use betterlite_auth::jwt_keys::resolver::JwksResolver;
 use betterlite_auth::jwt_keys::resolver::keys::token_kid;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -20,15 +20,15 @@ use crate::state::ServerState;
 mod tests;
 
 // The request facts the key fetch needs, plus the resolver the state built or a test injected.
+#[derive(Clone)]
 pub struct JwtKeyStageInput {
     pub resolver: Option<Arc<JwksResolver>>,
     pub token: Option<SecretString>,
 }
 
 impl fmt::Debug for JwtKeyStageInput {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("JwtKeyStageInput")
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("JwtKeyStageInput")
             .field("resolver_present", &self.resolver.is_some())
             .field("token_present", &self.token.is_some())
             .finish()
@@ -54,26 +54,19 @@ pub(crate) fn stage_input(request: &Request<Body>) -> StageInput {
 
 // get_public_key runs before the master key comparison, so an unavailable or unknown key answers 503 or 401.
 pub(crate) async fn prefetched(stage: JwtKeyStageInput) -> Result<StageInput, StageFailure> {
-    let resolver = stage.resolver.clone();
-    let token = stage
-        .token
-        .as_ref()
-        .map(|token| token.expose_secret().to_owned());
-    let Some(resolver) = resolver else {
+    let Some(resolver) = stage.resolver.as_ref() else {
         return Ok(StageInput::JwtKeys(Box::new(stage)));
     };
-    if resolver.settings.public_key_url.is_none() {
-        return Ok(StageInput::JwtKeys(Box::new(stage)));
-    }
-    let Some(token) = token else {
+    let Some(credential) = stage.token.as_ref() else {
         return Ok(StageInput::JwtKeys(Box::new(stage)));
     };
+    let token = credential.expose_secret();
     if token.split('.').count() != 3 {
         return Ok(StageInput::JwtKeys(Box::new(stage)));
     }
-    let kid = token_kid(&token);
+    let kid = token_kid(token);
     match resolver.get_public_key(kid.as_deref()).await {
-        Ok(_) => Ok(StageInput::JwtKeys(Box::new(stage))),
+        Ok(_) | Err(KeyError::MissingUrl) => Ok(StageInput::JwtKeys(Box::new(stage))),
         Err(error) => Err(StageFailure::JwtKeys(Box::new(exception_for(&error)))),
     }
 }

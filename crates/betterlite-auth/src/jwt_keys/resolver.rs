@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use tokio::sync::Mutex as AsyncMutex;
 
 use betterlite_models::decisions::Json;
 
@@ -9,6 +10,7 @@ use super::clock::Clock;
 use super::errors::KeyError;
 use super::http::JwksHttp;
 use super::settings::JwtKeySettings;
+use refresh::refresh_or_serve_stale;
 
 pub mod fetch;
 pub mod keys;
@@ -32,11 +34,11 @@ pub enum Refresh<'url> {
 }
 
 pub struct JwksResolver {
-    pub settings: Arc<JwtKeySettings>,
+    settings: Arc<JwtKeySettings>,
     cache: Arc<dyn KeyCache>,
     http: Arc<dyn JwksHttp>,
     clock: Arc<dyn Clock>,
-    refresh_locks: Mutex<BTreeMap<String, Arc<tokio::sync::Mutex<()>>>>,
+    refresh_locks: Mutex<BTreeMap<String, Arc<AsyncMutex<()>>>>,
 }
 
 impl JwksResolver {
@@ -143,7 +145,7 @@ impl JwksResolver {
         // a stored null reads back as None in Python, so it is a miss here too
         if let Some(cached) = self
             .cache
-            .get(cache_key)
+            .read_value(cache_key)
             .await?
             .filter(|value| !matches!(value, Json::Null))
         {
@@ -153,17 +155,16 @@ impl JwksResolver {
         let _guard = lock.lock().await;
         if let Some(cached) = self
             .cache
-            .get(cache_key)
+            .read_value(cache_key)
             .await?
             .filter(|value| !matches!(value, Json::Null))
         {
             return Ok(cached);
         }
-        self.refresh_or_serve_stale(cache_key, ttl, refresh, log_context)
-            .await
+        refresh_or_serve_stale(self, cache_key, ttl, refresh, log_context).await
     }
 
-    fn refresh_lock(&self, cache_key: &str) -> Arc<tokio::sync::Mutex<()>> {
+    fn refresh_lock(&self, cache_key: &str) -> Arc<AsyncMutex<()>> {
         let mut locks = match self.refresh_locks.lock() {
             Ok(locks) => locks,
             Err(poisoned) => poisoned.into_inner(),

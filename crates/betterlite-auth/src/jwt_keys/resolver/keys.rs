@@ -15,11 +15,12 @@ pub fn plain_urls(raw: &str) -> Vec<String> {
 }
 
 // parse_keys quirks: one dict or one list accepts the kid, a longer list takes the last match, a longer dict none.
+#[must_use]
 pub fn parse_keys(keys: &Json, kid: Option<&str>) -> Option<Json> {
     match keys {
         Json::List(items) => match items.as_slice() {
             [only] => single_key_match(only, kid).then(|| only.clone()),
-            _ if items.len() > 1 => {
+            _ => {
                 let mut found = None;
                 for item in items {
                     let Json::Object(fields) = item else {
@@ -34,13 +35,14 @@ pub fn parse_keys(keys: &Json, kid: Option<&str>) -> Option<Json> {
                 }
                 found
             }
-            _ => None,
         },
-        Json::Object(fields) if fields.len() == 1 => (kid.is_none()
-            || matches!(fields.get("kid"), Some(Json::Text(value)) if Some(value.as_str()) == kid))
-        .then(|| keys.clone()),
+        Json::Object(fields) => {
+            (fields.len() == 1
+                && (kid.is_none()
+                    || matches!(fields.get("kid"), Some(Json::Text(value)) if Some(value.as_str()) == kid)))
+            .then(|| keys.clone())
+        }
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => None,
-        Json::Object(_) => None,
     }
 }
 
@@ -56,13 +58,13 @@ fn single_key_match(only: &Json, kid: Option<&str>) -> bool {
 // is_allowed_domain: unset allows every address, else the text after the last @ must match exactly.
 #[must_use]
 pub fn is_allowed_domain(allowed: Option<&str>, user_email: &str) -> bool {
-    let Some(allowed) = allowed else {
+    let Some(allowed_domain) = allowed else {
         return true;
     };
     user_email
         .rsplit('@')
         .next()
-        .is_some_and(|domain| domain == allowed)
+        .is_some_and(|domain| domain == allowed_domain)
 }
 
 // The kid of a compact JWT header, which pyjwt only hands over when the header is a JSON object with a string kid.

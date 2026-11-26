@@ -1,55 +1,54 @@
 use base64::Engine as _;
 use base64::engine::general_purpose::{URL_SAFE, URL_SAFE_NO_PAD};
-use betterlite_models::decisions::Json;
 use rstest::rstest;
 
 use crate::jwt_keys::agent::{AgentLookup as _, NoRegisteredAgents};
 use crate::jwt_keys::resolver::keys::{is_allowed_domain, parse_keys, token_kid};
 
-use super::support::{json, key, keys};
+use super::support::json;
 
-#[test]
-fn key_dict_cardinality_and_last_matching_kid() {
-    // a one-entry dict is a key candidate, and its kid is the only check
-    let single = json(r#"{"kid":"a"}"#);
-    assert_eq!(parse_keys(&single, Some("a")), Some(single.clone()));
-    assert_eq!(parse_keys(&single, Some("b")), None);
-    assert_eq!(parse_keys(&single, None), Some(single.clone()));
-
-    // a dict with more than one field yields nothing, even when its kid matches
-    assert_eq!(parse_keys(&key("a"), Some("a")), None);
-    assert_eq!(parse_keys(&key("a"), None), None);
-
-    // a one-entry list is checked on its only entry, and that entry must be an object
-    assert_eq!(parse_keys(&keys(&[key("a")]), Some("a")), Some(key("a")));
-    assert_eq!(parse_keys(&keys(&[key("a")]), Some("b")), None);
-    assert_eq!(parse_keys(&keys(&[key("a")]), None), Some(key("a")));
-    assert_eq!(parse_keys(&json(r#"["a"]"#), None), None);
-    assert_eq!(parse_keys(&json("[7]"), None), None);
-
-    // a longer list takes the last matching entry and needs a kid to match at all
-    let listed = json(r#"[{"kid":"a","n":"1"},{"kid":"b","n":"2"},{"kid":"a","n":"3"}]"#);
-    assert_eq!(
-        parse_keys(&listed, Some("a")),
-        Some(json(r#"{"kid":"a","n":"3"}"#))
-    );
-    assert_eq!(
-        parse_keys(&listed, Some("b")),
-        Some(json(r#"{"kid":"b","n":"2"}"#))
-    );
-    assert_eq!(parse_keys(&listed, Some("c")), None);
-    assert_eq!(parse_keys(&listed, None), None);
-    let mixed = json(r#"[{"kid":"a","n":"1"},7,"x",{"kid":"a","n":"2"}]"#);
-    assert_eq!(
-        parse_keys(&mixed, Some("a")),
-        Some(json(r#"{"kid":"a","n":"2"}"#))
-    );
-
-    // nothing at all is nothing
-    assert_eq!(parse_keys(&json("[]"), Some("a")), None);
-    assert_eq!(parse_keys(&json("{}"), Some("a")), None);
-    assert_eq!(parse_keys(&Json::Null, None), None);
-    assert_eq!(parse_keys(&Json::Text("a".to_owned()), None), None);
+#[rstest]
+#[case::dict_match(r#"{"kid":"a"}"#, Some(r#"a"#), Some(r#"{"kid":"a"}"#))]
+#[case::dict_miss(r#"{"kid":"a"}"#, Some(r#"b"#), None)]
+#[case::dict_no_kid(r#"{"kid":"a"}"#, None, Some(r#"{"kid":"a"}"#))]
+#[case::long_dict(r#"{"kid":"a","n":"1"}"#, Some(r#"a"#), None)]
+#[case::long_dict_no_kid(r#"{"kid":"a","n":"1"}"#, None, None)]
+#[case::list_match(
+    r#"[{"kid":"a","n":"1"}]"#,
+    Some(r#"a"#),
+    Some(r#"{"kid":"a","n":"1"}"#)
+)]
+#[case::list_miss(r#"[{"kid":"a"}]"#, Some(r#"b"#), None)]
+#[case::list_no_kid(r#"[{"kid":"a"}]"#, None, Some(r#"{"kid":"a"}"#))]
+#[case::list_string(r#"["a"]"#, None, None)]
+#[case::list_number(r#"[7]"#, None, None)]
+#[case::last_match(
+    r#"[{"kid":"a","n":"1"},{"kid":"b","n":"2"},{"kid":"a","n":"3"}]"#,
+    Some(r#"a"#),
+    Some(r#"{"kid":"a","n":"3"}"#)
+)]
+#[case::middle_match(
+    r#"[{"kid":"a"},{"kid":"b"},{"kid":"a"}]"#,
+    Some(r#"b"#),
+    Some(r#"{"kid":"b"}"#)
+)]
+#[case::long_list_miss(r#"[{"kid":"a"},{"kid":"b"}]"#, Some(r#"c"#), None)]
+#[case::long_list_no_kid(r#"[{"kid":"a"},{"kid":"b"}]"#, None, None)]
+#[case::mixed_list(
+    r#"[{"kid":"a"},7,"x",{"kid":"a","n":"2"}]"#,
+    Some(r#"a"#),
+    Some(r#"{"kid":"a","n":"2"}"#)
+)]
+#[case::empty_list(r#"[]"#, Some(r#"a"#), None)]
+#[case::empty_object(r#"{}"#, Some(r#"a"#), None)]
+#[case::null(r#"null"#, None, None)]
+#[case::text(r#""a""#, None, None)]
+fn key_dict_cardinality_and_last_matching_kid(
+    #[case] body: &str,
+    #[case] kid: Option<&str>,
+    #[case] expected: Option<&str>,
+) {
+    assert_eq!(parse_keys(&json(body), kid), expected.map(json));
 }
 
 #[test]

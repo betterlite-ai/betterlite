@@ -8,20 +8,20 @@ use crate::jwt_keys::errors::{KeyError, exception_for};
 use crate::jwt_keys::resolver::{DISCOVERY_CACHE_KEY_PREFIX, KEYS_CACHE_KEY_PREFIX};
 
 use super::support::{
-    DISCOVERY_URL, JWKS_URL, KEYS_KEY, LevelCapture, Reply, ScriptedHttp, fixture, json, key, keys,
-    outage, settings,
+    DISCOVERY_URL, JWKS_URL, KEYS_KEY, LevelCapture, Reply, ScriptedHttp, json, key, keys,
+    new_resolver_fixture, outage, settings,
 };
 
 #[tokio::test]
 async fn configured_jwks() {
     assert_eq!(KEYS_KEY, format!("{KEYS_CACHE_KEY_PREFIX}{JWKS_URL}"));
-    let fixture = fixture(
+    let fixture = new_resolver_fixture(
         settings(Some(JWKS_URL), 600.0, 3600.0),
         1_000.0,
         vec![ScriptedHttp::answer(&keys(&[key("a")]))],
     );
     let value = fixture.resolver.get_public_key(Some("a")).await.unwrap();
-    assert_eq!(value, keys(&[key("a")]));
+    assert_eq!(value, key("a"));
     assert_eq!(fixture.http.requests(), vec![JWKS_URL.to_owned()]);
     let writes = fixture.cache.writes();
     assert_eq!(writes[0].key, KEYS_KEY);
@@ -34,7 +34,7 @@ async fn oidc_discovery() {
     let discovery = format!("{DISCOVERY_URL}?tenant=b");
     let jwks = "https://idp.example.com/tenant-b/jwks";
     let document = format!(r#"{{"issuer":"https://idp.example.com","jwks_uri":"{jwks}"}}"#);
-    let fixture = fixture(
+    let fixture = new_resolver_fixture(
         settings(Some(&discovery), 600.0, 3600.0),
         1_000.0,
         vec![
@@ -43,7 +43,7 @@ async fn oidc_discovery() {
         ],
     );
     let value = fixture.resolver.get_public_key(Some("a")).await.unwrap();
-    assert_eq!(value, keys(&[key("a")]));
+    assert_eq!(value, key("a"));
     assert_eq!(
         fixture.http.requests(),
         vec![discovery.clone(), jwks.to_owned()]
@@ -58,8 +58,8 @@ async fn oidc_discovery() {
     assert_eq!(writes[3].value, keys(&[key("a")]));
 
     // both the discovery lookup and the keys are cached, so the next call goes nowhere
-    let value = fixture.resolver.get_public_key(Some("a")).await.unwrap();
-    assert_eq!(value, keys(&[key("a")]));
+    let value2 = fixture.resolver.get_public_key(Some("a")).await.unwrap();
+    assert_eq!(value2, key("a"));
     assert_eq!(fixture.http.requests().len(), 2);
 }
 
@@ -74,62 +74,65 @@ async fn oidc_discovery() {
 #[tokio::test]
 async fn discovery_status_parse_missing_uri_errors(#[case] body: &str) {
     // a status is a discovery failure with the body in the message
-    let status = fixture(
+    let status = new_resolver_fixture(
         settings(Some(DISCOVERY_URL), 600.0, 3600.0),
         1_000.0,
         vec![ScriptedHttp::text(404, "not found")],
     );
     let error = status.resolver.get_public_key(None).await.unwrap_err();
     assert!(matches!(
-        error,
+        &error,
         KeyError::DiscoveryStatus {
             status: 404,
-            ref body,
+            body: response_body,
             ..
-        } if body == "not found"
+        } if response_body == "not found"
     ));
     assert_eq!(status.http.requests().len(), 1);
 
     // invalid JSON, a non-object document, and every unusable jwks_uri shape have their own failures
-    let fixture = fixture(
+    let fixture = new_resolver_fixture(
         settings(Some(DISCOVERY_URL), 600.0, 3600.0),
         1_000.0,
         vec![ScriptedHttp::text(200, body)],
     );
-    let error = fixture
+    let error2 = fixture
         .resolver
         .get_public_key(Some("a"))
         .await
         .unwrap_err();
     let expected = if body == "{" {
-        matches!(error, KeyError::DiscoveryParse { .. })
+        matches!(error2, KeyError::DiscoveryParse { .. })
     } else {
-        matches!(error, KeyError::DiscoveryMissingUri { .. })
+        matches!(error2, KeyError::DiscoveryMissingUri { .. })
     };
-    assert!(expected, "body {body} gave {error:?}");
+    assert!(expected, "body {body} gave {error2:?}");
     assert!(fixture.cache.writes().is_empty());
 }
 
 #[tokio::test(flavor = "current_thread")]
 async fn jwks_status_parse_log_and_keys_envelope() {
     // a JWKS status names the status and the body
-    let status = fixture(
+    let status = new_resolver_fixture(
         settings(Some(JWKS_URL), 600.0, 3600.0),
         1_000.0,
         vec![ScriptedHttp::text(500, "upstream broke")],
     );
     let error = status.resolver.get_public_key(Some("a")).await.unwrap_err();
     assert!(matches!(
-        error,
+        &error,
         KeyError::JwksStatus {
             status: 500,
-            ref body,
+            body,
             ..
         } if body == "upstream broke"
     ));
+}
 
+#[tokio::test]
+async fn jwks_parse_logs_response() {
     // a parse failure logs the body at ERROR and raises the short message
-    let malformed = fixture(
+    let malformed = new_resolver_fixture(
         settings(Some(JWKS_URL), 600.0, 3600.0),
         1_000.0,
         vec![ScriptedHttp::text(200, "{\"keys\":[")],
@@ -158,9 +161,12 @@ async fn jwks_status_parse_log_and_keys_envelope() {
         "the parse failure logs the original body: {messages:?}"
     );
     drop(capture);
+}
 
+#[tokio::test]
+async fn jwks_envelope_and_bare_values() {
     // the keys member is what gets cached when it is there
-    let envelope = fixture(
+    let envelope = new_resolver_fixture(
         settings(Some(JWKS_URL), 600.0, 3600.0),
         1_000.0,
         vec![ScriptedHttp::text(
@@ -176,26 +182,26 @@ async fn jwks_status_parse_log_and_keys_envelope() {
     );
 
     // without a keys member the response itself is the key material, list or object
-    let bare_list = fixture(
+    let bare_list = new_resolver_fixture(
         settings(Some(JWKS_URL), 600.0, 3600.0),
         1_000.0,
         vec![ScriptedHttp::text(200, r#"[{"kid":"a","n":"one"}]"#)],
     );
-    let value = bare_list.resolver.get_public_key(Some("a")).await.unwrap();
-    assert_eq!(value, json(r#"{"kid":"a","n":"one"}"#));
+    let value2 = bare_list.resolver.get_public_key(Some("a")).await.unwrap();
+    assert_eq!(value2, json(r#"{"kid":"a","n":"one"}"#));
 
-    let bare_key = fixture(
+    let bare_key = new_resolver_fixture(
         settings(Some(JWKS_URL), 600.0, 3600.0),
         1_000.0,
         vec![ScriptedHttp::text(200, r#"{"kid":"a"}"#)],
     );
-    let value = bare_key.resolver.get_public_key(Some("a")).await.unwrap();
-    assert_eq!(value, json(r#"{"kid":"a"}"#));
+    let value3 = bare_key.resolver.get_public_key(Some("a")).await.unwrap();
+    assert_eq!(value3, json(r#"{"kid":"a"}"#));
 }
 
 #[tokio::test]
 async fn malformed_jwks() {
-    let fixture = fixture(
+    let fixture = new_resolver_fixture(
         settings(Some(JWKS_URL), 600.0, 3600.0),
         1_000.0,
         vec![ScriptedHttp::text(200, "not json")],
@@ -214,18 +220,18 @@ async fn malformed_jwks() {
     assert!(fixture.cache.writes().is_empty());
 
     // a scalar body reaches parse_keys instead, which finds no key at all
-    let scalar = fixture(
+    let scalar = new_resolver_fixture(
         settings(Some(JWKS_URL), 600.0, 3600.0),
         1_000.0,
         vec![ScriptedHttp::text(200, "7")],
     );
-    let error = scalar.resolver.get_public_key(Some("a")).await.unwrap_err();
-    assert!(matches!(error, KeyError::NoMatchingKey { .. }));
+    let error2 = scalar.resolver.get_public_key(Some("a")).await.unwrap_err();
+    assert!(matches!(error2, KeyError::NoMatchingKey { .. }));
 }
 
 #[tokio::test]
 async fn transport_three_attempts() {
-    let fixture = fixture(settings(Some(JWKS_URL), 600.0, 3600.0), 1_000.0, outage());
+    let fixture = new_resolver_fixture(settings(Some(JWKS_URL), 600.0, 3600.0), 1_000.0, outage());
     let error = fixture
         .resolver
         .get_public_key(Some("a"))
@@ -237,8 +243,8 @@ async fn transport_three_attempts() {
         vec![Duration::from_millis(250), Duration::from_millis(500)]
     );
     assert!(matches!(
-        error,
-        KeyError::Unreachable { ref message }
+        &error,
+        KeyError::Unreachable { message }
             if message.contains("after 3 attempts") && message.contains(JWKS_URL)
     ));
 }
@@ -246,17 +252,17 @@ async fn transport_three_attempts() {
 #[tokio::test]
 async fn http_error_no_transport_retry() {
     // a status is not retried
-    let status = fixture(
+    let status = new_resolver_fixture(
         settings(Some(JWKS_URL), 600.0, 3600.0),
         1_000.0,
         vec![ScriptedHttp::text(503, "busy")],
     );
     let error = status.resolver.get_public_key(Some("a")).await.unwrap_err();
     assert!(matches!(
-        error,
+        &error,
         KeyError::JwksStatus {
             status: 503,
-            ref body,
+            body,
             ..
         } if body == "busy"
     ));
@@ -264,13 +270,13 @@ async fn http_error_no_transport_retry() {
     assert!(status.clock.sleeps().is_empty());
 
     // a port-level failure is not retried either
-    let failed = fixture(
+    let failed = new_resolver_fixture(
         settings(Some(JWKS_URL), 600.0, 3600.0),
         1_000.0,
         vec![Reply::Failed],
     );
-    let error = failed.resolver.get_public_key(Some("a")).await.unwrap_err();
-    assert!(matches!(error, KeyError::Fetch { .. }));
+    let error2 = failed.resolver.get_public_key(Some("a")).await.unwrap_err();
+    assert!(matches!(error2, KeyError::Fetch { .. }));
     assert_eq!(failed.http.requests().len(), 1);
     assert!(failed.clock.sleeps().is_empty());
 }
@@ -282,7 +288,7 @@ async fn http_error_no_transport_retry() {
 #[tokio::test]
 async fn absent_empty_and_ordered_url_list(#[case] raw: &str) {
     // absent is a hard failure before any fetch
-    let absent = fixture(settings(None, 600.0, 3600.0), 1_000.0, Vec::new());
+    let absent = new_resolver_fixture(settings(None, 600.0, 3600.0), 1_000.0, Vec::new());
     let error = absent.resolver.get_public_key(None).await.unwrap_err();
     assert!(matches!(error, KeyError::MissingUrl));
     assert_eq!(
@@ -292,23 +298,26 @@ async fn absent_empty_and_ordered_url_list(#[case] raw: &str) {
     assert!(absent.http.requests().is_empty());
 
     // empty is an empty list, which is no URL to try
-    let empty = fixture(settings(Some(raw), 600.0, 3600.0), 1_000.0, Vec::new());
-    let error = empty.resolver.get_public_key(None).await.unwrap_err();
+    let empty = new_resolver_fixture(settings(Some(raw), 600.0, 3600.0), 1_000.0, Vec::new());
+    let error2 = empty.resolver.get_public_key(None).await.unwrap_err();
     assert!(matches!(
-        error,
-        KeyError::NoMatchingKey { ref keys, kid: None } if keys == "[]"
+        &error2,
+        KeyError::NoMatchingKey { keys, kid: None } if keys == "[]"
     ));
     assert_eq!(
-        error.to_string(),
+        error2.to_string(),
         "No matching public key found. keys=[], kid=None"
     );
     assert!(empty.http.requests().is_empty());
+}
 
+#[tokio::test]
+async fn ordered_urls_keep_duplicates() {
     // the list is tried in order, each entry trimmed
     let first = "https://a.example.com/keys";
     let second = "https://b.example.com/keys";
     let raw = " https://b.example.com/keys , , https://a.example.com/keys ";
-    let ordered = fixture(
+    let ordered = new_resolver_fixture(
         settings(Some(raw), 600.0, 3600.0),
         1_000.0,
         vec![
@@ -325,7 +334,7 @@ async fn absent_empty_and_ordered_url_list(#[case] raw: &str) {
 
     // an entry that was already fetched and has no match is not fetched again
     let repeat = format!("{first},{first}");
-    let duplicate = fixture(
+    let duplicate = new_resolver_fixture(
         settings(Some(&repeat), 600.0, 3600.0),
         1_000.0,
         vec![ScriptedHttp::answer(&keys(&[key("b")]))],
@@ -346,7 +355,7 @@ async fn absent_empty_and_ordered_url_list(#[case] raw: &str) {
 async fn first_outage_stops_url_iteration_with_503_fields() {
     let first = "https://a.example.com/keys";
     let raw = format!("{first},https://b.example.com/keys");
-    let fixture = fixture(settings(Some(&raw), 600.0, 3600.0), 1_000.0, outage());
+    let fixture = new_resolver_fixture(settings(Some(&raw), 600.0, 3600.0), 1_000.0, outage());
     let error = fixture
         .resolver
         .get_public_key(Some("a"))
@@ -367,7 +376,7 @@ async fn first_outage_stops_url_iteration_with_503_fields() {
 
 #[tokio::test]
 async fn kid_mismatch() {
-    let fixture = fixture(
+    let fixture = new_resolver_fixture(
         settings(Some(JWKS_URL), 600.0, 3600.0),
         1_000.0,
         vec![ScriptedHttp::answer(&keys(&[key("a")]))],
@@ -378,22 +387,22 @@ async fn kid_mismatch() {
         .await
         .unwrap_err();
     assert!(matches!(
-        error,
-        KeyError::NoMatchingKey { ref keys, ref kid }
-            if keys == JWKS_URL && kid.as_deref() == Some("b")
+        &error,
+        KeyError::NoMatchingKey { keys, kid }
+            if keys == "['https://idp.example.com/jwks']" && kid.as_deref() == Some("b")
     ));
     assert_eq!(
         error.to_string(),
-        "No matching public key found. keys=https://idp.example.com/jwks, kid=b"
+        "No matching public key found. keys=['https://idp.example.com/jwks'], kid=b"
     );
 
     // the fetch succeeded, so the keys are cached for the next caller
-    let error = fixture
+    let error2 = fixture
         .resolver
         .get_public_key(Some("b"))
         .await
         .unwrap_err();
-    assert!(matches!(error, KeyError::NoMatchingKey { .. }));
+    assert!(matches!(error2, KeyError::NoMatchingKey { .. }));
     assert_eq!(fixture.http.requests().len(), 1);
     let value = fixture.resolver.get_public_key(Some("a")).await.unwrap();
     assert_eq!(value, key("a"));
@@ -405,7 +414,7 @@ async fn kid_miss_continues_without_refresh() {
     let first = "https://one.example.com/jwks";
     let second = "https://two.example.com/jwks";
     let raw = format!("{first}, {second}");
-    let fixture = fixture(
+    let fixture = new_resolver_fixture(
         settings(Some(&raw), 600.0, 3600.0),
         1_000.0,
         vec![

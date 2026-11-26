@@ -19,7 +19,7 @@ fn loaded(yaml: &str, environment: &[(&str, &str)]) -> Config {
 fn negative_stale_ttl_validation() {
     assert_eq!(
         settings_error(None, 600.0, -1.0),
-        SettingsError::NegativeStaleTtl { value: -1.0 }
+        SettingsError::NegativeStaleTtl { value: -1.0_f64 }
     );
     assert_eq!(
         settings_error(None, 600.0, -0.5).to_string(),

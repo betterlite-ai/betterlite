@@ -39,11 +39,16 @@ struct MemoryCache {
 
 #[async_trait]
 impl KeyCache for MemoryCache {
-    async fn get(&self, key: &str) -> Result<Option<Json>, AuthCacheError> {
+    async fn read_value(&self, key: &str) -> Result<Option<Json>, AuthCacheError> {
         Ok(self.entries.lock().unwrap().get(key).cloned())
     }
 
-    async fn set(&self, key: &str, value: &Json, _ttl_seconds: f64) -> Result<(), AuthCacheError> {
+    async fn write_value(
+        &self,
+        key: &str,
+        value: &Json,
+        _ttl_seconds: f64,
+    ) -> Result<(), AuthCacheError> {
         self.entries
             .lock()
             .unwrap()

@@ -11,6 +11,8 @@ use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::HelperResult;
 use indexmap::IndexMap;
 use serde_json::{Number, Value, json};
+use tokio::runtime::Builder;
+use tracing::subscriber::set_default;
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use tracing_subscriber::registry;
 
@@ -22,8 +24,8 @@ pub(super) fn answer(scenarios: &[Scenario]) -> HelperResult {
     let subscriber = registry().with(RecordLevels {
         levels: Arc::clone(&levels),
     });
-    let _guard = tracing::subscriber::set_default(subscriber);
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let _guard = set_default(subscriber);
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .or_value_error()?;

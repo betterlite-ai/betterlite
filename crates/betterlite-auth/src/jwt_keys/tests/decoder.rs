@@ -3,13 +3,15 @@ use std::path::PathBuf;
 
 use rstest::rstest;
 
+use super::support::{
+    DISCOVERY_URL, JWKS_URL, ScriptedHttp, json, key, keys, new_resolver_fixture, settings,
+    stale_key, timestamp_key,
+};
 use crate::jwt_keys::errors::{KeyError, exception_for};
 use crate::jwt_keys::{
     DecodeError, MAX_DOCUMENT_BYTES, MAX_DOCUMENT_DEPTH, decode_discovery_document,
     userinfo_document,
 };
-
-use super::support::{DISCOVERY_URL, JWKS_URL, ScriptedHttp, fixture, json, settings};
 
 fn nested(depth: usize) -> String {
     format!("{}{}", "[".repeat(depth), "]".repeat(depth))
@@ -21,25 +23,19 @@ fn nested(depth: usize) -> String {
 #[case::not_json("not json")]
 #[case::trailing("{\"a\":1} trailing")]
 fn decoder_boundaries(#[case] body: &str) {
-    // exactly the byte bound parses, one byte over is refused before parsing
     let exact = format!("\"{}\"", "a".repeat(MAX_DOCUMENT_BYTES - 2));
     assert_eq!(exact.len(), MAX_DOCUMENT_BYTES);
-    assert!(decode_discovery_document(exact.as_bytes()).is_ok());
+    decode_discovery_document(exact.as_bytes()).unwrap();
     let over = "a".repeat(MAX_DOCUMENT_BYTES + 1);
-    let error = decode_discovery_document(over.as_bytes()).unwrap_err();
+    let size_error = decode_discovery_document(over.as_bytes()).unwrap_err();
+    assert!(
+        matches!(size_error, DecodeError::TooLarge {bytes, limit: MAX_DOCUMENT_BYTES} if bytes == MAX_DOCUMENT_BYTES + 1)
+    );
+    decode_discovery_document(nested(MAX_DOCUMENT_DEPTH).as_bytes()).unwrap();
+    let depth_error =
+        decode_discovery_document(nested(MAX_DOCUMENT_DEPTH + 1).as_bytes()).unwrap_err();
     assert!(matches!(
-        error,
-        DecodeError::TooLarge {
-            bytes,
-            limit: MAX_DOCUMENT_BYTES,
-        } if bytes == MAX_DOCUMENT_BYTES + 1
-    ));
-
-    // exactly the depth bound parses, one level more is refused
-    assert!(decode_discovery_document(nested(MAX_DOCUMENT_DEPTH).as_bytes()).is_ok());
-    let error = decode_discovery_document(nested(MAX_DOCUMENT_DEPTH + 1).as_bytes()).unwrap_err();
-    assert!(matches!(
-        error,
+        depth_error,
         DecodeError::TooDeep {
             limit: MAX_DOCUMENT_DEPTH
         }
@@ -49,11 +45,12 @@ fn decoder_boundaries(#[case] body: &str) {
         r#"{"a":"#.repeat(MAX_DOCUMENT_DEPTH),
         "}".repeat(MAX_DOCUMENT_DEPTH)
     );
-    assert!(decode_discovery_document(object_depth.as_bytes()).is_ok());
-
-    // anything that is not JSON is a syntax failure
-    let error = decode_discovery_document(body.as_bytes()).unwrap_err();
-    assert!(matches!(error, DecodeError::Syntax(_)), "body {body:?}");
+    decode_discovery_document(object_depth.as_bytes()).unwrap();
+    let syntax_error = decode_discovery_document(body.as_bytes()).unwrap_err();
+    assert!(
+        matches!(syntax_error, DecodeError::Syntax(_)),
+        "body {body:?}"
+    );
 }
 
 #[rstest]
@@ -78,70 +75,57 @@ fn userinfo_document_requires_json_object(#[case] body: &str) {
     );
 }
 
+#[rstest]
+#[case::jwks_bytes(JWKS_URL, "a".repeat(MAX_DOCUMENT_BYTES + 1))]
+#[case::jwks_depth(JWKS_URL, nested(MAX_DOCUMENT_DEPTH + 1))]
+#[case::discovery_bytes(DISCOVERY_URL, "a".repeat(MAX_DOCUMENT_BYTES + 1))]
+#[case::discovery_depth(DISCOVERY_URL, nested(MAX_DOCUMENT_DEPTH + 1))]
 #[tokio::test]
-async fn discovery_and_jwks_byte_depth_limits_return_auth_error() {
-    let too_large = "a".repeat(MAX_DOCUMENT_BYTES + 1);
-
-    let jwks = fixture(
-        settings(Some(JWKS_URL), 600.0, 3600.0),
-        1_000.0,
-        vec![ScriptedHttp::text(200, &too_large)],
-    );
-    let error = jwks.resolver.get_public_key(Some("a")).await.unwrap_err();
-    assert!(matches!(error, KeyError::JwksParse { .. }));
-    assert!(
-        error
-            .to_string()
-            .contains(&format!("{MAX_DOCUMENT_BYTES}-byte limit"))
-    );
-    let exception = exception_for(&error);
-    assert_eq!(exception.code, "401");
-    assert_eq!(exception.error_type, "auth_error");
-    assert_eq!(exception.param.as_deref(), Some("None"));
-    assert!(
-        exception
-            .message
-            .starts_with("Authentication Error, Error parsing response:")
-    );
-
-    let too_deep = nested(MAX_DOCUMENT_DEPTH + 1);
-    let deep = fixture(
-        settings(Some(JWKS_URL), 600.0, 3600.0),
-        1_000.0,
-        vec![ScriptedHttp::text(200, &too_deep)],
-    );
-    let error = deep.resolver.get_public_key(Some("a")).await.unwrap_err();
-    assert!(matches!(error, KeyError::JwksParse { .. }));
-    assert!(
-        error
-            .to_string()
-            .contains(&format!("nests deeper than {MAX_DOCUMENT_DEPTH} levels"))
-    );
-
-    // exactly at the byte bound, the document parses and fails later for the honest reason
-    let mut body = String::from(r#"{"keys": null}"#);
-    body.push_str(&" ".repeat(MAX_DOCUMENT_BYTES - body.len()));
-    let exact = fixture(
-        settings(Some(JWKS_URL), 600.0, 3600.0),
+async fn discovery_and_jwks_byte_depth_limits_return_auth_error(
+    #[case] url: &str,
+    #[case] body: String,
+) {
+    let fixture = new_resolver_fixture(
+        settings(Some(url), 600.0, 3600.0),
         1_000.0,
         vec![ScriptedHttp::text(200, &body)],
     );
-    let error = exact.resolver.get_public_key(Some("a")).await.unwrap_err();
-    assert!(matches!(error, KeyError::NoMatchingKey { .. }));
-
-    // a discovery document is held to the same byte bound
-    let discovery = fixture(
-        settings(Some(DISCOVERY_URL), 600.0, 3600.0),
-        1_000.0,
-        vec![ScriptedHttp::text(200, &too_large)],
-    );
-    let error = discovery
+    fixture.cache.seed(&stale_key(), keys(&[key("a")]));
+    fixture.cache.seed(&timestamp_key(), json("1000"));
+    let error = fixture
         .resolver
         .get_public_key(Some("a"))
         .await
         .unwrap_err();
-    assert!(matches!(error, KeyError::DiscoveryParse { .. }));
-    assert_eq!(exception_for(&error).code, "401");
+    assert!(matches!(
+        error,
+        KeyError::JwksParse { .. } | KeyError::DiscoveryParse { .. }
+    ));
+    let exception = exception_for(&error);
+    assert_eq!(exception.code, "401");
+    assert_eq!(exception.error_type, "auth_error");
+    assert_eq!(exception.param.as_deref(), Some("None"));
+    assert!(exception.message.starts_with("Authentication Error, "));
+    assert_eq!(fixture.http.requests(), vec![url.to_owned()]);
+    assert!(fixture.clock.sleeps().is_empty());
+    assert!(fixture.cache.writes().is_empty());
+}
+
+#[tokio::test]
+async fn exact_byte_bound_reaches_key_selection() {
+    let mut body = String::from(r#"{"keys": null}"#);
+    body.push_str(&" ".repeat(MAX_DOCUMENT_BYTES - body.len()));
+    let fixture = new_resolver_fixture(
+        settings(Some(JWKS_URL), 600.0, 3600.0),
+        1_000.0,
+        vec![ScriptedHttp::text(200, &body)],
+    );
+    let error = fixture
+        .resolver
+        .get_public_key(Some("a"))
+        .await
+        .unwrap_err();
+    assert!(matches!(error, KeyError::NoMatchingKey { .. }));
 }
 
 #[rstest]

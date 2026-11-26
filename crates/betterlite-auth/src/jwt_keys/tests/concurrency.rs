@@ -1,8 +1,8 @@
-use super::support::{JWKS_URL, ScriptedHttp, fixture, key, keys, settings};
+use super::support::{JWKS_URL, ScriptedHttp, key, keys, new_resolver_fixture, settings};
 
 #[tokio::test(flavor = "current_thread")]
 async fn concurrent_refresh_single_flight() {
-    let fixture = fixture(
+    let fixture = new_resolver_fixture(
         settings(Some(JWKS_URL), 600.0, 3600.0),
         1_000.0,
         vec![ScriptedHttp::answer(&keys(&[key("a")]))],

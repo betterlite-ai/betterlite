@@ -33,10 +33,8 @@ pub struct ProxiedJwksHttp {
 impl ProxiedJwksHttp {
     #[must_use]
     pub fn new(client: ProxiedClient) -> Self {
-        Self {
-            client,
-            body_limit: MAX_DOCUMENT_BYTES,
-        }
+        let body_limit = client.limits.body_bytes.min(MAX_DOCUMENT_BYTES);
+        Self { client, body_limit }
     }
 }
 

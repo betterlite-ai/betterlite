@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use crate::jwt_keys::clock::{Clock, SystemClock};
+use crate::jwt_keys::clock::{Clock as _, SystemClock};
 
 #[tokio::test]
 async fn system_clock_reads_the_wall_clock_and_sleeps() {
