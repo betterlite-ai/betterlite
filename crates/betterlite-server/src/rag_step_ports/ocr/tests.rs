@@ -275,6 +275,26 @@ async fn ocr_call_uses_the_native_operation_without_a_router() {
 }
 
 #[tokio::test]
+async fn ocr_call_sends_an_image_to_the_native_operation() {
+    let backend = scripted_backend(&[(0, "page")]);
+    let state = ingestion_state(None, &backend, Some("mistral/mistral-ocr-latest"));
+    let text = state
+        .ocr(Some(b"\x89PNG"), Some("image/png"))
+        .await
+        .expect("the OCR call succeeds");
+    assert_eq!(text.as_deref(), Some("page"));
+    let requests = backend.requests.lock().unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(
+        requests[0].document,
+        OcrDocumentInput::Document(NativeDocument::ImageUrl {
+            image_url: format!("data:image/png;base64,{}", STANDARD.encode(b"\x89PNG")),
+            extra: BTreeMap::new(),
+        })
+    );
+}
+
+#[tokio::test]
 async fn ocr_call_passes_the_default_model_to_the_native_operation() {
     let backend = scripted_backend(&[(0, "page")]);
     let state = ingestion_state(None, &backend, None);
