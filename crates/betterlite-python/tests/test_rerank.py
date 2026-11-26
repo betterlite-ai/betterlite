@@ -416,37 +416,15 @@ LIMIT_CASES: Final[
 
 
 @pytest.mark.parametrize(("documents", "headers", "message"), LIMIT_CASES)
+@pytest.mark.parametrize("entry", ["sync", "async"])
 def test_request_caps_refused(
     documents: list[str | dict[str, JsonValue]],
     headers: dict[str, str] | None,
     message: str,
+    entry: str,
 ) -> None:
-    with closing(RerankServer()) as server:
-        with pytest.raises(ValueError, match=message):
-            _ = rerank(
-                model=MODEL, query=QUERY, documents=documents,
-                custom_llm_provider=PROVIDER, api_base=server.url, api_key=GOOD_KEY,
-                headers=headers,
-            )
-        assert server.calls == []
-
-
-@pytest.mark.parametrize(("documents", "headers", "message"), LIMIT_CASES)
-def test_async_request_caps(
-    documents: list[str | dict[str, JsonValue]],
-    headers: dict[str, str] | None,
-    message: str,
-) -> None:
-    with closing(RerankServer()) as server:
-        with pytest.raises(ValueError, match=message):
-            _ = asyncio.run(
-                arerank(
-                    model=MODEL, query=QUERY, documents=documents,
-                    custom_llm_provider=PROVIDER, api_base=server.url, api_key=GOOD_KEY,
-                    headers=headers,
-                )
-            )
-        assert server.calls == []
+    with pytest.raises(ValueError, match=message):
+        size_probe(entry, QUERY, documents, None, headers)
 
 
 def test_request_headers_limit() -> None:
@@ -468,28 +446,11 @@ def temporary_headers(headers: dict[str, str]) -> Iterator[None]:
         betterlite.headers = original
 
 
-def test_request_bytes_refused() -> None:
+@pytest.mark.parametrize("entry", ["sync", "async"])
+def test_request_bytes_refused(entry: str) -> None:
     documents: list[str | dict[str, JsonValue]] = ["x" * (WIRE_LIMIT + 1)]
-    with closing(RerankServer()) as server:
-        with pytest.raises(ValueError, match="bytes"):
-            _ = rerank(
-                model=MODEL, query=QUERY, documents=documents,
-                custom_llm_provider=PROVIDER, api_base=server.url, api_key=GOOD_KEY,
-            )
-        assert server.calls == []
-
-
-def test_async_request_bytes() -> None:
-    documents: list[str | dict[str, JsonValue]] = ["x" * (WIRE_LIMIT + 1)]
-    with closing(RerankServer()) as server:
-        with pytest.raises(ValueError, match="bytes"):
-            _ = asyncio.run(
-                arerank(
-                    model=MODEL, query=QUERY, documents=documents,
-                    custom_llm_provider=PROVIDER, api_base=server.url, api_key=GOOD_KEY,
-                )
-            )
-        assert server.calls == []
+    with pytest.raises(ValueError, match="bytes"):
+        size_probe(entry, QUERY, documents, None)
 
 
 def test_error_authentication() -> None:
