@@ -830,16 +830,25 @@ fn decoder_rejects_bad_documents(#[case] malformed: &[u8]) {
 fn decoder_rejects_a_document_that_is_not_an_object() {
     assert!(matches!(
         decode_network_headers(b"[]"),
-        Err(DecodeError::NotAnObject)
+        Err(DecodeError::Json(_))
     ));
 }
 
 #[test]
-fn decoder_names_an_unknown_field() {
-    match decode_network_headers(br#"{"host":"h","nope":"x"}"#) {
-        Err(DecodeError::UnknownField { field }) => assert_eq!(field, "nope"),
-        other => panic!("expected an unknown-field error, got {other:?}"),
-    }
+fn decoder_rejects_an_unknown_field() {
+    assert!(matches!(
+        decode_network_headers(br#"{"host":"h","nope":"x"}"#),
+        Err(DecodeError::Json(_))
+    ));
+}
+
+#[test]
+fn depth_scan_reads_brackets_in_strings_as_text() {
+    // the escaped quote keeps the string open, so its 64 brackets are text and not 64 levels
+    let document = format!(r#"{{"host":"\"{}"}}"#, "[".repeat(MAX_NETWORK_HEADER_DEPTH));
+    let decoded = decode_network_headers(document.as_bytes()).unwrap();
+    let expected = format!("\"{}", "[".repeat(MAX_NETWORK_HEADER_DEPTH));
+    assert_eq!(decoded.host.as_deref(), Some(expected.as_str()));
 }
 
 #[test]

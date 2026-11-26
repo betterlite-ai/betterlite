@@ -1,19 +1,12 @@
-use betterlite_models::controls::json_value::JsonValue;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::trusted_network::cidr::CidrRanges;
+use crate::trusted_network::cidr::{
+    CidrRanges, network_from_text, normalize_cidr_ranges, parse_address,
+};
 
 pub const MAX_NETWORK_HEADER_BYTES: usize = 0x0010_0000;
 pub const MAX_NETWORK_HEADER_DEPTH: usize = 64;
-
-const FIELD_NAMES: [&str; 5] = [
-    "x_forwarded_for",
-    "x_forwarded_proto",
-    "host",
-    "trusted_proxy_ranges",
-    "mcp_trusted_proxy_ranges",
-];
 
 // The header document the service writes and reads back through the one bounded decoder.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -37,12 +30,8 @@ pub enum DecodeError {
     TooLarge { size: usize, limit: usize },
     #[error("the network header document nests {depth} levels, over the {limit}-level limit")]
     TooDeep { depth: usize, limit: usize },
-    #[error("the network header document is not valid JSON")]
+    #[error("the network header document is not valid")]
     Json(#[source] serde_json::Error),
-    #[error("the network header document is not a JSON object")]
-    NotAnObject,
-    #[error("the network header document carries an unknown field {field}")]
-    UnknownField { field: String },
     #[error("the network header document could not be written")]
     Write(#[source] serde_json::Error),
 }
@@ -55,41 +44,55 @@ pub fn decode_network_headers(bytes: &[u8]) -> Result<TypedValue, DecodeError> {
             limit: MAX_NETWORK_HEADER_BYTES,
         });
     }
-    let document: JsonValue = serde_json::from_slice(bytes).map_err(DecodeError::Json)?;
-    let depth = nesting(&document);
+    let depth = document_depth(bytes);
     if depth > MAX_NETWORK_HEADER_DEPTH {
         return Err(DecodeError::TooDeep {
             depth,
             limit: MAX_NETWORK_HEADER_DEPTH,
         });
     }
-    let JsonValue::Object(fields) = &document else {
-        return Err(DecodeError::NotAnObject);
-    };
-    if let Some(name) = fields
-        .keys()
-        .find(|name| !FIELD_NAMES.contains(&name.as_str()))
-    {
-        return Err(DecodeError::UnknownField {
-            field: (*name).clone(),
-        });
+    let document: TypedValue = serde_json::from_slice(bytes).map_err(DecodeError::Json)?;
+    // The policy parses this text again; the fuzzer and the corpus replay reach the same parsers here.
+    for range in normalize_cidr_ranges(document.trusted_proxy_ranges.as_ref()) {
+        let _range = network_from_text(&range);
     }
-    serde_json::from_slice(bytes).map_err(DecodeError::Json)
+    for range in document.mcp_trusted_proxy_ranges.iter().flatten() {
+        let _mcp_range = network_from_text(range);
+    }
+    for hop in document
+        .x_forwarded_for
+        .iter()
+        .flat_map(|header| header.split(','))
+    {
+        let _hop = parse_address(hop.trim());
+    }
+    Ok(document)
 }
 
-// serde_json bounds its own parser at 128 levels, so this walk of the parsed tree cannot overflow the stack.
-fn nesting(value: &JsonValue) -> usize {
-    match value {
-        JsonValue::Array(items) => items
-            .iter()
-            .map(nesting)
-            .max()
-            .map_or(1_usize, |deepest| deepest.saturating_add(1)),
-        JsonValue::Object(fields) => fields
-            .values()
-            .map(nesting)
-            .max()
-            .map_or(1_usize, |deepest| deepest.saturating_add(1)),
-        JsonValue::Null | JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Text(_) => 0,
+// Brackets inside a JSON string are text, so raw bytes bound the depth before serde reads the value.
+fn document_depth(bytes: &[u8]) -> usize {
+    let mut depth = 0_usize;
+    let mut deepest = 0_usize;
+    let mut quoted = false;
+    let mut escaped = false;
+    for &byte in bytes {
+        if quoted {
+            match byte {
+                b'\\' if !escaped => escaped = true,
+                b'"' if !escaped => quoted = false,
+                _ => escaped = false,
+            }
+        } else {
+            match byte {
+                b'"' => quoted = true,
+                b'[' | b'{' => {
+                    depth = depth.saturating_add(1);
+                    deepest = deepest.max(depth);
+                }
+                b']' | b'}' => depth = depth.saturating_sub(1),
+                _ => {}
+            }
+        }
     }
+    deepest
 }
