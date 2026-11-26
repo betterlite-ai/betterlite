@@ -24,7 +24,7 @@ use betterlite_db::team_rows::team::LiteLLMTeamTable;
 use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExceptionInit};
 use rust_decimal::Decimal;
 
-use crate::auth::auth_identity::AuthContext;
+use crate::auth::auth_identity::{AuthContext, StageFailure, StageInput};
 use crate::auth::current_spend::spend_failure_exception;
 use crate::error_body::AuthenticationFailure;
 use crate::state::ServerState;
@@ -119,20 +119,31 @@ fn tags_for_body(body: Option<&Bytes>) -> Vec<String> {
 }
 
 // the request body supplies the tags, so the stage input is built while the caller still owns it
-pub(crate) fn stage_input(
+pub(crate) fn stage(
     request: &Request<Body>,
     authenticated: Option<&AuthContext>,
     body: Option<&Bytes>,
-) -> Result<TenantBudgetStageInput, AuthenticationFailure> {
+) -> Result<StageInput, StageFailure> {
     let context = authenticated
         .cloned()
         .ok_or(AuthenticationFailure::Missing)?;
-    Ok(TenantBudgetStageInput {
-        context,
-        rule: rule_for_request(request),
-        tags: tags_for_body(body),
-        database: database_for_request(request),
-    })
+    Ok(StageInput::AuthTenantBudgets(Box::new(
+        TenantBudgetStageInput {
+            context,
+            rule: rule_for_request(request),
+            tags: tags_for_body(body),
+            database: database_for_request(request),
+        },
+    )))
+}
+
+pub(crate) async fn prefetched(
+    stage: Box<TenantBudgetStageInput>,
+) -> Result<StageInput, StageFailure> {
+    prefetch(&stage)
+        .await
+        .map_err(StageFailure::TenantBudgets)?;
+    Ok(StageInput::AuthTenantBudgets(stage))
 }
 
 // common_checks: the project checks first, then the organization, tag and access-group checks settle together

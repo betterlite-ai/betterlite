@@ -101,7 +101,6 @@ pub(crate) async fn authenticate(
         Err(response) => *response,
     }
 }
-
 fn stage_input(
     backend: AuthBackend,
     request: &Request<Body>,
@@ -130,9 +129,7 @@ fn stage_input(
         AuthBackend::TeamBudgetAdmission => {
             team_budget_admission::stage_input(request, authenticated)
         }
-        AuthBackend::AuthTenantBudgets => Ok(StageInput::AuthTenantBudgets(Box::new(
-            auth_tenant_budgets::stage_input(request, authenticated, body)?,
-        ))),
+        AuthBackend::AuthTenantBudgets => auth_tenant_budgets::stage(request, authenticated, body),
         AuthBackend::AuthOrgLookup => Ok(StageInput::AuthOrgLookup(Box::new(
             auth_org_lookup::stage_input(request, authenticated)?,
         ))),
@@ -141,7 +138,6 @@ fn stage_input(
         ))),
     }
 }
-
 fn safety_stage_input(
     request: &Request<Body>,
     authenticated: Option<&AuthContext>,
@@ -222,12 +218,7 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
             Ok(StageInput::AuthKeyBudgets(stage))
         }
         StageInput::TeamBudgetAdmission(stage) => team_budget_admission::prefetched(stage).await,
-        StageInput::AuthTenantBudgets(stage) => {
-            auth_tenant_budgets::prefetch(&stage)
-                .await
-                .map_err(StageFailure::TenantBudgets)?;
-            Ok(StageInput::AuthTenantBudgets(stage))
-        }
+        StageInput::AuthTenantBudgets(stage) => auth_tenant_budgets::prefetched(stage).await,
         StageInput::AuthOrgLookup(stage) => {
             auth_org_lookup::prefetch(&stage)
                 .await

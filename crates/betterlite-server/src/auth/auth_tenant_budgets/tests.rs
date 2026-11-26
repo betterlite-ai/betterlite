@@ -28,7 +28,7 @@ use secrecy::SecretString;
 use serde_json::json;
 use tower::ServiceExt as _;
 
-use super::{TenantBudgetRule, TenantBudgetStageInput, prefetch, stage_input};
+use super::{TenantBudgetRule, TenantBudgetStageInput, prefetch, stage};
 use crate::auth::auth_identity::{
     AuthBackend, AuthContext, INSTALLED_STAGES, StageFailure, StageInput, dispatch,
 };
@@ -404,7 +404,12 @@ fn tenant_stage(context: &AuthContext, body: &'static str) -> TenantBudgetStageI
         .body(Body::empty())
         .expect("the request builds");
     let bytes = Bytes::from_static(body.as_bytes());
-    stage_input(&request, Some(context), Some(&bytes)).expect("the stage input builds")
+    let StageInput::AuthTenantBudgets(stage) =
+        stage(&request, Some(context), Some(&bytes)).expect("the stage input builds")
+    else {
+        panic!("the tenant budget stage input");
+    };
+    *stage
 }
 
 #[test]
@@ -449,7 +454,7 @@ fn bodyless_requests_carry_no_tags_and_require_a_caller() {
     let master_key = SecretString::from(MASTER_KEY.to_owned());
     let context = master_context(&master_key);
 
-    let no_body = stage_input(
+    let StageInput::AuthTenantBudgets(no_body) = stage(
         &Request::builder()
             .method("POST")
             .uri(MODEL_ROUTE)
@@ -458,10 +463,12 @@ fn bodyless_requests_carry_no_tags_and_require_a_caller() {
         Some(&context),
         None,
     )
-    .expect("the stage input builds");
+    .expect("the stage input builds") else {
+        panic!("the tenant budget stage input");
+    };
     assert!(no_body.tags.is_empty());
     assert!(!no_body.database);
-    stage_input(
+    stage(
         &Request::builder()
             .method("POST")
             .uri(MODEL_ROUTE)
