@@ -1,0 +1,18 @@
+task: B9371
+deviations:
+  - what: "A create or cancel reply that is a 3xx the client did not follow, and a delete reply of the same kind, become the provider's error class with the upstream status and body; a GET reply of any status reaches the transform."
+    why: "betterlite's exchange raises for every POST or DELETE reply outside 2xx, where httpx's raise_for_status only raises for 4xx and 5xx; a redirect the client cannot follow therefore reaches transform_*_run_response in LiteLLM, which fails to read it as a run. The status check is B9370's shared eval_exchange, and the same split holds for its eval handlers."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1514
+kept_bugs:
+  - what: list_runs_handler takes no timeout and sends none, so the GET runs on the pooled client's read deadline whatever the operation asked for.
+    why: "LiteLLM's list_runs_handler accepts a timeout and never puts it on the async get, so a working setup's list calls run on the client's deadline; honoring it here would time out list calls LiteLLM lets run."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L13339
+  - what: get_run_handler takes no timeout and sends none, so the GET runs on the pooled client's read deadline.
+    why: "The pinned get handler accepts a timeout and drops it on the async get, so betterlite keeps the client's deadline rather than a limit LiteLLM never applies."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L13440
+  - what: cancel_run_handler posts the literal {} and never the body transform_cancel_run_request builds.
+    why: "The pinned handler does the same, and OpenAI's transform also returns {}, so a provider transform that builds a different cancel body gets it dropped, as it does in LiteLLM."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L13541
+  - what: delete_run_handler sends no body and never the body transform_delete_run_request builds.
+    why: "The pinned handler calls delete without a body and drops the transform's empty object, so a provider transform that builds a delete body gets it dropped, as it does in LiteLLM."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L13642
