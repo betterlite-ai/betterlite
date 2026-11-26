@@ -50,7 +50,7 @@ async fn member_scope_uses_only_present_allowed_models(
     assert_eq!(models, owned(expected));
     assert_eq!(
         world.effects().len(),
-        if queries_membership { 1 } else { 0 },
+        usize::from(queries_membership),
         "membership is read only when both team and user are present"
     );
 }

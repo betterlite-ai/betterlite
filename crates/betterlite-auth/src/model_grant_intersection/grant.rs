@@ -4,7 +4,6 @@ use betterlite_db::team_rows::membership::LiteLLMTeamMembership;
 use crate::auth_model_patterns::grant::resolve_key_models;
 use crate::auth_prefetch::rows::CachedProject;
 use crate::model_grant_intersection::error::IntersectionError;
-use crate::model_grant_intersection::lists::text_models;
 use crate::model_grant_intersection::member::team_member_granted_models;
 use crate::model_grant_intersection::org::org_granted_models;
 use crate::model_grant_intersection::sources::GrantSources;

@@ -51,6 +51,8 @@ pub(super) enum Effect {
     },
 }
 
+type ServingMap = BTreeMap<String, BTreeSet<String>>;
+
 pub(super) struct World {
     pub(super) team: Mutex<Script<LiteLLMTeamTableCachedObj, TeamLookupError>>,
     pub(super) user: Mutex<Script<Option<LiteLLMUserTable>, UserLookupError>>,
@@ -58,7 +60,7 @@ pub(super) struct World {
     pub(super) org: Mutex<Script<Option<OrganizationTable>, OrgLookupError>>,
     pub(super) membership: Mutex<Script<Option<LiteLLMTeamMembership>, MembershipLoadError>>,
     pub(super) registry: Mutex<Script<Option<BTreeSet<String>>, RegistryError>>,
-    pub(super) serving: Mutex<Option<Result<BTreeMap<String, BTreeSet<String>>, ()>>>,
+    pub(super) serving: Mutex<Option<Result<ServingMap, ()>>>,
     effects: Mutex<Vec<Effect>>,
 }
 
