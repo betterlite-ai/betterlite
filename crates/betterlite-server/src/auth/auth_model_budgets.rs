@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::fmt;
-use std::sync::{Arc, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use axum::body::{Body, Bytes};
 use axum::http::Request;
@@ -27,10 +27,14 @@ use betterlite_models::model_registration::JsonObject;
 use crate::auth::auth_identity::{AuthContext, StageFailure, StageInput};
 use crate::error_body::AuthenticationFailure;
 use crate::state::ServerState;
-use body_views::{BodyViews, SharedViews};
+use body_views::BodyViews;
 
 pub(crate) mod body_views;
 mod tests;
+
+// the middleware and this stage share one handle so a fallback's body snapshots reach the downstream handler
+#[derive(Clone, Debug, Default)]
+pub struct SharedViews(pub(crate) Arc<Mutex<Option<BodyViews>>>);
 
 // What the authentication service resolved before this stage: the caller's token, the models the checks cover and the limiter protocols B8481 implements.
 #[derive(Clone)]
@@ -82,7 +86,7 @@ pub struct ModelBudgetStageInput {
     pub rule: Arc<ModelBudgetRule>,
     pub settings: Arc<Settings>,
     pub body: Option<Bytes>,
-    pub(crate) views: SharedViews,
+    pub views: SharedViews,
 }
 
 // the authentication service inserts the rule once it resolved the caller's key; without one the stage is inert
@@ -191,7 +195,7 @@ async fn check_key_budget(
         request_model: request_model.as_deref(),
     };
     let result = check_key_budget_fallback(call, &mut views, &context, None).await;
-    *stage.views.lock().unwrap_or_else(PoisonError::into_inner) = Some(views);
+    *stage.views.0.lock().unwrap_or_else(PoisonError::into_inner) = Some(views);
     result.map_err(|error| Box::new(key_budget_exception(&error)))
 }
 

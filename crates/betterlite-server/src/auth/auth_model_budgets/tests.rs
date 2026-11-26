@@ -31,8 +31,8 @@ use rust_decimal::Decimal;
 use secrecy::SecretString;
 use tower::ServiceExt as _;
 
-use super::body_views::{BodyViews, SharedViews};
-use super::{ModelBudgetRule, ModelBudgetStageInput, prefetch};
+use super::body_views::BodyViews;
+use super::{ModelBudgetRule, ModelBudgetStageInput, SharedViews, prefetch};
 use crate::auth::auth_identity::{
     AuthBackend, AuthContext, INSTALLED_STAGES, StageFailure, StageInput, dispatch,
 };
@@ -272,7 +272,7 @@ async fn prefetch_rewrites_the_body_for_the_authorized_fallback() {
     prefetch(&stage)
         .await
         .expect("the authorized fallback rewrites the body");
-    let views = stage.views.lock().unwrap().clone().unwrap();
+    let views = stage.views.0.lock().unwrap().clone().unwrap();
     let applied = views
         .serialized_body
         .expect("the fallback body is recorded");
@@ -284,7 +284,7 @@ async fn prefetch_rewrites_the_body_for_the_authorized_fallback() {
 fn rewritten_body_prefers_the_recorded_fallback() {
     let mut request = request_to(&Arc::new(AtomicBool::new(false)));
     let shared = SharedViews::default();
-    request.extensions_mut().insert(Arc::clone(&shared));
+    request.extensions_mut().insert(shared.clone());
     assert_eq!(rewritten_body(&mut request, None), None);
     let original = Bytes::from_static(b"{\"model\":\"gpt-4\"}");
     assert_eq!(
@@ -293,7 +293,7 @@ fn rewritten_body_prefers_the_recorded_fallback() {
     );
     let mut views = BodyViews::new(Some(&original), None);
     rewrite_model(&mut views, "gpt-3.5").unwrap();
-    *shared.lock().unwrap() = Some(views);
+    *shared.0.lock().unwrap() = Some(views);
     assert_eq!(
         rewritten_body(&mut request, Some(original)),
         Some(Bytes::from_static(b"{\"model\":\"gpt-3.5\"}"))

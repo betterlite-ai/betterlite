@@ -1,5 +1,3 @@
-use std::sync::{Arc, Mutex};
-
 use axum::body::Bytes;
 use betterlite_auth::auth_model_budgets::request_views::{ModelRewrite, RewriteFailure};
 use betterlite_core::api::request_body::{
@@ -7,8 +5,6 @@ use betterlite_core::api::request_body::{
 };
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject as PathParams;
-
-pub(crate) type SharedViews = Arc<Mutex<Option<BodyViews>>>;
 
 #[derive(Clone, Debug)]
 pub(crate) struct BodyViews {

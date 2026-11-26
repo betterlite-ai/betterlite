@@ -62,7 +62,7 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 
 use crate::auth::auth_identity::{AuthBackend, AuthContext, StageFailure, StageInput};
-use crate::auth::auth_model_budgets::body_views::SharedViews;
+use crate::auth::auth_model_budgets::SharedViews;
 use crate::auth::auth_model_patterns::{
     ModelPatternStageInput, max_recurse_depth_for_request, rule_for_request,
 };
@@ -111,6 +111,7 @@ fn rewritten_body(request: &mut Request<Body>, body: Option<Bytes>) -> Option<By
         .get::<SharedViews>()
         .and_then(|shared| {
             shared
+                .0
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
                 .clone()
