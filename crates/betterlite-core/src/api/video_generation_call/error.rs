@@ -193,7 +193,9 @@ where
             status_code_is_synthesized: carried.status_code_is_synthesized,
         },
         VideoTransportError::Config(source) => config_error(source, config),
-        VideoTransportError::Client(_) | VideoTransportError::Logging(_) => local_error(error),
+        VideoTransportError::Client(_) | VideoTransportError::Logging(_) => {
+            local_error::<Config>(error)
+        }
         VideoTransportError::Field(field) => VideoGenerationCallError::FieldType {
             field: field.field,
             expected: field.expected,
