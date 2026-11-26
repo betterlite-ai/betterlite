@@ -292,9 +292,10 @@ async fn a_config_row_stored_as_json_text_is_decoded_and_rewritten() {
         covered_report([0, 0, 0, 0, 0, 0]),
         covered_report([0, 0, 0, 0, 0, 0]),
     ]);
+    let kept_token = v2(SALT_KEY, "kept-token");
     let inner = serde_json::to_string(&object(vec![
         ("api_key", secret(&legacy(SALT_KEY, "sk-live"))),
-        ("integration_token", secret(&v2(SALT_KEY, "kept-token"))),
+        ("integration_token", secret(&kept_token)),
     ]))
     .expect("the vantage fixture is JSON");
     store
@@ -324,7 +325,7 @@ async fn a_config_row_stored_as_json_text_is_decoded_and_rewritten() {
     assert_eq!(open(SALT_KEY, &api_key).as_deref(), Some("sk-live"));
     assert_eq!(
         field_text(value, "integration_token").as_deref(),
-        Some(v2(SALT_KEY, "kept-token").as_str())
+        Some(kept_token.as_str())
     );
 }
 
@@ -353,29 +354,27 @@ async fn invalid_json_inside_a_config_row_propagates() {
     assert!(store.writes().is_empty());
 }
 
-fn sso_fixture() -> FakeStore {
+fn sso_fixture(already: &str) -> FakeStore {
     let store = clean_store();
+    let values = object(vec![
+        ("client_secret", secret(&legacy(SALT_KEY, "sso-secret"))),
+        ("client_id", secret("plain-client")),
+        ("already", secret(already)),
+        ("empty", secret("")),
+        ("count", MigrationJson::Bool(true)),
+    ]);
     store
         .settings
         .lock()
         .unwrap()
-        .insert("sso_config".to_owned(), sso_values());
+        .insert("sso_config".to_owned(), values);
     store
-}
-
-fn sso_values() -> MigrationJson {
-    object(vec![
-        ("client_secret", secret(&legacy(SALT_KEY, "sso-secret"))),
-        ("client_id", secret("plain-client")),
-        ("already", secret(&v2(SALT_KEY, "sso-done"))),
-        ("empty", secret("")),
-        ("count", MigrationJson::Bool(true)),
-    ])
 }
 
 #[tokio::test]
 async fn sso_visits_every_nonempty_string_field_and_skips_the_rest() {
-    let store = sso_fixture();
+    let already = v2(SALT_KEY, "sso-done");
+    let store = sso_fixture(&already);
     let mut rotation = FakeRotation::default();
     let cipher = cipher(Algorithm::Aes256Gcm, Some(SALT_KEY));
     let report = migration(&store, &mut rotation, &cipher, false)
@@ -401,7 +400,7 @@ async fn sso_visits_every_nonempty_string_field_and_skips_the_rest() {
     );
     assert_eq!(
         field_text(value, "already").as_deref(),
-        Some(v2(SALT_KEY, "sso-done").as_str())
+        Some(already.as_str())
     );
     assert_eq!(field_text(value, "empty").as_deref(), Some(""));
     assert!(

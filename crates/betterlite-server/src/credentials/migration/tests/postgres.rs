@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::time::Duration;
+
 use betterlite_db::auxiliary_repository::repository::PrismaClient;
 use betterlite_db::database_replica::availability::Availability;
 use betterlite_db::encryption_scan::report::MigrationReport;
@@ -15,8 +17,9 @@ use tokio_postgres::types::ToSql;
 
 use super::super::callback::CallbackVars;
 use super::super::error::MigrationError;
-use super::super::postgres::{MigrationStoreError, PostgresMigrationStore};
+use super::super::postgres::{MigrationDeadlines, MigrationStoreError, PostgresMigrationStore};
 use super::super::service::{Migration, check_encryption};
+use super::super::store::{MigrationStore as _, SettingsRow};
 use super::support::{
     EXPECTED_LOCATIONS, FakeRotation, RotationCall, RotationError, SALT_KEY,
     callback_settings_metadata, callback_text, callback_vars_metadata, cipher, field_text, json,
@@ -180,6 +183,7 @@ struct TestEnvironment {
 
 struct Harness {
     _fixture: PostgresFixture,
+    url: SecretString,
     pool: Pool,
     store: PostgresStore,
     availability: Availability,
@@ -211,6 +215,7 @@ impl Harness {
             pool: Some(pool.clone()),
         };
         Self {
+            url: fixture.options.url.clone(),
             _fixture: fixture,
             pool,
             store,
@@ -219,13 +224,36 @@ impl Harness {
     }
 
     fn migration_store(&self) -> PostgresMigrationStore<'_> {
+        self.migration_store_with(&self.store, MigrationDeadlines::default())
+    }
+
+    fn migration_store_with<'db>(
+        &'db self,
+        store: &'db PostgresStore,
+        deadlines: MigrationDeadlines,
+    ) -> PostgresMigrationStore<'db> {
         PostgresMigrationStore {
             client: PrismaClient {
-                writer: &self.store,
-                reader: &self.store,
+                writer: store,
+                reader: store,
                 availability: &self.availability,
             },
+            deadlines,
         }
+    }
+
+    fn limited_pool(&self, max_size: usize) -> Pool {
+        let manager = Manager::new(
+            self.url
+                .expose_secret()
+                .parse()
+                .expect("the fixture URL parses"),
+            NoTls,
+        );
+        Pool::builder(manager)
+            .max_size(max_size)
+            .build()
+            .expect("a limited fixture pool builds")
     }
 
     async fn execute(&self, statement: &str, parameters: &[&(dyn ToSql + Sync)]) {
@@ -309,11 +337,13 @@ impl Harness {
     }
 }
 
-async fn seed(harness: &Harness) {
+async fn seed(harness: &Harness) -> String {
+    let vantage_token = v2(SALT_KEY, "token-vantage");
     seed_covered_rows(harness).await;
-    seed_config_rows(harness).await;
+    seed_config_rows(harness, &vantage_token).await;
     seed_callback_rows(harness).await;
     seed_sso_row(harness).await;
+    vantage_token
 }
 
 async fn insert_value(harness: &Harness, statement: &str, value: &MigrationJson) {
@@ -332,8 +362,8 @@ async fn seed_covered_rows(harness: &Harness) {
     }
 }
 
-async fn seed_config_rows(harness: &Harness) {
-    for (statement, name, value) in config_rows() {
+async fn seed_config_rows(harness: &Harness, vantage_token: &str) {
+    for (statement, name, value) in config_rows(vantage_token) {
         insert_row(harness, statement, name, &value).await;
     }
 }
@@ -356,10 +386,14 @@ fn credential() -> MigrationJson {
     object(vec![("token", secret(&legacy(SALT_KEY, "sk-credential")))])
 }
 
-fn config_rows() -> [(&'static str, &'static str, MigrationJson); 3] {
+fn config_rows(vantage_token: &str) -> [(&'static str, &'static str, MigrationJson); 3] {
     [
         (INSERT_CONFIG_OBJECT, "environment_variables", environment()),
-        (INSERT_CONFIG_OBJECT, "vantage_settings", vantage()),
+        (
+            INSERT_CONFIG_OBJECT,
+            "vantage_settings",
+            vantage(vantage_token),
+        ),
         (INSERT_CONFIG_STRING, "cloudzero_settings", cloudzero()),
     ]
 }
@@ -371,10 +405,10 @@ fn environment() -> MigrationJson {
     )])
 }
 
-fn vantage() -> MigrationJson {
+fn vantage(token: &str) -> MigrationJson {
     object(vec![
         ("api_key", secret(&legacy(SALT_KEY, "sk-vantage"))),
-        ("integration_token", secret(&v2(SALT_KEY, "token-vantage"))),
+        ("integration_token", secret(token)),
     ])
 }
 
@@ -467,7 +501,7 @@ fn assert_attested(report: &MigrationReport) {
 #[tokio::test]
 async fn attestation_reads_every_location_with_the_gate_off() {
     let harness = Harness::start(vec![SCHEMA.to_owned()]).await;
-    seed(&harness).await;
+    let _vantage_token = seed(&harness).await;
     let before = harness.snapshot().await;
     let cipher = cipher(Algorithm::XSalsa20Poly1305, Some(SALT_KEY));
     let store = harness.migration_store();
@@ -481,7 +515,7 @@ async fn attestation_reads_every_location_with_the_gate_off() {
 #[tokio::test]
 async fn real_run_writes_json_strings_and_reports_exact_counts() {
     let harness = Harness::start(vec![SCHEMA.to_owned()]).await;
-    seed(&harness).await;
+    let vantage_token = seed(&harness).await;
     let mut rotation = FakeRotation::default();
     let cipher = cipher(Algorithm::Aes256Gcm, Some(SALT_KEY));
     let report = real_run(&harness, &mut rotation, &cipher, Some("admin"))
@@ -490,7 +524,7 @@ async fn real_run_writes_json_strings_and_reports_exact_counts() {
     assert_report_counts(&report, &rotation);
     assert_team_marked_row(&harness).await;
     assert_team_clean_and_string_rows(&harness).await;
-    assert_vantage_row(&harness).await;
+    assert_vantage_row(&harness, &vantage_token).await;
     assert_environment_and_cloudzero_rows(&harness).await;
     assert_sso_and_token_rows(&harness).await;
 }
@@ -507,7 +541,7 @@ fn assert_report_counts(report: &MigrationReport, rotation: &FakeRotation) {
     );
     assert_eq!(location_of(report, "cloudzero_settings").migrated, 1);
     let sso = location_of(report, "sso_config");
-    assert_eq!((sso.migrated, sso.already_v2, sso.plaintext), (1, 1, 1));
+    assert_eq!((sso.migrated, sso.already_v2, sso.plaintext), (1, 0, 1));
     assert_eq!(
         rotation.calls(),
         [RotationCall {
@@ -570,11 +604,10 @@ async fn assert_team_clean_and_string_rows(harness: &Harness) {
     assert_kind(harness, TEAM_STRING, "string").await;
 }
 
-async fn assert_vantage_row(harness: &Harness) {
-    let token = v2(SALT_KEY, "token-vantage");
+async fn assert_vantage_row(harness: &Harness, token: &str) {
     assert_kind(harness, VANTAGE, "string").await;
     assert_sealed(harness, VANTAGE, "api_key", "sk-vantage").await;
-    assert_kept(harness, VANTAGE, "integration_token", &token).await;
+    assert_kept(harness, VANTAGE, "integration_token", token).await;
 }
 
 async fn assert_environment_and_cloudzero_rows(harness: &Harness) {
@@ -593,7 +626,7 @@ async fn assert_sso_and_token_rows(harness: &Harness) {
 #[tokio::test]
 async fn partial_failure_keeps_the_earlier_rows_written() {
     let harness = Harness::start(vec![SCHEMA.to_owned(), FAIL_CLOUDZERO_WRITE.to_owned()]).await;
-    seed(&harness).await;
+    let _vantage_token = seed(&harness).await;
     let mut rotation = FakeRotation::default();
     let cipher = cipher(Algorithm::Aes256Gcm, Some(SALT_KEY));
     let error = real_run(&harness, &mut rotation, &cipher, None)
@@ -621,7 +654,7 @@ async fn assert_cloudzero_and_sso_kept(harness: &Harness) {
 #[tokio::test]
 async fn repeat_migration_skips_migrated_rows_and_writes_nothing() {
     let harness = Harness::start(vec![SCHEMA.to_owned()]).await;
-    seed(&harness).await;
+    let _vantage_token = seed(&harness).await;
     let cipher = cipher(Algorithm::Aes256Gcm, Some(SALT_KEY));
     let mut first = FakeRotation::default();
     real_run(&harness, &mut first, &cipher, None)
@@ -653,4 +686,104 @@ fn assert_second_run_counts(report: &MigrationReport) {
     assert_eq!((sso.scanned, sso.already_v2, sso.plaintext), (2, 1, 1));
     let model = location_of(report, "model_table");
     assert_eq!((model.scanned, model.legacy, model.migrated), (1, 1, 0));
+}
+
+#[tokio::test]
+async fn a_store_call_without_a_free_connection_times_out_acquiring_one() {
+    let harness = Harness::start(vec![SCHEMA.to_owned()]).await;
+    let pool = harness.limited_pool(1);
+    let held = pool.get().await.expect("the only connection");
+    let store = PostgresStore {
+        pool: Some(pool.clone()),
+    };
+    let deadlines = MigrationDeadlines {
+        acquire: Duration::from_millis(20),
+        ..MigrationDeadlines::default()
+    };
+    let migration_store = harness.migration_store_with(&store, deadlines);
+    let cipher = cipher(Algorithm::Aes256Gcm, Some(SALT_KEY));
+    let error = check_encryption(&migration_store, &cipher)
+        .await
+        .expect_err("the pool has no free connection");
+    assert!(matches!(
+        error,
+        MigrationStoreError::Timeout {
+            operation: "acquire",
+            deadline,
+        } if deadline == Duration::from_millis(20)
+    ));
+    drop(held);
+    pool.close();
+}
+
+#[tokio::test]
+async fn a_write_waiting_on_a_lock_times_out_and_discards_its_connection() {
+    let harness = Harness::start(vec![SCHEMA.to_owned()]).await;
+    let lock = harness.pool.get().await.expect("a lock connection");
+    lock.batch_execute("BEGIN; LOCK TABLE \"LiteLLM_SSOConfig\" IN ACCESS EXCLUSIVE MODE")
+        .await
+        .expect("the other connection holds the lock");
+    let pool = harness.limited_pool(1);
+    let store = PostgresStore {
+        pool: Some(pool.clone()),
+    };
+    let deadlines = MigrationDeadlines {
+        statement: Duration::from_millis(100),
+        ..MigrationDeadlines::default()
+    };
+    let migration_store = harness.migration_store_with(&store, deadlines);
+    let value = object(vec![(
+        "client_secret",
+        secret(&legacy(SALT_KEY, "sso-secret")),
+    )]);
+    let error = migration_store
+        .save_settings_row(SettingsRow::Sso, &value)
+        .await
+        .expect_err("the locked sso row cannot be written");
+    assert!(matches!(
+        error,
+        MigrationStoreError::Timeout {
+            operation: "save_settings_row",
+            deadline,
+        } if deadline == Duration::from_millis(100)
+    ));
+    assert_eq!(pool.status().size, 0, "a timed-out connection is discarded");
+    lock.batch_execute("ROLLBACK")
+        .await
+        .expect("the lock is released");
+    pool.close();
+}
+
+#[tokio::test]
+async fn a_covered_scan_waiting_on_a_lock_times_out_and_discards_its_connection() {
+    let harness = Harness::start(vec![SCHEMA.to_owned()]).await;
+    let lock = harness.pool.get().await.expect("a lock connection");
+    lock.batch_execute("BEGIN; LOCK TABLE \"LiteLLM_ProxyModelTable\" IN ACCESS EXCLUSIVE MODE")
+        .await
+        .expect("the other connection holds the lock");
+    let pool = harness.limited_pool(1);
+    let store = PostgresStore {
+        pool: Some(pool.clone()),
+    };
+    let deadlines = MigrationDeadlines {
+        statement: Duration::from_millis(100),
+        ..MigrationDeadlines::default()
+    };
+    let migration_store = harness.migration_store_with(&store, deadlines);
+    let cipher = cipher(Algorithm::Aes256Gcm, Some(SALT_KEY));
+    let error = check_encryption(&migration_store, &cipher)
+        .await
+        .expect_err("the locked table stops the scan");
+    assert!(matches!(
+        error,
+        MigrationStoreError::Timeout {
+            operation: "scan_covered",
+            deadline,
+        } if deadline == Duration::from_millis(100)
+    ));
+    assert_eq!(pool.status().size, 0, "a timed-out connection is discarded");
+    lock.batch_execute("ROLLBACK")
+        .await
+        .expect("the lock is released");
+    pool.close();
 }
