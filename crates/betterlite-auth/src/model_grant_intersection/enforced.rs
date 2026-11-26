@@ -3,7 +3,6 @@ use betterlite_db::team_rows::archived::LiteLLMTeamTableCachedObj;
 
 use crate::auth_identity::errors::AuthError as IdentityError;
 use crate::auth_model_patterns::grant::resolve_key_models;
-use crate::auth_prefetch::rows::CachedProject;
 use crate::auth_user_lookup::error::UserLookupError;
 use crate::model_grant_intersection::error::IntersectionError;
 use crate::model_grant_intersection::lists::{project_models, team_models, user_models};

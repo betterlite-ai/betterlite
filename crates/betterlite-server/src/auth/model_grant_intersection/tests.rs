@@ -167,7 +167,7 @@ fn key() -> UserAPIKeyAuth {
     UserAPIKeyAuth::construct(AuthInput::Dict(fields)).expect("the key fixture builds")
 }
 
-fn rule(sources: Option<Arc<ScriptedSources>>, recorder: Arc<Recorder>) -> Arc<GrantRule> {
+fn rule(sources: Option<Arc<dyn GrantSources>>, recorder: Arc<Recorder>) -> Arc<GrantRule> {
     Arc::new(GrantRule {
         key: Some(key()),
         team: None,

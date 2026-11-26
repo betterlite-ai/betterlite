@@ -88,7 +88,7 @@ impl StageInput {
 }
 
 // the resource grant stage reads the request's rule and database switch, so its input is built here
-fn resource_grant_stage_input(
+pub(crate) fn resource_grant_stage_input(
     request: &Request<Body>,
     authenticated: Option<&AuthContext>,
 ) -> Result<StageInput, AuthenticationFailure> {
