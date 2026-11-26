@@ -39,14 +39,14 @@ enum LlmApiOutcome {
 }
 
 pub fn check_virtual_key_route(
-    called: CalledRoute<'_>,
+    requested: CalledRoute<'_>,
     caller: &RouteCaller<'_>,
     registry: &PassThroughRegistry,
 ) -> Result<(), Box<ProxyException>> {
     let Some(routes) = restricted_routes(caller.allowed_routes) else {
         return Ok(());
     };
-    let route = called.route;
+    let route = requested.route;
     if routes
         .iter()
         .filter_map(text_entry)
@@ -54,7 +54,7 @@ pub fn check_virtual_key_route(
     {
         return Ok(());
     }
-    let scan = scan_groups(called, routes, caller, registry);
+    let scan = scan_groups(requested, routes, caller, registry);
     // an exact or wildcard entry returns before the remembered protected pass-through denial
     if scan.granted
         || routes
@@ -76,14 +76,13 @@ pub fn check_virtual_key_route(
 
 const fn restricted_routes(allowed: AllowedRoutes<'_>) -> Option<&[JsonData]> {
     match allowed {
-        AllowedRoutes::Unset | AllowedRoutes::NotAList => None,
-        AllowedRoutes::Listed(routes) if routes.is_empty() => None,
+        AllowedRoutes::Unset | AllowedRoutes::NotAList | AllowedRoutes::Listed([]) => None,
         AllowedRoutes::Listed(routes) => Some(routes),
     }
 }
 
 fn scan_groups(
-    called: CalledRoute<'_>,
+    requested: CalledRoute<'_>,
     routes: &[JsonData],
     caller: &RouteCaller<'_>,
     registry: &PassThroughRegistry,
@@ -96,7 +95,7 @@ fn scan_groups(
         if get_actual_routes(&[name]) == [name.to_owned()] {
             continue;
         }
-        if apply_group(called, name, caller, registry, &mut scan) {
+        if apply_group(requested, name, caller, registry, &mut scan) {
             return scan;
         }
     }
@@ -105,7 +104,7 @@ fn scan_groups(
 
 // true when the entry granted the route, so the caller stops scanning
 fn apply_group(
-    called: CalledRoute<'_>,
+    requested: CalledRoute<'_>,
     name: &str,
     caller: &RouteCaller<'_>,
     registry: &PassThroughRegistry,
@@ -113,21 +112,21 @@ fn apply_group(
 ) -> bool {
     let expanded = group_routes(name, registry);
     let allowed: Vec<&str> = expanded.iter().map(String::as_str).collect();
-    if check_route_access(called.route, &allowed) {
+    if check_route_access(requested.route, &allowed) {
         let protected = AUTH_ENFORCED_GROUPS.contains(&name)
-            && is_protected_pass_through(called.route, called.method, registry);
+            && is_protected_pass_through(requested.route, requested.method, registry);
         if !protected {
             scan.granted = true;
             return true;
         }
-        if check_passthrough_route_access(called.route, caller) {
+        if check_passthrough_route_access(requested.route, caller) {
             scan.granted = true;
             return true;
         }
         scan.pass_through_denied = true;
     }
     if name == LLM_API_ROUTES {
-        match llm_api_outcome(called, caller, registry) {
+        match llm_api_outcome(requested, caller, registry) {
             LlmApiOutcome::Granted => {
                 scan.granted = true;
                 return true;
@@ -141,27 +140,27 @@ fn apply_group(
 
 // the llm_api_routes carve-outs: the session read, registered pass-throughs, MCP discovery reads and the agent registry
 fn llm_api_outcome(
-    called: CalledRoute<'_>,
+    requested: CalledRoute<'_>,
     caller: &RouteCaller<'_>,
     registry: &PassThroughRegistry,
 ) -> LlmApiOutcome {
-    if called.route == AUTO_ROUTER_SESSION && called.method == Some("GET") {
+    if requested.route == AUTO_ROUTER_SESSION && requested.method == Some("GET") {
         return LlmApiOutcome::Granted;
     }
-    if registry.is_registered(called.route) {
-        if !is_protected_pass_through(called.route, called.method, registry) {
+    if registry.is_registered(requested.route) {
+        if !is_protected_pass_through(requested.route, requested.method, registry) {
             return LlmApiOutcome::Granted;
         }
-        return if check_passthrough_route_access(called.route, caller) {
+        return if check_passthrough_route_access(requested.route, caller) {
             LlmApiOutcome::Granted
         } else {
             LlmApiOutcome::ProtectedWithoutAccess
         };
     }
-    if is_mcp_discovery_route(called.route, called.method) {
+    if is_mcp_discovery_route(requested.route, requested.method) {
         return LlmApiOutcome::Granted;
     }
-    if check_route_access(called.route, AGENT_MANAGEMENT_ROUTES) {
+    if check_route_access(requested.route, AGENT_MANAGEMENT_ROUTES) {
         return LlmApiOutcome::Granted;
     }
     LlmApiOutcome::NotMatched

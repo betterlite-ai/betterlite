@@ -44,10 +44,13 @@ impl<'caller> RouteCaller<'caller> {
     #[must_use]
     pub fn of_key(key: &'caller UserAPIKeyAuth) -> Self {
         let token = &key.view.token;
-        let allowed_routes = match &token.allowed_routes.0 {
-            Some(routes) => AllowedRoutes::Listed(routes.as_slice()),
-            None => AllowedRoutes::Unset,
-        };
+        let allowed_routes = token
+            .allowed_routes
+            .0
+            .as_ref()
+            .map_or(AllowedRoutes::Unset, |routes| {
+                AllowedRoutes::Listed(routes.as_slice())
+            });
         Self {
             allowed_routes,
             metadata: Some(&token.metadata),
@@ -129,7 +132,7 @@ fn is_nonempty(value: &JsonData) -> bool {
         // Python's bool() is false for both zeroes, and true for NaN
         JsonData::Number(number) => number
             .as_f64()
-            .is_none_or(|value| value.abs().total_cmp(&0.0_f64).is_ne()),
+            .is_none_or(|magnitude| magnitude.abs().total_cmp(&0.0_f64).is_ne()),
         JsonData::String(text) => !text.is_empty(),
         JsonData::Array(items) => !items.is_empty(),
         JsonData::Object(entries) => !entries.is_empty(),
