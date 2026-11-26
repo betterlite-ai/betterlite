@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
-use betterlite_db::budget_permission_rows::JsonData;
+use betterlite_db::budget_permission_rows::{JsonData, LiteLLMBudgetTable};
 use betterlite_db::managed_resource_rows::tag::TagTable;
 use betterlite_db::resource_rows::organization::OrganizationTable;
 use betterlite_db::team_rows::team::LiteLLMTeamTable;
@@ -295,15 +295,16 @@ pub(crate) fn tag(name: &str, spend: f64) -> TagTable {
         .expect("the tag row decodes")
 }
 
+// the budget table the two budgeted fixtures attach, carrying the one ceiling the checks read
+fn budget_table(max_budget: Option<f64>) -> LiteLLMBudgetTable {
+    serde_json::from_value(json!({"max_budget": max_budget})).expect("the budget table decodes")
+}
+
 // a tag row whose budget table exists; its max_budget may still be absent
 pub(crate) fn tag_with_budget(name: &str, spend: f64, max_budget: Option<f64>) -> TagTable {
-    serde_json::from_value(json!({
-        "tag_name": name,
-        "models": [],
-        "spend": spend,
-        "litellm_budget_table": {"max_budget": max_budget},
-    }))
-    .expect("the tag row decodes")
+    let mut row = tag(name, spend);
+    row.litellm_budget_table = Some(budget_table(max_budget));
+    row
 }
 
 // an access group row with no budget table at all
@@ -318,12 +319,9 @@ pub(crate) fn group_with_budget(
     spend: f64,
     max_budget: Option<f64>,
 ) -> ModelAccessGroupBudgetRow {
-    serde_json::from_value(json!({
-        "access_group_name": name,
-        "spend": spend,
-        "litellm_budget_table": {"max_budget": max_budget},
-    }))
-    .expect("the group row decodes")
+    let mut row = group(name, spend);
+    row.litellm_budget_table = Some(budget_table(max_budget));
+    row
 }
 
 pub(crate) fn organization(alias: &str, spend: f64, max_budget: Option<f64>) -> OrganizationTable {

@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::sync::Arc;
 
 use secrecy::ExposeSecret as _;
@@ -53,67 +54,51 @@ fn assert_denial(
     );
 }
 
-async fn project_denial(recorder: &Recorder) {
-    let reader = ScriptedSpend::new(vec![number(11.0)]);
-    let admission = admission(&reader, recorder);
-    let error = project_check(
-        &project_row(11.0, Some((Some(10.0), None))),
-        None,
-        &admission,
-    )
-    .await
-    .expect_err("the project spend is over its ceiling");
-    assert_denial(error, "project", "proj-1", "11", "10");
-}
-
-async fn organization_denial(recorder: &Recorder) {
-    let world = Arc::new(OrgWorld::with_row(&organization_row(
-        "acme",
-        3.0,
-        Some(10.0),
-    )));
-    let org_lookup = lookup(&world);
-    let reader = ScriptedSpend::new(vec![number(10.0)]);
-    let admission = admission(&reader, recorder);
-    let mut auth = token(json!({"token": "sk-org", "org_id": "org-1"}));
-    let error = organization_check(
-        Some(&mut auth),
-        Some(&team(None)),
-        Some(&org_lookup),
-        &admission,
-    )
-    .await
-    .expect_err("the organization spend equals its ceiling");
-    assert_denial(error, "organization", "org-1", "10", "10");
-}
-
-async fn tag_denial(recorder: &Recorder) {
-    let world = TagWorld::new(vec![tag_with_budget("t", 0.0, Some(10.0))], vec![]);
-    let sources = tenant_sources(&world, true);
-    let reader = ScriptedSpend::new(vec![number(10.01)]);
-    let admission = admission(&reader, recorder);
-    let error = tag_check(&["t".to_owned()], &sources, &admission)
-        .await
-        .expect_err("the tag spend is over its ceiling");
-    assert_denial(error, "tag", "t", "10.01", "10");
-}
-
-async fn group_denial(recorder: &Recorder) {
-    let world = TagWorld::new(vec![], vec![group_with_budget("g", 10.0, Some(10.0))]);
-    let sources = tenant_sources(&world, true);
-    let reader = ScriptedSpend::new(vec![number(10.0)]);
-    let admission = admission(&reader, recorder);
-    let error = group_check(&["g".to_owned()], &sources, &admission)
-        .await
-        .expect_err("the group spend equals its ceiling");
-    assert_denial(error, "model_access_group", "g", "10", "10");
+async fn denial_of<F>(future: F, entity_type: &str, entity_id: &str, spend: &str, ceiling: &str)
+where
+    F: Future<Output = Result<(), TenantBudgetError>>,
+{
+    let error = future.await.expect_err("the spend is over the ceiling");
+    assert_denial(error, entity_type, entity_id, spend, ceiling);
 }
 
 #[tokio::test]
 async fn all_budget_error_fields_and_default_422() {
     let recorder = Recorder::default();
-    project_denial(&recorder).await;
-    organization_denial(&recorder).await;
-    tag_denial(&recorder).await;
-    group_denial(&recorder).await;
+    let project_reader = ScriptedSpend::new(vec![number(11.0)]);
+    let project_admission = admission(&project_reader, &recorder);
+    let project_value = project_row(11.0, Some((Some(10.0), None)));
+    let project_future = project_check(&project_value, None, &project_admission);
+    denial_of(project_future, "project", "proj-1", "11", "10").await;
+
+    let org_row = organization_row("acme", 3.0, Some(10.0));
+    let org_world = Arc::new(OrgWorld::with_row(&org_row));
+    let org_lookup = lookup(&org_world);
+    let org_reader = ScriptedSpend::new(vec![number(10.0)]);
+    let org_admission = admission(&org_reader, &recorder);
+    let mut org_token = token(json!({"token": "sk-org", "org_id": "org-1"}));
+    let org_team = team(None);
+    let org_future = organization_check(
+        Some(&mut org_token),
+        Some(&org_team),
+        Some(&org_lookup),
+        &org_admission,
+    );
+    denial_of(org_future, "organization", "org-1", "10", "10").await;
+
+    let tag_world = TagWorld::new(vec![tag_with_budget("t", 0.0, Some(10.0))], vec![]);
+    let tag_sources = tenant_sources(&tag_world, true);
+    let tag_names = ["t".to_owned()];
+    let tag_reader = ScriptedSpend::new(vec![number(10.01)]);
+    let tag_admission = admission(&tag_reader, &recorder);
+    let tag_future = tag_check(&tag_names, &tag_sources, &tag_admission);
+    denial_of(tag_future, "tag", "t", "10.01", "10").await;
+
+    let group_world = TagWorld::new(vec![], vec![group_with_budget("g", 10.0, Some(10.0))]);
+    let group_sources = tenant_sources(&group_world, true);
+    let group_names = ["g".to_owned()];
+    let group_reader = ScriptedSpend::new(vec![number(10.0)]);
+    let group_admission = admission(&group_reader, &recorder);
+    let group_future = group_check(&group_names, &group_sources, &group_admission);
+    denial_of(group_future, "model_access_group", "g", "10", "10").await;
 }
