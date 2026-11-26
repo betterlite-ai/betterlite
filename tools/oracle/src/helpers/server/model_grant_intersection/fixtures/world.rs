@@ -19,10 +19,7 @@ use betterlite_db::team_rows::membership::LiteLLMTeamMembership;
 use betterlite_oracle_helper_api::error::HelperError;
 use serde_json::Error as JsonError;
 
-mod input;
-
-use self::input::Fault;
-pub(crate) use self::input::{Function, Input, auth};
+use super::input::{self, Fault};
 
 // The scripted cache, database and router the production walks read, plus the calls they made.
 pub(crate) struct Fixture {

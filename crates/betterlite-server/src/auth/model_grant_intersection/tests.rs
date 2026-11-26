@@ -31,7 +31,7 @@ use secrecy::SecretString;
 use serde::de::DeserializeOwned;
 use tower::ServiceExt as _;
 
-use super::{GrantRule, GrantSink, GrantStageInput};
+use super::{GrantRule, GrantSink, GrantStageInput, now_seconds};
 use crate::auth::auth_identity::{
     AuthBackend, AuthContext, INSTALLED_STAGES, StageFailure, StageInput, dispatch,
 };
@@ -372,6 +372,15 @@ async fn failure_stops_downstream() {
     assert!(body.contains("Team doesn't exist in db"), "{body}");
     assert!(!reached);
     assert!(recorder.recorded().is_none());
+}
+
+#[test]
+fn stage_clock_reads_the_wall_clock() {
+    let now = now_seconds();
+    assert!(
+        now > 1_600_000_000.0,
+        "the stage clock reads epoch seconds: {now}"
+    );
 }
 
 #[test]

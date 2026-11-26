@@ -1,4 +1,4 @@
-mod fixture;
+mod fixtures;
 
 use betterlite_auth::model_grant_intersection::collect::{MatchedRequest, collect_matched_groups};
 use betterlite_auth::model_grant_intersection::enforced::{
@@ -16,7 +16,7 @@ use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde_json::{Value, json};
 use tokio::runtime::Builder;
 
-use self::fixture::{Fixture, Function, Input};
+use self::fixtures::{Fixture, Function, Input};
 
 // the project lookup's clock only stamps the cache entry; nothing in the walks compares it
 const NOW: f64 = 0.0;
@@ -28,7 +28,7 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         let fixture = Fixture::build(input)?;
-        let auth = fixture::auth(input)?;
+        let auth = fixtures::auth(input)?;
         let runtime = Builder::new_current_thread()
             .enable_all()
             .build()
