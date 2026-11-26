@@ -1,0 +1,29 @@
+kind: helper
+name: virtual-key-routes-auto-router-method
+call:
+  virtual_key_routes:
+    function: should_call_route
+    route: /auto_router/session
+    method: GET
+    key:
+      allowed_routes: [llm_api_routes]
+calls:
+  - virtual_key_routes:
+      function: should_call_route
+      route: /auto_router/session
+      method: POST
+      key:
+        allowed_routes: [llm_api_routes]
+  - virtual_key_routes:
+      function: should_call_route
+      route: /auto_router/session
+      method: DELETE
+      key:
+        allowed_routes: [llm_api_routes]
+  - virtual_key_routes:
+      function: should_call_route
+      route: /auto_router/session
+      key:
+        allowed_routes: [llm_api_routes]
+env: {}
+compare: {ignore: []}
