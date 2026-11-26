@@ -1,0 +1,9 @@
+kind: helper
+name: model-grant-intersection-seed
+call:
+  model_grant_intersection:
+    function: enforced
+    database: false
+    token: {models: [all-team-models], team_models: [tier-a], team_id: t1}
+env: {}
+compare: {ignore: []}
