@@ -3,11 +3,11 @@ import importlib
 import inspect
 import json
 import threading
-from collections.abc import Awaitable, Callable, Iterator
+from collections.abc import Awaitable, Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from types import TracebackType
-from typing import ClassVar, Final, Protocol, Self, TypeAlias, runtime_checkable
+from typing import ClassVar, Final, NamedTuple, Protocol, Self, TypeAlias, runtime_checkable
 from urllib.parse import urlsplit
 
 import openai
@@ -32,8 +32,6 @@ from betterlite.files import (
     file_list,
     file_retrieve,
 )
-from betterlite.files._calls import FileDeleted, FilePage
-from betterlite.types.llms.openai.core.files import OpenAIFileObject
 
 HOST: Final = "127.0.0.1"
 OK: Final = 200
@@ -43,6 +41,8 @@ GOOD_KEY: Final = "sk-test"
 FILE_ID: Final = "file-abc123"
 MISSING_ID: Final = "file-missing"
 FILES_PATH: Final = "/v1/files"
+FILE_PATH: Final = f"{FILES_PATH}/{FILE_ID}"
+LIST_PATH: Final = f"{FILES_PATH}?purpose=batch"
 CREATED_AT: Final = 1710000000
 PAYLOAD: Final = b"row1\n"
 CREATE_FILENAME: Final = "rows.jsonl"
@@ -119,7 +119,6 @@ class ReferencePage(ReferenceFile, Protocol):
 
 
 CallResult: TypeAlias = ReferenceFile | Awaitable[ReferenceFile]
-OurCall: TypeAlias = Callable[..., CallResult]
 
 
 # every reference call is dumped as a file record, and a page is a record whose rows iterate
@@ -127,11 +126,12 @@ class ReferenceCall(Protocol):
     def __call__(self, *args: CallValue, **kwargs: CallValue) -> CallResult: ...
 
 
-class LiteLLMFiles(Protocol):
+class FilesModule(Protocol):
     def __getattr__(self, name: str) -> ReferenceCall: ...
 
 
-REFERENCE: LiteLLMFiles = importlib.import_module("litellm")  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L115-L804
+REFERENCE: FilesModule = importlib.import_module("litellm")  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L115-L804
+OURS: FilesModule = importlib.import_module("betterlite.files.main")
 
 
 def error_payload(message: str) -> dict[str, JsonValue]:
@@ -283,36 +283,17 @@ def dumped_items(value: CallResult) -> list[dict[str, JsonValue]]:
     match value:
         case ReferencePage():
             return [dumped(item) for item in value]
-        case ReferenceFile():
+        case ReferenceFile() | Awaitable():
             raise AssertionError("the call did not answer with a file page")
-        case Awaitable():
-            raise AssertionError("the call answered with a coroutine instead of a page")
 
 
-async def awaited_file(
-    value: OpenAIFileObject | Awaitable[OpenAIFileObject],
-) -> OpenAIFileObject:
+# the record either call answered with, awaited when the call handed back its coroutine
+async def resolved(value: CallResult) -> ReferenceFile:
     match value:
         case Awaitable():
             return await value
-        case object():
-            raise AssertionError("the call answered with a file object instead of a coroutine")
-
-
-async def awaited_deleted(value: FileDeleted | Awaitable[FileDeleted]) -> FileDeleted:
-    match value:
-        case Awaitable():
-            return await value
-        case object():
-            raise AssertionError("the call answered with a deletion instead of a coroutine")
-
-
-async def awaited_page(value: FilePage | Awaitable[FilePage]) -> FilePage:
-    match value:
-        case Awaitable():
-            return await value
-        case object():
-            raise AssertionError("the call answered with a page instead of a coroutine")
+        case ReferenceFile():
+            return value
 
 
 def native_cause(error: BaseException) -> NativeFileCallError:
@@ -324,151 +305,156 @@ def native_cause(error: BaseException) -> NativeFileCallError:
             raise AssertionError("the exception does not carry the native error as its cause")
 
 
-CALL_PAIRS: Final[tuple[tuple[OurCall, OurCall], ...]] = (
-    (create_file, REFERENCE.create_file),
-    (acreate_file, REFERENCE.acreate_file),
-    (file_retrieve, REFERENCE.file_retrieve),
-    (afile_retrieve, REFERENCE.afile_retrieve),
-    (file_delete, REFERENCE.file_delete),
-    (afile_delete, REFERENCE.afile_delete),
-    (file_list, REFERENCE.file_list),
-    (afile_list, REFERENCE.afile_list),
-)
-ASYNC_CALLS: Final[tuple[OurCall, ...]] = (
-    acreate_file,
-    afile_retrieve,
-    afile_delete,
-    afile_list,
-)
-SYNC_CALLS: Final[tuple[OurCall, ...]] = (
-    create_file,
-    file_retrieve,
-    file_delete,
-    file_list,
-)
+class Comparison(NamedTuple):
+    ours: CallResult
+    reference: CallResult
+    ours_call: RecordedCall
+    reference_call: RecordedCall
+
+
+def endpoint_values(server: FileCallServer, **arguments: CallValue) -> dict[str, CallValue]:
+    values: dict[str, CallValue] = {"custom_llm_provider": "openai", "api_base": server.url}
+    values["api_key"] = GOOD_KEY
+    values.update(arguments)
+    return values
+
+
+# the reference call first, then ours against the same server and kwargs, keeping both calls
+def compared(
+    server: FileCallServer,
+    ours: ReferenceCall,
+    reference: ReferenceCall,
+    **arguments: CallValue,
+) -> Comparison:
+    values = endpoint_values(server, **arguments)
+    reference_value = reference(**values)
+    reference_call = server.last()
+    server.calls.clear()
+    ours_value = ours(**values)
+    return Comparison(ours_value, reference_value, server.last(), reference_call)
+
+
+def assert_same_call(
+    reference_call: RecordedCall, ours_call: RecordedCall, method: str, path: str,
+) -> None:
+    assert ours_call["method"] == reference_call["method"] == method
+    assert ours_call["path"] == reference_call["path"] == path
+
+
+def compared_upload(
+    server: FileCallServer, source: CallValue,
+) -> tuple[Comparison, dict[str, Part], dict[str, Part]]:
+    swapped = compared(
+        server, OURS.create_file, REFERENCE.create_file, file=source, purpose="batch")
+    reference_parts = sent_parts(swapped.reference_call)
+    return swapped, reference_parts, sent_parts(swapped.ours_call)
+
+
+def assert_same_upload(
+    swapped: Comparison, reference_parts: dict[str, Part], ours_parts: dict[str, Part],
+    filename: str,
+) -> None:
+    assert_same_call(swapped.reference_call, swapped.ours_call, "POST", FILES_PATH)
+    assert ours_parts["file"]["filename"] == reference_parts["file"]["filename"] == filename
+    assert ours_parts["file"]["body"] == reference_parts["file"]["body"] == PAYLOAD
+    assert ours_parts["purpose"]["body"] == reference_parts["purpose"]["body"] == b"batch"
+    assert dumped(swapped.ours) == dumped(swapped.reference) == FILE_RECORD
+
+
+# the sync call under its a-name flag and the async twin itself, both awaited
+def flagged_values(
+    server: FileCallServer,
+    synchronous: ReferenceCall,
+    asynchronous: ReferenceCall,
+    flag: str,
+    **arguments: CallValue,
+) -> list[ReferenceFile]:
+    values = endpoint_values(server, **arguments)
+    flagged = synchronous(**values, **{flag: True})
+    direct = asynchronous(**values)
+    assert inspect.isawaitable(flagged)
+    return [asyncio.run(resolved(flagged)), asyncio.run(resolved(direct))]
+
+
+def async_mode_value(
+    server: FileCallServer, synchronous: ReferenceCall, **arguments: CallValue
+) -> ReferenceFile:
+    values = endpoint_values(server, **arguments)
+    flagged = synchronous(**values, is_async=True)
+    assert inspect.isawaitable(flagged)
+    return asyncio.run(resolved(flagged))
+
+
 def test_signature_matches_litellm() -> None:
-    for ours, reference in CALL_PAIRS:
-        assert parameter_rows(inspect.signature(ours)) == parameter_rows(
-            inspect.signature(reference)
-        )
-    for call in ASYNC_CALLS:
-        assert inspect.iscoroutinefunction(call)
-    for call in SYNC_CALLS:
-        assert not inspect.iscoroutinefunction(call)
+    assert parameter_rows(inspect.signature(create_file)) == parameter_rows(
+        inspect.signature(REFERENCE.create_file))
+    assert parameter_rows(inspect.signature(acreate_file)) == parameter_rows(
+        inspect.signature(REFERENCE.acreate_file))
+    assert parameter_rows(inspect.signature(file_retrieve)) == parameter_rows(
+        inspect.signature(REFERENCE.file_retrieve))
+    assert parameter_rows(inspect.signature(afile_retrieve)) == parameter_rows(
+        inspect.signature(REFERENCE.afile_retrieve))
+    assert parameter_rows(inspect.signature(file_delete)) == parameter_rows(
+        inspect.signature(REFERENCE.file_delete))
+    assert parameter_rows(inspect.signature(afile_delete)) == parameter_rows(
+        inspect.signature(REFERENCE.afile_delete))
+    assert parameter_rows(inspect.signature(file_list)) == parameter_rows(
+        inspect.signature(REFERENCE.file_list))
+    assert parameter_rows(inspect.signature(afile_list)) == parameter_rows(
+        inspect.signature(REFERENCE.afile_list))
+    assert not inspect.iscoroutinefunction(create_file)
+    assert not inspect.iscoroutinefunction(file_retrieve)
+    assert not inspect.iscoroutinefunction(file_delete)
+    assert not inspect.iscoroutinefunction(file_list)
+    assert inspect.iscoroutinefunction(acreate_file)
+    assert inspect.iscoroutinefunction(afile_retrieve)
+    assert inspect.iscoroutinefunction(afile_delete)
+    assert inspect.iscoroutinefunction(afile_list)
 
 
 def test_create_bytes_matches_litellm() -> None:  # ast-grep-ignore: no-long-names
     with FileCallServer() as server:
-        reference = REFERENCE.create_file(
-            file=PAYLOAD,
-            purpose="batch",
-            custom_llm_provider="openai",
-            api_base=server.url,
-            api_key=GOOD_KEY,
-        )
-        reference_call = server.last()
-        server.calls.clear()
-        ours = create_file(
-            file=PAYLOAD,
-            purpose="batch",
-            custom_llm_provider="openai",
-            api_base=server.url,
-            api_key=GOOD_KEY,
-        )
-        ours_call = server.last()
-    assert ours_call["method"] == reference_call["method"] == "POST"
-    assert ours_call["path"] == reference_call["path"] == FILES_PATH
-    reference_parts = sent_parts(reference_call)
-    ours_parts = sent_parts(ours_call)
-    assert ours_parts["file"]["filename"] == reference_parts["file"]["filename"] == UPLOAD_NAME
-    assert ours_parts["file"]["body"] == reference_parts["file"]["body"] == PAYLOAD
-    assert ours_parts["purpose"]["body"] == reference_parts["purpose"]["body"] == b"batch"
-    assert dumped(ours) == dumped(reference) == FILE_RECORD
+        swapped, reference_parts, ours_parts = compared_upload(server, PAYLOAD)
+    assert_same_upload(swapped, reference_parts, ours_parts, UPLOAD_NAME)
 
 
 def test_create_path_matches_litellm(tmp_path: Path) -> None:  # ast-grep-ignore: no-long-names
     rows = tmp_path / CREATE_FILENAME
     rows.write_bytes(PAYLOAD)
     with FileCallServer() as server:
-        reference = REFERENCE.create_file(
-            file=rows,
-            purpose="batch",
-            custom_llm_provider="openai",
-            api_base=server.url,
-            api_key=GOOD_KEY,
-        )
-        reference_call = server.last()
-        server.calls.clear()
-        ours = create_file(
-            file=rows,
-            purpose="batch",
-            custom_llm_provider="openai",
-            api_base=server.url,
-            api_key=GOOD_KEY,
-        )
-        ours_call = server.last()
-    reference_parts = sent_parts(reference_call)
-    ours_parts = sent_parts(ours_call)
-    assert ours_parts["file"]["filename"] == reference_parts["file"]["filename"] == CREATE_FILENAME
-    assert ours_parts["file"]["body"] == reference_parts["file"]["body"] == PAYLOAD
-    assert dumped(ours) == dumped(reference) == FILE_RECORD
+        swapped, reference_parts, ours_parts = compared_upload(server, rows)
+    assert_same_upload(swapped, reference_parts, ours_parts, CREATE_FILENAME)
 
 
-def test_create_file_object_matches_litellm(tmp_path: Path) -> None:  # ast-grep-ignore: no-long-names
+def test_create_file_object_matches_litellm(  # ast-grep-ignore: no-long-names
+    tmp_path: Path,
+) -> None:
     rows = tmp_path / CREATE_FILENAME
     rows.write_bytes(PAYLOAD)
     with FileCallServer() as server, rows.open("rb") as stream:
         reference = REFERENCE.create_file(
-            file=stream,
-            purpose="batch",
-            custom_llm_provider="openai",
-            api_base=server.url,
-            api_key=GOOD_KEY,
+            file=stream, purpose="batch", custom_llm_provider="openai",
+            api_base=server.url, api_key=GOOD_KEY,
         )
         reference_call = server.last()
         server.calls.clear()
         stream.seek(0)
         position = stream.tell()
-        ours = create_file(
-            file=stream,
-            purpose="batch",
-            custom_llm_provider="openai",
-            api_base=server.url,
-            api_key=GOOD_KEY,
+        ours = OURS.create_file(
+            file=stream, purpose="batch", custom_llm_provider="openai",
+            api_base=server.url, api_key=GOOD_KEY,
         )
         assert stream.tell() == position
         ours_call = server.last()
-    reference_parts = sent_parts(reference_call)
-    ours_parts = sent_parts(ours_call)
-    assert ours_parts["file"]["filename"] == reference_parts["file"]["filename"] == CREATE_FILENAME
-    assert ours_parts["file"]["body"] == reference_parts["file"]["body"] == PAYLOAD
-    assert dumped(ours) == dumped(reference) == FILE_RECORD
+    swapped = Comparison(ours, reference, ours_call, reference_call)
+    assert_same_upload(
+        swapped, sent_parts(reference_call), sent_parts(ours_call), CREATE_FILENAME)
 
 
 def test_create_tuple_matches_litellm() -> None:  # ast-grep-ignore: no-long-names
     with FileCallServer() as server:
-        reference = REFERENCE.create_file(
-            file=(TUPLE_FILENAME, PAYLOAD),
-            purpose="batch",
-            custom_llm_provider="openai",
-            api_base=server.url,
-            api_key=GOOD_KEY,
-        )
-        reference_call = server.last()
-        server.calls.clear()
-        ours = create_file(
-            file=(TUPLE_FILENAME, PAYLOAD),
-            purpose="batch",
-            custom_llm_provider="openai",
-            api_base=server.url,
-            api_key=GOOD_KEY,
-        )
-        ours_call = server.last()
-    reference_parts = sent_parts(reference_call)
-    ours_parts = sent_parts(ours_call)
-    assert ours_parts["file"]["filename"] == reference_parts["file"]["filename"] == TUPLE_FILENAME
-    assert ours_parts["file"]["body"] == reference_parts["file"]["body"] == PAYLOAD
-    assert dumped(ours) == dumped(reference) == FILE_RECORD
+        swapped, reference_parts, ours_parts = compared_upload(server, (TUPLE_FILENAME, PAYLOAD))
+    assert_same_upload(swapped, reference_parts, ours_parts, TUPLE_FILENAME)
 
 
 def test_create_expires_after_reaches_server() -> None:  # ast-grep-ignore: no-long-names
@@ -489,26 +475,11 @@ def test_create_expires_after_reaches_server() -> None:  # ast-grep-ignore: no-l
 
 def test_create_flag_coroutine() -> None:
     with FileCallServer() as server:
-        flagged = create_file(
-            file=PAYLOAD,
-            purpose="batch",
-            custom_llm_provider="openai",
-            api_base=server.url,
-            api_key=GOOD_KEY,
-            acreate_file=True,
+        values = flagged_values(
+            server, OURS.create_file, OURS.acreate_file, "acreate_file",
+            file=PAYLOAD, purpose="batch",
         )
-        assert inspect.isawaitable(flagged)
-        made = asyncio.run(awaited_file(flagged))
-        direct = asyncio.run(
-            acreate_file(
-                file=PAYLOAD,
-                purpose="batch",
-                custom_llm_provider="openai",
-                api_base=server.url,
-                api_key=GOOD_KEY,
-            )
-        )
-    assert dumped(made) == dumped(direct) == FILE_RECORD
+    assert [dumped(value) for value in values] == [FILE_RECORD, FILE_RECORD]
 
 
 def test_create_provider_none_matches_litellm() -> None:  # ast-grep-ignore: no-long-names
@@ -534,186 +505,64 @@ def test_create_provider_none_matches_litellm() -> None:  # ast-grep-ignore: no-
 
 def test_retrieve_matches_litellm() -> None:
     with FileCallServer() as server:
-        reference = REFERENCE.file_retrieve(
-            file_id=FILE_ID,
-            custom_llm_provider="openai",
-            api_base=server.url,
-            api_key=GOOD_KEY,
-        )
-        reference_call = server.last()
-        server.calls.clear()
-        ours = file_retrieve(
-            file_id=FILE_ID,
-            custom_llm_provider="openai",
-            api_base=server.url,
-            api_key=GOOD_KEY,
-        )
-        ours_call = server.last()
-    assert ours_call["method"] == reference_call["method"] == "GET"
-    assert ours_call["path"] == reference_call["path"] == f"{FILES_PATH}/{FILE_ID}"
-    assert dumped(ours) == dumped(reference) == FILE_RECORD
+        swapped = compared(server, OURS.file_retrieve, REFERENCE.file_retrieve, file_id=FILE_ID)
+    assert_same_call(swapped.reference_call, swapped.ours_call, "GET", FILE_PATH)
+    assert dumped(swapped.ours) == dumped(swapped.reference) == FILE_RECORD
 
 
 def test_retrieve_flag_coroutine() -> None:
     with FileCallServer() as server:
-        flagged = file_retrieve(
-            file_id=FILE_ID,
-            custom_llm_provider="openai",
-            api_base=server.url,
-            api_key=GOOD_KEY,
-            afile_retrieve=True,
-        )
-        assert inspect.isawaitable(flagged)
-        asynchronous = file_retrieve(
-            file_id=FILE_ID,
-            custom_llm_provider="openai",
-            api_base=server.url,
-            api_key=GOOD_KEY,
-            is_async=True,
-        )
-        assert inspect.isawaitable(asynchronous)
-        made = asyncio.run(awaited_file(flagged))
-        made_async = asyncio.run(awaited_file(asynchronous))
-        direct = asyncio.run(
-            afile_retrieve(
-                file_id=FILE_ID,
-                custom_llm_provider="openai",
-                api_base=server.url,
-                api_key=GOOD_KEY,
-            )
-        )
-    assert dumped(made) == dumped(made_async) == dumped(direct) == FILE_RECORD
+        values = flagged_values(
+            server, OURS.file_retrieve, OURS.afile_retrieve, "afile_retrieve", file_id=FILE_ID)
+        asynchronous = async_mode_value(server, OURS.file_retrieve, file_id=FILE_ID)
+    assert [dumped(value) for value in values] == [FILE_RECORD, FILE_RECORD]
+    assert dumped(asynchronous) == FILE_RECORD
 
 
 def test_delete_matches_litellm() -> None:
     with FileCallServer() as server:
-        reference = REFERENCE.file_delete(
-            file_id=FILE_ID,
-            model="gpt-4o",
-            custom_llm_provider="openai",
-            api_base=server.url,
-            api_key=GOOD_KEY,
-        )
-        reference_call = server.last()
-        server.calls.clear()
-        ours = file_delete(
-            file_id=FILE_ID,
-            model="gpt-4o",
-            custom_llm_provider="openai",
-            api_base=server.url,
-            api_key=GOOD_KEY,
-        )
-        ours_call = server.last()
-    assert ours_call["method"] == reference_call["method"] == "DELETE"
-    assert ours_call["path"] == reference_call["path"] == f"{FILES_PATH}/{FILE_ID}"
-    assert dumped(ours) == dumped(reference) == DELETED_RECORD
+        swapped = compared(
+            server, OURS.file_delete, REFERENCE.file_delete, file_id=FILE_ID, model="gpt-4o")
+    assert_same_call(swapped.reference_call, swapped.ours_call, "DELETE", FILE_PATH)
+    assert dumped(swapped.ours) == dumped(swapped.reference) == DELETED_RECORD
 
 
 def test_delete_flag_coroutine() -> None:
     with FileCallServer() as server:
-        flagged = file_delete(
-            file_id=FILE_ID,
-            custom_llm_provider="openai",
-            api_base=server.url,
-            api_key=GOOD_KEY,
-            afile_delete=True,
+        values = flagged_values(
+            server, OURS.file_delete, OURS.afile_delete, "afile_delete",
+            file_id=FILE_ID, model="gpt-4o",
         )
-        assert inspect.isawaitable(flagged)
-        asynchronous = file_delete(
-            file_id=FILE_ID,
-            custom_llm_provider="openai",
-            api_base=server.url,
-            api_key=GOOD_KEY,
-            is_async=True,
-        )
-        assert inspect.isawaitable(asynchronous)
-        made = asyncio.run(awaited_deleted(flagged))
-        made_async = asyncio.run(awaited_deleted(asynchronous))
-        direct = asyncio.run(
-            afile_delete(
-                file_id=FILE_ID,
-                custom_llm_provider="openai",
-                api_base=server.url,
-                api_key=GOOD_KEY,
-                model="gpt-4o",
-            )
-        )
-    assert dumped(made) == dumped(made_async) == dumped(direct) == DELETED_RECORD
+        asynchronous = async_mode_value(
+            server, OURS.file_delete, file_id=FILE_ID, model="gpt-4o")
+    assert [dumped(value) for value in values] == [DELETED_RECORD, DELETED_RECORD]
+    assert dumped(asynchronous) == DELETED_RECORD
 
 
 def test_list_matches_litellm() -> None:
     with FileCallServer() as server:
-        reference = REFERENCE.file_list(
-            custom_llm_provider="openai",
-            purpose="batch",
-            api_base=server.url,
-            api_key=GOOD_KEY,
-        )
-        reference_call = server.last()
-        server.calls.clear()
-        ours = file_list(
-            custom_llm_provider="openai",
-            purpose="batch",
-            api_base=server.url,
-            api_key=GOOD_KEY,
-        )
-        ours_call = server.last()
-    assert ours_call["method"] == reference_call["method"] == "GET"
-    assert ours_call["path"] == reference_call["path"] == f"{FILES_PATH}?purpose=batch"
-    assert dumped(ours) == dumped(reference) == PAGE_RECORD
-    assert dumped_items(ours) == dumped_items(reference) == [FILE_RECORD]
-    assert dumped(ours)["has_more"] is False
+        swapped = compared(server, OURS.file_list, REFERENCE.file_list, purpose="batch")
+    assert_same_call(swapped.reference_call, swapped.ours_call, "GET", LIST_PATH)
+    assert dumped(swapped.ours) == dumped(swapped.reference) == PAGE_RECORD
+    assert dumped_items(swapped.ours) == dumped_items(swapped.reference) == [FILE_RECORD]
+    assert dumped(swapped.ours)["has_more"] is False
 
 
 def test_list_without_purpose_matches_litellm() -> None:  # ast-grep-ignore: no-long-names
     with FileCallServer() as server:
-        reference = REFERENCE.file_list(
-            custom_llm_provider="openai",
-            api_base=server.url,
-            api_key=GOOD_KEY,
-        )
-        reference_call = server.last()
-        server.calls.clear()
-        ours = file_list(
-            custom_llm_provider="openai",
-            api_base=server.url,
-            api_key=GOOD_KEY,
-        )
-        ours_call = server.last()
-    assert ours_call["path"] == reference_call["path"] == FILES_PATH
-    assert dumped(ours) == dumped(reference) == PAGE_RECORD
+        swapped = compared(server, OURS.file_list, REFERENCE.file_list)
+    assert_same_call(swapped.reference_call, swapped.ours_call, "GET", FILES_PATH)
+    assert dumped(swapped.ours) == dumped(swapped.reference) == PAGE_RECORD
 
 
 def test_list_flag_coroutine() -> None:
     with FileCallServer() as server:
-        flagged = file_list(
-            custom_llm_provider="openai",
-            purpose="batch",
-            api_base=server.url,
-            api_key=GOOD_KEY,
-            afile_list=True,
-        )
-        assert inspect.isawaitable(flagged)
-        asynchronous = file_list(
-            custom_llm_provider="openai",
-            purpose="batch",
-            api_base=server.url,
-            api_key=GOOD_KEY,
-            is_async=True,
-        )
-        assert inspect.isawaitable(asynchronous)
-        made = asyncio.run(awaited_page(flagged))
-        made_async = asyncio.run(awaited_page(asynchronous))
-        direct = asyncio.run(
-            afile_list(
-                custom_llm_provider="openai",
-                purpose="batch",
-                api_base=server.url,
-                api_key=GOOD_KEY,
-            )
-        )
-    assert dumped(made) == dumped(made_async) == dumped(direct) == PAGE_RECORD
-    assert dumped_items(made) == [FILE_RECORD]
+        values = flagged_values(
+            server, OURS.file_list, OURS.afile_list, "afile_list", purpose="batch")
+        asynchronous = async_mode_value(server, OURS.file_list, purpose="batch")
+    assert [dumped(value) for value in values] == [PAGE_RECORD, PAGE_RECORD]
+    assert dumped_items(values[0]) == [FILE_RECORD]
+    assert dumped(asynchronous) == PAGE_RECORD
 
 
 def test_error_matches_litellm() -> None:

@@ -9,10 +9,10 @@ from betterlite.files._calls import (
     file_retrieve,
 )
 from betterlite.files._content import (
-    FileContentStreamingResponse,
     afile_content,
     file_content,
 )
+from betterlite.files.streaming import FileContentStreamingResponse
 
 __all__ = [
     "FileContentStreamingResponse",
