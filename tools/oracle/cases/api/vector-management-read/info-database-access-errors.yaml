@@ -1,0 +1,57 @@
+kind: helper
+name: info-database-access-errors
+call:
+  b1070:
+    calls:
+      # a database hit keeps the whole row and redacts its params
+      - route: info
+        vector_store_id: vs_full
+        database: &rows
+          - {vector_store_id: vs_full, custom_llm_provider: openai, vector_store_name: full-name, vector_store_description: full-desc, vector_store_metadata: {env: prod}, created_at: "2024-01-02T03:04:05Z", litellm_credential_name: cred-full, litellm_params: {api_key: sk-full, region: us}, user_id: u9}
+          - {vector_store_id: vs_team, custom_llm_provider: openai, team_id: t1}
+          - {vector_store_id: vs_bare, custom_llm_provider: openai}
+        registry: null
+        caller: &admin {user_id: u1, user_role: proxy_admin, team_id: null}
+        disabled: false
+      # a teamless row is readable by an internal user
+      - route: info
+        vector_store_id: vs_full
+        database: *rows
+        registry: null
+        caller: {user_id: u2, user_role: internal_user, team_id: null}
+        disabled: false
+      - route: info
+        vector_store_id: vs_missing
+        database: *rows
+        registry: null
+        caller: *admin
+        disabled: false
+      - route: info
+        vector_store_id: vs_team
+        database: *rows
+        registry: null
+        caller: {user_id: u2, user_role: internal_user, team_id: t1}
+        disabled: false
+      - route: info
+        vector_store_id: vs_team
+        database: *rows
+        registry: null
+        caller: {user_id: u2, user_role: internal_user, team_id: t2}
+        disabled: false
+      # a cached team store the caller does not belong to is denied before the database is read
+      - route: info
+        vector_store_id: vs_cached_team
+        database: []
+        registry:
+          - {vector_store_id: vs_cached_team, custom_llm_provider: openai, team_id: t9}
+        caller: {user_id: u2, user_role: internal_user, team_id: t1}
+        disabled: false
+      # a bare row answers every other field as its default
+      - route: info
+        vector_store_id: vs_bare
+        database: *rows
+        registry: null
+        caller: *admin
+        disabled: false
+env: {}
+compare: {ignore: []}

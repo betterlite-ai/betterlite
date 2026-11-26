@@ -1,0 +1,6 @@
+task: B10108
+deviations:
+  - what: "A database value that resolves through os.environ/ to an s3:// or gcs:// module is refused after the references resolve: every field scrub_remote_modules covers is checked again on the config resolve_reload returns, a string field becomes null and a list drops the entry, with the scrub's warning. LiteLLM scrubs each database row before get_config resolves os.environ/ references, so a general_settings row holding custom_auth os.environ/AUTH_MODULE and an environment_variables row holding AUTH_MODULE=s3://attacker/module.handler passes the scrub, and the resolved config hands that URL to get_instance_fn's remote module loading as if the config file had named it."
+    why: "The database holds both halves of the reference, so scrubbing the row alone leaves the code-loading hole the scrub exists to close; a config file value that resolves to a remote module still loads as in LiteLLM, and only s3:// and gcs:// values are refused, so a working setup that stores real module paths keeps working."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6055-L6071
+kept_bugs: []
