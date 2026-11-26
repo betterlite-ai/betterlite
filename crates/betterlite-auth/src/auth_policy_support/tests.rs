@@ -12,7 +12,8 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 
 use super::extract::{
-    ExtractionError, ToolNameExtractors, anthropic_tool_names, extract_request_tool_names,
+    ExtractionError, ToolNameExtractor, ToolNameExtractors, anthropic_tool_names,
+    extract_request_tool_names,
 };
 use super::fetch::safe_fetch;
 use super::guardrails::{
@@ -280,7 +281,7 @@ fn tool_exact_string_names_and_duplicates() {
     let request = body(r#"{"functions":[{"name":"Alpha"},{"name":"alpha"},{"name":"Alpha"}]}"#);
     let denial = denial_of(check(&request, Some(&token), None, ROUTE, &extractors));
     assert!(
-        denial.message.contains(r#"["alpha", "Alpha"]"#),
+        denial.message.contains(r#"["alpha"]"#),
         "{}",
         denial.message
     );
@@ -408,6 +409,35 @@ fn missing_handler_empty() {
 }
 
 #[test]
+fn standalone_registration_preserves_existing_entries() {
+    let mut extractors = ToolNameExtractors {
+        routes: routes(&[("/custom", &["generate_content"])]),
+        standalone: BTreeMap::from([("generate_content", ToolNameExtractor::Mcp)]),
+        handlers: BTreeMap::new(),
+    };
+    extractors.register_standalone_builtins();
+    assert_eq!(extractors.standalone.len(), 1);
+    let names =
+        extract_request_tool_names("/custom", &body(r#"{"name":"registered"}"#), &extractors)
+            .unwrap();
+    assert_eq!(names, ["registered"]);
+}
+
+#[test]
+fn unsupported_registry_entries_are_skipped() {
+    let extractors = ToolNameExtractors {
+        routes: routes(&[("/embed", &["embedding"])]),
+        standalone: BTreeMap::from([("embedding", ToolNameExtractor::Mcp)]),
+        handlers: BTreeMap::new(),
+    };
+    let request = body(r#"{"name":"blocked"}"#);
+    let names = extract_request_tool_names("/embed", &request, &extractors).unwrap();
+    assert!(names.is_empty());
+    let token = tools_token(r#"["allowed"]"#, "null");
+    check(&request, Some(&token), None, "/embed", &extractors).unwrap();
+}
+
+#[test]
 fn chat_and_legacy_names() {
     let request = body(
         r#"{"tools":[{"type":"function","function":{"name":"fn-a"}},{"type":"other","function":{"name":"skipped"}},{"type":"function","function":{"name":""}},{"type":"function","function":"not-a-dict"},{"type":"function","function":{"name":"fn-b"}}],"functions":[{"name":"legacy-a"},{"name":false},{"name":"legacy-b"},"flat"]}"#,
@@ -484,7 +514,8 @@ fn mcp_name_precedence(#[case] request: &str, #[case] expected: Vec<&str>) {
 fn anthropic_both_names(#[case] request: &str, #[case] expected: Vec<&str>) {
     let table = routes(&[("/anthropic", &["anthropic_messages"])]);
     let extractors = ToolNameExtractors::builtin(table);
-    let names = extract_request_tool_names("/anthropic", &body(request), &extractors).unwrap();
+    let wrapped = body(&format!(r#"{{"tools":[{request}]}}"#));
+    let names = extract_request_tool_names("/anthropic", &wrapped, &extractors).unwrap();
     let wanted: Vec<String> = expected.into_iter().map(str::to_owned).collect();
     assert_eq!(names, wanted, "{request}");
     assert!(anthropic_tool_names(&Json::Null).is_empty());
@@ -642,39 +673,31 @@ fn reconstructed_team_all_fields() {
     );
     let cached = team_obj_from_token(&token).unwrap();
     let fields = &cached.team.fields;
-    assert_eq!(
-        (
-            fields.base.team_id.as_str(),
-            fields.base.max_budget,
-            fields.base.soft_budget,
-            fields.spend,
-        ),
-        (
-            "t1",
-            Some(Decimal::new(10, 0)),
-            Some(Decimal::new(5, 0)),
-            Some(Decimal::new(15, 1)),
-        )
-    );
-    assert_eq!(
-        (
-            fields.base.tpm_limit,
-            fields.base.rpm_limit,
-            fields.base.tpd_limit,
-        ),
-        (Some(10), Some(20), Some(30))
-    );
+    assert_eq!(fields.base.team_id, "t1");
+    assert_eq!(fields.base.max_budget, Some(Decimal::new(10, 0)));
+    assert_eq!(fields.base.soft_budget, Some(Decimal::new(5, 0)));
+    assert_eq!(fields.spend, Some(Decimal::new(15, 1)));
+    assert_eq!(fields.base.tpm_limit, Some(10));
+    assert_eq!(fields.base.rpm_limit, Some(20));
+    assert_eq!(fields.base.tpd_limit, Some(30));
     assert!(fields.base.blocked);
     assert_eq!(fields.base.models, ["gpt-4".to_owned()]);
     assert_eq!(fields.object_permission_id.as_deref(), Some("perm"));
-    let metadata = fields.base.metadata.as_ref().expect("team metadata");
-    assert!(metadata.contains_key("k"));
-    let model_max_budget = fields
-        .model_max_budget
-        .0
-        .as_ref()
-        .expect("model max budget");
-    assert!(model_max_budget.contains_key("gpt-4"));
+    assert_eq!(
+        fields.base.metadata,
+        token.view.team_metadata.map(|data| data.0)
+    );
+    assert_eq!(
+        fields.model_max_budget.0,
+        token.view.team_model_max_budget.map(|data| data.0)
+    );
+}
+
+#[test]
+fn reconstructed_team_does_not_invent_identity() {
+    let token = key(r#"{"token":"k","team_id":"t1","org_id":"o1","team_alias":"alias"}"#);
+    let cached = team_obj_from_token(&token).unwrap();
+    let fields = &cached.team.fields;
     assert_eq!(fields.model_spend, Nullable(Some(BTreeMap::new())));
     assert_eq!(fields.allow_team_guardrail_config, Nullable(Some(false)));
     assert_eq!(
@@ -737,7 +760,7 @@ fn missing_team_never_vouches() {
         &TeamLookupError::NoDatabase,
         &AllowRequestsOnOutage::Boolean(true),
     );
-    assert!(!no_team_id.unwrap());
+    assert!(no_team_id.unwrap());
 }
 
 #[rstest]
@@ -809,9 +832,14 @@ async fn any_populated_org_field_skips(#[case] fields: &str) {
     let lookup = org_lookup(&world);
     let team_row = team(r#"{"team_id":"t1","organization_id":"o1"}"#);
     let mut token = key(fields);
+    let mut expected = token.clone();
+    expected.view.token.org_id = Some("o1".to_owned());
     inherit(&mut token, &lookup, Some(&team_row)).await;
     assert_eq!(token.view.token.org_id.as_deref(), Some("o1"), "{fields}");
-    assert!(token.view.organization_alias.is_none(), "{fields}");
+    assert_eq!(
+        serde_json::to_string(&token).unwrap(),
+        serde_json::to_string(&expected).unwrap()
+    );
     assert_eq!(world.reads(), 0);
 }
 

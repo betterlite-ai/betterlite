@@ -22,7 +22,7 @@ use super::{Failure, Input, Lookup, invalid, proxy_denial, required_token, runti
 pub(super) fn team_from_token(input: &Input) -> HelperResult {
     let token = required_token(input.token.as_ref())?;
     match team_obj_from_token(&token) {
-        Ok(cached) => Ok(team_fields(&cached.team.fields)),
+        Ok(cached) => team_fields(&cached.team.fields),
         Err(error) => Ok(team_error(&error)),
     }
 }

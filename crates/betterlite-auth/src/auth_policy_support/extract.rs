@@ -9,12 +9,21 @@ use betterlite_models::model_registration::JsonObject;
 use crate::auth_errors::conversion::{AuthFailure, as_proxy_exception};
 use crate::auth_request_models::is_falsey;
 
-// get_call_types_for_route behind a trait: B207's catalog answers in the server, a fixture answers in a test
+pub const TOOL_CAPABLE_CALL_TYPES: [&str; 8] = [
+    "completion",
+    "acompletion",
+    "responses",
+    "aresponses",
+    "anthropic_messages",
+    "generate_content",
+    "agenerate_content",
+    "call_mcp_tool",
+];
+
 pub trait ToolRouteCallTypes: fmt::Debug + Send + Sync {
     fn call_types_for_route(&self, route: &str) -> Vec<String>;
 }
 
-// the built-in extractors LiteLLM registers per tool-capable call type
 #[derive(Clone, Copy, Debug)]
 pub enum ToolNameExtractor {
     AnthropicBody,
@@ -69,13 +78,15 @@ impl ToolNameExtractors {
     }
 }
 
-// extract_request_tool_names: a standalone extractor answers alone, and handlers are tried in order until one names a tool
 pub fn extract_request_tool_names(
     route: &str,
     data: &JsonObject,
     extractors: &ToolNameExtractors,
 ) -> Result<Vec<String>, ExtractionError> {
     for source_name in extractors.routes.call_types_for_route(route) {
+        if !TOOL_CAPABLE_CALL_TYPES.contains(&source_name.as_str()) {
+            continue;
+        }
         let standalone = extractors.standalone.get(source_name.as_str());
         let handler = extractors.handlers.get(source_name.as_str());
         let Some(extractor) = standalone.or(handler) else {
@@ -144,7 +155,6 @@ fn type_name(tool: &JsonObject) -> Option<&str> {
     }
 }
 
-// the Python truthy check, then the same source string conversion the named values use
 fn source_text(value: Option<&Json>) -> Option<String> {
     let present = value?;
     if is_falsey(present) {
@@ -227,7 +237,6 @@ pub(crate) fn anthropic_body_tool_names(data: &JsonObject) -> Result<Vec<String>
     Ok(names)
 }
 
-// the flat name and, only for type function, the forwarded OpenAI function.name, both nonempty strings
 #[must_use]
 pub fn anthropic_tool_names(tool: &Json) -> Vec<String> {
     let Json::Object(fields) = tool else {
@@ -243,7 +252,6 @@ pub fn anthropic_tool_names(tool: &Json) -> Vec<String> {
     names
 }
 
-// one generateContent tool's functionDeclarations names, and nothing for a non-object entry
 fn gemini_entry_names(entry: &Json) -> Result<Vec<String>, ExtractionError> {
     let Json::Object(tool) = entry else {
         return Ok(Vec::new());
@@ -262,7 +270,6 @@ pub(crate) fn gemini_tool_names(data: &JsonObject) -> Result<Vec<String>, Extrac
     Ok(names)
 }
 
-// MCP call_tool: the truthy name, else the mcp_tool_name
 fn mcp_name(data: &JsonObject) -> Option<&Json> {
     let preferred = data.get("name");
     if preferred.is_some_and(|value| !is_falsey(value)) {

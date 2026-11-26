@@ -8,7 +8,9 @@ use betterlite_models::model_registration::JsonObject;
 
 use crate::resolved_key::auth::UserAPIKeyAuth;
 
-use super::extract::{ExtractionError, ToolNameExtractors, extract_request_tool_names};
+use super::extract::{
+    ExtractionError, TOOL_CAPABLE_CALL_TYPES, ToolNameExtractors, extract_request_tool_names,
+};
 
 const TOOL_DENIAL_PARAM: &str = "tools";
 const TOOL_DENIAL_STATUS: i64 = 403;
@@ -68,10 +70,7 @@ fn has_tool_capable_call_type(route: &str, extractors: &ToolNameExtractors) -> b
         .routes
         .call_types_for_route(route)
         .iter()
-        .any(|name| {
-            extractors.standalone.contains_key(name.as_str())
-                || extractors.handlers.contains_key(name.as_str())
-        })
+        .any(|name| TOOL_CAPABLE_CALL_TYPES.contains(&name.as_str()))
 }
 
 // a nonempty key list wins over the team list, and an empty or malformed one falls back to it
