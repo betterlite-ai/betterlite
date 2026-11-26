@@ -77,7 +77,7 @@ def session_script(call: Call) -> SessionScript:
     membership_row = call.get("membership")
     user: LiteLLM_UserTable | None = None if user_row is None else LiteLLM_UserTable.model_validate(user_row)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py
     team: LiteLLM_TeamTableCachedObj | None = None if team_row is None else LiteLLM_TeamTableCachedObj.model_validate(team_row)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py
-    membership: LiteLLM_TeamMembership | None = None if membership_row is None else LiteLLM_TeamMembership.model_validate(membership_row)
+    membership = None if membership_row is None else LiteLLM_TeamMembership.model_validate(membership_row)
     outcome = call.get("user_outcome")
     return SessionScript(user, "missing" if outcome is None else outcome, team, membership)
 

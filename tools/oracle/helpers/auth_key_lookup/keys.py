@@ -1,4 +1,4 @@
-from typing import Protocol, TypeAlias
+from typing import Final, TypeAlias
 
 import httpx
 from litellm.caching.in_memory_cache import InMemoryCache
@@ -6,10 +6,9 @@ from litellm.models.object_permission import LiteLLM_ObjectPermissionTable
 from litellm.proxy._types import LiteLLM_VerificationTokenView, ProxyException, UserAPIKeyAuth
 from litellm.proxy.auth import auth_checks
 from litellm.proxy.common_utils.user_api_key_cache import UserApiKeyCache
-from litellm.proxy.db.prisma_client import PrismaWrapper
 from litellm.proxy.utils import PrismaClient, ProxyLogging
 from opentelemetry.trace import Span
-from pydantic import BaseModel, JsonValue
+from pydantic import BaseModel, JsonValue, TypeAdapter
 from typing_extensions import override
 
 from .inputs import JSON, STEP_LIST, Call, Permission, Row, Step
@@ -19,6 +18,8 @@ from .views import auth_fields, error_fields
 LookupArgument: TypeAlias = (
     str | bool | None | Span | PrismaClient | UserApiKeyCache | ProxyLogging
 )
+# the optional reconnect timeouts LiteLLM passes as keywords
+TIMEOUT: Final[TypeAdapter[float | None]] = TypeAdapter(float | None)
 
 
 class ReadScript:
@@ -27,6 +28,7 @@ class ReadScript:
         steps: list[Step],
         timeout: float | None = None,
         lock: float | None = None,
+        *,
         answer: bool = False,
     ) -> None:
         self.steps = steps
@@ -35,10 +37,6 @@ class ReadScript:
         self.answer = answer
         self.use_writer: list[bool] = []
         self.reconnects: list[JsonValue] = []
-
-
-class StaleEngine(Protocol):
-    def is_still_live(self, current: PrismaWrapper) -> bool: ...
 
 
 class ScriptedClient(PrismaClient):
@@ -53,8 +51,8 @@ class ScriptedClient(PrismaClient):
     async def get_data(  # type: ignore[override]  # pyright: ignore[reportIncompatibleMethodOverride]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4862-L4885
         self, **_options: JsonValue
     ) -> BaseModel | None:
-        used_writer = _options.get("use_writer")
-        self.script.use_writer.append(used_writer is True)
+        used_writer = _options.get("use_writer") is True
+        self.script.use_writer.append(used_writer)
         step = self.script.steps.pop(0) if self.script.steps else None
         if step is None:
             return None
@@ -65,24 +63,18 @@ class ScriptedClient(PrismaClient):
                 fields = step.get("fields")
                 if fields is None:
                     raise ValueError("a row step needs fields")
-                row: BaseModel = LiteLLM_VerificationTokenView.model_validate(fields)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py
-                return row
+                return LiteLLM_VerificationTokenView.model_validate(fields)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py
 
     @override
-    async def attempt_db_reconnect(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L6434-L6450
-        self,
-        reason: str,
-        force: bool = False,
-        timeout_seconds: float | None = None,
-        lock_timeout_seconds: float | None = None,
-        force_recreate: bool = False,
-        stale_read_engine: StaleEngine | None = None,
+    async def attempt_db_reconnect(  # type: ignore[override]  # pyright: ignore[reportIncompatibleMethodOverride]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L6434-L6450
+        self, reason: str, **_options: JsonValue
     ) -> bool:
-        del force, force_recreate, stale_read_engine
+        timeout = TIMEOUT.validate_python(_options.get("timeout_seconds"))
+        lock = TIMEOUT.validate_python(_options.get("lock_timeout_seconds"))
         record: dict[str, JsonValue] = {
             "reason": reason,
-            "timeout": timeout_seconds,
-            "lock": lock_timeout_seconds,
+            "timeout": timeout,
+            "lock": lock,
         }
         self.script.reconnects.append(JSON.validate_python(record))
         return self.script.answer
@@ -123,7 +115,9 @@ class PermissionReadError(Exception):
 
 
 class PermissionScript:
-    def __init__(self, table: LiteLLM_ObjectPermissionTable | None, fail: bool) -> None:
+    def __init__(
+        self, table: LiteLLM_ObjectPermissionTable | None, *, fail: bool
+    ) -> None:
         self.table = table
         self.fail = fail
         self.calls: list[bool] = []
@@ -140,8 +134,8 @@ class PermissionReader:
         **_kwargs: LookupArgument,
     ) -> LiteLLM_ObjectPermissionTable | None:
         del object_permission_id
-        db_only = _kwargs.get("check_db_only")
-        self.script.calls.append(db_only is True)
+        db_only = _kwargs.get("check_db_only") is True
+        self.script.calls.append(db_only)
         if self.script.fail:
             raise PermissionReadError("the object permission read failed")
         return self.script.table
@@ -149,15 +143,15 @@ class PermissionReader:
 
 def permission_script(permission: Permission | None) -> PermissionScript:
     if permission is None:
-        return PermissionScript(None, False)
+        return PermissionScript(None, fail=False)
     models: list[str] = ["gpt-4"]
     record: dict[str, JsonValue] = {
         "object_permission_id": permission["id"],
         "models": JSON.validate_python(models),
     }
     table: LiteLLM_ObjectPermissionTable = LiteLLM_ObjectPermissionTable.model_validate(record)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/object_permission.py
-    failed = permission.get("fail")
-    return PermissionScript(table, failed is True)
+    failed = permission.get("fail") is True
+    return PermissionScript(table, fail=failed)
 
 
 def read_steps(rows: list[JsonValue] | None) -> list[Step]:
@@ -171,11 +165,12 @@ def read_script(call: Call) -> ReadScript:
     if reconnect is None:
         raise ValueError("a key object call needs a reconnect fixture")
     answer = reconnect.get("answer")
+    answer_flag = False if answer is None else answer
     return ReadScript(
         read_steps(call.get("rows")),
         reconnect.get("timeout"),
         reconnect.get("lock"),
-        False if answer is None else answer,
+        answer=answer_flag,
     )
 
 
