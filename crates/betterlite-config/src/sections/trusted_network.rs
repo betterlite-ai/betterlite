@@ -76,11 +76,11 @@ fn ranges<L>(
 where
     L: EnvironmentLookup,
 {
-    let Some(configured) = configured else {
+    let Some(items) = configured else {
         return Ok(None);
     };
-    let mut resolved = Vec::with_capacity(configured.len());
-    for (index, range) in configured.into_iter().enumerate() {
+    let mut resolved = Vec::with_capacity(items.len());
+    for (index, range) in items.into_iter().enumerate() {
         resolved.push(resolve_string(range, &format!("{path}[{index}]"), lookup)?);
     }
     Ok(Some(resolved))
