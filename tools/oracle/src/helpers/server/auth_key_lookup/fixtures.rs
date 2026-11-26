@@ -131,6 +131,7 @@ impl KeyCacheWriter for ScriptedWriter {
     ) -> Result<(), InvalidationError> {
         let mut writes = self.writes.lock().unwrap_or_else(PoisonError::into_inner);
         *writes = writes.saturating_add(1);
+        drop(writes);
         Ok(())
     }
 }
