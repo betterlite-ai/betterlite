@@ -20,4 +20,12 @@ deviations:
       column as the database returned it instead of failing the whole answer on a value JSONB accepts; the
       declared object type is still what both routes emit for well-formed rows.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/management_endpoints.py#L532-L538
+  - what: >-
+      A stored litellm_params value that is not a JSON object, such as a string, number or list, is served after
+      redaction with a 200, where LiteLLM declares dict[str, Any] | None on the same response models and answers
+      a 500 while serializing the row.
+    why: >-
+      The JSONB column is served as the database returned it with only credential values replaced, the same choice
+      the metadata column gets above; the declared object type is still what both routes emit for well-formed rows.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/managed_files.py#L52-L64
 kept_bugs: []
