@@ -1,3 +1,5 @@
+use axum::body::{Body, Bytes};
+use axum::http::{Request, header};
 use betterlite_auth::auth_identity::errors::AuthError;
 use betterlite_auth::auth_identity::records::{
     CredentialRef, NetworkContext, Principal, SourceKey,
@@ -5,6 +7,7 @@ use betterlite_auth::auth_identity::records::{
 use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType};
 use betterlite_error::proxy_exception::ProxyException;
 use secrecy::{ExposeSecret as _, SecretString};
+use std::sync::Arc;
 use subtle::ConstantTimeEq as _;
 
 use crate::auth::auth_end_users::EndUserStageInput;
@@ -19,6 +22,7 @@ use crate::auth::end_user_identity::EndUserIdentityStageInput;
 use crate::auth::request_body_safety::{self, RequestBodySafetyStageInput};
 use crate::auth::team_budget_admission::TeamBudgetStageInput;
 use crate::error_body::AuthenticationFailure;
+use crate::state::ServerState;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AuthBackend {
@@ -180,6 +184,32 @@ fn auth_request_body_safety_stage(input: &StageInput) -> Result<AuthContext, Sta
         return Err(StageFailure::from(AuthenticationFailure::Missing));
     };
     request_body_safety::run_stage(stage).map_err(StageFailure::RequestBodySafety)
+}
+
+// auth.rs sits at its 300-line limit, so the body-safety stage input is built beside its dispatcher here
+pub(crate) fn safety_stage_input(
+    request: &Request<Body>,
+    authenticated: Option<&AuthContext>,
+    body: Option<&Bytes>,
+) -> Result<RequestBodySafetyStageInput, StageFailure> {
+    let context = authenticated
+        .cloned()
+        .ok_or(AuthenticationFailure::Missing)?;
+    let content_type = request
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+    let slot = request
+        .extensions()
+        .get::<Arc<ServerState>>()
+        .map(|state| state.request_body_safety.clone());
+    Ok(RequestBodySafetyStageInput {
+        context,
+        content_type,
+        body: body.cloned().unwrap_or_default(),
+        slot,
+    })
 }
 
 fn auth_resource_grants_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
