@@ -71,8 +71,8 @@ impl Helper for Op {
 async fn step_value(step: &Step) -> HelperResult {
     let effects = Effects::default();
     match step.function {
-        Function::Agent => agent_value(step, &effects).await,
-        Function::Fallback => fallback_value(step).await,
+        Function::Agent => Box::pin(agent_value(step, &effects)).await,
+        Function::Fallback => Box::pin(fallback_value(step)).await,
     }
 }
 
@@ -94,7 +94,8 @@ async fn agent_value(step: &Step, effects: &Effects) -> HelperResult {
         }
         Err(error) => Err(error),
     };
-    Ok(step_result(outcome, effects.entries()))
+    let entries = effects.entries();
+    Ok(step_result(outcome, &entries))
 }
 
 // RouterFallbackAccessCheck.__call__ with the source adapter's token, exactly as the router passes it
@@ -124,7 +125,7 @@ async fn fallback_value(step: &Step) -> HelperResult {
     }))
 }
 
-fn step_result(outcome: Result<(), AgentModelGrantsError>, effects: Vec<String>) -> Value {
+fn step_result(outcome: Result<(), AgentModelGrantsError>, effects: &[String]) -> Value {
     match outcome {
         Ok(()) => json!({
             "allowed": true,
