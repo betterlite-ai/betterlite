@@ -171,7 +171,8 @@ impl FailureContext {
 
 fn raised_exception(failure: &StageFailure) -> Option<ProxyException> {
     match failure {
-        StageFailure::EntityModelAccess(exception)
+        StageFailure::ModelGrants(exception)
+        | StageFailure::EntityModelAccess(exception)
         | StageFailure::AuthRequestPolicy(exception)
         | StageFailure::ResourceGrants(exception)
         | StageFailure::TagBudgets(exception)

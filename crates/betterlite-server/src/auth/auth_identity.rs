@@ -9,6 +9,7 @@ use subtle::ConstantTimeEq as _;
 
 use crate::auth::auth_end_users::EndUserStageInput;
 use crate::auth::auth_key_budgets::KeyBudgetStageInput;
+use crate::auth::auth_model_grants::AgentModelGrantsStageInput;
 use crate::auth::auth_model_patterns::{ModelAccessRejection, ModelPatternStageInput, run_stage};
 use crate::auth::auth_org_lookup::OrgStageInput;
 use crate::auth::auth_request_models::{RequestModelStageInput, resolve};
@@ -29,6 +30,7 @@ pub enum AuthBackend {
     AuthVirtualKeyRoutes,
     AuthRequestModels,
     AuthModelPatterns,
+    AuthModelGrants,
     EntityModelAccess,
     AuthResourceGrants,
     AuthTagBudgets,
@@ -46,6 +48,7 @@ pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
     AuthBackend::AuthVirtualKeyRoutes,
     AuthBackend::AuthRequestModels,
     AuthBackend::AuthModelPatterns,
+    AuthBackend::AuthModelGrants,
     AuthBackend::EntityModelAccess,
     AuthBackend::AuthResourceGrants,
     AuthBackend::AuthTagBudgets,
@@ -63,6 +66,7 @@ pub enum StageInput {
     AuthVirtualKeyRoutes(Box<VirtualKeyRouteStageInput>),
     AuthRequestModels(Box<RequestModelStageInput>),
     AuthModelPatterns(Box<ModelPatternStageInput>),
+    AuthModelGrants(Box<AgentModelGrantsStageInput>),
     EntityModelAccess(Box<EntityModelStageInput>),
     AuthResourceGrants(Box<ResourceGrantStageInput>),
     AuthTagBudgets(Box<TagBudgetStageInput>),
@@ -96,6 +100,7 @@ pub trait BudgetAdmission {
 pub(crate) enum StageFailure {
     Authentication(Box<AuthenticationFailure>),
     ModelAccess(Box<ModelAccessRejection>),
+    ModelGrants(Box<ProxyException>),
     EntityModelAccess(Box<ProxyException>),
     AuthRequestPolicy(Box<ProxyException>),
     ResourceGrants(Box<ProxyException>),
@@ -126,6 +131,13 @@ pub(crate) fn dispatch(
         AuthBackend::AuthVirtualKeyRoutes => auth_virtual_key_routes_stage(input),
         AuthBackend::AuthRequestModels => auth_request_models_stage(input),
         AuthBackend::AuthModelPatterns => auth_model_patterns_stage(input),
+        AuthBackend::AuthModelGrants => {
+            let StageInput::AuthModelGrants(stage) = input else {
+                return Err(StageFailure::from(AuthenticationFailure::Missing));
+            };
+            // the agent and caller checks ran in the prefetch, so only the identity is left
+            Ok(stage.context.clone())
+        }
         AuthBackend::EntityModelAccess => entity_model_access_stage(input),
         AuthBackend::AuthResourceGrants => auth_resource_grants_stage(input),
         AuthBackend::AuthTagBudgets => {
