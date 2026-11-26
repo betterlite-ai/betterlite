@@ -29,6 +29,8 @@ from litellm.proxy.utils import PrismaClient
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
 
+from team_budget_admission import ServiceLog
+
 PROXY_MODULE: Final = "litellm.proxy.proxy_server"
 STRINGS: Final = TypeAdapter(str)
 
@@ -95,16 +97,9 @@ class Database(PrismaClient):
     def __init__(self) -> None: ...
 
 
-class ProxyLoggingStub:
-    def __init__(self) -> None:
-        self.service_logging_obj = self
-
-    async def async_service_success_hook(self, **_kwargs: JsonValue) -> None: ...
-
-
 class ProxyServer(ModuleType):
     prisma_client: PrismaClient | None
-    proxy_logging_obj: ProxyLoggingStub
+    proxy_logging_obj: ServiceLog
     user_api_key_cache: UserApiKeyCache
 
 
@@ -235,7 +230,7 @@ async def run_step(step: Step) -> StepResult:
     fixture = Fixture(step)
     proxy_server = ProxyServer(PROXY_MODULE)
     proxy_server.prisma_client = Database() if step["database"] else None
-    proxy_server.proxy_logging_obj = ProxyLoggingStub()
+    proxy_server.proxy_logging_obj = ServiceLog()
     proxy_server.user_api_key_cache = KeyCache(fixture)
     sys.modules[PROXY_MODULE] = proxy_server
     try:
