@@ -209,12 +209,7 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
                 .map_err(StageFailure::KeyBudgets)?;
             Ok(StageInput::AuthKeyBudgets(stage))
         }
-        StageInput::AuthModelBudgets(stage) => {
-            auth_model_budgets::prefetch(&stage)
-                .await
-                .map_err(StageFailure::ModelBudgets)?;
-            Ok(StageInput::AuthModelBudgets(stage))
-        }
+        StageInput::AuthModelBudgets(stage) => auth_model_budgets::prefetched(stage).await,
         StageInput::TeamBudgetAdmission(stage) => team_budget_admission::prefetched(stage).await,
         StageInput::AuthOrgLookup(stage) => {
             auth_org_lookup::prefetch(&stage)

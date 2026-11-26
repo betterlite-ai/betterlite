@@ -8,7 +8,9 @@ use betterlite_auth::auth_errors::conversion::{AuthFailure, as_proxy_exception};
 use betterlite_auth::auth_model_budgets::checks::{
     check_team_model_budget, check_user_model_budget,
 };
-use betterlite_auth::auth_model_budgets::fallback::{KeyBudgetError, check_key_budget_fallback};
+use betterlite_auth::auth_model_budgets::fallback::{
+    KeyBudgetCall, KeyBudgetError, check_key_budget_fallback,
+};
 use betterlite_auth::auth_model_budgets::limits::{
     KeyModelBudgetLimiter, TeamModelBudgetLimiter, UserModelBudgetLimiter,
 };
@@ -24,7 +26,7 @@ use betterlite_error::proxy_exception::ProxyException;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 
-use crate::auth::auth_identity::AuthContext;
+use crate::auth::auth_identity::{AuthContext, StageFailure, StageInput};
 use crate::error_body::AuthenticationFailure;
 use crate::state::ServerState;
 
@@ -129,6 +131,14 @@ pub(crate) fn stage_input(
     })
 }
 
+// the auth stage loop holds the input across the await, so the prefetched stage comes back wrapped
+pub(crate) async fn prefetched(
+    stage: Box<ModelBudgetStageInput>,
+) -> Result<StageInput, StageFailure> {
+    prefetch(&stage).await.map_err(StageFailure::ModelBudgets)?;
+    Ok(StageInput::AuthModelBudgets(stage))
+}
+
 // The checks run in LiteLLM's order: the internal user's cap, the team's cap, then the key's cap with its fallback.
 pub(crate) async fn prefetch(stage: &ModelBudgetStageInput) -> Result<(), Box<ProxyException>> {
     let rule = &stage.rule;
@@ -148,8 +158,20 @@ pub(crate) async fn prefetch(stage: &ModelBudgetStageInput) -> Result<(), Box<Pr
     let Some(limiter) = rule.key_limiter.as_deref() else {
         return Ok(());
     };
+    let applied = check_key_budget(rule, auth, limiter, stage.body.as_deref()).await?;
+    *rule.applied.lock().unwrap_or_else(PoisonError::into_inner) = applied;
+    Ok(())
+}
+
+// a budget error or a denied fallback leaves the body as it was, so no rewrite is recorded
+async fn check_key_budget(
+    rule: &ModelBudgetRule,
+    auth: &UserAPIKeyAuth,
+    limiter: &dyn KeyModelBudgetLimiter,
+    body: Option<&Bytes>,
+) -> Result<Option<Bytes>, Box<ProxyException>> {
     let Some(model_name) = rule.model_name.as_deref() else {
-        return Ok(());
+        return Ok(None);
     };
     let provider = UnresolvedProviderInference;
     let context = ModelAccessContext {
@@ -159,21 +181,17 @@ pub(crate) async fn prefetch(stage: &ModelBudgetStageInput) -> Result<(), Box<Pr
         provider: &provider,
         max_recurse_depth: rule.max_recurse_depth,
     };
-    let mut views = BodyViews::new(stage.body.as_deref(), rule.path_params.clone());
-    check_key_budget_fallback(
+    let mut views = BodyViews::new(body, rule.path_params.clone());
+    let call = KeyBudgetCall {
         limiter,
-        auth,
+        token: auth,
         model_name,
-        rule.request_model.as_deref(),
-        &mut views,
-        &context,
-        None,
-    )
-    .await
-    .map_err(|error| Box::new(key_budget_exception(&error)))?;
-    let applied = views.serialized_body.map(Bytes::from);
-    *rule.applied.lock().unwrap_or_else(PoisonError::into_inner) = applied;
-    Ok(())
+        request_model: rule.request_model.as_deref(),
+    };
+    check_key_budget_fallback(call, &mut views, &context, None)
+        .await
+        .map_err(|error| Box::new(key_budget_exception(&error)))?;
+    Ok(views.serialized_body.map(Bytes::from))
 }
 
 // The bodies LiteLLM keeps apart are one parsed object here, so a view the request did not carry stays absent.

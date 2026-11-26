@@ -133,47 +133,33 @@ pub(crate) fn dispatch(
         AuthBackend::AuthModelPatterns => auth_model_patterns_stage(input),
         AuthBackend::EntityModelAccess => entity_model_access_stage(input),
         AuthBackend::AuthResourceGrants => auth_resource_grants_stage(input),
-        AuthBackend::AuthTagBudgets => {
-            let StageInput::AuthTagBudgets(stage) = input else {
-                return Err(StageFailure::from(AuthenticationFailure::Missing));
-            };
-            // the batch reads ran while this stage's input was assembled, so only the identity is left
-            Ok(stage.context.clone())
-        }
-        AuthBackend::AuthKeyBudgets => {
-            let StageInput::AuthKeyBudgets(stage) = input else {
-                return Err(StageFailure::from(AuthenticationFailure::Missing));
-            };
-            // the reads ran while the stage input was assembled, so the budget failures already surfaced there
-            Ok(stage.context.clone())
-        }
-        AuthBackend::AuthModelBudgets => {
-            let StageInput::AuthModelBudgets(stage) = input else {
-                return Err(StageFailure::from(AuthenticationFailure::Missing));
-            };
-            // the model budget checks and any fallback rewrite ran in the prefetch, so only the identity is left
-            Ok(stage.context.clone())
-        }
-        AuthBackend::TeamBudgetAdmission => {
-            let StageInput::TeamBudgetAdmission(stage) = input else {
-                return Err(StageFailure::from(AuthenticationFailure::Missing));
-            };
-            // the member scope and budget checks ran in the prefetch, so only the identity is left
-            Ok(stage.context.clone())
-        }
-        AuthBackend::AuthOrgLookup => {
-            let StageInput::AuthOrgLookup(stage) = input else {
-                return Err(StageFailure::from(AuthenticationFailure::Missing));
-            };
-            // the request-scoped lookup ran in the prefetch, so only the identity is left
-            Ok(stage.context.clone())
-        }
-        AuthBackend::AuthEndUsers => {
-            let StageInput::AuthEndUsers(stage) = input else {
-                return Err(StageFailure::from(AuthenticationFailure::Missing));
-            };
-            // the lookup and the budget check ran in the prefetch, so only the identity is left
-            Ok(stage.context.clone())
+        AuthBackend::AuthTagBudgets
+        | AuthBackend::AuthKeyBudgets
+        | AuthBackend::AuthModelBudgets
+        | AuthBackend::TeamBudgetAdmission
+        | AuthBackend::AuthOrgLookup
+        | AuthBackend::AuthEndUsers => carried_context(input),
+    }
+}
+
+// every read and check these stages own ran while their input was assembled or in the prefetch, so only the identity is left
+fn carried_context(input: &StageInput) -> Result<AuthContext, StageFailure> {
+    match input {
+        StageInput::AuthTagBudgets(stage) => Ok(stage.context.clone()),
+        StageInput::AuthKeyBudgets(stage) => Ok(stage.context.clone()),
+        StageInput::AuthModelBudgets(stage) => Ok(stage.context.clone()),
+        StageInput::TeamBudgetAdmission(stage) => Ok(stage.context.clone()),
+        StageInput::AuthOrgLookup(stage) => Ok(stage.context.clone()),
+        StageInput::AuthEndUsers(stage) => Ok(stage.context.clone()),
+        StageInput::MasterKey(_)
+        | StageInput::AuthRequestPolicy(_)
+        | StageInput::RequestBodySafety(_)
+        | StageInput::AuthVirtualKeyRoutes(_)
+        | StageInput::AuthRequestModels(_)
+        | StageInput::AuthModelPatterns(_)
+        | StageInput::EntityModelAccess(_)
+        | StageInput::AuthResourceGrants(_) => {
+            Err(StageFailure::from(AuthenticationFailure::Missing))
         }
     }
 }
