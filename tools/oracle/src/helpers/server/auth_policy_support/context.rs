@@ -16,13 +16,13 @@ use betterlite_error::proxy_exception::ProxyException;
 use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::HelperResult;
 
-use super::fixtures::{FakeOrg, org_fields, team_fields};
+use super::fixtures::{FakeOrg, ORG_FIELDS, TEAM_FIELDS, view_fields};
 use super::{Failure, Input, Lookup, invalid, proxy_denial, required_token, runtime, team_obj};
 
 pub(super) fn team_from_token(input: &Input) -> HelperResult {
     let token = required_token(input.token.as_ref())?;
     match team_obj_from_token(&token) {
-        Ok(cached) => team_fields(&cached.team.fields),
+        Ok(cached) => view_fields(&cached.team.fields, &TEAM_FIELDS),
         Err(error) => Ok(team_error(&error)),
     }
 }
@@ -89,7 +89,7 @@ pub(super) fn org_inherit(input: &Input) -> HelperResult {
             &outage,
         ))
         .or_value_error()?;
-    org_fields(&token)
+    view_fields(&token, &ORG_FIELDS)
 }
 
 pub(super) fn safe_fetch_outcome(input: &Input) -> HelperResult {
