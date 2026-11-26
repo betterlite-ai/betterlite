@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use super::error::SettingsSchemaError;
 
 // JsonSchemaNode: the pydantic-v2 schema node LiteLLM reads, with every key it never reads kept in passthrough
-#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize)]
 pub struct SchemaNode {
     #[serde(rename = "type")]
     pub schema_type: Option<String>,
@@ -22,7 +22,7 @@ pub struct SchemaNode {
 }
 
 // JsonSchemaItems: the items mapping a direct array field keeps whole, or only the enum a $ref definition contributes
-#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
 pub struct SchemaItems {
     #[serde(rename = "$ref", skip_serializing_if = "Option::is_none")]
     pub reference: Option<String>,
@@ -33,7 +33,7 @@ pub struct SchemaItems {
 }
 
 // JsonSchemaPropertyEntry: what the UI reads for one field, the outer description beside the resolved variant's type
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct SchemaPropertyEntry {
     pub description: String,
     #[serde(rename = "type")]
@@ -43,7 +43,7 @@ pub struct SchemaPropertyEntry {
 }
 
 // _RootSchema: a record type's pinned schema, whose two definition maps differ because pydantic v2 emits them differently
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct RootSchema {
     pub description: String,
     pub properties: BTreeMap<String, SchemaNode>,
@@ -52,19 +52,19 @@ pub struct RootSchema {
 }
 
 // nested_defs_out's entry for one legacy definition
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct NestedDefinition {
     pub description: String,
     pub properties: BTreeMap<String, NestedProperty>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct NestedProperty {
     pub description: String,
 }
 
 // field_schema: the root description and projected properties, with the legacy nested sections spread beside them
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct FieldSchema {
     pub description: String,
     pub properties: BTreeMap<String, SchemaPropertyEntry>,

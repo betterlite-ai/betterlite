@@ -6,14 +6,14 @@ use serde::Serialize;
 use super::schema::FieldSchema;
 
 // SettingsResponse and _SettingsWithSchema: the values a settings record renders and the schema the UI reads
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct SettingsResponse {
     pub values: BTreeMap<String, JsonValue>,
     pub field_schema: FieldSchema,
 }
 
 // SSOSettingsResponse: the common response plus where each stored field's value came from
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct SsoSettingsResponse {
     #[serde(flatten)]
     pub settings: SettingsResponse,
@@ -21,7 +21,7 @@ pub struct SsoSettingsResponse {
 }
 
 // _update_litellm_setting's return value: the caller's success message, the fixed status and the stored settings
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct SettingsUpdateResponse {
     pub message: String,
     pub status: SettingsUpdateStatus,
