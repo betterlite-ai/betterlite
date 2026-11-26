@@ -1,16 +1,29 @@
 #![cfg(test)]
 
+use std::sync::Arc;
+
+use async_trait::async_trait;
 use betterlite_auth::auth_key_budgets::alerts::BudgetAlertKind;
 use betterlite_auth::auth_key_budgets::money::Money;
+use betterlite_auth::auth_prefetch::permission::lookup::{
+    ObjectPermissionCache, PermissionAnswer, PermissionCacheError,
+};
+use betterlite_auth::auth_team_lookup::error::TeamLookupError;
+use betterlite_auth::auth_team_lookup::lookup::TeamLookup;
+use betterlite_auth::auth_team_lookup::ports::{TeamCache, TeamCacheError};
+use betterlite_auth::auth_user_lookup::cadence::{Cadence, CadenceClock, WallClock};
 use betterlite_auth::budget_primitives::window_start::DurationParser as _;
 use betterlite_auth::team_budget_admission::alerts::TeamAlertKind;
 use betterlite_auth::team_budget_admission::sources::{
     DefaultBudgetSource as _, MembershipSource as _,
 };
+use betterlite_db::budget_permission_rows::LiteLLMObjectPermissionTable;
+use betterlite_db::resource_rows::access_group::AccessGroupTable;
+use betterlite_db::team_rows::archived::LiteLLMTeamTableCachedObj;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
-use super::{AdvisoryDeps, NoSources, key_or_team_over_budget};
+use super::{AdvisoryDeps, CachedTeams, NoSources, key_or_team_over_budget};
 use crate::shadow_evaluation::tests::{
     Alerts, SpendFake, SpendRead, SpendScript, TeamAnswer, TeamsFake, add_field, decimal,
     hook_metadata, json, key_auth, now, team_row,
@@ -290,4 +303,87 @@ async fn the_budgetless_suppliers_answer_no_duration_and_no_membership() {
     assert_eq!(error.to_string(), "No db connected");
     let default = NoSources.team_member_default("budget-1").await;
     assert!(default.is_ok_and(|budget| budget.is_none()));
+}
+
+struct EmptyCache;
+
+#[async_trait]
+impl TeamCache for EmptyCache {
+    async fn read_team(
+        &self,
+        _key: &str,
+    ) -> Result<Option<LiteLLMTeamTableCachedObj>, TeamCacheError> {
+        Ok(None)
+    }
+
+    async fn write_team(
+        &self,
+        _key: &str,
+        _team: &LiteLLMTeamTableCachedObj,
+        _ttl: f64,
+    ) -> Result<(), TeamCacheError> {
+        Ok(())
+    }
+
+    async fn cache_team(
+        &self,
+        _team_id: &str,
+        _team: &mut LiteLLMTeamTableCachedObj,
+    ) -> Result<(), TeamCacheError> {
+        Ok(())
+    }
+
+    async fn read_access_group(
+        &self,
+        _key: &str,
+    ) -> Result<Option<AccessGroupTable>, TeamCacheError> {
+        Ok(None)
+    }
+
+    async fn cache_access_group(
+        &self,
+        _access_group_id: &str,
+        _table: &AccessGroupTable,
+    ) -> Result<(), TeamCacheError> {
+        Ok(())
+    }
+}
+
+struct EmptyPermissions;
+
+#[async_trait]
+impl ObjectPermissionCache for EmptyPermissions {
+    async fn read(&self, _key: &str) -> PermissionAnswer {
+        Ok(None)
+    }
+
+    async fn write(
+        &self,
+        _key: &str,
+        _permission: &LiteLLMObjectPermissionTable,
+        _ttl: f64,
+    ) -> Result<(), PermissionCacheError> {
+        Ok(())
+    }
+
+    fn management_ttl(&self) -> f64 {
+        60.0_f64
+    }
+}
+
+#[tokio::test]
+async fn production_team_lookup_is_cache_only_and_fails_open_without_database() {
+    let clock: Arc<dyn CadenceClock> = Arc::new(WallClock);
+    let lookup = TeamLookup {
+        cache: Arc::new(EmptyCache),
+        permission_cache: Arc::new(EmptyPermissions),
+        database: None,
+        provisioner: None,
+        cadence: Arc::new(Cadence::new(1, clock)),
+        in_memory_ttl: 60_i32,
+    };
+    assert!(matches!(
+        lookup.cached_team("team-1").await,
+        Err(TeamLookupError::NoDatabase)
+    ));
 }
