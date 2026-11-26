@@ -23,21 +23,19 @@ OBJECT_CHECK: Final = auth_checks._can_object_call_model  # noqa: SLF001  # pyri
 PROJECT_CHECK: Final = auth_checks.can_project_access_model  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L5249
 USER_CHECK: Final = auth_checks.can_user_call_model  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L5269
 
-PRINCIPALS: Final[TypeAdapter[UserAPIKeyAuth]] = TypeAdapter(UserAPIKeyAuth)
-USER_ROWS: Final[TypeAdapter[LiteLLM_UserTable]] = TypeAdapter(LiteLLM_UserTable)
-PROJECT_ROWS: Final[TypeAdapter[LiteLLM_ProjectTable]] = TypeAdapter(LiteLLM_ProjectTable)
-MEMBERSHIPS: Final[TypeAdapter[LiteLLM_TeamMembership]] = TypeAdapter(LiteLLM_TeamMembership)
-JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 
-# the fields of a user row the record keeps, as the row itself carries them
+# a scripted user row's allowlist, read as this view because LiteLLM_UserTable.models is untyped
 class UserRowJson(TypedDict):
     models: NotRequired[list[str]]
 
 
-USER_MODELS: Final[TypeAdapter[UserRowJson]] = TypeAdapter(UserRowJson)
+PRINCIPALS: Final = TypeAdapter(UserAPIKeyAuth)
+USER_ROWS: Final = TypeAdapter(LiteLLM_UserTable)
+PROJECT_ROWS: Final = TypeAdapter(LiteLLM_ProjectTable)
+MEMBERSHIPS: Final = TypeAdapter(LiteLLM_TeamMembership)
+USER_MODELS: Final = TypeAdapter(UserRowJson)
+JSON: Final = TypeAdapter(JsonValue)
 
-ObjectType: TypeAlias = Literal["user", "team", "key", "org", "project", "agent"]
-ScriptOutcome: TypeAlias = Literal["allow", "deny", "broken"]
 Row = TypeVar("Row")
 
 
@@ -55,7 +53,7 @@ class AccessScenario(TypedDict):
     proxy: bool
     database: bool
     checks: Literal["scripted", "real"]
-    outcomes: list[ScriptOutcome]
+    outcomes: list[Literal["allow", "deny", "broken"]]
     user: LookupScript
     project: LookupScript
     membership: LookupScript
@@ -75,11 +73,6 @@ class AccessCall(TypedDict):
 Input: TypeAlias = SettingsCall | AccessCall
 
 
-class SettingsOutcome(TypedDict):
-    model: str | None
-    max_tokens: int
-
-
 class CallJson(TypedDict):
     call: str
     object_type: str | None
@@ -90,17 +83,6 @@ class CallJson(TypedDict):
     user_id: str | None
     user_id_upsert: bool | None
     project_id: str | None
-
-
-class DiagnosticJson(TypedDict):
-    level: Literal["warning", "debug"]
-    message: str
-
-
-class AccessOutcome(TypedDict):
-    allowed: bool
-    calls: list[CallJson]
-    diagnostics: list[DiagnosticJson]
 
 
 class ScriptedError(Exception):
@@ -121,7 +103,7 @@ class ProxyModule(ModuleType):
 class Diagnostics(logging.Handler):
     def __init__(self) -> None:
         super().__init__(logging.DEBUG)
-        self.lines: list[DiagnosticJson] = []
+        self.lines: list[JsonValue] = []
 
     @override
     def emit(self, record: logging.LogRecord) -> None:
@@ -129,9 +111,9 @@ class Diagnostics(logging.Handler):
         if not message.startswith("compact_20260112:"):
             return
         if record.levelno == logging.DEBUG:
-            self.lines.append(DiagnosticJson(level="debug", message=message))
+            self.lines.append(JSON.validate_python({"level": "debug", "message": message}))
         elif record.levelno >= logging.WARNING:
-            self.lines.append(DiagnosticJson(level="warning", message=message))
+            self.lines.append(JSON.validate_python({"level": "warning", "message": message}))
 
 
 class ChecksModule(ModuleType):
@@ -147,12 +129,7 @@ class ChecksModule(ModuleType):
     def verdict(self) -> Literal[True]:
         outcome = self.outcomes.pop(0) if self.outcomes else "allow"
         if outcome == "deny":
-            raise ProxyException(
-                message="the summary model is not allowed",
-                type="model_access_denied",
-                param="model",
-                code=403,
-            )
+            raise ProxyException("summary model denied", "model_access_denied", "model")
         if outcome == "broken":
             raise ScriptedError("broken")
         return True
@@ -165,13 +142,11 @@ class ChecksModule(ModuleType):
         team_model_aliases: dict[str, str] | None = None,
         team_id: str | None = None,
         key_model_aliases: Mapping[str, str] | None = None,
-        object_type: ObjectType = "user",
+        object_type: Literal["user", "team", "key", "org", "project", "agent"] = "user",
         fallback_depth: int = 0,
     ) -> Literal[True]:
-        record = blank("object")
+        record = blank("object", model, list(models))
         record["object_type"] = object_type
-        record["model"] = model
-        record["models"] = list(models)
         aliases: dict[str, str] = {}
         if team_model_aliases is not None:
             aliases = dict(team_model_aliases)
@@ -180,13 +155,9 @@ class ChecksModule(ModuleType):
         self.journal.append(record)
         if self.real:
             return OBJECT_CHECK(
-                model=model,
-                llm_router=llm_router,
-                models=models,
-                team_model_aliases=team_model_aliases,
-                team_id=team_id,
-                key_model_aliases=key_model_aliases,
-                object_type=object_type,
+                model=model, llm_router=llm_router, models=models,
+                team_model_aliases=team_model_aliases, team_id=team_id,
+                key_model_aliases=key_model_aliases, object_type=object_type,
                 fallback_depth=fallback_depth,
             )
         return self.verdict()
@@ -198,15 +169,10 @@ class ChecksModule(ModuleType):
         user_object: LiteLLM_UserTable | None,
         key_model_aliases: Mapping[str, str] | None = None,
     ) -> Literal[True]:
-        record = blank("user")
-        record["model"] = model
-        record["models"] = user_models(self.user)
-        self.journal.append(record)
+        self.journal.append(blank("user", model, user_models(self.user)))
         if self.real:
             return await USER_CHECK(
-                model=model,
-                llm_router=llm_router,
-                user_object=user_object,
+                model=model, llm_router=llm_router, user_object=user_object,
                 key_model_aliases=key_model_aliases,
             )
         return self.verdict()
@@ -218,21 +184,16 @@ class ChecksModule(ModuleType):
         llm_router: None,
         key_model_aliases: Mapping[str, str] | None = None,
     ) -> Literal[True]:
-        record = blank("project")
-        record["model"] = model
-        record["models"] = list(project_object.models)
-        self.journal.append(record)
+        self.journal.append(blank("project", model, list(project_object.models)))
         if self.real:
             return PROJECT_CHECK(
-                model=model,
-                project_object=project_object,
-                llm_router=llm_router,
+                model=model, project_object=project_object, llm_router=llm_router,
                 key_model_aliases=key_model_aliases,
             )
         return self.verdict()
 
     async def get_user_object(
-        self, user_id: str, user_id_upsert: bool, **_context: object
+        self, user_id: str, *, user_id_upsert: bool, **_context: JsonValue
     ) -> LiteLLM_UserTable | None:
         record = blank("lookup_user")
         record["user_id"] = user_id
@@ -241,7 +202,7 @@ class ChecksModule(ModuleType):
         return resolve_row(self.user, USER_ROWS)
 
     async def get_project_object(
-        self, project_id: str, **_context: object
+        self, project_id: str, **_context: JsonValue
     ) -> LiteLLM_ProjectTable | None:
         record = blank("lookup_project")
         record["project_id"] = project_id
@@ -249,7 +210,7 @@ class ChecksModule(ModuleType):
         return resolve_row(self.project, PROJECT_ROWS)
 
     async def get_team_membership(
-        self, user_id: str, team_id: str, **_context: object
+        self, user_id: str, team_id: str, **_context: JsonValue
     ) -> LiteLLM_TeamMembership | None:
         record = blank("lookup_membership")
         record["user_id"] = user_id
@@ -258,24 +219,17 @@ class ChecksModule(ModuleType):
         return resolve_row(self.membership, MEMBERSHIPS)
 
 
-def blank(call: str) -> CallJson:
+def blank(call: str, model: str | None = None, models: list[str] | None = None) -> CallJson:
     return CallJson(
-        call=call,
-        object_type=None,
-        model=None,
-        models=[],
-        team_model_aliases={},
-        team_id=None,
-        user_id=None,
-        user_id_upsert=None,
-        project_id=None,
+        call=call, object_type=None, model=model, models=[] if models is None else models,
+        team_model_aliases={}, team_id=None, user_id=None, user_id_upsert=None, project_id=None,
     )
 
 
 def user_models(script: LookupScript) -> list[str]:
     if script["kind"] != "found":
         return []
-    row = USER_MODELS.validate_python(script["row"])
+    row = USER_MODELS.validate_python(script.get("row"))
     if "models" not in row:
         return []
     return row["models"]
@@ -286,7 +240,7 @@ def resolve_row(script: LookupScript, rows: TypeAdapter[Row]) -> Row | None:
         raise ScriptedError("offline")
     if script["kind"] == "missing":
         return None
-    return rows.validate_python(script["row"])
+    return rows.validate_python(script.get("row"))
 
 
 def install_proxy(
@@ -298,52 +252,44 @@ def install_proxy(
     sys.modules[PROXY_MODULE] = ProxyModule(database=database, general_settings=general_settings)
 
 
-def settings_answer(input_value: SettingsCall) -> list[SettingsOutcome]:
-    outcomes: list[SettingsOutcome] = []
+def settings_answer(input_value: SettingsCall) -> list[dict[str, JsonValue]]:
+    outcomes: list[dict[str, JsonValue]] = []
     for scenario in input_value["scenarios"]:
         general_settings = scenario["general_settings"]
-        install_proxy(
-            present=general_settings is not None,
-            database=False,
-            general_settings=general_settings,
-        )
-        outcomes.append(SettingsOutcome(model=READ_MODEL(), max_tokens=READ_TOKENS()))
+        present = general_settings is not None
+        install_proxy(present=present, database=False, general_settings=general_settings)
+        outcome: dict[str, JsonValue] = {"model": READ_MODEL(), "max_tokens": READ_TOKENS()}
+        outcomes.append(outcome)
     return outcomes
 
 
-def access_answer(input_value: AccessCall) -> list[AccessOutcome]:
+def access_answer(input_value: AccessCall) -> list[JsonValue]:
     logger = logging.getLogger("LiteLLM")
-    # LiteLLM's own handler sends debug records to stdout, so it is detached
-    # while the helper reads the compact debug lines
-    detached = list(logger.handlers)
-    for handler in detached:
-        logger.removeHandler(handler)
-    level = logger.level
+    # LiteLLM's own handler prints debug records to stdout, so it is detached for the run
+    detached, level = logger.handlers, logger.level
+    logger.handlers = []
     logger.setLevel(logging.DEBUG)
     diagnostics = Diagnostics()
     logger.addHandler(diagnostics)
-    outcomes: list[AccessOutcome] = []
+    outcomes: list[JsonValue] = []
     try:
         for scenario in input_value["scenarios"]:
             fields = scenario["principal"]
             principal = None if fields is None else PRINCIPALS.validate_python(fields)
-            install_proxy(
-                present=scenario["proxy"],
-                database=scenario["database"],
-                general_settings=None,
-            )
+            present = scenario["proxy"]
+            install_proxy(present=present, database=scenario["database"], general_settings=None)
             journal: list[CallJson] = []
             sys.modules[CHECKS_MODULE] = ChecksModule(scenario, journal)
             diagnostics.lines = []
             allowed = asyncio.run(CHECK(principal, input_value["summary_model"], None))
             outcomes.append(
-                AccessOutcome(allowed=allowed, calls=journal, diagnostics=list(diagnostics.lines))
+                JSON.validate_python(
+                    {"allowed": allowed, "calls": journal, "diagnostics": diagnostics.lines}
+                )
             )
     finally:
-        logger.removeHandler(diagnostics)
         logger.setLevel(level)
-        for handler in detached:
-            logger.addHandler(handler)
+        logger.handlers = detached
     return outcomes
 
 
