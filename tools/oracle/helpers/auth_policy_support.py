@@ -2,7 +2,7 @@ import asyncio
 import sys
 from collections.abc import Callable
 from types import ModuleType
-from typing import Final, Literal, NotRequired, NoReturn, TypedDict
+from typing import Final, Literal, NoReturn, NotRequired, TypedDict
 
 from litellm.caching.in_memory_cache import InMemoryCache
 from litellm.exceptions import BudgetExceededError
@@ -29,6 +29,9 @@ from typing_extensions import override
 
 PROXY_MODULE: Final = "litellm.proxy.proxy_server"
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
+TOKEN: Final[TypeAdapter[UserAPIKeyAuth]] = TypeAdapter(UserAPIKeyAuth)
+TEAM: Final[TypeAdapter[LiteLLM_TeamTable]] = TypeAdapter(LiteLLM_TeamTable)
+CACHED: Final[TypeAdapter[LiteLLM_TeamTableCachedObj]] = TypeAdapter(LiteLLM_TeamTableCachedObj)
 Row = dict[str, JsonValue]
 
 
@@ -90,7 +93,7 @@ def token_of(call: Call) -> UserAPIKeyAuth:
     row = call.get("token")
     if row is None:
         raise ValueError("the call needs a token")
-    return UserAPIKeyAuth(**row)
+    return TOKEN.validate_python(row)
 
 
 def guardrail(call: Call) -> JsonValue:
@@ -98,14 +101,13 @@ def guardrail(call: Call) -> JsonValue:
     if body is None:
         raise ValueError("the call needs a body")
     team_row = call.get("team")
-    team = None if team_row is None else LiteLLM_TeamTable(**team_row)
+    team = None if team_row is None else TEAM.validate_python(team_row)
     try:
         _guardrail_modification_check(body, team)  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L793-L844
     except HTTPException as raised:
         rejected = TypeAdapter(Rejection).validate_python(raised, from_attributes=True)
-        return JSON.validate_python(
-            {"outcome": "denied", "status": rejected.status_code, "detail": rejected.detail}
-        )
+        detail = JSON.validate_python(rejected.detail)
+        return {"outcome": "denied", "status": rejected.status_code, "detail": detail}
     return {"outcome": "allowed"}
 
 
@@ -117,27 +119,25 @@ def tools(call: Call) -> JsonValue:
     if route is None:
         raise ValueError("the call needs a route")
     token_row = call.get("token")
-    token = None if token_row is None else UserAPIKeyAuth(**token_row)
+    token = None if token_row is None else TOKEN.validate_python(token_row)
     team_row = call.get("team")
-    team = None if team_row is None else LiteLLM_TeamTable(**team_row)
+    team = None if team_row is None else TEAM.validate_python(team_row)
     try:
         names: list[str] = extract_request_tool_names(route, body)
     except TypeError:
         return {"outcome": "not_iterable"}
     try:
         asyncio.run(check_tools_allowlist(body, token, team, route))
-    except ProxyException as denied:
+    except ProxyException as denied:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325
         rejection = TypeAdapter(Denial).validate_python(denied, from_attributes=True)
-        return JSON.validate_python(
-            {
-                "outcome": "denied",
-                "names": names,
-                "error_type": rejection.type,
-                "param": rejection.param,
-                "code": rejection.code,
-            }
-        )
-    return JSON.validate_python({"outcome": "allowed", "names": names})
+        return {
+            "outcome": "denied",
+            "names": JSON.validate_python(names),
+            "error_type": rejection.type,
+            "param": rejection.param,
+            "code": rejection.code,
+        }
+    return {"outcome": "allowed", "names": JSON.validate_python(names)}
 
 
 def extract(call: Call) -> JsonValue:
@@ -151,7 +151,7 @@ def extract(call: Call) -> JsonValue:
         names: list[str] = extract_request_tool_names(route, body)
     except TypeError:
         return {"outcome": "not_iterable"}
-    return JSON.validate_python({"outcome": "extracted", "names": names})
+    return {"outcome": "extracted", "names": JSON.validate_python(names)}
 
 
 def team_from_token(call: Call) -> JsonValue:
@@ -160,7 +160,8 @@ def team_from_token(call: Call) -> JsonValue:
         cached: LiteLLM_TeamTableCachedObj = _team_obj_from_token(token)  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L2654-L2673
     except AssertionError:
         return {"error": "missing_team_id"}
-    return TypeAdapter(TeamView).validate_json(cached.model_dump_json())
+    view = TypeAdapter(TeamView).validate_json(cached.model_dump_json())
+    return JSON.validate_python(view)
 
 
 def vouch(call: Call) -> JsonValue:
@@ -210,12 +211,13 @@ class FakePrismaClient(PrismaClient):
 def org_inherit(call: Call) -> JsonValue:
     token = token_of(call)
     row = call.get("team")
-    team = None if row is None else LiteLLM_TeamTableCachedObj(**row)
+    team = None if row is None else CACHED.validate_python(row)
     fixture = OrgCacheFixture(call.get("org"))
     cache = UserApiKeyCache(in_memory_cache=fixture, default_in_memory_ttl=60.0)
     client = FakePrismaClient() if call.get("database") is True else None
     asyncio.run(_inherit_org_identity(token, team, client, cache, None, None))  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L2706-L2744
-    return TypeAdapter(OrgView).validate_json(token.model_dump_json())
+    view = TypeAdapter(OrgView).validate_json(token.model_dump_json())
+    return JSON.validate_python(view)
 
 
 async def failing(name: str) -> None:
