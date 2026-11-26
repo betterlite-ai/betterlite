@@ -2,8 +2,7 @@
 
 use pyo3::prelude::*;
 
-use super::NativeAudioSession;
-use crate::audio::answer;
+use super::{NativeAudioSession, answer};
 use crate::audio::convert::{SpeechAnswer, SpeechHeader};
 use crate::audio::register;
 use indexmap::IndexMap;

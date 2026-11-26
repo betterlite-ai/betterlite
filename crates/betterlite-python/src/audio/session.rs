@@ -105,7 +105,7 @@ impl AudioSession {
             .ok()
             .flatten()
             .unwrap_or(DEFAULT_TIMEOUT_SECONDS);
-        Duration::try_from_secs_f64(seconds).unwrap_or(Duration::from_secs(6000))
+        Duration::try_from_secs_f64(seconds).unwrap_or(Duration::from_mins(100))
     }
 }
 

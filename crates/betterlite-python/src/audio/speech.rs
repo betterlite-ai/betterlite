@@ -11,6 +11,7 @@ use betterlite_openai::speech::call::{SpeechCall, audio_speech};
 use betterlite_openai::speech::client::SpeechConnection;
 use betterlite_openai::speech::error::SpeechError;
 use betterlite_openai::speech::request::SpeechRequest;
+use betterlite_openai::speech::result::SpeechResponse;
 use betterlite_redact::secret::Redactor;
 
 mod tests;
@@ -42,7 +43,7 @@ pub(crate) async fn run(
     let mut logger = SilentAudioLogger;
     let pending = audio_speech(speech, &mut logger, &session.client).map_err(|error| {
         speech_failure(
-            error,
+            &error,
             &prepared.model,
             &prepared.provider,
             &session.redactor,
@@ -50,7 +51,7 @@ pub(crate) async fn run(
     })?;
     let response = pending.await.map_err(|error| {
         speech_failure(
-            error,
+            &error,
             &prepared.model,
             &prepared.provider,
             &session.redactor,
@@ -60,18 +61,26 @@ pub(crate) async fn run(
         status_code: response.status,
         headers: response.headers.clone(),
     };
-    let content = response
+    let content = read_content(session, &prepared, response).await?;
+    Ok(SpeechAnswer { content, header })
+}
+
+async fn read_content(
+    session: &AudioSession,
+    prepared: &Prepared,
+    response: SpeechResponse,
+) -> Result<Vec<u8>, CallFailure> {
+    response
         .content(session.client.limits.body_bytes)
         .await
         .map_err(|error| {
             speech_failure(
-                error,
+                &error,
                 &prepared.model,
                 &prepared.provider,
                 &session.redactor,
             )
-        })?;
-    Ok(SpeechAnswer { content, header })
+        })
 }
 
 fn prepare(session: &AudioSession, call: &SpeechCallWire) -> Result<Prepared, CallFailure> {
@@ -90,11 +99,11 @@ fn prepare(session: &AudioSession, call: &SpeechCallWire) -> Result<Prepared, Ca
     };
     let connection = speech_connection(session, call, &values)?;
     Ok(Prepared {
-        connection,
         model,
         provider,
         values,
         voice,
+        connection,
     })
 }
 
@@ -126,12 +135,12 @@ fn speech_connection(
 }
 
 fn speech_failure(
-    error: SpeechError,
+    error: &SpeechError,
     model: &str,
     provider: &str,
     redactor: &Redactor,
 ) -> CallFailure {
-    match &error {
+    match error {
         SpeechError::Status(found) => provider_failure(
             error.to_string(),
             Some(found.status),

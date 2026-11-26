@@ -113,7 +113,7 @@ pub(crate) const fn context(
 // A conversion the provider never saw: LiteLLM raises a ValueError for these.
 impl From<ConvertError> for CallFailure {
     fn from(error: ConvertError) -> Self {
-        CallFailure::plain("ValueError", error.to_string(), None)
+        Self::plain("ValueError", error.to_string(), None)
     }
 }
 

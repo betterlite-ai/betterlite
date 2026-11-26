@@ -141,13 +141,13 @@ pub(crate) fn audio_file(file: &CallFile) -> Result<(ProcessedAudioFile, String)
         })
     };
     let input = get_audio_file_name(&audio);
-    let processed = process_audio_file(audio, &NoFiles)?;
+    let parsed = process_audio_file(audio, &NoFiles)?;
     let processed = match &file.content_type {
         Some(kind) => ProcessedAudioFile {
             content_type: kind.clone(),
-            ..processed
+            ..parsed
         },
-        None => processed,
+        None => parsed,
     };
     Ok((processed, input))
 }
