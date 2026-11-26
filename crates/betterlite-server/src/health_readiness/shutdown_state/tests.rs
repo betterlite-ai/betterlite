@@ -122,6 +122,16 @@ async fn drain_wait_never_returns_a_negative_count() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn drain_wait_uses_the_configured_timeout_when_none_is_given() {
+    let in_flight = Arc::new(FakeInFlight::new(1));
+    let shutdown = state(&in_flight, Duration::from_secs(2));
+    let started = Instant::now();
+    let drained = shutdown.wait_for_drain(None, false).await;
+    assert_eq!(drained, 0);
+    assert_eq!(started.elapsed(), Duration::from_secs(2));
+}
+
+#[tokio::test(start_paused = true)]
 async fn drain_wait_times_out_and_returns_what_drained() {
     let (logs, _guard) = capture_logs(tracing::Level::WARN);
     let in_flight = Arc::new(FakeInFlight::new(3));
