@@ -25,7 +25,17 @@ pub fn transform_image_edit_request(
     let mask = take_mask(&mut options)?;
     let (width, height) = take_dimensions(&mut options)?;
     let generation = take_generation(&mut options, width, height)?;
-    let task_type = take_task_type(&mut options)?;
+    let task_type = match take_value(&mut options, "taskType") {
+        None => None,
+        Some(CanvasEditValue::Json(Json::Text(text))) => Some(text),
+        Some(
+            CanvasEditValue::Json(
+                Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_),
+            )
+            | CanvasEditValue::Bytes(_)
+            | CanvasEditValue::Tuple,
+        ) => return Err(field_error("taskType")),
+    };
     let text = task_text(input.prompt, task_type.as_deref())?;
     let negative_text = take_json(&mut options, "negativeText")?;
     let similarity_strength = take_json(&mut options, "similarityStrength")?;
@@ -125,20 +135,6 @@ fn take_nested(options: &mut CanvasEditOptions) -> IndexMap<String, Json> {
             | CanvasEditValue::Bytes(_)
             | CanvasEditValue::Tuple,
         ) => IndexMap::new(),
-    }
-}
-
-fn take_task_type(options: &mut CanvasEditOptions) -> Result<Option<String>, CanvasEditError> {
-    match take_value(options, "taskType") {
-        None => Ok(None),
-        Some(CanvasEditValue::Json(Json::Text(text))) => Ok(Some(text)),
-        Some(
-            CanvasEditValue::Json(
-                Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_),
-            )
-            | CanvasEditValue::Bytes(_)
-            | CanvasEditValue::Tuple,
-        ) => Err(field_error("taskType")),
     }
 }
 

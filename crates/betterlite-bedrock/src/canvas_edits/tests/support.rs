@@ -69,34 +69,34 @@ pub(super) fn image(content: &str) -> CanvasImageInput {
     CanvasImageInput::Bytes(content.as_bytes().to_vec())
 }
 
-pub(super) fn transform(
-    prompt: Option<&str>,
-    image: Option<&CanvasImageInput>,
-    options: &CanvasEditOptions,
+pub(super) type Prompt<'a> = Option<&'a str>;
+pub(super) type Source<'a> = Option<&'a CanvasImageInput>;
+pub(super) type Edits<'a> = &'a CanvasEditOptions;
+
+pub(super) fn prepared(
+    prompt: Prompt<'_>,
+    image: Source<'_>,
+    edits: Edits<'_>,
 ) -> Result<CanvasEditRequest, CanvasEditError> {
     transform_image_edit_request(&CanvasEditRequestInput {
         prompt,
         image,
-        options,
+        options: edits,
     })
 }
 
-pub(super) fn body(
-    prompt: Option<&str>,
-    image: Option<&CanvasImageInput>,
-    options: &CanvasEditOptions,
-) -> Json {
-    transform(prompt, image, options)
-        .expect("the request transforms")
-        .body
+pub(super) fn body(prompt: Prompt<'_>, image: Source<'_>, edits: Edits<'_>) -> Json {
+    match prepared(prompt, image, edits) {
+        Ok(request) => request.body,
+        Err(error) => panic!("the request transforms: {error}"),
+    }
 }
 
-pub(super) fn refused(
-    prompt: Option<&str>,
-    image: Option<&CanvasImageInput>,
-    options: &CanvasEditOptions,
-) -> CanvasEditError {
-    transform(prompt, image, options).expect_err("the request is refused")
+pub(super) fn refused(prompt: Prompt<'_>, image: Source<'_>, edits: Edits<'_>) -> CanvasEditError {
+    match prepared(prompt, image, edits) {
+        Err(error) => error,
+        Ok(request) => panic!("the request is accepted: {request:?}"),
+    }
 }
 
 pub(super) fn rendered(options: &CanvasEditOptions) -> Json {

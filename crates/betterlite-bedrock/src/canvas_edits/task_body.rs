@@ -98,7 +98,7 @@ pub fn canvas_task_body(input: &TaskBodyInput<'_>) -> Result<CanvasTaskBody, Can
         )));
     }
     if input.task_type == Some(OUTPAINTING) {
-        if !has_mask(input) {
+        if input.mask.is_none() && input.mask_prompt.is_none() {
             return Err(CanvasEditError::OutPaintingMask);
         }
         let body = painted_task(input, input.out_painting_mode.cloned());
@@ -110,20 +110,16 @@ pub fn canvas_task_body(input: &TaskBodyInput<'_>) -> Result<CanvasTaskBody, Can
         ))));
     }
     reject_unsupported_task(input.task_type)?;
-    if input.task_type == Some(INPAINTING) && !has_mask(input) {
+    if input.task_type == Some(INPAINTING) && input.mask.is_none() && input.mask_prompt.is_none() {
         return Err(CanvasEditError::InPaintingMask);
     }
-    if has_mask(input) || input.task_type == Some(INPAINTING) {
+    if input.mask.is_some() || input.mask_prompt.is_some() || input.task_type == Some(INPAINTING) {
         let body = painted_task(input, None);
         return Ok(CanvasTaskBody::InPainted(Box::new(body)));
     }
     Ok(CanvasTaskBody::ImageVariation(Box::new(variation_task(
         input,
     ))))
-}
-
-const fn has_mask(input: &TaskBodyInput<'_>) -> bool {
-    input.mask.is_some() || input.mask_prompt.is_some()
 }
 
 fn painted_task(input: &TaskBodyInput<'_>, out_painting_mode: Option<Json>) -> PaintedTask {
@@ -159,9 +155,10 @@ fn reject_unsupported_task(task_type: Option<&str>) -> Result<(), CanvasEditErro
 
 // A maskPrompt wins over a mask image wherever LiteLLM lets both through.
 fn painted_params(body: PaintedTask) -> IndexMap<String, Json> {
-    let mut params = IndexMap::new();
-    params.insert("image".to_owned(), Json::Text(body.image));
-    params.insert("text".to_owned(), Json::Text(body.text));
+    let mut base = IndexMap::from([
+        ("image".to_owned(), Json::Text(body.image)),
+        ("text".to_owned(), Json::Text(body.text)),
+    ]);
     let mask = body
         .mask_prompt
         .map(|prompt| ("maskPrompt".to_owned(), prompt))
@@ -170,29 +167,42 @@ fn painted_params(body: PaintedTask) -> IndexMap<String, Json> {
                 .map(|image| ("maskImage".to_owned(), Json::Text(image)))
         });
     if let Some((name, value)) = mask {
-        params.insert(name, value);
+        base.insert(name, value);
     }
-    if let Some(negative) = body.negative_text {
-        params.insert("negativeText".to_owned(), negative);
-    }
-    if let Some(mode) = body.out_painting_mode {
-        params.insert("outPaintingMode".to_owned(), mode);
-    }
-    params
+    task_params(
+        base,
+        [
+            ("negativeText", body.negative_text),
+            ("outPaintingMode", body.out_painting_mode),
+        ],
+    )
 }
 
 fn variation_params(body: ImageVariation) -> IndexMap<String, Json> {
-    let mut params = IndexMap::new();
-    params.insert(
-        "images".to_owned(),
-        Json::List(vec![Json::Text(body.image)]),
-    );
-    params.insert("text".to_owned(), Json::Text(body.text));
-    if let Some(negative) = body.negative_text {
-        params.insert("negativeText".to_owned(), negative);
-    }
-    if let Some(strength) = body.similarity_strength {
-        params.insert("similarityStrength".to_owned(), strength);
+    task_params(
+        IndexMap::from([
+            (
+                "images".to_owned(),
+                Json::List(vec![Json::Text(body.image)]),
+            ),
+            ("text".to_owned(), Json::Text(body.text)),
+        ]),
+        [
+            ("negativeText", body.negative_text),
+            ("similarityStrength", body.similarity_strength),
+        ],
+    )
+}
+
+// LiteLLM writes an optional field only when the caller supplied it.
+fn task_params(
+    mut params: IndexMap<String, Json>,
+    optional: [(&str, Option<Json>); 2],
+) -> IndexMap<String, Json> {
+    for (name, value) in optional {
+        if let Some(json) = value {
+            params.insert(name.to_owned(), json);
+        }
     }
     params
 }

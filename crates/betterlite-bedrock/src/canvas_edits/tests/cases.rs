@@ -1,4 +1,4 @@
-use super::support::{body, image, json, options_json, refused, transform, with_bytes, with_tuple};
+use super::support::{body, image, json, options_json, prepared, refused, with_bytes, with_tuple};
 use crate::canvas_edits::error::CanvasEditError;
 use crate::canvas_edits::types::{CanvasEditOptions, CanvasImageInput};
 
@@ -319,7 +319,7 @@ pub(super) fn mask_versus_mask_prompt() {
 fn mask_conversion_before_task() {
     let source = image("img");
     let masked = with_bytes(options_json("{}"), "mask", b"m");
-    let request = transform(Some("cat"), Some(&source), &masked).expect("the request transforms");
+    let request = prepared(Some("cat"), Some(&source), &masked).expect("the request transforms");
     assert_eq!(
         request.body,
         json(
