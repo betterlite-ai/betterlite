@@ -56,11 +56,16 @@ fn requested_params(call: &mut VideoGenerationRequest) -> Result<Params, VideoGe
     }
     // a null value removes the entry, and LiteLLM-owned names never travel as options
     optional.retain(|name, value| !matches!(value, Json::Null) && !is_litellm_owned_kwarg(name));
-    // extra_body: a loose one replaced the named argument in local_vars, and the top level wins only without one
+    // extra_body: local_vars.update(kwargs) replaced the named argument when a loose one came in
     let mut merged = Params::new();
     if let Some(loose) = &loose_extra_body {
         merge_extra_body(&mut merged, loose);
-    } else if let Some(named) = &call.extra_body {
+    }
+    if let Some(named) = call
+        .extra_body
+        .as_ref()
+        .filter(|_| loose_extra_body.is_none())
+    {
         merge_extra_body(&mut merged, &Json::Object(named.clone()));
     }
     merged.retain(|name, _| !is_litellm_owned_kwarg(name));

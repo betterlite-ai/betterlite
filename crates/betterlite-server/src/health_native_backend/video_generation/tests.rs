@@ -52,7 +52,7 @@ use super::{
     VideoGenerationProbe, VideoGenerationSetup, generation_reply, generation_request,
     restore_logging, take_logging,
 };
-use crate::health_native_backend::seams::VideoGenerationProbeCall;
+use crate::health_native_backend::seams::VideoGenerationProbeCall as _;
 use crate::health_probe_modes::calls::ProbeCall;
 use crate::health_probe_modes::error::HealthProbeError;
 use crate::health_probe_modes::logging::{HealthProbeLogging, ProbeLogging};
@@ -361,9 +361,9 @@ where
     Config: VideoGenerationConfig,
     Source: ClientSource,
 {
-    fn handle<'call, 'env>(
+    fn handle<'call>(
         &'call self,
-        _environment: GenerationHandlerEnvironment<'call, 'env, Config, Source>,
+        _environment: GenerationHandlerEnvironment<'call, '_, Config, Source>,
         _request: GenerationHandlerRequest<'call, Source>,
         _is_async: bool,
     ) -> PendingVideoGeneration<'call> {

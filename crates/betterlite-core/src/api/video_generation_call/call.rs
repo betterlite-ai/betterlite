@@ -66,12 +66,12 @@ where
     Handler: VideoGenerationHandling<Providers::Config, Providers::Source>,
 {
     // LiteLLM's video_generation: the mock short circuit, the resolution, the options, the logging update and the handler
-    pub fn video_generation<'call, 'env>(
+    pub fn video_generation<'call>(
         &'call self,
         mut request: VideoGenerationRequest,
         client: Option<&'call <Providers::Source as ClientSource>::Client>,
         resolution: &ResolutionContext<'_>,
-        environment: GenerationCallEnvironment<'call, 'env>,
+        environment: GenerationCallEnvironment<'call, '_>,
     ) -> Result<VideoGenerationWork<'call>, VideoGenerationFailure> {
         let GenerationCallEnvironment { logging, env } = environment;
         request.kwargs.shift_remove(LOGGING_OBJECT);
@@ -92,7 +92,7 @@ where
             extra_headers: prepared.extra_headers,
             extra_body: prepared.extra_body,
             timeout: prepared.timeout,
-            client: supplied_client(client, is_async),
+            client: supplied_client::<Providers::Source>(client, is_async),
         };
         let handler_environment = GenerationHandlerEnvironment {
             config: prepared.config,
@@ -114,12 +114,12 @@ where
     }
 
     // LiteLLM's avideo_generation: its own provider inference, the sync path with async_call true, then the future awaited
-    pub async fn avideo_generation<'call, 'env>(
+    pub async fn avideo_generation<'call>(
         &'call self,
         mut request: VideoGenerationRequest,
         client: Option<&'call <Providers::Source as ClientSource>::Client>,
         resolution: &ResolutionContext<'_>,
-        environment: GenerationCallEnvironment<'call, 'env>,
+        environment: GenerationCallEnvironment<'call, '_>,
     ) -> Result<VideoObject, VideoGenerationFailure> {
         self.infer_provider(&mut request, resolution)?;
         request

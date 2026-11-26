@@ -240,9 +240,9 @@ where
     Config: VideoGenerationConfig,
     Source: ClientSource,
 {
-    fn handle<'call, 'env>(
+    fn handle<'call>(
         &'call self,
-        environment: GenerationHandlerEnvironment<'call, 'env, Config, Source>,
+        environment: GenerationHandlerEnvironment<'call, '_, Config, Source>,
         request: GenerationHandlerRequest<'call, Source>,
         is_async: bool,
     ) -> PendingVideoGeneration<'call> {
