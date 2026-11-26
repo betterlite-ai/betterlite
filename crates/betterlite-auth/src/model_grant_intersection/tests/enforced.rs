@@ -1,3 +1,4 @@
+use crate::auth_errors::conversion::AuthFailure;
 use crate::auth_org_lookup::error::OrgLookupError;
 use crate::auth_team_lookup::error::TeamLookupError;
 use crate::auth_user_lookup::error::UserLookupError;
@@ -166,6 +167,7 @@ async fn team_project_errors_escape() {
         IntersectionError::Team(TeamLookupError::NoDatabase)
     ));
     assert_eq!(error.http_status(), None);
+    assert!(matches!(error.as_auth_failure(), AuthFailure::Other { .. }));
 
     let world = World::new().with_team(Err(TeamLookupError::TeamNotFound {
         team_id: "team-1".to_owned(),
