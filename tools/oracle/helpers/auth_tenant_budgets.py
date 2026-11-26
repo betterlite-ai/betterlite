@@ -247,7 +247,7 @@ async def organization_call(call: Call, recorder: Recorder) -> JsonValue:
 
 async def tags_call(call: Call, recorder: Recorder) -> JsonValue:
     auth_checks.get_tag_objects_batch = scripted_tag_objects
-    check: Awaitable[None] = auth_checks._tag_max_budget_check(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L6401-L6423
+    check: Awaitable[None] = auth_checks._tag_max_budget_check(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L6401-L6423
         request_body=call.get("request_body") or EMPTY_BODY,
         prisma_client=SeededDatabase() if call["database"] else None,
         user_api_key_cache=UserApiKeyCache(),
