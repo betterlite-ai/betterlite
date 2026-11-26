@@ -405,6 +405,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "batch_input_accounting"
+path = "fuzz_targets/batch_input_accounting.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "messages_agentic_stream"
 path = "fuzz_targets/messages_agentic_stream.rs"
 test = false
