@@ -269,6 +269,39 @@ fn provider_grant_fallback_sentinels_do_not_narrow_the_team(#[case] sentinel: &s
 }
 
 #[test]
+fn provider_grant_fallback_key_sentinel_does_not_narrow_the_team() {
+    let events = Log::default();
+    let catalog = Catalog {
+        model_names: vec!["proxy-model".to_owned()],
+        deployments: vec![row(
+            "public-x",
+            r#"{"id":"d1","team_id":"t","team_public_model_name":"public-x"}"#,
+        )],
+        credentials: credentials(&[(
+            "d1",
+            r#"{"api_key":"k-byok","custom_llm_provider":"openai"}"#,
+        )]),
+        events: events.clone(),
+        ..Catalog::default()
+    };
+    let providers = NoProviders;
+    let snapshot = CredentialSnapshot::default();
+    let found = get_team_provider_credentials(
+        Some(&catalog),
+        &principal(&["all-proxy-models"], &["claude-x"], Some("t")),
+        "openai",
+        &expansion(&providers, &snapshot),
+    )
+    .unwrap();
+    assert_eq!(
+        found,
+        Some(object(
+            r#"{"api_key":"k-byok","custom_llm_provider":"openai"}"#
+        ))
+    );
+}
+
+#[test]
 fn provider_grant_fallback_expands_access_groups() {
     let events = Log::default();
     let catalog = Catalog {

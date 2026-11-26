@@ -78,7 +78,8 @@ fn expanded_key_allowlist(
     let defers_to_team = raw_key_models
         .iter()
         .any(|model| model == ALL_PROXY_MODELS || model == ALL_TEAM_MODELS);
-    if raw_key_models.is_empty() || defers_to_team {
+    let key_is_restricted = !raw_key_models.is_empty() && !defers_to_team;
+    if !key_is_restricted {
         return Vec::new();
     }
     get_key_models(
@@ -146,19 +147,17 @@ fn provider_credentials<Catalog>(
 where
     Catalog: CredentialSource,
 {
-    let Some(credentials) = catalog
+    let found = catalog
         .credentials_with_provider(model_id, team_id)
         .map_err(|source| TeamCredentialError::Credentials {
             model_id: model_id.to_owned(),
             source,
-        })?
-    else {
+        })?;
+    let Some(credentials) = found else {
         return Ok(None);
     };
-    if !matches!(
-        credentials.get("custom_llm_provider"),
-        Some(Json::Text(found)) if found.as_str() == provider
-    ) {
+    let provider_field = credentials.get("custom_llm_provider");
+    if !matches!(provider_field, Some(Json::Text(text)) if text.as_str() == provider) {
         return Ok(None);
     }
     let without_model = credentials

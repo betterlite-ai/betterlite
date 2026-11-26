@@ -36,6 +36,14 @@ fn model_hint_precedence(
 }
 
 #[test]
+fn model_hint_precedence_empty_query_falls_to_the_header() {
+    let (embedded, from_param) =
+        extract_model_from_sources("file-abc", &hints(None, Some(""), Some("model_header")));
+    assert_eq!(embedded, None);
+    assert_eq!(from_param.as_deref(), Some("model_header"));
+}
+
+#[test]
 fn model_hint_precedence_embedded_model_comes_from_the_id() {
     let encoded = encode_file_id_with_model("file-raw", "model_id", RoutingIdType::File);
     let (embedded, from_param) =
