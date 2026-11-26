@@ -1,0 +1,20 @@
+kind: helper
+name: shadow-evaluation-no-database-withheld
+call:
+  b4085:
+    operation: pipeline
+    auth: null
+    team: null
+    key_spend: null
+    team_spend: null
+    database: false
+    pipeline_error: false
+    max_budget: null
+    job_spend: null
+    stats_spend: null
+    judge_reply: "tie"
+    arms:
+      - router: arm-router
+        shadow: reply
+env: {}
+compare: {ignore: []}

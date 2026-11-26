@@ -1,0 +1,20 @@
+kind: helper
+name: shadow-evaluation-shadow-call-fails
+call:
+  b4085:
+    operation: pipeline
+    auth: null
+    team: null
+    key_spend: null
+    team_spend: null
+    database: true
+    pipeline_error: false
+    max_budget: null
+    job_spend: null
+    stats_spend: null
+    judge_reply: "tie"
+    arms:
+      - router: arm-router
+        shadow: empty
+env: {}
+compare: {ignore: []}

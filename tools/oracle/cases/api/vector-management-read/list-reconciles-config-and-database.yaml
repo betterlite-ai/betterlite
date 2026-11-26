@@ -1,0 +1,68 @@
+kind: helper
+name: list-reconciles-config-and-database
+call:
+  b1070:
+    calls:
+      # both aliases: database order first, the config copy of a shared id wins, the config-only id is appended
+      - route: list
+        page: 1
+        page_size: 100
+        alias: false
+        database:
+          - {vector_store_id: vs_db, custom_llm_provider: openai, vector_store_name: db-only, vector_store_metadata: {env: prod}, litellm_params: {api_key: db-secret, region: us}}
+          - {vector_store_id: vs_shared, custom_llm_provider: openai, vector_store_name: shared-db, litellm_params: {api_key: shared-db-secret}}
+        registry:
+          - {vector_store_id: vs_stale, custom_llm_provider: openai, vector_store_name: stale, litellm_params: {api_key: stale-secret}}
+          - {vector_store_id: vs_shared, custom_llm_provider: openai, vector_store_name: shared-config, litellm_params: {api_key: shared-config-secret, region: eu}, is_config: true}
+          - {vector_store_id: vs_config, custom_llm_provider: openai, vector_store_name: config-only, litellm_params: {api_key: config-secret}, is_config: true}
+        caller: &admin {user_id: u1, user_role: proxy_admin, team_id: null}
+        disabled: false
+      - route: list
+        page: 1
+        page_size: 100
+        alias: true
+        database:
+          - {vector_store_id: vs_db, custom_llm_provider: openai, vector_store_name: db-only, vector_store_metadata: {env: prod}, litellm_params: {api_key: db-secret, region: us}}
+          - {vector_store_id: vs_shared, custom_llm_provider: openai, vector_store_name: shared-db, litellm_params: {api_key: shared-db-secret}}
+        registry:
+          - {vector_store_id: vs_stale, custom_llm_provider: openai, vector_store_name: stale, litellm_params: {api_key: stale-secret}}
+          - {vector_store_id: vs_shared, custom_llm_provider: openai, vector_store_name: shared-config, litellm_params: {api_key: shared-config-secret, region: eu}, is_config: true}
+          - {vector_store_id: vs_config, custom_llm_provider: openai, vector_store_name: config-only, litellm_params: {api_key: config-secret}, is_config: true}
+        caller: *admin
+        disabled: false
+      # no registry: the rows alone, each listed as not config-owned
+      - route: list
+        page: 1
+        page_size: 100
+        alias: false
+        database:
+          - {vector_store_id: vs_db, custom_llm_provider: openai, vector_store_name: db-only}
+        registry: null
+        caller: *admin
+        disabled: false
+      # no database: the stale cache record is purged, the config record is kept
+      - route: list
+        page: 1
+        page_size: 100
+        alias: false
+        database: null
+        registry:
+          - {vector_store_id: vs_stale, custom_llm_provider: openai, vector_store_name: stale}
+          - {vector_store_id: vs_config, custom_llm_provider: openai, vector_store_name: config-only, is_config: true}
+        caller: *admin
+        disabled: false
+      # a missing or empty id is skipped in both the rows and the cache
+      - route: list
+        page: 1
+        page_size: 100
+        alias: false
+        database:
+          - {vector_store_id: '', custom_llm_provider: openai}
+          - {custom_llm_provider: openai, vector_store_name: no-id-row}
+        registry:
+          - {vector_store_id: '', custom_llm_provider: openai}
+          - {custom_llm_provider: openai, vector_store_name: no-id-cache}
+        caller: *admin
+        disabled: false
+env: {}
+compare: {ignore: []}
