@@ -1,6 +1,5 @@
 import asyncio
 import inspect
-from collections.abc import Awaitable, Coroutine
 from contextlib import closing
 from types import ModuleType
 from typing import Final
@@ -61,8 +60,7 @@ CREATED: Final = 1700000000
 EMBEDDING_COUNT: Final = 1
 RERANK_COUNT: Final = 1
 REFUSED_CLIENT: Final = object()
-ASYNC_ANSWER: Final = "a synchronous call answered an awaitable"
-STREAM_ANSWER: Final = "a buffered call answered a stream"
+WRONG_ANSWER: Final = "a family call answered an unexpected type"
 IMAGE_BYTES: Final = b"\x89PNG\r\n\x1a\nsurface"
 AUDIO_BYTES: Final = (
     b"RIFF\x25\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00"
@@ -95,16 +93,25 @@ def test_surface_names_on_both() -> None:
 
 
 def test_names_are_coroutines() -> None:
-    # both facades re-export the same family objects, so main's are the ones to inspect
-    assert inspect.iscoroutinefunction(aembedding)
-    assert inspect.iscoroutinefunction(atext_completion)
-    assert inspect.iscoroutinefunction(amoderation)
-    assert inspect.iscoroutinefunction(aimage_generation)
-    assert inspect.iscoroutinefunction(aimage_variation)
-    assert inspect.iscoroutinefunction(aimage_edit)
-    assert inspect.iscoroutinefunction(arerank)
-    assert inspect.iscoroutinefunction(atranscription)
-    assert inspect.iscoroutinefunction(aspeech)
+    # each facade binds its own name, so both are inspected
+    assert inspect.iscoroutinefunction(betterlite.aembedding)
+    assert inspect.iscoroutinefunction(betterlite.main.aembedding)
+    assert inspect.iscoroutinefunction(betterlite.atext_completion)
+    assert inspect.iscoroutinefunction(betterlite.main.atext_completion)
+    assert inspect.iscoroutinefunction(betterlite.amoderation)
+    assert inspect.iscoroutinefunction(betterlite.main.amoderation)
+    assert inspect.iscoroutinefunction(betterlite.aimage_generation)
+    assert inspect.iscoroutinefunction(betterlite.main.aimage_generation)
+    assert inspect.iscoroutinefunction(betterlite.aimage_variation)
+    assert inspect.iscoroutinefunction(betterlite.main.aimage_variation)
+    assert inspect.iscoroutinefunction(betterlite.aimage_edit)
+    assert inspect.iscoroutinefunction(betterlite.main.aimage_edit)
+    assert inspect.iscoroutinefunction(betterlite.arerank)
+    assert inspect.iscoroutinefunction(betterlite.main.arerank)
+    assert inspect.iscoroutinefunction(betterlite.atranscription)
+    assert inspect.iscoroutinefunction(betterlite.main.atranscription)
+    assert inspect.iscoroutinefunction(betterlite.aspeech)
+    assert inspect.iscoroutinefunction(betterlite.main.aspeech)
 
 
 def test_calls_share_one_process() -> None:
@@ -142,13 +149,13 @@ def test_calls_share_one_process() -> None:
         case EmbeddingResponse():
             assert vectors.model == EMBEDDING_MODEL
             assert len(vectors.data) == EMBEDDING_COUNT
-        case Awaitable():
-            raise AssertionError(ASYNC_ANSWER)
+        case object():
+            raise AssertionError(WRONG_ANSWER)
     match text:
         case TextCompletionResponse():
             assert text.id == TEXT_ID
-        case TextCompletionStreamWrapper():
-            raise AssertionError(STREAM_ANSWER)
+        case object():
+            raise AssertionError(WRONG_ANSWER)
     assert answer.id == MODERATION_ID
     assert answer.results[0].flagged is False
     assert generated.created == CREATED
@@ -162,14 +169,14 @@ def test_calls_share_one_process() -> None:
             assert results is not None
             assert len(results) == RERANK_COUNT
             assert results[0]["relevance_score"] == RERANK_SCORE
-        case Awaitable():
-            raise AssertionError(ASYNC_ANSWER)
+        case object():
+            raise AssertionError(WRONG_ANSWER)
     assert heard.text == TRANSCRIPT
     match spoken:
         case HttpxBinaryResponseContent():
             assert spoken.content == SPEECH_BYTES
-        case Coroutine():
-            raise AssertionError(ASYNC_ANSWER)
+        case object():
+            raise AssertionError(WRONG_ANSWER)
 
 
 def test_client_refused_sync() -> None:
