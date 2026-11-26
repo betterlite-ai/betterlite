@@ -108,7 +108,7 @@ fn transform_errors_keep_message() {
 #[case::unauthorized(401, b"provider rejected", "provider rejected")]
 #[case::missing(404, b"provider rejected", "provider rejected")]
 #[case::invalid_utf8(401, b"\xff", "1 bytes that are not UTF-8")]
-#[case::unicode(404, "caf\u{e9}".as_bytes(), "caf\u{e9}")]
+#[case::unicode(404, "\u{e9}".as_bytes(), "\u{e9}")]
 fn response_status_keeps_facts(#[case] status: u16, #[case] body: &[u8], #[case] text: &str) {
     let mut headers = HeaderMap::new();
     headers.insert("x-request-id", HeaderValue::from_bytes(body).unwrap());
