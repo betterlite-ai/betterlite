@@ -57,14 +57,19 @@ enum Installed {
     Ready(Arc<EndUserIdResolver>),
 }
 
+// the resolver and the settings it is built from, kept out of the slot's public flags
+pub struct Validation {
+    installed: Mutex<Installed>,
+    settings: ResolverSettings,
+}
+
 // B10050's extraction settings, the B1218 validation flag and the resolver the proxy builds from them
 pub struct Slot {
     pub database: bool,
     pub validate_end_user_id_in_db: bool,
     pub max_end_user_budget_id: Option<String>,
     pub request_headers: Settings,
-    resolver: Mutex<Installed>,
-    settings: ResolverSettings,
+    pub validation: Validation,
 }
 
 impl Slot {
@@ -76,16 +81,18 @@ impl Slot {
             validate_end_user_id_in_db: registry.validate_end_user_id_in_db,
             max_end_user_budget_id: registry.max_end_user_budget_id.clone(),
             request_headers: config.sections.request_headers.clone(),
-            resolver: Mutex::new(Installed::Unbuilt),
-            settings: ResolverSettings {
-                registry: registry.clone(),
-                cache: config.sections.auth_cache,
-                deadline_seconds: config.sections.database_failures.deadline_seconds,
-                defaults: config
-                    .sections
-                    .auth_user_lookup
-                    .default_internal_user_params
-                    .clone(),
+            validation: Validation {
+                installed: Mutex::new(Installed::Unbuilt),
+                settings: ResolverSettings {
+                    registry: registry.clone(),
+                    cache: config.sections.auth_cache,
+                    deadline_seconds: config.sections.database_failures.deadline_seconds,
+                    defaults: config
+                        .sections
+                        .auth_user_lookup
+                        .default_internal_user_params
+                        .clone(),
+                },
             },
         }
     }
@@ -96,7 +103,11 @@ impl Slot {
         if !self.database || !self.validate_end_user_id_in_db {
             return None;
         }
-        let mut installed = self.resolver.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut installed = self
+            .validation
+            .installed
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
         if let Installed::Unbuilt = &*installed {
             *installed = build_resolver(state, self).map_or(Installed::Failed, Installed::Ready);
         }
@@ -110,12 +121,12 @@ impl Slot {
 // The production resolver: B733's cache, B739's row lookup, B736's user probe and B1218's registry.
 fn build_resolver(state: &Arc<ServerState>, slot: &Slot) -> Option<Arc<EndUserIdResolver>> {
     let store = cli_writer_store(state)?;
-    let cache = production_cache(&slot.settings.cache)?;
+    let cache = production_cache(&slot.validation.settings.cache)?;
     let end_users = Arc::new(DatabaseEndUsers {
         writer: Arc::clone(&store),
         reader: Arc::clone(&store),
         availability: Arc::new(Availability::default()),
-        default_deadline_seconds: slot.settings.deadline_seconds,
+        default_deadline_seconds: slot.validation.settings.deadline_seconds,
         tracker: Arc::new(DbLookupStallTracker {
             clock: SystemClock,
             last_hit: Mutex::new(None),
@@ -126,11 +137,13 @@ fn build_resolver(state: &Arc<ServerState>, slot: &Slot) -> Option<Arc<EndUserId
         rows: Some(Arc::<DatabaseEndUsers>::clone(&end_users)),
         budgets: Some(end_users),
         cache: Arc::clone(&cache),
-        registry: Arc::new(EndUserRegistry::new(slot.settings.registry.clone())),
+        registry: Arc::new(EndUserRegistry::new(
+            slot.validation.settings.registry.clone(),
+        )),
         store: store.as_ref().clone(),
         max_end_user_budget_id: slot.max_end_user_budget_id.clone(),
     };
-    let users = user_lookup(&store, &cache, &slot.settings)?;
+    let users = user_lookup(&store, &cache, &slot.validation.settings)?;
     Some(Arc::new(EndUserIdResolver {
         validate_end_user_id_in_db: slot.validate_end_user_id_in_db,
         max_end_user_budget_id: slot.max_end_user_budget_id.clone(),
@@ -167,8 +180,9 @@ fn user_lookup(
     settings: &ResolverSettings,
 ) -> Option<Arc<UserLookup>> {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).ok()?;
+    let lookup_cache = Arc::<AuthCache<DualCache<LocalMemoryOps>>>::clone(cache);
     Some(Arc::new(UserLookup {
-        cache: Arc::clone(cache),
+        cache: lookup_cache,
         store: Some(Arc::new(DatabaseUserStore {
             reader: store.as_ref().clone(),
             writer: store.as_ref().clone(),
