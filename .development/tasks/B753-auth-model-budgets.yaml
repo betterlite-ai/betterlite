@@ -112,7 +112,10 @@ scope:
     - tools/oracle/cases/helpers/auth-model-budgets/**
     - tools/oracle/fuzz/corpus/helper_case/auth-model-budgets-*
     - crates/betterlite-server/src/auth.rs
-    - crates/betterlite-server/src/auth/**
+    - crates/betterlite-server/src/auth/auth_identity.rs
+    - crates/betterlite-server/src/auth/auth_errors.rs
+    - crates/betterlite-server/src/auth/failures.rs
+    - crates/betterlite-server/src/auth/auth_request_models/tests.rs
     - crates/betterlite-server/src/state/auth_model_budgets.rs
     - crates/betterlite-server/src/state/auth_model_budgets/**
     - tools/oracle/cases/auth/auth-model-budgets/**
