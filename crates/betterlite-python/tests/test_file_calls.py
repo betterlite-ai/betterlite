@@ -418,6 +418,26 @@ def test_bytes_match_litellm() -> None:
     assert_same_upload(swapped, reference_parts, ours_parts, UPLOAD_NAME)
 
 
+def test_create_extra_fields() -> None:
+    with FileCallServer() as server:
+        swapped = compared(
+            server, OURS.create_file, REFERENCE.create_file,
+            file=PAYLOAD, purpose="batch",
+            extra_headers={"x-test": "1"}, extra_body={"note": "n"},
+        )
+    reference_parts = sent_parts(swapped.reference_call)
+    ours_parts = sent_parts(swapped.ours_call)
+    assert_same_upload(swapped, reference_parts, ours_parts, UPLOAD_NAME)
+    reference_headers = {
+        name.lower(): value for name, value in swapped.reference_call["headers"].items()
+    }
+    ours_headers = {
+        name.lower(): value for name, value in swapped.ours_call["headers"].items()
+    }
+    assert ours_headers["x-test"] == reference_headers["x-test"] == "1"
+    assert ours_parts["note"]["body"] == reference_parts["note"]["body"] == b"n"
+
+
 def test_path_matches_litellm(tmp_path: Path) -> None:
     rows = tmp_path / CREATE_FILENAME
     rows.write_bytes(PAYLOAD)
@@ -519,22 +539,28 @@ def test_retrieve_flag_coroutine() -> None:
     assert dumped(asynchronous) == FILE_RECORD
 
 
-def test_delete_matches_litellm() -> None:
+@pytest.mark.parametrize("provider", ["openai", ""], ids=["declared", "from-model"])
+def test_delete_matches_litellm(provider: str) -> None:
     with FileCallServer() as server:
         swapped = compared(
-            server, OURS.file_delete, REFERENCE.file_delete, file_id=FILE_ID, model="gpt-4o")
+            server, OURS.file_delete, REFERENCE.file_delete,
+            file_id=FILE_ID, custom_llm_provider=provider, model="openai/gpt-4o",
+        )
     assert_same_call(swapped.reference_call, swapped.ours_call, "DELETE", FILE_PATH)
     assert dumped(swapped.ours) == dumped(swapped.reference) == DELETED_RECORD
 
 
-def test_delete_flag_coroutine() -> None:
+@pytest.mark.parametrize("provider", ["openai", ""], ids=["declared", "from-model"])
+def test_delete_flag_coroutine(provider: str) -> None:
     with FileCallServer() as server:
         values = flagged_values(
             server, OURS.file_delete, OURS.afile_delete, "afile_delete",
-            file_id=FILE_ID, model="gpt-4o",
+            file_id=FILE_ID, custom_llm_provider=provider, model="openai/gpt-4o",
         )
         asynchronous = async_mode_value(
-            server, OURS.file_delete, file_id=FILE_ID, model="gpt-4o")
+            server, OURS.file_delete,
+            file_id=FILE_ID, custom_llm_provider=provider, model="openai/gpt-4o",
+        )
     assert [dumped(value) for value in values] == [DELETED_RECORD, DELETED_RECORD]
     assert dumped(asynchronous) == DELETED_RECORD
 
