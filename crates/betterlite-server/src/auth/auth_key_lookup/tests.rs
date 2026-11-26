@@ -28,6 +28,7 @@ use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use super::KeyLookupStageInput;
 
 const CHAT_ROUTE: &str = "/v1/chat/completions";
+const COMPLIANCE_ROUTE: &str = "/compliance/eu-ai-act";
 const PRESENTED: &str = "sk-virtual-key";
 
 #[derive(Clone, Copy)]
@@ -155,6 +156,33 @@ async fn failure_stops_downstream() {
     assert!(outage_body.contains("\"code\":\"503\""), "{outage_body}");
     assert!(!outage_reached);
     assert_eq!(outage.calls(), vec![PRESENTED.to_owned()]);
+}
+
+// The compliance router merges after the state extension layer, so only the middleware's own copy can match it.
+#[tokio::test]
+async fn master_key_is_compared_outside_the_state_layer() {
+    let application = application(&config(), ScriptedAuthenticator::new(Answer::Missing));
+    let accepted = application
+        .clone()
+        .oneshot(compliance_request("secret-master-key"))
+        .await
+        .expect("the request reaches the router");
+    assert_eq!(accepted.status(), StatusCode::OK);
+    let refused = application
+        .oneshot(compliance_request("not-the-master-key"))
+        .await
+        .expect("the request reaches the router");
+    assert_eq!(refused.status(), StatusCode::UNAUTHORIZED);
+}
+
+fn compliance_request(key: &str) -> Request<Body> {
+    Request::post(COMPLIANCE_ROUTE)
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::AUTHORIZATION, format!("Bearer {key}"))
+        .body(Body::from(
+            r#"{"request_id":"r","user_id":"u","model":"m","timestamp":"t"}"#,
+        ))
+        .expect("the request builds")
 }
 
 #[test]

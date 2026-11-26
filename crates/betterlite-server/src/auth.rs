@@ -61,6 +61,7 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 
 use crate::auth::auth_identity::{AuthBackend, AuthContext, StageFailure, StageInput};
+use crate::auth::auth_key_lookup::ConfiguredMasterKey;
 use crate::auth::auth_key_lookup::key_headers::{extract_key, headers_json};
 use crate::auth::auth_model_patterns::{
     ModelPatternStageInput, max_recurse_depth_for_request, rule_for_request,
@@ -79,7 +80,7 @@ use axum::response::Response;
 use secrecy::SecretString;
 pub(crate) async fn authenticate(
     State(master_key_state): State<Option<SecretString>>,
-    request: Request<Body>,
+    mut request: Request<Body>,
     next: Next,
     failure_response: fn(&StageFailure) -> Response,
 ) -> Response {
@@ -92,6 +93,9 @@ pub(crate) async fn authenticate(
     let Some(master_key) = master_key_state.as_ref() else {
         return next.run(request).await;
     };
+    request
+        .extensions_mut()
+        .insert(ConfiguredMasterKey(master_key.clone()));
     let pipeline = auth_stage_loop::run_stages(request, master_key, failure_response);
     match Box::pin(pipeline).await {
         Ok((staged, authenticated, body)) => {

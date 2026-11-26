@@ -20,6 +20,10 @@ use crate::state::ServerState;
 pub(crate) mod key_headers;
 mod tests;
 
+// authenticate copies it from the middleware state, so a route merged after the state layer still compares it
+#[derive(Clone)]
+pub(crate) struct ConfiguredMasterKey(pub(crate) SecretString);
+
 // The presented credential and the collaborators the lookup needs; the master key is compared in the prefetch.
 #[derive(Clone)]
 pub struct KeyLookupStageInput {
@@ -71,12 +75,12 @@ fn authenticator_for(request: &Request<Body>) -> Option<Arc<dyn KeyAuthenticator
         })
 }
 
-// routes hands the middleware this same key, so the prefetch compares against the configured master key.
+// authenticate installs the configured key on the request the stage loop runs for, whatever router owns the route.
 fn master_key_for(request: &Request<Body>) -> Option<SecretString> {
     request
         .extensions()
-        .get::<Arc<ServerState>>()
-        .and_then(|state| state.config.general_settings.master_key.clone())
+        .get::<ConfiguredMasterKey>()
+        .map(|key| key.0.clone())
 }
 
 // The master key wins as it does in LiteLLM, then the virtual key is read through get_key_object.
