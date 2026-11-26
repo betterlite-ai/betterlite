@@ -1,17 +1,14 @@
 use betterlite_models::decisions::Json;
-use indexmap::IndexMap;
 
 use super::error::CanvasEditError;
+use super::types::{
+    BackgroundRemovalParams, CanvasEditBody, ImageGenerationConfig, PaintedParams, VariationParams,
+};
 
 pub const BACKGROUND_REMOVAL: &str = "BACKGROUND_REMOVAL";
 pub const OUTPAINTING: &str = "OUTPAINTING";
 pub const IMAGE_VARIATION: &str = "IMAGE_VARIATION";
 pub const INPAINTING: &str = "INPAINTING";
-
-const BACKGROUND_REMOVAL_PARAMS: &str = "backgroundRemovalParams";
-const OUT_PAINTING_PARAMS: &str = "outPaintingParams";
-const IMAGE_VARIATION_PARAMS: &str = "imageVariationParams";
-const IN_PAINTING_PARAMS: &str = "inPaintingParams";
 
 pub struct TaskBodyInput<'body> {
     pub image: &'body str,
@@ -24,121 +21,81 @@ pub struct TaskBodyInput<'body> {
     pub out_painting_mode: Option<&'body Json>,
 }
 
-// The wire shape of one task body: the taskType tag, its params key, and the params object.
-pub struct BuiltTaskBody {
-    pub task_type: &'static str,
-    pub params_key: &'static str,
-    pub params: IndexMap<String, Json>,
-}
-
-// every variant is boxed so no payload is over 3x another, the limit variant_size_differences enforces
-pub enum CanvasTaskBody {
-    BackgroundRemoval(Box<BackgroundRemoval>),
-    OutPainted(Box<PaintedTask>),
-    ImageVariation(Box<ImageVariation>),
-    InPainted(Box<PaintedTask>),
-}
-
-pub struct BackgroundRemoval {
-    pub image: String,
-}
-
-// INPAINTING and OUTPAINTING share every field; only OUTPAINTING ever carries outPaintingMode.
-pub struct PaintedTask {
-    pub image: String,
-    pub text: String,
-    pub mask_prompt: Option<Json>,
-    pub mask_image: Option<String>,
-    pub negative_text: Option<Json>,
-    pub out_painting_mode: Option<Json>,
-}
-
-pub struct ImageVariation {
-    pub image: String,
-    pub text: String,
-    pub negative_text: Option<Json>,
-    pub similarity_strength: Option<Json>,
-}
-
-impl CanvasTaskBody {
-    #[must_use]
-    pub fn build(self) -> BuiltTaskBody {
-        match self {
-            Self::BackgroundRemoval(body) => BuiltTaskBody {
-                task_type: BACKGROUND_REMOVAL,
-                params_key: BACKGROUND_REMOVAL_PARAMS,
-                params: IndexMap::from([("image".to_owned(), Json::Text(body.image))]),
-            },
-            Self::OutPainted(body) => BuiltTaskBody {
-                task_type: OUTPAINTING,
-                params_key: OUT_PAINTING_PARAMS,
-                params: painted_params(*body),
-            },
-            Self::ImageVariation(body) => BuiltTaskBody {
-                task_type: IMAGE_VARIATION,
-                params_key: IMAGE_VARIATION_PARAMS,
-                params: variation_params(*body),
-            },
-            Self::InPainted(body) => BuiltTaskBody {
-                task_type: INPAINTING,
-                params_key: IN_PAINTING_PARAMS,
-                params: painted_params(*body),
-            },
-        }
-    }
-}
-
-// A taskType that is none, empty or whitespace routes automatically; any other name must be INPAINTING.
-pub fn canvas_task_body(input: &TaskBodyInput<'_>) -> Result<CanvasTaskBody, CanvasEditError> {
+// Every explicit task name has its own branch; only INPAINTING reaches the tail, and the rest route by mask.
+pub fn canvas_task_body(
+    input: &TaskBodyInput<'_>,
+    generation: Option<ImageGenerationConfig>,
+) -> Result<CanvasEditBody, CanvasEditError> {
     if input.task_type == Some(BACKGROUND_REMOVAL) {
-        return Ok(CanvasTaskBody::BackgroundRemoval(Box::new(
-            BackgroundRemoval {
+        return Ok(CanvasEditBody::BackgroundRemoval {
+            params: Box::new(BackgroundRemovalParams {
                 image: input.image.to_owned(),
-            },
-        )));
+            }),
+        });
+    }
+    let painted = input.task_type == Some(INPAINTING) || input.task_type == Some(OUTPAINTING);
+    if painted && input.mask.is_none() && input.mask_prompt.is_none() {
+        return Err(if input.task_type == Some(OUTPAINTING) {
+            CanvasEditError::OutPaintingMask
+        } else {
+            CanvasEditError::InPaintingMask
+        });
     }
     if input.task_type == Some(OUTPAINTING) {
-        if input.mask.is_none() && input.mask_prompt.is_none() {
-            return Err(CanvasEditError::OutPaintingMask);
+        return Ok(painted_body(input, generation, true));
+    }
+    let variation = input.task_type == Some(IMAGE_VARIATION);
+    if !variation {
+        reject_unsupported_task(input.task_type)?;
+        if input.mask.is_some()
+            || input.mask_prompt.is_some()
+            || input.task_type == Some(INPAINTING)
+        {
+            return Ok(painted_body(input, generation, false));
         }
-        let body = painted_task(input, input.out_painting_mode.cloned());
-        return Ok(CanvasTaskBody::OutPainted(Box::new(body)));
     }
-    if input.task_type == Some(IMAGE_VARIATION) {
-        return Ok(CanvasTaskBody::ImageVariation(Box::new(variation_task(
-            input,
-        ))));
-    }
-    reject_unsupported_task(input.task_type)?;
-    if input.task_type == Some(INPAINTING) && input.mask.is_none() && input.mask_prompt.is_none() {
-        return Err(CanvasEditError::InPaintingMask);
-    }
-    if input.mask.is_some() || input.mask_prompt.is_some() || input.task_type == Some(INPAINTING) {
-        let body = painted_task(input, None);
-        return Ok(CanvasTaskBody::InPainted(Box::new(body)));
-    }
-    Ok(CanvasTaskBody::ImageVariation(Box::new(variation_task(
-        input,
-    ))))
+    Ok(CanvasEditBody::ImageVariation {
+        params: Box::new(VariationParams {
+            images: vec![input.image.to_owned()],
+            text: input.text.to_owned(),
+            negative_text: input.negative_text.cloned(),
+            similarity_strength: input.similarity_strength.cloned(),
+        }),
+        image_generation_config: generation.map(Box::new),
+    })
 }
 
-fn painted_task(input: &TaskBodyInput<'_>, out_painting_mode: Option<Json>) -> PaintedTask {
-    PaintedTask {
+// A maskPrompt wins over a mask image wherever LiteLLM lets both through; only OUTPAINTING carries the mode.
+fn painted_body(
+    input: &TaskBodyInput<'_>,
+    generation: Option<ImageGenerationConfig>,
+    out_painting: bool,
+) -> CanvasEditBody {
+    let params = Box::new(PaintedParams {
         image: input.image.to_owned(),
         text: input.text.to_owned(),
         mask_prompt: input.mask_prompt.cloned(),
-        mask_image: input.mask.map(str::to_owned),
+        mask_image: input
+            .mask
+            .filter(|_mask| input.mask_prompt.is_none())
+            .map(str::to_owned),
         negative_text: input.negative_text.cloned(),
-        out_painting_mode,
-    }
-}
-
-fn variation_task(input: &TaskBodyInput<'_>) -> ImageVariation {
-    ImageVariation {
-        image: input.image.to_owned(),
-        text: input.text.to_owned(),
-        negative_text: input.negative_text.cloned(),
-        similarity_strength: input.similarity_strength.cloned(),
+        out_painting_mode: input
+            .out_painting_mode
+            .filter(|_mode| out_painting)
+            .cloned(),
+    });
+    let image_generation_config = generation.map(Box::new);
+    if out_painting {
+        CanvasEditBody::OutPainting {
+            params,
+            image_generation_config,
+        }
+    } else {
+        CanvasEditBody::InPainting {
+            params,
+            image_generation_config,
+        }
     }
 }
 
@@ -151,58 +108,4 @@ fn reject_unsupported_task(task_type: Option<&str>) -> Result<(), CanvasEditErro
         }
         Some(_) | None => Ok(()),
     }
-}
-
-// A maskPrompt wins over a mask image wherever LiteLLM lets both through.
-fn painted_params(body: PaintedTask) -> IndexMap<String, Json> {
-    let mut base = IndexMap::from([
-        ("image".to_owned(), Json::Text(body.image)),
-        ("text".to_owned(), Json::Text(body.text)),
-    ]);
-    let mask = body
-        .mask_prompt
-        .map(|prompt| ("maskPrompt".to_owned(), prompt))
-        .or_else(|| {
-            body.mask_image
-                .map(|image| ("maskImage".to_owned(), Json::Text(image)))
-        });
-    if let Some((name, value)) = mask {
-        base.insert(name, value);
-    }
-    task_params(
-        base,
-        [
-            ("negativeText", body.negative_text),
-            ("outPaintingMode", body.out_painting_mode),
-        ],
-    )
-}
-
-fn variation_params(body: ImageVariation) -> IndexMap<String, Json> {
-    task_params(
-        IndexMap::from([
-            (
-                "images".to_owned(),
-                Json::List(vec![Json::Text(body.image)]),
-            ),
-            ("text".to_owned(), Json::Text(body.text)),
-        ]),
-        [
-            ("negativeText", body.negative_text),
-            ("similarityStrength", body.similarity_strength),
-        ],
-    )
-}
-
-// LiteLLM writes an optional field only when the caller supplied it.
-fn task_params(
-    mut params: IndexMap<String, Json>,
-    optional: [(&str, Option<Json>); 2],
-) -> IndexMap<String, Json> {
-    for (name, value) in optional {
-        if let Some(json) = value {
-            params.insert(name.to_owned(), json);
-        }
-    }
-    params
 }

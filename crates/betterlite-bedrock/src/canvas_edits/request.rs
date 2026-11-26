@@ -4,11 +4,11 @@ use indexmap::IndexMap;
 
 use super::error::CanvasEditError;
 use super::file_types::file_types_to_b64;
-use super::params::{size_pair, take_value};
-use super::task_body::{
-    BACKGROUND_REMOVAL, BuiltTaskBody, INPAINTING, OUTPAINTING, TaskBodyInput, canvas_task_body,
+use super::params::size_pair;
+use super::task_body::{INPAINTING, OUTPAINTING, TaskBodyInput, canvas_task_body};
+use super::types::{
+    CanvasEditOptions, CanvasEditRequest, CanvasEditValue, CanvasImageInput, ImageGenerationConfig,
 };
-use super::types::{CanvasEditOptions, CanvasEditRequest, CanvasEditValue, CanvasImageInput};
 
 pub struct CanvasEditRequestInput<'request> {
     pub prompt: Option<&'request str>,
@@ -25,61 +25,54 @@ pub fn transform_image_edit_request(
     let mask = take_mask(&mut options)?;
     let (width, height) = take_dimensions(&mut options)?;
     let generation = take_generation(&mut options, width, height)?;
-    let task_type = match take_value(&mut options, "taskType") {
+    let task_type = match take_json(options.task_type.take(), "taskType")? {
         None => None,
-        Some(CanvasEditValue::Json(Json::Text(text))) => Some(text),
-        Some(
-            CanvasEditValue::Json(
-                Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_),
-            )
-            | CanvasEditValue::Bytes(_)
-            | CanvasEditValue::Tuple,
-        ) => return Err(field_error("taskType")),
+        Some(Json::Text(name)) => Some(name),
+        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+            return Err(CanvasEditError::Field {
+                field: "taskType".to_owned(),
+            });
+        }
     };
     let text = task_text(input.prompt, task_type.as_deref())?;
-    let negative_text = take_json(&mut options, "negativeText")?;
-    let similarity_strength = take_json(&mut options, "similarityStrength")?;
-    let mask_prompt = take_json(&mut options, "maskPrompt")?;
-    let out_painting_mode = take_json(&mut options, "outPaintingMode")?;
-    let body = canvas_task_body(&TaskBodyInput {
-        image: &image,
-        mask: mask.as_deref(),
-        text: &text,
-        negative_text: negative_text.as_ref(),
-        similarity_strength: similarity_strength.as_ref(),
-        task_type: task_type.as_deref(),
-        mask_prompt: mask_prompt.as_ref(),
-        out_painting_mode: out_painting_mode.as_ref(),
-    })?;
+    let negative_text = take_json(options.negative_text.take(), "negativeText")?;
+    let similarity_strength = take_json(options.similarity_strength.take(), "similarityStrength")?;
+    let mask_prompt = take_json(options.mask_prompt.take(), "maskPrompt")?;
+    let out_painting_mode = take_json(options.out_painting_mode.take(), "outPaintingMode")?;
+    let body = canvas_task_body(
+        &TaskBodyInput {
+            image: &image,
+            mask: mask.as_deref(),
+            text: &text,
+            negative_text: negative_text.as_ref(),
+            similarity_strength: similarity_strength.as_ref(),
+            task_type: task_type.as_deref(),
+            mask_prompt: mask_prompt.as_ref(),
+            out_painting_mode: out_painting_mode.as_ref(),
+        },
+        generation,
+    )?;
     Ok(CanvasEditRequest {
-        body: body_json(body.build(), generation),
+        body,
         files: ImageFiles::new(),
     })
 }
 
-// AWS rejects imageGenerationConfig on BACKGROUND_REMOVAL, and an empty one is left out too.
-fn body_json(body: BuiltTaskBody, generation: IndexMap<String, Json>) -> Json {
-    let mut json = IndexMap::new();
-    json.insert("taskType".to_owned(), Json::Text(body.task_type.to_owned()));
-    json.insert(body.params_key.to_owned(), Json::Object(body.params));
-    if body.task_type != BACKGROUND_REMOVAL && !generation.is_empty() {
-        json.insert("imageGenerationConfig".to_owned(), Json::Object(generation));
-    }
-    Json::Object(json)
-}
-
 fn take_mask(options: &mut CanvasEditOptions) -> Result<Option<String>, CanvasEditError> {
-    let Some(value) = take_value(options, "mask") else {
+    let Some(value) = options.mask.take() else {
         return Ok(None);
     };
     let image = match value {
+        CanvasEditValue::Json(Json::Null) => return Ok(None),
         CanvasEditValue::Json(Json::Text(text)) => CanvasImageInput::Text(text),
         CanvasEditValue::Bytes(content) => CanvasImageInput::Bytes(content),
         CanvasEditValue::Tuple => CanvasImageInput::Tuple,
         CanvasEditValue::Json(
-            Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_),
+            Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_),
         ) => {
-            return Err(field_error("mask"));
+            return Err(CanvasEditError::Field {
+                field: "mask".to_owned(),
+            });
         }
     };
     file_types_to_b64(Some(&image)).map(Some)
@@ -89,9 +82,9 @@ fn take_mask(options: &mut CanvasEditOptions) -> Result<Option<String>, CanvasEd
 fn take_dimensions(
     options: &mut CanvasEditOptions,
 ) -> Result<(Option<Json>, Option<Json>), CanvasEditError> {
-    let size = options.shift_remove("size");
-    let width = take_json(options, "width")?;
-    let height = take_json(options, "height")?;
+    let size = options.size.take();
+    let width = take_json(options.width.take(), "width")?;
+    let height = take_json(options.height.take(), "height")?;
     if width.is_none()
         && height.is_none()
         && let Some((left, right)) = size.as_ref().and_then(size_pair)
@@ -101,31 +94,49 @@ fn take_dimensions(
     Ok((width, height))
 }
 
+// A nested config is copied only when it is an object, and each non-None top-level value overwrites it.
 fn take_generation(
     options: &mut CanvasEditOptions,
     width: Option<Json>,
     height: Option<Json>,
-) -> Result<IndexMap<String, Json>, CanvasEditError> {
-    let overrides = [
-        ("width", width),
-        ("height", height),
-        ("numberOfImages", take_json(options, "numberOfImages")?),
-        ("quality", take_json(options, "quality")?),
-        ("cfgScale", take_json(options, "cfgScale")?),
-        ("seed", take_json(options, "seed")?),
-    ];
-    // The nested config's keys keep their order and a top-level value overwrites its own key.
-    let mut config = take_nested(options);
-    for (name, value) in overrides {
-        if let Some(json) = value {
-            config.insert(name.to_owned(), json);
+) -> Result<Option<ImageGenerationConfig>, CanvasEditError> {
+    let mut config = ImageGenerationConfig::default();
+    for (name, value) in take_nested(options) {
+        match name.as_str() {
+            "width" => config.width = Some(value),
+            "height" => config.height = Some(value),
+            "numberOfImages" => config.number_of_images = Some(value),
+            "quality" => config.quality = Some(value),
+            "cfgScale" => config.cfg_scale = Some(value),
+            "seed" => config.seed = Some(value),
+            other => {
+                config.passthrough.insert(other.to_owned(), value);
+            }
         }
     }
-    Ok(config)
+    if let Some(value) = width {
+        config.width = Some(value);
+    }
+    if let Some(value) = height {
+        config.height = Some(value);
+    }
+    if let Some(value) = take_json(options.number_of_images.take(), "numberOfImages")? {
+        config.number_of_images = Some(value);
+    }
+    if let Some(value) = take_json(options.quality.take(), "quality")? {
+        config.quality = Some(value);
+    }
+    if let Some(value) = take_json(options.cfg_scale.take(), "cfgScale")? {
+        config.cfg_scale = Some(value);
+    }
+    if let Some(value) = take_json(options.seed.take(), "seed")? {
+        config.seed = Some(value);
+    }
+    Ok((!config.is_empty()).then_some(config))
 }
 
 fn take_nested(options: &mut CanvasEditOptions) -> IndexMap<String, Json> {
-    match take_value(options, "imageGenerationConfig") {
+    match options.image_generation_config.take() {
         Some(CanvasEditValue::Json(Json::Object(fields))) => fields,
         None
         | Some(
@@ -138,11 +149,17 @@ fn take_nested(options: &mut CanvasEditOptions) -> IndexMap<String, Json> {
     }
 }
 
-fn take_json(options: &mut CanvasEditOptions, name: &str) -> Result<Option<Json>, CanvasEditError> {
-    take_value(options, name).map_or_else(
-        || Ok(None),
-        |value| value.to_json().map(Some).ok_or_else(|| field_error(name)),
-    )
+fn take_json(value: Option<CanvasEditValue>, name: &str) -> Result<Option<Json>, CanvasEditError> {
+    let Some(value) = value.filter(|taken| !matches!(taken, CanvasEditValue::Json(Json::Null)))
+    else {
+        return Ok(None);
+    };
+    value
+        .to_json()
+        .map(Some)
+        .ok_or_else(|| CanvasEditError::Field {
+            field: name.to_owned(),
+        })
 }
 
 fn task_text(prompt: Option<&str>, task_type: Option<&str>) -> Result<String, CanvasEditError> {
@@ -157,10 +174,4 @@ fn task_text(prompt: Option<&str>, task_type: Option<&str>) -> Result<String, Ca
         Some(text) if !text.is_empty() => text.to_owned(),
         None | Some(_) => " ".to_owned(),
     })
-}
-
-fn field_error(name: &str) -> CanvasEditError {
-    CanvasEditError::Field {
-        field: name.to_owned(),
-    }
 }
