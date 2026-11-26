@@ -81,7 +81,17 @@ fn exceeded_details(entity_type: &str, entity_id: &str) -> BudgetExceededDetails
     }
 }
 
-struct DenyingUserLimiter;
+struct DenyingUserLimiter {
+    denial: ErrorClass,
+}
+
+impl Default for DenyingUserLimiter {
+    fn default() -> Self {
+        Self {
+            denial: ErrorClass::BudgetExceeded(Box::new(exceeded_details("user", "u1"))),
+        }
+    }
+}
 
 #[async_trait]
 impl UserModelBudgetLimiter for DenyingUserLimiter {
@@ -91,9 +101,7 @@ impl UserModelBudgetLimiter for DenyingUserLimiter {
         _user_model_max_budget: &ModelMaxBudget,
         _model: &str,
     ) -> Result<bool, ErrorClass> {
-        Err(ErrorClass::BudgetExceeded(Box::new(exceeded_details(
-            "user", "u1",
-        ))))
+        Err(self.denial.clone())
     }
 }
 
@@ -105,7 +113,7 @@ fn failing_rule() -> Arc<ModelBudgetRule> {
         models: vec!["gpt-4".to_owned()],
         model_name: None,
         request_model: None,
-        user_limiter: Some(Arc::new(DenyingUserLimiter)),
+        user_limiter: Some(Arc::new(DenyingUserLimiter::default())),
         team_limiter: None,
         key_limiter: None,
         global_model_aliases: BTreeMap::new(),
