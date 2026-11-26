@@ -1,3 +1,4 @@
+pub mod access_groups;
 pub mod alerts;
 pub mod denial;
 pub mod error;
@@ -44,8 +45,7 @@ pub struct TenantRequest<'request> {
     pub matched_model_access_groups: &'request [String],
 }
 
-// common_checks' order for these scopes: the project checks run first and a denial stops the request; the
-// organization, tag and access-group checks then all settle, and the first failure in that order is raised.
+// common_checks runs the project checks first, then settles the organization, tag and access-group checks in order
 pub async fn admit(
     request: &mut TenantRequest<'_>,
     sources: &TenantSources<'_>,
@@ -62,7 +62,7 @@ pub async fn admit(
         admission,
     );
     let tags = tags::max_budget_check(request.tags, sources, admission);
-    let groups = tags::model_access_group_max_budget_check(
+    let groups = access_groups::access_group_max_budget_check(
         request.matched_model_access_groups,
         sources,
         admission,

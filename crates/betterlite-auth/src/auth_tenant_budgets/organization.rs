@@ -13,8 +13,7 @@ use super::denial::{Entity, denial};
 use super::error::TenantBudgetError;
 use super::project::NO_WINDOW;
 
-// _organization_max_budget_check: a lookup failure or a missing row skips, the budget state is carried, and a
-// finite ceiling denies at equality after the alert. The lookup failure is deliberately swallowed.
+// a lookup failure or a missing row skips, the budget state is carried, and a finite ceiling denies at equality after the alert; the failure is swallowed on purpose
 pub async fn max_budget_check(
     token: Option<&mut UserAPIKeyAuth>,
     team: Option<&LiteLLMTeamTable>,
