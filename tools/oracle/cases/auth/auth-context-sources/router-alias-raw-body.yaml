@@ -4,12 +4,11 @@ call:
   auth_context_sources:
     function: router_alias
     route: /chat/completions
-    route_class: llm_api
-    router: available
-    marker: fresh
-    dispatch: direct
+    router_available: true
+    marker_set: false
+    passthrough: false
     requested_model: alias-one
-    raw_body: available
+    raw_body_available: true
     settings: {model_group_alias: {alias-one: group-one}}
     client_requested_model: null
     team_id: null
@@ -17,84 +16,77 @@ calls:
   - auth_context_sources:
       function: router_alias
       route: /chat/completions
-      route_class: llm_api
-      router: available
-      marker: fresh
-      dispatch: direct
+      router_available: true
+      marker_set: false
+      passthrough: false
       requested_model: alias-one
-      raw_body: available
+      raw_body_available: true
       settings: {model_group_alias: {alias-one: group-one}}
       client_requested_model: client-choice
       team_id: null
   - auth_context_sources:
       function: router_alias
       route: /chat/completions
-      route_class: llm_api
-      router: available
-      marker: fresh
-      dispatch: direct
+      router_available: true
+      marker_set: false
+      passthrough: false
       requested_model: alias-one
-      raw_body: unavailable
+      raw_body_available: false
       settings: {model_group_alias: {alias-one: group-one}}
       client_requested_model: null
       team_id: null
   - auth_context_sources:
       function: router_alias
       route: /chat/completions
-      route_class: llm_api
-      router: available
-      marker: fresh
-      dispatch: passthrough
+      router_available: true
+      marker_set: false
+      passthrough: true
       requested_model: alias-one
-      raw_body: available
+      raw_body_available: true
       settings: {model_group_alias: {alias-one: group-one}}
       client_requested_model: null
       team_id: null
   - auth_context_sources:
       function: router_alias
       route: /chat/completions
-      route_class: llm_api
-      router: available
-      marker: resolved
-      dispatch: direct
+      router_available: true
+      marker_set: true
+      passthrough: false
       requested_model: alias-one
-      raw_body: available
+      raw_body_available: true
       settings: {model_group_alias: {alias-one: group-one}}
       client_requested_model: null
       team_id: null
   - auth_context_sources:
       function: router_alias
       route: /chat/completions
-      route_class: llm_api
-      router: available
-      marker: fresh
-      dispatch: direct
+      router_available: true
+      marker_set: false
+      passthrough: false
       requested_model: alias-one
-      raw_body: available
+      raw_body_available: true
       settings: {model_group_alias: {alias-one: alias-one}}
       client_requested_model: null
       team_id: null
   - auth_context_sources:
       function: router_alias
       route: /chat/completions
-      route_class: llm_api
-      router: absent
-      marker: fresh
-      dispatch: direct
+      router_available: false
+      marker_set: false
+      passthrough: false
       requested_model: alias-one
-      raw_body: available
+      raw_body_available: true
       settings: {model_group_alias: {alias-one: group-one}}
       client_requested_model: null
       team_id: null
   - auth_context_sources:
       function: router_alias
       route: /chat/completions
-      route_class: llm_api
-      router: available
-      marker: fresh
-      dispatch: direct
+      router_available: true
+      marker_set: false
+      passthrough: false
       requested_model: null
-      raw_body: available
+      raw_body_available: true
       settings: {model_group_alias: {alias-one: group-one}}
       client_requested_model: null
       team_id: null

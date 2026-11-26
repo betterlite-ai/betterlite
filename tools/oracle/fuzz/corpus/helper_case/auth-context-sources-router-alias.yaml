@@ -4,12 +4,11 @@ call:
   auth_context_sources:
     function: router_alias
     route: /chat/completions
-    route_class: llm_api
-    router: available
-    marker: fresh
-    dispatch: direct
+    router_available: true
+    marker_set: false
+    passthrough: false
     requested_model: alias-one
-    raw_body: available
+    raw_body_available: true
     settings: {model_group_alias: {alias-one: group-one}}
     client_requested_model: null
     team_id: team-one
