@@ -224,6 +224,7 @@ out_of_scope:
     RouteChecks.check_route_access (L613-L652), RouteChecks._is_assistants_api_request (L765-L781), RouteChecks.is_generate_content_route
     (L784-L794), RouteChecks._get_request_method (L655-L666).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+  - "An HTTP case where a seeded virtual key reaches the route check. Until B052 (with B2326, B738 and B755) installs key authentication, every non-master bearer gets 401 at the master stage, and the postgres fixture has no allowed_routes column, so that case comes after B052. The proof here is failure_stops_downstream over the production stages and the static-denial HTTP case."
 pitfalls:
   - 'The oracle helper for this task is pre-registered as virtual_key_routes in the server group. Replace the stub Op in tools/oracle/src/helpers/server/virtual_key_routes.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/virtual_key_routes.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Empty allowed_passthrough_routes on a key falls back to the team's list; it is not an explicit deny.

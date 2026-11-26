@@ -1,0 +1,15 @@
+kind: helper
+name: db-config-overlay-scrub-pass-through-target
+call:
+  b8379:
+    section: general_settings
+    row:
+      pass_through_endpoints:
+        - path: /remote
+          target: s3://bucket/module.handler
+        - target: gcs://bucket/module.handler
+        - path: /http
+          target: https://example.test/v1
+env: {}
+compare:
+  ignore: []
