@@ -1,8 +1,8 @@
 id: B10109
 milestone: M4 keys, spend and management
-title: A seeded virtual key's allowed_routes admits and denies routes over HTTP
+title: Seeded virtual keys prove route and model grants over HTTP
 status: todo
-depends_on: [B052, B883]
+depends_on: [B052, B883, B886]
 file: tasks/B10109-seeded-key-allowed-routes.yaml
 covers: []
 parent: null
