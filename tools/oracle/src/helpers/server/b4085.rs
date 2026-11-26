@@ -3,7 +3,6 @@ mod run;
 mod support;
 
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
-
 use inputs::Input;
 
 pub(crate) struct Op;

@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 use std::future::ready;
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use async_trait::async_trait;
 use betterlite_auth::auth_key_budgets::spend::{SpendReadError, SpendReader};
@@ -23,9 +23,18 @@ use betterlite_server::shadow_evaluation::pipeline::{
 };
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
+use serde_json::{Value, json};
 use tokio::runtime::{Builder, Runtime};
 
 use super::inputs::PipelineCall;
+
+// a poisoned lock is a failed test, not a corrupt answer, so the guard comes back rather than unwrapping again
+pub(crate) fn locked<Items>(log: &Mutex<Items>) -> MutexGuard<'_, Items> {
+    match log.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 #[error("scripted database failure")]
@@ -37,39 +46,21 @@ pub(crate) enum SpendScript {
     Unreadable,
 }
 
-pub(crate) struct SpendRead {
-    pub(crate) counter_key: String,
-    pub(crate) fallback_spend: Decimal,
-    pub(crate) max_budget: Option<Decimal>,
-}
-
 pub(crate) struct SpendFake {
-    key: SpendScript,
-    team: SpendScript,
-    pub(crate) reads: Mutex<Vec<SpendRead>>,
-}
-
-impl SpendFake {
-    pub(crate) fn new(key: SpendScript, team: SpendScript) -> Self {
-        Self {
-            key,
-            team,
-            reads: Mutex::new(Vec::new()),
-        }
-    }
+    pub(crate) key: SpendScript,
+    pub(crate) team: SpendScript,
+    pub(crate) reads: Mutex<Vec<Value>>,
 }
 
 #[async_trait]
 impl SpendReader for SpendFake {
     async fn read_spend(&self, query: &SpendQuery<'_>) -> Result<Decimal, SpendReadError> {
-        self.reads
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(SpendRead {
-                counter_key: query.counter_key.to_owned(),
-                fallback_spend: query.fallback_spend,
-                max_budget: query.max_budget,
-            });
+        let maximum = query.max_budget.map(|value| value.normalize().to_string());
+        locked(&self.reads).push(json!([
+            query.counter_key,
+            query.fallback_spend.normalize().to_string(),
+            maximum
+        ]));
         let script = if query.counter_key.starts_with("spend:key:") {
             self.key
         } else {
@@ -84,55 +75,34 @@ impl SpendReader for SpendFake {
     }
 }
 
-enum TeamAnswer {
-    Found(Box<LiteLLMTeamTableCachedObj>),
-    NoDatabase,
-}
-
 pub(crate) struct TeamsFake {
-    answer: TeamAnswer,
-}
-
-impl TeamsFake {
-    pub(crate) fn new(team: Option<LiteLLMTeamTableCachedObj>) -> Self {
-        let answer = match team {
-            Some(found) => TeamAnswer::Found(Box::new(found)),
-            None => TeamAnswer::NoDatabase,
-        };
-        Self { answer }
-    }
+    pub(crate) team: Option<LiteLLMTeamTableCachedObj>,
 }
 
 impl CachedTeams for TeamsFake {
     fn cached_team<'lookup>(&'lookup self, _team_id: &'lookup str) -> TeamFuture<'lookup> {
-        let answer = match &self.answer {
-            TeamAnswer::Found(team) => Ok(team.as_ref().clone()),
-            TeamAnswer::NoDatabase => Err(TeamLookupError::NoDatabase),
-        };
-        Box::pin(ready(answer))
+        Box::pin(ready(match &self.team {
+            Some(team) => Ok(team.clone()),
+            None => Err(TeamLookupError::NoDatabase),
+        }))
     }
 }
 
+// the database, the spend counter and the funnel are one recorder here: every stage's write lands in the same answer
 #[derive(Default)]
-pub(crate) struct FunnelLog {
+pub(crate) struct Recorder {
+    pub(crate) rows: Mutex<Vec<ShadowAttemptRow>>,
+    pub(crate) writes: Mutex<Vec<String>>,
     pub(crate) events: Mutex<Vec<(String, FunnelStage)>>,
 }
 
-impl FunnelRecorder for FunnelLog {
+impl FunnelRecorder for Recorder {
     fn record(&self, job_id: &str, stage: FunnelStage) {
-        self.events
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push((job_id.to_owned(), stage));
+        locked(&self.events).push((job_id.to_owned(), stage));
     }
 }
 
-#[derive(Default)]
-pub(crate) struct Attempts {
-    pub(crate) rows: Mutex<Vec<ShadowAttemptRow>>,
-}
-
-impl ShadowTables for Attempts {
+impl ShadowTables for Recorder {
     type Error = Scripted;
 
     fn find_active_jobs(
@@ -155,10 +125,7 @@ impl ShadowTables for Attempts {
     ) -> ShadowFuture<'database, (), Scripted> {
         let row = attempt.clone();
         Box::pin(async move {
-            self.rows
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .push(row);
+            locked(&self.rows).push(row);
             Ok(())
         })
     }
@@ -172,12 +139,7 @@ impl ShadowTables for Attempts {
     }
 }
 
-#[derive(Default)]
-pub(crate) struct SpendLog {
-    pub(crate) writes: Mutex<Vec<String>>,
-}
-
-impl SpendCounter for SpendLog {
+impl SpendCounter for Recorder {
     type Error = Scripted;
 
     fn add_spend<'counter>(
@@ -187,33 +149,15 @@ impl SpendCounter for SpendLog {
     ) -> SpendFuture<'counter, (), Scripted> {
         let entry = format!("write:{counter_key}:{}", cost.normalize());
         Box::pin(async move {
-            self.writes
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .push(entry);
+            locked(&self.writes).push(entry);
             Ok(())
         })
     }
 }
 
-pub(crate) struct JobSpendRead {
-    pub(crate) counter_key: String,
-    pub(crate) fallback_spend: Decimal,
-    pub(crate) max_budget: Decimal,
-}
-
 pub(crate) struct JobSpendFake {
-    spend: Decimal,
-    pub(crate) reads: Mutex<Vec<JobSpendRead>>,
-}
-
-impl JobSpendFake {
-    pub(crate) fn new(spend: Decimal) -> Self {
-        Self {
-            spend,
-            reads: Mutex::new(Vec::new()),
-        }
-    }
+    pub(crate) spend: Decimal,
+    pub(crate) reads: Mutex<Vec<Value>>,
 }
 
 impl JobSpendReader for JobSpendFake {
@@ -223,14 +167,11 @@ impl JobSpendReader for JobSpendFake {
         fallback_spend: Decimal,
         max_budget: Decimal,
     ) -> JobSpendFuture<'reader> {
-        self.reads
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(JobSpendRead {
-                counter_key: counter_key.to_owned(),
-                fallback_spend,
-                max_budget,
-            });
+        locked(&self.reads).push(json!([
+            counter_key,
+            fallback_spend.normalize().to_string(),
+            max_budget.normalize().to_string()
+        ]));
         Box::pin(ready(Ok(self.spend)))
     }
 }
@@ -276,15 +217,19 @@ impl CallsFake {
     }
 }
 
+fn call_failure(message: &str) -> CallFailure {
+    CallFailure {
+        error: message.to_owned(),
+        cost: Decimal::new(75, 2),
+        classifier_cost: Decimal::ZERO,
+    }
+}
+
 #[async_trait]
 impl ArmCalls for CallsFake {
     async fn shadow(&self, _request: &ShadowRequest<'_>) -> ArmStage<ShadowResponse> {
-        let answer = self
-            .shadow_answers
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .pop_front();
-        match answer {
+        let mut answers = locked(&self.shadow_answers);
+        match answers.pop_front() {
             Some(ShadowAnswer::Reply) => Ok(ShadowResponse {
                 text: "shadow answer".to_owned(),
                 model: "gpt-4o-mini".to_owned(),
@@ -292,11 +237,9 @@ impl ArmCalls for CallsFake {
                 cost: Decimal::new(75, 2),
                 classifier_cost: Decimal::ZERO,
             }),
-            Some(ShadowAnswer::Empty) => Err(ArmFailure::Failed(CallFailure {
-                error: "the shadow reply was empty".to_owned(),
-                cost: Decimal::new(75, 2),
-                classifier_cost: Decimal::ZERO,
-            })),
+            Some(ShadowAnswer::Empty) => Err(ArmFailure::Failed(call_failure(
+                "the shadow reply was empty",
+            ))),
             Some(ShadowAnswer::Raised) => Err(ArmFailure::Raised("provider exploded".to_owned())),
             None => Err(ArmFailure::Raised(
                 "no scripted shadow answer left".to_owned(),
@@ -305,18 +248,16 @@ impl ArmCalls for CallsFake {
     }
 
     async fn judge(&self, _request: &JudgeRequest<'_>) -> ArmStage<JudgeVerdict> {
+        // the oracle cases seed LiteLLM's A/B coin so a raw A unmasked to the shadow preference
         match &self.judge_answer {
-            // the oracle cases seed LiteLLM's A/B coin so a raw A unmasked to the shadow preference
             JudgeAnswer::Preference(raw) => Ok(JudgeVerdict {
                 preference: unmask_preference(raw, false),
                 confidence: Decimal::new(9, 1),
                 cost: Decimal::new(75, 2),
             }),
-            JudgeAnswer::Invalid => Err(ArmFailure::Failed(CallFailure {
-                error: "the judge verdict was not valid JSON".to_owned(),
-                cost: Decimal::new(75, 2),
-                classifier_cost: Decimal::ZERO,
-            })),
+            JudgeAnswer::Invalid => Err(ArmFailure::Failed(call_failure(
+                "the judge verdict was not valid JSON",
+            ))),
         }
     }
 }

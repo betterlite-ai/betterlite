@@ -39,7 +39,6 @@ use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use serde::Deserialize;
 
-#[cfg(test)]
 mod tests;
 
 // the collaborators the advisory gate reads through: the request path's spend reader, its cache-only team lookup and the alert sinks
@@ -98,7 +97,11 @@ pub async fn key_or_team_over_budget(
         KeyGate::Unreadable => return false,
         KeyGate::Within => {}
     }
-    let Some(team_id) = team_id(&auth) else {
+    // the key's team, read from its serde form because the token view keeps the field private
+    let identity: Identity = serde_json::to_value(&auth)
+        .and_then(serde_json::from_value)
+        .unwrap_or(Identity { team_id: None });
+    let Some(team_id) = identity.team_id.filter(|team_id| !team_id.is_empty()) else {
         return false;
     };
     team_is_over_budget(&auth, &team_id, deps).await
@@ -112,7 +115,7 @@ async fn key_gate(
     let admission = Admission {
         reader: deps.spend,
         alerts: deps.key_alerts,
-        durations: &NO_DURATIONS,
+        durations: &NO_SOURCES,
         global_alert_emails: None,
         alert_fraction: Money::Finite(Decimal::ZERO),
         throttle_pct: None,
@@ -151,11 +154,11 @@ async fn team_is_over_budget(
     };
     let admission = TeamAdmission {
         reader: deps.spend,
-        memberships: &NO_MEMBERSHIPS,
-        defaults: &NO_DEFAULTS,
+        memberships: &NO_SOURCES,
+        defaults: &NO_SOURCES,
         member_alerts: None,
         team_alerts: deps.team_alerts,
-        durations: &NO_DURATIONS,
+        durations: &NO_SOURCES,
         models: &models,
         now: deps.now,
     };
@@ -194,28 +197,17 @@ struct Identity {
     team_id: Option<String>,
 }
 
-// the key's team, read from its serde form because the token view keeps the field private
-fn team_id(auth: &UserAPIKeyAuth) -> Option<String> {
-    let identity: Identity = serde_json::to_value(auth)
-        .and_then(serde_json::from_value)
-        .ok()?;
-    identity.team_id.filter(|team_id| !team_id.is_empty())
-}
+// the advisory check reads the stored spend alone: no reset window, no membership and no member default reaches it
+struct NoSources;
 
-struct NoDurations;
-
-impl DurationParser for NoDurations {
+impl DurationParser for NoSources {
     fn seconds(&self, _spec: &str, _now: DateTime<Utc>) -> Option<i64> {
         None
     }
 }
 
-static NO_DURATIONS: NoDurations = NoDurations;
-
-struct NoMemberships;
-
 #[async_trait]
-impl MembershipSource for NoMemberships {
+impl MembershipSource for NoSources {
     async fn team_membership(
         &self,
         _user_id: &str,
@@ -225,12 +217,8 @@ impl MembershipSource for NoMemberships {
     }
 }
 
-static NO_MEMBERSHIPS: NoMemberships = NoMemberships;
-
-struct NoDefaults;
-
 #[async_trait]
-impl DefaultBudgetSource for NoDefaults {
+impl DefaultBudgetSource for NoSources {
     async fn team_member_default(
         &self,
         _budget_id: &str,
@@ -239,6 +227,6 @@ impl DefaultBudgetSource for NoDefaults {
     }
 }
 
-static NO_DEFAULTS: NoDefaults = NoDefaults;
+static NO_SOURCES: NoSources = NoSources;
 
 static UNRESOLVED_PROVIDER: UnresolvedProviderInference = UnresolvedProviderInference;

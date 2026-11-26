@@ -262,7 +262,7 @@ async fn a_failed_judge_call_keeps_the_billed_shadow_and_records_the_error() {
     let calls = CallsFake::new(
         vec![Answer::Reply(shadow_reply())],
         vec![Answer::Failed(call_failure(
-            "unparseable judge verdict: confidence: field required",
+            "unparsable judge verdict: confidence: field required",
             "0.4",
             "0.02",
         ))],
@@ -281,7 +281,7 @@ async fn a_failed_judge_call_keeps_the_billed_shadow_and_records_the_error() {
     assert_eq!(row.outcome, AttemptOutcome::Error);
     assert_eq!(
         row.error.as_deref(),
-        Some("unparseable judge verdict: confidence: field required")
+        Some("unparsable judge verdict: confidence: field required")
     );
     assert_eq!(row.shadow_model.as_deref(), Some("shadow-model"));
     assert_eq!(row.shadow_cost, decimal("0.25"));

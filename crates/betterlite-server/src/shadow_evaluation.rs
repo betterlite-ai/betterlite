@@ -2,7 +2,6 @@ pub mod advisory_budget;
 pub mod arm;
 pub mod pipeline;
 
-#[cfg(test)]
 mod tests;
 
 use betterlite_models::decisions::Json;

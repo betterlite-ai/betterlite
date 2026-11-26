@@ -28,9 +28,7 @@ use crate::shadow_eval_job_loading::jobs::{ActiveShadowEvalJob, ShadowEvalDirect
 use crate::shadow_evaluation::ShadowSample;
 use crate::shadow_evaluation::advisory_budget::{CachedTeams, TeamFuture};
 use crate::shadow_evaluation::arm::{ArmCalls, ArmFailure, ArmStage};
-use crate::shadow_evaluation::pipeline::{
-    FunnelRecorder, JobSpendError, JobSpendFuture, JobSpendReader,
-};
+use crate::shadow_evaluation::pipeline::{FunnelRecorder, JobSpendFuture, JobSpendReader};
 
 pub(crate) const TOKEN: &str = "token-1";
 
@@ -251,6 +249,7 @@ pub(crate) fn eval_job(
     }
 }
 
+#[derive(Default)]
 pub(crate) struct SampleFixture {
     pub(crate) request_id: String,
     pub(crate) messages: Vec<Json>,
@@ -266,35 +265,36 @@ pub(crate) struct SampleFixture {
 
 impl SampleFixture {
     pub(crate) fn new() -> Self {
-        Self {
-            request_id: "req-1".to_owned(),
-            messages: vec![Json::Object(IndexMap::from([
-                ("role".to_owned(), Json::Text("user".to_owned())),
-                ("content".to_owned(), Json::Text("hi".to_owned())),
-            ]))],
-            real_text: "real answer".to_owned(),
-            real_model: "gpt-4o".to_owned(),
-            real_cost: decimal("0.1"),
-            real_classifier_cost: decimal("0.02"),
-            real_cache_hit: true,
-            control_tier: None,
-            shadow_params: IndexMap::new(),
-            parent_metadata: IndexMap::new(),
-        }
+        let mut fixture = Self::default();
+        fixture.seed();
+        fixture
+    }
+
+    fn seed(&mut self) {
+        self.request_id = "req-1".to_owned();
+        self.messages.push(Json::Object(IndexMap::from([
+            ("role".to_owned(), Json::Text("user".to_owned())),
+            ("content".to_owned(), Json::Text("hi".to_owned())),
+        ])));
+        self.real_text = "real answer".to_owned();
+        self.real_model = "gpt-4o".to_owned();
+        self.real_cost = decimal("0.1");
+        self.real_classifier_cost = decimal("0.02");
+        self.real_cache_hit = true;
     }
 
     pub(crate) fn sample(&self) -> ShadowSample<'_> {
         ShadowSample {
-            request_id: &self.request_id,
-            messages: &self.messages,
-            real_text: &self.real_text,
-            real_model: &self.real_model,
-            real_cost: self.real_cost,
-            real_classifier_cost: self.real_classifier_cost,
-            real_cache_hit: self.real_cache_hit,
-            control_tier: self.control_tier.as_deref(),
-            shadow_params: &self.shadow_params,
             parent_metadata: &self.parent_metadata,
+            shadow_params: &self.shadow_params,
+            control_tier: self.control_tier.as_deref(),
+            real_cache_hit: self.real_cache_hit,
+            real_classifier_cost: self.real_classifier_cost,
+            real_cost: self.real_cost,
+            real_model: &self.real_model,
+            real_text: &self.real_text,
+            messages: &self.messages,
+            request_id: &self.request_id,
         }
     }
 }
@@ -451,8 +451,8 @@ impl JobSpendReader for JobSpendFake {
         });
         let answer = match self.answer {
             SpendAnswer::Spend(spend) => Ok(spend),
-            SpendAnswer::Unreadable => Err(JobSpendError {
-                message: "redis is unavailable".to_owned(),
+            SpendAnswer::Unreadable => Err(SpendReadError::Unverifiable {
+                counter_key: counter_key.to_owned(),
             }),
         };
         Box::pin(ready(answer))
@@ -471,17 +471,35 @@ pub(crate) struct ShadowCallLog {
     pub(crate) target_model: String,
     pub(crate) messages: Vec<Json>,
     pub(crate) shadow_params: IndexMap<String, Json>,
-    pub(crate) parent_metadata: IndexMap<String, Json>,
+}
+
+impl ShadowCallLog {
+    fn of(request: &ShadowRequest<'_>) -> Self {
+        Self {
+            target_model: request.target_model.to_owned(),
+            messages: request.messages.to_vec(),
+            shadow_params: request.shadow_params.clone(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct JudgeCallLog {
     pub(crate) judge_model: String,
-    pub(crate) messages: Vec<Json>,
     pub(crate) real_text: String,
     pub(crate) shadow_text: String,
     pub(crate) tools: Json,
-    pub(crate) parent_metadata: IndexMap<String, Json>,
+}
+
+impl JudgeCallLog {
+    fn of(request: &JudgeRequest<'_>) -> Self {
+        Self {
+            judge_model: request.judge_model.to_owned(),
+            real_text: request.real_text.to_owned(),
+            shadow_text: request.shadow_text.to_owned(),
+            tools: request.tools.clone(),
+        }
+    }
 }
 
 pub(crate) struct CallsFake {
@@ -497,8 +515,8 @@ impl CallsFake {
         judge: Vec<Answer<JudgeVerdict>>,
     ) -> Self {
         Self {
-            shadow_answers: Mutex::new(shadow.into()),
-            judge_answers: Mutex::new(judge.into()),
+            shadow_answers: Mutex::new(VecDeque::from(shadow)),
+            judge_answers: Mutex::new(VecDeque::from(judge)),
             shadow_calls: Mutex::new(Vec::new()),
             judge_calls: Mutex::new(Vec::new()),
         }
@@ -522,37 +540,32 @@ impl CallsFake {
     }
 }
 
+impl CallsFake {
+    fn next<Value>(answers: &Mutex<VecDeque<Answer<Value>>>, stage: &str) -> ArmStage<Value> {
+        match answers.lock().unwrap().pop_front() {
+            Some(Answer::Reply(value)) => Ok(value),
+            Some(Answer::Failed(failure)) => Err(ArmFailure::Failed(failure)),
+            Some(Answer::Raised(message)) => Err(ArmFailure::Raised(message.to_owned())),
+            None => panic!("the fake ran out of {stage} answers"),
+        }
+    }
+}
+
 #[async_trait]
 impl ArmCalls for CallsFake {
     async fn shadow(&self, request: &ShadowRequest<'_>) -> ArmStage<ShadowResponse> {
-        self.shadow_calls.lock().unwrap().push(ShadowCallLog {
-            target_model: request.target_model.to_owned(),
-            messages: request.messages.to_vec(),
-            shadow_params: request.shadow_params.clone(),
-            parent_metadata: request.parent_metadata.clone(),
-        });
-        match self.shadow_answers.lock().unwrap().pop_front() {
-            Some(Answer::Reply(response)) => Ok(response),
-            Some(Answer::Failed(failure)) => Err(ArmFailure::Failed(failure)),
-            Some(Answer::Raised(message)) => Err(ArmFailure::Raised(message.to_owned())),
-            None => panic!("the fake ran out of shadow answers"),
-        }
+        self.shadow_calls
+            .lock()
+            .unwrap()
+            .push(ShadowCallLog::of(request));
+        Self::next(&self.shadow_answers, "shadow")
     }
 
     async fn judge(&self, request: &JudgeRequest<'_>) -> ArmStage<JudgeVerdict> {
-        self.judge_calls.lock().unwrap().push(JudgeCallLog {
-            judge_model: request.judge_model.to_owned(),
-            messages: request.messages.to_vec(),
-            real_text: request.real_text.to_owned(),
-            shadow_text: request.shadow_text.to_owned(),
-            tools: request.tools.clone(),
-            parent_metadata: request.parent_metadata.clone(),
-        });
-        match self.judge_answers.lock().unwrap().pop_front() {
-            Some(Answer::Reply(verdict)) => Ok(verdict),
-            Some(Answer::Failed(failure)) => Err(ArmFailure::Failed(failure)),
-            Some(Answer::Raised(message)) => Err(ArmFailure::Raised(message.to_owned())),
-            None => panic!("the fake ran out of judge answers"),
-        }
+        self.judge_calls
+            .lock()
+            .unwrap()
+            .push(JudgeCallLog::of(request));
+        Self::next(&self.judge_answers, "judge")
     }
 }
