@@ -41,30 +41,23 @@ pub async fn update_litellm_setting(
         return Err(SettingsUpdateError::StorageDisabled);
     }
     let values = pruned_values(update.record.values());
-    let stored = JsonValue::Object(
-        values
-            .iter()
-            .map(|(key, value)| (key.clone(), value.clone()))
-            .collect(),
-    );
+    let stored = JsonValue::Object(values.clone().into_iter().collect());
     let mut config = ports.overlay.reload_config().await?;
     // a null stored section reads as empty, but save_config diffs the baseline, which must be an object too
+    let empty_section = JsonValue::Object(BTreeMap::new().into_iter().collect());
     if let Some(baseline) = config.baseline.as_mut()
         && baseline.get(LITELLM_SETTINGS) == Some(&JsonValue::Null)
     {
-        baseline.insert(
-            LITELLM_SETTINGS.to_owned(),
-            JsonValue::Object(BTreeMap::new().into_iter().collect()),
-        );
+        baseline.insert(LITELLM_SETTINGS.to_owned(), empty_section);
     }
     let mut section = object_entries(config.values.get(LITELLM_SETTINGS), LITELLM_SETTINGS)?;
     let before_value = section.get(update.setting.as_str()).cloned();
     ports.runtime.publish(update.setting, &stored);
     section.insert(update.setting.as_str().to_owned(), stored.clone());
-    config.values.insert(
-        LITELLM_SETTINGS.to_owned(),
-        JsonValue::Object(section.into_iter().collect()),
-    );
+    let section_value = JsonValue::Object(section.into_iter().collect());
+    config
+        .values
+        .insert(LITELLM_SETTINGS.to_owned(), section_value);
     save_config(state, &mut config, false, ports.database).await?;
     ports
         .audit
