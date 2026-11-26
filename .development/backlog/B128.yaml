@@ -1,7 +1,7 @@
 id: B128
 milestone: M8 platform
 title: Semantic caches
-status: blocked
+status: todo
 depends_on: [B8650, B8651, B9560]
 file: tasks/B128-semantic-cache-http.yaml
 covers:
@@ -10,5 +10,5 @@ parent: null
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): niche, Valkey and Redis semantic caches"
+blocked_reason: null
 pr: null

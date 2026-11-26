@@ -1,7 +1,7 @@
 id: B4842
 milestone: M9 agents and mcp
 title: Relay harness model requests through gateway and SDK calls
-status: blocked
+status: todo
 depends_on: [B173, B932, B1134, B4830, B4841, B5656]
 file: tasks/B4842-harness-model-relay.yaml
 covers:
@@ -10,5 +10,5 @@ parent: B143
 split_from: B143
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, agent harnesses can wait"
+blocked_reason: null
 pr: null

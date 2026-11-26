@@ -1,7 +1,7 @@
 id: B155
 milestone: M11 distribution
 title: LiteLLM's Terraform provider working against betterlite
-status: blocked
+status: todo
 depends_on: [B7760, B7761]
 file: tasks/B155-terraform-provider-release.yaml
 covers:
@@ -19,5 +19,5 @@ parent: null
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, Terraform provider can wait"
+blocked_reason: null
 pr: null

@@ -1,7 +1,7 @@
 id: B1012
 milestone: M5 api families
 title: Realtime ephemeral ids
-status: blocked
+status: todo
 depends_on: [B171, B886, B1004, B1087]
 file: tasks/B1012-realtime-ephemeral-ids.yaml
 covers:
@@ -10,5 +10,5 @@ parent: B084
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, Realtime WebSocket API is used by few deployments"
+blocked_reason: null
 pr: null

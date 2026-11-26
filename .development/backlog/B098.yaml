@@ -1,7 +1,7 @@
 id: B098
 milestone: M5 api families
 title: Google GenAI and Interactions APIs
-status: blocked
+status: todo
 depends_on: [B3481, B3498, B3499, B932, B1078, B8774, B9840]
 file: tasks/B098-genai-interactions-wiring.yaml
 covers:
@@ -15,5 +15,5 @@ parent: null
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, Google GenAI and Interactions API family can wait"
+blocked_reason: null
 pr: null
