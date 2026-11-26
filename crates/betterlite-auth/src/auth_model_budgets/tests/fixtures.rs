@@ -246,6 +246,12 @@ pub(crate) struct RecordingRewrite {
 
 impl Default for RecordingRewrite {
     fn default() -> Self {
+        Self::new(true)
+    }
+}
+
+impl RecordingRewrite {
+    pub(crate) fn new(path_exists: bool) -> Self {
         Self {
             calls: Mutex::new(Vec::new()),
             request_model: Mutex::new(Some("gpt-4".to_owned())),
@@ -253,13 +259,11 @@ impl Default for RecordingRewrite {
             json_cache: Mutex::new(None),
             serialized_body: Mutex::new(None),
             path_model: Mutex::new(Some("gpt-4".to_owned())),
-            path_exists: true,
+            path_exists,
             fail_serialization: false,
         }
     }
-}
 
-impl RecordingRewrite {
     pub(crate) fn models(&self) -> [Option<String>; 5] {
         [
             self.request_model.lock().unwrap().clone(),

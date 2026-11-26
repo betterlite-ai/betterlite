@@ -522,7 +522,11 @@ fn fallback_rule(models: &str) -> ModelBudgetRule {
         models: vec!["gpt-4".to_owned()],
         model_name: Some("gpt-4".to_owned()),
         key_limiter: Some(Arc::new(FallbackKeyLimiter)),
-        ..ModelBudgetRule::default()
+        user_limiter: None,
+        team_limiter: None,
+        global_model_aliases: BTreeMap::new(),
+        max_recurse_depth: DEFAULT_RECURSE_DEPTH,
+        path_params: None,
     }
 }
 

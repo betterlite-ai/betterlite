@@ -166,10 +166,7 @@ async fn fallback_rewrites_all_body_views_then_existing_path(
     let access = Access::default();
     let limiter = ScriptedKeyLimiter::new(&["gpt-4"], None).with_fallback("gpt-3.5");
     let key = token(&[("models", names(&["gpt-4", "gpt-3.5"]))]);
-    let mut request = RecordingRewrite {
-        path_exists,
-        ..RecordingRewrite::default()
-    };
+    let mut request = RecordingRewrite::new(path_exists);
     key_check(&limiter, &key, &mut request, &access, Some("gpt-4"))
         .await
         .unwrap();

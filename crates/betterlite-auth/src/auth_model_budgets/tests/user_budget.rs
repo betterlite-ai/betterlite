@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use betterlite_db::budget_permission_rows::JsonData;
 use serde_json::Number;
@@ -10,7 +11,7 @@ use crate::auth_model_budgets::tests::fixtures::{
     ScriptedTeamLimiter, ScriptedUserLimiter, budget_map, other_error, text, token,
 };
 use crate::auth_model_budgets::tests::logs::Logs;
-use crate::auth_model_budgets::tests::support::Harness;
+use crate::auth_model_budgets::tests::support::{FakeCache, FakeStore, Harness};
 
 fn objects() -> JsonData {
     JsonData::Object(BTreeMap::new())
@@ -172,7 +173,8 @@ async fn user_and_team_errors_propagate() {
 async fn absent_database_skips_even_a_cached_user() {
     let harness = Harness {
         with_store: false,
-        ..Harness::default()
+        store: Arc::new(FakeStore::default()),
+        cache: Arc::new(FakeCache::default()),
     };
     *harness.cache.cached.lock().unwrap() = Some(
         serde_json::from_str(r#"{"user_id":"cached","model_max_budget":{"gpt-4":3}}"#).unwrap(),
