@@ -30,8 +30,11 @@ impl OrgCache for FakeOrg {
         _key: &str,
         _local_only: bool,
     ) -> Result<Option<OrganizationTable>, AuthCacheError> {
-        let stored = self.org.lock().unwrap_or_else(PoisonError::into_inner);
-        Ok(stored.clone())
+        let org = {
+            let stored = self.org.lock().unwrap_or_else(PoisonError::into_inner);
+            stored.clone()
+        };
+        Ok(org)
     }
 
     async fn write_org(
@@ -40,14 +43,19 @@ impl OrgCache for FakeOrg {
         org: &OrganizationTable,
         _ttl: f64,
     ) -> Result<(), AuthCacheError> {
-        let mut stored = self.org.lock().unwrap_or_else(PoisonError::into_inner);
-        *stored = Some(org.clone());
+        {
+            let mut stored = self.org.lock().unwrap_or_else(PoisonError::into_inner);
+            *stored = Some(org.clone());
+        }
         Ok(())
     }
 
     async fn read_project(&self, key: &str) -> Result<Option<CachedProject>, AuthCacheError> {
-        let projects = self.projects.lock().unwrap_or_else(PoisonError::into_inner);
-        Ok(projects.get(key).cloned())
+        let project = {
+            let projects = self.projects.lock().unwrap_or_else(PoisonError::into_inner);
+            projects.get(key).cloned()
+        };
+        Ok(project)
     }
 
     async fn write_project(
@@ -56,8 +64,10 @@ impl OrgCache for FakeOrg {
         project: &CachedProject,
         _ttl: f64,
     ) -> Result<(), AuthCacheError> {
-        let mut projects = self.projects.lock().unwrap_or_else(PoisonError::into_inner);
-        projects.insert(key.to_owned(), project.clone());
+        {
+            let mut projects = self.projects.lock().unwrap_or_else(PoisonError::into_inner);
+            projects.insert(key.to_owned(), project.clone());
+        }
         Ok(())
     }
 
@@ -69,14 +79,17 @@ impl OrgCache for FakeOrg {
 #[async_trait]
 impl OrgStore for FakeOrg {
     async fn find_org(&self, org_id: &str, _include_budget: bool) -> StoreAnswer<Option<String>> {
-        let stored = self.org.lock().unwrap_or_else(PoisonError::into_inner);
-        let Some(row) = stored.as_ref() else {
+        let row = {
+            let stored = self.org.lock().unwrap_or_else(PoisonError::into_inner);
+            stored.clone()
+        };
+        let Some(row) = row else {
             return Ok(None);
         };
         if row.organization_id.as_deref() != Some(org_id) {
             return Ok(None);
         }
-        serde_json::to_string(row).map_or_else(|_| Ok(None), |text| Ok(Some(text)))
+        serde_json::to_string(&row).map_or_else(|_| Ok(None), |text| Ok(Some(text)))
     }
 
     async fn find_by_alias(&self, _org_alias: &str) -> StoreAnswer<Vec<String>> {
