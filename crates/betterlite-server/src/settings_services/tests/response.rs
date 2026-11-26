@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use betterlite_config::sections::settings::{FieldSource, JsonValue};
+use betterlite_config::sections::settings::FieldSource;
 
 use crate::settings_services::projection::settings_with_schema;
 use crate::settings_services::response::SsoSettingsResponse;

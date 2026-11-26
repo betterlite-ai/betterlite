@@ -1,5 +1,3 @@
-use betterlite_config::sections::settings::JsonValue;
-
 use crate::settings_services::error::SettingsSchemaError;
 use crate::settings_services::schema::root_schema;
 
