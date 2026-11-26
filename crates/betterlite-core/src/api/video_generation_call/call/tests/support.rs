@@ -24,6 +24,7 @@ use chrono::{DateTime, FixedOffset};
 use http::HeaderMap;
 use indexmap::IndexMap;
 
+use super::super::request::{Polled, poll_once};
 use crate::api::video_generation_call::VideoGenerationRequest;
 use crate::api::video_generation_call::call::{
     GenerationCallEnvironment, PendingVideoGeneration, VideoGenerationCaller, VideoGenerationWork,
@@ -383,6 +384,17 @@ impl Resolver {
     }
 }
 
+#[derive(Clone, Copy)]
+enum Invocation {
+    Sync,
+    Async,
+}
+
+enum Invoked {
+    Ready(Box<VideoObject>),
+    Pending,
+}
+
 pub(crate) struct Bench {
     pub(crate) caller: VideoGenerationCaller<FakeProviders, FakeHandler>,
     pub(crate) fixture: Fixture,
@@ -423,16 +435,8 @@ impl Bench {
         request: VideoGenerationRequest,
         client: Option<&FakeTransport>,
     ) -> Result<Box<VideoObject>, VideoGenerationFailure> {
-        let env = self.fixture.env.pre_post();
-        let resolution = self.resolver.context();
-        let environment = GenerationCallEnvironment {
-            logging: &mut self.fixture.state,
-            env: &env,
-        };
-        let work = self
-            .caller
-            .video_generation(request, client, &resolution, environment)?;
-        Ok(ready_object(work))
+        let running = self.invoke(request, client, Invocation::Sync);
+        settled(poll_once(running)).map(ready_object)
     }
 
     pub(crate) fn leaves_pending(
@@ -440,17 +444,9 @@ impl Bench {
         request: VideoGenerationRequest,
         client: Option<&FakeTransport>,
     ) -> bool {
-        let env = self.fixture.env.pre_post();
-        let resolution = self.resolver.context();
-        let environment = GenerationCallEnvironment {
-            logging: &mut self.fixture.state,
-            env: &env,
-        };
-        let work = self
-            .caller
-            .video_generation(request, client, &resolution, environment)
-            .expect("the sync entry prepares the call");
-        matches!(work, VideoGenerationWork::Pending(_pending))
+        let running = self.invoke(request, client, Invocation::Sync);
+        let work = settled(poll_once(running)).expect("the sync entry prepares the call");
+        matches!(work, Invoked::Pending)
     }
 
     pub(crate) async fn async_run(
@@ -458,26 +454,51 @@ impl Bench {
         request: VideoGenerationRequest,
         client: Option<&FakeTransport>,
     ) -> Result<VideoObject, VideoGenerationFailure> {
+        let work = self.invoke(request, client, Invocation::Async).await?;
+        Ok(*ready_object(work))
+    }
+
+    async fn invoke(
+        &mut self,
+        request: VideoGenerationRequest,
+        client: Option<&FakeTransport>,
+        invocation: Invocation,
+    ) -> Result<Invoked, VideoGenerationFailure> {
         let env = self.fixture.env.pre_post();
         let resolution = self.resolver.context();
-        self.caller
-            .avideo_generation(
-                request,
-                client,
-                &resolution,
-                GenerationCallEnvironment {
-                    logging: &mut self.fixture.state,
-                    env: &env,
-                },
-            )
-            .await
+        let environment = GenerationCallEnvironment {
+            logging: &mut self.fixture.state,
+            env: &env,
+        };
+        let work = match invocation {
+            Invocation::Sync => {
+                self.caller
+                    .video_generation(request, client, &resolution, environment)
+            }
+            Invocation::Async => self
+                .caller
+                .avideo_generation(request, client, &resolution, environment)
+                .await
+                .map(|object| VideoGenerationWork::Ready(Box::new(object))),
+        }?;
+        Ok(match work {
+            VideoGenerationWork::Ready(object) => Invoked::Ready(object),
+            VideoGenerationWork::Pending(_) => Invoked::Pending,
+        })
     }
 }
 
-fn ready_object(work: VideoGenerationWork<'_>) -> Box<VideoObject> {
+fn settled<Output>(polled: Polled<Output>) -> Output {
+    match polled {
+        Polled::Ready(output) => output,
+        Polled::StillWaiting => panic!("the sync fixture must settle on its first poll"),
+    }
+}
+
+fn ready_object(work: Invoked) -> Box<VideoObject> {
     match work {
-        VideoGenerationWork::Ready(object) => object,
-        VideoGenerationWork::Pending(_) => {
+        Invoked::Ready(object) => object,
+        Invoked::Pending => {
             panic!("the sync entry left a pending handler for an async caller")
         }
     }

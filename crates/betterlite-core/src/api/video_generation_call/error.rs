@@ -2,7 +2,6 @@ use std::time::TryFromFloatSecsError;
 
 use betterlite_error::dispatch::{DispatchInput, RawException, dispatch};
 use betterlite_error::error::ErrorClass;
-use betterlite_error::error::ErrorContext;
 use betterlite_error::error::details::ResponseDetails;
 use betterlite_logging::logging_state::LoggingStateError;
 use betterlite_models::resolution::ResolutionError;
@@ -91,29 +90,31 @@ pub fn failure(
     provider: Option<&str>,
     redactor: &Redactor,
 ) -> VideoGenerationFailure {
-    let message = error.to_string();
-    let provider_name = provider.unwrap_or_default();
-    let class = failure_class(&error, &message, model, provider_name, redactor);
+    let details = ResponseDetails::for_provider(
+        error.to_string(),
+        model.map(str::to_owned),
+        provider.unwrap_or_default(),
+    );
+    let class = failure_class(&error, details, redactor);
     VideoGenerationFailure { error, class }
 }
 
 fn failure_class(
     error: &VideoGenerationCallError,
-    message: &str,
-    model: Option<&str>,
-    provider: &str,
+    mut details: ResponseDetails<400>,
     redactor: &Redactor,
 ) -> ErrorClass {
     let cause = match error {
-        VideoGenerationCallError::FieldType { field, expected } => {
-            return field_error_class(field, expected, model, provider);
+        VideoGenerationCallError::FieldType { field, .. } => {
+            details.body_param = Some((*field).to_owned());
+            return ErrorClass::BadRequest(Box::new(details));
         }
         VideoGenerationCallError::Resolution(_) => ExceptionCause::Resolution,
         VideoGenerationCallError::Unsupported { .. }
         | VideoGenerationCallError::ConfigMissing { .. }
         | VideoGenerationCallError::Selection(_)
         | VideoGenerationCallError::UnknownProvider { .. } => {
-            return provider_class(message, model, provider);
+            return ErrorClass::BadRequest(Box::new(details));
         }
         VideoGenerationCallError::Mock(_)
         | VideoGenerationCallError::Timeout { .. }
@@ -125,66 +126,37 @@ fn failure_class(
             ..
         } => ExceptionCause::Transport(*status_code, *status_code_is_synthesized),
     };
-    exception_class(cause, message, model, provider, redactor)
-}
-
-fn field_error_class(
-    field: &str,
-    expected: &str,
-    model: Option<&str>,
-    provider: &str,
-) -> ErrorClass {
-    let context = ErrorContext {
-        message: format!("{field} must be {expected}"),
-        model: model.map(str::to_owned),
-        provider: Some(provider.to_owned()),
-        max_retries: None,
-        num_retries: None,
-        body_type: None,
-        body_param: Some(field.to_owned()),
-        body_code: None,
-    };
-    ErrorClass::BadRequest(Box::new(ResponseDetails::with_status(context, None)))
+    exception_class(cause, details, redactor)
 }
 
 fn exception_class(
     cause: ExceptionCause,
-    message: &str,
-    model: Option<&str>,
-    provider: &str,
+    mut details: ResponseDetails<400>,
     redactor: &Redactor,
 ) -> ErrorClass {
-    let mut class_message = message.to_owned();
     let (exception_type, status_code, status_code_is_synthesized) = match cause {
         ExceptionCause::Local => (VALUE_ERROR, None, false),
         ExceptionCause::Resolution => {
-            class_message = format!(
-                "GetLLMProvider Exception - {message}\n\noriginal model: {}",
-                model.unwrap_or("None")
+            details.message = format!(
+                "GetLLMProvider Exception - {}\n\noriginal model: {}",
+                details.message,
+                details.model.as_deref().unwrap_or("None")
             );
             (BAD_REQUEST, Some(400), false)
         }
         ExceptionCause::Transport(status_code, synthesized) => ("", status_code, synthesized),
     };
     let raw = RawException {
-        model: model.unwrap_or_default().to_owned(),
-        custom_llm_provider: provider.to_owned(),
-        error_str: class_message.clone(),
+        model: details.model.unwrap_or_default(),
+        custom_llm_provider: details.provider.unwrap_or_default(),
+        error_str: details.message.clone(),
         status_code,
         status_code_is_synthesized,
-        message: Some(class_message),
+        message: Some(details.message),
         body: None,
         exception_type: exception_type.to_owned(),
     };
     dispatch(&DispatchInput::Raw(Box::new(raw)), redactor)
-}
-
-fn provider_class(message: &str, model: Option<&str>, provider: &str) -> ErrorClass {
-    ErrorClass::BadRequest(Box::new(ResponseDetails::for_provider(
-        message.to_owned(),
-        model.map(str::to_owned),
-        provider,
-    )))
 }
 
 // what the B3333 handler's failure carries into exception_type: the provider's own status, or the local text
