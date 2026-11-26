@@ -2,7 +2,7 @@ use super::support::{body, image, json, options_json, refused, transform, with_b
 use crate::canvas_edits::error::CanvasEditError;
 use crate::canvas_edits::types::{CanvasEditOptions, CanvasImageInput};
 
-const TASK_ROWS: [(&str, &str); 11] = [
+const TASK_ROWS: [(&str, &str); 13] = [
     (
         r#"{"taskType": "BACKGROUND_REMOVAL", "mask": "m", "negativeText": "n", "width": 8}"#,
         r#"{"taskType":"BACKGROUND_REMOVAL","backgroundRemovalParams":{"image":"aW1n"}}"#,
@@ -46,6 +46,14 @@ const TASK_ROWS: [(&str, &str); 11] = [
     (
         r#"{"taskType": ""}"#,
         r#"{"taskType":"IMAGE_VARIATION","imageVariationParams":{"images":["aW1n"],"text":"cat"}}"#,
+    ),
+    (
+        r#"{"mask": null}"#,
+        r#"{"taskType":"IMAGE_VARIATION","imageVariationParams":{"images":["aW1n"],"text":"cat"}}"#,
+    ),
+    (
+        r#"{"taskType": "INPAINTING", "mask": "m", "outPaintingMode": "DEFAULT", "similarityStrength": 0.5}"#,
+        r#"{"taskType":"INPAINTING","inPaintingParams":{"image":"aW1n","text":"cat","maskImage":"m"}}"#,
     ),
 ];
 
@@ -92,6 +100,7 @@ pub(super) fn canvas_task_errors() {
     unsupported_task_types(&source);
     prompt_is_required(&source);
     empty_mask_prompt_is_present();
+    wrong_type_names_the_field(&source);
 }
 
 // OUTPAINTING and INPAINTING without a mask each name the two ways to supply one.
@@ -187,6 +196,32 @@ fn empty_mask_prompt_is_present() {
             r#"{"taskType":"OUTPAINTING","outPaintingParams":{"image":"aW1n","text":"cat","maskPrompt":""}}"#
         )
     );
+}
+
+// A value the transform does not declare for a field is refused by name, never coerced.
+fn wrong_type_names_the_field(source: &CanvasImageInput) {
+    let error = refused(
+        Some("cat"),
+        Some(source),
+        &options_json(r#"{"mask": {"x": 1}}"#),
+    );
+    assert!(matches!(&error, CanvasEditError::Field { field } if field == "mask"));
+    assert_eq!(
+        error.to_string(),
+        "the mask value has a type the Nova Canvas transform does not declare"
+    );
+    let error = refused(
+        Some("cat"),
+        Some(source),
+        &options_json(r#"{"taskType": 7}"#),
+    );
+    assert!(matches!(&error, CanvasEditError::Field { field } if field == "taskType"));
+    let error = refused(
+        Some("cat"),
+        Some(source),
+        &with_bytes(options_json(r#"{"width": 5}"#), "width", b"5"),
+    );
+    assert!(matches!(&error, CanvasEditError::Field { field } if field == "width"));
 }
 
 pub(super) fn image_bytes_base64() {
