@@ -403,6 +403,23 @@ async fn zero_team_rates_skipped() {
 }
 
 #[tokio::test]
+async fn equal_rates_allowed() {
+    let key = key_row(r#"{"tpm_limit": 100, "rpm_limit": 100}"#);
+    let team = team_row(r#"{"team_id": "team-1", "tpm_limit": 100, "rpm_limit": 100}"#);
+    let admin = caller(ADMIN);
+    let policy = caller_policy();
+    let context = policy.context();
+    let deps = TeamChangeDeps {
+        access: &policy.access,
+        teams: None,
+        context: &context,
+    };
+    validate_key_team_change(&key, &team, &admin, &deps)
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
 async fn owner_membership_required() {
     let key = key_row(r#"{"user_id": "ghost"}"#);
     let team = team_row(
