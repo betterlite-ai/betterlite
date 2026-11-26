@@ -56,7 +56,7 @@ fn master_context(master_key: &SecretString) -> AuthContext {
     context
 }
 
-fn stage_input(context: AuthContext, body: JsonObject) -> StageInput {
+fn policy_stage_input(context: AuthContext, body: JsonObject) -> StageInput {
     StageInput::OrganizationRoutePolicy(Box::new(OrganizationPolicyStageInput {
         context,
         user: Some(route_user()),
@@ -117,7 +117,7 @@ fn stage_is_registered() {
         .map(|index| index.saturating_add(1));
     assert_eq!(position, after_team_budgets);
     let master_key = SecretString::from(MASTER_KEY.to_owned());
-    let denied = stage_input(master_context(&master_key), JsonObject::new());
+    let denied = policy_stage_input(master_context(&master_key), JsonObject::new());
     let Err(StageFailure::OrganizationRoutePolicy(exception)) =
         dispatch(AuthBackend::OrganizationRoutePolicy, &denied, &master_key)
     else {
@@ -127,7 +127,7 @@ fn stage_is_registered() {
     assert_eq!(exception.param, Some("organization_id".to_owned()));
     assert_eq!(exception.code, "401");
     // an org admin that names its organization passes the same constructor
-    let admitted = stage_input(master_context(&master_key), organization_body("org-a"));
+    let admitted = policy_stage_input(master_context(&master_key), organization_body("org-a"));
     let Ok(forwarded) = dispatch(AuthBackend::OrganizationRoutePolicy, &admitted, &master_key)
     else {
         panic!("the organization policy admits the selected organization");

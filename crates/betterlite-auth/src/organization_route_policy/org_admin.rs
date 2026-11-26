@@ -8,10 +8,10 @@ use crate::organization_route_policy::membership::{ORG_ADMIN, RouteUser};
 // _user_is_org_admin: every requested organization must be one the user administers, and a proxy admin has no shortcut.
 #[must_use]
 pub fn user_is_org_admin(request: &JsonObject, user: Option<&RouteUser>) -> bool {
-    let Some(user) = user else {
+    let Some(caller) = user else {
         return false;
     };
-    let Some(memberships) = &user.organization_memberships else {
+    let Some(memberships) = &caller.organization_memberships else {
         return false;
     };
     let mut candidates: Vec<&Json> = Vec::new();

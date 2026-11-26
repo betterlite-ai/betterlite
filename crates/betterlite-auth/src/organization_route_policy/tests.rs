@@ -496,6 +496,11 @@ fn all_candidate_organizations() {
         )]),
         Some(&one)
     ));
+}
+
+#[test]
+fn null_singular_candidate_ignored() {
+    let one = user(None, Some(vec![org_admin("org-a")]));
     // a null singular id joins no candidate, so the administered list alone answers true
     let listed = body(&[
         ("organization_id", Json::Null),
@@ -639,6 +644,18 @@ async fn exact_patch_template_only() {
             .unwrap(),
         empty
     );
+    // the trailing slash leaves no last segment
+    assert_eq!(
+        add_team_org_context("/team/", &empty, &lookup, Some(PATCH_TEAM_ROUTE_TEMPLATE))
+            .await
+            .unwrap(),
+        empty
+    );
+}
+
+#[tokio::test]
+async fn team_update_reads_body_team_id() {
+    let lookup = ScriptedLookup::answering(Some("org-team"));
     // /team/update reads the body's team id, not the last path segment
     let update = body(&[("team_id", text("team-7"))]);
     let from_update = add_team_org_context(
@@ -650,17 +667,7 @@ async fn exact_patch_template_only() {
     .await
     .unwrap();
     assert_eq!(from_update.get("organization_id"), Some(&text("org-team")));
-    assert_eq!(
-        lookup.fetches(),
-        vec!["team-9".to_owned(), "team-7".to_owned()]
-    );
-    // the trailing slash leaves no last segment
-    assert_eq!(
-        add_team_org_context("/team/", &empty, &lookup, Some(PATCH_TEAM_ROUTE_TEMPLATE))
-            .await
-            .unwrap(),
-        empty
-    );
+    assert_eq!(lookup.fetches(), vec!["team-7".to_owned()]);
 }
 
 #[rstest]
@@ -673,10 +680,7 @@ async fn exact_patch_template_only() {
 #[tokio::test]
 async fn invalid_team_id_skips_lookup(#[case] team_id: Option<Json>) {
     let lookup = ScriptedLookup::answering(Some("org-team"));
-    let request = match team_id {
-        Some(value) => body(&[("team_id", value)]),
-        None => JsonObject::new(),
-    };
+    let request = team_id.map_or_else(JsonObject::new, |value| body(&[("team_id", value)]));
     assert_eq!(
         add_team_org_context(TEAM_UPDATE_ROUTE, &request, &lookup, None)
             .await

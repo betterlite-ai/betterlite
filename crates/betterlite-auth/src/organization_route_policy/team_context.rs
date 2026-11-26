@@ -16,12 +16,15 @@ pub trait TeamOrganizationLookup {
 }
 
 // add_team_org_context_to_request_body: the body the route gate reads, a copy that carries the target team's organization_id.
-pub async fn add_team_org_context<L: TeamOrganizationLookup + Sync>(
+pub async fn add_team_org_context<L>(
     route: &str,
     body: &JsonObject,
     lookup: &L,
     route_template: Option<&str>,
-) -> Result<JsonObject, L::Failure> {
+) -> Result<JsonObject, L::Failure>
+where
+    L: TeamOrganizationLookup + Sync,
+{
     // the declared type is str | None, so only a non-empty string is the caller's own organization_id
     if body
         .get("organization_id")

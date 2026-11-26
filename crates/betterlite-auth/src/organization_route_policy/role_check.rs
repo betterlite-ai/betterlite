@@ -16,32 +16,32 @@ pub fn check_organization_role(
     route: &str,
     request: &JsonObject,
 ) -> Result<(), RoutePolicyError> {
-    let Some(user) = user else {
+    let Some(caller) = user else {
         return Ok(());
     };
-    let proxy_admin = user.user_role.as_deref() == Some(PROXY_ADMIN);
+    let proxy_admin = caller.user_role.as_deref() == Some(PROXY_ADMIN);
     if route == ORGANIZATION_CREATE_ROUTE && !proxy_admin {
         return Err(RoutePolicyError::OrganizationCreateDenied {
-            role: user.user_role.as_deref().unwrap_or(NO_ROLE).to_owned(),
+            role: caller.user_role.as_deref().unwrap_or(NO_ROLE).to_owned(),
         });
     }
     if proxy_admin {
         return Ok(());
     }
     if ORG_ADMIN_ONLY_ROUTES.contains(&route) {
-        return check_org_admin_route(user, route, request);
+        return check_org_admin_route(caller, route, request);
     }
     if route == TEAM_CREATE_ROUTE {
-        return check_team_create(user, route, request);
+        return check_team_create(caller, route, request);
     }
     Ok(())
 }
 
 // the organization the request selects and the role the caller holds there, None when it selects none
-fn selected_organization<'a>(
-    user: &'a RouteUser,
+fn selected_organization<'user>(
+    user: &'user RouteUser,
     request: &JsonObject,
-) -> Result<Option<(String, Option<&'a str>)>, RoutePolicyError> {
+) -> Result<Option<(String, Option<&'user str>)>, RoutePolicyError> {
     let PassedOrganizationId::Text(organization_id) = PassedOrganizationId::of(request)? else {
         return Ok(None);
     };

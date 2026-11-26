@@ -46,7 +46,8 @@ pub(crate) fn stage_input(
     let rule = request
         .extensions()
         .get::<Arc<OrganizationRouteRule>>()
-        .map_or_else(|| Arc::new(OrganizationRouteRule::default()), Arc::clone);
+        .cloned()
+        .unwrap_or_default();
     let route = request_route(request);
     let reads_organization =
         ORG_ADMIN_ONLY_ROUTES.contains(&route.as_str()) || route == TEAM_CREATE_ROUTE;
@@ -81,7 +82,9 @@ fn request_body(request: &Request<Body>, body: Option<&Bytes>) -> JsonObject {
         .get(header::CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
         .unwrap_or_default();
-    let bytes = body.map_or(&[][..], |body| &body[..]);
+    let Some(bytes) = body else {
+        return JsonObject::new();
+    };
     request_object(bytes, content_type).unwrap_or_default()
 }
 
