@@ -78,7 +78,7 @@ from betterlite.types.utils.choices import map_finish_reason as parts_map_finish
 from betterlite.types.utils.response import ModelResponse, ModelResponseStream
 
 JSON_TYPE: Final = "application/json"
-IPV4_BIND: Final = "0.0.0.0"  # noqa: S104, E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1697
+IPV4_BIND: Final = "0.0.0.0"  # noqa: S104  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1697
 PROJECT: Final = "proj"
 CREATED_AT: Final = 1000.0
 METADATA_KEY: Final = "metadata"
