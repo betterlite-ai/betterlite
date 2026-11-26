@@ -136,6 +136,7 @@ description: >-
   B1100 registers state/jwt_keys.rs as a stub slot, so fill only crates/betterlite-server/src/state/jwt_keys.rs and leave state.rs as it is.
 scope:
   paths:
+    - "crates/betterlite-auth/src/jwt_claims/decode.rs"
     - crates/betterlite-auth/src/jwt_keys.rs
     - crates/betterlite-auth/src/jwt_keys/**
     - crates/betterlite-auth/Cargo.toml
