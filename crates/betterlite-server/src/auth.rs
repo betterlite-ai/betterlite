@@ -133,6 +133,9 @@ fn stage_input(
         AuthBackend::AuthOrgLookup => Ok(StageInput::AuthOrgLookup(Box::new(
             auth_org_lookup::stage_input(request, authenticated)?,
         ))),
+        AuthBackend::AuthEndUserIdentity => Ok(StageInput::AuthEndUserIdentity(Box::new(
+            end_user_identity::stage_input(request, authenticated, body)?,
+        ))),
         AuthBackend::AuthEndUsers => Ok(StageInput::AuthEndUsers(Box::new(
             auth_end_users::stage_input(request, authenticated)?,
         ))),
@@ -224,6 +227,12 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
                 .await
                 .map_err(StageFailure::OrgLookup)?;
             Ok(StageInput::AuthOrgLookup(stage))
+        }
+        StageInput::AuthEndUserIdentity(mut stage) => {
+            end_user_identity::prefetch(&mut stage)
+                .await
+                .map_err(StageFailure::EndUserIdentity)?;
+            Ok(StageInput::AuthEndUserIdentity(stage))
         }
         StageInput::AuthEndUsers(stage) => {
             auth_end_users::prefetch(&stage)

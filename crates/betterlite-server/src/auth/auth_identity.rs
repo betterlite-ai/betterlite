@@ -15,6 +15,7 @@ use crate::auth::auth_request_models::{RequestModelStageInput, resolve};
 use crate::auth::auth_request_policy::{self, AuthRequestPolicyStageInput};
 use crate::auth::auth_resource_grants::{self, ResourceGrantStageInput};
 use crate::auth::auth_tag_budgets::TagBudgetStageInput;
+use crate::auth::end_user_identity::EndUserIdentityStageInput;
 use crate::auth::request_body_safety::{self, RequestBodySafetyStageInput};
 use crate::auth::team_budget_admission::TeamBudgetStageInput;
 use crate::error_body::AuthenticationFailure;
@@ -31,6 +32,7 @@ pub enum AuthBackend {
     AuthKeyBudgets,
     TeamBudgetAdmission,
     AuthOrgLookup,
+    AuthEndUserIdentity,
     AuthEndUsers,
 }
 
@@ -46,6 +48,7 @@ pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
     AuthBackend::AuthKeyBudgets,
     AuthBackend::TeamBudgetAdmission,
     AuthBackend::AuthOrgLookup,
+    AuthBackend::AuthEndUserIdentity,
     AuthBackend::AuthEndUsers,
 ];
 
@@ -61,6 +64,7 @@ pub enum StageInput {
     AuthKeyBudgets(Box<KeyBudgetStageInput>),
     TeamBudgetAdmission(Box<TeamBudgetStageInput>),
     AuthOrgLookup(Box<OrgStageInput>),
+    AuthEndUserIdentity(Box<EndUserIdentityStageInput>),
     AuthEndUsers(Box<EndUserStageInput>),
 }
 
@@ -95,6 +99,7 @@ pub(crate) enum StageFailure {
     KeyBudgets(Box<ProxyException>),
     TeamBudgets(Box<ProxyException>),
     OrgLookup(Box<ProxyException>),
+    EndUserIdentity(Box<ProxyException>),
     EndUsers(Box<ProxyException>),
 }
 
@@ -144,6 +149,13 @@ pub(crate) fn dispatch(
                 return Err(StageFailure::from(AuthenticationFailure::Missing));
             };
             // the request-scoped lookup ran in the prefetch, so only the identity is left
+            Ok(stage.context.clone())
+        }
+        AuthBackend::AuthEndUserIdentity => {
+            let StageInput::AuthEndUserIdentity(stage) = input else {
+                return Err(StageFailure::from(AuthenticationFailure::Missing));
+            };
+            // the validation ran in the prefetch, so only the identity is left
             Ok(stage.context.clone())
         }
         AuthBackend::AuthEndUsers => {
