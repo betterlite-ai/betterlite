@@ -67,7 +67,23 @@ async fn walked(input: &Input, fixture: &Fixture, auth: &mut UserAPIKeyAuth) -> 
             .await?;
             Ok(json!(matched))
         }
-        Function::Stamped => Ok(stamped_answer(input, fixture, auth, &token, sources).await),
+        Function::Stamped => {
+            let returned = stamp_matched_groups(StampRequest {
+                models: input.models.as_deref(),
+                auth: Some(auth),
+                team: fixture.team.as_ref(),
+                project: fixture.project.as_ref(),
+                membership: fixture.membership.clone(),
+                membership_loaded: input.membership_loaded,
+                groups: Some(fixture),
+                sources,
+            })
+            .await;
+            Ok(json!({
+                "returned": returned,
+                "stored": matched_model_access_groups(auth),
+            }))
+        }
     }
 }
 
@@ -79,28 +95,4 @@ async fn enforced_answer(token: &GrantToken, sources: Option<&dyn GrantSources>)
     })
     .await?;
     Ok(json!(lists))
-}
-
-async fn stamped_answer(
-    input: &Input,
-    fixture: &Fixture,
-    auth: &mut UserAPIKeyAuth,
-    token: &GrantToken,
-    sources: Option<&dyn GrantSources>,
-) -> Value {
-    let returned = stamp_matched_groups(StampRequest {
-        models: input.models.as_deref(),
-        auth: Some(&mut *auth),
-        team: fixture.team.as_ref(),
-        project: fixture.project.as_ref(),
-        membership: fixture.membership.clone(),
-        membership_loaded: input.membership_loaded,
-        groups: Some(fixture),
-        sources,
-    })
-    .await;
-    json!({
-        "returned": returned,
-        "stored": matched_model_access_groups(auth),
-    })
 }
