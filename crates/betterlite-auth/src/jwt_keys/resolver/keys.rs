@@ -1,8 +1,8 @@
-use base64::Engine as _;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use betterlite_models::decisions::Json;
 
 use super::super::decode_discovery_document;
+use crate::jwt_claims::decode::decode_segment;
+use crate::resolved_key::credential::is_jwt;
 
 // get_public_key's split: every comma-separated URL trimmed, and a blank entry dropped rather than fetched.
 #[must_use]
@@ -70,23 +70,11 @@ pub fn is_allowed_domain(allowed: Option<&str>, user_email: &str) -> bool {
 // The kid of a compact JWT header, which pyjwt only hands over when the header is a JSON object with a string kid.
 #[must_use]
 pub fn token_kid(token: &str) -> Option<String> {
-    let mut segments = token.split('.');
-    let header = segments.next()?;
-    segments.next()?;
-    segments.next()?;
-    if segments.next().is_some() {
+    if !is_jwt(Some(token)) {
         return None;
     }
-    let padding = header
-        .bytes()
-        .rev()
-        .take_while(|byte| *byte == b'=')
-        .count();
-    if padding > 2 {
-        return None;
-    }
-    let unpadded = header.get(..header.len().checked_sub(padding)?)?;
-    let bytes = URL_SAFE_NO_PAD.decode(unpadded).ok()?;
+    let header = token.split('.').next()?;
+    let bytes = decode_segment(header.as_bytes()).ok()?;
     let Json::Object(fields) = decode_discovery_document(&bytes).ok()? else {
         return None;
     };

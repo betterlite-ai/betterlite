@@ -105,6 +105,27 @@ fn token_kid_reads_only_a_compact_jwt_object_header() {
 }
 
 #[rstest]
+#[case::unpadded_short(r#"{"kid":"a"}"#, "", Some("a"))]
+#[case::unpadded_quad(r#"{"kid":"aa"}"#, "", Some("aa"))]
+#[case::unpadded_long(r#"{"kid":"aaa"}"#, "", Some("aaa"))]
+#[case::single_padding(r#"{"kid":"a"}"#, "=", Some("a"))]
+#[case::double_padding(r#"{"kid":"aaa"}"#, "==", Some("aaa"))]
+#[case::incomplete_padding(r#"{"kid":"aaa"}"#, "=", None)]
+#[case::extra_padding(r#"{"kid":"a"}"#, "==", None)]
+#[case::unneeded_single_padding(r#"{"kid":"aa"}"#, "=", None)]
+#[case::unneeded_double_padding(r#"{"kid":"aa"}"#, "==", None)]
+#[case::excessive_padding(r#"{"kid":"aaa"}"#, "===", None)]
+fn token_kid_requires_whole_quad_padding(
+    #[case] header: &str,
+    #[case] padding: &str,
+    #[case] expected: Option<&str>,
+) {
+    let encoded = URL_SAFE_NO_PAD.encode(header.as_bytes());
+    let token = format!("{encoded}{padding}.e30.c2ln");
+    assert_eq!(token_kid(&token).as_deref(), expected);
+}
+
+#[rstest]
 #[case::array("[1]")]
 #[case::string(r#""kid""#)]
 #[case::no_kid(r#"{"alg":"RS256"}"#)]
