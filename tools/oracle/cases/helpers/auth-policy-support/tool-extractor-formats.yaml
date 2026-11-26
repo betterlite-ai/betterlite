@@ -1,0 +1,54 @@
+kind: helper
+name: auth-policy-support-tool-extractor-formats
+call:
+  auth_policy_support:
+    function: extract
+    route: /v1/chat/completions
+    body:
+      tools:
+        - {type: function, function: {name: get_weather}}
+        - {type: web_search}
+      functions:
+        - {name: legacy_search}
+        - {name: ''}
+calls:
+  - auth_policy_support:
+      function: extract
+      route: /v1/responses
+      body:
+        tools:
+          - {type: function, name: lookup}
+          - {type: custom, name: shell}
+          - {type: mcp, server_label: crm}
+          - {type: web_search}
+  - auth_policy_support:
+      function: extract
+      route: /v1/messages
+      body:
+        tools:
+          - {name: flat_name, type: custom}
+          - {name: outer, type: function, function: {name: nested}}
+          - {name: ''}
+          - {function: {name: only_nested}}
+  - auth_policy_support:
+      function: extract
+      route: '/v1beta/models/gemini-pro:generateContent'
+      body:
+        tools:
+          - functionDeclarations:
+              - {name: gemini_one}
+              - {name: gemini_two}
+  - auth_policy_support:
+      function: extract
+      route: /mcp/call_tool
+      body: {name: preferred, mcp_tool_name: fallback}
+  - auth_policy_support:
+      function: extract
+      route: /mcp/call_tool
+      body: {mcp_tool_name: only_fallback}
+  - auth_policy_support:
+      function: extract
+      route: /v1/chat/completions
+      body: {tools: true}
+env: {}
+compare: {ignore: []}
