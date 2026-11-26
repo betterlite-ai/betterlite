@@ -34,7 +34,7 @@ kept_bugs:
       grants every route. The wildcard match strips the star and compares an empty prefix, which every
       path starts with, and the wildcard loop runs before the remembered protected-pass-through denial.
     why: >-
-      LiteLLM deployments use allowed_routes=[\"*\"] to mean unrestricted, so a working setup can rely on
+      LiteLLM deployments use allowed_routes=["*"] to mean unrestricted, so a working setup can rely on
       it, and the task requires preserving the wildcard-before-denial ordering. betterlite copies both.
       The JWT team path deliberately rejects such blanket entries, which shows the two paths disagree.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L558-L584
