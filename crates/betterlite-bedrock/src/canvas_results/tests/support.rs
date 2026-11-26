@@ -60,22 +60,15 @@ pub(super) fn image(value: &str) -> ImageData {
 }
 
 pub(super) fn provider_error(error: &CanvasResultError) -> &BedrockError {
-    match error {
-        CanvasResultError::Edit(CanvasEditError::Provider { error: carried, .. }) => carried,
-        other @ (CanvasResultError::Edit(
-            CanvasEditError::MissingImage
-            | CanvasEditError::TupleFileType
-            | CanvasEditError::OutPaintingMask
-            | CanvasEditError::InPaintingMask
-            | CanvasEditError::UnsupportedTaskType { .. }
-            | CanvasEditError::MissingPrompt { .. }
-            | CanvasEditError::Field { .. }
-            | CanvasEditError::UnsupportedModel { .. }
-            | CanvasEditError::CompleteUrl
-            | CanvasEditError::Header(_),
-        )
-        | CanvasResultError::Reply(_)) => panic!("expected a provider error, got {other}"),
-    }
+    let provider = match error {
+        CanvasResultError::Edit(edit) => edit,
+        CanvasResultError::Parse { provider, .. } => provider,
+        CanvasResultError::Reply(_) => panic!("expected a provider error, got {error}"),
+    };
+    let CanvasEditError::Provider { error: carried, .. } = provider else {
+        panic!("expected a provider error, got {provider}");
+    };
+    carried
 }
 
 pub(super) struct Prices(BTreeMap<String, PriceRecord>);

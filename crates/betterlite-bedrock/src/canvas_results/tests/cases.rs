@@ -1,3 +1,6 @@
+use betterlite_openai::api::image_contracts::records::{ImageInputTokens, ImageUsage};
+use serde_json::Error as JsonError;
+
 use crate::canvas_results::{COST_HEADER, CanvasReplyError, CanvasResultError};
 
 use super::support::{
@@ -28,7 +31,19 @@ fn keeps_truthy_images_in_order() {
     let body = r#"{"images":["aGVsbG8=","",null,"d29ybGQ="],"created":7,"usage":{"total_tokens":9},"size":"1024x1024","model":"upstream"}"#;
     let reply = unpriced(200, body).expect("the images decode");
     assert_eq!(reply.response.created, NOW);
-    assert!(reply.response.usage.is_none());
+    // the body's own usage is dropped and the fresh ImageResponse keeps LiteLLM's zero-filled default
+    assert_eq!(
+        reply.response.usage,
+        Some(ImageUsage {
+            input_tokens: 0,
+            input_tokens_details: ImageInputTokens {
+                image_tokens: 0,
+                text_tokens: 0,
+            },
+            output_tokens: 0,
+            total_tokens: 0,
+        })
+    );
     assert_eq!(
         reply.response.data,
         Some(vec![image("aGVsbG8="), image("d29ybGQ=")])
@@ -199,8 +214,19 @@ fn error_fields_outrank_the_empty_list() {
 
 pub(super) fn canvas_malformed_reply() {
     raw_json_failures_are_wrapped();
+    the_decoder_failure_stays_in_the_chain();
     parsed_shapes_fail_at_their_fields();
     a_non_200_status_precedes_the_shape_checks();
+}
+
+fn the_decoder_failure_stays_in_the_chain() {
+    let error = unpriced(500, "not json").expect_err("bytes that are not JSON are wrapped");
+    let source = std::error::Error::source(&error).expect("the decoder failure is the source");
+    let decoder = source
+        .downcast_ref::<CanvasReplyError>()
+        .expect("the source is the decoder failure");
+    let cause = std::error::Error::source(decoder).expect("the serde error stays attached");
+    assert!(cause.downcast_ref::<JsonError>().is_some());
 }
 
 fn raw_json_failures_are_wrapped() {
@@ -292,7 +318,7 @@ fn the_price_times_the_retained_count() {
         reply.response.data,
         Some(vec![image("eA=="), image("eQ==")])
     );
-    assert!(reply.response.usage.is_none());
+    assert_eq!(reply.response.usage, Some(ImageUsage::default()));
     let wider = priced(
         OTHER_MODEL,
         record(r#"{"output_cost_per_image": 0.25}"#),
