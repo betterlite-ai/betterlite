@@ -74,18 +74,13 @@ impl KeyReassignmentError {
             | Self::OwnerNotInTeam { .. }
             | Self::InitiatorNotAdmin { .. } => (Some(403_u16), Some(DetailShape::Text)),
             Self::TeamAccess(error) => {
-                let detail = match error {
+                let text_body = matches!(
+                    error,
                     TeamAccessError::Denied
-                    | TeamAccessError::PersonalKeyGroups { .. }
-                    | TeamAccessError::GroupOptIn { .. } => Some(DetailShape::Text),
-                    TeamAccessError::NotTeamMember { .. }
-                    | TeamAccessError::MemberRoute { .. }
-                    | TeamAccessError::UnknownPermission { .. }
-                    | TeamAccessError::OrgRoles(_)
-                    | TeamAccessError::TeamLookup(_)
-                    | TeamAccessError::Caller(_) => None,
-                };
-                (error.status(), detail)
+                        | TeamAccessError::PersonalKeyGroups { .. }
+                        | TeamAccessError::GroupOptIn { .. }
+                );
+                (error.status(), text_body.then_some(DetailShape::Text))
             }
             Self::KeyTable(_)
             | Self::KeyQuery(_)
