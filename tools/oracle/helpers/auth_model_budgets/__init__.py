@@ -4,9 +4,9 @@ import litellm
 from pydantic import JsonValue, TypeAdapter
 
 from .case import key_fallback_call, team_budget_call, user_budget_call
+from .doubles import Call, Request
 from .end_user import end_user_apply_call, end_user_update_call
 from .spend import global_spend_call
-from .wire import Call, Request
 
 # an unmapped model prints a provider banner on stdout, which carries the oracle's JSON line
 litellm.suppress_debug_info = True

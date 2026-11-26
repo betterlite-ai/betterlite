@@ -1,3 +1,4 @@
+from collections.abc import Awaitable
 from typing import cast
 
 from litellm.exceptions import BudgetExceededError
@@ -8,8 +9,7 @@ from pydantic import JsonValue
 from starlette.requests import Request
 from starlette.types import Scope
 
-from .doubles import ScriptedKeyLimiter, ScriptedTeamLimiter, ScriptedUserLimiter
-from .wire import OBJECT, Call
+from .doubles import Call, OBJECT, ScriptedKeyLimiter, ScriptedTeamLimiter, ScriptedUserLimiter
 
 
 def auth_of(call: Call) -> UserAPIKeyAuth:
@@ -44,7 +44,7 @@ def json_model_of(request: Request) -> JsonValue:
     try:
         cached = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L484
             "dict[str, JsonValue]",
-            request._json,  # type: ignore[attr-defined]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L484
+            request._json,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L484
         )
     except AttributeError:
         return None
@@ -53,13 +53,26 @@ def json_model_of(request: Request) -> JsonValue:
 
 def body_model_of(request: Request) -> JsonValue:
     try:
-        body = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L485
-            "bytes",
-            request._body,  # type: ignore[attr-defined]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L485
-        )
+        body = request._body  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L485
     except AttributeError:
         return None
     return OBJECT.validate_json(body).get("model")
+
+
+def models_of(call: Call) -> list[str]:
+    models = call.get("models")
+    if models is None:
+        raise ValueError("a budget call names the models")
+    return models
+
+
+async def checked(work: Awaitable[None], calls: list[JsonValue]) -> JsonValue:
+    error: JsonValue = None
+    try:
+        await work
+    except BudgetExceededError as denied:
+        error = denial_record(denied)
+    return {"calls": calls, "error": error}
 
 
 async def key_fallback_call(call: Call) -> JsonValue:
@@ -69,7 +82,8 @@ async def key_fallback_call(call: Call) -> JsonValue:
     if model_name is None or request_data is None:
         raise ValueError("a key fallback call names the model and the request data")
     limiter = ScriptedKeyLimiter(failing=call.get("failing"), fallback=call.get("fallback"))
-    scope: Scope = {"type": "http", "headers": [], "query_string": b""}
+    headers: list[tuple[bytes, bytes]] = []
+    scope: Scope = {"type": "http", "headers": headers, "query_string": b""}
     path_params = call.get("path_params")
     if path_params is not None:
         scope["path_params"] = path_params
@@ -98,29 +112,15 @@ async def key_fallback_call(call: Call) -> JsonValue:
 
 async def user_budget_call(call: Call) -> JsonValue:
     fixed = auth_of(call)
-    models = call.get("models")
-    if models is None:
-        raise ValueError("a user budget call names the models")
     failing_models = call.get("failing_models")
     limiter = ScriptedUserLimiter([] if failing_models is None else failing_models)
-    error: JsonValue = None
-    try:
-        await user_api_key_auth._check_user_model_budget(fixed, limiter, models)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L377-L395
-    except BudgetExceededError as denied:
-        error = denial_record(denied)
-    return {"calls": list(limiter.calls), "error": error}
+    work = user_api_key_auth._check_user_model_budget(fixed, limiter, models_of(call))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L377-L395
+    return await checked(work, limiter.calls)
 
 
 async def team_budget_call(call: Call) -> JsonValue:
     fixed = auth_of(call)
-    models = call.get("models")
-    if models is None:
-        raise ValueError("a team budget call names the models")
     failing_models = call.get("failing_models")
     limiter = ScriptedTeamLimiter([] if failing_models is None else failing_models)
-    error: JsonValue = None
-    try:
-        await user_api_key_auth._check_team_model_budget(fixed, limiter, models)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L398-L414
-    except BudgetExceededError as denied:
-        error = denial_record(denied)
-    return {"calls": list(limiter.calls), "error": error}
+    work = user_api_key_auth._check_team_model_budget(fixed, limiter, models_of(call))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L398-L414
+    return await checked(work, limiter.calls)

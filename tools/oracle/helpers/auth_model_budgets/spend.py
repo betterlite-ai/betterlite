@@ -5,8 +5,7 @@ import litellm
 from litellm.proxy.auth import user_api_key_auth
 from pydantic import JsonValue
 
-from .doubles import AlertRecorder, FakeCache, FakePrisma, FakeUserTable
-from .wire import Call
+from .doubles import AlertRecorder, Call, FakeCache, FakePrisma, FakeUserTable
 
 
 class SpendRunner:

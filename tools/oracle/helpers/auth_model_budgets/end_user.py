@@ -5,7 +5,7 @@ from litellm.proxy.auth import user_api_key_auth
 from pydantic import JsonValue
 
 from .case import auth_of
-from .wire import Call
+from .doubles import Call
 
 
 def end_user_apply_call(call: Call) -> JsonValue:
