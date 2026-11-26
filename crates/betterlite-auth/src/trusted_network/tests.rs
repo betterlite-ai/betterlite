@@ -771,26 +771,30 @@ fn decodes_and_encodes_the_header_document() {
     );
 }
 
+#[rstest]
+#[case::not_json(b"not json")]
+#[case::host_not_a_string(br#"{"host":1}"#)]
+#[case::forwarded_not_a_string(br#"{"x_forwarded_for":{"a":1}}"#)]
+#[case::ranges_not_a_string(br#"{"trusted_proxy_ranges":5}"#)]
+#[case::mcp_ranges_not_a_list(br#"{"mcp_trusted_proxy_ranges":"10.0.0.0/8"}"#)]
+#[case::mcp_ranges_with_a_number(br#"{"mcp_trusted_proxy_ranges":["10.0.0.0/8",7]}"#)]
+fn decoder_rejects_bad_documents(#[case] malformed: &[u8]) {
+    assert!(matches!(
+        decode_network_headers(malformed),
+        Err(DecodeError::Json(_))
+    ));
+}
+
 #[test]
-fn decoder_rejects_bad_documents() {
-    let malformed: [&[u8]; 6] = [
-        b"not json",
-        br#"{"host":1}"#,
-        br#"{"x_forwarded_for":{"a":1}}"#,
-        br#"{"trusted_proxy_ranges":5}"#,
-        br#"{"mcp_trusted_proxy_ranges":"10.0.0.0/8"}"#,
-        br#"{"mcp_trusted_proxy_ranges":["10.0.0.0/8",7]}"#,
-    ];
-    for bytes in malformed {
-        assert!(matches!(
-            decode_network_headers(bytes),
-            Err(DecodeError::Json(_))
-        ));
-    }
+fn decoder_rejects_a_document_that_is_not_an_object() {
     assert!(matches!(
         decode_network_headers(b"[]"),
         Err(DecodeError::NotAnObject)
     ));
+}
+
+#[test]
+fn decoder_names_an_unknown_field() {
     match decode_network_headers(br#"{"host":"h","nope":"x"}"#) {
         Err(DecodeError::UnknownField { field }) => assert_eq!(field, "nope"),
         other => panic!("expected an unknown-field error, got {other:?}"),
