@@ -24,7 +24,6 @@ pub const SUPPORTED_OPENAI_PARAMS: [&str; 13] = [
 // Keys the transform consumes itself, so drop_params keeps them even though OpenAI does not name them.
 const KEPT_PARAMS: [&str; 4] = ["width", "height", "numberOfImages", "mask"];
 const PREMIUM: &str = "premium";
-const STANDARD: &str = "standard";
 const B64_JSON: &str = "b64_json";
 
 pub struct MappedOptions {
@@ -103,9 +102,6 @@ fn map_quality(options: &mut CanvasEditOptions) {
     let quality = match &value {
         CanvasEditValue::Json(Json::Text(text)) if text == "hd" || text == PREMIUM => {
             Json::Text(PREMIUM.to_owned())
-        }
-        CanvasEditValue::Json(Json::Text(text)) if text == STANDARD => {
-            Json::Text(STANDARD.to_owned())
         }
         CanvasEditValue::Json(json) => json.clone(),
         CanvasEditValue::Bytes(_) | CanvasEditValue::Tuple => value.clone(),
