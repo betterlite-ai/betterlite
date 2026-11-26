@@ -57,6 +57,24 @@ def image_entries(response: ImageResponse) -> list[JsonValue]:
     ]
 
 
+def usage_projection(response: ImageResponse) -> JsonValue:
+    usage = response.usage
+    if usage is None:
+        return None
+    details = usage.input_tokens_details
+    details_projection: dict[str, JsonValue] = {
+        "image_tokens": details.image_tokens,
+        "text_tokens": details.text_tokens,
+    }
+    projection: dict[str, JsonValue] = {
+        "input_tokens": usage.input_tokens,
+        "input_tokens_details": details_projection,
+        "output_tokens": usage.output_tokens,
+        "total_tokens": usage.total_tokens,
+    }
+    return projection
+
+
 def response_answer(call: ResponseCall, config: EditConfig) -> JsonValue:
     upstream = httpx.Response(call["status"], headers=None, content=call["body"].encode())
     try:
@@ -67,6 +85,7 @@ def response_answer(call: ResponseCall, config: EditConfig) -> JsonValue:
     return {
         "ok": True,
         "images": image_entries(response),
+        "usage": usage_projection(response),
         "cost": hidden["additional_headers"].get(COST_HEADER),
     }
 
