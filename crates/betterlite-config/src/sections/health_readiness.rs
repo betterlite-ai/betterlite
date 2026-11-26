@@ -111,7 +111,7 @@ impl Section for Raw {
             ),
             drain: DrainSettings {
                 enabled: matches!(general.enable_drain, Some(RawFlag::Boolean(true))),
-                token: drain_token(general.drain_token, lookup)?,
+                token: drain_token(general.drain_token, lookup),
             },
             graceful_shutdown_timeout: graceful_shutdown_timeout(lookup),
             db_lookup_stall_window_seconds: stall_window(lookup)?,
@@ -126,23 +126,26 @@ impl Section for Raw {
 fn drain_token(
     configured: Option<RawToken>,
     lookup: &dyn EnvironmentLookup,
-) -> Result<Option<SecretString>, ConfigError> {
+) -> Option<SecretString> {
     if let Some(RawToken::Text(secret)) = configured {
         let text = secret.expose_secret();
         // LiteLLM resolves an unset os.environ reference to None, which then falls through to the env var
-        if let Some(variable) = text.strip_prefix("os.environ/") {
+        let reference = text.strip_prefix("os.environ/");
+        if let Some(variable) = reference {
             let target = lookup.lookup(variable).filter(|value| !value.is_empty());
             if let Some(value) = target {
-                return Ok(Some(SecretString::from(value)));
+                return Some(SecretString::from(value));
             }
-        } else if !text.is_empty() {
-            return Ok(Some(SecretString::from(text)));
+        }
+        // an unresolved reference is not a token, so only a non-empty literal falls back to itself
+        if reference.is_none() && !text.is_empty() {
+            return Some(SecretString::from(text));
         }
     }
-    let environment = lookup
+    lookup
         .lookup(DRAIN_TOKEN_VARIABLE)
-        .filter(|value| !value.is_empty());
-    Ok(environment.map(SecretString::from))
+        .filter(|value| !value.is_empty())
+        .map(SecretString::from)
 }
 
 // a malformed timeout must not keep the pod alive past terminationGracePeriodSeconds, so it falls back to 30 s
