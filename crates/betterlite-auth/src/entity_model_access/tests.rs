@@ -382,36 +382,45 @@ async fn resolved_default_db_argument() {
         admission: None,
         now: 0.0,
     };
-    // the key check inside the resolved flow receives the default prisma_client, so groups never expand
+    // the omitted prisma_client defaults to the proxy's own, so the key's groups expand inside this flow
+    can_key_call_resolved_model(&one("claude"), &token(TOKEN_GROUPS), &context, &deps)
+        .await
+        .unwrap();
+    // the team check gets the same default, so the team's own groups expand onto its list
+    let team_token = token(r#"{"token":"hash-1","team_id":"team-1","config":{"rpm":1}}"#);
+    can_key_call_resolved_model(&one("claude"), &team_token, &context, &deps)
+        .await
+        .unwrap();
+    let reads = script.reads();
+    assert!(
+        reads
+            .iter()
+            .any(|event| event.contains("access_group_id:ag-key"))
+    );
+    assert!(
+        reads
+            .iter()
+            .any(|event| event.contains("access_group_id:ag-team"))
+    );
+    // with no database both checks fall back to the plain grants and the original denial stands
+    let offline = ResolvedDeps {
+        teams: None,
+        projects: None,
+        admission: None,
+        now: 0.0,
+    };
     let key_refused =
-        can_key_call_resolved_model(&one("claude"), &token(TOKEN_GROUPS), &context, &deps)
+        can_key_call_resolved_model(&one("claude"), &token(TOKEN_GROUPS), &context, &offline)
             .await
             .unwrap_err();
     assert_eq!(
         error_type(&key_refused),
         ProxyErrorTypes::KeyModelAccessDenied.to_string()
     );
-    let team_token = token(
-        r#"{"token":"hash-1","team_id":"team-1","config":{"rpm":1},"project_id":"project-1"}"#,
-    );
-    let team_refused = can_key_call_resolved_model(&one("claude"), &team_token, &context, &deps)
+    // without a lookup the team is rebuilt from the key, whose empty team_models grant every model
+    can_key_call_resolved_model(&one("claude"), &team_token, &context, &offline)
         .await
-        .unwrap_err();
-    assert_eq!(
-        error_type(&team_refused),
-        ProxyErrorTypes::TeamModelAccessDenied.to_string()
-    );
-    let reads = script.reads();
-    assert!(
-        !reads
-            .iter()
-            .any(|event| event.contains("access_group_id:ag-team"))
-    );
-    assert!(
-        !reads
-            .iter()
-            .any(|event| event.contains("project_id:project-1"))
-    );
+        .unwrap();
 }
 
 #[tokio::test]

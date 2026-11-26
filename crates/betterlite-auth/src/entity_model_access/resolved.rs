@@ -42,8 +42,8 @@ pub async fn can_key_call_resolved_model(
             .iter()
             .any(|name| name == ALL_TEAM_MODELS);
     if !skip_key_check {
-        // the source calls this check without its global prisma_client, so no access group expands here
-        can_key_call_model(model, token, context, None).await?;
+        // the source omits the argument, and the callee's default is the proxy's own prisma_client
+        can_key_call_model(model, token, context, deps.teams).await?;
     }
     let mut team_object: Option<LiteLLMTeamTableCachedObj> = None;
     let mut from_lookup = false;
@@ -67,10 +67,16 @@ pub async fn can_key_call_resolved_model(
     if let Some(loaded) = &team_object {
         let aliases = team_aliases(token);
         let targets = key_aliases(token);
-        // the source omits its prisma_client here too, so the team's own groups do not expand
-        let checked =
-            can_team_access_model(model, Some(&loaded.team), &aliases, &targets, context, None)
-                .await;
+        // the same default reaches the team check, so the team's own groups expand through it
+        let checked = can_team_access_model(
+            model,
+            Some(&loaded.team),
+            &aliases,
+            &targets,
+            context,
+            deps.teams,
+        )
+        .await;
         if let Err(error) = checked {
             // only team_model_access_denied can be overridden; every other exception escapes
             if !error.is_team_denial() {
