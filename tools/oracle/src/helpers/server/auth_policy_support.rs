@@ -22,7 +22,6 @@ pub(crate) struct Op;
 pub(crate) enum Function {
     Guardrail,
     Tools,
-    Extract,
     TeamFromToken,
     Vouch,
     OrgInherit,
@@ -69,11 +68,10 @@ impl Helper for Op {
         match input.function {
             Function::Guardrail => policy::guardrail(input),
             Function::Tools => policy::tools(input),
-            Function::Extract => policy::extract(input),
             Function::TeamFromToken => context::team_from_token(input),
             Function::Vouch => context::vouch(input),
             Function::OrgInherit => context::org_inherit(input),
-            Function::SafeFetch => context::safe_fetch(input),
+            Function::SafeFetch => context::safe_fetch_outcome(input),
         }
     }
 }
@@ -81,26 +79,26 @@ impl Helper for Op {
 pub(super) fn team_obj(
     value: Option<&Value>,
 ) -> Result<Option<LiteLLMTeamTable>, Box<HelperError>> {
-    let Some(value) = value else {
+    let Some(raw) = value else {
         return Ok(None);
     };
-    let row = serde_json::from_value(value.clone()).or_value_error()?;
+    let row = serde_json::from_value(raw.clone()).or_value_error()?;
     Ok(Some(row))
 }
 
 pub(super) fn token_in(value: Option<&Value>) -> Result<Option<UserAPIKeyAuth>, Box<HelperError>> {
-    let Some(value) = value else {
+    let Some(raw) = value else {
         return Ok(None);
     };
-    let token = token_obj(value)?;
+    let token = token_obj(raw)?;
     Ok(Some(token))
 }
 
 pub(super) fn required_token(value: Option<&Value>) -> Result<UserAPIKeyAuth, Box<HelperError>> {
-    let Some(value) = value else {
+    let Some(raw) = value else {
         return Err(invalid("the call needs a token"));
     };
-    token_obj(value)
+    token_obj(raw)
 }
 
 fn token_obj(value: &Value) -> Result<UserAPIKeyAuth, Box<HelperError>> {

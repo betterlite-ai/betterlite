@@ -37,7 +37,7 @@ Row = dict[str, JsonValue]
 
 class Call(TypedDict):
     function: Literal[
-        "guardrail", "tools", "extract", "team_from_token", "vouch", "org_inherit", "safe_fetch"
+        "guardrail", "tools", "team_from_token", "vouch", "org_inherit", "safe_fetch"
     ]
     body: NotRequired[Row]
     route: NotRequired[str]
@@ -140,20 +140,6 @@ def tools(call: Call) -> JsonValue:
     return {"outcome": "allowed", "names": JSON.validate_python(names)}
 
 
-def extract(call: Call) -> JsonValue:
-    body = call.get("body")
-    if body is None:
-        raise ValueError("the call needs a body")
-    route = call.get("route")
-    if route is None:
-        raise ValueError("the call needs a route")
-    try:
-        names: list[str] = extract_request_tool_names(route, body)
-    except TypeError:
-        return {"outcome": "not_iterable"}
-    return {"outcome": "extracted", "names": JSON.validate_python(names)}
-
-
 def team_from_token(call: Call) -> JsonValue:
     token = token_of(call)
     try:
@@ -243,7 +229,6 @@ def run(input_value: Call) -> JsonValue:
     handlers: dict[str, Callable[[Call], JsonValue]] = {
         "guardrail": guardrail,
         "tools": tools,
-        "extract": extract,
         "team_from_token": team_from_token,
         "vouch": vouch,
         "org_inherit": org_inherit,

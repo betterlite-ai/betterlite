@@ -2,7 +2,7 @@ kind: helper
 name: auth-policy-support-tool-extractor-formats
 call:
   auth_policy_support:
-    function: extract
+    function: tools
     route: /v1/chat/completions
     body:
       tools:
@@ -13,7 +13,7 @@ call:
         - {name: ''}
 calls:
   - auth_policy_support:
-      function: extract
+      function: tools
       route: /v1/responses
       body:
         tools:
@@ -22,7 +22,7 @@ calls:
           - {type: mcp, server_label: crm}
           - {type: web_search}
   - auth_policy_support:
-      function: extract
+      function: tools
       route: /v1/messages
       body:
         tools:
@@ -31,7 +31,7 @@ calls:
           - {name: ''}
           - {function: {name: only_nested}}
   - auth_policy_support:
-      function: extract
+      function: tools
       route: '/v1beta/models/gemini-pro:generateContent'
       body:
         tools:
@@ -39,15 +39,15 @@ calls:
               - {name: gemini_one}
               - {name: gemini_two}
   - auth_policy_support:
-      function: extract
+      function: tools
       route: /mcp/call_tool
       body: {name: preferred, mcp_tool_name: fallback}
   - auth_policy_support:
-      function: extract
+      function: tools
       route: /mcp/call_tool
       body: {mcp_tool_name: only_fallback}
   - auth_policy_support:
-      function: extract
+      function: tools
       route: /v1/chat/completions
       body: {tools: true}
 env: {}

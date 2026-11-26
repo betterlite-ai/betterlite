@@ -30,7 +30,8 @@ impl OrgCache for FakeOrg {
         _key: &str,
         _local_only: bool,
     ) -> Result<Option<OrganizationTable>, AuthCacheError> {
-        Ok(self.org.lock().ok().and_then(|guard| guard.clone()))
+        let stored = self.org.lock().unwrap_or_else(PoisonError::into_inner);
+        Ok(stored.clone())
     }
 
     async fn write_org(
@@ -39,9 +40,8 @@ impl OrgCache for FakeOrg {
         org: &OrganizationTable,
         _ttl: f64,
     ) -> Result<(), AuthCacheError> {
-        if let Ok(mut guard) = self.org.lock() {
-            *guard = Some(org.clone());
-        }
+        let mut stored = self.org.lock().unwrap_or_else(PoisonError::into_inner);
+        *stored = Some(org.clone());
         Ok(())
     }
 
@@ -69,13 +69,14 @@ impl OrgCache for FakeOrg {
 #[async_trait]
 impl OrgStore for FakeOrg {
     async fn find_org(&self, org_id: &str, _include_budget: bool) -> StoreAnswer<Option<String>> {
-        let Some(org) = self.org.lock().ok().and_then(|guard| guard.clone()) else {
+        let stored = self.org.lock().unwrap_or_else(PoisonError::into_inner);
+        let Some(row) = stored.as_ref() else {
             return Ok(None);
         };
-        if org.organization_id.as_deref() != Some(org_id) {
+        if row.organization_id.as_deref() != Some(org_id) {
             return Ok(None);
         }
-        match serde_json::to_string(&org) {
+        match serde_json::to_string(row) {
             Ok(text) => Ok(Some(text)),
             Err(_) => Ok(None),
         }

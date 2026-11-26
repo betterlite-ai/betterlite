@@ -1,6 +1,6 @@
 use serde_json::{Value, json};
 
-use betterlite_auth::auth_policy_support::extract::{ExtractionError, extract_request_tool_names};
+use betterlite_auth::auth_policy_support::extract::extract_request_tool_names;
 use betterlite_auth::auth_policy_support::guardrails::{
     GUARDRAIL_DENIAL, GuardrailCheckError, guardrail_modification_check,
 };
@@ -56,12 +56,4 @@ pub(super) fn tools(input: &Input) -> HelperResult {
             Err(ToolCheckError::Extraction(_)) => json!({ "outcome": "not_iterable" }),
         },
     )
-}
-
-pub(super) fn extract(input: &Input) -> HelperResult {
-    let extractors = extractors()?;
-    let Ok(names) = extract_request_tool_names(&input.route, &input.body, &extractors) else {
-        return Ok(json!({ "outcome": "not_iterable" }));
-    };
-    Ok(json!({ "outcome": "extracted", "names": names }))
 }

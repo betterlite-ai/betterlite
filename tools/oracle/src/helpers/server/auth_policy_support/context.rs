@@ -65,17 +65,15 @@ fn vouch_json(outcome: Result<bool, PolicyError>) -> Value {
 pub(super) fn org_inherit(input: &Input) -> HelperResult {
     let mut token = required_token(input.token.as_ref())?;
     let team = team_obj(input.team.as_ref())?;
-    let org: Option<OrganizationTable> = match input.org.as_ref() {
-        Some(value) => Some(serde_json::from_value(value.clone()).or_value_error()?),
-        None => None,
-    };
+    let org: Option<OrganizationTable> = input
+        .org
+        .as_ref()
+        .map(|value| serde_json::from_value(value.clone()).or_value_error())
+        .transpose()?;
     let cache = Arc::new(FakeOrg::new(org));
     let cache_trait: Arc<dyn OrgCache> = Arc::<FakeOrg>::clone(&cache);
-    let store: Option<Arc<dyn OrgStore>> = if input.database {
-        Some(Arc::<FakeOrg>::clone(&cache))
-    } else {
-        None
-    };
+    let wired: Arc<dyn OrgStore> = Arc::<FakeOrg>::clone(&cache);
+    let store = input.database.then_some(wired);
     let lookup = OrgLookup {
         store,
         cache: cache_trait,
@@ -93,10 +91,9 @@ pub(super) fn org_inherit(input: &Input) -> HelperResult {
     org_fields(&token)
 }
 
-pub(super) fn safe_fetch(input: &Input) -> HelperResult {
-    let failure = match input.failure {
-        Some(failure) => failure,
-        None => return Err(invalid("the call needs a failure")),
+pub(super) fn safe_fetch_outcome(input: &Input) -> HelperResult {
+    let Some(failure) = input.failure else {
+        return Err(invalid("the call needs a failure"));
     };
     let runtime = runtime()?;
     let re_raised = match failure {
@@ -125,7 +122,7 @@ pub(super) fn safe_fetch(input: &Input) -> HelperResult {
     })
 }
 
-fn failure_name(failure: Failure) -> &'static str {
+const fn failure_name(failure: Failure) -> &'static str {
     match failure {
         Failure::Proxy => "proxy",
         Failure::TeamNotFound => "team_not_found",
