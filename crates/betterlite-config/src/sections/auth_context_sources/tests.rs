@@ -23,6 +23,21 @@ fn secret(secret: Option<&secrecy::SecretString>) -> Option<&str> {
 }
 
 #[test]
+fn settings_default_uses_pinned_minimum_key_length() {
+    let settings = Settings::default();
+    assert_eq!(
+        settings.minimum_custom_key_length,
+        DEFAULT_MINIMUM_KEY_LENGTH
+    );
+    assert_eq!(settings.microsoft_client_id, None);
+    assert_eq!(settings.google_client_id, None);
+    assert_eq!(settings.generic_client_id, None);
+    assert_eq!(secret(settings.google_client_secret.as_ref()), None);
+    assert_eq!(secret(settings.microsoft_client_secret.as_ref()), None);
+    assert_eq!(secret(settings.generic_client_secret.as_ref()), None);
+}
+
+#[test]
 fn sso_env_absent_and_empty() {
     let absent = load(&[]).expect("the config loads without sso settings");
     assert_eq!(absent.microsoft_client_id, None);
