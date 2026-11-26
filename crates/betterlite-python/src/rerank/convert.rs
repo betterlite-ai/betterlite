@@ -166,17 +166,25 @@ pub(crate) fn hidden_params(facts: &HiddenFacts<'_>) -> HiddenParams {
         String::from("callback_duration_ms"),
         Number::from_f64(0.0_f64).map_or_else(|| Json::Null, Json::Number),
     );
-    hidden.insert(String::from("litellm_call_id"), text(Some(facts.call_id)));
-    hidden.insert(String::from("api_base"), text(facts.api_base));
+    hidden.insert(
+        String::from("litellm_call_id"),
+        Json::Text(facts.call_id.to_owned()),
+    );
+    hidden.insert(
+        String::from("api_base"),
+        facts
+            .api_base
+            .map_or_else(|| Json::Null, |shown| Json::Text(shown.to_owned())),
+    );
     let model_id = facts.model_id.cloned().unwrap_or(Json::Null);
     hidden.insert(String::from("model_id"), model_id);
     // main.py overwrites the cost with the priced answer, as LiteLLM's logging does after the call
     hidden.insert(String::from("response_cost"), Json::Null);
     let additional = Json::Object(IndexMap::new());
     hidden.insert(String::from("additional_headers"), additional);
-    let model_name = text(Some(facts.litellm_model));
+    let model_name = Json::Text(facts.litellm_model.to_owned());
     hidden.insert(String::from("litellm_model_name"), model_name);
-    let provider = text(Some(facts.provider));
+    let provider = Json::Text(facts.provider.to_owned());
     hidden.insert(String::from("custom_llm_provider"), provider);
     if let Some(overhead) = facts.overhead_ms {
         hidden.insert(
@@ -185,13 +193,6 @@ pub(crate) fn hidden_params(facts: &HiddenFacts<'_>) -> HiddenParams {
         );
     }
     hidden
-}
-
-fn text(value: Option<&str>) -> Json {
-    match value {
-        Some(shown) => Json::Text(shown.to_owned()),
-        None => Json::Null,
-    }
 }
 
 #[derive(Debug, Serialize)]
