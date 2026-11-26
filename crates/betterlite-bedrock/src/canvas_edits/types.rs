@@ -1,61 +1,56 @@
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::image_contracts::records::{ImageFiles, ImageParams};
 use indexmap::IndexMap;
-use serde::Serialize;
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
+
+use super::error::CanvasEditError;
 
 // The options LiteLLM's mapper and transform read by name; every other key stays in passthrough.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
 pub struct CanvasEditOptions {
     #[serde(rename = "n", skip_serializing_if = "Option::is_none")]
-    pub image_count: Option<CanvasEditValue>,
+    pub image_count: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub size: Option<CanvasEditValue>,
+    pub size: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub response_format: Option<CanvasEditValue>,
+    pub response_format: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub mask: Option<CanvasEditValue>,
+    pub mask: Option<CanvasImageInput>,
     #[serde(rename = "negativeText", skip_serializing_if = "Option::is_none")]
-    pub negative_text: Option<CanvasEditValue>,
+    pub negative_text: Option<String>,
     #[serde(rename = "similarityStrength", skip_serializing_if = "Option::is_none")]
-    pub similarity_strength: Option<CanvasEditValue>,
+    pub similarity_strength: Option<f64>,
     #[serde(rename = "cfgScale", skip_serializing_if = "Option::is_none")]
-    pub cfg_scale: Option<CanvasEditValue>,
+    pub cfg_scale: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub seed: Option<CanvasEditValue>,
+    pub seed: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub quality: Option<CanvasEditValue>,
+    pub quality: Option<String>,
     #[serde(rename = "taskType", skip_serializing_if = "Option::is_none")]
-    pub task_type: Option<CanvasEditValue>,
+    pub task_type: Option<String>,
     #[serde(rename = "maskPrompt", skip_serializing_if = "Option::is_none")]
-    pub mask_prompt: Option<CanvasEditValue>,
+    pub mask_prompt: Option<String>,
     #[serde(rename = "outPaintingMode", skip_serializing_if = "Option::is_none")]
-    pub out_painting_mode: Option<CanvasEditValue>,
+    pub out_painting_mode: Option<String>,
     #[serde(
         rename = "imageGenerationConfig",
         skip_serializing_if = "Option::is_none"
     )]
-    pub image_generation_config: Option<CanvasEditValue>,
+    pub image_generation_config: Option<ImageGenerationConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub width: Option<CanvasEditValue>,
+    pub width: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub height: Option<CanvasEditValue>,
+    pub height: Option<i64>,
     #[serde(rename = "numberOfImages", skip_serializing_if = "Option::is_none")]
-    pub number_of_images: Option<CanvasEditValue>,
+    pub number_of_images: Option<i64>,
     #[serde(flatten)]
-    pub passthrough: IndexMap<String, CanvasEditValue>,
+    pub passthrough: IndexMap<String, Json>,
 }
 
-// A Python option value: JSON, bytes already read from a file or SDK object, or a tuple FileTypes.
+// A Python image value: a supplied string, bytes already read from a file or SDK object, or a tuple FileTypes.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(untagged)]
-pub enum CanvasEditValue {
-    Json(Json),
-    Bytes(Vec<u8>),
-    Tuple,
-}
-
-// The Python wheel reads a file-like image at its current position, so bytes arrive already read.
-#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CanvasImageInput {
     Bytes(Vec<u8>),
     Text(String),
@@ -116,13 +111,13 @@ pub struct PaintedParams {
     pub image: String,
     pub text: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub mask_prompt: Option<Json>,
+    pub mask_prompt: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mask_image: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub negative_text: Option<Json>,
+    pub negative_text: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub out_painting_mode: Option<Json>,
+    pub out_painting_mode: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -131,29 +126,29 @@ pub struct VariationParams {
     pub images: Vec<String>,
     pub text: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub negative_text: Option<Json>,
+    pub negative_text: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub similarity_strength: Option<Json>,
+    pub similarity_strength: Option<f64>,
 }
 
 // The nested config keeps the caller's other keys; the six top-level values overwrite their own key.
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImageGenerationConfig {
     #[serde(flatten)]
     pub passthrough: IndexMap<String, Json>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub width: Option<Json>,
+    pub width: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub height: Option<Json>,
+    pub height: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub number_of_images: Option<Json>,
+    pub number_of_images: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub quality: Option<Json>,
+    pub quality: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub cfg_scale: Option<Json>,
+    pub cfg_scale: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub seed: Option<Json>,
+    pub seed: Option<i64>,
 }
 
 #[derive(Debug)]
@@ -164,45 +159,78 @@ pub struct CanvasEditRequest {
 
 impl CanvasEditOptions {
     // The request's option dict by its OpenAI and Nova Canvas names; a key neither names is kept aside.
-    #[must_use]
-    pub fn from_params(params: &ImageParams) -> Self {
-        let mut options = Self::default();
-        for (name, raw) in params {
-            let value = CanvasEditValue::Json(raw.clone());
-            match name.as_str() {
-                "n" => options.image_count = Some(value),
-                "size" => options.size = Some(value),
-                "response_format" => options.response_format = Some(value),
-                "mask" => options.mask = Some(value),
-                "negativeText" => options.negative_text = Some(value),
-                "similarityStrength" => options.similarity_strength = Some(value),
-                "cfgScale" => options.cfg_scale = Some(value),
-                "seed" => options.seed = Some(value),
-                "quality" => options.quality = Some(value),
-                "taskType" => options.task_type = Some(value),
-                "maskPrompt" => options.mask_prompt = Some(value),
-                "outPaintingMode" => options.out_painting_mode = Some(value),
-                "imageGenerationConfig" => options.image_generation_config = Some(value),
-                "width" => options.width = Some(value),
-                "height" => options.height = Some(value),
-                "numberOfImages" => options.number_of_images = Some(value),
-                other => {
-                    options.passthrough.insert(other.to_owned(), value);
-                }
-            }
-        }
-        options
+    pub fn from_params(params: &ImageParams) -> Result<Self, CanvasEditError> {
+        let mut remaining = params.clone();
+        let options = Self {
+            image_count: field(&mut remaining, "n")?,
+            size: field(&mut remaining, "size")?,
+            response_format: field(&mut remaining, "response_format")?,
+            mask: mask_input(&mut remaining)?,
+            negative_text: field(&mut remaining, "negativeText")?,
+            similarity_strength: field(&mut remaining, "similarityStrength")?,
+            cfg_scale: field(&mut remaining, "cfgScale")?,
+            seed: field(&mut remaining, "seed")?,
+            quality: field(&mut remaining, "quality")?,
+            task_type: field(&mut remaining, "taskType")?,
+            mask_prompt: field(&mut remaining, "maskPrompt")?,
+            out_painting_mode: field(&mut remaining, "outPaintingMode")?,
+            image_generation_config: generation_input(&mut remaining)?,
+            width: field(&mut remaining, "width")?,
+            height: field(&mut remaining, "height")?,
+            number_of_images: field(&mut remaining, "numberOfImages")?,
+            passthrough: remaining,
+        };
+        Ok(options)
     }
 }
 
-impl CanvasEditValue {
-    // None when the value holds bytes or a tuple, which no JSON body can carry
-    #[must_use]
-    pub fn to_json(&self) -> Option<Json> {
-        match self {
-            Self::Json(value) => Some(value.clone()),
-            Self::Bytes(_) | Self::Tuple => None,
+// Each named option is parsed here with its declared type; a value the type cannot hold names the key.
+fn field<T>(params: &mut ImageParams, name: &str) -> Result<Option<T>, CanvasEditError>
+where
+    T: DeserializeOwned,
+{
+    let Some(value) = params.shift_remove(name) else {
+        return Ok(None);
+    };
+    typed(&value, name)
+}
+
+fn typed<T>(value: &Json, name: &str) -> Result<Option<T>, CanvasEditError>
+where
+    T: DeserializeOwned,
+{
+    serde_json::to_string(value)
+        .ok()
+        .and_then(|text| serde_json::from_str::<Option<T>>(&text).ok())
+        .ok_or_else(|| CanvasEditError::Field {
+            field: name.to_owned(),
+        })
+}
+
+// A JSON mask is a base64 string or null; bytes and tuples arrive from the SDK-side input instead.
+fn mask_input(params: &mut ImageParams) -> Result<Option<CanvasImageInput>, CanvasEditError> {
+    match params.shift_remove("mask") {
+        None | Some(Json::Null) => Ok(None),
+        Some(Json::Text(text)) => Ok(Some(CanvasImageInput::Text(text))),
+        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+            Err(CanvasEditError::Field {
+                field: "mask".to_owned(),
+            })
         }
+    }
+}
+
+// A nested config is read only when it is an object; any other value is ignored, as LiteLLM's isinstance check does.
+fn generation_input(
+    params: &mut ImageParams,
+) -> Result<Option<ImageGenerationConfig>, CanvasEditError> {
+    let Some(value) = params.shift_remove("imageGenerationConfig") else {
+        return Ok(None);
+    };
+    if matches!(value, Json::Object(_)) {
+        typed(&value, "imageGenerationConfig")
+    } else {
+        Ok(None)
     }
 }
 

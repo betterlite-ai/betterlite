@@ -1,5 +1,3 @@
-use betterlite_models::decisions::Json;
-
 use super::error::CanvasEditError;
 use super::types::{
     BackgroundRemovalParams, CanvasEditBody, ImageGenerationConfig, PaintedParams, VariationParams,
@@ -14,11 +12,11 @@ pub struct TaskBodyInput<'body> {
     pub image: &'body str,
     pub mask: Option<&'body str>,
     pub text: &'body str,
-    pub negative_text: Option<&'body Json>,
-    pub similarity_strength: Option<&'body Json>,
+    pub negative_text: Option<&'body str>,
+    pub similarity_strength: Option<f64>,
     pub task_type: Option<&'body str>,
-    pub mask_prompt: Option<&'body Json>,
-    pub out_painting_mode: Option<&'body Json>,
+    pub mask_prompt: Option<&'body str>,
+    pub out_painting_mode: Option<&'body str>,
 }
 
 // Every explicit task name has its own branch; only INPAINTING reaches the tail, and the rest route by mask.
@@ -58,8 +56,8 @@ pub fn canvas_task_body(
         params: Box::new(VariationParams {
             images: vec![input.image.to_owned()],
             text: input.text.to_owned(),
-            negative_text: input.negative_text.cloned(),
-            similarity_strength: input.similarity_strength.cloned(),
+            negative_text: input.negative_text.map(str::to_owned),
+            similarity_strength: input.similarity_strength,
         }),
         image_generation_config: generation.map(Box::new),
     })
@@ -74,16 +72,16 @@ fn painted_body(
     let params = Box::new(PaintedParams {
         image: input.image.to_owned(),
         text: input.text.to_owned(),
-        mask_prompt: input.mask_prompt.cloned(),
+        mask_prompt: input.mask_prompt.map(str::to_owned),
         mask_image: input
             .mask
             .filter(|_mask| input.mask_prompt.is_none())
             .map(str::to_owned),
-        negative_text: input.negative_text.cloned(),
+        negative_text: input.negative_text.map(str::to_owned),
         out_painting_mode: input
             .out_painting_mode
             .filter(|_mode| out_painting)
-            .cloned(),
+            .map(str::to_owned),
     });
     let image_generation_config = generation.map(Box::new);
     if out_painting {

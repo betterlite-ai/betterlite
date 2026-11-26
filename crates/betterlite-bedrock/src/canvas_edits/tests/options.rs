@@ -7,7 +7,7 @@ use crate::canvas_edits::params::SUPPORTED_OPENAI_PARAMS;
 
 const NO_CONFIG: &str = "{}";
 
-const SIZE_ROWS: [(&str, &str); 16] = [
+const SIZE_ROWS: [(&str, &str); 15] = [
     (r#"{"size": "10x20"}"#, r#"{"width":10,"height":20}"#),
     (r#"{"size": "007x8"}"#, r#"{"width":7,"height":8}"#),
     (r#"{"size": "1_0x2_0"}"#, r#"{"width":10,"height":20}"#),
@@ -19,7 +19,6 @@ const SIZE_ROWS: [(&str, &str); 16] = [
     (r#"{"size": "10xzz"}"#, NO_CONFIG),
     (r#"{"size": "10"}"#, NO_CONFIG),
     (r#"{"size": "x"}"#, NO_CONFIG),
-    (r#"{"size": 10}"#, NO_CONFIG),
     (r#"{"size": null}"#, NO_CONFIG),
     (
         r#"{"size": "10x20", "width": 5}"#,
@@ -29,14 +28,13 @@ const SIZE_ROWS: [(&str, &str); 16] = [
     (r#"{"n": null}"#, NO_CONFIG),
 ];
 
-const GENERATION_ROWS: [(&str, Option<&str>); 11] = [
+const GENERATION_ROWS: [(&str, Option<&str>); 10] = [
     (r#"{"size": "10x20", "width": 5}"#, Some(r#"{"width":5}"#)),
     (r#"{"size": "10x20", "height": 7}"#, Some(r#"{"height":7}"#)),
     (
         r#"{"size": "10xzz", "numberOfImages": 2}"#,
         Some(r#"{"numberOfImages":2}"#),
     ),
-    (r#"{"size": 5}"#, None),
     (
         r#"{"imageGenerationConfig": {"seed": 1, "custom": "x"}, "width": 9}"#,
         Some(r#"{"seed":1,"custom":"x","width":9}"#),
@@ -58,14 +56,12 @@ const GENERATION_ROWS: [(&str, Option<&str>); 11] = [
     ),
 ];
 
-const QUALITY_ROWS: [(&str, &str); 8] = [
+const QUALITY_ROWS: [(&str, &str); 6] = [
     (r#"{"quality": "hd"}"#, r#"{"quality":"premium"}"#),
     (r#"{"quality": "premium"}"#, r#"{"quality":"premium"}"#),
     (r#"{"quality": "standard"}"#, r#"{"quality":"standard"}"#),
     (r#"{"quality": "auto"}"#, r#"{"quality":"auto"}"#),
     (r#"{"quality": null}"#, NO_CONFIG),
-    (r#"{"quality": 5}"#, r#"{"quality":5}"#),
-    (r#"{"quality": ["a"]}"#, r#"{"quality":["a"]}"#),
     (
         r#"{"n": 2, "size": "1x2"}"#,
         r#"{"numberOfImages":2,"width":1,"height":2}"#,
@@ -165,10 +161,6 @@ pub(super) fn response_format_warning() {
     assert_eq!(
         mapped_messages(r#"{"response_format": "url"}"#, false),
         ["Nova Canvas image edit ignores response_format=url and returns base64 images"]
-    );
-    assert_eq!(
-        mapped_messages(r#"{"response_format": 5}"#, false),
-        ["Nova Canvas image edit ignores response_format=5 and returns base64 images"]
     );
     for silent in [
         r#"{"response_format": "b64_json"}"#,

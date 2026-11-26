@@ -10,11 +10,8 @@ use betterlite_bedrock::canvas_edits::request::{
     CanvasEditRequestInput, transform_image_edit_request,
 };
 use betterlite_bedrock::canvas_edits::selection::{ImageEditConfig, image_edit_config_for_model};
-use betterlite_bedrock::canvas_edits::types::{
-    CanvasEditOptions, CanvasEditValue, CanvasImageInput,
-};
+use betterlite_bedrock::canvas_edits::types::{CanvasEditOptions, CanvasImageInput};
 use betterlite_bedrock::model_routes::ParamMap;
-use betterlite_models::decisions::Json;
 use betterlite_models::model_catalog_keys::ModelCostKeys;
 use serde_json::{Value, json};
 
@@ -58,10 +55,11 @@ pub(super) fn observe(call: &Call, model_cost: &ParamMap, catalog: &Catalog) -> 
 }
 
 fn map_answer(call: &MapCall) -> Value {
-    let mapped = map_openai_params(
-        &CanvasEditOptions::from_params(&call.options),
-        call.drop_params,
-    );
+    let options = match CanvasEditOptions::from_params(&call.options) {
+        Ok(options) => options,
+        Err(error) => return json!({"ok": false, "error": {"status": error.status()}}),
+    };
+    let mapped = map_openai_params(&options, call.drop_params);
     let message = mapped
         .ignored_response_format
         .as_ref()
@@ -70,9 +68,12 @@ fn map_answer(call: &MapCall) -> Value {
 }
 
 fn transform_answer(call: &TransformCall) -> Value {
-    let mut options = CanvasEditOptions::from_params(&call.options);
+    let mut options = match CanvasEditOptions::from_params(&call.options) {
+        Ok(options) => options,
+        Err(error) => return json!({"ok": false, "error": {"status": error.status()}}),
+    };
     if let Some(mask) = &call.mask {
-        options.mask = Some(mask_value(mask));
+        options.mask = Some(image_input(mask));
     }
     let image = call.image.as_ref().map(image_input);
     let request = CanvasEditRequestInput {
@@ -145,13 +146,5 @@ fn image_input(spec: &FileSpec) -> CanvasImageInput {
         FileSpec::Bytes { data } => CanvasImageInput::Bytes(data.as_bytes().to_vec()),
         FileSpec::Text { text } => CanvasImageInput::Text(text.clone()),
         FileSpec::Tuple => CanvasImageInput::Tuple,
-    }
-}
-
-fn mask_value(spec: &FileSpec) -> CanvasEditValue {
-    match spec {
-        FileSpec::Bytes { data } => CanvasEditValue::Bytes(data.as_bytes().to_vec()),
-        FileSpec::Text { text } => CanvasEditValue::Json(Json::Text(text.clone())),
-        FileSpec::Tuple => CanvasEditValue::Tuple,
     }
 }

@@ -16,9 +16,7 @@ use crate::canvas_edits::error::CanvasEditError;
 use crate::canvas_edits::params::{IgnoredResponseFormat, map_openai_params};
 use crate::canvas_edits::request::{CanvasEditRequestInput, transform_image_edit_request};
 use crate::canvas_edits::selection::{ImageEditConfig, image_edit_config_for_model};
-use crate::canvas_edits::types::{
-    CanvasEditOptions, CanvasEditRequest, CanvasEditValue, CanvasImageInput,
-};
+use crate::canvas_edits::types::{CanvasEditOptions, CanvasEditRequest, CanvasImageInput};
 use crate::model_routes::ParamMap;
 
 pub(super) const CANVAS_MODEL: &str = "canvas-fixture-plain";
@@ -53,16 +51,24 @@ where
 
 pub(super) fn options_json(source: &str) -> CanvasEditOptions {
     let params: ImageParams = from_str(source).expect("the options are JSON");
-    CanvasEditOptions::from_params(&params)
+    CanvasEditOptions::from_params(&params).expect("the options are declared types")
+}
+
+pub(super) fn refused_options(source: &str) -> CanvasEditError {
+    let params: ImageParams = from_str(source).expect("the options are JSON");
+    match CanvasEditOptions::from_params(&params) {
+        Err(error) => error,
+        Ok(options) => panic!("the options are accepted: {options:?}"),
+    }
 }
 
 pub(super) fn with_mask_bytes(mut options: CanvasEditOptions, content: &[u8]) -> CanvasEditOptions {
-    options.mask = Some(CanvasEditValue::Bytes(content.to_vec()));
+    options.mask = Some(CanvasImageInput::Bytes(content.to_vec()));
     options
 }
 
 pub(super) fn with_mask_tuple(mut options: CanvasEditOptions) -> CanvasEditOptions {
-    options.mask = Some(CanvasEditValue::Tuple);
+    options.mask = Some(CanvasImageInput::Tuple);
     options
 }
 

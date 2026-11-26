@@ -1,8 +1,9 @@
 use super::support::{
-    body, image, json, options_json, prepared, refused, wire, with_mask_bytes, with_mask_tuple,
+    body, image, json, options_json, prepared, refused, refused_options, wire, with_mask_bytes,
+    with_mask_tuple,
 };
 use crate::canvas_edits::error::CanvasEditError;
-use crate::canvas_edits::types::{CanvasEditOptions, CanvasEditValue, CanvasImageInput};
+use crate::canvas_edits::types::{CanvasEditOptions, CanvasImageInput};
 
 const TASK_ROWS: [(&str, &str); 13] = [
     (
@@ -102,7 +103,7 @@ pub(super) fn canvas_task_errors() {
     unsupported_task_types(&source);
     prompt_is_required(&source);
     empty_mask_prompt_is_present();
-    wrong_type_names_the_field(&source);
+    wrong_type_names_the_field();
 }
 
 // OUTPAINTING and INPAINTING without a mask each name the two ways to supply one.
@@ -203,28 +204,40 @@ fn empty_mask_prompt_is_present() {
     );
 }
 
-// A value the transform does not declare for a field is refused by name, never coerced.
-fn wrong_type_names_the_field(source: &CanvasImageInput) {
-    let bad_mask = refused(
-        Some("cat"),
-        Some(source),
-        &options_json(r#"{"mask": {"x": 1}}"#),
-    );
-    assert!(matches!(&bad_mask, CanvasEditError::Field { field } if field == "mask"));
-    assert_eq!(
-        bad_mask.to_string(),
-        "the mask value has a type the Nova Canvas transform does not declare"
-    );
-    let wrong_task_type = refused(
-        Some("cat"),
-        Some(source),
-        &options_json(r#"{"taskType": 7}"#),
-    );
-    assert!(matches!(&wrong_task_type, CanvasEditError::Field { field } if field == "taskType"));
-    let mut asked = options_json(r#"{"width": 5}"#);
-    asked.width = Some(CanvasEditValue::Bytes(b"5".to_vec()));
-    let bad_width = refused(Some("cat"), Some(source), &asked);
-    assert!(matches!(&bad_width, CanvasEditError::Field { field } if field == "width"));
+// A value the option's declared type cannot hold is refused by name at the entry, never coerced.
+fn wrong_type_names_the_field() {
+    for (given, field) in [
+        (r#"{"mask": {"x": 1}}"#, "mask"),
+        (r#"{"taskType": 7}"#, "taskType"),
+        (r#"{"width": "5"}"#, "width"),
+        (r#"{"height": [1]}"#, "height"),
+        (r#"{"size": 10}"#, "size"),
+        (r#"{"n": "2"}"#, "n"),
+        (r#"{"quality": ["a"]}"#, "quality"),
+        (r#"{"response_format": 5}"#, "response_format"),
+        (r#"{"negativeText": 1}"#, "negativeText"),
+        (r#"{"similarityStrength": "x"}"#, "similarityStrength"),
+        (r#"{"cfgScale": [1]}"#, "cfgScale"),
+        (r#"{"seed": 1.5}"#, "seed"),
+        (r#"{"maskPrompt": {"a": 1}}"#, "maskPrompt"),
+        (r#"{"outPaintingMode": false}"#, "outPaintingMode"),
+        (r#"{"numberOfImages": "3"}"#, "numberOfImages"),
+        (
+            r#"{"imageGenerationConfig": {"seed": "x"}}"#,
+            "imageGenerationConfig",
+        ),
+    ] {
+        let error = refused_options(given);
+        assert!(
+            matches!(&error, CanvasEditError::Field { field: name } if name == field),
+            "{given}"
+        );
+        assert_eq!(
+            error.to_string(),
+            format!("the {field} value has a type the Nova Canvas transform does not declare"),
+            "{given}"
+        );
+    }
 }
 
 pub(super) fn image_bytes_base64() {
