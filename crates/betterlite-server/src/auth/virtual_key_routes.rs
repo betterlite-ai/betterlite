@@ -3,8 +3,7 @@ use std::sync::Arc;
 use axum::body::Body;
 use axum::http::Request;
 use betterlite_auth::pass_through_registry::PassThroughRegistry;
-use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
-use betterlite_auth::virtual_key_routes::caller::RouteCaller;
+use betterlite_auth::virtual_key_routes::caller::{AllowedRoutes, RouteCaller};
 use betterlite_auth::virtual_key_routes::route_checks::{CalledRoute, check_virtual_key_route};
 use betterlite_error::proxy_exception::ProxyException;
 
@@ -15,16 +14,9 @@ use crate::state::ServerState;
 
 mod tests;
 
-// what the async auth service resolved before this stage: the caller's key
-#[derive(Debug, Default)]
-pub struct VirtualKeyRouteRule {
-    pub key: Option<UserAPIKeyAuth>,
-}
-
 #[derive(Clone, Debug)]
 pub struct VirtualKeyRouteStageInput {
     pub context: AuthContext,
-    pub rule: Arc<VirtualKeyRouteRule>,
     pub team_allowed_routes: Vec<String>,
     pub registry: PassThroughRegistry,
     pub route: String,
@@ -60,7 +52,6 @@ pub(crate) fn stage_input(
         decoded_route_path(request.uri().path()).unwrap_or_else(|| request.uri().path().to_owned());
     let stage = VirtualKeyRouteStageInput {
         context,
-        rule: rule_for_request(request),
         team_allowed_routes,
         registry,
         route,
@@ -72,22 +63,22 @@ pub(crate) fn stage_input(
 pub(crate) fn run_stage(
     stage: &VirtualKeyRouteStageInput,
 ) -> Result<AuthContext, Box<ProxyException>> {
-    let caller = stage
-        .rule
-        .key
-        .as_ref()
-        .map_or_else(RouteCaller::absent, RouteCaller::of_key);
+    // the auth chain resolves the caller's key into the principal, so the grants read it there
+    let caller = stage.context.principal.source_key.0.as_ref().map_or_else(
+        || RouteCaller {
+            allowed_routes: AllowedRoutes::Unset,
+            metadata: None,
+            team_metadata: None,
+            jwt_claims: false,
+            has_token: false,
+            team_id: None,
+        },
+        RouteCaller::of_key,
+    );
     let requested = CalledRoute {
         route: &stage.route,
         method: stage.method.as_deref(),
     };
     check_virtual_key_route(requested, &caller, &stage.registry)?;
     Ok(stage.context.clone())
-}
-
-pub(crate) fn rule_for_request(request: &Request<Body>) -> Arc<VirtualKeyRouteRule> {
-    request
-        .extensions()
-        .get::<Arc<VirtualKeyRouteRule>>()
-        .map_or_else(|| Arc::new(VirtualKeyRouteRule::default()), Arc::clone)
 }

@@ -6,10 +6,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use axum::Router;
 use axum::body::{Body, to_bytes};
-use axum::extract::Extension;
+use axum::extract::{Extension, State};
 use axum::http::{Request, StatusCode, header};
+use axum::middleware::{self, Next};
+use axum::response::Response;
 use axum::routing::post;
-use betterlite_auth::pass_through_registry::PassThroughRegistry;
+use betterlite_auth::auth_identity::records::SourceKey;
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::types::Config;
@@ -17,10 +19,12 @@ use betterlite_db::budget_permission_rows::JsonData;
 use secrecy::SecretString;
 use tower::ServiceExt as _;
 
-use super::{VirtualKeyRouteRule, VirtualKeyRouteStageInput};
+use super::{run_stage, stage_input};
 use crate::auth::auth_identity::{
     AuthBackend, AuthContext, INSTALLED_STAGES, StageFailure, StageInput, dispatch,
 };
+use crate::auth::failures::stage_failure_response;
+use crate::error_body::AuthenticationFailure;
 use crate::routes;
 use crate::routes::tests::state_for;
 
@@ -52,74 +56,11 @@ fn key(fields: &str) -> UserAPIKeyAuth {
     UserAPIKeyAuth::construct(AuthInput::Dict(decoded)).expect("the key fixture constructs")
 }
 
-fn rule(fields: &str) -> Arc<VirtualKeyRouteRule> {
-    Arc::new(VirtualKeyRouteRule {
-        key: Some(key(fields)),
-    })
-}
-
-fn stage_input(
-    context: AuthContext,
-    rule: Arc<VirtualKeyRouteRule>,
-    path: &str,
-) -> VirtualKeyRouteStageInput {
-    VirtualKeyRouteStageInput {
-        context,
-        rule,
-        team_allowed_routes: Vec::new(),
-        registry: PassThroughRegistry {
-            root_path: String::new(),
-            registrations: Vec::new(),
-        },
-        route: path.to_owned(),
-        method: Some("POST".to_owned()),
-    }
-}
-
-#[test]
-fn stage_is_registered() {
-    assert!(INSTALLED_STAGES.contains(&AuthBackend::AuthVirtualKeyRoutes));
-    let state = state_for(&config_with_master_key());
-    assert_eq!(
-        state.virtual_key_routes.team_allowed_routes,
-        [
-            "openai_routes",
-            "info_routes",
-            "mcp_routes",
-            "/v1/messages",
-            "/v1/messages/count_tokens",
-        ]
-    );
-    let snapshot = state.virtual_key_routes.registry_snapshot();
-    assert!(snapshot.registrations.is_empty());
-
-    let master_key = SecretString::from("secret-master-key".to_owned());
-    let granted = stage_input(master_context(&master_key), rule(ALLOWED_KEY), MODEL_ROUTE);
-    let granted_input = StageInput::AuthVirtualKeyRoutes(Box::new(granted));
-    let Ok(forwarded) = dispatch(
-        AuthBackend::AuthVirtualKeyRoutes,
-        &granted_input,
-        &master_key,
-    ) else {
-        panic!("the B732 constructor dispatches to the production virtual key route stage");
-    };
-    assert_eq!(forwarded.principal.subject, "master_key");
-
-    let refused = stage_input(master_context(&master_key), rule(DENIED_KEY), MODEL_ROUTE);
-    let refused_input = StageInput::AuthVirtualKeyRoutes(Box::new(refused));
-    assert!(matches!(
-        dispatch(
-            AuthBackend::AuthVirtualKeyRoutes,
-            &refused_input,
-            &master_key
-        ),
-        Err(StageFailure::VirtualKeyRoutes(_))
-    ));
-}
-
-async fn mark_called(Extension(reached): Extension<Arc<AtomicBool>>) -> &'static str {
-    reached.store(true, Ordering::Release);
-    "reached"
+// the auth chain resolves the caller's key into the principal, and no other input carries it
+fn context_with_key(master_key: &SecretString, fields: &str) -> AuthContext {
+    let mut context = master_context(master_key);
+    context.principal.source_key = SourceKey(Some(key(fields)));
+    context
 }
 
 fn request_to(reached: &Arc<AtomicBool>) -> Request<Body> {
@@ -133,22 +74,44 @@ fn request_to(reached: &Arc<AtomicBool>) -> Request<Body> {
     request
 }
 
-fn application(config: &Config, rule: Arc<VirtualKeyRouteRule>) -> Router {
+// the production stage constructor and runner behind a real HTTP route
+async fn guard(State(context): State<AuthContext>, request: Request<Body>, next: Next) -> Response {
+    let Ok(input) = stage_input(&request, Some(&context)) else {
+        return stage_failure_response(&StageFailure::from(AuthenticationFailure::Missing));
+    };
+    let StageInput::AuthVirtualKeyRoutes(stage) = input else {
+        panic!("the virtual key route constructor builds its own stage input");
+    };
+    match run_stage(&stage) {
+        Ok(_) => next.run(request).await,
+        Err(exception) => stage_failure_response(&StageFailure::VirtualKeyRoutes(exception)),
+    }
+}
+
+fn guarded_application(config: &Config, context: AuthContext) -> Router {
+    Router::new()
+        .route(MODEL_ROUTE, post(mark_called))
+        .layer(middleware::from_fn_with_state(context, guard))
+        .layer(Extension(state_for(config)))
+}
+
+fn chained_application(config: &Config) -> Router {
     routes::router(
         state_for(config),
         Arc::new(AtomicBool::new(false)),
         Router::new().route(MODEL_ROUTE, post(mark_called)),
         Router::new(),
     )
-    .layer(Extension(rule))
 }
 
-async fn run_request(
-    config: &Config,
-    rule: Arc<VirtualKeyRouteRule>,
-) -> (StatusCode, String, bool) {
+async fn mark_called(Extension(reached): Extension<Arc<AtomicBool>>) -> &'static str {
+    reached.store(true, Ordering::Release);
+    "reached"
+}
+
+async fn run_request(application: Router) -> (StatusCode, String, bool) {
     let reached = Arc::new(AtomicBool::new(false));
-    let response = application(config, rule)
+    let response = application
         .oneshot(request_to(&reached))
         .await
         .expect("the request reaches the router");
@@ -160,35 +123,87 @@ async fn run_request(
     (status, text, reached.load(Ordering::Acquire))
 }
 
+#[test]
+fn stage_is_registered() {
+    assert!(INSTALLED_STAGES.contains(&AuthBackend::AuthVirtualKeyRoutes));
+    let config = config_with_master_key();
+    let state = state_for(&config);
+    assert_eq!(
+        state.virtual_key_routes.team_allowed_routes,
+        [
+            "openai_routes",
+            "info_routes",
+            "mcp_routes",
+            "/v1/messages",
+            "/v1/messages/count_tokens",
+        ]
+    );
+    assert!(
+        state
+            .virtual_key_routes
+            .registry_snapshot()
+            .registrations
+            .is_empty()
+    );
+
+    let master_key = SecretString::from("secret-master-key".to_owned());
+    let mut request = Request::builder()
+        .method("POST")
+        .uri(MODEL_ROUTE)
+        .body(Body::empty())
+        .expect("the request builds");
+    request.extensions_mut().insert(state);
+    let Ok(granted) = stage_input(&request, Some(&context_with_key(&master_key, ALLOWED_KEY)))
+    else {
+        panic!("the production constructor builds the grant input");
+    };
+    let Ok(forwarded) = dispatch(AuthBackend::AuthVirtualKeyRoutes, &granted, &master_key) else {
+        panic!("the B732 constructor dispatches to the production virtual key route stage");
+    };
+    assert_eq!(forwarded.principal.subject, "master_key");
+
+    let Ok(refused) = stage_input(&request, Some(&context_with_key(&master_key, DENIED_KEY)))
+    else {
+        panic!("the production constructor builds the denied input");
+    };
+    assert!(matches!(
+        dispatch(AuthBackend::AuthVirtualKeyRoutes, &refused, &master_key),
+        Err(StageFailure::VirtualKeyRoutes(_))
+    ));
+}
+
 #[tokio::test]
 async fn failure_stops_downstream() {
-    let (status, body, reached) = run_request(&config_with_master_key(), rule(DENIED_KEY)).await;
+    let master_key = SecretString::from("secret-master-key".to_owned());
+    let (status, body, reached) = run_request(guarded_application(
+        &config_with_master_key(),
+        context_with_key(&master_key, DENIED_KEY),
+    ))
+    .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
     assert!(body.contains("\"type\":\"auth_error\""), "{body}");
     assert!(body.contains("\"param\":\"None\""), "{body}");
     assert!(body.contains("\"code\":\"403\""), "{body}");
+    assert!(body.contains("the key may not call /v1/files"), "{body}");
     assert!(
-        body.contains(
-            "Virtual key is not allowed to call this route. Only allowed to call routes: \
-             ['/v1/embeddings']. Tried to call route: /v1/files"
-        ),
+        body.contains("its allowed routes are /v1/embeddings"),
         "{body}"
     );
     assert!(!reached);
 
-    let (allowed_status, _allowed_body, allowed_reached) =
-        run_request(&config_with_master_key(), rule(ALLOWED_KEY)).await;
+    let (allowed_status, _allowed_body, allowed_reached) = run_request(guarded_application(
+        &config_with_master_key(),
+        context_with_key(&master_key, ALLOWED_KEY),
+    ))
+    .await;
     assert_eq!(allowed_status, StatusCode::OK);
     assert!(allowed_reached);
 }
 
 #[tokio::test]
 async fn a_request_without_a_key_has_no_route_restriction() {
-    let (status, _body, reached) = run_request(
-        &config_with_master_key(),
-        Arc::new(VirtualKeyRouteRule::default()),
-    )
-    .await;
+    let (status, _body, reached) =
+        run_request(chained_application(&config_with_master_key())).await;
     assert_eq!(status, StatusCode::OK);
     assert!(reached);
 }
