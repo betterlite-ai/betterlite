@@ -81,7 +81,7 @@ pub(super) struct FakeSource {
 impl FakeSource {
     pub(super) fn new(answers: Vec<Result<Option<CombinedKeyView>, KeyReadError>>) -> Arc<Self> {
         Arc::new(Self {
-            answers: Mutex::new(answers.into()),
+            answers: Mutex::new(VecDeque::from(answers)),
             calls: Mutex::new(Vec::new()),
         })
     }
@@ -290,7 +290,7 @@ impl FakePermissions {
         answers: Vec<Result<Option<LiteLLMObjectPermissionTable>, PermissionError>>,
     ) -> Arc<Self> {
         Arc::new(Self {
-            answers: Mutex::new(answers.into()),
+            answers: Mutex::new(VecDeque::from(answers)),
             calls: Mutex::new(Vec::new()),
         })
     }
@@ -447,11 +447,10 @@ impl TeamLoader for FakeTeams {
         &self,
         request: TeamRequest<'_>,
     ) -> Result<LiteLLMTeamTableCachedObj, TeamLookupError> {
+        let team_id = request.team_id.to_owned();
         match &self.0 {
             Some(team) => Ok(team.clone()),
-            None => Err(TeamLookupError::TeamNotFound {
-                team_id: request.team_id.to_owned(),
-            }),
+            None => Err(TeamLookupError::TeamNotFound { team_id }),
         }
     }
 }

@@ -41,25 +41,15 @@ pub trait JwtMappingSource: Send + Sync {
 // jwt_key_mapping_cache_key: an empty or absent issuer is the issuer-agnostic scope.
 #[must_use]
 pub fn jwt_key_mapping_cache_key(
-    jwt_claim_name: &str,
-    jwt_claim_value: &str,
-    jwt_issuer: Option<&str>,
+    claim_name: &str,
+    claim_value: &str,
+    issuer: Option<&str>,
 ) -> String {
-    match jwt_issuer {
-        Some(issuer) if !issuer.is_empty() => {
-            format!("jwt_key_mapping:{issuer}:{jwt_claim_name}:{jwt_claim_value}")
-        }
-        Some(_) | None => format!("jwt_key_mapping:{jwt_claim_name}:{jwt_claim_value}"),
+    let issuer = issuer.filter(|issuer| !issuer.is_empty());
+    match issuer {
+        Some(scope) => format!("jwt_key_mapping:{scope}:{claim_name}:{claim_value}"),
+        None => format!("jwt_key_mapping:{claim_name}:{claim_value}"),
     }
-}
-
-// ast-grep-ignore: no-long-names
-pub async fn get_jwt_key_mapping_cache_keys_for_token(
-    hashed_token: &str,
-    source: &dyn JwtMappingSource,
-) -> Result<Vec<String>, JwtError> {
-    let tokens = [hashed_token.to_owned()];
-    Ok(cache_keys(source.mappings_for_tokens(&tokens).await?))
 }
 
 // ast-grep-ignore: no-long-names
@@ -67,10 +57,10 @@ pub async fn get_jwt_key_mapping_cache_keys_for_tokens(
     hashed_tokens: &[String],
     source: &dyn JwtMappingSource,
 ) -> Result<Vec<String>, JwtError> {
-    if hashed_tokens.is_empty() {
-        return Ok(Vec::new());
+    match hashed_tokens {
+        [] => Ok(Vec::new()),
+        tokens => source.mappings_for_tokens(tokens).await.map(cache_keys),
     }
-    Ok(cache_keys(source.mappings_for_tokens(hashed_tokens).await?))
 }
 
 // get_jwt_key_mapping_object: one exact scope, no fallback to the global mapping.
@@ -80,14 +70,13 @@ pub async fn get_jwt_key_mapping_object(
     jwt_issuer: Option<&str>,
     source: &dyn JwtMappingSource,
 ) -> Result<Option<String>, JwtError> {
-    let filter = JwtMappingFilter {
-        claim_name: jwt_claim_name.to_owned(),
-        claim_value: jwt_claim_value.to_owned(),
-        issuer: jwt_issuer.unwrap_or_default().to_owned(),
-        active: true,
-    };
     Ok(source
-        .find_active_mapping(&filter)
+        .find_active_mapping(&JwtMappingFilter {
+            claim_name: jwt_claim_name.to_owned(),
+            claim_value: jwt_claim_value.to_owned(),
+            issuer: jwt_issuer.unwrap_or_default().to_owned(),
+            active: true,
+        })
         .await?
         .map(|mapping| mapping.token))
 }

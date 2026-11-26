@@ -119,13 +119,7 @@ impl KeyCache for ScriptedCache {
 }
 
 pub(super) struct ScriptedWriter {
-    writes: Mutex<usize>,
-}
-
-impl ScriptedWriter {
-    pub(super) fn writes(&self) -> usize {
-        *self.writes.lock().unwrap_or_else(PoisonError::into_inner)
-    }
+    pub(super) writes: Mutex<usize>,
 }
 
 #[async_trait]
@@ -145,7 +139,7 @@ pub(super) struct ReadFixture {
     pub(super) writer: Arc<ScriptedWriter>,
     reader: Option<Arc<KeyReader>>,
     cache: Arc<ScriptedCache>,
-    permissions: Arc<ScriptedPermissions>,
+    pub(super) permissions: Arc<ScriptedPermissions>,
     reconnect_calls: ReconnectCalls,
 }
 
@@ -160,10 +154,6 @@ impl ReadFixture {
             writer,
             permissions: Some(permissions),
         }
-    }
-
-    pub(super) fn permission_modes(&self) -> Vec<bool> {
-        self.permissions.call_modes()
     }
 
     pub(super) fn reconnect_calls(&self) -> Value {

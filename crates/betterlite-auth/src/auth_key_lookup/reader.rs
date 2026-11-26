@@ -18,10 +18,8 @@ use super::error::{KeyLookupError, PARKED_FAULT, transport_fault};
 // The bounded lookup's name and the reconnect reason LiteLLM passes for a key read.
 pub const KEY_LOOKUP: &str = "key";
 pub const AUTH_RECONNECT_REASON: &str = "auth_get_key_object_lookup_failure";
-// ast-grep-ignore: no-long-names
-pub const DEFAULT_RECONNECT_TIMEOUT_SECONDS: f64 = 2.0;
-// ast-grep-ignore: no-long-names
-pub const DEFAULT_RECONNECT_LOCK_TIMEOUT_SECONDS: f64 = 0.1;
+pub const RECONNECT_TIMEOUT_SECONDS: f64 = 2.0;
+pub const RECONNECT_LOCK_SECONDS: f64 = 0.1;
 
 // B2320's get_data branch, reached by the caller with the supplied hash and the requested table.
 #[async_trait]
@@ -34,8 +32,7 @@ pub trait KeySource: Send + Sync {
     ) -> Result<Option<CombinedKeyView>, KeyReadError>;
 }
 
-// _fetch_key_object_from_db_with_reconnect over _unbounded: one deadline bounds the gate, the read,
-// the reconnect and the single retry.
+// one deadline bounds the gate, the read, the reconnect and the single retry.
 pub struct KeyReader {
     pub source: Arc<dyn KeySource>,
     pub reconnect: Option<Arc<AsyncMutex<Box<dyn DbReconnect + Send>>>>,
@@ -70,10 +67,12 @@ impl KeyReader {
         };
         match bounded_db_lookup(read(call), request, &self.tasks).await {
             Ok(found) => Ok(found),
-            Err(error) if is_parked(&error) => match take_parked(&parked) {
-                Some(failure) => Err(KeyLookupError::Read(failure)),
-                None => Err(KeyLookupError::Lookup(error)),
-            },
+            Err(error) if is_parked(&error) => {
+                match parked.lock().unwrap_or_else(PoisonError::into_inner).take() {
+                    Some(failure) => Err(KeyLookupError::Read(failure)),
+                    None => Err(KeyLookupError::Lookup(error)),
+                }
+            }
             Err(error) => Err(KeyLookupError::Lookup(error)),
         }
     }
@@ -112,10 +111,10 @@ async fn read(call: ReadCall) -> Result<Option<CombinedKeyView>, DbLookupError> 
         let mut client = reconnect.lock().await;
         let timeout_seconds = client
             .reconnect_timeout_seconds()
-            .unwrap_or(DEFAULT_RECONNECT_TIMEOUT_SECONDS);
+            .unwrap_or(RECONNECT_TIMEOUT_SECONDS);
         let lock_timeout_seconds = client
             .reconnect_lock_timeout_seconds()
-            .unwrap_or(DEFAULT_RECONNECT_LOCK_TIMEOUT_SECONDS);
+            .unwrap_or(RECONNECT_LOCK_SECONDS);
         client
             .attempt_db_reconnect(AUTH_RECONNECT_REASON, timeout_seconds, lock_timeout_seconds)
             .await
@@ -148,10 +147,6 @@ fn park(parked: &Mutex<Option<KeyReadError>>, error: KeyReadError) -> DbLookupEr
         traceback_modules: Vec::new(),
         cause: None,
     })
-}
-
-fn take_parked(parked: &Mutex<Option<KeyReadError>>) -> Option<KeyReadError> {
-    parked.lock().unwrap_or_else(PoisonError::into_inner).take()
 }
 
 fn is_parked(error: &DbLookupError) -> bool {

@@ -5,8 +5,6 @@ use betterlite_auth::auth_key_lookup::jwt::{
     JwtError,
     JwtMappingSource,
     // ast-grep-ignore: no-long-names
-    get_jwt_key_mapping_cache_keys_for_token as token_cache_keys,
-    // ast-grep-ignore: no-long-names
     get_jwt_key_mapping_cache_keys_for_tokens as batch_cache_keys,
     get_jwt_key_mapping_object,
     jwt_key_mapping_cache_key,
@@ -41,7 +39,7 @@ pub(super) async fn mapping(input: &MappingInput) -> HelperResult {
     });
     match &input.lookup {
         MappingLookup::Token { hashed_token } => {
-            let keys = token_cache_keys(hashed_token, source.as_ref())
+            let keys = batch_cache_keys(&[hashed_token.clone()], source.as_ref())
                 .await
                 .or_value_error()?;
             Ok(json!({"keys": keys, "where": source.single_where()}))

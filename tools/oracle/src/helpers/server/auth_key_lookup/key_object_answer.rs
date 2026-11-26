@@ -1,4 +1,7 @@
-use betterlite_auth::auth_key_lookup::error::{KeyLookupError, proxy_exception};
+use std::sync::PoisonError;
+
+use betterlite_auth::auth_errors::conversion::as_proxy_exception;
+use betterlite_auth::auth_key_lookup::error::KeyLookupError;
 use betterlite_auth::auth_key_lookup::key_object::{KeyRequest, get_key_object};
 use betterlite_oracle_helper_api::helper::HelperResult;
 use serde_json::{Value, json};
@@ -25,8 +28,8 @@ pub(super) async fn key_object(input: &KeyObjectInput) -> HelperResult {
         "error": error,
         "fields": fields,
         "use_writer": fixture.source.calls(),
-        "cache_written": fixture.writer.writes(),
-        "permission_calls": fixture.permission_modes(),
+        "cache_written": *fixture.writer.writes.lock().unwrap_or_else(PoisonError::into_inner),
+        "permission_calls": fixture.permissions.call_modes(),
         "reconnects": fixture.reconnect_calls(),
     }))
 }
@@ -49,7 +52,7 @@ fn outcome_label(error: &KeyLookupError) -> &'static str {
 fn error_report(error: &KeyLookupError) -> Value {
     match error {
         KeyLookupError::MissingKey { .. } => {
-            let exception = proxy_exception(error);
+            let exception = as_proxy_exception(&error.failure()).exception().clone();
             json!({
                 "type": exception.error_type,
                 "param": exception.param,

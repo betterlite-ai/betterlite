@@ -9,4 +9,11 @@ deviations:
       not-yet-composed route; the auth-folder cases in this repo follow the same helper form until the composing
       task lands.
     link: ''
+  - what: >-
+      The single-token JWT mapping cache-key lookup is served by the batch read with a one-element token list,
+      so the crate has one mapping read rather than LiteLLM's separate exact-token read.
+    why: >-
+      Both reads return the rows of the same table for that token, and one read path keeps one bounded lookup
+      and one deadline; the reported answer, the cache keys in row order, is the same.
+    link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3828-L3836'
 kept_bugs: []

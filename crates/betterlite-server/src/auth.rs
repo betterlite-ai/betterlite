@@ -61,6 +61,8 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 
 use crate::auth::auth_identity::{AuthBackend, AuthContext, StageFailure, StageInput};
+use crate::auth::auth_key_lookup::key_headers::extract_key;
+pub use crate::auth::auth_key_lookup::key_headers::parse_key_header;
 use crate::auth::auth_model_patterns::{
     ModelPatternStageInput, max_recurse_depth_for_request, rule_for_request,
 };
@@ -76,7 +78,6 @@ use axum::extract::State;
 use axum::http::{HeaderMap, Request, header};
 use axum::middleware::Next;
 use axum::response::Response;
-use regex::Regex;
 use secrecy::SecretString;
 pub(crate) async fn authenticate(
     State(master_key_state): State<Option<SecretString>>,
@@ -110,13 +111,8 @@ fn stage_input(
     body: Option<&Bytes>,
 ) -> Result<StageInput, StageFailure> {
     match backend {
-        AuthBackend::AuthKeyLookup => Ok(StageInput::AuthKeyLookup(Box::new(
-            auth_key_lookup::stage_input(request),
-        ))),
-        AuthBackend::MasterKey => match authenticated {
-            Some(context) => Ok(StageInput::Authenticated(Box::new(context.clone()))),
-            None => Ok(StageInput::MasterKey(extract_key(request.headers()))),
-        },
+        AuthBackend::AuthKeyLookup => auth_key_lookup::lookup_stage_input(request),
+        AuthBackend::MasterKey => auth_key_lookup::master_stage_input(request, authenticated),
         AuthBackend::AuthRequestPolicy => Ok(StageInput::AuthRequestPolicy(Box::new(
             auth_request_policy::stage_input(request, authenticated, body)?,
         ))),
@@ -210,15 +206,9 @@ fn resolver_for(request: &Request<Body>) -> Arc<RequestModelResolver> {
 }
 
 // stage_input cannot await while holding the request borrow (Request<Body> is Send but not Sync), so the caller awaits the stage prefetch on the owned input
-pub(crate) async fn prefetch_stage(
-    input: StageInput,
-    master_key: &SecretString,
-) -> Result<StageInput, StageFailure> {
+pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, StageFailure> {
     match input {
-        StageInput::AuthKeyLookup(stage) => {
-            let context = auth_key_lookup::prefetch(&stage, master_key).await?;
-            Ok(StageInput::Authenticated(Box::new(context)))
-        }
+        StageInput::AuthKeyLookup(stage) => auth_key_lookup::prefetch(*stage).await,
         StageInput::AuthTagBudgets(stage) => {
             auth_tag_budgets::prefetch(&stage)
                 .await
@@ -315,53 +305,4 @@ fn query_json(query: Option<&str>) -> JsonObject {
         }
     }
     object
-}
-fn extract_key(headers: &HeaderMap) -> Option<SecretString> {
-    for name in [
-        "x-litellm-api-key",
-        header::AUTHORIZATION.as_str(),
-        "api-key",
-        "x-api-key",
-        "x-goog-api-key",
-        "ocp-apim-subscription-key",
-    ] {
-        let Some(value) = headers.get(name) else {
-            continue;
-        };
-        if let Some(key) = parse_key_header(name, value.as_bytes()) {
-            return Some(key);
-        }
-    }
-    None
-}
-pub fn parse_key_header(name: &str, header_bytes: &[u8]) -> Option<SecretString> {
-    if header_bytes.is_empty() {
-        return None;
-    }
-    let header_value: String = header_bytes.iter().map(|byte| char::from(*byte)).collect();
-    let token = if name == header::AUTHORIZATION.as_str() {
-        strip_prefix(&header_value).unwrap_or_default()
-    } else if name == "x-litellm-api-key" {
-        strip_prefix(&header_value).unwrap_or(header_value)
-    } else {
-        header_value
-    };
-    Some(SecretString::from(token))
-}
-fn strip_prefix(value: &str) -> Option<String> {
-    for prefix in ["Bearer ", "Basic ", "bearer "] {
-        if value.starts_with(prefix) {
-            return Some(value.replace(prefix, ""));
-        }
-    }
-    value
-        .starts_with("AWS4-HMAC-SHA256")
-        .then(|| aws_credential(value))
-        .flatten()
-}
-fn aws_credential(value: &str) -> Option<String> {
-    let bearer = Regex::new(r"Credential=Bearer\s+([^/\s,]+)").ok()?;
-    let plain = Regex::new(r"Credential=([^/\s,]+)").ok()?;
-    let captures = bearer.captures(value).or_else(|| plain.captures(value))?;
-    captures.get(1).map(|token| token.as_str().to_owned())
 }

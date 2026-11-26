@@ -9,15 +9,16 @@ use betterlite_db::database_faults::ErrorType;
 use betterlite_db::identity_rows::Payload;
 use rust_decimal::Decimal;
 
-use super::error::{KeyLookupError, proxy_exception};
+use super::error::KeyLookupError;
 use super::jwt::{
-    get_jwt_key_mapping_cache_keys_for_token, get_jwt_key_mapping_cache_keys_for_tokens,
-    get_jwt_key_mapping_object, jwt_key_mapping_cache_key,
+    get_jwt_key_mapping_cache_keys_for_tokens, get_jwt_key_mapping_object,
+    jwt_key_mapping_cache_key,
 };
 use super::key_object::get_key_object;
 use super::reader::AUTH_RECONNECT_REASON;
 use super::session::resolve_object_permission_for_unresolvable_team;
 use super::{HashedKeyAuthenticator, KeyAuthenticator};
+use crate::auth_errors::conversion::as_proxy_exception;
 use crate::auth_prefetch::permission::lookup::PermissionError;
 use crate::identity_grants::denial::PublicDenial;
 use crate::user_roles::UserRole;
@@ -132,7 +133,7 @@ async fn missing_key_401() {
         .await
         .unwrap_err();
     assert!(matches!(error, KeyLookupError::MissingKey { .. }));
-    let exception = proxy_exception(&error);
+    let exception = as_proxy_exception(&error.failure()).exception().clone();
     assert_eq!(exception.code, "401");
     assert_eq!(exception.error_type, "token_not_found_in_db");
     assert_eq!(exception.param.as_deref(), Some("key"));
@@ -464,7 +465,7 @@ async fn mapping_order_duplicates() {
         ],
         None,
     );
-    let keys = get_jwt_key_mapping_cache_keys_for_token("hashed", source.as_ref())
+    let keys = get_jwt_key_mapping_cache_keys_for_tokens(&["hashed".to_owned()], source.as_ref())
         .await
         .unwrap();
     assert_eq!(

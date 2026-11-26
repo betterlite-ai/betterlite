@@ -10,7 +10,7 @@ use betterlite_db::postgres_store::diagnostics::DriverError;
 use betterlite_error::proxy_error_types::ProxyErrorTypes;
 use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExceptionInit};
 
-use crate::auth_errors::conversion::{AuthFailure, as_proxy_exception};
+use crate::auth_errors::conversion::AuthFailure;
 use crate::auth_invalidation::error::InvalidationError;
 use crate::auth_prefetch::permission::lookup::{
     MISSING_PERMISSION_MESSAGE, MISSING_PERMISSION_STATUS, PermissionError,
@@ -60,25 +60,41 @@ impl KeyLookupError {
                 exception: missing_key_exception(key),
                 invalid_virtual_key: false,
             },
-            Self::Read(error) => read_failure(error),
+            Self::Read(error) => match error {
+                KeyReadError::Database(DatabaseFailure::Reported(fault)) => {
+                    AuthFailure::Database(fault.clone())
+                }
+                KeyReadError::Database(DatabaseFailure::Driver(driver)) => {
+                    AuthFailure::Database(db_fault(ErrorType::RawQuery, driver.to_string()))
+                }
+                KeyReadError::MissingToken => http_failure(error.to_string(), 400),
+                KeyReadError::View(_)
+                | KeyReadError::Reconnect(_)
+                | KeyReadError::Metrics { .. } => other_failure(error.to_string()),
+            },
             Self::Lookup(error) => lookup_failure(error),
-            Self::Permission(error) => permission_failure(error),
+            Self::Permission(error) => match error {
+                PermissionError::Repository(fault) => match error.database_fault() {
+                    Some(database) => AuthFailure::Database(database),
+                    None => other_failure(fault.to_string()),
+                },
+                PermissionError::MissingInDatabaseOnly => http_failure(
+                    MISSING_PERMISSION_MESSAGE.to_owned(),
+                    MISSING_PERMISSION_STATUS,
+                ),
+                PermissionError::Lookup(lookup) => lookup_failure(lookup),
+                PermissionError::NoDatabase
+                | PermissionError::Cache(_)
+                | PermissionError::Validation(_) => other_failure(error.to_string()),
+            },
             Self::NoDatabase
             | Self::NotInCache { .. }
             | Self::Row(_)
             | Self::NotAnObject
             | Self::Json(_)
-            | Self::CacheWrite(_) => AuthFailure::Other {
-                message: self.to_string(),
-                param: None,
-            },
+            | Self::CacheWrite(_) => other_failure(self.to_string()),
         }
     }
-}
-
-#[must_use]
-pub fn proxy_exception(error: &KeyLookupError) -> ProxyException {
-    as_proxy_exception(&error.failure()).exception().clone()
 }
 
 fn missing_key_exception(key: &str) -> ProxyException {
@@ -95,85 +111,33 @@ fn missing_key_exception(key: &str) -> ProxyException {
     })
 }
 
-fn read_failure(error: &KeyReadError) -> AuthFailure {
-    match error {
-        KeyReadError::Database(DatabaseFailure::Reported(fault)) => {
-            AuthFailure::Database(fault.clone())
-        }
-        KeyReadError::Database(DatabaseFailure::Driver(driver)) => {
-            AuthFailure::Database(raw_query_fault(driver))
-        }
-        KeyReadError::MissingToken => AuthFailure::Http {
-            detail: error.to_string(),
-            param: None,
-            status_code: 400,
-            invalid_virtual_key: false,
-        },
-        KeyReadError::View(_) | KeyReadError::Reconnect(_) | KeyReadError::Metrics { .. } => {
-            AuthFailure::Other {
-                message: error.to_string(),
-                param: None,
-            }
-        }
-    }
-}
-
 fn lookup_failure(error: &DbLookupError) -> AuthFailure {
-    match error {
-        DbLookupError::Database(fault) => AuthFailure::Database(fault.clone()),
-        DbLookupError::Deadline(_) | DbLookupError::Elapsed(_) | DbLookupError::Task(_) => {
-            AuthFailure::Database(deadline_fault(error))
-        }
+    if let DbLookupError::Database(fault) = error {
+        return AuthFailure::Database(fault.clone());
+    }
+    AuthFailure::Database(db_fault(ErrorType::Deadline, error.to_string()))
+}
+
+fn http_failure(detail: String, status_code: u16) -> AuthFailure {
+    AuthFailure::Http {
+        detail,
+        param: None,
+        status_code,
+        invalid_virtual_key: false,
     }
 }
 
-fn permission_failure(error: &PermissionError) -> AuthFailure {
-    match error {
-        PermissionError::MissingInDatabaseOnly => AuthFailure::Http {
-            detail: MISSING_PERMISSION_MESSAGE.to_owned(),
-            param: None,
-            status_code: MISSING_PERMISSION_STATUS,
-            invalid_virtual_key: false,
-        },
-        PermissionError::Lookup(DbLookupError::Database(fault)) => {
-            AuthFailure::Database(fault.clone())
-        }
-        PermissionError::Lookup(
-            deadline @ (DbLookupError::Deadline(_)
-            | DbLookupError::Elapsed(_)
-            | DbLookupError::Task(_)),
-        ) => AuthFailure::Database(deadline_fault(deadline)),
-        PermissionError::Repository(fault) => match error.database_fault() {
-            Some(fault) => AuthFailure::Database(fault),
-            None => AuthFailure::Other {
-                message: fault.to_string(),
-                param: None,
-            },
-        },
-        PermissionError::NoDatabase
-        | PermissionError::Cache(_)
-        | PermissionError::Validation(_) => AuthFailure::Other {
-            message: error.to_string(),
-            param: None,
-        },
+fn other_failure(message: String) -> AuthFailure {
+    AuthFailure::Other {
+        message,
+        param: None,
     }
 }
 
-fn deadline_fault(error: &DbLookupError) -> DbError {
+fn db_fault(error_type: ErrorType, message: String) -> DbError {
     DbError {
-        error_type: ErrorType::Deadline,
-        message: error.to_string(),
-        code: None,
-        meta_code: None,
-        traceback_modules: Vec::new(),
-        cause: None,
-    }
-}
-
-fn raw_query_fault(driver: &DriverError) -> DbError {
-    DbError {
-        error_type: ErrorType::RawQuery,
-        message: driver.to_string(),
+        error_type,
+        message,
         code: None,
         meta_code: None,
         traceback_modules: Vec::new(),
@@ -188,7 +152,7 @@ pub(crate) fn transport_fault(error: &KeyReadError) -> Option<DbError> {
             is_database_transport_error(fault).then(|| fault.clone())
         }
         KeyReadError::Database(DatabaseFailure::Driver(driver)) => {
-            driver_is_transport(driver).then(|| connect_fault(driver))
+            driver_is_transport(driver).then(|| db_fault(ErrorType::Connect, driver.to_string()))
         }
         KeyReadError::MissingToken
         | KeyReadError::View(_)
