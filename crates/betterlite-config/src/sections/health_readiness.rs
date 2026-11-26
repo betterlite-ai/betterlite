@@ -1,18 +1,18 @@
 use std::time::Duration;
 
 use betterlite_env::EnvError;
+use secrecy::ExposeSecret as _;
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde::de::IgnoredAny;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::raw::RawNumber;
-use crate::resolve::{parse_float, resolve_number, resolve_string};
+use crate::resolve::{parse_float, resolve_number};
 use crate::sections::Section;
 
 mod tests;
 
-const DRAIN_TOKEN_PATH: &str = "general_settings.drain_endpoint_token";
 const REQUEST_TIMEOUT_PATH: &str = "litellm_settings.request_timeout";
 const GRACEFUL_TIMEOUT_VARIABLE: &str = "GRACEFUL_SHUTDOWN_TIMEOUT";
 const DRAIN_TOKEN_VARIABLE: &str = "DRAIN_ENDPOINT_TOKEN";
@@ -57,7 +57,7 @@ enum RawFlag {
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 enum RawToken {
-    Text(String),
+    Text(SecretString),
     Other(IgnoredAny),
 }
 
@@ -127,16 +127,16 @@ fn drain_token(
     configured: Option<RawToken>,
     lookup: &dyn EnvironmentLookup,
 ) -> Result<Option<SecretString>, ConfigError> {
-    if let Some(RawToken::Text(text)) = configured {
+    if let Some(RawToken::Text(secret)) = configured {
+        let text = secret.expose_secret();
         // LiteLLM resolves an unset os.environ reference to None, which then falls through to the env var
-        let unset = text
-            .strip_prefix("os.environ/")
-            .is_some_and(|variable| lookup.lookup(variable).is_none());
-        if !unset {
-            let resolved = resolve_string(text, DRAIN_TOKEN_PATH, lookup)?;
-            if !resolved.is_empty() {
-                return Ok(Some(SecretString::from(resolved)));
+        if let Some(variable) = text.strip_prefix("os.environ/") {
+            let target = lookup.lookup(variable).filter(|value| !value.is_empty());
+            if let Some(value) = target {
+                return Ok(Some(SecretString::from(value)));
             }
+        } else if !text.is_empty() {
+            return Ok(Some(SecretString::from(text)));
         }
     }
     let environment = lookup

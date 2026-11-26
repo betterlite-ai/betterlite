@@ -103,6 +103,16 @@ fn the_drain_token_comes_from_the_config_or_the_environment(
     assert_eq!(token, expected);
 }
 
+#[test]
+fn the_raw_config_debug_redacts_the_drain_token() {
+    let raw: Raw =
+        serde_saphyr::from_str("general_settings: {drain_endpoint_token: pre-stop-secret}")
+            .unwrap();
+    let rendered = format!("{raw:?}");
+    assert!(!rendered.contains("pre-stop-secret"), "{rendered}");
+    assert!(rendered.contains("[REDACTED]"), "{rendered}");
+}
+
 #[rstest]
 #[case::unset(&[], Duration::from_secs(30))]
 #[case::seconds(&[("GRACEFUL_SHUTDOWN_TIMEOUT", "12.5")], Duration::from_millis(12_500))]
