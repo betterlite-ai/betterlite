@@ -37,6 +37,7 @@ use betterlite_logging::registry::CallbackRegistry;
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::ChatError;
 use betterlite_openai::chat::execution::ChatExecutor;
+use betterlite_prometheus::collector_registry::CollectorRegistry;
 use chat_setup::vertex_embedding::{VertexEmbeddingSetupError, vertex_embedding_calls};
 use error::ChatCallsError;
 use std::io;
@@ -207,10 +208,13 @@ pub(crate) fn application(
         &config.sections.request_size_limit,
         &config.sections.security_headers,
     );
-    let admission = AdmissionControl::from_settings(&config.sections.admission_control);
+    // the one registry /metrics renders once B8680 mounts it; nothing reads it before then
+    let registry = Arc::new(CollectorRegistry::default());
+    let admission =
+        AdmissionControl::from_settings(&config.sections.admission_control, Arc::clone(&registry));
     let stack = AdmissionStack {
         admission: Arc::new(admission),
-        in_flight: Arc::new(InFlightRequests::default()),
+        in_flight: Arc::new(InFlightRequests::new(registry)),
     };
     let application = stack.wrap(stacked);
     let prefixed = RootPaths::from_settings(&config.sections.request_root_paths);

@@ -9,6 +9,7 @@ use axum::body::Body;
 use axum::http::{HeaderMap, HeaderName, HeaderValue, Method, Request, StatusCode};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::admission_control::{Limits, Settings};
+use betterlite_prometheus::collector_registry::CollectorRegistry;
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use rstest::rstest;
@@ -229,20 +230,23 @@ async fn cancel_queued_decrements() {
         (snapshot.admitted, snapshot.queued, snapshot.rejected_total),
         (1, 0, 0)
     );
-    assert_eq!(harness.stack.in_flight.current.load(Ordering::Acquire), 1);
+    assert_eq!(harness.stack.in_flight.stats().current, 1);
     harness.gates.get("/a").unwrap().release.notify_one();
     assert_eq!(requests.complete("/a").await.0, StatusCode::OK);
     assert_eq!(harness.stack.admission.stats().admitted, 0);
 }
 
 fn queue_reservation_holds_under_thread_contention() {
-    let control = AdmissionControl::from_settings(&Settings {
-        limits: Some(Limits {
-            max_in_flight_requests: 1,
-            max_queued_requests: 1,
-            queue_timeout: Duration::from_secs(1),
-        }),
-    });
+    let control = AdmissionControl::from_settings(
+        &Settings {
+            limits: Some(Limits {
+                max_in_flight_requests: 1,
+                max_queued_requests: 1,
+                queue_timeout: Duration::from_secs(1),
+            }),
+        },
+        Arc::new(CollectorRegistry::default()),
+    );
     for round in 0..RESERVATION_ROUNDS {
         control.queued.store(0, Ordering::Release);
         let successes = reservation_round(&control);
@@ -280,7 +284,7 @@ async fn huge_limit_disables() {
     await_started(&harness.gates, "/a").await;
     requests.start(&harness.router, "/b");
     await_started(&harness.gates, "/b").await;
-    assert_eq!(harness.stack.in_flight.current.load(Ordering::Acquire), 2);
+    assert_eq!(harness.stack.in_flight.stats().current, 2);
     harness.gates.get("/a").unwrap().release.notify_one();
     harness.gates.get("/b").unwrap().release.notify_one();
     assert_eq!(requests.complete("/a").await.0, StatusCode::OK);
@@ -426,12 +430,12 @@ async fn upgrade_bypasses_saturation() {
         (snapshot.admitted, snapshot.queued, snapshot.rejected_total),
         (1, 0, 0)
     );
-    assert_eq!(harness.stack.in_flight.current.load(Ordering::Acquire), 1);
+    assert_eq!(harness.stack.in_flight.stats().current, 1);
     harness.gates.get("/a").unwrap().release.notify_one();
     assert_eq!(requests.complete("/a").await.0, StatusCode::OK);
     requests.start(&harness.router, "/b");
     await_started(&harness.gates, "/b").await;
     assert_eq!(requests.complete("/b").await.0, StatusCode::OK);
     assert_eq!(harness.stack.admission.stats().admitted, 0);
-    assert_eq!(harness.stack.in_flight.current.load(Ordering::Acquire), 0);
+    assert_eq!(harness.stack.in_flight.stats().current, 0);
 }
