@@ -15,6 +15,7 @@ use crate::auth::auth_request_models::{RequestModelStageInput, resolve};
 use crate::auth::auth_request_policy::{self, AuthRequestPolicyStageInput};
 use crate::auth::auth_resource_grants::{self, ResourceGrantStageInput};
 use crate::auth::auth_tag_budgets::TagBudgetStageInput;
+use crate::auth::organization_route_policy::{self, OrganizationPolicyStageInput};
 use crate::auth::request_body_safety::{self, RequestBodySafetyStageInput};
 use crate::auth::team_budget_admission::TeamBudgetStageInput;
 use crate::error_body::AuthenticationFailure;
@@ -30,6 +31,7 @@ pub enum AuthBackend {
     AuthTagBudgets,
     AuthKeyBudgets,
     TeamBudgetAdmission,
+    OrganizationRoutePolicy,
     AuthOrgLookup,
     AuthEndUsers,
 }
@@ -45,6 +47,7 @@ pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
     AuthBackend::AuthTagBudgets,
     AuthBackend::AuthKeyBudgets,
     AuthBackend::TeamBudgetAdmission,
+    AuthBackend::OrganizationRoutePolicy,
     AuthBackend::AuthOrgLookup,
     AuthBackend::AuthEndUsers,
 ];
@@ -60,6 +63,7 @@ pub enum StageInput {
     AuthTagBudgets(Box<TagBudgetStageInput>),
     AuthKeyBudgets(Box<KeyBudgetStageInput>),
     TeamBudgetAdmission(Box<TeamBudgetStageInput>),
+    OrganizationRoutePolicy(Box<OrganizationPolicyStageInput>),
     AuthOrgLookup(Box<OrgStageInput>),
     AuthEndUsers(Box<EndUserStageInput>),
 }
@@ -94,6 +98,7 @@ pub(crate) enum StageFailure {
     RequestBodySafety(Box<ProxyException>),
     KeyBudgets(Box<ProxyException>),
     TeamBudgets(Box<ProxyException>),
+    OrganizationRoutePolicy(Box<ProxyException>),
     OrgLookup(Box<ProxyException>),
     EndUsers(Box<ProxyException>),
 }
@@ -139,6 +144,7 @@ pub(crate) fn dispatch(
             // the member scope and budget checks ran in the prefetch, so only the identity is left
             Ok(stage.context.clone())
         }
+        AuthBackend::OrganizationRoutePolicy => organization_route_policy_stage(input),
         AuthBackend::AuthOrgLookup => {
             let StageInput::AuthOrgLookup(stage) = input else {
                 return Err(StageFailure::from(AuthenticationFailure::Missing));
@@ -175,6 +181,13 @@ fn auth_resource_grants_stage(input: &StageInput) -> Result<AuthContext, StageFa
         return Err(StageFailure::from(AuthenticationFailure::Missing));
     };
     auth_resource_grants::run_stage(stage).map_err(StageFailure::ResourceGrants)
+}
+
+fn organization_route_policy_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
+    let StageInput::OrganizationRoutePolicy(stage) = input else {
+        return Err(StageFailure::from(AuthenticationFailure::Missing));
+    };
+    organization_route_policy::run_stage(stage).map_err(StageFailure::OrganizationRoutePolicy)
 }
 
 fn auth_model_patterns_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
