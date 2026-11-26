@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use rstest::rstest;
 use secrecy::ExposeSecret as _;
 
 use crate::auth_key_budgets::money::Money;
@@ -16,53 +17,35 @@ use super::support::{
     number, organization, team, token,
 };
 
+#[rstest]
+#[case::token(Some("token-org"), Some("team-org"), Some("token-org"))]
+#[case::empty_token(Some(""), Some("team-org"), Some(""))]
+#[case::team(None, Some("team-org"), Some("team-org"))]
+#[case::neither(None, None, None)]
 #[tokio::test]
-async fn org_token_id_precedes_team_including_empty() {
+async fn org_token_id_precedes_team_including_empty(
+    #[case] token_org: Option<&str>,
+    #[case] team_org: Option<&str>,
+    #[case] expected_org: Option<&str>,
+) {
     let world = Arc::new(OrgWorld::with_row(&organization("acme", 0.0_f64, None)));
     let lookup = lookup(&world);
     let reader = ScriptedSpend::new(Vec::new());
     let recorder = Recorder::default();
-    let admission = TenantAdmission {
-        reader: &reader,
-        alerts: Some(&recorder),
-    };
-    let team = team(Some("team-org"));
-    let mut token_org = token(TokenFields {
+    let admission = admission(&reader, &recorder);
+    let team = team_org.map(|id| team(Some(id)));
+    let mut auth = token(TokenFields {
         token: "sk",
-        org_id: Some("token-org"),
+        org_id: token_org,
     });
-    max_budget_check(Some(&mut token_org), Some(&team), Some(&lookup), &admission)
+    max_budget_check(Some(&mut auth), team.as_ref(), Some(&lookup), &admission)
         .await
-        .expect("an absent ceiling allows");
-    let mut empty_org = token(TokenFields {
-        token: "sk",
-        org_id: Some(""),
-    });
-    max_budget_check(Some(&mut empty_org), Some(&team), Some(&lookup), &admission)
-        .await
-        .expect("an empty token organization still wins");
-    let mut from_team = token(TokenFields {
-        token: "sk",
-        org_id: None,
-    });
-    max_budget_check(Some(&mut from_team), Some(&team), Some(&lookup), &admission)
-        .await
-        .expect("the team organization answers when the token has none");
-    let mut nowhere = token(TokenFields {
-        token: "sk",
-        org_id: None,
-    });
-    max_budget_check(Some(&mut nowhere), None, Some(&lookup), &admission)
-        .await
-        .expect("no organization id skips");
-    assert_eq!(
-        world.lookups(),
-        vec![
-            ("token-org".to_owned(), true),
-            (String::new(), true),
-            ("team-org".to_owned(), true),
-        ]
-    );
+        .expect("a missing organization or ceiling allows");
+    let expected: Vec<_> = expected_org
+        .map(|id| (id.to_owned(), true))
+        .into_iter()
+        .collect();
+    assert_eq!(world.lookups(), expected);
     assert!(reader.reads().is_empty());
 }
 
@@ -218,11 +201,8 @@ fn assert_org_alert(alerts: &[TenantAlert]) {
 
 #[tokio::test]
 async fn org_equality_alert_payload_and_error() {
-    let world = Arc::new(OrgWorld::with_row(&organization(
-        "acme",
-        3.0_f64,
-        Some(10.0_f64),
-    )));
+    let row = organization("acme", 3.0_f64, Some(10.0_f64));
+    let world = Arc::new(OrgWorld::with_row(&row));
     let lookup = lookup(&world);
     let reader = ScriptedSpend::new(vec![number(10.0_f64)]);
     let recorder = Recorder::default();
