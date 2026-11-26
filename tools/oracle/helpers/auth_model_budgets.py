@@ -236,13 +236,14 @@ def end_user_update_call(call: Call) -> JsonValue:
     if params is None:
         raise ValueError("an end user update call names the params")
     updated = user_api_key_auth.update_valid_token_with_end_user_params(auth_of(call), params)  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L710-L726
+    model_max_budget = cast("dict[str, JsonValue] | None", updated.end_user_model_max_budget)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3315
     return {
         "end_user_id": updated.end_user_id,
         "tpm": updated.end_user_tpm_limit,
         "rpm": updated.end_user_rpm_limit,
         "tpd": updated.end_user_tpd_limit,
         "max_budget": updated.end_user_max_budget,
-        "model_max_budget": cast("dict[str, JsonValue] | None", updated.end_user_model_max_budget),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3315
+        "model_max_budget": model_max_budget,
     }
 
 
