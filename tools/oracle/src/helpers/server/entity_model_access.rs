@@ -1,8 +1,6 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use betterlite_auth::auth_model_patterns::decision::ModelAccessContext;
-use betterlite_auth::auth_model_patterns::pattern::UnresolvedProviderInference;
 use betterlite_auth::auth_model_patterns::user_model::can_user_call_model;
 use betterlite_auth::auth_request_models::RequestedModels;
 use betterlite_auth::auth_team_lookup::lookup::TeamLookup;
@@ -26,15 +24,10 @@ use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use tokio::runtime::Builder;
 
-use fixture::{Fixture, admission, project_lookup, team_lookup};
+use fixture::{Fixture, admission, context, project_lookup, team_lookup};
 
 #[path = "entity_model_access/fixtures/mod.rs"]
 mod fixture;
-
-static UNRESOLVED_PROVIDER: UnresolvedProviderInference = UnresolvedProviderInference;
-static NO_ALIASES: BTreeMap<String, String> = BTreeMap::new();
-// litellm.constants' DEFAULT_MAX_RECURSE_DEPTH default
-const MAX_RECURSE_DEPTH: i64 = 100;
 
 pub(crate) struct Op;
 
@@ -186,16 +179,6 @@ async fn resolved_value(
     Ok(decision_value(outcome))
 }
 
-const fn context() -> ModelAccessContext<'static> {
-    ModelAccessContext {
-        view: None,
-        global_model_aliases: &NO_ALIASES,
-        compaction: None,
-        provider: &UNRESOLVED_PROVIDER,
-        max_recurse_depth: MAX_RECURSE_DEPTH,
-    }
-}
-
 fn kind(step: &Step) -> ResourceKind {
     match step.resource_field.unwrap_or(Field::ModelNames) {
         Field::ModelNames => ResourceKind::ModelNames,
@@ -204,7 +187,10 @@ fn kind(step: &Step) -> ResourceKind {
     }
 }
 
-fn row<T: DeserializeOwned>(value: Option<&Value>) -> Result<Option<T>, serde_json::Error> {
+fn row<T>(value: Option<&Value>) -> Result<Option<T>, serde_json::Error>
+where
+    T: DeserializeOwned,
+{
     value
         .map(|row| serde_json::from_value(row.clone()))
         .transpose()

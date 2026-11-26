@@ -5,6 +5,7 @@ use async_trait::async_trait;
 use betterlite_auth::auth_end_users::defaults::MemberBudgetError;
 use betterlite_auth::auth_key_budgets::spend::{SpendReadError, SpendReader};
 use betterlite_auth::auth_model_patterns::decision::ModelAccessContext;
+use betterlite_auth::auth_model_patterns::pattern::UnresolvedProviderInference;
 use betterlite_auth::auth_org_lookup::organization::OrgLookup;
 use betterlite_auth::auth_prefetch::rows::CachedProject;
 use betterlite_auth::auth_team_lookup::lookup::{TeamDatabase, TeamLookup};
@@ -118,12 +119,12 @@ impl DurationParser for Fixture {
 
 pub(super) fn team_lookup(fixture: &Arc<Fixture>) -> TeamLookup {
     TeamLookup {
-        cache: Arc::clone(fixture),
-        permission_cache: Arc::clone(fixture),
+        cache: Arc::<Fixture>::clone(fixture),
+        permission_cache: Arc::<Fixture>::clone(fixture),
         database: Some(TeamDatabase {
-            store: Arc::clone(fixture),
-            permission_reader: Arc::clone(fixture),
-            permission_writer: Arc::clone(fixture),
+            store: Arc::<Fixture>::clone(fixture),
+            permission_reader: Arc::<Fixture>::clone(fixture),
+            permission_writer: Arc::<Fixture>::clone(fixture),
         }),
         provisioner: None,
         cadence: Arc::new(Cadence::new(1024, Arc::new(WallClock))),
@@ -133,8 +134,8 @@ pub(super) fn team_lookup(fixture: &Arc<Fixture>) -> TeamLookup {
 
 pub(super) fn project_lookup(fixture: &Arc<Fixture>) -> OrgLookup {
     OrgLookup {
-        store: Some(Arc::clone(fixture)),
-        cache: Arc::clone(fixture),
+        store: Some(Arc::<Fixture>::clone(fixture)),
+        cache: Arc::<Fixture>::clone(fixture),
         in_memory_ttl: 60.0,
     }
 }
@@ -152,5 +153,20 @@ pub(super) const fn admission<'deps>(
         durations: fixture,
         models,
         now: DateTime::UNIX_EPOCH,
+    }
+}
+
+static UNRESOLVED_PROVIDER: UnresolvedProviderInference = UnresolvedProviderInference;
+static NO_ALIASES: BTreeMap<String, String> = BTreeMap::new();
+// litellm.constants' DEFAULT_MAX_RECURSE_DEPTH default
+const MAX_RECURSE_DEPTH: i64 = 100;
+
+pub(super) const fn context() -> ModelAccessContext<'static> {
+    ModelAccessContext {
+        view: None,
+        global_model_aliases: &NO_ALIASES,
+        compaction: None,
+        provider: &UNRESOLVED_PROVIDER,
+        max_recurse_depth: MAX_RECURSE_DEPTH,
     }
 }
