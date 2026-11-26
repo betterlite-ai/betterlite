@@ -8,7 +8,7 @@ description: >-
   allowed_routes column. This task adds that case once both have landed.
 
 
-  Give the fixture LiteLLM's column (allowed_routes TEXT[] NOT NULL DEFAULT '{}', as schema.prisma declares it), let a
+  Give the fixture LiteLLM's column ("allowed_routes" TEXT[] DEFAULT ARRAY[]::TEXT[], the way baseline.sql already writes allowed_cache_controls), let a
   seeded key row carry allowed_routes in KeyRow, and insert it in seed_sql.rs. Then add HTTP cases under
   tools/oracle/cases/auth/virtual-key-routes/ that seed a key with allowed_routes [/v1/models]: GET /v1/models answers
   200, and POST /chat/completions answers LiteLLM's 403 before any upstream call.
