@@ -2,8 +2,7 @@ use serde::Deserialize;
 
 use crate::api::file_routing_ids::routing::decode_model_from_file_id;
 
-// The model-name sources a files route reads besides the id's embedded model, each None when the
-// route saw no such source.
+// The model-name sources a files route reads besides the id's embedded model, each None when the route saw none.
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ModelHints {
@@ -12,9 +11,7 @@ pub struct ModelHints {
     pub header: Option<String>,
 }
 
-// extract_model_from_sources: the id's embedded model, then body.model, then query.model, then the
-// header. An empty body or query is falsy and falls through, while an empty header is the or-chain's
-// last operand and stays "".
+// extract_model_from_sources: the embedded model, then body.model, then query.model, then the header, with an empty body or query falling through
 #[must_use]
 pub fn extract_model_from_sources(
     file_id: &str,

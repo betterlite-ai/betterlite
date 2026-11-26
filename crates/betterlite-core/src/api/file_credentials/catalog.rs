@@ -22,8 +22,7 @@ impl DeploymentRow {
     }
 }
 
-// The Router reads the file credential helpers make besides B10060's lookup, answered by whatever catalog
-// the server injects; the credential lookup itself comes from CredentialSource.
+// The Router reads the file credential helpers make besides CredentialSource's lookup, answered by whatever catalog the server injects.
 pub trait CredentialCatalog: CredentialSource {
     // Router.get_model_names(team_id=...)
     fn model_names(&self, team_id: Option<&str>) -> Result<Vec<String>, Self::Error>;
@@ -34,7 +33,6 @@ pub trait CredentialCatalog: CredentialSource {
     // Router.model_list, in deployment order
     fn deployments(&self) -> Result<Vec<DeploymentRow>, Self::Error>;
 
-    // Router.get_credential_deployment(model_id).model_info.model_dump(): the complete resolved
-    // model_info an accounting snapshot is priced by
+    // Router.get_credential_deployment(model_id).model_info.model_dump(), the resolved model_info an accounting snapshot is priced by
     fn resolved_model_info(&self, model_id: &str) -> Result<Option<JsonObject>, Self::Error>;
 }

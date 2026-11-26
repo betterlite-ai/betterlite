@@ -24,8 +24,7 @@ where
     MetadataNotObject,
 }
 
-// add_internal_model_credentials: the deployment's immutable server-side snapshot, which the Bedrock
-// file config reads its bucket from. Every failure leaves data alone, so an old batch stays retrievable.
+// add_internal_model_credentials: the deployment's immutable snapshot, which the Bedrock file config reads its bucket from, and a failure leaves data alone.
 pub fn add_internal_model_credentials<Catalog>(
     data: &mut JsonObject,
     catalog: Option<&Catalog>,
@@ -44,8 +43,7 @@ where
     Some(trusted_snapshot(&credentials))
 }
 
-// add_deployment_model_info: stamps the resolved model_info into litellm_metadata, the way the router
-// stamps a routed call, so a direct batch call is priced by its deployment id.
+// add_deployment_model_info: stamps the resolved model_info into litellm_metadata, so a direct batch call is priced by its deployment id.
 pub fn add_deployment_model_info<Catalog>(
     data: &mut JsonObject,
     catalog: Option<&Catalog>,

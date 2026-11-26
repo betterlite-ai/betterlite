@@ -17,7 +17,7 @@ use indexmap::IndexMap;
 use serde::Deserialize;
 use thiserror::Error;
 
-use crate::api::file_credentials::catalog::CredentialCatalog;
+use crate::api::file_credentials::catalog::{CredentialCatalog, DeploymentRow};
 use crate::api::model_credentials::{CredentialSource, prepare_data_with_credentials};
 
 // The UserAPIKeyAuth fields the provider search reads; a caller with no key, such as a JWT user, has none.
@@ -137,54 +137,42 @@ fn may_use(scope: &TeamScope, public_model_name: &str) -> bool {
             .any(|allowed| allowed == public_model_name)
 }
 
-// _provider_credentials: this provider's credentials without their model field, read as the caller's team.
-fn provider_credentials<Catalog>(
+// _provider_credentials over a list of candidates: the first lookup that names this provider, without its model field.
+fn first_provider_credentials<Catalog>(
     catalog: &Catalog,
-    model_id: &str,
+    candidates: Vec<String>,
     team_id: Option<&str>,
     provider: &str,
 ) -> Result<Option<JsonObject>, TeamCredentialError<Catalog::Error>>
 where
     Catalog: CredentialSource,
 {
-    let found = catalog
-        .credentials_with_provider(model_id, team_id)
-        .map_err(|source| TeamCredentialError::Credentials {
-            model_id: model_id.to_owned(),
-            source,
-        })?;
-    let Some(credentials) = found else {
-        return Ok(None);
-    };
-    let provider_field = credentials.get("custom_llm_provider");
-    if !matches!(provider_field, Some(Json::Text(text)) if text.as_str() == provider) {
-        return Ok(None);
+    for model_id in candidates {
+        let found = catalog
+            .credentials_with_provider(&model_id, team_id)
+            .map_err(|source| TeamCredentialError::Credentials {
+                model_id: model_id.clone(),
+                source,
+            })?;
+        let Some(credentials) = found else {
+            continue;
+        };
+        let provider_field = credentials.get("custom_llm_provider");
+        if !matches!(provider_field, Some(Json::Text(text)) if text.as_str() == provider) {
+            continue;
+        }
+        let without_model = credentials
+            .into_iter()
+            .filter(|(name, _)| name != "model")
+            .collect();
+        return Ok(Some(without_model));
     }
-    let without_model = credentials
-        .into_iter()
-        .filter(|(name, _)| name != "model")
-        .collect();
-    Ok(Some(without_model))
+    Ok(None)
 }
 
-// 1. the team's own BYOK row: the first that names this team, carries an id and a usable public name.
-fn byok_credentials<Catalog>(
-    catalog: &Catalog,
-    scope: &TeamScope,
-    provider: &str,
-) -> Result<Option<JsonObject>, TeamCredentialError<Catalog::Error>>
-where
-    Catalog: CredentialCatalog,
-{
-    let Some(team) = scope.team_id.as_deref() else {
-        return Ok(None);
-    };
-    let deployments = catalog
-        .deployments()
-        .map_err(|source| TeamCredentialError::Catalog {
-            read: "deployments",
-            source,
-        })?;
+// 1. the team's own BYOK rows: the deployments naming this team, with an id and a usable public name.
+fn byok_candidates(team: &str, scope: &TeamScope, deployments: &[DeploymentRow]) -> Vec<String> {
+    let mut candidates = Vec::new();
     for deployment in deployments {
         if deployment.info_text("team_id") != Some(team) {
             continue;
@@ -196,28 +184,18 @@ where
             .info_text("team_public_model_name")
             .filter(|name| !name.is_empty());
         let public_name = configured_name.unwrap_or(&deployment.model_name);
-        if !may_use(scope, public_name) {
-            continue;
-        }
-        if let Some(credentials) =
-            provider_credentials(catalog, deployment_id, Some(team), provider)?
-        {
-            return Ok(Some(credentials));
+        if may_use(scope, public_name) {
+            candidates.push(deployment_id.to_owned());
         }
     }
-    Ok(None)
+    candidates
 }
 
-// 2. the deployments the caller may use; all-proxy-models on the team defers to the team-scoped list.
-fn fallback_credentials<Catalog>(
-    catalog: &Catalog,
+// 2. the deployments the caller may use, in B759 order; all-proxy-models on the team defers to the team-scoped list.
+fn fallback_candidates(
     scope: &TeamScope,
-    provider: &str,
     expansion: &ExpansionContext<'_>,
-) -> Result<Option<JsonObject>, TeamCredentialError<Catalog::Error>>
-where
-    Catalog: CredentialCatalog,
-{
+) -> Result<Vec<String>, WildcardError> {
     let team_grants_all = scope
         .team_models
         .iter()
@@ -243,14 +221,7 @@ where
         },
     };
     let models_to_try = get_complete_model_list(&scope.proxy_model_list, &listing, expansion)?;
-    for model in dedup_first(models_to_try) {
-        if let Some(credentials) =
-            provider_credentials(catalog, &model, scope.team_id.as_deref(), provider)?
-        {
-            return Ok(Some(credentials));
-        }
-    }
-    Ok(None)
+    Ok(dedup_first(models_to_try))
 }
 
 // get_team_provider_credentials: the team's BYOK row first, then the caller's deployments in B759 order.
@@ -267,14 +238,29 @@ where
         return Ok(None);
     };
     let scope = team_scope(catalog, principal)?;
-    if let Some(credentials) = byok_credentials(catalog, &scope, provider)? {
+    let team_id = scope.team_id.as_deref();
+    let byok = match team_id {
+        Some(team) => {
+            let deployments =
+                catalog
+                    .deployments()
+                    .map_err(|source| TeamCredentialError::Catalog {
+                        read: "deployments",
+                        source,
+                    })?;
+            byok_candidates(team, &scope, &deployments)
+        }
+        None => Vec::new(),
+    };
+    if let Some(credentials) = first_provider_credentials(catalog, byok, team_id, provider)? {
         return Ok(Some(credentials));
     }
-    fallback_credentials(catalog, &scope, provider, expansion)
+    let fallback = fallback_candidates(&scope, expansion)?;
+    first_provider_credentials(catalog, fallback, team_id, provider)
 }
 
-// apply_team_provider_credentials: a miss leaves data untouched, so the caller keeps its own fallback.
-pub fn apply_team_provider_credentials<Catalog>(
+// apply_team_credentials: a miss leaves data untouched, so the caller keeps its own fallback.
+pub fn apply_team_credentials<Catalog>(
     data: &mut JsonObject,
     catalog: Option<&Catalog>,
     principal: &Principal,
@@ -288,12 +274,7 @@ where
     else {
         return Ok(());
     };
-    // include_internal_credentials is false, as in the source
-    drop(prepare_data_with_credentials(
-        data,
-        &credentials,
-        None,
-        false,
-    ));
+    // include_internal_credentials is false, as in the source, so the snapshot it could return is unused
+    let _snapshot = prepare_data_with_credentials(data, &credentials, None, false);
     Ok(())
 }
