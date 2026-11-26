@@ -73,8 +73,8 @@ fn networks(texts: &[&str]) -> Vec<IpNet> {
     parse_normalized(&list(texts), "trusted_proxy_cidrs")
 }
 
-fn rendered(networks: &[IpNet]) -> Vec<String> {
-    networks.iter().map(ToString::to_string).collect()
+fn rendered(items: &[IpNet]) -> Vec<String> {
+    items.iter().map(ToString::to_string).collect()
 }
 
 fn defaults() -> TrustedNetworkSettings {
@@ -809,28 +809,33 @@ fn decoder_rejects_bad_documents() {
 
 #[test]
 fn native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso() {
-    let prefix = br#"{"host":""#;
-    let suffix = br#""}"#;
-    let fill = MAX_NETWORK_HEADER_BYTES - prefix.len() - suffix.len();
+    const PREFIX: &[u8] = br#"{"host":""#;
+    const SUFFIX: &[u8] = br#""}"#;
+    const BODY: usize = MAX_NETWORK_HEADER_BYTES - SUFFIX.len();
+    const FILL: usize = BODY - PREFIX.len();
+    const OVER: usize = MAX_NETWORK_HEADER_BYTES + 1;
+    const INSIDE: usize = MAX_NETWORK_HEADER_DEPTH - 1;
+    const OVER_DEPTH: usize = MAX_NETWORK_HEADER_DEPTH + 1;
+
     let mut document = Vec::with_capacity(MAX_NETWORK_HEADER_BYTES);
-    document.extend_from_slice(prefix);
-    document.resize(MAX_NETWORK_HEADER_BYTES - suffix.len(), b'x');
-    document.extend_from_slice(suffix);
+    document.extend_from_slice(PREFIX);
+    document.resize(BODY, b'x');
+    document.extend_from_slice(SUFFIX);
     assert_eq!(document.len(), MAX_NETWORK_HEADER_BYTES);
     let decoded = decode_network_headers(&document).unwrap();
-    assert_eq!(decoded.host.as_deref().map(str::len), Some(fill));
+    assert_eq!(decoded.host.as_deref().map(str::len), Some(FILL));
 
     document.push(b' ');
-    assert_eq!(document.len(), MAX_NETWORK_HEADER_BYTES + 1);
+    assert_eq!(document.len(), OVER);
     assert!(matches!(
         decode_network_headers(&document),
         Err(DecodeError::TooLarge { size, limit })
-            if size == MAX_NETWORK_HEADER_BYTES + 1 && limit == MAX_NETWORK_HEADER_BYTES
+            if size == OVER && limit == MAX_NETWORK_HEADER_BYTES
     ));
 
     // the depth limit counts the object itself; 64 levels parse, 65 are refused
-    let open_inside = "[".repeat(MAX_NETWORK_HEADER_DEPTH - 1);
-    let close_inside = "]".repeat(MAX_NETWORK_HEADER_DEPTH - 1);
+    let open_inside = "[".repeat(INSIDE);
+    let close_inside = "]".repeat(INSIDE);
     let inside = format!("{{\"host\":{open_inside}{close_inside}}}");
     assert!(matches!(
         decode_network_headers(inside.as_bytes()),
@@ -842,7 +847,7 @@ fn native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso
     assert!(matches!(
         decode_network_headers(over.as_bytes()),
         Err(DecodeError::TooDeep { depth, limit })
-            if depth == MAX_NETWORK_HEADER_DEPTH + 1 && limit == MAX_NETWORK_HEADER_DEPTH
+            if depth == OVER_DEPTH && limit == MAX_NETWORK_HEADER_DEPTH
     ));
 }
 

@@ -77,7 +77,7 @@ fn stage_is_registered() {
         .expect("the master key stage is installed");
     assert_eq!(
         position,
-        master + 1,
+        master.saturating_add(1),
         "network identity is stamped right after authentication"
     );
 

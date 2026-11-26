@@ -43,10 +43,9 @@ pub(crate) fn stage_input(
         .map(|state| state.trusted_network.clone());
     // general_settings falls back to {} when the proxy has not loaded it, which is every default
     let fallback = TrustedNetworkSettings::default();
-    let settings = match &slot {
-        Some(slot) => slot.settings.as_ref(),
-        None => &fallback,
-    };
+    let settings = slot
+        .as_ref()
+        .map_or(&fallback, |slot| slot.settings.as_ref());
     let document = TypedValue {
         x_forwarded_for: header_text(request, X_FORWARDED_FOR),
         x_forwarded_proto: header_text(request, X_FORWARDED_PROTO),
