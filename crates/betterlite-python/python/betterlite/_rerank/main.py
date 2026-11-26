@@ -1,5 +1,5 @@
 from collections.abc import Awaitable, Mapping
-from typing import Final, TypedDict
+from typing import Final, Protocol, TypedDict
 
 from pydantic import JsonValue, TypeAdapter
 
@@ -42,8 +42,13 @@ SKIPPED_KWARGS: Final[tuple[str, ...]] = (
     "logger_fn", "shared_session",
 )
 
+
+class JsonValidator(Protocol):
+    def validate_python(self, value: CallValue, /) -> JsonValue: ...
+
+
 TEXT: Final[TypeAdapter[str | None]] = TypeAdapter(str | None)
-JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
+JSON: JsonValidator = TypeAdapter[JsonValue](JsonValue)
 HEADERS: Final[TypeAdapter[dict[str, JsonValue] | None]] = TypeAdapter(dict[str, JsonValue] | None)
 
 

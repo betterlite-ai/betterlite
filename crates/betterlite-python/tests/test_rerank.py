@@ -4,18 +4,18 @@ import inspect
 import json
 import threading
 import time
-from collections.abc import Awaitable
-from contextlib import closing
+from collections.abc import Awaitable, Iterator
+from contextlib import closing, contextmanager, nullcontext
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import ClassVar, Final, Protocol, TypedDict
+from typing import ClassVar, Final, Protocol, SupportsIndex, TypedDict
 
 import pytest
 from pydantic import JsonValue, TypeAdapter
+from typing_extensions import override
 
 import betterlite
 from betterlite._completion.errors import UnsupportedCallArgument
 from betterlite._endpoints import CallValue
-from betterlite._rerank import limits as limits_module
 from betterlite._rerank import main as rerank_module
 from betterlite._rerank.limits import (
     MAX_DEPTH,
@@ -25,7 +25,7 @@ from betterlite._rerank.limits import (
     RequestBudget,
     check_request_size,
 )
-from betterlite._rerank.main import MAX_DOCUMENTS
+from betterlite._rerank.main import MAX_DOCUMENTS, JsonValidator
 from betterlite.exceptions import (
     APIConnectionError,
     AuthenticationError,
@@ -56,7 +56,6 @@ SEARCH_UNITS: Final = 1
 SEARCH_COST: Final = 0.002
 MAX_CHUNKS: Final = 10
 WIRE_LIMIT: Final = 8 * 1024 * 1024
-JSON_DUMPS: Final = json.dumps
 PROVIDER_DELAY: Final = 0.5
 INFINITY_PROVIDER: Final = "infinity"
 INFINITY_KEY: Final = "infinity-key-1"
@@ -451,14 +450,19 @@ def test_async_request_caps(
 
 def test_request_headers_limit() -> None:
     module_headers = {f"h{index}": "v" for index in range(MAX_HEADERS + 1)}
+    with temporary_headers(module_headers), pytest.raises(ValueError, match="headers"):
+        _ = rerank(
+            model=MODEL, query=QUERY, documents=DOCUMENTS_TEXT,
+            custom_llm_provider=PROVIDER,
+        )
+
+
+@contextmanager
+def temporary_headers(headers: dict[str, str]) -> Iterator[None]:
     original = betterlite.headers
-    betterlite.headers = module_headers  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L593
+    betterlite.headers = headers  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L593
     try:
-        with pytest.raises(ValueError, match="headers"):
-            _ = rerank(
-                model=MODEL, query=QUERY, documents=DOCUMENTS_TEXT,
-                custom_llm_provider=PROVIDER,
-            )
+        yield
     finally:
         betterlite.headers = original
 
@@ -573,32 +577,45 @@ def test_error_azure_refused() -> None:
 
 @pytest.mark.parametrize("entry", ["sync", "async", "flag"])
 @pytest.mark.parametrize("field", ["documents", "query", "extra", "aggregate", "settings"])
-def test_request_before_copy(
-    monkeypatch: pytest.MonkeyPatch, entry: str, field: str,
-) -> None:
+def test_request_before_copy(entry: str, field: str) -> None:
     text = "x" * (WIRE_LIMIT + 1)
     query = text if field == "query" else QUERY
     documents: list[str | dict[str, JsonValue]] = [text] if field == "documents" else []
-    extras: dict[str, CallValue] = {"extra": {"nested": text}} if field == "extra" else {}
+    extra: JsonValue = {"nested": text} if field == "extra" else None
     if field == "aggregate":
         query = "x" * (WIRE_LIMIT // 2)
         documents = [{"text": query}]
-    if field == "settings":
-        monkeypatch.setattr(betterlite, "api_base", text)
-    monkeypatch.setattr(rerank_module, "JSON", None)
-    monkeypatch.setattr(rerank_module, "to_call_payload", None)
-    with pytest.raises(ValueError, match="bytes"):
-        if entry == "async":
-            _ = asyncio.run(arerank(MODEL, query, documents, **extras))
-        else:
-            _ = rerank(MODEL, query, documents, _is_async=entry == "flag", **extras)
+    original = betterlite.api_base
+    original_validator = rerank_module.JSON
+    rerank_module.JSON = RefuseValidation()
+    try:
+        if field == "settings":
+            betterlite.api_base = text
+        with pytest.raises(ValueError, match="bytes"):
+            size_probe(entry, query, documents, extra)
+    finally:
+        betterlite.api_base = original
+        rerank_module.JSON = original_validator
+
+
+def size_probe(
+    entry: str, query: str, documents: list[str | dict[str, JsonValue]], extra: JsonValue,
+) -> None:
+    if entry == "async":
+        _ = asyncio.run(arerank(MODEL, query, documents, extra=extra))
+    else:
+        _ = rerank(MODEL, query, documents, _is_async=entry == "flag", extra=extra)
+
+
+class RefuseValidation(JsonValidator):
+    @override
+    def validate_python(self, value: CallValue, /) -> JsonValue:
+        raise AssertionError("validation ran before the input limit")
 
 
 @pytest.mark.parametrize("entry", ["sync", "async"])
 @pytest.mark.parametrize("source", ["caller", "module", "combined"])
-def test_request_before_headers(
-    monkeypatch: pytest.MonkeyPatch, entry: str, source: str,
-) -> None:
+def test_request_before_headers(entry: str, source: str) -> None:
     caller: dict[str, str] = {}
     module: dict[str, str] = {}
     if source == "caller":
@@ -609,18 +626,22 @@ def test_request_before_headers(
             module["extra"] = "v"
         else:
             caller["extra"] = "v"
-    monkeypatch.setattr(betterlite, "headers", module)
-    monkeypatch.setattr(rerank_module, "JSON", None)
-    monkeypatch.setattr(rerank_module, "HEADERS", None)
-    with pytest.raises(ValueError, match="headers"):
-        if entry == "async":
-            _ = asyncio.run(arerank(MODEL, QUERY, [], headers=caller))
-        else:
-            _ = rerank(MODEL, QUERY, [], headers=caller)
+    original = rerank_module.JSON
+    with temporary_headers(module):
+        rerank_module.JSON = RefuseValidation()
+        try:
+            if entry == "async":
+                with pytest.raises(ValueError, match="headers"):
+                    _ = asyncio.run(arerank(MODEL, QUERY, [], headers=caller))
+            else:
+                with pytest.raises(ValueError, match="headers"):
+                    _ = rerank(MODEL, QUERY, [], headers=caller)
+        finally:
+            rerank_module.JSON = original
 
 
 @pytest.mark.parametrize("value", [
-    None, True, False, 0, -123, 1.25, "", "ascii", "\"\\\n\b\t\r\f\x00\x1f\x7f",
+    None, True, False, 0, -123, 1.25, "", "ascii", '"\\\n\b\t\r\f\x00\x1f\x7f',
     "é中😀", [], {}, [None, True, {"nested": ["é", 42]}],
 ])
 def test_request_size_matches_json(value: JsonValue) -> None:
@@ -656,36 +677,38 @@ def test_request_size_cycle() -> None:
         budget.consume(cyclic)
 
 
-def bounded_dumps(value: CallValue) -> str:
-    match value:
-        case str():
-            assert len(value) <= STRING_CHUNK
-    return JSON_DUMPS(value)
+class ChunkedText(str):
+    slices: int = 0
+
+    @override
+    def __getitem__(self, key: SupportsIndex | slice, /) -> str:
+        result = super().__getitem__(key)
+        assert len(result) <= STRING_CHUNK
+        self.slices += 1
+        return result
 
 
-def test_request_encoding_chunks(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(limits_module.json, "dumps", bounded_dumps)
+def test_request_encoding_chunks() -> None:
     budget = RequestBudget()
-    text = "é" * (STRING_CHUNK + 1)
+    text = ChunkedText("é" * (STRING_CHUNK + 1))
     budget.consume(text)
-    assert budget.remaining == WIRE_LIMIT - len(JSON_DUMPS(text))
+    assert budget.remaining == WIRE_LIMIT - len(json.dumps(text))
+    assert text.slices == (len(text) + STRING_CHUNK - 1) // STRING_CHUNK
 
 
 @pytest.mark.parametrize("depth", [MAX_DEPTH - 1, MAX_DEPTH, MAX_DEPTH + 1])
 def test_request_depth_boundary(depth: int) -> None:
     budget = RequestBudget()
-    if depth > MAX_DEPTH:
-        with pytest.raises(ValueError, match="nesting"):
-            budget.consume("", depth)
-    else:
-        budget.consume("", depth)
-        assert budget.remaining == WIRE_LIMIT - len('""')
+    expected = pytest.raises(ValueError, match="nesting") if depth > MAX_DEPTH else nullcontext()
+    with expected:
+        budget.consume(None, depth)
+    assert budget.remaining == WIRE_LIMIT - (len("null") if depth <= MAX_DEPTH else 0)
 
 
 @pytest.mark.parametrize("count", [0, MAX_HEADERS - 1, MAX_HEADERS])
-def test_request_headers_boundary(monkeypatch: pytest.MonkeyPatch, count: int) -> None:
-    monkeypatch.setattr(betterlite, "headers", {})
-    check_request_size((), {"headers": {f"h{index}": "v" for index in range(count)}})
+def test_request_headers_boundary(count: int) -> None:
+    with temporary_headers({}):
+        check_request_size((), {"headers": {f"h{index}": "v" for index in range(count)}})
 
 
 def test_request_integer_budget() -> None:

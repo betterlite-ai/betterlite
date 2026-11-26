@@ -39,7 +39,7 @@ class RequestBudget:
     def consume_scalar(self, value: CallValue) -> None:
         match value:
             case str():
-                # Count the unescaped text first, then encode only bounded chunks for the extra bytes.
+                # Count raw text first so escaping only allocates bounded chunks.
                 self.charge(len(value) + 2)
                 for offset in range(0, len(value), STRING_CHUNK):
                     chunk = value[offset:offset + STRING_CHUNK]
@@ -52,6 +52,8 @@ class RequestBudget:
                 self.charge(len(json.dumps(value)))
             case bytes() | bytearray():
                 self.charge(len(value))
+            case object():
+                return
 
     def consume_fields(self, fields: Mapping[str, CallValue], depth: int = 0) -> None:
         self.charge(2 + max(0, len(fields) - 1) * 2 + len(fields) * 2)
@@ -79,6 +81,8 @@ def check_request_size(values: tuple[CallValue, ...], kwargs: Mapping[str, CallV
         match source:
             case Mapping():
                 headers += len(source)
+            case object():
+                continue
     if headers > MAX_HEADERS:
         raise ValueError(f"too many rerank headers: {headers} > {MAX_HEADERS}")
     budget = RequestBudget()
