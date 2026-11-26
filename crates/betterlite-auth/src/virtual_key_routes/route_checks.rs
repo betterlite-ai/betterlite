@@ -147,8 +147,7 @@ fn llm_api_outcome(
     if requested.route == AUTO_ROUTER_SESSION && requested.method == Some("GET") {
         return LlmApiOutcome::Granted;
     }
-    let mut protected_without_access = false;
-    if registry.is_registered(requested.route) {
+    let protected_without_access = if registry.is_registered(requested.route) {
         if !is_protected_pass_through(requested.route, requested.method, registry) {
             return LlmApiOutcome::Granted;
         }
@@ -156,8 +155,10 @@ fn llm_api_outcome(
             return LlmApiOutcome::Granted;
         }
         // the denial is remembered, and the carve-outs below still get their say
-        protected_without_access = true;
-    }
+        true
+    } else {
+        false
+    };
     if is_mcp_discovery_route(requested.route, requested.method) {
         return LlmApiOutcome::Granted;
     }
