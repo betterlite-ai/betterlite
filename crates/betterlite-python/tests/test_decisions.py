@@ -4,7 +4,7 @@ import inspect
 import json
 import threading
 from collections.abc import Sequence
-from contextlib import closing
+from contextlib import closing, suppress
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import ClassVar, Final, Protocol
 
@@ -51,6 +51,7 @@ TOTAL_TOKENS: Final = 15
 NOUL: Final = 0.75
 BAD_REQUEST_TEXT: Final = "boom"
 SANDBOX_DOMAIN: Final = "e2b.app"
+BAD_DOMAIN: Final = "bad host"
 ENVD_VALUE: Final = "envd-token"
 TRAFFIC_VALUE: Final = "traffic-token"
 DEFAULT_TEMPLATE: Final = "code-interpreter-v1"
@@ -227,9 +228,14 @@ class RecordingHandler(BaseHTTPRequestHandler):
             case "/providers/microsoft/v1/systemone":
                 self.reply(OK, SYSTEMONE_BODY)
             case "/sandboxes":
-                self.reply(OK, CREATE_BODY)
+                self.reply(OK, self.create_body())
             case object():
                 self.reply(NOT_FOUND, {})
+
+    def create_body(self) -> dict[str, JsonValue]:
+        if self.owner.mode == "unusable-domain":
+            return {**CREATE_BODY, "domain": BAD_DOMAIN}
+        return CREATE_BODY
 
     def do_DELETE(self) -> None:
         self.owner.record(self.command, self.path, dict(self.headers.items()), {})
@@ -483,6 +489,18 @@ def test_handle_calls_delete() -> None:
     assert create["body"]["timeout"] == DEFAULT_TIMEOUT
     assert create["body"]["allow_internet_access"] is True
     assert call["path"] == f"{SANDBOXES_PATH}/{SANDBOX_ID}"
+
+
+def test_code_interpreter_calls_delete_after_a_failed_run() -> None:
+    with closing(RecordingServer("unusable-domain")) as server, suppress(Exception):
+        asyncio.run(
+            acode_interpreter_tool(
+                provider="e2b", code="print(1)", api_key=E2B_KEY, api_base=server.url
+            )
+        )
+    commands = [call["command"] for call in server.calls]
+    assert commands == ["POST", "DELETE"]
+    assert server.calls[-1]["path"] == f"{SANDBOXES_PATH}/{SANDBOX_ID}"
 
 
 def test_sandbox_tools_calls(monkeypatch: pytest.MonkeyPatch) -> None:
