@@ -237,6 +237,39 @@ fn extracted(config: &Config, headers: &[(&str, &str)], body: &str) -> Option<St
 }
 
 #[test]
+fn database_flag_comes_from_the_state() {
+    let master_key = SecretString::from("secret-master-key".to_owned());
+    let context = master_context(&master_key);
+    let mut without = stage_request(&[], "{}");
+    without
+        .extensions_mut()
+        .insert(state_for(&config_with_master_key()));
+    let Ok(without_stage) = stage_input(&without, Some(&context), None) else {
+        panic!("the authenticated request builds its stage input");
+    };
+    assert!(!without_stage.database);
+    let mut with = stage_request(&[], "{}");
+    with.extensions_mut()
+        .insert(state_for(&config_with_database()));
+    let Ok(with_stage) = stage_input(&with, Some(&context), None) else {
+        panic!("the authenticated request builds its stage input");
+    };
+    assert!(with_stage.database);
+}
+
+#[test]
+fn the_rule_debug_names_the_wired_resolver() {
+    let cache = ScriptedCache::new(false);
+    let (identity, _existence) = resolver(true, &cache);
+    let rule = EndUserIdentityRule {
+        resolver: Some(identity),
+    };
+    let debug = format!("{rule:?}");
+    assert!(debug.contains("EndUserIdResolver"), "{debug}");
+    assert!(!debug.contains("ScriptedCache"), "{debug}");
+}
+
+#[test]
 fn request_id_sources() {
     let config = config_with_database();
     let standard = extracted(

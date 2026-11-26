@@ -1,4 +1,3 @@
-use std::fmt;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -68,23 +67,6 @@ pub struct EndUserObjectExistence<
     pub registry: Arc<EndUserRegistry>,
     pub store: PostgresStore,
     pub max_end_user_budget_id: Option<String>,
-}
-
-// the wired dependencies stay out of the log: only which probes exist is readable
-impl<Rows, Budgets, Cache> fmt::Debug for EndUserObjectExistence<Rows, Budgets, Cache>
-where
-    Rows: EndUserRows + ?Sized,
-    Budgets: BudgetRows + ?Sized,
-    Cache: EndUserCache + ?Sized,
-{
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("EndUserObjectExistence")
-            .field("rows", &self.rows.is_some())
-            .field("budgets", &self.budgets.is_some())
-            .field("max_end_user_budget_id", &self.max_end_user_budget_id)
-            .finish_non_exhaustive()
-    }
 }
 
 #[async_trait]

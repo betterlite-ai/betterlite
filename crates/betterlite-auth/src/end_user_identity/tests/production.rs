@@ -5,7 +5,7 @@ use std::sync::Arc;
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_models::decisions::Json;
 
-use super::super::cache::ValidationCache;
+use super::super::cache::{POSITIVE_TTL_SECONDS, ValidationCache};
 use super::super::existence::{
     EndUserExistence, EndUserObjectExistence, ExistenceError, UserExistence, UserProbe,
 };
@@ -15,6 +15,7 @@ use super::support::{
     ScriptedUsers, UserCachePort, capture_events, debug_messages, end_user_row, registry,
     user_lookup,
 };
+use crate::auth_cache::WriteTtl;
 use crate::auth_end_users::object::EndUserObjectError;
 use crate::auth_user_lookup::lookup::UserLookup;
 
@@ -31,6 +32,27 @@ fn adapter(
         store: PostgresStore { pool: None },
         max_end_user_budget_id: max_end_user_budget_id.map(str::to_owned),
     }
+}
+
+#[tokio::test]
+async fn validation_cache_round_trips() {
+    let storage: Arc<dyn ValidationCache> = Arc::new(test_cache());
+    let cache_key = "end_user_validation:alice";
+    assert_eq!(storage.read(cache_key).await.expect("the empty read"), None);
+    storage
+        .write(
+            cache_key,
+            &Json::Text("valid".to_owned()),
+            WriteTtl {
+                seconds: POSITIVE_TTL_SECONDS,
+            },
+        )
+        .await
+        .expect("the cache write");
+    assert_eq!(
+        storage.read(cache_key).await.expect("the cached read"),
+        Some(Json::Text("valid".to_owned()))
+    );
 }
 
 #[tokio::test]
