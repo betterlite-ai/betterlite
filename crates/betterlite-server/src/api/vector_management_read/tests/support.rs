@@ -223,24 +223,13 @@ pub(super) fn flags_blocked_team_admins() -> FeatureSettings {
     settings
 }
 
+#[derive(Default)]
 pub(super) struct Setup {
     pub(super) database: Option<FakeDatabase>,
     pub(super) registry: Option<Vec<LiteLlmManagedVectorStore>>,
     pub(super) world: World,
     pub(super) privileges: bool,
     pub(super) settings: FeatureSettings,
-}
-
-impl Default for Setup {
-    fn default() -> Self {
-        Self {
-            database: None,
-            registry: None,
-            world: World::default(),
-            privileges: false,
-            settings: FeatureSettings::default(),
-        }
-    }
 }
 
 pub(super) fn build(setup: Setup) -> Arc<VectorManagementReadState<FakeDatabase>> {
@@ -252,11 +241,13 @@ pub(super) fn build(setup: Setup) -> Arc<VectorManagementReadState<FakeDatabase>
             credentials: Arc::new(CredentialSnapshot::default()),
         }))
     });
+    let permissions: Arc<dyn ObjectPermissionLookup> = Arc::clone(&world);
+    let teams: Arc<dyn TeamLoader> = Arc::clone(&world);
     Arc::new(VectorManagementReadState {
         database: setup.database,
         registry,
-        permissions: Arc::clone(&world),
-        teams: Arc::clone(&world),
+        permissions,
+        teams,
         session_teams: world,
         privileges: Arc::new(FakePrivileges {
             granted: setup.privileges,

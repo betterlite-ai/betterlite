@@ -116,6 +116,8 @@ async fn answer(
 
 fn build_state(setup: &Setup) -> Arc<VectorManagementReadState<FakeDatabase>> {
     let world = Arc::new(World);
+    let permissions: Arc<dyn ObjectPermissionLookup> = Arc::clone(&world);
+    let teams: Arc<dyn TeamLoader> = Arc::clone(&world);
     Arc::new(VectorManagementReadState {
         database: setup.database.clone().map(|rows| FakeDatabase { rows }),
         registry: setup.registry.clone().map(|stores| {
@@ -125,8 +127,8 @@ fn build_state(setup: &Setup) -> Arc<VectorManagementReadState<FakeDatabase>> {
                 credentials: Arc::new(CredentialSnapshot::default()),
             }))
         }),
-        permissions: Arc::clone(&world),
-        teams: Arc::clone(&world),
+        permissions,
+        teams,
         session_teams: world,
         privileges: Arc::new(NoPrivileges),
         settings: Settings {

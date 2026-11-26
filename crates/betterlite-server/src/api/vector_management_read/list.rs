@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Mutex, PoisonError};
 
 use betterlite_core::api::api_boundaries::ApiLimits;
@@ -87,6 +87,7 @@ where
         total_count: Some(total_count),
         current_page: Some(page),
         total_pages: Some(pages),
+        extra: BTreeMap::new(),
     })
 }
 
@@ -137,8 +138,8 @@ fn reconcile(
                 "Vector store {id} exists in memory but not in database - marking for deletion from cache"
             );
             to_delete.push(id.to_owned());
-        } else if !stores.contains_key(id) {
-            stores.insert(id.to_owned(), store.clone());
+        } else {
+            stores.entry(id.to_owned()).or_insert_with(|| store.clone());
         }
     }
     for id in &to_delete {

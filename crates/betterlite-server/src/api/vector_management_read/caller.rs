@@ -17,7 +17,6 @@ pub struct CallerView {
 }
 
 impl CallerView {
-    #[must_use]
     pub fn from_principal(principal: &Principal) -> Result<Self, ManagementReadError> {
         let identity =
             caller_identity(principal).map_err(|_error| ManagementReadError::Internal {
