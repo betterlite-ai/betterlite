@@ -13,7 +13,7 @@ pub async fn max_budget_check(
     sources: &TenantSources<'_>,
     admission: &TenantAdmission<'_>,
 ) -> Result<(), TenantBudgetError> {
-    if !sources.database || tag_names.is_empty() {
+    if !sources.database {
         return Ok(());
     }
     let (Some(cache), Some(rows)) = (sources.cache, sources.tags) else {

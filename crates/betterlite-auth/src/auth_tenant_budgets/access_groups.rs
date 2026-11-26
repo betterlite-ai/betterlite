@@ -14,7 +14,7 @@ pub async fn access_group_max_budget_check(
     sources: &TenantSources<'_>,
     admission: &TenantAdmission<'_>,
 ) -> Result<(), TenantBudgetError> {
-    if !sources.database || group_names.is_empty() {
+    if !sources.database {
         return Ok(());
     }
     let (Some(cache), Some(rows)) = (sources.cache, sources.groups) else {
