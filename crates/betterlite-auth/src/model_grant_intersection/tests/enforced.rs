@@ -1,3 +1,5 @@
+use betterlite_db::identity_rows::user::LiteLLMUserTable;
+
 use crate::auth_errors::conversion::AuthFailure;
 use crate::auth_org_lookup::error::OrgLookupError;
 use crate::auth_team_lookup::error::TeamLookupError;
@@ -150,6 +152,24 @@ async fn user_not_found_only_suppressed() {
     assert_user_failure_escapes(user_read_failure()).await;
     assert_user_failure_escapes(UserLookupError::Unavailable(unavailable())).await;
     assert_user_failure_escapes(UserLookupError::PreLookup(unavailable())).await;
+}
+
+// LiteLLM declares list[str]; a stored non-text entry grants nothing because no allowlist check matches it
+#[tokio::test]
+async fn non_text_user_models_grant_nothing() {
+    let user: LiteLLMUserTable =
+        serde_json::from_str(r#"{"user_id":"u1","models":["user-group",7]}"#)
+            .expect("the user row fixture parses");
+    let world = World::new().with_user(Ok(Some(user)));
+    let token = grant_token(&[("user_id", text("u1"))]);
+    let lists = enforced_model_allowlists(EnforcedRequest {
+        token: &token,
+        sources: Some(&world),
+        now: 0.0,
+    })
+    .await
+    .unwrap();
+    assert_eq!(lists[3], owned(&["user-group"]));
 }
 
 #[tokio::test]

@@ -8,8 +8,8 @@ deviations:
     why: >-
       betterlite-db keeps the user models column untyped, so the row decodes where a declared list[str] would
       reject it. Only a string can name a group or a model, so dropping the entry keeps the rest of the
-      allowlist in force. The string paths are covered by db_five_list_order, user_not_found_only_suppressed
-      and matched_group_stamping.
+      allowlist in force. non_text_user_models_grant_nothing proves the dropped entry while the string paths
+      are covered by db_five_list_order, user_not_found_only_suppressed and matched_group_stamping.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L4900-L4913
 kept_bugs:
   - what: >-

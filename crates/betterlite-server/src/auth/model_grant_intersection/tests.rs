@@ -181,6 +181,20 @@ fn rule(sources: Arc<ScriptedSources>, recorder: Arc<Recorder>) -> Arc<GrantRule
     })
 }
 
+fn unsourced_rule(recorder: Arc<Recorder>) -> Arc<GrantRule> {
+    Arc::new(GrantRule {
+        key: Some(key()),
+        team: None,
+        project: None,
+        membership: None,
+        membership_loaded: false,
+        models: Some(vec!["gpt-4o".to_owned()]),
+        sources: None,
+        groups: Some(Arc::new(ScriptedGroups)),
+        sink: Some(recorder),
+    })
+}
+
 fn config(environment: &[(&str, &str)], yaml: &str) -> Config {
     let lookup = environment
         .iter()
@@ -342,6 +356,17 @@ async fn assert_request_records_the_walk() {
         "the no-database answer pairs the key list with the token's team models"
     );
     assert!(skip_matched.is_empty());
+
+    // a database without the stage's sources skips the walk rather than failing the request
+    let unwired = Arc::new(Recorder::default());
+    let (unwired_status, _unwired_body, unwired_reached) = run_request(
+        &config_with_database(),
+        unsourced_rule(Arc::clone(&unwired)),
+    )
+    .await;
+    assert_eq!(unwired_status, StatusCode::OK);
+    assert!(unwired_reached);
+    assert!(unwired.recorded().is_none());
 }
 
 #[tokio::test]
