@@ -45,12 +45,9 @@ impl Convertor {
 fn float(candidate: &str) -> bool {
     match candidate.split_once('.') {
         Some((whole, fraction)) => {
-            !whole.is_empty()
-                && whole.bytes().all(|byte| byte.is_ascii_digit())
-                && !fraction.is_empty()
-                && fraction.bytes().all(|byte| byte.is_ascii_digit())
+            Convertor::Int.accepts(whole) && Convertor::Int.accepts(fraction)
         }
-        None => !candidate.is_empty() && candidate.bytes().all(|byte| byte.is_ascii_digit()),
+        None => Convertor::Int.accepts(candidate),
     }
 }
 
