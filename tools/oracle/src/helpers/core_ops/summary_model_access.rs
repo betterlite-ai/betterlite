@@ -45,14 +45,14 @@ pub(crate) enum Input {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct SettingsScenario {
+pub(crate) struct SettingsScenario {
     // null means a process without the proxy module, where each reader takes its fallback
     general_settings: Option<BTreeMap<String, JsonData>>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct AccessScenario {
+pub(crate) struct AccessScenario {
     principal: Option<BTreeMap<String, JsonData>>,
     // false means a process whose proxy_server import fails, where the check allows every summary model
     proxy: bool,
@@ -213,9 +213,10 @@ fn principal_of(scenario: &AccessScenario) -> Result<Option<UserAPIKeyAuth>, Box
         .or_value_error()
 }
 
-fn lookup<Row: DeserializeOwned>(
-    script: &LookupScript,
-) -> Result<ScriptedLookup<Row>, Box<HelperError>> {
+fn lookup<Row>(script: &LookupScript) -> Result<ScriptedLookup<Row>, Box<HelperError>>
+where
+    Row: DeserializeOwned,
+{
     match script {
         LookupScript::Missing => Ok(ScriptedLookup::Missing),
         LookupScript::Failed => Ok(ScriptedLookup::Failed),
