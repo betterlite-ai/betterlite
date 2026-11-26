@@ -217,19 +217,26 @@ impl FileCallCore {
             .run(entry_of(mode), operation, kwargs, context)
             .await
             .map_err(|error| PyErr::from(read_failure(&error)))?;
-        match (kind, answer) {
-            (AnswerKind::File, ReadAnswer::File(object)) => answer_text(&object),
-            (AnswerKind::Page, ReadAnswer::Listing(FileListing::Page(page))) => answer_text(&page),
-            (AnswerKind::File, ReadAnswer::Listing(_)) => Err(PyRuntimeError::new_err(
-                "file_retrieve answered with a file list",
-            )),
+        let serialized = match (kind, answer) {
+            (AnswerKind::File, ReadAnswer::File(object)) => serde_json::to_string(&object),
+            (AnswerKind::Page, ReadAnswer::Listing(FileListing::Page(page))) => {
+                serde_json::to_string(&page)
+            }
+            (AnswerKind::File, ReadAnswer::Listing(_)) => {
+                return Err(PyRuntimeError::new_err(
+                    "file_retrieve answered with a file list",
+                ));
+            }
             (
                 AnswerKind::Page,
                 ReadAnswer::File(_) | ReadAnswer::Listing(FileListing::Files(_)),
-            ) => Err(PyRuntimeError::new_err(
-                "file_list answered with another reply kind",
-            )),
-        }
+            ) => {
+                return Err(PyRuntimeError::new_err(
+                    "file_list answered with another reply kind",
+                ));
+            }
+        };
+        serialized.map_err(|source| PyErr::from(ConvertError::Answer(source)))
     }
 }
 
@@ -244,17 +251,6 @@ fn write_answer<T>(answer: Result<T, FileWriteError<DispatchError>>) -> Result<S
 where
     T: Serialize,
 {
-    answer
-        .map_err(|error| PyErr::from(write_failure(&error)))
-        .and_then(|value| answer_text(&value))
-}
-
-fn answer_text<T>(value: &T) -> Result<String, PyErr>
-where
-    T: Serialize,
-{
-    match serde_json::to_string(value) {
-        Ok(text) => Ok(text),
-        Err(source) => Err(PyErr::from(ConvertError::Answer(source))),
-    }
+    let value = answer.map_err(|error| PyErr::from(write_failure(&error)))?;
+    serde_json::to_string(&value).map_err(|source| PyErr::from(ConvertError::Answer(source)))
 }
