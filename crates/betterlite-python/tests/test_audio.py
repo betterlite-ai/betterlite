@@ -19,6 +19,7 @@ import betterlite
 from betterlite._audio.binary import HttpxBinaryResponseContent
 from betterlite._audio.main import transcription_response_from_cached_dict
 from betterlite._completion.errors import UnsupportedCallArgument
+from betterlite._endpoints import CallValue
 from betterlite.exceptions import APIConnectionError, AuthenticationError, BadRequestError
 from betterlite.main import aspeech, atranscription, speech, transcription
 from betterlite.types.utils.transcription import (
@@ -32,6 +33,7 @@ from betterlite.types.utils.transcription import (
 HOST: Final = "127.0.0.1"
 OK: Final = 200
 UNAUTHORIZED: Final = 401
+BAD_REQUEST: Final = 400
 GOOD_KEY: Final = "sk-test"
 BAD_KEY: Final = "bad-key"
 MODEL: Final = "whisper-1"
@@ -147,12 +149,16 @@ class AudioServer(ThreadingHTTPServer):
     calls: list[RecordedCall]
     transcription_body: dict[str, JsonValue]
     speech_body: bytes
+    error_status: int | None
+    error_body: dict[str, JsonValue]
 
     def __init__(self) -> None:
         super().__init__((HOST, 0), AudioHandler)
         self.calls = []
         self.transcription_body = dict(VERBOSE_BODY)
         self.speech_body = AUDIO_BYTES
+        self.error_status = None
+        self.error_body = {}
         AudioHandler.owner = self
         self.thread = threading.Thread(target=self.serve_forever, daemon=True)
         self.thread.start()
@@ -179,6 +185,9 @@ class AudioHandler(BaseHTTPRequestHandler):
         self.owner.record(self.path, dict(self.headers.items()), raw)
         if self.headers.get("Authorization") != f"Bearer {GOOD_KEY}":
             self.reply_json(UNAUTHORIZED, dict(AUTH_BODY))
+            return
+        if self.owner.error_status is not None:
+            self.reply_json(self.owner.error_status, self.owner.error_body)
             return
         if self.path.endswith("/audio/speech"):
             self.reply_bytes(self.owner.speech_body, AUDIO_TYPE)
@@ -464,6 +473,8 @@ def test_transcription_auth_error() -> None:
     assert error.model == MODEL
     assert error.llm_provider == PROVIDER
     assert AUTH_TEXT in error.message
+    assert error.type == "invalid_request_error"
+    assert error.code == "invalid_api_key"
     cause = error.__cause__
     assert cause is not None
     assert cause.__class__.__name__ == "NativeAudioError"
@@ -477,6 +488,8 @@ def test_speech_auth_error() -> None:
         )
     assert caught.value.status_code == UNAUTHORIZED
     assert AUTH_TEXT in caught.value.message
+    assert caught.value.type == "invalid_request_error"
+    assert caught.value.code == "invalid_api_key"
 
 
 def test_speech_voice_error() -> None:
@@ -527,3 +540,77 @@ def test_speech_missing_key_error(monkeypatch: pytest.MonkeyPatch) -> None:
     finally:
         betterlite.api_key, betterlite.openai_key = previous_key, previous_openai
     assert "api_key client option must be set" in caught.value.message
+
+
+@pytest.mark.parametrize(("field", "value", "message"), [
+    ("model", None, "model parameter is required"),
+    ("model", 42, "model must be text"),
+    ("file", None, "file is required"),
+    ("file", "clip.wav", BARE_STRING_TEXT),
+    ("timeout", "soon", "timeout must be a number"),
+])
+def test_transcription_local_error(field: str, value: CallValue, message: str) -> None:
+    values: dict[str, CallValue] = {"model": MODEL, "file": wav_bytes(), "api_key": GOOD_KEY}
+    values[field] = value
+    for mode in ("sync", "async"):
+        with pytest.raises(ValueError, match=message) as caught:
+            if mode == "sync":
+                transcription(**values)
+            else:
+                asyncio.run(atranscription(**values))
+        cause = caught.value.__cause__
+        assert cause is not None
+        assert cause.__class__.__name__ == "NativeAudioError"
+
+
+@pytest.mark.parametrize("operation", ["transcription", "atranscription", "speech", "aspeech"])
+def test_audio_provider_body_error(operation: str) -> None:
+    with closing(AudioServer()) as server, pytest.raises(BadRequestError) as caught:
+        server.error_status = BAD_REQUEST
+        server.error_body = {"error": {
+            "message": "Invalid file", "type": "invalid_request_error",
+            "param": "file", "code": "invalid_file",
+        }}
+        match operation:
+            case "transcription":
+                transcription(MODEL, wav_bytes(), api_base=server.url, api_key=GOOD_KEY)
+            case "atranscription":
+                asyncio.run(atranscription(
+                    MODEL, wav_bytes(), api_base=server.url, api_key=GOOD_KEY,
+                ))
+            case "speech":
+                speech(TTS_MODEL, "hello", "alloy", api_base=server.url, api_key=GOOD_KEY)
+            case "aspeech":
+                asyncio.run(aspeech(
+                    TTS_MODEL, "hello", "alloy", api_base=server.url, api_key=GOOD_KEY,
+                ))
+            case object():
+                pytest.fail("unknown audio operation")
+    assert caught.value.type == "invalid_request_error"
+    assert caught.value.param == "file"
+    assert caught.value.code == "invalid_file"
+    assert BODY.validate_python(caught.value.body)["code"] == "invalid_file"
+
+
+def test_speech_sdk_identity_headers(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("OPENAI_ORG_ID", raising=False)
+    monkeypatch.delenv("OPENAI_PROJECT_ID", raising=False)
+    monkeypatch.setenv("OPENAI_ORGANIZATION", "org-env")
+    monkeypatch.setenv("OPENAI_PROJECT", "project-env")
+    monkeypatch.setattr(betterlite, "organization", "org-setting")
+    monkeypatch.setattr(betterlite, "project", "project-setting")
+    with closing(AudioServer()) as server:
+        speech(
+            TTS_MODEL, "hello", "alloy", organization="org-a", project="project-a",
+            api_base=server.url, api_key=GOOD_KEY,
+        )
+        assert header_of(server.calls[-1], "openai-organization") is None
+        assert header_of(server.calls[-1], "openai-project") is None
+        monkeypatch.setenv("OPENAI_ORG_ID", "org-sdk")
+        monkeypatch.setenv("OPENAI_PROJECT_ID", "project-sdk")
+        asyncio.run(aspeech(
+            TTS_MODEL, "hello", "alloy", organization="org-a", project="project-a",
+            api_base=server.url, api_key=GOOD_KEY,
+        ))
+        assert header_of(server.calls[-1], "openai-organization") == "org-sdk"
+        assert header_of(server.calls[-1], "openai-project") == "project-sdk"

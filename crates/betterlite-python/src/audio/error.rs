@@ -4,6 +4,7 @@ use crate::completion::error::SessionError as CompletionSessionError;
 use betterlite_error::dispatch::{DispatchInput, RawException, RawExceptionBody, dispatch};
 use betterlite_error::error::metadata::RetryMetadata;
 use betterlite_error::error::{ErrorClass, ErrorContext, class_message};
+use betterlite_openai::files::error::StatusError;
 use betterlite_redact::error::RedactionError;
 use betterlite_redact::secret::Redactor;
 use betterlite_sdk::call_wrapper::error::{class_name, class_status};
@@ -38,6 +39,7 @@ pub(crate) struct CallFailure {
     pub(crate) provider: Option<Box<str>>,
     pub(crate) status_code: Option<u16>,
     headers: BTreeMap<String, String>,
+    pub(crate) body: Option<RawExceptionBody>,
     #[serde(flatten)]
     retry: RetryMetadata,
 }
@@ -51,6 +53,7 @@ impl CallFailure {
             provider: None,
             status_code: None,
             headers: BTreeMap::new(),
+            body: None,
             retry: RetryMetadata::default(),
         }
     }
@@ -69,6 +72,7 @@ impl CallFailure {
             provider: metadata.provider.map(String::into_boxed_str),
             status_code: class_status(class),
             headers,
+            body: None,
             retry: metadata.retry,
         }
     }
@@ -126,21 +130,31 @@ pub(crate) fn missing_key(model: &str) -> CallFailure {
 
 pub(crate) fn provider_failure(
     message: String,
-    status: Option<u16>,
+    status: Option<&StatusError>,
     model: &str,
     provider: &str,
     redactor: &Redactor,
 ) -> CallFailure {
+    let body = status.map(|found| RawExceptionBody {
+        kind: found.error_type.clone(),
+        param: found.param.clone(),
+        code: found.code.clone(),
+        message: None,
+        error: None,
+    });
     let raw = RawException {
         model: model.to_owned(),
         custom_llm_provider: provider.to_owned(),
         error_str: message,
-        status_code: status,
+        status_code: status.map(|found| found.status),
         status_code_is_synthesized: false,
         message: None,
-        body: Some(RawExceptionBody::default()),
+        body: body.clone(),
         exception_type: String::new(),
     };
     let class = dispatch(&DispatchInput::Raw(Box::new(raw)), redactor);
-    CallFailure::from_class(&class)
+    CallFailure {
+        body,
+        ..CallFailure::from_class(&class)
+    }
 }

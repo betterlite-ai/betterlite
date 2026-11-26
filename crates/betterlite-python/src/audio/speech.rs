@@ -23,10 +23,6 @@ struct Prepared {
     connection: SpeechConnection,
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "Keep the provider call lifecycle together"
-)]
 pub(crate) async fn run(
     session: &AudioSession,
     call: SpeechCallWire,
@@ -43,23 +39,17 @@ pub(crate) async fn run(
         connection: prepared.connection,
         aspeech: call.aspeech,
     };
+    let failure = |error: SpeechError| {
+        speech_failure(
+            &error,
+            &prepared.model,
+            &prepared.provider,
+            &session.redactor,
+        )
+    };
     let mut logger = SilentAudioLogger;
-    let pending = audio_speech(speech, &mut logger, &session.client).map_err(|error| {
-        speech_failure(
-            &error,
-            &prepared.model,
-            &prepared.provider,
-            &session.redactor,
-        )
-    })?;
-    let response = pending.await.map_err(|error| {
-        speech_failure(
-            &error,
-            &prepared.model,
-            &prepared.provider,
-            &session.redactor,
-        )
-    })?;
+    let pending = audio_speech(speech, &mut logger, &session.client).map_err(failure)?;
+    let response = pending.await.map_err(failure)?;
     let header = SpeechHeader {
         status_code: response.status,
         headers: response.headers.clone(),
@@ -67,14 +57,7 @@ pub(crate) async fn run(
     let content = response
         .content(session.client.limits.body_bytes)
         .await
-        .map_err(|error| {
-            speech_failure(
-                &error,
-                &prepared.model,
-                &prepared.provider,
-                &session.redactor,
-            )
-        })?;
+        .map_err(failure)?;
     Ok(SpeechAnswer { content, header })
 }
 
@@ -135,13 +118,9 @@ fn speech_failure(
     redactor: &Redactor,
 ) -> CallFailure {
     match error {
-        SpeechError::Status(found) => provider_failure(
-            error.to_string(),
-            Some(found.status),
-            model,
-            provider,
-            redactor,
-        ),
+        SpeechError::Status(found) => {
+            provider_failure(error.to_string(), Some(found), model, provider, redactor)
+        }
         SpeechError::Transport { .. } => {
             provider_failure(error.to_string(), None, model, provider, redactor)
         }

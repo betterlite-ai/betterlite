@@ -37,8 +37,6 @@ pub(crate) struct AudioSettings {
     pub(crate) api_base: Option<String>,
     pub(crate) api_key: Option<SecretString>,
     pub(crate) openai_key: Option<SecretString>,
-    pub(crate) organization: Option<String>,
-    pub(crate) project: Option<String>,
     pub(crate) num_retries: Option<u32>,
 }
 

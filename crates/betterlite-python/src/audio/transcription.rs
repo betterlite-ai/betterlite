@@ -62,25 +62,19 @@ pub(crate) async fn run(
         connection: prepared.connection,
         boundary: Uuid::new_v4(),
     };
-    let mut logger = SilentAudioLogger;
-    let (outbound, pending) =
-        audio_transcriptions(&transcription, &request, &mut logger).map_err(|error| {
-            transcription_failure(
-                &error,
-                &prepared.model,
-                &prepared.provider,
-                &session.redactor,
-            )
-        })?;
-    let sent = TranscriptionTransport::send(&session.client, outbound).await;
-    let reply = finish_transcription(pending, sent, &mut logger).map_err(|error| {
+    let failure = |error: TranscriptionError| {
         transcription_failure(
             &error,
             &prepared.model,
             &prepared.provider,
             &session.redactor,
         )
-    })?;
+    };
+    let mut logger = SilentAudioLogger;
+    let (outbound, pending) =
+        audio_transcriptions(&transcription, &request, &mut logger).map_err(failure)?;
+    let sent = TranscriptionTransport::send(&session.client, outbound).await;
+    let reply = finish_transcription(pending, sent, &mut logger).map_err(failure)?;
     let response_ms = started.elapsed().as_secs_f64().mul_add(1000.0_f64, 0.0_f64);
     let hidden_params = hidden_params(
         &reply,
@@ -89,14 +83,7 @@ pub(crate) async fn run(
         &call,
         &prepared.model,
     )
-    .map_err(|error| {
-        transcription_failure(
-            &error,
-            &prepared.model,
-            &prepared.provider,
-            &session.redactor,
-        )
-    })?;
+    .map_err(failure)?;
     Ok(TranscriptionAnswer {
         reply: reply.response,
         response_ms,
@@ -190,21 +177,18 @@ fn hidden_params(
         String::from("additional_headers"),
         Json::Object(reply.provider_headers.additional_headers.clone()),
     );
-    let duration_missing = !reply.response.extra.contains_key("duration");
-    if !call.atranscription || call.file_from_kwargs {
-        if duration_missing && let Some(found) = request_duration(&processed.file_content) {
-            hidden.insert(
-                String::from("audio_transcription_duration"),
-                duration_number(Some(found))?,
-            );
-        }
-    } else if let StoredDuration::Known(found) = reply.duration {
+    let mut duration = reply.duration;
+    if (!call.atranscription || call.file_from_kwargs)
+        && !reply.response.extra.contains_key("duration")
+        && let Some(found) = request_duration(&processed.file_content)
+    {
+        duration = StoredDuration::Known(Some(found));
+    }
+    if let StoredDuration::Known(found) = duration {
         hidden.insert(
             String::from("audio_transcription_duration"),
             duration_number(found)?,
         );
-    } else {
-        // Positional async files keep an absent handler duration absent.
     }
     if let Some(found) = Number::from_f64(response_ms) {
         hidden.insert(String::from("_response_ms"), Json::Number(found));
@@ -230,13 +214,9 @@ fn transcription_failure(
     redactor: &Redactor,
 ) -> CallFailure {
     match error {
-        TranscriptionError::Status(found) => provider_failure(
-            error.to_string(),
-            Some(found.status),
-            model,
-            provider,
-            redactor,
-        ),
+        TranscriptionError::Status(found) => {
+            provider_failure(error.to_string(), Some(found), model, provider, redactor)
+        }
         TranscriptionError::Transport { .. } => {
             provider_failure(error.to_string(), None, model, provider, redactor)
         }

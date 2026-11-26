@@ -6,9 +6,12 @@ use super::{
     bare_string_file, family_for, first_file, max_retries, parse, parse_speech, resolve_target,
     timeout, transcription_options,
 };
+use crate::audio::error::provider_failure;
 use betterlite_openai::api::audio_file_input::AuthorizedAudioFiles as _;
+use betterlite_openai::files::error::StatusError;
 use betterlite_openai::speech::request::SpeechFormat;
 use betterlite_openai::transcription::config::TranscriptionFamily;
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_sdk::call_files::{CallFile, CallFilesError};
 use betterlite_sdk::call_setup::RequestMap;
 use rust_decimal::Decimal;
@@ -253,4 +256,41 @@ fn request_speech_timeout_reads_the_argument() {
     );
     let absent = RequestMap::new();
     assert_eq!(speech_timeout(&absent).unwrap(), None);
+}
+
+#[test]
+fn error_provider_body_keeps_fields() {
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
+    for status in [400_u16, 401_u16, 500_u16] {
+        let error = StatusError::from_response(
+            status,
+            br#"{"error":{"type":"invalid_request_error","param":"file","code":"invalid_file"}}"#,
+        );
+        let failure = provider_failure(
+            error.message.clone(),
+            Some(&error),
+            "whisper-1",
+            "openai",
+            &redactor,
+        );
+        assert_eq!(failure.status_code, Some(status));
+        let body = failure.body.unwrap();
+        assert_eq!(body.kind.as_deref(), Some("invalid_request_error"));
+        assert_eq!(body.param.as_deref(), Some("file"));
+        assert_eq!(body.code.as_deref(), Some("invalid_file"));
+    }
+}
+
+#[test]
+fn error_transport_body_is_absent() {
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
+    let failure = provider_failure(
+        "connection refused".to_owned(),
+        None,
+        "whisper-1",
+        "openai",
+        &redactor,
+    );
+    assert!(failure.body.is_none());
+    assert_eq!(failure.kind, "APIConnectionError");
 }

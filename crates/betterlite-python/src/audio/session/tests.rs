@@ -30,8 +30,8 @@ fn request_credentials_read_the_environment() {
     let found = session(environment_of(&[
         ("OPENAI_BASE_URL", "https://env-root/v1"),
         ("OPENAI_API_BASE", "https://env-base/v1"),
-        ("OPENAI_ORGANIZATION", "org-env"),
-        ("OPENAI_PROJECT", "project-env"),
+        ("OPENAI_ORG_ID", "org-env"),
+        ("OPENAI_PROJECT_ID", "project-env"),
         ("OPENAI_API_KEY", "sk-env"),
     ]))
     .credentials(&AudioSettings::default(), &RequestMap::new())
@@ -47,7 +47,7 @@ fn request_credentials_skip_an_empty_environment_value() {
     let found = session(environment_of(&[
         ("OPENAI_BASE_URL", ""),
         ("OPENAI_API_BASE", "https://env-base/v1"),
-        ("OPENAI_ORGANIZATION", ""),
+        ("OPENAI_ORG_ID", ""),
     ]))
     .credentials(&AudioSettings::default(), &RequestMap::new())
     .unwrap();
@@ -67,7 +67,7 @@ fn request_credentials_skip_an_empty_argument() {
     ]);
     let found = session(environment_of(&[
         ("OPENAI_BASE_URL", "https://env-root/v1"),
-        ("OPENAI_PROJECT", "project-env"),
+        ("OPENAI_PROJECT_ID", "project-env"),
     ]))
     .credentials(&AudioSettings::default(), &arguments)
     .unwrap();

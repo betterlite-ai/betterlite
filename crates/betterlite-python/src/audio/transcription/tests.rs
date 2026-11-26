@@ -14,6 +14,7 @@ use betterlite_sdk::call_files::CallFile;
 use betterlite_sdk::call_setup::RequestMap;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
+use serde_json::Number;
 use std::collections::BTreeMap;
 use std::iter::repeat_n;
 
@@ -221,4 +222,49 @@ fn request_hidden_params_omit_absent_async_duration() {
     )
     .unwrap();
     assert_eq!(hidden.get("audio_transcription_duration"), None);
+}
+
+#[test]
+fn request_hidden_params_keep_undecodable_duration() {
+    let request = AudioCallWire {
+        arguments: RequestMap::new(),
+        settings: AudioSettings::default(),
+        atranscription: true,
+        file_from_kwargs: true,
+    };
+    let mut file = processed();
+    file.file_content = b"unsupported audio codec".to_vec();
+    let mut stored = reply(r#"{"text":"subtitle"}"#);
+    for (duration, expected) in [
+        (
+            StoredDuration::Known(Some(Decimal::ONE)),
+            Some(Json::Number(Number::from_f64(1.0_f64).unwrap())),
+        ),
+        (StoredDuration::Known(None), Some(Json::Null)),
+        (StoredDuration::Absent, None),
+    ] {
+        stored.duration = duration;
+        let hidden = hidden_params(&stored, &file, 1.0_f64, &request, "whisper-1").unwrap();
+        assert_eq!(
+            hidden.get("audio_transcription_duration"),
+            expected.as_ref()
+        );
+    }
+}
+
+#[test]
+fn request_hidden_params_override_stored_duration() {
+    let request = AudioCallWire {
+        arguments: RequestMap::new(),
+        settings: AudioSettings::default(),
+        atranscription: true,
+        file_from_kwargs: true,
+    };
+    let mut stored = reply(r#"{"text":"subtitle"}"#);
+    stored.duration = StoredDuration::Known(Some(Decimal::new(3, 1)));
+    let hidden = hidden_params(&stored, &processed(), 1.0_f64, &request, "whisper-1").unwrap();
+    assert_eq!(
+        hidden.get("audio_transcription_duration"),
+        Some(&Json::Number(Number::from_f64(1.0_f64).unwrap()))
+    );
 }

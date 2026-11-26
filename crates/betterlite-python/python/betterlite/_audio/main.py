@@ -9,8 +9,6 @@ from betterlite._audio.errors import raise_audio_error
 from betterlite._endpoints import (
     CallPayload,
     CallValue,
-    acall_native,
-    call_native,
     model_from_arguments,
     read_settings,
     to_call_payload,
@@ -120,13 +118,19 @@ def audio_payload(
 
 
 def transcription_call(payload: CallPayload) -> TranscriptionResponse:
-    answer = call_native(NativeAudioSession("{}").transcription, payload, NativeAudioError)
-    return transcription_response(ANSWER.validate_python(answer))
+    try:
+        answer = NativeAudioSession("{}").transcription(payload.text, payload.blobs)
+    except NativeAudioError as failure:
+        raise_audio_error(failure)
+    return transcription_response(ANSWER.validate_json(answer))
 
 
 async def atranscription_call(payload: CallPayload) -> TranscriptionResponse:
-    answer = await acall_native(NativeAudioSession("{}").atranscription, payload, NativeAudioError)
-    return transcription_response(ANSWER.validate_python(answer))
+    try:
+        answer = await NativeAudioSession("{}").atranscription(payload.text, payload.blobs)
+    except NativeAudioError as failure:
+        raise_audio_error(failure)
+    return transcription_response(ANSWER.validate_json(answer))
 
 
 # ast-grep-ignore: no-long-names

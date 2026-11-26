@@ -61,35 +61,27 @@ impl AudioSession {
                 .flatten()
                 .find(|value| !value.is_empty()),
             api_key: text(arguments, "api_key")?.map(SecretString::from),
-            organization: text(arguments, "organization")?,
+            organization: None,
         };
         let globals = LiteLlmGlobals {
             api_base: settings.api_base.clone(),
             api_key: settings.api_key.clone(),
             openai_key: settings.openai_key.clone(),
-            organization: settings.organization.clone(),
+            organization: None,
         };
         let configured = OpenAiCredentialSettings {
             api_base: first_text(&self.environment, &["OPENAI_BASE_URL", "OPENAI_API_BASE"])
                 .unwrap_or_else(|| DEFAULT_API_BASE.to_owned()),
-            organization: first_text(&self.environment, &["OPENAI_ORGANIZATION"]),
+            organization: None,
         };
         let env_api_key =
             first_text(&self.environment, &["OPENAI_API_KEY"]).map(SecretString::from);
         let resolved = get_openai_credentials(explicit, globals, &configured, env_api_key);
-        let project = [
-            text(arguments, "project")?,
-            settings.project.clone(),
-            first_text(&self.environment, &["OPENAI_PROJECT"]),
-        ]
-        .into_iter()
-        .flatten()
-        .find(|value| !value.is_empty());
         Ok(Credentials {
             api_base: resolved.api_base,
             api_key: resolved.api_key,
-            organization: resolved.organization,
-            project,
+            organization: first_text(&self.environment, &["OPENAI_ORG_ID"]),
+            project: first_text(&self.environment, &["OPENAI_PROJECT_ID"]),
         })
     }
 
