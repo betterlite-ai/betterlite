@@ -8,7 +8,7 @@ use betterlite_core::api::realtime_connect::AZURE_DEFAULT_API_VERSION;
 use betterlite_core::api::realtime_connection_plan::azure::azure_protocol;
 use betterlite_core::api::realtime_connection_plan::metadata::RealtimeModelMetadata;
 use betterlite_core::api::realtime_connection_plan::parameters::{
-    ResolvedProbeParameters, model_params_with_stored_credentials, resolve_probe_parameters,
+    ResolvedProbeParameters, merge_stored_credentials, resolve_probe_parameters,
 };
 use betterlite_core::api::realtime_connection_plan::{
     AZURE_PROVIDER, OPENAI_DEFAULT_API_BASE, OPENAI_PROVIDER, ProbeConnection,
@@ -175,7 +175,7 @@ impl<'case> Probe<'case> {
             realtime_protocol: scenario.realtime_protocol.clone(),
             model_params: scenario.model_params.clone(),
         };
-        let merged = model_params_with_stored_credentials(&request.model_params, &stored);
+        let merged = merge_stored_credentials(&request.model_params, &stored);
         let resolved = resolve_probe_parameters(&request, &merged).map_err(failure)?;
         let azure = ScriptedAzure {
             token: scenario.azure_ad_token.as_deref().map(SecretString::from),

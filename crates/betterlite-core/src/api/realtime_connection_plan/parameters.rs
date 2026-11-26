@@ -2,10 +2,7 @@ use betterlite_auth::auth_model_lists::credential::CredentialSnapshot;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_openai::openai_base_config::Headers;
-use betterlite_openai::realtime::url::QueryParams;
 use secrecy::{ExposeSecret as _, SecretString};
-
-use crate::api::realtime_connect::QUERY_MODEL_KEY;
 
 use super::{RealtimeProbeError, RealtimeProbeRequest};
 
@@ -22,9 +19,9 @@ pub struct ResolvedProbeParameters {
     pub api_version: Option<String>,
 }
 
-// _model_params_with_stored_credentials: stored values sit underneath the explicit parameters, so an explicit None erases one
+// stored values sit underneath the explicit parameters, so an explicit None erases one
 #[must_use]
-pub fn model_params_with_stored_credentials(
+pub fn merge_stored_credentials(
     model_params: &JsonObject,
     stored: &CredentialSnapshot,
 ) -> JsonObject {
@@ -48,16 +45,15 @@ pub fn resolve_probe_parameters(
     request: &RealtimeProbeRequest,
     merged: &JsonObject,
 ) -> Result<ResolvedProbeParameters, RealtimeProbeError> {
+    let named_key = request
+        .api_key
+        .as_ref()
+        .map(|key| key.expose_secret().as_str());
     Ok(ResolvedProbeParameters {
-        api_key: resolved_secret(request.api_key.as_ref(), merged, API_KEY_KEY)?,
+        api_key: resolved_text(named_key, merged, API_KEY_KEY)?.map(SecretString::from),
         api_base: resolved_text(request.api_base.as_deref(), merged, API_BASE_KEY)?,
         api_version: resolved_text(request.api_version.as_deref(), merged, API_VERSION_KEY)?,
     })
-}
-
-#[must_use]
-pub fn model_query(model: &str) -> QueryParams {
-    QueryParams::from([(String::from(QUERY_MODEL_KEY), Some(model.to_owned()))])
 }
 
 // _realtime_health_check_auth_headers outside Azure: an absent key sends nothing, an empty one still sends "Bearer "
@@ -73,15 +69,6 @@ pub fn bearer_headers(api_key: Option<&SecretString>) -> Headers {
 }
 
 // `named or merged`: the named argument wins only when it is a non-empty string
-fn resolved_secret(
-    named: Option<&SecretString>,
-    merged: &JsonObject,
-    field: &'static str,
-) -> Result<Option<SecretString>, RealtimeProbeError> {
-    let named_text = named.map(|value| value.expose_secret().as_str());
-    resolved_text(named_text, merged, field).map(|value| value.map(SecretString::from))
-}
-
 fn resolved_text(
     named: Option<&str>,
     merged: &JsonObject,
@@ -96,17 +83,5 @@ fn resolved_text(
         Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
             Err(RealtimeProbeError::ParameterType { field })
         }
-    }
-}
-
-#[must_use]
-pub fn truthy(value: &Json) -> bool {
-    match value {
-        Json::Null => false,
-        Json::Bool(flag) => *flag,
-        Json::Number(number) => number.as_f64().is_some_and(|number| number != 0.0_f64),
-        Json::Text(text) => !text.is_empty(),
-        Json::List(items) => !items.is_empty(),
-        Json::Object(fields) => !fields.is_empty(),
     }
 }

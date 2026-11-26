@@ -9,19 +9,20 @@ use betterlite_auth::auth_model_lists::credential::CredentialSnapshot;
 use betterlite_config::tls::Verification;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_openai::openai_base_config::Headers;
-use betterlite_openai::realtime::url::construct_url;
+use betterlite_openai::realtime::url::{QueryParams, construct_url};
 use secrecy::SecretString;
 use thiserror::Error;
 
 use crate::api::realtime_backend_transport::dial::{RealtimeSsl, realtime_ssl};
 use crate::api::realtime_connect::token::VertexTokenError;
-use crate::api::realtime_connect::{AZURE_DEFAULT_API_VERSION, RealtimeConnectError};
+use crate::api::realtime_connect::{
+    AZURE_DEFAULT_API_VERSION, QUERY_MODEL_KEY, RealtimeConnectError,
+};
 
 use self::azure::{AzureAdTokens, azure_connection, azure_protocol, transcription_query};
 use self::metadata::RealtimeModelMetadata;
 use self::parameters::{
-    ResolvedProbeParameters, bearer_headers, model_params_with_stored_credentials, model_query,
-    resolve_probe_parameters,
+    ResolvedProbeParameters, bearer_headers, merge_stored_credentials, resolve_probe_parameters,
 };
 use self::vertex::VertexProbeConfig;
 
@@ -126,12 +127,12 @@ pub async fn realtime_health_check(
     settings: &RealtimeProbeSettings,
     dependencies: &RealtimeProbeDependencies<'_>,
 ) -> Result<(), RealtimeProbeError> {
-    let merged = model_params_with_stored_credentials(&request.model_params, dependencies.stored);
+    let merged = merge_stored_credentials(&request.model_params, dependencies.stored);
     let resolved = resolve_probe_parameters(request, &merged)?;
     if request.custom_llm_provider == AZURE_PROVIDER {
         return azure_health_check(request, settings, &merged, &resolved, dependencies).await;
     }
-    let configured_base = non_empty(resolved.api_base.as_deref());
+    let configured_base = resolved.api_base.as_deref().filter(|text| !text.is_empty());
     let default_base = match request.custom_llm_provider.as_str() {
         OPENAI_PROVIDER => OPENAI_DEFAULT_API_BASE,
         XAI_PROVIDER => XAI_DEFAULT_API_BASE,
@@ -147,7 +148,7 @@ pub async fn realtime_health_check(
     };
     let url = construct_url(
         configured_base.unwrap_or(default_base),
-        &model_query(&request.model),
+        &QueryParams::from([(String::from(QUERY_MODEL_KEY), Some(request.model.clone()))]),
     )?;
     probe(
         dependencies,
@@ -173,7 +174,11 @@ async fn azure_health_check(
         settings.azure_realtime_protocol.as_deref(),
     );
     let query_params = transcription_query(&request.model, dependencies.metadata);
-    let version = non_empty(resolved.api_version.as_deref()).unwrap_or(AZURE_DEFAULT_API_VERSION);
+    let version = resolved
+        .api_version
+        .as_deref()
+        .filter(|text| !text.is_empty())
+        .unwrap_or(AZURE_DEFAULT_API_VERSION);
     let connection = azure_connection(&azure::AzureProbeConnection {
         model: &request.model,
         api_key: resolved.api_key.as_ref(),
@@ -190,11 +195,6 @@ async fn azure_health_check(
         .probe(&connection)
         .await
         .map_err(RealtimeProbeError::Dial)
-}
-
-// the `or` default: a configured empty string is treated as absent
-fn non_empty(value: Option<&str>) -> Option<&str> {
-    value.filter(|text| !text.is_empty())
 }
 
 impl From<RealtimeConnectError<VertexTokenError>> for RealtimeProbeError {

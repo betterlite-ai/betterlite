@@ -8,7 +8,6 @@ use betterlite_openai::realtime::url::QueryParams;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::metadata::RealtimeModelMetadata;
-use super::parameters::truthy;
 use super::{ProbeConnection, RealtimeProbeError, realtime_ssl};
 
 pub const TRANSCRIPTION_INTENT: &str = "transcription";
@@ -69,12 +68,24 @@ pub fn azure_protocol(
     let selected = [named_value.as_ref(), merged, environment_value.as_ref()]
         .into_iter()
         .flatten()
-        .find(|value| truthy(value))
+        .find(|value| is_configured(value))
         .or(environment_value.as_ref());
     match selected {
         Some(Json::Text(text)) => text.clone(),
         Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
         | None => String::from(GA_PROTOCOL),
+    }
+}
+
+// the `or` chain skips a null, false, 0, empty text and an empty list or object
+fn is_configured(value: &Json) -> bool {
+    match value {
+        Json::Null => false,
+        Json::Bool(flag) => *flag,
+        Json::Number(number) => number.as_f64().is_some_and(|number| number != 0.0_f64),
+        Json::Text(text) => !text.is_empty(),
+        Json::List(items) => !items.is_empty(),
+        Json::Object(fields) => !fields.is_empty(),
     }
 }
 
