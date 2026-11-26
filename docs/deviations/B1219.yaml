@@ -1,0 +1,13 @@
+task: B1219
+deviations:
+  - what: >-
+      A key whose tpm_limit or rpm_limit exceeds the destination team's ceiling keeps the 403
+      string detail, but the detail omits the key token: it reads "Key has a tpm_limit=200 which
+      is greater than the team's tpm_limit=100." instead of naming the key.
+    why: >-
+      LiteLLM interpolates key.token into both messages. betterlite never echoes a virtual key
+      into a caller-visible error, so the token is dropped and the limit values stay.
+      rate_denial_does_not_echo_token proves the rendered message for both the TPM and the RPM
+      denial.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L4030-L4042
+kept_bugs: []
