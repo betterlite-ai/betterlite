@@ -92,19 +92,11 @@ where
             .as_deref()
             .filter(|model| !model.is_empty())
             .unwrap_or(DEFAULT_MODEL);
-        let named_provider = request
-            .custom_llm_provider
-            .as_deref()
-            .filter(|provider| !provider.is_empty());
-        let sync_model = request
-            .model
-            .as_deref()
-            .filter(|model| !model.is_empty())
-            .or(Some(DEFAULT_MODEL));
         resolve(
             &ResolutionRequest {
                 model: requested_model,
-                custom_llm_provider: named_provider,
+                // an empty name reaches the resolver like an absent one, the same falsy check LiteLLM makes
+                custom_llm_provider: request.custom_llm_provider.as_deref(),
                 api_base: None,
                 api_key: None,
             },
@@ -113,7 +105,7 @@ where
         .map_err(|error| {
             failure(
                 VideoGenerationCallError::Resolution(error),
-                sync_model,
+                Some(requested_model),
                 request.custom_llm_provider.as_deref(),
                 &self.redactor,
             )
