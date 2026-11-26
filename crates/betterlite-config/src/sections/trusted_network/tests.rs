@@ -104,7 +104,10 @@ fn invalid_value_fallback() {
     )
     .unwrap_err();
     assert!(matches!(scalar, ConfigError::Yaml { .. }));
+}
 
+#[test]
+fn invalid_hop_count_errors() {
     let zero = load("general_settings:\n  mcp_xff_num_trusted_hops: 0\n", &[]).unwrap_err();
     assert!(matches!(
         zero,
@@ -119,6 +122,13 @@ fn invalid_value_fallback() {
             if path == "general_settings.mcp_xff_num_trusted_hops"
     ));
 
+    // one hop is the smallest value the boundary accepts; zero and below are refused above
+    let one_hop = load("general_settings:\n  mcp_xff_num_trusted_hops: 1\n", &[]).unwrap();
+    assert_eq!(one_hop.mcp_xff_num_trusted_hops, Some(1));
+}
+
+#[test]
+fn missing_range_environment_names_the_path() {
     let missing = load(
         "general_settings:\n  mcp_trusted_proxy_ranges: [os.environ/NO_SUCH_RANGES]\n",
         &[],
@@ -130,8 +140,4 @@ fn invalid_value_fallback() {
             if variable == "NO_SUCH_RANGES"
                 && path == "general_settings.mcp_trusted_proxy_ranges[0]"
     ));
-
-    // one hop is the smallest value the boundary accepts; zero and below are refused above
-    let one_hop = load("general_settings:\n  mcp_xff_num_trusted_hops: 1\n", &[]).unwrap();
-    assert_eq!(one_hop.mcp_xff_num_trusted_hops, Some(1));
 }
