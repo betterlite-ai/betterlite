@@ -4,6 +4,7 @@ use std::sync::{Arc, PoisonError};
 
 use betterlite_http::interactions::base::clients::HttpClients;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
+use rstest::rstest;
 use secrecy::SecretString;
 
 use super::super::convert::{CallWire, ConvertError, parse};
@@ -100,6 +101,24 @@ fn core_answers_an_unknown_operation_with_the_operation_it_got() {
         panic!("an unknown operation is a conversion failure");
     };
     assert_eq!(operation, "chat");
+}
+
+#[rstest]
+#[case::unknown("chat")]
+#[case::register("register_tools")]
+#[case::resolve("resolve_tool")]
+#[tokio::test]
+async fn core_rejects_non_async_operations(#[case] operation: &str) {
+    let core = SessionCore::build(r#"{"environment":{}}"#).unwrap();
+    let wire: CallWire = parse(&format!(r#"{{"operation":"{operation}"}}"#)).unwrap();
+    let failure = core.acall(&wire).await.unwrap_err();
+    let SessionFailure::Invalid(ConvertError::Operation {
+        operation: rejected,
+    }) = failure
+    else {
+        panic!("an unsupported async operation is a conversion failure");
+    };
+    assert_eq!(rejected, operation);
 }
 
 #[test]
@@ -202,12 +221,16 @@ fn core_maps_invalid_decision_fields_to_a_bad_request() {
     assert_eq!(payload.kind, "BadRequestError");
 }
 
+#[rstest]
+#[case::decisions("decisions")]
+#[case::systemone("systemone")]
 #[tokio::test]
-async fn core_answers_an_async_systemone_timeout_as_a_conversion_failure() {
+async fn core_rejects_async_timeouts(#[case] operation: &str) {
     let core: SessionCore = SessionCore::build("{}").unwrap();
-    let wire: CallWire =
-        parse(r#"{"operation": "systemone", "arguments": {"model": "gpt-4o", "timeout": -1.0}}"#)
-            .unwrap();
+    let wire: CallWire = parse(&format!(
+        r#"{{"operation":"{operation}","arguments":{{"model":"gpt-4o","timeout":-1.0}}}}"#
+    ))
+    .unwrap();
     let failure = core.acall(&wire).await.unwrap_err();
     assert!(matches!(
         failure,

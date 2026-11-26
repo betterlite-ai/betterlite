@@ -35,9 +35,7 @@ use tokio::time::Instant;
 
 use self::asynchronous::adecision_call;
 use self::decisions::{DecisionFormat, sync_decision};
-use self::sandbox::{
-    code_interpreter, create_sandbox, delete_sandbox, register_tools, resolve_tool, run_code,
-};
+use self::sandbox::{register_tools, resolve_tool, sandbox_call};
 use super::convert::{CallWire, ConvertError, SessionWire, parse};
 use super::error::{SessionError, SessionFailure};
 use super::transport::ProxiedOpenSandboxHttp;
@@ -119,13 +117,7 @@ impl SessionCore {
         match wire.operation.as_str() {
             DECISIONS => adecision_call(self, wire, DecisionFormat::Decisions).await,
             SYSTEMONE => adecision_call(self, wire, DecisionFormat::SystemOne).await,
-            CREATE => create_sandbox(self, wire).await,
-            RUN => run_code(self, wire).await,
-            DELETE => delete_sandbox(self, wire).await,
-            CODE_INTERPRETER => code_interpreter(self, wire).await,
-            other => Err(SessionFailure::from(ConvertError::Operation {
-                operation: other.to_owned(),
-            })),
+            _ => sandbox_call(self, wire).await,
         }
     }
 

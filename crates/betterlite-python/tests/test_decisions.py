@@ -537,6 +537,9 @@ def test_sandbox_tools_calls(monkeypatch: pytest.MonkeyPatch) -> None:
     assert resolve_sandbox_tool("missing") is None
     clear_sandbox_tools()
     assert resolve_sandbox_tool("python") is None
+    assert resolve_sandbox_tool("env") is None
+    clear_sandbox_tools()
+    assert resolve_sandbox_tool("missing") is None
 
 
 def test_bare_id_value_error() -> None:

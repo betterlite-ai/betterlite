@@ -62,25 +62,18 @@ fn native_session_answers_a_sandbox_tool_registration_with_null() {
 }
 
 #[test]
-fn native_async_session_answers_a_sandbox_tool_registration_with_null() {
+fn native_async_session_rejects_malformed_requests() {
     Python::initialize();
-    let answer = Python::attach(|py| -> PyResult<String> {
+    Python::attach(|py| {
         let session = NativeDecisionSession {
-            core: Arc::new(SessionCore::build(r#"{"environment":{}}"#)?),
-            error_type: PyErr::new_type(py, c"probe.NativeDecisionError", None, None, None)?,
+            core: Arc::new(SessionCore::build(r#"{"environment":{}}"#).unwrap()),
+            error_type: PyErr::new_type(py, c"probe.NativeDecisionError", None, None, None)
+                .unwrap(),
         };
         let blobs = py.None().into_bound(py).into_any();
-        let awaitable = session.acall(
-            py,
-            r#"{"operation": "register_tools", "arguments": {"tools": [], "environment": {}}}"#,
-            &blobs,
-        )?;
-        py.import("asyncio")?
-            .call_method1("run", (awaitable,))?
-            .extract()
-    })
-    .unwrap();
-    assert_eq!(answer, "null");
+        let malformed = session.acall(py, "not json", &blobs).unwrap_err();
+        assert!(malformed.is_instance_of::<PyValueError>(py));
+    });
 }
 
 #[test]
