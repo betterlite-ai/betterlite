@@ -25,6 +25,9 @@ use crate::auth_prefetch::permission::lookup::PermissionError;
 use crate::identity_grants::denial::PublicDenial;
 use crate::user_roles::UserRole;
 
+mod adapters;
+mod database;
+mod failures;
 mod support;
 use support::{
     FakeCache, FakeMappings, FakeMembers, FakePermissions, FakeSource, FakeTeams, FakeUsers,

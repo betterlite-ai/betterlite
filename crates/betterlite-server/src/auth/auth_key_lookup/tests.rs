@@ -19,9 +19,10 @@ use betterlite_db::database_faults::{DbError, ErrorType};
 use secrecy::{ExposeSecret as _, SecretString};
 use tower::ServiceExt as _;
 
-use crate::auth::auth_identity::{AuthBackend, INSTALLED_STAGES};
+use crate::auth::auth_identity::{AuthBackend, INSTALLED_STAGES, dispatch};
 use crate::routes;
 use crate::routes::tests::state_for;
+use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 
 use super::{KeyLookupStageInput, key_headers};
 
@@ -174,4 +175,69 @@ fn stage_input_debug_redacts_keys() {
     assert!(text.contains("presented: true"));
     assert!(!text.contains("sk-presented-secret"));
     assert!(!text.contains("master-key-secret"));
+}
+
+#[test]
+fn authenticated_stage_forwarding() {
+    let master = SecretString::from("master".to_owned());
+    let Some(context) = super::master_key_context(Some(&master), &master) else {
+        panic!("matching master key authenticates");
+    };
+    let input = super::StageInput::Authenticated(Box::new(context));
+    let Ok(forwarded) = dispatch(AuthBackend::MasterKey, &input, &master) else {
+        panic!("master stage forwards the authenticated key");
+    };
+    assert_eq!(forwarded.principal.subject, "master_key");
+    assert!(dispatch(AuthBackend::AuthRequestPolicy, &input, &master).is_err());
+    let raw = super::StageInput::MasterKey(Some(master.clone()));
+    assert!(dispatch(AuthBackend::AuthKeyLookup, &raw, &master).is_err());
+}
+
+#[rstest::rstest]
+#[case::empty("")]
+#[case::wrong("other")]
+fn master_stage_denials(#[case] value: &str) {
+    let input = super::StageInput::MasterKey(Some(SecretString::from(value.to_owned())));
+    let master = SecretString::from("master".to_owned());
+    let Err(super::StageFailure::Authentication(failure)) =
+        dispatch(AuthBackend::MasterKey, &input, &master)
+    else {
+        panic!("bad master credential is refused");
+    };
+    if value.is_empty() {
+        assert!(matches!(*failure, super::AuthenticationFailure::Missing));
+    } else {
+        assert!(matches!(*failure, super::AuthenticationFailure::Invalid));
+    }
+}
+
+#[test]
+fn virtual_key_context_fields() {
+    let fields = serde_json::from_str(r#"{"key_name":"key-name","user_id":"live-user","team_id":"live-team","team_alias":"Live","user_role":"proxy_admin"}"#).unwrap();
+    let auth = UserAPIKeyAuth::construct(AuthInput::Dict(fields)).unwrap();
+    let context = super::key_context(KeyLookupOutcome {
+        auth,
+        hashed_token: "hash".to_owned(),
+    });
+    assert_eq!(context.principal.subject, "live-user");
+    assert_eq!(context.principal.teams[0].id, "live-team");
+    assert_eq!(context.principal.teams[0].name.as_deref(), Some("Live"));
+    assert_eq!(
+        context.principal.credential_ref.token_id.as_deref(),
+        Some("hash")
+    );
+    assert!(context.principal.source_key.0.is_some());
+}
+
+#[test]
+fn master_input_before_lookup() {
+    let request = Request::builder()
+        .header(header::AUTHORIZATION, "Bearer master")
+        .body(Body::empty())
+        .unwrap();
+    let Ok(super::StageInput::MasterKey(Some(key))) = super::master_stage_input(&request, None)
+    else {
+        panic!("the master stage extracts an unprocessed credential");
+    };
+    assert_eq!(key.expose_secret(), "master");
 }
