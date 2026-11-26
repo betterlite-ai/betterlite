@@ -1,7 +1,6 @@
 use std::sync::PoisonError;
 
 use betterlite_models::decisions::Json;
-use betterlite_models::sandbox::CodeExecutionResult;
 use betterlite_models::sandbox_dispatch::sandbox_tool_entries;
 use betterlite_provider::sandbox_dispatch::request::SandboxContainer;
 
@@ -46,7 +45,8 @@ pub(super) async fn sandbox_call(
         }
         RUN => {
             let container = container_of(&wire.arguments)?;
-            let result = run_on(core, &wire.arguments, &container).await?;
+            let mut request = run_request(&wire.arguments, &container)?;
+            let result = core.sandbox().arun_code(&mut request).await?;
             encode(&result).map_err(SessionFailure::from)
         }
         DELETE => {
@@ -76,22 +76,16 @@ async fn create_on(
 
 async fn code_interpreter(core: &SessionCore, wire: &CallWire) -> Result<String, SessionFailure> {
     let container = create_on(core, &wire.arguments).await?;
-    let outcome = run_on(core, &wire.arguments, &container).await;
+    let outcome = async {
+        let mut request = run_request(&wire.arguments, &container)?;
+        core.sandbox()
+            .arun_code(&mut request)
+            .await
+            .map_err(SessionFailure::from)
+    }
+    .await;
     let mut request = delete_request(&wire.arguments, &container);
     // LiteLLM logs the failed cleanup and still answers with the run's result
     let _cleanup = core.sandbox().adelete_sandbox(&mut request).await;
     encode(&outcome?).map_err(SessionFailure::from)
-}
-
-async fn run_on(
-    core: &SessionCore,
-    arguments: &Arguments,
-    container: &SandboxContainer,
-) -> Result<CodeExecutionResult, SessionFailure> {
-    let mut request = run_request(arguments, container)?;
-    let sandbox = core.sandbox();
-    sandbox
-        .arun_code(&mut request)
-        .await
-        .map_err(SessionFailure::from)
 }
