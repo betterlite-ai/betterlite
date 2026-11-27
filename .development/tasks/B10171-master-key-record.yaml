@@ -104,6 +104,9 @@ scope:
     - crates/betterlite-server/src/health_access_and_connections/tests/**
     - crates/betterlite-server/src/health_services/tests.rs
     - crates/betterlite-server/src/health_services/tests/**
+    - crates/betterlite-server/src/health_status_routes/tests.rs
+    - crates/betterlite-server/src/health_status_routes/tests/**
+    - crates/betterlite-server/src/app/tests.rs
     - crates/betterlite-server/src/invitation_routes/**/tests.rs
     - crates/betterlite-server/src/invitation_routes/**/tests/**
     - crates/betterlite-server/src/management/gateway_request_activity/tests.rs
@@ -229,7 +232,7 @@ checks:
     - id: no-master-subject
       why: A master key subject constant, subject comparison, default_user_id copy or second alias constant is still in the code.
       run: >-
-        test -z "$(git grep -l -E 'MASTER_KEY_SUBJECT|MASTER_KEY_USER_ID|DEFAULT_ADMIN_USER_ID|LITELLM_PROXY_MASTER_KEY_ALIAS' -- crates)"
+        test -z "$(git grep -l -E 'MASTER_KEY_SUBJECT|MASTER_KEY_USER_ID|DEFAULT_ADMIN_USER_ID|const LITELLM_PROXY_MASTER_KEY_ALIAS' -- crates)"
         && test -z "$(git grep -l -F 'subject == "master_key"' -- crates)"
         && test -z "$(git grep -l -F '"litellm_proxy_master_key"' -- 'crates/betterlite-server/src/*.rs' 'crates/betterlite-core/src/*.rs' ':!**/tests.rs' ':!**/tests/**')"
         && test "$(git grep -l -E 'const MASTER_KEY_ALIAS' -- crates)" = crates/betterlite-auth/src/master_key_admin.rs
@@ -239,7 +242,7 @@ checks:
         cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^master_key_admin::/)'
         && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::request_metadata_safety::/)'
         && cargo nextest run --locked -p betterlite-server --no-tests=fail
-        -E 'test(/^(auth::|management_guards::|management_admins::|credentials::|agent_endpoints::|api::|auto_router_read_api::|cache_settings_read::|cache_settings_test::|cache_settings_update::|endpoints::passthrough_config_reads::|guardrails::|health_access_and_connections::|health_services::|invitation_routes::|management::|organization_create::|plugin_routes::|reload_routes::|roi_connections::|roi_settings::|root_routes::|routes::|search_tool_routes::|spend::|tracing_routes::|usage_ai_chat_route::|workflow_events::|workflow_runs::|compliance_checks::|lens_access::)/)'
+        -E 'test(/^(auth::|management_guards::|management_admins::|credentials::|agent_endpoints::|api::|auto_router_read_api::|cache_settings_read::|cache_settings_test::|cache_settings_update::|endpoints::passthrough_config_reads::|guardrails::|health_access_and_connections::|health_services::|invitation_routes::|management::|organization_create::|plugin_routes::|reload_routes::|roi_connections::|roi_settings::|root_routes::|routes::|search_tool_routes::|spend::|tracing_routes::|usage_ai_chat_route::|workflow_events::|workflow_runs::|compliance_checks::|lens_access::|app::|health_status_routes::)/)'
 oracle_cases: []
 deviations: []
 out_of_scope:
@@ -260,7 +263,7 @@ pitfalls:
   - "A hand-built \"master\" fixture stops being an admin. Switch it to master_caller(); don't add roles or a source key by hand to keep it passing."
   - "spend/reports: the master branch gave api_key \"litellm_proxy_master_key\", team None and org None; check that logged_api_key over the record (api_key the alias, is_session_token false, key_alias None) gives the same."
   - "invitation_routes/queue/request.rs's master KeyView carried token None; the record's token is the alias, as in LiteLLM, so compare the queued call's key fields with LiteLLM's L16800-L16816 rather than with the old branch."
-  - "B10165 added master_key_context calls in management_admins/tests.rs and credentials/tests/create.rs; they take the Result now."
+  - "B10165 added master_key_context calls in management_admins/tests.rs and credentials/tests/create.rs; they take the Result now. Its master_key_context_carries_the_admin_user_and_role asserts ServiceAccount and no source key, which both change here, so master_key_context_carries_the_master_key_record replaces it."
 review_level: security
 budget:
   max_changed_lines: 1500
