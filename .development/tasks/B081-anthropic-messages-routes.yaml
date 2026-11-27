@@ -166,7 +166,8 @@ oracle_cases:
 - tools/oracle/cases/api/anthropic-messages-routes/stream-answers-with-sse-headers.yaml
 deviations:
 - what: A /v1/messages success whose hidden params hold no response_cost carries no x-litellm-response-cost, or only the guardrail cost, until production logging state reaches the route; LiteLLM recovers the cost from its logging object.
-  why: The route runs with B8801's standalone pre-call and pass-through hooks until B8804 and the logging tasks swap them in; there is no cost source before that.
+  why: The route runs with B8801's standalone pre-call and pass-through hooks until B8804 and the logging tasks swap them in; there is no cost source before that. The guardrail cost is not part of the gap, since LiteLLM's shared base_process_llm_request adds it for every route type (common_request_processing.py L2902-L2923), and /v1/messages reaches that path with route_type anthropic_messages (anthropic_endpoints/endpoints.py L151-L155), so api::response_tail adds it here too.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L2902-L2923
 - what: When sse_keepalive_ping_interval_seconds is set and the request fails after the first keepalive went out, the closing data frame holds the Anthropic error envelope this route builds, where LiteLLM writes the OpenAI-shaped error object of sse_error_payload.
   why: The route maps its typed failures inside the future it hands to open_sse_before_first_byte, since that wrap only carries an SseFailure back and the three failure branches need the typed error; the fast path, without keepalives, answers exactly as LiteLLM does.
 out_of_scope:
