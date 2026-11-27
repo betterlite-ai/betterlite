@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use betterlite_bedrock::image_call::plan::ImageEnvironment;
 use betterlite_bedrock::image_models::params::Params;
+use secrecy::SecretString;
 
 use crate::bedrock_image_dispatch::call::GenerateOperation;
 use crate::bedrock_image_dispatch::test_support::{NOW_SECONDS, instant};
@@ -12,6 +13,8 @@ pub(crate) struct GenerateFixture {
     pub(crate) prompt: String,
     pub(crate) optional_params: Params,
     pub(crate) extra_headers: Option<Vec<(String, String)>>,
+    pub(crate) api_base: Option<String>,
+    pub(crate) api_key: Option<SecretString>,
     pub(crate) timeout: Option<Duration>,
     pub(crate) aimg_generation: bool,
 }
@@ -23,6 +26,8 @@ impl GenerateFixture {
             prompt: prompt.to_owned(),
             optional_params,
             extra_headers: None,
+            api_base: None,
+            api_key: None,
             timeout: None,
             aimg_generation: false,
         }
@@ -34,8 +39,8 @@ impl GenerateFixture {
             prompt: &self.prompt,
             optional_params: self.optional_params.clone(),
             extra_headers: self.extra_headers.as_deref(),
-            api_base: None,
-            api_key: None,
+            api_base: self.api_base.as_deref(),
+            api_key: self.api_key.as_ref(),
             timeout: self.timeout,
             aimg_generation: self.aimg_generation,
             environment: ImageEnvironment::default(),

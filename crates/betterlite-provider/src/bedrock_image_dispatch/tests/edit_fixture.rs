@@ -1,13 +1,15 @@
 use std::time::{Duration, SystemTime};
 
+use betterlite_bedrock::image_call::transport::ClientKind;
 use betterlite_bedrock::image_edits::plan::{EditEnvironment, EditImage, EditPlan};
 use betterlite_bedrock::model_routes::ParamMap;
 use betterlite_openai::api::image_contracts::records::ImageParams;
+use secrecy::SecretString;
 
 use crate::bedrock_image_dispatch::call::{BedrockImageOperation, EditOperation};
 use crate::bedrock_image_dispatch::test_support::{Catalog, NOW_SECONDS, Reply, instant};
 
-use super::fixture::{Run, model_cost, run};
+use super::fixture::{Run, model_cost, run, run_supplied};
 
 pub(crate) struct EditFixture {
     pub(crate) model: Option<String>,
@@ -15,6 +17,8 @@ pub(crate) struct EditFixture {
     pub(crate) images: Vec<EditImage>,
     pub(crate) optional_params: ImageParams,
     pub(crate) extra_headers: Option<Vec<(String, String)>>,
+    pub(crate) api_base: Option<String>,
+    pub(crate) api_key: Option<SecretString>,
     pub(crate) timeout: Option<Duration>,
     pub(crate) aimage_edit: bool,
     pub(crate) now: SystemTime,
@@ -34,6 +38,8 @@ impl EditFixture {
             images,
             optional_params,
             extra_headers: None,
+            api_base: None,
+            api_key: None,
             timeout: None,
             aimage_edit: false,
             now,
@@ -50,8 +56,8 @@ impl EditFixture {
             images: &self.images,
             optional_params: self.optional_params.clone(),
             extra_headers: self.extra_headers.as_deref(),
-            api_base: None,
-            api_key: None,
+            api_base: self.api_base.as_deref(),
+            api_key: self.api_key.as_ref(),
             timeout: self.timeout,
             aimage_edit: self.aimage_edit,
             environment: EditEnvironment::default(),
@@ -76,11 +82,28 @@ impl EditSetup {
     }
 
     pub(crate) async fn run(&self, fixture: &EditFixture, reply: Reply) -> Run {
+        self.run_with(fixture, reply, None).await
+    }
+
+    pub(crate) async fn run_supplied(
+        &self,
+        fixture: &EditFixture,
+        reply: Reply,
+        kind: ClientKind,
+    ) -> Run {
+        self.run_with(fixture, reply, Some(kind)).await
+    }
+
+    async fn run_with(&self, fixture: &EditFixture, reply: Reply, kind: Option<ClientKind>) -> Run {
         let context = self.catalog.context();
         let plan = EditPlan {
             model_cost: &self.model_cost,
             resolution: &context,
         };
-        run(BedrockImageOperation::Edit(fixture.operation(plan)), reply).await
+        let operation = BedrockImageOperation::Edit(fixture.operation(plan));
+        match kind {
+            Some(supplied) => run_supplied(operation, reply, supplied).await,
+            None => run(operation, reply).await,
+        }
     }
 }

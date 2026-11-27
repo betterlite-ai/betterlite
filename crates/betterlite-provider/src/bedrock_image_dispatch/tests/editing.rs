@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use betterlite_bedrock::image_call::transport::ClientKind;
 use betterlite_bedrock::image_edits::plan::EditImage;
+use secrecy::SecretString;
 
 use super::edit_fixture::{EditFixture, EditSetup};
 use super::fixture::{Run, answer, image_params};
@@ -27,7 +28,57 @@ pub(super) async fn canvas_edit() {
     assert_eq!(inpainting.cost(), Some(0.25_f64));
     canvas_asynchronous().await;
     canvas_requires_an_image().await;
+    canvas_proxy_endpoint_and_key().await;
+    canvas_supplied_client().await;
     failures(CANVAS_MODEL, &[(500, r#"{"message": "no"}"#, 500)]).await;
+}
+
+// The arm forwards the caller's endpoint override and key: the request goes to the proxy with a bearer
+async fn canvas_proxy_endpoint_and_key() {
+    let setup = EditSetup::new();
+    let mut fixture = EditFixture::new(
+        Some(CANVAS_MODEL),
+        Some("edit it"),
+        vec![EditImage::Text("aW1n".to_owned())],
+        image_params(REGION),
+    );
+    fixture.api_base = Some("https://bedrock-proxy.example".to_owned());
+    fixture.api_key = Some(SecretString::from("canvas-bearer".to_owned()));
+    let run = setup
+        .run(&fixture, answer(200, r#"{"images": ["b3V0"]}"#))
+        .await;
+    assert_eq!(
+        run.posted().url,
+        "https://bedrock-proxy.example/model/amazon.nova-canvas-v1:0/invoke"
+    );
+    assert_eq!(run.authorization(), Some("Bearer canvas-bearer"));
+    assert_eq!(run.edit_images(), vec!["b3V0".to_owned()]);
+}
+
+// A supplied transport posts the request, and the factory is never asked for a client
+async fn canvas_supplied_client() {
+    let setup = EditSetup::new();
+    let fixture = EditFixture::new(
+        Some(CANVAS_MODEL),
+        Some("edit it"),
+        vec![EditImage::Text("aW1n".to_owned())],
+        image_params(REGION),
+    );
+    let run = setup
+        .run_supplied(
+            &fixture,
+            answer(200, r#"{"images": ["b3V0"]}"#),
+            ClientKind::Sync,
+        )
+        .await;
+    assert!(run.calls().is_empty());
+    assert!(run.requests().is_empty());
+    assert_eq!(run.supplied().len(), 1);
+    assert_eq!(
+        run.supplied()[0].url,
+        "https://bedrock-runtime.us-east-1.amazonaws.com/model/amazon.nova-canvas-v1:0/invoke"
+    );
+    assert_eq!(run.edit_images(), vec!["b3V0".to_owned()]);
 }
 
 async fn canvas_variation() {

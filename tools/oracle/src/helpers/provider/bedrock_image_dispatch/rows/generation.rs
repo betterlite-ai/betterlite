@@ -4,6 +4,7 @@ use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_provider::bedrock_image_dispatch::call::{BedrockImageOperation, GenerateOperation};
 use betterlite_provider::bedrock_image_dispatch::test_support::{NOW_SECONDS, instant};
+use secrecy::SecretString;
 use serde_json::Value;
 
 use super::super::Probe;
@@ -17,13 +18,14 @@ pub(super) async fn generation_row(probe: &Probe) -> Result<Value, Box<HelperErr
         .as_deref()
         .ok_or_else(|| failure("Prompt", "a generation probe carries a prompt"))?;
     let extra = probe.extra_headers.as_ref().map(header_pairs);
+    let api_key = probe.api_key.clone().map(SecretString::from);
     let operation = GenerateOperation {
         model: Some(probe.model.as_str()),
         prompt,
         optional_params: generation_params(probe)?,
         extra_headers: extra.as_deref(),
-        api_base: None,
-        api_key: None,
+        api_base: probe.api_base.as_deref(),
+        api_key: api_key.as_ref(),
         timeout: None,
         aimg_generation: false,
         environment: ImageEnvironment::default(),

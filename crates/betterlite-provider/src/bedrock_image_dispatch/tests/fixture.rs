@@ -4,7 +4,9 @@ use std::time::Duration;
 use betterlite_bedrock::aws_settings::sources::Credentials;
 use betterlite_bedrock::canvas_results::COST_HEADER;
 use betterlite_bedrock::image_call::plan::LogContext;
-use betterlite_bedrock::image_call::transport::{ClientKind, ImageReply, ImageRequest};
+use betterlite_bedrock::image_call::transport::{
+    ClientKind, ImageReply, ImageRequest, SuppliedClient,
+};
 use betterlite_bedrock::image_edits::response::EditReply;
 use betterlite_bedrock::image_models::params::Params;
 use betterlite_bedrock::image_models::response::ModelResponse;
@@ -64,6 +66,7 @@ pub(crate) struct Run {
     result: Result<BedrockImageResult, BedrockImageError>,
     calls: Vec<(ClientKind, Option<Duration>)>,
     requests: Vec<ImageRequest>,
+    supplied: Vec<ImageRequest>,
     state: LoggingState,
 }
 
@@ -99,6 +102,10 @@ impl Run {
 
     pub(crate) fn requests(&self) -> &[ImageRequest] {
         &self.requests
+    }
+
+    pub(crate) fn supplied(&self) -> &[ImageRequest] {
+        &self.supplied
     }
 
     pub(crate) fn posted(&self) -> &ImageRequest {
@@ -166,10 +173,11 @@ impl Run {
 }
 
 pub(crate) async fn run(operation: BedrockImageOperation<'_, '_, '_>, reply: Reply) -> Run {
-    run_request(
+    run_with(
         OperationRequest::BedrockImage(BedrockImageRequest),
         operation,
         reply,
+        None,
     )
     .await
 }
@@ -178,6 +186,38 @@ pub(crate) async fn run_request(
     request: OperationRequest,
     operation: BedrockImageOperation<'_, '_, '_>,
     reply: Reply,
+) -> Run {
+    run_with(request, operation, reply, None).await
+}
+
+pub(crate) async fn run_supplied(
+    operation: BedrockImageOperation<'_, '_, '_>,
+    reply: Reply,
+    kind: ClientKind,
+) -> Run {
+    let client = FixtureClient {
+        reply: reply.clone(),
+        seen: Seen::default(),
+    };
+    let supplied = SuppliedClient {
+        kind,
+        transport: &client,
+    };
+    run_with(
+        OperationRequest::BedrockImage(BedrockImageRequest),
+        operation,
+        reply,
+        Some(supplied),
+    )
+    .await
+}
+
+// The supplied client posts through its own recorder, so an empty factory log proves it was never asked
+async fn run_with(
+    request: OperationRequest,
+    operation: BedrockImageOperation<'_, '_, '_>,
+    reply: Reply,
+    supplied: Option<SuppliedClient<'_, FixtureClient>>,
 ) -> Run {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the default redactor builds");
     let mut state = logging_state(&redactor).expect("the fixture logging state builds");
@@ -188,6 +228,9 @@ pub(crate) async fn run_request(
         calls: Mutex::new(Vec::new()),
         seen: Seen::default(),
     };
+    let supplied_seen = supplied
+        .as_ref()
+        .map(|client| Arc::clone(&client.transport.seen));
     let source = fixture_source();
     let dispatched = {
         let mut log = LogContext {
@@ -200,19 +243,20 @@ pub(crate) async fn run_request(
             &source,
             Transport {
                 factory: &factory,
-                supplied: None,
+                supplied,
             },
             &mut log,
         )
         .await
     };
-    finish(dispatched, &factory, state)
+    finish(dispatched, &factory, supplied_seen, state)
 }
 
-// The dispatch outcome becomes the image record the caller reads, next to the requests the factory saw
+// The dispatch outcome becomes the image record the caller reads, next to the requests each client saw
 fn finish(
     dispatched: Result<OperationResult, BedrockImageError>,
     factory: &Factory,
+    supplied_seen: Option<Seen>,
     state: LoggingState,
 ) -> Run {
     let result = match dispatched {
@@ -220,6 +264,9 @@ fn finish(
         Ok(_other) => panic!("the image dispatcher returns an image result"),
         Err(error) => Err(error),
     };
+    let supplied = supplied_seen.map_or_else(Vec::new, |seen| {
+        seen.lock().unwrap_or_else(PoisonError::into_inner).clone()
+    });
     Run {
         result,
         calls: factory
@@ -232,6 +279,7 @@ fn finish(
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone(),
+        supplied,
         state,
     }
 }

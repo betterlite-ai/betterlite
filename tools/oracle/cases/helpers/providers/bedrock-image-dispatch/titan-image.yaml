@@ -25,5 +25,14 @@ call:
           status: 429
           headers: {x-amzn-errortype: ThrottlingException}
           body: '{"message": "slow down"}'
+      - model: amazon.titan-image-generator-v2:0
+        prompt: a proxied titan seed
+        optional_params:
+          aws_access_key_id: AKIAIOSFODNN7EXAMPLE
+          aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+          aws_region_name: us-east-1
+        api_base: https://bedrock-proxy.example
+        api_key: titan-bearer
+        reply: {body: '{"images": ["cHJveHk="]}'}
 env: {}
 compare: {ignore: []}

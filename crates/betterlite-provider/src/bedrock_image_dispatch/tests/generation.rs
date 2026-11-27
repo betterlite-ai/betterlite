@@ -2,8 +2,9 @@ use std::time::Duration;
 
 use betterlite_bedrock::image_call::transport::ClientKind;
 use betterlite_models::decisions::Json;
+use secrecy::SecretString;
 
-use super::fixture::{Run, answer, params, run};
+use super::fixture::{Run, answer, params, run, run_supplied};
 use super::generate_fixture::GenerateFixture;
 use crate::bedrock_image_dispatch::call::BedrockImageOperation;
 use crate::bedrock_image_dispatch::error::BedrockImageError;
@@ -20,6 +21,8 @@ pub(super) async fn titan_image() {
     titan_success().await;
     titan_asynchronous().await;
     titan_provider_error().await;
+    titan_proxy_endpoint_and_key().await;
+    titan_supplied_client().await;
 }
 
 async fn titan_success() {
@@ -42,7 +45,7 @@ async fn titan_success() {
     titan_request(&run);
     assert_eq!(
         run.images(),
-        vec!["dGl0YW4".to_owned(), "dGl0YW4y".to_owned()]
+        vec!["dGl0YW4=".to_owned(), "dGl0YW4y".to_owned()]
     );
     assert_eq!(run.post_call(), Some(&Json::Text(TITAN_BODY.to_owned())));
     assert_eq!(run.input(), Some(&Json::Text("a cat".to_owned())));
@@ -67,6 +70,49 @@ fn titan_request(run: &Run) {
     assert!(
         run.authorization()
             .is_some_and(|value| { value.starts_with("AWS4-HMAC-SHA256") })
+    );
+}
+
+// The arm forwards the caller's endpoint override and key: the request goes to the proxy with a bearer
+async fn titan_proxy_endpoint_and_key() {
+    let mut fixture = GenerateFixture::new(Some(TITAN_MODEL), "a cat", params(REGION));
+    fixture.api_base = Some("https://bedrock-proxy.example".to_owned());
+    fixture.api_key = Some(SecretString::from("titan-bearer".to_owned()));
+    let run = run(
+        BedrockImageOperation::Generate(fixture.operation()),
+        answer(200, TITAN_BODY),
+    )
+    .await;
+    assert_eq!(
+        run.posted().url,
+        "https://bedrock-proxy.example/model/amazon.titan-image-generator-v2:0/invoke"
+    );
+    assert_eq!(run.authorization(), Some("Bearer titan-bearer"));
+    assert_eq!(
+        run.images(),
+        vec!["dGl0YW4=".to_owned(), "dGl0YW4y".to_owned()]
+    );
+}
+
+// A supplied transport posts the request, and the factory is never asked for a client
+async fn titan_supplied_client() {
+    let fixture = GenerateFixture::new(Some(TITAN_MODEL), "a cat", params(REGION));
+    let run = run_supplied(
+        BedrockImageOperation::Generate(fixture.operation()),
+        answer(200, TITAN_BODY),
+        ClientKind::Sync,
+    )
+    .await;
+    assert!(run.calls().is_empty());
+    assert!(run.requests().is_empty());
+    assert_eq!(run.supplied().len(), 1);
+    assert_eq!(
+        run.supplied()[0].url,
+        "https://bedrock-runtime.us-east-1.amazonaws.com/model/amazon.titan-image-generator-v2:0/invoke"
+    );
+    assert_eq!(
+        run.images(),
+        vec!["dGl0YW4=".to_owned(), "dGl0YW4y".to_owned()]
     );
 }
 

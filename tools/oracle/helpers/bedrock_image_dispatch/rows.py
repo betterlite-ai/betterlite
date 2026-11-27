@@ -62,10 +62,10 @@ def case_row(probe: Probe, *, edit: bool) -> JsonValue:
                 logging_obj=logger,
                 timeout=None,
                 aimage_edit=False,
-                api_base=None,
+                api_base=probe.api_base,
                 extra_headers=probe.extra_headers,
                 client=fixture.client(),
-                api_key=None,
+                api_key=probe.api_key,
             )
         except BedrockError as error:
             return failure_row(fixture, logger, error.status_code)
@@ -82,10 +82,10 @@ def case_row(probe: Probe, *, edit: bool) -> JsonValue:
             logging_obj=logger,
             timeout=None,
             aimg_generation=False,
-            api_base=None,
+            api_base=probe.api_base,
             extra_headers=None,
             client=fixture.client(),
-            api_key=None,
+            api_key=probe.api_key,
         )
     except BedrockError as error:
         return failure_row(fixture, logger, error.status_code)

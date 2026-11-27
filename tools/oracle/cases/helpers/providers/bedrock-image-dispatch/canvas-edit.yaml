@@ -24,6 +24,16 @@ call:
         extra_headers: {x-oracle-extra: kept}
         reply: {body: '{"images": ["b3V0MQ==", "b3V0Mg=="]}'}
       - model: amazon.nova-canvas-v1:0
+        prompt: edit it
+        images: [aW1n]
+        optional_params:
+          aws_access_key_id: AKIAIOSFODNN7EXAMPLE
+          aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+          aws_region_name: us-east-1
+        api_base: https://bedrock-proxy.example
+        api_key: canvas-bearer
+        reply: {body: '{"images": ["cHJveHk="]}'}
+      - model: amazon.nova-canvas-v1:0
         prompt: remove the cat
         images: [aW1n]
         optional_params:

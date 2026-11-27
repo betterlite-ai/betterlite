@@ -35,6 +35,8 @@ class Probe:
     images: list[str] = field(default_factory=list)
     optional_params: dict[str, JsonValue] = field(default_factory=dict)
     extra_headers: dict[str, str] | None = None
+    api_base: str | None = None
+    api_key: str | None = None
     reply: Reply = field(default_factory=Reply)
 
 

@@ -62,6 +62,10 @@ pub(super) struct Probe {
     #[serde(default)]
     pub(super) extra_headers: Option<BTreeMap<String, String>>,
     #[serde(default)]
+    pub(super) api_base: Option<String>,
+    #[serde(default)]
+    pub(super) api_key: Option<String>,
+    #[serde(default)]
     pub(super) reply: ProbeReply,
 }
 
