@@ -15,8 +15,8 @@ description: >-
   `shared.mcp_registry`, McpCore's PayloadRules and StdioPolicy (B4716), and McpState's tokens.user_caches (B4715's
   UserTokenCaches, built by B8622). ConfigStore is `shared.proxy_config` (B8380's ProxyConfigState): get_config is its
   snapshot and save_config is its save_config with include_env_vars false and the database. PublicServerSetting.set
-  replaces the live RegistrySettings.public_mcp_servers of the registry in `shared.mcp_registry` under its write lock,
-  so the next public read sees the new list.
+  calls B10162's ServerRegistry::set_public_mcp_servers on the registry in `shared.mcp_registry` under its write lock,
+  so the next public read sees the new list, and get clones B10162's public_mcp_servers() under the read lock.
 
 
   Tests in app::mcp::server_admin:: : the router builds merged with the other MCP routers, each of the five paths
