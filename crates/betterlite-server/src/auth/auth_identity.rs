@@ -1,5 +1,3 @@
-use axum::body::Body;
-use axum::http::Request;
 use betterlite_auth::auth_identity::errors::AuthError;
 use betterlite_auth::auth_identity::records::{
     CredentialRef, NetworkContext, Principal, SourceKey,
@@ -100,21 +98,6 @@ pub struct AuthContext {
     pub principal: Principal,
 }
 
-// the resource grant stage reads the request's rule and database switch, so its input is built here
-pub(crate) fn resource_grant_stage_input(
-    request: &Request<Body>,
-    authenticated: Option<&AuthContext>,
-) -> Result<StageInput, AuthenticationFailure> {
-    let stage = ResourceGrantStageInput {
-        context: authenticated
-            .cloned()
-            .ok_or(AuthenticationFailure::Missing)?,
-        rule: auth_resource_grants::rule_for_request(request),
-        database: auth_resource_grants::database_for_request(request),
-    };
-    Ok(StageInput::AuthResourceGrants(Box::new(stage)))
-}
-
 #[derive(Clone, Debug)]
 pub struct RequestScope {
     pub route: String,
@@ -197,9 +180,8 @@ pub(crate) fn dispatch(
     input: &StageInput,
     master_key: &SecretString,
 ) -> Result<AuthContext, StageFailure> {
-    let key_pass_through =
-        backend == AuthBackend::MasterKey && matches!(input, StageInput::Authenticated(_));
-    if backend != input.backend() && !key_pass_through {
+    let pass_through = matches!(input, StageInput::Authenticated(_));
+    if !(backend == input.backend() || (backend == AuthBackend::MasterKey && pass_through)) {
         return Err(StageFailure::from(AuthenticationFailure::Missing));
     }
     match input {
@@ -253,9 +235,9 @@ fn auth_request_models_stage(stage: &RequestModelStageInput) -> Result<AuthConte
 fn master_key_stage(
     input: &StageInput,
     master_key: &SecretString,
-) -> Result<AuthContext, StageFailure> {
+) -> Result<AuthContext, AuthenticationFailure> {
     let StageInput::MasterKey(presented) = input else {
-        return Err(StageFailure::from(AuthenticationFailure::Missing));
+        return Err(AuthenticationFailure::Missing);
     };
     if let Some(context) = master_key_context(presented.as_ref(), master_key) {
         return Ok(context);
@@ -264,7 +246,7 @@ fn master_key_stage(
         Some(key) if !key.expose_secret().is_empty() => AuthenticationFailure::Invalid,
         Some(_) | None => AuthenticationFailure::Missing,
     };
-    Err(StageFailure::from(failure))
+    Err(failure)
 }
 
 // The master key authenticates the request before any virtual key is read, as LiteLLM's first check does.
