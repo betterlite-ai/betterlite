@@ -176,7 +176,7 @@ def page_facts(html: str) -> dict[str, JsonValue]:
 
 
 def response_report(status: int, content_type: str | None) -> dict[str, JsonValue]:
-    report: dict[str, JsonValue] = {key: None for key in REPORT_KEYS}
+    report: dict[str, JsonValue] = dict.fromkeys(REPORT_KEYS)
     report["status"] = status
     report["content_type"] = content_type
     return report
