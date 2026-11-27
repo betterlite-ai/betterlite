@@ -1,11 +1,13 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
+use betterlite_models::decisions::Json as DecisionJson;
 use betterlite_openai::chat::ChatRequest;
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::ChatExecutor;
 use betterlite_openai::chat::response::ChatResponse;
 use betterlite_prompts::arguments::json::{Json, Object};
+use indexmap::IndexMap;
 use serde::Serialize;
 use serde_json::Number;
 
@@ -48,7 +50,7 @@ pub struct ExecutorCompletion<'executor> {
 #[derive(Serialize)]
 struct SummaryWire<'wire> {
     model: &'wire str,
-    messages: &'wire [Json],
+    messages: &'wire [DecisionJson],
     max_tokens: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     user: Option<&'wire str>,
@@ -61,8 +63,10 @@ impl SummaryCompletion for ExecutorCompletion<'_> {
         call: SummaryCall<'_>,
     ) -> Result<CompletionAnswer, SummaryCallFailure> {
         // litellm.completion validates the messages and drops their None fields before any provider call
-        let messages = fix_openai_messages(call.messages).map_err(|error| SummaryCallFailure {
-            message: error.to_string(),
+        let messages = fix_openai_messages(&decision_messages(call.messages)).map_err(|error| {
+            SummaryCallFailure {
+                message: error.to_string(),
+            }
         })?;
         let wire = SummaryWire {
             model: call.model,
@@ -96,6 +100,29 @@ impl SummaryCompletion for ExecutorCompletion<'_> {
             })?;
         Ok(answer_from_response(outcome.response))
     }
+}
+
+// the validator and the wire read betterlite_models' Json; the summary keeps betterlite_prompts' one
+fn decision_messages(messages: &[Json]) -> Vec<DecisionJson> {
+    messages.iter().map(decision_json).collect()
+}
+
+fn decision_json(value: &Json) -> DecisionJson {
+    match value {
+        Json::Null => DecisionJson::Null,
+        Json::Bool(flag) => DecisionJson::Bool(*flag),
+        Json::Number(number) => DecisionJson::Number(number.clone()),
+        Json::Text(text) => DecisionJson::Text(text.clone()),
+        Json::List(items) => DecisionJson::List(items.iter().map(decision_json).collect()),
+        Json::Object(fields) => DecisionJson::Object(decision_object(fields)),
+    }
+}
+
+fn decision_object(fields: &Object) -> IndexMap<String, DecisionJson> {
+    fields
+        .iter()
+        .map(|(name, value)| (name.clone(), decision_json(value)))
+        .collect()
 }
 
 fn answer_from_response(response: ChatResponse) -> CompletionAnswer {
