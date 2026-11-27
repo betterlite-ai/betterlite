@@ -1,0 +1,42 @@
+kind: helper
+name: auth-tenant-budgets-auth-tag-budget
+call:
+  auth_tenant_budgets:
+    calls:
+      # metadata tags precede the body's and keep duplicates; the first tag over its ceiling denies with no alert
+      - function: tags
+        database: true
+        request_body:
+          metadata:
+            tags: ["m", "m"]
+          tags: ["t", "m"]
+        tag_rows:
+          - {tag_name: m, models: [], spend: 0.0, litellm_budget_table: {max_budget: 10.0}}
+          - {tag_name: t, models: [], spend: 0.0, litellm_budget_table: {max_budget: 5.0}}
+        spends: [10.0, 5.0, 6.0]
+      # spend equal to the tag ceiling passes
+      - function: tags
+        database: true
+        request_body: {tags: ["eq"]}
+        tag_rows:
+          - {tag_name: eq, models: [], spend: 10.0, litellm_budget_table: {max_budget: 10.0}}
+        spends: [10.0]
+      # a zero ceiling denies any positive spend
+      - function: tags
+        database: true
+        request_body: {tags: ["zero"]}
+        tag_rows:
+          - {tag_name: zero, models: [], spend: 0.0, litellm_budget_table: {max_budget: 0.0}}
+        spends: [0.01]
+      # a database-less call and a tag with no row read nothing
+      - function: tags
+        database: false
+        request_body: {tags: ["eq"]}
+        spends: []
+      - function: tags
+        database: true
+        request_body: {tags: ["ghost"]}
+        spends: []
+env: {}
+compare:
+  ignore: []

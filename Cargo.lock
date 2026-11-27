@@ -1665,6 +1665,9 @@ name = "betterlite-core"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "aws-credential-types",
+ "aws-sigv4",
+ "aws-smithy-runtime-api",
  "base64 0.23.1",
  "betterlite-anthropic",
  "betterlite-auth",
@@ -3373,6 +3376,7 @@ dependencies = [
 name = "betterlite-oracle-mcp"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "betterlite-auth",
  "betterlite-config",
  "betterlite-db",
