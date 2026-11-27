@@ -37,38 +37,15 @@ impl Debug for VertexRagHttp {
 #[async_trait]
 impl vertex_ports::VertexRagHttp for VertexRagHttp {
     async fn post_json(&self, request: JsonRequest<'_>) -> Result<HttpReply, PortError> {
-        self.send(RagWire {
-            method: Method::POST,
-            url: request.url,
-            headers: authorized(request.token)?,
-            body: RequestBody::Json(request.body.to_vec()),
-            timeout: request.timeout,
-        })
-        .await
+        self.send(wire(Call::Json(request))?).await
     }
 
     async fn get(&self, request: GetRequest<'_>) -> Result<HttpReply, PortError> {
-        self.send(RagWire {
-            method: Method::GET,
-            url: request.url,
-            headers: authorized(request.token)?,
-            body: RequestBody::Empty,
-            timeout: request.timeout,
-        })
-        .await
+        self.send(wire(Call::Get(request))?).await
     }
 
     async fn post_multipart(&self, request: MultipartRequest<'_>) -> Result<HttpReply, PortError> {
-        let mut headers = authorized(request.token)?;
-        headers.insert(UPLOAD_PROTOCOL, HeaderValue::from_static("multipart"));
-        self.send(RagWire {
-            method: Method::POST,
-            url: request.url,
-            headers,
-            body: multipart_body(&request),
-            timeout: request.timeout,
-        })
-        .await
+        self.send(wire(Call::Multipart(request))?).await
     }
 }
 
@@ -78,6 +55,42 @@ struct RagWire<'request> {
     headers: HeaderMap,
     body: RequestBody,
     timeout: Duration,
+}
+
+enum Call<'request> {
+    Json(JsonRequest<'request>),
+    Get(GetRequest<'request>),
+    Multipart(MultipartRequest<'request>),
+}
+
+fn wire(call: Call<'_>) -> Result<RagWire<'_>, PortError> {
+    match call {
+        Call::Json(request) => Ok(RagWire {
+            method: Method::POST,
+            url: request.url,
+            headers: authorized(request.token)?,
+            body: RequestBody::Json(request.body.to_vec()),
+            timeout: request.timeout,
+        }),
+        Call::Get(request) => Ok(RagWire {
+            method: Method::GET,
+            url: request.url,
+            headers: authorized(request.token)?,
+            body: RequestBody::Empty,
+            timeout: request.timeout,
+        }),
+        Call::Multipart(request) => {
+            let mut headers = authorized(request.token)?;
+            headers.insert(UPLOAD_PROTOCOL, HeaderValue::from_static("multipart"));
+            Ok(RagWire {
+                method: Method::POST,
+                url: request.url,
+                headers,
+                body: multipart_body(&request),
+                timeout: request.timeout,
+            })
+        }
+    }
 }
 
 impl VertexRagHttp {

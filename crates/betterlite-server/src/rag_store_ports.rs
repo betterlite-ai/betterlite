@@ -3,7 +3,6 @@ pub mod openai;
 pub mod vertex_http;
 pub mod vertex_token;
 
-#[cfg(test)]
 mod test_support;
 
 use betterlite_http::proxy::ProxiedClient;

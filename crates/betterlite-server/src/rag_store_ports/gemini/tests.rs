@@ -8,7 +8,7 @@ use betterlite_core::rag::gemini_ingestion::port::{
 };
 use betterlite_models::decisions::Json;
 use betterlite_test_ports::refused_port::RefusedPort;
-use http::header::{CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
+use http::header::{HeaderMap, HeaderName, HeaderValue};
 
 use super::GeminiHttp;
 use crate::rag_store_ports::test_support::{Reply, client, with_server};
@@ -19,30 +19,25 @@ fn json(text: &str) -> Json {
     serde_json::from_str(text).expect("the fixture text is JSON")
 }
 
-fn json_headers() -> HeaderMap {
-    let mut headers = HeaderMap::new();
-    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-    headers.insert(
-        HeaderName::from_static("x-goog-api-key"),
-        HeaderValue::from_static(API_KEY),
-    );
-    headers
-}
+const JSON_HEADERS: &[(&str, &str)] = &[
+    ("content-type", "application/json"),
+    ("x-goog-api-key", API_KEY),
+];
 
-fn put_headers() -> HeaderMap {
+const PUT_HEADERS: &[(&str, &str)] = &[
+    ("content-length", "5"),
+    ("x-goog-upload-offset", "0"),
+    ("x-goog-upload-command", "upload, finalize"),
+];
+
+fn headers(entries: &[(&str, &str)]) -> HeaderMap {
     let mut headers = HeaderMap::new();
-    headers.insert(
-        HeaderName::from_static("content-length"),
-        HeaderValue::from_static("5"),
-    );
-    headers.insert(
-        HeaderName::from_static("x-goog-upload-offset"),
-        HeaderValue::from_static("0"),
-    );
-    headers.insert(
-        HeaderName::from_static("x-goog-upload-command"),
-        HeaderValue::from_static("upload, finalize"),
-    );
+    for &(name, value) in entries {
+        headers.insert(
+            HeaderName::from_bytes(name.as_bytes()).expect("the fixture name is valid"),
+            HeaderValue::from_str(value).expect("the fixture value is valid"),
+        );
+    }
     headers
 }
 
@@ -60,7 +55,7 @@ async fn send_posts_json_with_its_headers() {
             .send(TransportRequest {
                 method: TransportMethod::Post,
                 url: format!("{base}/fileSearchStores"),
-                headers: json_headers(),
+                headers: headers(JSON_HEADERS),
                 body: TransportBody::Json(json(r#"{"displayName":"docs"}"#)),
                 timeout: Duration::from_secs(60),
             })
@@ -92,7 +87,7 @@ async fn send_puts_the_file_bytes() {
             .send(TransportRequest {
                 method: TransportMethod::Put,
                 url: format!("{base}/upload/v1beta/fileSearchStores/abc:uploadToFileSearchStore"),
-                headers: put_headers(),
+                headers: headers(PUT_HEADERS),
                 body: TransportBody::Bytes(b"hello".to_vec()),
                 timeout: Duration::from_secs(300),
             })
@@ -129,7 +124,7 @@ async fn send_returns_a_non_2xx_reply_unchanged() {
             .send(TransportRequest {
                 method: TransportMethod::Post,
                 url: format!("{base}/fileSearchStores"),
-                headers: json_headers(),
+                headers: headers(JSON_HEADERS),
                 body: TransportBody::Json(json(r#"{"displayName":"docs"}"#)),
                 timeout: Duration::from_secs(60),
             })
@@ -149,7 +144,7 @@ async fn send_reports_a_transport_failure_without_the_key() {
         .send(TransportRequest {
             method: TransportMethod::Post,
             url: format!("http://{}/fileSearchStores", refused.address),
-            headers: json_headers(),
+            headers: headers(JSON_HEADERS),
             body: TransportBody::Json(json(r#"{"displayName":"docs"}"#)),
             timeout: Duration::from_secs(1),
         })
@@ -165,7 +160,7 @@ async fn send_reports_a_url_that_is_not_a_url() {
         .send(TransportRequest {
             method: TransportMethod::Post,
             url: "not a url".to_owned(),
-            headers: json_headers(),
+            headers: headers(JSON_HEADERS),
             body: TransportBody::Json(json("{}")),
             timeout: Duration::from_secs(1),
         })
@@ -186,7 +181,7 @@ async fn send_reports_a_reply_over_the_client_body_cap() {
         .send(TransportRequest {
             method: TransportMethod::Post,
             url: format!("{base}/fileSearchStores"),
-            headers: json_headers(),
+            headers: headers(JSON_HEADERS),
             body: TransportBody::Json(json("{}")),
             timeout: Duration::from_secs(60),
         })
