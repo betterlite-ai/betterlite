@@ -260,14 +260,11 @@ where
             .cloned()
             .collect();
         for server_id in server_ids {
-            let Some(mut server) = self
-                .registry
-                .read()
-                .await
-                .config_servers
-                .get(&server_id)
-                .cloned()
-            else {
+            let stored = {
+                let registry = self.registry.read().await;
+                registry.config_servers.get(&server_id).cloned()
+            };
+            let Some(mut server) = stored else {
                 continue;
             };
             if !self.dcr.hydrate(&mut server).await {
