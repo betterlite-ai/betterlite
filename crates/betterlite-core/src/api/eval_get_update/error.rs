@@ -12,7 +12,7 @@ use thiserror::Error;
 
 use crate::api::eval_create_list::DEFAULT_EVALS_PROVIDER;
 use crate::api::eval_create_list::call::EvalsCallParams;
-use crate::api::eval_http::error::EvalHttpError;
+use crate::api::eval_http::error::{EvalHttpError, unsupported_provider};
 
 // what get_eval and update_eval raise before litellm.exception_type maps it
 #[derive(Debug, Error)]
@@ -78,11 +78,13 @@ pub fn failure(
             ))),
             redactor,
         ),
-        // everything outside the provider family reaches exception_type as a ValueError
         EvalsGetUpdateError::UnknownProvider { .. }
         | EvalsGetUpdateError::GetUnsupported { .. }
-        | EvalsGetUpdateError::UpdateUnsupported { .. }
-        | EvalsGetUpdateError::Timeout { .. }
+        | EvalsGetUpdateError::UpdateUnsupported { .. } => {
+            unsupported_provider(error.to_string(), provider)
+        }
+        // everything else outside the provider family reaches exception_type as a ValueError
+        EvalsGetUpdateError::Timeout { .. }
         | EvalsGetUpdateError::Params(_)
         | EvalsGetUpdateError::Logging(_)
         | EvalsGetUpdateError::Handler(_) => dispatch(

@@ -28,6 +28,7 @@ futures-util = { version = "0.3.34", default-features = false, features = ["std"
 hex.workspace = true
 http = "1.5.0"
 indexmap = "2.14.2"
+ipnet = "2.12.2"
 lru = "0.18.4"
 opentelemetry = { version = "0.33.1", default-features = false, features = ["trace"] }
 pcre2 = "0.2.11"

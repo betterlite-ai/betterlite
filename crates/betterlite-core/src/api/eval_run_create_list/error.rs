@@ -10,7 +10,7 @@ use betterlite_redact::secret::Redactor;
 use indexmap::IndexMap;
 use thiserror::Error;
 
-use crate::api::eval_http::error::EvalHttpError;
+use crate::api::eval_http::error::{EvalHttpError, unsupported_provider};
 
 // exception_type() sees model=None for every eval run call
 const MODEL: &str = "";
@@ -88,7 +88,7 @@ fn class_of(error: &EvalRunCallError, provider: &str, redactor: &Redactor) -> Er
     match error {
         EvalRunCallError::UnknownProvider { .. }
         | EvalRunCallError::UnsupportedCreate { .. }
-        | EvalRunCallError::UnsupportedList { .. } => provider_class(message, provider),
+        | EvalRunCallError::UnsupportedList { .. } => unsupported_provider(message, provider),
         EvalRunCallError::FieldType { field, .. } => field_class(field, message, provider),
         EvalRunCallError::UnknownBodyKey { key } => field_class(key, message, provider),
         EvalRunCallError::Config(EvalsError::Provider { provider: found })
@@ -139,15 +139,6 @@ fn local_class(message: String, provider: &str, redactor: &Redactor) -> ErrorCla
         &DispatchInput::Raw(Box::new(raw_exception(message, None, false, provider))),
         redactor,
     )
-}
-
-// the provider name is the caller's input and the call can never succeed, so LiteLLM's ValueError becomes a 400
-fn provider_class(message: String, provider: &str) -> ErrorClass {
-    ErrorClass::BadRequest(Box::new(ResponseDetails::for_provider(
-        message,
-        Some(MODEL.to_owned()),
-        provider,
-    )))
 }
 
 // docs/compatibility.md: a value the declared type cannot hold is a 400 with the field as its param

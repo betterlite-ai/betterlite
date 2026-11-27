@@ -1,0 +1,60 @@
+kind: helper
+name: trusted-network-trusted-rightmost-hop
+env: {}
+compare: {ignore: []}
+call:
+  trusted_network:
+    headers: {x_forwarded_for: "203.0.113.99, 198.51.100.7, 10.1.2.3", x_forwarded_proto: null, host: null}
+    peer: 10.1.2.3
+    scheme: http
+    settings: {proxy_base_url: null, use_x_forwarded_for: true, trusted_proxy_ranges: [10.0.0.0/8], mcp_trusted_proxy_ranges: [10.0.0.0/8], mcp_internal_ip_ranges: null, mcp_xff_num_trusted_hops: null}
+    scenario: {kind: resolve_client_ip, client_ip: null, xff_header: "", num_trusted_hops: 0, feature_name: "", setting_name: ""}
+calls:
+  - trusted_network:
+      headers: {x_forwarded_for: "10.0.0.4, garbage, 198.51.100.7", x_forwarded_proto: null, host: null}
+      peer: 10.1.2.3
+      scheme: http
+      settings: {proxy_base_url: null, use_x_forwarded_for: true, trusted_proxy_ranges: [10.0.0.0/8], mcp_trusted_proxy_ranges: [10.0.0.0/8], mcp_internal_ip_ranges: null, mcp_xff_num_trusted_hops: null}
+      scenario: {kind: resolve_client_ip, client_ip: null, xff_header: "", num_trusted_hops: 0, feature_name: "", setting_name: ""}
+  - trusted_network:
+      headers: {x_forwarded_for: "", x_forwarded_proto: null, host: null}
+      peer: 10.1.2.3
+      scheme: http
+      settings: {proxy_base_url: null, use_x_forwarded_for: true, trusted_proxy_ranges: [10.0.0.0/8], mcp_trusted_proxy_ranges: [10.0.0.0/8], mcp_internal_ip_ranges: null, mcp_xff_num_trusted_hops: null}
+      scenario: {kind: resolve_client_ip, client_ip: null, xff_header: "", num_trusted_hops: 0, feature_name: "", setting_name: ""}
+  - trusted_network:
+      headers: {x_forwarded_for: "10.0.0.4, 10.9.9.9", x_forwarded_proto: null, host: null}
+      peer: 10.1.2.3
+      scheme: http
+      settings: {proxy_base_url: null, use_x_forwarded_for: true, trusted_proxy_ranges: [10.0.0.0/8], mcp_trusted_proxy_ranges: [10.0.0.0/8], mcp_internal_ip_ranges: null, mcp_xff_num_trusted_hops: null}
+      scenario: {kind: resolve_client_ip, client_ip: null, xff_header: "", num_trusted_hops: 0, feature_name: "", setting_name: ""}
+  - trusted_network:
+      headers: {x_forwarded_for: null, x_forwarded_proto: null, host: null}
+      peer: 10.1.2.3
+      scheme: http
+      settings: {proxy_base_url: null, use_x_forwarded_for: true, trusted_proxy_ranges: " 10.0.0.0/8 , , 192.168.0.0/16 ", mcp_trusted_proxy_ranges: null, mcp_internal_ip_ranges: null, mcp_xff_num_trusted_hops: null}
+      scenario: {kind: normalize_cidr_ranges, client_ip: null, xff_header: "", num_trusted_hops: 0, feature_name: "", setting_name: ""}
+  - trusted_network:
+      headers: {x_forwarded_for: null, x_forwarded_proto: null, host: null}
+      peer: 10.1.2.3
+      scheme: http
+      settings: {proxy_base_url: null, use_x_forwarded_for: true, trusted_proxy_ranges: [" 10.0.0.0/8 ", "", " 192.168.0.0/16"], mcp_trusted_proxy_ranges: null, mcp_internal_ip_ranges: null, mcp_xff_num_trusted_hops: null}
+      scenario: {kind: get_trusted_proxy_cidrs, client_ip: null, xff_header: "", num_trusted_hops: 0, feature_name: "", setting_name: ""}
+  - trusted_network:
+      headers: {x_forwarded_for: "203.0.113.1", x_forwarded_proto: null, host: null}
+      peer: 10.1.2.3
+      scheme: http
+      settings: {proxy_base_url: null, use_x_forwarded_for: true, trusted_proxy_ranges: null, mcp_trusted_proxy_ranges: [10.0.0.0/8], mcp_internal_ip_ranges: null, mcp_xff_num_trusted_hops: null}
+      scenario: {kind: is_request_from_trusted_proxy, client_ip: null, xff_header: "", num_trusted_hops: 0, feature_name: "", setting_name: ""}
+  - trusted_network:
+      headers: {x_forwarded_for: "203.0.113.1", x_forwarded_proto: null, host: null}
+      peer: 10.1.2.3
+      scheme: http
+      settings: {proxy_base_url: null, use_x_forwarded_for: false, trusted_proxy_ranges: null, mcp_trusted_proxy_ranges: [10.0.0.0/8], mcp_internal_ip_ranges: null, mcp_xff_num_trusted_hops: null}
+      scenario: {kind: is_request_from_trusted_proxy, client_ip: null, xff_header: "", num_trusted_hops: 0, feature_name: "", setting_name: ""}
+  - trusted_network:
+      headers: {x_forwarded_for: null, x_forwarded_proto: null, host: null}
+      peer: 10.1.2.3
+      scheme: http
+      settings: {proxy_base_url: null, use_x_forwarded_for: false, trusted_proxy_ranges: [10.0.0.0/8, 172.16.0.0/12], mcp_trusted_proxy_ranges: null, mcp_internal_ip_ranges: null, mcp_xff_num_trusted_hops: null}
+      scenario: {kind: ip_in_networks, client_ip: 172.20.1.1, xff_header: "", num_trusted_hops: 0, feature_name: "", setting_name: ""}

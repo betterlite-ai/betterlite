@@ -77,7 +77,12 @@ async fn create_eval_rejects_a_provider_without_an_evals_config() {
         &failure.error,
         EvalsCreateListError::CreateUnsupported { .. }
     ));
-    assert!(matches!(failure.class, ErrorClass::ApiConnection(_)));
+    let ErrorClass::BadRequest(details) = &failure.class else {
+        panic!("a bad request, got {:?}", failure.class);
+    };
+    assert_eq!(details.status.0, 400);
+    assert_eq!(details.model.as_deref(), Some(""));
+    assert_eq!(details.provider.as_deref(), Some("anthropic"));
     assert_eq!(
         failure.error.to_string(),
         "CREATE eval is not supported for anthropic"
@@ -108,7 +113,12 @@ async fn list_evals_rejects_a_provider_without_an_evals_config() {
         &failure.error,
         EvalsCreateListError::ListUnsupported { .. }
     ));
-    assert!(matches!(failure.class, ErrorClass::ApiConnection(_)));
+    let ErrorClass::BadRequest(details) = &failure.class else {
+        panic!("a bad request, got {:?}", failure.class);
+    };
+    assert_eq!(details.status.0, 400);
+    assert_eq!(details.model.as_deref(), Some(""));
+    assert_eq!(details.provider.as_deref(), Some("anthropic"));
     assert_eq!(
         failure.error.to_string(),
         "LIST evals is not supported for anthropic"
@@ -120,7 +130,7 @@ async fn list_evals_rejects_a_provider_without_an_evals_config() {
 async fn create_eval_rejects_an_unknown_provider_name() {
     let harness = Harness::new();
     let mut calls = Calls::empty();
-    calls.provider = Some("nonsense".to_owned());
+    calls.provider = Some("not-a-provider".to_owned());
     let call = create_call(&calls, None, None);
     let mut state = harness.logging_state("acreate_eval");
     let env = harness.env.pre_post();
@@ -138,10 +148,15 @@ async fn create_eval_rejects_an_unknown_provider_name() {
         &failure.error,
         EvalsCreateListError::UnknownProvider { .. }
     ));
-    assert!(matches!(failure.class, ErrorClass::ApiConnection(_)));
+    let ErrorClass::BadRequest(details) = &failure.class else {
+        panic!("a bad request, got {:?}", failure.class);
+    };
+    assert_eq!(details.status.0, 400);
+    assert_eq!(details.model.as_deref(), Some(""));
+    assert_eq!(details.provider.as_deref(), Some("not-a-provider"));
     assert_eq!(
         failure.error.to_string(),
-        "\"nonsense\" is not a provider betterlite knows"
+        "\"not-a-provider\" is not a provider betterlite knows"
     );
     assert!(harness.handler.creates().is_empty());
 }
@@ -150,7 +165,7 @@ async fn create_eval_rejects_an_unknown_provider_name() {
 async fn list_evals_rejects_an_unknown_provider_name() {
     let harness = Harness::new();
     let mut calls = Calls::empty();
-    calls.provider = Some("nonsense".to_owned());
+    calls.provider = Some("not-a-provider".to_owned());
     let call = list_call(&calls);
     let mut state = harness.logging_state("alist_evals");
     let env = harness.env.pre_post();
@@ -168,7 +183,12 @@ async fn list_evals_rejects_an_unknown_provider_name() {
         &failure.error,
         EvalsCreateListError::UnknownProvider { .. }
     ));
-    assert!(matches!(failure.class, ErrorClass::ApiConnection(_)));
+    let ErrorClass::BadRequest(details) = &failure.class else {
+        panic!("a bad request, got {:?}", failure.class);
+    };
+    assert_eq!(details.status.0, 400);
+    assert_eq!(details.model.as_deref(), Some(""));
+    assert_eq!(details.provider.as_deref(), Some("not-a-provider"));
     assert!(harness.handler.lists().is_empty());
 }
 
@@ -193,7 +213,12 @@ async fn create_eval_does_not_fall_back_when_the_config_is_missing() {
         failure.error.to_string(),
         "CREATE eval is not supported for openai"
     );
-    assert!(matches!(failure.class, ErrorClass::ApiConnection(_)));
+    let ErrorClass::BadRequest(details) = &failure.class else {
+        panic!("a bad request, got {:?}", failure.class);
+    };
+    assert_eq!(details.status.0, 400);
+    assert_eq!(details.model.as_deref(), Some(""));
+    assert_eq!(details.provider.as_deref(), Some("openai"));
     assert!(harness.handler.creates().is_empty());
 }
 
@@ -218,7 +243,12 @@ async fn list_evals_does_not_fall_back_when_the_config_is_missing() {
         failure.error.to_string(),
         "LIST evals is not supported for openai"
     );
-    assert!(matches!(failure.class, ErrorClass::ApiConnection(_)));
+    let ErrorClass::BadRequest(details) = &failure.class else {
+        panic!("a bad request, got {:?}", failure.class);
+    };
+    assert_eq!(details.status.0, 400);
+    assert_eq!(details.model.as_deref(), Some(""));
+    assert_eq!(details.provider.as_deref(), Some("openai"));
     assert!(harness.handler.lists().is_empty());
 }
 

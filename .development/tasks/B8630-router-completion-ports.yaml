@@ -46,7 +46,7 @@ oracle_cases: []
 deviations: []
 out_of_scope:
 - "The completion logic itself (acompletion, _acompletion, completion, the batch helpers): B6020. Every router service behind a port: the router task named next to it in the description."
-- "The generic, single-call, batch and call-type ports of B6021, B8352, B8353 and B8354 and the RouterCalls bundle: B8631."
+- "The generic, single-call, batch and call-type ports of B6021, B8352, B8353 and B8354 and the RouterCalls bundle: B8631. The batch retrieval list ports and the batch create and retrieval builders: B10142 and B10143."
 - "Building the startup router and the router views: B8611. Giving routes a RouterCompletion through Shared: see the B8630 notes for the architect."
 pitfalls:
 - 'B016 owns selection, but the content filter it calls is B399''s _should_raise_content_policy_error and the fallbacks-off check is B309''s fallbacks_disabled_for_request, so those adapters hold different router pieces than the selection adapter.'

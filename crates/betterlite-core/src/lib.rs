@@ -15,6 +15,7 @@ pub mod diagnostic_snapshots;
 pub mod dispatch;
 pub mod duration;
 pub mod edenai_messages;
+pub mod email_date;
 pub mod embedding_rerank_providers;
 pub mod environment_validation;
 pub mod error;
