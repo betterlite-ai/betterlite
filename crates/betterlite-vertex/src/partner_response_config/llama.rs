@@ -11,7 +11,7 @@ use betterlite_openai::compatible_wire::LogInput;
 use betterlite_openai::containers::container_file_http::proxied::reply_headers;
 use betterlite_openai::openai_base_config::forwarding::ForwardingFailure;
 use betterlite_openai::openai_base_config::{Headers, Object};
-use serde::Deserialize;
+use serde::Deserialize as _;
 use serde::Serialize;
 use serde::de::value::MapDeserializer;
 use uuid::Uuid;
@@ -41,6 +41,14 @@ pub fn llama3_transform_response<CounterFailure>(
 where
     CounterFailure: StdError + Send + Sync + 'static,
 {
+    let PartnerResponseInput {
+        model,
+        json_mode,
+        identifier,
+        state,
+        env,
+        ..
+    } = input;
     let headers = reply_headers(input.headers);
     let reply = ResponseReply {
         status: input.status,
@@ -51,13 +59,11 @@ where
         messages: Json::List(input.messages.to_vec()),
         data: RawBody::Object(input.request_data.clone()),
     };
-    let model = input.model;
-    let json_mode = input.json_mode.unwrap_or(false);
-    let identifier = input.identifier;
+    let wants_json = json_mode.unwrap_or(false);
     let response = transform_openai_response(
         &reply,
-        input.state,
-        input.env,
+        state,
+        env,
         log,
         move |value, _raw_headers, _hidden_headers| {
             let Some(source) = value.as_object() else {
@@ -65,11 +71,7 @@ where
                     message: String::from("the Llama reply is not a JSON object"),
                 });
             };
-            let answer = llama_answer(source, model, json_mode, identifier).map_err(|error| {
-                ForwardingFailure {
-                    message: error.to_string(),
-                }
-            })?;
+            let answer = project(source, model, wants_json, identifier)?;
             serde_json::to_value(answer).map_err(|error| ForwardingFailure {
                 message: error.to_string(),
             })
@@ -77,6 +79,20 @@ where
     )
     .map_err(|error| vertex_error(error, input.status, &headers))?;
     Ok(serde_json::from_value(response)?)
+}
+
+// The projection B504 runs on the parsed reply: the Llama3 class's answer, or the failure that becomes its error.
+fn project(
+    source: &Object,
+    requested_model: &str,
+    json_mode: bool,
+    identifier: fn() -> Uuid,
+) -> Result<Answer, ForwardingFailure> {
+    llama_answer(source, requested_model, json_mode, identifier).map_err(|error| {
+        ForwardingFailure {
+            message: error.to_string(),
+        }
+    })
 }
 
 // LiteLLM parses the reply with OpenAIChatCompletionResponse, so a body that is not one is a VertexAIError.
@@ -105,14 +121,14 @@ fn llama_answer(
 
 // Usage(**reply.get("usage", {})): a count the reply leaves out or nulls reports zero.
 fn usage_from(usage: &Object) -> Result<ChatUsage, PartnerOpenAiError> {
-    let mut usage = usage.clone();
+    let mut counts = usage.clone();
     for name in ["prompt_tokens", "completion_tokens", "total_tokens"] {
-        if usage.get(name).is_none_or(|value| value.is_null()) {
-            usage.insert(name.to_owned(), serde_json::json!(0));
+        if counts.get(name).filter(|value| !value.is_null()).is_none() {
+            counts.insert(name.to_owned(), serde_json::json!(0_i32));
         }
     }
     let deserializer = MapDeserializer::<_, serde_json::Error>::new(
-        usage.iter().map(|(key, value)| (key.as_str(), value)),
+        counts.iter().map(|(key, value)| (key.as_str(), value)),
     );
     ChatUsage::deserialize(deserializer).map_err(|source| PartnerOpenAiError::Reply { source })
 }

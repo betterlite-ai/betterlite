@@ -51,7 +51,7 @@ impl Logging {
             setup,
             &self.redactor,
             || String::from("b10159"),
-            Duration::from_secs(0),
+            Duration::default,
         )
         .or_config_error()?;
         let now = DateTime::<FixedOffset>::parse_from_rfc3339(NOW).or_config_error()?;

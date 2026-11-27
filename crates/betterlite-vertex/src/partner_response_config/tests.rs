@@ -75,7 +75,7 @@ fn logging_state(redactor: &Redactor) -> LoggingState {
         },
         redactor,
         || String::from("generated"),
-        Duration::default(),
+        Duration::default,
     )
     .expect("logging state")
 }
@@ -213,7 +213,7 @@ fn answer_view(outcome: &Outcome) -> AnswerView {
 }
 
 fn ai21_body(id: &str, created: &str, model: &str, usage: &str) -> String {
-    format!(r#"{{{id}{created}{model}{AI21_CHOICES}{usage}}}"#)
+    format!("{{{id}{created}{model}{AI21_CHOICES}{usage}}}")
 }
 
 #[test]
@@ -468,7 +468,7 @@ fn transform_ai21_not_json_is_an_ai21_error() {
 
 #[test]
 fn transform_llama_fills_missing_fields() {
-    let body = format!(r#"{{{LLAMA_CHOICES}}}"#);
+    let body = format!("{{{LLAMA_CHOICES}}}");
     let outcome = transform(&Sample {
         publisher: VertexPublisher::OpenApi,
         model: "meta/llama-3.1-405b-instruct-maas",

@@ -82,11 +82,12 @@ fn project(
         .and_then(|id| id.as_str())
         .is_none_or(str::is_empty)
     {
-        response.id = starting_id.to_owned();
+        starting_id.clone_into(&mut response.id);
     }
     if source
         .get("created")
-        .is_none_or(|created| created.is_null())
+        .filter(|value| !value.is_null())
+        .is_none()
     {
         response.created = u64::try_from(now).unwrap_or_default();
     }
