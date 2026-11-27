@@ -1,5 +1,7 @@
 use std::fs;
-use std::path::Path;
+use std::path::PathBuf;
+
+use rstest::rstest;
 
 use super::super::S3ListingError;
 use super::super::decode::{DecodeLimits, decode_s3_listing};
@@ -73,29 +75,23 @@ fn s3_listing_rejects_dtd_and_limits() {
     assert_eq!(content.contents[0].key.as_deref(), Some("k"));
 }
 
-#[test]
-fn replays_the_bedrock_services_s3_listing_corpus() {
-    let corpus =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/bedrock_services_s3_listing");
-    let mut total = 0_usize;
-    for entry in fs::read_dir(&corpus).unwrap() {
-        let path = entry.unwrap().path();
-        let name = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap()
-            .to_owned();
-        let bytes = fs::read(&path).unwrap();
-        let outcome = decode_s3_listing(&bytes, &DecodeLimits::DEFAULT);
-        let valid = name.starts_with("valid") || name.starts_with("boundary-valid");
-        assert_eq!(
-            outcome.is_ok(),
-            valid,
-            "seed {name} decoded against its expected category"
-        );
-        total = total.saturating_add(1);
-    }
-    assert!(total > 0, "no bedrock_services_s3_listing fuzz seeds");
+#[rstest]
+fn replays_the_bedrock_services_s3_listing_corpus(
+    #[files("fuzz/corpus/bedrock_services_s3_listing/*")] path: PathBuf,
+) {
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap()
+        .to_owned();
+    let bytes = fs::read(&path).unwrap();
+    let outcome = decode_s3_listing(&bytes, &DecodeLimits::DEFAULT);
+    let valid = name.starts_with("valid") || name.starts_with("boundary-valid");
+    assert_eq!(
+        outcome.is_ok(),
+        valid,
+        "seed {name} decoded against its expected category"
+    );
 }
 
 #[test]
@@ -181,13 +177,16 @@ fn bedrock_services_s3_listing_secret_safe_failure() {
         unavailable_credentials,
     ))
     .unwrap_err();
-    for rendered in [error.to_string(), format!("{error:?}")] {
-        assert!(!rendered.contains("S3SECRETACCESS"));
-        assert!(!rendered.contains("S3SECRETVALUE"));
-        assert!(!rendered.contains("AWSSECRETACCESS"));
-        assert!(!rendered.contains("AWSSECRETVALUE"));
-        assert!(!rendered.contains("AWSSECRETTOKEN"));
-    }
+    assert_secret_absent(
+        &error,
+        &[
+            "S3SECRETACCESS",
+            "S3SECRETVALUE",
+            "AWSSECRETACCESS",
+            "AWSSECRETVALUE",
+            "AWSSECRETTOKEN",
+        ],
+    );
 
     let mut unavailable = text_params(&[
         ("aws_region_name", "us-east-1"),
@@ -203,11 +202,10 @@ fn bedrock_services_s3_listing_secret_safe_failure() {
         unavailable_credentials,
     ))
     .unwrap_err();
-    for rendered in [error.to_string(), format!("{error:?}")] {
-        assert!(!rendered.contains("AWSSECRETACCESS"));
-        assert!(!rendered.contains("AWSSECRETVALUE"));
-        assert!(!rendered.contains("AWSSECRETTOKEN"));
-    }
+    assert_secret_absent(
+        &error,
+        &["AWSSECRETACCESS", "AWSSECRETVALUE", "AWSSECRETTOKEN"],
+    );
 
     let mut bad_endpoint = text_params(&[
         ("aws_region_name", "us-east-1"),
@@ -287,4 +285,15 @@ fn bedrock_services_s3_listing_secret_safe_failure() {
     ))
     .unwrap_err();
     assert!(!format!("{secret_error:?}").contains("S3SECRETVALUE"));
+}
+
+fn assert_secret_absent(error: &S3ListingError, secrets: &[&str]) {
+    for rendered in [error.to_string(), format!("{error:?}")] {
+        for secret in secrets {
+            assert!(
+                !rendered.contains(secret),
+                "the failure output carries a fixture secret"
+            );
+        }
+    }
 }

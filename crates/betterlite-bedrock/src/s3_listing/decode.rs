@@ -196,15 +196,11 @@ fn check_attributes(
         };
         if let ResolveResult::Unknown(unknown) = resolver.resolve_prefix(Some(prefix), false) {
             return Err(S3ListingError::UnboundPrefix {
-                prefix: prefix_text(&unknown),
+                prefix: unknown.iter().map(|&byte| char::from(byte)).collect(),
             });
         }
     }
     Ok(())
-}
-
-fn prefix_text(bytes: &[u8]) -> String {
-    bytes.iter().map(|&byte| char::from(byte)).collect()
 }
 
 pub fn decode_s3_listing(bytes: &[u8], limits: &DecodeLimits) -> Result<S3Listing, S3ListingError> {
@@ -221,7 +217,7 @@ pub fn decode_s3_listing(bytes: &[u8], limits: &DecodeLimits) -> Result<S3Listin
         let (resolved, event) = reader.read_resolved_event_into(&mut buffer)?;
         if let ResolveResult::Unknown(prefix) = &resolved {
             return Err(S3ListingError::UnboundPrefix {
-                prefix: prefix_text(prefix),
+                prefix: prefix.iter().map(|&byte| char::from(byte)).collect(),
             });
         }
         match event {

@@ -8,10 +8,11 @@ use betterlite_bedrock::s3_listing::responses::{
 };
 use serde::Serialize;
 use serde_json::{Map, Value, json};
+use tokio::runtime::Builder;
 
 use super::input::{Call, Input, Operation};
 use super::support::{
-    access_params, from_params, request_of, resolve_credentials, runtime, signing_now, to_params,
+    access_params, from_params, request_of, resolve_credentials, signing_now, to_params,
 };
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::HelperResult;
@@ -91,7 +92,7 @@ fn success_entry(signed: &S3SignedRequest, litellm_params: &Params, nested: bool
 }
 
 fn signed_requests(calls: &[Call], kind: RequestKind) -> HelperResult {
-    let executor = runtime()?;
+    let executor = Builder::new_current_thread().build().or_value_error()?;
     let now = signing_now()?;
     let mut results = Vec::new();
     for call in calls {

@@ -11,7 +11,6 @@ use betterlite_bedrock::signing::target::RegionInputs;
 use betterlite_config::sections::bedrock_settings::AwsSettings;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Map, Value};
-use tokio::runtime::{Builder, Runtime};
 
 use super::input::{Call, WireValue};
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
@@ -21,10 +20,6 @@ use betterlite_oracle_helper_api::helper::HelperResult;
 pub(super) const SIGNING_SECONDS: u64 = 1_704_067_200;
 pub(super) const ENV_ACCESS_KEY: &str = "AKIDEXAMPLE";
 pub(super) const ENV_KEY_VALUE: &str = "secret";
-
-pub(super) fn runtime() -> Result<Runtime, Box<HelperError>> {
-    Builder::new_current_thread().build().or_value_error()
-}
 
 pub(super) fn signing_now() -> Result<SystemTime, Box<HelperError>> {
     UNIX_EPOCH
@@ -93,26 +88,24 @@ pub(super) fn region_inputs(environment: &BTreeMap<String, String>) -> RegionInp
 }
 
 // boto3's chain as the Python side sets it up: request keys sign as given, otherwise the environment pair
-fn chain_identity(settings: &AwsSettings) -> Credentials {
-    match (&settings.access_key_id, &settings.secret_access_key) {
-        (Some(access_key_id), Some(secret_access_key)) => Credentials {
-            access_key_id: access_key_id.clone(),
-            secret_access_key: secret_access_key.clone(),
-            session_token: settings.session_token.clone(),
-        },
-        (Some(_) | None, _) => Credentials {
-            access_key_id: SecretString::from(ENV_ACCESS_KEY.to_owned()),
-            secret_access_key: SecretString::from(ENV_KEY_VALUE.to_owned()),
-            session_token: None,
-        },
-    }
-}
-
 pub(super) fn resolve_credentials(
     settings: &AwsSettings,
     _region: &str,
 ) -> Ready<Result<Credentials, CredentialError>> {
-    ready(Ok(chain_identity(settings)))
+    ready(Ok(
+        match (&settings.access_key_id, &settings.secret_access_key) {
+            (Some(access_key_id), Some(secret_access_key)) => Credentials {
+                access_key_id: access_key_id.clone(),
+                secret_access_key: secret_access_key.clone(),
+                session_token: settings.session_token.clone(),
+            },
+            (Some(_) | None, _) => Credentials {
+                access_key_id: SecretString::from(ENV_ACCESS_KEY.to_owned()),
+                secret_access_key: SecretString::from(ENV_KEY_VALUE.to_owned()),
+                session_token: None,
+            },
+        },
+    ))
 }
 
 pub(super) fn request_of<'a>(
