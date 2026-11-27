@@ -6,6 +6,7 @@ from litellm.llms.bedrock.image_generation.image_handler import BedrockImageGene
 from litellm.llms.custom_httpx.http_handler import HTTPHandler
 from litellm.types.utils import ImageResponse
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
+from typing_extensions import override
 
 
 class Input(TypedDict):
@@ -52,9 +53,11 @@ class Recorder(Logger):
         self.pre: dict[str, JsonValue] | None = None
         self.post: dict[str, JsonValue] | None = None
 
+    @override
     def pre_call(self, **values: JsonValue) -> None:
         self.pre = values
 
+    @override
     def post_call(self, **values: JsonValue) -> None:
         self.post = values
 
