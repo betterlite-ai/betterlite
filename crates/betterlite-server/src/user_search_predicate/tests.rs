@@ -93,13 +93,8 @@ fn predicate_lists_the_user_id_term_before_the_user_email_term() {
 fn predicate_serializes_as_litellms_mapping() {
     let predicate = user_search_where(Some("Bob")).unwrap();
     assert_eq!(
-        serde_json::to_value(predicate).unwrap(),
-        serde_json::json!({
-            "OR": [
-                {"user_id": {"contains": "Bob", "mode": "insensitive"}},
-                {"user_email": {"contains": "Bob", "mode": "insensitive"}}
-            ]
-        })
+        serde_json::to_string(&predicate).unwrap(),
+        r#"{"OR":[{"user_id":{"contains":"Bob","mode":"insensitive"}},{"user_email":{"contains":"Bob","mode":"insensitive"}}]}"#
     );
 }
 
