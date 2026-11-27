@@ -39,22 +39,23 @@ enum Handler {
     DeleteRun,
 }
 
-// What one handler puts on the wire and what reads its answer
+// What one handler puts on the wire and which response transform reads its answer
 struct Expectation {
     method: &'static str,
     path: &'static str,
     body: Option<&'static str>,
     reply: &'static str,
+    transform: &'static str,
 }
 
 #[rustfmt::skip]
 const fn expectation(handler: Handler) -> Expectation {
     match handler {
-        Handler::CreateRun => Expectation { method: "POST", path: CREATE_URL, body: Some(CREATE_BODY), reply: RUN },
-        Handler::ListRuns => Expectation { method: "GET", path: "/v1/evals/eval_1/runs?limit=5&order=asc", body: None, reply: PAGE },
-        Handler::GetRun => Expectation { method: "GET", path: RUN_URL, body: None, reply: RUN },
-        Handler::CancelRun => Expectation { method: "POST", path: CANCEL_URL, body: Some("{}"), reply: CANCELLED },
-        Handler::DeleteRun => Expectation { method: "DELETE", path: RUN_URL, body: None, reply: DELETED },
+        Handler::CreateRun => Expectation { method: "POST", path: CREATE_URL, body: Some(CREATE_BODY), reply: RUN, transform: "create_run_response" },
+        Handler::ListRuns => Expectation { method: "GET", path: "/v1/evals/eval_1/runs?limit=5&order=asc", body: None, reply: PAGE, transform: "list_runs_response" },
+        Handler::GetRun => Expectation { method: "GET", path: RUN_URL, body: None, reply: RUN, transform: "get_run_response" },
+        Handler::CancelRun => Expectation { method: "POST", path: CANCEL_URL, body: Some("{}"), reply: CANCELLED, transform: "cancel_run_response" },
+        Handler::DeleteRun => Expectation { method: "DELETE", path: RUN_URL, body: None, reply: DELETED, transform: "delete_run_response" },
     }
 }
 
@@ -101,7 +102,7 @@ fn assert_answer(handler: Handler, answered: Answer) {
     }
 }
 
-// The method, the path, the query and the body each handler puts on the wire, and the reply its transform reads
+// The method, the path, the query and the body each handler puts on the wire, and the response transform that reads the reply
 #[rstest]
 #[case::create(Handler::CreateRun)]
 #[case::list(Handler::ListRuns)]
@@ -122,6 +123,7 @@ async fn handler_sends_litellm_method_and_body(#[case] handler: Handler) {
         .await
         .expect("the handler answers");
     assert_answer(handler, answered);
+    assert_eq!(bench.config.seen(), [expected.transform]);
     let request = serving.finish().expect("the fixture finishes");
     assert_line(&request, expected.method, expected.path);
     match expected.body {

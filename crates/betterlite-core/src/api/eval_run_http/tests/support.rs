@@ -24,8 +24,13 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::error::ProviderError;
 use betterlite_openai::evals::error::EvalsError;
 use betterlite_openai::evals::openai::OpenAiEvalsConfig;
+use betterlite_openai::evals::transformation::{
+    BaseEvalsAPIConfig, EvalsHttpResponse, EvalsRequestContext,
+};
 use betterlite_openai::evals::types::{
-    CancelRunResponse, ListRunsResponse, Run, RunDeleteResponse,
+    CancelEvalResponse, CancelRunResponse, CreateEvalRequest, CreateRunRequest, DeleteEvalResponse,
+    Eval, ListEvalsParams, ListEvalsResponse, ListRunsParams, ListRunsResponse, Run,
+    RunDeleteResponse, UpdateEvalRequest,
 };
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
@@ -57,6 +62,147 @@ impl Events {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
+    }
+}
+
+// The real OpenAI evals config behind a recorder: each run reply transform keeps its name, so a swapped call fails
+#[derive(Default)]
+pub(crate) struct RecordingConfig {
+    inner: OpenAiEvalsConfig,
+    seen: Arc<Mutex<Vec<&'static str>>>,
+}
+
+macro_rules! delegated_requests {
+    ($($name:ident($($arg:ident: $ty:ty),*) -> $out:ty;)+) => {
+        $(
+            fn $name(
+                &self,
+                $($arg: $ty,)*
+                context: &EvalsRequestContext<'_>,
+            ) -> Result<$out, EvalsError> {
+                self.inner.$name($($arg,)* context)
+            }
+        )+
+    };
+}
+
+macro_rules! delegated_replies {
+    ($($name:ident -> $out:ty;)+) => {
+        $(
+            fn $name(&self, raw_response: &EvalsHttpResponse<'_>) -> Result<$out, EvalsError> {
+                self.inner.$name(raw_response)
+            }
+        )+
+    };
+}
+
+impl RecordingConfig {
+    pub(crate) fn seen(&self) -> Vec<&'static str> {
+        self.seen
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    fn record(&self, transform: &'static str) {
+        self.seen
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(transform);
+    }
+}
+
+impl BaseEvalsAPIConfig for RecordingConfig {
+    type Error = EvalsError;
+
+    fn validate_environment(
+        &self,
+        headers: Headers,
+        litellm_params: Option<&Object>,
+    ) -> Result<Headers, EvalsError> {
+        self.inner.validate_environment(headers, litellm_params)
+    }
+
+    fn get_complete_url(
+        &self,
+        api_base: Option<&str>,
+        endpoint: &str,
+        eval_id: Option<&str>,
+    ) -> Result<String, EvalsError> {
+        self.inner.get_complete_url(api_base, endpoint, eval_id)
+    }
+
+    delegated_requests! {
+        transform_create_eval_request(create_request: &CreateEvalRequest) -> Object;
+        transform_list_evals_request(list_params: &ListEvalsParams) -> (String, Object);
+        transform_get_eval_request(eval_id: &str, api_base: &str) -> (String, Headers);
+        transform_update_eval_request(eval_id: &str, update_request: &UpdateEvalRequest, api_base: &str) -> (String, Headers, Object);
+        transform_delete_eval_request(eval_id: &str, api_base: &str) -> (String, Headers);
+        transform_cancel_eval_request(eval_id: &str, api_base: &str) -> (String, Headers, Object);
+        transform_create_run_request(eval_id: &str, create_request: &CreateRunRequest) -> (String, Object);
+        transform_list_runs_request(eval_id: &str, list_params: &ListRunsParams) -> (String, Object);
+        transform_get_run_request(eval_id: &str, run_id: &str, api_base: &str) -> (String, Headers);
+        transform_cancel_run_request(eval_id: &str, run_id: &str, api_base: &str) -> (String, Headers, Object);
+        transform_delete_run_request(eval_id: &str, run_id: &str, api_base: &str) -> (String, Headers, Object);
+    }
+
+    delegated_replies! {
+        transform_create_eval_response -> Eval;
+        transform_list_evals_response -> ListEvalsResponse;
+        transform_get_eval_response -> Eval;
+        transform_update_eval_response -> Eval;
+        transform_delete_eval_response -> DeleteEvalResponse;
+        transform_cancel_eval_response -> CancelEvalResponse;
+    }
+
+    fn transform_create_run_response(
+        &self,
+        raw_response: &EvalsHttpResponse<'_>,
+    ) -> Result<Run, EvalsError> {
+        self.record("create_run_response");
+        self.inner.transform_create_run_response(raw_response)
+    }
+
+    fn transform_list_runs_response(
+        &self,
+        raw_response: &EvalsHttpResponse<'_>,
+    ) -> Result<ListRunsResponse, EvalsError> {
+        self.record("list_runs_response");
+        self.inner.transform_list_runs_response(raw_response)
+    }
+
+    fn transform_get_run_response(
+        &self,
+        raw_response: &EvalsHttpResponse<'_>,
+    ) -> Result<Run, EvalsError> {
+        self.record("get_run_response");
+        self.inner.transform_get_run_response(raw_response)
+    }
+
+    fn transform_cancel_run_response(
+        &self,
+        raw_response: &EvalsHttpResponse<'_>,
+    ) -> Result<CancelRunResponse, EvalsError> {
+        self.record("cancel_run_response");
+        self.inner.transform_cancel_run_response(raw_response)
+    }
+
+    fn transform_delete_run_response(
+        &self,
+        raw_response: &EvalsHttpResponse<'_>,
+    ) -> Result<RunDeleteResponse, EvalsError> {
+        self.record("delete_run_response");
+        self.inner.transform_delete_run_response(raw_response)
+    }
+
+    fn get_error_class(
+        &self,
+        error_message: &str,
+        status_code: u16,
+        headers: &Headers,
+    ) -> EvalsError {
+        self.inner
+            .get_error_class(error_message, status_code, headers)
     }
 }
 
@@ -169,7 +315,7 @@ impl Fixture {
 pub(crate) struct Bench {
     pub(crate) events: Events,
     pub(crate) fixture: Fixture,
-    pub(crate) config: OpenAiEvalsConfig,
+    pub(crate) config: RecordingConfig,
     pub(crate) client: ProxiedClient,
     pub(crate) url: String,
     pub(crate) headers: Headers,
@@ -182,7 +328,7 @@ impl Bench {
         Self {
             events,
             fixture,
-            config: OpenAiEvalsConfig::default(),
+            config: RecordingConfig::default(),
             client: proxied_client(limits),
             url,
             headers: headers(&[("x-test", "yes")]),
