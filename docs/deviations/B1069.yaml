@@ -11,6 +11,19 @@ deviations:
       task pins this route to it instead of adding a second parser. The update and delete routes take
       typed request records and answer the same 422 LiteLLM does.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/management_endpoints.py#L277-L280
+  - what: >-
+      A litellm_params member whose JSON type the GenericLiteLLMParams field of the same name cannot hold
+      is stored as sent instead of rejected: POST /vector_store/new with litellm_params {"tpm": "abc"}
+      answers 200 and keeps tpm as the string beside the five False defaults. LiteLLM builds
+      GenericLiteLLMParams(**litellm_params), pydantic rejects the value, and the create handler's
+      catch-all turns the ValidationError into a 500.
+    why: >-
+      GenericLiteLLMParams is B010's typed deployment params model, and this route carries the request's
+      litellm_params as open JSON through B1131, normalizing the keys it acts on and leaving the rest as
+      sent. B3360 and B3483 record the same unvalidated model. docs/compatibility.md answers a request
+      value the declared type cannot hold with a 400 that names the field, and that needs the typed model
+      here; a per-field type table written in this route would be one more copy of it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/management_endpoints.py#L248-L250
 kept_bugs:
   - what: >-
       A litellm_params value sent to POST /vector_store/update is ignored and the stored params stay as

@@ -353,6 +353,35 @@ async fn create_drops_non_dict_metadata_and_keeps_empty_params() {
     assert_eq!("{}", empty_params.litellm_params);
 }
 
+// a wrong-typed declared member is stored as sent: the typed model is B010's, and docs/deviations/B1069.yaml records it
+#[tokio::test]
+async fn create_stores_a_wrong_typed_declared_param_as_sent() {
+    let database = FakeDatabase::new(Vec::new());
+    let setup = Setup {
+        database: Some(database.clone()),
+        cache: None,
+        registry: Some(Vec::new()),
+        world: World::default(),
+        privileges: false,
+        settings: FeatureSettings::default(),
+        events: Events::default(),
+    };
+    let state = build(setup);
+    let (status, _headers, _) = call_new(
+        &state,
+        r#"{"vector_store_id":"vs_t","custom_llm_provider":"openai","litellm_params":{"tpm":"abc"}}"#,
+    )
+    .await;
+    assert_eq!(StatusCode::OK, status);
+    let record = database.creates().pop().expect("the insert ran");
+    let stored: Json = serde_json::from_str(&record.litellm_params).expect("params are JSON text");
+    assert_eq!(Some(&Json::Text("abc".to_owned())), field(&stored, "tpm"));
+    assert_eq!(
+        Some(&Json::Bool(false)),
+        field(&stored, "use_litellm_proxy")
+    );
+}
+
 #[tokio::test]
 async fn create_without_a_database_answers_500() {
     let events = Events::default();
