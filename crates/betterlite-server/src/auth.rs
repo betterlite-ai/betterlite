@@ -55,13 +55,14 @@ pub mod virtual_key_routes;
 
 use std::{collections::BTreeSet, sync::Arc};
 
-use betterlite_auth::auth_request_models::MODEL_ROUTING_HEADER_NAME;
 use betterlite_auth::auth_request_models::catalog::{EmptyCatalog, RequestModelResolver};
 use betterlite_models::{decisions::Json, model_registration::JsonObject};
 
 use crate::auth::auth_identity::{
     AuthBackend, AuthContext, StageFailure, StageInput, resource_grant_stage_input,
 };
+use crate::auth::auth_key_lookup::ConfiguredMasterKey;
+use crate::auth::auth_key_lookup::key_headers::{extract_key, headers_json};
 use crate::auth::auth_model_patterns::{
     ModelPatternStageInput, max_recurse_depth_for_request, rule_for_request,
 };
@@ -71,13 +72,13 @@ use crate::auth::virtual_key_routes::stage_input as virtual_key_route_stage_inpu
 use crate::error_body::AuthenticationFailure;
 use axum::body::{Body, Bytes};
 use axum::extract::State;
-use axum::http::{HeaderMap, Request, header};
+use axum::http::{Request, header};
 use axum::middleware::Next;
 use axum::response::Response;
 use secrecy::SecretString;
 pub(crate) async fn authenticate(
     State(master_key_state): State<Option<SecretString>>,
-    request: Request<Body>,
+    mut request: Request<Body>,
     next: Next,
     failure_response: fn(&StageFailure) -> Response,
 ) -> Response {
@@ -87,6 +88,9 @@ pub(crate) async fn authenticate(
     let Some(master_key) = master_key_state.as_ref() else {
         return next.run(request).await;
     };
+    request
+        .extensions_mut()
+        .insert(ConfiguredMasterKey(master_key.clone()));
     let pipeline = auth_stage_loop::run_stages(request, master_key, failure_response);
     match Box::pin(pipeline).await {
         Ok((staged, authenticated, body)) => {
@@ -104,7 +108,8 @@ fn stage_input(
     body: Option<&Bytes>,
 ) -> Result<StageInput, StageFailure> {
     match backend {
-        AuthBackend::MasterKey => Ok(StageInput::MasterKey(extract_key(request.headers()))),
+        AuthBackend::AuthKeyLookup => Ok(auth_key_lookup::lookup_stage_input(request)),
+        AuthBackend::MasterKey => Ok(auth_key_lookup::master_stage_input(request, authenticated)),
         AuthBackend::AuthRequestPolicy => Ok(StageInput::AuthRequestPolicy(Box::new(
             auth_request_policy::stage_input(request, authenticated, body)?,
         ))),
@@ -184,34 +189,28 @@ fn resolver_for(request: &Request<Body>) -> Arc<RequestModelResolver> {
 // stage_input cannot await while holding the request borrow (Request<Body> is Send but not Sync), so the caller awaits the stage prefetch on the owned input
 pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, StageFailure> {
     match input {
-        StageInput::AuthTagBudgets(stage) => {
-            auth_tag_budgets::prefetch(&stage)
-                .await
-                .map_err(StageFailure::TagBudgets)?;
-            Ok(StageInput::AuthTagBudgets(stage))
-        }
-        StageInput::AuthKeyBudgets(stage) => {
-            auth_key_budgets::prefetch(&stage)
-                .await
-                .map_err(StageFailure::KeyBudgets)?;
-            Ok(StageInput::AuthKeyBudgets(stage))
-        }
+        StageInput::AuthKeyLookup(stage) => auth_key_lookup::prefetch(*stage).await,
+        StageInput::AuthTagBudgets(stage) => auth_tag_budgets::prefetch(&stage)
+            .await
+            .map_err(StageFailure::TagBudgets)
+            .map(|()| StageInput::AuthTagBudgets(stage)),
+        StageInput::AuthKeyBudgets(stage) => auth_key_budgets::prefetch(&stage)
+            .await
+            .map_err(StageFailure::KeyBudgets)
+            .map(|()| StageInput::AuthKeyBudgets(stage)),
         StageInput::TeamBudgetAdmission(stage) => team_budget_admission::prefetched(stage).await,
-        StageInput::AuthOrgLookup(stage) => {
-            auth_org_lookup::prefetch(&stage)
-                .await
-                .map_err(StageFailure::OrgLookup)?;
-            Ok(StageInput::AuthOrgLookup(stage))
-        }
-        StageInput::AuthEndUsers(stage) => {
-            auth_end_users::prefetch(&stage)
-                .await
-                .map_err(StageFailure::EndUsers)?;
-            Ok(StageInput::AuthEndUsers(stage))
-        }
+        StageInput::AuthOrgLookup(stage) => auth_org_lookup::prefetch(&stage)
+            .await
+            .map_err(StageFailure::OrgLookup)
+            .map(|()| StageInput::AuthOrgLookup(stage)),
+        StageInput::AuthEndUsers(stage) => auth_end_users::prefetch(&stage)
+            .await
+            .map_err(StageFailure::EndUsers)
+            .map(|()| StageInput::AuthEndUsers(stage)),
         StageInput::ModelGrantIntersection(stage) => StageInput::prefetch_model_grants(stage).await,
         StageInput::EntityModelAccess(stage) => entity_model_access::prefetched(stage).await,
-        other @ (StageInput::MasterKey(_)
+        other @ (StageInput::Authenticated(_)
+        | StageInput::MasterKey(_)
         | StageInput::AuthRequestPolicy(_)
         | StageInput::RequestBodySafety(_)
         | StageInput::AuthVirtualKeyRoutes(_)
@@ -246,49 +245,6 @@ fn model_stage_input(
         resolver: Arc::clone(resolver),
     }
 }
-fn headers_json(headers: &HeaderMap) -> JsonObject {
-    let mut object = JsonObject::new();
-    if let Some(value) = headers.get(MODEL_ROUTING_HEADER_NAME) {
-        // LiteLLM decodes header bytes as latin-1, and only this header feeds the model candidates
-        let text: String = value
-            .as_bytes()
-            .iter()
-            .map(|byte| char::from(*byte))
-            .collect();
-        object.insert(MODEL_ROUTING_HEADER_NAME.to_owned(), Json::Text(text));
-    }
-    object
-}
-const MODEL_QUERY_KEYS: [&str; 2] = ["model", "target_model_names"];
-
-fn query_json(query: Option<&str>) -> JsonObject {
-    let mut object = JsonObject::new();
-    for (name, value) in form_urlencoded::parse(query.unwrap_or_default().as_bytes()) {
-        // LiteLLM reads these two query keys into the model candidates and nothing else
-        if MODEL_QUERY_KEYS.contains(&name.to_lowercase().as_str()) {
-            object.insert(name.into_owned(), Json::Text(value.into_owned()));
-        }
-    }
-    object
-}
-fn extract_key(headers: &HeaderMap) -> Option<SecretString> {
-    for name in [
-        "x-litellm-api-key",
-        header::AUTHORIZATION.as_str(),
-        "api-key",
-        "x-api-key",
-        "x-goog-api-key",
-        "ocp-apim-subscription-key",
-    ] {
-        let Some(value) = headers.get(name) else {
-            continue;
-        };
-        if let Some(key) = parse_key_header(name, value.as_bytes()) {
-            return Some(key);
-        }
-    }
-    None
-}
 pub fn parse_key_header(name: &str, header_bytes: &[u8]) -> Option<SecretString> {
     if header_bytes.is_empty() {
         return None;
@@ -302,4 +258,17 @@ pub fn parse_key_header(name: &str, header_bytes: &[u8]) -> Option<SecretString>
         header_value
     };
     Some(SecretString::from(token))
+}
+
+const MODEL_QUERY_KEYS: [&str; 2] = ["model", "target_model_names"];
+
+fn query_json(query: Option<&str>) -> JsonObject {
+    let mut object = JsonObject::new();
+    for (name, value) in form_urlencoded::parse(query.unwrap_or_default().as_bytes()) {
+        // LiteLLM reads these two query keys into the model candidates and nothing else
+        if MODEL_QUERY_KEYS.contains(&name.to_lowercase().as_str()) {
+            object.insert(name.into_owned(), Json::Text(value.into_owned()));
+        }
+    }
+    object
 }

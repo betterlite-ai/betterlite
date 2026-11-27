@@ -1,0 +1,43 @@
+kind: helper
+name: auth-key-lookup-key-cache-copy
+call:
+  auth_key_lookup:
+    aspect: key_object
+    hashed_token: hashed-token
+    cached:
+      token: hashed-token
+      key_name: k1
+      user_id: u1
+      team_id: t1
+      team_alias: alpha
+      models: [gpt-4]
+      team_models: [claude-3]
+      object_permission_id: op-cached
+    reconnect: {answer: false}
+calls:
+  # a writer read never serves the cached copy and never writes the cache back
+  - auth_key_lookup:
+      aspect: key_object
+      hashed_token: hashed-token
+      cached:
+        token: hashed-token
+        key_name: k1
+        user_id: u1
+        team_id: t1
+        team_alias: alpha
+        models: [gpt-4]
+        team_models: [claude-3]
+      reconnect: {answer: false}
+      check_db_only: true
+      rows:
+        - kind: row
+          fields:
+            token: hashed-token
+            key_name: k1
+            user_id: u1
+            team_id: t1
+            team_alias: alpha
+            models: [gpt-4]
+            team_models: [claude-3]
+env: {}
+compare: {ignore: []}

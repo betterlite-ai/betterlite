@@ -1,0 +1,7 @@
+general_settings:
+  alerting:
+    - slack
+    - ms_teams
+  alert_types:
+    - budget_alerts
+    - daily_reports

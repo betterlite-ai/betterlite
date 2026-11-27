@@ -1,13 +1,13 @@
 id: B170
 milestone: M12 python
 title: Python wheels for Linux, macOS and Windows and the PyPI release
-status: todo
+status: done
 depends_on: [B5369, B157]
 file: tasks/B170-python-wheel-release.yaml
 covers: []
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3275
