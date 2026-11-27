@@ -6,7 +6,7 @@ use betterlite_db::auxiliary_repository::repository::TableError;
 use betterlite_openai::api::vector_store_records::records::vector::LiteLlmManagedVectorStore;
 use betterlite_server::api::vector_management_boundaries::rows::VectorStoreRows;
 use betterlite_server::api::vector_management_write::rows::{
-    FieldChange, NewVectorStoreRecord, VectorStoreChanges, VectorStoreWrites,
+    NewVectorStoreRecord, VectorStoreChanges, VectorStoreWrites,
 };
 use serde_json::Value;
 
@@ -17,6 +17,8 @@ const UPDATED_AT: &str = "2024-02-03T04:05:06.000";
 type Found = Result<Option<LiteLlmManagedVectorStore>, TableError>;
 type Stored = Result<LiteLlmManagedVectorStore, TableError>;
 type Rows<'guard> = MutexGuard<'guard, DbState>;
+// an update field: the outer Option is presence and the inner one an explicit null, as exclude_unset keeps them apart
+type FieldChange<T> = Option<Option<T>>;
 
 // the rows the management writes change, with every call recorded like the table's
 #[derive(Clone)]
@@ -168,8 +170,8 @@ where
     F: Fn(&str) -> T,
 {
     match change {
-        FieldChange::Omitted => {}
-        FieldChange::Null => *field = None,
-        FieldChange::Value(text) => *field = Some(convert(text)),
+        None => {}
+        Some(None) => *field = None,
+        Some(Some(text)) => *field = Some(convert(text)),
     }
 }
