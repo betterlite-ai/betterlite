@@ -1,11 +1,20 @@
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
+mod entities;
+mod input;
+mod lookups;
+mod output;
+mod probe;
+mod run;
+mod support;
+mod tests;
+
 pub(crate) struct Op;
 
 impl Helper for Op {
-    type Input = serde_json::Value;
+    type Input = input::Input;
 
-    fn run(_input: &Self::Input) -> HelperResult {
-        Self::not_built("b3883")
+    fn run(input: &Self::Input) -> HelperResult {
+        run::run(input)
     }
 }
