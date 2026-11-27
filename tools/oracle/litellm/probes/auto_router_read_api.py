@@ -103,7 +103,7 @@ class FakeTable:
         matching = [
             row for row in self.rows if row.get("api_key") == api_key and row.get("session_id") == session_id
         ]
-        chosen = sorted(matching, key=turn_stamp, reverse=True)[0] if matching else None
+        chosen = max(matching, key=turn_stamp) if matching else None
         self.lookup = {"api_key": api_key, "session_id": session_id, "matched": chosen is not None}
         return chosen
 
