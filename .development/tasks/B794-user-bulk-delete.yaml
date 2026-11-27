@@ -48,7 +48,9 @@ description: >-
 
   After COMMIT, schedule B784 deleted-key audits if any keys; delete token cache objects via B734;
   B878 evict/broadcast JWT mappings, then sorted user IDs; emit B1202 team metrics in sorted order;
-  finally run B797 user audits with concurrency exactly 10. User audits use action=deleted,
+  finally run user audits, LiteLLM's create_internal_user_audit_log, with concurrency exactly 10,
+  each awaiting B065's AuditService::create_object_audit_log with B2330's AuditTable::User,
+  action=deleted,
   supplied changed-by/admin-name/caller, before=row JSON excluding nulls, after default null.
   Per-user audit exceptions warn and continue; the bounded gather retains BaseException outcomes
   in input order. Key-audit scheduling, token cache and broadcast exceptions propagate globally
@@ -203,7 +205,7 @@ deviations: []
 out_of_scope:
   - B1222 owns the HTTP route/problem envelope; B2334 owns wire contracts; B777 owns archive
     row projection; B738 owns JWT cache-key snapshots; B734 owns token cache eviction;
-    B784/B797 own key/user audit sinks. B1202 owns shared team records and the transaction timeout.
+    B784 owns the key audit sink and B065 the user audit sink create_object_audit_log. B1202 owns shared team records and the transaction timeout.
   - 'litellm/proxy/management_helpers/bulk_user_deletion.py: B1202 owns _TeamRemoval.deleted_key_tokens
     (L99-L100), _team_not_found (L120-L128), _team_tx_db (L153-L154), _membership_tx_db (L161-L162), _same_email
     (L177-L178), _addresses_member (L181-L184), _with_row_email (L187-L190), _remove_members_from_team
