@@ -129,8 +129,14 @@ fn model_hint(data: &JsonObject, user_controlled: Option<&str>) -> Option<String
             Json::Text(text) => Some(text.clone()),
             Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
         },
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))
-        | Some(Json::Object(_))
+        Some(
+            Json::Null
+            | Json::Bool(_)
+            | Json::Number(_)
+            | Json::Text(_)
+            | Json::List(_)
+            | Json::Object(_),
+        )
         | None => user_controlled.map(str::to_owned),
     }
 }

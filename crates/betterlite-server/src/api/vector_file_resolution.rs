@@ -21,32 +21,32 @@ use http::HeaderMap;
 use serde::Deserialize;
 
 // What a files route reads off the request besides the request data it already decoded.
-pub struct RequestFacts<'a> {
-    pub method: &'a str,
-    pub query: Option<&'a str>,
-    pub headers: &'a HeaderMap,
-    pub body: &'a RequestBody,
-    pub route: RequestRouteSource<'a>,
+pub struct RequestFacts<'request> {
+    pub method: &'request str,
+    pub query: Option<&'request str>,
+    pub headers: &'request HeaderMap,
+    pub body: &'request RequestBody,
+    pub route: RequestRouteSource<'request>,
 }
 
 // The authenticated caller: the principal the grant checks run for, and the key whose team and metadata these helpers read.
-pub struct Caller<'a> {
-    pub principal: &'a Principal,
-    pub auth: &'a UserAPIKeyAuth,
+pub struct Caller<'caller> {
+    pub principal: &'caller Principal,
+    pub auth: &'caller UserAPIKeyAuth,
 }
 
 // The router, grant and managed-file ports a routing helper calls; a route with no router passes None.
-pub struct RoutingDeps<'a, Catalog, Grants> {
-    pub catalog: Option<&'a Catalog>,
-    pub grants: &'a Grants,
-    pub managed_files: Option<&'a dyn ManagedResourceAccessChecker>,
+pub struct RoutingDeps<'deps, Catalog, Grants> {
+    pub catalog: Option<&'deps Catalog>,
+    pub grants: &'deps Grants,
+    pub managed_files: Option<&'deps dyn ManagedResourceAccessChecker>,
     pub require_managed_files: bool,
 }
 
 // The store a route already resolved and the registry B1062 loaded, for the legacy overlay path.
-pub struct StoreDeps<'a> {
-    pub managed_store: Option<&'a LiteLlmManagedVectorStore>,
-    pub registry: Option<&'a VectorStoreRegistry>,
+pub struct StoreDeps<'store> {
+    pub managed_store: Option<&'store LiteLlmManagedVectorStore>,
+    pub registry: Option<&'store VectorStoreRegistry>,
     pub should_lookup_registry: bool,
 }
 

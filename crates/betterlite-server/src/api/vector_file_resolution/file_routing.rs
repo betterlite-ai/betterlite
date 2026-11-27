@@ -7,7 +7,7 @@ use betterlite_core::api::file_credentials::routing::{
 use betterlite_core::api::file_upload_options::error::ResourceKind;
 use betterlite_core::api::file_upload_options::managed::validate_managed_id;
 use betterlite_core::api::managed_resource_ids::{decode_unified_id, parse_unified_id};
-use betterlite_core::api::model_credentials::{CredentialSource, prepare_data_with_credentials};
+use betterlite_core::api::model_credentials::prepare_data_with_credentials;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 
@@ -78,7 +78,7 @@ where
         );
         return Ok(Some(file_id.to_owned()));
     };
-    let provider_file_id = extract_provider_file_id(decoded);
+    let provider_file_id = extract_provider_file_id(&decoded);
     if let Some(parts) = parse_unified_id(file_id) {
         if let Some(model_name) = parts.target_model_names.first() {
             data.insert("model".to_owned(), Json::Text(model_name.clone()));

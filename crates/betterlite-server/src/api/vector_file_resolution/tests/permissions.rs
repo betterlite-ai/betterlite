@@ -272,8 +272,8 @@ fn permissions_team_metadata_read_denied() {
         panic!("a read-only grant must deny the write")
     };
     assert!(matches!(
-        denied,
-        VectorEndpointAccessError::FileDenied { vector_store_id } if vector_store_id == "vs_1"
+        &denied,
+        VectorEndpointAccessError::FileDenied { vector_store_id } if vector_store_id.as_str() == "vs_1"
     ));
     assert_eq!(denied.status(), 403);
 }

@@ -2,16 +2,16 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 
 // The provider response shapes _replace_file_id_in_response rewrites, each borrowed in place.
-pub enum FileResponse<'a> {
+pub enum FileResponse<'response> {
     // a dict response: every id and file_id key that is present is rewritten, nested objects are not
-    Fields(&'a mut JsonObject),
+    Fields(&'response mut JsonObject),
     // an object carrying both attributes: LiteLLM checks id first, so file_id keeps the provider id
     Both {
-        id: &'a mut String,
-        file_id: &'a mut String,
+        id: &'response mut String,
+        file_id: &'response mut String,
     },
-    Identifier(&'a mut String),
-    FileIdentifier(&'a mut String),
+    Identifier(&'response mut String),
+    FileIdentifier(&'response mut String),
 }
 
 // _replace_file_id_in_response: a null response stays null, a dict rewrites both keys, and an object rewrites id first.
