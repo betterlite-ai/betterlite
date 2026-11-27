@@ -92,7 +92,10 @@ pub(crate) fn local_vars_list(request: &ListRunsArgs<'_>) -> IndexMap<String, Js
 
 // Python's local holds the timeout in seconds, and the pair fallback writes null for an absent one
 fn seconds_of(timeout: Duration) -> Json {
-    Number::from_f64(timeout.as_secs_f64()).map_or(Json::Null, Json::Number)
+    let Some(seconds) = Number::from_f64(timeout.as_secs_f64()) else {
+        return Json::Null;
+    };
+    Json::Number(seconds)
 }
 
 // Json mirrors any serde JSON value, and the objects and headers local_vars holds always convert
