@@ -228,7 +228,7 @@ async fn caches_a_hit_for_three_hundred_seconds() {
         .await
         .expect("the cached fetch succeeds")
         .expect("the hit keeps the document");
-    assert_eq!(rendered(&cached), UPSTREAM_DOCUMENT);
+    assert_eq!(cached, document(UPSTREAM_DOCUMENT));
     assert_eq!(root.upstream.calls().len(), 1);
     advance(Duration::from_secs(1)).await;
     let renewed = root
@@ -238,6 +238,28 @@ async fn caches_a_hit_for_three_hundred_seconds() {
         .expect("the refetch gets the document again");
     assert_eq!(rendered(&renewed), UPSTREAM_DOCUMENT);
     assert_eq!(root.upstream.calls().len(), 2);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_cache_hit_keeps_the_stored_values() {
+    let body = r#"{"resource":"https://upstream.example.test/mcp","count":2.5,"flag":false,"items":[null,"text",{"nested":true}]}"#;
+    let harness = Harness::new().reply(PASS_THROUGH_HOST, body);
+    let root = harness.root();
+    let server = passthrough_server();
+    let initial = root
+        .fetch_upstream_oauth_protected_resource(&server)
+        .await
+        .expect("the first fetch succeeds")
+        .expect("the first fetch gets the document");
+    assert_eq!(initial, document(body));
+    advance(Duration::from_secs(1)).await;
+    let cached = root
+        .fetch_upstream_oauth_protected_resource(&server)
+        .await
+        .expect("the cached fetch succeeds")
+        .expect("the hit keeps the document");
+    assert_eq!(cached, document(body));
+    assert_eq!(root.upstream.calls().len(), 1);
 }
 
 #[tokio::test(start_paused = true)]
@@ -355,7 +377,7 @@ async fn reads_the_cache_after_taking_the_slot() {
         .expect("the second caller succeeds")
         .expect("the second caller reuses the cached document");
     assert_eq!(rendered(&first), UPSTREAM_DOCUMENT);
-    assert_eq!(rendered(&second), UPSTREAM_DOCUMENT);
+    assert_eq!(second, document(UPSTREAM_DOCUMENT));
     assert_eq!(root.upstream.calls().len(), 1);
 }
 

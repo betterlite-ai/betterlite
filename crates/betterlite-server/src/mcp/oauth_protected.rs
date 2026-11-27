@@ -19,8 +19,8 @@ use thiserror::Error;
 use tokio::time::Instant;
 
 use self::routes::{
-    AUTHORIZATION_SERVER_PATH, NamedShape, PROTECTED_RESOURCE_PATH, aggregate_authorization_server,
-    aggregate_resource, named_document, root_document,
+    AUTHORIZATION_SERVER_PATH, NamedShape, PROTECTED_RESOURCE_PATH, WellKnownShape, named_document,
+    well_known_document,
 };
 
 pub type JsonObject = IndexMap<String, Json>;
@@ -83,11 +83,19 @@ where
         let legacy_path = format!("{PROTECTED_RESOURCE_PATH}{suffix}/{{mcp_server_name}}/mcp");
         let aggregate_server_path = format!("{AUTHORIZATION_SERVER_PATH}{suffix}/mcp");
         Router::new()
-            .route(PROTECTED_RESOURCE_PATH, get(root_document::<U, R, G>))
-            .route(&aggregate_resource_path, get(aggregate_resource::<U, R, G>))
+            .route(
+                PROTECTED_RESOURCE_PATH,
+                get(well_known_document::<U, R, G>).layer(Extension(WellKnownShape::Root)),
+            )
+            .route(
+                &aggregate_resource_path,
+                get(well_known_document::<U, R, G>)
+                    .layer(Extension(WellKnownShape::AggregateResource)),
+            )
             .route(
                 &aggregate_server_path,
-                get(aggregate_authorization_server::<U, R, G>),
+                get(well_known_document::<U, R, G>)
+                    .layer(Extension(WellKnownShape::AggregateAuthorizationServer)),
             )
             .route(
                 &standard_path,

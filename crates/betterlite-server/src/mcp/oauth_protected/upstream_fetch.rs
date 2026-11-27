@@ -86,36 +86,10 @@ fn payload_from(candidate: &str, reply: &UpstreamReply) -> Option<JsonObject> {
     }
 }
 
-fn cached_document(payload: JsonValue) -> Option<JsonObject> {
-    match payload {
-        JsonValue::Object(entries) => Some(
-            entries
-                .into_iter()
-                .map(|(field, value)| (field, document_value(value)))
-                .collect(),
-        ),
-        JsonValue::Null
-        | JsonValue::Bool(_)
-        | JsonValue::Number(_)
-        | JsonValue::String(_)
-        | JsonValue::Array(_) => None,
-    }
-}
-
-fn document_value(value: JsonValue) -> Json {
-    match value {
-        JsonValue::Null => Json::Null,
-        JsonValue::Bool(flag) => Json::Bool(flag),
-        JsonValue::Number(number) => Json::Number(number),
-        JsonValue::String(text) => Json::Text(text),
-        JsonValue::Array(items) => Json::List(items.into_iter().map(document_value).collect()),
-        JsonValue::Object(entries) => Json::Object(
-            entries
-                .into_iter()
-                .map(|(field, item)| (field, document_value(item)))
-                .collect(),
-        ),
-    }
+fn cached_document(entry: Option<JsonValue>) -> Option<JsonObject> {
+    let payload = entry?;
+    let text = serde_json::to_string(&payload).ok()?;
+    serde_json::from_str::<JsonObject>(&text).ok()
 }
 
 fn stored_value(value: &Json) -> JsonValue {

@@ -22,13 +22,21 @@ pub(crate) enum NamedShape {
     Legacy,
 }
 
+#[derive(Clone, Copy)]
+pub(crate) enum WellKnownShape {
+    Root,
+    AggregateResource,
+    AggregateAuthorizationServer,
+}
+
 #[derive(Serialize)]
 struct DetailBody {
     detail: String,
 }
 
-pub(crate) async fn root_document<U, R, G>(
+pub(crate) async fn well_known_document<U, R, G>(
     State(root): State<Arc<ProtectedRoot<U, R, G>>>,
+    Extension(shape): Extension<WellKnownShape>,
     request: Request,
 ) -> Response
 where
@@ -38,36 +46,17 @@ where
 {
     let (parts, _body) = request.into_parts();
     let base_url = root.request.request_base_url(&parts);
-    Json(root_resource(&base_url)).into_response()
-}
-
-pub(crate) async fn aggregate_resource<U, R, G>(
-    State(root): State<Arc<ProtectedRoot<U, R, G>>>,
-    request: Request,
-) -> Response
-where
-    U: UpstreamGet + 'static,
-    R: RequestFacts + 'static,
-    G: GatewayFacts + 'static,
-{
-    let (parts, _body) = request.into_parts();
-    let base_url = root.request.request_base_url(&parts);
-    Json(aggregate_protected_resource(&base_url)).into_response()
-}
-
-pub(crate) async fn aggregate_authorization_server<U, R, G>(
-    State(root): State<Arc<ProtectedRoot<U, R, G>>>,
-    request: Request,
-) -> Response
-where
-    U: UpstreamGet + 'static,
-    R: RequestFacts + 'static,
-    G: GatewayFacts + 'static,
-{
-    let (parts, _body) = request.into_parts();
-    let base_url = root.request.request_base_url(&parts);
-    let token_exchange_available = root.gateway.token_exchange().refusal().is_none();
-    Json(aggregate_auth_server(&base_url, token_exchange_available)).into_response()
+    match shape {
+        WellKnownShape::Root => Json(root_resource(&base_url)).into_response(),
+        WellKnownShape::AggregateResource => {
+            Json(aggregate_protected_resource(&base_url)).into_response()
+        }
+        WellKnownShape::AggregateAuthorizationServer => Json(aggregate_auth_server(
+            &base_url,
+            root.gateway.token_exchange().refusal().is_none(),
+        ))
+        .into_response(),
+    }
 }
 
 pub(crate) async fn named_document<U, R, G>(
