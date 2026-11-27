@@ -492,7 +492,9 @@ fn a_configured_database_url_opens_the_read_store() {
 async fn an_oversized_session_id_reaches_the_store_bounded() {
     let oversized = "a".repeat(257);
     let bounded = bounded_session_id(&oversized);
-    let store = Arc::new(RecordingStore::with_session(session_row(&bounded)));
+    let mut row = session_row("litellm_proxy_master_key");
+    row.session_id = bounded.clone();
+    let store = Arc::new(RecordingStore::with_session(row));
     let handle = Arc::clone(&store);
     let raw = format!("session_id={oversized}");
     let response = session(
@@ -502,6 +504,8 @@ async fn an_oversized_session_id_reaches_the_store_bounded() {
     )
     .await;
     assert_eq!(response.status(), StatusCode::OK);
+    let answer: SessionResponse = decode(response).await;
+    assert_eq!(answer.session_id, oversized);
     assert_eq!(
         store.calls(),
         [("litellm_proxy_master_key".to_owned(), bounded)]
