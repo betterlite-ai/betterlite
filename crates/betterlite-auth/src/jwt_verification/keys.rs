@@ -1,8 +1,10 @@
+use std::str::FromStr as _;
+
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
-use jsonwebtoken::DecodingKey;
+use jsonwebtoken::{Algorithm, DecodingKey};
 use p521::ecdsa::signature::Verifier as _;
 use p521::ecdsa::{Signature as P521Signature, VerifyingKey as P521VerifyingKey};
 use x509_parser::public_key::PublicKey as CertificateKey;
@@ -99,29 +101,24 @@ fn verify_with_ec_components(
     signing_input: &[u8],
     signature: &str,
 ) -> Result<(), VerificationError> {
-    match algorithm.library() {
-        Some(_) => {
-            let key =
-                DecodingKey::from_ec_components(x, y).map_err(|error| unusable_key(&error))?;
-            verify_with_library(&key, algorithm, signing_input, signature)
-        }
-        None => {
-            // ES512 has no jsonwebtoken verifier, so the point goes to RustCrypto's P-521 instead
-            let mut point = Vec::with_capacity(133);
-            point.push(4_u8);
-            point.extend_from_slice(
-                &URL_SAFE_NO_PAD
-                    .decode(x)
-                    .map_err(|error| unusable_key(&error))?,
-            );
-            point.extend_from_slice(
-                &URL_SAFE_NO_PAD
-                    .decode(y)
-                    .map_err(|error| unusable_key(&error))?,
-            );
-            verify_with_p521(&point, signing_input, signature)
-        }
+    if Algorithm::from_str(algorithm.wire_name()).is_err() {
+        // ES512 has no jsonwebtoken verifier, so the point goes to RustCrypto's P-521 instead
+        let mut point = Vec::with_capacity(133);
+        point.push(4_u8);
+        point.extend_from_slice(
+            &URL_SAFE_NO_PAD
+                .decode(x)
+                .map_err(|error| unusable_key(&error))?,
+        );
+        point.extend_from_slice(
+            &URL_SAFE_NO_PAD
+                .decode(y)
+                .map_err(|error| unusable_key(&error))?,
+        );
+        return verify_with_p521(&point, signing_input, signature);
     }
+    let key = DecodingKey::from_ec_components(x, y).map_err(|error| unusable_key(&error))?;
+    verify_with_library(&key, algorithm, signing_input, signature)
 }
 
 fn verify_with_library(
@@ -130,7 +127,7 @@ fn verify_with_library(
     signing_input: &[u8],
     signature: &str,
 ) -> Result<(), VerificationError> {
-    let Some(library) = algorithm.library() else {
+    let Ok(library) = Algorithm::from_str(algorithm.wire_name()) else {
         return Err(incompatible_key());
     };
     match jsonwebtoken::crypto::verify(signature, signing_input, key, library) {
@@ -172,30 +169,26 @@ fn verify_with_certificate(
         .public_key()
         .parsed()
         .map_err(|error| unusable_key(&error))?;
-    match public_key {
-        CertificateKey::RSA(rsa) => {
-            let key =
-                DecodingKey::from_rsa_raw_components(unsigned(rsa.modulus), unsigned(rsa.exponent));
-            verify_with_library(&key, algorithm, signing_input, signature)
-        }
-        CertificateKey::EC(point) => match algorithm.library() {
-            Some(_) => {
-                let key = DecodingKey::from_ec_der(point.data());
-                verify_with_library(&key, algorithm, signing_input, signature)
-            }
-            None => verify_with_p521(point.data(), signing_input, signature),
-        },
-        CertificateKey::Unknown(bytes) => {
-            if algorithm.family() != Family::Ed || bytes.len() != 32 {
-                return Err(incompatible_key());
-            }
-            let key = DecodingKey::from_ed_der(bytes);
-            verify_with_library(&key, algorithm, signing_input, signature)
-        }
-        CertificateKey::DSA(_)
-        | CertificateKey::GostR3410(_)
-        | CertificateKey::GostR3410_2012(_) => Err(incompatible_key()),
+    if let CertificateKey::RSA(rsa) = &public_key {
+        let key =
+            DecodingKey::from_rsa_raw_components(unsigned(rsa.modulus), unsigned(rsa.exponent));
+        return verify_with_library(&key, algorithm, signing_input, signature);
     }
+    if let CertificateKey::EC(point) = &public_key {
+        if Algorithm::from_str(algorithm.wire_name()).is_ok() {
+            let key = DecodingKey::from_ec_der(point.data());
+            return verify_with_library(&key, algorithm, signing_input, signature);
+        }
+        return verify_with_p521(point.data(), signing_input, signature);
+    }
+    if let CertificateKey::Unknown(bytes) = &public_key {
+        if algorithm.family() != Family::Ed || bytes.len() != 32 {
+            return Err(incompatible_key());
+        }
+        let key = DecodingKey::from_ed_der(bytes);
+        return verify_with_library(&key, algorithm, signing_input, signature);
+    }
+    Err(incompatible_key())
 }
 
 // x509-parser keeps DER INTEGER bytes as written, and a leading zero only pads the unsigned value.

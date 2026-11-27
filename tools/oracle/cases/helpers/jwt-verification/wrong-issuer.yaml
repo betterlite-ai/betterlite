@@ -4,6 +4,8 @@ call:
   jwt_verification:
     scenarios:
       - now: 1700000000.0
+        userinfo_ttl: 300.0
+        issuers: []
         issuer: "https://issuer-a.example.com"
         key: {"kty":"RSA","kid":"rsa-key","n":"qBV4uuD4ho4EljGE_P0Mkeu4ez_KwlFScpDLtRQDxOg8Xmq-QcuML77h593QZ-K_rbWxHqD_VVHUQLKTiLuIJNeUS6QXqpbbkvwhJpNNyUFBr0d46RnnU6kQF5wH4KIfWYs2ns97lceqOLc40a8eppoap6k1aXr2l_b2NuJvKPB7qmeAbGu9qvLKzOIhqUGCjcVZFr75IXrVDrX8VXkN3LIBgtdFIbz89AGfh8hV4iNbGmCGWJxadJENmbNCmqNt0GS1zJsl9fK7ivXVnZbT8psHOxnmipU_DjXvxhIoBSZH9b1F0mrBdejxM3rP8BZPPpcZPC_sKzMyNwxTeRJQhw","e":"AQAB"}
         steps:

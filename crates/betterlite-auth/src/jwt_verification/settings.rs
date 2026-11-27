@@ -1,5 +1,5 @@
 use betterlite_config::sections::jwt_settings::Settings as JwtAuthSettings;
-use betterlite_config::sections::jwt_settings::records::{IssuerConfig, Selector};
+use betterlite_config::sections::jwt_settings::records::Selector;
 use betterlite_config::types::Config;
 
 // JWT_AUDIENCE and JWT_ISSUER join the litellm_jwtauth object B869 already typed; nothing here parses it again.
@@ -27,35 +27,18 @@ impl JwtVerificationSettings {
         }
     }
 
-    // get_issuer_config: the first exact issuer match wins, and later duplicates are never reached
-    #[must_use]
-    pub fn issuer_config(&self, issuer: Option<&str>) -> Option<&IssuerConfig> {
-        self.jwt.issuer_config(issuer)
-    }
-
-    #[must_use]
-    pub fn issuers(&self) -> &[IssuerConfig] {
-        self.jwt.routing.issuers.as_deref().unwrap_or_default()
-    }
-
-    // a configured endpoint that is empty is still configured, and get_oidc_userinfo rejects it before any cache read
-    #[must_use]
-    pub fn userinfo_endpoint(&self) -> Option<&str> {
-        self.jwt.userinfo.oidc_userinfo_endpoint.as_deref()
-    }
-
-    #[must_use]
-    pub const fn userinfo_ttl(&self) -> f64 {
-        self.jwt.userinfo.oidc_userinfo_cache_ttl
-    }
-
     // the state builds a verifier only when some JWT input exists, so a proxy without JWT auth answers as before
     #[must_use]
     pub fn is_configured(&self) -> bool {
         self.audience.is_some()
             || self.issuer.is_some()
-            || !self.issuers().is_empty()
-            || self.userinfo_endpoint().is_some()
+            || self
+                .jwt
+                .routing
+                .issuers
+                .as_deref()
+                .is_some_and(|issuers| !issuers.is_empty())
+            || self.jwt.userinfo.oidc_userinfo_endpoint.is_some()
     }
 }
 

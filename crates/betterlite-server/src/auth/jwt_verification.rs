@@ -43,30 +43,24 @@ impl fmt::Debug for JwtVerificationStageInput {
 }
 
 pub(crate) fn stage_input(request: &Request<Body>) -> StageInput {
-    let verifier = request
-        .extensions()
-        .get::<Arc<JwtVerifier>>()
-        .map(Arc::clone)
-        .or_else(|| {
-            request
-                .extensions()
-                .get::<Arc<ServerState>>()
-                .and_then(|state| state.jwt_verification.verifier.clone())
-        });
-    let source = request
-        .extensions()
-        .get::<Arc<dyn PublicKeySource>>()
-        .map(Arc::clone)
-        .or_else(|| {
-            let resolver = request
-                .extensions()
-                .get::<Arc<ServerState>>()?
-                .jwt_keys
-                .resolver
-                .as_ref()?;
-            let source: Arc<dyn PublicKeySource> = Arc::clone(resolver);
-            Some(source)
-        });
+    let extensions = request.extensions();
+    let state = extensions.get::<Arc<ServerState>>();
+    let injected_verifier = extensions.get::<Arc<JwtVerifier>>();
+    let verifier = match injected_verifier {
+        Some(injected) => Some(Arc::clone(injected)),
+        None => state.and_then(|state| state.jwt_verification.verifier.clone()),
+    };
+    let injected_source = extensions.get::<Arc<dyn PublicKeySource>>();
+    let source: Option<Arc<dyn PublicKeySource>> = match injected_source {
+        Some(injected) => Some(Arc::clone(injected)),
+        None => match state.and_then(|state| state.jwt_keys.resolver.as_ref()) {
+            Some(resolver) => {
+                let source: Arc<dyn PublicKeySource> = Arc::clone(resolver);
+                Some(source)
+            }
+            None => None,
+        },
+    };
     StageInput::JwtVerification(Box::new(JwtVerificationStageInput {
         verifier,
         source,

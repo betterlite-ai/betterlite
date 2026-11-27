@@ -25,28 +25,22 @@ pub enum VerificationError {
 impl From<DecodeError> for VerificationError {
     fn from(error: DecodeError) -> Self {
         Self::Header {
-            detail: pyjwt_message(&error),
+            detail: pyjwt_message(&error).to_owned(),
         }
     }
 }
 
 // PyJWT's own wording for a token whose segments or header never parse, which the mapper prefixes unchanged.
-fn pyjwt_message(error: &DecodeError) -> String {
+fn pyjwt_message(error: &DecodeError) -> &'static str {
     match error {
-        DecodeError::TooLarge { .. } => {
-            "the signed token is over the 1048576-byte limit".to_owned()
+        DecodeError::TooLarge { .. } => "the signed token is over the 1048576-byte limit",
+        DecodeError::TooDeep { .. } => "the signed token nests deeper than 64 JSON levels",
+        DecodeError::Utf8(_) | DecodeError::NotDocument | DecodeError::Document(_) => {
+            "Invalid token"
         }
-        DecodeError::TooDeep { .. } => {
-            "the signed token nests deeper than 64 JSON levels".to_owned()
-        }
-        DecodeError::Utf8(_) => "Invalid token".to_owned(),
-        DecodeError::Segments => "Not enough segments".to_owned(),
-        DecodeError::Header => "Invalid header string: the header is not valid JSON".to_owned(),
-        DecodeError::Claims(_) => {
-            "Invalid payload string: the payload is not valid base64url JSON".to_owned()
-        }
-        DecodeError::NotDocument => "Invalid token".to_owned(),
-        DecodeError::Document(_) => "Invalid token".to_owned(),
+        DecodeError::Segments => "Not enough segments",
+        DecodeError::Header => "Invalid header string: the header is not valid JSON",
+        DecodeError::Claims(_) => "Invalid payload string: the payload is not valid base64url JSON",
     }
 }
 

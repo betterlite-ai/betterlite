@@ -18,8 +18,18 @@ pub fn validate_claims(
     payload: &Document,
     checks: &ClaimChecks<'_>,
 ) -> Result<(), VerificationError> {
-    validate_issued_at(payload, checks.now)?;
-    validate_not_before(payload, checks.now)?;
+    validate_not_in_future(
+        payload,
+        checks.now,
+        "iat",
+        "Issued At claim (iat) must be an integer.",
+    )?;
+    validate_not_in_future(
+        payload,
+        checks.now,
+        "nbf",
+        "Not Before claim (nbf) must be an integer.",
+    )?;
     validate_expiration(payload, checks.now)?;
     if checks.verify_iss {
         validate_issuer(payload, checks.issuer)?;
@@ -47,44 +57,36 @@ fn numeric_claim(
         })
 }
 
-fn validate_issued_at(payload: &Document, now: f64) -> Result<(), VerificationError> {
-    let Some(issued_at) =
-        numeric_claim(payload, "iat", "Issued At claim (iat) must be an integer.")?
-    else {
+// pyjwt reads iat and nbf the same way: an optional integer that must not lie in the future.
+fn validate_not_in_future(
+    payload: &Document,
+    now: f64,
+    claim: &str,
+    message: &str,
+) -> Result<(), VerificationError> {
+    let Some(value) = numeric_claim(payload, claim, message)? else {
         return Ok(());
     };
-    if issued_at > now {
+    if value > now {
         return Err(VerificationError::Validation {
-            detail: "The token is not yet valid (iat)".to_owned(),
-        });
-    }
-    Ok(())
-}
-
-fn validate_not_before(payload: &Document, now: f64) -> Result<(), VerificationError> {
-    let Some(not_before) =
-        numeric_claim(payload, "nbf", "Not Before claim (nbf) must be an integer.")?
-    else {
-        return Ok(());
-    };
-    if not_before > now {
-        return Err(VerificationError::Validation {
-            detail: "The token is not yet valid (nbf)".to_owned(),
+            detail: format!("The token is not yet valid ({claim})"),
         });
     }
     Ok(())
 }
 
 fn validate_expiration(payload: &Document, now: f64) -> Result<(), VerificationError> {
-    let Some(expiration) = payload.json.get("exp") else {
-        return Err(VerificationError::Validation {
-            detail: "Token is missing the \"exp\" claim".to_owned(),
-        });
-    };
-    let Some(expiration) = expiration.as_f64() else {
-        return Err(VerificationError::Validation {
-            detail: "Expiration Time claim (exp) must be an integer.".to_owned(),
-        });
+    let expiration = match payload.json.get("exp") {
+        None => {
+            return Err(VerificationError::Validation {
+                detail: "Token is missing the \"exp\" claim".to_owned(),
+            });
+        }
+        Some(value) => value
+            .as_f64()
+            .ok_or_else(|| VerificationError::Validation {
+                detail: "Expiration Time claim (exp) must be an integer.".to_owned(),
+            })?,
     };
     // leeway is zero: a token is expired from the instant its exp passes
     if expiration <= now {

@@ -10,10 +10,9 @@ use thiserror::Error;
 
 use super::settings::JwtVerificationSettings;
 use crate::auth_cache::AuthCacheError;
-use crate::jwt_keys::MAX_DOCUMENT_BYTES;
 use crate::jwt_keys::cache::KeyCache;
 use crate::jwt_keys::http::FetchError;
-use crate::jwt_keys::userinfo_document;
+use crate::jwt_keys::{DecodeError, MAX_DOCUMENT_BYTES, userinfo_document};
 
 pub const USERINFO_CACHE_KEY_PREFIX: &str = "oidc_userinfo_";
 pub const USERINFO_ACCEPT: &str = "application/json";
@@ -44,15 +43,21 @@ pub enum UserinfoError {
     NotConfigured,
     #[error(transparent)]
     Cache(#[from] AuthCacheError),
-    #[error("Failed to fetch OIDC UserInfo: {detail}")]
-    Failed { detail: String },
+    #[error("Failed to fetch OIDC UserInfo: {source}")]
+    Failed { source: UserinfoFailure },
 }
 
-// oidc_userinfo_<sha256 token hex>, so the bearer credential itself never becomes a cache key.
-#[must_use]
-pub fn cache_key(token: &str) -> String {
-    let digest = Sha256::digest(token.as_bytes());
-    format!("{USERINFO_CACHE_KEY_PREFIX}{}", hex::encode(digest))
+// The wrapped steps stay typed, so a caller can tell a transport outage from a status or a decode failure.
+#[derive(Debug, Error)]
+pub enum UserinfoFailure {
+    #[error(transparent)]
+    Fetch(#[from] FetchError),
+    #[error("OIDC UserInfo endpoint returned status {status}: {text}")]
+    Status { status: u16, text: String },
+    #[error(transparent)]
+    Document(#[from] DecodeError),
+    #[error(transparent)]
+    Cache(#[from] AuthCacheError),
 }
 
 // JWTHandler.get_oidc_userinfo: endpoint check, cache read, one fetch, success log, cache write, then return.
@@ -62,13 +67,17 @@ pub async fn fetch_userinfo(
     http: &dyn UserinfoHttp,
     token: &str,
 ) -> Result<IndexMap<String, Json>, UserinfoError> {
-    let Some(endpoint) = settings.userinfo_endpoint() else {
+    let Some(endpoint) = settings.jwt.userinfo.oidc_userinfo_endpoint.as_deref() else {
         return Err(UserinfoError::NotConfigured);
     };
     if endpoint.is_empty() {
         return Err(UserinfoError::NotConfigured);
     }
-    let key = cache_key(token);
+    // oidc_userinfo_<sha256 token hex>, so the bearer credential itself never becomes a cache key
+    let key = format!(
+        "{USERINFO_CACHE_KEY_PREFIX}{}",
+        hex::encode(Sha256::digest(token.as_bytes()))
+    );
     // a cache read failure is the cache's own error, never wrapped as a fetch failure
     if let Some(cached) = cache.read_value(&key).await? {
         match cached {
@@ -88,36 +97,32 @@ pub async fn fetch_userinfo(
     );
     let fetched = async {
         let authorization = format!("Bearer {token}");
-        let reply = http
-            .get(endpoint, &authorization, USERINFO_ACCEPT)
-            .await
-            .map_err(|error| error.to_string())?;
+        let reply = http.get(endpoint, &authorization, USERINFO_ACCEPT).await?;
         if reply.status != 200 {
             let text = str::from_utf8(&reply.body).unwrap_or_default();
-            return Err(format!(
-                "OIDC UserInfo endpoint returned status {}: {text}",
-                reply.status
-            ));
+            return Err(UserinfoFailure::Status {
+                status: reply.status,
+                text: text.to_owned(),
+            });
         }
-        let userinfo = userinfo_document(&reply.body).map_err(|error| error.to_string())?;
+        let userinfo = userinfo_document(&reply.body)?;
         // a privacy deviation from LiteLLM: the outcome is logged, the identity document never is
         tracing::debug!(target: "LiteLLM Proxy", "Received OIDC UserInfo");
         let stored = Json::Object(userinfo.clone());
         cache
-            .write_value(&key, &stored, settings.userinfo_ttl())
-            .await
-            .map_err(|error| error.to_string())?;
+            .write_value(&key, &stored, settings.jwt.userinfo.oidc_userinfo_cache_ttl)
+            .await?;
         Ok(userinfo)
     }
     .await;
     match fetched {
         Ok(userinfo) => Ok(userinfo),
-        Err(detail) => {
+        Err(source) => {
             tracing::error!(
                 target: "LiteLLM Proxy",
-                "Error fetching OIDC UserInfo: {detail}"
+                "Error fetching OIDC UserInfo: {source}"
             );
-            Err(UserinfoError::Failed { detail })
+            Err(UserinfoError::Failed { source })
         }
     }
 }

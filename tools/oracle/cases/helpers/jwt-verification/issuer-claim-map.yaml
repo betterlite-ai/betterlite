@@ -4,8 +4,9 @@ call:
   jwt_verification:
     scenarios:
       - now: 1700000000.0
+        userinfo_ttl: 300.0
         issuers:
-          - {"issuer":"https://issuer-a.example.com","jwks_url":"https://issuer-a.example.com/jwks","audience":"litellm-proxy","user_id_jwt_field":"user.id","user_email_jwt_field":"user.email","team_id_jwt_field":"team.id","team_ids_jwt_field":"teams","org_id_jwt_field":"org.id","end_user_id_jwt_field":"end_user.id"}
+          - {"issuer":"https://issuer-a.example.com","jwks_url":"https://issuer-a.example.com/jwks","audience":"litellm-proxy","disable_audience_validation":false,"user_id_jwt_field":"user.id","user_email_jwt_field":"user.email","team_id_jwt_field":"team.id","team_ids_jwt_field":"teams","org_id_jwt_field":"org.id","end_user_id_jwt_field":"end_user.id"}
         key: {"kty":"RSA","kid":"rsa-key","n":"qBV4uuD4ho4EljGE_P0Mkeu4ez_KwlFScpDLtRQDxOg8Xmq-QcuML77h593QZ-K_rbWxHqD_VVHUQLKTiLuIJNeUS6QXqpbbkvwhJpNNyUFBr0d46RnnU6kQF5wH4KIfWYs2ns97lceqOLc40a8eppoap6k1aXr2l_b2NuJvKPB7qmeAbGu9qvLKzOIhqUGCjcVZFr75IXrVDrX8VXkN3LIBgtdFIbz89AGfh8hV4iNbGmCGWJxadJENmbNCmqNt0GS1zJsl9fK7ivXVnZbT8psHOxnmipU_DjXvxhIoBSZH9b1F0mrBdejxM3rP8BZPPpcZPC_sKzMyNwxTeRJQhw","e":"AQAB"}
         steps:
           - op: auth_jwt

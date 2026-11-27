@@ -7,7 +7,10 @@ use std::time::Duration;
 use async_trait::async_trait;
 use betterlite_cache::dual_cache::DualCacheError;
 use betterlite_config::sections::jwt_settings::Settings as JwtAuthSettings;
-use betterlite_config::sections::jwt_settings::groups::{RoutingFields, UserinfoFields};
+use betterlite_config::sections::jwt_settings::groups::{
+    ClaimFields, KeyFields, RbacFields, RouteFields, RoutingFields, ScopeFields, SyncFields,
+    TeamFields, UserinfoFields, VirtualKeyFields,
+};
 use betterlite_config::sections::jwt_settings::records::{IssuerConfig, Selector};
 use betterlite_models::decisions::Json;
 use betterlite_paths::paths::Document;
@@ -105,24 +108,13 @@ pub(super) struct WriteRecord {
     pub(super) value: Json,
 }
 
+#[derive(Default)]
 pub(super) struct TestCache {
     pub(super) entries: Mutex<BTreeMap<String, Json>>,
     pub(super) writes: Mutex<Vec<WriteRecord>>,
     pub(super) fail_read: AtomicBool,
     pub(super) fail_write: AtomicBool,
     pub(super) events: Events,
-}
-
-impl Default for TestCache {
-    fn default() -> Self {
-        Self {
-            entries: Mutex::new(BTreeMap::new()),
-            writes: Mutex::new(Vec::new()),
-            fail_read: AtomicBool::new(false),
-            fail_write: AtomicBool::new(false),
-            events: Events::default(),
-        }
-    }
 }
 
 impl TestCache {
@@ -192,6 +184,7 @@ pub(super) struct HttpRequestRecord {
     pub(super) accept: String,
 }
 
+#[derive(Default)]
 pub(super) struct TestHttp {
     pub(super) replies: Mutex<VecDeque<FakeReply>>,
     pub(super) requests: Mutex<Vec<HttpRequestRecord>>,
@@ -208,17 +201,6 @@ impl TestHttp {
 
     pub(super) fn requests(&self) -> Vec<HttpRequestRecord> {
         lock(&self.requests).clone()
-    }
-}
-
-impl Default for TestHttp {
-    fn default() -> Self {
-        Self {
-            replies: Mutex::new(VecDeque::new()),
-            requests: Mutex::new(Vec::new()),
-            closed: AtomicBool::new(false),
-            events: Events::default(),
-        }
     }
 }
 
@@ -421,23 +403,42 @@ pub(super) fn settings(
 }
 
 pub(super) fn jwt_settings_with_issuers(issuers: Vec<IssuerConfig>) -> JwtAuthSettings {
-    JwtAuthSettings {
-        routing: RoutingFields {
+    jwt_auth_settings(
+        RoutingFields {
+            routing_overrides: None,
+            team_claim_fallback: false,
+            fallback_to_db_teams: false,
             issuers: Some(issuers),
-            ..RoutingFields::default()
         },
-        ..JwtAuthSettings::default()
-    }
+        UserinfoFields::default(),
+    )
 }
 
 pub(super) fn jwt_settings_with_userinfo(endpoint: Option<&str>, ttl: f64) -> JwtAuthSettings {
-    JwtAuthSettings {
-        userinfo: UserinfoFields {
+    jwt_auth_settings(
+        RoutingFields::default(),
+        UserinfoFields {
             oidc_userinfo_endpoint: endpoint.map(str::to_owned),
             oidc_userinfo_enabled: false,
             oidc_userinfo_cache_ttl: ttl,
         },
-        ..JwtAuthSettings::default()
+    )
+}
+
+// every litellm_jwtauth group named, so a default this helper does not set stays visible at the call site
+fn jwt_auth_settings(routing: RoutingFields, userinfo: UserinfoFields) -> JwtAuthSettings {
+    JwtAuthSettings {
+        routes: RouteFields::default(),
+        teams: TeamFields::default(),
+        claims: ClaimFields::default(),
+        keys: KeyFields::default(),
+        rbac: RbacFields::default(),
+        scopes: ScopeFields::default(),
+        custom_validate: None,
+        sync: SyncFields::default(),
+        userinfo,
+        virtual_keys: VirtualKeyFields::default(),
+        routing,
     }
 }
 

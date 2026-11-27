@@ -54,11 +54,6 @@ impl JwtVerifier {
         }
     }
 
-    #[must_use]
-    pub fn settings(&self) -> &JwtVerificationSettings {
-        &self.settings
-    }
-
     // auth_jwt: parse and log the unverified header, pick a configured issuer, then fetch a key and verify.
     pub async fn auth_jwt(
         &self,
@@ -155,10 +150,14 @@ impl JwtVerifier {
         let Json::Text(issuer) = issuer else {
             return false;
         };
-        for config in self.settings.issuers() {
+        for config in self.settings.jwt.routing.issuers.iter().flatten() {
             if config.issuer == *issuer {
-                return config.audience.as_ref().is_some_and(audience_is_truthy)
-                    && !config.disable_audience_validation;
+                let scoped = match config.audience.as_ref() {
+                    Some(Selector::One(value)) => !value.is_empty(),
+                    Some(Selector::Many(values)) => !values.is_empty(),
+                    None => false,
+                };
+                return scoped && !config.disable_audience_validation;
             }
         }
         self.settings.issuer.as_deref() == Some(issuer.as_str())
@@ -199,7 +198,15 @@ impl JwtVerifier {
 
     // _get_configured_issuer: the first exact config for a nonempty string iss, read from unverified claims.
     fn configured_issuer(&self, token: &str) -> Option<&IssuerConfig> {
-        if self.settings.issuers().is_empty() {
+        if self
+            .settings
+            .jwt
+            .routing
+            .issuers
+            .as_deref()
+            .unwrap_or_default()
+            .is_empty()
+        {
             return None;
         }
         let claims = decode_signed_jwt(token.as_bytes()).ok()?;
@@ -207,7 +214,7 @@ impl JwtVerifier {
         if issuer.is_empty() {
             return None;
         }
-        self.settings.issuer_config(Some(issuer))
+        self.settings.jwt.issuer_config(Some(issuer))
     }
 
     // _decode_jwt_with_public_key: explicit options bypass option construction, then the signature and claims are checked.
@@ -260,17 +267,12 @@ impl JwtVerifier {
         )
         .await
     }
-
-    // close: release the HTTP handler the verifier owns.
-    pub fn close(&self) {
-        self.http.close();
-    }
 }
 
-fn audience_is_truthy(audience: &Selector) -> bool {
-    match audience {
-        Selector::One(value) => !value.is_empty(),
-        Selector::Many(values) => !values.is_empty(),
+// close: the verifier owns its HTTP handler, so releasing it closes that handler as LiteLLM's close does.
+impl Drop for JwtVerifier {
+    fn drop(&mut self) {
+        self.http.close();
     }
 }
 

@@ -1,12 +1,9 @@
 use std::sync::atomic::Ordering;
 
 use betterlite_config::sections::jwt_settings::Settings as JwtAuthSettings;
-use betterlite_config::sections::jwt_settings::groups::UserinfoFields;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use sha2::{Digest as _, Sha256};
-
-use crate::jwt_verification::userinfo::cache_key;
 
 use super::support::{
     Events, FakeReply, Harness, TestCache, TestHttp, capture_logs, harness, harness_with,
@@ -58,7 +55,6 @@ async fn userinfo_endpoint_before_cache() {
 async fn userinfo_hashed_key_empty_hit_and_headers() {
     let token = "abc";
     let key = expected_key(token);
-    assert_eq!(key, cache_key(token));
     assert!(key.starts_with("oidc_userinfo_"));
     let digest = key.trim_start_matches("oidc_userinfo_");
     assert_eq!(digest.len(), 64);
@@ -177,13 +173,7 @@ async fn userinfo_cache_before_return_and_ttl() {
         body: "{\"sub\":\"u\",\"email\":\"e\"}".to_owned(),
     }]);
     http.events = events.clone();
-    let jwt = JwtAuthSettings {
-        userinfo: UserinfoFields {
-            oidc_userinfo_endpoint: Some(ENDPOINT.to_owned()),
-            ..UserinfoFields::default()
-        },
-        ..JwtAuthSettings::default()
-    };
+    let jwt = jwt_settings_with_userinfo(Some(ENDPOINT), 300.0);
     let h = harness_with(settings(None, None, jwt), cache, http);
     let token = "token";
     let userinfo = h.verifier.get_oidc_userinfo(token).await.unwrap();
@@ -209,7 +199,7 @@ async fn userinfo_cache_before_return_and_ttl() {
 async fn close_http_handler() {
     let h = harness(settings(None, None, JwtAuthSettings::default()));
     assert!(!h.http.closed.load(Ordering::Acquire));
-    h.verifier.close();
+    drop(h.verifier);
     assert!(h.http.closed.load(Ordering::Acquire));
 }
 

@@ -117,6 +117,15 @@ async fn wrong_signature() {
     );
 }
 
+async fn rejects_algorithm(h: &Harness, source: &ScriptedSource, token: &str) {
+    let error = h.verifier.auth_jwt(token, source).await.unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "Validation fails: The specified alg value is not allowed"
+    );
+    assert_eq!(into_proxy_exception(&error).code, "401");
+}
+
 #[tokio::test]
 async fn algorithm_confusion() {
     let h = scoped();
@@ -124,14 +133,8 @@ async fn algorithm_confusion() {
         SourceReply::Key(fixtures::RSA_JWK.to_owned()),
         SourceReply::Key(fixtures::RSA_JWK.to_owned()),
     ]);
-    for token in [fixtures::TOKEN_HS256, fixtures::TOKEN_NONE] {
-        let error = h.verifier.auth_jwt(token, &source).await.unwrap_err();
-        assert_eq!(
-            error.to_string(),
-            "Validation fails: The specified alg value is not allowed"
-        );
-        assert_eq!(into_proxy_exception(&error).code, "401");
-    }
+    rejects_algorithm(&h, &source, fixtures::TOKEN_HS256).await;
+    rejects_algorithm(&h, &source, fixtures::TOKEN_NONE).await;
     assert_eq!(
         source.calls(),
         vec!["lookup:None".to_owned(), "lookup:None".to_owned()]

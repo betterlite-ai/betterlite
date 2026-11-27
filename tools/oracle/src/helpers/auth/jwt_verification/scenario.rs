@@ -8,7 +8,10 @@ use betterlite_auth::jwt_verification::settings::JwtVerificationSettings;
 use betterlite_auth::jwt_verification::userinfo::UserinfoHttp;
 use betterlite_auth::jwt_verification::verifier::JwtVerifier;
 use betterlite_config::sections::jwt_settings::Settings as JwtAuthSettings;
-use betterlite_config::sections::jwt_settings::groups::{RoutingFields, UserinfoFields};
+use betterlite_config::sections::jwt_settings::groups::{
+    ClaimFields, KeyFields, RbacFields, RouteFields, RoutingFields, ScopeFields, SyncFields,
+    TeamFields, UserinfoFields, VirtualKeyFields,
+};
 use betterlite_config::sections::jwt_settings::records::Selector;
 use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::error::OrHelperError as _;
@@ -77,16 +80,26 @@ async fn scenario_answer(scenario: &Scenario, levels: &Mutex<Vec<String>>) -> Sc
 fn settings_for(scenario: &Scenario) -> JwtVerificationSettings {
     let issuers: Vec<_> = scenario.issuers.iter().map(Issuer::config).collect();
     let jwt = JwtAuthSettings {
-        routing: RoutingFields {
-            issuers: Some(issuers),
-            ..RoutingFields::default()
-        },
+        routes: RouteFields::default(),
+        teams: TeamFields::default(),
+        claims: ClaimFields::default(),
+        keys: KeyFields::default(),
+        rbac: RbacFields::default(),
+        scopes: ScopeFields::default(),
+        custom_validate: None,
+        sync: SyncFields::default(),
         userinfo: UserinfoFields {
             oidc_userinfo_endpoint: scenario.userinfo_endpoint.clone(),
             oidc_userinfo_enabled: false,
             oidc_userinfo_cache_ttl: scenario.userinfo_ttl.unwrap_or(300.0),
         },
-        ..JwtAuthSettings::default()
+        virtual_keys: VirtualKeyFields::default(),
+        routing: RoutingFields {
+            routing_overrides: None,
+            team_claim_fallback: false,
+            fallback_to_db_teams: false,
+            issuers: Some(issuers),
+        },
     };
     JwtVerificationSettings {
         audience: scenario.audience.clone(),

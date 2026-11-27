@@ -3,7 +3,7 @@ import json
 import logging
 import os
 from dataclasses import dataclass
-from typing import Final, Literal, NotRequired, Protocol, Required, TypedDict
+from typing import Final, Literal, NotRequired, Protocol, Required, TypedDict, cast
 
 import httpx
 import litellm
@@ -31,7 +31,7 @@ class Issuer(TypedDict, total=False):
     issuer: Required[str]
     jwks_url: str | None
     audience: str | list[str] | None
-    disable_audience_validation: bool
+    disable_audience_validation: Required[bool]
     user_id_jwt_field: str | None
     user_email_jwt_field: str | None
     team_id_jwt_field: str | None
@@ -48,7 +48,7 @@ class Reply(TypedDict):
 
 class Step(TypedDict):
     op: Literal["auth_jwt", "decode", "userinfo"]
-    token: NotRequired[str]
+    token: str
     http: NotRequired[list[Reply]]
 
 
@@ -56,11 +56,11 @@ class Scenario(TypedDict):
     now: float
     key: PublicKey
     steps: list[Step]
+    userinfo_ttl: float
+    issuers: list[Issuer]
     audience: NotRequired[str | None]
     issuer: NotRequired[str | None]
     userinfo_endpoint: NotRequired[str | None]
-    userinfo_ttl: NotRequired[float]
-    issuers: NotRequired[list[Issuer]]
 
 
 class Input(TypedDict):
@@ -101,13 +101,23 @@ class Answer(TypedDict):
     scenarios: list[ScenarioResult]
 
 
-# the two handler methods a step runs, typed so the calls carry no bare LiteLLM dict
+# the three handler methods a step runs, typed so the calls carry no bare LiteLLM dict
 class AuthCall(Protocol):
     async def auth_jwt(self, token: str) -> JsonValue: ...
 
 
 class UserinfoCall(Protocol):
     async def get_oidc_userinfo(self, token: str) -> JsonValue: ...
+
+
+class DecodeCall(Protocol):
+    def _decode_jwt_with_public_key(
+        self,
+        token: str,
+        public_key: PublicKey,
+        audience: str | None,
+        issuer: str | None,
+    ) -> JsonValue: ...
 
 
 # the four levels LiteLLM logs on, where only warning is compared: the rest stay silent
@@ -161,8 +171,7 @@ class ProxyFailure(BaseModel):
     param: str | None
 
 
-# The identity provider: the scenario's JWK as its JWKS, a discovery document on demand, and the
-# userinfo endpoint answered from the step's script.
+# The identity provider: the scenario's JWK as its JWKS, a discovery document, and the scripted userinfo replies.
 class KeyTransport:
     def __init__(self, key: PublicKey, userinfo_endpoint: str | None) -> None:
         self.key = key
@@ -176,15 +185,16 @@ class KeyTransport:
             self.requests.append(
                 RequestView(
                     url=url,
-                    authorization=request.headers.get("authorization", ""),
-                    accept=request.headers.get("accept", ""),
+                    authorization=request.headers["authorization"],
+                    accept=request.headers["accept"],
                 )
             )
             return self.userinfo_reply(request)
         if ".well-known/openid-configuration" in url:
-            discovery = {"jwks_uri": f"{request.url.scheme}://{request.url.netloc}/jwks"}
+            discovery: dict[str, str] = {"jwks_uri": f"https://{request.url.host}/jwks"}
             return httpx.Response(200, json=discovery)
-        return httpx.Response(200, json={"keys": [self.key]})
+        keys: dict[str, list[PublicKey]] = {"keys": [self.key]}
+        return httpx.Response(200, json=keys)
 
     def userinfo_reply(self, request: httpx.Request) -> httpx.Response:
         reply = self.replies.pop(0) if self.replies else Reply(kind="transport")
@@ -223,7 +233,7 @@ def issuer_config(entry: Issuer) -> JWTIssuerConfig:
         issuer=entry["issuer"],
         jwks_url=entry.get("jwks_url"),
         audience=entry.get("audience"),
-        disable_audience_validation=entry.get("disable_audience_validation", False),
+        disable_audience_validation=entry["disable_audience_validation"],
         user_id_jwt_field=entry.get("user_id_jwt_field"),
         user_email_jwt_field=entry.get("user_email_jwt_field"),
         team_id_jwt_field=entry.get("team_id_jwt_field"),
@@ -235,9 +245,9 @@ def issuer_config(entry: Issuer) -> JWTIssuerConfig:
 
 def build_handler(settings: Scenario, cache: Cache, transport: KeyTransport) -> JWTHandler:
     jwtauth = LiteLLM_JWTAuth(
-        issuers=[issuer_config(entry) for entry in settings.get("issuers", [])],
+        issuers=[issuer_config(entry) for entry in settings["issuers"]],
         oidc_userinfo_endpoint=settings.get("userinfo_endpoint"),
-        oidc_userinfo_cache_ttl=settings.get("userinfo_ttl", 300.0),
+        oidc_userinfo_cache_ttl=settings["userinfo_ttl"],
     )
     handler = JWTHandler()
     handler.update_environment(
@@ -279,14 +289,15 @@ class Session:
         warnings_from = len(self.recorder.warnings)
         requests_from = len(self.transport.requests)
         writes_from = len(self.cache.writes)
-        token = step.get("token", "")
+        token = step["token"]
         operation = step["op"]
         if operation == "auth_jwt":
             value, error = await self.auth_jwt(token)
         elif operation == "decode":
             value, error = self.decode(token)
         else:
-            self.transport.replies.extend(step.get("http", []))
+            if "http" in step:
+                self.transport.replies.extend(step["http"])
             value, error = await self.userinfo(token)
         return StepResult(
             value=value,
@@ -297,14 +308,15 @@ class Session:
         )
 
     async def auth_jwt(self, token: str) -> tuple[JsonValue, Failure | None]:
-        call: AuthCall = self.handler
+        call = cast(AuthCall, self.handler)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1295-L1335
         task = asyncio.ensure_future(call.auth_jwt(token))
         await asyncio.wait({task})
         return auth_outcome(task)
 
     def decode(self, token: str) -> tuple[JsonValue, Failure | None]:
+        call = cast(DecodeCall, self.handler)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1217-L1261
         try:
-            payload = self.handler._decode_jwt_with_public_key(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownVariableType, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1217-L1261
+            payload = call._decode_jwt_with_public_key(  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1217-L1261
                 token=token,
                 public_key=self.key,
                 audience=self.audience,
@@ -315,7 +327,7 @@ class Session:
         return (JSON.validate_json(json.dumps(payload)), None)
 
     async def userinfo(self, token: str) -> tuple[JsonValue, Failure | None]:
-        call: UserinfoCall = self.handler
+        call = cast(UserinfoCall, self.handler)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1009-L1066
         task = asyncio.ensure_future(call.get_oidc_userinfo(token))
         await asyncio.wait({task})
         return userinfo_outcome(task)

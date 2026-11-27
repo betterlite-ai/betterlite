@@ -4,6 +4,8 @@ call:
   jwt_verification:
     scenarios:
       - now: 1700000000.0
+        userinfo_ttl: 300.0
+        issuers: []
         audience: litellm-proxy
         key: {"kty":"EC","kid":"p521-key","crv":"P-521","x":"AQaU4ZocE7X5Y0fkq6it6gM2TDrPNI5-GZkfd9cJUeupH3E75drBOjM7W4f_pCtrkcYEqSUyUZ-OzmqgQfY6WGDX","y":"AenKRE7L5CnQYEgZBTvaRZBy7z_wsQmNfIjrgHi-NQLrkzX44MoqNT1NYQAm27Co9mWuIF8W7Ty2jVgrggpCObhL"}
         steps:

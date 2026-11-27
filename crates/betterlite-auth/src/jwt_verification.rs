@@ -1,6 +1,3 @@
-//! JWT signature and claim verification with trusted-issuer handling, ported from
-//! litellm/proxy/auth/handle_jwt.py L1009-L1338.
-
 pub mod algorithms;
 pub mod claims;
 pub mod decode;

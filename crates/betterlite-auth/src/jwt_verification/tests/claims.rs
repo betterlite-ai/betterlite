@@ -37,9 +37,12 @@ fn exactly_seven_internal_claims_removed() {
     );
     let stripped = strip_internal_claims(&payload).unwrap();
     let fields = claim_fields(&stripped);
-    for name in LITELLM_INTERNAL_CLAIMS {
-        assert!(!fields.contains_key(name), "the {name} claim survived");
-    }
+    let survived: Vec<&str> = LITELLM_INTERNAL_CLAIMS
+        .iter()
+        .copied()
+        .filter(|name| fields.contains_key(*name))
+        .collect();
+    assert!(survived.is_empty(), "the claims survived: {survived:?}");
     assert_eq!(text_claim(&fields, "_litellm_other"), Some("kept"));
     assert_eq!(text_claim(&fields, "sub"), Some("u"));
     assert_eq!(fields.len(), 2);
@@ -59,9 +62,12 @@ async fn injected_litellm_team_id_stripped() {
         .await
         .unwrap();
     let fields = claim_fields(&payload);
-    for name in LITELLM_INTERNAL_CLAIMS {
-        assert!(!fields.contains_key(name), "the {name} claim survived");
-    }
+    let survived: Vec<&str> = LITELLM_INTERNAL_CLAIMS
+        .iter()
+        .copied()
+        .filter(|name| fields.contains_key(*name))
+        .collect();
+    assert!(survived.is_empty(), "the claims survived: {survived:?}");
     assert_eq!(text_claim(&fields, "_litellm_other"), Some("kept"));
 }
 
