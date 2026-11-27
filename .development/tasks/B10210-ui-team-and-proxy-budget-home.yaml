@@ -1,0 +1,115 @@
+id: B10210
+title: LiteLLM's dashboard team id and proxy budget user are defined once, in special_proxy_strings
+description: >-
+  LiteLLM keeps two more proxy strings that betterlite copies. UI_TEAM_ID, "litellm-dashboard", is the team every dashboard session key is minted under, and auth answers TeamNotFoundError for it instead of reading a team row (_types.py L5140; constants.py L1725 holds the same value as UI_SESSION_TOKEN_TEAM_ID). LITELLM_PROXY_BUDGET_NAME, "litellm-proxy-budget", is the user row that carries a proxy-wide max_budget and is charged with every spend (constants.py L1739). On main 109d4e3cf8c betterlite writes the first value in five production consts under two names, and betterlite-mcp's principal.rs gives it a third; it writes the second in three consts. B753, running now, adds a fourth spelling of the second as a literal in betterlite-auth's auth_model_budgets/rows.rs. B10207 makes crates/betterlite-error/src/proxy_enums/special_proxy_strings.rs the home of LiteLLM's proxy identity strings and adds an ast-grep rule against new copies; this task starts once B10207 has merged and moves these two values there too.
+
+
+  The home. special_proxy_strings.rs gains `pub const UI_TEAM_ID: &str = "litellm-dashboard";` and `pub const LITELLM_PROXY_BUDGET_NAME: &str = "litellm-proxy-budget";` after B10207's two consts. UI_TEAM_ID is the only name betterlite keeps for the dashboard team, so every UI_SESSION_TOKEN_TEAM_ID goes. proxy_enums/tests.rs gains `ui_team_and_proxy_budget_keep_litellms_values`, which compares each new const with LiteLLM's literal text. .ast-grep/rules/no-proxy-identity-literals.yml widens its regex to `^(default_user_id|litellm_proxy_master_key|litellm-dashboard|litellm-proxy-budget)$`, and its message names all four consts and their module.
+
+
+  The dashboard team. In betterlite-auth, agent_permission_handler/get_allowed_agents_for_team.rs drops UI_TEAM_ID and its comment (L20-L21), auth_policy_support/team.rs drops its pub UI_TEAM_ID (L13) and session_token_codec/builders.rs drops its UI_TEAM_ID (L22); all three import the home's const and keep their uses (L44, L105, L152). ui_session_identity.rs drops UI_SESSION_TOKEN_TEAM_ID and its comment (L11-L12) and compares team_id with UI_TEAM_ID (L28). betterlite-server's key_query_plan/filters.rs drops its pub UI_SESSION_TOKEN_TEAM_ID and its comment (L7-L8) and pushes UI_TEAM_ID (L117), and search_tool_routes/list.rs imports the home instead of filters (L20) and compares with UI_TEAM_ID (L171). betterlite-mcp adds `betterlite-error = { path = "../betterlite-error" }` to [dependencies] in name order. Its server_grants.rs (L4, L141), server_grants/team.rs (L1, L11) and server_grants/user.rs (L1, L8) import UI_TEAM_ID where they import betterlite_auth's UI_SESSION_TOKEN_TEAM_ID, and auth/object_permission_hydration/principal.rs drops the alias `const UI_TEAM_ID: &str = UI_SESSION_TOKEN_TEAM_ID;` (L11) and imports the home's UI_TEAM_ID in place of L4. B3884, running now, reads UI_SESSION_TOKEN_TEAM_ID for its exclude_team_id in betterlite-server's prometheus_budget_refresh; whatever it imports or spells there moves onto UI_TEAM_ID too.
+
+
+  The proxy budget user. betterlite-db's identity_budget_reset/global_proxy.rs drops PROXY_BUDGET_USER_ID and its comment (L6-L7) and compares with LITELLM_PROXY_BUDGET_NAME (L14). spend_writer/settings.rs drops DEFAULT_PROXY_BUDGET_NAME and its comment (L3-L4) and fills its default from the home (L22), and betterlite-server's spend/runtime.rs imports the home instead (L29, L81). betterlite-auth's auth_model_budgets/rows.rs reads the budget row by LITELLM_PROXY_BUDGET_NAME where B753 writes the literal, as user_api_key_auth.py L748 reads it by the constant. The betterlite crate adds betterlite-error to [dependencies] in name order, and startup_checks/proxy_budget.rs drops its pub const and comment (L13-L14) and passes the home's const at L70 and L84. betterlite-db reaches betterlite-error through the edge B10207 adds, and betterlite-error still depends only on betterlite-redact, so the two new edges, betterlite-mcp and betterlite to betterlite-error, make no cycle.
+
+
+  Tests keep the literal values where they spell them, as in B10207, since they assert what LiteLLM stores. A test that imports a moved name changes its import, and for UI_SESSION_TOKEN_TEAM_ID its name too: auth's auth_policy_support/tests.rs (L23), ui_session_identity/tests.rs (L17) and session_auth/tests.rs (L25), core's api/managed_store_access/tests.rs (L21) and api/vector_store_access/tests.rs (L16), server's api/vector_management_boundaries/tests.rs (L19), db's identity_budget_reset/global_proxy/tests.rs (L5) and the betterlite crate's startup_checks/tests.rs (L47).
+
+
+  What users see: nothing. The same team id marks dashboard session keys, and the same user row carries the proxy budget.
+scope:
+  paths:
+    - crates/betterlite-error/src/proxy_enums/special_proxy_strings.rs
+    - crates/betterlite-error/src/proxy_enums/tests.rs
+    - .ast-grep/rules/no-proxy-identity-literals.yml
+    - Cargo.lock
+    - crates/betterlite-auth/src/agent_permission_handler/get_allowed_agents_for_team.rs
+    - crates/betterlite-auth/src/auth_policy_support/team.rs
+    - crates/betterlite-auth/src/auth_policy_support/tests.rs
+    - crates/betterlite-auth/src/session_token_codec/builders.rs
+    - crates/betterlite-auth/src/ui_session_identity.rs
+    - crates/betterlite-auth/src/ui_session_identity/tests.rs
+    - crates/betterlite-auth/src/session_auth/tests.rs
+    - crates/betterlite-auth/src/auth_model_budgets/rows.rs
+    - crates/betterlite-core/src/api/managed_store_access/tests.rs
+    - crates/betterlite-core/src/api/vector_store_access/tests.rs
+    - crates/betterlite-server/src/key_query_plan/filters.rs
+    - crates/betterlite-server/src/search_tool_routes/list.rs
+    - crates/betterlite-server/src/api/vector_management_boundaries/tests.rs
+    - crates/betterlite-server/src/spend/runtime.rs
+    - crates/betterlite-server/src/prometheus_budget_refresh.rs
+    - crates/betterlite-server/src/prometheus_budget_refresh/**
+    - crates/betterlite-mcp/Cargo.toml
+    - crates/betterlite-mcp/src/server_grants.rs
+    - crates/betterlite-mcp/src/server_grants/team.rs
+    - crates/betterlite-mcp/src/server_grants/user.rs
+    - crates/betterlite-mcp/src/auth/object_permission_hydration/principal.rs
+    - crates/betterlite-db/src/identity_budget_reset/global_proxy.rs
+    - crates/betterlite-db/src/identity_budget_reset/global_proxy/tests.rs
+    - crates/betterlite-db/src/spend_writer/settings.rs
+    - crates/betterlite/Cargo.toml
+    - crates/betterlite/src/startup_checks/proxy_budget.rs
+    - crates/betterlite/src/startup_checks/tests.rs
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5140
+    why: UI_TEAM_ID "litellm-dashboard", the name the home keeps.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1725
+    why: UI_SESSION_TOKEN_TEAM_ID, LiteLLM's second name for the same value, which betterlite drops.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1739
+    why: LITELLM_PROXY_BUDGET_NAME "litellm-proxy-budget".
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L2502-L2504
+    why: a key on the dashboard team gets TeamNotFoundError instead of a team read, the check auth_policy_support/team.rs ports.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L748
+    why: the proxy budget row read by LITELLM_PROXY_BUDGET_NAME, which auth_model_budgets/rows.rs ports.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10413-L10417
+    why: startup seeds the proxy budget user under LITELLM_PROXY_BUDGET_NAME, which startup_checks/proxy_budget.rs ports.
+dod:
+  - text: special_proxy_strings holds UI_TEAM_ID and LITELLM_PROXY_BUDGET_NAME with LiteLLM's values, and a test pins both.
+    proof: [home-values]
+  - text: No production Rust file outside the home spells either value, UI_SESSION_TOKEN_TEAM_ID, PROXY_BUDGET_USER_ID, DEFAULT_PROXY_BUDGET_NAME and principal.rs's alias are gone, and only the home defines UI_TEAM_ID and LITELLM_PROXY_BUDGET_NAME.
+    proof: [no-copies]
+  - text: Dashboard session keys are still recognized by auth's team lookup, agent grants, session minting and UI session identity, core's store access, server's key and search tool lists, and MCP's server grants and permission hydration.
+    proof: [no-copies, auth-tests, server-tests, mcp-tests]
+  - text: The proxy budget still lives on the litellm-proxy-budget user at startup, in the spend writer's default and in the global budget reset.
+    proof: [no-copies, budget-tests]
+  - text: The ast-grep rule refuses both new values as whole string literals in production Rust outside the home.
+    proof: [proxy-literal-rule]
+checks:
+  optional: []
+  commands:
+    - id: no-copies
+      why: a production file still spells one of the two values, an old name is left, or a crate defines its own UI_TEAM_ID or LITELLM_PROXY_BUDGET_NAME
+      run: test -z "$(grep -rnE --include='*.rs' --exclude=tests.rs --exclude-dir=tests '"(litellm-dashboard|litellm-proxy-budget)"' crates | grep -v '^crates/betterlite-error/src/proxy_enums/special_proxy_strings.rs:')" && test -z "$(grep -rnwE --include='*.rs' 'UI_SESSION_TOKEN_TEAM_ID|PROXY_BUDGET_USER_ID|DEFAULT_PROXY_BUDGET_NAME' crates)" && test -z "$(grep -rnE --include='*.rs' 'const (UI_TEAM_ID|LITELLM_PROXY_BUDGET_NAME)\b' crates | grep -v '^crates/betterlite-error/src/proxy_enums/special_proxy_strings.rs:')"
+    - id: proxy-literal-rule
+      why: the rule does not name the two new values, or production Rust outside the home still spells one of the four
+      run: grep -q 'litellm-dashboard' .ast-grep/rules/no-proxy-identity-literals.yml && grep -q 'litellm-proxy-budget' .ast-grep/rules/no-proxy-identity-literals.yml && ast-grep scan --rule .ast-grep/rules/no-proxy-identity-literals.yml crates
+    - id: home-values
+      why: a new const is missing or no longer holds LiteLLM's text
+      run: cargo nextest run --locked -p betterlite-error --no-tests=fail -E 'test(/^proxy_enums::tests::ui_team_and_proxy_budget_keep_litellms_values$/)'
+    - id: auth-tests
+      why: auth or core no longer treats litellm-dashboard as the dashboard team
+      run: grep -q special_proxy_strings crates/betterlite-auth/src/ui_session_identity.rs && grep -q special_proxy_strings crates/betterlite-auth/src/auth_policy_support/team.rs && cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^(agent_permission_handler|auth_policy_support|session_token_codec|ui_session_identity|session_auth|auth_model_budgets)::/) - test(/replays_the_/)' && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::(managed_store_access|vector_store_access)::/)'
+    - id: server-tests
+      why: the key list, the search tool list, the spend runtime or the budget refresh lost the dashboard team or the budget user
+      run: grep -q special_proxy_strings crates/betterlite-server/src/key_query_plan/filters.rs && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^(key_query_plan|search_tool_routes|api::vector_management_boundaries|spend::runtime|prometheus_budget_refresh)::/) - test(/replays_the_/)'
+    - id: mcp-tests
+      why: MCP server grants or permission hydration stopped skipping the dashboard team
+      run: grep -q special_proxy_strings crates/betterlite-mcp/src/server_grants.rs && cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^(server_grants|auth::object_permission_hydration)::/)'
+    - id: budget-tests
+      why: startup, the spend writer or the global reset no longer uses the litellm-proxy-budget user
+      run: grep -q special_proxy_strings crates/betterlite-db/src/spend_writer/settings.rs && grep -q special_proxy_strings crates/betterlite/src/startup_checks/proxy_budget.rs && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^(identity_budget_reset|spend_writer)::/)' && cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^startup_checks::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "\"litellm-dashboard\" in tools/dashboard and in oracle case YAML: there it names LiteLLM's UI package or is case data, not a Rust copy, and the rule scans only Rust under crates."
+  - "Other LiteLLM constants copied the same way: ALL_PROXY_MODELS \"all-proxy-models\" (betterlite-auth auth_model_patterns.rs L13, betterlite-server lens_access/model.rs L10, a literal in betterlite-router model_group_usage/access_filter.rs L83) and NO_MCP_SERVERS \"no-mcp-servers\" (betterlite-mcp server_grants.rs L27, betterlite-server mcp_permission_ids/cleanup.rs L6)."
+pitfalls:
+  - "UI_SESSION_TOKEN_TEAM_ID is LiteLLM's second name for \"litellm-dashboard\"; rename every use to UI_TEAM_ID, tests included, since no-copies refuses the old name as a whole word anywhere in crates."
+  - "principal.rs's `const UI_TEAM_ID: &str = UI_SESSION_TOKEN_TEAM_ID;` is a copy under a new name; delete it and import the home's const, or the `const UI_TEAM_ID` grep fails."
+  - "global_proxy.rs's PROXY_BUDGET_USER_ID was pub(crate) and its test compares it with the literal (global_proxy/tests.rs L16); keep that assertion on the home's const so the literal stays in the test."
+  - "betterlite-mcp and the betterlite crate gain betterlite-error under [dependencies] only; betterlite-error must gain no betterlite crate but betterlite-redact."
+review_level: standard
+budget:
+  max_changed_lines: 200
+  max_new_expects: 0

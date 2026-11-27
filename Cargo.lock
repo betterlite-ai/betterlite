@@ -4615,6 +4615,7 @@ dependencies = [
  "betterlite-prompts",
  "betterlite-redact",
  "betterlite-streaming",
+ "bytes",
  "chrono",
  "futures-util",
  "hex",
