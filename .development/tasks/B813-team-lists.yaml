@@ -31,10 +31,7 @@ description: >-
   legacy_explicit_self_scope, legacy_memberships_and_keys, legacy_alias_and_org_filter and
   invalid_team_logged_and_dropped cover these differences.
 
-  The live Prometheus caller uses get_paginated_teams: defaults page_size=10,page=1, count before page
-  read, sort team_alias ascending, return (rows,count). Any count/read error logs the [Non-Blocking]
-  diagnostic and returns ([],0); native pagination_failure_is_empty exercises both errors. UI filtering
-  is hidden from OpenAPI and has no management wrapper or local role check despite its admin-only
+  UI filtering is hidden from OpenAPI and has no management wrapper or local role check despite its admin-only
   docstring; use B052's actual middleware policy. It defaults page=1,page_size=50 (1..100), null ID/alias,
   adds case-insensitive contains predicates only for truthy filters (both are AND), orders created_at
   descending and returns [] for no match. No DB is 500 detail.error="No db connected" before its try;
@@ -44,8 +41,8 @@ description: >-
 
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/team_endpoints.py:
-  list_team_v2 (L5598-L5780; 154 source lines), list_team (L5859-L5931; 62 source lines), get_paginated_teams
-  (L5934-L5965; 26 source lines), ui_view_teams (L5977-L6035; 45 source lines).
+  list_team_v2 (L5598-L5780; 154 source lines), list_team (L5859-L5931; 62 source lines), ui_view_teams
+  (L5977-L6035; 45 source lines).
 
 
   Register these actual HTTP routes and aliases exactly once: GET /v2/team/list -> list_team_v2; GET /team/list
@@ -55,13 +52,13 @@ description: >-
   never skip failed connections. The owned code has no new setting, environment read or byte decoder.
 
 
-  Sizing: 287 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  260 production, 370 behavior/Postgres tests, 0 helper adapters, 70 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 700 changed lines estimated within a 750-line gate.
+  Sizing: 261 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  235 production, 345 behavior/Postgres tests, 0 helper adapters, 70 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 650 changed lines estimated within a 750-line gate.
 
 
-  Keep get_paginated_teams callable by the existing Prometheus integration without importing that
-  higher-level caller; only its repository dependency is needed here.
+  get_paginated_teams, the team page reader of the Prometheus budget refresh, is B10152's in team_pagination.rs;
+  none of these routes calls it.
   B1100 registers routes/team_lists.rs as a stub, so fill only crates/betterlite-server/src/routes/team_lists.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
@@ -83,13 +80,11 @@ references:
     why: Own list_team_v2; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L5857-L5931
     why: Own list_team; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L5934-L5965
-    why: Own get_paginated_teams; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L5968-L6035
     why: Own ui_view_teams; preserve caller-visible values and failure ordering.
 dod:
   - text: Named v2, legacy and UI cases in the description cover defaults, errors, query shapes, dropped
-      invalid rows and logging; pagination_failure_is_empty proves both Prometheus lookup failure paths.
+      invalid rows and logging.
     proof:
       - behavior-tests
   - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
@@ -200,6 +195,7 @@ out_of_scope:
     _get_user_team_ids_from_db (L5325-L5342), _build_team_list_where_conditions (L5345-L5436), _batch_resolve_access_group_resources
     (L5439-L5455), _convert_teams_to_response_models (L5458-L5488), _get_keys_count_by_team (L5491-L5513),
     _enforce_list_team_v2_access (L5516-L5588), _authorize_and_filter_teams (L5783-L5854).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B10152 owns get_paginated_teams (L5934-L5965); no route here calls it.'
   - 'litellm/proxy/management_endpoints/team_endpoints.py::add_new_models_to_team: no production caller
     at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.

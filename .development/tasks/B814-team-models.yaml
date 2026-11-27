@@ -156,7 +156,8 @@ out_of_scope:
     _add_team_member_budget_table (L4756-L4769), _hydrate_member_user_details (L4772-L4792), _parent_organization_models
     (L4803-L4806), _resolve_team_access_group_resources (L4809-L4838), team_info (L4843-L5009).'
   - 'litellm/proxy/management_endpoints/team_endpoints.py: B813 owns list_team_v2 (L5598-L5780), list_team
-    (L5859-L5931), get_paginated_teams (L5934-L5965), ui_view_teams (L5977-L6035).'
+    (L5859-L5931), ui_view_teams (L5977-L6035).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B10152 owns get_paginated_teams (L5934-L5965).'
   - 'litellm/proxy/management_endpoints/team_endpoints.py: B815 owns _daily_activity_error (L6512-L6515),
     resolve_team_daily_activity_scope (L6525-L6623), get_team_daily_activity (L6631-L6689), aggregated_date_range_error
     (L6695-L6705), _team_user_spend_sql (L6708-L6731), get_team_spend_by_user (L6753-L6821), _team_alias_or_none

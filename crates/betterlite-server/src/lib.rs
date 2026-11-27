@@ -409,6 +409,7 @@ pub mod team_merge_patch;
 pub mod team_model_cleanup;
 pub mod team_models;
 pub mod team_org_move;
+pub mod team_pagination;
 pub mod team_parent_limits;
 pub mod team_patch;
 pub mod team_problems;
