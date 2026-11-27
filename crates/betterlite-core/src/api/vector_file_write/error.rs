@@ -86,11 +86,11 @@ impl VectorFileWriteFailure {
     }
 }
 
-// LiteLLM's exception_type(model=None, custom_llm_provider=..., original_exception=...)
+// exception_type(model=None, custom_llm_provider=..., original_exception=...); None is the outer wrap's argument
 #[must_use]
 pub fn failure(
     error: VectorFileWriteError,
-    provider: &str,
+    provider: Option<&str>,
     redactor: &Redactor,
 ) -> VectorFileWriteFailure {
     let class = dispatch(
@@ -100,7 +100,7 @@ pub fn failure(
     VectorFileWriteFailure { error, class }
 }
 
-fn raw_exception(error: &VectorFileWriteError, provider: &str) -> RawException {
+fn raw_exception(error: &VectorFileWriteError, provider: Option<&str>) -> RawException {
     let (message, status_code, synthesized, exception_type) = match error {
         VectorFileWriteError::Write(FileWriteError::Provider(source)) => (
             source.message.clone(),
@@ -124,7 +124,7 @@ fn raw_exception(error: &VectorFileWriteError, provider: &str) -> RawException {
     };
     RawException {
         model: MODEL.to_owned(),
-        custom_llm_provider: provider.to_owned(),
+        custom_llm_provider: provider.unwrap_or_default().to_owned(),
         error_str: message.clone(),
         status_code,
         status_code_is_synthesized: synthesized,

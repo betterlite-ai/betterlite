@@ -89,6 +89,8 @@ struct Prepared<'call> {
     provider: ProviderId,
     config: VectorStoreFilesConfigTag,
     provider_name: String,
+    // the provider a handler failure maps with: the resolved one, or the caller's own argument for the async wrappers
+    failure_provider: Option<&'call str>,
     vector_store_id: &'call str,
     file_id: &'call str,
     params: WriteParams,
@@ -152,7 +154,7 @@ impl<Service: WriteService> VectorFileWrites<'_, Service> {
             kwargs: &prepared.merged,
             provider: &prepared.provider_name,
         })
-        .map_err(|error| failure(error, &prepared.provider_name, self.deps.redactor))
+        .map_err(|error| failure(error, Some(&prepared.provider_name), self.deps.redactor))
     }
 
     fn prepare<'call>(
@@ -165,7 +167,7 @@ impl<Service: WriteService> VectorFileWrites<'_, Service> {
         let mut forwarded = request.kwargs.clone();
         let mode = take_mode(flag(operation), &mut forwarded);
         let provider = ensure_provider(request.custom_llm_provider);
-        let deny = |error: VectorFileWriteError| failure(error, provider, self.deps.redactor);
+        let deny = |error: VectorFileWriteError| failure(error, Some(provider), self.deps.redactor);
         let mut credentials = OperationKwargs(forwarded);
         prepare_registry_credentials(
             request.vector_store_id,
@@ -181,12 +183,18 @@ impl<Service: WriteService> VectorFileWrites<'_, Service> {
             Operation::Delete => VectorStoreFileUpdateRequest::default(),
         };
         let deadline = call_timeout(request.timeout, self.deps.request_timeout_seconds);
+        // sync maps a handler failure with the resolved provider; aupdate/adelete wrap it once more with the caller's argument
+        let failure_provider = match mode {
+            ClientKind::Sync => Some(provider),
+            ClientKind::Asynchronous => request.custom_llm_provider,
+        };
         Ok(Prepared {
             operation,
             mode,
             provider: declared.id,
             config: declared.config,
             provider_name: provider.to_owned(),
+            failure_provider,
             vector_store_id: request.vector_store_id,
             file_id: request.file_id,
             params,
@@ -209,7 +217,11 @@ impl<Service: WriteService> VectorFileWrites<'_, Service> {
                     mode: prepared.mode,
                     seconds,
                 };
-                return Err(failure(error, &prepared.provider_name, self.deps.redactor));
+                return Err(failure(
+                    error,
+                    Some(&prepared.provider_name),
+                    self.deps.redactor,
+                ));
             }
         };
         let call = WriteCall {
@@ -229,7 +241,7 @@ impl<Service: WriteService> VectorFileWrites<'_, Service> {
         self.service.write(&call).await.map_err(|error| {
             failure(
                 VectorFileWriteError::Write(error),
-                &prepared.provider_name,
+                prepared.failure_provider,
                 self.deps.redactor,
             )
         })

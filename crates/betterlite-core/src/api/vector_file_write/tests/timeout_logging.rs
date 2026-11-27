@@ -18,8 +18,8 @@ const TIMEOUT_PREFIX: &str =
 const DELETE_PREFIX: &str = "InternalServerError: OpenAIException - timed out";
 
 #[rstest]
-#[case::absent(None, 6000.0_f64, Duration::from_secs(6000))]
-#[case::default_zero(Some(0.0_f64), 6000.0_f64, Duration::from_secs(6000))]
+#[case::absent(None, 6000.0_f64, Duration::from_mins(100))]
+#[case::default_zero(Some(0.0_f64), 6000.0_f64, Duration::from_mins(100))]
 #[case::explicit(Some(7.0_f64), 6000.0_f64, Duration::from_secs(7))]
 #[case::environment_absent(None, 12.0_f64, Duration::from_secs(12))]
 #[case::environment_zero(Some(0.0_f64), 12.0_f64, Duration::from_secs(12))]

@@ -36,13 +36,13 @@ pub(crate) fn target(
         ProviderId::from_str(provider).map_err(|_invalid| VectorFileWriteError::InvalidProvider {
             provider: provider.to_owned(),
         });
-    let id = parsed.map_err(|error| failure(error, provider, deps.redactor))?;
+    let id = parsed.map_err(|error| failure(error, Some(provider), deps.redactor))?;
     let Some(config) = select_store_files_config(id) else {
         let error = VectorFileWriteError::Unsupported {
             operation,
             provider: provider.to_owned(),
         };
-        return Err(failure(error, provider, deps.redactor));
+        return Err(failure(error, Some(provider), deps.redactor));
     };
     Ok(Target { id, config })
 }
