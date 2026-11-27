@@ -565,35 +565,38 @@ async fn retrieve_cache_value_over_limit() {
     assert_eq!(retrieved.data, namespaced_data());
 }
 
-// a cached integer past i64 has no CacheValue number form, so the shared mapper answers a miss instead of a rounded float
+// an integer at i64::MAX still has a CacheValue form and decodes unchanged
 #[tokio::test]
-async fn retrieve_cache_value_refuses_an_integer_past_i64() {
-    let mut inside_rig = Rig::new();
-    inside_rig.memory.store(
+async fn retrieve_cache_value_decodes_an_i64_max_integer() {
+    let mut rig = Rig::new();
+    rig.memory.store(
         CACHE_KEY,
         envelope(None, Json::Number(Number::from(i64::MAX))),
     );
-    let inside_input = retrieve_input(Some(CACHE_KEY), None);
-    let BatchPrecallResult::Retrieve(inside) = inside_rig.run(&inside_input).await.unwrap() else {
+    let input = retrieve_input(Some(CACHE_KEY), None);
+    let BatchPrecallResult::Retrieve(retrieved) = rig.run(&input).await.unwrap() else {
         panic!("a retrieve answers with the retrieve result");
     };
     assert_eq!(
-        inside.cached,
+        retrieved.cached,
         Some(envelope(None, Json::Number(Number::from(i64::MAX))))
     );
+}
 
-    let mut outside_rig = Rig::new();
-    outside_rig.memory.store(
+// an integer past i64 has no CacheValue number form, so the shared mapper answers a miss instead of a rounded float
+#[tokio::test]
+async fn retrieve_cache_value_refuses_an_integer_past_i64() {
+    let mut rig = Rig::new();
+    rig.memory.store(
         CACHE_KEY,
         envelope(None, Json::Number(Number::from(u64::MAX))),
     );
-    let outside_input = retrieve_input(Some(CACHE_KEY), None);
-    let BatchPrecallResult::Retrieve(outside) = outside_rig.run(&outside_input).await.unwrap()
-    else {
+    let input = retrieve_input(Some(CACHE_KEY), None);
+    let BatchPrecallResult::Retrieve(retrieved) = rig.run(&input).await.unwrap() else {
         panic!("a retrieve answers with the retrieve result");
     };
-    assert_eq!(outside.cached, None);
-    assert!(outside.diagnostics.is_empty());
+    assert_eq!(retrieved.cached, None);
+    assert!(retrieved.diagnostics.is_empty());
 }
 
 // a memory miss reads the backing store through the request's cache key and warms memory for a minute
