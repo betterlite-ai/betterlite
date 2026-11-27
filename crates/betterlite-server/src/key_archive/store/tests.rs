@@ -558,7 +558,7 @@ async fn insert_leaves_absent_values_null_postgres() {
     assert_minimal_arrays(&row);
     assert_eq!(
         row.get::<_, String>("id"),
-        record.id.clone().expect("the record carries an id")
+        record.id.expect("the record carries an id")
     );
     assert_eq!(
         row.get::<_, NaiveDateTime>("deleted_at"),
