@@ -2,7 +2,7 @@ task: B10008
 deviations:
   - what: >-
       A key or team callback that names agentops when litellm_settings never did answers the unavailable-adapter error
-      naming agentops; LiteLLM fetches the token then and builds the logger.
+      naming agentops whenever the legacy path would build it; LiteLLM fetches the token then and builds the logger.
     why: >-
       The catalog resolver is synchronous and the fetch is not, and the fetch stays at startup instead of becoming a lazy
       one.
