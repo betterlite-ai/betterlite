@@ -1,0 +1,22 @@
+kind: helper
+name: proxy-tool-call-validate-schema
+call:
+  b4686:
+    handler: mcp_proxy_tool
+    name: call_tool
+    arguments:
+      tool_id: "234af1383b1b5ef9ff5a3da9eac8bdb1"
+      arguments: {q: 1}
+    tools:
+      - name: alpha-tool
+        server_id: srv
+        inputSchema:
+          type: object
+          properties: {q: {type: string}}
+          required: [q]
+    caller: {user_id: u1}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/content/0/text
+      why: jsonschema and betterlite's validator word the same type error differently
