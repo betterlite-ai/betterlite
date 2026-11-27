@@ -72,31 +72,31 @@ def lookup_answer(call: LookupCall) -> JsonValue:
         server_name=call["server_name"],
         access_groups=call["access_groups"],
     )
-    return JSON_VALUE.validate_python({"resolved": resolved})
+    return {"resolved": JSON_VALUE.validate_python(resolved)}
 
 
 def answer(call: Call) -> JsonValue:
     match call["function"]:
         case "sanitize_alias":
-            return JSON_VALUE.validate_python(
-                {"sanitized": sanitize_mcp_alias_for_header(call["alias"])}
-            )
+            return {"sanitized": sanitize_mcp_alias_for_header(call["alias"])}
         case "lookup":
             return lookup_answer(call)
         case "per_server_authorization":
-            has_header = _client_has_per_server_auth_header(
-                build_server(call["server"]), call["server_auth_headers"]
-            )
-            return JSON_VALUE.validate_python({"has_header": has_header})
+            return {
+                "has_header": _client_has_per_server_auth_header(
+                    build_server(call["server"]), call["server_auth_headers"]
+                )
+            }
         case "passthrough_authorization":
-            has_passthrough = _client_has_passthrough_authorization(
-                build_server(call["server"]),
-                call["oauth2_headers"],
-                call["server_auth_headers"],
-            )
-            return JSON_VALUE.validate_python({"has_passthrough": has_passthrough})
+            return {
+                "has_passthrough": _client_has_passthrough_authorization(
+                    build_server(call["server"]),
+                    call["oauth2_headers"],
+                    call["server_auth_headers"],
+                )
+            }
 
 
 def run(input_value: Input) -> JsonValue:
     answers: list[JsonValue] = [answer(call) for call in input_value["calls"]]
-    return JSON_VALUE.validate_python({"answers": answers})
+    return {"answers": answers}
