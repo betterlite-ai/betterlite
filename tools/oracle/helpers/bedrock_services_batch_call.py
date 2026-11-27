@@ -24,16 +24,13 @@ litellm.suppress_debug_info = True
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 ARGS: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
 CLIENT_ERROR_STATUS: Final = 300
+EMPTY_RECORDS: Final[list[dict[str, JsonValue]]] = []
+EMPTY_REQUESTS: Final[list[str]] = []
 PROJECTED_KEYS: Final = (
-    "id", "object", "endpoint", "completion_window", "status", "created_at",
-    "in_progress_at", "completed_at", "failed_at", "cancelled_at", "expires_at",
-    "finalizing_at", "expired_at", "cancelling_at", "error_file_id", "input_file_id",
-    "output_file_id", "request_counts", "errors", "metadata", "model", "usage",
+    "id", "object", "endpoint", "completion_window", "status", "created_at", "in_progress_at", "completed_at", "failed_at", "cancelled_at", "expires_at",
+    "finalizing_at", "expired_at", "cancelling_at", "error_file_id", "input_file_id", "output_file_id", "request_counts", "errors", "metadata", "model", "usage",
 )
-OPERATION_NAMES: Final[dict[str, str]] = {
-    "StopModelInvocationJob": "stop_model_invocation_job",
-    "GetModelInvocationJob": "get_model_invocation_job",
-}
+OPERATION_NAMES: Final[dict[str, str]] = {"StopModelInvocationJob": "stop_model_invocation_job", "GetModelInvocationJob": "get_model_invocation_job"}
 PARSER: Final = botocore.parsers.create_parser("rest-json")  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/handler.py#L145
 BEDROCK: Final = botocore.session.get_session().get_service_model("bedrock")  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/handler.py#L145
 
@@ -208,12 +205,18 @@ def async_credentials(case: Input) -> dict[str, JsonValue]:
     return credentials
 
 
+def provider_for(case: Input) -> Provider:
+    provider = Provider(case["credentials"])
+    BaseAWSLLM.resolve_credentials = provider  # type: ignore[assignment, method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L512
+    return provider
+
+
 def settled(
     call: Callable[[], LiteLLMBatch],
     provider: Provider,
-    calls: JsonValue,
-    requests: JsonValue,
-    events: JsonValue,
+    calls: list[dict[str, JsonValue]],
+    requests: list[str],
+    events: list[dict[str, JsonValue]],
 ) -> JsonValue:
     try:
         outcome: dict[str, JsonValue] = {"batch": project_batch(call()), "error": None}
@@ -229,71 +232,49 @@ def settled(
     return {
         "batch": outcome["batch"],
         "error": outcome["error"],
-        "calls": calls,
+        "calls": JSON.validate_python(calls),
         "resolved": JSON.validate_python(provider.regions),
-        "requests": requests,
-        "log": events,
+        "requests": JSON.validate_python(requests),
+        "log": JSON.validate_python(events),
     }
-
-
-def control_plane(case: Input, *, cancel: bool) -> JsonValue:
-    replies = case.get("replies")
-    if replies is None:
-        raise ValueError("the control plane scenario needs replies")
-    provider = Provider(case["credentials"])
-    BaseAWSLLM.resolve_credentials = provider  # type: ignore[assignment, method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L512
-    service = Service(replies)
-    sys.modules["boto3"] = FakeBoto3(service)
-    recorder = Recorder() if case.get("logging") is True else None
-    status_call = cast(
-        "Callable[[str, str | None, Recorder | None], LiteLLMBatch]",
-        BedrockBatchesHandler._handle_model_invocation_job_status,  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/handler.py#L262
-    )
-    if cancel:
-        call: Callable[[], LiteLLMBatch] = partial(
-            BedrockBatchesHandler.cancel_batch,
-            case["batch_id"],
-            aws_region_name=case.get("region"),
-            logging_obj=recorder,
-        )
-    else:
-        call = partial(status_call, case["batch_id"], case.get("region"), recorder)
-    events = JSON.validate_python([] if recorder is None else recorder.events)
-    return settled(
-        call,
-        provider,
-        JSON.validate_python(service.calls),
-        JSON.validate_python([]),
-        events,
-    )
-
-
-def async_status(case: Input) -> JsonValue:
-    reply = case.get("reply")
-    if reply is None:
-        raise ValueError("the async scenario needs one reply")
-    provider = Provider(case["credentials"])
-    BaseAWSLLM.resolve_credentials = provider  # type: ignore[assignment, method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L512
-    fixture = Fixture(reply)
-    embedding_module.get_async_httpx_client = fixture.client  # type: ignore[assignment, attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L648
-    region = case.get("region")
-    if region is None:
-        region = "us-east-1"
-    async_call = cast(
-        "Callable[..., LiteLLMBatch]",
-        BedrockBatchesHandler._handle_async_invoke_status,  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/handler.py#L185
-    )
-    return settled(
-        partial(async_call, case["batch_id"], region, None, **async_credentials(case)),
-        provider,
-        JSON.validate_python([]),
-        JSON.validate_python(fixture.requests),
-        JSON.validate_python([]),
-    )
 
 
 def run(input_value: Input) -> JsonValue:
     operation = input_value["operation"]
+    provider = provider_for(input_value)
     if operation == "async_status":
-        return async_status(input_value)
-    return control_plane(input_value, cancel=operation == "cancel")
+        reply = input_value.get("reply")
+        if reply is None:
+            raise ValueError("the async scenario needs one reply")
+        fixture = Fixture(reply)
+        embedding_module.get_async_httpx_client = fixture.client  # type: ignore[assignment, attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L648
+        region = input_value.get("region")
+        if region is None:
+            region = "us-east-1"
+        async_call = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/handler.py#L185
+            "Callable[[str, str, None], LiteLLMBatch]",
+            partial(BedrockBatchesHandler._handle_async_invoke_status, **async_credentials(input_value)),  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/handler.py#L185
+        )
+        call = partial(async_call, input_value["batch_id"], region, None)
+        return settled(call, provider, EMPTY_RECORDS, fixture.requests, EMPTY_RECORDS)
+    replies = input_value.get("replies")
+    if replies is None:
+        raise ValueError("the control plane scenario needs replies")
+    service = Service(replies)
+    sys.modules["boto3"] = FakeBoto3(service)
+    recorder = Recorder() if input_value.get("logging") is True else None
+    status_call = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/handler.py#L262
+        "Callable[[str, str | None, Recorder | None], LiteLLMBatch]",
+        BedrockBatchesHandler._handle_model_invocation_job_status,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/handler.py#L262
+    )
+    if operation == "cancel":
+        call = partial(
+            BedrockBatchesHandler.cancel_batch,
+            input_value["batch_id"],
+            aws_region_name=input_value.get("region"),
+            logging_obj=recorder,
+        )
+    else:
+        call = partial(status_call, input_value["batch_id"], input_value.get("region"), recorder)
+    recorded = EMPTY_RECORDS if recorder is None else recorder.events
+    return settled(call, provider, service.calls, EMPTY_REQUESTS, recorded)

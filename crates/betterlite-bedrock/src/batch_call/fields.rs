@@ -30,7 +30,10 @@ pub fn required_object<'json>(
 }
 
 pub fn required_text(fields: &Fields, field: &'static str) -> Parsed<String> {
-    text_field(fields, field)?.ok_or(BatchCallError::MissingField { field })
+    match text_field(fields, field)? {
+        Some(text) => Ok(text),
+        None => Err(BatchCallError::MissingField { field }),
+    }
 }
 
 pub fn required_integer(fields: &Fields, field: &'static str) -> Parsed<i64> {
