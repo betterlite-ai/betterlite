@@ -10,7 +10,7 @@ description: >-
   Constants, spelled as in LiteLLM: TEMPORARY_MCP_SERVER_TTL_SECONDS = 300 and TEMPORARY_MCP_SERVER_REDIS_KEY_PREFIX = "litellm:mcp:temporary_server". Neither is configurable.
 
 
-  Functions to build (LiteLLM name in backticks). Types come from other tasks: MCPServer and OAuth2Flow from B6590, LiteLLM_MCPServerTable from B858, NewMCPServerRequest and its checks from B4716, redaction and credential inheritance from B4717, the draft rows from B4711 and B4712, the registry lookups from B4731, build_mcp_server_from_table from B6592, the response cache backend trait from B4290 (read its exact name and method signatures in crates/betterlite-cache/src/backend.rs once B4290 has merged) and the stored cipher from B1600.
+  Functions to build (LiteLLM name in backticks). Types come from other tasks: MCPServer and OAuth2Flow from B6590, LiteLLM_MCPServerTable from B858, NewMCPServerRequest and its checks from B4716, redaction from B10134 (redact_mcp_credentials) and credential inheritance from B4717, the draft rows from B4711 and B4712, the registry lookups from B4731, build_mcp_server_from_table from B6592, the response cache backend trait from B4290 (read its exact name and method signatures in crates/betterlite-cache/src/backend.rs once B4290 has merged) and the stored cipher from B1600.
 
   1. record.rs, `build_temporary_record` (`_build_temporary_mcp_server_record`), inputs: the request, created_by: Option<&str>, server_id and now. It returns a LiteLLM_MCPServerTable with created_at and updated_at both set to now, created_by and updated_by both set to created_by, teams set to the empty list, allowed_tools and extra_headers set to the request value or the empty list, and server_name set to the request's server_name, else its alias, else the server_id (the first non-empty one). These fields copy over from the request: alias, description, url, transport, auth_type, credentials, mcp_access_groups, mcp_info, static_headers, command, args, env, issuer, authorization_url, token_url, registration_url, allow_all_keys, available_on_public_internet, timeout, max_concurrent_requests. Every other row field keeps its default. In particular approval_status is not set, so the table value is not a draft; only the database row written in step 4 is a draft. Read the row type from B858 and match every field it has.
 
@@ -138,7 +138,7 @@ deviations:
 out_of_scope:
   - "B4711 owns _get_prisma_client_or_none, get_prisma_client_or_throw and get_mcp_server; this task calls them."
   - "B4712 owns create_draft_mcp_server, _prune_expired_draft_mcp_servers and get_draft_mcp_server (db.py L1013-L1100); this task calls them."
-  - "B4716 owns validate_and_normalize_mcp_server_payload, stamp_omitted_oauth2_flow and NewMCPServerRequest; B4717 owns _redact_mcp_credentials and _inherit_credentials_from_existing_server."
+  - "B4716 owns validate_and_normalize_mcp_server_payload, stamp_omitted_oauth2_flow and NewMCPServerRequest; B10134 owns _redact_mcp_credentials (redact_mcp_credentials); B4717 owns _inherit_credentials_from_existing_server."
   - "B4731 owns resolve_mcp_server, authorize_mcp_server and get_mcp_server_by_id (server_resolution.py and the registry reads); B6763 owns build_mcp_server_from_table."
   - "B4719 owns _mcp_oauth_user_api_key_auth (cookie and delegate_auth_to_upstream fallbacks) and the three routes mcp_authorize, mcp_token and mcp_register that call cached_temporary_server_or_404."
   - "B4729 and B4730 own the connection preview and test routes; they use their own staging, not this store."

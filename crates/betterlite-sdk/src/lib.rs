@@ -9,6 +9,8 @@ pub mod mcp_loop;
 pub mod proxy_auth;
 pub mod rag_query_call;
 pub mod router_batch_calls;
+pub mod router_batch_create;
+pub mod router_batch_retrieve;
 pub mod router_call_types;
 pub mod router_completion;
 pub mod router_container;

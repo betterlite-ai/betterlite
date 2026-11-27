@@ -174,6 +174,7 @@ fn raised_exception(failure: &StageFailure) -> Option<ProxyException> {
         StageFailure::AuthModelGrants(exception)
         | StageFailure::EntityModelAccess(exception)
         | StageFailure::AuthRequestPolicy(exception)
+        | StageFailure::TrustedNetwork(exception)
         | StageFailure::ResourceGrants(exception)
         | StageFailure::TagBudgets(exception)
         | StageFailure::RequestBodySafety(exception)

@@ -1,4 +1,5 @@
 pub mod active_subjects;
+pub mod admin_credential_view;
 pub mod admission_fallback;
 pub mod auth_challenge;
 pub mod auth_flows;
@@ -16,6 +17,7 @@ pub mod hook_payloads;
 pub mod live_admission;
 pub mod managed_openapi;
 pub mod management_access;
+pub mod management_server_access;
 pub mod management_visibility;
 pub mod message_tracing;
 pub mod modern_transport;
