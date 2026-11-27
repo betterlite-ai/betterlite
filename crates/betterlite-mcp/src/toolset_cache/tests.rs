@@ -6,6 +6,9 @@ use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
+use betterlite_config::sections::mcp_toolset_storage::table::{
+    ToolsetFilter, ToolsetRow, ToolsetTable, ToolsetUpdate,
+};
 use betterlite_config::sections::mcp_toolset_storage::{
     MCPToolset, MCPToolsetStorageError, MCPToolsetTool, ToolsetLookup,
 };
@@ -202,6 +205,77 @@ impl ToolsetByName for FakeStore {
     }
 }
 
+struct FakeToolsetTable {
+    row: Option<ToolsetRow>,
+    names: Mutex<Vec<String>>,
+}
+
+impl FakeToolsetTable {
+    fn new(row: Option<ToolsetRow>) -> Self {
+        Self {
+            row,
+            names: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn names(&self) -> Vec<String> {
+        self.names
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+}
+
+impl ToolsetTable for FakeToolsetTable {
+    fn create(
+        &self,
+        _row: ToolsetRow,
+    ) -> impl Future<Output = Result<ToolsetRow, MCPToolsetStorageError>> + Send {
+        ready(Err(store_failure()))
+    }
+
+    fn find_unique(
+        &self,
+        _toolset_id: &str,
+    ) -> impl Future<Output = Result<Option<ToolsetRow>, MCPToolsetStorageError>> + Send {
+        ready(Err(store_failure()))
+    }
+
+    fn find_first_by_name(
+        &self,
+        toolset_name: &str,
+    ) -> impl Future<Output = Result<Option<ToolsetRow>, MCPToolsetStorageError>> + Send {
+        self.names
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(toolset_name.to_owned());
+        ready(Ok(self.row.clone()))
+    }
+
+    fn find_many(
+        &self,
+        _filter: ToolsetFilter,
+        _use_writer: bool,
+    ) -> impl Future<Output = Result<Vec<ToolsetRow>, MCPToolsetStorageError>> + Send {
+        ready(Err(store_failure()))
+    }
+
+    fn update(
+        &self,
+        _toolset_id: &str,
+        _update: ToolsetUpdate,
+    ) -> impl Future<Output = Result<Option<ToolsetRow>, MCPToolsetStorageError>> + Send {
+        ready(Err(store_failure()))
+    }
+
+    fn delete(
+        &self,
+        _toolset_id: &str,
+    ) -> impl Future<Output = Result<Option<ToolsetRow>, MCPToolsetStorageError>> + Send {
+        ready(Err(store_failure()))
+    }
+}
+
 #[derive(Clone, Default)]
 struct RecordingWriter(Arc<Mutex<Vec<u8>>>);
 
@@ -347,6 +421,33 @@ async fn lookup_store_error_reaches_the_caller_and_writes_nothing() {
     assert_eq!(store.calls(), vec!["test-alpha".to_owned()]);
     assert!(cache.write_log().is_empty());
     assert!(cache.keys().is_empty());
+}
+
+#[tokio::test]
+async fn lookup_store_adapter_reads_the_table_by_name() {
+    let row = ToolsetRow {
+        toolset_id: "test-id-test-alpha".to_owned(),
+        toolset_name: "test-alpha".to_owned(),
+        description: Some("test description".to_owned()),
+        tools: Some(r#"[{"server_id": "test-server", "tool_name": "test-tool"}]"#.to_owned()),
+        created_at: None,
+        created_by: Some("test-owner".to_owned()),
+        updated_at: None,
+        updated_by: Some("test-editor".to_owned()),
+    };
+    let table = FakeToolsetTable::new(Some(row));
+
+    let found = table.by_name("test-alpha").await.unwrap().unwrap();
+
+    assert_eq!(found.toolset_id, "test-id-test-alpha");
+    assert_eq!(
+        found.tools,
+        vec![MCPToolsetTool {
+            server_id: "test-server".to_owned(),
+            tool_name: "test-tool".to_owned(),
+        }]
+    );
+    assert_eq!(table.names(), vec!["test-alpha".to_owned()]);
 }
 
 #[test]
