@@ -18,6 +18,8 @@ description: >-
   GenericCallExecutor for the call type acreate_batch over the same B1036 provider create the direct branch calls.
   BatchProviderCreateInput is deny_unknown_fields, so the executor reads its fields out of the merged map by name and
   never deserializes the whole map, which also holds litellm_metadata, model_info, caching and the deployment's other params.
+  That executor's transport builds the provider request with B10146's BatchCreate::from_request and its deadline with Timeout::duration (betterlite-openai batches), and writes no conversion of its own.
+  The same RouterBatchCreate serves B1112's managed-file create: implement B1112's ProviderBatchCreate port over it (take model out of the request for acreate_batch, and read the answer's JSON body as betterlite-openai's BatchObject) and hand that to _create_provider_batch_for_managed_file.
 
 
   The oracle has no litellm-enterprise. get_proxy_hook(managed_files) is absent: preserve each MIT caller's own
