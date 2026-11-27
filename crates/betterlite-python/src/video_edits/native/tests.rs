@@ -80,7 +80,7 @@ fn failure_message(method: &str, payload: &str) -> String {
         let error = session
             .call_method1(py, method, (payload, Vec::<Vec<u8>>::new()))
             .unwrap_err();
-        assert!(error.is_instance_of::<NativeVideoEditError>(py));
+        assert!(error.is_instance_of::<NativeVideoEditError>(py), "{error}");
         error.value(py).to_string()
     })
 }
