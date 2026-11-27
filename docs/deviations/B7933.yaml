@@ -3,9 +3,6 @@ deviations:
   - what: Names imported from the openai package through litellm.types.llms.openai are replaced by betterlite's own local equivalents.
     why: The wheel does not depend on openai or httpx.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/generic_guardrail_api.py#L7-L12
-  - what: DynamoTextType, PolicyMethod and PolicyApplicableTo derive from enum.StrEnum where LiteLLM declares them as class X(str, enum.Enum).
-    why: The repository's ruff rules require StrEnum over a str mixin. Members, values and compare-by-value behavior are identical; str() returns the value rather than Class.MEMBER, and Python runtime formatting is outside the compatibility policy.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/dynamoai.py#L22-L38
   - what: Open JSON positions are declared as dict[str, JsonValue] where LiteLLM writes a bare dict or dict[str, Any], and coerce_stream_holdback_value takes a JsonValue where LiteLLM takes Any, so a non-JSON Python value in such a field raises invalid-json-value where LiteLLM accepts and keeps it.
     why: The repository's ast-grep rules reject Any and bare dict in type positions. JsonValue names the same open JSON, and the values these fields and functions receive over the API arrive as JSON.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/generic_guardrail_api.py#L41-L44

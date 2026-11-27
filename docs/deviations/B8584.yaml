@@ -12,9 +12,6 @@ deviations:
   - what: "The classes are LiteLLMParams, UpdateLiteLLMParams, UpdateDeployment and LiteLLMRouterFileObject, where LiteLLM's are LiteLLM_Params, updateLiteLLMParams, updateDeployment and LiteLLM_RouterFileObject."
     why: "ruff N801 requires CapWords class names without internal underscores; betterlite._router_types exports each under LiteLLM's name with an import alias, so only __name__ differs."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L522-L556
-  - what: "RouterErrorTypes and RequestType subclass enum.StrEnum, where LiteLLM writes (str, enum.Enum)."
-    why: "ruff UP042 replaces the str mixin with StrEnum; str() and f-strings of a member return its value where LiteLLM returns 'RouterErrorTypes.rate_limit_error', while .value and equality with the string are unchanged."
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L959-L962
   - what: "The timeout fields are float | str | None, without LiteLLM's httpx.Timeout member."
     why: "betterlite's wheel has no httpx dependency; pydantic still accepts a number or a duration string and rejects an httpx.Timeout object that LiteLLM's arbitrary-types model keeps."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L391

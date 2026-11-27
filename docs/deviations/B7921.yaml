@@ -12,9 +12,6 @@ deviations:
   - what: "ALL_RESPONSES_API_TOOL_PARAMS is dict[str, JsonValue] | ComputerToolParam | ShellToolParam, where LiteLLM's ToolParam | ComputerToolParam | ShellToolParam flattens into the 17 openai tool parameter TypedDicts plus those two."
     why: "ToolParam comes from openai, which the wheel does not depend on; a tool parameter mapping validates as JSON, and the two LiteLLM-defined members stay named."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1244
-  - what: "ResponsesAPIStreamEvents is a StrEnum, where LiteLLM declares class ResponsesAPIStreamEvents(str, Enum)."
-    why: "ruff's UP042 rewrites the `str, Enum` mixin pair on the Python 3.11 target and the budgets allow no suppression; members keep their names, values, str-ness and equality with the raw strings, and only str()/repr() text differs, which docs/compatibility.md leaves to Python's runtime."
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1509-L1570
   - what: "ErrorEventError.param is str | dict[str, JsonValue] | None, where LiteLLM declares str | dict[str, object] | None."
     why: "object admits values that have no JSON form, and the field arrives over the wire as JSON; a nested non-JSON Python object now fails validation naming param, where LiteLLM only fails at serialization."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1867-L1873

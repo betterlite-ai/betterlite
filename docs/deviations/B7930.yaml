@@ -32,20 +32,13 @@ deviations:
       schema shows additionalProperties as a reference to JsonValue where LiteLLM shows true.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L169
   - what: >-
-      Role subclasses enum.StrEnum instead of plain Enum.
+      Role is a (str, Enum) class, where LiteLLM declares it as a plain Enum.
     why: >-
-      A StrEnum member is a str, so it fits the protocol input types without a cast. Member names and
-      values are unchanged; a member now compares equal to its string value and JSON serializes it
+      A member has to be a str to fit the protocol input types without a cast. Member names and
+      values are unchanged; a member compares equal to its string value and JSON serializes it
       where LiteLLM's plain Enum raises. GuardrailItem's use_enum_values stores plain strings either
       way.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L155
-  - what: >-
-      PiiAction, PiiEntityCategory, PiiEntityType and GuardrailParamUITypes subclass enum.StrEnum
-      instead of (str, Enum).
-    why: >-
-      Ruff UP042 requires StrEnum for a str-mixin Enum. Member names, values, comparisons to str and
-      JSON output are unchanged; str() and repr text is not part of parity.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L207
   - what: >-
       The ported models carry no pydantic Field descriptions and no class docstrings, so
       model_json_schema() has no description keys where LiteLLM's does.

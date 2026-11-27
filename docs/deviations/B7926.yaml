@@ -10,13 +10,11 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/anthropic.py#L22-L33
   - what: >-
       ANTHROPIC_HOSTED_TOOLS and ANTHROPIC_BETA_HEADER_VALUES are declared as the
-      AnthropicHostedToolNames and AnthropicBetaHeaderValues StrEnum classes, and the module binds
-      each LiteLLM name to its class, where LiteLLM declares class X(str, Enum).
+      AnthropicHostedToolNames and AnthropicBetaHeaderValues classes, and the module binds each
+      LiteLLM name to its class.
     why: >-
-      Ruff N801 rejects a class name with underscores and the repository's rules require StrEnum
-      over a str mixin. Member names, member values and compare-by-value behavior are identical;
-      str() and repr() return the value rather than Class.MEMBER, and Python runtime formatting is
-      outside the compatibility policy.
+      Ruff N801 rejects a class name with underscores, so the classes carry CapWords names. Member
+      names, member values and compare-by-value behavior are identical.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/anthropic.py#L739
   - what: >-
       The ported modules import Required and NotRequired from typing, where LiteLLM imports them
