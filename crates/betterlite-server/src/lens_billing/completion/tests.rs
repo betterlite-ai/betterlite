@@ -105,6 +105,10 @@ impl ReservationRelease for Fake {
     }
 }
 
+fn stamped_reservation() -> ReservationHandle {
+    ReservationHandle::new(Decimal::ZERO, Vec::new(), Decimal::ZERO)
+}
+
 fn response() -> ChatResponse {
     let json = concat!(
         "{\"id\":\"x\",\"object\":\"chat.completion\",\"created\":1,\"model\":\"lens-model\",",
@@ -178,6 +182,7 @@ async fn complete_authorizes_reserves_then_runs() {
 async fn a_budget_error_from_the_authorizer_is_the_fixed_402() {
     let mut plan = Plan::default();
     plan.budget = true;
+    plan.reservation = Some(stamped_reservation());
     let (billing, fake, log) = harness(plan);
     let error = complete(
         &billing,
@@ -201,6 +206,7 @@ async fn a_budget_error_from_the_authorizer_is_the_fixed_402() {
 async fn a_reserve_failure_releases_and_skips_the_chat_call() {
     let mut plan = Plan::default();
     plan.reserve_failure = true;
+    plan.reservation = Some(stamped_reservation());
     let (billing, fake, log) = harness(plan);
     let error = complete(
         &billing,
@@ -220,6 +226,7 @@ async fn a_reserve_failure_releases_and_skips_the_chat_call() {
 async fn a_chat_failure_releases_the_reservation() {
     let mut plan = Plan::default();
     plan.run_failure = true;
+    plan.reservation = Some(stamped_reservation());
     let (billing, fake, log) = harness(plan);
     let error = complete(
         &billing,
@@ -299,6 +306,7 @@ async fn the_billed_cost_header_is_parsed() {
 async fn an_unparseable_billed_cost_fails_the_call() {
     let mut plan = Plan::default();
     plan.billed = Some("cheap");
+    plan.reservation = Some(stamped_reservation());
     let (billing, fake, log) = harness(plan);
     let error = complete(
         &billing,

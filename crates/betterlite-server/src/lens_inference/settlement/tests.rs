@@ -136,6 +136,10 @@ fn a_spend_outside_the_decimal_range_is_an_overflow() {
     let error = settle_transform(huge, &request("job-1", "4.0")).unwrap_err();
     assert!(matches!(error, SettlementError::Overflow));
     assert_eq!(error.status(), 500);
+    assert_eq!(
+        error.detail(),
+        "the settled lens spend is outside the decimal range"
+    );
 }
 
 #[tokio::test]
