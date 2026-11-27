@@ -57,6 +57,7 @@ pub mod static_credential;
 pub mod tool_access;
 pub mod tool_registry;
 pub mod tools;
+pub mod toolset_cache;
 pub mod toolset_scope;
 pub mod types;
 pub mod ui_session;
