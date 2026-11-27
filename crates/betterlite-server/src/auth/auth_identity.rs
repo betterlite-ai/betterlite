@@ -156,6 +156,33 @@ impl StageInput {
             Self::ModelGrantIntersection(_) => AuthBackend::ModelGrantIntersection,
         }
     }
+
+    // the stages that resolve nothing carry the context an earlier stage resolved, and every other input has none
+    fn forwarded_context(&self) -> Result<AuthContext, StageFailure> {
+        match self {
+            Self::Authenticated(context) => Ok((**context).clone()),
+            Self::EntityModelAccess(stage) => Ok(stage.context.clone()),
+            Self::AuthModelGrants(stage) => Ok(stage.context.clone()),
+            Self::AuthTagBudgets(stage) => Ok(stage.context.clone()),
+            Self::AuthKeyBudgets(stage) => Ok(stage.context.clone()),
+            Self::TeamBudgetAdmission(stage) => Ok(stage.context.clone()),
+            Self::AuthTenantBudgets(stage) => Ok(stage.context.clone()),
+            Self::AuthOrgLookup(stage) => Ok(stage.context.clone()),
+            Self::AuthEndUsers(stage) => Ok(stage.context.clone()),
+            Self::ModelGrantIntersection(stage) => Ok(stage.context.clone()),
+            Self::AuthKeyLookup(_)
+            | Self::AuthIdentity(_)
+            | Self::MasterKey(_)
+            | Self::AuthRequestPolicy(_)
+            | Self::RequestBodySafety(_)
+            | Self::AuthVirtualKeyRoutes(_)
+            | Self::AuthRequestModels(_)
+            | Self::AuthModelPatterns(_)
+            | Self::AuthResourceGrants(_)
+            | Self::OrganizationRoutePolicy(_)
+            | Self::AuthPolicySupport(_) => Err(StageFailure::from(AuthenticationFailure::Missing)),
+        }
+    }
 }
 
 pub(crate) fn dispatch(
@@ -169,10 +196,19 @@ pub(crate) fn dispatch(
         return Err(StageFailure::from(AuthenticationFailure::Missing));
     }
     match input {
+        StageInput::Authenticated(_)
+        | StageInput::EntityModelAccess(_)
+        | StageInput::AuthModelGrants(_)
+        | StageInput::AuthTagBudgets(_)
+        | StageInput::AuthKeyBudgets(_)
+        | StageInput::TeamBudgetAdmission(_)
+        | StageInput::AuthTenantBudgets(_)
+        | StageInput::AuthOrgLookup(_)
+        | StageInput::AuthEndUsers(_)
+        | StageInput::ModelGrantIntersection(_) => input.forwarded_context()?,
         StageInput::AuthKeyLookup(_) | StageInput::AuthIdentity(_) => {
             Err(StageFailure::from(AuthenticationFailure::Missing))
         }
-        StageInput::Authenticated(context) => Ok((**context).clone()),
         StageInput::MasterKey(_) => master_key_stage(input, master_key).map_err(StageFailure::from),
         StageInput::AuthRequestPolicy(stage) => {
             auth_request_policy::run_stage(stage).map_err(StageFailure::AuthRequestPolicy)
@@ -185,23 +221,14 @@ pub(crate) fn dispatch(
         }
         StageInput::AuthRequestModels(stage) => auth_request_models_stage(stage),
         StageInput::AuthModelPatterns(stage) => run_stage(stage).map_err(StageFailure::from),
-        StageInput::EntityModelAccess(stage) => Ok(stage.context.clone()),
-        StageInput::AuthModelGrants(stage) => Ok(stage.context.clone()),
         StageInput::AuthResourceGrants(stage) => {
             auth_resource_grants::run_stage(stage).map_err(StageFailure::ResourceGrants)
         }
-        StageInput::AuthTagBudgets(stage) => Ok(stage.context.clone()),
-        StageInput::AuthKeyBudgets(stage) => Ok(stage.context.clone()),
-        StageInput::TeamBudgetAdmission(stage) => Ok(stage.context.clone()),
-        StageInput::AuthTenantBudgets(stage) => Ok(stage.context.clone()),
         StageInput::OrganizationRoutePolicy(stage) => organization_route_policy::run_stage(stage)
             .map_err(StageFailure::OrganizationRoutePolicy),
-        StageInput::AuthOrgLookup(stage) => Ok(stage.context.clone()),
-        StageInput::AuthEndUsers(stage) => Ok(stage.context.clone()),
         StageInput::AuthPolicySupport(stage) => {
             auth_policy_support::run_stage(stage).map_err(StageFailure::AuthPolicySupport)
         }
-        StageInput::ModelGrantIntersection(stage) => Ok(stage.context.clone()),
     }
 }
 
