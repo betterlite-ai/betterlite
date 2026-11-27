@@ -1,0 +1,62 @@
+kind: sdk_http
+name: disabled-and-under-threshold
+call:
+  summary_execution:
+    scenarios:
+      - model: main-model
+        messages:
+          - role: user
+            content:
+              - type: compaction
+                content: S
+          - role: assistant
+            content: ack
+          - role: user
+            content: recent question
+        system: BASE SYSTEM
+        edit_spec:
+          type: compact_20260112
+      - model: main-model
+        messages:
+          - role: user
+            content:
+              - type: compaction
+                content: S
+          - role: assistant
+            content: ack
+          - role: user
+            content: recent question
+        system: BASE SYSTEM
+        summary_model: sum
+        edit_spec:
+          type: compact_20260112
+        counter:
+          conversation: 150000
+      - model: main-model
+        messages:
+          - role: user
+            content:
+              - type: compaction
+                content: S
+          - role: assistant
+            content: ack
+          - role: user
+            content: recent question
+        system: BASE SYSTEM
+        summary_model: sum
+        edit_spec:
+          type: compact_20260112
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: chatcmpl-1
+      object: chat.completion
+      created: 1700000000
+      model: gpt-4o-mini
+      choices:
+        - index: 0
+          message: {role: assistant, content: "<summary> NEW </summary>"}
+          finish_reason: stop
+      usage: {prompt_tokens: 12, completion_tokens: 3, total_tokens: 15}
+compare: {headers: [], headers_present: [], upstream_headers: [authorization], ignore: []}
