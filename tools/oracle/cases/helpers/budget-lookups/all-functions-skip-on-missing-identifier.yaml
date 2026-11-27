@@ -1,0 +1,35 @@
+kind: helper
+name: budget-lookups-all-functions-skip-on-missing-identifier
+call:
+  b3883:
+    function: team
+    team_id: null
+    team_alias: Alpha
+    team_spend: 1.0
+    team_max_budget: 10.0
+    response_cost: 0.25
+    carried: null
+    lookup:
+      kind: record
+      budget_reset_at: '2026-01-06T00:00:00Z'
+      max_budget: 10.0
+      spend: null
+      organization_alias: null
+      user_email: null
+      user_alias: null
+      budget: null
+    now: '2026-01-01T00:00:00Z'
+    noop: false
+    labels_by_metric:
+      litellm_remaining_team_budget_metric:
+      - team
+      - team_alias
+      litellm_team_max_budget_metric:
+      - team
+      - team_alias
+      litellm_team_budget_remaining_hours_metric:
+      - team
+      - team_alias
+env: {}
+compare:
+  ignore: []

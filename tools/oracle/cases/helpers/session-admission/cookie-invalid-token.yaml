@@ -1,0 +1,11 @@
+kind: helper
+name: session-admission-cookie-invalid-token
+call:
+  b4655:
+    cookie_header: "token=not-a-jwt"
+    master_key: sk-oracle-master
+    key_resolves: true
+    now: 1700000000
+env: {}
+compare:
+  ignore: []
