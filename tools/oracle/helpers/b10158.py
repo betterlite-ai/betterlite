@@ -8,7 +8,7 @@ from litellm.proxy.management_endpoints.internal_user_endpoints import (
 from pydantic import JsonValue, TypeAdapter
 from starlette.exceptions import HTTPException
 
-DETAIL: Final[TypeAdapter[str | dict[str, str]]] = TypeAdapter(str | dict[str, str])
+JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 
 Role: TypeAlias = Literal[
     "proxy_admin",
@@ -53,17 +53,18 @@ def answer(call: Call) -> JsonValue:
         return {
             "raised": {
                 "status_code": error.status_code,
-                "detail": DETAIL.validate_python(error.detail),
+                "detail": JSON.validate_python(error.detail),
             }
         }
+    if entity_ids is None:
+        return {"entity_ids": None}
     match entity_ids:
         case ScopeDenied(status_code=status_code, reason=reason):
             return {"denied": {"status_code": status_code, "reason": reason}}
-        case None:
-            return {"entity_ids": None}
         case tuple() as selected:
             return {"entity_ids": [*selected]}
 
 
 def run(input_value: Input) -> JsonValue:
-    return [answer(call) for call in input_value["calls"]]
+    answers: list[JsonValue] = [answer(call) for call in input_value["calls"]]
+    return JSON.validate_python(answers)
