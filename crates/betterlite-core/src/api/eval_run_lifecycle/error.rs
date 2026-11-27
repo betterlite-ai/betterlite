@@ -8,7 +8,7 @@ use betterlite_openai::evals::error::EvalsError;
 use betterlite_redact::secret::Redactor;
 use thiserror::Error;
 
-use crate::api::eval_http::error::EvalHttpError;
+use crate::api::eval_http::error::{EvalHttpError, unsupported_provider};
 
 // The three run operations LiteLLM spells out twice each; one call body serves them, keyed by this
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -90,9 +90,10 @@ pub fn failure(error: EvalRunError, provider: &str, redactor: &Redactor) -> Eval
         EvalRunError::Handler(EvalHttpError::Api(source)) => {
             evals_class(source, provider, redactor)
         }
-        EvalRunError::UnknownProvider { .. }
-        | EvalRunError::Unsupported { .. }
-        | EvalRunError::Handler(EvalHttpError::Logging(_) | EvalHttpError::Record { .. })
+        EvalRunError::UnknownProvider { .. } | EvalRunError::Unsupported { .. } => {
+            unsupported_provider(error.to_string(), provider)
+        }
+        EvalRunError::Handler(EvalHttpError::Logging(_) | EvalHttpError::Record { .. })
         | EvalRunError::Logging(_)
         | EvalRunError::Params { .. }
         | EvalRunError::SyncInRuntime

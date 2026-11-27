@@ -16,6 +16,7 @@ pub(crate) enum StageFailure {
     ModelAccess(Box<ModelAccessRejection>),
     AuthModelGrants(Box<ProxyException>),
     EntityModelAccess(Box<ProxyException>),
+    TrustedNetwork(Box<ProxyException>),
     AuthRequestPolicy(Box<ProxyException>),
     ResourceGrants(Box<ProxyException>),
     TagBudgets(Box<ProxyException>),
@@ -51,6 +52,7 @@ pub(crate) fn stage_failure_response(failure: &StageFailure) -> Response {
         | StageFailure::AuthModelGrants(exception)
         | StageFailure::EntityModelAccess(exception)
         | StageFailure::AuthRequestPolicy(exception)
+        | StageFailure::TrustedNetwork(exception)
         | StageFailure::ResourceGrants(exception)
         | StageFailure::TagBudgets(exception)
         | StageFailure::RequestBodySafety(exception)

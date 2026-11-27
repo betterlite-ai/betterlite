@@ -25,7 +25,7 @@ description: >-
   Order of checks: database present, caller has a user id, server authorized, read.
   No database gives 500 with detail.error "Database not connected. Connect a database to your proxy" (B4711's get_prisma_client_or_throw).
   An empty or missing user_id on the key gives 400 "User ID not found in token".
-  The server comes from B4717's authorize_mcp_server (LiteLLM authorize_and_fetch_mcp_server), given the route state's ServerAccessCheck (B4731) (admin: any server, 404 "MCP Server {server_id} not found" for unknown; non-admin: 403 outside the allowed set, never 404, with the message B4717 owns).
+  The server comes from B10135's authorize_and_fetch_mcp_server (LiteLLM _authorize_and_fetch_mcp_server), given the route state's registry, B4711's get_mcp_server as the DbLookup and the state's ServerAccessCheck (B4731) (admin view: any server, 404 "MCP Server {server_id} not found" for unknown; non-admin: 403 outside the allowed set, never 404, with the message B10135 owns). Its NotFound and Forbidden answer 404 and 403 with {"detail": detail}; Lookup and Access are server errors that pass through the wrapper.
   Then B4714's get_user_env_vars(user_id, server_id) and compute_user_env_status.
   2. POST /v1/mcp/server/{server_id}/user-env-vars stores values. Same first three checks as route 1, same order.
   allowed_names = the names of the server's user specs (parse_admin_env_vars, all of them, referenced or not).
@@ -35,12 +35,12 @@ description: >-
   Call B4714's delete_user_env_vars, then the same cache drop, and answer compute_user_env_status with an empty map, so every blocking variable reports is_set false and missing_count equals the number listed. A missing row is not an error.
   4. GET /v1/mcp/user-env-vars/status lists the caller's status across the servers they can use.
   Database check first (500 as above), then an empty user id answers [] (200, not 400; this route differs from the other three).
-  accessible = B4717's resolve_accessible_servers for the caller (LiteLLM resolve_accessible_mcp_servers; credential-free list of server table rows, deduplicated by server_id). An empty list answers [].
+  accessible = B10135's resolve_accessible_mcp_servers(registry, sources, auth, mode) for the caller (LiteLLM _resolve_accessible_mcp_servers; unredacted server table rows, deduplicated by server_id), where sources is the AccessibleServerSources and mode the ManagementMode (config.sections.mcp_management_mode.mode) the route state holds. A sources error passes through the wrapper as a server error. An empty list answers [].
   Otherwise one B4714 get_user_env_vars_bulk(user_id, ids) call for all ids, and a status per server (missing entry means an empty map). Keep only statuses whose required list is non-empty, in the order of accessible.
 
   Cache port. LiteLLM drops the entry with the manager's invalidate_user_env_vars_cache(user_id, server_id) after a POST and after a DELETE (not after a failed write: an error from merge or delete leaves the cache alone). Declare a trait `UserEnvVarsCache` in this module with `fn invalidate(&self, user_id: &str, server_id: &str)`, hold it as a `Arc<dyn UserEnvVarsCache>` field of the state, and use an in-memory fake that records calls in the tests. The cache itself (60 second TTL, 4096 entries, written by the gateway read path) is not built here; see notes.
 
-  Routes 1 to 3 do not read the server's env_vars from a stale copy: they use the table that authorize_mcp_server returns for this request.
+  Routes 1 to 3 do not read the server's env_vars from a stale copy: they use the table that authorize_and_fetch_mcp_server returns for this request.
   Native tests use fakes for the store, the authorizer and the cache, with a recorded event list. Do not need a live Postgres.
 
 scope:
@@ -67,7 +67,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L2913-L2940
     why: The all-servers status route, its empty-user answer and its required filter.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L2728-L2761
-    why: _authorize_and_fetch_mcp_server, owned by B4717; read for the 404 and 403 texts.
+    why: _authorize_and_fetch_mcp_server, owned by B10135; read for the 404 and 403 texts.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1849-L1877
     why: The three wire types with their field defaults.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L1071-L1074
@@ -119,7 +119,7 @@ deviations: []
 
 out_of_scope:
   - "get_prisma_client_or_throw: owned by B4711. get_user_env_vars, get_user_env_vars_bulk, merge_user_env_vars, delete_user_env_vars and UserEnvVars: owned by B4714."
-  - "_authorize_and_fetch_mcp_server and _resolve_accessible_mcp_servers: owned by B4717 as authorize_mcp_server and resolve_accessible_servers. _user_has_admin_view (user_api_key_has_admin_view): owned by B2314."
+  - "_authorize_and_fetch_mcp_server, _resolve_accessible_mcp_servers and _get_user_mcp_management_mode: owned by B10135 as authorize_and_fetch_mcp_server, resolve_accessible_mcp_servers and the mcp_management_mode section, with its AccessibleServerSources port. _user_has_admin_view (user_api_key_has_admin_view): owned by B2314."
   - "parse_admin_env_vars, collect_env_var_references and build_env_var_setup_url: owned by B6594. LiteLLM_MCPServerTable and MCPEnvVar: owned by B858."
   - "management_endpoint_wrapper: owned by B865."
   - "The gateway's per-user env var cache (_user_env_vars_cache, _write_user_env_vars_cache, its read in the tool-call path and the body of invalidate_user_env_vars_cache): B8461's UpstreamClients and its invalidate_user_env. This task owns only the UserEnvVarsCache port, and B8700 implements it over that method."

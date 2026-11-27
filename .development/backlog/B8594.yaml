@@ -1,8 +1,8 @@
 id: B8594
 milestone: M8 platform
-title: "/config/update route and config audit redaction"
+title: "/config/update route"
 status: todo
-depends_on: [B8380, B8397, B10074, B8611, B2330, B323, B9711]
+depends_on: [B8380, B8397, B10074, B10136, B2330, B323, B9711, B10137]
 file: tasks/B8594-config-update-route.yaml
 covers:
   - "litellm/proxy/proxy_server.py"

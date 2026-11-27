@@ -1,0 +1,14 @@
+id: B10140
+milestone: M4 keys, spend and management
+title: Team membership metric and audit effects
+status: todo
+depends_on: [B065, B192, B2330, B3882, B859, B171, B856]
+file: tasks/B10140-team-membership-effects.yaml
+covers:
+  - "litellm/proxy/management_endpoints/team_endpoints.py"
+parent: B057
+split_from: B807
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

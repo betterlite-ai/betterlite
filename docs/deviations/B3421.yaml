@@ -25,8 +25,8 @@ deviations:
     why: "Rust has no module-level mutable handler instance, and B9370 owns the transport. The service is handed the client the proxy builds, so a call still runs on the pooled connection LiteLLM's shared handler would use."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L204-L216
   - what: "An unknown provider name fails with \"<name>\" is not a provider betterlite knows, where LiteLLM fails inside LlmProviders(name) with Python's enum ValueError text."
-    why: "Both are ValueErrors and map to the same class; the text names the provider instead of Python's enum mechanics."
-    link: ""
+    why: "The name is in the message, and the class is the 400 B10113 maps an unknown provider to; the text names the provider instead of Python's enum mechanics."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L157-L163"
 kept_bugs:
   - what: "list_evals resolves timeout or request_timeout and hands it to the handler call, but B9370's list handler takes no timeout and sends none, so the GET runs on the pooled client's read deadline."
     why: "LiteLLM's pinned list handler accepts the timeout and never puts it on the request; honoring it here would time out list calls LiteLLM lets run."
