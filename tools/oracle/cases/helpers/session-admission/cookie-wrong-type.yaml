@@ -1,0 +1,11 @@
+kind: helper
+name: session-admission-cookie-wrong-type
+call:
+  b4655:
+    cookie_header: "token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjQxMDI0NDQ4MDAsInVzZXJfaWQiOiJ1c2VyLTEiLCJzZXJ2ZXJfaWQiOiJzcnYtMSIsInR5cGUiOiJieW9rX3Nlc3Npb24iLCJpYXQiOjE3MDAwMDAwMDB9.w5_L-pjv1-mYkXvsuZ0dYyiynpQche_1w_YMtJbYIlo"
+    master_key: sk-oracle-master
+    key_resolves: true
+    now: 1700000000
+env: {}
+compare:
+  ignore: []
