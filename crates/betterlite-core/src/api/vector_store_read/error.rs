@@ -50,6 +50,7 @@ pub struct VectorStoreReadFailure {
 
 impl VectorStoreReadFailure {
     // the exception a Python caller catches, as exception_type() raises it
+    #[must_use]
     pub fn raised(&self) -> RaisedException {
         let metadata = self.class.metadata();
         RaisedException {
@@ -105,7 +106,7 @@ fn raw_exception(error: &VectorStoreReadError, provider: &str) -> RawException {
     }
 }
 
-fn provider_exception(error: &CreateReadError) -> Option<&BaseLlmException> {
+const fn provider_exception(error: &CreateReadError) -> Option<&BaseLlmException> {
     if let CreateReadError::Write(WriteError::Provider(exception)) = error {
         return Some(exception);
     }
