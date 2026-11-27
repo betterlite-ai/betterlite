@@ -53,10 +53,8 @@ where
             BatchData::Json(object) => dumps_object(object),
             BatchData::Text(text) => text.to_owned(),
         };
-        (
-            text,
-            vec![("Content-Type".to_owned(), "application/json".to_owned())],
-        )
+        let content_type = vec![("Content-Type".to_owned(), "application/json".to_owned())];
+        (text, content_type)
     };
     let supplied = without_computed(initial_headers, credentials.session_token.is_some());
     let computed = sign_request(&Signable {
