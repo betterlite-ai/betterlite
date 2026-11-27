@@ -369,63 +369,67 @@ enum ItemArm {
     CustomTool,
 }
 
+const IMAGE_CALL: &str =
+    r#"{"type":"image_generation_call","id":"img_1","status":"completed","result":null}"#;
+
+const CODE_INTERPRETER_CALL: &str = r#"{"type":"code_interpreter_call","id":"ci_1","code":null,"container_id":null,"status":"completed","outputs":null}"#;
+
+const CUSTOM_TOOL_CALL: &str = r#"{"type":"custom_tool_call","call_id":"ct_1","id":"ct_1","name":"f","input":"","status":null}"#;
+
+fn sdk_call() -> ResponseOutputItem {
+    ResponseOutputItem::Sdk(Box::new(SdkOutput::FunctionCall(Box::new(FunctionCall {
+        r#type: FunctionCallTag::Value,
+        arguments: r#"{"city":"Paris"}"#.to_owned(),
+        call_id: "call_sdk".to_owned(),
+        name: "weather".to_owned(),
+        id: Some("fc_sdk".to_owned()),
+        caller: None,
+        namespace: None,
+        status: None,
+        extra: BTreeMap::new(),
+    }))))
+}
+
+fn typed_call(item_type: Option<&str>, arguments: Option<&str>) -> ResponseOutputItem {
+    ResponseOutputItem::FunctionCall(OutputFunctionToolCall {
+        arguments: arguments.map(str::to_owned),
+        call_id: Some("call_typed".to_owned()),
+        name: Some("clock".to_owned()),
+        r#type: item_type.map(str::to_owned),
+        id: None,
+        status: FunctionCallStatus::Completed,
+        phase: None,
+        extra: BTreeMap::new(),
+    })
+}
+
+fn message_call(item_type: &str, id: &str, extra: &[(&str, &str)]) -> ResponseOutputItem {
+    ResponseOutputItem::Message(GenericResponseOutputItem {
+        r#type: item_type.to_owned(),
+        id: id.to_owned(),
+        status: "completed".to_owned(),
+        role: "assistant".to_owned(),
+        content: Vec::new(),
+        phase: None,
+        extra: text_entries(extra),
+    })
+}
+
 fn item(arm: ItemArm) -> ResponseOutputItem {
     match arm {
-        ItemArm::SdkFunctionCall => ResponseOutputItem::Sdk(Box::new(SdkOutput::FunctionCall(
-            Box::new(FunctionCall {
-                r#type: FunctionCallTag::Value,
-                arguments: r#"{"city":"Paris"}"#.to_owned(),
-                call_id: "call_sdk".to_owned(),
-                name: "weather".to_owned(),
-                id: Some("fc_sdk".to_owned()),
-                caller: None,
-                namespace: None,
-                status: None,
-                extra: BTreeMap::new(),
-            }),
-        ))),
-        ItemArm::TypedFunctionCall => ResponseOutputItem::FunctionCall(OutputFunctionToolCall {
-            arguments: Some("{}".to_owned()),
-            call_id: Some("call_typed".to_owned()),
-            name: Some("clock".to_owned()),
-            r#type: Some("function_call".to_owned()),
-            id: None,
-            status: FunctionCallStatus::Completed,
-            phase: None,
-            extra: BTreeMap::new(),
-        }),
-        ItemArm::UntypedFunctionCall => ResponseOutputItem::FunctionCall(OutputFunctionToolCall {
-            arguments: None,
-            call_id: Some("call_typed".to_owned()),
-            name: Some("clock".to_owned()),
-            r#type: None,
-            id: None,
-            status: FunctionCallStatus::Completed,
-            phase: None,
-            extra: BTreeMap::new(),
-        }),
-        ItemArm::FunctionCallMessage => ResponseOutputItem::Message(GenericResponseOutputItem {
-            r#type: "function_call".to_owned(),
-            id: "msg_fc".to_owned(),
-            status: "completed".to_owned(),
-            role: "assistant".to_owned(),
-            content: Vec::new(),
-            phase: None,
-            extra: text_entries(&[
+        ItemArm::SdkFunctionCall => sdk_call(),
+        ItemArm::TypedFunctionCall => typed_call(Some("function_call"), Some("{}")),
+        ItemArm::UntypedFunctionCall => typed_call(None, None),
+        ItemArm::FunctionCallMessage => message_call(
+            "function_call",
+            "msg_fc",
+            &[
                 ("call_id", "call_message"),
                 ("name", "search"),
                 ("arguments", "{}"),
-            ]),
-        }),
-        ItemArm::PlainMessage => ResponseOutputItem::Message(GenericResponseOutputItem {
-            r#type: "message".to_owned(),
-            id: "msg_1".to_owned(),
-            status: "completed".to_owned(),
-            role: "assistant".to_owned(),
-            content: Vec::new(),
-            phase: None,
-            extra: BTreeMap::new(),
-        }),
+            ],
+        ),
+        ItemArm::PlainMessage => message_call("message", "msg_1", &[]),
         ItemArm::UnknownFunctionCall => ResponseOutputItem::Unknown(text_entries(&[
             ("type", "function_call"),
             ("call_id", "call_unknown"),
@@ -439,22 +443,13 @@ fn item(arm: ItemArm) -> ResponseOutputItem {
             ResponseOutputItem::Unknown(text_entries(&[("type", "message"), ("id", "x_1")]))
         }
         ItemArm::ImageGeneration => ResponseOutputItem::ImageGeneration(
-            serde_json::from_str(
-                r#"{"type":"image_generation_call","id":"img_1","status":"completed","result":null}"#,
-            )
-            .expect("the image call decodes"),
+            serde_json::from_str(IMAGE_CALL).expect("the image call decodes"),
         ),
         ItemArm::CodeInterpreter => ResponseOutputItem::CodeInterpreter(
-            serde_json::from_str(
-                r#"{"type":"code_interpreter_call","id":"ci_1","code":null,"container_id":null,"status":"completed","outputs":null}"#,
-            )
-            .expect("the code interpreter call decodes"),
+            serde_json::from_str(CODE_INTERPRETER_CALL).expect("the code interpreter call decodes"),
         ),
         ItemArm::CustomTool => ResponseOutputItem::CustomTool(
-            serde_json::from_str(
-                r#"{"type":"custom_tool_call","call_id":"ct_1","id":"ct_1","name":"f","input":"","status":null}"#,
-            )
-            .expect("the custom tool call decodes"),
+            serde_json::from_str(CUSTOM_TOOL_CALL).expect("the custom tool call decodes"),
         ),
     }
 }
