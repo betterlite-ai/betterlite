@@ -20,6 +20,8 @@ description: >-
 
 
   What users see: nothing. Every stored creator, audit row, auth record, spend-log key and guardrail payload carries the same strings.
+
+  A guard. A new rule .ast-grep/rules/no-proxy-identity-literals.yml in no-subprocess.yml's shape (language rust, severity error, its ignores plus "**/tests/**" and crates/betterlite-error/src/proxy_enums/special_proxy_strings.rs) matches `kind: string_content` with the regex `^(default_user_id|litellm_proxy_master_key)$`, and its message names the two consts and their module. A later task that spells either value then fails the hooks instead of adding a copy. The rule matches whole strings only, so "default_user_id:spend" stays.
 scope:
   paths:
     - crates/betterlite-error/src/proxy_enums.rs
@@ -42,6 +44,7 @@ scope:
     - crates/betterlite-logging/src/spend_metadata/redaction.rs
     - crates/betterlite-guardrails/Cargo.toml
     - crates/betterlite-guardrails/src/straiker/v3.rs
+    - .ast-grep/rules/no-proxy-identity-literals.yml
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1738-L1740
@@ -67,12 +70,17 @@ dod:
     proof: [no-copies, alias-tests]
   - text: Straiker v3 still drops both placeholder identities.
     proof: [no-copies, guardrails-tests]
+  - text: An ast-grep rule refuses either value as a whole string literal in production Rust outside the home module.
+    proof: [proxy-literal-rule]
 checks:
   optional: []
   commands:
     - id: no-copies
       why: a production file still spells one of the two values, a short-named copy is left, or db or server still defines or imports DEFAULT_USER_ID
       run: test -z "$(grep -rnE --include='*.rs' --exclude=tests.rs --exclude-dir=tests '"(default_user_id|litellm_proxy_master_key)"' crates | grep -v '^crates/betterlite-error/src/proxy_enums/special_proxy_strings.rs:')" && test -z "$(grep -rnwE --include='*.rs' 'MASTER_KEY_USER_ID|DEFAULT_ADMIN_USER_ID|PROXY_ADMIN_NAME|MASTER_KEY_ALIAS' crates)" && test -z "$(grep -rnw DEFAULT_USER_ID crates/betterlite-db/src crates/betterlite-server/src/cache_settings_update crates/betterlite-server/src/credentials crates/betterlite-server/src/organization_create crates/betterlite-server/src/auth crates/betterlite-server/src/config_audit.rs)"
+    - id: proxy-literal-rule
+      why: the rule is missing, or production Rust outside the home still spells one of the two values
+      run: test -f .ast-grep/rules/no-proxy-identity-literals.yml && ast-grep scan --rule .ast-grep/rules/no-proxy-identity-literals.yml crates
     - id: home-values
       why: the home module or its test is missing, or a const no longer holds LiteLLM's text
       run: cargo nextest run --locked -p betterlite-error --no-tests=fail -E 'test(/^proxy_enums::tests::special_proxy_strings_keep_litellms_values$/)'
@@ -103,5 +111,5 @@ pitfalls:
   - "PLACEHOLDER_IDENTITIES and NON_SECRET_KEY_ALIASES stay const arrays; a const can stand in an array literal, so neither needs a LazyLock or a function."
 review_level: standard
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 450
   max_new_expects: 0
