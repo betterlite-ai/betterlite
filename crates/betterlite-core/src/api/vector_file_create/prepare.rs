@@ -99,7 +99,17 @@ pub(crate) fn log_call(
     provider: &str,
 ) -> Result<(), FileCallError> {
     let optional_params = optional_params_of(vector_store_id, filtered)?;
-    let litellm_params = litellm_params_of(kwargs, vector_store_id);
+    let mut litellm_params = IndexMap::from([
+        (
+            String::from("vector_store_id"),
+            Json::Text(vector_store_id.to_owned()),
+        ),
+        (
+            String::from("litellm_call_id"),
+            kwargs.get("litellm_call_id").cloned().unwrap_or(Json::Null),
+        ),
+    ]);
+    litellm_params.extend(generic_params_dump(kwargs));
     let additional_params = IndexMap::from([(
         String::from("custom_llm_provider"),
         Json::Text(provider.to_owned()),
@@ -134,17 +144,6 @@ fn optional_params_of(
         );
     }
     Ok(optional_params)
-}
-
-fn litellm_params_of(kwargs: &IndexMap<String, Json>, store: &str) -> IndexMap<String, Json> {
-    let mut litellm_params = generic_params_dump(kwargs);
-    let call_id = kwargs.get("litellm_call_id").cloned().unwrap_or(Json::Null);
-    litellm_params.insert(
-        String::from("vector_store_id"),
-        Json::Text(store.to_owned()),
-    );
-    litellm_params.insert(String::from("litellm_call_id"), call_id);
-    litellm_params
 }
 
 // GenericLiteLLMParams.model_dump(exclude_none=True): the five fields defaulting to False, then every non-null kwarg
