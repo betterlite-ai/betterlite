@@ -489,7 +489,7 @@ async fn oauth_body_limits() {
         "[".repeat(MAX_OAUTH_RESPONSE_DEPTH),
         "]".repeat(MAX_OAUTH_RESPONSE_DEPTH)
     );
-    assert!(decode_oauth_response(boundary.as_bytes()).is_ok());
+    drop(decode_oauth_response(boundary.as_bytes()).expect("the exact depth is accepted"));
     let over = format!(
         "{}{}",
         "[".repeat(MAX_OAUTH_RESPONSE_DEPTH + 1),
