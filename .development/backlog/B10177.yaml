@@ -1,0 +1,13 @@
+id: B10177
+milestone: R2 bug fixes
+title: The SDK pass-through call logs its reply through the provider configs and the success handler
+status: todo
+depends_on: [B10166, B10168, B8690, B3572, B252, B250, B4301, B3605, B548, B566, B8178, B5837, B7890]
+file: tasks/B10177-passthrough-reply-logging.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

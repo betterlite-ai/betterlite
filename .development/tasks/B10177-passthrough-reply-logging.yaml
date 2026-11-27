@@ -1,0 +1,151 @@
+id: B10177
+title: The SDK pass-through call logs its reply through the provider configs and the success handler
+description: >-
+  B8690's `allm_passthrough_route` in crates/betterlite-core/src/api/passthrough_call never logs a reply. `RelayLogging` (logging.rs L31-L56) is a SpendLogging sink whose two flush methods do nothing and whose spend_target is three empty strings, `NoSpendCollector` (L58-L73) drops every chunk, and `PassthroughCallConfig` (config.rs L99-L101, `type Logged = ()`) returns that collector from create_stream_collector (L150-L158) and keeps the trait's empty logging_non_streaming_response. Nothing logs a full reply after the call either: B7890's Python session (crates/betterlite-python/src/passthrough_calls/session.rs L77-L88) and B8691's router executor call the function directly, and B5368's call wrapper has no pass-through outcome (crates/betterlite-sdk/src/call_setup/correlation.rs L16-L20). In LiteLLM the call feeds every relayed chunk to the provider config's stream collector and flushes the built response to the logging object's success handler (passthrough/main.py L39-L66, L131-L149; litellm_logging.py L2703-L2716), and the @client wrapper's success log maps a full httpx reply through the provider config's logging_non_streaming_response (utils.py L2190-L2207; litellm_logging.py L2338-L2358). That logged response carries the usage the cost and the spend log read. The pieces are merged: B3572's relay calls its SpendLogging sink when the stream ends (crates/betterlite-core/src/passthrough_stream/flush_scheduling.rs L13-L42), B252's `async_flush_passthrough` and `flush_passthrough` log a collector's built response (crates/betterlite-logging/src/logging_streams/flush.rs L19-L49), B250's `dispatch_success_handlers` is _dispatch_success_logging's async and sync split (logging_success/dispatch.rs L14-L32), and the Azure, Azure AI, GigaChat and NVIDIA configs have their hooks.
+
+
+  The log argument. The second parameter of `allm_passthrough_route`, `logging: &mut LoggingState`, becomes `logging: &Arc<tokio::sync::Mutex<PassthroughLog>>`; the function stays at five parameters after B10164's environment map and B10166's AWS port. `PassthroughLog { state: LoggingState, correlation: CorrelationContext, success: Option<Arc<OwnedSuccessHandler>> }` lives in a new file passthrough_call/success.rs, declared with `pub mod success;` in passthrough_call.rs. `OwnedSuccessHandler` is B4301's bundle of what B250's SuccessHandler borrows (crates/betterlite-core/src/caching/hit_callbacks/job.rs L23-L33). Like LiteLLM's one logging object, the caller, the call and the stream share it. send.rs `run` (L69-L105) locks it for record_environment, the stream flag and record_pre_call and drops the guard before the send. `success: None` means the caller has no success callbacks, and then the call logs nothing, as today.
+
+
+  The config. `PassthroughCallConfig` gets `type Logged = SuccessResult` (crates/betterlite-logging/src/logging_success/types.rs L13-L19). A new file passthrough_call/logged.rs holds the two functions the config's logging_non_streaming_response and handle_collected_chunks call. Each is a match on the tag that builds the provider config the way is_streaming_request does (config.rs L103-L133), asks its hook and converts the answer. Azure (B548, crates/betterlite-azure/src/passthrough/config.rs L212-L245): `Chat(body)` is Chat, `Relay(body)` is Embeddings when the hook set the call type to aembedding and Other otherwise, `Terminal(event)` is Other. Azure AI (B566's FoundryPassthroughPlan from `foundry_plan(Object::new())`, crates/betterlite-foundry/src/passthrough/plan.rs L202-L235): `Azure(log)` converts as Azure, `Relay` as Azure's Relay, `Ocr` is Other, and `Standard(object)` goes through B3605's `PassThroughResponse::Standard` and its `From` for SuccessResult (crates/betterlite-logging/src/passthrough_logging_state/response.rs L52-L56). GigaChat (B8178, crates/betterlite-openai/src/gigachat_passthrough.rs L122-L170): `Chat` is Chat, `Embedding` is Embeddings, and `Chunks` answers None, since LiteLLM runs stream_chunk_builder on them (gigachat/passthrough/transformation.py L134-L195). NVIDIA NIM full replies only (B5837, nvidia_nim_passthrough.rs L151-L158): its RelayedBody becomes `PassThroughResponse::Standard` the same way. Bedrock and Bedrock Mantle answer None until their adapters exist (out of scope below). Watsonx and VLLM answer None, as LiteLLM's configs define neither hook. Serde values convert with logging.rs's `json` and `json_object` (L91-L107) and typed responses with serde_json::to_value, since ChatResponse, EmbeddingResponse, ResponsesTerminalEvent and OCRResponse derive Serialize.
+
+
+  Call types. The Azure and Foundry hooks name the logged call type through `PassthroughLogging::set_call_type` (crates/betterlite-openai/src/passthrough/transformation/types.rs L69-L71), as LiteLLM's logged_relay_shape sets logging_obj.call_type (base_llm/passthrough/transformation.py L86-L99). success.rs implements that trait over `&mut LoggingState`, writing `RelayCallType::as_str` (types.rs L51-L60) into `state.call_type`. logged.rs wraps the logging object it is given in a recorder that forwards the call and keeps the last type, so a Relay arm can pick Embeddings.
+
+
+  One RelayedBody conversion. Foundry's `standard_response` (plan.rs L238-L245) matches RelayedBody into PassThroughResponseObject, and the NVIDIA arm needs the same match. It moves once to betterlite-openai as `RelayedBody::into_standard_response(self) -> Option<PassThroughResponseObject>` in passthrough/transformation/types.rs next to the enum (L38-L41); betterlite-openai already depends on betterlite-logging. Foundry's function then reads the body and calls it, and logged.rs calls it for NVIDIA.
+
+
+  The stream. The create_stream_collector override (config.rs L150-L158) and NoSpendCollector go. The trait's default RawBytesStreamCollector (crates/betterlite-openai/src/passthrough/transformation.rs L261-L278) then hands the joined lines to handle_collected_chunks, as LiteLLM's RawBytesStreamCollector does (base_llm/passthrough/transformation.py L110-L131). `RelayLogging` moves to success.rs and holds the Arc'd log and the owned model, provider slug and endpoint, so spend_target answers the call's target. send.rs `send` (L190-L227) and send/reply.rs `synthetic_stream` (L48-L87) build it from `RelayContext` (send.rs L55-L61), and RelayContext gains the log. `async_flush_collected_chunks` returns Ok at once when success is None. Otherwise it locks the log, wraps the collector in a type that implements B252's `StreamCollector` (flush.rs L9-L16) over the state's PassthroughLogging, writes B250's `SuccessHandler` from the OwnedSuccessHandler fields as job.rs L88-L98 does, and calls `async_flush_passthrough`. `flush_collected_chunks` does the same with `blocking_lock` and `flush_passthrough`. FlushError is PassthroughError, and B3572 logs it with the chunk count.
+
+
+  The full reply. When the send answers a full body (send.rs L211, and reply.rs `answer`'s non-streaming branch L41-L45, both under status 400) and success is Some, a function in success.rs locks the log and asks the config's logging_non_streaming_response with the call's target, `RelayedResponse { status_code, body }`, the request data and the state's PassthroughLogging. It then awaits `dispatch_success_handlers` with `SuccessRequest { result, start_time: None, end_time: None, cache_hit: None, prefer_async_handlers: false, standard_logging_object: None, guardrail_snapshot: None }` before the call returns the reply. The result is the hook's answer, or `SuccessResult::Other(Json::Null)` when it answers None: LiteLLM's wrapper then logs the raw httpx Response, and B250 treats a Null result as neither a recognized type nor a dict (types.rs L17-L18, logging_success/recognized.rs L11-L25). The request data is the pick logging.rs `request_data` makes (L140-L146: data when it is not empty, otherwise json) as an Object, and an empty Object when json is not one. Split that function so the logged Json and the hook's Object come from one pick. A streamed reply is logged only by the flush.
+
+
+  Callers. The Python session's `logging_state` (session.rs L113-L140) builds a CorrelationContext at L121 and drops it; it returns a PassthroughLog with that context and `success: None`, and `call` passes it Arc'd. B8691's executor and B8631's assembly are edited to build the shared log and pass a success handler through `passthrough_executors`.
+
+
+  Tests. crates/betterlite-core/src/api/passthrough_call/tests/success.rs, declared with `mod success;` in passthrough_call/tests.rs, with recording fakes for StandardPayloadBuilder, StreamAssembler and SuccessClock in its own support, the way caching/hit_callbacks/tests/support.rs L221-L330 builds an OwnedSuccessHandler. Cases: an Azure `/embeddings` full reply logs Embeddings and leaves call type aembedding on the state; an NVIDIA full reply logs Other `{"response": body}`; a GigaChat `/chat/completions` full reply logs Chat; a VLLM full reply logs Other(Null); a 400 logs nothing; success None logs nothing and the reply is the same; an Azure `/responses` stream logs its terminal event once, after the relay ends; the relay's spend_target is the resolved model, the provider slug and the endpoint; a Bedrock stream logs nothing. The existing call tests lock the shared log to read the state. A test in passthrough/transformation/tests.rs covers into_standard_response for a JSON object and a text body.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/passthrough_call.rs
+    - crates/betterlite-core/src/api/passthrough_call/**
+    - crates/betterlite-openai/src/passthrough/transformation/types.rs
+    - crates/betterlite-openai/src/passthrough/transformation/tests.rs
+    - crates/betterlite-foundry/src/passthrough/plan.rs
+    - crates/betterlite-python/src/passthrough_calls/session.rs
+    - crates/betterlite-python/src/passthrough_calls/session/tests.rs
+    - docs/deviations/B8690.yaml
+    - docs/deviations/B10177.yaml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L39-L66
+    why: _SpendCollection builds the provider's stream collector from the logging object's model, provider and endpoint and flushes only when chunks came and nothing failed.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L131-L149
+    why: _start_flush schedules async_flush_passthrough_collected_chunks once the stream ends.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L604-L633
+    why: _async_passthrough_request returns a full reply with no hook of its own; its logging comes from the wrapper.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2190-L2207
+    why: the @client wrapper's success log for the reply the call returned.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L1347-L1400
+    why: _dispatch_success_logging queues the async handler and runs the sync callbacks for async calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L2338-L2358
+    why: normalize_logging_result asks the provider pass-through config's logging_non_streaming_response for an httpx Response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L2529-L2543
+    why: the success handler swaps in a ModelResponse or EmbeddingResponse and computes cost only for recognized results, dicts and lists, and never while stream is True.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L2703-L2716
+    why: flush_passthrough_collected_chunks and async_flush_passthrough_collected_chunks log the collector's built response when it is not None.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/passthrough/transformation.py#L86-L131
+    why: logged_relay_shape sets the call type; RawBytesStreamCollector hands the joined lines to handle_logging_collected_chunks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/passthrough/transformation.py#L215-L241
+    why: the defaults, None from both hooks and the raw-bytes collector.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/passthrough/transformation.py#L176-L231
+    why: Azure's logged chat reply, relay shapes and stream assembly.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/passthrough/transformation.py#L139-L208
+    why: Azure AI's logged reply, its standard pass-through object, and the stream that reuses Azure's.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/passthrough/transformation.py#L71-L195
+    why: GigaChat's chat and embedding replies and its stream_chunk_builder over the collected chunks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nvidia_nim/passthrough/transformation.py#L130-L139
+    why: NVIDIA NIM logs every full reply as a StandardPassThroughResponseObject and has no stream hook.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/passthrough/transformation.py#L234-L282
+    why: Bedrock's logged reply and event stream collector, left to the adapter task.
+dod:
+  - text: >-
+      An Azure, Azure AI, GigaChat or NVIDIA full reply with a success handler reaches dispatch_success_handlers with the provider's logged response in the SuccessResult variant LiteLLM's type maps to, and every other full reply under 400 with Other(Json::Null).
+    proof: [success-tests]
+  - text: An Azure or Azure AI stream flushes its built response once through B252's async_flush_passthrough, and the relay's spend_target is the call's model, provider and endpoint.
+    proof: [success-tests, stream-tests]
+  - text: With success None, or a status of 400 or more, nothing is logged and the reply is unchanged.
+    proof: [success-tests, passthrough-tests, python-session-tests]
+  - text: NoSpendCollector and the empty RelayLogging are gone, and Foundry and the NVIDIA arm share one RelayedBody conversion.
+    proof: [no-copies, openai-tests, foundry-tests]
+  - text: B8690's logging-state row says the object is shared and the call runs the full reply's success log, and docs/deviations/B10177.yaml has this task's rows.
+    proof: [deviation-rows]
+checks:
+  optional: [mutants]
+  commands:
+    - id: success-tests
+      why: a provider's logged response is lost, lands in the wrong SuccessResult variant, is logged twice, or is logged without a handler
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::passthrough_call::tests::success::/)'
+    - id: passthrough-tests
+      why: the shared log broke a request, stream, params, environment, AWS or error test of the call
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::passthrough_call::/)'
+    - id: stream-tests
+      why: B3572's relay or its flush scheduling changed while the call's sink was rebuilt
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^passthrough_stream::/)'
+    - id: openai-tests
+      why: the moved RelayedBody conversion answers a JSON body or a text body differently
+      run: grep -q 'fn into_standard_response' crates/betterlite-openai/src/passthrough/transformation/types.rs && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^passthrough::transformation::/)'
+    - id: foundry-tests
+      why: Foundry's standard pass-through object changed when its conversion moved
+      run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/^passthrough::/) - test(/replays_the_/)'
+    - id: python-session-tests
+      why: the Python session no longer builds the shared log or its call fails with the new argument
+      run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^passthrough_calls::/)'
+    - id: no-copies
+      why: the drop-everything collector or Foundry's own RelayedBody match is still there
+      run: test -z "$(grep -rn 'NoSpendCollector' crates/betterlite-core/src)" && test -z "$(grep -n 'RelayedBody::Text' crates/betterlite-foundry/src/passthrough/plan.rs)"
+    - id: deviation-rows
+      why: this task's deviations are missing, or B8690 still says the call only updates the state it is given
+      run: test -s docs/deviations/B10177.yaml && test -z "$(grep -n 'only updates the state it is given' docs/deviations/B8690.yaml)"
+oracle_cases: []
+deviations:
+  - what: >-
+      A full reply's success log runs before allm_passthrough_route returns: the async handlers first, then the sync callbacks for async calls. LiteLLM's @client wrapper queues the async handler as a task and runs only the sync callbacks before it returns.
+    why: >-
+      No wrapper surrounds this call in betterlite and core has no logging worker for it, so the call awaits dispatch_success_handlers itself. The log cannot outlive the call, and the reply waits for the handlers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L1347-L1400
+  - what: >-
+      A streamed reply is logged once, by the relay's flush. LiteLLM's wrapper also hands the success handler the stream wrapper itself as soon as the call returns.
+    why: >-
+      With stream set to True the success handler builds no payload and no cost for that result, so the flush carries the spend in both.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L2529-L2543
+  - what: >-
+      The Python package's pass-through call runs no success callbacks, since its session passes no success handler.
+    why: >-
+      The package registers no success callbacks for its native calls (search_ocr's session builds its logging state with none), and an OwnedSuccessHandler needs the proxy's payload builder.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2190-L2207
+  - what: >-
+      Bedrock and Bedrock Mantle replies, Azure and Azure AI chat completions and GigaChat streams have no provider-built logged response: a full reply is logged as an unrecognized result and a stream logs nothing.
+    why: >-
+      B658's Bedrock plan, Azure's chat projection and stream assembly and GigaChat's chunk assembly need ports that no production code implements yet; a later task builds them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/passthrough/transformation.py#L234-L282
+out_of_scope:
+  - "Production implementations of the provider logging ports: B658's BedrockPassthroughPlan selector, transform and assembler (crates/betterlite-bedrock/src/passthrough.rs L50-L57), reached through B10166's AwsPassthrough port; Azure's ChatReplyProjection and ChatStreamAssembly (crates/betterlite-azure/src/passthrough/logging.rs L33-L60 has only the no-op pair); and GigaChat's chunk assembly, where stream_chunk_builder (crates/betterlite-streaming/src/streamed_response_assembly.rs L126) is async and a collector's build_logged_response is sync. Reported to the architect."
+  - "A production OwnedSuccessHandler in the server: no code builds one yet (B8610 names a future builder), so B8631 passes None."
+  - "The @client failure log for a failed pass-through call."
+  - "The wrapper's other post-call steps for the reply (_update_response_metadata, post_call_processing, the success deployment hook, utils.py L2144-L2196)."
+  - "The three owned copies of SuccessHandler's borrowed fields (core's OwnedSuccessHandler, betterlite-logging's InteractionLoggingCallbacks and StreamLoggingCallbacks): this task uses core's and leaves any merge to a cleanup task."
+pitfalls:
+  - "allm_passthrough_route keeps five parameters, the rules' limit: the success handler travels inside PassthroughLog, never as a sixth argument."
+  - "tokio's Mutex is not reentrant. Drop the guard run takes before the send, because the full reply log and the relay flush lock the log again."
+  - "B252's async_flush_passthrough needs a Sync collector (flush.rs L43) and B3572's BoxedCollector is only Send (crates/betterlite-core/src/passthrough_stream/spend_collection.rs L17), so the StreamCollector adapter keeps the boxed collector behind a std::sync::Mutex."
+  - "The flush runs on a spawned task (flush_scheduling.rs L32-L41), so RelayLogging owns all it reads: the Arc'd log and the target strings."
+  - "send.rs has 282 of its 300 lines and passthrough_call.rs 245 before B10164 and B10166. The new code goes in success.rs and logged.rs, and send.rs and reply.rs only call it."
+  - "Write SuccessHandler as a struct literal over OwnedSuccessHandler's fields, as job.rs L88-L98 and crates/betterlite-core/src/caching/lookup/hit.rs L201-L211 do: the rules forbid a constructor that only builds a struct."
+  - "A status of 400 or more never reaches the full reply log, since answer returns Failure::Upstream first (reply.rs L31-L37)."
+  - "Convert serde values with json, json_object or serde_json::to_value and never through from_str: arbitrary_precision is on in these crates."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
