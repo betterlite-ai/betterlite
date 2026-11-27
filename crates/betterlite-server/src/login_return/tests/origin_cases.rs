@@ -60,6 +60,16 @@ fn relative_path_rejections(#[case] return_to: &str) {
     Some("https://cp.example"),
     Expected::ParseError
 )]
+#[case::userinfo_is_not_part_of_the_origin(
+    "https://user:pw@cp.example/ui",
+    Some("https://cp.example"),
+    Expected::Accepted
+)]
+#[case::wss_defaults_to_port_80(
+    "wss://cp.example/ui",
+    Some("wss://cp.example:443"),
+    Expected::Rejected
+)]
 fn control_plane_origins(
     #[case] return_to: &str,
     #[case] control_plane_url: Option<&str>,
@@ -78,32 +88,6 @@ fn control_plane_origins(
             let error = result.expect_err("the malformed port fails the parse");
             assert_eq!(error.status(), None);
             assert!(matches!(error, ReturnToError::Parse(_)));
-        }
-    }
-}
-
-#[rstest]
-#[case::userinfo_is_not_part_of_the_origin(
-    "https://user:pw@cp.example/ui",
-    "https://cp.example",
-    Expected::Accepted
-)]
-#[case::wss_defaults_to_port_80("wss://cp.example/ui", "wss://cp.example:443", Expected::Rejected)]
-fn control_plane_origin_details(
-    #[case] return_to: &str,
-    #[case] control_plane_url: &str,
-    #[case] expected: Expected,
-) {
-    let result = validate_return_to(return_to, Some(control_plane_url));
-    match expected {
-        Expected::Accepted => assert!(result.unwrap(), "{return_to:?}"),
-        Expected::Rejected => {
-            let error = result.expect_err("the origin does not match");
-            assert_eq!(error.status(), Some(400));
-            assert!(matches!(error, ReturnToError::MismatchedOrigin));
-        }
-        Expected::Ignored | Expected::ParseError => {
-            panic!("this table names only accepted or rejected origins")
         }
     }
 }

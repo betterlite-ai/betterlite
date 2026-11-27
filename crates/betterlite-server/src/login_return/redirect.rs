@@ -48,9 +48,7 @@ pub enum LoginReturnError {
     Cache(#[from] LoginCodeCacheError),
 }
 
-// _sso_return_to_redirect: a relative same-origin path gets the session cookie and the exact path
-// back, a control-plane origin gets a single-use code the control plane redeems, and every other
-// destination, including an absolute one with no configured control plane, falls through to None.
+// _sso_return_to_redirect: a safe relative path gets the session cookie, a control-plane origin a code.
 pub async fn resume_login<Redis, User, Entropy>(
     request: ResumeRequest<'_>,
     settings: &LoginSettings,
@@ -83,13 +81,17 @@ where
         token: (*request.session_token).clone(),
         redirect_url: return_to.clone(),
     };
-    caches
-        .store(
-            &format!("{LOGIN_CODE_PREFIX}{code}"),
-            &stored,
-            LOGIN_CODE_TTL_SECONDS,
-        )
-        .await?;
+    let key = format!("{LOGIN_CODE_PREFIX}{code}");
+    let write = match caches.redis {
+        Some(redis) => redis.store(&key, &stored, LOGIN_CODE_TTL_SECONDS).await,
+        None => {
+            caches
+                .user
+                .store(&key, &stored, LOGIN_CODE_TTL_SECONDS)
+                .await
+        }
+    };
+    write?;
     // the handoff line names neither the token nor the single-use code
     tracing::info!("Cross-origin SSO: redirecting to control plane with login code");
     Ok(Some(control_plane_redirect(&return_to, &code)))

@@ -30,8 +30,7 @@ impl ReturnToError {
     }
 }
 
-// SSOAuthenticationHandler._validate_return_to: absent control plane ignores the absolute target,
-// a matching origin accepts it, and any other origin raises the 400 the handler documents.
+// _validate_return_to: absent control plane ignores the target, a matching origin accepts, else a 400.
 pub fn validate_return_to(
     return_to: &str,
     control_plane_url: Option<&str>,

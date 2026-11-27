@@ -1,7 +1,7 @@
 use super::support::{
-    CountingEntropy, FailingCache, FailingEntropy, FixedEntropy, RecordingCache, SESSION_TOKEN,
-    attribute, code_from_location, cookie_attributes, local_cache, resume_absolute,
-    resume_relative, session_token, settings, user_only,
+    CountingEntropy, FailingEntropy, FixedEntropy, RecordingCache, SESSION_TOKEN, attribute,
+    code_from_location, cookie_attributes, local_cache, plain_network, resume, session_token,
+    settings, user_only,
 };
 use crate::login_return::cache::LoginCaches;
 use crate::login_return::redirect::{LoginReturnError, ResumeRequest, resume_login};
@@ -38,14 +38,13 @@ async fn no_destination() {
 async fn relative_cookie_redirect() {
     let token = session_token();
     let user = RecordingCache::default();
-    let network = NetworkRequest {
-        scheme: "http",
-        ..NetworkRequest::default()
-    };
-    let redirect = resume_relative(
-        &token,
-        b"/ui/settings?tab=keys",
-        network,
+    let redirect = resume(
+        ResumeRequest {
+            destination: Some(b"/ui/settings?tab=keys"),
+            session_token: &token,
+            network: plain_network("http"),
+        },
+        &settings(None),
         &TrustedNetworkSettings::default(),
         &user,
     )
@@ -65,10 +64,14 @@ async fn relative_cookie_redirect() {
 async fn absolute_code_redirect() {
     let token = session_token();
     let user = RecordingCache::default();
-    let redirect = resume_absolute(
-        &token,
-        b"https://cp.example/console",
-        "https://cp.example",
+    let redirect = resume(
+        ResumeRequest {
+            destination: Some(b"https://cp.example/console"),
+            session_token: &token,
+            network: NetworkRequest::default(),
+        },
+        &settings(Some("https://cp.example")),
+        &TrustedNetworkSettings::default(),
         &user,
     )
     .await
@@ -100,10 +103,14 @@ async fn absolute_code_redirect() {
 async fn existing_query() {
     let token = session_token();
     let user = RecordingCache::default();
-    let redirect = resume_absolute(
-        &token,
-        b"https://cp.example/console?tenant=a",
-        "https://cp.example",
+    let redirect = resume(
+        ResumeRequest {
+            destination: Some(b"https://cp.example/console?tenant=a"),
+            session_token: &token,
+            network: NetworkRequest::default(),
+        },
+        &settings(Some("https://cp.example")),
+        &TrustedNetworkSettings::default(),
         &user,
     )
     .await
@@ -119,10 +126,14 @@ async fn existing_query() {
 async fn fragment_concatenation() {
     let token = session_token();
     let user = RecordingCache::default();
-    let redirect = resume_absolute(
-        &token,
-        b"https://cp.example/console#section",
-        "https://cp.example",
+    let redirect = resume(
+        ResumeRequest {
+            destination: Some(b"https://cp.example/console#section"),
+            session_token: &token,
+            network: NetworkRequest::default(),
+        },
+        &settings(Some("https://cp.example")),
+        &TrustedNetworkSettings::default(),
         &user,
     )
     .await
@@ -207,11 +218,16 @@ async fn local_cache_ttl() {
 #[tokio::test]
 async fn failed_cache_no_redirect() {
     let token = session_token();
-    let outcome = resume_absolute(
-        &token,
-        b"https://cp.example/console",
-        "https://cp.example",
-        &FailingCache,
+    let user = RecordingCache::failing();
+    let outcome = resume(
+        ResumeRequest {
+            destination: Some(b"https://cp.example/console"),
+            session_token: &token,
+            network: NetworkRequest::default(),
+        },
+        &settings(Some("https://cp.example")),
+        &TrustedNetworkSettings::default(),
+        &user,
     )
     .await;
     assert!(matches!(outcome, Err(LoginReturnError::Cache(_))));
@@ -282,26 +298,32 @@ async fn entropy_failure_propagates() {
 async fn location_quoting() {
     let token = session_token();
     let user = RecordingCache::default();
-    let redirect = resume_relative(
-        &token,
-        "/café/%2F?q=<tag>".as_bytes(),
-        NetworkRequest::default(),
+    let redirect = resume(
+        ResumeRequest {
+            destination: Some("/é/%2F?q=<tag>".as_bytes()),
+            session_token: &token,
+            network: NetworkRequest::default(),
+        },
+        &settings(None),
         &TrustedNetworkSettings::default(),
         &user,
     )
     .await
     .unwrap()
     .unwrap();
-    assert_eq!(redirect.location, "/caf%C3%A9/%2F?q=%3Ctag%3E");
+    assert_eq!(redirect.location, "/%C3%A9/%2F?q=%3Ctag%3E");
 }
 #[tokio::test]
 async fn one_shot_cookie_deletion() {
     let token = session_token();
     let user = RecordingCache::default();
-    let redirect = resume_relative(
-        &token,
-        b"/ui/return",
-        NetworkRequest::default(),
+    let redirect = resume(
+        ResumeRequest {
+            destination: Some(b"/ui/return"),
+            session_token: &token,
+            network: NetworkRequest::default(),
+        },
+        &settings(None),
         &TrustedNetworkSettings::default(),
         &user,
     )

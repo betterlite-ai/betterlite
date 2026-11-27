@@ -25,54 +25,61 @@ pub(super) fn settings(control_plane_url: Option<&str>) -> LoginSettings {
 pub(super) fn user_only<Cache>(user: &Cache) -> LoginCaches<'_, RecordingCache, Cache> {
     LoginCaches { redis: None, user }
 }
-pub(super) async fn resume_relative<Cache>(
-    token: &SecretString,
-    destination: &[u8],
-    network: NetworkRequest<'_>,
+pub(super) async fn resume<Cache>(
+    request: ResumeRequest<'_>,
+    settings: &LoginSettings,
     trusted: &TrustedNetworkSettings,
     user: &Cache,
 ) -> Result<Option<LoginRedirect>, LoginReturnError>
 where
     Cache: LoginCodeCache,
 {
-    resume_login(
-        ResumeRequest {
-            destination: Some(destination),
-            session_token: token,
-            network,
-        },
-        &settings(None),
-        trusted,
-        user_only(user),
-        &FixedEntropy,
-    )
-    .await
+    resume_login(request, settings, trusted, user_only(user), &FixedEntropy).await
 }
-pub(super) async fn resume_absolute<Cache>(
-    token: &SecretString,
-    destination: &[u8],
-    control_plane_url: &str,
-    user: &Cache,
-) -> Result<Option<LoginRedirect>, LoginReturnError>
-where
-    Cache: LoginCodeCache,
-{
-    resume_login(
-        ResumeRequest {
-            destination: Some(destination),
-            session_token: token,
-            network: NetworkRequest::default(),
-        },
-        &settings(Some(control_plane_url)),
-        &TrustedNetworkSettings::default(),
-        user_only(user),
-        &FixedEntropy,
-    )
-    .await
+pub(super) fn plain_network(scheme: &str) -> NetworkRequest<'_> {
+    NetworkRequest {
+        peer: None,
+        x_forwarded_for: None,
+        x_forwarded_proto: None,
+        host: None,
+        scheme,
+    }
+}
+pub(super) fn forwarded_network<'request>(
+    peer: &'request str,
+    x_forwarded_proto: &'request str,
+    scheme: &'request str,
+) -> NetworkRequest<'request> {
+    NetworkRequest {
+        peer: Some(peer),
+        x_forwarded_for: None,
+        x_forwarded_proto: Some(x_forwarded_proto),
+        host: None,
+        scheme,
+    }
+}
+pub(super) fn trusted_proxy_settings() -> TrustedNetworkSettings {
+    TrustedNetworkSettings {
+        proxy_base_url: String::new(),
+        use_x_forwarded_for: true,
+        trusted_proxy_ranges: None,
+        mcp_trusted_proxy_ranges: Some(vec!["10.0.0.0/8".to_owned()]),
+        mcp_xff_num_trusted_hops: None,
+    }
+}
+pub(super) fn public_base_url(base_url: &str) -> TrustedNetworkSettings {
+    TrustedNetworkSettings {
+        proxy_base_url: base_url.to_owned(),
+        use_x_forwarded_for: false,
+        trusted_proxy_ranges: None,
+        mcp_trusted_proxy_ranges: None,
+        mcp_xff_num_trusted_hops: None,
+    }
 }
 #[derive(Default)]
 pub(super) struct RecordingCache {
     writes: Mutex<Vec<RecordedWrite>>,
+    fails: bool,
 }
 #[derive(Clone, Debug)]
 pub(super) struct RecordedWrite {
@@ -82,6 +89,12 @@ pub(super) struct RecordedWrite {
     pub(super) ttl_seconds: f64,
 }
 impl RecordingCache {
+    pub(super) const fn failing() -> Self {
+        Self {
+            writes: Mutex::new(Vec::new()),
+            fails: true,
+        }
+    }
     pub(super) fn writes(&self) -> Vec<RecordedWrite> {
         self.writes
             .lock()
@@ -97,6 +110,12 @@ impl LoginCodeCache for RecordingCache {
         value: &LoginCode,
         ttl_seconds: f64,
     ) -> Result<(), LoginCodeCacheError> {
+        if self.fails {
+            let source = serde_json::Error::io(io::Error::other("cache unavailable"));
+            return Err(LoginCodeCacheError::Local(AuthCacheError::Payload(
+                Box::new(PayloadError::Json(source)),
+            )));
+        }
         let write = RecordedWrite {
             key: key.to_owned(),
             token: value.token.expose_secret().to_owned(),
@@ -108,21 +127,6 @@ impl LoginCodeCache for RecordingCache {
             .unwrap_or_else(PoisonError::into_inner)
             .push(write);
         Ok(())
-    }
-}
-pub(super) struct FailingCache;
-#[async_trait]
-impl LoginCodeCache for FailingCache {
-    async fn store(
-        &self,
-        _key: &str,
-        _value: &LoginCode,
-        _ttl_seconds: f64,
-    ) -> Result<(), LoginCodeCacheError> {
-        let source = serde_json::Error::io(io::Error::other("cache unavailable"));
-        Err(LoginCodeCacheError::Local(AuthCacheError::Payload(
-            Box::new(PayloadError::Json(source)),
-        )))
     }
 }
 pub(super) type LocalLoginCache = AuthCache<DualCache<LocalMemoryOps>>;

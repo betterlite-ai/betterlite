@@ -95,22 +95,3 @@ pub struct LoginCaches<'caches, Redis, User> {
     pub redis: Option<&'caches Redis>,
     pub user: &'caches User,
 }
-
-impl<Redis, User> LoginCaches<'_, Redis, User>
-where
-    Redis: LoginCodeCache,
-    User: LoginCodeCache,
-{
-    // _sso_return_to_redirect writes the configured Redis usage cache and the user API key cache otherwise
-    pub(super) async fn store(
-        &self,
-        key: &str,
-        value: &LoginCode,
-        ttl_seconds: f64,
-    ) -> Result<(), LoginCodeCacheError> {
-        match self.redis {
-            Some(redis) => redis.store(key, value, ttl_seconds).await,
-            None => self.user.store(key, value, ttl_seconds).await,
-        }
-    }
-}

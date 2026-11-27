@@ -23,8 +23,7 @@ pub fn decode_return_destination(bytes: &[u8]) -> Result<String, ReturnDestinati
         .map_err(ReturnDestinationError::NotUtf8)
 }
 
-// ui_sso.py _is_same_origin_return_path: one leading slash, no protocol-relative form, no backslash,
-// and no control, space or DEL character anywhere in the value.
+// ui_sso.py _is_same_origin_return_path: one leading slash, no //, no backslash, no control, space or DEL.
 #[must_use]
 pub fn is_same_origin_return_path(return_to: &str) -> bool {
     if !return_to.starts_with('/') || return_to.starts_with("//") || return_to.contains('\\') {

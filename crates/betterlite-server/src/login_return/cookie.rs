@@ -3,12 +3,10 @@ use secrecy::{ExposeSecret as _, SecretString};
 pub const SESSION_COOKIE_NAME: &str = "token";
 pub const RETURN_COOKIE_NAME: &str = "litellm_cp_return_to";
 
-// Starlette's RedirectResponse passes url through urllib.parse.quote with this safe set on top of
-// quote's always-safe alphanumerics and "_.-~"
+// Location quoting: urllib.parse.quote with safe=":/%#?=@[]!$&'()*+,;" over alphanumerics and "_.-~"
 const LOCATION_SAFE: &str = ":/%#?=@[]!$&'()*+,;";
 
-// set_session_token_cookie: the dashboard reads this cookie from JavaScript, so no HttpOnly, and
-// Secure follows the trust-aware request check the caller supplies.
+// set_session_token_cookie: no HttpOnly (dashboard JavaScript reads it); Secure comes from the caller.
 #[must_use]
 pub fn session_cookie_header(token: &SecretString, secure: bool) -> String {
     let mut header = format!("{SESSION_COOKIE_NAME}={}", token.expose_secret());
@@ -19,8 +17,7 @@ pub fn session_cookie_header(token: &SecretString, secure: bool) -> String {
     header
 }
 
-// RedirectResponse.delete_cookie with Starlette's defaults: Path=/, Max-Age=0, samesite=lax and no
-// Secure or HttpOnly.
+// RedirectResponse.delete_cookie defaults: Path=/, Max-Age=0, samesite=lax, no Secure or HttpOnly.
 #[must_use]
 pub fn clear_return_cookie_header() -> String {
     format!(
