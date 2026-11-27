@@ -1,9 +1,141 @@
-use crate::state::ServerState;
-use axum::Router;
 use std::sync::Arc;
 
-#[cfg_attr(test, mutants::skip)]
-pub(crate) fn routes(_state: &Arc<ServerState>) -> Router {
-    // the route owner fills this router
-    Router::new()
+use axum::Json;
+use axum::Router;
+use axum::extract::{Extension, RawQuery, State};
+use axum::http::StatusCode;
+use axum::response::{IntoResponse as _, Response};
+use axum::routing::get;
+use chrono::Utc;
+use serde::Serialize;
+
+use crate::auth::auth_identity::AuthContext;
+use crate::auto_router_read_api::access::caller_api_key;
+use crate::auto_router_read_api::error::ReadApiError;
+use crate::auto_router_read_api::postgres::reads_from_state;
+use crate::auto_router_read_api::query::{
+    ReadQueryError, decode_benchmarks_query, decode_session_query,
+};
+use crate::auto_router_read_api::service::{benchmarks_for, session_for};
+use crate::auto_router_read_api::store::AutoRouterReadStore;
+use crate::auto_router_read_api::{BENCHMARKS_PATH, SESSION_PATH, VIEW_ACTION};
+use crate::plugin_routes::routes::caller_identity;
+use crate::routing::auto_router_read_api::{ConfiguredRouter, configured_deployments};
+use crate::shadow_eval_lifecycle::access::require_admin;
+use crate::shadow_eval_validation::access::AdminRole;
+use crate::state::ServerState;
+use crate::tracing_routes::router::{ValidationBody, ValidationIssue, unauthenticated};
+
+// what the two reads open, resolved once when the router is built
+struct ReadState {
+    store: Option<Arc<dyn AutoRouterReadStore>>,
+    deployments: Vec<ConfiguredRouter>,
 }
+
+#[derive(Serialize)]
+struct DetailBody {
+    detail: String,
+}
+
+#[cfg_attr(test, mutants::skip)]
+pub(crate) fn routes(state: &Arc<ServerState>) -> Router {
+    let reads = Arc::new(ReadState {
+        store: store_of_state(state),
+        deployments: configured_deployments(&state.config.model_list),
+    });
+    Router::new()
+        .route(BENCHMARKS_PATH, get(benchmarks_read))
+        .route(SESSION_PATH, get(session_read))
+        .with_state(reads)
+}
+
+fn store_of_state(state: &Arc<ServerState>) -> Option<Arc<dyn AutoRouterReadStore>> {
+    Some(Arc::new(reads_from_state(state)?))
+}
+
+// FastAPI checks the auth (401) before it validates the query (422), then the endpoint checks the role (403)
+async fn benchmarks_read(
+    State(state): State<Arc<ReadState>>,
+    caller: Option<Extension<AuthContext>>,
+    RawQuery(raw_query): RawQuery,
+) -> Response {
+    let Some(extension) = caller else {
+        return unauthenticated();
+    };
+    let identity = match caller_identity(&extension.principal) {
+        Ok(identity) => identity,
+        Err(source) => return failure(&ReadApiError::Identity { source }),
+    };
+    let query = match decode_benchmarks_query(raw_query.as_deref().unwrap_or_default().as_bytes()) {
+        Ok(query) => query,
+        Err(error) => return failure(&ReadApiError::from(error)),
+    };
+    if let Err(error) = require_admin(&identity, VIEW_ACTION, AdminRole::Viewer) {
+        return failure(&ReadApiError::from(error));
+    }
+    let Some(store) = state.store.as_deref() else {
+        return failure(&ReadApiError::DatabaseUnavailable);
+    };
+    match benchmarks_for(store, &query, &state.deployments, Utc::now().date_naive()).await {
+        Ok(benchmarks) => Json(benchmarks).into_response(),
+        Err(error) => failure(&error),
+    }
+}
+
+// the session read needs no role: any caller sees only the rows written under its own key
+async fn session_read(
+    State(state): State<Arc<ReadState>>,
+    caller: Option<Extension<AuthContext>>,
+    RawQuery(raw_query): RawQuery,
+) -> Response {
+    let Some(extension) = caller else {
+        return unauthenticated();
+    };
+    let query = match decode_session_query(raw_query.as_deref().unwrap_or_default().as_bytes()) {
+        Ok(query) => query,
+        Err(error) => return failure(&ReadApiError::from(error)),
+    };
+    let Some(store) = state.store.as_deref() else {
+        return failure(&ReadApiError::DatabaseUnavailable);
+    };
+    let api_key = match caller_api_key(&extension.principal) {
+        Ok(api_key) => api_key,
+        Err(source) => return failure(&ReadApiError::CallerKey { source }),
+    };
+    match session_for(store, api_key.as_deref(), &query).await {
+        Ok(response) => Json(response).into_response(),
+        Err(error) => failure(&error),
+    }
+}
+
+// the shared failure body: a Query rejection is the validation envelope, every other failure a detail
+fn failure(error: &ReadApiError) -> Response {
+    if let ReadApiError::Query(ReadQueryError::Invalid {
+        parameter,
+        kind,
+        msg,
+    }) = error
+    {
+        let body = ValidationBody {
+            detail: vec![ValidationIssue {
+                kind,
+                loc: vec!["query".to_owned(), (*parameter).to_owned()],
+                msg,
+            }],
+        };
+        return (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response();
+    }
+    let status = match error.status_code() {
+        400 => StatusCode::BAD_REQUEST,
+        403 => StatusCode::FORBIDDEN,
+        404 => StatusCode::NOT_FOUND,
+        422 => StatusCode::UNPROCESSABLE_ENTITY,
+        _ => StatusCode::INTERNAL_SERVER_ERROR,
+    };
+    let body = DetailBody {
+        detail: error.to_string(),
+    };
+    (status, Json(body)).into_response()
+}
+
+mod tests;
