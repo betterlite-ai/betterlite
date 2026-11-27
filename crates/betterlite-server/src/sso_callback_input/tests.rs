@@ -75,6 +75,13 @@ fn query_replaces_invalid_utf8_with_the_replacement_character() {
 }
 
 #[test]
+fn query_keeps_a_bare_high_byte_as_its_latin_1_character() {
+    let decoded = decode_oauth_callback_query(b"state=\xff&error=%FF");
+    assert_eq!(decoded.state.as_deref(), Some("\u{FF}"));
+    assert_eq!(decoded.error.as_deref(), Some("\u{FFFD}"));
+}
+
+#[test]
 fn query_ignores_names_other_than_the_three_callback_fields() {
     let decoded = decode_oauth_callback_query(b"code=abc&scope=openid+email&session_state=xyz");
     assert_eq!(decoded, OAuthCallbackQuery::default());
