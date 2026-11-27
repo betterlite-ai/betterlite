@@ -96,9 +96,21 @@ fn configured_callbacks(
     litellm: &BTreeMap<String, JsonValue>,
 ) -> Result<ConfiguredCallbacks, CallbackConfigError> {
     Ok(ConfiguredCallbacks {
-        success: callbacks::normalized_entries(litellm.get(SUCCESS_CALLBACK), SUCCESS_PATH)?,
-        failure: callbacks::normalized_entries(litellm.get(FAILURE_CALLBACK), FAILURE_PATH)?,
-        both: callbacks::normalized_entries(litellm.get(CALLBACKS), CALLBACKS_PATH)?,
+        success: callbacks::entry_list(
+            litellm.get(SUCCESS_CALLBACK),
+            SUCCESS_PATH,
+            callbacks::SingleEntry::Allowed,
+        )?,
+        failure: callbacks::entry_list(
+            litellm.get(FAILURE_CALLBACK),
+            FAILURE_PATH,
+            callbacks::SingleEntry::Allowed,
+        )?,
+        both: callbacks::entry_list(
+            litellm.get(CALLBACKS),
+            CALLBACKS_PATH,
+            callbacks::SingleEntry::Allowed,
+        )?,
     })
 }
 
@@ -191,7 +203,11 @@ fn callback_rows(
 fn alerting_destinations(
     general: &BTreeMap<String, JsonValue>,
 ) -> Result<(bool, JsonValue), CallbackConfigError> {
-    let alerting = callbacks::strict_entries(general.get("alerting"), ALERTING_PATH)?;
+    let alerting = callbacks::entry_list(
+        general.get("alerting"),
+        ALERTING_PATH,
+        callbacks::SingleEntry::Rejected,
+    )?;
     let slack_enabled = alerting.iter().any(|destination| destination == SLACK);
     let destinations = alerting.into_iter().map(JsonValue::String).collect();
     Ok((slack_enabled, JsonValue::Array(destinations)))

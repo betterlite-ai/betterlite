@@ -95,7 +95,11 @@ async fn remove_callback(
     let mut config = state.config.overlay.reload_config().await?;
     let mut settings =
         callbacks::section_object(config.values.get(LITELLM_SETTINGS), LITELLM_SETTINGS)?;
-    let mut success = callbacks::strict_entries(settings.get(SUCCESS_CALLBACK), SUCCESS_PATH)?;
+    let mut success = callbacks::entry_list(
+        settings.get(SUCCESS_CALLBACK),
+        SUCCESS_PATH,
+        callbacks::SingleEntry::Rejected,
+    )?;
     let callback_name = requested.to_lowercase();
     // the lower-cased name is compared against the stored names as they are, never lower-cased themselves
     let Some(index) = success.iter().position(|entry| *entry == callback_name) else {

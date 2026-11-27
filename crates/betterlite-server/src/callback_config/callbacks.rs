@@ -72,13 +72,15 @@ fn invalid_config(field: &str, expected: &'static str) -> CallbackConfigError {
     }
 }
 
+// Whether a bare string in the stored value counts as one entry: the settings page reads it that way, the delete path does not
 #[derive(Eq, PartialEq)]
-enum SingleEntry {
+pub(crate) enum SingleEntry {
     Allowed,
     Rejected,
 }
 
-fn entry_list(
+// A stored callback list read as its entries: null is absent, and any other non-list is rejected with the field named
+pub(crate) fn entry_list(
     value: Option<&JsonValue>,
     field: &str,
     single: SingleEntry,
@@ -91,22 +93,6 @@ fn entry_list(
             JsonValue::String(_) | JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Object(_),
         ) => Err(invalid_config(field, "a list of strings")),
     }
-}
-
-// A stored callback list the delete path rewrites: null is the absent default, and any other non-list is rejected
-pub(crate) fn strict_entries(
-    value: Option<&JsonValue>,
-    field: &str,
-) -> Result<Vec<String>, CallbackConfigError> {
-    entry_list(value, field, SingleEntry::Rejected)
-}
-
-// normalize_callback: the settings page reads a single string as one entry, as LiteLLM does
-pub(crate) fn normalized_entries(
-    value: Option<&JsonValue>,
-    field: &str,
-) -> Result<Vec<String>, CallbackConfigError> {
-    entry_list(value, field, SingleEntry::Allowed)
 }
 
 fn string_items(items: &[JsonValue], field: &str) -> Result<Vec<String>, CallbackConfigError> {
@@ -128,16 +114,16 @@ pub(crate) fn section_object(
     value: Option<&JsonValue>,
     section: &str,
 ) -> Result<BTreeMap<String, JsonValue>, CallbackConfigError> {
-    match value {
-        None | Some(JsonValue::Null) => Ok(BTreeMap::new()),
-        Some(JsonValue::Object(entries)) => Ok(entries
-            .iter()
-            .map(|(key, entry)| (key.clone(), entry.clone()))
-            .collect()),
-        Some(
-            JsonValue::String(_) | JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Array(_),
-        ) => Err(invalid_config(section, "an object")),
-    }
+    let Some(present) = value.filter(|entry| !entry.is_null()) else {
+        return Ok(BTreeMap::new());
+    };
+    let JsonValue::Object(entries) = present else {
+        return Err(invalid_config(section, "an object"));
+    };
+    Ok(entries
+        .iter()
+        .map(|(key, entry)| (key.clone(), entry.clone()))
+        .collect())
 }
 
 pub(crate) fn available_callbacks() -> BTreeMap<&'static str, available::UiCallback> {
