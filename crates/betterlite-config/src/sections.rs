@@ -274,6 +274,7 @@ pub mod mcp_client_side_auth;
 pub mod mcp_discovery;
 pub mod mcp_env_values;
 pub mod mcp_gateway_env;
+pub mod mcp_management_mode;
 pub mod mcp_redirect_trust;
 pub mod mcp_registry;
 pub mod mcp_required_fields;
@@ -617,7 +618,7 @@ sections! {
     lemonade_model_metadata, llm_classifier, local_ttl_cache, logging_privacy, login_form,
     login_return, login_routes, login_throttle, management_rbac, mcp_access_requirements,
     mcp_allow_all_scope, mcp_bearer_credentials, mcp_client_side_auth, mcp_env_values,
-    mcp_gateway_env, mcp_redirect_trust, mcp_registry, mcp_required_fields, mcp_sso_assertion_cache, mcp_tool_helpers, mcp_tools, mcp_toolset_storage, member_row_write, messages_advisor, messages_dispatch, messages_mcp,
+    mcp_gateway_env, mcp_management_mode, mcp_redirect_trust, mcp_registry, mcp_required_fields, mcp_sso_assertion_cache, mcp_tool_helpers, mcp_tools, mcp_toolset_storage, member_row_write, messages_advisor, messages_dispatch, messages_mcp,
     messages_native_call, messages_native_stream, messages_response_call,
     messages_responses_output, messages_thinking, migration_drift, migration_ledger,
     migration_recovery, mistral_credentials, mistral_options, mistral_resources, mock_response, mock_testing_params,
