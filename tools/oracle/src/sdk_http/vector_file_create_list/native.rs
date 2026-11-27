@@ -99,45 +99,56 @@ async fn run_once(
         request_timeout_seconds,
     };
     let kwargs = kwargs_of(run, api_base);
-    let answer = match run.operation {
-        Operation::Create => {
-            let args = run.create.as_ref().ok_or_else(|| missing("create"))?;
-            let request = CreateFileRequest {
-                transport: transport(run, &kwargs),
-                file_id: &args.file_id,
-                attributes: args.attributes.as_ref(),
-                chunking_strategy: args.chunking_strategy.as_ref(),
-            };
-            let files = VectorFileCreates { service, deps };
-            match run.mode {
-                Mode::Sync => files.create(&request).await,
-                Mode::Asynchronous => files.acreate(&request).await,
-            }
-        }
-        Operation::List => {
-            let args = run.list.as_ref().ok_or_else(|| missing("list"))?;
-            let request = ListFileRequest {
-                transport: transport(run, &kwargs),
-                after: args.after.as_deref(),
-                before: args.before.as_deref(),
-                filter: args.filter.as_deref(),
-                limit: args.limit,
-                order: args.order.as_deref(),
-            };
-            let files = VectorFileCreates { service, deps };
-            match run.mode {
-                Mode::Sync => files.list(&request).await,
-                Mode::Asynchronous => files.alist(&request).await,
-            }
-        }
+    let files = VectorFileCreates { service, deps };
+    let answer = match (attachment_call(run, &kwargs)?, run.mode) {
+        (AttachmentCall::Create(request), Mode::Sync) => files.create(&request).await,
+        (AttachmentCall::Create(request), Mode::Asynchronous) => files.acreate(&request).await,
+        (AttachmentCall::List(request), Mode::Sync) => files.list(&request).await,
+        (AttachmentCall::List(request), Mode::Asynchronous) => files.alist(&request).await,
     };
-    let failure = answer.as_ref().err().map(project);
+    let failure = answer
+        .as_ref()
+        .err()
+        .map(|failure| project(failure.as_ref()));
     Ok(RunOutcome {
         operation: run.operation,
         mode: run.mode,
         result: answer.ok(),
         failure,
     })
+}
+
+enum AttachmentCall<'run> {
+    Create(CreateFileRequest<'run>),
+    List(ListFileRequest<'run>),
+}
+
+fn attachment_call<'run>(
+    run: &'run Run,
+    kwargs: &'run IndexMap<String, Json>,
+) -> Result<AttachmentCall<'run>, SdkHttpError> {
+    match run.operation {
+        Operation::Create => {
+            let args = run.create.as_ref().ok_or_else(|| missing("create"))?;
+            Ok(AttachmentCall::Create(CreateFileRequest {
+                transport: transport(run, kwargs),
+                file_id: &args.file_id,
+                attributes: args.attributes.as_ref(),
+                chunking_strategy: args.chunking_strategy.as_ref(),
+            }))
+        }
+        Operation::List => {
+            let args = run.list.as_ref().ok_or_else(|| missing("list"))?;
+            Ok(AttachmentCall::List(ListFileRequest {
+                transport: transport(run, kwargs),
+                after: args.after.as_deref(),
+                before: args.before.as_deref(),
+                filter: args.filter.as_deref(),
+                limit: args.limit,
+                order: args.order.as_deref(),
+            }))
+        }
+    }
 }
 const fn call_type(operation: Operation) -> &'static str {
     match operation {

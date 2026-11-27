@@ -43,7 +43,7 @@ pub enum FileCallError {
 
 // LiteLLM's exception_type(model=None, custom_llm_provider=..., original_exception=...) as the SDK raises it
 #[must_use]
-pub fn failure(error: &FileCallError, provider: &str, redactor: &Redactor) -> SdkFailure {
+pub fn failure(error: &FileCallError, provider: &str, redactor: &Redactor) -> Box<SdkFailure> {
     let (message, status, synthesized, exception_type) = match error {
         FileCallError::Service(FileTransportError::Provider(source)) => (
             source.message.clone(),
@@ -73,7 +73,7 @@ pub fn failure(error: &FileCallError, provider: &str, redactor: &Redactor) -> Sd
         redactor,
     );
     let metadata = projected.metadata();
-    SdkFailure {
+    Box::new(SdkFailure {
         class: class_name(&projected).to_owned(),
         status: metadata.status_code,
         kind: metadata.error_type,
@@ -82,5 +82,5 @@ pub fn failure(error: &FileCallError, provider: &str, redactor: &Redactor) -> Sd
             .openai_code
             .map_or(WireField::Null, WireField::Text),
         message,
-    }
+    })
 }

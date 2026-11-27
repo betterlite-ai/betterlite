@@ -21,7 +21,6 @@ use super::super::{
     CreateFileRequest, FileResult, ListFileRequest, TransportRequest, VectorFileCreateDeps,
     VectorFileCreates,
 };
-use crate::api::vector_file_http_create_list::config::FilesParams;
 use crate::api::vector_file_http_create_list::error::FileTransportError;
 use crate::api::vector_file_provider::{CredentialLookup, CredentialLookupError, OperationKwargs};
 use crate::api::vector_store_http_write::error::{BaseLlmException, HeaderMap};
@@ -30,7 +29,6 @@ use crate::api::vector_store_search::error::SdkFailure;
 
 pub(crate) const CALL_ID: &str = "call-a";
 pub(crate) const VECTOR_STORE_ID: &str = "vs_a";
-pub(crate) const API_BASE: &str = "https://api.openai.com/v1";
 pub(crate) const REQUEST_TIMEOUT: f64 = 6000.0;
 pub(crate) const FILE_BODY: &str =
     r#"{"id":"file_b","object":"vector_store.file","status":"in_progress"}"#;
@@ -242,7 +240,7 @@ pub(crate) async fn refused(
     fixture: &Fixture,
     registry: Option<&dyn CredentialLookup>,
 ) -> SdkFailure {
-    call(which, spy, fixture, registry, REQUEST_TIMEOUT)
+    *call(which, spy, fixture, registry, REQUEST_TIMEOUT)
         .await
         .expect_err("the attachment call fails")
 }
@@ -361,10 +359,10 @@ impl Spy {
 impl FileService for Spy {
     fn file(
         &self,
-        file_call: &FileCall<'_>,
+        call: &FileCall<'_>,
     ) -> impl Future<Output = Result<Json, FileTransportError>> + Send {
         self.calls.fetch_add(1, Ordering::Relaxed);
-        *self.seen.lock().unwrap_or_else(PoisonError::into_inner) = Some(observe(file_call));
+        *self.seen.lock().unwrap_or_else(PoisonError::into_inner) = Some(observe(call));
         ready(self.answer())
     }
 }

@@ -8,6 +8,7 @@ mod tests;
 use std::collections::BTreeMap;
 use std::str::FromStr as _;
 use std::sync::Mutex;
+use std::time::Duration;
 
 use betterlite_context::resource_config_selection::vector_stores::{
     VectorStoreFilesConfigTag, select_store_files_config,
@@ -23,12 +24,13 @@ use self::error::{FileCallError, failure};
 use self::prepare::{call_timeout, create_locals, files_params, list_locals, log_call};
 use self::service::{FileCall, FileService, Operation, mode};
 use crate::api::vector_file_contracts::{FileParamsKind, filter_file_params};
+use crate::api::vector_file_http_create_list::config::FilesParams;
 use crate::api::vector_file_provider::{
     CredentialLookup, OperationKwargs, ensure_provider, prepare_registry_credentials,
 };
 use crate::api::vector_store_search::error::SdkFailure;
 
-pub type FileResult = Result<Json, SdkFailure>;
+pub type FileResult = Result<Json, Box<SdkFailure>>;
 
 #[derive(Clone, Copy)]
 pub struct VectorFileCreateDeps<'deps> {
@@ -50,7 +52,7 @@ pub struct TransportRequest<'request> {
     pub kwargs: &'request IndexMap<String, Json>,
 }
 
-impl<'request> TransportRequest<'request> {
+impl TransportRequest<'_> {
     // acreate and alist insert their flag into a copy of the kwargs, as LiteLLM does before its shared call
     const fn flagged<'flagged>(
         &'flagged self,
@@ -88,6 +90,16 @@ pub struct ListFileRequest<'request> {
 struct Attachment<'request> {
     locals: Result<FileParams, serde_json::Error>,
     file_id: Option<&'request str>,
+}
+
+// everything a call needs before the operation-dependent overlays and the service are involved
+struct Prepared<'request> {
+    name: &'request str,
+    provider: ProviderId,
+    config: VectorStoreFilesConfigTag,
+    params: FilesParams,
+    fields: FileParams,
+    timeout: Duration,
 }
 
 pub struct VectorFileCreates<'service, Service> {
@@ -132,36 +144,15 @@ impl<Service: FileService> VectorFileCreates<'_, Service> {
         transport: &TransportRequest<'_>,
         attachment: Attachment<'_>,
     ) -> FileResult {
-        let Attachment { locals, file_id } = attachment;
-        let name = ensure_provider(transport.custom_llm_provider);
-        let redactor = self.deps.redactor;
-        let entries =
-            locals.map_err(|source| failure(&FileCallError::Params(source), name, redactor))?;
-        let kwargs = overlay_credentials(operation, transport, self.deps.registry);
-        let params = files_params(&kwargs).map_err(|error| failure(&error, name, redactor))?;
-        let provider = resolve_provider(name).map_err(|error| failure(&error, name, redactor))?;
-        let config = store_config(operation, provider, name)
-            .map_err(|error| failure(&error, name, redactor))?;
-        let fields = merge_fields(operation.kind(), entries, &kwargs, file_id)
-            .map_err(|source| failure(&FileCallError::Params(source), name, redactor))?;
-        log_call(
-            self.deps.logging,
-            &kwargs,
-            transport.vector_store_id,
-            &fields,
-            name,
-        )
-        .map_err(|error| failure(&error, name, redactor))?;
-        let timeout = call_timeout(transport.timeout, self.deps.request_timeout_seconds)
-            .map_err(|error| failure(&error, name, redactor))?;
+        let prepared = prepare(operation, transport, attachment, self.deps)?;
         let call = FileCall {
             operation,
             mode: mode(operation, transport.kwargs),
-            provider,
-            config,
+            provider: prepared.provider,
+            config: prepared.config,
             vector_store_id: transport.vector_store_id,
-            params: &params,
-            fields: &fields,
+            params: &prepared.params,
+            fields: &prepared.fields,
             extra_headers: transport.extra_headers,
             extra_body: match operation {
                 Operation::Create => transport.extra_body,
@@ -171,14 +162,55 @@ impl<Service: FileService> VectorFileCreates<'_, Service> {
                 Operation::Create => None,
                 Operation::List => transport.extra_query,
             },
-            timeout,
+            timeout: prepared.timeout,
             logging: self.deps.logging,
         };
-        self.service
-            .file(&call)
-            .await
-            .map_err(|source| failure(&FileCallError::Service(source), name, redactor))
+        self.service.file(&call).await.map_err(|source| {
+            failure(
+                &FileCallError::Service(source),
+                prepared.name,
+                self.deps.redactor,
+            )
+        })
     }
+}
+
+fn prepare<'request>(
+    operation: Operation,
+    transport: &TransportRequest<'request>,
+    attachment: Attachment<'request>,
+    deps: VectorFileCreateDeps<'_>,
+) -> Result<Prepared<'request>, Box<SdkFailure>> {
+    let Attachment { locals, file_id } = attachment;
+    let name = ensure_provider(transport.custom_llm_provider);
+    let redactor = deps.redactor;
+    let entries =
+        locals.map_err(|source| failure(&FileCallError::Params(source), name, redactor))?;
+    let kwargs = overlay_credentials(operation, transport, deps.registry);
+    let params = files_params(&kwargs).map_err(|error| failure(&error, name, redactor))?;
+    let provider = resolve_provider(name).map_err(|error| failure(&error, name, redactor))?;
+    let config =
+        store_config(operation, provider, name).map_err(|error| failure(&error, name, redactor))?;
+    let fields = merge_fields(operation.kind(), entries, &kwargs, file_id)
+        .map_err(|source| failure(&FileCallError::Params(source), name, redactor))?;
+    log_call(
+        deps.logging,
+        &kwargs,
+        transport.vector_store_id,
+        &fields,
+        name,
+    )
+    .map_err(|error| failure(&error, name, redactor))?;
+    let timeout = call_timeout(transport.timeout, deps.request_timeout_seconds)
+        .map_err(|error| failure(&error, name, redactor))?;
+    Ok(Prepared {
+        name,
+        provider,
+        config,
+        params,
+        fields,
+        timeout,
+    })
 }
 
 impl<'request> CreateFileRequest<'request> {

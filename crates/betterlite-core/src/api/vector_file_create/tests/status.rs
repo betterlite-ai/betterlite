@@ -11,8 +11,7 @@ use crate::api::vector_store_http_write::error::{BaseLlmException, HeaderMap, Ur
 struct Inner;
 
 impl FilesConfig for Inner {
-    fn validate_environment(&self, headers: Headers, _params: &FilesParams) -> Headers {
-        let mut headers = headers;
+    fn validate_environment(&self, mut headers: Headers, _params: &FilesParams) -> Headers {
         headers.insert(
             String::from("x-inner"),
             SecretString::from(String::from("yes")),
