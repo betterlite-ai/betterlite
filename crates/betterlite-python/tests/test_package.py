@@ -26,6 +26,9 @@ MIN_COST_ENTRIES = 1000
 MIN_SET_COUNT = 60
 MIN_CHAT_MODELS = 100
 
+# the lock's requires-python starts at 3.11, so the 3.10 httpx2 pin lives only here
+HTTPX_PYTHON_310 = "2.14.0"
+
 FAMILIES = (
     "a2a",
     "assistant_calls",
@@ -131,6 +134,12 @@ def test_wheel_is_abi3_cp310() -> None:
     assert re.search(r"^Tag: cp310-abi3-", wheel, re.MULTILINE)
 
 
+def requirement_triple(text: str) -> tuple[str, str, str]:
+    parsed = Requirement(text)
+    marker = "" if parsed.marker is None else str(parsed.marker)
+    return canonicalize_name(parsed.name), str(parsed.specifier), marker
+
+
 def test_requires_match_lock() -> None:
     lock_text = (ROOT / "tools/oracle/litellm/uv.lock").read_text()
     lock_data: dict[str, Json] = tomllib.loads(lock_text)
@@ -140,14 +149,15 @@ def test_requires_match_lock() -> None:
     }
     requires = metadata.distribution("betterlite").requires
     assert requires is not None
-    declared = {
-        canonicalize_name(parsed.name): str(parsed.specifier)
-        for parsed in map(Requirement, requires)
-    }
+    declared = {requirement_triple(line) for line in requires}
     expected = {
-        canonicalize_name(name): f"=={locked[canonicalize_name(name)]}"
+        requirement_triple(f"{name}=={locked[canonicalize_name(name)]}")
         for name in ("pydantic", "python-dotenv", "typing-extensions")
     }
+    httpx_name = canonicalize_name("httpx2")
+    # maturin writes pyproject's python_version marker as python_full_version in Requires-Dist
+    expected.add(requirement_triple(f"httpx2=={HTTPX_PYTHON_310}; python_full_version < '3.11'"))
+    expected.add(requirement_triple(f"httpx2=={locked[httpx_name]}; python_full_version >= '3.11'"))
     assert declared == expected
 
 
@@ -189,24 +199,10 @@ def test_families_are_listed() -> None:
     assert starred == list(FAMILIES)
 
 
-@pytest.mark.parametrize("family", FAMILIES)
-def test_family_stub_is_empty(family: str) -> None:
-    stub = PACKAGE / f"_native_{family}.pyi"
-    assert stub.read_text() == ""
-    assert (CRATE / "src" / f"{family}.rs").exists()
-
-
 def test_init_lists_python_modules() -> None:
     text = (PACKAGE / "__init__.py").read_text()
     starred: list[str] = re.findall(r"^from betterlite\.(\w+) import \*", text, re.MULTILINE)
     assert sorted(starred) == sorted(PYTHON_MODULES)
-
-
-@pytest.mark.parametrize("name", PYTHON_MODULES)
-def test_python_module_is_empty(name: str) -> None:
-    module = importlib.import_module(f"betterlite.{name}")
-    public = [member for member in dir(module) if not member.startswith("_")]
-    assert public == []
 
 
 def test_caching_is_a_package() -> None:
