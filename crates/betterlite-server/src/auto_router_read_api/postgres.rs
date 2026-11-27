@@ -146,9 +146,10 @@ impl AutoRouterReadStore for PgAutoRouterReads {
 
 // the route reads through the proxy's writer pool, the one the cache activity routes already open
 #[must_use]
-pub(crate) fn reads_from_state(state: &Arc<ServerState>) -> Option<PgAutoRouterReads> {
-    cli_writer_store(state).map(|store| PgAutoRouterReads {
+pub(crate) fn reads_from_state(state: &Arc<ServerState>) -> Option<Arc<dyn AutoRouterReadStore>> {
+    let store = cli_writer_store(state)?;
+    Some(Arc::new(PgAutoRouterReads {
         store: PostgresStore::clone(&store),
         availability: Availability::default(),
-    })
+    }))
 }

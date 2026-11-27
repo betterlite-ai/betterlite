@@ -40,17 +40,13 @@ struct DetailBody {
 #[cfg_attr(test, mutants::skip)]
 pub(crate) fn routes(state: &Arc<ServerState>) -> Router {
     let reads = Arc::new(ReadState {
-        store: store_of_state(state),
+        store: reads_from_state(state),
         deployments: configured_deployments(&state.config.model_list),
     });
     Router::new()
         .route(BENCHMARKS_PATH, get(benchmarks_read))
         .route(SESSION_PATH, get(session_read))
         .with_state(reads)
-}
-
-fn store_of_state(state: &Arc<ServerState>) -> Option<Arc<dyn AutoRouterReadStore>> {
-    Some(Arc::new(reads_from_state(state)?))
 }
 
 // FastAPI checks the auth (401) before it validates the query (422), then the endpoint checks the role (403)

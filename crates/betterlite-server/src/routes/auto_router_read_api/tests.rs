@@ -24,11 +24,13 @@ use sha2::{Digest as _, Sha256};
 use super::{ReadState, benchmarks_read, session_read};
 use crate::auth::auth_identity::AuthContext;
 use crate::auto_router_read_api::error::ReadApiError;
+use crate::auto_router_read_api::postgres::reads_from_state;
 use crate::auto_router_read_api::service::SessionResponse;
 use crate::auto_router_read_api::store::AutoRouterReadStore;
 use crate::benchmark_aggregates::group::Benchmarks;
 use crate::benchmark_aggregates::row::SessionAggRow;
 use crate::benchmark_aggregates::window::BenchmarkWindow;
+use crate::routes::tests::state_for;
 use crate::shadow_eval_lifecycle::error::DB_NOT_CONNECTED;
 
 #[derive(Debug, Deserialize)]
@@ -398,8 +400,8 @@ fn a_configured_database_url_opens_the_read_store() {
     }
     .load("general_settings:\n  database_url: postgres://probe:secret@localhost:5432/probe")
     .unwrap();
-    let state = crate::routes::tests::state_for(&config);
-    assert!(super::store_of_state(&state).is_some());
+    let state = state_for(&config);
+    assert!(reads_from_state(&state).is_some());
 }
 
 #[tokio::test]
