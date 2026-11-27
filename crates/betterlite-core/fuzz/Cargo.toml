@@ -265,6 +265,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "realtime_token_payload"
+path = "fuzz_targets/realtime_token_payload.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "messages_sse_events"
 path = "fuzz_targets/messages_sse_events.rs"
 test = false
