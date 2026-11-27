@@ -19,7 +19,7 @@ struct ValidationBody {
     detail: Vec<ValidationIssue>,
 }
 
-pub(crate) enum BodyError {
+pub enum BodyError {
     MissingBody,
     NotAnObject(JsonValue),
     InvalidJson,
@@ -77,12 +77,12 @@ impl IntoResponse for BodyError {
     }
 }
 
-pub(crate) struct CallbackDelete {
+pub struct CallbackDelete {
     pub(crate) callback_name: String,
 }
 
 // CallbackDelete.callback_name is a required str, so FastAPI answers a missing key and a non-string alike
-pub(crate) fn callback_delete_request(body: &[u8]) -> Result<CallbackDelete, BodyError> {
+pub fn callback_delete_request(body: &[u8]) -> Result<CallbackDelete, BodyError> {
     let mut fields = match parse_body(body)? {
         JsonValue::Object(fields) => fields,
         other @ (JsonValue::Null
@@ -105,7 +105,7 @@ pub(crate) fn callback_delete_request(body: &[u8]) -> Result<CallbackDelete, Bod
 }
 
 // config_yaml_endpoint declares a ConfigYAML body parameter, so a GET without one is a 422 before the mock runs
-pub(crate) fn config_yaml_request(body: &[u8]) -> Result<(), BodyError> {
+pub fn config_yaml_request(body: &[u8]) -> Result<(), BodyError> {
     let value = parse_body(body)?;
     if value.is_object() {
         return Ok(());
