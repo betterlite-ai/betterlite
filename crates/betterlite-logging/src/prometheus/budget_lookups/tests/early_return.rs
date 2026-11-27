@@ -13,9 +13,9 @@ use crate::prometheus::budget_lookups::team_budget::{
     TeamBudgetRequest, set_team_budget_metrics_after_api_request,
 };
 use crate::prometheus::budget_lookups::test_support::{
-    Answer, CUSTOMER_GAUGES, KEY_GAUGES, ORG_GAUGES, RecordingLookups, TEAM_GAUGES, USER_GAUGES,
-    all_samples, capture_logs, customer_context, customer_tracking, decimal, default_tracking,
-    entity_gauges, source, time,
+    Answer, CUSTOMER_GAUGES, EntityGauges, KEY_GAUGES, ORG_GAUGES, RecordingLookups, TEAM_GAUGES,
+    USER_GAUGES, all_samples, capture_logs, customer_context, customer_tracking, decimal,
+    default_tracking, entity_gauges, source, time,
 };
 use crate::prometheus::budget_lookups::user_budget::{
     UserBudgetRequest, set_user_budget_metrics_after_api_request,
@@ -40,7 +40,7 @@ struct Requests<'request> {
     customer: CustomerBudgetRequest<'request>,
 }
 
-fn all_requests<'request>(id: Option<&'request str>) -> Requests<'request> {
+fn all_requests(id: Option<&str>) -> Requests<'_> {
     Requests {
         team: TeamBudgetRequest {
             user_api_team: id,
@@ -79,59 +79,40 @@ fn all_requests<'request>(id: Option<&'request str>) -> Requests<'request> {
     }
 }
 
-#[tokio::test]
-async fn noop_gauges_skip_every_function_before_any_lookup() {
-    let requests = all_requests(Some("entity-1"));
+fn every_entity_gauges(noop: bool) -> [EntityGauges; 5] {
+    [
+        entity_gauges(TEAM_GAUGES, &["team"], noop),
+        entity_gauges(ORG_GAUGES, &["org_id"], noop),
+        entity_gauges(KEY_GAUGES, &["hashed_api_key"], noop),
+        entity_gauges(USER_GAUGES, &["user"], noop),
+        entity_gauges(CUSTOMER_GAUGES, &["end_user"], noop),
+    ]
+}
+
+async fn call_every_function(
+    lookups: &RecordingLookups,
+    requests: &Requests<'_>,
+    gauges: &[EntityGauges; 5],
+) {
     let settings = PrometheusLabelSettings::with_defaults();
+    let labels = source(&settings, default_tracking());
+    let now = time("2026-01-01T00:00:00Z");
     let tracker = BoundedPrometheusSeriesTracker::default();
     let limits = SeriesLimits::default();
-    let lookups = RecordingLookups::default().with_database(true);
-    let gauges = [
-        entity_gauges(TEAM_GAUGES, &["team"], true),
-        entity_gauges(ORG_GAUGES, &["org_id"], true),
-        entity_gauges(KEY_GAUGES, &["hashed_api_key"], true),
-        entity_gauges(USER_GAUGES, &["user"], true),
-        entity_gauges(CUSTOMER_GAUGES, &["end_user"], true),
-    ];
-    let now = time("2026-01-01T00:00:00Z");
-    set_team_budget_metrics_after_api_request(
-        &lookups,
-        &gauges[0],
-        source(&settings, default_tracking()),
-        now,
-        &requests.team,
-    )
-    .await
-    .unwrap();
-    set_org_budget_metrics_after_api_request(
-        &lookups,
-        &gauges[1],
-        source(&settings, default_tracking()),
-        now,
-        &requests.org,
-    )
-    .await
-    .unwrap();
-    set_key_budget_metrics_after_api_request(
-        &lookups,
-        &gauges[2],
-        source(&settings, default_tracking()),
-        now,
-        &requests.key,
-    )
-    .await
-    .unwrap();
-    set_user_budget_metrics_after_api_request(
-        &lookups,
-        &gauges[3],
-        source(&settings, default_tracking()),
-        now,
-        &requests.user,
-    )
-    .await
-    .unwrap();
+    set_team_budget_metrics_after_api_request(lookups, &gauges[0], labels, now, &requests.team)
+        .await
+        .unwrap();
+    set_org_budget_metrics_after_api_request(lookups, &gauges[1], labels, now, &requests.org)
+        .await
+        .unwrap();
+    set_key_budget_metrics_after_api_request(lookups, &gauges[2], labels, now, &requests.key)
+        .await
+        .unwrap();
+    set_user_budget_metrics_after_api_request(lookups, &gauges[3], labels, now, &requests.user)
+        .await
+        .unwrap();
     set_customer_budget_metrics_after_api_request(
-        &lookups,
+        lookups,
         &gauges[4],
         customer_context(&settings, &tracker, &limits, customer_tracking(), now),
         customer_tracking(),
@@ -139,80 +120,28 @@ async fn noop_gauges_skip_every_function_before_any_lookup() {
     )
     .await
     .unwrap();
+}
+
+async fn assert_every_function_skips(requests: &Requests<'_>, noop: bool) {
+    let lookups = RecordingLookups::default().with_database(true);
+    let gauges = every_entity_gauges(noop);
+    call_every_function(&lookups, requests, &gauges).await;
     assert!(gauges.iter().all(|entity| all_samples(entity).is_empty()));
     assert!(lookups.calls().is_empty());
+}
+
+#[tokio::test]
+async fn noop_gauges_skip_every_function_before_any_lookup() {
+    assert_every_function_skips(&all_requests(Some("entity-1")), true).await;
 }
 
 #[tokio::test]
 async fn missing_identifiers_skip_every_function_before_any_lookup() {
-    let requests = all_requests(None);
-    let settings = PrometheusLabelSettings::with_defaults();
-    let tracker = BoundedPrometheusSeriesTracker::default();
-    let limits = SeriesLimits::default();
-    let lookups = RecordingLookups::default().with_database(true);
-    let gauges = [
-        entity_gauges(TEAM_GAUGES, &["team"], false),
-        entity_gauges(ORG_GAUGES, &["org_id"], false),
-        entity_gauges(KEY_GAUGES, &["hashed_api_key"], false),
-        entity_gauges(USER_GAUGES, &["user"], false),
-        entity_gauges(CUSTOMER_GAUGES, &["end_user"], false),
-    ];
-    let now = time("2026-01-01T00:00:00Z");
-    set_team_budget_metrics_after_api_request(
-        &lookups,
-        &gauges[0],
-        source(&settings, default_tracking()),
-        now,
-        &requests.team,
-    )
-    .await
-    .unwrap();
-    set_org_budget_metrics_after_api_request(
-        &lookups,
-        &gauges[1],
-        source(&settings, default_tracking()),
-        now,
-        &requests.org,
-    )
-    .await
-    .unwrap();
-    set_key_budget_metrics_after_api_request(
-        &lookups,
-        &gauges[2],
-        source(&settings, default_tracking()),
-        now,
-        &requests.key,
-    )
-    .await
-    .unwrap();
-    set_user_budget_metrics_after_api_request(
-        &lookups,
-        &gauges[3],
-        source(&settings, default_tracking()),
-        now,
-        &requests.user,
-    )
-    .await
-    .unwrap();
-    set_customer_budget_metrics_after_api_request(
-        &lookups,
-        &gauges[4],
-        customer_context(&settings, &tracker, &limits, customer_tracking(), now),
-        customer_tracking(),
-        &requests.customer,
-    )
-    .await
-    .unwrap();
-    assert!(gauges.iter().all(|entity| all_samples(entity).is_empty()));
-    assert!(lookups.calls().is_empty());
+    assert_every_function_skips(&all_requests(None), false).await;
 }
 
 #[tokio::test]
 async fn lookup_errors_are_logged_and_swallowed_by_every_function() {
-    let requests = all_requests(Some("entity-1"));
-    let settings = PrometheusLabelSettings::with_defaults();
-    let tracker = BoundedPrometheusSeriesTracker::default();
-    let limits = SeriesLimits::default();
     let (logs, _guard) = capture_logs();
     let lookups = RecordingLookups::default()
         .with_database(true)
@@ -221,59 +150,8 @@ async fn lookup_errors_are_logged_and_swallowed_by_every_function() {
         .with_key(Answer::Failed(READ_FAILED))
         .with_user(Answer::Failed(READ_FAILED))
         .with_customer(Answer::Failed(READ_FAILED));
-    let gauges = [
-        entity_gauges(TEAM_GAUGES, &["team"], false),
-        entity_gauges(ORG_GAUGES, &["org_id"], false),
-        entity_gauges(KEY_GAUGES, &["hashed_api_key"], false),
-        entity_gauges(USER_GAUGES, &["user"], false),
-        entity_gauges(CUSTOMER_GAUGES, &["end_user"], false),
-    ];
-    let now = time("2026-01-01T00:00:00Z");
-    set_team_budget_metrics_after_api_request(
-        &lookups,
-        &gauges[0],
-        source(&settings, default_tracking()),
-        now,
-        &requests.team,
-    )
-    .await
-    .unwrap();
-    set_org_budget_metrics_after_api_request(
-        &lookups,
-        &gauges[1],
-        source(&settings, default_tracking()),
-        now,
-        &requests.org,
-    )
-    .await
-    .unwrap();
-    set_key_budget_metrics_after_api_request(
-        &lookups,
-        &gauges[2],
-        source(&settings, default_tracking()),
-        now,
-        &requests.key,
-    )
-    .await
-    .unwrap();
-    set_user_budget_metrics_after_api_request(
-        &lookups,
-        &gauges[3],
-        source(&settings, default_tracking()),
-        now,
-        &requests.user,
-    )
-    .await
-    .unwrap();
-    set_customer_budget_metrics_after_api_request(
-        &lookups,
-        &gauges[4],
-        customer_context(&settings, &tracker, &limits, customer_tracking(), now),
-        customer_tracking(),
-        &requests.customer,
-    )
-    .await
-    .unwrap();
+    let gauges = every_entity_gauges(false);
+    call_every_function(&lookups, &all_requests(Some("entity-1")), &gauges).await;
     assert_eq!(lookups.calls().len(), 5);
     let text = logs.text();
     assert_logged(&text, "team");

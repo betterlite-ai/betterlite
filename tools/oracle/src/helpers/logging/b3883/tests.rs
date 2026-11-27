@@ -25,9 +25,9 @@ fn a_carried_team_snapshot_skips_the_lookup() {
         "function": "team",
         "team_id": "team-1",
         "team_alias": "Alpha",
-        "team_spend": 1.5,
-        "response_cost": 0.25,
-        "carried": {"budget_reset_at": "2026-01-06T00:00:00Z", "max_budget": 20},
+        "team_spend": 1.5_f64,
+        "response_cost": 0.25_f64,
+        "carried": {"budget_reset_at": "2026-01-06T00:00:00Z", "max_budget": 20_i32},
         "lookup": {"kind": "missing"},
         "now": "2026-01-01T00:00:00Z",
         "noop": false,
@@ -64,12 +64,12 @@ fn a_fetched_team_record_fills_the_missing_max_budget() {
         "function": "team",
         "team_id": "team-1",
         "team_alias": "Alpha",
-        "team_spend": 2,
-        "response_cost": 0.25,
+        "team_spend": 2_i32,
+        "response_cost": 0.25_f64,
         "lookup": {
             "kind": "record",
             "budget_reset_at": "2026-01-06T00:00:00Z",
-            "max_budget": 30
+            "max_budget": 30_i32
         },
         "now": "2026-01-01T00:00:00Z",
         "noop": false,
@@ -106,8 +106,8 @@ fn the_key_fallback_reads_the_cache_only() {
         "function": "key",
         "user_api_key": "key-1",
         "user_api_key_alias": "Key Alpha",
-        "response_cost": 0.25,
-        "key_spend": 1,
+        "response_cost": 0.25_f64,
+        "key_spend": 1_i32,
         "lookup": {"kind": "record", "budget_reset_at": "2026-01-06T00:00:00Z"},
         "now": "2026-01-01T00:00:00Z",
         "noop": false,
@@ -145,12 +145,12 @@ fn a_customer_cache_hit_reports_no_reset_hours() {
     let output = run(json!({
         "function": "customer",
         "end_user_id": "end-1",
-        "response_cost": 0.25,
+        "response_cost": 0.25_f64,
         "enable_prometheus_only": true,
         "lookup": {
             "kind": "record",
-            "spend": 1.5,
-            "budget": {"max_budget": 5, "budget_reset_at": "2026-01-06T00:00:00Z"}
+            "spend": 1.5_f64,
+            "budget": {"max_budget": 5_i32, "budget_reset_at": "2026-01-06T00:00:00Z"}
         },
         "now": "2026-01-01T00:00:00Z",
         "noop": false,
@@ -188,8 +188,8 @@ fn the_customer_gate_is_off_by_default() {
     let output = run(json!({
         "function": "customer",
         "end_user_id": "end-3",
-        "response_cost": 0.25,
-        "lookup": {"kind": "record", "spend": 1, "budget": {"max_budget": 5}},
+        "response_cost": 0.25_f64,
+        "lookup": {"kind": "record", "spend": 1_i32, "budget": {"max_budget": 5_i32}},
         "now": "2026-01-01T00:00:00Z",
         "noop": false,
         "labels_by_metric": {
@@ -218,7 +218,7 @@ fn a_default_customer_budget_reports_its_limit_and_reset() {
         "default_budget_id": "budget-1",
         "lookup": {
             "kind": "record",
-            "budget": {"max_budget": 25, "budget_reset_at": "2026-02-01T00:00:00Z"}
+            "budget": {"max_budget": 25_i32, "budget_reset_at": "2026-02-01T00:00:00Z"}
         }
     }));
     assert_eq!(
@@ -239,9 +239,9 @@ fn noop_gauges_skip_before_the_lookup() {
         "function": "team",
         "team_id": "team-1",
         "team_alias": "Alpha",
-        "team_spend": 1,
-        "response_cost": 0.25,
-        "lookup": {"kind": "record", "max_budget": 10},
+        "team_spend": 1_i32,
+        "response_cost": 0.25_f64,
+        "lookup": {"kind": "record", "max_budget": 10_i32},
         "now": "2026-01-01T00:00:00Z",
         "noop": true,
         "labels_by_metric": team_labels()

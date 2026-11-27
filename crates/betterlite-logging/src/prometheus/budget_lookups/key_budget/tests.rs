@@ -16,8 +16,7 @@ const LABELS: [&str; 2] = ["hashed_api_key", "api_key_alias"];
 fn request<'request>(
     key: Option<&'request str>,
     alias: Option<&'request str>,
-    spend: Option<&str>,
-    max_budget: Option<&str>,
+    budgets: Option<(&str, &str)>,
     cost: &str,
     carried: Option<&'request KeyBudgetSnapshot>,
 ) -> KeyBudgetRequest<'request> {
@@ -25,8 +24,8 @@ fn request<'request>(
         user_api_key: key,
         user_api_key_alias: alias,
         response_cost: decimal(cost),
-        key_max_budget: max_budget.map(decimal),
-        key_spend: spend.map(decimal),
+        key_max_budget: budgets.map(|(_, max_budget)| decimal(max_budget)),
+        key_spend: budgets.map(|(spend, _)| decimal(spend)),
         carried,
     }
 }
@@ -48,8 +47,7 @@ async fn a_carried_snapshot_uses_its_reset() {
     let key_request = request(
         Some("key-1"),
         Some("Key Alpha"),
-        Some("0.5"),
-        Some("10"),
+        Some(("0.5", "10")),
         "0.25",
         Some(&carried),
     );
@@ -83,7 +81,7 @@ async fn the_cache_only_fetch_reads_the_reset() {
     }));
     let gauges = entity_gauges(KEY_GAUGES, &LABELS, false);
     let now = time("2026-01-01T00:00:00Z");
-    let key_request = request(Some("key-1"), Some("Key Alpha"), None, None, "0.5", None);
+    let key_request = request(Some("key-1"), Some("Key Alpha"), None, "0.5", None);
     set_key_budget_metrics_after_api_request(
         &lookups,
         &gauges,
@@ -118,7 +116,7 @@ async fn a_fetched_key_without_a_reset_emits_no_hours() {
     }));
     let gauges = entity_gauges(KEY_GAUGES, &LABELS, false);
     let now = time("2026-01-01T00:00:00Z");
-    let key_request = request(Some("key-1"), None, Some("0"), Some("10"), "0.5", None);
+    let key_request = request(Some("key-1"), None, Some(("0", "10")), "0.5", None);
     set_key_budget_metrics_after_api_request(
         &lookups,
         &gauges,
@@ -148,8 +146,7 @@ async fn a_cache_miss_keeps_the_partial_key_and_logs_it() {
     let key_request = request(
         Some("key-1"),
         Some("Key Alpha"),
-        Some("1"),
-        Some("10"),
+        Some(("1", "10")),
         "0.25",
         None,
     );
@@ -182,7 +179,7 @@ async fn no_key_skips_before_the_lookup() {
     let lookups = RecordingLookups::default();
     let gauges = entity_gauges(KEY_GAUGES, &LABELS, false);
     let now = time("2026-01-01T00:00:00Z");
-    let key_request = request(None, Some("Key Alpha"), Some("1"), Some("10"), "0.25", None);
+    let key_request = request(None, Some("Key Alpha"), Some(("1", "10")), "0.25", None);
     set_key_budget_metrics_after_api_request(
         &lookups,
         &gauges,
@@ -205,8 +202,7 @@ async fn a_noop_remaining_gauge_skips_before_the_lookup() {
     let key_request = request(
         Some("key-1"),
         Some("Key Alpha"),
-        Some("1"),
-        Some("10"),
+        Some(("1", "10")),
         "0.25",
         None,
     );

@@ -7,8 +7,8 @@ use crate::prometheus::budget_lookups::lookups::UserLookupOptions;
 use crate::prometheus::budget_lookups::records::UserRecord;
 use crate::prometheus::budget_lookups::snapshots::UserBudgetSnapshot;
 use crate::prometheus::budget_lookups::test_support::{
-    Answer, LookupCall, RecordingLookups, USER_GAUGES, all_samples, capture_logs, decimal,
-    default_tracking, entity_gauges, hours_row, infinity_row, row, source, time,
+    Answer, EntityGauges, LookupCall, RecordingLookups, USER_GAUGES, all_samples, capture_logs,
+    decimal, default_tracking, entity_gauges, hours_row, infinity_row, row, source, time,
 };
 use crate::prometheus_label_schema::PrometheusLabelSettings;
 
@@ -43,9 +43,35 @@ fn request<'request>(
     }
 }
 
+fn user_info(user_id: &str) -> LookupCall {
+    LookupCall::UserInfo {
+        user_id: user_id.to_owned(),
+        options: UserLookupOptions {
+            user_id_upsert: false,
+            check_db_only: false,
+        },
+    }
+}
+
+async fn run_metrics(
+    lookups: &RecordingLookups,
+    gauges: &EntityGauges,
+    user_request: &UserBudgetRequest<'_>,
+) {
+    let settings = PrometheusLabelSettings::with_defaults();
+    set_user_budget_metrics_after_api_request(
+        lookups,
+        gauges,
+        source(&settings, default_tracking()),
+        time("2026-01-01T00:00:00Z"),
+        user_request,
+    )
+    .await
+    .unwrap();
+}
+
 #[tokio::test]
 async fn a_carried_snapshot_uses_its_reset_alias_and_the_request_email() {
-    let settings = PrometheusLabelSettings::with_defaults();
     let lookups = RecordingLookups::default();
     let gauges = entity_gauges(USER_GAUGES, &LABELS, false);
     let now = time("2026-01-01T00:00:00Z");
@@ -58,15 +84,7 @@ async fn a_carried_snapshot_uses_its_reset_alias_and_the_request_email() {
         None,
         Some(&carried),
     );
-    set_user_budget_metrics_after_api_request(
-        &lookups,
-        &gauges,
-        source(&settings, default_tracking()),
-        now,
-        &user_request,
-    )
-    .await
-    .unwrap();
+    run_metrics(&lookups, &gauges, &user_request).await;
     let labels = [
         ("user", "user-1"),
         ("user_email", "request@example.com"),
@@ -85,21 +103,11 @@ async fn a_carried_snapshot_uses_its_reset_alias_and_the_request_email() {
 
 #[tokio::test]
 async fn a_request_max_budget_wins_over_the_carried_one() {
-    let settings = PrometheusLabelSettings::with_defaults();
     let lookups = RecordingLookups::default();
     let gauges = entity_gauges(USER_GAUGES, &LABELS, false);
-    let now = time("2026-01-01T00:00:00Z");
     let carried = snapshot(None, Some("20"), None);
     let user_request = request(Some("user-1"), None, Some("1"), Some("12"), Some(&carried));
-    set_user_budget_metrics_after_api_request(
-        &lookups,
-        &gauges,
-        source(&settings, default_tracking()),
-        now,
-        &user_request,
-    )
-    .await
-    .unwrap();
+    run_metrics(&lookups, &gauges, &user_request).await;
     let labels = [("user", "user-1"), ("user_email", ""), ("user_alias", "")];
     assert_eq!(
         all_samples(&gauges),
@@ -112,7 +120,6 @@ async fn a_request_max_budget_wins_over_the_carried_one() {
 
 #[tokio::test]
 async fn the_fetched_user_fills_the_reset_email_and_alias() {
-    let settings = PrometheusLabelSettings::with_defaults();
     let reset_at = time("2026-01-06T00:00:00Z");
     let lookups = RecordingLookups::default().with_user(Answer::Found(UserRecord {
         budget_reset_at: Some(reset_at),
@@ -129,15 +136,7 @@ async fn the_fetched_user_fills_the_reset_email_and_alias() {
         None,
         None,
     );
-    set_user_budget_metrics_after_api_request(
-        &lookups,
-        &gauges,
-        source(&settings, default_tracking()),
-        now,
-        &user_request,
-    )
-    .await
-    .unwrap();
+    run_metrics(&lookups, &gauges, &user_request).await;
     let labels = [
         ("user", "user-1"),
         ("user_email", "db@example.com"),
@@ -151,21 +150,11 @@ async fn the_fetched_user_fills_the_reset_email_and_alias() {
             hours_row(USER_GAUGES[2], &labels, reset_at, now),
         ]
     );
-    assert_eq!(
-        lookups.calls(),
-        vec![LookupCall::UserInfo {
-            user_id: "user-1".to_owned(),
-            options: UserLookupOptions {
-                user_id_upsert: false,
-                check_db_only: false,
-            },
-        }]
-    );
+    assert_eq!(lookups.calls(), [user_info("user-1")]);
 }
 
 #[tokio::test]
 async fn a_request_max_budget_keeps_the_fetched_one_off() {
-    let settings = PrometheusLabelSettings::with_defaults();
     let reset_at = time("2026-01-06T00:00:00Z");
     let lookups = RecordingLookups::default().with_user(Answer::Found(UserRecord {
         budget_reset_at: Some(reset_at),
@@ -176,15 +165,7 @@ async fn a_request_max_budget_keeps_the_fetched_one_off() {
     let gauges = entity_gauges(USER_GAUGES, &LABELS, false);
     let now = time("2026-01-01T00:00:00Z");
     let user_request = request(Some("user-1"), None, Some("2"), Some("10"), None);
-    set_user_budget_metrics_after_api_request(
-        &lookups,
-        &gauges,
-        source(&settings, default_tracking()),
-        now,
-        &user_request,
-    )
-    .await
-    .unwrap();
+    run_metrics(&lookups, &gauges, &user_request).await;
     let labels = [("user", "user-1"), ("user_email", ""), ("user_alias", "")];
     assert_eq!(
         all_samples(&gauges),
@@ -198,7 +179,6 @@ async fn a_request_max_budget_keeps_the_fetched_one_off() {
 
 #[tokio::test]
 async fn a_fetched_user_without_an_email_or_alias_keeps_them_empty() {
-    let settings = PrometheusLabelSettings::with_defaults();
     let lookups = RecordingLookups::default().with_user(Answer::Found(UserRecord {
         budget_reset_at: None,
         max_budget: None,
@@ -206,7 +186,6 @@ async fn a_fetched_user_without_an_email_or_alias_keeps_them_empty() {
         user_alias: None,
     }));
     let gauges = entity_gauges(USER_GAUGES, &LABELS, false);
-    let now = time("2026-01-01T00:00:00Z");
     let user_request = request(
         Some("user-1"),
         Some("request@example.com"),
@@ -214,15 +193,7 @@ async fn a_fetched_user_without_an_email_or_alias_keeps_them_empty() {
         None,
         None,
     );
-    set_user_budget_metrics_after_api_request(
-        &lookups,
-        &gauges,
-        source(&settings, default_tracking()),
-        now,
-        &user_request,
-    )
-    .await
-    .unwrap();
+    run_metrics(&lookups, &gauges, &user_request).await;
     assert_eq!(
         all_samples(&gauges),
         vec![infinity_row(
@@ -234,10 +205,8 @@ async fn a_fetched_user_without_an_email_or_alias_keeps_them_empty() {
 
 #[tokio::test]
 async fn a_user_the_lookup_cannot_find_keeps_the_partial_object() {
-    let settings = PrometheusLabelSettings::with_defaults();
     let lookups = RecordingLookups::default();
     let gauges = entity_gauges(USER_GAUGES, &LABELS, false);
-    let now = time("2026-01-01T00:00:00Z");
     let user_request = request(
         Some("user-1"),
         Some("request@example.com"),
@@ -245,15 +214,7 @@ async fn a_user_the_lookup_cannot_find_keeps_the_partial_object() {
         Some("10"),
         None,
     );
-    set_user_budget_metrics_after_api_request(
-        &lookups,
-        &gauges,
-        source(&settings, default_tracking()),
-        now,
-        &user_request,
-    )
-    .await
-    .unwrap();
+    run_metrics(&lookups, &gauges, &user_request).await;
     let labels = [("user", "user-1"), ("user_email", ""), ("user_alias", "")];
     assert_eq!(
         all_samples(&gauges),
@@ -262,26 +223,16 @@ async fn a_user_the_lookup_cannot_find_keeps_the_partial_object() {
             row(USER_GAUGES[1], &labels, "10"),
         ]
     );
-    assert_eq!(lookups.calls().len(), 1);
+    assert_eq!(lookups.calls(), [user_info("user-1")]);
 }
 
 #[tokio::test]
 async fn a_lookup_error_keeps_the_partial_user_and_logs_it() {
-    let settings = PrometheusLabelSettings::with_defaults();
     let (logs, _guard) = capture_logs();
     let lookups = RecordingLookups::default().with_user(Answer::Failed("the user read failed"));
     let gauges = entity_gauges(USER_GAUGES, &LABELS, false);
-    let now = time("2026-01-01T00:00:00Z");
     let user_request = request(Some("user-1"), None, Some("1"), Some("10"), None);
-    set_user_budget_metrics_after_api_request(
-        &lookups,
-        &gauges,
-        source(&settings, default_tracking()),
-        now,
-        &user_request,
-    )
-    .await
-    .unwrap();
+    run_metrics(&lookups, &gauges, &user_request).await;
     let labels = [("user", "user-1"), ("user_email", ""), ("user_alias", "")];
     assert_eq!(
         all_samples(&gauges),
@@ -298,10 +249,8 @@ async fn a_lookup_error_keeps_the_partial_user_and_logs_it() {
 
 #[tokio::test]
 async fn no_user_id_skips_before_the_lookup() {
-    let settings = PrometheusLabelSettings::with_defaults();
     let lookups = RecordingLookups::default();
     let gauges = entity_gauges(USER_GAUGES, &LABELS, false);
-    let now = time("2026-01-01T00:00:00Z");
     let user_request = request(
         None,
         Some("request@example.com"),
@@ -309,35 +258,17 @@ async fn no_user_id_skips_before_the_lookup() {
         Some("10"),
         None,
     );
-    set_user_budget_metrics_after_api_request(
-        &lookups,
-        &gauges,
-        source(&settings, default_tracking()),
-        now,
-        &user_request,
-    )
-    .await
-    .unwrap();
+    run_metrics(&lookups, &gauges, &user_request).await;
     assert!(all_samples(&gauges).is_empty());
     assert!(lookups.calls().is_empty());
 }
 
 #[tokio::test]
 async fn a_noop_remaining_gauge_skips_before_the_lookup() {
-    let settings = PrometheusLabelSettings::with_defaults();
     let lookups = RecordingLookups::default();
     let gauges = entity_gauges(USER_GAUGES, &LABELS, true);
-    let now = time("2026-01-01T00:00:00Z");
     let user_request = request(Some("user-1"), None, Some("1"), Some("10"), None);
-    set_user_budget_metrics_after_api_request(
-        &lookups,
-        &gauges,
-        source(&settings, default_tracking()),
-        now,
-        &user_request,
-    )
-    .await
-    .unwrap();
+    run_metrics(&lookups, &gauges, &user_request).await;
     assert!(all_samples(&gauges).is_empty());
     assert!(lookups.calls().is_empty());
 }

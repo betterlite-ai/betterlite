@@ -85,21 +85,19 @@ pub(crate) const fn customer_tracking() -> EndUserCostTrackingSettings {
     }
 }
 
-pub(crate) const fn source<'labels>(
-    settings: &'labels PrometheusLabelSettings,
+pub(crate) const fn source(
+    settings: &PrometheusLabelSettings,
     end_user_settings: EndUserCostTrackingSettings,
-) -> LabelSource<'labels> {
+) -> LabelSource<'_> {
     LabelSource::Values {
         settings,
         end_user_settings,
     }
 }
 
-pub(crate) fn entity_gauges(
-    names: [&'static str; 3],
-    labels: &[&str],
-    noop: bool,
-) -> EntityBudgetGauges<MetricLike<PrometheusMetric>> {
+pub(crate) type EntityGauges = EntityBudgetGauges<MetricLike<PrometheusMetric>>;
+
+pub(crate) fn entity_gauges(names: [&'static str; 3], labels: &[&str], noop: bool) -> EntityGauges {
     EntityBudgetGauges {
         remaining: field(names[0], labels, noop),
         max: field(names[1], labels, noop),
@@ -224,12 +222,6 @@ pub(crate) enum Answer<T> {
     Failed(&'static str),
 }
 
-impl<T> Default for Answer<T> {
-    fn default() -> Self {
-        Self::Missing
-    }
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum LookupCall {
     TeamInfo {
@@ -255,7 +247,7 @@ pub(crate) enum LookupCall {
     },
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub(crate) struct RecordingLookups {
     pub(crate) database: bool,
     pub(crate) team: Answer<TeamRecord>,
@@ -265,6 +257,22 @@ pub(crate) struct RecordingLookups {
     pub(crate) customer: Answer<CachedEndUser>,
     pub(crate) default_budget: Answer<BudgetTableSnapshot>,
     calls: Arc<Mutex<Vec<LookupCall>>>,
+}
+
+// Answer<T> has no Default, and deriving would demand T: Default from every record type
+impl Default for RecordingLookups {
+    fn default() -> Self {
+        Self {
+            database: false,
+            team: Answer::Missing,
+            org: Answer::Missing,
+            key: Answer::Missing,
+            user: Answer::Missing,
+            customer: Answer::Missing,
+            default_budget: Answer::Missing,
+            calls: Arc::default(),
+        }
+    }
 }
 
 impl RecordingLookups {
@@ -357,11 +365,16 @@ impl BudgetLookups for RecordingLookups {
         required(self.team.clone())
     }
 
-    async fn org_info(&self, org_id: &str, include: bool) -> LookupResult<Option<OrgRecord>> {
-        self.record(LookupCall::OrgInfo {
+    async fn org_info(
+        &self,
+        org_id: &str,
+        include_budget_table: bool,
+    ) -> LookupResult<Option<OrgRecord>> {
+        let call = LookupCall::OrgInfo {
             org_id: org_id.to_owned(),
-            include_budget_table: include,
-        });
+            include_budget_table,
+        };
+        self.record(call);
         answer(self.org.clone())
     }
 
