@@ -94,14 +94,14 @@ const INSERT_SESSION_SQL: &str = r#"INSERT INTO "LiteLLM_AutoRouterSession"
     (api_key, session_id, router_name, router_type, first_turn_at, last_turn_at, last_model,
      turns, spend, saved_spend, savings_estimated_turns, savings_estimated_actual_spend,
      savings_estimated_saved_spend, classifier_cost, classifier_cost_recorded_turns, tier_turns)
-    VALUES ($1, $2, $3, $4, $5::timestamp, $6::timestamp, $7, $8,
+    VALUES ($1, $2, $3, $4, ($5::text)::timestamp, ($6::text)::timestamp, $7, $8,
         ($9::text::numeric)::double precision, $10, $11, $12, $13, $14, $15, ($16::text)::jsonb)"#;
 
 const INSERT_USER_SESSION_SQL: &str = r#"INSERT INTO "LiteLLM_AutoRouterUserSession"
     (user_id, api_key, session_id, router_name, router_type, first_turn_at, last_turn_at, last_model,
      turns, spend, saved_spend, savings_estimated_turns, savings_estimated_actual_spend,
      savings_estimated_saved_spend, classifier_cost, classifier_cost_recorded_turns, tier_turns)
-    VALUES ($1, $2, $3, $4, $5, $6::timestamp, $7::timestamp, $8, $9,
+    VALUES ($1, $2, $3, $4, $5, ($6::text)::timestamp, ($7::text)::timestamp, $8, $9,
         ($10::text::numeric)::double precision, $11, $12, $13, $14, $15, $16, ($17::text)::jsonb)"#;
 
 #[derive(Parser)]

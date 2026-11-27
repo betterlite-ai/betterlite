@@ -9,6 +9,7 @@ use betterlite_db::managed_resource_rows::autorouter::AutoRouterSession;
 use betterlite_db::postgres_store::errors::backend;
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_redis::config_sync::publish::{PublishChange, redis_config_change_publisher};
+use chrono::NaiveDateTime;
 use tokio_postgres::types::ToSql;
 
 use crate::app::spend::cli_writer_store;
@@ -114,8 +115,9 @@ impl AutoRouterReadStore for PgAutoRouterReads {
         user_id: Option<&str>,
     ) -> Result<Vec<SessionAggRow>, ReadApiError> {
         let client = self.store.session().await?;
-        let params: [&(dyn ToSql + Sync); 4] =
-            [&window.query_start, &window.query_end, &api_key, &user_id];
+        let start = window_bound(&window.query_start)?;
+        let end = window_bound(&window.query_end)?;
+        let params: [&(dyn ToSql + Sync); 4] = [&start, &end, &api_key, &user_id];
         let row = client
             .query_one(BENCHMARKS_SQL, &params)
             .await
@@ -142,6 +144,15 @@ impl AutoRouterReadStore for PgAutoRouterReads {
             .await
             .map_err(ReadApiError::from)
     }
+}
+
+// the SQL casts its window bounds to timestamp, so they are bound as timestamps rather than text
+fn window_bound(value: &str) -> Result<NaiveDateTime, ReadApiError> {
+    value
+        .parse::<NaiveDateTime>()
+        .map_err(|source| ReadApiError::Store {
+            message: source.to_string(),
+        })
 }
 
 // the route reads through the proxy's writer pool, the one the cache activity routes already open
