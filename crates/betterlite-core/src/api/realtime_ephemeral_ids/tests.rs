@@ -621,6 +621,8 @@ fn realtime_token_legacy_decoding() {
         "\u{feff}{}",
         r#"{"v":"realtime_v1","ephemeral_key":"k","model_id":"m","x":NaN}"#,
         r#"{"v":"realtime_v1","ephemeral_key":"k","model_id":"m","x":1e400}"#,
+        r#"{"v":"realtime_v1","ephemeral_key":"k","model_id":"m","x":[1e400]}"#,
+        r#"{"v":"realtime_v1","ephemeral_key":"k","model_id":"m","x":{"y":-1e400}}"#,
         r#"{"v":"realtime_v1","ephemeral_key":"k","model_id":"m","x":"\ud800"}"#,
     ];
     assert!(

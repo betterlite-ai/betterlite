@@ -108,6 +108,9 @@ pub fn decode_realtime_token_payload(
     if text_value(fields.get("v")) != Some(TOKEN_VERSION) {
         return None;
     }
+    if fields.values().any(holds_non_finite_number) {
+        return None;
+    }
     let ephemeral_key = text_value(fields.get("ephemeral_key"))?.to_owned();
     let model_id = text_value(fields.get("model_id"))?.to_owned();
     drop(fields.shift_remove("v"));
@@ -119,4 +122,15 @@ pub fn decode_realtime_token_payload(
         model_id,
         fields,
     })
+}
+
+// a number betterlite cannot hand back as standard JSON: arbitrary precision keeps a literal that overflows f64, such as 1e400, where Python's json reads an infinity
+#[must_use]
+fn holds_non_finite_number(value: &Json) -> bool {
+    match value {
+        Json::Number(number) => number.as_f64().is_none(),
+        Json::List(items) => items.iter().any(holds_non_finite_number),
+        Json::Object(object) => object.values().any(holds_non_finite_number),
+        Json::Null | Json::Bool(_) | Json::Text(_) => false,
+    }
 }
