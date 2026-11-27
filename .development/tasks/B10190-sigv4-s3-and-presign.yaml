@@ -74,40 +74,40 @@ checks:
       run: test -z "$(grep -rlE 'v4::SigningParams|SigningSettings|SignableRequest|aws_sigv4' crates/betterlite-logging/src crates/betterlite-config/src crates/betterlite-db/src/rds_credentials)" && test -z "$(grep -rnE 'RequestToSign|SigningCredentials' crates/betterlite-logging/src crates/betterlite-bedrock/src/s3_signing crates/betterlite-server/src/bucket_config)" && test -z "$(grep -n 'pub struct Credentials' crates/betterlite-logging/src/s3_transport/signing.rs)" && test -z "$(grep -nE '^aws-sigv4 ' crates/betterlite-logging/Cargo.toml crates/betterlite-config/Cargo.toml crates/betterlite-db/Cargo.toml)"
     - id: sigv4-tests
       why: the S3 mode or presign_request is missing, signs differently from botocore, or orders the token after the signature
-      run: cargo nextest run --locked -p betterlite-sigv4 --no-tests=fail -E 'test(/^sign::tests::/)'
+      run: grep -q "fn presign_request" crates/betterlite-sigv4/src/sign.rs && cargo nextest run --locked -p betterlite-sigv4 --no-tests=fail -E 'test(/^sign::tests::/)'
     - id: s3-transport-tests
       why: an S3 log upload, download or FOCUS delivery lost a signed header or its error mapping
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E '(test(/^s3_transport::/) | test(/^finops::focus::(.*::)?focus_s3_destination::/) | test(/^(s3_batch|legacy_s3|s3_audit)::/)) - test(/replays_the_/)'
+      run: grep -q S3SigV4Auth crates/betterlite-logging/src/s3_transport/upload.rs && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E '(test(/^s3_transport::/) | test(/^finops::focus::(.*::)?focus_s3_destination::/) | test(/^(s3_batch|legacy_s3|s3_audit)::/)) - test(/replays_the_/)'
     - id: s3-transport-cases
       why: the S3 log transport helper cases no longer match LiteLLM's signed requests
-      run: cargo run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-logging -- tools/oracle/cases/s3_log_transport
+      run: grep -q S3SigV4Auth crates/betterlite-logging/src/s3_transport/upload.rs && cargo run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-logging -- tools/oracle/cases/s3_log_transport
     - id: bedrock-s3-tests
       why: the Bedrock S3 upload lost a signed header, its botocore order or its error variant
-      run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/^s3_signing::/) - test(/replays_the_/)'
+      run: grep -q betterlite_sigv4 crates/betterlite-bedrock/src/s3_signing/signer.rs && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/^s3_signing::/) - test(/replays_the_/)'
     - id: bedrock-s3-cases
       why: the Bedrock S3 signing helper cases no longer match LiteLLM's signed upload
-      run: cargo run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-bedrock -- tools/oracle/cases/helpers/providers/bedrock-services-s3-signing
+      run: grep -q betterlite_sigv4 crates/betterlite-bedrock/src/s3_signing/signer.rs && cargo run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-bedrock -- tools/oracle/cases/helpers/providers/bedrock-services-s3-signing
     - id: server-s3-tests
       why: a bucket config read or module download is no longer signed
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^bucket_config::(s3_reader|module_download)::/)'
+      run: grep -q S3SigV4Auth crates/betterlite-server/src/bucket_config/s3_reader.rs && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^bucket_config::(s3_reader|module_download)::/)'
     - id: elasticache-token-order
       why: an ElastiCache token with a session token still lists it after the signature
       run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::redis_credentials::tests::elasticache_provider_puts_the_session_token_before_the_signature$/)'
     - id: redis-credentials-tests
       why: the ElastiCache token or the server's Redis IAM auth changed
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::redis_credentials::/)' && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^redis_cloud_auth::/)'
+      run: grep -q presign_request crates/betterlite-config/src/sections/redis_credentials/aws.rs && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::redis_credentials::/)' && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^redis_cloud_auth::/)'
     - id: redis-credentials-cases
       why: the Redis credential helper cases no longer match LiteLLM
-      run: cargo run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-config -- tools/oracle/cases/helpers/redis-credentials
+      run: grep -q presign_request crates/betterlite-config/src/sections/redis_credentials/aws.rs && cargo run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-config -- tools/oracle/cases/helpers/redis-credentials
     - id: rds-tests
       why: an RDS token no longer matches botocore's answers or maps its signing error
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^rds_credentials::/)'
+      run: grep -q presign_request crates/betterlite-db/src/rds_credentials/signer.rs && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^rds_credentials::/)'
 oracle_cases: []
 deviations: []
 out_of_scope:
   - "The five header signers in betterlite-secret-managers, betterlite-logging's SQS and DynamoDB, betterlite-http and betterlite-openai: B10191."
   - "betterlite-rag's bedrock_ingestion signs its S3 calls (S3_SERVICE, client.rs L28) through the default SigV4Auth mode, while LiteLLM uploads through boto3's S3 client; moving them onto S3SigV4Auth changes their signatures and is its own fix."
-  - "The credential side: ElastiCache's AwsCredentialsResolver, RDS's credential selection and STS flows, the S3 CredentialSource and the server's resolve_credentials keep their types and logic. B10174 and B10175 own the AWS credential chain."
+  - "The credential side: ElastiCache's AwsCredentialsResolver, RDS's credential selection and STS flows, the S3 CredentialSource and the server's resolve_credentials keep their types and logic, since the credential chain is B10174 and B10175 work."
   - "S3 presigning (botocore's S3SigV4QueryAuth with UNSIGNED-PAYLOAD): nothing presigns S3."
 pitfalls:
   - "aws-sigv4 returns X-Amz-Signature before X-Amz-Security-Token; presign_request moves the signature to the end, and RDS's token_query must not add it a second time."
