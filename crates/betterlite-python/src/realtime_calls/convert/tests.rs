@@ -59,7 +59,9 @@ fn request_transcription_keeps_the_session_body() {
 #[test]
 fn request_calls_requires_the_ephemeral_key() {
     let payload = r#"{"arguments":{"model":"gpt-4o-realtime-preview"}}"#;
-    let error = calls(arguments(payload), &[b"sdp".to_vec()]).unwrap_err();
+    let error = calls(arguments(payload), vec![b"sdp".to_vec()])
+        .err()
+        .unwrap();
     assert!(matches!(
         error,
         ConvertError::Missing("openai_ephemeral_key")
@@ -69,7 +71,7 @@ fn request_calls_requires_the_ephemeral_key() {
 #[test]
 fn request_calls_takes_the_sdp_from_the_last_blob() {
     let payload = r#"{"arguments":{"openai_ephemeral_key":"ek_1","model":"gpt-4o-realtime-preview","session":{"type":"realtime"}}}"#;
-    let request = calls(arguments(payload), &[b"offer".to_vec()]).unwrap();
+    let request = calls(arguments(payload), vec![b"offer".to_vec()]).unwrap();
     assert_eq!(request.ephemeral_key.as_str(), "ek_1");
     assert_eq!(request.sdp, b"offer".to_vec());
     assert!(request.session.is_some());

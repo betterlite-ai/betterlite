@@ -110,19 +110,19 @@ pub(crate) fn transcription(arguments: Arguments) -> TranscriptionArguments {
 
 pub(crate) fn calls(
     arguments: Arguments,
-    blobs: &[Vec<u8>],
+    mut blobs: Vec<Vec<u8>>,
 ) -> Result<CallsArguments, ConvertError> {
     let Some(ephemeral_key) = arguments.openai_ephemeral_key.clone() else {
         return Err(ConvertError::Missing("openai_ephemeral_key"));
     };
-    let Some(sdp) = blobs.last() else {
+    let Some(sdp) = blobs.pop() else {
         return Err(ConvertError::Missing("sdp_body"));
     };
     Ok(CallsArguments {
         session: arguments.session.clone(),
         common: common(arguments),
         ephemeral_key,
-        sdp: sdp.clone(),
+        sdp,
     })
 }
 
@@ -169,15 +169,11 @@ fn dispatch_failure(error: &RealtimeHttpError) -> CallFailure {
         RealtimeHttpError::Logging(source) => CallFailure::class("ValueError", source.to_string()),
         RealtimeHttpError::Sdp(source) => CallFailure::class("ValueError", source.to_string()),
         RealtimeHttpError::Config(source) => CallFailure::class("ValueError", source.to_string()),
-        RealtimeHttpError::RequestUrl { .. } => CallFailure::class("ValueError", error.to_string()),
-        RealtimeHttpError::HeaderName { .. } => CallFailure::class("ValueError", error.to_string()),
-        RealtimeHttpError::HeaderValue { .. } => {
-            CallFailure::class("ValueError", error.to_string())
-        }
-        RealtimeHttpError::HeaderNotText { .. } => {
-            CallFailure::class("ValueError", error.to_string())
-        }
-        RealtimeHttpError::Encode(_source) => CallFailure::class("ValueError", error.to_string()),
+        RealtimeHttpError::RequestUrl { .. }
+        | RealtimeHttpError::HeaderName { .. }
+        | RealtimeHttpError::HeaderValue { .. }
+        | RealtimeHttpError::HeaderNotText { .. }
+        | RealtimeHttpError::Encode(_) => CallFailure::class("ValueError", error.to_string()),
     }
 }
 

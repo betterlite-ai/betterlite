@@ -50,16 +50,16 @@ impl NativeRealtimeSession {
     fn acalls(&self, py: Python<'_>, payload: &str, blobs: Blobs) -> Pending {
         let envelope: convert::Payload =
             serde_json::from_str(payload).map_err(ConvertError::Json)?;
-        let arguments = convert::calls(envelope.arguments, &blobs)?;
+        let arguments = convert::calls(envelope.arguments, blobs)?;
         answer(py, &self.session, Prepared::Calls(arguments))
     }
 }
 
 // The provider's answer as text, or the class LiteLLM raises for its failure
 fn answer(py: Python<'_>, session: &Arc<RealtimeSession>, prepared: Prepared) -> Pending {
-    let session = Arc::clone(session);
+    let owned = Arc::clone(session);
     let future = async move {
-        match http::exchange(&session, &prepared).await {
+        match http::exchange(&owned, &prepared).await {
             Ok(response) => body_text(response),
             Err(error) => Err(convert::http_failure(&error).exception()),
         }

@@ -6,7 +6,7 @@ use betterlite_core::api::realtime_http_calls::call::{
     CallCommon, ClientSecretCall, RealtimeCallsCall, SuppliedClient, TranscriptionSessionCall,
 };
 use betterlite_core::api::realtime_http_calls::dispatch::{
-    CallsRequest, RealtimeHttpDispatch, RealtimeHttpRequest, SessionEndpoint, SessionRequest,
+    RealtimeHttpDispatch, RealtimeHttpRequest, SessionEndpoint,
 };
 use betterlite_core::api::realtime_http_calls::error::RealtimeHttpCallsError;
 use betterlite_core::api::realtime_http_calls::provider::RealtimeHttpConfig;
@@ -37,7 +37,7 @@ pub(crate) struct Dispatcher<'session> {
     session: &'session RealtimeSession,
 }
 
-impl<'session> Dispatcher<'session> {
+impl Dispatcher<'_> {
     fn deps<'deps>(
         &'deps self,
         config: Option<&'deps RealtimeHttpConfig>,
@@ -101,7 +101,7 @@ struct EndpointRequest<'call> {
     supplied: Option<SuppliedClient<'call>>,
 }
 
-fn endpoint_request(request: RealtimeHttpRequest<'_>) -> EndpointRequest<'_> {
+const fn endpoint_request(request: RealtimeHttpRequest<'_>) -> EndpointRequest<'_> {
     match request {
         RealtimeHttpRequest::Session(session) => EndpointRequest {
             call: EndpointCall::Session(SessionCall {
