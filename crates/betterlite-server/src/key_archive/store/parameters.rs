@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use betterlite_db::budget_permission_rows::{JsonData, Timestamp};
+use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::identity_rows::Payload;
 use betterlite_db::identity_rows::key::{DeletedVerificationToken, Expiry};
 use chrono::{DateTime, NaiveDateTime};
@@ -99,7 +99,7 @@ fn boolean_parameters(record: &DeletedVerificationToken) -> [Parameter; 3] {
     ]
 }
 
-fn integer_parameters(record: &DeletedVerificationToken) -> [Parameter; 5] {
+const fn integer_parameters(record: &DeletedVerificationToken) -> [Parameter; 5] {
     [
         Parameter::Integer(record.token.max_parallel_requests),
         Parameter::Integer(record.token.tpm_limit),
@@ -109,7 +109,7 @@ fn integer_parameters(record: &DeletedVerificationToken) -> [Parameter; 5] {
     ]
 }
 
-fn number_parameters(record: &DeletedVerificationToken) -> [Parameter; 3] {
+const fn number_parameters(record: &DeletedVerificationToken) -> [Parameter; 3] {
     [
         Parameter::Number(Some(record.token.spend)),
         Parameter::Number(Some(record.token.total_spend)),
@@ -119,20 +119,25 @@ fn number_parameters(record: &DeletedVerificationToken) -> [Parameter; 3] {
 
 fn timestamp_parameters(
     record: &DeletedVerificationToken,
-) -> Result<[Parameter; 9], KeyArchiveError> {
+) -> Result<Vec<Parameter>, KeyArchiveError> {
     let token = &record.token;
-    let instants = [
-        expiry_instant(token.expires.as_ref())?,
-        timestamp_instant(token.budget_reset_at),
-        timestamp_instant(token.created_at),
-        timestamp_instant(token.updated_at),
-        timestamp_instant(token.settings_updated_at),
-        timestamp_instant(token.last_active),
-        timestamp_instant(token.last_rotation_at),
-        timestamp_instant(token.key_rotation_at),
-        timestamp_instant(record.deleted_at),
+    let stamps = [
+        token.budget_reset_at,
+        token.created_at,
+        token.updated_at,
+        token.settings_updated_at,
+        token.last_active,
+        token.last_rotation_at,
+        token.key_rotation_at,
+        record.deleted_at,
     ];
-    Ok(instants.map(Parameter::Timestamp))
+    let mut parameters = vec![Parameter::Timestamp(expiry_instant(
+        token.expires.as_ref(),
+    )?)];
+    parameters.extend(
+        stamps.map(|stamp| Parameter::Timestamp(stamp.map(|value| value.utc().naive_utc()))),
+    );
+    Ok(parameters)
 }
 
 fn array_parameters(record: &DeletedVerificationToken) -> Result<[Parameter; 4], KeyArchiveError> {
@@ -165,18 +170,11 @@ fn json_parameters(record: &DeletedVerificationToken) -> [Parameter; 8] {
     ]
 }
 
-fn timestamp_instant(timestamp: Option<Timestamp>) -> Option<NaiveDateTime> {
-    match timestamp {
-        None => None,
-        Some(value) => Some(value.utc().naive_utc()),
-    }
-}
-
 fn expiry_instant(expiry: Option<&Expiry>) -> Result<Option<NaiveDateTime>, KeyArchiveError> {
-    let Some(expiry) = expiry else {
+    let Some(given) = expiry else {
         return Ok(None);
     };
-    match expiry {
+    match given {
         Expiry::DateTime(value) => Ok(Some(value.naive_utc())),
         Expiry::Text(text) => parse_expiry_instant(text)
             .map(Some)
@@ -195,10 +193,10 @@ fn text_values(
     values: Option<&[JsonData]>,
     column: &'static str,
 ) -> Result<Option<Vec<String>>, KeyArchiveError> {
-    let Some(values) = values else {
+    let Some(given) = values else {
         return Ok(None);
     };
-    let texts = values
+    let texts = given
         .iter()
         .map(|value| match value {
             JsonData::String(text) => Ok(text.clone()),

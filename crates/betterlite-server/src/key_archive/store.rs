@@ -12,10 +12,13 @@ use super::KeyArchiveError;
 mod tests;
 
 // ast-grep-ignore: no-long-names
-pub async fn save_deleted_verification_token_records<C: GenericClient + Sync>(
+pub async fn save_deleted_verification_token_records<C>(
     db: &C,
     records: &[DeletedVerificationToken],
-) -> Result<(), KeyArchiveError> {
+) -> Result<(), KeyArchiveError>
+where
+    C: GenericClient + Sync,
+{
     if records.is_empty() {
         return Ok(());
     }

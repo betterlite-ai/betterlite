@@ -235,8 +235,8 @@ fn deleted_by_names_the_caller() {
     let actor = records[0]
         .deleted_by_api_key
         .as_ref()
-        .map(|secret| secret.expose_secret().as_str());
-    assert_eq!(actor, Some("sk-caller-hash"));
+        .expect("the caller's api key");
+    assert_eq!(actor.expose_secret(), "sk-caller-hash");
 }
 
 #[test]
@@ -249,11 +249,7 @@ fn missing_caller_leaves_the_deletion_actors_unset() {
         &clock,
     );
     assert_eq!(records[0].deleted_by, None);
-    let actor = records[0]
-        .deleted_by_api_key
-        .as_ref()
-        .map(|secret| secret.expose_secret().as_str());
-    assert_eq!(actor, None);
+    assert!(records[0].deleted_by_api_key.is_none());
 }
 
 #[test]

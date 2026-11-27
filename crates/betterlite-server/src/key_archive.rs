@@ -24,13 +24,16 @@ pub enum KeyArchiveError {
 }
 
 // ast-grep-ignore: no-long-names
-pub async fn persist_deleted_verification_tokens<C: GenericClient + Sync>(
+pub async fn persist_deleted_verification_tokens<C>(
     db: &C,
     keys: &[LiteLLMVerificationToken],
     caller: &CallerIdentity,
     litellm_changed_by: Option<&str>,
     clock: &dyn ArchiveClock,
-) -> Result<(), KeyArchiveError> {
+) -> Result<(), KeyArchiveError>
+where
+    C: GenericClient + Sync,
+{
     // ast-grep-ignore: no-long-names
     let records = records::transform_verification_tokens_to_deleted_records(
         keys,
