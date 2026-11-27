@@ -12,7 +12,7 @@ use betterlite_openai::openai_base_config::Object;
 use super::super::auth;
 use super::super::config::PassthroughCallConfig;
 use super::super::{PassthroughCallArgs, allm_passthrough_route};
-use super::support::{base_args, empty_environment, logging_state, proxy_client, test_environment};
+use super::support::{base_args, logging_state, proxy_client, test_environment};
 
 fn args_for(model: &str) -> PassthroughCallArgs {
     let mut args = base_args();
@@ -158,14 +158,14 @@ async fn azure_openai_key_reaches_the_request_when_azure_api_key_is_unset() {
 #[tokio::test]
 async fn azure_api_key_beats_the_azure_openai_key() {
     let serving = serve(reply("200 fixture", &[], "pong"), Duration::ZERO).unwrap();
-    let mut args = azure_args("2024-02-01");
-    args.api_base = Some(format!("http://{}", serving.address));
+    let base = format!("http://{}", serving.address);
     let environment = test_environment(&[
+        ("AZURE_API_BASE", base.as_str()),
         ("AZURE_OPENAI_API_KEY", "openai-env-key"),
         ("AZURE_API_KEY", "azure-env-key"),
     ]);
     allm_passthrough_route(
-        args,
+        azure_args("2024-02-01"),
         &mut logging_state(),
         &proxy_client(1024),
         &environment,
@@ -200,8 +200,9 @@ async fn azure_ad_token_becomes_the_bearer_header() {
 #[tokio::test]
 async fn azure_param_ad_token_becomes_the_bearer_header() {
     let serving = serve(reply("200 fixture", &[], "pong"), Duration::ZERO).unwrap();
+    let base = format!("http://{}", serving.address);
+    let environment = test_environment(&[("AZURE_API_BASE", base.as_str())]);
     let mut args = azure_args("2024-02-01");
-    args.api_base = Some(format!("http://{}", serving.address));
     args.extra.insert(
         "azure_ad_token".to_owned(),
         JsonValue::String(String::from("param-token")),
@@ -210,7 +211,7 @@ async fn azure_param_ad_token_becomes_the_bearer_header() {
         args,
         &mut logging_state(),
         &proxy_client(1024),
-        &empty_environment(),
+        &environment,
     )
     .await
     .expect("the upstream answers");
