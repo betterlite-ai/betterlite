@@ -70,7 +70,10 @@ where
                     message: String::from("the Llama reply is not a JSON object"),
                 });
             };
-            let answer = project(source, model, json_mode.unwrap_or(false), identifier)?;
+            let answer = llama_answer(source, model, json_mode.unwrap_or(false), identifier)
+                .map_err(|error| ForwardingFailure {
+                    message: error.to_string(),
+                })?;
             serde_json::to_value(answer).map_err(|error| ForwardingFailure {
                 message: error.to_string(),
             })
@@ -78,20 +81,6 @@ where
     )
     .map_err(|error| vertex_error(error, input.status, &headers))?;
     Ok(serde_json::from_value(response)?)
-}
-
-// The projection B504 runs on the parsed reply: the Llama3 class's answer, or the failure that becomes its error.
-fn project(
-    source: &Object,
-    requested_model: &str,
-    json_mode: bool,
-    identifier: fn() -> Uuid,
-) -> Result<Answer, ForwardingFailure> {
-    llama_answer(source, requested_model, json_mode, identifier).map_err(|error| {
-        ForwardingFailure {
-            message: error.to_string(),
-        }
-    })
 }
 
 // LiteLLM parses the reply with OpenAIChatCompletionResponse, so a body that is not one is a VertexAIError.
