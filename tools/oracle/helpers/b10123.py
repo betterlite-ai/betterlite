@@ -27,7 +27,7 @@ class Records(logging.Handler):
 
 def run(input_value: Input) -> dict[str, JsonValue]:
     response = ModelResponse(**input_value["body"])  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2181
-    messages = cast("list[object]", input_value["original_messages"])  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L976
+    messages = cast("list[object]", input_value["original_messages"])  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L976
     handler = Records()
     logger = logging.getLogger("LiteLLM")
     previous_handlers = list(logger.handlers)
@@ -37,7 +37,7 @@ def run(input_value: Input) -> dict[str, JsonValue]:
     logger.addHandler(handler)
     logger.setLevel(logging.DEBUG)
     try:
-        follow_up = LiteLLM_Proxy_MCP_Handler._create_follow_up_messages_for_chat(  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L975
+        follow_up = LiteLLM_Proxy_MCP_Handler._create_follow_up_messages_for_chat(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L975
             original_messages=messages,
             response=response,
             tool_results=input_value["tool_results"],
