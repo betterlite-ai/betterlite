@@ -56,7 +56,7 @@ pub(super) const UPDATED_AT: &str = "2024-02-03T04:05:06.000";
 type Found = Result<Option<LiteLlmManagedVectorStore>, TableError>;
 type Stored = Result<LiteLlmManagedVectorStore, TableError>;
 type Kept = Result<(), CacheError>;
-type Rows<'a> = MutexGuard<'a, Vec<LiteLlmManagedVectorStore>>;
+type Rows<'guard> = MutexGuard<'guard, Vec<LiteLlmManagedVectorStore>>;
 
 // a record built from the wire shape the DB hands over
 pub(super) fn parsed(source: &str) -> LiteLlmManagedVectorStore {
@@ -277,7 +277,10 @@ fn arm<T>(cell: &Mutex<Option<T>>, failure: T) {
     *cell.lock().unwrap_or_else(PoisonError::into_inner) = Some(failure);
 }
 
-fn armed<T: PartialEq>(cell: &Mutex<Option<T>>, which: T) -> bool {
+fn armed<T>(cell: &Mutex<Option<T>>, which: T) -> bool
+where
+    T: PartialEq,
+{
     *cell.lock().unwrap_or_else(PoisonError::into_inner) == Some(which)
 }
 
@@ -595,7 +598,7 @@ pub(super) fn build(setup: Setup) -> Arc<VectorManagementWriteState<FakeDatabase
     let cache = setup.cache.clone();
     let events = setup.events.clone();
     let cache: Option<Arc<dyn VectorStoreCache>> =
-        cache.map(|store| Arc::new(store.with_events(events)));
+        cache.map(|store| -> Arc<dyn VectorStoreCache> { Arc::new(store.with_events(events)) });
     Arc::new(VectorManagementWriteState {
         reads: read_state(setup),
         cache,

@@ -4,69 +4,13 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_openai::api::vector_store_records::records::vector::LiteLlmManagedVectorStore;
 
-use super::cache::VectorStoreCache;
 use super::error::ManagementWriteError;
 use super::params::generic_params_dump;
 use super::response::{VectorStoreWriteResponse, decode_json};
-use super::rows::{NewVectorStoreRecord, VectorStoreWrites};
+use super::rows::VectorStoreWrites;
 use super::state::VectorManagementWriteState;
-use crate::api::vector_management_boundaries::error::VectorManagementError;
-use crate::api::vector_management_boundaries::rows::VectorStoreRows;
+use super::{NewVectorStore, create_vector_store_in_db};
 use crate::api::vector_management_read::caller::CallerView;
-
-// create_vector_store_in_db's arguments, so B3464 passes the same nine values the endpoint passes
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct NewVectorStore {
-    pub vector_store_id: String,
-    pub custom_llm_provider: String,
-    pub vector_store_name: Option<String>,
-    pub vector_store_description: Option<String>,
-    pub vector_store_metadata: Option<Json>,
-    pub litellm_params: Option<JsonObject>,
-    pub litellm_credential_name: Option<String>,
-    pub team_id: Option<String>,
-    pub user_id: Option<String>,
-}
-
-// create_vector_store_in_db: duplicate check, insert, registry add, and no rollback if the add fails
-pub async fn create_vector_store_in_db<Database>(
-    database: Option<&Database>,
-    cache: Option<&dyn VectorStoreCache>,
-    vector_store: NewVectorStore,
-) -> Result<LiteLlmManagedVectorStore, ManagementWriteError>
-where
-    Database: VectorStoreWrites + Send + Sync,
-{
-    let Some(database) = database else {
-        return Err(ManagementWriteError::DatabaseNotConnected);
-    };
-    let vector_store_id = vector_store.vector_store_id.clone();
-    let existing = VectorStoreRows::find_unique(database, &vector_store_id)
-        .await
-        .map_err(VectorManagementError::Rows)?;
-    if existing.is_some() {
-        return Err(ManagementWriteError::AlreadyExists { vector_store_id });
-    }
-    let record = NewVectorStoreRecord {
-        vector_store_id: vector_store_id.clone(),
-        custom_llm_provider: vector_store.custom_llm_provider,
-        vector_store_name: vector_store.vector_store_name,
-        vector_store_description: vector_store.vector_store_description,
-        vector_store_metadata: optional_metadata_text(vector_store.vector_store_metadata.as_ref())?,
-        litellm_credential_name: vector_store.litellm_credential_name,
-        litellm_params: params_text(vector_store.litellm_params.as_ref())?,
-        team_id: vector_store.team_id,
-        user_id: vector_store.user_id,
-    };
-    let created = VectorStoreWrites::create(database, record)
-        .await
-        .map_err(VectorManagementError::Rows)?;
-    if let Some(cache) = cache {
-        cache.add(created.clone())?;
-    }
-    tracing::info!("Vector store {vector_store_id} created in database successfully");
-    Ok(created)
-}
 
 // new_vector_store: the feature switch, then the try block's catch-all
 pub async fn new_vector_store<Database>(
@@ -149,7 +93,9 @@ fn params_value(
     }
 }
 
-fn optional_metadata_text(metadata: Option<&Json>) -> Result<Option<String>, ManagementWriteError> {
+pub(super) fn optional_metadata_text(
+    metadata: Option<&Json>,
+) -> Result<Option<String>, ManagementWriteError> {
     let Some(metadata) = metadata else {
         return Ok(None);
     };
@@ -159,7 +105,7 @@ fn optional_metadata_text(metadata: Option<&Json>) -> Result<Option<String>, Man
 }
 
 // an absent or empty dict stores {}, any other stores GenericLiteLLMParams.model_dump(exclude_none=True)
-fn params_text(params: Option<&JsonObject>) -> Result<String, ManagementWriteError> {
+pub(super) fn params_text(params: Option<&JsonObject>) -> Result<String, ManagementWriteError> {
     let empty = JsonObject::new();
     let Some(params) = params.filter(|params| !params.is_empty()) else {
         return safe_dumps(&empty, DEFAULT_MAX_RECURSE_DEPTH, None)

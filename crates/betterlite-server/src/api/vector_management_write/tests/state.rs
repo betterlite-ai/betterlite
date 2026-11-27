@@ -1,7 +1,6 @@
 #![cfg(test)]
 
 use super::support::{Setup, memory_store, read_state};
-use crate::api::vector_management_write::cache::VectorStoreCache as _;
 use crate::api::vector_management_write::state::VectorManagementWriteState;
 
 #[test]
