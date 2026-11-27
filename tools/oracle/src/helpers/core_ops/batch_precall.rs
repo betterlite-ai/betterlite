@@ -11,7 +11,7 @@ use betterlite_core::api::batch_precall::BatchPrecall;
 use betterlite_core::api::batch_precall::input::{BatchPrecallCall, BatchPrecallInput};
 use betterlite_error::rate_limit::{ProxyRateLimitError, ProxyRateLimitErrorInit};
 use betterlite_models::decisions::Json;
-use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_redact::structured::Payload;
 use indexmap::IndexMap;
