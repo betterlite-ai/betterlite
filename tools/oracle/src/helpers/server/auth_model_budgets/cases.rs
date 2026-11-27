@@ -57,7 +57,8 @@ async fn budget_value(call: &Call, entity: BudgetEntity) -> Result<Value, Failur
                 seen: Mutex::new(Vec::new()),
             };
             let outcome = check_user_model_budget(&limiter, &token, &models).await;
-            let calls: Vec<Value> = limiter.seen().into_iter().map(seen_json).collect();
+            let seen = limiter.seen();
+            let calls: Vec<Value> = seen.iter().map(seen_json).collect();
             Ok(json!({"calls": calls, "error": error_value(outcome)?}))
         }
         BudgetEntity::Team => {
@@ -71,7 +72,7 @@ async fn budget_value(call: &Call, entity: BudgetEntity) -> Result<Value, Failur
     }
 }
 
-fn seen_json(seen: SeenUser) -> Value {
+fn seen_json(seen: &SeenUser) -> Value {
     json!({
         "user_id": seen.user_id,
         "model": seen.model,
@@ -88,7 +89,8 @@ async fn key_fallback_value(call: &Call) -> Result<Value, Failure> {
         .as_deref()
         .ok_or(Failure::Missing("the model name"))?;
     let error = fallback_error(&limiter, &token_of(call)?, model_name, &mut request, call).await?;
-    key_answer(&request, limiter.calls(), error)
+    let calls = limiter.calls();
+    key_answer(&request, &calls, &error)
 }
 
 fn key_limiter_of(call: &Call) -> ScriptedKeyLimiter {
@@ -113,7 +115,7 @@ fn request_of(call: &Call) -> Result<CaseRewrite, Failure> {
     })
 }
 
-fn key_answer(request: &CaseRewrite, calls: Vec<String>, error: Value) -> Result<Value, Failure> {
+fn key_answer(request: &CaseRewrite, calls: &[String], error: &Value) -> Result<Value, Failure> {
     Ok(json!({
         "calls": calls,
         "request_model": model_of(request.request_data.as_ref()),

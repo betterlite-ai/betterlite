@@ -93,7 +93,7 @@ fn json_as<T>(params: &BTreeMap<String, JsonData>, name: &str) -> Option<T>
 where
     T: DeserializeOwned,
 {
-    serde_json::to_value(params.get(name)?)
-        .ok()
-        .and_then(|value| serde_json::from_value(value).ok())
+    let value = params.get(name)?;
+    let json = serde_json::to_value(value).ok()?;
+    serde_json::from_value(json).ok()
 }
