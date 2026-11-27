@@ -69,15 +69,11 @@ def cleaned(kwargs: dict[str, CallValue]) -> dict[str, CallValue]:
     return kwargs
 
 
-# The call's own fields, then everything the caller left in **kwargs under the key the wire reads
+# The call's own fields without the ones the caller left unset, then its **kwargs for the wire
 def call_values(kwargs: dict[str, CallValue], **named: CallValue) -> dict[str, CallValue]:
     requested = cleaned(kwargs)
-    return {**named, "kwargs": requested}
-
-
-# A setting the caller left unset stays absent, so the fallback it would hide applies instead
-def connection_values(**named: CallValue) -> dict[str, CallValue]:
-    return {name: value for name, value in named.items() if value is not None}
+    present = {name: value for name, value in named.items() if value is not None}
+    return {**present, "kwargs": requested}
 
 
 def create_now(values: dict[str, CallValue]) -> VectorStoreFileObject:

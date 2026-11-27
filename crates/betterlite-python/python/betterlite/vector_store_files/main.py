@@ -16,7 +16,6 @@ from betterlite.vector_store_files._calls import (
     FILE,
     PAGE,
     call_values,
-    connection_values,
     content_async,
     content_now,
     create_async,
@@ -49,10 +48,8 @@ def create(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a
     values = call_values(
         kwargs, vector_store_id=vector_store_id, file_id=file_id,
         attributes=attributes, chunking_strategy=chunking_strategy,
-        **connection_values(
-            extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body,
-            timeout=timeout, custom_llm_provider=custom_llm_provider,
-        ),
+        extra_headers=extra_headers, extra_query=extra_query, extra_body=extra_body,
+        timeout=timeout, custom_llm_provider=custom_llm_provider,
     )
     match kwargs.pop("acreate", None):
         case given if given is True:
@@ -99,13 +96,10 @@ def list(  # noqa: A001, PLR0913  # https://github.com/BerriAI/litellm/blob/d665
     **kwargs: CallValue,
 ) -> VectorStoreFileListResponse | Awaitable[VectorStoreFileListResponse]:
     values = call_values(
-        kwargs, vector_store_id=vector_store_id, extra_headers=extra_headers,
+        kwargs, vector_store_id=vector_store_id, after=after, before=before,
+        filter=filter, limit=limit, order=order, extra_headers=extra_headers,
         extra_query=extra_query, timeout=timeout, custom_llm_provider=custom_llm_provider,
     )
-    query = connection_values(
-        after=after, before=before, filter=filter, limit=limit, order=order,
-    )
-    values.update(query)
     if kwargs.pop("alist", None) is True:
         return list_async(values)
     return list_now(values)
@@ -127,13 +121,10 @@ async def alist(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d66
 ) -> VectorStoreFileListResponse:
     kwargs.pop("alist", None)
     values = call_values(
-        kwargs, vector_store_id=vector_store_id, extra_headers=extra_headers,
+        kwargs, vector_store_id=vector_store_id, after=after, before=before,
+        filter=filter, limit=limit, order=order, extra_headers=extra_headers,
         extra_query=extra_query, timeout=timeout, custom_llm_provider=custom_llm_provider,
     )
-    query = connection_values(
-        after=after, before=before, filter=filter, limit=limit, order=order,
-    )
-    values |= query
     return PAGE.validate_python(await settled(list_async(values)))
 
 
@@ -220,12 +211,12 @@ def update(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a
     custom_llm_provider: str | None = None,
     **kwargs: CallValue,
 ) -> VectorStoreFileObject | Awaitable[VectorStoreFileObject]:
-    values = call_values(kwargs, vector_store_id=vector_store_id, file_id=file_id)
-    values["attributes"] = attributes
-    values |= connection_values(
+    values = call_values(
+        kwargs, vector_store_id=vector_store_id, file_id=file_id,
         extra_headers=extra_headers, extra_body=extra_body, timeout=timeout,
         custom_llm_provider=custom_llm_provider,
     )
+    values["attributes"] = attributes
     return (
         update_now(values)
         if kwargs.pop("aupdate", None) is not True
@@ -245,12 +236,12 @@ async def aupdate(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d
     **kwargs: CallValue,
 ) -> VectorStoreFileObject:
     kwargs.pop("aupdate", None)
-    values = call_values(kwargs, vector_store_id=vector_store_id, file_id=file_id)
-    values["attributes"] = attributes
-    values |= connection_values(
+    values = call_values(
+        kwargs, vector_store_id=vector_store_id, file_id=file_id,
         extra_headers=extra_headers, extra_body=extra_body, timeout=timeout,
         custom_llm_provider=custom_llm_provider,
     )
+    values["attributes"] = attributes
     answer = await update_async(values)
     return FILE.validate_python(answer)
 
@@ -264,8 +255,8 @@ def delete(
     custom_llm_provider: str | None = None,
     **kwargs: CallValue,
 ) -> VectorStoreFileDeleteResponse | Awaitable[VectorStoreFileDeleteResponse]:
-    values = call_values(kwargs, vector_store_id=vector_store_id, file_id=file_id)
-    values |= connection_values(
+    values = call_values(
+        kwargs, vector_store_id=vector_store_id, file_id=file_id,
         extra_headers=extra_headers, timeout=timeout,
         custom_llm_provider=custom_llm_provider,
     )
@@ -284,8 +275,8 @@ async def adelete(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fca
     **kwargs: CallValue,
 ) -> VectorStoreFileDeleteResponse:
     kwargs.pop("adelete", None)
-    values = call_values(kwargs, vector_store_id=vector_store_id, file_id=file_id)
-    values |= connection_values(
+    values = call_values(
+        kwargs, vector_store_id=vector_store_id, file_id=file_id,
         extra_headers=extra_headers, timeout=timeout,
         custom_llm_provider=custom_llm_provider,
     )

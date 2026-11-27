@@ -370,9 +370,9 @@ def test_calls_delete() -> None:
 def set_module_globals(
     monkeypatch: pytest.MonkeyPatch, module: ModuleType, url: str, key: str
 ) -> None:
-    monkeypatch.setattr(module, "api_base", url)
-    monkeypatch.setattr(module, "api_key", key)
-    monkeypatch.setattr(module, "openai_key", key)
+    monkeypatch.setattr(module, "api_base", url)  # ast-grep-ignore: no-string-mocking
+    monkeypatch.setattr(module, "api_key", key)  # ast-grep-ignore: no-string-mocking
+    monkeypatch.setattr(module, "openai_key", key)  # ast-grep-ignore: no-string-mocking
 
 
 def test_calls_use_module_globals(monkeypatch: pytest.MonkeyPatch) -> None:
