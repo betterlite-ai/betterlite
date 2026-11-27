@@ -49,15 +49,15 @@ pub(super) fn answer(
 ) -> Value {
     let Probe { events, staging } = probe;
     let state = staging_state(&staging);
-    let (pcm_hex, sample_rate_hz, num_channels, duration_seconds) = match audio {
-        Some(track) => (
-            Some(hex::encode(track.pcm_bytes.as_slice())),
-            Some(track.sample_rate_hz),
-            Some(track.num_channels),
-            track.duration_seconds.to_f64(),
-        ),
-        None => (None, None, None, None),
-    };
+    let (pcm_hex, sample_rate_hz, num_channels, duration_seconds) =
+        audio.map_or((None, None, None, None), |track| {
+            (
+                Some(hex::encode(track.pcm_bytes.as_slice())),
+                Some(track.sample_rate_hz),
+                Some(track.num_channels),
+                track.duration_seconds.to_f64(),
+            )
+        });
     json!({
         "status": status,
         "message": message,
