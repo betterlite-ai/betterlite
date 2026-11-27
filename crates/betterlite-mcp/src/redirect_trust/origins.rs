@@ -9,24 +9,25 @@ pub fn parse_trusted_redirect_origins(text: &str) -> Vec<String> {
     }
     let mut entries: Vec<String> = Vec::new();
     for token in raw.split(',') {
-        let mut entry = token.trim().to_lowercase();
+        let entry = token.trim().to_lowercase();
         if entry.is_empty() {
             continue;
         }
-        if let Some((_, after_scheme)) = entry.split_once("://") {
-            entry = after_scheme.to_owned();
-        }
-        if let Some((before_path, _)) = entry.split_once('/') {
-            entry = before_path.to_owned();
-        }
-        if entry.is_empty() {
+        let after_scheme = entry
+            .split_once("://")
+            .map_or(entry.as_str(), |(_, rest)| rest);
+        let before_path = after_scheme
+            .split_once('/')
+            .map_or(after_scheme, |(host, _)| host);
+        if before_path.is_empty() {
             continue;
         }
-        if !entry.starts_with("*.") {
-            entry = strip_default_port("https", &entry);
+        let mut netloc = before_path.to_owned();
+        if !netloc.starts_with("*.") {
+            netloc = strip_default_port("https", &netloc);
         }
-        if !entry.is_empty() {
-            entries.push(entry);
+        if !netloc.is_empty() {
+            entries.push(netloc);
         }
     }
     entries

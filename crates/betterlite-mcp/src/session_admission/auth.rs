@@ -5,6 +5,7 @@ use betterlite_auth::resolved_key::auth::{AuthError, AuthInput, UserAPIKeyAuth};
 use betterlite_db::budget_permission_rows::JsonData;
 use chrono::{DateTime, Utc};
 use http::StatusCode;
+use secrecy::SecretString;
 use thiserror::Error;
 
 use super::identity::session_identity_from_cookie;
@@ -35,14 +36,14 @@ impl SessionAuthError {
 // LiteLLM's _byok_session_auth: a live UI session cookie, then the UserAPIKeyAuth the route receives.
 pub async fn byok_session_auth(
     cookie_header: Option<&str>,
-    master_key: &str,
+    master_key: &SecretString,
     authenticator: Option<&dyn KeyAuthenticator>,
     now: DateTime<Utc>,
 ) -> Result<UserAPIKeyAuth, SessionAuthError> {
     let Some(identity) = session_identity_from_cookie(cookie_header, master_key, now) else {
         return Err(SessionAuthError::LoginRequired);
     };
-    if !session_key_is_live(authenticator, identity.session_key.as_deref()).await {
+    if !session_key_is_live(authenticator, identity.session_key.as_ref()).await {
         return Err(SessionAuthError::LoginRequired);
     }
     let mut fields: BTreeMap<String, JsonData> = BTreeMap::new();

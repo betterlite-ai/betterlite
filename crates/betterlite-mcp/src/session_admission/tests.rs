@@ -6,12 +6,12 @@ use async_trait::async_trait;
 use aws_lc_rs::hmac;
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use betterlite_auth::auth_key_lookup::{
-    KeyAuthenticator, KeyLookupError, KeyLookupOutcome, key_identity,
-};
+use betterlite_auth::auth_key_lookup::error::KeyLookupError;
+use betterlite_auth::auth_key_lookup::{KeyAuthenticator, KeyLookupOutcome, key_identity};
 use betterlite_auth::resolved_key::auth::{AuthError, AuthInput, UserAPIKeyAuth};
-use chrono::{DateTime, Utc};
+use chrono::DateTime;
 use http::StatusCode;
+use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 
 use super::auth::{LOGIN_REQUIRED, SessionAuthError, byok_session_auth};
@@ -23,19 +23,19 @@ const NOW: i64 = 1_700_000_000;
 const FUTURE_EXPIRY: i64 = 4_102_444_800;
 
 #[derive(Clone, Copy, Default, Serialize)]
-struct Claims<'a> {
+struct Claims<'text> {
     #[serde(skip_serializing_if = "Option::is_none")]
     exp: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     iat: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    login_method: Option<&'a str>,
+    login_method: Option<&'text str>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    user_id: Option<&'a str>,
+    user_id: Option<&'text str>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    key: Option<&'a str>,
+    key: Option<&'text str>,
     #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
-    token_type: Option<&'a str>,
+    token_type: Option<&'text str>,
 }
 
 fn signed(claims: Claims<'_>, master_key: &str) -> String {
@@ -79,7 +79,8 @@ impl KeyAuthenticator for Keys {
 async fn admits(cookie_header: Option<&str>, master_key: &str, resolves: bool) -> Option<String> {
     let keys = Keys { resolves };
     let now = DateTime::from_timestamp(NOW, 0).unwrap();
-    match byok_session_auth(cookie_header, master_key, Some(&keys), now).await {
+    let master = SecretString::from(master_key);
+    match byok_session_auth(cookie_header, &master, Some(&keys), now).await {
         Ok(auth) => key_identity(&auth).user_id,
         Err(SessionAuthError::LoginRequired) => None,
         Err(error) => panic!("the session principal did not construct: {error}"),
@@ -263,7 +264,8 @@ async fn cookie_sk_key_without_database() {
         ..ui_claims()
     };
     let now = DateTime::from_timestamp(NOW, 0).unwrap();
-    let auth = byok_session_auth(Some(&token(claims, MASTER_KEY)), MASTER_KEY, None, now)
+    let master = SecretString::from(MASTER_KEY);
+    let auth = byok_session_auth(Some(&token(claims, MASTER_KEY)), &master, None, now)
         .await
         .unwrap();
     assert_eq!(key_identity(&auth).user_id, Some("user-1".to_owned()));
@@ -276,13 +278,14 @@ async fn cookie_empty_key_claim() {
         ..ui_claims()
     };
     let header = token(claims, MASTER_KEY);
+    let master = SecretString::from(MASTER_KEY);
     let identity = session_identity_from_cookie(
         Some(&header),
-        MASTER_KEY,
+        &master,
         DateTime::from_timestamp(NOW, 0).unwrap(),
     )
     .unwrap();
-    assert_eq!(identity.session_key, None);
+    assert!(identity.session_key.is_none());
     assert_eq!(
         admits(Some(&header), MASTER_KEY, false).await,
         Some("user-1".to_owned())
@@ -367,9 +370,10 @@ struct PrincipalSnapshot {
 async fn session_auth_constructs_the_byok_session_principal() {
     let keys = Keys { resolves: true };
     let now = DateTime::from_timestamp(NOW, 0).unwrap();
+    let master = SecretString::from(MASTER_KEY);
     let auth = byok_session_auth(
         Some(&token(ui_claims(), MASTER_KEY)),
-        MASTER_KEY,
+        &master,
         Some(&keys),
         now,
     )

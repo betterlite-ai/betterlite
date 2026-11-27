@@ -3,12 +3,14 @@ mod tests;
 use std::collections::BTreeMap;
 
 use async_trait::async_trait;
-use betterlite_auth::auth_key_lookup::{KeyAuthenticator, KeyLookupError, KeyLookupOutcome};
+use betterlite_auth::auth_key_lookup::error::KeyLookupError;
+use betterlite_auth::auth_key_lookup::{KeyAuthenticator, KeyLookupOutcome};
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_mcp::session_admission::auth::byok_session_auth;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use chrono::DateTime;
+use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::json;
 use tokio::runtime::Builder;
@@ -47,10 +49,11 @@ impl Helper for Op {
         let keys = Keys {
             resolves: input.key_resolves,
         };
+        let master = SecretString::from(input.master_key.as_str());
         let admitted = runtime
             .block_on(byok_session_auth(
                 input.cookie_header.as_deref(),
-                &input.master_key,
+                &master,
                 Some(&keys),
                 now,
             ))

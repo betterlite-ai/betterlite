@@ -6,25 +6,26 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use betterlite_models::controls::json_value::JsonValue;
 use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
+use secrecy::{ExposeSecret as _, SecretString};
 use std::str;
 use thiserror::Error;
 
 // The untrusted token cookie bytes, decoded structurally; the caller checks the signature and the clock.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub struct SessionCookie {
-    pub claims: SessionClaims,
-    signing_input: String,
-    signature: Vec<u8>,
+    pub(crate) claims: SessionClaims,
+    pub(crate) signing_input: SecretString,
+    pub(crate) signature: Vec<u8>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub struct SessionClaims {
     pub exp: i64,
     pub iat: Option<i64>,
     pub nbf: Option<i64>,
     pub user_id: ClaimText,
     pub login_method: ClaimText,
-    pub session_key: ClaimText,
+    pub session_key: Option<SecretString>,
     pub token_type: ClaimText,
 }
 
@@ -80,23 +81,23 @@ pub fn decode_session_cookie(bytes: &[u8]) -> Result<SessionCookie, DecodeError>
     let (header_segment, payload_segment) = signing_input
         .split_once('.')
         .ok_or(DecodeError::NotCompact)?;
-    let header = segment(header_segment.as_bytes()).ok_or(DecodeError::Header)?;
-    let header: JsonValue =
-        serde_json::from_slice(&header).map_err(|_source| DecodeError::Header)?;
-    let JsonValue::Object(header) = header else {
+    let header_bytes = segment(header_segment.as_bytes()).ok_or(DecodeError::Header)?;
+    let header_json: JsonValue =
+        serde_json::from_slice(&header_bytes).map_err(|_source| DecodeError::Header)?;
+    let JsonValue::Object(header) = header_json else {
         return Err(DecodeError::Header);
     };
     validate_header(&header)?;
     let signature = segment(signature_segment.as_bytes()).ok_or(DecodeError::Signature)?;
-    let payload = segment(payload_segment.as_bytes()).ok_or(DecodeError::Payload)?;
-    let payload: JsonValue =
-        serde_json::from_slice(&payload).map_err(|_source| DecodeError::Payload)?;
-    let JsonValue::Object(payload) = payload else {
+    let payload_bytes = segment(payload_segment.as_bytes()).ok_or(DecodeError::Payload)?;
+    let payload_json: JsonValue =
+        serde_json::from_slice(&payload_bytes).map_err(|_source| DecodeError::Payload)?;
+    let JsonValue::Object(payload) = payload_json else {
         return Err(DecodeError::Payload);
     };
     Ok(SessionCookie {
         claims: claims(&payload)?,
-        signing_input: signing_input.to_owned(),
+        signing_input: SecretString::from(signing_input),
         signature,
     })
 }
@@ -104,10 +105,10 @@ pub fn decode_session_cookie(bytes: &[u8]) -> Result<SessionCookie, DecodeError>
 impl SessionCookie {
     // PyJWT's HS256 verification: the master key signs the header.payload bytes the cookie carried.
     #[must_use]
-    pub fn signature_matches(&self, master_key: &str) -> bool {
+    pub fn signature_matches(&self, master_key: &SecretString) -> bool {
         hmac::verify(
-            &hmac::Key::new(hmac::HMAC_SHA256, master_key.as_bytes()),
-            self.signing_input.as_bytes(),
+            &hmac::Key::new(hmac::HMAC_SHA256, master_key.expose_secret().as_bytes()),
+            self.signing_input.expose_secret().as_bytes(),
             &self.signature,
         )
         .is_ok()
@@ -211,7 +212,7 @@ fn claims(payload: &IndexMap<String, JsonValue>) -> Result<SessionClaims, Decode
         nbf,
         user_id: claim_text(payload, "user_id"),
         login_method: claim_text(payload, "login_method"),
-        session_key: claim_text(payload, "key"),
+        session_key: session_key_claim(payload),
         token_type: claim_text(payload, "type"),
     })
 }
@@ -257,7 +258,7 @@ fn time_value(number: &serde_json::Number) -> Option<i64> {
 }
 
 // LiteLLM requests no audience, so PyJWT refuses any audience the token carries, empty ones aside.
-fn validate_audience(audience: Option<&JsonValue>) -> Result<(), DecodeError> {
+const fn validate_audience(audience: Option<&JsonValue>) -> Result<(), DecodeError> {
     match audience {
         None | Some(JsonValue::Null) => Ok(()),
         Some(JsonValue::Text(value)) if value.is_empty() => Ok(()),
@@ -272,4 +273,15 @@ fn claim_text(payload: &IndexMap<String, JsonValue>, name: &str) -> ClaimText {
         Some(JsonValue::Null) | None => ClaimText::Absent,
         Some(_) => ClaimText::Other,
     }
+}
+
+// LiteLLM keeps a non-empty text key as the revocable session key; any other shape of the claim is no key.
+fn session_key_claim(payload: &IndexMap<String, JsonValue>) -> Option<SecretString> {
+    let Some(JsonValue::Text(text)) = payload.get("key") else {
+        return None;
+    };
+    if text.is_empty() {
+        return None;
+    }
+    Some(SecretString::from(text.as_str()))
 }

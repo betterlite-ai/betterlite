@@ -325,8 +325,8 @@ fn origins_empty_text() {
 #[case::origins_keep_wildcard_port("*.Example.com:443", &["*.example.com:443"])]
 fn redirect_origins(#[case] text: &str, #[case] expected: &[&str]) {
     let parsed = parse_trusted_redirect_origins(text);
-    let expected: Vec<String> = expected.iter().map(|entry| (*entry).to_owned()).collect();
-    assert_eq!(parsed, expected);
+    let expected_owned: Vec<String> = expected.iter().map(|entry| (*entry).to_owned()).collect();
+    assert_eq!(parsed, expected_owned);
 }
 
 #[rstest]

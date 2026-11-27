@@ -1,11 +1,11 @@
 #[must_use]
 pub fn session_token_cookie(header: Option<&str>) -> Option<String> {
-    let header = header?;
+    let raw_header = header?;
     let mut token: Option<String> = None;
-    for chunk in header.split(';') {
-        let (key, value) = chunk.split_once('=').unwrap_or(("", chunk));
-        let key = key.trim();
-        let value = value.trim();
+    for chunk in raw_header.split(';') {
+        let (raw_key, raw_value) = chunk.split_once('=').unwrap_or(("", chunk));
+        let key = raw_key.trim();
+        let value = raw_value.trim();
         if key.is_empty() && value.is_empty() {
             continue;
         }

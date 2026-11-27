@@ -8,6 +8,7 @@ use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use chrono::DateTime;
 use rstest::rstest;
+use secrecy::SecretString;
 
 use super::{ClaimText, DecodeError, decode_session_cookie};
 
@@ -45,10 +46,10 @@ fn a_signed_ui_cookie_decodes_its_claims() {
         cookie.claims.login_method,
         ClaimText::Text("sso".to_owned())
     );
-    assert_eq!(cookie.claims.session_key, ClaimText::Absent);
+    assert!(cookie.claims.session_key.is_none());
     assert_eq!(cookie.claims.token_type, ClaimText::Absent);
-    assert!(cookie.signature_matches(MASTER_KEY));
-    assert!(!cookie.signature_matches("sk-other-master"));
+    assert!(cookie.signature_matches(&SecretString::from(MASTER_KEY)));
+    assert!(!cookie.signature_matches(&SecretString::from("sk-other-master")));
     assert!(cookie.claims_are_current(DateTime::from_timestamp(NOW, 0).unwrap()));
 }
 
@@ -105,7 +106,7 @@ fn absent_null_and_non_text_claims_are_told_apart() {
     let cookie = decode_session_cookie(&token(HEADER, payload)).unwrap();
     assert_eq!(cookie.claims.user_id, ClaimText::Absent);
     assert_eq!(cookie.claims.login_method, ClaimText::Other);
-    assert_eq!(cookie.claims.session_key, ClaimText::Other);
+    assert!(cookie.claims.session_key.is_none());
     assert_eq!(cookie.claims.token_type, ClaimText::Absent);
 }
 
@@ -135,15 +136,15 @@ fn an_empty_audience_is_accepted(#[case] payload: &str) {
 #[case::number_token_id(r#"{"exp":1,"jti":1}"#, DecodeError::TokenId)]
 fn claim_errors_are_refused(#[case] payload: &str, #[case] expected: DecodeError) {
     assert_eq!(
-        decode_session_cookie(&token(HEADER, payload)),
-        Err(expected)
+        decode_session_cookie(&token(HEADER, payload)).unwrap_err(),
+        expected
     );
 }
 
 #[rstest]
 #[case::algorithm_hs512(r#"{"alg":"HS512"}"#, DecodeError::Algorithm)]
 #[case::algorithm_none(r#"{"alg":"none"}"#, DecodeError::Algorithm)]
-#[case::algorithm_missing(r#"{}"#, DecodeError::Algorithm)]
+#[case::algorithm_missing("{}", DecodeError::Algorithm)]
 #[case::algorithm_number(r#"{"alg":256}"#, DecodeError::Algorithm)]
 #[case::key_id_number(r#"{"alg":"HS256","kid":1}"#, DecodeError::KeyId)]
 #[case::crit_text(r#"{"alg":"HS256","crit":"b64"}"#, DecodeError::Critical)]
@@ -157,8 +158,8 @@ fn claim_errors_are_refused(#[case] payload: &str, #[case] expected: DecodeError
 )]
 fn header_errors_are_refused(#[case] header: &str, #[case] expected: DecodeError) {
     assert_eq!(
-        decode_session_cookie(&token(header, VALID_PAYLOAD)),
-        Err(expected)
+        decode_session_cookie(&token(header, VALID_PAYLOAD)).unwrap_err(),
+        expected
     );
 }
 
@@ -172,11 +173,17 @@ fn a_critical_b64_header_is_accepted() {
 #[test]
 fn byte_input_that_is_not_text_or_a_compact_jwt_is_refused() {
     assert_eq!(
-        decode_session_cookie(&[0xff, 0xfe]),
-        Err(DecodeError::NotText)
+        decode_session_cookie(&[0xff, 0xfe]).unwrap_err(),
+        DecodeError::NotText
     );
-    assert_eq!(decode_session_cookie(b""), Err(DecodeError::NotCompact));
-    assert_eq!(decode_session_cookie(b"a.b"), Err(DecodeError::NotCompact));
+    assert_eq!(
+        decode_session_cookie(b"").unwrap_err(),
+        DecodeError::NotCompact
+    );
+    assert_eq!(
+        decode_session_cookie(b"a.b").unwrap_err(),
+        DecodeError::NotCompact
+    );
 }
 
 #[test]
@@ -185,16 +192,16 @@ fn each_segment_must_be_canonical_base64url() {
     let payload = segment(VALID_PAYLOAD);
     let signature = segment("signature");
     assert_eq!(
-        decode_session_cookie(format!("!!!!.{payload}.{signature}").as_bytes()),
-        Err(DecodeError::Header)
+        decode_session_cookie(format!("!!!!.{payload}.{signature}").as_bytes()).unwrap_err(),
+        DecodeError::Header
     );
     assert_eq!(
-        decode_session_cookie(format!("{header}.!!!!.{signature}").as_bytes()),
-        Err(DecodeError::Payload)
+        decode_session_cookie(format!("{header}.!!!!.{signature}").as_bytes()).unwrap_err(),
+        DecodeError::Payload
     );
     assert_eq!(
-        decode_session_cookie(format!("{header}.{payload}.!!!!").as_bytes()),
-        Err(DecodeError::Signature)
+        decode_session_cookie(format!("{header}.{payload}.!!!!").as_bytes()).unwrap_err(),
+        DecodeError::Signature
     );
 }
 
@@ -204,20 +211,24 @@ fn header_and_payload_must_be_json_objects() {
     let payload = segment(VALID_PAYLOAD);
     let signature = segment("signature");
     assert_eq!(
-        decode_session_cookie(format!("{}.{payload}.{signature}", segment("[]")).as_bytes()),
-        Err(DecodeError::Header)
+        decode_session_cookie(format!("{}.{payload}.{signature}", segment("[]")).as_bytes())
+            .unwrap_err(),
+        DecodeError::Header
     );
     assert_eq!(
-        decode_session_cookie(format!("{}.{payload}.{signature}", segment("nope")).as_bytes()),
-        Err(DecodeError::Header)
+        decode_session_cookie(format!("{}.{payload}.{signature}", segment("nope")).as_bytes())
+            .unwrap_err(),
+        DecodeError::Header
     );
     assert_eq!(
-        decode_session_cookie(format!("{header}.{}.{signature}", segment("[]")).as_bytes()),
-        Err(DecodeError::Payload)
+        decode_session_cookie(format!("{header}.{}.{signature}", segment("[]")).as_bytes())
+            .unwrap_err(),
+        DecodeError::Payload
     );
     assert_eq!(
-        decode_session_cookie(format!("{header}.{}.{signature}", segment("nope")).as_bytes()),
-        Err(DecodeError::Payload)
+        decode_session_cookie(format!("{header}.{}.{signature}", segment("nope")).as_bytes())
+            .unwrap_err(),
+        DecodeError::Payload
     );
 }
 
@@ -227,9 +238,15 @@ fn json_that_python_accepts_but_standard_json_refuses() {
         HEADER,
         r#"{"exp":1,"login_method":"sso","user_id":"user-1","x":NaN}"#,
     );
-    assert_eq!(decode_session_cookie(&nan), Err(DecodeError::Payload));
+    assert_eq!(
+        decode_session_cookie(&nan).unwrap_err(),
+        DecodeError::Payload
+    );
     let bom = token("\u{feff}{\"alg\":\"HS256\"}", VALID_PAYLOAD);
-    assert_eq!(decode_session_cookie(&bom), Err(DecodeError::Header));
+    assert_eq!(
+        decode_session_cookie(&bom).unwrap_err(),
+        DecodeError::Header
+    );
 }
 
 #[test]
@@ -243,8 +260,8 @@ fn segment_padding_follows_the_compact_encoding_rules() {
         FUTURE_EXPIRY
     );
     assert_eq!(
-        decode_session_cookie(format!("{compact}==").as_bytes()),
-        Err(DecodeError::Signature)
+        decode_session_cookie(format!("{compact}==").as_bytes()).unwrap_err(),
+        DecodeError::Signature
     );
     let header = segment(HEADER);
     let payload = segment(VALID_PAYLOAD);
@@ -256,17 +273,18 @@ fn segment_padding_follows_the_compact_encoding_rules() {
         FUTURE_EXPIRY
     );
     assert_eq!(
-        decode_session_cookie(format!("{header}====.{payload}.AAAA").as_bytes()),
-        Err(DecodeError::Header)
+        decode_session_cookie(format!("{header}====.{payload}.AAAA").as_bytes()).unwrap_err(),
+        DecodeError::Header
     );
     let padded_payload = format!("{}=", segment(r#"{"exp":1}"#));
     assert_eq!(
-        decode_session_cookie(format!("{header}.{padded_payload}.AAAA").as_bytes()),
-        Err(DecodeError::Payload)
+        decode_session_cookie(format!("{header}.{padded_payload}.AAAA").as_bytes()).unwrap_err(),
+        DecodeError::Payload
     );
     assert_eq!(
-        decode_session_cookie(format!("{header}.{}.A", segment(VALID_PAYLOAD)).as_bytes()),
-        Err(DecodeError::Signature)
+        decode_session_cookie(format!("{header}.{}.A", segment(VALID_PAYLOAD)).as_bytes())
+            .unwrap_err(),
+        DecodeError::Signature
     );
 }
 

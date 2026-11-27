@@ -105,9 +105,9 @@ fn trusted_rejection(
     proxy_base: Option<&str>,
 ) -> RedirectUriRejected {
     let redirect_origin = format!("{}://{redirect_netloc}", parsed.scheme);
-    let proxy = proxy_base.and_then(|base| python_url::parse(base).ok());
+    let parsed_proxy = proxy_base.and_then(|base| python_url::parse(base).ok());
     let mut mismatch_parts: Vec<String> = Vec::new();
-    if let Some(proxy) = &proxy
+    if let Some(proxy) = &parsed_proxy
         && !proxy.netloc.is_empty()
     {
         if parsed.scheme != proxy.scheme {

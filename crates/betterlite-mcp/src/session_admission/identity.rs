@@ -1,23 +1,24 @@
 use chrono::{DateTime, Utc};
+use secrecy::{ExposeSecret as _, SecretString};
 
 use super::cookie::session_token_cookie;
 use super::decode_session_cookie::{ClaimText, SessionCookie, decode_session_cookie};
 
 // The dashboard user a signed ``token`` cookie names, with the session key that logout can revoke.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub struct SessionIdentity {
     pub user_id: String,
-    pub session_key: Option<String>,
+    pub session_key: Option<SecretString>,
 }
 
 // LiteLLM's _session_identity_from_cookie: the master key signs UI cookies and login_method separates UI tokens.
 #[must_use]
 pub fn session_identity_from_cookie(
     cookie_header: Option<&str>,
-    master_key: &str,
+    master_key: &SecretString,
     now: DateTime<Utc>,
 ) -> Option<SessionIdentity> {
-    if master_key.is_empty() {
+    if master_key.expose_secret().is_empty() {
         return None;
     }
     let token = session_token_cookie(cookie_header)?;
@@ -43,12 +44,8 @@ fn identity(cookie: &SessionCookie) -> Option<SessionIdentity> {
     if user_id.is_empty() {
         return None;
     }
-    let session_key = match &claims.session_key {
-        ClaimText::Text(key) if !key.is_empty() => Some(key.clone()),
-        ClaimText::Absent | ClaimText::Text(_) | ClaimText::Other => None,
-    };
     Some(SessionIdentity {
         user_id: user_id.clone(),
-        session_key,
+        session_key: claims.session_key.clone(),
     })
 }
