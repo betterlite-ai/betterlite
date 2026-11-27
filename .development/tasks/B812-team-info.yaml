@@ -164,9 +164,11 @@ out_of_scope:
   - 'litellm/proxy/management_endpoints/team_endpoints.py: B806 owns update_team (L2109-L2565).'
   - 'litellm/proxy/management_endpoints/team_endpoints.py: B807 owns _check_team_member_admin_add (L2690-L2703),
     team_call_validation_checks (L2706-L2726), team_member_add_duplication_check (L2729-L2780), _validate_team_member_add_permissions
-    (L2783-L2856), _update_team_members_list (L2956-L2972), _add_team_members_to_team (L2975-L3028), _update_team_member_role
-    (L3031-L3060), _emit_team_members_metric (L3063-L3075), _members_audit_value (L3156-L3167), _schedule_team_membership_audit_log
-    (L3170-L3197), _schedule_team_member_add_audit_logs (L3200-L3242).'
+    (L2783-L2856), _update_team_member_role (L3031-L3060), _schedule_team_member_add_audit_logs (L3200-L3242).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B10141 owns _update_team_members_list (L2956-L2972),
+    _add_team_members_to_team (L2975-L3028).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B10140 owns _emit_team_members_metric (L3063-L3075),
+    _members_audit_value (L3156-L3167), _schedule_team_membership_audit_log (L3170-L3197).'
   - 'litellm/proxy/management_endpoints/team_endpoints.py: B808 owns team_member_add (L3356-L3505), team_member_update
     (L3763-L3915).'
   - 'litellm/proxy/management_endpoints/team_endpoints.py: B809 owns _check_not_resetting_own_spend (L3918-L3928),
