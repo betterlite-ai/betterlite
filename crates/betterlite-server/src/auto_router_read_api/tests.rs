@@ -510,6 +510,7 @@ enum Boundary {
     QueryAtTheLimit,
     QueryPastTheLimit,
     WindowBounds,
+    DefaultWindow,
     Filters,
     MemberForbidden,
     SessionNotFound(&'static str, &'static str),
@@ -529,6 +530,7 @@ enum Boundary {
 #[case::a_query_at_the_limit_decodes(Boundary::QueryAtTheLimit)]
 #[case::a_query_past_the_limit_is_refused(Boundary::QueryPastTheLimit)]
 #[case::the_window_end_is_the_next_midnight(Boundary::WindowBounds)]
+#[case::absent_dates_default_to_today_and_thirty_days_back(Boundary::DefaultWindow)]
 #[case::the_filters_reach_the_store_exactly(Boundary::Filters)]
 #[case::a_member_is_forbidden(Boundary::MemberForbidden)]
 #[case::session_404_quotes_the_raw_id(Boundary::SessionNotFound("s1", "'s1'"))]
@@ -549,6 +551,7 @@ async fn auto_router_read_api_boundaries(#[case] boundary: Boundary) {
         Boundary::QueryAtTheLimit => query_at_the_limit(),
         Boundary::QueryPastTheLimit => query_past_the_limit(),
         Boundary::WindowBounds => window_bounds().await,
+        Boundary::DefaultWindow => default_window().await,
         Boundary::Filters => filters().await,
         Boundary::MemberForbidden => member_forbidden(),
         Boundary::SessionNotFound(session_id, expected) => {
@@ -692,6 +695,38 @@ async fn window_bounds() {
             api_key: None,
             user_id: None,
         }]
+    );
+}
+
+async fn default_window() {
+    let store = FakeStore::empty();
+    benchmarks_for(&store, &query(None, None, None, None), &[], day(1, 5))
+        .await
+        .unwrap();
+    benchmarks_for(
+        &store,
+        &query(None, Some("2024-01-10"), None, None),
+        &[],
+        day(1, 5),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        store.calls(),
+        [
+            RecordedCall::AggRows {
+                start: "2023-12-06T00:00:00".to_owned(),
+                end: "2024-01-06T00:00:00".to_owned(),
+                api_key: None,
+                user_id: None,
+            },
+            RecordedCall::AggRows {
+                start: "2023-12-11T00:00:00".to_owned(),
+                end: "2024-01-11T00:00:00".to_owned(),
+                api_key: None,
+                user_id: None,
+            },
+        ]
     );
 }
 
