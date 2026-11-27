@@ -34,8 +34,16 @@ def _session() -> NativeEvalSession:
 
 
 # LiteLLM's logging object belongs to its own runtime, so it never crosses into the payload
-def _payload(**values: CallValue) -> CallPayload:
+def _payload(
+    extra_headers: Headers, extra_query: Query, timeout: float | TimeoutValues | None,
+    custom_llm_provider: str | None, **values: CallValue,
+) -> CallPayload:
     named = {name: value for name, value in values.items() if name != LOGGING_OBJECT}
+    shared: dict[str, CallValue] = {
+        "extra_headers": extra_headers, "extra_query": extra_query,
+        "timeout": timeout, "custom_llm_provider": custom_llm_provider,
+    }
+    named.update(shared)
     return to_call_payload(named)
 
 
@@ -47,6 +55,15 @@ def _answer(model: type[Model], payload: CallPayload, method: NativeCall) -> Mod
 async def _aanswer(model: type[Model], payload: CallPayload, method: AsyncNativeCall) -> Model:
     answer = await acall_native(method, payload, NativeEvalError)
     return model.model_validate(answer)
+
+
+# the sync twin answers a coroutine when its async keyword is set, and its result itself otherwise
+async def _awaited(pending: Model | Awaitable[Model]) -> Model:
+    match pending:
+        case Awaitable():
+            return await pending
+        case object():
+            return pending
 
 
 def create_eval(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L114
@@ -63,15 +80,10 @@ def create_eval(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm
 ) -> Eval | Awaitable[Eval]:
     asynchronous = kwargs.pop("acreate_eval", None) is True
     payload = _payload(
+        extra_headers, extra_query, timeout, custom_llm_provider,
         data_source_config=JSON.validate_python(data_source_config),
         testing_criteria=JSON.validate_python(testing_criteria),
-        name=name,
-        metadata=metadata,
-        extra_headers=extra_headers,
-        extra_query=extra_query,
-        extra_body=extra_body,
-        timeout=timeout,
-        custom_llm_provider=custom_llm_provider,
+        name=name, metadata=metadata,
         **kwargs,
     )
     if asynchronous:
@@ -93,22 +105,10 @@ async def acreate_eval(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/
 ) -> Eval:
     kwargs["acreate_eval"] = True
     pending = create_eval(
-        data_source_config,
-        testing_criteria,
-        name,
-        metadata,
-        extra_headers,
-        extra_query,
-        extra_body,
-        timeout,
-        custom_llm_provider,
-        **kwargs,
+        data_source_config, testing_criteria, name, metadata, extra_headers, extra_query,
+        extra_body, timeout, custom_llm_provider, **kwargs,
     )
-    match pending:
-        case Eval():
-            return pending
-        case Awaitable():
-            return await pending
+    return await _awaited(pending)
 
 
 def list_evals(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L299
@@ -125,15 +125,9 @@ def list_evals(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/
 ) -> ListEvalsResponse | Awaitable[ListEvalsResponse]:
     asynchronous = kwargs.pop("alist_evals", None) is True
     payload = _payload(
-        limit=limit,
-        after=after,
-        before=before,
-        order=order,
-        order_by=order_by,
-        extra_headers=extra_headers,
-        extra_query=extra_query,
-        timeout=timeout,
-        custom_llm_provider=custom_llm_provider,
+        extra_headers, extra_query, timeout, custom_llm_provider,
+        limit=limit, after=after, before=before,
+        order=order, order_by=order_by,
         **kwargs,
     )
     if asynchronous:
@@ -155,22 +149,10 @@ async def alist_evals(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/l
 ) -> ListEvalsResponse:
     kwargs["alist_evals"] = True
     pending = list_evals(
-        limit,
-        after,
-        before,
-        order,
-        order_by,
-        extra_headers,
-        extra_query,
-        timeout,
-        custom_llm_provider,
-        **kwargs,
+        limit, after, before, order, order_by, extra_headers, extra_query, timeout,
+        custom_llm_provider, **kwargs,
     )
-    match pending:
-        case ListEvalsResponse():
-            return pending
-        case Awaitable():
-            return await pending
+    return await _awaited(pending)
 
 
 def get_eval(
@@ -183,11 +165,8 @@ def get_eval(
 ) -> Eval | Awaitable[Eval]:
     asynchronous = kwargs.pop("aget_eval", None) is True
     payload = _payload(
+        extra_headers, extra_query, timeout, custom_llm_provider,
         eval_id=eval_id,
-        extra_headers=extra_headers,
-        extra_query=extra_query,
-        timeout=timeout,
-        custom_llm_provider=custom_llm_provider,
         **kwargs,
     )
     if asynchronous:
@@ -205,11 +184,7 @@ async def aget_eval(
 ) -> Eval:
     kwargs["aget_eval"] = True
     pending = get_eval(eval_id, extra_headers, extra_query, timeout, custom_llm_provider, **kwargs)
-    match pending:
-        case Eval():
-            return pending
-        case Awaitable():
-            return await pending
+    return await _awaited(pending)
 
 
 def update_eval(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L632
@@ -225,14 +200,8 @@ def update_eval(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm
 ) -> Eval | Awaitable[Eval]:
     asynchronous = kwargs.pop("aupdate_eval", None) is True
     payload = _payload(
-        eval_id=eval_id,
-        name=name,
-        metadata=metadata,
-        extra_headers=extra_headers,
-        extra_query=extra_query,
-        extra_body=extra_body,
-        timeout=timeout,
-        custom_llm_provider=custom_llm_provider,
+        extra_headers, extra_query, timeout, custom_llm_provider,
+        eval_id=eval_id, name=name, metadata=metadata,
         **kwargs,
     )
     if asynchronous:
@@ -253,21 +222,10 @@ async def aupdate_eval(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/
 ) -> Eval:
     kwargs["aupdate_eval"] = True
     pending = update_eval(
-        eval_id,
-        name,
-        metadata,
-        extra_headers,
-        extra_query,
-        extra_body,
-        timeout,
-        custom_llm_provider,
-        **kwargs,
+        eval_id, name, metadata, extra_headers, extra_query, extra_body, timeout,
+        custom_llm_provider, **kwargs,
     )
-    match pending:
-        case Eval():
-            return pending
-        case Awaitable():
-            return await pending
+    return await _awaited(pending)
 
 
 def delete_eval(
@@ -280,11 +238,8 @@ def delete_eval(
 ) -> DeleteEvalResponse | Awaitable[DeleteEvalResponse]:
     asynchronous = kwargs.pop("adelete_eval", None) is True
     payload = _payload(
+        extra_headers, extra_query, timeout, custom_llm_provider,
         eval_id=eval_id,
-        extra_headers=extra_headers,
-        extra_query=extra_query,
-        timeout=timeout,
-        custom_llm_provider=custom_llm_provider,
         **kwargs,
     )
     if asynchronous:
@@ -304,11 +259,7 @@ async def adelete_eval(
     pending = delete_eval(
         eval_id, extra_headers, extra_query, timeout, custom_llm_provider, **kwargs
     )
-    match pending:
-        case DeleteEvalResponse():
-            return pending
-        case Awaitable():
-            return await pending
+    return await _awaited(pending)
 
 
 def cancel_eval(
@@ -321,11 +272,8 @@ def cancel_eval(
 ) -> CancelEvalResponse | Awaitable[CancelEvalResponse]:
     asynchronous = kwargs.pop("acancel_eval", None) is True
     payload = _payload(
+        extra_headers, extra_query, timeout, custom_llm_provider,
         eval_id=eval_id,
-        extra_headers=extra_headers,
-        extra_query=extra_query,
-        timeout=timeout,
-        custom_llm_provider=custom_llm_provider,
         **kwargs,
     )
     if asynchronous:
@@ -345,8 +293,4 @@ async def acancel_eval(
     pending = cancel_eval(
         eval_id, extra_headers, extra_query, timeout, custom_llm_provider, **kwargs
     )
-    match pending:
-        case CancelEvalResponse():
-            return pending
-        case Awaitable():
-            return await pending
+    return await _awaited(pending)
