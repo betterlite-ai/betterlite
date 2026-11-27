@@ -1,0 +1,13 @@
+id: B10192
+milestone: R2 bug fixes
+title: The AWS credential resolver reads LiteLLM's AWS_* environment names itself, so every Bedrock-family caller gets them
+status: todo
+depends_on: [B10175]
+file: tasks/B10192-aws-environment-names.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
