@@ -22,7 +22,7 @@ pub(super) fn settings(control_plane_url: Option<&str>) -> LoginSettings {
         control_plane_url: control_plane_url.map(str::to_owned),
     }
 }
-pub(super) fn user_only<Cache>(user: &Cache) -> LoginCaches<'_, RecordingCache, Cache> {
+pub(super) const fn user_only<Cache>(user: &Cache) -> LoginCaches<'_, RecordingCache, Cache> {
     LoginCaches { redis: None, user }
 }
 pub(super) async fn resume<Cache>(
@@ -36,7 +36,7 @@ where
 {
     resume_login(request, settings, trusted, user_only(user), &FixedEntropy).await
 }
-pub(super) fn plain_network(scheme: &str) -> NetworkRequest<'_> {
+pub(super) const fn plain_network(scheme: &str) -> NetworkRequest<'_> {
     NetworkRequest {
         peer: None,
         x_forwarded_for: None,
@@ -45,7 +45,7 @@ pub(super) fn plain_network(scheme: &str) -> NetworkRequest<'_> {
         scheme,
     }
 }
-pub(super) fn forwarded_network<'request>(
+pub(super) const fn forwarded_network<'request>(
     peer: &'request str,
     x_forwarded_proto: &'request str,
     scheme: &'request str,
