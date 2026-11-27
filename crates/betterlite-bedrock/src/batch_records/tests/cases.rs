@@ -204,10 +204,10 @@ pub(super) fn alias_and_target_model() {
         String::from("my-alias"),
         String::from("amazon.nova-pro-v1:0"),
     )]);
-    let aliased = record(
+    let source = record(
         r#"{"custom_id":"a","url":"/v1/chat/completions","body":{"model":"my-alias","messages":[{"content":"hi","role":"user"}]}}"#,
     );
-    transform_with(&aliased_families, &[aliased], "", &aliases)
+    transform_with(&aliased_families, &[source], "", &aliases)
         .expect("the aliased record transforms");
     let calls = aliased_families.nova_calls();
     assert_eq!(calls[0].model, "amazon.nova-pro-v1:0");

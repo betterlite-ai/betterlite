@@ -7,7 +7,6 @@ use betterlite_logging::python_json;
 use betterlite_models::decisions::Json;
 use betterlite_openai::files::records::CreatePurpose;
 use betterlite_prompts::media_metadata::FileData;
-use betterlite_prompts::media_metadata::error::MediaMetadataError;
 use betterlite_prompts::media_metadata::extract_file_data;
 use betterlite_secret_managers::secret_lookup::SecretLookup;
 use secrecy::ExposeSecret as _;
@@ -136,14 +135,14 @@ where
 }
 
 async fn batch_content<Lookup>(
-    content: &[u8],
+    payload: &[u8],
     target_model: &str,
     context: &BatchRecordContext<'_, Lookup>,
 ) -> Result<String, BatchRecordsError>
 where
     Lookup: ModelInfoLookup,
 {
-    let text = std::str::from_utf8(content)?;
+    let text = std::str::from_utf8(payload)?;
     let mut records = Vec::new();
     for line in text.split(LINE_BOUNDARIES) {
         if let Some(record) = decode_batch_input_line(line.as_bytes())? {

@@ -228,7 +228,7 @@ impl ModelInfoLookup for StubLookup {
     fn bedrock_model_info(
         &self,
         _model: &str,
-    ) -> impl std::future::Future<Output = Result<ModelInfo, Infallible>> + Send {
+    ) -> impl Future<Output = Result<ModelInfo, Infallible>> + Send {
         ready(Ok(ModelInfo {
             fields: IndexMap::new(),
         }))

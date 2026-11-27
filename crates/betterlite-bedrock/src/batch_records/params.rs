@@ -91,7 +91,7 @@ fn without_litellm_kwargs(optional: &Params) -> Params {
     optional
         .iter()
         .filter(|(name, _value)| {
-            !is_litellm_owned_kwarg(name.as_str()) || name == ALLOWED_OPENAI_PARAMS
+            !is_litellm_owned_kwarg(name.as_str()) || name.as_str() == ALLOWED_OPENAI_PARAMS
         })
         .map(|(name, value)| (name.clone(), value.clone()))
         .collect()
