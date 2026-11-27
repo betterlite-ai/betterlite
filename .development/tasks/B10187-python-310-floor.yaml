@@ -10,10 +10,10 @@ description: >-
   `ImportError: cannot import name 'NotRequired' from 'typing'` at python/betterlite/_completion/errors.py line 2.
 
 
-  Counted on main at 6a51ccf2b26 under crates/betterlite-python/python, four things break on 3.10. 105 `from typing
-  import` statements in 105 files import a name typing only has from 3.11 (Required 60, NotRequired 18, Self 18,
-  Unpack 14, Never 1, one of them the multi-line import in types/utils/base.py), and two return annotations are the
-  string "typing.Self" (types/proxy/carried_budget_state.py line 20 and
+  Counted on main at 6a51ccf2b26 under crates/betterlite-python/python (main at 09d3fd41b17 changes no file there),
+  four things break on 3.10. 105 `from typing import` statements in 105 files import a name typing only has from 3.11
+  (Required 60, NotRequired 18, Self 18, Unpack 14, Never 1, one of them the multi-line import in types/utils/base.py),
+  and two return annotations are the string "typing.Self" (types/proxy/carried_budget_state.py line 20 and
   anthropic_interface/exceptions/exception_mapping_utils.py line 124). 35 files use enum.StrEnum, also new in 3.11: 34
   import it and exceptions/_rate_limit.py writes `enum.StrEnum`, for 53 classes and the functional call that builds
   GUARDRAIL_DEFINITION_LOCATION in types/guardrails/params.py. Two files import datetime.UTC
@@ -33,21 +33,58 @@ description: >-
   Import Never, NotRequired, Required, Self, Unpack and TypedDict from typing_extensions. The wheel already pins
   typing-extensions==4.16.0 and 252 package files import from it today. The two "typing.Self" strings become Self from
   typing_extensions, and datetime.UTC becomes datetime.timezone.utc. At py311 ruff's UP035 turns Never, NotRequired,
-  Required and Self back into typing imports and UP017 turns timezone.utc back into datetime.UTC; at py310 neither
-  fires, so ruff moves to py310 in the same change.
+  Required and Self back into typing imports, UP017 turns timezone.utc back into datetime.UTC and UP042 rejects a
+  (str, Enum) base; at py310 none of them fires, so ruff moves to py310 in the same change.
 
 
-  Python 3.10 has no StrEnum. Add python/betterlite/_str_enum.py with one class, `class StrEnum(str, Enum)`, that does
-  what CPython 3.11's enum.StrEnum does: `__str__` and `__format__` give the str value, and `_generate_next_value_`
-  gives `name.lower()`, so the twelve `auto()` members of MCPAuth in types/mcp/enums.py keep LiteLLM's values. It is
-  the same class on every Python version, with no version branch. Each file that imports enum.StrEnum imports this
-  class instead, and exceptions/_rate_limit.py's two bases name it too. str(), format(), f-strings and %s of a member
-  gave the value on 3.11 and later before this change and give it on every version after it. LiteLLM declares these
-  enums as (str, Enum), for example
-  https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp.py#L27-L54, where
-  str() gives Class.MEMBER on every version and format() gives the value on 3.10 and Class.MEMBER from 3.11.
-  docs/compatibility.md keeps str text out of the contract, and the deviation files of B7921 to B8584 already list
-  that difference.
+  Python 3.10 has no StrEnum, and LiteLLM uses none: at the pin every one of these classes is `class X(str, Enum)` or
+  `class X(str, enum.Enum)` with explicit values, for example
+  https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp.py#L27-L54.
+  Declare each ported class the way LiteLLM declares it, with LiteLLM's explicit values, and add no shared enum
+  module. MCPAuth's twelve `auto()` members become LiteLLM's twelve string values; ruff S105 reads bearer_token, token
+  and oauth2_token_exchange as passwords, so those three lines carry `# noqa: S105` with a link to LiteLLM's line
+  (litellm/types/mcp.py lines 44, 49 and 50). GUARDRAIL_DEFINITION_LOCATION becomes LiteLLM's class statement
+  (litellm/types/guardrails.py line 1320) with `# noqa: N801` and that link, since basedpyright ignores the functional
+  form's `type=str` and would type its members as a plain Enum. httpxSpecialProvider's class line keeps its N801
+  noqa, so the edit counts as a new one too: five in all. Every class has a LiteLLM counterpart.
+  AnthropicHostedToolNames and AnthropicBetaHeaderValues are LiteLLM's ANTHROPIC_HOSTED_TOOLS and
+  ANTHROPIC_BETA_HEADER_VALUES under the CapWords names B7926 gave them, and they keep those names and the
+  module-level aliases. Role is the one LiteLLM declares as a plain Enum (litellm/types/guardrails.py line 155). B7930
+  made it a str enum on purpose so a member fits the protocol's str inputs, so it becomes (str, Enum) and B7930's row
+  says so. DynamicPromptManagementParamLiteral is (str, Enum) already.
+
+
+  After this change str() and %s of a member give `Class.MEMBER`, and format() and f-strings give the value on 3.10
+  and `Class.MEMBER` from 3.11, as LiteLLM's members do on the same Python: CPython 3.10's Enum.__format__ formats a
+  mixed-in member's value, and 3.11 and later return `str.__format__(str(self), format_spec)`. On main, with StrEnum,
+  all four gave the value from 3.11. Equality with a str, hashing, json.dumps, pydantic validation and dumps, `in`
+  against a set of str and the native module's String arguments read the str value either way. So every place in
+  the package that turns a member into text through str(), format(), an f-string or %s reads `.value` instead, the
+  way LiteLLM does where it needs the text. Swept on main, these are the hook names handed to the native module in
+  _integrations/custom_guardrail_support.py (lines 97, 106, 147, 152 and 201) and
+  _integrations/custom_guardrail_recording.py (line 59); RateLimitError's category and rate_limit_type in
+  exceptions/_server.py (lines 67 and 68), which take a member's value and keep a str as given, as LiteLLM's
+  litellm/exceptions.py lines 477 to 483 do; and the two "cache type is not built yet" messages in caching/caching.py
+  (lines 174 and 206), whose text betterlite writes itself. Log arguments stay as they are. No other package line
+  formats a member: the other str() and f-string calls in the 95 files that name these enums take a str, a number or
+  an exception, and the Rust side calls no __str__ on what Python hands it.
+
+
+  The 17 deviation files that list the StrEnum base lose those rows, since the base now matches LiteLLM: B7921,
+  B7922, B7925, B7928, B7929, B7933, B7934, B7939, B7940, B7950, B7951, B7953 and B8584 drop the row, and B7931 drops
+  its row for ContentFilterAction, GuardrailEventHooks and GUARDRAIL_DEFINITION_LOCATION. Four rows mix in another
+  difference and are rewritten: B7926's says only that the two Anthropic enums carry CapWords names with LiteLLM's
+  names bound to them, B7930's says Role is (str, Enum) where LiteLLM's is a plain Enum, B7931's guardrailConfig row
+  drops its sentence about GUARDRAIL_DEFINITION_LOCATION, and B7943's row keeps only the parse_pinned_tools
+  difference. Three tests pin the old text or the old base and change with it: test_names_enum_strings in
+  tests/test_types_router.py asserts that ours differs from LiteLLM's and now asserts they match, test_enum_names in
+  tests/test_types_guardrail_hooks_b.py expects `str(DynamoTextType.MODEL_INPUT) == "MODEL_INPUT"` and now expects
+  LiteLLM's text, and tests/test_types_mcp_types.py annotates its pairs as `type[StrEnum]` and names `type[Enum]`
+  instead. Add tests/test_enum_parity.py, which compares str(), format(), an f-string, %s, name and value of members
+  of MCPAuth, MCPTransport, GuardrailEventHooks, GUARDRAIL_DEFINITION_LOCATION, PiiAction, Role, LiteLLMCacheType,
+  CacheMode, RouterErrorTypes, RequestType, RateLimitErrorCategory, ResponsesAPIStreamEvents and AlertType with
+  LiteLLM's, checks every MCPAuth value against LiteLLM's, checks that a RateLimitError built from members holds plain
+  str values, and checks that `Cache(type=LiteLLMCacheType.S3)` fails with "s3 cache type is not built yet".
 
 
   The package moves to 3.10 and the tests stay at 3.11. The tests only ever run in tools/oracle/litellm, whose
@@ -55,10 +92,10 @@ description: >-
   crates/betterlite-python/ruff.toml set `target-version = "py310"` and `per-file-target-version = { "tests/*" =
   "py311" }`, and ban typing.TypedDict with flake8-tidy-imports banned-api (TID251), with a message that names
   pydantic's 3.12 limit and with tests/* exempt. basedpyright accepts typing.TypedDict at 3.10, so the ban is what
-  keeps a new file from bringing it back. python/betterlite/fine_tuning/ruff.toml and python/betterlite/_model_info/ruff.toml
-  extend the root ruff.toml directly and so skip the crate's settings; point both at "../../../ruff.toml", as
-  _tokens, _genai, _cost and _text already do. That brings the three typing.TypedDict imports in _model_info under the
-  ban and nothing else.
+  keeps a new file from bringing it back. python/betterlite/fine_tuning/ruff.toml and
+  python/betterlite/_model_info/ruff.toml extend the root ruff.toml directly and so skip the crate's settings; point
+  both at "../../../ruff.toml", as _tokens, _genai, _cost and _text already do. That brings the three
+  typing.TypedDict imports in _model_info under the ban and nothing else.
 
 
   At py310 ruff reports 22 noqa comments as unused (RUF100): 21 `# noqa: ASYNC109` in 9 files, since ASYNC109 only
@@ -74,25 +111,54 @@ description: >-
   `{"include": ["python", "tests"], "extraPaths": ["python"], "typeCheckingMode": "strict", "pythonVersion": "3.10",
   "reportMissingModuleSource": "none", "executionEnvironments": [{"root": "tests", "pythonVersion": "3.11"}]}`. An
   execution environment inherits the top-level extraPaths, so the tests still find the package. The python-lint
-  check passes `--pythonversion 3.10` too: basedpyright's command line overrides the config file's default version
-  outside the language server, so the check fails on main by itself, while the committed file makes every other
-  task's python-lint check run at 3.10 from the day this merges.
+  check passes `--pythonversion 3.10` too: basedpyright 1.40.2 applies command-line options over the config file
+  outside the language server and builds the execution environments afterwards, each keeping its own pythonVersion,
+  so tests/ stays at 3.11 while the check fails on main by itself, and the committed file makes every other task's
+  python-lint check run at 3.10 from the day this merges.
 
 
   tools/python-release/smoke_wheel.py only imports betterlite, so a module that `import betterlite` never reaches can
   still fail on 3.10. Make it import every .py module the installed wheel has under betterlite/, the two folders
   without __init__.py included (anthropic_interface and types/proxy/guardrails), and let the first failure raise with
-  its traceback. python-wheels.yml then runs that on 3.10 and 3.14 on all five platforms. Add
-  tools/python-release/tests/test_smoke_wheel.py, which runs on Python 3.10 with only the wheel and pytest installed:
-  it checks that the module list matches the .py files the installed distribution has under betterlite/ and that
-  smoke_wheel.py's main passes with the installed version, and the imports-on-310 check runs it there.
+  its traceback. It keeps its `smoke_wheel.py <version>` command line, so python-wheels.yml runs the walk on 3.10 and
+  3.14 on all five platforms without an edit. Add tools/python-release/tests/test_smoke_wheel.py, which runs on
+  Python 3.10 with only the wheel and pytest installed: it checks that the module list matches the .py files the
+  installed distribution has under betterlite/ and that smoke_wheel.py's main passes with the installed version, and
+  the imports-on-310 check runs it there.
 scope:
   paths:
   - crates/betterlite-python/ruff.toml
   - crates/betterlite-python/pyrightconfig.json
   - crates/betterlite-python/python/betterlite/fine_tuning/ruff.toml
   - crates/betterlite-python/python/betterlite/_model_info/ruff.toml
-  - crates/betterlite-python/python/betterlite/_str_enum.py
+  - crates/betterlite-python/python/betterlite/_completion/adapters.py
+  - crates/betterlite-python/python/betterlite/_completion/errors.py
+  - crates/betterlite-python/python/betterlite/_completion/wire.py
+  - crates/betterlite-python/python/betterlite/_core_helpers/budget_records.py
+  - crates/betterlite-python/python/betterlite/_core_helpers/test_server.py
+  - crates/betterlite-python/python/betterlite/_custom_llm/streaming_chunk.py
+  - crates/betterlite-python/python/betterlite/_embeddings/embedding.py
+  - crates/betterlite-python/python/betterlite/_genai/arguments.py
+  - crates/betterlite-python/python/betterlite/_images/main.py
+  - crates/betterlite-python/python/betterlite/_integrations/base_secret_manager.py
+  - crates/betterlite-python/python/betterlite/_integrations/custom_guardrail_hook_logging.py
+  - crates/betterlite-python/python/betterlite/_integrations/custom_guardrail_hooks.py
+  - crates/betterlite-python/python/betterlite/_integrations/custom_guardrail_recording.py
+  - crates/betterlite-python/python/betterlite/_integrations/custom_guardrail_support.py
+  - crates/betterlite-python/python/betterlite/_integrations/custom_secret_manager.py
+  - crates/betterlite-python/python/betterlite/_model_info/catalog.py
+  - crates/betterlite-python/python/betterlite/_model_info/cost_map.py
+  - crates/betterlite-python/python/betterlite/_model_info/lookup.py
+  - crates/betterlite-python/python/betterlite/_provider/settings.py
+  - crates/betterlite-python/python/betterlite/_rerank/main.py
+  - crates/betterlite-python/python/betterlite/_router_types_config.py
+  - crates/betterlite-python/python/betterlite/_router_types_errors.py
+  - crates/betterlite-python/python/betterlite/_router_types_groups.py
+  - crates/betterlite-python/python/betterlite/_router_types_litellm_params.py
+  - crates/betterlite-python/python/betterlite/_router_types_model_info.py
+  - crates/betterlite-python/python/betterlite/_router_types_routing.py
+  - crates/betterlite-python/python/betterlite/_text/text.py
+  - crates/betterlite-python/python/betterlite/_tokens/codec.py
   - crates/betterlite-python/python/betterlite/a2a_protocol/errors.py
   - crates/betterlite-python/python/betterlite/a2a_protocol/main.py
   - crates/betterlite-python/python/betterlite/a2a_protocol/types.py
@@ -102,46 +168,21 @@ scope:
   - crates/betterlite-python/python/betterlite/budget_manager.py
   - crates/betterlite-python/python/betterlite/caching/_cache_arguments.py
   - crates/betterlite-python/python/betterlite/caching/caching.py
-  - crates/betterlite-python/python/betterlite/_completion/adapters.py
-  - crates/betterlite-python/python/betterlite/_completion/errors.py
-  - crates/betterlite-python/python/betterlite/_completion/wire.py
-  - crates/betterlite-python/python/betterlite/_core_helpers/budget_records.py
-  - crates/betterlite-python/python/betterlite/_core_helpers/test_server.py
-  - crates/betterlite-python/python/betterlite/_custom_llm/streaming_chunk.py
   - crates/betterlite-python/python/betterlite/decisions/main.py
-  - crates/betterlite-python/python/betterlite/_embeddings/embedding.py
   - crates/betterlite-python/python/betterlite/exceptions/_rate_limit.py
+  - crates/betterlite-python/python/betterlite/exceptions/_server.py
   - crates/betterlite-python/python/betterlite/experimental_mcp_client/client.py
   - crates/betterlite-python/python/betterlite/experimental_mcp_client/errors.py
   - crates/betterlite-python/python/betterlite/experimental_mcp_client/tools.py
   - crates/betterlite-python/python/betterlite/files/_content.py
   - crates/betterlite-python/python/betterlite/files/streaming.py
-  - crates/betterlite-python/python/betterlite/_genai/arguments.py
-  - crates/betterlite-python/python/betterlite/_images/main.py
-  - crates/betterlite-python/python/betterlite/_integrations/base_secret_manager.py
-  - crates/betterlite-python/python/betterlite/_integrations/custom_guardrail_hook_logging.py
-  - crates/betterlite-python/python/betterlite/_integrations/custom_guardrail_hooks.py
-  - crates/betterlite-python/python/betterlite/_integrations/custom_secret_manager.py
-  - crates/betterlite-python/python/betterlite/_model_info/catalog.py
-  - crates/betterlite-python/python/betterlite/_model_info/cost_map.py
-  - crates/betterlite-python/python/betterlite/_model_info/lookup.py
   - crates/betterlite-python/python/betterlite/passthrough/utils.py
-  - crates/betterlite-python/python/betterlite/_provider/settings.py
   - crates/betterlite-python/python/betterlite/proxy/client/chat.py
   - crates/betterlite-python/python/betterlite/proxy/client/http_client.py
   - crates/betterlite-python/python/betterlite/proxy/client/keys.py
   - crates/betterlite-python/python/betterlite/proxy/client/teams.py
-  - crates/betterlite-python/python/betterlite/_rerank/main.py
-  - crates/betterlite-python/python/betterlite/_router_types_config.py
-  - crates/betterlite-python/python/betterlite/_router_types_errors.py
-  - crates/betterlite-python/python/betterlite/_router_types_groups.py
-  - crates/betterlite-python/python/betterlite/_router_types_litellm_params.py
-  - crates/betterlite-python/python/betterlite/_router_types_model_info.py
-  - crates/betterlite-python/python/betterlite/_router_types_routing.py
   - crates/betterlite-python/python/betterlite/sandbox/main.py
   - crates/betterlite-python/python/betterlite/systemone/main.py
-  - crates/betterlite-python/python/betterlite/_text/text.py
-  - crates/betterlite-python/python/betterlite/_tokens/codec.py
   - crates/betterlite-python/python/betterlite/types/agents.py
   - crates/betterlite-python/python/betterlite/types/caching.py
   - crates/betterlite-python/python/betterlite/types/completion.py
@@ -186,8 +227,8 @@ scope:
   - crates/betterlite-python/python/betterlite/types/llms/cohere.py
   - crates/betterlite-python/python/betterlite/types/llms/custom_http.py
   - crates/betterlite-python/python/betterlite/types/llms/databricks.py
-  - crates/betterlite-python/python/betterlite/types/llms/gemini/gemini_audio_transcription.py
   - crates/betterlite-python/python/betterlite/types/llms/gemini/gemini.py
+  - crates/betterlite-python/python/betterlite/types/llms/gemini/gemini_audio_transcription.py
   - crates/betterlite-python/python/betterlite/types/llms/gemini/vertex_ai_types.py
   - crates/betterlite-python/python/betterlite/types/llms/meta.py
   - crates/betterlite-python/python/betterlite/types/llms/ollama.py
@@ -204,7 +245,6 @@ scope:
   - crates/betterlite-python/python/betterlite/types/llms/openai/core/files.py
   - crates/betterlite-python/python/betterlite/types/llms/openai/core/messages.py
   - crates/betterlite-python/python/betterlite/types/llms/openai/core/threads.py
-  - crates/betterlite-python/python/betterlite/types/llms/openai_evals/__init__.py
   - crates/betterlite-python/python/betterlite/types/llms/openai/realtime/chat.py
   - crates/betterlite-python/python/betterlite/types/llms/openai/realtime/conversation.py
   - crates/betterlite-python/python/betterlite/types/llms/openai/realtime/items.py
@@ -214,6 +254,7 @@ scope:
   - crates/betterlite-python/python/betterlite/types/llms/openai/realtime/transcription.py
   - crates/betterlite-python/python/betterlite/types/llms/openai/realtime/usage.py
   - crates/betterlite-python/python/betterlite/types/llms/openai/realtime/video.py
+  - crates/betterlite-python/python/betterlite/types/llms/openai_evals/__init__.py
   - crates/betterlite-python/python/betterlite/types/llms/vertex_ai/cached_content.py
   - crates/betterlite-python/python/betterlite/types/llms/vertex_ai/content.py
   - crates/betterlite-python/python/betterlite/types/llms/vertex_ai/credentials.py
@@ -263,18 +304,41 @@ scope:
   - crates/betterlite-python/python/betterlite/types/vector_stores.py
   - crates/betterlite-python/python/betterlite/videos/_calls.py
   - crates/betterlite-python/python/betterlite/videos/_edits.py
-  - crates/betterlite-python/tests/test_str_enum.py
+  - crates/betterlite-python/tests/test_enum_parity.py
+  - crates/betterlite-python/tests/test_types_guardrail_hooks_b.py
   - crates/betterlite-python/tests/test_types_mcp_types.py
+  - crates/betterlite-python/tests/test_types_router.py
   - tools/python-release/smoke_wheel.py
   - tools/python-release/tests/test_smoke_wheel.py
+  - docs/deviations/B7921.yaml
+  - docs/deviations/B7922.yaml
+  - docs/deviations/B7925.yaml
+  - docs/deviations/B7926.yaml
+  - docs/deviations/B7928.yaml
+  - docs/deviations/B7929.yaml
+  - docs/deviations/B7930.yaml
+  - docs/deviations/B7931.yaml
+  - docs/deviations/B7933.yaml
+  - docs/deviations/B7934.yaml
+  - docs/deviations/B7939.yaml
+  - docs/deviations/B7940.yaml
+  - docs/deviations/B7943.yaml
+  - docs/deviations/B7950.yaml
+  - docs/deviations/B7951.yaml
+  - docs/deviations/B7953.yaml
+  - docs/deviations/B8584.yaml
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/pyproject.toml#L6
   why: LiteLLM runs on Python 3.10 to 3.14, the floor the wheel declares too.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp.py#L27-L54
+  why: LiteLLM's string enums are (str, Enum) with explicit values, MCPAuth's twelve included.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L477-L483
+  why: RateLimitError keeps a member's value and a str as given.
 - url: https://github.com/pydantic/pydantic/blob/v2.14.1/pydantic/_internal/_generate_schema.py#L1447-L1451
   why: pydantic raises typed-dict-version for a typing.TypedDict below Python 3.12 (_SUPPORTS_TYPEDDICT at L130).
-- url: https://docs.python.org/3.11/library/enum.html#enum.StrEnum
-  why: What the shared StrEnum copies, str(), format() and auto().
+- url: https://docs.python.org/3/whatsnew/3.11.html#enum
+  why: From 3.11 format() of a (str, Enum) member gives the same text as str(), Class.MEMBER.
 - url: https://docs.astral.sh/ruff/settings/#per-file-target-version
   why: How the tests keep py311 while the package moves to py310.
 - url: https://docs.astral.sh/ruff/settings/#lint_flake8-tidy-imports_banned-api
@@ -295,20 +359,31 @@ dod:
     string, or reads datetime.UTC, and ruff bans typing.TypedDict in the package outside tests/.
   proof: [no-311-names, floor-config, python-lint]
 - text: >-
-    python/betterlite/_str_enum.py holds the one StrEnum the package's string enums subclass. str(), format(), an
-    f-string and %s of a member give its value, auto() gives the lowercase member name, the functional call builds
-    GUARDRAIL_DEFINITION_LOCATION, and no file imports enum.StrEnum. test_str_enum.py checks these on MCPAuth,
-    GuardrailEventHooks, LiteLLMCacheType and GUARDRAIL_DEFINITION_LOCATION, and checks each MCPAuth value against
-    LiteLLM's.
-  proof: [str-enum, no-stdlib-strenum]
+    Every string enum in the package is declared (str, Enum) as LiteLLM declares it, with LiteLLM's explicit values,
+    MCPAuth's and GUARDRAIL_DEFINITION_LOCATION's included, Role is (str, Enum), and no package file, test or deviation
+    file names StrEnum. test_enum_parity.py checks that str(), format(), an f-string, %s, name and value of members of
+    MCPAuth, MCPTransport, GuardrailEventHooks, GUARDRAIL_DEFINITION_LOCATION, PiiAction, Role, LiteLLMCacheType,
+    CacheMode, RouterErrorTypes, RequestType, RateLimitErrorCategory, ResponsesAPIStreamEvents and AlertType equal
+    LiteLLM's, and that every MCPAuth value equals LiteLLM's.
+  proof: [enum-parity, no-strenum]
+- text: >-
+    The guardrail hook names sent to the native module, RateLimitError's category and rate_limit_type and the "cache
+    type is not built yet" messages read a member's value: test_enum_parity.py checks that a RateLimitError built from
+    members holds plain str values and that `Cache(type=LiteLLMCacheType.S3)` fails with "s3 cache type is not built
+    yet", and the guardrail tests still pass.
+  proof: [enum-parity, enum-regressions]
+- text: >-
+    The 17 deviation files keep no StrEnum row, B7926, B7930, B7931 and B7943 keep their rewritten rows, and
+    test_names_enum_strings and test_enum_names assert LiteLLM's str() text.
+  proof: [no-strenum, enum-regressions]
 - text: >-
     crates/betterlite-python/ruff.toml targets py310 with tests/* at py311, the fine_tuning and _model_info ruff.toml
     files extend it, pyrightconfig.json checks python/ at 3.10 and tests/ at 3.11, and the package, its tests and
     tools/python-release pass ruff and strict basedpyright, with the 22 unused noqa comments gone.
   proof: [floor-config, python-lint]
 - text: >-
-    The ported enums still equal LiteLLM's members, and the guardrail, cache, router and alert code that reads them
-    behaves as before.
+    The ported enums still equal LiteLLM's members, and the guardrail, cache, router, alert and exception code that
+    reads them behaves as before.
   proof: [enum-regressions]
 checks:
   optional: []
@@ -316,20 +391,22 @@ checks:
   - id: imports-on-310
     why: The wheel still fails to install or to import a module on Python 3.10.
     run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && uv run --no-project --python 3.10 --with pytest==9.1.1 --with "$(ls target/python-wheel/betterlite-*.whl)" pytest tools/python-release/tests/test_smoke_wheel.py
-  - id: str-enum
-    why: The shared StrEnum gives other text than the value, or auto() stops giving LiteLLM's MCPAuth values.
-    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_str_enum.py -k str_enum
+  - id: enum-parity
+    why: A ported enum formats a member differently from LiteLLM's, or a value that leaves the package is still a member's str().
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_enum_parity.py
   - id: enum-regressions
     why: A ported enum lost a member or a value, or code that reads one changed.
-    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_types_mcp_types.py crates/betterlite-python/tests/test_custom_guardrail.py crates/betterlite-python/tests/test_types_guardrails_params.py crates/betterlite-python/tests/test_cache_setup.py crates/betterlite-python/tests/test_types_router.py crates/betterlite-python/tests/test_types_integration_alerts.py
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_types_mcp_types.py crates/betterlite-python/tests/test_custom_guardrail.py crates/betterlite-python/tests/test_types_guardrails_params.py crates/betterlite-python/tests/test_cache_setup.py crates/betterlite-python/tests/test_types_router.py crates/betterlite-python/tests/test_types_integration_alerts.py crates/betterlite-python/tests/test_exceptions_server.py crates/betterlite-python/tests/test_types_guardrail_hooks_b.py
   - id: no-311-names
     why: A package file still imports a name Python 3.10's typing or datetime lacks, or typing.TypedDict.
     run: |-
       test -z "$(grep -rn -E '^[[:space:]]*from typing import [^#(]*\b(Never|NotRequired|Required|Self|Unpack|TypedDict)\b|"typing\.(Never|NotRequired|Required|Self|Unpack)\b|from datetime import [^#]*\bUTC\b|\bdatetime\.UTC\b' crates/betterlite-python/python)"
-  - id: no-stdlib-strenum
-    why: A file still imports the standard library StrEnum, which Python 3.10 lacks.
+  - id: no-strenum
+    why: A file still uses StrEnum, which Python 3.10 lacks and LiteLLM never declares, MCPAuth still takes auto() values, or a deviation row still lists the StrEnum base.
     run: |-
-      test -z "$(grep -rn -E 'from enum import [^#]*\bStrEnum\b|\benum\.StrEnum\b' crates/betterlite-python/python crates/betterlite-python/tests)"
+      set -e
+      test -z "$(grep -rn -w StrEnum crates/betterlite-python/python crates/betterlite-python/tests docs/deviations)"
+      test -z "$(grep -n -E '\bauto\(' crates/betterlite-python/python/betterlite/types/mcp/enums.py)"
   - id: floor-config
     why: The configs other tasks' checks read still check the package at 3.11 or let typing.TypedDict in.
     run: |-
@@ -351,31 +428,35 @@ oracle_cases: []
 deviations: []
 out_of_scope:
 - >-
-  Moving the enums to LiteLLM's (str, Enum). str() of every member would change on 3.11 and later, and the guardrail
-  code hands str(event_type) to the native module (_integrations/custom_guardrail_support.py lines 97, 106, 147, 152
-  and 201, _integrations/custom_guardrail_recording.py line 59).
+  Log arguments that format a member, such as the event_hook in _integrations/custom_guardrail_state.py line 97. Log
+  text isn't part of the contract, and LiteLLM's own log lines format members the same way.
 - >-
-  The StrEnum rows in docs/deviations for B7921, B7922, B7925, B7926, B7928, B7929, B7930, B7931, B7933, B7934, B7939,
-  B7940, B7943, B7950, B7951, B7953 and B8584. The text they describe doesn't change.
+  Role as a plain Enum like LiteLLM's. B7930 chose a str enum so a member fits the protocol's str inputs and
+  tests/test_types_guardrails_core.py puts one in a JSON payload.
 - >-
   Checking the tests or tools/python-release at 3.10. They run in tools/oracle/litellm and read TOML with tomllib, and
   smoke_wheel.py itself runs on 3.10 in the imports-on-310 check and in python-wheels.yml.
 - The root ruff.toml, which the oracle helpers share at py311, and the Rust side of the wheel.
 pitfalls:
 - pydantic raises typed-dict-version only when a TypeAdapter or a model first reads a typing.TypedDict and basedpyright accepts typing.TypedDict at 3.10, so TypedDict moves with the other names even where nothing complains yet.
-- ruff's isort counts typing_extensions as third-party, so its import goes in the block with pydantic, httpx2 and dotenv (last there by name), never beside `from typing import`, and `from betterlite._str_enum import StrEnum` goes in the betterlite block.
-- Inside one import ruff sorts constants, then classes, then functions, as in `from typing_extensions import NotRequired, TypedDict, override`, and a `from typing import` line left with no names is deleted.
-- No `if sys.version_info` branch anywhere, neither for the typing names nor in _str_enum.py, since the typing_extensions names and the one StrEnum work on every version.
-- pkgutil.walk_packages skips folders without __init__.py, and python/betterlite/anthropic_interface and python/betterlite/types/proxy/guardrails have none, so build the module list from importlib.metadata's files for the installed betterlite distribution.
-- Test files keep `from typing import Self` and `datetime.UTC`, since at py311 UP035 and UP017 flag the typing_extensions and timezone.utc forms there; of the existing tests only test_types_mcp_types.py changes, because its `type[StrEnum]` annotations must name the shared class.
-- Give `__str__`, `__format__` and the `@staticmethod` `_generate_next_value_` the signatures typeshed gives enum.StrEnum, and mark each with typing_extensions.override, which keeps ruff's ARG004 quiet about the unused start, count and last_values.
+- ruff's isort counts typing_extensions as third-party, so its import goes in the block with pydantic, httpx2 and dotenv (last there by name), never beside `from typing import`.
+- Inside one import ruff sorts constants, then classes, then functions, as in `from typing_extensions import NotRequired, TypedDict, override`, and a `from typing import` or `from enum import` line left with no names is deleted.
+- No `if sys.version_info` branch anywhere, since the typing_extensions names and (str, Enum) work on every version.
 - >-
-  GUARDRAIL_DEFINITION_LOCATION keeps its functional form, `StrEnum("GUARDRAIL_DEFINITION_LOCATION", {"DB": "db", "CONFIG": "config"})`, now built from the shared class.
+  A field typed `str | RateLimitErrorCategory` needs a match with `case RateLimitErrorCategory():` before `.value`,
+  where LiteLLM writes isinstance; a bare str() of a member gives Class.MEMBER.
+- >-
+  `Literal[MCPTransport.sse, ...]` aliases, `case MCPAuth.oauth2:` patterns, `==` against a str and the `in` tests
+  against frozensets of str keep working with (str, Enum); leave them as they are.
+- Each new noqa line ends with the pinned LiteLLM link, as the Python rules hook wants, and the five of them are the whole expect budget.
+- Tests keep the 3.11 forms (`from typing import Self`, `datetime.UTC`) and declare no (str, Enum) class, since at py311 UP035, UP017 and UP042 flag those in tests/.
+- In each deviation file delete or rewrite only the StrEnum row; keep `task:`, the other rows and kept_bugs exactly as they are.
+- pkgutil.walk_packages skips folders without __init__.py, and python/betterlite/anthropic_interface and python/betterlite/types/proxy/guardrails have none, so build the module list from importlib.metadata's files for the installed betterlite distribution.
 - test_smoke_wheel.py runs on Python 3.10 with no litellm, as smoke_wheel.py's main requires, so it imports only the standard library, pytest, smoke_wheel and betterlite, and the check keeps `--no-project` so the oracle environment stays out.
-- A dispatched run can't run ruff or basedpyright, so make the import edits with one perl script over the scope list and read the diff per folder rather than one Read and Edit per file.
-- A file that another task merges after 6a51ccf2b26 and that imports one of these names fails basedpyright at 3.10 from outside this scope; answer blocked with its path.
+- A dispatched run can't run ruff or basedpyright, so make the import and base edits with one perl script over the scope list and read the diff per folder rather than one Read and Edit per file.
+- A file another task merges after this plan that imports one of these names, declares a StrEnum or adds a StrEnum deviation row fails these checks from outside this scope; answer blocked with its path.
 - Importing every module can surface an import cycle that `import betterlite` hides through its order; answer blocked with the traceback when the fix lies outside the scope.
 review_level: standard
 budget:
   max_changed_lines: 1500
-  max_new_expects: 0
+  max_new_expects: 5
