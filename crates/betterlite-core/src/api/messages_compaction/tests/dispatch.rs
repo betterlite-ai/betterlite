@@ -278,8 +278,9 @@ async fn serial_editor_result_flow_keeps_a_polyfills_null_system() {
     assert_eq!(result.system, None);
 }
 
-fn latest_editor() -> ScriptedEditor {
-    ScriptedEditor::new(
+#[tokio::test]
+async fn latest_nonnull_compaction_fields() {
+    let editor = ScriptedEditor::new(
         Vec::new(),
         vec![
             ScriptedResult::Polyfilled(polyfilled(
@@ -298,12 +299,7 @@ fn latest_editor() -> ScriptedEditor {
                 Some(Vec::new()),
             )),
         ],
-    )
-}
-
-#[tokio::test]
-async fn latest_nonnull_compaction_fields() {
-    let editor = latest_editor();
+    );
     let spec = three_compactions();
     let dispatch = request(decided(r#"[]"#), None, Some(&spec));
     let result = apply_context_management(dispatch, &editor)

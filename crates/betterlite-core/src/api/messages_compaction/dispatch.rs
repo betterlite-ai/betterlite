@@ -61,18 +61,19 @@ impl EditType {
     }
 }
 
+// the typed arguments of one registry entry: the sync clear call or the async compact call
+pub enum EditCall<'call> {
+    Clear(ClearCall),
+    Compact(CompactCall<'call>),
+}
+
 // the two registered editors behind the dispatcher's single serial loop
 pub trait ContextEditor: Send + Sync {
     type Failure: Error + 'static;
 
-    fn clear_tool_uses(
+    fn edit(
         &self,
-        call: ClearCall,
-    ) -> impl Future<Output = Result<EditorOutcome, Self::Failure>> + Send;
-
-    fn compact(
-        &self,
-        call: CompactCall<'_>,
+        call: EditCall<'_>,
     ) -> impl Future<Output = Result<EditorOutcome, Self::Failure>> + Send;
 }
 
@@ -190,34 +191,26 @@ where
     };
     let fallback_system = state.system.take();
     let messages = std::mem::take(&mut state.messages);
-    let outcome = match edit_type {
-        EditType::ClearToolUses => {
-            let call = ClearCall {
-                model: shared.model.to_owned(),
-                messages,
-                tools: shared.tools.clone(),
-                system: fallback_system.clone(),
-                edit_spec: Json::Object(edit_spec),
-            };
-            editor
-                .clear_tool_uses(call)
-                .await
-                .map_err(DispatchError::Editor)?
-        }
-        EditType::Compact => {
-            let call = CompactCall {
-                model: shared.model,
-                messages,
-                tools: shared.tools.clone(),
-                system: fallback_system.clone(),
-                edit_spec: Json::Object(edit_spec),
-                litellm_metadata: shared.litellm_metadata,
-                llm_router: shared.llm_router,
-                user_api_key_auth: shared.user_api_key_auth,
-            };
-            editor.compact(call).await.map_err(DispatchError::Editor)?
-        }
+    let call = match edit_type {
+        EditType::ClearToolUses => EditCall::Clear(ClearCall {
+            model: shared.model.to_owned(),
+            messages,
+            tools: shared.tools.clone(),
+            system: fallback_system.clone(),
+            edit_spec: Json::Object(edit_spec),
+        }),
+        EditType::Compact => EditCall::Compact(CompactCall {
+            model: shared.model,
+            messages,
+            tools: shared.tools.clone(),
+            system: fallback_system.clone(),
+            edit_spec: Json::Object(edit_spec),
+            litellm_metadata: shared.litellm_metadata,
+            llm_router: shared.llm_router,
+            user_api_key_auth: shared.user_api_key_auth,
+        }),
     };
+    let outcome = editor.edit(call).await.map_err(DispatchError::Editor)?;
     state.carry(outcome, fallback_system);
     Ok(())
 }

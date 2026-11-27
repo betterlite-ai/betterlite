@@ -8,7 +8,7 @@ use tokio::task::{JoinError, JoinSet};
 
 use crate::api::messages_compaction::convert::{SystemShapeError, prompt_json, system_prompt};
 use crate::api::messages_compaction::dispatch::{
-    ClearCall, CompactCall, ContextEditor, EditorOutcome,
+    ClearCall, ContextEditor, EditCall, EditorOutcome,
 };
 use crate::api::messages_context_clear::counter::TokenCounter;
 use crate::api::messages_context_clear::editor::{
@@ -71,84 +71,83 @@ where
 {
     type Failure = EditorFailure<Hooks::Error>;
 
-    fn clear_tool_uses(
+    fn edit(
         &self,
-        call: ClearCall,
+        call: EditCall<'_>,
     ) -> impl Future<Output = Result<EditorOutcome, Self::Failure>> + Send {
         async move {
-            // both specs are read out of the edit the client sent, as LiteLLM hands the dict to each editor
-            let edit_spec: ClearToolUsesEditSpec = serde_json::from_value(
-                serde_json::to_value(&call.edit_spec).map_err(EditorFailure::Spec)?,
-            )
-            .map_err(EditorFailure::Spec)?;
-            let ClearCall {
-                model,
-                messages,
-                tools,
-                system,
-                edit_spec: _,
-            } = call;
-            let counter = Arc::clone(&self.clear_counter);
-            let mut tasks = JoinSet::new();
-            tasks.spawn_blocking(move || {
-                apply_clear_tool_uses_20250919(
-                    ClearEditorRequest {
-                        model: &model,
+            match call {
+                EditCall::Clear(clear) => {
+                    // both specs are read out of the edit the client sent, as LiteLLM hands the dict to each editor
+                    let edit_spec: ClearToolUsesEditSpec = serde_json::from_value(
+                        serde_json::to_value(&clear.edit_spec).map_err(EditorFailure::Spec)?,
+                    )
+                    .map_err(EditorFailure::Spec)?;
+                    let ClearCall {
+                        model,
                         messages,
+                        tools,
+                        system,
+                        edit_spec: _,
+                    } = clear;
+                    let counter = Arc::clone(&self.clear_counter);
+                    let mut tasks = JoinSet::new();
+                    tasks.spawn_blocking(move || {
+                        apply_clear_tool_uses_20250919(
+                            ClearEditorRequest {
+                                model: &model,
+                                messages,
+                                tools: tools.as_deref(),
+                                system: system.as_ref(),
+                                edit_spec: &edit_spec,
+                            },
+                            counter.as_ref(),
+                        )
+                    });
+                    let outcome: ClearToolUsesOutcome = match tasks.join_next().await {
+                        Some(Ok(result)) => result.map_err(EditorFailure::Clear)?,
+                        Some(Err(source)) => return Err(EditorFailure::Task(source)),
+                        None => return Err(EditorFailure::MissingResult),
+                    };
+                    Ok(EditorOutcome::Legacy {
+                        messages: outcome.messages,
+                        applied: outcome.applied,
+                    })
+                }
+                EditCall::Compact(compact) => {
+                    let edit_spec: CompactEditSpec = serde_json::from_value(
+                        serde_json::to_value(&compact.edit_spec).map_err(EditorFailure::Spec)?,
+                    )
+                    .map_err(EditorFailure::Spec)?;
+                    let messages: Vec<PromptJson> =
+                        compact.messages.iter().map(prompt_json).collect();
+                    let tools: Option<Vec<PromptJson>> = compact
+                        .tools
+                        .as_deref()
+                        .map(|tools| tools.iter().map(prompt_json).collect());
+                    let system = system_prompt(compact.system.as_ref())?;
+                    let services = EditorServices {
+                        settings: self.settings,
+                        proxy: self.proxy,
+                        budgets: self.budgets,
+                        hooks: self.hooks,
+                        counter: self.history_counter,
+                        router: compact.llm_router,
+                        direct: self.direct,
+                    };
+                    let request = CompactEditorRequest {
+                        model: compact.model,
+                        messages: &messages,
                         tools: tools.as_deref(),
                         system: system.as_ref(),
                         edit_spec: &edit_spec,
-                    },
-                    counter.as_ref(),
-                )
-            });
-            let outcome: ClearToolUsesOutcome = match tasks.join_next().await {
-                Some(Ok(result)) => result.map_err(EditorFailure::Clear)?,
-                Some(Err(source)) => return Err(EditorFailure::Task(source)),
-                None => return Err(EditorFailure::MissingResult),
-            };
-            Ok(EditorOutcome::Legacy {
-                messages: outcome.messages,
-                applied: outcome.applied,
-            })
-        }
-    }
-
-    fn compact(
-        &self,
-        call: CompactCall<'_>,
-    ) -> impl Future<Output = Result<EditorOutcome, Self::Failure>> + Send {
-        async move {
-            let edit_spec: CompactEditSpec = serde_json::from_value(
-                serde_json::to_value(&call.edit_spec).map_err(EditorFailure::Spec)?,
-            )
-            .map_err(EditorFailure::Spec)?;
-            let messages: Vec<PromptJson> = call.messages.iter().map(prompt_json).collect();
-            let tools: Option<Vec<PromptJson>> = call
-                .tools
-                .as_deref()
-                .map(|tools| tools.iter().map(prompt_json).collect());
-            let system = system_prompt(call.system.as_ref())?;
-            let services = EditorServices {
-                settings: self.settings,
-                proxy: self.proxy,
-                budgets: self.budgets,
-                hooks: self.hooks,
-                counter: self.history_counter,
-                router: call.llm_router,
-                direct: self.direct,
-            };
-            let request = CompactEditorRequest {
-                model: call.model,
-                messages: &messages,
-                tools: tools.as_deref(),
-                system: system.as_ref(),
-                edit_spec: &edit_spec,
-                litellm_metadata: call.litellm_metadata,
-                principal: call.user_api_key_auth,
-            };
-            let result = apply_compact_20260112(request, &services).await?;
-            Ok(EditorOutcome::Polyfilled(result))
+                        litellm_metadata: compact.litellm_metadata,
+                        principal: compact.user_api_key_auth,
+                    };
+                    let result = apply_compact_20260112(request, &services).await?;
+                    Ok(EditorOutcome::Polyfilled(result))
+                }
+            }
         }
     }
 }

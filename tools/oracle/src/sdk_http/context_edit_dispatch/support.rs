@@ -123,32 +123,23 @@ impl HistoryTokenCounter for FixedCounter {
 // the policy seams never run while the principal is absent, but the editor still names their types
 pub(super) struct NoChecks;
 
+type Access<'router> = Option<&'router dyn ModelAccessView>;
+type UserRow<'row> = &'row LiteLLMUserTable;
+type ProjectRow<'row> = &'row ProjectTable;
+type Check = Result<(), PolicyFailure<io::Error>>;
+
 impl SummaryModelChecks for NoChecks {
     type Failure = io::Error;
 
-    fn object_call(
-        &self,
-        _router: Option<&dyn ModelAccessView>,
-        _call: &ObjectCall<'_>,
-    ) -> Result<(), PolicyFailure<io::Error>> {
+    fn object_call(&self, _router: Access<'_>, _call: &ObjectCall<'_>) -> Check {
         Ok(())
     }
 
-    fn user_call(
-        &self,
-        _router: Option<&dyn ModelAccessView>,
-        _model: &str,
-        _user: &LiteLLMUserTable,
-    ) -> Result<(), PolicyFailure<io::Error>> {
+    fn user_call(&self, _router: Access<'_>, _model: &str, _user: UserRow<'_>) -> Check {
         Ok(())
     }
 
-    fn project_call(
-        &self,
-        _router: Option<&dyn ModelAccessView>,
-        _model: &str,
-        _project: &ProjectTable,
-    ) -> Result<(), PolicyFailure<io::Error>> {
+    fn project_call(&self, _router: Access<'_>, _model: &str, _project: ProjectRow<'_>) -> Check {
         Ok(())
     }
 }

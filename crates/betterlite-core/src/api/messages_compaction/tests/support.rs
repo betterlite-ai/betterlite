@@ -39,7 +39,7 @@ use url::Url;
 use uuid::Uuid;
 
 use crate::api::messages_compaction::dispatch::{
-    ClearCall, CompactCall, ContextEditor, DispatchRequest, EditorOutcome,
+    ContextEditor, DispatchRequest, EditCall, EditorOutcome,
 };
 use crate::api::messages_context_clear::constants::{CLEAR_TOOL_USES_EDIT_TYPE, COMPACT_EDIT_TYPE};
 use crate::api::messages_context_clear::counter::{TokenCountRequest, TokenCounter};
@@ -173,40 +173,39 @@ impl ScriptedEditor {
 impl ContextEditor for ScriptedEditor {
     type Failure = ScriptedError;
 
-    fn clear_tool_uses(
+    fn edit(
         &self,
-        call: ClearCall,
+        call: EditCall<'_>,
     ) -> impl Future<Output = Result<EditorOutcome, ScriptedError>> + Send {
-        let record = ClearRecord {
-            editor: CLEAR_TOOL_USES_EDIT_TYPE,
-            model: call.model,
-            messages: call.messages,
-            tools: call.tools,
-            system: call.system,
-            edit_spec: call.edit_spec,
+        let outcome = match call {
+            EditCall::Clear(clear) => {
+                let record = ClearRecord {
+                    editor: CLEAR_TOOL_USES_EDIT_TYPE,
+                    model: clear.model,
+                    messages: clear.messages,
+                    tools: clear.tools,
+                    system: clear.system,
+                    edit_spec: clear.edit_spec,
+                };
+                self.record(&record);
+                self.next(&self.clear, "clear_tool_uses")
+            }
+            EditCall::Compact(compact) => {
+                let record = CompactRecord {
+                    editor: COMPACT_EDIT_TYPE,
+                    model: compact.model.to_owned(),
+                    messages: compact.messages,
+                    tools: compact.tools,
+                    system: compact.system,
+                    edit_spec: compact.edit_spec,
+                    litellm_metadata: compact.litellm_metadata.cloned(),
+                    llm_router: compact.llm_router.map(|_router| "router"),
+                    user_api_key_auth: compact.user_api_key_auth.map(|_principal| "present"),
+                };
+                self.record(&record);
+                self.next(&self.compact, "compact")
+            }
         };
-        self.record(&record);
-        let outcome = self.next(&self.clear, "clear_tool_uses");
-        ready(outcome)
-    }
-
-    fn compact(
-        &self,
-        call: CompactCall<'_>,
-    ) -> impl Future<Output = Result<EditorOutcome, ScriptedError>> + Send {
-        let record = CompactRecord {
-            editor: COMPACT_EDIT_TYPE,
-            model: call.model.to_owned(),
-            messages: call.messages,
-            tools: call.tools,
-            system: call.system,
-            edit_spec: call.edit_spec,
-            litellm_metadata: call.litellm_metadata.cloned(),
-            llm_router: call.llm_router.map(|_router| "router"),
-            user_api_key_auth: call.user_api_key_auth.map(|_principal| "present"),
-        };
-        self.record(&record);
-        let outcome = self.next(&self.compact, "compact");
         ready(outcome)
     }
 }
@@ -245,32 +244,23 @@ impl HistoryTokenCounter for FixedHistoryCounter {
 // the policy seams never run while the principal is absent, but the editor still names their types
 pub(crate) struct NoChecks;
 
+type Access<'router> = Option<&'router dyn ModelAccessView>;
+type UserRow<'row> = &'row LiteLLMUserTable;
+type ProjectRow<'row> = &'row ProjectTable;
+type Check = Result<(), PolicyFailure<io::Error>>;
+
 impl SummaryModelChecks for NoChecks {
     type Failure = io::Error;
 
-    fn object_call(
-        &self,
-        _router: Option<&dyn ModelAccessView>,
-        _call: &ObjectCall<'_>,
-    ) -> Result<(), PolicyFailure<io::Error>> {
+    fn object_call(&self, _router: Access<'_>, _call: &ObjectCall<'_>) -> Check {
         Ok(())
     }
 
-    fn user_call(
-        &self,
-        _router: Option<&dyn ModelAccessView>,
-        _model: &str,
-        _user: &LiteLLMUserTable,
-    ) -> Result<(), PolicyFailure<io::Error>> {
+    fn user_call(&self, _router: Access<'_>, _model: &str, _user: UserRow<'_>) -> Check {
         Ok(())
     }
 
-    fn project_call(
-        &self,
-        _router: Option<&dyn ModelAccessView>,
-        _model: &str,
-        _project: &ProjectTable,
-    ) -> Result<(), PolicyFailure<io::Error>> {
+    fn project_call(&self, _router: Access<'_>, _model: &str, _project: ProjectRow<'_>) -> Check {
         Ok(())
     }
 }

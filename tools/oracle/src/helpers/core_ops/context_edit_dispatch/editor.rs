@@ -2,9 +2,7 @@ use std::collections::VecDeque;
 use std::future::{Future, ready};
 use std::sync::{Mutex, PoisonError};
 
-use betterlite_core::api::messages_compaction::dispatch::{
-    ClearCall, CompactCall, ContextEditor, EditorOutcome,
-};
+use betterlite_core::api::messages_compaction::dispatch::{ContextEditor, EditCall, EditorOutcome};
 use betterlite_core::api::messages_context_clear::constants::{
     CLEAR_TOOL_USES_EDIT_TYPE, COMPACT_EDIT_TYPE,
 };
@@ -126,40 +124,39 @@ impl ScriptedEditor {
 impl ContextEditor for ScriptedEditor {
     type Failure = ScriptFailure;
 
-    fn clear_tool_uses(
+    fn edit(
         &self,
-        call: ClearCall,
+        call: EditCall<'_>,
     ) -> impl Future<Output = Result<EditorOutcome, ScriptFailure>> + Send {
-        let record = json!({
-            "editor": CLEAR_TOOL_USES_EDIT_TYPE,
-            "model": call.model,
-            "messages": call.messages,
-            "tools": call.tools,
-            "system": call.system,
-            "edit_spec": call.edit_spec,
-        });
-        self.record(record);
-        let outcome = Self::next(&self.clear);
-        ready(outcome)
-    }
-
-    fn compact(
-        &self,
-        call: CompactCall<'_>,
-    ) -> impl Future<Output = Result<EditorOutcome, ScriptFailure>> + Send {
-        let record = json!({
-            "editor": COMPACT_EDIT_TYPE,
-            "model": call.model,
-            "messages": call.messages,
-            "tools": call.tools,
-            "system": call.system,
-            "edit_spec": call.edit_spec,
-            "litellm_metadata": call.litellm_metadata,
-            "llm_router": call.llm_router.map(|_router| "router"),
-            "user_api_key_auth": call.user_api_key_auth.map(|_principal| "present"),
-        });
-        self.record(record);
-        let outcome = Self::next(&self.compact);
+        let outcome = match call {
+            EditCall::Clear(clear) => {
+                let record = json!({
+                    "editor": CLEAR_TOOL_USES_EDIT_TYPE,
+                    "model": clear.model,
+                    "messages": clear.messages,
+                    "tools": clear.tools,
+                    "system": clear.system,
+                    "edit_spec": clear.edit_spec,
+                });
+                self.record(record);
+                Self::next(&self.clear)
+            }
+            EditCall::Compact(compact) => {
+                let record = json!({
+                    "editor": COMPACT_EDIT_TYPE,
+                    "model": compact.model,
+                    "messages": compact.messages,
+                    "tools": compact.tools,
+                    "system": compact.system,
+                    "edit_spec": compact.edit_spec,
+                    "litellm_metadata": compact.litellm_metadata,
+                    "llm_router": compact.llm_router.map(|_router| "router"),
+                    "user_api_key_auth": compact.user_api_key_auth.map(|_principal| "present"),
+                });
+                self.record(record);
+                Self::next(&self.compact)
+            }
+        };
         ready(outcome)
     }
 }
