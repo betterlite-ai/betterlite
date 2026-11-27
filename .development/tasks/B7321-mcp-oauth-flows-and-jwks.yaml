@@ -29,7 +29,7 @@ description: >-
   3. OauthFlowsImpl (flows_impl.rs). Implements B4719's OauthFlows for the production wiring: resolve_ephemeral_dcr_client calls B7531, register_client_with_server calls B7531, authorize_with_server and exchange_token_with_server call B7532's AuthFlows, redeem_passthrough_code (LiteLLM calls it redeem_passthrough_authorization_code; B4719 names the port method with the short name) calls B7530's redeem_passthrough_code, client_supplied_redirect_uris calls B7530's function of that name, request_base_url calls B4654's get_request_base_url. Each method is one call; do not copy logic. A struct of the five collaborators, generic over their traits.
 
 
-  B8623 builds the ports of B7530 to B7532 (SealCipher over B1600's StoredCipher, UpstreamForm and UpstreamHttp over the outbound HTTP client, FaultRenderer, UserTokenStore, UserAccess, BridgeMint, IdentityBinding, ClientStore, DiscoveryJoin, Decryptor). This task does not build them.
+  B8623 builds the ports of B7530 to B7532 (SealCipher over B1600's StoredCipher, UpstreamForm and UpstreamHttp over the outbound HTTP client, FaultRenderer, UserTokenStore, UserAccess, BridgeMint, IdentityBinding, ClientStore, DiscoveryJoin, Decryptor). OauthFlowsImpl remains generic over the flow collaborators; B8623 supplies B7970's OauthFaultRenderer behind their FaultRenderer port.
 
 
   Tests use synthetic servers (test-oauth-1, https://mcp.example.test/sse), a fake registry, fake signer and fakes for the B4676, B4719 and B7532 ports. Check each route's status, headers and key order. B8624 mounts these routes and runs their HTTP oracle cases through the booted proxy with a master key, no database and an MCP server in the config; here the routes are tested with tower's oneshot. The token routes are covered with error answers only (422 for a missing field, 404 for no server, 401 for a bad client on revoke, 401 on introspect without a key), since a good exchange needs an IdP. A helper `tools/oracle/helpers/b7321.py` is not needed; the cases are plain HTTP.
@@ -85,7 +85,7 @@ deviations: []
 out_of_scope:
   - "State and sealed codes: B7530. DCR and register flows: B7531. Authorize and token exchange flows: B7532. The OauthFlows trait and the /v1/mcp/server/oauth routes: B4719."
   - "Gateway token logic (aggregate_token, revoke_refresh_token, introspect_gateway_token): B4676. The bare /.well-known/oauth-authorization-server route: B4678."
-  - "The faults package behind FaultRenderer: B7970. The /callback, /authorize, POST /register, /authorize/flow and /authorize/complete routes: B7971. The protected resource routes, fetch_upstream_oauth_protected_resource and the aggregate authorization server route: B7972."
+  - "B8623 supplies B7970's faults implementation behind the injected FaultRenderer; this task uses the flow contracts of B7531 and B7532. The /callback, /authorize, POST /register, /authorize/flow and /authorize/complete routes: B7971. The protected resource routes, fetch_upstream_oauth_protected_resource and the aggregate authorization server route: B7972."
 
 pitfalls:
   - A duplicate route panics axum at startup, so check the router builds with every task's routes merged.

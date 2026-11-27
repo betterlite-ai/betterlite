@@ -1,0 +1,26 @@
+kind: helper
+name: auth-key-lookup-mapping-seed
+call:
+  auth_key_lookup:
+    aspect: mapping
+    claim_name: sub
+    claim_value: abc
+    issuer: iss
+    lookup:
+      mode: object
+      found: {token: hashed-token, jwt_claim_name: sub, jwt_claim_value: abc, jwt_issuer: iss}
+calls:
+  - auth_key_lookup:
+      aspect: mapping
+      claim_name: sub
+      claim_value: abc
+      rows:
+        - {token: hashed-token, jwt_claim_name: sub, jwt_claim_value: abc, jwt_issuer: iss}
+      lookup: {mode: tokens, hashed_tokens: [hashed-token]}
+  - auth_key_lookup:
+      aspect: cache_key
+      claim_name: sub
+      claim_value: abc
+      issuer: ''
+env: {}
+compare: {ignore: []}
