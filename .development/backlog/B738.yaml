@@ -1,7 +1,7 @@
 id: B738
 milestone: M4 keys, spend and management
 title: Key lookup and UI session grant refresh
-status: todo
+status: done
 depends_on: [B001, B003, B171, B715, B726, B732, B733, B734, B735, B736, B737, B757, B856, B860, B871, B872, B2314, B2315, B2320, B2323]
 file: tasks/B738-auth-key-lookup.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/auth/user_api_key_auth.py"
 parent: B052
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3266

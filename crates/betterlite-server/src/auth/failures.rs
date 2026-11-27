@@ -14,7 +14,8 @@ pub(crate) fn stage_failure_response(failure: &StageFailure) -> Response {
     match failure {
         StageFailure::Authentication(authentication) => authentication_error(authentication),
         StageFailure::ModelAccess(rejection) => rejection_response(rejection),
-        StageFailure::EntityModelAccess(exception)
+        StageFailure::KeyLookup(exception)
+        | StageFailure::EntityModelAccess(exception)
         | StageFailure::AuthRequestPolicy(exception)
         | StageFailure::TrustedNetwork(exception)
         | StageFailure::ResourceGrants(exception)
