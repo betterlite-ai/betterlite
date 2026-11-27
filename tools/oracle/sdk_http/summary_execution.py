@@ -253,7 +253,7 @@ async def run_scenario(scenario: Scenario, api_base: str) -> dict[str, JsonValue
     principal = (
         None
         if scenario.principal is None
-        else UserAPIKeyAuth.model_validate(scenario.principal)
+        else UserAPIKeyAuth.model_validate(scenario.principal)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3356
     )
     capture = LogCapture()
     logger = logging.getLogger("LiteLLM")
@@ -283,16 +283,16 @@ async def run_scenario(scenario: Scenario, api_base: str) -> dict[str, JsonValue
     }
 
 
-async def dispatch(call: Call, api_base: str) -> list[JsonValue]:
-    return [await run_scenario(scenario, api_base) for scenario in call.scenarios]
-
-
 class SummaryExecutionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     summary_execution: Call
 
+    async def dispatch(self, api_base: str) -> list[JsonValue]:
+        scenarios = self.summary_execution.scenarios
+        return [await run_scenario(scenario, api_base) for scenario in scenarios]
+
     def serialize(self, api_base: str) -> str:
-        runs = asyncio.run(dispatch(self.summary_execution, api_base))
+        runs = asyncio.run(self.dispatch(api_base))
         payload: dict[str, JsonValue] = {"summary_execution": {"value": {"runs": runs}}}
         return json.dumps(payload)
