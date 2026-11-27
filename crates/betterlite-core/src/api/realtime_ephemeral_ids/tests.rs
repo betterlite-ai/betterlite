@@ -10,6 +10,8 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde_json::Number;
 
+use crate::api::realtime_contracts::records::RealtimeClientSecretRequest;
+
 use super::prepare::{
     PreparedSession, SessionGrantRequest, SessionModelGrant, prepare_client_secret_session,
 };
@@ -28,7 +30,7 @@ fn session(text: &str) -> IndexMap<String, Json> {
     serde_json::from_str(text).unwrap()
 }
 
-fn request(text: &str) -> crate::api::realtime_contracts::records::RealtimeClientSecretRequest {
+fn request(text: &str) -> RealtimeClientSecretRequest {
     serde_json::from_str(text).unwrap()
 }
 
@@ -234,6 +236,17 @@ fn realtime_transcription_model_setter_keeps_siblings() {
     assert_eq!(
         flat_only,
         session(r#"{"input_audio_transcription":{"language":"en","model":"a"}}"#)
+    );
+
+    let mut nested_only = session(
+        r#"{"audio":{"input":{"transcription":{"model":"old","language":"en"}}},"model":"top"}"#,
+    );
+    set_transcription_model(&mut nested_only, "a", true);
+    assert_eq!(
+        nested_only,
+        session(
+            r#"{"audio":{"input":{"transcription":{"model":"a","language":"en"}}},"model":"top"}"#
+        )
     );
 
     let mut none = session(r#"{"audio":"legacy","input_audio_transcription":"legacy"}"#);

@@ -42,13 +42,13 @@ pub(super) fn text_value(value: Option<&Json>) -> Option<&str> {
 
 // _append_model_candidate: only a nonempty string is a candidate, and it joins the list once, untrimmed
 pub fn append_model_candidate(candidates: &mut Vec<String>, model: Option<&str>) {
-    let Some(model) = model else {
+    let Some(candidate) = model else {
         return;
     };
-    if model.is_empty() || candidates.iter().any(|candidate| candidate == model) {
+    if candidate.is_empty() || candidates.iter().any(|existing| existing == candidate) {
         return;
     }
-    candidates.push(model.to_owned());
+    candidates.push(candidate.to_owned());
 }
 
 // _transcription_model_candidates_from_session: the GA nested model first, then the flat one
@@ -73,35 +73,54 @@ pub fn set_transcription_model(
     model: &str,
     create_if_missing: bool,
 ) {
-    let mut updated = false;
-    if let Some(Json::Object(transcription)) = session.get("input_audio_transcription") {
-        let mut replaced = transcription.clone();
-        replaced.insert("model".to_owned(), Json::Text(model.to_owned()));
-        session.insert(
-            "input_audio_transcription".to_owned(),
-            Json::Object(replaced),
-        );
-        updated = true;
+    let flat = rewrite_flat_transcription(session, model);
+    let nested = rewrite_nested_transcription(session, model);
+    if flat || nested {
+        return;
     }
-    if let Some(Json::Object(audio)) = session.get("audio")
-        && let Some(Json::Object(input)) = audio.get("input")
-        && let Some(Json::Object(transcription)) = input.get("transcription")
-    {
-        let mut replaced_transcription = transcription.clone();
-        replaced_transcription.insert("model".to_owned(), Json::Text(model.to_owned()));
-        let mut replaced_input = input.clone();
-        replaced_input.insert(
-            "transcription".to_owned(),
-            Json::Object(replaced_transcription),
-        );
-        let mut replaced_audio = audio.clone();
-        replaced_audio.insert("input".to_owned(), Json::Object(replaced_input));
-        session.insert("audio".to_owned(), Json::Object(replaced_audio));
-        updated = true;
-    }
-    if !updated && create_if_missing {
+    if create_if_missing {
         create_nested_transcription(session, model);
     }
+}
+
+// the flat shape takes the model and keeps its other keys
+#[must_use]
+fn rewrite_flat_transcription(session: &mut IndexMap<String, Json>, model: &str) -> bool {
+    let Some(Json::Object(transcription)) = session.get("input_audio_transcription") else {
+        return false;
+    };
+    let mut replaced = transcription.clone();
+    replaced.insert("model".to_owned(), Json::Text(model.to_owned()));
+    session.insert(
+        "input_audio_transcription".to_owned(),
+        Json::Object(replaced),
+    );
+    true
+}
+
+// the GA nesting takes the model, keeping audio, input and the transcription's other keys
+#[must_use]
+fn rewrite_nested_transcription(session: &mut IndexMap<String, Json>, model: &str) -> bool {
+    let Some(Json::Object(audio)) = session.get("audio") else {
+        return false;
+    };
+    let Some(Json::Object(input)) = audio.get("input") else {
+        return false;
+    };
+    let Some(Json::Object(transcription)) = input.get("transcription") else {
+        return false;
+    };
+    let mut replaced_transcription = transcription.clone();
+    replaced_transcription.insert("model".to_owned(), Json::Text(model.to_owned()));
+    let mut replaced_input = input.clone();
+    replaced_input.insert(
+        "transcription".to_owned(),
+        Json::Object(replaced_transcription),
+    );
+    let mut replaced_audio = audio.clone();
+    replaced_audio.insert("input".to_owned(), Json::Object(replaced_input));
+    session.insert("audio".to_owned(), Json::Object(replaced_audio));
+    true
 }
 
 // the create_if_missing branch keeps whatever existing dictionary holds the audio and input, and replaces anything else
