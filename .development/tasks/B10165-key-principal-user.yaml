@@ -1,0 +1,156 @@
+id: B10165
+title: API-key and master-key authentication fill the principal's user
+description: >-
+  No auth stage on main fills Principal.user. key_context in crates/betterlite-server/src/auth/auth_key_lookup.rs (B738) turns a resolved virtual key into the request's Principal with `user: None`, although key_identity hands it the key's user_id and key_context even uses that id as the subject. master_key_context in crates/betterlite-server/src/auth/auth_identity.rs does the same for the master key. The route code that ports LiteLLM's `user_api_key_dict.user_id` reads `principal.user`, so every API-key caller looks like a service account. On the route modules: /usage/ai/chat (B8271) answers "Service-account keys cannot query user analytics. Use a user-bound key, or call as a proxy admin." with 403 to every non-admin key. /global/spend/logs answers "/global/spend/logs Error: User ID is None" and /global/spend/keys and /global/spend/models answer "No user_id found" (B1724). An org admin's key never passes the admin check of /invitation/new and /invitation/delete, since management_admins' AdminCaller reads its user id from principal.user, and /invitation/delete refuses it with "Organization admins can only delete invitations they created." /invitation/update cannot identify the caller, a proxy admin's key makes /invitation/new record default_user_id as creator (B8599), /credentials records no creator (B1601), and a proxy admin's key registers a /claude-code/plugins entry without created_by. The guardrail translation leaves user_api_key_user_id and user_api_key_user_email out of the metadata, and skills and container files stamp a user-bound key's resources with its team or key scope where LiteLLM stamps the user id, so the user's team mates can open them.
+
+
+  LiteLLM reads the key's user_id in every one of these places. Its auth seam projects the resolved key with IdentityStore._principal_from_key, which sets `user = UserIdentity(id=key.user_id, email=key.user_email)` whenever user_id is not None (resolvers/store.py L172, called from _resolve_request_principal L3224-L3245). The master key authenticates as a UserAPIKeyAuth whose user_id is litellm_proxy_admin_name (user_api_key_auth.py L2085-L2098), the constant LITELLM_PROXY_ADMIN_NAME = "default_user_id" (constants.py L1738).
+
+
+  Fix it at the two stages and leave the readers alone. In betterlite-auth, KeyIdentity (crates/betterlite-auth/src/auth_key_lookup.rs) gains `pub user_email: Option<String>`, which key_identity fills from auth.extra.user_email, since UserAPIKeyAuth keeps its fields pub(crate). key_context sets `user` to `Some(UserIdentity { id, external_id: None, user_name: None, email: identity.user_email, display_name: None })` when the key's user_id is Some, an empty id included, and None when the key has no user_id. Every other field key_context sets stays as it is.
+
+
+  master_key_context sets `user` to `Some(UserIdentity { id: DEFAULT_USER_ID.to_owned(), external_id: None, user_name: None, email: None, display_name: None })`, with betterlite_db::model_secrets::DEFAULT_USER_ID, the constant that already holds LiteLLM's "default_user_id". Its subject stays "master_key", its principal_type ServiceAccount and its roles empty. auth_identity.rs already counts 300 lines for the gate's file-size check (the `mod tests;` line is free), so master_key_context moves next to key_context in auth_key_lookup.rs, together with the imports only it uses (subtle's ConstantTimeEq among them). auth_identity.rs keeps `pub(crate) use crate::auth::auth_key_lookup::master_key_context;`, so master_key_stage, which stays in auth_identity.rs, and every import through auth_identity keep working. That includes B870's server identity_store.rs, which is in progress and imports `super::auth_identity::master_key_context`. Move it whatever the file's size is when you start.
+
+
+  The readers then behave as LiteLLM does without a change of their own. The ones that read the key's user_id first and fall back to principal.user (organization_create/caller.rs, plugin_routes/routes.rs caller_identity, invitation_routes/queue/request.rs queue_user_id) answer as before. The master fallbacks to default_user_id in invitation_routes/invitations/update.rs, api/claude_plugin_write/access.rs creator_id and the invitation store give the same id the master principal now carries. For the master key, /credentials now records default_user_id as creator, as LiteLLM does.
+
+
+  B870 (in progress) adds principal_from_key in betterlite-auth's identity_store, the whole _principal_from_key projection, and its AuthIdentity stage uses it once a composition root installs the store's ports; B738's lookup stays the fallback. key_context does not switch to it here. That would also change, on this path, the subject (key_alias instead of key_name), principal_type, credential_ref.key_id, organization, project, end_user and the team roles, and the readers of those fields are not this task's. The user field built here equals principal_from_key's, field for field. Retiring that fallback is not planned yet: B855 wires _resolve_request_principal, but its scope does not include auth_key_lookup.rs.
+
+
+  Tests. crates/betterlite-server/src/auth/auth_key_lookup/tests.rs is declared with `pub(crate) mod tests;`, as routes::tests is, and gains `pub(crate) fn caller_through_key_stage(fields: &str) -> AuthContext`: it builds a UserAPIKeyAuth from a JSON object of key fields with UserAPIKeyAuth::construct(AuthInput::Dict(..)) and returns key_context's AuthContext for it with hashed_token "hashed-key". The new route tests build their caller with caller_through_key_stage or master_key_context, never with a hand-written Principal: the existing fixtures set `user` by hand, which is how this bug passed every route test.
+
+
+  In auth::auth_key_lookup::tests: key_context_fills_the_key_user (fields key_name "key-name", user_id "u1", user_email "u1@example.com", team_id "t1": user is UserIdentity with id "u1" and that email and nothing else, subject "u1", credential_ref key_id "key-name" and token_id "hashed-key"), key_context_fills_an_empty_user_id (user_id "" gives a user with id ""), key_context_leaves_a_userless_key_without_a_user (key_name "svc" and team_id "t1": user None, subject "svc") and master_key_context_carries_the_admin_user (user id "default_user_id" with every other field None, subject "master_key", principal_type ServiceAccount, no roles).
+
+
+  In usage_ai_chat_route/tests/caller.rs: caller_answers_a_user_bound_key_from_the_key_stage sends the tool body as caller_through_key_stage(r#"{"user_id":"u1"}"#) with the real GuardCallerId and gets 200 with the done event, the source sees user id Some("u1"), and the model gets one tool, as caller_uses_the_real_guard_id_for_a_user_bound_non_admin expects for its hand-built principal.
+
+
+  In invitation_routes/tests/invitations.rs: new_invitation_by_an_org_admin_key_records_its_user (caller_through_key_stage over user_id "u1" and user_role "org_admin", open scope, body {"user_id":"alice"}: 200 and created is [("alice", Some("u1"))]), update_by_a_user_bound_key_records_its_user (caller_through_key_stage over user_id "u1", record inv-1: 200, updated_by "u1" in the body and in the store) and delete_lets_an_org_admin_key_delete_its_own_invitation (org-admin key over user_id "u1", privileged scope, record inv-1 created by "u1": 200 and deleted is ["inv-1"]).
+
+
+  In spend/totals/tests/routes.rs: logs_scope_a_user_bound_key_to_its_user (caller_through_key_stage over user_id "u1" and user_role "internal_user" on /global/spend/logs?api_key=sk-one: 200 and the store call is user_daily_spend(u1,Some("sk-one"))) and keys_scope_a_user_bound_key_to_its_user (the same key on /global/spend/keys: the store call is user_keys_by_spend for u1).
+
+
+  In credentials/tests/create.rs: create_records_the_key_user_as_actor (caller_through_key_stage over user_id "u1": the store's created actor is Some("u1")) and create_records_the_master_key_admin_user_as_actor (the principal from master_key_context: Some("default_user_id")).
+
+
+  There are no HTTP oracle cases. The booted proxy installs no KeyAuthenticator (state/auth_key_lookup.rs leaves the slot None), so no booted request authenticates with a virtual key, and the usage chat, invitation, spend totals and credentials routers are not composed into the app yet. Each route test drives that route's own router.
+scope:
+  paths:
+    - crates/betterlite-auth/src/auth_key_lookup.rs
+    - crates/betterlite-auth/src/auth_key_lookup/tests.rs
+    - crates/betterlite-server/src/auth/auth_key_lookup.rs
+    - crates/betterlite-server/src/auth/auth_key_lookup/tests.rs
+    - crates/betterlite-server/src/auth/auth_identity.rs
+    - crates/betterlite-server/src/usage_ai_chat_route/tests/caller.rs
+    - crates/betterlite-server/src/invitation_routes/tests/invitations.rs
+    - crates/betterlite-server/src/spend/totals/tests/routes.rs
+    - crates/betterlite-server/src/credentials/tests/create.rs
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/resolvers/store.py#L149-L190
+    why: _principal_from_key, the projection LiteLLM's auth seam applies to every resolved key; L172 sets the user from user_id and user_email whenever user_id is not None.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L3224-L3245
+    why: _resolve_request_principal, where the seam calls _principal_from_key for each authenticated request.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L2085-L2098
+    why: The master key's UserAPIKeyAuth carries user_id litellm_proxy_admin_name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1738
+    why: LITELLM_PROXY_ADMIN_NAME is "default_user_id".
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/usage_endpoints/endpoints.py#L34-L76
+    why: /usage/ai/chat scopes a non-admin caller by user_api_key_dict.user_id through require_caller_user_id_for_non_admin (common_utils.py L126-L150).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L17707-L17950
+    why: /invitation/new, /invitation/update and /invitation/delete read user_api_key_dict.user_id for the creator, the updater and the org-admin ownership check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L3802-L3843
+    why: global_spend_for_internal_user scopes /global/spend/logs by user_api_key_dict.user_id.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/credential_endpoints/endpoints.py#L76-L141
+    why: create_credential records user_api_key_dict.user_id as created_by and updated_by.
+dod:
+  - text: >-
+      key_context fills Principal.user from the key: the id is the key's user_id, an empty one included, the email is
+      the key's user_email and the other UserIdentity fields are None. A key without a user_id leaves user None, and
+      the subject and credential_ref are what they were.
+    proof: [key-stage-user]
+  - text: >-
+      master_key_context fills user with id "default_user_id" and no other field, and keeps subject "master_key",
+      principal_type ServiceAccount and no roles.
+    proof: [master-stage-user]
+  - text: >-
+      A non-admin key with user_id u1 gets /usage/ai/chat's streamed answer scoped to u1 instead of the
+      service-account 403.
+    proof: [usage-chat]
+  - text: >-
+      The invitation routes see a key's user: /invitation/new records it as creator, /invitation/update as updater,
+      and an org admin's key may delete the invitation it created.
+    proof: [invitations]
+  - text: /global/spend/logs and /global/spend/keys scope an internal user's key to its user_id instead of answering that the user id is missing.
+    proof: [spend-totals]
+  - text: /credentials records the key's user_id as creator, and default_user_id for the master key.
+    proof: [credential-actor]
+  - text: >-
+      KeyIdentity carries the key's user_email, and the key lookup, auth stage and reader test suites still pass with
+      master_key_context moved.
+    proof: [module-tests]
+checks:
+  optional: []
+  commands:
+    - id: key-stage-user
+      why: key_context still leaves the user out, drops an empty user id, loses the email or changes the subject or credential_ref.
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^auth::auth_key_lookup::tests::(key_context_fills_the_key_user|key_context_fills_an_empty_user_id|key_context_leaves_a_userless_key_without_a_user)$/)'
+    - id: master-stage-user
+      why: The master key's principal has no user, or the fill changed its subject, type or roles.
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^auth::auth_key_lookup::tests::master_key_context_carries_the_admin_user$/)'
+    - id: usage-chat
+      why: A user-bound non-admin key still gets the service-account 403 from /usage/ai/chat.
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^usage_ai_chat_route::tests::caller_answers_a_user_bound_key_from_the_key_stage$/)'
+    - id: invitations
+      why: An invitation route still sees no user on a key, so it records the wrong creator or updater or refuses an org admin its own invitation.
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^invitation_routes::tests::invitations::(new_invitation_by_an_org_admin_key_records_its_user|update_by_a_user_bound_key_records_its_user|delete_lets_an_org_admin_key_delete_its_own_invitation)$/)'
+    - id: spend-totals
+      why: The spend totals still answer an internal user's key that its user id is missing.
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^spend::totals::tests::routes::(logs_scope_a_user_bound_key_to_its_user|keys_scope_a_user_bound_key_to_its_user)$/)'
+    - id: credential-actor
+      why: /credentials still records no creator for a key or for the master key.
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^credentials::tests::create::(create_records_the_key_user_as_actor|create_records_the_master_key_admin_user_as_actor)$/)'
+    - id: module-tests
+      why: KeyIdentity has no user_email, or the fill or the move broke another key lookup, auth stage or reader test.
+      run: >-
+        grep -q -F 'pub user_email' crates/betterlite-auth/src/auth_key_lookup.rs
+        && cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^auth_key_lookup::/)'
+        && cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^(auth::|usage_ai_chat_route::|invitation_routes::|spend::totals::|credentials::|api::claude_plugin_write::|guardrails::chat_guardrail_translation::|guardrails::submissions::|management_guards::|management_admins::|plugin_routes::|organization_create::)/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "Switching key_context to B870's principal_from_key, and the other fields it projects differently (subject from key_alias, principal_type, credential_ref.key_id, organization, project, end_user, team roles): B870 builds the projection and B855 wires _resolve_request_principal; no task retires this fallback yet."
+  - "The readers: none of them changes. Their master-key fallbacks to default_user_id and their key-first reads stay, and so do the server modules' own \"default_user_id\" constants."
+  - "The master principal's empty roles. Readers that test roles for PlatformAdmin without the master-key subject check (betterlite-core's managed_resource_store::is_proxy_admin, AdminCaller.proxy_admin, PollCaller.platform_admin) still treat the master key as a non-admin."
+  - "The JWT, OAuth2 and SSO stages, which don't exist on main yet; their tasks build their own principals."
+  - "HTTP oracle cases, for the reasons in the description."
+pitfalls:
+  - "Fill the user whenever the key's user_id is Some, an empty string included: store.py L172 tests `is not None`, and caller_user_id_for_non_admin refuses only a missing id."
+  - "Take the email from the key's user_email through KeyIdentity, never None: guardrails/submissions/teams.rs caller() reads the email from principal.user whenever a user is set, so a None there drops the email it reads from the key today."
+  - "Leave subject, principal_type, roles, teams and credential_ref as they are on both stages. A dozen readers (usage_ai_chat_route/caller.rs, spend/totals/access.rs, api/agents/collection_routes/guards.rs and others) recognize the master key only by subject == \"master_key\"."
+  - "auth_identity.rs counts 300 lines for the file-size check, so the master fill can't stay there; the move is what makes room. B870 edits the same import block, so read the imports again after merging main."
+  - "Use betterlite_db::model_secrets::DEFAULT_USER_ID for the master user; don't add another \"default_user_id\" literal."
+  - "A route test whose caller is a hand-written Principal with user set passes on main and proves nothing. Leave the existing fixtures as they are: new_invitation_by_the_master_key_has_no_actor and caller_takes_an_admins_own_user_id_and_allows_null still pass, because their master principals are hand-built."
+  - "invitation_routes/tests/support.rs already has a key_caller(fields) that builds a hand-written principal with no user; the invitation tests import caller_through_key_stage from crate::auth::auth_key_lookup::tests, not that one."
+  - "The file-size count frees only `mod` and `pub mod` lines, so `pub(crate) mod tests;` counts as one line in auth_key_lookup.rs, which stays far under 300."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
