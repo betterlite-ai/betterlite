@@ -16,7 +16,7 @@ use crate::oauth_tokens::request::{
 use crate::oauth_tokens::transport::{
     TokenInfoRequest, TokenInfoResponse, TokenInfoTransport, TokenInfoTransportError,
 };
-use crate::oauth_tokens::{DecodeError, TypedValue, decode_oauth_response};
+use crate::oauth_tokens::{DecodeError, decode_oauth_response};
 use crate::resolved_key::auth::{AuthError, AuthInput, UserAPIKeyAuth};
 
 const STATUS_PREFIX: &str = "Oauth 2.0 Token validation failed";

@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::io;
+use std::mem;
 use std::str::from_utf8;
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -103,12 +104,12 @@ impl TokenInfoTransport for Scripted {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(request);
-        if let Some(source) = self
+        let failure = self
             .failure
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .take()
-        {
+            .take();
+        if let Some(source) = failure {
             return Err(TokenInfoTransportError::Failed { source });
         }
         Ok(TokenInfoResponse {
@@ -135,10 +136,10 @@ pub(super) fn mappings(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
         .collect()
 }
 
-pub(super) fn network<'a>(
-    peer: Option<&'a str>,
-    forwarded_for: Option<&'a str>,
-) -> NetworkRequest<'a> {
+pub(super) fn network<'peer>(
+    peer: Option<&'peer str>,
+    forwarded_for: Option<&'peer str>,
+) -> NetworkRequest<'peer> {
     NetworkRequest {
         peer,
         x_forwarded_for: forwarded_for,
@@ -180,7 +181,7 @@ pub(super) struct Idp {
 
 impl Idp {
     pub(super) fn take(&self) -> Vec<Seen> {
-        std::mem::take(&mut *self.seen.lock().unwrap_or_else(PoisonError::into_inner))
+        mem::take(&mut *self.seen.lock().unwrap_or_else(PoisonError::into_inner))
     }
 }
 
@@ -297,13 +298,17 @@ async fn read_request(stream: &mut TcpStream) -> io::Result<Seen> {
 }
 
 async fn read_head(stream: &mut TcpStream, buffer: &mut Vec<u8>) -> io::Result<usize> {
+    // a read into the Vec itself would ask for zero bytes while it is empty and never see the head
+    let mut chunk = [0_u8; 1024];
     loop {
         if let Some(position) = buffer.windows(4).position(|window| window == b"\r\n\r\n") {
             return Ok(position.saturating_add(4));
         }
-        if stream.read(buffer).await? == 0 {
+        let read = stream.read(&mut chunk).await?;
+        if read == 0 {
             return Err(io::Error::from(io::ErrorKind::UnexpectedEof));
         }
+        buffer.extend_from_slice(&chunk[..read]);
     }
 }
 
@@ -344,10 +349,13 @@ async fn read_body(
     length: usize,
 ) -> io::Result<String> {
     let end = head_end.saturating_add(length);
+    let mut chunk = [0_u8; 1024];
     while buffer.len() < end {
-        if stream.read(buffer).await? == 0 {
+        let read = stream.read(&mut chunk).await?;
+        if read == 0 {
             break;
         }
+        buffer.extend_from_slice(&chunk[..read]);
     }
     Ok(from_utf8(&buffer[head_end..end.min(buffer.len())])
         .unwrap_or_default()

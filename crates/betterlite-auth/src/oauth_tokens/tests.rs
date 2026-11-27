@@ -37,10 +37,10 @@ const TRUSTED_PEER: Option<&str> = Some("10.0.0.5");
 const INTROSPECTION_BODY: &str = r#"{"sub":"user-1","role":"internal_user","team_id":"team-7"}"#;
 
 fn expect_validation(error: CheckError) -> ValidationError {
-    match error {
-        CheckError::Validation { source } => source,
-        other => panic!("expected a validation failure, got {other}"),
-    }
+    let CheckError::Validation { source } = error else {
+        panic!("expected a validation failure");
+    };
+    source
 }
 
 #[rstest]
@@ -285,12 +285,11 @@ async fn non_bool_active_refused(#[case] body: &str) {
     let error = check_oauth2_token(&configured, &transport, &token())
         .await
         .expect_err("a non-boolean active is refused");
-    match expect_validation(error) {
-        ValidationError::Extract(ExtractError::FieldNotBool { field }) => {
-            assert_eq!(field, "active")
-        }
-        other => panic!("expected a non-boolean active failure, got {other}"),
-    }
+    let ValidationError::Extract(ExtractError::FieldNotBool { field }) = expect_validation(error)
+    else {
+        panic!("expected a non-boolean active failure");
+    };
+    assert_eq!(field, "active");
 }
 
 #[tokio::test]
@@ -372,12 +371,11 @@ async fn non_string_field_refused() {
     let error = check_oauth2_token(&configured, &transport, &token())
         .await
         .expect_err("a non-string identity field is refused");
-    match expect_validation(error) {
-        ValidationError::Extract(ExtractError::FieldNotString { field }) => {
-            assert_eq!(field, "sub")
-        }
-        other => panic!("expected a non-string field failure, got {other}"),
-    }
+    let ValidationError::Extract(ExtractError::FieldNotString { field }) = expect_validation(error)
+    else {
+        panic!("expected a non-string field failure");
+    };
+    assert_eq!(field, "sub");
 }
 
 #[tokio::test]
@@ -387,12 +385,11 @@ async fn invalid_role() {
     let error = check_oauth2_token(&configured, &transport, &token())
         .await
         .expect_err("an unknown role is refused");
-    let source = expect_validation(error);
-    assert!(
-        matches!(source, ValidationError::Auth(AuthError::View(_))),
-        "{source}"
-    );
-    assert!(source.to_string().contains("verification token view"));
+    // user_role lives in the extras, whose serde decode refuses a name no UserRole carries
+    let ValidationError::Auth(AuthError::Json(source)) = expect_validation(error) else {
+        panic!("expected an unknown role to fail the extras decode");
+    };
+    assert!(source.to_string().contains("superuser"), "{source}");
 }
 
 #[tokio::test]
@@ -729,7 +726,7 @@ fn proxy_latin1_header() {
     // Starlette decodes header bytes as latin-1, so 0xE9 becomes the single character U+00E9
     let auth = handle_oauth2_proxy_request(&present, Some(&mapping), &peer, &configured)
         .expect("a latin-1 header value maps");
-    assert_eq!(auth.view.token.user_id.as_deref(), Some("user-é"));
+    assert_eq!(auth.view.token.user_id.as_deref(), Some("user-\u{e9}"));
 }
 
 #[test]
