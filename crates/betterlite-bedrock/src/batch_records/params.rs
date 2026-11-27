@@ -124,9 +124,8 @@ fn projected_messages(value: Option<&Json>) -> Result<Vec<Json>, BatchRecordsErr
         records.push(message_record(&fields));
         objects.push(fields);
     }
-    let projected = developer_to_system(records)?;
-    let mut bodies = Vec::with_capacity(projected.len());
-    for (message, fields) in projected.into_iter().zip(objects) {
+    let mut bodies = Vec::with_capacity(objects.len());
+    for (message, fields) in developer_to_system(records)?.into_iter().zip(objects) {
         bodies.push(projected_message(message, fields));
     }
     Ok(bodies)
