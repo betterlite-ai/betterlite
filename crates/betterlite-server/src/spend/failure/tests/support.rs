@@ -76,16 +76,18 @@ pub(super) struct Harness {
 
 impl Harness {
     pub(super) fn new() -> Self {
+        let request_data = object(r#"{"model": "gpt-4o"}"#);
+        let facts = ExceptionFacts {
+            class_name: "ProviderError".to_owned(),
+            message: Some("the provider is down".to_owned()),
+            status_code: Some(503_u16),
+            // ast-grep-ignore: no-default-struct-update - the fixture sets only the fields it reads
+            ..ExceptionFacts::default()
+        };
         Self {
-            request_data: object(r#"{"model": "gpt-4o"}"#),
+            request_data,
             principal: principal(),
-            facts: ExceptionFacts {
-                class_name: "ProviderError".to_owned(),
-                message: Some("the provider is down".to_owned()),
-                status_code: Some(503_u16),
-                // ast-grep-ignore: no-default-struct-update - the fixture sets only the fields it reads
-                ..ExceptionFacts::default()
-            },
+            facts,
             normalizer: normalizer(),
         }
     }

@@ -47,24 +47,30 @@ fn lift_fills_a_falsey_standard_logging_object(
     assert_eq!(request_data["standard_logging_object"], expected_value);
 }
 
-#[rstest]
-#[case::absent_is_filled("{}", Some("trace"), Json::Text("trace".to_owned()))]
-#[case::null_is_filled(r#"{"litellm_trace_id": null}"#, Some("trace"), Json::Text("trace".to_owned()))]
-#[case::a_text_stays(r#"{"litellm_trace_id": "kept"}"#, Some("trace"), Json::Text("kept".to_owned()))]
-#[case::no_logging_object_fills_null("{}", None, Json::Null)]
-fn lift_fills_a_null_trace_id(
-    #[case] request: &str,
-    #[case] trace: Option<&str>,
-    #[case] expected: Json,
-) {
-    let mut request_data = object(request);
-    let call_log = CallLog {
-        litellm_trace_id: trace.map(str::to_owned),
-        // ast-grep-ignore: no-default-struct-update - the test sets only the fields it reads
+#[test]
+fn lift_fills_a_null_trace_id() {
+    let mut request_data = object(r#"{"litellm_trace_id": null}"#);
+    lift_call_log(&mut request_data, &CallLog::default());
+    assert_eq!(request_data["litellm_trace_id"], Json::Null);
+    let logged = CallLog {
+        litellm_trace_id: Some("trace".to_owned()),
+        // ast-grep-ignore: no-default-struct-update - the fixture sets only the fields it reads
         ..CallLog::default()
     };
-    lift_call_log(&mut request_data, &call_log);
-    assert_eq!(request_data["litellm_trace_id"], expected);
+    lift_call_log(&mut request_data, &logged);
+    assert_eq!(
+        request_data["litellm_trace_id"],
+        Json::Text("trace".to_owned())
+    );
+    request_data.insert("litellm_trace_id".to_owned(), Json::Text("kept".to_owned()));
+    lift_call_log(&mut request_data, &logged);
+    assert_eq!(
+        request_data["litellm_trace_id"],
+        Json::Text("kept".to_owned())
+    );
+    let mut absent = object("{}");
+    lift_call_log(&mut absent, &CallLog::default());
+    assert_eq!(absent["litellm_trace_id"], Json::Null);
 }
 
 #[rstest]

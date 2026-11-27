@@ -3,12 +3,11 @@ from types import ModuleType
 from typing import Final, Literal, TypeAlias, TypedDict
 
 from litellm.proxy.hooks.proxy_track_cost_callback import (
-    _get_request_tags_for_cost_tracking,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/proxy_track_cost_callback.py#L679
+    _get_request_tags_for_cost_tracking,  # pyright: ignore[reportPrivateUsage, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/proxy_track_cost_callback.py#L679
     _proxy_stamped_used_client_oauth_token,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/proxy_track_cost_callback.py#L90
     _should_track_cost_callback,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/proxy_track_cost_callback.py#L635
-    _write_spend_metadata_to_kwargs,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/proxy_track_cost_callback.py#L599
+    _write_spend_metadata_to_kwargs,  # pyright: ignore[reportPrivateUsage, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/proxy_track_cost_callback.py#L599
 )
-from litellm.types.utils import StandardLoggingPayload
 from pydantic import JsonValue, TypeAdapter
 
 JSON_VALUE: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
@@ -37,7 +36,7 @@ class PatchInput(TypedDict):
 
 class TagsInput(TypedDict):
     function: Literal["tags"]
-    standard_logging_object: StandardLoggingPayload | None
+    standard_logging_object: dict[str, JsonValue] | None
     metadata: dict[str, JsonValue]
 
 
@@ -61,16 +60,18 @@ def stamp(input_value: StampInput) -> JsonValue:
     )
 
 
-def patch(input_value: PatchInput) -> JsonValue:
+def patch_metadata(input_value: PatchInput) -> JsonValue:
     kwargs = input_value["request_data"]
     _write_spend_metadata_to_kwargs(kwargs, input_value["metadata"])
     return JSON_VALUE.validate_python(kwargs)
 
 
 def tags(input_value: TagsInput) -> JsonValue:
+    standard = input_value["standard_logging_object"]
     return JSON_VALUE.validate_python(
         _get_request_tags_for_cost_tracking(
-            input_value["standard_logging_object"], input_value["metadata"]
+            standard,  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/proxy_track_cost_callback.py#L679-L682
+            input_value["metadata"],
         )
     )
 
@@ -93,7 +94,7 @@ def run(input_value: Input) -> JsonValue:
     if input_value["function"] == "stamp":
         return stamp(input_value)
     if input_value["function"] == "patch":
-        return patch(input_value)
+        return patch_metadata(input_value)
     if input_value["function"] == "tags":
         return tags(input_value)
     return eligibility(input_value)
