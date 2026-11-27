@@ -7,6 +7,8 @@ use betterlite_error::proxy_exception::ProxyException;
 use secrecy::{ExposeSecret as _, SecretString};
 use subtle::ConstantTimeEq as _;
 
+use self::AuthBackend::MasterKey;
+use self::StageInput::Authenticated;
 use crate::auth::auth_end_users::EndUserStageInput;
 use crate::auth::auth_key_budgets::KeyBudgetStageInput;
 use crate::auth::auth_key_lookup::KeyLookupStageInput;
@@ -186,8 +188,7 @@ pub(crate) fn dispatch(
     input: &StageInput,
     master_key: &SecretString,
 ) -> Result<AuthContext, StageFailure> {
-    let pass_through = matches!(input, StageInput::Authenticated(_));
-    if !(backend == input.backend() || (backend == AuthBackend::MasterKey && pass_through)) {
+    if backend != input.backend() && !(backend == MasterKey && matches!(input, Authenticated(_))) {
         return Err(StageFailure::from(AuthenticationFailure::Missing));
     }
     match input {
