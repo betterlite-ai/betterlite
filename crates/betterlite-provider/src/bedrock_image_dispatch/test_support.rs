@@ -68,14 +68,6 @@ pub struct FixtureClient {
     pub seen: Seen,
 }
 
-impl FixtureClient {
-    #[must_use]
-    pub fn requests(&self) -> Vec<ImageRequest> {
-        let seen = self.seen.lock().unwrap_or_else(PoisonError::into_inner);
-        seen.clone()
-    }
-}
-
 impl ImageTransport for FixtureClient {
     fn post(
         &self,
