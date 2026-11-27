@@ -13,7 +13,7 @@ description: >-
   into a JSON object `{"filename", "content_type", "data_base64"}` under its `field` key, and the executor turns it back into the named buffer the SDK call takes (add `base64` to betterlite-sdk's Cargo.toml). An executor reads its arguments from the
   map by the same names the route tasks use for the SDK call (B3338 for generation, B3339 for status and content, B3340 for remix and list, B3341 for the two character calls, B3342 for edit and extension), passes every other key as a loose keyword, and
   returns `VideoReply::Json` of the result, or `VideoReply::Bytes` for avideo_content. `RouterVideo::new` takes the `RouterGeneric` handle and returns the nine executors through `video_executors(...)`, a function that returns `Vec<(String, Arc<dyn GenericCallExecutor>)>`
-  for the caller that builds `RouterGeneric` (see notes). Put video_executors after the container executors and in front of the passthrough ones in B8631's RouterGeneric list (crates/betterlite-server/src/app/inference/router_calls); B8631 lands first and answers a video call type with UnknownCallType until then. `RouterVideo` removes `custom_llm_provider` and `client` from the arguments before it hands them to the generic call, because the router wrapper swallows both as named
+  for the caller that builds `RouterGeneric` (see notes). Put video_executors after the container executors and in front of the passthrough ones in B8631's RouterGeneric list (crates/betterlite-server/src/app/inference/router_calls); B8631 lands first and answers a video call type with UnknownCallType until then. Also extend B6022's `NativeRouter` in betterlite-python's `router_call` family: add the nine executors from `video_executors(...)` after the anthropic_messages one in B6022's `generic_executors` (crates/betterlite-python/src/router_call/executors.rs), so the Python `Router`'s video methods, which reach `RouterGeneric` by call type name through B8355 and B8354's `Dispatch`, find them; until this addition a video call name returns `GenericError::UnknownCallType` through `NativeError`. `RouterVideo` removes `custom_llm_provider` and `client` from the arguments before it hands them to the generic call, because the router wrapper swallows both as named
   parameters; the deployment's own provider (B014's `provider_for_generic_call`) is put back by B6021's attempt. A plan's `specific_deployment` goes into the generic request, where B6021's attempt takes it out before selection.
 
 
@@ -22,8 +22,8 @@ description: >-
   comes from the route entries' plan.
 
 
-  Counts: about 40 non-blank LiteLLM lines in factory wiring; the 110 lines of route branches are B9944's. Budget about 200 implementation, 250 tests, 60 for the base64 upload round trip. No oracle cases: the wrappers sit behind an async proxy function that reads proxy_server
-  globals, and the route tasks own the HTTP cases. No fuzz target: nothing here parses bytes. Tests are rstest functions with fakes for the generic dispatch and the SDK calls, in `router_video::tests` with prefixes `wrapper_`, `executor_` and `upload_`.
+  Counts: about 40 non-blank LiteLLM lines in factory wiring; the 110 lines of route branches are B9944's. Budget about 200 implementation, 250 tests, 60 for the base64 upload round trip and 60 for the betterlite-python wiring and its test. No oracle cases: the wrappers sit behind an async proxy function that reads proxy_server
+  globals, and the route tasks own the HTTP cases. No fuzz target: nothing here parses bytes. Tests are rstest functions with fakes for the generic dispatch and the SDK calls, in `router_video::tests` with prefixes `wrapper_`, `executor_` and `upload_`. The betterlite-python wiring has its own tests in `router_call::executors::tests` with the prefix `video_`: the list `generic_executors` returns holds anthropic_messages and the nine video call type names once each, and a video executor whose fake SDK entry point fails gives an error that B6022's conversion turns into `NativeError` with that failure's class and message, never `UnknownCallType`. They need no interpreter.
 scope:
   paths:
     - crates/betterlite-sdk/src/router_video.rs
@@ -31,6 +31,8 @@ scope:
     - crates/betterlite-sdk/Cargo.toml
     - crates/betterlite-server/src/app/inference/router_calls.rs
     - crates/betterlite-server/src/app/inference/router_calls/**
+    - crates/betterlite-python/src/router_call/executors.rs
+    - crates/betterlite-python/src/router_call/executors/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L2099-L2141
@@ -48,6 +50,8 @@ dod:
     proof: [wrapper-args]
   - text: A failure of the generic call or of an SDK call comes back as VideoRouterError::Mapped with the class and the message of that failure.
     proof: [wrapper-errors]
+  - text: B6022's generic_executors returns the anthropic_messages executor and the nine video executors once each, and a failing video executor reaches NativeError with that failure's class and message instead of UnknownCallType.
+    proof: [native-router-video]
 checks:
   optional: [mutants]
   commands:
@@ -63,6 +67,9 @@ checks:
     - id: wrapper-errors
       why: a router or SDK failure is swallowed, or reaches the caller with another class or message
       run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_video::tests::wrapper_errors/)'
+    - id: native-router-video
+      why: the Python router answers a video call with UnknownCallType, or a video failure loses its class on the way to Python
+      run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^router_call::executors::tests::video_/)'
 oracle_cases: []
 deviations:
   - what: Uploads cross the generic call as base64 inside the JSON argument map.
@@ -74,7 +81,7 @@ out_of_scope:
   - "The generic engine (_ageneric_api_call_with_fallbacks, its helper and _dispatch_generic_call_type) is B6021; selection, retries, slots and the refusal check are B016, B017, B303 and B310. This task only plugs executors into it."
   - "The core module api::video_router_calls (the call types, VideoRouterCalls, VideoRouterError, VideoRouteView and plan_video_route) and the video branches of route_llm_request.py: B9944."
   - "The SDK functions the executors call: B3338 (generation), B3339 (status, content), B3340 (remix, list), B3341 (characters) and B3342 (edit, extension). Route handlers, provider and model lookup from the video id: B3343, B3344, B3345 and B6360."
-  - "The construction of RouterGeneric and the server's VideoRouteView: B8631 builds RouterGeneric, B8694 implements VideoRouteView as RouteViews, and B093 hands RouterVideo and the view to the video routes."
+  - "The construction of RouterGeneric and the server's VideoRouteView: B8631 builds RouterGeneric, B8694 implements VideoRouteView as RouteViews, and B093 hands RouterVideo and the view to the video routes. B6022 builds NativeRouter, its RouterGeneric and generic_executors; this task only adds the video executors to that list."
 pitfalls:
   - "async_wrapper takes custom_llm_provider and client as named parameters and does not pass them on, so a status call that the route set to custom_llm_provider=openai reaches the provider with the deployment's provider instead."
   - "B6021's generic attempt pops specific_deployment before selection, so the flag never reaches an SDK call; an executor must not read it from its arguments."
