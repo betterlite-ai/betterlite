@@ -2,13 +2,10 @@ import asyncio
 import json
 import logging
 from dataclasses import asdict
-from typing import Any, Final, Literal, Protocol, cast
+from typing import Final, Literal, Protocol, cast
 
 import litellm
-from litellm.llms.anthropic.pass_through.context_management import (
-    PolyfillResult,
-    errors,
-)
+from litellm.llms.anthropic.pass_through.context_management import PolyfillResult, errors
 from litellm.llms.anthropic.pass_through.context_management.constants import (
     COMPACT_SUMMARY_MAX_TOKENS,
 )
@@ -88,20 +85,24 @@ class Principal(BaseModel):
     allowed_model_region: str | None = None
 
 
-# the proxy general_settings values the editor's setting readers answer, without the proxy server
-class ModelSetting:
-    def __init__(self, value: str | None) -> None:
+# the editor's JSON arguments plus the router and the proxy auth the scenario stands in for
+class CompactEditor(Protocol):
+    async def __call__(
+        self,
+        llm_router: Router | None = None,
+        user_api_key_auth: Principal | None = None,
+        **arguments: JsonValue,
+    ) -> PolyfillResult: ...
+
+
+EDITOR = cast(CompactEditor, apply_compact_20260112)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L1160
+
+
+class Setting:
+    def __init__(self, value: str | int | None) -> None:
         self.value = value
 
-    def __call__(self) -> str | None:
-        return self.value
-
-
-class MaxTokensSetting:
-    def __init__(self, value: int) -> None:
-        self.value = value
-
-    def __call__(self) -> int:
+    def __call__(self) -> str | int | None:
         return self.value
 
 
@@ -125,26 +126,19 @@ class Deployment:
         call = SummaryCall.model_validate(kwargs)
         self.calls.append(
             {
-                "route": self.route,
-                "model": call.model,
-                "messages": call.messages,
-                "max_tokens": call.max_tokens,
+                "route": self.route, "model": call.model,
+                "messages": call.messages, "max_tokens": call.max_tokens,
                 "timeout_seconds": int(call.timeout),
                 # a snapshot: litellm.acompletion adds its own timing keys to this dict
                 "metadata": dict(call.litellm_metadata),
-                "user": call.user,
-                "region": call.allowed_model_region,
+                "user": call.user, "region": call.allowed_model_region,
             }
         )
         request: dict[str, JsonValue] = {
-            "model": "openai/gpt-4o-mini",
-            "messages": call.messages,
-            "max_tokens": call.max_tokens,
-            "timeout": call.timeout,
-            "litellm_metadata": call.litellm_metadata,
-            "num_retries": 0,
-            "api_base": self.api_base,
-            "api_key": "sk-test",
+            "model": "openai/gpt-4o-mini", "messages": call.messages,
+            "max_tokens": call.max_tokens, "timeout": call.timeout,
+            "litellm_metadata": call.litellm_metadata, "num_retries": 0,
+            "api_base": self.api_base, "api_key": "sk-test",
         }
         if call.user is not None:
             request["user"] = call.user
@@ -156,49 +150,30 @@ class Deployment:
 
 class PolicyCheck:
     def __init__(self, policy: Policy, *, record: bool) -> None:
-        self.allowed = {
-            "access": policy.access,
-            "budget": policy.budget,
-            "rate": policy.rate,
-        }
+        self.allowed = {"access": policy.access, "budget": policy.budget, "rate": policy.rate}
         self.record = record
         self.steps: list[JsonValue] = []
 
-    def note(self, step: str) -> bool:
+    def note(self, step: str, user_api_key_auth: Principal | None) -> bool:
+        if user_api_key_auth is None:
+            return True
         if self.record:
             self.steps.append(step)
         return self.allowed[step] == "allow"
 
     async def access(
-        self,
-        user_api_key_auth: Principal | None,
-        summary_model: str,
-        llm_router: Router | None,
+        self, user_api_key_auth: Principal | None, summary_model: str, llm_router: Router | None
     ) -> bool:
         del summary_model, llm_router
-        if user_api_key_auth is None:
-            return True
-        return self.note("access")
+        return self.note("access", user_api_key_auth)
 
-    async def budget(
-        self,
-        user_api_key_auth: Principal | None,
-        summary_model: str,
-    ) -> bool:
+    async def budget(self, user_api_key_auth: Principal | None, summary_model: str) -> bool:
         del summary_model
-        if user_api_key_auth is None:
-            return True
-        return self.note("budget")
+        return self.note("budget", user_api_key_auth)
 
-    async def rate_limit(
-        self,
-        user_api_key_auth: Principal | None,
-        summary_model: str,
-    ) -> bool:
+    async def rate_limit(self, user_api_key_auth: Principal | None, summary_model: str) -> bool:
         del summary_model
-        if user_api_key_auth is None:
-            return True
-        return self.note("rate")
+        return self.note("rate", user_api_key_auth)
 
 
 class ScriptedCounter:
@@ -218,9 +193,7 @@ class ScriptedCounter:
         del model, messages, tools, kwargs
         if self.fail:
             raise ValueError("broken")
-        if text is None:
-            return self.conversation
-        return self.text
+        return self.conversation if text is None else self.text
 
 
 class LogCapture(logging.Handler):
@@ -247,12 +220,8 @@ def patch_checks(policy: PolicyCheck) -> None:
 
 
 def patch_settings(scenario: Scenario) -> None:
-    object.__setattr__(
-        compact, "_read_summary_model_setting", ModelSetting(scenario.summary_model)
-    )
-    object.__setattr__(
-        compact, "_read_summary_max_tokens_setting", MaxTokensSetting(scenario.max_tokens)
-    )
+    object.__setattr__(compact, "_read_summary_model_setting", Setting(scenario.summary_model))
+    object.__setattr__(compact, "_read_summary_max_tokens_setting", Setting(scenario.max_tokens))
 
 
 async def call_editor(
@@ -260,15 +229,15 @@ async def call_editor(
     llm_router: Router | None,
     principal: Principal | None,
 ) -> PolyfillResult:
-    return await apply_compact_20260112(
+    return await EDITOR(
         model=scenario.model,
-        messages=cast(list[dict[str, object]], scenario.messages),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L1163
-        tools=cast(list[dict[str, object]] | None, scenario.tools),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L1164
-        system=cast(str | list[dict[str, object]] | None, scenario.system),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L1165
-        edit_spec=cast(dict[str, object], scenario.edit_spec),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L1166
+        messages=scenario.messages,
+        tools=scenario.tools,
+        system=scenario.system,
+        edit_spec=scenario.edit_spec,
         litellm_metadata=scenario.metadata,
         llm_router=llm_router,
-        user_api_key_auth=cast(Any, principal),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3356
+        user_api_key_auth=principal,
     )
 
 
@@ -284,11 +253,8 @@ async def run_scenario(scenario: Scenario, api_base: str) -> dict[str, JsonValue
         object.__setattr__(litellm, "acompletion", REAL_ACOMPLETION)
     else:
         object.__setattr__(litellm, "acompletion", deployment)
-    principal = (
-        None
-        if scenario.principal is None
-        else Principal.model_validate(scenario.principal)
-    )
+    principal_json = scenario.principal
+    principal = None if principal_json is None else Principal.model_validate(principal_json)
     capture = LogCapture()
     logger = logging.getLogger("LiteLLM")
     previous_handlers = logger.handlers
