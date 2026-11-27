@@ -1,3 +1,5 @@
+use std::error::Error as StdError;
+
 use aws_sigv4::http_request::SigningError as AwsSigningError;
 use aws_sigv4::sign::v4::signing_params::BuildError;
 use thiserror::Error;
@@ -19,6 +21,6 @@ pub enum SpeechError {
     #[error("the AWS Polly credentials could not be resolved")]
     Credentials {
         #[source]
-        source: Box<dyn std::error::Error + Send + Sync>,
+        source: Box<dyn StdError + Send + Sync>,
     },
 }

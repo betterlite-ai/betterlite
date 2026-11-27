@@ -6,7 +6,7 @@ use super::error::SpeechError;
 use super::values::text_field;
 
 // the ten source arguments LiteLLM's _sign_polly_request hands get_credentials
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct CredentialSources<'text> {
     pub aws_access_key_id: Option<&'text str>,
     pub aws_secret_access_key: Option<&'text str>,

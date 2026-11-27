@@ -47,19 +47,18 @@ pub fn map_openai_params(
     options: &SpeechMappingOptions,
 ) -> (Option<SpeechVoice>, Object) {
     let mut mapped = Object::new();
-    let mut format = json!(DEFAULT_OUTPUT_FORMAT);
     let requested = optional_params
         .get("response_format")
         .filter(|value| !value.is_null());
-    if let Some(value) = requested {
-        format = match value.as_str() {
-            Some(name) => FORMAT_MAPPINGS
-                .iter()
-                .find(|(openai, _)| *openai == name)
-                .map_or_else(|| value.clone(), |(_, polly_name)| json!(*polly_name)),
-            None => value.clone(),
-        };
-    }
+    let format = requested.map_or_else(
+        || json!(DEFAULT_OUTPUT_FORMAT),
+        |value| {
+            value
+                .as_str()
+                .and_then(|name| FORMAT_MAPPINGS.iter().find(|(openai, _)| *openai == name))
+                .map_or_else(|| value.clone(), |(_, polly_name)| json!(*polly_name))
+        },
+    );
     mapped.insert(String::from("output_format"), format);
     mapped.insert(String::from("engine"), json!(extract_engine(model)));
     for (source, target) in POLLY_KWARGS {

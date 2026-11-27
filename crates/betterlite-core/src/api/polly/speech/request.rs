@@ -24,6 +24,7 @@ pub struct Dispatch<'call> {
     pub environment: RegionEnvironment<'call>,
 }
 
+#[derive(Debug)]
 pub struct Dispatched {
     pub voice: Option<String>,
     pub optional_params: Object,
@@ -83,13 +84,13 @@ pub fn transform_request(
     let body = request_body(request.input, request.voice, request.optional_params);
     let payload = dumps_object(&body);
     let sources = credentials::sources(request.litellm_params)?;
-    let resolved = resolver.resolve(&sources)?;
+    let identity = resolver.resolve(&sources)?;
     let headers = sign_post(&SignablePost {
         url: &url,
         region: region.unwrap_or(DEFAULT_REGION),
         body: payload.as_bytes(),
         now: request.now,
-        credentials: &resolved,
+        credentials: &identity,
     })?;
     Ok(TextToSpeechRequest {
         url,

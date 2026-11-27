@@ -2,11 +2,9 @@ use std::time::SystemTime;
 
 use aws_credential_types::Credentials;
 use aws_sigv4::http_request::{
-    SignableBody, SignableRequest, SigningError as AwsSigningError, SigningParams, SigningSettings,
-    sign,
+    SignableBody, SignableRequest, SigningParams, SigningSettings, sign,
 };
 use aws_sigv4::sign::v4;
-use aws_sigv4::sign::v4::signing_params::BuildError;
 use aws_smithy_runtime_api::client::identity::Identity;
 use indexmap::IndexMap;
 use secrecy::ExposeSecret as _;

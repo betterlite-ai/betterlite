@@ -12,6 +12,7 @@ const VOICE_MAPPINGS: [(&str, &str); 6] = [
 ];
 
 // map_openai_params only maps a string voice; a dict voice maps to None and is resolved again by dispatch
+#[must_use]
 pub fn mapped_voice(voice: Option<&SpeechVoice>) -> Option<SpeechVoice> {
     let Some(SpeechVoice::Name(name)) = voice else {
         return None;
