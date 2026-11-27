@@ -415,7 +415,7 @@ async fn the_master_key_reads_under_its_stable_alias() {
     let store = Arc::new(RecordingStore::with_session(session_row(
         "litellm_proxy_master_key",
     )));
-    let handle: Arc<dyn AutoRouterReadStore> = Arc::clone(&store);
+    let handle = Arc::clone(&store);
     let response = session(
         Some(handle),
         Some(authenticated(master_principal())),
@@ -493,7 +493,7 @@ async fn an_oversized_session_id_reaches_the_store_bounded() {
     let oversized = "a".repeat(257);
     let bounded = bounded_session_id(&oversized);
     let store = Arc::new(RecordingStore::with_session(session_row(&bounded)));
-    let handle: Arc<dyn AutoRouterReadStore> = Arc::clone(&store);
+    let handle = Arc::clone(&store);
     let raw = format!("session_id={oversized}");
     let response = session(
         Some(handle),

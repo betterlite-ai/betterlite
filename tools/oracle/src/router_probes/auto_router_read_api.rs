@@ -87,7 +87,10 @@ struct Fields {
     steps: Vec<StepOutcome>,
 }
 
-fn invalid<T: Display + ?Sized>(error: &T) -> OperationError {
+fn invalid<T>(error: &T) -> OperationError
+where
+    T: Display + ?Sized,
+{
     OperationError::InvalidRequest {
         message: error.to_string(),
     }
