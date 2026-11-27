@@ -9,32 +9,6 @@ from litellm.types.proxy.carried_budget_state import (
     UserBudgetSnapshot,
 )
 
-TEAM_METRICS: Final[tuple[str, ...]] = (
-    "litellm_remaining_team_budget_metric",
-    "litellm_team_max_budget_metric",
-    "litellm_team_budget_remaining_hours_metric",
-)
-ORG_METRICS: Final[tuple[str, ...]] = (
-    "litellm_remaining_org_budget_metric",
-    "litellm_org_max_budget_metric",
-    "litellm_org_budget_remaining_hours_metric",
-)
-KEY_METRICS: Final[tuple[str, ...]] = (
-    "litellm_remaining_api_key_budget_metric",
-    "litellm_api_key_max_budget_metric",
-    "litellm_api_key_budget_remaining_hours_metric",
-)
-USER_METRICS: Final[tuple[str, ...]] = (
-    "litellm_remaining_user_budget_metric",
-    "litellm_user_max_budget_metric",
-    "litellm_user_budget_remaining_hours_metric",
-)
-CUSTOMER_METRICS: Final[tuple[str, ...]] = (
-    "litellm_remaining_customer_budget_metric",
-    "litellm_customer_max_budget_metric",
-    "litellm_customer_budget_remaining_hours_metric",
-)
-
 CREATED_AT: Final = datetime(2026, 1, 1, tzinfo=UTC)
 
 
@@ -81,7 +55,14 @@ class MissingLookup(TypedDict):
 LookupCall = RecordLookup | MissingLookup
 
 
-class TeamCall(TypedDict):
+class SampleCall(TypedDict):
+    lookup: LookupCall
+    now: str
+    noop: bool
+    labels_by_metric: dict[str, list[str]]
+
+
+class TeamCall(SampleCall):
     function: Literal["team"]
     team_id: str | None
     team_alias: str | None
@@ -89,38 +70,26 @@ class TeamCall(TypedDict):
     team_max_budget: float | None
     response_cost: float
     carried: TeamSnapshotInput | None
-    lookup: LookupCall
-    now: str
-    noop: bool
-    labels_by_metric: dict[str, list[str]]
 
 
-class OrgCall(TypedDict):
+class OrgCall(SampleCall):
     function: Literal["org"]
     org_id: str | None
     org_alias: str | None
     response_cost: float
     carried: OrgSnapshotInput | None
     database: bool
-    lookup: LookupCall
-    now: str
-    noop: bool
-    labels_by_metric: dict[str, list[str]]
 
 
-class CustomerCall(TypedDict):
+class CustomerCall(SampleCall):
     function: Literal["customer"]
     end_user_id: str | None
     response_cost: float
     enable_prometheus_only: bool | None
     disable_end_user_cost_tracking: bool | None
-    lookup: LookupCall
-    now: str
-    noop: bool
-    labels_by_metric: dict[str, list[str]]
 
 
-class KeyCall(TypedDict):
+class KeyCall(SampleCall):
     function: Literal["key"]
     user_api_key: str | None
     user_api_key_alias: str | None
@@ -128,13 +97,9 @@ class KeyCall(TypedDict):
     key_max_budget: float | None
     key_spend: float | None
     carried: KeySnapshotInput | None
-    lookup: LookupCall
-    now: str
-    noop: bool
-    labels_by_metric: dict[str, list[str]]
 
 
-class UserCall(TypedDict):
+class UserCall(SampleCall):
     function: Literal["user"]
     user_id: str | None
     user_spend: float | None
@@ -142,10 +107,6 @@ class UserCall(TypedDict):
     response_cost: float
     carried: UserSnapshotInput | None
     user_email: str | None
-    lookup: LookupCall
-    now: str
-    noop: bool
-    labels_by_metric: dict[str, list[str]]
 
 
 class DefaultBudgetCall(TypedDict):

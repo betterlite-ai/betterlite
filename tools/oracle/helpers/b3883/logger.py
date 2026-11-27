@@ -48,48 +48,33 @@ class BudgetLogger(PrometheusLogger):
         self._gauges: list[Gauge] = []
         self._registry = CollectorRegistry()
         self._bounded_prometheus_series_tracker = BoundedPrometheusSeriesTracker()
-        self.litellm_remaining_team_budget_metric = self._budget_gauge(
-            "litellm_remaining_team_budget_metric"
-        )
-        self.litellm_team_max_budget_metric = self._budget_gauge(
-            "litellm_team_max_budget_metric"
-        )
+        gauge = self._budget_gauge
+        self.litellm_remaining_team_budget_metric = gauge("litellm_remaining_team_budget_metric")
+        self.litellm_team_max_budget_metric = gauge("litellm_team_max_budget_metric")
         self.litellm_team_budget_remaining_hours_metric = self._budget_gauge(
             "litellm_team_budget_remaining_hours_metric"
         )
-        self.litellm_remaining_org_budget_metric = self._budget_gauge(
-            "litellm_remaining_org_budget_metric"
-        )
-        self.litellm_org_max_budget_metric = self._budget_gauge(
-            "litellm_org_max_budget_metric"
-        )
+        self.litellm_remaining_org_budget_metric = gauge("litellm_remaining_org_budget_metric")
+        self.litellm_org_max_budget_metric = gauge("litellm_org_max_budget_metric")
         self.litellm_org_budget_remaining_hours_metric = self._budget_gauge(
             "litellm_org_budget_remaining_hours_metric"
         )
-        self.litellm_remaining_api_key_budget_metric = self._budget_gauge(
+        self.litellm_remaining_api_key_budget_metric = gauge(
             "litellm_remaining_api_key_budget_metric"
         )
-        self.litellm_api_key_max_budget_metric = self._budget_gauge(
-            "litellm_api_key_max_budget_metric"
-        )
+        self.litellm_api_key_max_budget_metric = gauge("litellm_api_key_max_budget_metric")
         self.litellm_api_key_budget_remaining_hours_metric = self._budget_gauge(
             "litellm_api_key_budget_remaining_hours_metric"
         )
-        self.litellm_remaining_user_budget_metric = self._budget_gauge(
-            "litellm_remaining_user_budget_metric"
-        )
-        self.litellm_user_max_budget_metric = self._budget_gauge(
-            "litellm_user_max_budget_metric"
-        )
+        self.litellm_remaining_user_budget_metric = gauge("litellm_remaining_user_budget_metric")
+        self.litellm_user_max_budget_metric = gauge("litellm_user_max_budget_metric")
         self.litellm_user_budget_remaining_hours_metric = self._budget_gauge(
             "litellm_user_budget_remaining_hours_metric"
         )
         self.litellm_remaining_customer_budget_metric = self._budget_gauge(
             "litellm_remaining_customer_budget_metric"
         )
-        self.litellm_customer_max_budget_metric = self._budget_gauge(
-            "litellm_customer_max_budget_metric"
-        )
+        self.litellm_customer_max_budget_metric = gauge("litellm_customer_max_budget_metric")
         self.litellm_customer_budget_remaining_hours_metric = self._budget_gauge(
             "litellm_customer_budget_remaining_hours_metric"
         )

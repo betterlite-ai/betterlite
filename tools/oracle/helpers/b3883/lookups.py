@@ -45,10 +45,12 @@ class ScriptedLookups:
         return lookup
 
 
-class TeamLookup:
+class ScriptedCall:
     def __init__(self, scripted: ScriptedLookups) -> None:
         self._scripted = scripted
 
+
+class TeamLookup(ScriptedCall):
     async def __call__(
         self,
         team_id: str,
@@ -67,10 +69,7 @@ class TeamLookup:
         )
 
 
-class OrgLookup:
-    def __init__(self, scripted: ScriptedLookups) -> None:
-        self._scripted = scripted
-
+class OrgLookup(ScriptedCall):
     async def __call__(
         self,
         org_id: str,
@@ -98,10 +97,7 @@ class OrgLookup:
         )
 
 
-class KeyLookup:
-    def __init__(self, scripted: ScriptedLookups) -> None:
-        self._scripted = scripted
-
+class KeyLookup(ScriptedCall):
     async def __call__(
         self,
         hashed_token: str,
@@ -123,10 +119,7 @@ class KeyLookup:
         )
 
 
-class UserLookup:
-    def __init__(self, scripted: ScriptedLookups) -> None:
-        self._scripted = scripted
-
+class UserLookup(ScriptedCall):
     async def __call__(
         self,
         user_id: str | None,
@@ -158,10 +151,7 @@ class UserLookup:
         )
 
 
-class EndUserCache:
-    def __init__(self, scripted: ScriptedLookups) -> None:
-        self._scripted = scripted
-
+class EndUserCache(ScriptedCall):
     async def async_get_cache(
         self,
         key: str,
@@ -182,10 +172,7 @@ class EndUserCache:
         )
 
 
-class FakeBudgetTable:
-    def __init__(self, scripted: ScriptedLookups) -> None:
-        self._scripted = scripted
-
+class FakeBudgetTable(ScriptedCall):
     async def find_unique(self, *, where: Mapping[str, str]) -> LiteLLM_BudgetTableFull | None:
         await asyncio.sleep(0)
         budget_id = where["budget_id"]
