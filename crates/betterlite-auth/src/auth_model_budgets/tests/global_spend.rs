@@ -190,7 +190,7 @@ litellm_settings:
 #[case::zero("0")]
 #[case::zero_float("0.0")]
 #[case::negative("-5")]
-#[case::nan(".nan")]
+#[case::nan("\"NaN\"")]
 #[tokio::test]
 async fn loaded_budget_nonpositive_skips_read(#[case] value: &str) {
     let source = format!("litellm_settings:\n  max_budget: {value}");

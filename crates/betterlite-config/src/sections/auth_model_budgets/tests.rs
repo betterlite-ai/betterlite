@@ -47,12 +47,13 @@ litellm_settings:
     assert!(literal.max_budget > Decimal::ZERO);
 }
 
-// get_global_proxy_spend gates on `max_budget > 0`, so these values never read the aggregate
+// get_global_proxy_spend gates on `max_budget > 0`, so these values never read the aggregate;
+// a quoted NaN is the text LiteLLM's float(value) turns into nan, while an unquoted .nan never reaches this section
 #[rstest]
 #[case::zero("0")]
 #[case::zero_float("0.0")]
 #[case::negative("-5")]
-#[case::nan(".nan")]
+#[case::nan("\"NaN\"")]
 fn zero_negative_and_nan_skip_read(#[case] value: &str) {
     let source = format!("litellm_settings:\n  max_budget: {value}");
     let loaded = load(&source, &[]).expect("a non-positive ceiling still loads");
@@ -63,6 +64,14 @@ fn zero_negative_and_nan_skip_read(#[case] value: &str) {
     };
     assert_eq!(loaded.max_budget, expected, "{value}");
     assert!(loaded.max_budget <= Decimal::ZERO, "{value}");
+}
+
+// the shared YAML layer refuses a non-finite literal, so it never becomes a ceiling
+#[test]
+fn nonfinite_literal_fails_at_the_yaml_layer() {
+    let error = load("litellm_settings:\n  max_budget: .nan", &[])
+        .expect_err("a non-finite YAML budget fails the load");
+    assert_eq!(error.category(), "yaml");
 }
 
 #[rstest]
