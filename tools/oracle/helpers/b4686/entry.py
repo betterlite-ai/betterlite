@@ -1,6 +1,7 @@
 import asyncio
 import sys
 from types import ModuleType
+from typing import cast
 
 import litellm
 from litellm.proxy._experimental.mcp_server.tool_search import (
@@ -71,7 +72,7 @@ async def dispatch(input_value: Input, fakes: Fakes) -> CallToolResult:
             arguments = {}
         return await handle_mcp_proxy_tool(
             name=name,
-            arguments=ARGUMENTS.validate_python(arguments),
+            arguments=cast("dict[str, object]", ARGUMENTS.validate_python(arguments)),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_search.py#L505
             user_api_key_dict=fakes.principal,
             client_ip=input_value.get("client_ip"),
             mcp_servers=input_value.get("mcp_servers"),

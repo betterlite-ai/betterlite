@@ -6,7 +6,7 @@ from litellm.proxy.agent_endpoints.agent_search import AgentSearchResult
 from mcp.types import Tool
 from pydantic import JsonValue, TypeAdapter
 
-ARGUMENTS: Final = TypeAdapter(dict[str, object])
+ARGUMENTS: Final = TypeAdapter(dict[str, JsonValue])
 JSON: Final = TypeAdapter(JsonValue)
 
 
