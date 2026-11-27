@@ -49,7 +49,10 @@ async fn assemble_user_object(
     user_id: &str,
     request: &UserBudgetRequest<'_>,
 ) -> UserBudgetGaugeInput {
-    let spend = request.user_spend.unwrap_or(Decimal::ZERO) + request.response_cost;
+    let spend = request
+        .user_spend
+        .unwrap_or(Decimal::ZERO)
+        .saturating_add(request.response_cost);
     if let Some(carried) = request.carried {
         return UserBudgetGaugeInput {
             user_id: user_id.to_owned(),

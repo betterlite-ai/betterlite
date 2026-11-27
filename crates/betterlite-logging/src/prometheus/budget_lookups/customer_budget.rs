@@ -49,7 +49,7 @@ where
     let budget_table = customer.litellm_budget_table.as_ref();
     let input = CustomerBudgetGaugeInput {
         end_user_id: end_user_id.to_owned(),
-        spend: customer.spend + request.response_cost,
+        spend: customer.spend.saturating_add(request.response_cost),
         max_budget: budget_table.and_then(|table| table.max_budget),
         budget_reset_at: None,
     };

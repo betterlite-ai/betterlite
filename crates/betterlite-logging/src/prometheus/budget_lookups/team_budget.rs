@@ -48,7 +48,10 @@ async fn assemble_team_object(
     team_id: &str,
     request: &TeamBudgetRequest<'_>,
 ) -> TeamBudgetGaugeInput {
-    let spend = request.team_spend.unwrap_or(Decimal::ZERO) + request.response_cost;
+    let spend = request
+        .team_spend
+        .unwrap_or(Decimal::ZERO)
+        .saturating_add(request.response_cost);
     let team_alias = request.user_api_team_alias.map(str::to_owned);
     if let Some(carried) = request.carried {
         return TeamBudgetGaugeInput {

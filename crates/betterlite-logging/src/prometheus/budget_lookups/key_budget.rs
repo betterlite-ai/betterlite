@@ -48,7 +48,10 @@ async fn assemble_key_object(
     user_api_key: &str,
     request: &KeyBudgetRequest<'_>,
 ) -> KeyBudgetGaugeInput {
-    let spend = request.key_spend.unwrap_or(Decimal::ZERO) + request.response_cost;
+    let spend = request
+        .key_spend
+        .unwrap_or(Decimal::ZERO)
+        .saturating_add(request.response_cost);
     let key_alias = request.user_api_key_alias.map(str::to_owned);
     if let Some(carried) = request.carried {
         return KeyBudgetGaugeInput {

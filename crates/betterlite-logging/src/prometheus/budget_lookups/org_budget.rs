@@ -67,7 +67,7 @@ fn carried_input(
     OrgBudgetGaugeInput {
         org_id: org_id.to_owned(),
         org_alias: request.org_alias.unwrap_or_default().to_owned(),
-        spend: carried.spend + request.response_cost,
+        spend: carried.spend.saturating_add(request.response_cost),
         max_budget: carried.max_budget,
         budget_reset_at: None,
     }
@@ -83,7 +83,10 @@ fn record_input(
     OrgBudgetGaugeInput {
         org_id: org_id.to_owned(),
         org_alias: record.organization_alias.unwrap_or_default(),
-        spend: record.spend.unwrap_or(Decimal::ZERO) + request.response_cost,
+        spend: record
+            .spend
+            .unwrap_or(Decimal::ZERO)
+            .saturating_add(request.response_cost),
         max_budget: budget_table.and_then(|table| table.max_budget),
         budget_reset_at: budget_table.and_then(|table| table.budget_reset_at),
     }
