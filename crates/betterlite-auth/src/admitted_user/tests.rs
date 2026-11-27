@@ -192,10 +192,7 @@ async fn error_a_user_role_that_is_not_a_user_role_is_a_500_that_keeps_the_auth_
         Ok(None),
     );
     let reloader = build_reloader(users, fake_team_limits(None));
-    let error = reloader
-        .reload_admitted_user("test-user", false)
-        .await
-        .unwrap_err();
+    let error = reloader.reload("test-user", false).await.unwrap_err();
     assert_eq!(error.status(), 500);
     let source = error.source().expect("the auth error stays the source");
     assert!(source.downcast_ref::<AuthError>().is_some());
@@ -211,8 +208,7 @@ async fn reload_without_a_database_gives_no_database_before_any_read() {
         calls: Mutex::new(Vec::new()),
     };
     let reloader = build_reloader(users, fake_team_limits(None));
-    let (status, detail) =
-        status_and_detail(reloader.reload_admitted_user("test-user", false).await);
+    let (status, detail) = status_and_detail(reloader.reload("test-user", false).await);
     assert_eq!(
         (status, detail.as_str()),
         (500, "Server misconfigured: no database connection")
@@ -227,14 +223,11 @@ async fn reload_without_a_database_gives_no_database_before_any_read() {
 async fn reload_reads_the_user_with_the_fresh_flag_it_was_given(#[case] fresh: bool) {
     let users = fake_users(Ok(Some(row(ROW))), Ok(None));
     let reloader = build_reloader(users, fake_team_limits(None));
-    reloader
-        .reload_admitted_user("test-user", fresh)
-        .await
-        .unwrap();
+    reloader.reload("test-subject", fresh).await.unwrap();
     assert_eq!(
         reloader.users.calls(),
         vec![ReadCall::User {
-            user_id: "test-user".to_owned(),
+            user_id: "test-subject".to_owned(),
             fresh,
         }]
     );
@@ -247,10 +240,7 @@ async fn reload_reads_the_user_with_the_fresh_flag_it_was_given(#[case] fresh: b
 async fn reload_loads_a_missing_object_permission_with_the_same_fresh_flag(#[case] fresh: bool) {
     let users = fake_users(Ok(Some(row(ROW))), Ok(Some(permission(PERMISSION))));
     let reloader = build_reloader(users, fake_team_limits(None));
-    let auth = reloader
-        .reload_admitted_user("test-user", fresh)
-        .await
-        .unwrap();
+    let auth = reloader.reload("test-user", fresh).await.unwrap();
     assert_eq!(
         reloader.users.calls(),
         vec![
@@ -275,10 +265,7 @@ async fn reload_keeps_the_rows_own_object_permission_without_a_second_read() {
     let own = r#"{"user_id":"test-user","object_permission_id":"test-permission","object_permission":{"object_permission_id":"test-own"}}"#;
     let users = fake_users(Ok(Some(row(own))), Ok(Some(permission(PERMISSION))));
     let reloader = build_reloader(users, fake_team_limits(None));
-    let auth = reloader
-        .reload_admitted_user("test-user", false)
-        .await
-        .unwrap();
+    let auth = reloader.reload("test-user", false).await.unwrap();
     assert_eq!(
         reloader.users.calls(),
         vec![ReadCall::User {
@@ -299,10 +286,7 @@ async fn reload_reads_no_object_permission_when_the_row_names_none() {
         Ok(Some(permission(PERMISSION))),
     );
     let reloader = build_reloader(users, fake_team_limits(None));
-    let auth = reloader
-        .reload_admitted_user("test-user", false)
-        .await
-        .unwrap();
+    let auth = reloader.reload("test-user", false).await.unwrap();
     assert_eq!(
         reloader.users.calls(),
         vec![ReadCall::User {
@@ -317,10 +301,7 @@ async fn reload_reads_no_object_permission_when_the_row_names_none() {
 async fn reload_passes_a_missing_object_permission_row_as_no_permission() {
     let users = fake_users(Ok(Some(row(ROW))), Ok(None));
     let reloader = build_reloader(users, fake_team_limits(None));
-    let auth = reloader
-        .reload_admitted_user("test-user", false)
-        .await
-        .unwrap();
+    let auth = reloader.reload("test-user", false).await.unwrap();
     assert_eq!(
         reloader.users.calls(),
         vec![
@@ -353,7 +334,7 @@ async fn reload_maps_a_user_read_fault_to_its_status(
 ) {
     let reloader = build_reloader(fake_users(Err(fault), Ok(None)), fake_team_limits(None));
     assert_eq!(
-        status_and_detail(reloader.reload_admitted_user("test-user", false).await),
+        status_and_detail(reloader.reload("test-user", false).await),
         (status, detail.to_owned())
     );
 }
@@ -375,7 +356,7 @@ async fn reload_maps_an_object_permission_fault_like_a_user_fault(
     let users = fake_users(Ok(Some(row(ROW))), Err(fault));
     let reloader = build_reloader(users, fake_team_limits(None));
     assert_eq!(
-        status_and_detail(reloader.reload_admitted_user("test-user", false).await),
+        status_and_detail(reloader.reload("test-user", false).await),
         (status, detail.to_owned())
     );
 }
@@ -385,7 +366,7 @@ async fn reload_gives_401_for_a_missing_user_row() {
     let users = fake_users(Ok(None), Ok(Some(permission(PERMISSION))));
     let reloader = build_reloader(users, fake_team_limits(None));
     assert_eq!(
-        status_and_detail(reloader.reload_admitted_user("test-user", false).await),
+        status_and_detail(reloader.reload("test-user", false).await),
         (401, "Invalid or expired credential".to_owned())
     );
     assert_eq!(
@@ -407,7 +388,7 @@ async fn reload_gives_401_when_scim_active_is_json_false() {
     );
     let reloader = build_reloader(users, fake_team_limits(None));
     assert_eq!(
-        status_and_detail(reloader.reload_admitted_user("test-user", false).await),
+        status_and_detail(reloader.reload("test-user", false).await),
         (401, "Invalid or expired credential".to_owned())
     );
 }
@@ -427,10 +408,7 @@ async fn reload_passes_metadata_whose_scim_active_is_not_json_false(#[case] meta
         Ok(None),
     );
     let reloader = build_reloader(users, fake_team_limits(None));
-    reloader
-        .reload_admitted_user("test-user", false)
-        .await
-        .unwrap();
+    reloader.reload("test-user", false).await.unwrap();
     assert_eq!(reloader.users.calls().len(), 1);
 }
 
@@ -438,20 +416,14 @@ async fn reload_passes_metadata_whose_scim_active_is_not_json_false(#[case] meta
 async fn reload_passes_a_user_row_without_metadata() {
     let users = fake_users(Ok(Some(row(r#"{"user_id":"test-user"}"#))), Ok(None));
     let reloader = build_reloader(users, fake_team_limits(None));
-    reloader
-        .reload_admitted_user("test-user", false)
-        .await
-        .unwrap();
+    reloader.reload("test-user", false).await.unwrap();
 }
 
 #[tokio::test]
 async fn reload_builds_the_admitted_auth_from_the_row() {
     let users = fake_users(Ok(Some(row(ROW))), Ok(Some(permission(PERMISSION))));
     let reloader = build_reloader(users, fake_team_limits(None));
-    let auth = reloader
-        .reload_admitted_user("test-user", false)
-        .await
-        .unwrap();
+    let auth = reloader.reload("test-user", false).await.unwrap();
     assert_eq!(auth.view.token.user_id.as_deref(), Some("test-user"));
     assert_eq!(auth.extra.user_role, Some(UserRole::InternalUser));
     assert_eq!(auth.view.token.org_id.as_deref(), Some("test-org"));
@@ -470,6 +442,20 @@ async fn reload_builds_the_admitted_auth_from_the_row() {
     assert!(auth.view.token.team_id.is_none());
 }
 
+#[tokio::test]
+async fn reload_keeps_the_row_fields_it_does_not_have_absent() {
+    let users = fake_users(Ok(Some(row(r#"{"user_id":"test-user"}"#))), Ok(None));
+    let reloader = build_reloader(users, fake_team_limits(None));
+    let auth = reloader.reload("test-user", false).await.unwrap();
+    assert_eq!(auth.view.token.user_id.as_deref(), Some("test-user"));
+    assert_eq!(auth.extra.user_role, None);
+    assert_eq!(auth.view.token.org_id, None);
+    assert_eq!(auth.view.token.object_permission_id, None);
+    assert_eq!(auth.view.token.object_permission, None);
+    assert_eq!(auth.extra.user_tpm_limit, None);
+    assert_eq!(auth.extra.user_rpm_limit, None);
+}
+
 #[rstest]
 #[case::fresh(false)]
 #[case::stale(true)]
@@ -479,10 +465,7 @@ async fn reload_stamps_the_admitted_marker_and_the_fresh_flag(#[case] fresh: boo
         fake_users(Ok(Some(row(ROW))), Ok(None)),
         fake_team_limits(None),
     );
-    let auth = reloader
-        .reload_admitted_user("test-user", fresh)
-        .await
-        .unwrap();
+    let auth = reloader.reload("test-user", fresh).await.unwrap();
     assert!(auth.extra.mcp_access.mcp_admitted_user_subject);
     assert_eq!(auth.extra.requires_fresh_policy, fresh);
 }
@@ -493,10 +476,7 @@ async fn reload_hands_the_stamped_auth_to_team_limits_and_keeps_their_answer() {
         fake_users(Ok(Some(row(ROW))), Ok(None)),
         fake_team_limits(Some(limits())),
     );
-    let auth = reloader
-        .reload_admitted_user("test-user", true)
-        .await
-        .unwrap();
+    let auth = reloader.reload("test-user", true).await.unwrap();
     assert_eq!(
         reloader.team_limits.seen(),
         vec![SeenAuth {
@@ -515,10 +495,7 @@ async fn reload_stores_no_team_limits_when_the_port_returns_none() {
         fake_users(Ok(Some(row(ROW))), Ok(None)),
         fake_team_limits(None),
     );
-    let auth = reloader
-        .reload_admitted_user("test-user", false)
-        .await
-        .unwrap();
+    let auth = reloader.reload("test-user", false).await.unwrap();
     assert_eq!(auth.extra.mcp_source_team_rpm_limits, None);
 }
 
@@ -561,10 +538,7 @@ async fn session_resource_setter_changes_only_the_resource_server_id(
         fake_users(Ok(Some(row(ROW))), Ok(Some(permission(PERMISSION)))),
         fake_team_limits(Some(limits())),
     );
-    let auth = reloader
-        .reload_admitted_user("test-user", true)
-        .await
-        .unwrap();
+    let auth = reloader.reload("test-user", true).await.unwrap();
     let admitted = with_session_resource_server_id(auth, resource_server_id.clone());
     assert_eq!(
         admitted.extra.mcp_session_resource_server_id,

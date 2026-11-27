@@ -54,7 +54,8 @@ pub struct AdmittedUserReload<U: UserReads, T: TeamLimits> {
 }
 
 impl<U: UserReads, T: TeamLimits> AdmittedUserReload<U, T> {
-    pub async fn reload_admitted_user(
+    // clippy's same_name_method refuses reload_admitted_user while DelegatedHuman declares it
+    pub async fn reload(
         &self,
         user_id: &str,
         requires_fresh_policy: bool,
@@ -111,7 +112,7 @@ impl<U: UserReads, T: TeamLimits> DelegatedHuman for AdmittedUserReload<U, T> {
         user_id: &str,
         requires_fresh_policy: bool,
     ) -> impl Future<Output = Result<UserAPIKeyAuth, AdmittedUserError>> + Send {
-        self.reload_admitted_user(user_id, requires_fresh_policy)
+        self.reload(user_id, requires_fresh_policy)
     }
 }
 
@@ -168,6 +169,15 @@ fn auth_fields(
     user: &LiteLLMUserTable,
     object_permission: Option<&LiteLLMObjectPermissionTable>,
 ) -> Result<BTreeMap<String, JsonData>, AuthError> {
+    let mut fields = row_fields(user);
+    fields.insert(
+        "object_permission".to_owned(),
+        permission_json(object_permission)?,
+    );
+    Ok(fields)
+}
+
+fn row_fields(user: &LiteLLMUserTable) -> BTreeMap<String, JsonData> {
     let mut fields = BTreeMap::new();
     fields.insert("user_id".to_owned(), JsonData::String(user.user_id.clone()));
     fields.insert(
@@ -181,10 +191,6 @@ fn auth_fields(
         user.organization_id
             .clone()
             .map_or(JsonData::Null, JsonData::String),
-    );
-    fields.insert(
-        "object_permission".to_owned(),
-        permission_json(object_permission)?,
     );
     fields.insert(
         "object_permission_id".to_owned(),
@@ -204,7 +210,7 @@ fn auth_fields(
             JsonData::Number(Number::from(limit))
         }),
     );
-    Ok(fields)
+    fields
 }
 
 fn permission_json(
