@@ -24,8 +24,8 @@ from betterlite.exceptions import AuthenticationError, BadRequestError
 from betterlite.types.videos.main import VideoCreateOptionalRequestParams as CreateParams
 from betterlite.videos._utils import (
     VideoProviderConfig,
-    get_optional_params_video_generation,
-    get_requested_video_generation_optional_param,
+    map_video_optional_params,
+    requested_optional_params,
 )
 
 HOST: Final = "127.0.0.1"
@@ -521,7 +521,7 @@ def test_package_export_calls() -> None:
 def test_utils_optional_calls() -> None:
     optional: CreateParams = CreateParams(
         seconds=SECONDS, model=MODEL, extra_body={"style": STYLE})
-    ours = get_optional_params_video_generation(MODEL, FixedConfig(), optional)
+    ours = map_video_optional_params(MODEL, FixedConfig(), optional)
     reference = OPTIONAL_UTILS.VideoGenerationRequestUtils.get_optional_params_video_generation(
         MODEL, FixedConfig(), optional)
     expected: dict[str, JsonValue] = {
@@ -533,7 +533,7 @@ def test_utils_optional_calls() -> None:
 def test_utils_requested_calls() -> None:
     ours_params: dict[str, JsonValue] = copy.deepcopy(REQUESTED_PARAMS)
     reference_params: dict[str, JsonValue] = copy.deepcopy(REQUESTED_PARAMS)
-    ours = get_requested_video_generation_optional_param(ours_params)
+    ours = requested_optional_params(ours_params)
     reference_utils = REQUESTED_UTILS.VideoGenerationRequestUtils
     reference = reference_utils.get_requested_video_generation_optional_param(reference_params)
     assert ours == reference

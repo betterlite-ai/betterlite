@@ -44,7 +44,7 @@ def json_map(value: JsonValue | None) -> dict[str, JsonValue]:
             return {}
 
 
-def get_optional_params_video_generation(
+def map_video_optional_params(
     model: str,
     provider_config: VideoProviderConfig,
     optional_params: CreateParams,
@@ -62,7 +62,7 @@ def get_optional_params_video_generation(
     return mapped_params
 
 
-def get_requested_video_generation_optional_param(
+def requested_optional_params(
     params: Mapping[str, JsonValue],
 ) -> dict[str, JsonValue]:
     given = dict(params)

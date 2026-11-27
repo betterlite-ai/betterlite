@@ -134,13 +134,12 @@ impl CharacterConfig for OpenAiEditConfig {
         record(&character)
     }
 
+    // LiteLLM decodes a get character reply exactly like a create reply
     fn transform_get_response(
         &self,
         reply: &UpstreamResponse,
-        _logging: &mut LoggingState,
+        logging: &mut LoggingState,
     ) -> Result<CharacterObject, Self::Error> {
-        let character =
-            decode_character_reply(&reply.body).map_err(|source| provider_fault(&source))?;
-        record(&character)
+        self.transform_create_response(reply, logging)
     }
 }
