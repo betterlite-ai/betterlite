@@ -1,0 +1,53 @@
+kind: helper
+name: bedrock-image-dispatch-canvas-edit
+call:
+  bedrock_image_dispatch:
+    case: canvas_edit
+    model_cost:
+      amazon.nova-canvas-v1:0:
+        litellm_provider: bedrock
+        supports_nova_canvas_image_edit: true
+        output_cost_per_image: 0.25
+    probes:
+      - model: amazon.nova-canvas-v1:0
+        prompt: make it pop
+        images: [aW1n]
+        optional_params:
+          aws_access_key_id: AKIAIOSFODNN7EXAMPLE
+          aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+          aws_region_name: us-east-1
+          numberOfImages: 2
+          width: 512
+          height: 512
+          negativeText: blurry
+          similarityStrength: 0.7
+        extra_headers: {x-oracle-extra: kept}
+        reply: {body: '{"images": ["b3V0MQ==", "b3V0Mg=="]}'}
+      - model: amazon.nova-canvas-v1:0
+        prompt: remove the cat
+        images: [aW1n]
+        optional_params:
+          aws_access_key_id: AKIAIOSFODNN7EXAMPLE
+          aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+          aws_region_name: us-east-1
+          taskType: INPAINTING
+          mask: bWFzaw==
+          numberOfImages: 1
+        reply: {body: '{"images": ["aW5wYWludA=="]}'}
+      - model: amazon.nova-canvas-v1:0
+        prompt: edit it
+        optional_params:
+          aws_access_key_id: AKIAIOSFODNN7EXAMPLE
+          aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+          aws_region_name: us-east-1
+        reply: {body: '{"images": ["eA=="]}'}
+      - model: amazon.nova-canvas-v1:0
+        prompt: edit it
+        images: [aW1n]
+        optional_params:
+          aws_access_key_id: AKIAIOSFODNN7EXAMPLE
+          aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+          aws_region_name: us-east-1
+        reply: {status: 500, body: '{"message": "boom"}'}
+env: {}
+compare: {ignore: []}
