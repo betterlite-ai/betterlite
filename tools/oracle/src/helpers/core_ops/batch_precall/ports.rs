@@ -225,17 +225,16 @@ impl BatchPrecallMemory for Scripted {
         entries: Vec<(String, Json)>,
         _ttl_seconds: f64,
     ) -> impl Future<Output = Result<(), BatchCacheError>> + Send {
-        match cache_error(&self.memory_faults, Function::SetMany) {
-            Some(error) => ready(Err(error)),
-            None => {
-                self.state
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .memory
-                    .extend(entries);
-                ready(Ok(()))
-            }
+        let fault = cache_error(&self.memory_faults, Function::SetMany);
+        if let Some(error) = fault {
+            return ready(Err(error));
         }
+        self.state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .memory
+            .extend(entries);
+        ready(Ok(()))
     }
 }
 
