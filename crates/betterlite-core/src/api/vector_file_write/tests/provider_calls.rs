@@ -67,6 +67,15 @@ async fn registry_credentials_replace_the_callers() {
     ])));
     let seen = recorded(Which::Update, &spy, &fixture, REQUEST_TIMEOUT).await;
     assert_eq!(seen.api_key.as_deref(), Some("sk-registry"));
+    // GenericLiteLLMParams' dump carries the merged key, plus the five fields that default to false
+    assert_eq!(
+        seen.litellm_params.get("api_key"),
+        Some(&Json::Text(String::from("sk-registry")))
+    );
+    assert_eq!(
+        seen.litellm_params.get("use_litellm_proxy"),
+        Some(&Json::Bool(false))
+    );
     // the provider is resolved before the merge, so the registry's azure lands in the logged params only
     assert_eq!(seen.provider, ProviderId::Openai);
     assert_eq!(seen.provider_name.as_deref(), Some("openai"));

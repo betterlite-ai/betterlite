@@ -40,6 +40,25 @@ async fn update_keeps_the_empty_and_null_attributes() {
 }
 
 #[tokio::test]
+async fn write_params_reads_ssl_verify() {
+    let spy = Spy::replying(success());
+    let mut verifying = Fixture::new();
+    verifying
+        .arguments
+        .kwargs
+        .insert(String::from("ssl_verify"), Json::Bool(true));
+    let checked = recorded(Which::Update, &spy, &verifying, REQUEST_TIMEOUT).await;
+    assert_eq!(checked.ssl_verify, Some(true));
+    let mut refusing = Fixture::new();
+    refusing
+        .arguments
+        .kwargs
+        .insert(String::from("ssl_verify"), Json::Bool(false));
+    let unchecked = recorded(Which::Update, &spy, &refusing, REQUEST_TIMEOUT).await;
+    assert_eq!(unchecked.ssl_verify, Some(false));
+}
+
+#[tokio::test]
 async fn extra_body_replaces_the_map_downstream() {
     let spy = Spy::replying(success());
     let mut fixture = Fixture::new();
