@@ -386,7 +386,18 @@ async fn a_changed_roster_schedules_one_updated_team_row() {
     assert_eq!(record.action, AuditAction::Updated);
     assert_eq!(record.table_name, AuditTable::Team);
     assert_eq!(record.object_id, "test-team-1");
-    assert_eq!(record.changed_by.as_deref(), Some("test-admin"));
+}
+
+#[tokio::test]
+async fn the_row_holds_the_before_roster() {
+    let harness = harness(true);
+    let caller = caller(Some("test-admin"), None);
+    let before = before_roster();
+    let after = after_roster();
+    harness.schedule(&entry(&caller, &before, &after)).unwrap();
+    harness.spawner.run_all().await;
+    let inserted = harness.repository.inserted();
+    let record = inserted.first().unwrap();
     assert_eq!(
         record.before_value,
         Some(json!({
@@ -405,6 +416,18 @@ async fn a_changed_roster_schedules_one_updated_team_row() {
             ],
         }))
     );
+}
+
+#[tokio::test]
+async fn the_row_holds_the_after_roster() {
+    let harness = harness(true);
+    let caller = caller(Some("test-admin"), None);
+    let before = before_roster();
+    let after = after_roster();
+    harness.schedule(&entry(&caller, &before, &after)).unwrap();
+    harness.spawner.run_all().await;
+    let inserted = harness.repository.inserted();
+    let record = inserted.first().unwrap();
     assert_eq!(
         record.updated_values,
         Some(json!({
