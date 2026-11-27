@@ -16,6 +16,7 @@ pub(super) fn cancel_idempotent_errors() {
     tolerated_returns_the_lookup();
     tolerated_but_still_running();
     untolerated_code_is_rethrown();
+    non_text_codes_are_kept();
     failed_lookup_is_the_error();
     error_code_precedence();
     status_codes();
@@ -79,6 +80,27 @@ fn untolerated_code_is_rethrown() {
         .expect_err("a stop error outside the tolerated codes is rethrown");
     assert_eq!(client_code(&error), Some("AccessDeniedException"));
     assert_eq!(run.factory.requests().len(), 1);
+}
+
+// a code of a non-text type keeps its Python str() spelling instead of one of the tolerated names
+fn non_text_codes_are_kept() {
+    let runs = [
+        (r#"{"code":true}"#, Some("True")),
+        (r#"{"code":5}"#, Some("5")),
+    ];
+    for (body, expected) in runs {
+        let run = run_job(
+            vec![answer(400, body)],
+            JOB_ID,
+            Some(REGION),
+            &auth_parameters(),
+        );
+        let error = run
+            .result
+            .expect_err("an untolerated stop error is rethrown");
+        assert_eq!(client_code(&error), expected);
+        assert_eq!(run.factory.requests().len(), 1);
+    }
 }
 
 fn failed_lookup_is_the_error() {

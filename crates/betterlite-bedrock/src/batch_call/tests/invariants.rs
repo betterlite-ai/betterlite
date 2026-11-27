@@ -104,6 +104,10 @@ fn debug_hides_header_values() {
     assert!(!shown_config.contains(ACCESS_KEY));
     assert!(!shown_config.contains(SECRET_KEY));
     assert!(!shown_config.contains(SESSION_TOKEN));
+    assert!(shown_config.contains("ClientConfig"));
+    assert!(shown_config.contains("bedrock"));
+    assert!(shown_config.contains(REGION));
+    assert!(shown_config.contains("v4"));
 }
 
 fn errors_hide_credentials() {
