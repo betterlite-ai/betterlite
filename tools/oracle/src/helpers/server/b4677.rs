@@ -1,3 +1,4 @@
+mod page;
 mod tests;
 
 use std::collections::BTreeMap;
@@ -24,8 +25,6 @@ use tokio::runtime::Builder;
 
 const HTML_CONTENT_TYPE: &str = "text/html; charset=utf-8";
 const JSON_CONTENT_TYPE: &str = "application/json";
-const ACCESS_ITEM_OPEN: &str = "class=\"access-item\"><span class=\"check\">&#10003;</span>";
-const DURATION_OPEN: &str = "selDur('";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -120,7 +119,7 @@ fn get_report(
             "status": 200_u16,
             "content_type": HTML_CONTENT_TYPE,
             "body": null,
-            "page": page_facts(&html),
+            "page": page::page_facts(&html),
             "location": null,
             "code_is_uuid": null,
             "stored": null,
@@ -276,75 +275,6 @@ fn is_uuid4(code: &str) -> bool {
             14 => byte == b'4',
             _ => matches!(byte, b'0'..=b'9' | b'a'..=b'f'),
         })
-}
-
-fn page_facts(html: &str) -> serde_json::Value {
-    json!({
-        "title": between(html, "<title>", "</title>"),
-        "heading": between(html, "<h2 class=\"step-title\">", "<"),
-        "initial": between(html, "class=\"logo logo-s\">", "<"),
-        "hidden": json!({
-            "client_id": hidden_value(html, "client_id"),
-            "redirect_uri": hidden_value(html, "redirect_uri"),
-            "code_challenge": hidden_value(html, "code_challenge"),
-            "code_challenge_method": hidden_value(html, "code_challenge_method"),
-            "state": hidden_value(html, "state"),
-            "server_id": hidden_value(html, "server_id"),
-            "duration": hidden_value(html, "duration"),
-        }),
-        "access_items": access_texts(html),
-        "help_href": help_href(html),
-        "durations": durations(html),
-        "steps": json!({
-            "s1": html.contains("id=\"s1\""),
-            "s2": html.contains("id=\"s2\""),
-        }),
-        "api_key_required": html.contains("name=\"api_key\"") && html.contains("required"),
-        "form_post": html.contains("method=\"POST\""),
-    })
-}
-
-fn between<'text>(text: &'text str, start: &str, end: &str) -> Option<&'text str> {
-    let (_, rest) = text.split_once(start)?;
-    let (found, _) = rest.split_once(end)?;
-    Some(found)
-}
-
-fn hidden_value<'page>(html: &'page str, field: &str) -> Option<&'page str> {
-    let marker = format!("name=\"{field}\"");
-    let (_, after_name) = html.split_once(marker.as_str())?;
-    between(after_name, "value=\"", "\"")
-}
-
-fn help_href(html: &str) -> Option<&str> {
-    let (_, after_class) = html.split_once("class=\"help-link\"")?;
-    between(after_class, "href=\"", "\"")
-}
-
-fn access_texts(html: &str) -> Vec<&str> {
-    let mut found = Vec::new();
-    let mut rest = html;
-    while let Some((_, after_open)) = rest.split_once(ACCESS_ITEM_OPEN) {
-        let Some((text, tail)) = after_open.split_once("</div>") else {
-            break;
-        };
-        found.push(text);
-        rest = tail;
-    }
-    found
-}
-
-fn durations(html: &str) -> Vec<&str> {
-    let mut found = Vec::new();
-    let mut rest = html;
-    while let Some((_, after_call)) = rest.split_once(DURATION_OPEN) {
-        let Some((value, tail)) = after_call.split_once('\'') else {
-            break;
-        };
-        found.push(value);
-        rest = tail;
-    }
-    found
 }
 
 struct MissingKeys;
