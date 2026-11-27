@@ -98,7 +98,7 @@ fn variables_value(fields: &[ResolvedField]) -> JsonValue {
     let mut variables = BTreeMap::new();
     for field in fields {
         let value = field.value.as_ref().map_or(JsonValue::Null, |text| {
-            JsonValue::String(text.expose_secret().clone())
+            JsonValue::String(text.expose_secret().to_owned())
         });
         variables.insert(field.field_name.to_owned(), value);
     }
@@ -156,10 +156,10 @@ pub(crate) fn webhook_map(
 
 fn webhook_value(url: &WebhookUrl) -> JsonValue {
     match url {
-        WebhookUrl::Single(secret) => JsonValue::String(secret.expose_secret().clone()),
+        WebhookUrl::Single(secret) => JsonValue::String(secret.expose_secret().to_owned()),
         WebhookUrl::Multiple(urls) => JsonValue::Array(
             urls.iter()
-                .map(|secret| JsonValue::String(secret.expose_secret().clone()))
+                .map(|secret| JsonValue::String(secret.expose_secret().to_owned()))
                 .collect(),
         ),
     }

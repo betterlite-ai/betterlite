@@ -407,7 +407,7 @@ impl Harness {
     pub(crate) fn state(&self) -> CallbackConfigState {
         CallbackConfigState {
             overlay: Arc::new(self.overlay_source()),
-            saver: Arc::clone(&self.saver) as Arc<dyn ConfigSaver>,
+            saver: saver_port(Arc::clone(&self.saver)),
             database_connected: self.database_connected,
             store_model_in_db: Arc::new(StoreFlag(self.store_model_in_db)),
             callbacks: Arc::new(self.callback_fakes()),
@@ -443,9 +443,10 @@ impl Harness {
     }
 
     fn router_reader(&self) -> Option<Arc<dyn RouterSettingsReader>> {
-        self.router_settings
-            .clone()
-            .map(|settings| Arc::new(FakeRouter { settings }) as Arc<dyn RouterSettingsReader>)
+        match self.router_settings.clone() {
+            None => None,
+            Some(settings) => Some(router_port(Arc::new(FakeRouter { settings }))),
+        }
     }
 
     pub(crate) async fn call(
@@ -453,7 +454,10 @@ impl Harness {
         request: Request<Body>,
         caller: Option<Principal>,
     ) -> (StatusCode, JsonValue) {
-        let mut router = routes(self.state(), Arc::clone(&self.deployments));
+        let mut router = routes(
+            self.state(),
+            deployments_port(Arc::clone(&self.deployments)),
+        );
         if let Some(principal) = caller {
             router = router.layer(Extension(AuthContext { principal }));
         }
@@ -465,6 +469,18 @@ impl Harness {
         let body = serde_json::from_slice(&bytes).expect("the body is JSON");
         (status, body)
     }
+}
+
+fn saver_port(saver: Arc<RecordingSaver>) -> Arc<dyn ConfigSaver> {
+    saver
+}
+
+fn deployments_port(deployments: Arc<FakeDeployments>) -> Arc<dyn DeploymentSyncPort> {
+    deployments
+}
+
+fn router_port(router: Arc<FakeRouter>) -> Arc<dyn RouterSettingsReader> {
+    router
 }
 
 pub(crate) fn get_request(uri: &str) -> Request<Body> {

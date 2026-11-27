@@ -4,7 +4,8 @@ use super::ports::{RuntimeCallback, RuntimeCallbacks};
 
 // _hidden_runtime_callback_names always hides these two, before it looks at any object
 const INTERNAL_CALLBACK_NAMES: [&str; 2] = ["cache", "vector_store_pre_call_hook"];
-const INTERNAL_MODULE_OWNERS: [&str; 2] = ["litellm", "litellm_enterprise"];
+// The second owner LiteLLM hides is its proprietary enterprise package, which betterlite carries no code from
+const INTERNAL_MODULE_OWNER: &str = "litellm";
 
 // The runtime callbacks the settings page must not offer: LiteLLM's own machinery, guardrails and configured objects
 pub(crate) fn hidden_names(
@@ -41,7 +42,7 @@ fn is_hidden(
 ) -> bool {
     let owner = callback.module.split('.').next().unwrap_or_default();
     callback.guardrail
-        || (!callback.registered_integration && INTERNAL_MODULE_OWNERS.contains(&owner))
+        || (!callback.registered_integration && owner == INTERNAL_MODULE_OWNER)
         || is_configured_class_instance(callback, configured_classes)
         || configured_modules.contains(&callback.module)
 }
