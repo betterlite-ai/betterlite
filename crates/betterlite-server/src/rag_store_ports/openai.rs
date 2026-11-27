@@ -113,7 +113,7 @@ impl VectorFilePort for OpenAiFilePort {
         let payload = serde_json::to_vec(&body)
             .map_err(|source| port_error(OpenAiPortError::Encode { source }))?;
         let reply = post(&self.client, &url, headers, RequestBody::Json(payload)).await?;
-        if reply.status >= 400 {
+        if !(200..300).contains(&reply.status) {
             let message = reply_text(&reply.body);
             return Err(port_error(provider.error_class(
                 &message,

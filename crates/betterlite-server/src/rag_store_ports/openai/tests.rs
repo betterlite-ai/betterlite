@@ -197,6 +197,10 @@ async fn attach_posts_the_file_id_and_the_chunking_strategy() {
     let request = seen.first().expect("the attach reaches the server");
     assert_eq!(request.method, "POST");
     assert_eq!(request.path, "/vector_stores/vs_1/files");
+    assert_eq!(
+        request.headers.get("authorization").map(String::as_str),
+        Some("Bearer sk-test")
+    );
     let body = serde_json::from_str::<Json>(&request.body).expect("the body is JSON");
     let expected = serde_json::from_str::<Json>(
         r#"{"file_id":"file-9","chunking_strategy":{"type":"static","static":{"max_chunk_size_tokens":800,"chunk_overlap_tokens":400}}}"#,
@@ -229,6 +233,31 @@ async fn attach_turns_a_status_error_into_a_port_error() {
             .downcast_ref::<BaseLlmException>()
             .is_some_and(|native| native.status_code == 500)
     );
+}
+
+#[tokio::test]
+async fn attach_turns_a_redirect_into_a_port_error() {
+    let body = r#"{"id":"file-abc","object":"vector_store.file"}"#;
+    let (result, _seen) = with_server(Reply::json(body).with_status(300), |base| async move {
+        let chunking: &RawValue = serde_json::from_str("null").expect("null is JSON");
+        file_port()
+            .attach(AttachFile {
+                vector_store_id: "vs_1",
+                file_id: "file-9",
+                chunking_strategy: chunking,
+                api_key: None,
+                api_base: Some(base.as_str()),
+            })
+            .await
+    })
+    .await;
+    let error = result.expect_err("a redirect is an error");
+    assert_eq!(error.message, body);
+    let native = error
+        .source
+        .downcast_ref::<BaseLlmException>()
+        .expect("the native error is the source");
+    assert_eq!(native.status_code, 300);
 }
 
 #[tokio::test]

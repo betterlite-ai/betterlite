@@ -109,6 +109,10 @@ async fn post_multipart_sends_the_metadata_and_the_file() {
     let request = seen.first().expect("the upload reaches the server");
     assert_eq!(request.method, "POST");
     assert_eq!(
+        request.headers.get("authorization").map(String::as_str),
+        Some("Bearer secret-token")
+    );
+    assert_eq!(
         request
             .headers
             .get("x-goog-upload-protocol")
