@@ -48,7 +48,7 @@ class StagesJson(TypedDict):
     owner: str
 
 
-class CallJson(TypedDict, total=False):
+class CallJson(TypedDict):
     op: Literal["create", "create_failure", "retrieve", "terminal_retrieve"]
     call_type: str
     principal: dict[str, JsonValue]
@@ -86,7 +86,7 @@ def reservation_view(reservation: BatchEnqueuedTokenReservation) -> JsonValue:
 
 
 class ScriptedRedis(RedisCache):
-    def __init__(self, spec: dict[str, JsonValue], effects: list[str]) -> None:  # pyright: ignore[reportMissingSuperCall]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L604
+    def __init__(self, spec: dict[str, JsonValue], effects: list[JsonValue]) -> None:  # pyright: ignore[reportMissingSuperCall]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L604
         self._spec = spec
         self._effects = effects
 
@@ -117,7 +117,7 @@ class ScriptedRedis(RedisCache):
 
 
 class ScriptedStore(BatchEnqueuedTokenStore):
-    def __init__(self, stages: StagesJson, effects: list[str]) -> None:
+    def __init__(self, stages: StagesJson, effects: list[JsonValue]) -> None:
         super().__init__(internal_usage_cache=InternalUsageCache(DualCache()))
         self._stages = stages
         self._effects = effects
@@ -137,7 +137,7 @@ class ScriptedStore(BatchEnqueuedTokenStore):
         return BatchEnqueuedTokenReservation(
             tokens=tokens,
             scopes=tuple(scopes),
-            backend=self._stages["backend"] or "memory",
+            backend="memory" if self._stages["backend"] is None else self._stages["backend"],
             owner=self._stages["owner"],
         )
 
@@ -170,17 +170,15 @@ class ScriptedStore(BatchEnqueuedTokenStore):
 
 
 class ScriptedHook(BatchRateLimiter):
-    def __init__(self, stages: StagesJson, effects: list[str], limiter: Limiter) -> None:
+    def __init__(self, stages: StagesJson, effects: list[JsonValue], limiter: Limiter) -> None:
         cache = InternalUsageCache(DualCache())
         super().__init__(internal_usage_cache=cache, parallel_request_limiter=limiter)
         self._stages = stages
         self._effects = effects
 
     @override
-    def _should_skip_batch_input_file_processing(  # pyright: ignore[reportIncompatibleMethodOverride]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L338
-        self,
-        data: dict[str, JsonValue],
-        user_api_key_dict: UserAPIKeyAuth,
+    def _should_skip_batch_input_file_processing(  # ast-grep-ignore: no-long-names  # pyright: ignore[reportIncompatibleMethodOverride]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L338
+        self, data: dict[str, JsonValue], user_api_key_dict: UserAPIKeyAuth,
         has_enqueued_scopes: bool = False,
     ) -> tuple[bool, list[RateLimitDescriptor] | None]:
         del data, user_api_key_dict, has_enqueued_scopes
@@ -188,7 +186,7 @@ class ScriptedHook(BatchRateLimiter):
         return self._stages["skip"], None
 
     @override
-    async def count_input_file_usage(  # pyright: ignore[reportIncompatibleMethodOverride]  # noqa: E501, PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L843
+    async def count_input_file_usage(  # pyright: ignore[reportIncompatibleMethodOverride]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L843
         self,
         file_id: str,
         custom_llm_provider: Literal["openai", "azure", "vertex_ai"] = "openai",
@@ -201,7 +199,7 @@ class ScriptedHook(BatchRateLimiter):
         return BATCH_USAGE.validate_python(self._stages["usage"])
 
 
-def scripted(value: Input, effects: list[str]) -> tuple[Limiter, ScriptedStore]:
+def scripted(value: Input, effects: list[JsonValue]) -> tuple[Limiter, ScriptedStore]:
     store = ScriptedStore(value["stages"], effects)
     limiter = Limiter(internal_usage_cache=InternalUsageCache(DualCache()))
     limiter.batch_enqueued_token_store = store
@@ -213,79 +211,75 @@ def scripted(value: Input, effects: list[str]) -> tuple[Limiter, ScriptedStore]:
 
 async def lifecycle_answer(value: Input, auth: UserAPIKeyAuth) -> JsonValue:
     call = value["call"]
-    effects: list[str] = []
+    effects: list[JsonValue] = []
     limiter, store = scripted(value, effects)
     diagnostics = Sink()
     if call["op"] == "create":
-        data: dict[str, JsonValue] = call["data"]
         hook = ScriptedHook(value["stages"], effects, limiter)
-        await hook.async_pre_call_hook(  # pyright: ignore[reportAny, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L1180
-            user_api_key_dict=auth, cache=DualCache(), data=data, call_type=call["call_type"]
+        await hook.async_pre_call_hook(  # type: ignore[misc]  # pyright: ignore[reportAny, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L1180
+            user_api_key_dict=auth, cache=DualCache(), data=call["data"],
+            call_type=call["call_type"],
         )
         reservation = get_or_create_request_stash().batch_enqueued_reservation
-        return JSON.validate_python(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L1250
-            {
-                "data": data,
-                "diagnostics": diagnostics.lines,
-                "effects": effects,
-                "reservation": None if reservation is None else reservation_view(reservation),
-            }
-        )
+        create_answer: dict[str, JsonValue] = {
+            "data": call["data"],
+            "diagnostics": diagnostics.lines,
+            "effects": effects,
+            "reservation": None if reservation is None else reservation_view(reservation),
+        }
+        return JSON.validate_python(create_answer)
     if call["op"] == "create_failure":
-        await limiter.async_post_call_failure_hook(  # pyright: ignore[reportAny, reportUnknownMemberType]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L5286
-            request_data={},
+        request_data: dict[str, JsonValue] = {}
+        await limiter.async_post_call_failure_hook(  # pyright: ignore[reportAny, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L5286
+            request_data=request_data,
             original_exception=RuntimeError("the batch route failed"),
             user_api_key_dict=UserAPIKeyAuth(),
         )
         refunded = store.refunded
-        return JSON.validate_python(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L5320
-            {
-                "refunded": None if refunded is None else reservation_view(refunded),
-                "diagnostics": diagnostics.lines,
-            }
-        )
-    await limiter.async_post_call_success_hook(  # pyright: ignore[reportAny, reportUnknownMemberType]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L5232
-        data={},
-        user_api_key_dict=UserAPIKeyAuth(),
-        response={"id": call["batch_id"], "status": call["status"], "object": "batch"},
-    )
-    return JSON.validate_python(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L5265
-        {
-            "batch_id": call["batch_id"],
-            "saved": store.saved,
-            "refunded": store.refunded is not None,
+        failure_answer: dict[str, JsonValue] = {
+            "refunded": None if refunded is None else reservation_view(refunded),
             "diagnostics": diagnostics.lines,
         }
+        return JSON.validate_python(failure_answer)
+    data: dict[str, JsonValue] = {}
+    response: dict[str, str] = {"id": call["batch_id"], "status": call["status"], "object": "batch"}
+    await limiter.async_post_call_success_hook(  # type: ignore[misc]  # pyright: ignore[reportAny, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L5232
+        data=data,
+        user_api_key_dict=UserAPIKeyAuth(),
+        response=response,  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L491-L497
     )
+    success_answer: dict[str, JsonValue] = {
+        "batch_id": call["batch_id"],
+        "saved": store.saved,
+        "refunded": store.refunded is not None,
+        "diagnostics": diagnostics.lines,
+    }
+    return JSON.validate_python(success_answer)
 
 
 async def retrieve_answer(value: Input, auth: UserAPIKeyAuth) -> JsonValue:
     call = value["call"]
-    effects: list[str] = []
+    effects: list[JsonValue] = []
     memory = InMemoryCache()
-    memory.cache_dict = dict(cast(dict[str, JsonValue], value["memory"]["entries"]))  # pyright: ignore[reportUnknownMemberType]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L158
+    memory.cache_dict = dict(cast(dict[str, JsonValue], value["memory"]["entries"]))  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L158
     remote = ScriptedRedis(value["remote"], effects)
     litellm.cache = Cache(_backend=remote, type=LiteLLMCacheType.REDIS)
     diagnostics = Sink()
-    hook = BatchRedisRequests()
-    cast(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_redis_get.py#L34
-        JsonValue,
-        await hook.async_pre_call_hook(
-            user_api_key_dict=auth,
-            cache=DualCache(in_memory_cache=memory),
-            data=call["data"],
-            call_type=call["call_type"],
-        ),
+    hook = BatchRedisRequests()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_redis_get.py#L18
+    await hook.async_pre_call_hook(  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_redis_get.py#L34
+        user_api_key_dict=auth,
+        cache=DualCache(in_memory_cache=memory),
+        data=call["data"],
+        call_type=call["call_type"],
     )
-    cached = cast(JsonValue, await hook.async_get_cache(cache_key=call["cache_key"]))  # pyright: ignore[reportUnknownMemberType]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_redis_get.py#L91
-    return JSON.validate_python(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_redis_get.py#L91
-        {
-            "data": call["data"],
-            "cached": cached,
-            "diagnostics": diagnostics.lines,
-            "effects": effects,
-        }
-    )
+    cached = cast(JsonValue, await hook.async_get_cache(cache_key=call["cache_key"]))  # type: ignore[no-untyped-call, misc]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_redis_get.py#L91
+    retrieve_answer_json: dict[str, JsonValue] = {
+        "data": call["data"],
+        "cached": cached,
+        "diagnostics": diagnostics.lines,
+        "effects": effects,
+    }
+    return JSON.validate_python(retrieve_answer_json)
 
 
 def run(input_value: Input) -> JsonValue:
