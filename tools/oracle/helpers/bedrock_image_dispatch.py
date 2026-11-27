@@ -76,6 +76,7 @@ class Recorder:
         self.post = values
 
 
+@runtime_checkable
 class GenerationHandler(Protocol):
     def image_generation(
         self,
@@ -94,6 +95,7 @@ class GenerationHandler(Protocol):
     ) -> ImageResponse: ...
 
 
+@runtime_checkable
 class EditHandler(Protocol):
     def image_edit(
         self,
@@ -162,7 +164,7 @@ class Fixture:
 def first_header_name(headers: dict[str, str] | None) -> str | None:
     if headers is None:
         return None
-    return next(iter(headers), None)
+    return next(iter(sorted(headers)), None)
 
 
 def authorization(request: httpx.Request) -> JsonValue:
@@ -203,11 +205,7 @@ def images_of(response: ImageResponse) -> list[JsonValue]:
     data = response.data
     if data is None:
         return []
-    images: list[JsonValue] = []
-    for image in data:
-        if image.b64_json is not None:
-            images.append(image.b64_json)
-    return images
+    return [image.b64_json for image in data if image.b64_json is not None]
 
 
 def edit_cost(response: ImageResponse) -> JsonValue:
