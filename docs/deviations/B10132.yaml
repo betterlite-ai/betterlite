@@ -1,6 +1,6 @@
 task: B10132
 deviations:
-  - what: The one reconcile lock is a ModelReconcileLock handle the startup builds and clones into its holders, not a module-level MODEL_RECONCILE_LOCK; a handle built with Default is an independent lock.
-    why: betterlite wires dependencies through constructors and keeps no module-level state. Behavior is the same once the startup builds one handle and passes clones, since every LiteLLM user takes the one lock.
+  - what: The reconcile lock is a ModelReconcileLock handle its holders receive as a clone, not a module-level MODEL_RECONCILE_LOCK; a handle built with Default is an independent lock, so one lock per process comes from passing clones of a single handle.
+    why: betterlite wires dependencies through constructors and keeps no module-level state. Behavior is the same once one handle is built and cloned into every holder, since every LiteLLM user takes the one lock.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2587-L2595
 kept_bugs: []
