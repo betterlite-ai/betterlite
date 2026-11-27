@@ -191,7 +191,15 @@ pub(super) fn responses_to_chat() {
             }
         })
     );
-    assert_eq!(families.responses_calls(), vec![source]);
+    // LiteLLM hands the record body, not the whole record, to the Responses bridge.
+    let Json::Object(source_fields) = &source else {
+        panic!("the source record is an object");
+    };
+    let body = source_fields
+        .get("body")
+        .cloned()
+        .expect("the source record carries a body");
+    assert_eq!(families.responses_calls(), vec![body]);
 }
 
 pub(super) fn embedding_batch_record() {
@@ -287,9 +295,9 @@ pub(super) fn default_record_id() {
         "/v1/chat/completions",
     ];
     let bodies = [
-        r#"{"body":{"model":"openai.gpt-oss-20b-1:0","messages":[]}}"#,
-        r#"{"custom_id":null,"body":{"model":"openai.gpt-oss-20b-1:0","messages":[]}}"#,
-        r#"{"custom_id":"z","body":{"model":"openai.gpt-oss-20b-1:0","messages":[]}}"#,
+        r#""body":{"model":"openai.gpt-oss-20b-1:0","messages":[]}"#,
+        r#""custom_id":null,"body":{"model":"openai.gpt-oss-20b-1:0","messages":[]}"#,
+        r#""custom_id":"z","body":{"model":"openai.gpt-oss-20b-1:0","messages":[]}"#,
     ];
     let records: Vec<OpenAiBatchRecord> = sources
         .iter()
@@ -394,7 +402,14 @@ pub(super) fn malformed_jsonl_line() {
         content: FileBody::Bytes(b"plain text".to_vec()),
         content_type: Some(String::from("text/plain")),
     };
-    let (plain_result, _) = run_upload(&Families::empty(), &plain, None, "", &mut booking_params());
+    // get_complete_file_url requires a purpose, and a non-batch one leaves the content unparsed
+    let (plain_result, _) = run_upload(
+        &Families::empty(),
+        &plain,
+        Some(CreatePurpose::Assistants),
+        "",
+        &mut booking_params(),
+    );
     let plain_handoff = plain_result.expect("the plain upload signs");
     assert_eq!(plain_handoff.data, "plain text");
     let bare = FileData::Direct(FileBody::BareString(String::from("plain text")));

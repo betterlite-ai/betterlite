@@ -106,7 +106,8 @@ fn batch_records_secret_safe_failure() {
     // Debug names the headers and the data length, never a signature or a key
     let rendered = format!("{signed:?}");
     assert!(!rendered.contains(SECRET_KEY));
-    assert!(!rendered.contains("Authorization"));
+    assert!(!rendered.contains(ACCESS_KEY));
+    assert!(rendered.contains("Authorization"));
     assert!(rendered.contains("header_names"));
     assert!(rendered.contains("data_length"));
 }
