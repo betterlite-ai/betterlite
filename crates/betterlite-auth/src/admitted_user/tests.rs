@@ -221,7 +221,7 @@ async fn reload_without_a_database_gives_no_database_before_any_read() {
 #[case::stale(true)]
 #[tokio::test]
 async fn reload_reads_the_user_with_the_fresh_flag_it_was_given(#[case] fresh: bool) {
-    let users = fake_users(Ok(Some(row(ROW))), Ok(None));
+    let users = fake_users(Ok(Some(row(r#"{"user_id":"test-user"}"#))), Ok(None));
     let reloader = build_reloader(users, fake_team_limits(None));
     reloader.reload("test-subject", fresh).await.unwrap();
     assert_eq!(
@@ -501,7 +501,7 @@ async fn reload_stores_no_team_limits_when_the_port_returns_none() {
 
 #[tokio::test]
 async fn delegated_human_forwards_both_arguments() {
-    let users = fake_users(Ok(Some(row(ROW))), Ok(None));
+    let users = fake_users(Ok(Some(row(r#"{"user_id":"test-user"}"#))), Ok(None));
     let reloader = build_reloader(users, fake_team_limits(None));
     let auth = DelegatedHuman::reload_admitted_user(&reloader, "test-user", true)
         .await
