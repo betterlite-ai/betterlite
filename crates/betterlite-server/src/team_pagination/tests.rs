@@ -83,12 +83,12 @@ impl LogBuffer {
 }
 
 impl io::Write for LogBuffer {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.0
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .extend_from_slice(buffer);
-        Ok(buffer.len())
+            .extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -221,8 +221,8 @@ async fn reader_store_serves_rows_and_count_until_unavailable() {
             .store(true, Ordering::SeqCst);
         let (primary_page, primary_count) = get_paginated_teams(client, 10, 1).await;
         assert_eq!(alias_names(&primary_page), ["Writer"].map(Some));
-        assert_eq!(primary_count, 1);
-    }
+        assert_eq!(primary_count, 1)
+    };
     reader.close().await;
     writer.close().await;
 }
