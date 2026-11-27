@@ -1,7 +1,7 @@
 import json
 import sys
 import types
-from typing import Final, Literal, TypedDict
+from typing import Final, Literal, TypedDict, cast
 
 import litellm
 from fastapi import FastAPI
@@ -13,7 +13,6 @@ from litellm.proxy.vector_store_endpoints.management_endpoints import router
 from litellm.types.vector_stores import LiteLLM_ManagedVectorStore
 from litellm.vector_stores.vector_store_registry import VectorStoreRegistry
 from pydantic import JsonValue, TypeAdapter
-from typing_extensions import override
 
 NEW_PATH: Final = "/vector_store/new"
 DELETE_PATH: Final = "/vector_store/delete"
@@ -35,9 +34,6 @@ ROUTES: Final[dict[Literal["new", "delete", "update"], str]] = {
     "update": UPDATE_PATH,
 }
 BODY: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
-REGISTRY_ROWS: Final[TypeAdapter[list[LiteLLM_ManagedVectorStore]]] = TypeAdapter(
-    list[LiteLLM_ManagedVectorStore]
-)
 
 class Caller(TypedDict):
     user_id: str
@@ -80,7 +76,7 @@ class StoreTable:
 
     async def find_unique(self, *, where: dict[str, str]) -> StoreRow | None:
         vector_store_id = where["vector_store_id"]
-        self.events.append(f"db:find:{vector_store_id}")
+        self.events.append("db:find")
         for row in self.rows:
             if row.get("vector_store_id") == vector_store_id:
                 return row
@@ -88,7 +84,7 @@ class StoreTable:
 
     async def create(self, *, data: dict[str, JsonValue]) -> StoreRow:
         row = created_row(data)
-        self.events.append(f"db:create:{row['vector_store_id']}")
+        self.events.append("db:create")
         self.rows.append(row)
         return row
 
@@ -96,7 +92,7 @@ class StoreTable:
         self, *, where: dict[str, str], data: dict[str, JsonValue]
     ) -> StoreRow | None:
         vector_store_id = where["vector_store_id"]
-        self.events.append(f"db:update:{vector_store_id}")
+        self.events.append("db:update")
         for row in self.rows:
             if row.get("vector_store_id") == vector_store_id:
                 for key in UPDATABLE_FIELDS:
@@ -108,7 +104,7 @@ class StoreTable:
 
     async def delete(self, *, where: dict[str, str]) -> StoreRow | None:
         vector_store_id = where["vector_store_id"]
-        self.events.append(f"db:delete:{vector_store_id}")
+        self.events.append("db:delete")
         for index, row in enumerate(self.rows):
             if row.get("vector_store_id") == vector_store_id:
                 del self.rows[index]
@@ -146,14 +142,13 @@ class FakePrisma:
         self.db = FakeDb(table)
 
 
-# the proxy module both endpoints read their database, registry and feature flags from
+# the proxy module both endpoints read their database and feature flags from
 class ProxyServer(types.ModuleType):
     def __init__(self, name: str) -> None:
         super().__init__(name)
         self.prisma_client: FakePrisma | None = None
         self.general_settings: dict[str, bool] = {}
         self.user_api_key_cache: UserApiKeyCache | None = None
-        self.redis_usage_cache: object = None
 
 
 PROXY: Final = ProxyServer(PROXY_MODULE)
@@ -172,50 +167,9 @@ class CallerAnswer:
 # the management routes with the call's caller in place of the key check
 def app_for(caller: UserAPIKeyAuth) -> FastAPI:
     app = FastAPI()
-    app.dependency_overrides[user_api_key_auth] = CallerAnswer(caller)
+    app.dependency_overrides[user_api_key_auth] = CallerAnswer(caller)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L3432
     app.include_router(router)
     return app
-
-
-# the real registry, with the calls the endpoints make recorded in the answer's order
-class LoggingRegistry(VectorStoreRegistry):
-    def __init__(self, events: list[str], vector_stores: list[LiteLLM_ManagedVectorStore]) -> None:
-        super().__init__(vector_stores=vector_stores)
-        self.events = events
-
-    @override
-    def get_litellm_managed_vector_store_from_registry(
-        self, vector_store_id: str
-    ) -> LiteLLM_ManagedVectorStore | None:
-        self.events.append(f"cache:find:{vector_store_id}")
-        return super().get_litellm_managed_vector_store_from_registry(vector_store_id)
-
-    @override
-    def add_vector_store_to_registry(self, vector_store: LiteLLM_ManagedVectorStore) -> None:
-        self.events.append(f"cache:add:{vector_store.get('vector_store_id')}")
-        super().add_vector_store_to_registry(vector_store)
-
-    @override
-    def delete_vector_store_from_registry(self, vector_store_id: str) -> None:
-        self.events.append(f"cache:remove:{vector_store_id}")
-        super().delete_vector_store_from_registry(vector_store_id)
-
-    @override
-    def update_vector_store_in_registry(
-        self, vector_store_id: str, updated_data: LiteLLM_ManagedVectorStore
-    ) -> None:
-        self.events.append(f"cache:update:{vector_store_id}")
-        super().update_vector_store_in_registry(
-            vector_store_id=vector_store_id, updated_data=updated_data
-        )
-
-    # the ownership check reads the registry without a recorded lookup, as betterlite's does
-    @override
-    def is_config_vector_store(self, vector_store_id: str) -> bool:
-        return any(
-            store.get("vector_store_id") == vector_store_id and store.get("is_config", False)
-            for store in self.vector_stores
-        )
 
 
 def caller_of(caller: Caller) -> UserAPIKeyAuth:
@@ -226,33 +180,40 @@ def caller_of(caller: Caller) -> UserAPIKeyAuth:
     )
 
 
+# the real registry, seeded with the call's rows; the routes then change it through its own methods
 def registry_of(
-    rows: list[dict[str, JsonValue]] | None, events: list[str]
-) -> LoggingRegistry | None:
+    rows: list[dict[str, JsonValue]] | None,
+) -> VectorStoreRegistry | None:
     if rows is None:
         return None
-    stores = REGISTRY_ROWS.validate_json(json.dumps(rows))
-    return LoggingRegistry(events, stores)
+    return VectorStoreRegistry(vector_stores=cast("list[LiteLLM_ManagedVectorStore]", rows))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/vector_stores.py#L25-L49
 
 
-# both helpers format JSON text differently, so a column holding JSON text is compared as that JSON,
-# and a column a row leaves out compares the same as one holding null
+# both helpers format JSON text differently, so a column holding JSON text compares as that JSON and a null column as absent
 def canonical(value: JsonValue) -> JsonValue:
-    if isinstance(value, dict):
-        fields: dict[str, JsonValue] = value
-        out: dict[str, JsonValue] = {}
-        for key, item in fields.items():
-            if item is None:
-                continue
-            if key in JSON_TEXT_FIELDS and isinstance(item, str):
-                out[key] = BODY.validate_json(item)
-                continue
-            out[key] = canonical(item)
-        return out
-    if isinstance(value, list):
-        items: list[JsonValue] = value
-        return [canonical(item) for item in items]
+    match value:
+        case dict():
+            fields: dict[str, JsonValue] = value
+            return canonical_fields(fields)
+        case list():
+            return [canonical(item) for item in value]
     return value
+
+
+def canonical_fields(fields: dict[str, JsonValue]) -> JsonValue:
+    out: dict[str, JsonValue] = {}
+    for key, item in fields.items():
+        if item is not None:
+            out[key] = canonical_field(key, item)
+    return out
+
+
+def canonical_field(key: str, value: JsonValue) -> JsonValue:
+    if key in JSON_TEXT_FIELDS:
+        match value:
+            case str():
+                return BODY.validate_json(value)
+    return canonical(value)
 
 
 def ask(caller: UserAPIKeyAuth, path: str, payload: dict[str, JsonValue]) -> Answer:
@@ -267,10 +228,15 @@ def ask(caller: UserAPIKeyAuth, path: str, payload: dict[str, JsonValue]) -> Ans
     }
 
 
+def cache_answer(registry: VectorStoreRegistry) -> JsonValue:
+    stores = cast("list[dict[str, JsonValue]]", registry.vector_stores)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/vector_store_registry.py#L215
+    return canonical(BODY.validate_json(json.dumps(stores)))
+
+
 def answer_for(call: Call) -> Answer:
     caller = caller_of(call["caller"])
     events: list[str] = []
-    registry = registry_of(call["registry"], events)
+    registry = registry_of(call["registry"])
     litellm.vector_store_registry = registry
     PROXY.general_settings = {DISABLE_FLAG: call["disabled"]}
     database = call["database"]
@@ -280,7 +246,7 @@ def answer_for(call: Call) -> Answer:
     if table is not None:
         answer["database"] = canonical(BODY.validate_json(json.dumps(table.rows)))
     if registry is not None:
-        answer["cache"] = canonical(BODY.validate_json(json.dumps(registry.vector_stores)))
+        answer["cache"] = cache_answer(registry)
     answer["writes"] = events
     return answer
 

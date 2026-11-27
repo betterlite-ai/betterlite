@@ -75,8 +75,13 @@ where
 {
     let vector_store_id = body.vector_store_id.clone();
     state.refuse_config_owned(&vector_store_id)?;
-    let _found =
-        fetch_store_before_access(database, &state.access(), &vector_store_id, &caller.key).await?;
+    let _found = fetch_store_before_access(
+        database,
+        &state.reads.access(),
+        &vector_store_id,
+        &caller.key,
+    )
+    .await?;
     let fields: UpdateFields = serde_json::from_slice(raw).map_err(ManagementWriteError::Json)?;
     let changes = VectorStoreChanges {
         custom_llm_provider: text_change(fields.custom_llm_provider),
@@ -100,7 +105,11 @@ where
             "Updated vector store {vector_store_id} in both database and in-memory registry"
         );
     }
-    VectorStoreWriteResponse::updated(&vector_store_id, &updated, state.reads.limits)
+    VectorStoreWriteResponse::success(
+        format!("Vector store {vector_store_id} updated successfully"),
+        &updated,
+        state.reads.limits,
+    )
 }
 
 fn text_change(field: Option<Option<String>>) -> FieldChange<String> {

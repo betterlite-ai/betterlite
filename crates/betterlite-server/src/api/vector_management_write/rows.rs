@@ -158,9 +158,15 @@ fn insert_sql(document: &BTreeMap<String, JsonData>) -> String {
     )
 }
 
-fn row_record(row: JsonData) -> Result<LiteLlmManagedVectorStore, TableError> {
+// the row a write changed, decoded the way the reads decode one; a missing row stays missing
+fn row_record(row: Option<JsonData>) -> Result<Option<LiteLlmManagedVectorStore>, TableError> {
+    let Some(row) = row else {
+        return Ok(None);
+    };
     let text = serde_json::to_string(&row).map_err(TableError::Row)?;
-    serde_json::from_str(&text).map_err(TableError::Row)
+    serde_json::from_str(&text)
+        .map_err(TableError::Row)
+        .map(Some)
 }
 
 // B726's row actions over B858's table, reached through B1070's database handle
@@ -211,7 +217,7 @@ impl VectorStoreWrites for PostgresVectorDatabase {
             vector_store_id.to_owned(),
         )
         .await?;
-        updated.map(row_record).transpose()
+        row_record(updated)
     }
 
     #[cfg_attr(test, mutants::skip)]
@@ -228,6 +234,6 @@ impl VectorStoreWrites for PostgresVectorDatabase {
             .table(ResourceActions::<StoresTable>::new)
             .map_err(TableError::Database)?;
         let deleted = TableActions::delete(&table, vector_store_id.to_owned()).await?;
-        deleted.map(row_record).transpose()
+        row_record(deleted)
     }
 }

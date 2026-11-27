@@ -14,15 +14,19 @@ use serde_json::Value;
 const CREATED_AT: &str = "2024-01-02T03:04:05.000";
 const UPDATED_AT: &str = "2024-02-03T04:05:06.000";
 
-// the rows the management writes change, with every call recorded like the registry's
+type Found = Result<Option<LiteLlmManagedVectorStore>, TableError>;
+type Stored = Result<LiteLlmManagedVectorStore, TableError>;
+type Rows<'a> = MutexGuard<'a, DbState>;
+
+// the rows the management writes change, with every call recorded like the table's
 #[derive(Clone)]
 pub(super) struct FakeDatabase {
-    inner: Arc<Mutex<DbState>>,
+    pub(super) inner: Arc<Mutex<DbState>>,
     events: Arc<Mutex<Vec<String>>>,
 }
 
-struct DbState {
-    rows: Vec<LiteLlmManagedVectorStore>,
+pub(super) struct DbState {
+    pub(super) rows: Vec<LiteLlmManagedVectorStore>,
 }
 
 impl FakeDatabase {
@@ -36,79 +40,80 @@ impl FakeDatabase {
         }
     }
 
-    pub(super) fn rows(&self) -> Vec<LiteLlmManagedVectorStore> {
-        self.state().rows.clone()
-    }
-
-    fn state(&self) -> MutexGuard<'_, DbState> {
-        self.inner.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
     fn note(&self, entry: String) {
         self.events
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(entry);
     }
-}
 
-impl VectorStoreRows for FakeDatabase {
-    fn find_unique(
-        &self,
-        vector_store_id: &str,
-    ) -> impl Future<Output = Result<Option<LiteLlmManagedVectorStore>, TableError>> + Send {
-        self.note(format!("db:find:{vector_store_id}"));
-        let found = self
-            .state()
+    // a call's event, then the rows it reads or changes
+    fn begin(&self, entry: &str) -> Rows<'_> {
+        self.note(entry.to_owned());
+        self.inner.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn find(&self, vector_store_id: &str) -> Option<LiteLlmManagedVectorStore> {
+        self.begin("db:find")
             .rows
             .iter()
             .find(|row| row.vector_store_id.as_deref() == Some(vector_store_id))
-            .cloned();
-        ready(Ok(found))
+            .cloned()
+    }
+
+    fn insert(&self, record: NewVectorStoreRecord) -> LiteLlmManagedVectorStore {
+        let store = record_to_store(&record);
+        self.begin("db:create").rows.push(store.clone());
+        store
+    }
+
+    fn replace(
+        &self,
+        vector_store_id: &str,
+        changes: &VectorStoreChanges,
+    ) -> Option<LiteLlmManagedVectorStore> {
+        let mut state = self.begin("db:update");
+        state
+            .rows
+            .iter_mut()
+            .find(|row| row.vector_store_id.as_deref() == Some(vector_store_id))
+            .map(|row| {
+                apply_changes(row, changes);
+                row.clone()
+            })
+    }
+
+    fn take(&self, vector_store_id: &str) -> Option<LiteLlmManagedVectorStore> {
+        let mut state = self.begin("db:delete");
+        let position = state
+            .rows
+            .iter()
+            .position(|row| row.vector_store_id.as_deref() == Some(vector_store_id));
+        position.map(|index| state.rows.remove(index))
+    }
+}
+
+impl VectorStoreRows for FakeDatabase {
+    fn find_unique(&self, vector_store_id: &str) -> impl Future<Output = Found> + Send {
+        ready(Ok(self.find(vector_store_id)))
     }
 }
 
 impl VectorStoreWrites for FakeDatabase {
-    fn create(
-        &self,
-        record: NewVectorStoreRecord,
-    ) -> impl Future<Output = Result<LiteLlmManagedVectorStore, TableError>> + Send {
-        self.note(format!("db:create:{}", record.vector_store_id));
-        let store = record_to_store(&record);
-        self.state().rows.push(store.clone());
-        ready(Ok(store))
+    fn create(&self, record: NewVectorStoreRecord) -> impl Future<Output = Stored> + Send {
+        ready(Ok(self.insert(record)))
     }
 
     fn update(
         &self,
         vector_store_id: &str,
         changes: VectorStoreChanges,
-    ) -> impl Future<Output = Result<Option<LiteLlmManagedVectorStore>, TableError>> + Send {
-        self.note(format!("db:update:{vector_store_id}"));
-        let mut state = self.state();
-        let updated = state
-            .rows
-            .iter_mut()
-            .find(|row| row.vector_store_id.as_deref() == Some(vector_store_id))
-            .map(|row| {
-                apply_changes(row, &changes);
-                row.clone()
-            });
-        ready(Ok(updated))
+    ) -> impl Future<Output = Found> + Send {
+        ready(Ok(self.replace(vector_store_id, &changes)))
     }
 
-    fn delete(
-        &self,
-        vector_store_id: &str,
-    ) -> impl Future<Output = Result<Option<LiteLlmManagedVectorStore>, TableError>> + Send {
-        self.note(format!("db:delete:{vector_store_id}"));
-        let mut state = self.state();
-        let removed = state
-            .rows
-            .iter()
-            .position(|row| row.vector_store_id.as_deref() == Some(vector_store_id))
-            .map(|position| state.rows.remove(position));
-        ready(Ok(removed))
+    fn delete(&self, vector_store_id: &str) -> impl Future<Output = Found> + Send {
+        ready(Ok(self.take(vector_store_id)))
     }
 }
 
@@ -158,7 +163,10 @@ fn apply_changes(row: &mut LiteLlmManagedVectorStore, changes: &VectorStoreChang
     row.updated_at = Some(String::from(UPDATED_AT));
 }
 
-fn apply<T>(field: &mut Option<T>, change: &FieldChange<String>, convert: impl Fn(&str) -> T) {
+fn apply<T, F>(field: &mut Option<T>, change: &FieldChange<String>, convert: F)
+where
+    F: Fn(&str) -> T,
+{
     match change {
         FieldChange::Omitted => {}
         FieldChange::Null => *field = None,

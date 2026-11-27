@@ -3,8 +3,7 @@ use serde_json::{Map, Value};
 // the JSONB columns hold JSON text, so an answer parses them before comparing
 const JSON_TEXT_FIELDS: [&str; 2] = ["litellm_params", "vector_store_metadata"];
 
-// the two helpers format JSON text differently, so every JSONB column and every redacted
-// params string is compared as the JSON it holds; the columns a row leaves out compare as absent
+// a JSONB column holds JSON text, so this parses it and drops nulls before the two answers compare
 pub(super) fn canonical(value: Value) -> Value {
     match value {
         Value::Object(fields) => {

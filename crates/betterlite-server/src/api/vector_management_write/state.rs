@@ -1,10 +1,5 @@
 use std::sync::{Arc, PoisonError};
 
-use betterlite_auth::identity_grants::loaders::TeamLoader;
-use betterlite_auth::ui_session_identity::UiSessionTeams;
-use betterlite_core::api::vector_store_access::VectorStoreAccess;
-use betterlite_core::api::vector_store_access::auth::ObjectPermissionLookup;
-
 use super::cache::{RegistryCache, VectorStoreCache};
 use super::error::ManagementWriteError;
 use crate::api::vector_management_boundaries::ownership::raise_if_config_owned;
@@ -18,13 +13,6 @@ pub struct VectorManagementWriteState<Database> {
 }
 
 impl<Database> VectorManagementWriteState<Database> {
-    #[must_use]
-    pub fn access(
-        &self,
-    ) -> VectorStoreAccess<'_, dyn ObjectPermissionLookup, dyn TeamLoader, dyn UiSessionTeams> {
-        self.reads.access()
-    }
-
     // _raise_if_config_owned: only the registry says a config file owns the id, and no registry owns nothing
     pub fn refuse_config_owned(&self, vector_store_id: &str) -> Result<(), ManagementWriteError> {
         let Some(registry) = &self.reads.registry else {

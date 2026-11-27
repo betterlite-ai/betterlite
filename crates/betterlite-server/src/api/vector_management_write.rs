@@ -14,6 +14,7 @@ use std::sync::Arc;
 
 use axum::body::Bytes;
 use axum::extract::{Extension, State};
+use axum::http::Uri;
 use axum::response::{IntoResponse as _, Response};
 use axum::routing::post;
 use axum::{Json, Router};
@@ -43,49 +44,33 @@ where
     Database: VectorStoreWrites + Send + Sync + 'static,
 {
     Router::new()
-        .route(NEW_PATH, post(new_handler::<Database>))
-        .route(DELETE_PATH, post(delete_handler::<Database>))
-        .route(UPDATE_PATH, post(update_handler::<Database>))
+        .route(NEW_PATH, post(write_handler::<Database>))
+        .route(DELETE_PATH, post(write_handler::<Database>))
+        .route(UPDATE_PATH, post(write_handler::<Database>))
         .with_state(state)
 }
 
-async fn new_handler<Database>(
+// the three writes share one handler: the caller once, then the operation the path names
+async fn write_handler<Database>(
     State(state): State<Arc<VectorManagementWriteState<Database>>>,
     Extension(context): Extension<AuthContext>,
+    uri: Uri,
     body: Bytes,
 ) -> Result<Response, ManagementWriteError>
 where
     Database: VectorStoreWrites + Send + Sync + 'static,
 {
     let caller = CallerView::from_principal(&context.principal)?;
-    let request: LiteLlmManagedVectorStore = decode_body(&body)?;
-    let response = new_vector_store(state.as_ref(), &caller, &request).await?;
-    Ok(Json(response).into_response())
-}
-
-async fn delete_handler<Database>(
-    State(state): State<Arc<VectorManagementWriteState<Database>>>,
-    Extension(context): Extension<AuthContext>,
-    body: Bytes,
-) -> Result<Response, ManagementWriteError>
-where
-    Database: VectorStoreWrites + Send + Sync + 'static,
-{
-    let caller = CallerView::from_principal(&context.principal)?;
-    let request: VectorStoreDeleteRequest = decode_body(&body)?;
-    let response = delete_vector_store(state.as_ref(), &caller, &request).await?;
-    Ok(Json(response).into_response())
-}
-
-async fn update_handler<Database>(
-    State(state): State<Arc<VectorManagementWriteState<Database>>>,
-    Extension(context): Extension<AuthContext>,
-    body: Bytes,
-) -> Result<Response, ManagementWriteError>
-where
-    Database: VectorStoreWrites + Send + Sync + 'static,
-{
-    let caller = CallerView::from_principal(&context.principal)?;
+    if uri.path() == NEW_PATH {
+        let request: LiteLlmManagedVectorStore = decode_body(&body)?;
+        let response = new_vector_store(state.as_ref(), &caller, &request).await?;
+        return Ok(Json(response).into_response());
+    }
+    if uri.path() == DELETE_PATH {
+        let request: VectorStoreDeleteRequest = decode_body(&body)?;
+        let response = delete_vector_store(state.as_ref(), &caller, &request).await?;
+        return Ok(Json(response).into_response());
+    }
     let request: VectorStoreUpdateRequest = decode_body(&body)?;
     let response = update_vector_store(state.as_ref(), &caller, &request, &body).await?;
     Ok(Json(response).into_response())

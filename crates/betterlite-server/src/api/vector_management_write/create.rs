@@ -125,7 +125,11 @@ where
         request,
     )
     .await?;
-    VectorStoreWriteResponse::created(&vector_store_id, &created, state.reads.limits)
+    VectorStoreWriteResponse::success(
+        format!("Vector store {vector_store_id} created successfully"),
+        &created,
+        state.reads.limits,
+    )
 }
 
 // metadata is kept only when it parsed as a JSON object; a string is dropped as LiteLLM drops it

@@ -57,7 +57,7 @@ where
         ));
     };
     state.refuse_config_owned(vector_store_id)?;
-    let allowed = check_vector_store_access(&state.access(), &check, &caller.key)
+    let allowed = check_vector_store_access(&state.reads.access(), &check, &caller.key)
         .await
         .map_err(VectorManagementError::Access)?;
     if !allowed {

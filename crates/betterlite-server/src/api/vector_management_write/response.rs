@@ -33,32 +33,8 @@ impl VectorStoreDeleteResponse {
 }
 
 impl VectorStoreWriteResponse {
-    pub fn created(
-        vector_store_id: &str,
-        store: &LiteLlmManagedVectorStore,
-        limits: ApiLimits,
-    ) -> Result<Self, ManagementWriteError> {
-        Self::with_message(
-            format!("Vector store {vector_store_id} created successfully"),
-            store,
-            limits,
-        )
-    }
-
-    pub fn updated(
-        vector_store_id: &str,
-        store: &LiteLlmManagedVectorStore,
-        limits: ApiLimits,
-    ) -> Result<Self, ManagementWriteError> {
-        Self::with_message(
-            format!("Vector store {vector_store_id} updated successfully"),
-            store,
-            limits,
-        )
-    }
-
     // the DB row as stored, with litellm_params redacted through B2486 before it leaves
-    fn with_message(
+    pub fn success(
         message: String,
         store: &LiteLlmManagedVectorStore,
         limits: ApiLimits,

@@ -9,7 +9,7 @@ use super::support::{
     CacheFailure, Events, Failure, FakeCache, FakeDatabase, Setup, build, capture_logs,
     config_store, db_store, internal,
 };
-use super::{at, content_type, decoded, field, field_count, stored_params, text};
+use super::{Column, at, content_type, decoded, field, field_count, stored_column, text};
 use crate::api::vector_management_boundaries::redaction::REDACTED_BY_LITELM;
 use crate::api::vector_management_write::NEW_PATH;
 use crate::api::vector_management_write::state::VectorManagementWriteState;
@@ -23,13 +23,12 @@ async fn register_store_preserves_raw_embedding_reference() {
     let events = Events::default();
     let database = FakeDatabase::new(Vec::new());
     let cache = FakeCache::new(Vec::new());
-    let state = build(Setup {
-        database: Some(database.clone()),
-        cache: Some(cache.clone()),
-        registry: Some(vec![config_store("vs_owned")]),
-        events: events.clone(),
-        ..Setup::default()
-    });
+    let mut setup = Setup::default();
+    setup.database = Some(database.clone());
+    setup.cache = Some(cache.clone());
+    setup.registry = Some(vec![config_store("vs_owned")]);
+    setup.events = events.clone();
+    let state = build(setup);
     let (status, headers, body) = call_new(&state, REGISTER_BODY).await;
     assert_eq!(StatusCode::OK, status);
     assert_eq!(Some("application/json"), content_type(&headers));
@@ -86,13 +85,13 @@ async fn register_store_preserves_raw_embedding_reference() {
     assert_eq!(Some("t".to_owned()), cached.team_id);
     assert_eq!(
         Some(&Json::Text("secret".to_owned())),
-        field(&stored_params(&cached), "api_key")
+        field(&stored_column(&cached, Column::Params), "api_key")
     );
     assert_eq!(
         vec![
-            "db:find:vs_a".to_owned(),
-            "db:create:vs_a".to_owned(),
-            "cache:add:vs_a".to_owned(),
+            "db:find".to_owned(),
+            "db:create".to_owned(),
+            "cache:add".to_owned(),
         ],
         events.entries()
     );
@@ -101,38 +100,44 @@ async fn register_store_preserves_raw_embedding_reference() {
 #[tokio::test]
 async fn create_requires_id_and_provider() {
     let events = Events::default();
-    let state = build(Setup {
-        database: Some(FakeDatabase::new(Vec::new())),
-        events: events.clone(),
-        ..Setup::default()
-    });
-    for payload in [
-        r#"{"custom_llm_provider":"openai"}"#,
+    let mut setup = Setup::default();
+    setup.database = Some(FakeDatabase::new(Vec::new()));
+    setup.events = events.clone();
+    let state = build(setup);
+    assert_required(&state, r#"{"custom_llm_provider":"openai"}"#).await;
+    assert_required(
+        &state,
         r#"{"vector_store_id":"","custom_llm_provider":"openai"}"#,
-        r#"{"vector_store_id":"vs_a"}"#,
+    )
+    .await;
+    assert_required(&state, r#"{"vector_store_id":"vs_a"}"#).await;
+    assert_required(
+        &state,
         r#"{"vector_store_id":"vs_a","custom_llm_provider":""}"#,
-    ] {
-        let (status, _headers, body) = call_new(&state, payload).await;
-        assert_eq!(StatusCode::BAD_REQUEST, status);
-        assert_eq!(
-            "vector_store_id and custom_llm_provider are required",
-            text(at(&body, "detail"))
-        );
-        assert_eq!(None, field(&body, "type"));
-    }
+    )
+    .await;
     assert!(events.entries().is_empty());
+}
+
+async fn assert_required(state: &WriteState, payload: &str) {
+    let (status, _headers, body) = call_new(state, payload).await;
+    assert_eq!(StatusCode::BAD_REQUEST, status);
+    assert_eq!(
+        "vector_store_id and custom_llm_provider are required",
+        text(at(&body, "detail"))
+    );
+    assert_eq!(None, field(&body, "type"));
 }
 
 #[tokio::test]
 async fn create_refuses_config_owned_id_before_the_database() {
     let events = Events::default();
     let database = FakeDatabase::new(Vec::new());
-    let state = build(Setup {
-        database: Some(database.clone()),
-        registry: Some(vec![config_store("vs_c")]),
-        events: events.clone(),
-        ..Setup::default()
-    });
+    let mut setup = Setup::default();
+    setup.database = Some(database.clone());
+    setup.registry = Some(vec![config_store("vs_c")]);
+    setup.events = events.clone();
+    let state = build(setup);
     let (status, _headers, body) = call_new(
         &state,
         r#"{"vector_store_id":"vs_c","custom_llm_provider":"openai"}"#,
@@ -151,12 +156,11 @@ async fn create_refuses_config_owned_id_before_the_database() {
 async fn create_refuses_duplicate_id() {
     let events = Events::default();
     let database = FakeDatabase::new(vec![db_store("vs_a")]);
-    let state = build(Setup {
-        database: Some(database.clone()),
-        registry: Some(Vec::new()),
-        events: events.clone(),
-        ..Setup::default()
-    });
+    let mut setup = Setup::default();
+    setup.database = Some(database.clone());
+    setup.registry = Some(Vec::new());
+    setup.events = events.clone();
+    let state = build(setup);
     let (status, _headers, body) = call_new(
         &state,
         r#"{"vector_store_id":"vs_a","custom_llm_provider":"openai"}"#,
@@ -167,7 +171,7 @@ async fn create_refuses_duplicate_id() {
         "Vector store with ID vs_a already exists",
         text(at(&body, "detail"))
     );
-    assert_eq!(vec!["db:find:vs_a".to_owned()], events.entries());
+    assert_eq!(vec!["db:find".to_owned()], events.entries());
     assert!(database.creates().is_empty());
 }
 
@@ -176,13 +180,12 @@ async fn create_optional_database_values() {
     let events = Events::default();
     let database = FakeDatabase::new(Vec::new());
     let cache = FakeCache::new(Vec::new());
-    let state = build(Setup {
-        database: Some(database.clone()),
-        cache: Some(cache.clone()),
-        registry: Some(Vec::new()),
-        events,
-        ..Setup::default()
-    });
+    let mut setup = Setup::default();
+    setup.database = Some(database.clone());
+    setup.cache = Some(cache.clone());
+    setup.registry = Some(Vec::new());
+    setup.events = events;
+    let state = build(setup);
     let (status, _headers, body) = call_new(
         &state,
         r#"{"vector_store_id":"vs_a","custom_llm_provider":"openai","vector_store_name":"","vector_store_description":"","vector_store_metadata":{},"litellm_params":null,"litellm_credential_name":""}"#,
@@ -261,12 +264,11 @@ async fn create_optional_database_values() {
 #[tokio::test]
 async fn create_without_a_database_answers_500() {
     let events = Events::default();
-    let state = build(Setup {
-        cache: Some(FakeCache::new(Vec::new())),
-        registry: Some(Vec::new()),
-        events: events.clone(),
-        ..Setup::default()
-    });
+    let mut setup = Setup::default();
+    setup.cache = Some(FakeCache::new(Vec::new()));
+    setup.registry = Some(Vec::new());
+    setup.events = events.clone();
+    let state = build(setup);
     let (status, _headers, body) = call_new(&state, REGISTER_BODY).await;
     assert_eq!(StatusCode::INTERNAL_SERVER_ERROR, status);
     assert_eq!("Database not connected", text(at(&body, "detail")));
@@ -277,17 +279,16 @@ async fn create_without_a_database_answers_500() {
 async fn create_database_failure_writes_nothing_to_the_cache() {
     let events = Events::default();
     let cache = FakeCache::new(Vec::new());
-    let state = build(Setup {
-        database: Some(FakeDatabase::new(Vec::new()).failing(Failure::Create)),
-        cache: Some(cache.clone()),
-        registry: Some(Vec::new()),
-        events: events.clone(),
-        ..Setup::default()
-    });
+    let mut setup = Setup::default();
+    setup.database = Some(FakeDatabase::new(Vec::new()).failing(Failure::Create));
+    setup.cache = Some(cache.clone());
+    setup.registry = Some(Vec::new());
+    setup.events = events.clone();
+    let state = build(setup);
     let (status, _headers, _body) = call_new(&state, REGISTER_BODY).await;
     assert_eq!(StatusCode::INTERNAL_SERVER_ERROR, status);
     assert_eq!(
-        vec!["db:find:vs_a".to_owned(), "db:create:vs_a".to_owned()],
+        vec!["db:find".to_owned(), "db:create".to_owned()],
         events.entries()
     );
     assert!(cache.stores().is_empty());
@@ -298,13 +299,12 @@ async fn create_cache_failure_keeps_the_database_row() {
     let events = Events::default();
     let database = FakeDatabase::new(Vec::new());
     let cache = FakeCache::new(Vec::new()).failing(CacheFailure::Add);
-    let state = build(Setup {
-        database: Some(database.clone()),
-        cache: Some(cache),
-        registry: Some(Vec::new()),
-        events: events.clone(),
-        ..Setup::default()
-    });
+    let mut setup = Setup::default();
+    setup.database = Some(database.clone());
+    setup.cache = Some(cache);
+    setup.registry = Some(Vec::new());
+    setup.events = events.clone();
+    let state = build(setup);
     let (logs, _guard) = capture_logs(tracing::Level::ERROR);
     let (status, _headers, body) = call_new(&state, REGISTER_BODY).await;
     assert_eq!(StatusCode::INTERNAL_SERVER_ERROR, status);
@@ -318,12 +318,11 @@ async fn create_cache_failure_keeps_the_database_row() {
 
 #[tokio::test]
 async fn create_logs_the_created_id() {
-    let state = build(Setup {
-        database: Some(FakeDatabase::new(Vec::new())),
-        cache: Some(FakeCache::new(Vec::new())),
-        registry: Some(Vec::new()),
-        ..Setup::default()
-    });
+    let mut setup = Setup::default();
+    setup.database = Some(FakeDatabase::new(Vec::new()));
+    setup.cache = Some(FakeCache::new(Vec::new()));
+    setup.registry = Some(Vec::new());
+    let state = build(setup);
     let (logs, _guard) = capture_logs(tracing::Level::INFO);
     let (status, _headers, _body) = call_new(&state, REGISTER_BODY).await;
     assert_eq!(StatusCode::OK, status);

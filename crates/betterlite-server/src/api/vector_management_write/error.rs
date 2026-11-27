@@ -39,8 +39,6 @@ pub enum ManagementWriteError {
     Cache(#[from] CacheError),
     #[error(transparent)]
     Json(#[from] serde_json::Error),
-    #[error("{message}")]
-    Internal { message: String },
 }
 
 #[derive(Serialize)]
@@ -63,8 +61,7 @@ impl ManagementWriteError {
             | Self::Params(_)
             | Self::PrivateJson(_)
             | Self::Cache(_)
-            | Self::Json(_)
-            | Self::Internal { .. } => false,
+            | Self::Json(_) => false,
         }
     }
 }
@@ -93,11 +90,9 @@ impl IntoResponse for ManagementWriteError {
                 detail(StatusCode::BAD_REQUEST, self.to_string())
             }
             Self::DeleteAccessDenied => detail(StatusCode::FORBIDDEN, self.to_string()),
-            Self::Params(_)
-            | Self::PrivateJson(_)
-            | Self::Cache(_)
-            | Self::Json(_)
-            | Self::Internal { .. } => detail(StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
+            Self::Params(_) | Self::PrivateJson(_) | Self::Cache(_) | Self::Json(_) => {
+                detail(StatusCode::INTERNAL_SERVER_ERROR, self.to_string())
+            }
         }
     }
 }

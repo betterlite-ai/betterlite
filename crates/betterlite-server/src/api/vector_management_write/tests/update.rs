@@ -10,7 +10,7 @@ use super::support::{
     CacheFailure, Events, FakeCache, FakeDatabase, Setup, UPDATED_AT, build, capture_logs,
     config_store, db_store, internal, team_store,
 };
-use super::{at, decoded, field, stored_metadata, stored_params, text};
+use super::{Column, at, decoded, field, stored_column, text};
 use crate::api::vector_management_boundaries::redaction::REDACTED_BY_LITELM;
 use crate::api::vector_management_write::UPDATE_PATH;
 use crate::api::vector_management_write::rows::{FieldChange, VectorStoreChanges};
@@ -32,13 +32,12 @@ async fn update_uses_exclude_unset() {
     let events = Events::default();
     let database = FakeDatabase::new(vec![db_store("vs_a")]);
     let cache = FakeCache::new(vec![db_store("vs_a")]);
-    let state = build(Setup {
-        database: Some(database.clone()),
-        cache: Some(cache.clone()),
-        registry: Some(Vec::new()),
-        events: events.clone(),
-        ..Setup::default()
-    });
+    let mut setup = Setup::default();
+    setup.database = Some(database.clone());
+    setup.cache = Some(cache.clone());
+    setup.registry = Some(Vec::new());
+    setup.events = events.clone();
+    let state = build(setup);
     let (status, _headers, body) = call_update(
         &state,
         &internal("u1", None),
@@ -65,9 +64,8 @@ async fn update_uses_exclude_unset() {
     assert_eq!(None, row.vector_store_metadata);
     assert_eq!(Some("db-vs_a".to_owned()), row.vector_store_name);
     assert_eq!(Some(UPDATED_AT.to_owned()), row.updated_at);
-    // pinned LiteLLM's VectorStoreUpdateRequest has no litellm_params field, so a body value is ignored
-    // and the stored params survive; the task text's "params becomes {}" does not match the pinned code
-    let params = stored_params(&row);
+    // pinned LiteLLM's VectorStoreUpdateRequest has no litellm_params field, so the stored params survive
+    let params = stored_column(&row, Column::Params);
     assert_eq!(
         Some(&Json::Text("db-secret-vs_a".to_owned())),
         field(&params, "api_key")
@@ -76,7 +74,7 @@ async fn update_uses_exclude_unset() {
     assert_eq!(None, cached.vector_store_description);
     assert_eq!(
         Some(&Json::Text("db-secret-vs_a".to_owned())),
-        field(&stored_params(&cached), "api_key")
+        field(&stored_column(&cached, Column::Params), "api_key")
     );
     let updated = at(&body, "vector_store");
     assert_eq!("vs_a", text(at(updated, "vector_store_id")));
@@ -97,9 +95,9 @@ async fn update_uses_exclude_unset() {
     );
     assert_eq!(
         vec![
-            "db:find:vs_a".to_owned(),
-            "db:update:vs_a".to_owned(),
-            "cache:update:vs_a".to_owned(),
+            "db:find".to_owned(),
+            "db:update".to_owned(),
+            "cache:update".to_owned(),
         ],
         events.entries()
     );
@@ -125,12 +123,11 @@ fn written_names(changes: &VectorStoreChanges) -> Vec<&'static str> {
 #[tokio::test]
 async fn update_writes_the_present_values() {
     let database = FakeDatabase::new(vec![db_store("vs_a")]);
-    let state = build(Setup {
-        database: Some(database.clone()),
-        cache: Some(FakeCache::new(vec![db_store("vs_a")])),
-        registry: Some(Vec::new()),
-        ..Setup::default()
-    });
+    let mut setup = Setup::default();
+    setup.database = Some(database.clone());
+    setup.cache = Some(FakeCache::new(vec![db_store("vs_a")]));
+    setup.registry = Some(Vec::new());
+    let state = build(setup);
     let (status, _headers, body) = call_update(
         &state,
         &internal("u1", None),
@@ -160,7 +157,7 @@ async fn update_writes_the_present_values() {
     assert_eq!(Some("bedrock".to_owned()), row.custom_llm_provider);
     assert_eq!(
         Some(&Json::Number(Number::from(1_i64))),
-        field(&stored_metadata(&row), "x")
+        field(&stored_column(&row, Column::Metadata), "x")
     );
     let response_metadata = decoded(at(at(&body, "vector_store"), "vector_store_metadata"));
     assert_eq!(
@@ -203,13 +200,12 @@ async fn update_writes_the_present_values() {
 #[tokio::test]
 async fn update_errors_before_mutation() {
     let owned_events = Events::default();
-    let owned = build(Setup {
-        database: Some(FakeDatabase::new(vec![db_store("vs_c")])),
-        cache: Some(FakeCache::new(vec![config_store("vs_c")])),
-        registry: Some(vec![config_store("vs_c")]),
-        events: owned_events.clone(),
-        ..Setup::default()
-    });
+    let mut setup = Setup::default();
+    setup.database = Some(FakeDatabase::new(vec![db_store("vs_c")]));
+    setup.cache = Some(FakeCache::new(vec![config_store("vs_c")]));
+    setup.registry = Some(vec![config_store("vs_c")]);
+    setup.events = owned_events.clone();
+    let owned = build(setup);
     let (status, _headers, body) = call_update(
         &owned,
         &internal("u1", None),
@@ -220,13 +216,12 @@ async fn update_errors_before_mutation() {
     assert_eq!("vs_c", text(at(at(&body, "detail"), "vector_store_id")));
     assert!(owned_events.entries().is_empty());
     let missing_events = Events::default();
-    let missing = build(Setup {
-        database: Some(FakeDatabase::new(Vec::new())),
-        cache: Some(FakeCache::new(Vec::new())),
-        registry: Some(Vec::new()),
-        events: missing_events.clone(),
-        ..Setup::default()
-    });
+    let mut setup = Setup::default();
+    setup.database = Some(FakeDatabase::new(Vec::new()));
+    setup.cache = Some(FakeCache::new(Vec::new()));
+    setup.registry = Some(Vec::new());
+    setup.events = missing_events.clone();
+    let missing = build(setup);
     let (status, _headers, body) = call_update(
         &missing,
         &internal("u1", None),
@@ -238,13 +233,12 @@ async fn update_errors_before_mutation() {
         "Vector store with ID vs_a not found",
         text(at(&body, "detail"))
     );
-    assert_eq!(vec!["db:find:vs_a".to_owned()], missing_events.entries());
-    let denied = build(Setup {
-        database: Some(FakeDatabase::new(vec![team_store("vs_a", "t2")])),
-        cache: Some(FakeCache::new(Vec::new())),
-        registry: Some(Vec::new()),
-        ..Setup::default()
-    });
+    assert_eq!(vec!["db:find".to_owned()], missing_events.entries());
+    let mut setup = Setup::default();
+    setup.database = Some(FakeDatabase::new(vec![team_store("vs_a", "t2")]));
+    setup.cache = Some(FakeCache::new(Vec::new()));
+    setup.registry = Some(Vec::new());
+    let denied = build(setup);
     let (status, _headers, body) = call_update(
         &denied,
         &internal("u1", Some("t1")),
@@ -258,13 +252,12 @@ async fn update_errors_before_mutation() {
     );
     // a row that vanished between the fetch and the update answers the same 404
     let vanished_events = Events::default();
-    let vanished = build(Setup {
-        database: Some(FakeDatabase::new(vec![db_store("vs_a")]).missing_update()),
-        cache: Some(FakeCache::new(Vec::new())),
-        registry: Some(Vec::new()),
-        events: vanished_events.clone(),
-        ..Setup::default()
-    });
+    let mut setup = Setup::default();
+    setup.database = Some(FakeDatabase::new(vec![db_store("vs_a")]).missing_update());
+    setup.cache = Some(FakeCache::new(Vec::new()));
+    setup.registry = Some(Vec::new());
+    setup.events = vanished_events.clone();
+    let vanished = build(setup);
     let (status, _headers, body) = call_update(
         &vanished,
         &internal("u1", None),
@@ -277,7 +270,7 @@ async fn update_errors_before_mutation() {
         text(at(&body, "detail"))
     );
     assert_eq!(
-        vec!["db:find:vs_a".to_owned(), "db:update:vs_a".to_owned()],
+        vec!["db:find".to_owned(), "db:update".to_owned()],
         vanished_events.entries()
     );
 }
@@ -287,13 +280,12 @@ async fn update_registry_failure_preserves_database_change() {
     let events = Events::default();
     let database = FakeDatabase::new(vec![db_store("vs_a")]);
     let cache = FakeCache::new(vec![db_store("vs_a")]).failing(CacheFailure::Update);
-    let state = build(Setup {
-        database: Some(database.clone()),
-        cache: Some(cache.clone()),
-        registry: Some(Vec::new()),
-        events: events.clone(),
-        ..Setup::default()
-    });
+    let mut setup = Setup::default();
+    setup.database = Some(database.clone());
+    setup.cache = Some(cache.clone());
+    setup.registry = Some(Vec::new());
+    setup.events = events.clone();
+    let state = build(setup);
     let (logs, _guard) = capture_logs(tracing::Level::ERROR);
     let (status, _headers, body) = call_update(
         &state,
@@ -321,9 +313,9 @@ async fn update_registry_failure_preserves_database_change() {
     );
     assert_eq!(
         vec![
-            "db:find:vs_a".to_owned(),
-            "db:update:vs_a".to_owned(),
-            "cache:update:vs_a".to_owned(),
+            "db:find".to_owned(),
+            "db:update".to_owned(),
+            "cache:update".to_owned(),
         ],
         events.entries()
     );
@@ -336,12 +328,11 @@ async fn update_registry_failure_preserves_database_change() {
 #[tokio::test]
 async fn update_redacts_existing_credentials() {
     let database = FakeDatabase::new(vec![db_store("vs_a")]);
-    let state = build(Setup {
-        database: Some(database.clone()),
-        cache: None,
-        registry: Some(Vec::new()),
-        ..Setup::default()
-    });
+    let mut setup = Setup::default();
+    setup.database = Some(database.clone());
+    setup.cache = None;
+    setup.registry = Some(Vec::new());
+    let state = build(setup);
     let (status, _headers, body) = call_update(
         &state,
         &internal("u1", None),
@@ -355,7 +346,8 @@ async fn update_redacts_existing_credentials() {
         Some(&Json::Text(REDACTED_BY_LITELM.to_owned())),
         field(&response_params, "api_key")
     );
-    let params = stored_params(&database.rows().pop().expect("the row stays"));
+    let row = database.rows().pop().expect("the row stays");
+    let params = stored_column(&row, Column::Params);
     assert_eq!(
         Some(&Json::Text("db-secret-vs_a".to_owned())),
         field(&params, "api_key")
@@ -364,11 +356,10 @@ async fn update_redacts_existing_credentials() {
 
 #[tokio::test]
 async fn update_without_a_database_answers_500() {
-    let state = build(Setup {
-        cache: Some(FakeCache::new(Vec::new())),
-        registry: Some(Vec::new()),
-        ..Setup::default()
-    });
+    let mut setup = Setup::default();
+    setup.cache = Some(FakeCache::new(Vec::new()));
+    setup.registry = Some(Vec::new());
+    let state = build(setup);
     let (status, _headers, body) = call_update(
         &state,
         &internal("u1", None),
@@ -381,10 +372,9 @@ async fn update_without_a_database_answers_500() {
 
 #[tokio::test]
 async fn update_requires_a_vector_store_id() {
-    let state = build(Setup {
-        database: Some(FakeDatabase::new(Vec::new())),
-        ..Setup::default()
-    });
+    let mut setup = Setup::default();
+    setup.database = Some(FakeDatabase::new(Vec::new()));
+    let state = build(setup);
     let (status, _headers, body) = call_update(
         &state,
         &internal("u1", None),

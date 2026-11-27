@@ -1,4 +1,3 @@
-mod cache;
 mod canonical;
 mod database;
 mod input;
@@ -6,7 +5,6 @@ mod world;
 
 use std::sync::{Arc, Mutex, PoisonError};
 
-use self::cache::LoggingCache;
 use self::canonical::canonical;
 use self::database::FakeDatabase;
 use self::input::{Call, Route};
@@ -20,7 +18,6 @@ use betterlite_core::api::vector_store_registry::store::VectorStoreRegistry;
 use betterlite_openai::api::vector_store_records::records::vector::LiteLlmManagedVectorStore;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_server::api::vector_management_read::state::VectorManagementReadState;
-use betterlite_server::api::vector_management_write::cache::{RegistryCache, VectorStoreCache};
 use betterlite_server::api::vector_management_write::state::VectorManagementWriteState;
 use betterlite_server::api::vector_management_write::{DELETE_PATH, NEW_PATH, UPDATE_PATH, routes};
 use chrono::Utc;
@@ -62,12 +59,7 @@ async fn answer(call: &Call) -> HelperResult {
             credentials: Arc::new(CredentialSnapshot::default()),
         }))
     });
-    let state = write_state(
-        call,
-        database.clone(),
-        registry.clone(),
-        Arc::clone(&events),
-    );
+    let state = write_state(call, database.clone(), registry.clone());
     let request = Request::builder()
         .method("POST")
         .uri(path(call.route))
@@ -86,7 +78,13 @@ async fn answer(call: &Call) -> HelperResult {
         .map_err(|error| failure(error.to_string()))?;
     let body: Value = serde_json::from_slice(&bytes).map_err(|error| failure(error.to_string()))?;
     let database_rows = match &database {
-        Some(database) => json!(database.rows()),
+        Some(database) => {
+            let db_state = database
+                .inner
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            json!(db_state.rows)
+        }
         None => Value::Null,
     };
     let cache_rows = match &registry {
@@ -118,15 +116,7 @@ fn write_state(
     call: &Call,
     database: Option<FakeDatabase>,
     registry: Option<Arc<Mutex<VectorStoreRegistry>>>,
-    events: Arc<Mutex<Vec<String>>>,
 ) -> Arc<VectorManagementWriteState<FakeDatabase>> {
-    let cache = registry.as_ref().map(|registry| {
-        let cache: Arc<dyn VectorStoreCache> = Arc::new(LoggingCache {
-            inner: RegistryCache(Arc::clone(registry)),
-            events: Arc::clone(&events),
-        });
-        cache
-    });
     let world = Arc::new(World);
     let reads = Arc::new(VectorManagementReadState {
         database,
@@ -144,7 +134,7 @@ fn write_state(
         },
         limits: ApiLimits::default(),
     });
-    Arc::new(VectorManagementWriteState { reads, cache })
+    Arc::new(VectorManagementWriteState::from(reads))
 }
 
 fn stores_of(registry: &Arc<Mutex<VectorStoreRegistry>>) -> Vec<LiteLlmManagedVectorStore> {

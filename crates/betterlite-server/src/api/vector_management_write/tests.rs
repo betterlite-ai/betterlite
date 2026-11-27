@@ -55,25 +55,24 @@ fn decoded(value: &Json) -> Json {
     serde_json::from_str(text(value)).expect("the column holds JSON text")
 }
 
-// a row's litellm_params column: Prisma stores JSON text in it
-fn stored_params(store: &LiteLlmManagedVectorStore) -> Json {
-    let value = store.litellm_params.clone().expect("the row holds params");
-    let tree: Json = serde_json::from_value(value).expect("a JSON value");
-    match tree {
-        Json::Text(inner) => serde_json::from_str(&inner).expect("params text is JSON"),
-        other => other,
-    }
+#[derive(Clone, Copy)]
+enum Column {
+    Params,
+    Metadata,
 }
 
-// a row's vector_store_metadata column: Prisma stores JSON text in it too
-fn stored_metadata(store: &LiteLlmManagedVectorStore) -> Json {
-    let value = store
-        .vector_store_metadata
-        .clone()
-        .expect("the row holds metadata");
+// a row's JSONB column: Prisma stores JSON text in it, so the column is parsed for a structural assertion
+fn stored_column(store: &LiteLlmManagedVectorStore, column: Column) -> Json {
+    let value = match column {
+        Column::Params => store.litellm_params.clone().expect("the row holds params"),
+        Column::Metadata => store
+            .vector_store_metadata
+            .clone()
+            .expect("the row holds metadata"),
+    };
     let tree: Json = serde_json::from_value(value).expect("a JSON value");
     match tree {
-        Json::Text(inner) => serde_json::from_str(&inner).expect("metadata text is JSON"),
+        Json::Text(inner) => serde_json::from_str(&inner).expect("the column holds JSON text"),
         other => other,
     }
 }

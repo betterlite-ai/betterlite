@@ -53,6 +53,11 @@ pub(super) const SIMULATED_CACHE_FAILURE: &str = "simulated cache failure";
 pub(super) const CREATED_AT: &str = "2024-01-02T03:04:05.000";
 pub(super) const UPDATED_AT: &str = "2024-02-03T04:05:06.000";
 
+type Found = Result<Option<LiteLlmManagedVectorStore>, TableError>;
+type Stored = Result<LiteLlmManagedVectorStore, TableError>;
+type Kept = Result<(), CacheError>;
+type Rows<'a> = MutexGuard<'a, Vec<LiteLlmManagedVectorStore>>;
+
 // a record built from the wire shape the DB hands over
 pub(super) fn parsed(source: &str) -> LiteLlmManagedVectorStore {
     let tree: Json = serde_json::from_str(source).expect("the record is JSON");
@@ -123,7 +128,6 @@ pub(super) enum CacheFailure {
     Remove,
 }
 
-#[derive(Default)]
 struct DbInner {
     rows: Mutex<Vec<LiteLlmManagedVectorStore>>,
     creates: Mutex<Vec<NewVectorStoreRecord>>,
@@ -132,7 +136,7 @@ struct DbInner {
     missing_update: Mutex<bool>,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub(super) struct FakeDatabase {
     inner: Arc<DbInner>,
     events: Events,
@@ -140,11 +144,15 @@ pub(super) struct FakeDatabase {
 
 impl FakeDatabase {
     pub(super) fn new(rows: Vec<LiteLlmManagedVectorStore>) -> Self {
+        let inner = DbInner {
+            rows: Mutex::new(rows),
+            creates: Mutex::new(Vec::new()),
+            updates: Mutex::new(Vec::new()),
+            failure: Mutex::new(None),
+            missing_update: Mutex::new(false),
+        };
         Self {
-            inner: Arc::new(DbInner {
-                rows: Mutex::new(rows),
-                ..DbInner::default()
-            }),
+            inner: Arc::new(inner),
             events: Events::default(),
         }
     }
@@ -154,11 +162,7 @@ impl FakeDatabase {
     }
 
     pub(super) fn failing(self, failure: Failure) -> Self {
-        *self
-            .inner
-            .failure
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) = Some(failure);
+        arm(&self.inner.failure, failure);
         self
     }
 
@@ -200,79 +204,52 @@ impl FakeDatabase {
         self.rows_lock().clone()
     }
 
-    fn rows_lock(&self) -> MutexGuard<'_, Vec<LiteLlmManagedVectorStore>> {
+    fn rows_lock(&self) -> Rows<'_> {
         self.inner
             .rows
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
     }
 
-    fn blocked(&self, which: Failure) -> bool {
-        *self
-            .inner
-            .failure
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            == Some(which)
-    }
-}
-
-impl VectorStoreRows for FakeDatabase {
-    fn find_unique(
-        &self,
-        vector_store_id: &str,
-    ) -> impl Future<Output = Result<Option<LiteLlmManagedVectorStore>, TableError>> + Send {
-        self.events.note(format!("db:find:{vector_store_id}"));
-        if self.blocked(Failure::Find) {
-            return ready(Err(simulated()));
+    // a database call's event and failure gate, then the rows it reads or changes
+    fn begin(&self, entry: &str, failure: Failure) -> Result<Rows<'_>, TableError> {
+        self.events.note(entry.to_owned());
+        if armed(&self.inner.failure, failure) {
+            return Err(simulated());
         }
-        let found = self
-            .rows_lock()
+        Ok(self.rows_lock())
+    }
+
+    fn find(&self, vector_store_id: &str) -> Found {
+        let rows = self.begin("db:find", Failure::Find)?;
+        Ok(rows
             .iter()
             .find(|row| row.vector_store_id.as_deref() == Some(vector_store_id))
-            .cloned();
-        ready(Ok(found))
+            .cloned())
     }
-}
 
-impl VectorStoreWrites for FakeDatabase {
-    fn create(
-        &self,
-        record: NewVectorStoreRecord,
-    ) -> impl Future<Output = Result<LiteLlmManagedVectorStore, TableError>> + Send {
-        self.events
-            .note(format!("db:create:{}", record.vector_store_id));
-        if self.blocked(Failure::Create) {
-            return ready(Err(simulated()));
-        }
+    fn insert(&self, record: NewVectorStoreRecord) -> Stored {
         let store = record_to_store(&record);
+        let mut rows = self.begin("db:create", Failure::Create)?;
         self.inner
             .creates
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(record);
-        self.rows_lock().push(store.clone());
-        ready(Ok(store))
+        rows.push(store.clone());
+        Ok(store)
     }
 
-    fn update(
-        &self,
-        vector_store_id: &str,
-        changes: VectorStoreChanges,
-    ) -> impl Future<Output = Result<Option<LiteLlmManagedVectorStore>, TableError>> + Send {
-        self.events.note(format!("db:update:{vector_store_id}"));
-        if self.blocked(Failure::Update) {
-            return ready(Err(simulated()));
-        }
+    fn replace(&self, vector_store_id: &str, changes: VectorStoreChanges) -> Found {
+        let mut rows = self.begin("db:update", Failure::Update)?;
         self.inner
             .updates
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push((vector_store_id.to_owned(), changes.clone()));
         if self.skips_update() {
-            return ready(Ok(None));
+            return Ok(None);
         }
-        let mut rows = self.rows_lock();
         let updated = rows
             .iter_mut()
             .find(|row| row.vector_store_id.as_deref() == Some(vector_store_id))
@@ -280,23 +257,51 @@ impl VectorStoreWrites for FakeDatabase {
                 apply_changes(row, &changes);
                 row.clone()
             });
-        ready(Ok(updated))
+        Ok(updated)
     }
 
-    fn delete(
-        &self,
-        vector_store_id: &str,
-    ) -> impl Future<Output = Result<Option<LiteLlmManagedVectorStore>, TableError>> + Send {
-        self.events.note(format!("db:delete:{vector_store_id}"));
-        if self.blocked(Failure::Delete) {
-            return ready(Err(simulated()));
-        }
-        let mut rows = self.rows_lock();
-        let removed = rows
+    fn take(&self, vector_store_id: &str) -> Found {
+        let mut rows = self.begin("db:delete", Failure::Delete)?;
+        let Some(position) = rows
             .iter()
             .position(|row| row.vector_store_id.as_deref() == Some(vector_store_id))
-            .map(|position| rows.remove(position));
-        ready(Ok(removed))
+        else {
+            return Ok(None);
+        };
+        Ok(Some(rows.remove(position)))
+    }
+}
+
+// a fake's failure cell: set by the test builder, read by the call the test blocks
+fn arm<T>(cell: &Mutex<Option<T>>, failure: T) {
+    *cell.lock().unwrap_or_else(PoisonError::into_inner) = Some(failure);
+}
+
+fn armed<T: PartialEq>(cell: &Mutex<Option<T>>, which: T) -> bool {
+    *cell.lock().unwrap_or_else(PoisonError::into_inner) == Some(which)
+}
+
+impl VectorStoreRows for FakeDatabase {
+    fn find_unique(&self, vector_store_id: &str) -> impl Future<Output = Found> + Send {
+        ready(self.find(vector_store_id))
+    }
+}
+
+impl VectorStoreWrites for FakeDatabase {
+    fn create(&self, record: NewVectorStoreRecord) -> impl Future<Output = Stored> + Send {
+        ready(self.insert(record))
+    }
+
+    fn update(
+        &self,
+        vector_store_id: &str,
+        changes: VectorStoreChanges,
+    ) -> impl Future<Output = Found> + Send {
+        ready(self.replace(vector_store_id, changes))
+    }
+
+    fn delete(&self, vector_store_id: &str) -> impl Future<Output = Found> + Send {
+        ready(self.take(vector_store_id))
     }
 }
 
@@ -353,7 +358,10 @@ fn apply_changes(row: &mut LiteLlmManagedVectorStore, changes: &VectorStoreChang
     row.updated_at = Some(String::from(UPDATED_AT));
 }
 
-fn apply<T>(field: &mut Option<T>, change: &FieldChange<String>, convert: impl Fn(&str) -> T) {
+fn apply<T, F>(field: &mut Option<T>, change: &FieldChange<String>, convert: F)
+where
+    F: Fn(&str) -> T,
+{
     match change {
         FieldChange::Omitted => {}
         FieldChange::Null => *field = None,
@@ -375,13 +383,9 @@ pub(super) struct FakeCache {
 
 impl FakeCache {
     pub(super) fn new(stores: Vec<LiteLlmManagedVectorStore>) -> Self {
-        Self {
-            inner: Arc::new(CacheInner {
-                stores: Mutex::new(stores),
-                ..CacheInner::default()
-            }),
-            events: Events::default(),
-        }
+        let cache = Self::default();
+        *cache.stores_lock() = stores;
+        cache
     }
 
     pub(super) fn with_events(self, events: Events) -> Self {
@@ -389,11 +393,7 @@ impl FakeCache {
     }
 
     pub(super) fn failing(self, failure: CacheFailure) -> Self {
-        *self
-            .inner
-            .failure
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) = Some(failure);
+        arm(&self.inner.failure, failure);
         self
     }
 
@@ -401,41 +401,32 @@ impl FakeCache {
         self.stores_lock().clone()
     }
 
-    fn stores_lock(&self) -> MutexGuard<'_, Vec<LiteLlmManagedVectorStore>> {
+    fn stores_lock(&self) -> Rows<'_> {
         self.inner
             .stores
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
     }
 
-    fn blocked(&self, which: CacheFailure) -> bool {
-        *self
-            .inner
-            .failure
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            == Some(which)
+    // a cache call's event and failure gate, then the stores it reads or changes
+    fn gate(&self, entry: &str, failure: CacheFailure) -> Result<Rows<'_>, CacheError> {
+        self.events.note(entry.to_owned());
+        if armed(&self.inner.failure, failure) {
+            return Err(simulated_cache());
+        }
+        Ok(self.stores_lock())
     }
-}
 
-impl VectorStoreCache for FakeCache {
-    fn find(&self, vector_store_id: &str) -> Option<LiteLlmManagedVectorStore> {
-        self.events.note(format!("cache:find:{vector_store_id}"));
+    fn lookup(&self, vector_store_id: &str) -> Option<LiteLlmManagedVectorStore> {
+        self.events.note(String::from("cache:find"));
         self.stores_lock()
             .iter()
             .find(|store| store.vector_store_id.as_deref() == Some(vector_store_id))
             .cloned()
     }
 
-    fn add(&self, store: LiteLlmManagedVectorStore) -> Result<(), CacheError> {
-        self.events.note(format!(
-            "cache:add:{}",
-            store.vector_store_id.clone().unwrap_or_default()
-        ));
-        if self.blocked(CacheFailure::Add) {
-            return Err(simulated_cache());
-        }
-        let mut stores = self.stores_lock();
+    fn insert(&self, store: LiteLlmManagedVectorStore) -> Kept {
+        let mut stores = self.gate("cache:add", CacheFailure::Add)?;
         let known = store.vector_store_id.clone();
         if !stores.iter().any(|held| held.vector_store_id == known) {
             stores.push(store);
@@ -443,34 +434,40 @@ impl VectorStoreCache for FakeCache {
         Ok(())
     }
 
-    fn update(
-        &self,
-        vector_store_id: &str,
-        store: LiteLlmManagedVectorStore,
-    ) -> Result<(), CacheError> {
-        self.events.note(format!("cache:update:{vector_store_id}"));
-        if self.blocked(CacheFailure::Update) {
-            return Err(simulated_cache());
-        }
-        let mut stores = self.stores_lock();
-        match stores
-            .iter_mut()
-            .find(|held| held.vector_store_id.as_deref() == Some(vector_store_id))
-        {
-            Some(held) => *held = store,
+    fn replace(&self, vector_store_id: &str, store: LiteLlmManagedVectorStore) -> Kept {
+        let mut stores = self.gate("cache:update", CacheFailure::Update)?;
+        let position = stores
+            .iter()
+            .position(|held| held.vector_store_id.as_deref() == Some(vector_store_id));
+        match position {
+            Some(index) => stores[index] = store,
             None => stores.push(store),
         }
         Ok(())
     }
 
-    fn remove(&self, vector_store_id: &str) -> Result<(), CacheError> {
-        self.events.note(format!("cache:remove:{vector_store_id}"));
-        if self.blocked(CacheFailure::Remove) {
-            return Err(simulated_cache());
-        }
-        self.stores_lock()
-            .retain(|held| held.vector_store_id.as_deref() != Some(vector_store_id));
+    fn discard(&self, vector_store_id: &str) -> Kept {
+        let mut stores = self.gate("cache:remove", CacheFailure::Remove)?;
+        stores.retain(|held| held.vector_store_id.as_deref() != Some(vector_store_id));
         Ok(())
+    }
+}
+
+impl VectorStoreCache for FakeCache {
+    fn find(&self, vector_store_id: &str) -> Option<LiteLlmManagedVectorStore> {
+        self.lookup(vector_store_id)
+    }
+
+    fn add(&self, store: LiteLlmManagedVectorStore) -> Kept {
+        self.insert(store)
+    }
+
+    fn update(&self, vector_store_id: &str, store: LiteLlmManagedVectorStore) -> Kept {
+        self.replace(vector_store_id, store)
+    }
+
+    fn remove(&self, vector_store_id: &str) -> Kept {
+        self.discard(vector_store_id)
     }
 }
 
@@ -594,10 +591,8 @@ pub(super) fn build(setup: Setup) -> Arc<VectorManagementWriteState<FakeDatabase
         settings: setup.settings,
         limits: ApiLimits::default(),
     });
-    let cache = setup.cache.map(|cache| {
-        let cache: Arc<dyn VectorStoreCache> = Arc::new(cache.with_events(events));
-        cache
-    });
+    let cache: Option<Arc<dyn VectorStoreCache>> =
+        setup.cache.map(|store| Arc::new(store.with_events(events)));
     Arc::new(VectorManagementWriteState { reads, cache })
 }
 
@@ -644,32 +639,6 @@ pub(super) fn internal(user_id: &str, team_id: Option<&str>) -> AuthContext {
     }
     let key = UserAPIKeyAuth::construct(AuthInput::Dict(fields)).expect("the key is valid");
     principal(&[], Some(key))
-}
-
-pub(super) fn ui_session(user_id: &str) -> AuthContext {
-    let mut fields = BTreeMap::new();
-    fields.insert("user_id".to_owned(), JsonData::String(user_id.to_owned()));
-    fields.insert(
-        "user_role".to_owned(),
-        JsonData::String("internal_user".to_owned()),
-    );
-    fields.insert(
-        "team_id".to_owned(),
-        JsonData::String("litellm-dashboard".to_owned()),
-    );
-    let key = UserAPIKeyAuth::construct(AuthInput::Dict(fields)).expect("the key is valid");
-    principal(&[], Some(key))
-}
-
-pub(super) fn registry_of(
-    state: &Arc<VectorManagementWriteState<FakeDatabase>>,
-) -> MutexGuard<'_, VectorStoreRegistry> {
-    let registry = state
-        .reads
-        .registry
-        .as_ref()
-        .expect("the state carries a registry");
-    registry.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 // one POST through the module's routes: the caller rides in the extensions the auth stage would fill
