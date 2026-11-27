@@ -15,7 +15,7 @@ use crate::auth::auth_model_patterns::{ModelAccessRejection, ModelPatternStageIn
 use crate::auth::auth_org_lookup::OrgStageInput;
 use crate::auth::auth_policy_support::{self, AuthPolicySupportStageInput};
 use crate::auth::auth_pricing::PricingStageInput;
-use crate::auth::auth_request_models::{RequestModelStageInput, resolve};
+use crate::auth::auth_request_models::RequestModelStageInput;
 use crate::auth::auth_request_policy::{self, AuthRequestPolicyStageInput};
 use crate::auth::auth_resource_grants::{self, ResourceGrantStageInput};
 use crate::auth::auth_tag_budgets::TagBudgetStageInput;
@@ -210,7 +210,7 @@ pub(crate) fn dispatch(
         StageInput::AuthVirtualKeyRoutes(stage) => {
             virtual_key_routes::run_stage(stage).map_err(StageFailure::VirtualKeyRoutes)
         }
-        StageInput::AuthRequestModels(stage) => auth_request_models_stage(stage),
+        StageInput::AuthRequestModels(stage) => super::auth_request_models_stage(stage),
         StageInput::AuthModelPatterns(stage) => {
             run_stage(stage).map_err(|rejection| StageFailure::ModelAccess(Box::new(rejection)))
         }
@@ -232,16 +232,6 @@ pub(crate) fn dispatch(
             auth_policy_support::run_stage(stage).map_err(StageFailure::AuthPolicySupport)
         }
         StageInput::ModelGrantIntersection(stage) => Ok(stage.context.clone()),
-    }
-}
-
-fn auth_request_models_stage(stage: &RequestModelStageInput) -> Result<AuthContext, StageFailure> {
-    match resolve(stage) {
-        Ok(_) => Ok(stage.context.clone()),
-        Err(error) => {
-            tracing::debug!(error = %error, "the request model stage failed");
-            Err(StageFailure::from(AuthenticationFailure::Missing))
-        }
     }
 }
 

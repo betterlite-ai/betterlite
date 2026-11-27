@@ -251,6 +251,17 @@ fn model_stage_input(
         resolver: Arc::clone(resolver),
     }
 }
+
+fn auth_request_models_stage(stage: &RequestModelStageInput) -> Result<AuthContext, StageFailure> {
+    match resolve(stage) {
+        Ok(_) => Ok(stage.context.clone()),
+        Err(error) => {
+            tracing::debug!(error = %error, "the request model stage failed");
+            Err(StageFailure::from(AuthenticationFailure::Missing))
+        }
+    }
+}
+
 pub fn parse_key_header(name: &str, header_bytes: &[u8]) -> Option<SecretString> {
     if header_bytes.is_empty() {
         return None;
