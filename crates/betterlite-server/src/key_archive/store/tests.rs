@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::slice::from_ref;
 
 use betterlite_db::identity_rows::Payload;
 use betterlite_db::identity_rows::key::{DeletedVerificationToken, LiteLLMVerificationToken};
@@ -323,9 +324,9 @@ fn assert_texts(row: &Row, record: &DeletedVerificationToken) {
         ("updated_by", &record.token.updated_by),
         ("rotation_interval", &record.token.rotation_interval),
     ];
-    expected.iter().for_each(|(column, value)| {
-        assert_eq!(row.get::<_, Option<String>>(*column), **value, "{column}");
-    });
+    for (column, value) in expected {
+        assert_eq!(row.get::<_, Option<String>>(column), *value, "{column}");
+    }
 }
 
 fn assert_json(row: &Row) {
@@ -434,26 +435,24 @@ fn assert_null_texts(row: &Row) {
         "deleted_by_api_key",
         "litellm_changed_by",
     ];
-    columns
-        .iter()
-        .for_each(|column| assert_eq!(row.get::<_, Option<String>>(*column), None, "{column}"));
+    for column in columns {
+        assert_eq!(row.get::<_, Option<String>>(column), None, "{column}");
+    }
+}
+
+fn assert_null_stamps(row: &Row) {
+    for (column, _) in SAMPLE_INSTANTS {
+        if column != "deleted_at" {
+            assert_eq!(
+                row.get::<_, Option<NaiveDateTime>>(column),
+                None,
+                "{column}"
+            );
+        }
+    }
 }
 
 fn assert_null_scalars(row: &Row) {
-    assert_eq!(row.get::<_, Option<NaiveDateTime>>("expires"), None);
-    assert_eq!(row.get::<_, Option<NaiveDateTime>>("budget_reset_at"), None);
-    assert_eq!(row.get::<_, Option<NaiveDateTime>>("created_at"), None);
-    assert_eq!(row.get::<_, Option<NaiveDateTime>>("updated_at"), None);
-    assert_eq!(
-        row.get::<_, Option<NaiveDateTime>>("settings_updated_at"),
-        None
-    );
-    assert_eq!(row.get::<_, Option<NaiveDateTime>>("last_active"), None);
-    assert_eq!(
-        row.get::<_, Option<NaiveDateTime>>("last_rotation_at"),
-        None
-    );
-    assert_eq!(row.get::<_, Option<NaiveDateTime>>("key_rotation_at"), None);
     assert_eq!(row.get::<_, Option<i32>>("max_parallel_requests"), None);
     assert_eq!(row.get::<_, Option<i64>>("tpm_limit"), None);
     assert_eq!(row.get::<_, Option<i64>>("rpm_limit"), None);
@@ -509,7 +508,7 @@ fn assert_minimal_arrays(row: &Row) {
         row.get::<_, Option<Vec<String>>>("allowed_routes"),
         Some(Vec::new())
     );
-    assert_eq!(row.get::<_, Option<i32>>("rotation_count"), Some(0));
+    assert_eq!(row.get::<_, Option<i32>>("rotation_count"), Some(0_i32));
     assert_eq!(row.get::<_, Option<bool>>("auto_rotate"), Some(false));
 }
 
@@ -518,7 +517,7 @@ async fn insert_writes_the_record_postgres() {
     let database = Database::start().await;
     let record = record_from(SAMPLE_TOKEN);
     let client = database.client().await;
-    save_deleted_verification_token_records(&client, std::slice::from_ref(&record))
+    save_deleted_verification_token_records(&client, from_ref(&record))
         .await
         .unwrap();
     let row = only_row(&database).await;
@@ -548,11 +547,12 @@ async fn insert_leaves_absent_values_null_postgres() {
     );
     let record = records.pop().expect("one record for one token");
     let client = database.client().await;
-    save_deleted_verification_token_records(&client, std::slice::from_ref(&record))
+    save_deleted_verification_token_records(&client, from_ref(&record))
         .await
         .unwrap();
     let row = only_row(&database).await;
     assert_null_texts(&row);
+    assert_null_stamps(&row);
     assert_null_scalars(&row);
     assert_minimal_defaults(&row);
     assert_minimal_arrays(&row);
@@ -613,10 +613,10 @@ async fn insert_of_a_duplicate_id_reports_a_database_error_postgres() {
     let database = Database::start().await;
     let record = record_from(SAMPLE_TOKEN);
     let client = database.client().await;
-    save_deleted_verification_token_records(&client, std::slice::from_ref(&record))
+    save_deleted_verification_token_records(&client, from_ref(&record))
         .await
         .unwrap();
-    let error = save_deleted_verification_token_records(&client, std::slice::from_ref(&record))
+    let error = save_deleted_verification_token_records(&client, from_ref(&record))
         .await
         .expect_err("the second write collides on the id");
     assert!(matches!(&error, KeyArchiveError::Database { .. }));
@@ -631,7 +631,7 @@ async fn insert_of_a_batch_with_one_duplicate_writes_nothing_postgres() {
     let record = record_from(SAMPLE_TOKEN);
     let fresh = record_from(r#"{"token": "sk-fresh", "key_name": "fresh-key"}"#);
     let client = database.client().await;
-    save_deleted_verification_token_records(&client, std::slice::from_ref(&record))
+    save_deleted_verification_token_records(&client, from_ref(&record))
         .await
         .unwrap();
     let error = save_deleted_verification_token_records(&client, &[fresh, record])
@@ -649,7 +649,7 @@ async fn insert_runs_inside_the_callers_transaction_postgres() {
     let record = record_from(SAMPLE_TOKEN);
     let mut client = database.client().await;
     let rolled_back = client.transaction().await.expect("a transaction");
-    save_deleted_verification_token_records(&rolled_back, std::slice::from_ref(&record))
+    save_deleted_verification_token_records(&rolled_back, from_ref(&record))
         .await
         .unwrap();
     let inside: i64 = rolled_back
@@ -666,7 +666,7 @@ async fn insert_runs_inside_the_callers_transaction_postgres() {
         .get(0);
     assert_eq!(after, 0);
     let committed = client.transaction().await.expect("a transaction");
-    save_deleted_verification_token_records(&committed, std::slice::from_ref(&record))
+    save_deleted_verification_token_records(&committed, from_ref(&record))
         .await
         .unwrap();
     committed.commit().await.expect("the commit");
@@ -717,7 +717,7 @@ async fn persist_transforms_and_saves_postgres() {
 #[test]
 fn non_text_models_are_refused() {
     let record = record_from(r#"{"token": "sk-x", "models": [1]}"#);
-    let Err(error) = archived_parameters(std::slice::from_ref(&record)) else {
+    let Err(error) = archived_parameters(from_ref(&record)) else {
         panic!("a numeric model name is refused");
     };
     assert!(matches!(
@@ -729,7 +729,7 @@ fn non_text_models_are_refused() {
 #[test]
 fn non_text_cache_controls_are_refused() {
     let record = record_from(r#"{"token": "sk-x", "allowed_cache_controls": [1]}"#);
-    let Err(error) = archived_parameters(std::slice::from_ref(&record)) else {
+    let Err(error) = archived_parameters(from_ref(&record)) else {
         panic!("a numeric cache control is refused");
     };
     assert!(matches!(
@@ -743,7 +743,7 @@ fn non_text_cache_controls_are_refused() {
 #[test]
 fn non_text_allowed_routes_are_refused() {
     let record = record_from(r#"{"token": "sk-x", "allowed_routes": ["/chat", true]}"#);
-    let Err(error) = archived_parameters(std::slice::from_ref(&record)) else {
+    let Err(error) = archived_parameters(from_ref(&record)) else {
         panic!("a boolean route is refused");
     };
     assert!(matches!(
@@ -757,7 +757,7 @@ fn non_text_allowed_routes_are_refused() {
 #[test]
 fn unparsable_expires_is_refused() {
     let record = record_from(r#"{"token": "sk-x", "expires": "tomorrow"}"#);
-    let Err(error) = archived_parameters(std::slice::from_ref(&record)) else {
+    let Err(error) = archived_parameters(from_ref(&record)) else {
         panic!("a text expiry that is not a timestamp is refused");
     };
     assert!(matches!(

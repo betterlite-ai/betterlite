@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::slice::from_ref;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use betterlite_db::budget_permission_rows::Timestamp;
@@ -132,9 +133,7 @@ fn records_share_one_deleted_at() {
         transform_verification_tokens_to_deleted_records(&keys(), &caller(), None, &clock);
     assert_eq!(read_count(&clock), 1);
     let expected = Some(Timestamp::Naive(deleted_at().naive_utc()));
-    records
-        .iter()
-        .for_each(|record| assert_eq!(record.deleted_at, expected));
+    assert!(records.iter().all(|record| record.deleted_at == expected));
 }
 
 #[test]
@@ -161,7 +160,7 @@ fn every_record_copies_its_token() {
     let clock = counting_clock();
     let original = token(SAMPLE_TOKEN);
     let records = transform_verification_tokens_to_deleted_records(
-        std::slice::from_ref(&original),
+        from_ref(&original),
         &caller(),
         Some("changer-1"),
         &clock,
@@ -186,7 +185,7 @@ fn joined_relations_are_cleared() {
     assert!(original.object_permission.is_some());
     assert!(original.budget_limits.is_some());
     let records = transform_verification_tokens_to_deleted_records(
-        std::slice::from_ref(&original),
+        from_ref(&original),
         &caller(),
         None,
         &clock,
@@ -294,10 +293,10 @@ fn every_record_gets_a_fresh_uuid_id() {
         .collect();
     assert_eq!(ids.len(), 2);
     assert_ne!(ids[0], ids[1]);
-    ids.iter().for_each(|id| {
+    assert!(ids.iter().all(|id| {
         let parsed = Uuid::parse_str(id).expect("the archived id is a uuid");
-        assert_eq!(parsed.get_version_num(), 4);
-    });
+        parsed.get_version_num() == 4
+    }));
 }
 
 #[test]
