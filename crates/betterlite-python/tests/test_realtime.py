@@ -8,16 +8,19 @@ from contextlib import closing
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import ClassVar, Final, Protocol, runtime_checkable
 
+import litellm
 import pytest
 from batch_server import parameter_rows
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import TypedDict
 
+import betterlite
 from betterlite._completion.errors import UnsupportedCallArgument
 from betterlite._endpoints.payload import CallValue
 from betterlite._native import NativeRealtimeError
 from betterlite.realtime_api import (
     BaseLLMException,
+    MaskedHTTPStatusError,
     acreate_realtime_client_secret,
     acreate_realtime_transcription_session,
     arealtime_calls,
@@ -31,6 +34,7 @@ GOOD_KEY: Final = "sk-test"
 BAD_KEY: Final = "bad-key"
 EPHEMERAL_KEY: Final = "ek-test"
 MODEL: Final = "openai/gpt-4o-realtime-preview"
+NO_CONFIG_MODEL: Final = "anthropic/claude-3-5-sonnet-latest"
 RESOLVED_MODEL: Final = "gpt-4o-realtime-preview"
 TRANSCRIPTION_MODEL: Final = "openai/gpt-realtime-whisper"
 NESTED_MODEL: Final = "gpt-realtime-whisper"
@@ -61,6 +65,7 @@ CLIENT_SECRET_REQUEST: Final[dict[str, JsonValue]] = {
 TRANSCRIPTION_REQUEST: Final[dict[str, JsonValue]] = {
     "input_audio_transcription": {"model": NESTED_MODEL},
 }
+GLOBALS_REQUEST: Final[dict[str, JsonValue]] = {"session": {"type": "realtime"}}
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 DUMP: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
 
@@ -111,6 +116,9 @@ REFERENCE_TRANSCRIPTION: ReferenceModule = importlib.import_module("litellm")
 REFERENCE_CALLS: ReferenceModule = importlib.import_module("litellm")
 REFERENCE_ERRORS: ErrorModule = importlib.import_module(
     "litellm.llms.base_llm.chat.transformation"
+)
+REFERENCE_HTTP: ErrorModule = importlib.import_module(
+    "litellm.llms.custom_httpx.http_handler"
 )
 
 
@@ -186,7 +194,7 @@ def posted_fields(call: RecordedCall) -> dict[str, bytes]:
     return fields
 
 
-def error_fields(error: BaseException) -> ErrorFields:
+def error_fields(error: BaseException | ErrorFields) -> ErrorFields:
     match error:
         case ErrorFields():
             return error
@@ -287,6 +295,41 @@ def test_http_calls() -> None:
     assert DUMP.validate_json(ours_transcription.model_dump_json()) == TRANSCRIPTION_BODY
 
 
+def test_calls_read_module_globals() -> None:
+    our_key, our_base = betterlite.api_key, betterlite.api_base
+    their_key, their_base = litellm.api_key, litellm.api_base
+    with closing(RealtimeServer()) as server:
+        try:
+            betterlite.api_key, betterlite.api_base = GOOD_KEY, server.url
+            litellm.api_key = GOOD_KEY
+            litellm.api_base = server.url
+            ours = asyncio.run(
+                acreate_realtime_client_secret(
+                    model=MODEL, session={"type": "realtime"}
+                )
+            )
+            ours_call = server.calls[-1]
+            theirs = asyncio.run(
+                REFERENCE_SECRET.acreate_realtime_client_secret(
+                    model=MODEL, session={"type": "realtime"}
+                )
+            )
+            theirs_call = server.calls[-1]
+        finally:
+            betterlite.api_key, betterlite.api_base = our_key, our_base
+            litellm.api_key = their_key
+            litellm.api_base = their_base
+    assert ours_call["path"] == theirs_call["path"] == CLIENTS_PATH
+    assert JSON.validate_json(ours_call["body"]) == GLOBALS_REQUEST
+    assert JSON.validate_json(ours_call["body"]) == JSON.validate_json(
+        theirs_call["body"]
+    )
+    assert DUMP.validate_json(ours.model_dump_json()) == DUMP.validate_python(
+        theirs.json()
+    )
+    assert DUMP.validate_json(ours.model_dump_json()) == CLIENT_SECRET_BODY
+
+
 def test_realtime_calls() -> None:
     with closing(RealtimeServer()) as server:
         ours = asyncio.run(
@@ -352,6 +395,37 @@ def test_provider_error() -> None:
     assert theirs.value.__class__.__name__ == "BaseLLMException"
     failure = FAILURE.validate_json(str(native_cause(ours.value)))
     assert failure["type"] == "BaseLLMException"
+    assert failure["message"] == AUTH_TEXT
+    assert failure["status_code"] == UNAUTHORIZED
+
+
+def test_masked_status_error() -> None:
+    reference_error = REFERENCE_HTTP.MaskedHTTPStatusError
+    with closing(RealtimeServer()) as server:
+        with pytest.raises(reference_error) as theirs:
+            asyncio.run(
+                REFERENCE_SECRET.acreate_realtime_client_secret(
+                    model=NO_CONFIG_MODEL,
+                    api_base=server.url,
+                    api_key=BAD_KEY,
+                )
+            )
+        with pytest.raises(MaskedHTTPStatusError) as ours:
+            asyncio.run(
+                acreate_realtime_client_secret(
+                    model=NO_CONFIG_MODEL,
+                    api_base=server.url,
+                    api_key=BAD_KEY,
+                )
+            )
+    assert error_fields(ours.value).status_code == UNAUTHORIZED
+    assert error_fields(theirs.value).status_code == UNAUTHORIZED
+    assert error_fields(ours.value).message == AUTH_TEXT
+    assert error_fields(theirs.value).message == AUTH_TEXT
+    assert ours.value.__class__.__name__ == theirs.value.__class__.__name__
+    assert theirs.value.__class__.__name__ == "MaskedHTTPStatusError"
+    failure = FAILURE.validate_json(str(native_cause(ours.value)))
+    assert failure["type"] == "MaskedHTTPStatusError"
     assert failure["message"] == AUTH_TEXT
     assert failure["status_code"] == UNAUTHORIZED
 
