@@ -21,14 +21,41 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use secrecy::SecretString;
 
-use super::auth_identity::StageFailure;
 use super::auth_resource_grants::denial_response;
 use super::extract_key;
+use crate::auth::auth_model_patterns::ModelAccessRejection;
 use crate::error_body::AuthenticationFailure;
 use crate::state::ServerState;
 use crate::state::auth_errors::AuthFailureHook;
 
 mod tests;
+
+// the failure each auth stage yields; this module turns it into the response the proxy sends
+pub(crate) enum StageFailure {
+    Authentication(Box<AuthenticationFailure>),
+    KeyLookup(Box<ProxyException>),
+    ModelAccess(Box<ModelAccessRejection>),
+    EntityModelAccess(Box<ProxyException>),
+    AuthRequestPolicy(Box<ProxyException>),
+    ResourceGrants(Box<ProxyException>),
+    TagBudgets(Box<ProxyException>),
+    RequestBodySafety(Box<ProxyException>),
+    VirtualKeyRoutes(Box<ProxyException>),
+    KeyBudgets(Box<ProxyException>),
+    ModelBudgets(Box<ProxyException>),
+    TeamBudgets(Box<ProxyException>),
+    OrganizationRoutePolicy(Box<ProxyException>),
+    OrgLookup(Box<ProxyException>),
+    EndUsers(Box<ProxyException>),
+    AuthPolicySupport(Box<ProxyException>),
+    ModelGrants(Box<ProxyException>),
+}
+
+impl From<AuthenticationFailure> for StageFailure {
+    fn from(failure: AuthenticationFailure) -> Self {
+        Self::Authentication(Box::new(failure))
+    }
+}
 
 struct ServerPorts {
     hook: Option<Arc<dyn AuthFailureHook>>,
@@ -199,11 +226,5 @@ fn raised_exception(failure: &StageFailure) -> Option<ProxyException> {
             AuthenticationFailure::Missing => None,
         },
         StageFailure::ModelAccess(_) => None,
-    }
-}
-
-impl From<AuthenticationFailure> for StageFailure {
-    fn from(failure: AuthenticationFailure) -> Self {
-        Self::Authentication(Box::new(failure))
     }
 }

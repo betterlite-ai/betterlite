@@ -5,7 +5,6 @@ use betterlite_auth::auth_identity::records::{
     CredentialRef, NetworkContext, Principal, SourceKey,
 };
 use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType};
-use betterlite_error::proxy_exception::ProxyException;
 use secrecy::{ExposeSecret as _, SecretString};
 use subtle::ConstantTimeEq as _;
 
@@ -13,7 +12,7 @@ use crate::auth::auth_end_users::EndUserStageInput;
 use crate::auth::auth_key_budgets::KeyBudgetStageInput;
 use crate::auth::auth_key_lookup::KeyLookupStageInput;
 use crate::auth::auth_model_budgets::ModelBudgetStageInput;
-use crate::auth::auth_model_patterns::{ModelAccessRejection, ModelPatternStageInput, run_stage};
+use crate::auth::auth_model_patterns::{ModelPatternStageInput, run_stage};
 use crate::auth::auth_org_lookup::OrgStageInput;
 use crate::auth::auth_policy_support::{self, AuthPolicySupportStageInput};
 use crate::auth::auth_request_models::{RequestModelStageInput, resolve};
@@ -131,25 +130,8 @@ pub trait BudgetAdmission {
     ) -> Result<AdmissionLease, AuthError>;
 }
 
-pub(crate) enum StageFailure {
-    Authentication(Box<AuthenticationFailure>),
-    KeyLookup(Box<ProxyException>),
-    ModelAccess(Box<ModelAccessRejection>),
-    EntityModelAccess(Box<ProxyException>),
-    AuthRequestPolicy(Box<ProxyException>),
-    ResourceGrants(Box<ProxyException>),
-    TagBudgets(Box<ProxyException>),
-    RequestBodySafety(Box<ProxyException>),
-    VirtualKeyRoutes(Box<ProxyException>),
-    KeyBudgets(Box<ProxyException>),
-    ModelBudgets(Box<ProxyException>),
-    TeamBudgets(Box<ProxyException>),
-    OrganizationRoutePolicy(Box<ProxyException>),
-    OrgLookup(Box<ProxyException>),
-    EndUsers(Box<ProxyException>),
-    AuthPolicySupport(Box<ProxyException>),
-    ModelGrants(Box<ProxyException>),
-}
+// the failure type lives with its response mapping in auth_errors.rs; the re-export keeps this path
+pub(crate) use crate::auth::auth_errors::StageFailure;
 
 impl StageInput {
     // the prefetch reads the cache, database and router, so the caller awaits it on the owned input
