@@ -1,7 +1,7 @@
 import asyncio
 from collections.abc import Coroutine
 from datetime import UTC, datetime
-from typing import ClassVar, Literal, Never, Protocol, TypeVar, TypedDict, Unpack
+from typing import ClassVar, Literal, Never, Protocol, TypedDict, TypeVar, Unpack
 
 import litellm
 import openai
@@ -140,9 +140,8 @@ class RefusingRegistry(VectorStoreRegistry):
     refusal: ClassVar[str] = "a vector store read must not consult the registry"
 
     @override
-    def get_credentials_for_vector_store(  # ast-grep-ignore: no-long-names
-        self, _vector_store_id: str
-    ) -> Never:
+    # ast-grep-ignore: no-long-names
+    def get_credentials_for_vector_store(self, _vector_store_id: str) -> Never:
         raise RuntimeError(self.refusal)
 
 
