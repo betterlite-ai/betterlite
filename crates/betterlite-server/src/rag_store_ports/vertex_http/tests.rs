@@ -10,6 +10,7 @@ use betterlite_test_ports::refused_port::RefusedPort;
 use secrecy::SecretString;
 
 use super::VertexRagHttp;
+use super::multipart_boundary;
 use crate::rag_store_ports::test_support::{Reply, client, with_server};
 
 const TOKEN: &str = "secret-token";
@@ -118,17 +119,22 @@ async fn post_multipart_sends_the_metadata_and_the_file() {
         .headers
         .get("content-type")
         .expect("the multipart content type");
-    // the boundary is sha256 of the metadata and then the file, so it cannot repeat inside them
-    assert_eq!(
-        content_type,
-        "multipart/form-data; boundary=betterlite-486380f0ed1bbecc5989a8d5376d835079c599eada654533c6172055009da8d9"
-    );
+    assert!(content_type.starts_with("multipart/form-data; boundary=betterlite-"));
     assert!(request.body.contains(
         "Content-Disposition: form-data; name=\"metadata\"\r\nContent-Type: application/json\r\n\r\n{\"rag_file\":{\"display_name\":\"notes.txt\"}}\r\n"
     ));
     assert!(request.body.contains(
         "Content-Disposition: form-data; name=\"file\"; filename=\"notes.txt\"\r\nContent-Type: text/plain\r\n\r\nhello\r\n"
     ));
+}
+
+#[test]
+fn the_multipart_boundary_is_the_parts_digest() {
+    // sha256 of the metadata and then the file, so the boundary cannot repeat inside them
+    assert_eq!(
+        multipart_boundary(br#"{"rag_file":{"display_name":"notes.txt"}}"#, b"hello"),
+        "betterlite-486380f0ed1bbecc5989a8d5376d835079c599eada654533c6172055009da8d9"
+    );
 }
 
 #[tokio::test]
