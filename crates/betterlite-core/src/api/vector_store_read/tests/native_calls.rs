@@ -286,6 +286,7 @@ async fn native_retrieve_request() {
         .get(AUTHORIZATION)
         .expect("the request carries an authorization header");
     assert_eq!(sent.to_str().ok(), Some("Bearer sk-caller"));
+    drop(requests);
 }
 
 #[tokio::test]
@@ -302,6 +303,7 @@ async fn native_list_request() {
     assert_eq!(requests[0].url.path(), "/v1/vector_stores");
     assert_eq!(requests[0].url.query(), Some("limit=20&order=desc"));
     assert!(matches!(requests[0].body, RequestBody::Empty));
+    drop(requests);
 }
 
 #[tokio::test]
