@@ -15,7 +15,7 @@ deviations:
 - what: "`delete_eval` and `cancel_eval` with a provider that has no evals API config answer a `BadRequestError` (400), where LiteLLM's `ValueError` goes through `exception_type` and comes out as an `APIConnectionError` (500)."
   why: "The provider name is the caller's input and the call can never succeed; B3423 made that call for the native lifecycle service, and these functions surface the class it chose."
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L879-L884
-- what: "The async twins set the async keyword, call their sync twin and await the coroutine it answers, instead of running the sync function through functools.partial, contextvars.copy_context and loop.run_in_executor."
+- what: "The async twins set the async keyword and await the native async operation: acreate_eval and acancel_eval call their sync twin and await the coroutine it answers, and alist_evals, aget_eval, aupdate_eval and adelete_eval build the same payload and await the session's async method. LiteLLM instead runs every sync body through functools.partial, contextvars.copy_context and loop.run_in_executor."
   why: The native operation is async end to end, so there is no blocking body to hand to an executor; the event loop stays free and both names return the same result or the same mapped error.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L44-L110
 - what: "A value outside its declared type (a non-string header value, or metadata, extra_query and extra_body values that are not JSON) raises a 400 that names the field, where LiteLLM's dict updates pass the object on and httpx or the provider fails later."
