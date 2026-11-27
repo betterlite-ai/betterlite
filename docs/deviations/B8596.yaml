@@ -1,0 +1,6 @@
+task: B8596
+deviations:
+  - what: MS_TEAMS_WEBHOOK_URL is masked for a PROXY_ADMIN and replaced with REDACTED for every other caller in the ms_teams alert entry of /get/config/callbacks.
+    why: LiteLLM's alerting key sets leave the Teams webhook URL plaintext for every caller, but the URL carries its access token in the path, as the Slack webhook URL LiteLLM masks does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1674
+kept_bugs: []
