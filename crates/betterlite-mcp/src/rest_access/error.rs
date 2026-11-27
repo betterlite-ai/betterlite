@@ -23,12 +23,12 @@ pub enum RestDetail {
 
 // ast-grep-ignore: no-spelling-impls - text renders bare and objects as JSON, by variant
 impl fmt::Display for RestDetail {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Text(text) => formatter.write_str(text),
+            Self::Text(text) => f.write_str(text),
             Self::Error { .. } | Self::ErrorMessage { .. } => {
                 let encoded = serde_json::to_string(self).map_err(|_source| fmt::Error)?;
-                formatter.write_str(&encoded)
+                f.write_str(&encoded)
             }
         }
     }
