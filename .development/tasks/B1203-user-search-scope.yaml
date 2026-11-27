@@ -8,9 +8,9 @@ description: >-
   projection at _types.py L3789-L3791 below B124: output only user_id and user_email (default null), never
   other columns or a pagination envelope.
 
-  Call B066 get_ui_settings_cached and read scope_user_search_to_org with default false. This is stored
+  Call B1659 get_ui_settings_cached and read scope_user_search_to_org with default false. This is stored
   in litellm_uisettings, row id ui_settings, not general_settings or a dedicated environment variable.
-  B066 owns cache key ui_settings:settings_dict, TTL 600, stored-JSON decoding and allowed-field filtering.
+  B1659 owns cache key ui_settings:settings_dict, TTL 600, stored-JSON decoding and allowed-field filtering.
   A falsey value permits any authenticated caller to search all users. A truthy value first permits B2314
   admin-view roles proxy_admin and proxy_admin_viewer without scoping. Otherwise fetch a non-null caller
   user_id through B736 with user_id_upsert=false, swallowing only ValueError. Collect ALL organization
@@ -55,7 +55,7 @@ description: >-
   source lines).
 
 
-  B001 HTTP cases run this route through the actual authenticated proxy. Seed B066's persisted UI settings
+  B001 HTTP cases run this route through the actual authenticated proxy. Seed B1659's persisted UI settings
   and cache state, then prove absent/false/true flag behavior and cached-setting consumption. Missing bearer
   exercises B052's rejection; an unrelated authenticated user is allowed when the flag is off. An unknown
   searched user produces [] rather than an invalid-target error. No cookies, redirects or changed-by header
@@ -65,12 +65,12 @@ description: >-
   Use POSTGRES_TEST_URL when supplied, otherwise testcontainers via betterlite-postgres-fixture. Native
   Postgres tests inspect the actual predicates, page offsets and response redaction, plus failures from UI
   settings/cache/user/team loading and user queries. An unavailable selected fixture fails the test. The
-  flag's stored-data and cache boundary belongs to B066, so do not add a fake config-loader acceptance test.
+  flag's stored-data and cache boundary belongs to B1659, so do not add a fake config-loader acceptance test.
 
 
   Sizing starts with 173 helper/route lines before docstring exclusion and the response projection:
   allow 210 production, 380 behavior/Postgres tests and 100 HTTP integration/wiring lines, totaling 690
-  within 750. B003 parses query parameters; B066 decodes stored settings. Neither decoder is duplicated.
+  within 750. B003 parses query parameters; B1659 decodes stored settings. Neither decoder is duplicated.
 
 
   HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
@@ -100,7 +100,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L2205-L2215
     why: Own _user_search_where; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L1667-L1703
-    why: B066 owns the actual stored UI-setting lookup and cache, not a YAML setting.
+    why: B1659 owns the actual stored UI-setting lookup and cache, not a YAML setting.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3789-L3791
     why: The response exposes exactly user_id and nullable user_email.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L368-L419
@@ -147,7 +147,7 @@ oracle_cases:
   - tools/oracle/cases/management/user-search-scope/missing-database-and-query-errors.yaml
 deviations: []
 out_of_scope:
-  - B066 owns get_ui_settings_cached, its cache constants, UISettingsRepository access and settings mutation routes.
+  - B1659 owns get_ui_settings_cached, its cache constants and UISettingsRepository access; settings mutation routes remain outside this task.
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B056 owns new_user (L482-L672).'
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B790 owns _user_table (L121-L125),
     _team_table (L128-L132), _verification_token_table (L135-L141), _organization_membership_table (L148-L154),

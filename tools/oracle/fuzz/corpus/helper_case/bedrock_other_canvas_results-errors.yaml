@@ -1,0 +1,20 @@
+kind: helper
+name: bedrock-other-canvas-results-errors
+call:
+  bedrock_other_canvas_results:
+    model_cost: {}
+    calls:
+      - model: amazon.nova-canvas-v1:0
+        status: 200
+        body: '{"errors":null}'
+      - model: amazon.nova-canvas-v1:0
+        status: 200
+        body: '{"message":5}'
+      - model: amazon.nova-canvas-v1:0
+        status: 200
+        body: '{"images":[""],"errors":"bad"}'
+      - model: amazon.nova-canvas-v1:0
+        status: 200
+        body: '{"images":["eA=="],"errors":"bad"}'
+env: {}
+compare: {ignore: []}
