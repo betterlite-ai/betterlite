@@ -45,6 +45,15 @@ fn role(text: &str) -> Option<UserRole> {
     Some(text.parse().unwrap())
 }
 
+struct MarkerNonces;
+
+impl NonceSource for MarkerNonces {
+    fn fill(&self, nonce: &mut [u8]) -> Result<(), SecretError> {
+        nonce.fill(0xAB);
+        Ok(())
+    }
+}
+
 #[tokio::test]
 async fn consent_reads_the_cache_source() {
     let store = FakeStore {
@@ -309,16 +318,6 @@ async fn mint_token_without_a_team_carries_the_user_models_and_effective_role() 
     assert_eq!(record.team_id, None);
     assert_eq!(record.user_role, role("internal_user"));
     assert!(record.team_models.is_empty());
-}
-
-#[tokio::test]
-struct MarkerNonces;
-
-impl NonceSource for MarkerNonces {
-    fn fill(&self, nonce: &mut [u8]) -> Result<(), SecretError> {
-        nonce.fill(0xAB);
-        Ok(())
-    }
 }
 
 #[test]
