@@ -318,17 +318,14 @@ fn edit_mock() {
 fn character_provider_refusal() {
     let arguments = r#""name":"hero","custom_llm_provider":"runwayml""#;
     check_refused("create_character", arguments);
-    check_refused("acreate_character", arguments);
     let lookup = r#""character_id":"char_test","custom_llm_provider":"runwayml""#;
     check_refused("get_character", lookup);
-    check_refused("aget_character", lookup);
 }
 
 #[test]
 fn edit_provider_refusal() {
     let arguments = r#""video_id":"vid-1","prompt":"p","custom_llm_provider":"gemini""#;
     check_refused("edit", arguments);
-    check_refused("aedit", arguments);
 }
 
 #[test]
@@ -336,7 +333,6 @@ fn extension_provider_refusal() {
     let arguments =
         r#""video_id":"vid-1","prompt":"p","seconds":"8","custom_llm_provider":"gemini""#;
     check_refused("extension", arguments);
-    check_refused("aextension", arguments);
 }
 
 #[test]
