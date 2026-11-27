@@ -9,7 +9,7 @@ description: >-
 
   Layout. crates/betterlite-server/src/mcp/catalog_views.rs holds CatalogViews (a struct whose fields are the ports and values the routes need, built by B8625 with a struct literal), the CatalogError enum (thiserror, one variant per failure, a status mapping used by the routes) and `routes()` which returns the axum router with the nine routes.
   The files beside it, each with a tests.rs: small_reads.rs (routes 1 to 3), registry_feed.rs (route 4), server_list.rs (route 5), health_routes.rs (route 6), server_detail.rs (route 7), discovery.rs (routes 8 and 9).
-  No global state. The LiteLLM globals become fields: the registry (B4731 ServerRegistry behind B6592's shared handle), the health service (B6592), the database port (B4711), the settings (B4717's management mode, this task's registry flag), the clock, the tool lister and the server access check (B4731's ServerAccessCheck).
+  No global state. The LiteLLM globals become fields: the registry (B4731 ServerRegistry behind B6592's shared handle), the health service (B6592), the database port (B4711), the settings (B10135's ManagementMode from config.sections.mcp_management_mode.mode, this task's registry flag), the live public server list that B10134's redaction reads, the clock, the tool lister, the server access check (B4731's ServerAccessCheck) and the accessible server sources (B10135's AccessibleServerSources).
 
 
   Config section. crates/betterlite-config/src/sections/mcp_registry.rs reads general_settings.enable_mcp_registry, a boolean that defaults to false, and exposes it as config.sections.mcp_registry. LiteLLM tests it with bool(...), and the declared type is a boolean, so only a boolean is accepted. Its tests live in the section's tests.rs and load a config file with the key set to true, to false and absent. The skeleton adds the stub, the `pub mod` line and the name in the sections! list; do not edit sections.rs or any shared config file.
@@ -34,20 +34,20 @@ description: >-
 
   Route 5. GET /v1/mcp/server lists servers for the dashboard. Query: team_id (optional string) and connected_app_view (bool, default false). The response model is a list of B858's LiteLLM_MCPServerTable, every field serialized, nulls included.
   Steps, in this order.
-  a. Let restricted = B4717's is_restricted_virtual_key_request(auth). A team_id that is a string with non-blank content takes the team branch (a blank or whitespace-only value takes the normal branch, not an error).
+  a. Let restricted = B10135's is_restricted_virtual_key_request(auth). A team_id that is a string with non-blank content takes the team branch (a blank or whitespace-only value takes the normal branch, not an error).
   b. Team branch. A restricted key gets 403 with the string detail "Restricted virtual keys cannot query team-scoped MCP servers." The id is trimmed. A caller without admin view (B2314's user_api_key_has_admin_view: PROXY_ADMIN and PROXY_ADMIN_VIEW_ONLY) loads the team with B737's get_team_object(team_id, check_db_only true), which raises its own error for an unknown team and that error passes through unchanged. If no member of the team has user_id equal to the caller's user_id (members with a None user_id never match) the answer is 403 with the string detail "You do not have permission to view MCP servers for this team." Then the list is the team-scoped list (step c), sorted.
   c. Team-scoped list (`_get_team_scoped_mcp_server_list`). Load the team again with get_team_object(team_id, check_db_only true). The id set is B818's _get_team_allowed_mcp_servers(team) united with B817's _get_allow_all_keys_server_ids(). An empty set gives []. Otherwise each id is read with B4731's server_by_id (no ip), ids the registry does not know are skipped, and each found record becomes a table row with B4731's server_table. The rows are then redacted with B4717's redact list function.
-  d. Normal branch: B4717's resolve_accessible_mcp_servers(auth), then B4717's redact list function, then sorted.
+  d. Normal branch: B10135's resolve_accessible_mcp_servers(registry, sources, auth, mode), then B4717's redact list function, then sorted. A sources error is a server error.
   e. Sort key (`_mcp_server_display_order`): the lowercase of server_name, else alias, else server_id, then the server_id as a tie breaker.
-  f. connected_app_view: only when the flag is true and B10070's is_ui_session_credential(auth) is true, set connected_app_reachable on every row to whether its server_id is in the reachable set. The reachable set (`_connected_app_reachable_server_ids`) is empty when B4672's admitted_user_context(auth) is None, else B6591's allowed_servers(admitted).
+  f. connected_app_view: only when the flag is true and B10070's is_ui_session_credential(auth) is true, set connected_app_reachable on every row to whether its server_id is in the reachable set. The reachable set (`_connected_app_reachable_server_ids`) is empty when B10127's admitted_user_context(auth) is None, else B6591's allowed_servers(admitted).
   g. has_user_credential: only when the caller has a non-empty user_id and a database exists. Take the rows with is_byok true. If there are any, read the credential rows of B4711's _db_find_user_credential_rows with where user_id = the caller and server_id in those ids (one query), and set has_user_credential on each BYOK row to whether its id is among them. Any credential row counts, BYOK or OAuth, because both share the table and the query has no type filter.
   h. A restricted key gets B4717's sanitize list for virtual key. Else a caller who is not a full admin (B4717's user_is_full_admin: PROXY_ADMIN only) gets B4717's sanitize list for non-admin. Else the redacted rows are returned.
   This route needs no database for the normal branch: without one the answer is built from the registry alone.
 
   Route 6. GET /v1/mcp/server/health. Query: server_ids (repeatable, optional) and include_reachability (bool, default false). It returns a JSON list of {"server_id": id, "status": s}.
   s goes through `_mcp_health_status_for_response`: the value "reachable" becomes "unknown" unless include_reachability is true, and every other value (healthy, unhealthy, unknown, or null) is unchanged, null staying null.
-  When B4717's get_user_mcp_management_mode is "view_all" and the key is not restricted, the rows come from B6592's with_health_unfiltered(server_ids), in its order.
-  Otherwise, for each context in B4672's build_effective_auth_contexts(auth), call B6592's with_health_and_teams(context, server_ids, checked) where checked is a copy of the ids already collected before this call, and keep a server's status the first time it is seen. The output order is the order of first sight. Nothing is health-checked twice.
+  When the ManagementMode (B10135) is ViewAll and the key is not restricted, the rows come from B6592's with_health_unfiltered(server_ids), in its order.
+  Otherwise, for each context in B10127's build_effective_auth_contexts(auth), call B6592's with_health_and_teams(context, server_ids, checked) where checked is a copy of the ids already collected before this call, and keep a server's status the first time it is seen. The output order is the order of first sight. Nothing is health-checked twice.
 
   Route 7. GET /v1/mcp/server/{server_id} describes one server. Query: include_reachability (bool, default false). The static path /server/health must win over this path.
   Steps, in this order.
@@ -56,7 +56,7 @@ description: >-
   c. B4731's resolve_server(server_id, no temp lookup, db lookup = B4711's get_mcp_server, id_client_ip = client_ip, name_client_ip = client_ip, match_name true), then authorize_server with: the auth; the access check; is_admin_view; not_found_detail {"error": "MCP Server with id <id> not found"}; forbidden_detail {"error": "User does not have permission to view mcp server with id <id>. You can only view mcp servers that you have access to."}; non_admin_missing "not_found"; and allow_catalog_view = management mode is "view_all" AND key not restricted AND the resolved row exists AND its approval_status is None, "active" or "approved" AND the registry knows the id (server_by_id with no ip is Some).
   d. When the authorized source is the database, add the server to the registry with B6592's add_server(row). This changes shared state on a read.
   e. Health: B6592's check_server(server_id). On success set status to the `_mcp_health_status_for_response` value (null becomes "unknown"), last_health_check and health_check_error from the result. On any error from it: status "unknown", last_health_check = the current time as a naive ISO-8601 datetime in the process's local time (no zone suffix), health_check_error = the error text, and a debug log line "Error performing health check on server %s: %s".
-  f. B4717's redact. A restricted key gets sanitize for virtual key; else a non-full-admin gets sanitize for non-admin; else the redacted row.
+  f. B10134's redact_mcp_credentials. A restricted key gets sanitize for virtual key; else a non-full-admin gets sanitize for non-admin; else the redacted row.
 
   Route 8. GET /v1/mcp/discover is the curated list of well-known servers for the dashboard's add-server grid. Query: query (optional) and category (optional).
   A caller without admin view gets 403 with the object detail {"error": "Only proxy admins can access MCP discovery. Your role=<user_role>"}, where <user_role> is the role's string value as LiteLLM prints it (read B2314 for the enum's text; a key without a role prints None).
@@ -92,7 +92,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L1069-L1107
     why: Route 4, registry.json, with no auth dependency, the flag gate, the ip filter, the sort and the per-record skip.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L1109-L1190
-    why: The display sort key, the team-scoped server list and the connected app reachable set (the management mode and accessible-server helpers in the same range belong to B4717).
+    why: The display sort key, the team-scoped server list and the connected app reachable set (the management mode and accessible-server helpers in the same range belong to B10135).
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L1191-L1300
     why: Route 5 from its decorator, the team branch, the connected app annotation, the BYOK annotation and the two sanitizer exits.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L1302-L1371
@@ -186,11 +186,11 @@ deviations:
     why: LiteLLM's _list_mcp_tools lives in operations.py, which no task owns yet. See the report notes.
 
 out_of_scope:
-  - "_get_user_mcp_management_mode, _resolve_accessible_mcp_servers, _is_restricted_virtual_key_request, _user_is_full_admin, _redact_mcp_credentials, _redact_mcp_credentials_list and the four sanitize functions: owned by B4717; this task only calls them."
+  - "_get_user_mcp_management_mode, _resolve_accessible_mcp_servers and _is_restricted_virtual_key_request: owned by B10135. _redact_mcp_credentials: owned by B10134. _user_is_full_admin, _redact_mcp_credentials_list and the four sanitize functions: owned by B4717. This task only calls them."
   - "get_prisma_client_or_throw, get_mcp_server, _db_find_user_credential_rows and the server table handle: owned by B4711."
   - "resolve_mcp_server, authorize_mcp_server, get_mcp_server_by_id, get_filtered_registry and _build_mcp_server_table: owned by B4731."
   - "get_allowed_mcp_servers: owned by B6591. health_check_server, get_all_mcp_servers_with_health_and_teams, get_all_mcp_servers_with_health_unfiltered and add_server: owned by B6592."
-  - "is_ui_session_credential: owned by B10070. admitted_user_context and build_effective_auth_contexts: owned by B4672. user_api_key_has_admin_view: owned by B2314."
+  - "is_ui_session_credential: owned by B10070. admitted_user_context and build_effective_auth_contexts: owned by B10127. user_api_key_has_admin_view: owned by B2314."
   - "get_team_object: owned by B737. _get_team_allowed_mcp_servers: owned by B818. _get_allow_all_keys_server_ids: owned by B817."
   - "get_mcp_client_ip: owned by B743. get_request_base_url: owned by B4654. get_server_prefix: owned by B6594."
   - "The OpenAPI catalog data and its loader (_load_openapi_registry): owned by B4231; route 9 only serves what it loads."

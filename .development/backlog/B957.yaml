@@ -2,7 +2,7 @@ id: B957
 milestone: M5 api families
 title: Chat mcp loop
 status: todo
-depends_on: [B014, B171, B950, B951, B956, B1087]
+depends_on: [B014, B171, B950, B10121, B10123, B956, B1087]
 file: tasks/B957-chat-mcp-loop.yaml
 covers:
   - "litellm/responses/mcp/chat_completions_handler.py"

@@ -14,7 +14,7 @@ description: >-
 
 
   views.rs. B4720's CatalogViews: the registry from McpCore, McpCore's B6592 health service, the database port over
-  B4711, B4717's management mode settings, McpIdentity's ServerAccessCheck (B8621), config.sections.mcp_registry, a system clock, the gateway name and
+  B4711, B10135's ManagementMode (config.sections.mcp_management_mode.mode), McpIdentity's ServerAccessCheck (B8621), config.sections.mcp_registry, a system clock, the gateway name and
   description from B8620's section, and a ToolLister whose list_tools(auth) calls B8197's _list_mcp_tools entry with
   only the auth (no auth header, no server filter, no per-server headers, no client ip) and returns only the tools.
   GET /v1/mcp/registry.json is served without a key in LiteLLM while the other eight routes take one, and B4720 returns
