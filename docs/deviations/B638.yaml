@@ -1,0 +1,37 @@
+task: B638
+deviations:
+  - what: >-
+      A timeout reaches the caller as B682 BedrockError with status 408 and the message "the provider request timed
+      out". LiteLLM's shared HTTP handler turns the httpx timeout into litellm.Timeout (status 408, message
+      "litellm.Timeout: Connection timed out after {timeout} seconds.") before the handler's own
+      BedrockError(408, "Timeout error occurred.") catch can see it.
+    why: >-
+      The status is the stable field both report, and the shared transport has one timeout without the httpx
+      exception or the HTTPHandler's own message template. No working Bedrock edit setup branches on the text
+      of a timeout error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_edit/handler.py#L115-L124
+  - what: >-
+      A response body that is not UTF-8 reports "N bytes that are not UTF-8" in the provider error message and
+      in the post_call original_response. LiteLLM reads httpx's response.text, which decodes those bytes with
+      replacement characters.
+    why: >-
+      betterlite refuses to mangle bytes it cannot decode, as the shared transport does for every other body;
+      replacement characters would put U+FFFD into a logged response and an error message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_edit/handler.py#L115-L124
+  - what: >-
+      A Stability reply for a model with no catalog record returns its images with a 0.0 response-cost header.
+      LiteLLM's stability transform calls get_model_info without a guard, so an unmapped model raises and the
+      already-fetched image is lost.
+    why: >-
+      B637 owns the transform and reads an absent record as the declared zero price; losing a paid image because
+      the price table lacks the model is a failure no working setup relies on, so it is fixed rather than copied.
+      An oracle case cannot compare the two there because LiteLLM raises on that input.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_edit/stability_transformation.py#L341-L346
+kept_bugs:
+  - what: >-
+      A Stability reply with an errors key raises whatever the key holds, and only the first finish_reasons
+      element is inspected; a truthy one fails the reply with status 400.
+    why: >-
+      Working Bedrock Stability responses carry errors only for failures and one finish reason, and B637's
+      transform keeps that contract; the execution layer hands it the raw reply unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_edit/stability_transformation.py#L302-L317
