@@ -101,6 +101,7 @@ description: >-
   B1100 registers state/auth_model_budgets.rs as a stub slot, so fill only crates/betterlite-server/src/state/auth_model_budgets.rs and leave state.rs as it is.
 scope:
   paths:
+    - "crates/betterlite-auth/**"
     - crates/betterlite-auth/src/auth_model_budgets.rs
     - crates/betterlite-auth/src/auth_model_budgets/**
     - crates/betterlite-auth/Cargo.toml
