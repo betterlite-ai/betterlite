@@ -21,6 +21,7 @@ use betterlite_db::managed_resource_rows::wire::RowTimestamp;
 use rstest::rstest;
 use rust_decimal::Decimal;
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
 use sha2::{Digest as _, Sha256};
 
 use super::{BENCHMARKS_PATH, ReadState, SESSION_PATH, read};
@@ -250,7 +251,7 @@ async fn session(
 
 async fn decode<T>(response: Response) -> T
 where
-    T: for<'de> Deserialize<'de>,
+    T: DeserializeOwned,
 {
     let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     serde_json::from_slice(&bytes).unwrap()

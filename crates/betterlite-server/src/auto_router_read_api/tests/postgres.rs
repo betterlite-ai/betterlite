@@ -376,6 +376,11 @@ async fn rollup_savings(reads: &PgAutoRouterReads) {
 }
 
 async fn filtered_views(reads: &PgAutoRouterReads) {
+    user_filtered_views(reads).await;
+    key_and_past_views(reads).await;
+}
+
+async fn user_filtered_views(reads: &PgAutoRouterReads) {
     let mine = benchmarks_for(
         reads,
         &super::BenchmarksQuery {
@@ -390,6 +395,9 @@ async fn filtered_views(reads: &PgAutoRouterReads) {
     assert_eq!(mine.groups.len(), 1);
     assert_eq!(mine.groups[0].router_name, "quality-auto");
     assert_eq!(mine.groups[0].turns, 3);
+}
+
+async fn key_and_past_views(reads: &PgAutoRouterReads) {
     let keyed = benchmarks_for(
         reads,
         &super::BenchmarksQuery {
