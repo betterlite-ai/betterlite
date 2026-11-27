@@ -329,3 +329,56 @@ fn a_call_that_outlives_its_timeout_raises_the_family_error() {
     });
     let _request = serving.finish().unwrap();
 }
+
+#[test]
+fn session_settings_supply_the_credentials_the_call_uses() {
+    Python::initialize();
+    let serving = serve(
+        reply("200 OK", &[("content-type", "application/json")], FILE),
+        Duration::ZERO,
+    )
+    .unwrap();
+    let settings = format!(
+        r#"{{"environment":{{}},"api_base":"http://{}/v1","api_key":"sk-global"}}"#,
+        serving.address
+    );
+    Python::attach(|py| {
+        let module = PyModule::new(py, "vector_file_settings_test").unwrap();
+        register(&module).unwrap();
+        let session = module
+            .getattr("NativeVectorFileSession")
+            .unwrap()
+            .call1((settings,))
+            .unwrap();
+        let globals = PyDict::new(py);
+        globals.set_item("session", session).unwrap();
+        globals.set_item("method", "create").unwrap();
+        globals
+            .set_item(
+                "payload",
+                r#"{"vector_store_id":"vs_a","file_id":"file_1","kwargs":{}}"#,
+            )
+            .unwrap();
+        globals.set_item("blobs", Vec::<Vec<u8>>::new()).unwrap();
+        py.run(INVOKE, Some(&globals), None).unwrap();
+        let answer = globals.get_item("answer").unwrap().unwrap();
+        let text: String = answer.extract().unwrap();
+        assert!(text.contains(r#""id":"file_1""#), "{text}");
+    });
+    let request = serving.finish().unwrap();
+    assert!(
+        request
+            .head
+            .to_lowercase()
+            .contains("authorization: bearer sk-global"),
+        "{}",
+        request.head
+    );
+    assert!(
+        request
+            .line
+            .starts_with("POST /v1/vector_stores/vs_a/files HTTP/"),
+        "{}",
+        request.line
+    );
+}

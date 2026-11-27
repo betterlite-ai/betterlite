@@ -176,3 +176,5 @@ impl SessionCore {
         })
     }
 }
+
+mod tests;
