@@ -18,6 +18,11 @@ description: >-
   decoding uses B1131's existing records and corpus; no new parser or helper oracle is needed.
 scope:
   paths:
+  - "crates/betterlite-router/src/deployment_identity/tests.rs"
+  - "crates/betterlite-router/src/deployment_identity/params.rs"
+  - "crates/betterlite-models/src/call_helpers/tests.rs"
+  - "crates/betterlite-models/src/call_helpers/generic_params.rs"
+  - "crates/betterlite-models/src/call_helpers.rs"
   - "crates/betterlite-server/src/db_row_decrypt/deployments.rs"
   - crates/betterlite-server/src/api.rs
   - crates/betterlite-server/src/api/**
