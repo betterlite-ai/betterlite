@@ -29,7 +29,7 @@ use betterlite_openai::openai_video_identifiers::ids::{
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use http::HeaderMap;
 use indexmap::IndexMap;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 
 use crate::video_edits::adapter::OpenAiEditConfig;
 use crate::video_edits::session::logging as call_logging;
