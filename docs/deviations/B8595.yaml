@@ -1,0 +1,53 @@
+task: B8595
+deviations:
+  - what: >-
+      The update and delete answers carry only param_name and param_value; the
+      Prisma row LiteLLM returns also carries last_run_at and reload_revision.
+    why: >-
+      betterlite's config row is a (param_name, param_value) pair throughout
+      B8380's ConfigStateDatabase, and LiteLLM's own readers ignore the two
+      extra columns.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L18345
+  - what: >-
+      The config audit row is awaited before the answer; LiteLLM schedules it
+      with asyncio.create_task and answers without waiting.
+    why: >-
+      betterlite's audit sink is a plain async call, so awaiting it makes the
+      audit visible when the route answers instead of racing the caller.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L18360
+  - what: >-
+      A request FastAPI rejects while parsing (a missing or unknown
+      config_type, a missing field_name, a body that is not JSON) answers 422
+      with {"detail": "<sentence>"}; LiteLLM answers 422 with FastAPI's
+      {"detail": [{"loc": ..., "msg": ..., "type": ...}]} list.
+    why: >-
+      docs/compatibility.md leaves pydantic's and FastAPI's runtime validation
+      envelope out of the contract; the status code is the same.
+    link: ""
+  - what: >-
+      A value of the wrong JSON type is refused with 400 Invalid type of field
+      value=<type> passed in.; pydantic's non-strict model_validate would first
+      coerce some values (a numeric string into an int, an int into a float).
+    why: >-
+      docs/compatibility.md: a value of the wrong type is an error that names
+      the field, and Python's silent coercion is not ported.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L18301
+  - what: >-
+      A null litellm_settings section counts as absent: persist creates it and
+      reset leaves it out; LiteLLM's presence checks pass for a null section
+      and the following indexing raises AttributeError, answering 500.
+    why: >-
+      A null section means the same as an absent one under
+      docs/compatibility.md, and a 500 for it is not something a working setup
+      can rely on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L18721
+kept_bugs:
+  - what: >-
+      The delete route neither re-registers plugins nor re-applies the SSRF
+      settings after it pops the field, while update does both.
+    why: >-
+      LiteLLM's delete has no register_plugins_from_config and no
+      _apply_ssrf_general_settings call, and a dashboard that deletes one field
+      relies on the rest of the process staying as it was; betterlite copies
+      the omission.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L18982
