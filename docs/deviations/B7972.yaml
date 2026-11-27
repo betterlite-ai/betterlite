@@ -1,0 +1,28 @@
+task: B7972
+deviations:
+  - what: >-
+      A 502 detail that quotes a server name escapes only the backslash, the quote it chooses, newline, carriage
+      return and tab; Python's repr also escapes every other control character and every non-printable character,
+      as \\xNN, \\uNNNN or \\UXXXXXXXX.
+    why: >-
+      The task fixes Python's repr for a plain name, and deciding printability for every Unicode category needs
+      Python's own table, which std does not carry; a name holding such a character reads raw in the detail.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L2562-L2580
+  - what: >-
+      The root document's resource keeps a request base URL that has no scheme exactly as given, where Python's
+      urlparse finds an empty scheme and netloc and LiteLLM writes resource "://".
+    why: >-
+      A base URL from a real request always has a scheme, and the unusable "://" explains nothing when one is
+      missing.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L2651-L2659
+  - what: >-
+      The 200 body decoder reads UTF-8 RFC 8259 JSON, so a body that Python's json.loads accepts but serde_json
+      refuses (UTF-16 or UTF-32 text, a NaN or Infinity literal) counts as no metadata and is logged.
+    why: >-
+      Upstream metadata is UTF-8 standard JSON, and a NaN or Infinity value cannot survive LiteLLM's own JSON
+      response either, so accepting it would only move the failure past the fetch.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L2452-L2463
+kept_bugs: []
