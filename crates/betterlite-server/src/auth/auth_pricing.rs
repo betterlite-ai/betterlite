@@ -80,9 +80,8 @@ impl Default for PricingRule {
 
 // the token never reaches the debug line, only whether the stage has one
 impl fmt::Debug for PricingRule {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("PricingRule")
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PricingRule")
             .field("has_auth", &self.auth.is_some())
             .field(
                 "project_id",

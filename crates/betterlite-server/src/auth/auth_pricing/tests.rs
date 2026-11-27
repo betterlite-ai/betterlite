@@ -76,7 +76,7 @@ fn stage_is_registered() {
     );
 
     let master_key = SecretString::from(MASTER_KEY.to_owned());
-    let stage = PricingStageInput {
+    let payload = PricingStageInput {
         context: master_context(&master_key),
         rule: Arc::new(PricingRule::default()),
         method: Some("POST".to_owned()),
@@ -85,7 +85,7 @@ fn stage_is_registered() {
         settings: Settings::default(),
         max_recurse_depth: 100,
     };
-    let input = StageInput::AuthPricing(Box::new(stage));
+    let input = StageInput::AuthPricing(Box::new(payload));
     let Ok(forwarded) = dispatch(AuthBackend::AuthPricing, &input, &master_key) else {
         panic!("the B732 constructor dispatches to the production pricing stage");
     };
@@ -177,44 +177,38 @@ async fn failure_stops_downstream() {
     assert!(body.contains("\"param\":null"), "{body}");
     assert!(body.contains("\"code\":\"422\""), "{body}");
     assert!(!reached);
+}
 
-    // a zero ceiling disables the proxy check, so the same spend reaches the handler
-    let (off_status, _body, off_reached) = run_request(&config("0"), "10").await;
-    assert_eq!(off_status, StatusCode::OK);
-    assert!(off_reached);
+// a zero ceiling disables the proxy check, so the same spend reaches the handler
+#[tokio::test]
+async fn zero_ceiling_reaches_downstream() {
+    let (status, _body, reached) = run_request(&config("0"), "10").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(reached);
+}
 
-    // a project budget with no spend reader cannot be verified, so the stage answers 503
+// a project budget with no spend reader cannot be verified, so the stage answers 503
+#[tokio::test]
+async fn unverifiable_project_spend_answers_503() {
     let project: CachedProject = serde_json::from_str(
         r#"{"project_id":"proj-budget","blocked":false,"models":[],
             "litellm_budget_table":{"budget_id":"b1","max_budget":5,"soft_budget":0}}"#,
     )
     .expect("the project row decodes");
     let rule = PricingRule {
-        auth: None,
         project: Some(project),
-        model: RequestedModels::None,
-        catalog: None,
-        view: None,
-        provider: None,
-        global_model_aliases: BTreeMap::new(),
-        reader: None,
-        alerts: None,
-        global_spend: None,
+        ..PricingRule::default()
     };
-    let (project_status, project_body, project_reached) =
-        run_rule(&config("0"), rule, MODEL_ROUTE, "{}").await;
-    assert_eq!(project_status, StatusCode::SERVICE_UNAVAILABLE);
-    assert!(
-        project_body.contains(BUDGET_UNVERIFIABLE_DETAIL),
-        "{project_body}"
-    );
-    assert!(
-        project_body.contains("\"type\":\"auth_error\""),
-        "{project_body}"
-    );
-    assert!(!project_reached);
+    let (status, body, reached) = run_rule(&config("0"), rule, MODEL_ROUTE, "{}").await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert!(body.contains(BUDGET_UNVERIFIABLE_DETAIL), "{body}");
+    assert!(body.contains("\"type\":\"auth_error\""), "{body}");
+    assert!(!reached);
+}
 
-    // a client-side tags list is a 400 bad_request_error that names the param
+// a client-side tags list is a 400 bad_request_error that names the param
+#[tokio::test]
+async fn request_checks_refuse() {
     let tags_config = config_with("  reject_clientside_metadata_tags: true\n", "0");
     let (tags_status, tags_body, tags_reached) = run_rule(
         &tags_config,
