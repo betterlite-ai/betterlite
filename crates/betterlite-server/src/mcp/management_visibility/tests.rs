@@ -323,11 +323,16 @@ fn every_other_credential_field_counts(#[case] fixture: &str) {
 // the guard lists the complement of B10134's keys, so widening that constant must fail here until the guard follows
 #[test]
 fn admin_config_keys_from_b10134_are_not_credentials() {
-    for key in MCP_ADMIN_CONFIG_CREDENTIAL_KEYS {
-        let supplied: MCPCredentials =
-            serde_json::from_str(&format!(r#"{{"{key}": "value"}}"#)).unwrap();
-        assert!(!has_non_admin_config_credentials(Some(&supplied)));
-    }
+    assert_eq!(
+        MCP_ADMIN_CONFIG_CREDENTIAL_KEYS,
+        ["upstream_resource", "upstream_token_header"]
+    );
+    let resource: MCPCredentials =
+        serde_json::from_str(r#"{"upstream_resource": "value"}"#).unwrap();
+    assert!(!has_non_admin_config_credentials(Some(&resource)));
+    let header: MCPCredentials =
+        serde_json::from_str(r#"{"upstream_token_header": "value"}"#).unwrap();
+    assert!(!has_non_admin_config_credentials(Some(&header)));
 }
 
 #[test]

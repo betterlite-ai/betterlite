@@ -1,9 +1,8 @@
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Final, Literal, NotRequired, TypeAlias, TypedDict
 
 import litellm
-from fastapi import HTTPException
 from litellm.proxy._experimental.mcp_server.mcp_server_manager import (
     global_mcp_server_manager,
 )
@@ -21,6 +20,7 @@ from litellm.proxy.management_endpoints.mcp_management_endpoints import (
 )
 from litellm.types.mcp import MCPCredentials
 from pydantic import JsonValue, TypeAdapter
+from starlette.exceptions import HTTPException
 
 from b10079 import servers_by_id
 
@@ -104,10 +104,11 @@ class InheritAnswer(TypedDict):
 
 SERVER: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
 INHERIT_ANSWER: Final[TypeAdapter[InheritAnswer]] = TypeAdapter(InheritAnswer)
+AUTH: Final[TypeAdapter[UserAPIKeyAuth]] = TypeAdapter(UserAPIKeyAuth)
 
 
 @contextmanager
-def servers_swapped(call: RegistryCall) -> Iterator[None]:
+def servers_swapped(call: RegistryCall) -> Generator[None, None, None]:
     saved = (
         global_mcp_server_manager.config_mcp_servers,
         global_mcp_server_manager.registry,
@@ -165,12 +166,12 @@ def virtual_key_list(call: VirtualKeyListCall) -> list[dict[str, JsonValue]]:
 
 
 def full_admin(call: FullAdminCall) -> dict[str, JsonValue]:
-    auth = UserAPIKeyAuth.model_validate(call["auth"])
+    auth = AUTH.validate_python(call["auth"])
     return {"full_admin": _user_is_full_admin(auth)}
 
 
 def credential_target(call: CredentialTargetCall) -> dict[str, JsonValue]:
-    auth = UserAPIKeyAuth.model_validate(call["auth"])
+    auth = AUTH.validate_python(call["auth"])
     try:
         target = _resolve_credential_target_user_id(auth, call["requested_user_id"])
     except HTTPException as error:
