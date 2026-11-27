@@ -70,7 +70,7 @@ pub(crate) struct Memory {
 }
 
 // the backing store the retrieve warm-up scans and reads; the source's litellm.cache is always a RedisCache here
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub(crate) struct Remote {
     pub(crate) scan_keys: Vec<String>,
     pub(crate) batch_entries: IndexMap<String, Json>,
