@@ -1,0 +1,13 @@
+id: B10199
+milestone: R2 bug fixes
+title: The managed agent routes run the request pipeline and the Gemini agent calls in production
+status: todo
+depends_on: [B10200, B3508, B3504, B3505, B9800, B9802, B744, B8800, B8399, B8610, B8612, B8631, B8802, B081]
+file: tasks/B10199-agent-request-processing.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -4,6 +4,7 @@ pub mod eval_deployments;
 pub mod evals;
 pub mod gateway_compaction;
 pub mod google;
+pub mod google_agents;
 pub mod limit_parity;
 pub mod native_compaction;
 pub mod pre_call;

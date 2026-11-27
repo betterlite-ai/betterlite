@@ -1,0 +1,68 @@
+id: B10200
+title: The Gemini agents config that B3504's and B3505's agent calls take exists in production
+description: >-
+  B3504's create and list calls (crates/betterlite-core/src/api/agents/collection/creation.rs L13, listing.rs L13) take a `Config: AgentsApiConfig` (crates/betterlite-http/src/interactions/agents_create_read.rs L68), and B3505's get, delete and list_versions (crates/betterlite-core/src/api/agents/item.rs L50-L158) take that one and an `AgentsConfig` (agents_delete_versions.rs L52). Core's get_agents_api_config answers only `AgentsProvider::Gemini` and leaves the config value to its caller (crates/betterlite-core/src/api/agents.rs L18-L22). B1392 ported LiteLLM's GeminiAgentsConfig as functions in crates/betterlite-vertex/src/studio_agents (headers.rs validate_environment, urls.rs collection_target, item_target and versions_target, request.rs create_agent_body, decode.rs decode_studio_agent_payload and decode_studio_agent_delete), but nothing outside the oracle implements the two traits over them. The only implementations are oracle adapters: tools/oracle/src/helpers/core_ops/b3504/gemini.rs wraps the studio_agents functions, and b3505/fixture.rs with b3505/records.rs is a hand-written stand-in for the provider. So B10199 has no config value for the agent routes, and the oracle carries two copies of the provider. This task writes the config once in betterlite-vertex and points both oracle adapters at it.
+
+
+  Module `studio_agents::config` (crates/betterlite-vertex/src/studio_agents/config.rs and config/: error.rs, params.rs, tests.rs). Declare it with `pub mod config;` in crates/betterlite-vertex/src/studio_agents.rs. `pub struct GeminiAgentsConfig { pub settings: Settings }` holds B1392's `betterlite_config::sections::studio_identity::Settings`, which already resolved GOOGLE_API_KEY, GEMINI_API_KEY and the Studio base at config load; callers write the struct literal. It implements `ErrorClasses` with `Error = GeminiAgentError`, `AgentsApiConfig` with `CreateOutput = StudioAgent`, `ListOutput = AgentPage` and `GetOutput = StudioAgent`, and `AgentsConfig` with `DeleteOutput = AgentDeleteResult` and `VersionsOutput = AgentVersionsPage`, all from studio_agents::records, since those already serialize to the JSON LiteLLM's AgentCreateResponse, AgentListResponse, AgentDeleteResult and AgentVersionsResponse dump. validate_environment (both traits) reads the AgentParams and calls headers::validate_environment; get_complete_url answers collection_target's url; transform_create_request answers create_agent_body as Params; transform_list_request, transform_get_request and transform_versions_request answer the target's url with its query pairs as text params; transform_delete_request answers item_target's url; the create, get, list and versions responses go through decode_studio_agent_payload with the operation and the name, and delete through decode_studio_agent_delete. get_error_class answers `GeminiAgentError::Status { status, message, headers }`, LiteLLM's GeminiError(message, status_code, headers).
+
+
+  Errors (config/error.rs). `GeminiAgentError` has Studio (B1392's StudioAgentError), Status, and `Params { field: &'static str }` for a litellm_params value that is not the declared type. It implements B3504's `AgentFailure` (status_code: the Gemini or Status status, None for the rest) and B3505's `ProviderFailure` (status_code: the same status; for the errors LiteLLM raises as a plain ValueError, the missing key and the custom base without a key, the status B3505's dispatch needs to give exception_type's answer for a ValueError, read from betterlite-error's dispatch and checked by a test). message is the Gemini body for Gemini and Status, and the Display text for the rest.
+
+
+  Params (config/params.rs). `agent_params(params: &Params) -> Result<AgentParams, GeminiAgentError>` reads api_key, api_base, base_agent, instructions, page_token as optional text, page_size as an optional integer and base_environment as B1392's BaseEnvironment, where absent and null are None and another JSON kind is the Params error that names the field. base_environment comes out of the JsonValue through serde without a serde_json::Value hop, since the crate lints refuse Value outside a passthrough field.
+
+
+  Oracle. b3504/gemini.rs goes, and b3504.rs builds `GeminiAgentsConfig { settings }` where it built GeminiConfig; the helper's result serializes the records it gets back. b3505/fixture.rs and b3505/records.rs go, b3505.rs, harness.rs and projection.rs use the same config, and each helper builds its Settings from the case env the way the studio_identity section reads it, since a helper reads no process environment. The 9 cases in tools/oracle/cases/agents/collection and the 12 item-*.yaml cases in tools/oracle/cases/agents must still match LiteLLM: their Python side already runs LiteLLM's real GeminiAgentsConfig against the case's mock server.
+
+
+  Tests in studio_agents::config::tests, against a betterlite_http_fixture mock: create sends the body with name, base_agent, instructions and base_environment and x-goog-api-key, and answers a StudioAgent whose id falls back to the name on a non-JSON reply; list and versions send pageSize and pageToken only when set and answer next_page_token; get reads one agent; delete answers name and deleted true on 200 and 204; a 404 reply becomes Status with 404 and the body as message; an api_base without an api_key is the Studio error and sends nothing; a non-text api_key is the Params error naming api_key; and the ProviderFailure status of the missing-key error gives the same class B3505's dispatch gives a ValueError.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/studio_agents.rs
+    - crates/betterlite-vertex/src/studio_agents/config.rs
+    - crates/betterlite-vertex/src/studio_agents/config/**
+    - tools/oracle/src/helpers/core_ops/b3504.rs
+    - tools/oracle/src/helpers/core_ops/b3504/**
+    - tools/oracle/src/helpers/core_ops/b3505.rs
+    - tools/oracle/src/helpers/core_ops/b3505/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/agents/transformation.py#L55-L294
+    why: GeminiAgentsConfig, every method the two traits stand for; B1392 ported the steps, this task binds them to the traits.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/utils.py#L41-L53
+    why: get_provider_agents_api_config answers GeminiAgentsConfig() for gemini, the value this task makes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/agents.py#L346-L403
+    why: The four response models whose dumps the studio_agents records match.
+dod:
+  - text: GeminiAgentsConfig implements ErrorClasses, AgentsApiConfig and AgentsConfig over B1392's studio_agents functions, and each operation sends LiteLLM's request and answers its record or its error.
+    proof: [config-tests]
+  - text: Neither oracle adapter keeps its own Gemini config, and every agents helper case still matches LiteLLM through the shared one.
+    proof: [no-oracle-copies, agent-cases]
+checks:
+  optional: []
+  commands:
+    - id: config-tests
+      why: an operation sends the wrong URL, query, headers or body, a reply decodes wrong, or a failure carries the wrong status
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^studio_agents::config::/)'
+    - id: no-oracle-copies
+      why: an oracle adapter still implements the agents traits or its own Gemini records
+      run: test -z "$(grep -rnE 'impl (ErrorClasses|AgentsApiConfig|AgentsConfig) for|fn (agent_response|deleted_agent|gemini_headers|agent_params)\(' tools/oracle/src/helpers/core_ops/b3504.rs tools/oracle/src/helpers/core_ops/b3504 tools/oracle/src/helpers/core_ops/b3505.rs tools/oracle/src/helpers/core_ops/b3505)" && grep -rq 'GeminiAgentsConfig' tools/oracle/src/helpers/core_ops/b3504.rs tools/oracle/src/helpers/core_ops/b3505.rs
+    - id: agent-cases
+      why: the shared config answers an agents helper case differently from LiteLLM
+      run: test -z "$(grep -rn 'impl AgentsApiConfig for' tools/oracle/src/helpers/core_ops/b3504 tools/oracle/src/helpers/core_ops/b3505)" && cargo run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-core-ops -- tools/oracle/cases/agents/collection tools/oracle/cases/agents/item-*.yaml
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "Calling the config from the proxy's agent routes: B10199."
+  - "The studio_agents steps themselves (URLs, headers, decode, the response cap): B1392."
+  - "core's own copy of the agent records in crates/betterlite-core/src/agents/provider.rs (AgentCreateResponse and the rest); nothing in this task reads them."
+pitfalls:
+  - "LiteLLM's list and versions send pageSize and pageToken only when truthy, so page_size 0 and page_token \"\" send nothing; urls.rs pagination already does that, so pass the params through and add no check of your own."
+  - "AgentsApiConfig.validate_environment takes the caller's headers as BTreeMap<String, String> and AgentsConfig's takes RequestHeaders; both answer RequestHeaders, so the SecretString values B1392's AgentHeaders carries stay secret all the way."
+  - "The missing-key and custom-base errors carry no status in LiteLLM, but ProviderFailure::status_code is a u16; pick the status by reading what exception_type does with a ValueError and prove it in a test, never by guessing 500."
+  - "The oracle helpers read only the case input and env: build Settings from the case env, so a case that sets GEMINI_API_KEY in env still finds its key."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
