@@ -1,8 +1,10 @@
 id: B330
 title: Build bounded classifier context from request messages
 description: 'Build ClassifierContext from B384 extracted messages, opening/current asks, caller constraints,
-  prior-turn budgets and bounded images. Adapt B080 Responses and B081 Messages into B010 structured messages
-  through server services. Truncate only classifier input, preserving Unicode counting and provider payloads.
+  prior-turn budgets and bounded images. Adapt B080 Responses and Messages into B010 structured messages
+  through server services; the Messages adapter calls B3675 get_structured_messages in
+  guardrails::anthropic_translation::input_scan, already on main, without invoking an HTTP route.
+  Truncate only classifier input, preserving Unicode counting and provider payloads.
   Configuration boundary keys introduced or consumed here: classifier_context_window_size, classifier_context_budget_chars,
   classifier_context_per_turn_chars, classifier_context_include_assistant_turns. Pinned declaration defaults:
   classifier_context_window_size=DEFAULT_CLASSIFIER_CONTEXT_WINDOW_SIZE; classifier_context_budget_chars=DEFAULT_CLASSIFIER_CONTEXT_BUDGET_CHARS;

@@ -1,0 +1,22 @@
+kind: helper
+name: realtime-probe-connection-settings
+call:
+  realtime_probe_websocket:
+    scenarios:
+      - model: probe-model
+        custom_llm_provider: openai
+        api_key: sk-openai
+        api_base: https://probe.example/v1
+        settings: {max_message_size_bytes: 2048, credential_timeout_seconds: 20.0}
+      - model: probe-model
+        custom_llm_provider: xai
+        api_key: sk-xai
+        settings: {max_message_size_bytes: 2048, credential_timeout_seconds: 20.0}
+      - model: realtime-a
+        custom_llm_provider: azure
+        api_key: sk-azure
+        api_base: https://azure.example
+        settings: {max_message_size_bytes: 2048, credential_timeout_seconds: 20.0}
+env:
+  REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES: "2048"
+compare: {ignore: []}

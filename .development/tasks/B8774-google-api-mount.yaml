@@ -14,7 +14,7 @@ description: >-
 
   Where. Module `app::inference::google` (crates/betterlite-server/src/app/inference/google.rs and google/tests.rs). In
   crates/betterlite-server/src/app/inference.rs add one line to `mount` that calls `google::mount(router, state)`,
-  after the lines B8634 and B8635 wrote, and the `mod google;` line. google::mount merges, each once and in this
+  preserving any existing mounts. B10082 already declares `mod google` and the mount function on main; fill this task's declared module and add no duplicate declaration. This mount uses no search, decisions or container service from B8634/B8635. google::mount merges, each once and in this
   order, `api::genai_routes::routes(..)`, `api::interaction_routes::routes(..)` with
   `app::spend::budget::interaction_release(&state.shared)` as its release argument, and
   `api::agents::collection_routes::routes(..)`. B3507's and B3508's route states keep B8801's

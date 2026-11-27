@@ -1,0 +1,32 @@
+kind: helper
+name: auth-key-lookup-session-outcomes
+call:
+  auth_key_lookup:
+    aspect: session
+    auth: {token: sess-token, user_id: u1, team_id: t1, is_session_token: true}
+    user_outcome: gone
+calls:
+  # an unreadable user row keeps the minted grants
+  - auth_key_lookup:
+      aspect: session
+      auth: {token: sess-token, user_id: u1, team_id: t1, is_session_token: true}
+      user_outcome: outage
+  # a user the live row no longer lists in the team is refused
+  - auth_key_lookup:
+      aspect: session
+      auth: {token: sess-token, user_id: u1, team_id: t1, is_session_token: true}
+      user: {user_id: u1, teams: [other]}
+      team: {team_id: t1, team_alias: live}
+  # a team row that no longer exists is refused
+  - auth_key_lookup:
+      aspect: session
+      auth: {token: sess-token, user_id: u1, team_id: t1, is_session_token: true}
+      user: {user_id: u1, teams: [t1]}
+      membership: {user_id: u1, team_id: t1}
+  # a session whose user row is gone but whose team still resolves keeps the minted grants
+  - auth_key_lookup:
+      aspect: session
+      auth: {token: sess-token, user_id: u1, team_id: t1, is_session_token: true}
+      team: {team_id: t1, team_alias: live}
+env: {}
+compare: {ignore: []}

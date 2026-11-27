@@ -1,0 +1,23 @@
+kind: helper
+name: bedrock-other-canvas-results-cost
+call:
+  bedrock_other_canvas_results:
+    model_cost:
+      canvas-fixture-priced: {output_cost_per_image: 0.07}
+      canvas-fixture-null: {output_cost_per_image: null}
+      canvas-fixture-unpriced: {}
+    calls:
+      - model: canvas-fixture-priced
+        status: 200
+        body: '{"images":["eA==","eQ=="]}'
+      - model: canvas-fixture-null
+        status: 200
+        body: '{"images":["eA=="]}'
+      - model: canvas-fixture-unpriced
+        status: 200
+        body: '{"images":["eA=="]}'
+      - model: canvas-fixture-absent
+        status: 200
+        body: '{"images":["eA=="]}'
+env: {}
+compare: {ignore: []}

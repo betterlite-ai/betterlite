@@ -1,0 +1,31 @@
+task: B885
+deviations:
+  - what: >-
+      A stored user models column that holds a non-string entry is read as its string entries alone. LiteLLM
+      returns the column as stored from enforced_model_allowlists, and its attribution builds one frozenset
+      out of every granted list, where an unhashable entry (a dict or a list) raises TypeError and loses the
+      whole stamp for that request.
+    why: >-
+      betterlite-db keeps the user models column untyped, so the row decodes where a declared list[str] would
+      reject it. Only a string can name a group or a model, so dropping the entry keeps the rest of the
+      allowlist in force. non_text_user_models_grant_nothing proves the dropped entry while the string paths
+      are covered by db_five_list_order, user_not_found_only_suppressed and matched_group_stamping.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L4900-L4913
+kept_bugs:
+  - what: >-
+      An organization lookup failure during access group attribution is swallowed with a debug line, and the
+      org contributes no grants. A request that authorized normally is never denied because the attribution
+      read failed.
+    why: >-
+      The comments in LiteLLM call this fail-safe, and a working setup relies on attribution never breaking
+      auth. The enforcement walk still lets every team, user, project and membership failure escape, so
+      org_error_debug_empty and team_project_errors_escape prove both sides.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L4740-L4742
+  - what: >-
+      A collection failure inside stamp_matched_model_access_groups (a registry read, a router scan, a lookup
+      escaping the attribution walk) is swallowed with a debug line and an existing stamp stays untouched.
+    why: >-
+      LiteLLM treats the stamp as spend telemetry rather than an authorization decision, so a broken
+      registry or router must not fail the request. stamp_exception_debug_drop proves the debug line and the
+      kept stamp.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L4947-L4949
