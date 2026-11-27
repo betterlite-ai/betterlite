@@ -57,18 +57,20 @@ const MIXED_OUTPUT: &str = r#"[
     {"type":"image_generation_call","id":"ig_1","status":"completed","result":null},
     {"type":"message","id":"msg_2","status":"completed","role":"assistant","content":[{"type":"output_text","text":"two","annotations":[]}]},
     {"type":"reasoning","summary":[],"content":null},
-    {"type":"message","id":"msg_3","status":"completed","role":"assistant"}
+    {"type":"message","id":"msg_3","status":"completed","role":"assistant"},
+    {"type":"message","id":"msg_4","role":"assistant","content":"plain"},
+    {"type":"message","id":"msg_5","role":"assistant","content":null}
 ]"#;
 
 const MIXED_KEPT: &str = r#"[
-    {"type":"message","role":"assistant","content":[{"type":"output_text","text":"one","annotations":[]},{"type":"output_text","text":"two","annotations":[]}]},
+    {"type":"message","role":"assistant","content":[{"type":"output_text","text":"one","annotations":[]},{"type":"output_text","text":"two","annotations":[]},"plain",null]},
     {"type":"function_call","call_id":"call_1","name":"weather","arguments":"{\"city\":\"Paris\"}"},
     {"type":"reasoning","id":"rs_1","summary":[{"type":"summary_text","text":"thinking"}],"encrypted_content":"enc"},
     {"type":"reasoning","summary":[],"content":null}
 ]"#;
 
 const MIXED_DROPPED: &str = r#"[
-    {"type":"message","role":"assistant","content":[{"type":"output_text","text":"one","annotations":[]},{"type":"output_text","text":"two","annotations":[]}]},
+    {"type":"message","role":"assistant","content":[{"type":"output_text","text":"one","annotations":[]},{"type":"output_text","text":"two","annotations":[]},"plain",null]},
     {"type":"function_call","call_id":"call_1","name":"weather","arguments":"{\"city\":\"Paris\"}"}
 ]"#;
 

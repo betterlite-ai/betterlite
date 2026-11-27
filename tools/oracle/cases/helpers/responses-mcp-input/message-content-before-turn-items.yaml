@@ -15,6 +15,8 @@ call:
             - {type: message, id: msg_2, status: completed, role: assistant, content: [{type: output_text, text: two, annotations: []}]}
             - {type: reasoning, summary: [], content: null}
             - {type: message, id: msg_3, status: completed, role: assistant}
+            - {type: message, id: msg_4, role: assistant, content: plain}
+            - {type: message, id: msg_5, role: assistant, content: null}
         tool_results: []
         preserve_reasoning: true
       - function: follow_up
@@ -29,6 +31,8 @@ call:
             - {type: message, id: msg_2, status: completed, role: assistant, content: [{type: output_text, text: two, annotations: []}]}
             - {type: reasoning, summary: [], content: null}
             - {type: message, id: msg_3, status: completed, role: assistant}
+            - {type: message, id: msg_4, role: assistant, content: plain}
+            - {type: message, id: msg_5, role: assistant, content: null}
         tool_results: []
         preserve_reasoning: false
 env: {}
