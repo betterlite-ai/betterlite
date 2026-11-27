@@ -195,17 +195,12 @@ impl StageInput {
     }
 }
 
-fn stage_accepts(backend: AuthBackend, input: &StageInput) -> bool {
-    backend == input.backend()
-        || (backend == AuthBackend::MasterKey && matches!(input, StageInput::Authenticated(_)))
-}
-
 pub(crate) fn dispatch(
     backend: AuthBackend,
     input: &StageInput,
     master_key: &SecretString,
 ) -> Result<AuthContext, StageFailure> {
-    if !stage_accepts(backend, input) {
+    if backend != input.backend() && !(backend == MasterKey && matches!(input, Authenticated(_))) {
         return Err(StageFailure::from(AuthenticationFailure::Missing));
     }
     match input {
