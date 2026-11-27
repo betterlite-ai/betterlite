@@ -16,7 +16,7 @@ use super::plan::{
 use super::steps::{
     CallStepError, GATED_MOCK_PARAM_NAMES, mock_params_disallowed, required_param_missing,
 };
-use super::{CallFailure, Context, MessagesCallError, MessagesCallSteps};
+use super::{CallFailure, Context, MessagesCallError, MessagesCallParts, MessagesCallSteps};
 use crate::keepalive_interval::DeploymentLookup;
 use crate::route_read_through::{ModelNotFoundCause as _, ModelReadThrough};
 
@@ -209,12 +209,45 @@ fn call_steps(
     user_model: Option<&str>,
 ) -> MessagesCallSteps {
     MessagesCallSteps::new(
-        dispatch_port(dispatch),
-        routing.map(routing_port),
-        read_through.map(read_through_port),
-        MockTestingParams { allowed },
-        user_model.map(str::to_owned),
+        "anthropic_messages",
+        MessagesCallParts {
+            dispatch: dispatch_port(dispatch),
+            routing: routing.map(routing_port),
+            read_through: read_through.map(read_through_port),
+            mock: MockTestingParams { allowed },
+            user_model: user_model.map(str::to_owned),
+        },
     )
+}
+
+#[tokio::test]
+async fn steps_name_their_route_type_in_not_found() {
+    let steps = MessagesCallSteps::new(
+        "agenerate_content",
+        MessagesCallParts {
+            dispatch: dispatch_port(Arc::new(FakeDispatch::default())),
+            routing: None,
+            read_through: None,
+            mock: MockTestingParams { allowed: false },
+            user_model: None,
+        },
+    );
+    let Err(error) = steps
+        .call(object(&[("model", text("mystery"))]), false)
+        .await
+    else {
+        panic!("an unserved model is refused");
+    };
+    assert_eq!(error.status(), 400);
+    assert_eq!(
+        error.http_detail(),
+        Some(JsonValue::Object(object(&[(
+            "error",
+            text(
+                "agenerate_content: Invalid model name passed in model=mystery. Call `/v1/models` to view available models for your key."
+            )
+        )])))
+    );
 }
 
 fn input(model: Option<&str>, has_model: bool) -> MessagesRouteInput {
@@ -876,6 +909,7 @@ fn a_call_failure_keeps_its_status_and_a_context_keeps_its_own() {
         param: None,
         headers: BTreeMap::new(),
         timeout: None,
+        cooldown: None,
     };
     let error = MessagesCallError::Call(failure);
     assert_eq!(error.status(), 429);
@@ -888,6 +922,7 @@ fn a_call_failure_keeps_its_status_and_a_context_keeps_its_own() {
         param: None,
         headers: BTreeMap::new(),
         timeout: None,
+        cooldown: None,
     };
     assert_eq!(MessagesCallError::Call(stateless).status(), 500);
     let context = Context {

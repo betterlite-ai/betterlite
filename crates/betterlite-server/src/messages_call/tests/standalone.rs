@@ -40,6 +40,7 @@ const DEPLOYMENT: &str =
 #[test]
 fn standalone_routing_knows_the_config_groups_and_deployment_names() {
     let routing = standalone_routing(
+        "anthropic_messages",
         standalone_executor(DEPLOYMENT),
         Arc::new(FakeDispatch::default()),
     );
@@ -59,6 +60,7 @@ fn standalone_routing_knows_the_config_groups_and_deployment_names() {
 #[test]
 fn standalone_routing_plans_its_groups_names_and_unknown_models() {
     let routing = standalone_routing(
+        "anthropic_messages",
         standalone_executor(DEPLOYMENT),
         Arc::new(FakeDispatch::default()),
     );
@@ -83,7 +85,11 @@ fn standalone_routing_plans_its_groups_names_and_unknown_models() {
 async fn standalone_anthropic_messages_writes_the_picked_deployment() {
     let executor = standalone_executor(DEPLOYMENT);
     let dispatch = Arc::new(FakeDispatch::default());
-    let routing = standalone_routing(Arc::clone(&executor), dispatch_port(Arc::clone(&dispatch)));
+    let routing = standalone_routing(
+        "anthropic_messages",
+        Arc::clone(&executor),
+        dispatch_port(Arc::clone(&dispatch)),
+    );
     let data = object(&[
         ("model", text("messages-model")),
         (
@@ -119,7 +125,11 @@ async fn standalone_anthropic_messages_writes_the_picked_deployment() {
 async fn standalone_anthropic_messages_replaces_a_non_object_model_info() {
     let executor = standalone_executor(DEPLOYMENT);
     let dispatch = Arc::new(FakeDispatch::default());
-    let routing = standalone_routing(Arc::clone(&executor), dispatch_port(Arc::clone(&dispatch)));
+    let routing = standalone_routing(
+        "anthropic_messages",
+        Arc::clone(&executor),
+        dispatch_port(Arc::clone(&dispatch)),
+    );
     let numeric = object(&[
         ("model", text("messages-model")),
         (
@@ -141,7 +151,11 @@ async fn standalone_anthropic_messages_replaces_a_non_object_model_info() {
 async fn standalone_specific_deployment_picks_the_named_litellm_model() {
     let executor = standalone_executor(DEPLOYMENT);
     let dispatch = Arc::new(FakeDispatch::default());
-    let routing = standalone_routing(Arc::clone(&executor), dispatch_port(Arc::clone(&dispatch)));
+    let routing = standalone_routing(
+        "anthropic_messages",
+        Arc::clone(&executor),
+        dispatch_port(Arc::clone(&dispatch)),
+    );
     routing
         .anthropic_messages(object(&[("model", text("openai/messages-model"))]), true)
         .await
@@ -156,7 +170,11 @@ const TWO_DEPLOYMENTS: &str = "model_list:\n  - model_name: first\n    litellm_p
 async fn standalone_specific_deployment_skips_the_other_litellm_models() {
     let executor = config_executor(TWO_DEPLOYMENTS);
     let dispatch = Arc::new(FakeDispatch::default());
-    let routing = standalone_routing(Arc::clone(&executor), dispatch_port(Arc::clone(&dispatch)));
+    let routing = standalone_routing(
+        "anthropic_messages",
+        Arc::clone(&executor),
+        dispatch_port(Arc::clone(&dispatch)),
+    );
     routing
         .anthropic_messages(object(&[("model", text("openai/second-model"))]), true)
         .await
@@ -171,7 +189,11 @@ async fn standalone_specific_deployment_skips_the_other_litellm_models() {
 async fn standalone_a2a_and_an_unknown_pick_answer_no_agent_and_not_found() {
     let executor = standalone_executor(DEPLOYMENT);
     let dispatch = Arc::new(FakeDispatch::default());
-    let routing = standalone_routing(Arc::clone(&executor), dispatch_port(Arc::clone(&dispatch)));
+    let routing = standalone_routing(
+        "anthropic_messages",
+        Arc::clone(&executor),
+        dispatch_port(Arc::clone(&dispatch)),
+    );
     assert!(routing.a2a_agent(JsonMap::new()).await.is_none());
     let Err(error) = routing
         .anthropic_messages(object(&[("model", text("mystery"))]), false)
