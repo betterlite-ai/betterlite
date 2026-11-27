@@ -73,6 +73,7 @@ pub fn build(
 }
 
 // with_agentops hands the connected callback to the arm through the catalog's own build closure
+#[must_use]
 pub(super) fn wrap(dispatch: ArmBuild, callback: AgentOpsCallback) -> ArmBuild {
     Arc::new(
         move |name: CallbackName,
