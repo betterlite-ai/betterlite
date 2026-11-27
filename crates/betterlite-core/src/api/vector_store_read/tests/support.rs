@@ -22,7 +22,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 use super::super::error::VectorStoreReadFailure;
 use super::super::service::{
-    ListQuery, Operation, ReadCall, ReadConfig, ReadProvider, VectorStoreReadConfigs,
+    Operation, ReadCall, ReadConfig, ReadProvider, VectorStoreReadConfigs,
 };
 use super::super::{
     TransportRequest, VectorStoreListRequest, VectorStoreReadDeps, VectorStoreReadRequest,
@@ -217,22 +217,28 @@ impl Which {
     }
 }
 
-pub(crate) async fn call<Provider: ReadProvider>(
+pub(crate) async fn call<Provider>(
     which: Which,
     provider: &Provider,
     fixture: &Fixture,
     request_timeout_seconds: f64,
-) -> Result<Json, VectorStoreReadFailure> {
+) -> Result<Json, VectorStoreReadFailure>
+where
+    Provider: ReadProvider,
+{
     call_with(which, provider, fixture, None, request_timeout_seconds).await
 }
 
-pub(crate) async fn call_with<Provider: ReadProvider>(
+pub(crate) async fn call_with<Provider>(
     which: Which,
     provider: &Provider,
     fixture: &Fixture,
     supplied: Option<SuppliedClient<'_, Provider::Client>>,
     request_timeout_seconds: f64,
-) -> Result<Json, VectorStoreReadFailure> {
+) -> Result<Json, VectorStoreReadFailure>
+where
+    Provider: ReadProvider,
+{
     let deps = VectorStoreReadDeps {
         configs: &fixture.configs,
         logging: &fixture.logging,

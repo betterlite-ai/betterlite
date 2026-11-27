@@ -20,13 +20,14 @@ use rstest::rstest;
 use secrecy::SecretString;
 use serde_json::from_str;
 
-use super::super::service::{ListQuery, Operation, ReadCall, ReadProvider};
+use super::super::service::{Operation, ReadCall, ReadProvider};
 use super::support::{
     Fixture, REQUEST_TIMEOUT, Which, call_with, listing, moment, record, redactor, supplied,
 };
 use crate::api::vector_store_http_create_read::error::CreateReadError;
 use crate::api::vector_store_http_create_read::service::{
-    CreateReadCall, CreateReadDeps, CreateReadTarget, ListCall, RetrieveCall, prepare, send,
+    CreateReadCall, CreateReadDeps, CreateReadTarget, ListCall, ListQuery as HttpListQuery,
+    RetrieveCall, prepare, send,
 };
 use crate::api::vector_store_http_write::error::ClientError;
 use crate::api::vector_store_http_write::service::{
@@ -41,8 +42,11 @@ pub(crate) struct Wire {
 }
 
 impl Wire {
-    fn replying(body: &str) -> Self {
-        Self::answering(200, body)
+    fn replying(value: &Json) -> Self {
+        Self::answering(
+            200,
+            &serde_json::to_string(value).expect("the fixture reply is JSON"),
+        )
     }
 
     fn answering(status: u16, body: &str) -> Self {
@@ -198,7 +202,7 @@ impl ReadProvider for Native {
                 }),
                 Operation::List => CreateReadCall::List(ListCall {
                     target,
-                    query: ListQuery {
+                    query: HttpListQuery {
                         after: call.query.after,
                         before: call.query.before,
                         limit: call.query.limit,
@@ -244,7 +248,7 @@ async fn native_read_timeout(
     #[case] configured: f64,
     #[case] expected: f64,
 ) {
-    let native = Native::new(Wire::replying(record()));
+    let native = Native::new(Wire::replying(&record()));
     let mut fixture = Fixture::new();
     fixture.arguments.timeout = requested;
     call_with(Which::Retrieve, &native, &fixture, None, configured)
@@ -263,7 +267,7 @@ async fn native_read_timeout(
 
 #[tokio::test]
 async fn native_retrieve_request() {
-    let native = Native::new(Wire::replying(record()));
+    let native = Native::new(Wire::replying(&record()));
     let mut fixture = Fixture::new();
     fixture.arguments.extra_query = Some(IndexMap::from([(
         String::from("after"),
@@ -290,7 +294,7 @@ async fn native_retrieve_request() {
 #[tokio::test]
 async fn native_list_request() {
     // an absent limit and order take the signature's defaults
-    let native = Native::new(Wire::replying(listing()));
+    let native = Native::new(Wire::replying(&listing()));
     let fixture = Fixture::new();
     let value = call_with(Which::List, &native, &fixture, None, REQUEST_TIMEOUT)
         .await
@@ -303,7 +307,7 @@ async fn native_list_request() {
     assert!(matches!(requests[0].body, RequestBody::Empty));
 
     // every cursor travels, an empty after and a zero limit included
-    let native = Native::new(Wire::replying(listing()));
+    let native = Native::new(Wire::replying(&listing()));
     let mut fixture = Fixture::new();
     fixture.arguments.after = Some(String::new());
     fixture.arguments.before = Some(String::from("vs_z"));
@@ -319,7 +323,7 @@ async fn native_list_request() {
     );
 
     // an explicit null omits both
-    let native = Native::new(Wire::replying(listing()));
+    let native = Native::new(Wire::replying(&listing()));
     let mut fixture = Fixture::new();
     fixture.arguments.limit = Some(None);
     fixture.arguments.order = Some(None);
@@ -332,7 +336,7 @@ async fn native_list_request() {
 #[tokio::test]
 async fn native_selects_the_matching_client() {
     // a sync client in sync mode is used, so the source builds nothing
-    let wire = Wire::replying(record());
+    let wire = Wire::replying(&record());
     let native = Native::new(wire.clone());
     let fixture = Fixture::new();
     call_with(
@@ -348,7 +352,7 @@ async fn native_selects_the_matching_client() {
     assert_eq!(native.requests().len(), 1);
 
     // an async call skips a sync supplied client and builds the source's
-    let wire = Wire::replying(record());
+    let wire = Wire::replying(&record());
     let native = Native::new(wire.clone());
     let fixture = Fixture::new();
     call_with(
@@ -363,7 +367,7 @@ async fn native_selects_the_matching_client() {
     assert_eq!(native.source_calls(), vec![None]);
 
     // the async supplied client is used as given
-    let wire = Wire::replying(record());
+    let wire = Wire::replying(&record());
     let native = Native::new(wire.clone());
     let fixture = Fixture::new();
     call_with(
