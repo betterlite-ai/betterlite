@@ -43,6 +43,7 @@ use super::seams::Configs;
 use super::source::ProxiedSource;
 
 mod operations;
+mod tests;
 
 const DEFAULT_PROVIDER: &str = "openai";
 

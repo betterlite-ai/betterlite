@@ -8,6 +8,8 @@ use betterlite_core::api::vector_store_search::provider::ResolvedProvider;
 use betterlite_openai::credentials::LiteLlmGlobals;
 use secrecy::SecretString;
 
+mod tests;
+
 // B010's read config for the tags this build serves
 pub(crate) struct Configs<'core> {
     pub(crate) credentials: &'core OpenAiCredentialsSettings,

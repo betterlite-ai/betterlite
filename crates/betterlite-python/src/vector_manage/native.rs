@@ -10,6 +10,8 @@ use super::convert::{ConvertError, DeleteWire, ListWire, RetrieveWire, UpdateWir
 use super::error::raise;
 use super::session::{Pending, SessionCore, SystemClock, SystemIds};
 
+mod tests;
+
 // the attached-file list every call takes; a vector store call only reads whether it is empty
 type Blobs<'py> = Bound<'py, PyList>;
 
