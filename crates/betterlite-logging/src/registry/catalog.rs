@@ -81,6 +81,7 @@ use crate::callback_config::options::callback_config_error;
 use crate::callback_config::{CallbackVars, FeatureFlags};
 use crate::callback_logger::CallbackLogger;
 use crate::callback_logger::resolver::LoggerResolver;
+use crate::otel::callbacks::agentops::AgentOpsCallback;
 use crate::otel::logger_runtime::LoggerRuntime;
 
 pub fn validate_callback_vars(
@@ -160,6 +161,29 @@ impl LoggerCatalog {
     #[must_use]
     pub fn with_runtime(mut self, runtime: Arc<LoggerRuntime>) -> Self {
         self.runtime = Some(runtime);
+        self
+    }
+
+    // the startup step awaited the JWT fetch, which the resolver cannot; the arm builds from its result
+    #[must_use]
+    pub fn with_agentops(mut self, callback: AgentOpsCallback) -> Self {
+        let dispatch = Arc::clone(&self.build);
+        self.build = Arc::new(
+            move |name: CallbackName,
+                  inputs: &CatalogInputs,
+                  runtime: Option<&LoggerRuntime>,
+                  shared: &SharedOtel,
+                  in_memory: &mut Vec<Arc<dyn CallbackLogger>>|
+                  -> Result<Arc<dyn CallbackLogger>, CatalogError> {
+                if name == CallbackName::Agentops {
+                    let logger =
+                        agentops::build(inputs, runtime, shared, in_memory, Some(&callback))?;
+                    push_once(in_memory, &logger);
+                    return Ok(logger);
+                }
+                dispatch(name, inputs, runtime, shared, in_memory)
+            },
+        );
         self
     }
 
@@ -282,6 +306,7 @@ impl LoggerResolver for LoggerCatalog {
 macro_rules! dispatch_logger {
     (
         arms { $($arm:ident => $arm_builder:ident),+ $(,)? }
+        connected { $($connected:ident => $connected_fn:ident),+ $(,)? }
         builders { $($builder:ident => $builder_fn:ident),+ $(,)? }
         refused { $($refused:ident),+ $(,)? }
     ) => {
@@ -294,6 +319,7 @@ macro_rules! dispatch_logger {
         ) -> Result<Arc<dyn CallbackLogger>, CatalogError> {
             let logger = match callback {
                 $(CallbackName::$arm => $arm_builder::build(inputs, runtime, shared, in_memory)?,)+
+                $(CallbackName::$connected => $connected_fn::build(inputs, runtime, shared, in_memory, None)?,)+
                 $(CallbackName::$builder => $builder_fn::build(inputs)?,)+
                 $(CallbackName::$refused)|+ => {
                     return Err(CatalogError::Unavailable {
@@ -307,7 +333,7 @@ macro_rules! dispatch_logger {
     };
 }
 
-// the OTel arms take the runtime and the in-memory list; every other builder keeps its build(inputs)
+// the OTel arms take the runtime and the in-memory list, the connected arm also takes its startup callback
 dispatch_logger! {
     arms {
         Arize => arize,
@@ -322,8 +348,11 @@ dispatch_logger! {
         Traceloop => traceloop,
         WeaveOtel => weave_otel,
     }
+    connected {
+        Agentops => agentops,
+    }
     builders {
-        Agentops => agentops, Argilla => argilla,
+        Argilla => argilla,
         Athina => athina, AwsSqs => aws_sqs,
         AzureSentinel => azure_sentinel, AzureStorage => azure_storage,
         Bitbucket => bitbucket, Braintrust => braintrust,
