@@ -241,6 +241,26 @@ async fn azure_ai_entra_reads_the_ad_token() {
 }
 
 #[tokio::test]
+async fn hosted_vllm_reads_its_base_from_the_environment() {
+    let serving = serve(reply("200 fixture", &[], "pong"), Duration::ZERO).unwrap();
+    let base = format!("http://{}/v1", serving.address);
+    let environment = test_environment(&[
+        ("HOSTED_VLLM_API_BASE", base.as_str()),
+        ("HOSTED_VLLM_API_KEY", "vllm-env-key"),
+    ]);
+    allm_passthrough_route(
+        args_for("hosted_vllm/meta-llama/Llama-3-8B"),
+        &mut logging_state(),
+        &proxy_client(1024),
+        &environment,
+    )
+    .await
+    .expect("the upstream answers");
+    let sent = serving.finish().unwrap();
+    assert_eq!(sent.line, "POST /v1/chat/completions HTTP/1.1");
+}
+
+#[tokio::test]
 async fn watsonx_reads_its_url_key_and_iam_url_from_the_environment() {
     let upstream = serve(reply("200 fixture", &[], "pong"), Duration::ZERO).unwrap();
     let iam = serve(
