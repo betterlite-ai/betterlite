@@ -8,7 +8,7 @@ description: >-
   - ProbeClient.get_stream_status(url, accept, timeout) -> Result<(), ProbeError>. It issues a GET without auth and without redirects, reads no body, and is implemented by B8620 over betterlite-http (B171, B173). ProbeError has Timeout and Failed(kind name).
   - SessionProbe.run_noop(server, static_headers, timeout) -> Result<Option<String>, SessionError>. It opens an MCP session, runs a no-op and returns the instructions text from the initialize result. SessionError has Timeout, Cancelled and Failed(text). The real one wraps `_create_mcp_client` and `_resolve_static_headers_with_env_vars` (no owner found, see notes).
   - EnvVarCheck.references_per_user_env_var(server) -> bool (`_references_per_user_env_var`, L3928-3946).
-  - AllowedServers.allowed_server_ids(auth) -> Vec<String> from B6591 (get_allowed_mcp_servers).
+  - Declare AllowedServers.allowed_server_ids(auth) -> Vec<String> here over B2314's resolved-key auth; HealthService consumes this injected source and tests supply a fake. The later composition root adapts B6591's get_allowed_mcp_servers to this port; this task imports no ServerUnion implementation.
   - ToolsetCache.get(key) -> Option<CachedToolset>, set(key, value, ttl), and remove_where(predicate on key) for the in-memory layer. CachedToolset is Found(MCPToolset) or NotFound (the "__not_found__" sentinel).
   - ToolsetLookup.by_name(name) -> Option<MCPToolset>, implemented over B4681's get_mcp_toolset_by_name.
 
