@@ -164,8 +164,7 @@ impl Database {
             .expect("the statement runs");
     }
 
-    async fn seed(&self, seed: &Seed<'_>, scope: Scope) {
-        let spend = seed.spend.to_string();
+    async fn seed(&self, seed: &Seed, scope: Scope) {
         let shared: [&(dyn ToSql + Sync); 15] = [
             &seed.key,
             &seed.session,
@@ -175,7 +174,7 @@ impl Database {
             &seed.last,
             &seed.model,
             &seed.turns,
-            &spend,
+            &seed.spend,
             &seed.saved,
             &seed.estimate,
             &seed.actual,
@@ -214,47 +213,165 @@ enum Scope {
     User,
 }
 
-struct Seed<'text> {
-    user: &'text str,
-    key: &'text str,
-    session: &'text str,
-    router: &'text str,
-    kind: &'text str,
-    first: &'text str,
-    last: &'text str,
-    model: &'text str,
+struct Seed {
+    user: &'static str,
+    key: &'static str,
+    session: &'static str,
+    router: &'static str,
+    kind: &'static str,
+    first: &'static str,
+    last: &'static str,
+    model: &'static str,
     turns: i32,
-    spend: Decimal,
+    spend: &'static str,
     saved: f64,
     estimate: i32,
     actual: f64,
     estimated_saved: f64,
     classifier: f64,
     recorded: i32,
-    tiers: &'text str,
+    tiers: &'static str,
 }
 
-fn complexity_seed() -> Seed<'static> {
-    Seed {
-        user: "",
-        key: "hash-a",
-        session: "s1",
-        router: "complexity-auto",
-        kind: "complexity",
-        first: "2024-01-01T00:00:00",
-        last: "2024-01-01T00:01:00",
-        model: "gpt-4o",
-        turns: 4,
-        spend: money("2.0"),
-        saved: 2.0,
-        estimate: 4,
-        actual: 2.0,
-        estimated_saved: 2.0,
-        classifier: 0.5,
-        recorded: 4,
-        tiers: r#"{"SIMPLE": 4}"#,
-    }
-}
+const COMPLEXITY_SESSION: Seed = Seed {
+    user: "",
+    key: "hash-a",
+    session: "s1",
+    router: "complexity-auto",
+    kind: "complexity",
+    first: "2024-01-01T00:00:00",
+    last: "2024-01-01T00:01:00",
+    model: "gpt-4o",
+    turns: 4,
+    spend: "2.0",
+    saved: 2.0,
+    estimate: 4,
+    actual: 2.0,
+    estimated_saved: 2.0,
+    classifier: 0.5,
+    recorded: 4,
+    tiers: r#"{"SIMPLE": 4}"#,
+};
+
+const SECOND_SESSION: Seed = Seed {
+    user: "",
+    key: "hash-b",
+    session: "s2",
+    router: "complexity-auto",
+    kind: "complexity",
+    first: "2024-01-01T00:00:00",
+    last: "2024-01-01T00:01:00",
+    model: "gpt-4o",
+    turns: 2,
+    spend: "1.0",
+    saved: 1.0,
+    estimate: 2,
+    actual: 1.0,
+    estimated_saved: 1.0,
+    classifier: 0.25,
+    recorded: 2,
+    tiers: r#"{"COMPLEX": 2}"#,
+};
+
+const ADAPTIVE_SESSION: Seed = Seed {
+    user: "",
+    key: "hash-a",
+    session: "s3",
+    router: "adaptive-auto",
+    kind: "adaptive",
+    first: "2024-01-01T00:00:00",
+    last: "2024-01-01T00:01:00",
+    model: "gpt-4o",
+    turns: 2,
+    spend: "4.0",
+    saved: 4.0,
+    estimate: 2,
+    actual: 4.0,
+    estimated_saved: 4.0,
+    classifier: 0.5,
+    recorded: 1,
+    tiers: "{}",
+};
+
+const PAST_SESSION: Seed = Seed {
+    user: "",
+    key: "hash-a",
+    session: "old",
+    router: "complexity-auto",
+    kind: "complexity",
+    first: "2023-12-31T00:00:00",
+    last: "2023-12-31T00:01:00",
+    model: "gpt-4o",
+    turns: 4,
+    spend: "2.0",
+    saved: 2.0,
+    estimate: 4,
+    actual: 2.0,
+    estimated_saved: 2.0,
+    classifier: 0.5,
+    recorded: 4,
+    tiers: r#"{"SIMPLE": 4}"#,
+};
+
+const USER_SESSION: Seed = Seed {
+    user: "u1",
+    key: "",
+    session: "us1",
+    router: "quality-auto",
+    kind: "quality",
+    first: "2024-01-01T00:00:00",
+    last: "2024-01-01T00:01:00",
+    model: "gpt-4o",
+    turns: 3,
+    spend: "1.5",
+    saved: 1.5,
+    estimate: 3,
+    actual: 1.5,
+    estimated_saved: 1.5,
+    classifier: 0.25,
+    recorded: 3,
+    tiers: "{}",
+};
+
+const NEWER_SESSION: Seed = Seed {
+    user: "",
+    key: "hash-a",
+    session: "s1",
+    router: "adaptive-auto",
+    kind: "adaptive",
+    first: "2024-01-01T00:00:00",
+    last: "2024-01-02T00:00:00",
+    model: "gpt-4o-mini",
+    turns: 4,
+    spend: "2.0",
+    saved: 2.0,
+    estimate: 4,
+    actual: 2.0,
+    estimated_saved: 2.0,
+    classifier: 0.5,
+    recorded: 4,
+    tiers: r#"{"SIMPLE": 4}"#,
+};
+
+const OTHER_KEY_SESSION: Seed = Seed {
+    user: "",
+    key: "hash-b",
+    session: "s1",
+    router: "complexity-auto",
+    kind: "complexity",
+    first: "2024-01-01T00:00:00",
+    last: "2024-01-01T00:01:00",
+    model: "o3",
+    turns: 4,
+    spend: "2.0",
+    saved: 2.0,
+    estimate: 4,
+    actual: 2.0,
+    estimated_saved: 2.0,
+    classifier: 0.5,
+    recorded: 4,
+    tiers: r#"{"SIMPLE": 4}"#,
+};
 
 fn day(month: u32, day_of_month: u32) -> NaiveDate {
     NaiveDate::from_ymd_opt(2024, month, day_of_month).unwrap()
@@ -267,80 +384,16 @@ fn window(start: &str, end: &str) -> super::BenchmarksQuery {
 #[tokio::test]
 async fn the_rollup_query_groups_compares_and_filters() {
     let database = Database::start().await;
-    database.seed(&complexity_seed(), Scope::Session).await;
-    database.seed(&second_session(), Scope::Session).await;
-    database.seed(&adaptive_session(), Scope::Session).await;
-    database.seed(&old_session(), Scope::Session).await;
-    database.seed(&user_session(), Scope::User).await;
+    database.seed(&COMPLEXITY_SESSION, Scope::Session).await;
+    database.seed(&SECOND_SESSION, Scope::Session).await;
+    database.seed(&ADAPTIVE_SESSION, Scope::Session).await;
+    database.seed(&PAST_SESSION, Scope::Session).await;
+    database.seed(&USER_SESSION, Scope::User).await;
     let reads = database.reads();
     rollup_groups(&reads).await;
     rollup_savings(&reads).await;
     filtered_views(&reads).await;
     database.close().await;
-}
-
-fn second_session() -> Seed<'static> {
-    Seed {
-        key: "hash-b",
-        session: "s2",
-        turns: 2,
-        spend: money("1.0"),
-        saved: 1.0,
-        estimate: 2,
-        actual: 1.0,
-        estimated_saved: 1.0,
-        classifier: 0.25,
-        recorded: 2,
-        tiers: r#"{"COMPLEX": 2}"#,
-        ..complexity_seed()
-    }
-}
-
-fn adaptive_session() -> Seed<'static> {
-    Seed {
-        session: "s3",
-        router: "adaptive-auto",
-        kind: "adaptive",
-        turns: 2,
-        spend: money("4.0"),
-        saved: 4.0,
-        estimate: 2,
-        actual: 4.0,
-        estimated_saved: 4.0,
-        classifier: 0.5,
-        recorded: 1,
-        tiers: "{}",
-        ..complexity_seed()
-    }
-}
-
-fn old_session() -> Seed<'static> {
-    Seed {
-        session: "old",
-        first: "2023-12-31T00:00:00",
-        last: "2023-12-31T00:01:00",
-        ..complexity_seed()
-    }
-}
-
-fn user_session() -> Seed<'static> {
-    Seed {
-        user: "u1",
-        key: "",
-        session: "us1",
-        router: "quality-auto",
-        kind: "quality",
-        turns: 3,
-        spend: money("1.5"),
-        saved: 1.5,
-        estimate: 3,
-        actual: 1.5,
-        estimated_saved: 1.5,
-        classifier: 0.25,
-        recorded: 3,
-        tiers: "{}",
-        ..complexity_seed()
-    }
 }
 
 async fn rollup_groups(reads: &PgAutoRouterReads) {
@@ -419,30 +472,12 @@ async fn key_and_past_views(reads: &PgAutoRouterReads) {
     assert_eq!(past.groups[0].turns, 4);
 }
 
-fn newer_session() -> Seed<'static> {
-    Seed {
-        router: "adaptive-auto",
-        kind: "adaptive",
-        last: "2024-01-02T00:00:00",
-        model: "gpt-4o-mini",
-        ..complexity_seed()
-    }
-}
-
-fn other_key_session() -> Seed<'static> {
-    Seed {
-        key: "hash-b",
-        model: "o3",
-        ..complexity_seed()
-    }
-}
-
 #[tokio::test]
 async fn the_latest_session_reads_the_newest_row_under_the_key() {
     let database = Database::start().await;
-    database.seed(&complexity_seed(), Scope::Session).await;
-    database.seed(&newer_session(), Scope::Session).await;
-    database.seed(&other_key_session(), Scope::Session).await;
+    database.seed(&COMPLEXITY_SESSION, Scope::Session).await;
+    database.seed(&NEWER_SESSION, Scope::Session).await;
+    database.seed(&OTHER_KEY_SESSION, Scope::Session).await;
     let reads = database.reads();
     let newest = reads
         .latest_session("hash-a", "s1")
