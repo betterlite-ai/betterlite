@@ -1,0 +1,22 @@
+kind: helper
+name: login-throttle-cidr-precedence
+call:
+  login_throttle:
+    config:
+      general_settings:
+        trusted_proxy_ranges: []
+        max_failed_login_attempts_per_source_overrides:
+          10.0.0.0/8: 6
+          10.1.0.0/16: 0
+          10.1.2.3/32: 8
+    phases:
+      - request: {peer: "10.1.2.3"}
+        now: 1000.0
+        steps:
+          - {kind: attempt, username: bob}
+      - request: {peer: "10.1.9.9"}
+        now: 1000.0
+        steps:
+          - {kind: attempt, username: bob}
+env: {}
+compare: {ignore: []}

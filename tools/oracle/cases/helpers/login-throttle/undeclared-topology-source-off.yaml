@@ -1,0 +1,24 @@
+kind: helper
+name: login-throttle-undeclared-topology-source-off
+call:
+  login_throttle:
+    config:
+      general_settings:
+        max_failed_login_attempts_per_source: 4
+    phases:
+      - request: {peer: "10.1.1.1"}
+        now: 1000.0
+        steps:
+          - {kind: attempt, username: u1}
+          - {kind: failed}
+          - {kind: attempt, username: u2}
+          - {kind: failed}
+          - {kind: attempt, username: u3}
+          - {kind: failed}
+          - {kind: attempt, username: u4}
+          - {kind: failed}
+          - {kind: attempt, username: u5}
+          - {kind: failed}
+          - {kind: attempt, username: u6}
+env: {}
+compare: {ignore: []}

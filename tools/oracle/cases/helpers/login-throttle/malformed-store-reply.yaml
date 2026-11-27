@@ -1,0 +1,18 @@
+kind: helper
+name: login-throttle-malformed-store-reply
+call:
+  login_throttle:
+    config:
+      general_settings: {}
+    redis:
+      faults:
+        block_ttls: malformed
+        record_failure: malformed
+    phases:
+      - request: {peer: "10.1.1.1"}
+        now: 1000.0
+        steps:
+          - {kind: attempt, username: bob}
+          - {kind: record_failure, username: bob}
+env: {}
+compare: {ignore: []}

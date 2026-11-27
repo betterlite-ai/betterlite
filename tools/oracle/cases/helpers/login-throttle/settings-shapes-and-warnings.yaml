@@ -1,0 +1,18 @@
+kind: helper
+name: login-throttle-settings-shapes-and-warnings
+call:
+  login_throttle:
+    config:
+      general_settings:
+        max_failed_login_attempts_per_source: "abc"
+        max_failed_login_attempts_per_source_overrides: "nope"
+        failed_login_window_seconds: 0
+        failed_login_block_seconds: -5
+        trusted_proxy_ranges: 5
+    phases:
+      - request: {peer: "10.1.1.1"}
+        now: 1000.0
+        steps:
+          - {kind: attempt, username: bob}
+env: {}
+compare: {ignore: []}
