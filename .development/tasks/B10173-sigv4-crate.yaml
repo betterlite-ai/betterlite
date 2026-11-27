@@ -65,7 +65,7 @@ checks:
       run: test -f crates/betterlite-sigv4/Cargo.toml && grep -q '^workspace = true' crates/betterlite-sigv4/Cargo.toml && grep -q 'license.workspace = true' crates/betterlite-sigv4/Cargo.toml && test -z "$(grep -n 'betterlite-' crates/betterlite-sigv4/Cargo.toml | grep -v 'name = .betterlite-sigv4.')" && test ! -e crates/betterlite-bedrock/src/signing/sigv4.rs && test -z "$(grep -rn 'signing::sigv4\|pub struct Credentials' crates/betterlite-bedrock/src crates/betterlite-rag/src crates/betterlite-transcribe/src crates/betterlite-vertex/src)"
     - id: no-polly-copy
       why: core still carries its own SigV4 steps, credential type or AWS signing dependencies
-      run: test -z "$(grep -rnE 'ResolvedCredentials|fn litellm_casing|SigningParams|Identity::new|aws_sigv4|aws_credential_types|aws_smithy_runtime_api' crates/betterlite-core/src tools/oracle/src/helpers/core_ops/polly_speech.rs)" && test -z "$(grep -nE '^aws-(sigv4|credential-types|smithy-runtime-api) ' crates/betterlite-core/Cargo.toml)"
+      run: test -z "$(grep -rnE 'ResolvedCredentials|fn litellm_casing|SigningParams|Identity::new|aws_sigv4|aws_credential_types|aws_smithy_runtime_api' crates/betterlite-core/src/api/polly tools/oracle/src/helpers/core_ops/polly_speech.rs)" && test -z "$(grep -nE '^aws-(sigv4|credential-types|smithy-runtime-api) ' crates/betterlite-core/Cargo.toml)"
     - id: polly-speech-tests
       why: Polly mapping or exact-body signing changed after the move onto the shared signer
       run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::polly::speech::/)'
