@@ -40,8 +40,22 @@ async fn dispatch(input: &Input, fakes: &Fakes<'_>) -> Result<CallToolResult, Bo
         Handler::AgentSearch => agent_search(input, &context).await,
         Handler::SkillSearch => skill_search(input, &context).await,
         Handler::McpToolSearch => mcp_tool_search(input, &context).await,
-        Handler::McpProxyTool => mcp_proxy_tool(input, &context).await,
-        Handler::McpToolCall => mcp_tool_call(input, &context).await,
+        Handler::McpProxyTool => {
+            let request = ProxyToolRequest {
+                name: input.name.as_deref().unwrap_or_default(),
+                arguments: &input.arguments,
+            };
+            handle_mcp_proxy_tool(request, &context).await
+        }
+        Handler::McpToolCall => {
+            let request = ToolCallRequest {
+                tool_name: input.tool_name.as_deref().unwrap_or_default(),
+                arguments: &input.call_arguments,
+                requested_server_id: input.requested_server_id.as_deref(),
+                guardrail_context: input.guardrail_context.as_ref(),
+            };
+            handle_mcp_tool_call(request, &context).await
+        }
     };
     outcome.map_err(|error| handler_error(&error))
 }
@@ -68,25 +82,6 @@ async fn mcp_tool_search(input: &Input, context: &HandlerContext<'_>) -> Handler
         top_k: input.top_k.unwrap_or(DEFAULT_TOP_K),
     };
     handle_mcp_tool_search(request, context).await
-}
-
-async fn mcp_proxy_tool(input: &Input, context: &HandlerContext<'_>) -> HandlerOutcome {
-    let name = input.name.as_deref().unwrap_or_default();
-    let request = ProxyToolRequest {
-        name,
-        arguments: &input.arguments,
-    };
-    handle_mcp_proxy_tool(request, context).await
-}
-
-async fn mcp_tool_call(input: &Input, context: &HandlerContext<'_>) -> HandlerOutcome {
-    let request = ToolCallRequest {
-        tool_name: input.tool_name.as_deref().unwrap_or_default(),
-        arguments: &input.call_arguments,
-        requested_server_id: input.requested_server_id.as_deref(),
-        guardrail_context: input.guardrail_context.as_ref(),
-    };
-    handle_mcp_tool_call(request, context).await
 }
 
 fn handler_error(error: &SearchHandlerError) -> Box<HelperError> {

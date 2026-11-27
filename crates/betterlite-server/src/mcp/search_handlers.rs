@@ -12,14 +12,13 @@ use betterlite_core::schema::validate::validate_schema;
 use betterlite_core::skills::search::MAX_SKILL_SEARCH_TOP_K;
 use betterlite_db::mcp_stored_contracts::JsonValue;
 use betterlite_mcp::client::tools::result::{CallToolResult, ContentBlock, TextContent};
-use betterlite_mcp::wire_compat::result_conversion::complete_call_tool_result;
-use betterlite_mcp::wire_compat::tool_outcome::WireCompat;
 use betterlite_prompts::arguments::json::Object;
 use http::StatusCode;
 
-use self::dispatch::{agent_search_text, proxy_search, ranked_hits, tool_search_result};
+use self::dispatch::{
+    agent_search_text, execute_tool_text, proxy_search, ranked_hits, tool_search_text,
+};
 use self::error::SearchHandlerError;
-use self::ports::ToolExecution;
 use self::types::{
     AgentSearchRequest, HandlerContext, McpToolSearchRequest, ProxyToolIdentity, ProxyToolRequest,
     SearchOutcome, SkillSearchRequest, ToolCallRequest, json_string,
@@ -29,7 +28,7 @@ use crate::mcp::catalog_guard::types::MCPTool;
 use crate::mcp::tool_search::identity::{mcp_proxy_tool_id, proxy_schema_result};
 use crate::mcp::tool_search::{
     MCP_PROXY_CALL_TOOL_NAME, MCP_PROXY_SCHEMA_TOOL_NAME, MCP_PROXY_SEARCH_TOOL_NAME,
-    MCP_TOOL_SEARCH_SETTINGS_KEY, ToolSearchResult,
+    MCP_TOOL_SEARCH_SETTINGS_KEY,
 };
 
 // the message litellm_settings.mcp_tool_search.embedding_model gets when no model_list exists
@@ -97,13 +96,7 @@ pub async fn handle_mcp_tool_search(
         ._list_mcp_tools(context.caller, context.scope, false)
         .await?;
     let ranking = ranked_hits(request.query, request.top_k, &tools, &settings, context).await;
-    match ranking {
-        Ok(hits) => {
-            let results: Vec<ToolSearchResult> = hits.into_iter().map(tool_search_result).collect();
-            Ok(text_tool_result(serde_json::to_string(&results)?, false))
-        }
-        Err(error) => Ok(text_tool_result(error.to_string(), true)),
-    }
+    tool_search_text(ranking)
 }
 
 pub async fn handle_mcp_proxy_tool(
@@ -186,26 +179,8 @@ pub async fn handle_mcp_tool_call(
     request: ToolCallRequest<'_>,
     context: &HandlerContext<'_>,
 ) -> Result<CallToolResult, SearchHandlerError> {
-    let ToolCallRequest {
-        tool_name,
-        arguments,
-        requested_server_id,
-        guardrail_context,
-    } = request;
     let allowed_servers = allowed_servers_for_call(context).await?;
-    let call = ToolExecution {
-        scope: context.scope,
-        caller: context.caller,
-        tool_name,
-        arguments,
-        allowed_servers: &allowed_servers,
-        requested_server_id,
-        guardrail_context,
-    };
-    Ok(complete_call_tool_result(
-        context.operations.execute_mcp_tool(call).await?,
-        WireCompat::Legacy,
-    ))
+    execute_tool_text(request, &allowed_servers, context).await
 }
 
 async fn allowed_servers_for_call(

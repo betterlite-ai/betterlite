@@ -2,10 +2,15 @@ use std::collections::BTreeMap;
 
 use betterlite_db::mcp_stored_contracts::JsonValue;
 use betterlite_mcp::client::tools::result::CallToolResult;
+use betterlite_mcp::wire_compat::result_conversion::complete_call_tool_result;
+use betterlite_mcp::wire_compat::tool_outcome::WireCompat;
 use serde::Serialize;
 
 use super::error::SearchHandlerError;
-use super::types::{AgentSearchRequest, HandlerContext, SearchOutcome, json_string};
+use super::ports::ToolExecution;
+use super::types::{
+    AgentSearchRequest, HandlerContext, SearchOutcome, ToolCallRequest, json_string,
+};
 use super::{EMBEDDING_WITHOUT_ROUTER, text_tool_result};
 use crate::mcp::catalog_guard::types::MCPTool;
 use crate::mcp::tool_search::identity::{MCPProxyToolIdentityError, proxy_search_result};
@@ -47,6 +52,7 @@ pub(super) fn tool_search_result(hit: MCPToolSearchHit) -> ToolSearchResult {
     }
 }
 
+// LiteLLM's agent search handler resolves the caller's accessible agents and searches them
 pub(super) async fn agent_search_text(
     query: &str,
     top_k: i64,
@@ -63,6 +69,45 @@ pub(super) async fn agent_search_text(
         )
         .await?;
     search_text(outcome)
+}
+
+pub(super) fn tool_search_text(
+    ranking: Result<Vec<MCPToolSearchHit>, SearchError>,
+) -> Result<CallToolResult, SearchHandlerError> {
+    match ranking {
+        Ok(hits) => {
+            let results: Vec<ToolSearchResult> = hits.into_iter().map(tool_search_result).collect();
+            Ok(text_tool_result(serde_json::to_string(&results)?, false))
+        }
+        Err(error) => Ok(text_tool_result(error.to_string(), true)),
+    }
+}
+
+// LiteLLM's tool call handler executes an authorized call and converts the outcome for MCP
+pub(super) async fn execute_tool_text(
+    request: ToolCallRequest<'_>,
+    allowed_servers: &[String],
+    context: &HandlerContext<'_>,
+) -> Result<CallToolResult, SearchHandlerError> {
+    let ToolCallRequest {
+        tool_name,
+        arguments,
+        requested_server_id,
+        guardrail_context,
+    } = request;
+    let call = ToolExecution {
+        scope: context.scope,
+        caller: context.caller,
+        tool_name,
+        arguments,
+        allowed_servers,
+        requested_server_id,
+        guardrail_context,
+    };
+    Ok(complete_call_tool_result(
+        context.operations.execute_mcp_tool(call).await?,
+        WireCompat::Legacy,
+    ))
 }
 
 fn search_text<T>(outcome: SearchOutcome<T>) -> Result<CallToolResult, SearchHandlerError>
