@@ -32,8 +32,8 @@ pub(crate) struct RetrieveCache<'cache, Memory, Remote> {
 }
 
 // the verbose sink a retrieve writes through, holding the caller's key so print_verbose can mask it
-struct Verbose<'a> {
-    api_key: Option<&'a str>,
+struct Verbose<'key> {
+    api_key: Option<&'key str>,
     diagnostics: Vec<BatchDiagnostic>,
     printed: Vec<String>,
 }
