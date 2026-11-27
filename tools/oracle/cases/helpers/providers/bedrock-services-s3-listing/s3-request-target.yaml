@@ -1,0 +1,49 @@
+kind: helper
+name: bedrock-services-s3-listing-s3-request-target
+call:
+  bedrock_services_s3_listing:
+    operation: list_request
+    requests:
+      - purpose: batch
+        litellm_params: {aws_region_name: us-east-1}
+        optional_params: {aws_region_name: eu-west-1}
+        trusted: [[s3_bucket_name, bucket]]
+      - purpose: batch
+        litellm_params: {aws_region_name: us-east-1, s3_region_name: cn-north-1}
+        trusted: [[s3_bucket_name, bucket]]
+      - purpose: batch
+        litellm_params: {aws_region_name: eu-west-1, s3_endpoint_url: "https://example.com:9000/"}
+        trusted: [[s3_bucket_name, bucket]]
+      - purpose: batch
+        litellm_params: {}
+        environment: {AWS_REGION: eu-west-1}
+        trusted: [[s3_bucket_name, bucket]]
+      - purpose: batch
+        litellm_params: {}
+        trusted: [[s3_bucket_name, bucket]]
+      - purpose: batch
+        litellm_params: {aws_region_name: us_east}
+        trusted: [[s3_bucket_name, bucket]]
+      - purpose: batch
+        litellm_params: {aws_region_name: us-east-1}
+        optional_params: {aws_region_name: 5}
+        trusted: [[s3_bucket_name, bucket]]
+      - purpose: batch
+        litellm_params: {s3_region_name: "", aws_region_name: eu-west-1}
+        trusted: [[s3_bucket_name, bucket]]
+      - purpose: batch
+        litellm_params: {aws_region_name: eu-west-1, s3_endpoint_url: ""}
+        trusted: [[s3_bucket_name, bucket]]
+      - purpose: batch
+        litellm_params: {aws_region_name: 5}
+        trusted: [[s3_bucket_name, bucket]]
+      - purpose: batch
+        litellm_params: {}
+        environment: {AWS_REGION_NAME: ap-south-1}
+        trusted: [[s3_bucket_name, bucket]]
+      - purpose: batch
+        litellm_params: {}
+        environment: {AWS_REGION: ap-south-1}
+        trusted: [[s3_bucket_name, bucket]]
+env: {}
+compare: {ignore: []}
