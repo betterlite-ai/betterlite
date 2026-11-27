@@ -1,4 +1,5 @@
-use std::future::poll_fn;
+use std::future::{Future, poll_fn};
+use std::pin::Pin;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::task::Poll;
 use std::time::Duration;
@@ -118,6 +119,21 @@ macro_rules! delegated_replies {
     };
 }
 
+// the two run transforms record the context they were handed, then pass the same call to the real config
+macro_rules! recorded_transform {
+    ($method:ident, $operation:expr, $request:ident, $request_type:ty) => {
+        fn $method(
+            &self,
+            eval_id: &str,
+            $request: &$request_type,
+            context: &EvalsRequestContext<'_>,
+        ) -> Result<(String, Object), EvalsError> {
+            self.record($operation, eval_id, context);
+            self.inner.$method(eval_id, $request, context)
+        }
+    };
+}
+
 impl BaseEvalsAPIConfig for RecordingConfig {
     type Error = EvalsError;
 
@@ -150,27 +166,19 @@ impl BaseEvalsAPIConfig for RecordingConfig {
         transform_delete_run_request(eval_id: &str, run_id: &str, api_base: &str) -> (String, Headers, Object);
     }
 
-    fn transform_create_run_request(
-        &self,
-        eval_id: &str,
-        create_request: &CreateRunRequest,
-        context: &EvalsRequestContext<'_>,
-    ) -> Result<(String, Object), EvalsError> {
-        self.record("create_run", eval_id, context);
-        self.inner
-            .transform_create_run_request(eval_id, create_request, context)
-    }
+    recorded_transform!(
+        transform_create_run_request,
+        "create_run",
+        create_request,
+        CreateRunRequest
+    );
 
-    fn transform_list_runs_request(
-        &self,
-        eval_id: &str,
-        list_params: &ListRunsParams,
-        context: &EvalsRequestContext<'_>,
-    ) -> Result<(String, Object), EvalsError> {
-        self.record("list_runs", eval_id, context);
-        self.inner
-            .transform_list_runs_request(eval_id, list_params, context)
-    }
+    recorded_transform!(
+        transform_list_runs_request,
+        "list_runs",
+        list_params,
+        ListRunsParams
+    );
 
     delegated_replies! {
         transform_create_eval_response -> Eval;
@@ -357,84 +365,83 @@ impl Recorder {
     }
 }
 
-impl RunTransport for Recorder {
-    fn create_run<'call>(
-        &'call self,
-        _log: EvalLogging<'call, '_>,
-        call: CreateRunCall<'call>,
-    ) -> PendingCreateRun<'call> {
-        self.creates
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(SeenCreate {
-                provider: call.provider,
-                url: call.url,
-                headers: call.headers,
-                body: call.body,
-                timeout: call.timeout,
-                mode: call.mode,
-            });
-        let failure = self.failure;
-        Box::pin(async move {
-            match failure {
-                Some(Failure::Provider) => Err(provider_failure()),
-                Some(Failure::Local) => Err(local_failure()),
-                Some(Failure::Deferred) => {
-                    let mut first = true;
-                    poll_fn(move |context| {
-                        if first {
-                            first = false;
-                            context.waker().wake_by_ref();
-                            Poll::Pending
-                        } else {
-                            Poll::Ready(Ok(run_fixture()))
-                        }
-                    })
-                    .await
-                }
-                None => Ok(run_fixture()),
-            }
-        })
-    }
+// the future a recorded handler hands back, whatever reply type the case asked the handler for
+type AnswerFuture<'call, Reply> =
+    Pin<Box<dyn Future<Output = Result<Reply, EvalRunCallError>> + Send + 'call>>;
 
-    fn list_runs<'call>(
-        &'call self,
-        _log: EvalLogging<'call, '_>,
-        call: ListRunsCall<'call>,
-    ) -> PendingListRuns<'call> {
-        self.lists
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(SeenList {
-                provider: call.provider,
-                url: call.url,
-                headers: call.headers,
-                query: call.query,
-                timeout: call.timeout,
-                mode: call.mode,
-            });
-        let failure = self.failure;
-        Box::pin(async move {
-            match failure {
-                Some(Failure::Provider) => Err(provider_failure()),
-                Some(Failure::Local) => Err(local_failure()),
-                Some(Failure::Deferred) => {
-                    let mut first = true;
-                    poll_fn(move |context| {
-                        if first {
-                            first = false;
-                            context.waker().wake_by_ref();
-                            Poll::Pending
-                        } else {
-                            Poll::Ready(Ok(runs_fixture()))
-                        }
-                    })
-                    .await
-                }
-                None => Ok(runs_fixture()),
+// the answer both handlers give: the fixture, the failure a case asked for, or one that answers on the second poll
+fn answer<'call, Reply>(
+    failure: Option<Failure>,
+    ready: fn() -> Reply,
+) -> AnswerFuture<'call, Reply>
+where
+    Reply: Send + 'call,
+{
+    Box::pin(async move {
+        match failure {
+            Some(Failure::Provider) => return Err(provider_failure()),
+            Some(Failure::Local) => return Err(local_failure()),
+            Some(Failure::Deferred) => {}
+            None => return Ok(ready()),
+        }
+        let mut first = true;
+        poll_fn(move |context| {
+            if first {
+                first = false;
+                context.waker().wake_by_ref();
+                Poll::Pending
+            } else {
+                Poll::Ready(Ok(ready()))
             }
         })
-    }
+        .await
+    })
+}
+
+// the two handlers differ only in their call, the recorded fields and the fixture, so one template spells them
+macro_rules! recorded_transport {
+    ($method:ident, $call:ident, $pending:ident, $seen:ident, $slot:ident, $payload:ident, $fixture:path) => {
+        fn $method<'call>(
+            &'call self,
+            _log: EvalLogging<'call, '_>,
+            call: $call<'call>,
+        ) -> $pending<'call> {
+            self.$slot
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push($seen {
+                    provider: call.provider,
+                    url: call.url,
+                    headers: call.headers,
+                    $payload: call.$payload,
+                    timeout: call.timeout,
+                    mode: call.mode,
+                });
+            answer(self.failure, $fixture)
+        }
+    };
+}
+
+impl RunTransport for Recorder {
+    recorded_transport!(
+        create_run,
+        CreateRunCall,
+        PendingCreateRun,
+        SeenCreate,
+        creates,
+        body,
+        run_fixture
+    );
+
+    recorded_transport!(
+        list_runs,
+        ListRunsCall,
+        PendingListRuns,
+        SeenList,
+        lists,
+        query,
+        runs_fixture
+    );
 }
 
 fn provider_failure() -> EvalRunCallError {
@@ -495,42 +502,51 @@ pub(crate) fn header<'call>(headers: &'call Headers, name: &str) -> &'call str {
         .expect("the header is sent")
 }
 
-pub(crate) fn create_args<'call>(
-    eval_id: &'call str,
-    data_source: &'call Object,
-    kwargs: &'call IndexMap<String, Json>,
-) -> CreateRunArgs<'call> {
-    CreateRunArgs {
-        eval_id,
-        data_source,
-        name: None,
-        metadata: None,
-        extra_headers: None,
-        extra_query: None,
-        extra_body: None,
-        timeout: None,
-        custom_llm_provider: None,
-        kwargs,
-    }
+// a request with every optional value absent, so a case sets only the keyword it exercises
+macro_rules! absent_args {
+    (create $name:ident, $args:ident) => {
+        pub(crate) const fn $name<'call>(
+            eval_id: &'call str,
+            data_source: &'call Object,
+            kwargs: &'call IndexMap<String, Json>,
+        ) -> $args<'call> {
+            $args {
+                eval_id,
+                data_source,
+                name: None,
+                metadata: None,
+                extra_headers: None,
+                extra_query: None,
+                extra_body: None,
+                timeout: None,
+                custom_llm_provider: None,
+                kwargs,
+            }
+        }
+    };
+    (list $name:ident, $args:ident) => {
+        pub(crate) const fn $name<'call>(
+            eval_id: &'call str,
+            kwargs: &'call IndexMap<String, Json>,
+        ) -> $args<'call> {
+            $args {
+                eval_id,
+                limit: None,
+                after: None,
+                before: None,
+                order: None,
+                extra_headers: None,
+                extra_query: None,
+                timeout: None,
+                custom_llm_provider: None,
+                kwargs,
+            }
+        }
+    };
 }
 
-pub(crate) fn list_args<'call>(
-    eval_id: &'call str,
-    kwargs: &'call IndexMap<String, Json>,
-) -> ListRunsArgs<'call> {
-    ListRunsArgs {
-        eval_id,
-        limit: None,
-        after: None,
-        before: None,
-        order: None,
-        extra_headers: None,
-        extra_query: None,
-        timeout: None,
-        custom_llm_provider: None,
-        kwargs,
-    }
-}
+absent_args!(create create_args, CreateRunArgs);
+absent_args!(list list_args, ListRunsArgs);
 
 pub(crate) fn ready(work: CreateRunWork<'_>) -> Run {
     match work {
@@ -553,100 +569,60 @@ pub(crate) fn error<Output>(result: Result<Output, EvalRunFailure>) -> EvalRunFa
     }
 }
 
-// one blocking create over a fresh fixture: the answer, the logging state it filled, and the caller struct it ran through
-pub(crate) fn sync_create(
-    config: RecordingConfig,
-    recorder: Recorder,
-    request: CreateRunArgs<'_>,
-) -> (
-    Result<Run, EvalRunFailure>,
-    Fixture,
-    EvalRunCreateList<RecordingConfig, Recorder>,
-) {
-    let calls = caller(config, recorder);
-    let mut fixture = Fixture::new("create_run");
-    let answer = {
-        let env = fixture.env.pre_post();
-        let log = EvalLogging {
-            state: &mut fixture.state,
-            env: &env,
-        };
-        match calls.create_run(request, log) {
-            Ok(work) => Ok(ready(work)),
-            Err(failure) => Err(failure),
+// one call over a fresh fixture: the answer, the logging state it filled, and the caller struct it ran through
+macro_rules! call_helper {
+    (sync $name:ident, $call_type:expr, $request:ident, $reply:ty, $method:ident, $ready:path) => {
+        pub(crate) fn $name(
+            config: RecordingConfig,
+            recorder: Recorder,
+            request: $request<'_>,
+        ) -> (
+            Result<$reply, EvalRunFailure>,
+            Fixture,
+            EvalRunCreateList<RecordingConfig, Recorder>,
+        ) {
+            let calls = caller(config, recorder);
+            let mut fixture = Fixture::new($call_type);
+            let answer = {
+                let env = fixture.env.pre_post();
+                let log = EvalLogging {
+                    state: &mut fixture.state,
+                    env: &env,
+                };
+                match calls.$method(request, log) {
+                    Ok(work) => Ok($ready(work)),
+                    Err(failure) => Err(failure),
+                }
+            };
+            (answer, fixture, calls)
         }
     };
-    (answer, fixture, calls)
-}
-
-// one blocking list over a fresh fixture, the same way
-pub(crate) fn sync_list(
-    config: RecordingConfig,
-    recorder: Recorder,
-    request: ListRunsArgs<'_>,
-) -> (
-    Result<ListRunsResponse, EvalRunFailure>,
-    Fixture,
-    EvalRunCreateList<RecordingConfig, Recorder>,
-) {
-    let calls = caller(config, recorder);
-    let mut fixture = Fixture::new("list_runs");
-    let answer = {
-        let env = fixture.env.pre_post();
-        let log = EvalLogging {
-            state: &mut fixture.state,
-            env: &env,
-        };
-        match calls.list_runs(request, log) {
-            Ok(work) => Ok(ready_runs(work)),
-            Err(failure) => Err(failure),
+    (awaited $name:ident, $call_type:expr, $request:ident, $reply:ty, $method:ident) => {
+        pub(crate) fn $name(
+            config: RecordingConfig,
+            recorder: Recorder,
+            request: $request<'_>,
+        ) -> (
+            Result<$reply, EvalRunFailure>,
+            Fixture,
+            EvalRunCreateList<RecordingConfig, Recorder>,
+        ) {
+            let calls = caller(config, recorder);
+            let mut fixture = Fixture::new($call_type);
+            let answer = {
+                let env = fixture.env.pre_post();
+                let log = EvalLogging {
+                    state: &mut fixture.state,
+                    env: &env,
+                };
+                block_on(calls.$method(request, log))
+            };
+            (answer, fixture, calls)
         }
     };
-    (answer, fixture, calls)
 }
 
-// one awaited create: acreate_run runs on a block_on executor, since the handler futures answer at once
-pub(crate) fn awaited_create(
-    config: RecordingConfig,
-    recorder: Recorder,
-    request: CreateRunArgs<'_>,
-) -> (
-    Result<Run, EvalRunFailure>,
-    Fixture,
-    EvalRunCreateList<RecordingConfig, Recorder>,
-) {
-    let calls = caller(config, recorder);
-    let mut fixture = Fixture::new("create_run");
-    let answer = {
-        let env = fixture.env.pre_post();
-        let log = EvalLogging {
-            state: &mut fixture.state,
-            env: &env,
-        };
-        block_on(calls.acreate_run(request, log))
-    };
-    (answer, fixture, calls)
-}
-
-// one awaited list, the same way
-pub(crate) fn awaited_list(
-    config: RecordingConfig,
-    recorder: Recorder,
-    request: ListRunsArgs<'_>,
-) -> (
-    Result<ListRunsResponse, EvalRunFailure>,
-    Fixture,
-    EvalRunCreateList<RecordingConfig, Recorder>,
-) {
-    let calls = caller(config, recorder);
-    let mut fixture = Fixture::new("list_runs");
-    let answer = {
-        let env = fixture.env.pre_post();
-        let log = EvalLogging {
-            state: &mut fixture.state,
-            env: &env,
-        };
-        block_on(calls.alist_runs(request, log))
-    };
-    (answer, fixture, calls)
-}
+call_helper!(sync sync_create, "create_run", CreateRunArgs, Run, create_run, ready);
+call_helper!(sync sync_list, "list_runs", ListRunsArgs, ListRunsResponse, list_runs, ready_runs);
+call_helper!(awaited awaited_create, "create_run", CreateRunArgs, Run, acreate_run);
+call_helper!(awaited awaited_list, "list_runs", ListRunsArgs, ListRunsResponse, alist_runs);
