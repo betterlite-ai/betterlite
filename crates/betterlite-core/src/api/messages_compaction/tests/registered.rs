@@ -76,12 +76,16 @@ fn registered<'services>(
     }
 }
 
-fn dispatch<'spec>(messages: Vec<Json>, spec: &'spec Json) -> DispatchRequest<'spec> {
+fn dispatch<'spec>(
+    messages: Vec<Json>,
+    system: Option<Json>,
+    spec: &'spec Json,
+) -> DispatchRequest<'spec> {
     DispatchRequest {
         model: "main-model",
         messages,
         tools: None,
-        system: None,
+        system,
         context_management_spec: Some(spec),
         litellm_metadata: None,
         llm_router: None,
@@ -89,7 +93,12 @@ fn dispatch<'spec>(messages: Vec<Json>, spec: &'spec Json) -> DispatchRequest<'s
     }
 }
 
-async fn run_registered(messages: &str, spec: &Json, clear_count: usize) -> SummaryRun {
+async fn run_registered(
+    messages: &str,
+    system: Option<Json>,
+    spec: &Json,
+    clear_count: usize,
+) -> SummaryRun {
     let serving = serve_summary();
     let executor = executor();
     let summary_deployment = deployment(&format!("http://{}/v1", serving.address));
@@ -103,7 +112,7 @@ async fn run_registered(messages: &str, spec: &Json, clear_count: usize) -> Summ
         text: 0,
     };
     let editors = registered(&settings, &counter, &completion, clear_count);
-    let result = apply_context_management(dispatch(decided(messages), spec), &editors)
+    let result = apply_context_management(dispatch(decided(messages), system, spec), &editors)
         .await
         .expect("the registered editors run");
     let request = serving.finish().expect("one provider request");
@@ -164,8 +173,24 @@ async fn registered_summary_editor_http() {
     let spec = parse(
         r#"{"edits":[{"type":"compact_20260112","trigger":{"type":"input_tokens","value":50000}}]}"#,
     );
-    let run = run_registered(COMPACT_HISTORY, &spec, 0).await;
+    let run = run_registered(COMPACT_HISTORY, None, &spec, 0).await;
     assert_one_summary_request(&run.request);
+    assert_compaction_result(&run.result);
+}
+
+#[tokio::test]
+async fn registered_summary_editor_http_carries_the_system_prompt() {
+    let spec = parse(
+        r#"{"edits":[{"type":"compact_20260112","trigger":{"type":"input_tokens","value":50000}}]}"#,
+    );
+    let system = Some(parse(r#""BASE SYSTEM""#));
+    let run = run_registered(COMPACT_HISTORY, system, &spec, 0).await;
+    assert_one_summary_request(&run.request);
+    assert!(
+        run.request.body.contains("BASE SYSTEM"),
+        "the system prompt becomes the summary call's first message: {}",
+        run.request.body
+    );
     assert_compaction_result(&run.result);
 }
 
@@ -176,11 +201,16 @@ async fn registered_summary_editor_http_clears_before_compacting() {
             "trigger":{"type":"input_tokens","value":50000}},
             {"type":"compact_20260112","trigger":{"type":"input_tokens","value":50000}}]}"#,
     );
-    let run = run_registered(TOOL_HISTORY, &spec, 50_001).await;
+    let run = run_registered(TOOL_HISTORY, None, &spec, 50_001).await;
     assert_eq!(run.request.line, "POST /v1/chat/completions HTTP/1.1");
     assert!(
         run.request.body.contains(CLEARED_TOOL_RESULT_CONTENT),
         "the cleared tool result reaches the summary request: {}",
+        run.request.body
+    );
+    assert!(
+        run.request.body.contains("tool_call_id"),
+        "the tool history reaches the summary call in OpenAI shape: {}",
         run.request.body
     );
     assert_clear_then_compact(&run.result);
