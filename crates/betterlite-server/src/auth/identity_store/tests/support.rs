@@ -107,10 +107,9 @@ impl KeyCacheWriter for RecordingWriter {
     async fn write_key(
         &self,
         hashed_token: &str,
-        auth: &mut UserAPIKeyAuth,
+        _auth: &mut UserAPIKeyAuth,
     ) -> Result<(), InvalidationError> {
         lock(&self.writes).push(hashed_token.to_owned());
-        auth.view.last_refreshed_at = Some(Decimal::ONE);
         Ok(())
     }
 }

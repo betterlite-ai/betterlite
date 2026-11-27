@@ -1,9 +1,8 @@
 use betterlite_auth::auth_errors::conversion::as_proxy_exception;
 use betterlite_auth::auth_key_lookup::error::KeyLookupError;
 use betterlite_auth::identity_store::error::IdentityStoreError;
-use betterlite_oracle_helper_api::helper::HelperResult;
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{Value, json};
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -33,17 +32,17 @@ impl ErrorKind {
     }
 }
 
-pub(super) fn error(input: &ErrorInput) -> HelperResult {
+pub(super) fn error(input: &ErrorInput) -> Value {
     let failure = store_error(input).failure();
     let client = as_proxy_exception(&failure);
     let exception = client.exception();
-    Ok(json!({
+    json!({
         "kind": input.kind.label(),
         "message": &exception.message,
         "type": &exception.error_type,
         "param": exception.param.as_deref(),
         "code": &exception.code,
-    }))
+    })
 }
 
 fn store_error(input: &ErrorInput) -> IdentityStoreError {

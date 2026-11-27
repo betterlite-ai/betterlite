@@ -54,7 +54,7 @@ impl Helper for Op {
         match input {
             Input::Principal(fields) => principal::principal(fields),
             Input::Carrier(fields) => carrier::carrier(fields),
-            Input::Error(fields) => error::error(fields),
+            Input::Error(fields) => Ok(error::error(fields)),
         }
     }
 }

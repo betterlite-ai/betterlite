@@ -18,6 +18,7 @@ use crate::state::ServerState;
 mod tests;
 
 // The resolved identity's inputs: the credential, the composition root's store, and the master key compared first.
+#[derive(Clone)]
 pub struct IdentityStageInput {
     presented: Option<SecretString>,
     store: IdentityStore,
