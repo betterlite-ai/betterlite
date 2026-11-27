@@ -1,7 +1,7 @@
 import asyncio
-import dataclasses
 import json
 import logging
+from dataclasses import asdict
 from typing import Final, Literal, Protocol, cast
 
 import litellm
@@ -224,10 +224,10 @@ async def call_editor(
 ) -> PolyfillResult:
     return await apply_compact_20260112(
         model=scenario.model,
-        messages=scenario.messages,
-        tools=scenario.tools,
-        system=scenario.system,
-        edit_spec=scenario.edit_spec,
+        messages=cast(list[dict[str, object]], scenario.messages),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L1163
+        tools=cast(list[dict[str, object]] | None, scenario.tools),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L1164
+        system=cast(str | list[dict[str, object]] | None, scenario.system),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L1165
+        edit_spec=cast(dict[str, object], scenario.edit_spec),  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L1166
         litellm_metadata=scenario.metadata,
         llm_router=llm_router,
         user_api_key_auth=principal,
@@ -265,7 +265,7 @@ async def run_scenario(scenario: Scenario, api_base: str) -> dict[str, JsonValue
     refused: dict[str, JsonValue] | None
     try:
         polyfilled = await call_editor(scenario, llm_router, principal)
-        outcome = SHAPE.validate_python(cast(dict[str, JsonValue], dataclasses.asdict(polyfilled)))
+        outcome = SHAPE.validate_python(cast(dict[str, JsonValue], asdict(polyfilled)))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/result.py#L21
         refused = None
     except errors.AnthropicContextManagementError as error:
         outcome = None
