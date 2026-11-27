@@ -1,0 +1,97 @@
+id: B10167
+title: One email date port for Retry-After and the blog feed
+description: >-
+  LiteLLM's _get_retry_after_from_exception_header reads a Retry-After header as int(header) first and otherwise as email.utils.parsedate_tz plus mktime_tz, answering -1 when neither works. betterlite reads that header twice. The router's crates/betterlite-router/src/retry_policy/retry_after.rs (B306) hand-ports _parsedate_tz and calendar.timegm, while betterlite-core's crates/betterlite-core/src/retry_after.rs (B5364) uses jiff's strict RFC 2822 parser and the httpdate crate. The core reader refuses headers LiteLLM reads: a wrong weekday, a lower-case or long month name, a two-digit year in the RFC 2822 form, an underscore inside a number, an unknown zone name, a clock that rolls over. B10163's blog feed needs the same _parsedate_tz port for its pubDate. Move the router's port down into betterlite-core, the lowest crate the router, the server and the guardrails all depend on, and make both Retry-After readers call it, so one port is left.
+
+
+  Module. crates/betterlite-core/src/email_date.rs, a one-line stub on main with its `pub mod email_date;` line in core's lib.rs. Move into it from the router's retry_after.rs the MONTHS, WEEKDAYS, ZONES and EPOCH_ORDINAL tables and date_tokens, parse_date, unix_seconds, zone_offset and parse_integer, reshaped into three public functions. python_int(text: &str) -> Option<i64> reads a token the way Python's int() does: an optional sign, then ASCII digits where a single underscore may sit between two digits, saturating at the i64 bounds as parse_integer does today. parsedate_tz(text: &str) -> Option<ParsedDate> keeps today's tokenizing, weekday, RFC 850, glued zone, month swap, year, time and zone swap, clock split and two-digit-year rules unchanged and reads every number through python_int. ParsedDate holds year, day, hour, minute and second as i64, month as u32 from 1 to 12, and zone_offset: Option<i64> in seconds: a ZONES name, or python_int of the zone token turned into sign times (hours times 3600 plus minutes times 60) as _parsedate_tz does, with saturating arithmetic so a huge zone stays huge; None when the zone is missing, is neither a name nor a number, or is a negative zero such as "-0000". mktime_tz(date: &ParsedDate) -> Option<i64> is today's unix_seconds: calendar.timegm with the day and clock unchecked so they roll over, the year bounded to 1 through 9999, minus the offset, where a missing offset counts as 0 as email.utils.parsedate_tz makes it. Unit tests go in email_date/tests.rs: python_int_reads_python_integers ("1_0", "+7", "-5", "007" and a 25-digit value that saturates are read; "1__0", "_10", "10_", "+", "", "0x10" and "3.5" are not), zone_offset_follows_parsedate_tz ("EST" gives -18000, "+0530" 19800, "-0000", "XYZ" and "+12a4" give None, a 20-digit zone saturates) and parsedate_tz_reads_the_fields (exact fields for an RFC 2822 date, an RFC 850 date and an asctime date).
+
+
+  Router. retry_after.rs keeps MAX_RETRY_AFTER_BYTES, RetryAfter with seconds_until, RetryAfterError and parse_retry_after: the byte bound and UTF-8 check stay, then the trimmed text goes through betterlite_core::email_date::python_int for the seconds form and parsedate_tz with mktime_tz for the date. The router tests stay as they are with two edits: the underscore case moves from an_unparsable_value_is_a_typed_error in retry_policy_boundaries.rs to seconds_are_read_exactly as underscore_between_digits, giving 10, and the_date_forms_parsedate_tz_reads_parse in retry_policy_behaviors.rs gains underscore_in_year (b"21 Oct 2_015 07:28:00 GMT", 1_445_412_480).
+
+
+  Core. retry_after_from_header keeps its signature and its -1 for a missing or unreadable header. It tries python_int on the trimmed text, then parsedate_tz and mktime_tz, turns the seconds into a jiff Timestamp and keeps today's duration_since(now).as_secs(), so a fractional now truncates toward zero like Python's int(). Remove the DateTimeParser and httpdate calls and the httpdate dependency in crates/betterlite-core/Cargo.toml, since nothing else in core uses it; jiff stays for budget_reset, duration and the now argument. retry_after_header_reads_seconds_or_an_http_date in retry_after/tests.rs gains, with NOW 30 seconds before 07:28:00 GMT on 21 Oct 2015 and 30 expected for each date: wrong_weekday ("Fri, 21 Oct 2015 07:28:00 GMT"), lower_case_month ("Wed, 21 oct 2015 07:28:00 GMT"), long_month ("21 October 2015 07:28:00 GMT"), two_digit_year ("Wed, 21 Oct 15 07:28:00 GMT"), underscore_year ("21 Oct 2_015 07:28:00 GMT"), named_zone ("Wed, 21 Oct 2015 03:28:00 EDT"), unknown_zone_is_utc ("Wed, 21 Oct 2015 07:28:00 XYZ") and clock_rollover ("21 Oct 2015 07:27:60 GMT"), plus underscore_seconds ("1_0" gives 10). The RFC 850, asctime and no-weekday cases already in the file keep passing through the new path.
+
+
+  Oracle. Add tools/oracle/cases/helpers/environment-validation/retry-after-lenient-dates.yaml calling B5364's existing b5364 operation with operation retry_after_header, now 1445412450 and the same nine headers, so LiteLLM's own _get_retry_after_from_exception_header is the reference. No new helper operation.
+
+
+  Guardrails. crates/betterlite-guardrails/src/azure_content_safety/legacy_retry.rs calls retry_after_from_header for Retry-After and the two Azure millisecond headers and needs no code change; its retry tests must keep passing.
+
+
+  What callers see. Core's readers, the B5364 helper and the Azure Content Safety retry delay now read every lenient date and underscore form above the way LiteLLM does, where today they answer -1. A header holding an integer past the i64 range now saturates to i64::MAX instead of answering -1: calculate_retry_after still falls back to backoff, but legacy_retry's delay becomes i64::MAX seconds where today it is zero, the same wait it already gives a header of exactly 9223372036854775807. In the router, "1_0" is 10 seconds instead of NotDate, and a numeric zone too large for i64 seconds gives a far-past RetryAfter::At instead of NotDate; the cooldown filter drops a negative wait and the sleep falls back to backoff, so no router caller sees that one.
+scope:
+  paths:
+    - Cargo.lock
+    - crates/betterlite-core/Cargo.toml
+    - crates/betterlite-core/src/email_date.rs
+    - crates/betterlite-core/src/email_date/**
+    - crates/betterlite-core/src/retry_after.rs
+    - crates/betterlite-core/src/retry_after/**
+    - crates/betterlite-router/src/retry_policy/retry_after.rs
+    - crates/betterlite-router/src/retry_policy/tests/retry_policy_behaviors.rs
+    - crates/betterlite-router/src/retry_policy/tests/retry_policy_boundaries.rs
+    - crates/betterlite-guardrails/src/azure_content_safety/legacy_retry.rs
+    - crates/betterlite-guardrails/src/azure_content_safety/tests/azure_violation_detection/retry_policy.rs
+    - tools/oracle/cases/helpers/environment-validation/retry-after-lenient-dates.yaml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L7197-L7228
+    why: _get_retry_after_from_exception_header, int(retry_header) and then email.utils.parsedate_tz with mktime_tz, -1 otherwise; both Rust readers port it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_blog_posts.py#L94-L100
+    why: The other LiteLLM caller of the same port, parsedate_to_datetime in the blog feed; B10163 builds it on email_date.
+  - url: https://docs.python.org/3/library/email.utils.html#email.utils.parsedate_tz
+    why: parsedate_tz and mktime_tz, the lenient parsing and the None-to-zero offset rule email_date keeps.
+dod:
+  - text: betterlite-core's email_date holds the one _parsedate_tz port with python_int, parsedate_tz and mktime_tz, and its unit tests pin the integer grammar, the zone offsets and the parsed fields.
+    proof: [email-date-tests]
+  - text: The router's parse_retry_after calls email_date and keeps no tables, tokenizer or integer parser of its own, and every retry policy test passes, including the moved underscore case and the new underscore year.
+    proof: [router-tests, router-underscore]
+  - text: Core's retry_after_from_header calls email_date instead of jiff's RFC 2822 parser and httpdate, httpdate leaves core's manifest, and the lenient forms LiteLLM reads give LiteLLM's seconds.
+    proof: [core-retry-tests, core-lenient-cases, oracle]
+  - text: The new helper case compares those headers with LiteLLM's own reader through the b5364 operation.
+    proof: [lenient-case, oracle]
+  - text: The Azure Content Safety retry delay still answers as before for every header its tests cover.
+    proof: [guardrails-retry]
+checks:
+  optional: [mutants]
+  commands:
+    - id: email-date-tests
+      why: The shared port is missing from betterlite-core or its integer, zone or field rules drift from _parsedate_tz.
+      run: grep -q 'pub fn parsedate_tz' crates/betterlite-core/src/email_date.rs && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^email_date::/)'
+    - id: router-tests
+      why: The router keeps its own copy of the port, or switching to core changed a Retry-After answer its tests pin.
+      run: grep -q 'email_date' crates/betterlite-router/src/retry_policy/retry_after.rs && ! grep -qE 'const MONTHS|const ZONES|fn date_tokens|fn parse_integer' crates/betterlite-router/src/retry_policy/retry_after.rs && cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^retry_policy::/)'
+    - id: router-underscore
+      why: The router still refuses an underscore Python's int() accepts.
+      run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^retry_policy::tests::retry_policy_boundaries::seconds_are_read_exactly::case_\d+_underscore_between_digits$/)' && cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^retry_policy::tests::retry_policy_behaviors::the_date_forms_parsedate_tz_reads_parse::case_\d+_underscore_in_year$/)'
+    - id: core-retry-tests
+      why: Core still reads dates with jiff's parser or httpdate, or a B5364 retry test broke.
+      run: grep -q 'email_date' crates/betterlite-core/src/retry_after.rs && ! grep -qE 'DateTimeParser|httpdate' crates/betterlite-core/src/retry_after.rs && ! grep -q '^httpdate' crates/betterlite-core/Cargo.toml && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^retry_after::/)'
+    - id: core-lenient-cases
+      why: A lenient form LiteLLM reads has no core test.
+      run: for name in wrong_weekday lower_case_month long_month two_digit_year underscore_year named_zone unknown_zone_is_utc clock_rollover underscore_seconds; do grep -q "case::${name}(" crates/betterlite-core/src/retry_after/tests.rs || exit 1; done && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^retry_after::tests::retry_after_header_reads_seconds_or_an_http_date::/)'
+    - id: lenient-case
+      why: No helper case compares the lenient headers with LiteLLM.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/environment-validation/retry-after-lenient-dates.yaml)" && grep -q 'retry_after_header' tools/oracle/cases/helpers/environment-validation/retry-after-lenient-dates.yaml
+    - id: guardrails-retry
+      why: The Azure Content Safety retry delay changed for a header its tests pin once core switched readers.
+      run: grep -q 'email_date' crates/betterlite-core/src/retry_after.rs && cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_content_safety::(.*::)?azure_violation_detection::retry_policy::/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/environment-validation/retry-after-header.yaml
+  - tools/oracle/cases/helpers/environment-validation/retry-after-lenient-dates.yaml
+deviations: []
+out_of_scope:
+  - "B10163 moves the blog feed parser into betterlite-server and builds its pubDate parsing on email_date.parsedate_tz; this task does not touch the blog."
+  - "_calculate_retry_after, should_retry, RetryTiming and RetryAttempt in core and the router's backoff and cooldown stay as B5364 and B306 built them; only the header reading changes."
+  - "betterlite-transcribe's media_source.rs reads Last-Modified with chrono's RFC 2822 parser where LiteLLM's transcribe passthrough calls parsedate_to_datetime; it is a separate reader and is left alone."
+  - "B306's retry-policy probe cases stay out of oracle_cases so the gate does not build the gateway; the router's own tests pin the same answers."
+pitfalls:
+  - The router's parse_integer has no underscore rule today, so moving it as it is would keep refusing "1_0"; Python's int() takes one underscore only between two digits, so "1__0", "_10" and "10_" must still fail.
+  - The zone offset saturates instead of failing on overflow, because B10163's blog date needs an out-of-range zone to stay out of range, and a zone that turned into None on overflow would count as no zone.
+  - A missing zone_offset means local time in Python's mktime_tz, but parsedate_tz has already turned None into 0 before LiteLLM calls it, so mktime_tz here reads None as 0 and never as local time.
+  - The guardrails reader passes the two Azure millisecond headers through the same function, so "1_0" in x-ms-retry-after-ms now means 10 milliseconds as well.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

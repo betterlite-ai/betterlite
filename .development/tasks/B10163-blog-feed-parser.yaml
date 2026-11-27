@@ -7,10 +7,7 @@ description: >-
   Files. Move with git mv, then fix paths and visibility. tools/oracle/src/helpers/server/blog_feed/parser.rs replaces the one-line stub crates/betterlite-server/src/public_endpoints/blog_feed_parser.rs (its `pub mod blog_feed_parser;` line in public_endpoints.rs is on main). parser/collector.rs becomes blog_feed_parser/collector.rs, parser/tests.rs becomes blog_feed_parser/tests.rs and date_parse/tests.rs becomes blog_feed_parser/date_parse/tests.rs. Replace the #[path] attributes with plain `mod` lines like the rest of the crate. That is 351 lines of source (143 parser, 208 collector) and 194 lines of tests. The helper's 288-line date_parse.rs is deleted, not moved; the next paragraph says what replaces it.
 
 
-  One date port. date_parse.rs ports email.utils._parsedate_tz, and crates/betterlite-router/src/retry_policy/retry_after.rs (B306) already ports the same function for Retry-After dates, so keep the router's port and build the blog date on it. betterlite-server already depends on betterlite-router, so there is no new crate edge. In retry_after.rs, split the private parse_date into pub fn parsedate_tz(text: &str) -> Option<ParsedDate> and the timegm step. ParsedDate holds year, day, hour, minute and second as i64 read the way Python's int() reads them, month as u32 from 1 to 12, and zone_offset: Option<i64> in seconds. zone_offset is None when the zone is missing, is not a number or a known name, or is a negative zero ("-0000"), as _parsedate_tz returns. It is computed with saturating arithmetic, so a zone too large for i64 seconds stays out of range instead of failing. parsedate_tz keeps today's tokenizing, month, field-swap, clock and two-digit-year rules and the zone name table unchanged. The timegm step stays private in retry_after.rs: it reads a missing zone as 0, as email.utils.parsedate_tz does, and keeps the year 1 to 9999 bound and the unchecked day and clock rollover. parse_integer becomes Python's int() grammar, an optional sign and ASCII digits with single underscores allowed between two digits, still saturating at the i64 bounds, and it serves both the seconds form and the date fields. Then blog_feed_parser/date_parse.rs is about 40 lines: parse_date(raw) calls parsedate_tz and returns the raw text when it gives None, when zone_offset is 86,400 seconds or more in either direction (datetime.timezone's bound), or when the fields make no valid datetime (year 1 to 9999, a day that exists in the month, hour under 24, minute and second under 60); otherwise it returns the parsed fields as YYYY-MM-DD without converting the zone. collector.rs reaches it as super::date_parse::parse_date. The moved date tests must pass unchanged; add the case underscore_in_day ("Thu, 1_2 Mar 2026 10:00:00 GMT" gives "2026-03-12") to formats_valid_dates.
-
-
-  Behavior that changes. The router now reads an underscore between digits as Python does: a Retry-After of "1_0" is 10 seconds instead of NotDate, the same as LiteLLM's int(retry_header), and a date field like "2_015" parses. Move the router's underscore case from an_unparsable_value_is_a_typed_error in retry_policy_boundaries.rs to seconds_are_read_exactly as underscore_between_digits with 10, and add underscore_in_year (b"21 Oct 2_015 07:28:00 GMT", 1_445_412_480) to the_date_forms_parsedate_tz_reads_parse in retry_policy_behaviors.rs. A numeric zone too large for i64 seconds now gives a far-past RetryAfter::At instead of NotDate, as LiteLLM computes a huge negative retry_after; the cooldown filter drops a negative value and the sleep falls back to backoff, so no caller sees a difference. On the blog side a named zone such as EST now resolves to an offset instead of counting as no zone; the date stays the same. An underscore in a date field now parses instead of keeping the raw text.
+  One date port. date_parse.rs ports email.utils._parsedate_tz, and B10167 moves the one shared port of that function into betterlite-core as email_date, where the router's and core's Retry-After readers already call it. betterlite-server depends on betterlite-core, so there is no new crate edge. blog_feed_parser/date_parse.rs is about 40 lines over betterlite_core::email_date::parsedate_tz: parse_date(raw) returns the raw text when parsedate_tz gives None, when its zone_offset is 86,400 seconds or more in either direction (datetime.timezone's bound), or when the fields make no valid datetime (year 1 to 9999, a day that exists in the month, hour under 24, minute and second under 60); otherwise it returns the parsed fields as YYYY-MM-DD without converting the zone. collector.rs reaches it as super::date_parse::parse_date. The moved date tests must pass unchanged; add the case underscore_in_day ("Thu, 1_2 Mar 2026 10:00:00 GMT" gives "2026-03-12") to formats_valid_dates. Against the helper's port, a named zone such as EST now resolves to an offset instead of counting as no zone, and the date stays the same; an underscore in a date field now parses as Python's int() reads it instead of keeping the raw text.
 
 
   Public surface, used by the oracle helper and by B9300: BlogPost with pub title, description, date and url Strings (Debug, Clone, PartialEq, Eq, Serialize and Deserialize with deny_unknown_fields, as today), ParseFailure (the module's one thiserror enum: Xml, Decode, Escape, MissingChannel, UnclosedElement, OutsideRoot and the new TooDeep below) and parse_rss_to_posts(xml: &str, max_posts: usize, max_depth: usize) -> Result<Vec<BlogPost>, ParseFailure>. The collector, the event handlers and parse_date stay private or pub(super), since the workspace denies unreachable_pub.
@@ -37,9 +34,6 @@ scope:
     - crates/betterlite-server/src/public_endpoints/blog_feed_parser/**
     - crates/betterlite-server/fuzz/fuzz_targets/blog_feed.rs
     - crates/betterlite-server/fuzz/corpus/blog_feed/**
-    - crates/betterlite-router/src/retry_policy/retry_after.rs
-    - crates/betterlite-router/src/retry_policy/tests/retry_policy_behaviors.rs
-    - crates/betterlite-router/src/retry_policy/tests/retry_policy_boundaries.rs
     - tools/oracle/src/helpers/server/Cargo.toml
     - tools/oracle/src/helpers/server/blog_feed.rs
     - tools/oracle/src/helpers/server/blog_feed/**
@@ -51,11 +45,9 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_blog_posts.py#L68-L111
     why: parse_rss_to_posts, the behavior the moved parser keeps; root.find("channel"), channel.findall("item") and item.find() pick only direct children.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_blog_posts.py#L94-L100
-    why: The pubDate branch, parsedate_to_datetime with the raw text kept on any exception; date_parse.rs builds it on the router's parsedate_tz.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L7197-L7228
-    why: The Retry-After reader the router port serves, int(retry_header) first and then email.utils.parsedate_tz with mktime_tz.
+    why: The pubDate branch, parsedate_to_datetime with the raw text kept on any exception; date_parse.rs builds it on B10167's email_date.parsedate_tz.
   - url: https://docs.python.org/3/library/email.utils.html#email.utils.parsedate_to_datetime
-    why: parsedate_tz and parsedate_to_datetime, the two callers of the one _parsedate_tz port, including the 24-hour zone bound B5100 fixed.
+    why: parsedate_to_datetime, the datetime and 24-hour zone checks date_parse.rs adds on top of email_date.parsedate_tz, including the zone bound B5100 fixed.
   - url: https://docs.rs/quick-xml/0.41.0/quick_xml/events/struct.BytesStart.html#method.decoder
     why: The decoder that replaces String::from_utf8_lossy for start tag names.
 dod:
@@ -67,10 +59,8 @@ dod:
     proof: [depth-tests]
   - text: Exactly one blog parser and one fuzz target remain, in betterlite-server; the oracle fuzz target is gone and the production module uses no String::from_utf8_lossy.
     proof: [one-parser]
-  - text: One email.utils._parsedate_tz port remains, the router's parsedate_tz; the blog date parsing calls it, and every existing retry policy test still passes.
-    proof: [one-parser, router-tests, behavior-tests]
-  - text: The shared port reads integers with Python's int() grammar, so an underscore between digits parses in a Retry-After value, a router date field and a blog date field.
-    proof: [underscore-cases]
+  - text: The blog date parsing calls betterlite-core's email_date.parsedate_tz and keeps no tokenizer of its own, and its moved tests plus underscore_in_day pass.
+    proof: [one-parser, behavior-tests]
   - text: The production blog_feed fuzz target calls parse_rss_to_posts, and its corpus, the moved seeds plus a new deep-nesting seed, replays through the production parser.
     proof: [blog-corpus]
 checks:
@@ -78,7 +68,7 @@ checks:
   commands:
     - id: behavior-tests
       why: The moved parser and date tests are missing from betterlite-server or fail there.
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^public_endpoints::blog_feed_parser::/) - test(/::replays_the_blog_feed_corpus/)'
+      run: grep -q 'case::underscore_in_day(' crates/betterlite-server/src/public_endpoints/blog_feed_parser/date_parse/tests.rs && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^public_endpoints::blog_feed_parser::/) - test(/::replays_the_blog_feed_corpus/)'
     - id: depth-tests
       why: The nesting limit B9300 relies on is missing or off by one.
       run: grep -q 'fn nesting_at_the_limit_is_accepted' crates/betterlite-server/src/public_endpoints/blog_feed_parser/tests.rs && grep -q 'fn nesting_past_the_limit_is_refused' crates/betterlite-server/src/public_endpoints/blog_feed_parser/tests.rs && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^public_endpoints::blog_feed_parser::tests::nesting_(at|past)_the_limit_is_(accepted|refused)$/)'
@@ -88,12 +78,6 @@ checks:
     - id: one-parser
       why: A second copy of the parser, the date parsing or the oracle fuzz target survives, or the production module mangles bytes it should refuse.
       run: grep -q 'fn parse_rss_to_posts' crates/betterlite-server/src/public_endpoints/blog_feed_parser.rs && ! grep -rqE 'fn parse_rss_to_posts|fn parse_date|struct Collector' tools/oracle/src/helpers/server/blog_feed.rs tools/oracle/src/helpers/server/blog_feed tools/oracle/fuzz/fuzz_targets && ! grep -q 'blog_feed_xml' tools/oracle/fuzz/Cargo.toml && ! grep -rq 'from_utf8_lossy' crates/betterlite-server/src/public_endpoints/blog_feed_parser.rs crates/betterlite-server/src/public_endpoints/blog_feed_parser && grep -q 'parsedate_tz' crates/betterlite-server/src/public_endpoints/blog_feed_parser/date_parse.rs && ! grep -qE 'MONTHNAMES|DAYNAMES|fn python_int_digits|fn split_glued_timezone|fn resolve_month' crates/betterlite-server/src/public_endpoints/blog_feed_parser/date_parse.rs
-    - id: router-tests
-      why: The router no longer exposes the shared parsedate_tz, or splitting it changed a Retry-After answer the retry policy tests pin.
-      run: grep -q 'pub fn parsedate_tz' crates/betterlite-router/src/retry_policy/retry_after.rs && cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^retry_policy::/)'
-    - id: underscore-cases
-      why: The shared integer reading still refuses an underscore Python's int() accepts.
-      run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^retry_policy::tests::retry_policy_boundaries::seconds_are_read_exactly::case_\d+_underscore_between_digits$/)' && cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^retry_policy::tests::retry_policy_behaviors::the_date_forms_parsedate_tz_reads_parse::case_\d+_underscore_in_year$/)' && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^public_endpoints::blog_feed_parser::date_parse::tests::formats_valid_dates::case_\d+_underscore_in_day$/)'
     - id: blog-corpus
       why: The production fuzz target does not reach the parser, or its corpus has no deep-nesting seed or does not replay.
       run: grep -q 'parse_rss_to_posts' crates/betterlite-server/fuzz/fuzz_targets/blog_feed.rs && test -n "$(git diff --no-renames --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/blog_feed/deep-nesting.xml)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^public_endpoints::blog_feed_parser::tests::replays_the_blog_feed_corpus/)'
@@ -127,11 +111,10 @@ out_of_scope:
   - "B9300 owns load_local_blog_posts, fetch_rss_feed, validate_blog_posts, get_blog_posts and the module-level get_blog_posts wrapper in get_blog_posts.py, the production BlogFeed and BlogPostsResponse, the 16 MiB response cap and the choice of 64 as the public nesting cap."
   - "The oracle helper's fetch mock, cache, validate_blog_posts and sequence runners in blog_feed.rs and blog_feed/logic.rs keep their logic here and only change their parser calls; B9300 switches them to its BlogFeed, so get_blog_posts exists once after it lands."
   - "No new helper operation and no new oracle case: the existing blog_feed operation and its 24 cases prove the move."
-  - "Retry-After's seconds handling, the 8192-byte bound, RetryAfter and its callers stay B306's as they are; only the date port inside retry_after.rs is split and its integer grammar changes."
+  - "B10167 owns betterlite-core's email_date (python_int, parsedate_tz, mktime_tz) and both Retry-After readers; this task only calls parsedate_tz."
 pitfalls:
-  - The gate counts the diff with --no-renames, so the move and the date rewrite cost about 1,200 of the 1,500 changed lines (the moved tests.rs files, the router tests and the corpus do not count); make no edits beyond the ones the description lists, and leave the router's tokenizer lines where they are.
-  - The zone offset saturates instead of failing on overflow, since the blog test timezone_overflows_i64 expects the raw text back, and a zone that turned into "no zone" on overflow would give a date instead.
-  - Python's int() takes an underscore only between two digits, so "1__0", "_10" and "10_" stay unparsable; keep those refusals while "1_0" becomes 10.
+  - The gate counts the diff with --no-renames, so the move and the date rewrite cost about 1,130 of the 1,500 changed lines (the moved tests.rs files and the corpus do not count); make no edits beyond the ones the description lists.
+  - email_date.parsedate_tz saturates a huge zone instead of dropping it, so timezone_overflows_i64 keeps its raw text only if parse_date checks the offset bound with unsigned_abs and does not treat a saturated i64::MIN as small.
   - The corpus replay used to sit at "../../../fuzz/corpus/blog_feed" from the oracle group crate; under crates/betterlite-server the path is "fuzz/corpus/blog_feed", and an rstest files glob or a read_dir on the old path finds nothing.
   - The helper's parse_failure_class matches ParseFailure exhaustively, so the new TooDeep variant has to get its arm there in the same change or the oracle server group stops compiling.
   - The oracle fuzz manifest lists chrono and quick-xml under [package.metadata.cargo-shear] ignored only because the path includes hid their use; remove the ignore entries with the dependencies, or cargo shear reports them.
