@@ -1,0 +1,37 @@
+kind: helper
+name: model-grant-intersection-layered-walk
+call:
+  model_grant_intersection:
+    function: enforced
+    database: true
+    token: {models: [gpt-4o], team_id: t1, user_id: u1, project_id: p1}
+    team: {team_id: t1, models: [gpt-4o, tier-a], organization_id: o1}
+    user: {user_id: u1, models: [user-model]}
+    project: {project_id: p1, models: [proj-model]}
+    membership: {user_id: u1, team_id: t1, allowed_models: [tier-a]}
+calls:
+  # attribution reads the organization the team carries and never the user scope
+  - model_grant_intersection:
+      function: collected
+      database: true
+      token: {models: [gpt-4o], team_id: t1, user_id: u1}
+      models: [gpt-4o]
+      team: {team_id: t1, models: [gpt-4o, tier-a], organization_id: o1}
+      membership: {user_id: u1, team_id: t1, allowed_models: [tier-a]}
+      org: {organization_id: o1, models: [tier-b]}
+      registry: [tier-a, tier-b]
+      serving: {gpt-4o: [tier-a, tier-b, tier-c]}
+  # the stamp replaces an earlier attribution with the groups of this request
+  - model_grant_intersection:
+      function: stamped
+      database: true
+      token: {models: [gpt-4o], team_id: t1, user_id: u1}
+      models: [gpt-4o]
+      stamp_before: [old]
+      team: {team_id: t1, models: [gpt-4o, tier-a], organization_id: o1}
+      membership: {user_id: u1, team_id: t1, allowed_models: [tier-a]}
+      org: {organization_id: o1, models: [tier-b]}
+      registry: [tier-a, tier-b]
+      serving: {gpt-4o: [tier-a, tier-b, tier-c]}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,21 @@
+kind: helper
+name: auth-key-lookup-jwt-mapping-issuer-cache-key
+call:
+  auth_key_lookup:
+    aspect: cache_key
+    claim_name: sub
+    claim_value: abc
+    issuer: iss
+calls:
+  # an absent issuer and an empty one share the global cache key
+  - auth_key_lookup:
+      aspect: cache_key
+      claim_name: sub
+      claim_value: abc
+  - auth_key_lookup:
+      aspect: cache_key
+      claim_name: sub
+      claim_value: abc
+      issuer: ''
+env: {}
+compare: {ignore: []}

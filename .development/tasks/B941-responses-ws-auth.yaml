@@ -89,7 +89,7 @@ description: >-
   "http", method "POST", path "/v1/responses", the WebSocket scope headers,
   and request._url equal to websocket.url. Its body is the UTF-8 JSON bytes
   produced from {"model": "gpt-4o"}, including the json.dumps space after the
-  colon. Call common_processing_pre_call_logic (B8801's PreCall step with route type _aresponses_websocket; keep `Arc<dyn PreCall<UserAPIKeyAuth>>` in the route state, built with B8802's `app::inference::pre_call_step(state)` in routes(state); B8804 swaps the step in the core route modules and lands first, so never build `PreCallStep::standalone`) before route_request, pass
+  colon. Call common_processing_pre_call_logic (B8801's PreCall step with route type _aresponses_websocket; keep `Arc<dyn PreCall<UserAPIKeyAuth>>` in the route state, built with B8802's `app::inference::pre_call_step(state)` in routes(state); this task installs that production step directly in its own route constructor, so never build `PreCallStep::standalone`) before route_request, pass
   route_type="_aresponses_websocket", resolved model, original first_message,
   user_api_key_dict and only non-null routing hints. The route data starts with
   model, websocket and first_message, then includes user_api_key_dict and the

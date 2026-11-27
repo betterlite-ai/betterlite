@@ -1,0 +1,57 @@
+id: B10112
+title: End-user deadline test stalls the read with a table lock, not a zero timer
+description: >-
+  Fix a flaky test on main. auth_end_users::tests::postgres::end_user_read_carries_the_lookup_deadline in
+  crates/betterlite-auth/src/auth_end_users/tests/postgres.rs sets rows.default_deadline_seconds to 0.0 and expects
+  find_end_user("with-budget") to fail with AuthReadError::Lookup(DbLookupError::Deadline(_)). In the scheduled
+  run https://github.com/betterlite-ai/betterlite/actions/runs/45921685195 (main at 3da0d0e98db, job tests-2) it
+  panicked at postgres.rs:247 with "a zero lookup deadline fails the bounded read: Some(LiteLLMEndUserTable {
+  user_id: "with-budget", ... })": the read returned the row. A zero deadline becomes Duration::ZERO in
+  lookup_budget (crates/betterlite-db/src/database_failures/deadline.rs, the `deadline_seconds <= 0.0` branch),
+  and tokio's timeout polls the spawned lookup before its timer, which fires on the next 1 ms tick. A local
+  Postgres that answers inside that tick wins, so the test passes only while the database is slower than one
+  timer tick. The product is right; the test races.
+
+
+  Test change only. Make the read wait on something the test controls: before the read, a second connection
+  from the same pool runs `BEGIN; LOCK TABLE "LiteLLM_EndUserTable" IN ACCESS EXCLUSIVE MODE`, so the SELECT
+  behind find_end_user blocks until that transaction ends. Run the read with a short positive deadline (0.2
+  seconds; never 0, so the test no longer depends on the zero branch), assert the same Deadline error as today,
+  then roll back the locking transaction and close the fixture. crates/betterlite-db/src/baseline/store/tests.rs
+  (the `LOCK TABLE "LiteLLM_AutoRouterBaselineComparison" IN ACCESS EXCLUSIVE MODE` test) does the same. Keep the
+  test's name and its comment line.
+scope:
+  paths:
+  - crates/betterlite-auth/src/auth_end_users/tests/postgres.rs
+  lint_tables: false
+references: []
+dod:
+- text: >-
+    end_user_read_carries_the_lookup_deadline gets its Deadline error from a read blocked by a table lock the
+    test holds, with a positive deadline, and the other auth_end_users tests still pass.
+  proof: [end-user-tests, locked-read, no-zero-deadline]
+checks:
+  optional: []
+  commands:
+  - id: end-user-tests
+    why: An end-user test broke.
+    run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^auth_end_users::tests::/)'
+  - id: locked-read
+    why: The deadline test does not hold a lock on the end-user table, so its read can still finish first.
+    run: grep -q -F 'LOCK TABLE "LiteLLM_EndUserTable" IN ACCESS EXCLUSIVE MODE' crates/betterlite-auth/src/auth_end_users/tests/postgres.rs
+  - id: no-zero-deadline
+    why: The deadline test still races a zero timer.
+    run: "! grep -n -E 'default_deadline_seconds = 0\\.0' crates/betterlite-auth/src/auth_end_users/tests/postgres.rs"
+oracle_cases: []
+deviations: []
+out_of_scope:
+- The deadline code in betterlite-db and the end-user read in betterlite-auth; both behave as LiteLLM does.
+- Other tests' deadlines.
+pitfalls:
+- 'The test pool has max_size 2: the lock holder takes one connection and find_end_user takes the other. Take the lock holder from the pool after seed has returned its connection.'
+- 'Roll back (or drop) the locking transaction before close(fixture, pool); the aborted lookup still waits on the lock on the server side until then.'
+- 'Do not sleep to make the read slow; the lock is what makes it wait.'
+review_level: standard
+budget:
+  max_changed_lines: 80
+  max_new_expects: 3
