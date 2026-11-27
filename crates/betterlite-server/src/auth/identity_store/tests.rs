@@ -8,7 +8,7 @@ use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::extract::Extension;
 use axum::http::{Request, StatusCode, header};
-use axum::routing::get;
+use axum::routing::post;
 use betterlite_auth::identity_store::ports::Ports;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::types::Config;
@@ -47,15 +47,16 @@ fn application(state: Arc<ServerState>) -> Router {
     routes::router(
         state,
         Arc::new(AtomicBool::new(false)),
-        Router::new().route(CHAT_ROUTE, get(mark_called)),
+        Router::new().route(CHAT_ROUTE, post(mark_called)),
         Router::new(),
     )
 }
 
 fn request(presented: &str) -> Request<Body> {
-    Request::get(CHAT_ROUTE)
+    Request::post(CHAT_ROUTE)
         .header(header::AUTHORIZATION, format!("Bearer {presented}"))
-        .body(Body::empty())
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(r#"{"model":"gpt-4o","messages":[]}"#))
         .expect("the request builds")
 }
 
