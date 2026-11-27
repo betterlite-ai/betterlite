@@ -58,7 +58,9 @@ use std::{collections::BTreeSet, sync::Arc};
 use betterlite_auth::auth_request_models::catalog::{EmptyCatalog, RequestModelResolver};
 use betterlite_models::{decisions::Json, model_registration::JsonObject};
 
-use crate::auth::auth_identity::{AuthBackend, AuthContext, StageFailure, StageInput};
+use crate::auth::auth_identity::{
+    AuthBackend, AuthContext, StageFailure, StageInput, request_model_failure,
+};
 use crate::auth::auth_key_lookup::ConfiguredMasterKey;
 use crate::auth::auth_key_lookup::key_headers::{extract_key, headers_json};
 use crate::auth::auth_model_patterns::{
@@ -176,13 +178,7 @@ fn model_pattern_input(
     if backend == AuthBackend::AuthRequestModels {
         return Ok(StageInput::AuthRequestModels(Box::new(stage)));
     }
-    let requested = match resolve(&stage) {
-        Ok(requested) => requested,
-        Err(error) => {
-            tracing::debug!(error = %error, "the request model stage failed");
-            return Err(StageFailure::from(AuthenticationFailure::Missing));
-        }
-    };
+    let requested = resolve(&stage).map_err(request_model_failure)?;
     let rule = rule_for_request(request);
     let depth = max_recurse_depth_for_request(request);
     Ok(StageInput::AuthModelPatterns(Box::new(
@@ -249,16 +245,6 @@ fn model_stage_input(
         path_params: BTreeSet::new(),
         team_id: None,
         resolver: Arc::clone(resolver),
-    }
-}
-
-fn auth_request_models_stage(stage: &RequestModelStageInput) -> Result<AuthContext, StageFailure> {
-    match resolve(stage) {
-        Ok(_) => Ok(stage.context.clone()),
-        Err(error) => {
-            tracing::debug!(error = %error, "the request model stage failed");
-            Err(StageFailure::from(AuthenticationFailure::Missing))
-        }
     }
 }
 
