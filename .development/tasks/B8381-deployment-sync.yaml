@@ -9,7 +9,7 @@ description: >-
   enum DeploymentSyncError.
 
   `add_deployment(db)`: first re-read the UI settings (B1659's sync, outside the lock), then hold the one model
-  reconcile lock (B836's MODEL_RECONCILE_LOCK; clear_cache calls the locked half directly) and run, catching and logging
+  reconcile lock (B10132's ModelReconcileLock, LiteLLM's MODEL_RECONCILE_LOCK, the one handle DeploymentSync is built with; clear_cache calls the locked half directly) and run, catching and logging
   every error: prefetch the config params general_settings, router_settings, litellm_settings, environment_variables and
   anthropic_beta_headers_reload_config (B8397); when B10054's should_load_db_object allows models, read rows with
   B8382's model reader; sync credentials; update the router; apply the general_settings row through B8379's apply_general_settings_row, passing the

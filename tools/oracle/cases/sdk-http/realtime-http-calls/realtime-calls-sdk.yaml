@@ -1,0 +1,31 @@
+kind: sdk_http
+name: realtime-calls-sdk
+call:
+  realtime_http_calls:
+    operation: calls
+    model: openai/gpt-4o-realtime-preview
+    api_key: sk-long-lived
+    ephemeral_key: ep-caller
+    sdp: [118, 61, 48, 13, 10, 97, 61, 111, 102, 102, 101, 114, 13, 10]
+    session:
+      type: transcription
+      model: null
+      audio:
+        input: {format: pcm16}
+env:
+  OPENAI_API_KEY: sk-env
+upstream:
+  - status: 429
+    headers: {content-type: text/plain, retry-after: "2"}
+    body: {error: {message: slow down}}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore:
+    - pointer: /upstream/0/body
+      why: LiteLLM writes the session part through json.dumps spacing and this side through standard JSON, and each side picks its own boundary
+    - pointer: /realtime_http_calls/value/failure/headers/date
+      why: each side answers from its own mock, so a server-stamped date differs while answering nothing
+    - pointer: /realtime_http_calls/value/logged/litellm_api_base
+      why: each side answers from its own mock, so the resolved api_base the logger records differs

@@ -1,0 +1,53 @@
+task: B10113
+deviations:
+  - what: >-
+      create_eval and list_evals answer a BadRequestError (400) with model "" and the provider set when the
+      provider name is unknown or names a provider without an evals API config. LiteLLM raises its ValueError at
+      lines 163 and 348 of litellm/evals/main.py
+      (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L348),
+      and exception_type turns each into an APIConnectionError (500).
+    why: >-
+      The provider name is the caller's input and the call can never succeed, so a 500 tells the client the server
+      broke when its own request was wrong.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L160-L163
+  - what: >-
+      get_eval and update_eval answer a BadRequestError (400) with model "" and the provider set when the provider
+      name is unknown or names a provider without an evals API config. LiteLLM raises its ValueError at lines 514
+      and 679 of litellm/evals/main.py
+      (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L679),
+      and exception_type turns each into an APIConnectionError (500).
+    why: >-
+      The provider name is the caller's input and the call can never succeed, so a 500 tells the client the server
+      broke when its own request was wrong.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L511-L514
+  - what: >-
+      delete_eval and cancel_eval answer a BadRequestError (400) with model "" and the provider set when the
+      provider name is unknown or names a provider without an evals API config. LiteLLM raises its ValueError at
+      lines 884 and 1034 of litellm/evals/main.py
+      (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1034),
+      and exception_type turns each into an APIConnectionError (500).
+    why: >-
+      The provider name is the caller's input and the call can never succeed, so a 500 tells the client the server
+      broke when its own request was wrong.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L881-L884
+  - what: >-
+      create_run and list_runs answer a BadRequestError (400) with model "" and the provider set when the provider
+      name is unknown or names a provider without an evals API config. LiteLLM raises its ValueError at lines 1213
+      and 1397 of litellm/evals/main.py
+      (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1397),
+      and exception_type turns each into an APIConnectionError (500).
+    why: >-
+      The provider name is the caller's input and the call can never succeed, so a 500 tells the client the server
+      broke when its own request was wrong.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1210-L1213
+  - what: >-
+      get_run, cancel_run and delete_run answer a BadRequestError (400) with model "" and the provider set when
+      the provider name is unknown or names a provider without an evals API config. LiteLLM raises its ValueError
+      at lines 1567, 1723 and 1888 of litellm/evals/main.py
+      (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1723
+      and https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1888),
+      and exception_type turns each into an APIConnectionError (500).
+    why: >-
+      The provider name is the caller's input and the call can never succeed, so a 500 tells the client the server
+      broke when its own request was wrong.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1564-L1567

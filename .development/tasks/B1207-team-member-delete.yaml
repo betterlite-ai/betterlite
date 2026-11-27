@@ -18,7 +18,7 @@ description: >-
 
   Fetch keys for eligible IDs AND this team, then B738 JWT mapping cache keys. Write roster JSON only
   when entries were removed; strip the team from stale user rows; delete memberships in sorted ID
-  order; archive keys through B777 using the same tx; delete those keys. A failure rolls back these
+  order; archive keys through B10129's persist_deleted_verification_tokens on the same tx; delete those keys. A failure rolls back these
   writes. After commit schedule B784 deletion audit logs with changed_by=None, evict team then key
   caches through B734, broadcast JWT mappings then sorted user IDs through B878, invalidate each member's
   spend state through B734, and emit B10140's team members metric. The route finally schedules B10140's

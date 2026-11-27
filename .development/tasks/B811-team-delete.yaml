@@ -21,7 +21,7 @@ description: >-
   and audit_archive_identity_difference prove that distinction; audit settings and their loader belong
   to B065 rather than a new config key here.
 
-  Fetch key rows and B738 JWT mapping cache keys, archive nonempty keys through B777, delete team keys
+  Fetch key rows and B738 JWT mapping cache keys, archive nonempty keys through B10129's persist_deleted_verification_tokens, delete team keys
   through B8397, then issue B784 deletion audit events, B734 key-cache invalidation and B878 JWT eviction.
   Next call B836 delete_team_models. A failure at any stage preserves prior archives, deletions and
   scheduled events. Sweep every user with SQL array_remove(teams,$1) WHERE $1=ANY(teams), once per input
@@ -154,7 +154,7 @@ oracle_cases:
   - tools/oracle/cases/management/team-delete/database-required.yaml
 deviations: []
 out_of_scope:
-  - B777 owns key archival transforms, B836 owns BYOK model deletion and B065 owns audit enablement and actor policy.
+  - B10129 owns key archival transforms, B836 owns BYOK model deletion and B065 owns audit enablement and actor policy.
   - 'litellm/proxy/management_endpoints/team_endpoints.py: B801 owns _as_object (L238-L239), _as_list
     (L242-L245), _UserIdRow.user_id (L250-L250), _user_id_rows_db (L253-L254), _ModelDumpRow.model_dump
     (L258-L258), _TeamIdRow.team_id (L263-L263), _ObjectPermissionRow.object_permission_id (L271-L271),

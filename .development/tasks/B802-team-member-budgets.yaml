@@ -26,10 +26,13 @@ description: >-
   CR/LF-sanitized team/budget IDs via B801. A failure healing nulls leaves the earlier inserts in place.
 
   Bulk updates read TeamRepository through B714.WriterPinnedClient BEFORE the 60-second transaction;
-  no advisory/roster lock is acquired. Missing team and forbidden caller use B1202's ManagementProblem
-  team-not-found 404 and forbidden 403, respectively. B800 allows proxy/team/org admins. Resolve an
+  no advisory/roster lock is acquired. A missing team raises B10130's team_not_found 404 and a forbidden
+  caller B10130's forbidden 403 with detail Call not allowed. User not proxy admin OR team admin OR org admin
+  for this team. route='/management/v1/teams/<id>/members/bulk_update'. B800 allows proxy/team/org admins. Resolve an
   explicit user_id against the roster first; otherwise match email exactly and take the first ID.
-  Reject later repeated request identities (B1202) and later identities resolving to the same user.
+  Reject later repeated request identities (B2363's duplicate_member_indexes, on main in betterlite-db's
+  member_removal_identity, whose in_filter, eq_filter and team_users_filter also build the membership
+  filters) and later identities resolving to the same user.
   If nothing applies, return original-order failures with Duplicate member in request or User not
   found in team and do not transact, invalidate or audit.
 

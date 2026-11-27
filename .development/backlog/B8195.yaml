@@ -2,7 +2,7 @@ id: B8195
 milestone: M9 agents and mcp
 title: "MCP operations: server scoping and tool filters"
 status: todo
-depends_on: [B8190, B8191, B4731, B6591, B4726]
+depends_on: [B8190, B8191, B4731, B6591, B10145]
 file: tasks/B8195-mcp-ops-scoping.yaml
 covers:
   - "litellm/proxy/_experimental/mcp_server/operations.py"

@@ -1,0 +1,64 @@
+id: B10145
+title: MCP registry IP filter
+description: >-
+  B4726's REST access and B8195's operations scoping both cut a list of allowed MCP server ids down to the servers the caller's IP may reach, and B4727's tool listing reports how many were cut. In LiteLLM that is MCPServerManager.filter_server_ids_by_ip and filter_server_ids_by_ip_with_info, 28 lines beside the much larger REST helpers of B4726. They are a task of their own so B8195 no longer waits for the rest of B4726.
+
+
+  Code goes in betterlite-mcp, module registry_ip_filter: crates/betterlite-mcp/src/registry_ip_filter.rs, with its tests in registry_ip_filter/tests.rs. The file is an empty stub that lib.rs already declares. It sits outside registry/ on purpose, since registry.rs and registry/** are B4731's. Write plain functions over B10020's ServerRegistry (crate::registry::servers::ServerRegistry), not more impl ServerRegistry blocks. Call B4731's server_by_id and is_accessible_from_ip for the lookup and the IP rule; don't read RegistrySettings, parse IP ranges or call B743 here, because is_accessible_from_ip is the one place that decides IP access. No Cargo.toml changes. Import nothing from rest_access, toolset_scope, acting identities or token admission, so B4726 and betterlite-server's mcp::ops_scoping can both call down into this module.
+
+
+  1. filter_server_ids_by_ip_with_info(registry: &ServerRegistry, server_ids: &[String], client_ip: Option<&str>) -> IpFilteredIds, where IpFilteredIds { server_ids: Vec<String>, ip_blocked_count: usize } derives Clone, Debug, Eq and PartialEq. With no client ip it returns a copy of the input and a count of 0 and looks nothing up. With a client ip it walks the input in order and looks each id up with registry.server_by_id(id, None), with no ip, and then asks is_accessible_from_ip(record, client_ip). A reachable record keeps its id. A record the ip may not reach is dropped and adds one to ip_blocked_count. An id with no record is dropped and not counted. A repeated id is handled on each occurrence, the same as LiteLLM's loop over the list.
+
+  2. filter_server_ids_by_ip(registry, server_ids, client_ip) -> Vec<String> returns only the server_ids of the first.
+
+
+  Callers: B4726's resolve_allowed_servers_with_ip_filter calls filter_server_ids_by_ip on the union of the caller's allowed ids. B8195's allowed server resolution and B4727's GET /mcp-rest/tools/list call the _with_info form and log or report the blocked count. None of them is built here.
+
+
+  Tests build MCPServer records from JSON the way registry/servers/tests.rs does, and a ServerRegistry with ServerRegistry::new and internal_ip_ranges None, so the default internal networks apply. Use 10.0.0.5 as the internal address and 203.0.113.7 as the external one: a record with available_on_public_internet true is reachable from both, a plain record only from 10.0.0.5. Ids start with test-. Tests without a client ip have names that start with no_ip_ and tests with one names that start with ip_, so the two checks select them apart. No oracle cases: no route reaches these functions at this commit, and the HTTP cases come with the mounted /mcp-rest routes.
+scope:
+  paths:
+    - crates/betterlite-mcp/src/registry_ip_filter.rs
+    - crates/betterlite-mcp/src/registry_ip_filter/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L3734-L3761
+    why: Owned. filter_server_ids_by_ip and filter_server_ids_by_ip_with_info.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L6923-L6952
+    why: _is_server_accessible_from_ip and get_mcp_server_by_id, built by B4731 and called here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/operations.py#L644-L663
+    why: Call site in B8195. _get_allowed_mcp_servers filters the allowed ids and logs the blocked count at debug.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L646-L648
+    why: Call site in B4726. _resolve_allowed_mcp_servers_with_ip_filter filters the union of the caller's allowed ids.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L1027-L1032
+    why: Call site in B4727. list_tool_rest_api takes the filtered ids and the blocked count.
+dod:
+  - text: Without a client ip both functions return the input ids as given, unknown ids included, with a blocked count of 0.
+    proof: [no-ip-tests]
+  - text: With a client ip the input order is kept, a reachable record stays, a record the ip may not reach is dropped and counted once per occurrence, and an id with no record is dropped without being counted.
+    proof: [ip-tests]
+  - text: filter_server_ids_by_ip returns the same ids as filter_server_ids_by_ip_with_info for the same input.
+    proof: [ip-tests]
+checks:
+  optional: []
+  commands:
+    - id: no-ip-tests
+      why: the pass through without a client ip is missing, or it looks ids up or drops unknown ones
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^registry_ip_filter::tests::no_ip_/)'
+    - id: ip-tests
+      why: the ip filter keeps, drops or counts a server differently from LiteLLM
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^registry_ip_filter::tests::ip_/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "litellm/proxy/_experimental/mcp_server/mcp_server_manager.py: get_mcp_server_by_id, _is_server_accessible_from_ip and the other registry reads: B4731. get_registry and the registry-order reads: B10020. The public-hub rules: B10079. get_allowed_mcp_servers: B6591. Every other function has the owner B139's and B4731's out_of_scope name."
+  - "_resolve_allowed_mcp_servers_with_ip_filter and its ip_filtering refusal: B4726. _get_allowed_mcp_servers and its debug lines about blocked servers: B8195. list_tool_rest_api and what it does with the count: B4727."
+  - "Reading the client ip from a request (get_mcp_client_ip) and the internal range parsing: B743."
+pitfalls:
+  - "Look each id up with server_by_id(id, None) and test the ip afterwards; passing the client ip to the lookup gives None for a blocked record, so it is dropped as unknown and never counted."
+  - "Only None skips the filter. Some(\"\") is still an ip and goes through is_accessible_from_ip, so don't treat an empty ip as absent."
+  - "Without an ip the list comes back as given, unknown ids included; only the ip branch drops ids the registry does not know."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -4,8 +4,9 @@ description: >-
   Build the module `daily_activity_export` in betterlite-server. It serves GET `{prefix}/daily/activity/export` for
   every entity that has daily activity routes and streams the rows of the caller's scope as a CSV or JSON download.
   The scope of the caller (which users, teams, tags and so on they may see) is decided before any row is read, by
-  B3094 and B3095. This task does not touch daily_activity_routes (B3096 owns that module); it imports that module's
-  helpers `resolved_scope`, `get_daily_activity_prisma_client` and `get_daily_activity_repository`.
+  B3094 and B3095. This task does not touch daily_activity_routes (B3096) or daily_activity_common (B10138); it
+  imports B10138's `resolved_scope`, `DailyActivityScopeError` and `daily_activity_dependencies` (LiteLLM's
+  get_daily_activity_prisma_client and get_daily_activity_repository in one lookup).
 
   Routes. For each prefix of an entity's resolver (`route_prefixes`: /user, /team, /tag, /organization, /customer and
   /end_user, /agent) register one GET route `{prefix}/daily/activity/export`. That makes 7 routes. /end_user is an alias of
@@ -95,7 +96,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/daily_activity_routes.py#L560-L579
     why: Which prefixes get the export route (all of them); the loop itself is not built here.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/daily_activity_routes.py#L63-L94
-    why: The repository and database dependencies and _resolved_scope, built by B3096 and called here.
+    why: The repository and database dependencies and _resolved_scope, built by B10138 and called here.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/repositories/daily_activity.py#L79-L104
     why: ExportType and ExportRow, built by B2312; the field order is the CSV column order.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_repository.py#L212-L223
@@ -203,7 +204,7 @@ deviations:
   - what: The six resolver callables become a match on B3094's Entity enum, so the route function takes the entity and calls B3095's dispatch.
     why: rules.yaml requires an exhaustive enum in place of a registry of callables.
 out_of_scope:
-  - "B3096 owns resolved_scope, date_range_error, get_daily_activity_prisma_client, get_daily_activity_repository and the key report routes (L63-L162, L313-L353, L405-L452, L516-L557)."
+  - "B10138 owns resolved_scope, date_range_error, get_daily_activity_prisma_client and get_daily_activity_repository (L63-L94); B3096 owns the key report helpers and routes (L119-L162, L313-L353, L405-L452, L516-L557)."
   - "B3097 owns the aggregated and search routes and _sum_metrics, _fold_key_metrics and _search_rows (L97-L116, L187-L200, L240-L310, L356-L402)."
   - "B8482 composes the routes of B3096 to B3098 and owns register_daily_activity_routes with its loop over the six resolvers (L560-L579); this task only exposes export_routes."
   - "B729 owns DailyActivityRepository.export_rows and its keyset paging; B2312 owns ExportType and ExportRow; B3094 and B3095 own the resolvers and query shapes."

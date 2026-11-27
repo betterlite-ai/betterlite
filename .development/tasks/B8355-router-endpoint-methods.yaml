@@ -61,7 +61,7 @@ deviations:
     why: LiteLLM would call its module function; betterlite only has the dispatched ones.
 out_of_scope:
   - "B6022 owns `NativeRouter`, the family root and the chat and messages methods; B5078 owns the chat Python methods."
-  - "B8352, B8353 and B8354 own the routing logic; B014 owns the provider dispatch behind each executor."
+  - "B8352, B8353 (which forwards acreate_batch to B10143 and aretrieve_batch to B10142) and B8354 own the routing logic; B014 owns the provider dispatch behind each executor."
   - "B8356 builds the Router class that mixes this in."
 pitfalls:
   - "A test that compares a private LiteLLM field, such as _hidden_params, carries a noqa for SLF001 with the pinned LiteLLM link on the same line, as crates/betterlite-python/tests/test_chat_response_objects.py does; four of the expects are for those lines."

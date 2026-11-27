@@ -92,3 +92,11 @@ path = "fuzz_targets/gateway_dcr_open_sealed.rs"
 test = false
 doc = false
 bench = false
+
+
+[[bin]]
+name = "decode_session_cookie"
+path = "fuzz_targets/decode_session_cookie.rs"
+test = false
+doc = false
+bench = false

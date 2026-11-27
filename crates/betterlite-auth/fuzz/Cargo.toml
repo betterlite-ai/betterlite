@@ -116,3 +116,10 @@ path = "fuzz_targets/team_model_aliases.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "trusted_network"
+path = "fuzz_targets/trusted_network.rs"
+test = false
+doc = false
+bench = false
