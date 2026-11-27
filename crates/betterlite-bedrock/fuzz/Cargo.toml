@@ -258,3 +258,10 @@ path = "fuzz_targets/bedrock_qwen_deepseek.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "bedrock_services_s3_listing"
+path = "fuzz_targets/bedrock_services_s3_listing.rs"
+test = false
+doc = false
+bench = false
