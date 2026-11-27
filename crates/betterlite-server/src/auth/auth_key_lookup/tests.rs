@@ -253,7 +253,7 @@ fn master_stage_denials(#[case] value: &str) {
 fn virtual_key_context_fields() {
     let fields = serde_json::from_str(r#"{"key_name":"key-name","user_id":"live-user","team_id":"live-team","team_alias":"Live","user_role":"proxy_admin"}"#).unwrap();
     let auth = UserAPIKeyAuth::construct(AuthInput::Dict(fields)).unwrap();
-    let context = super::key_context(KeyLookupOutcome {
+    let context = super::key_context(&KeyLookupOutcome {
         auth,
         hashed_token: "hash".to_owned(),
     });
@@ -283,7 +283,7 @@ pub(crate) fn caller_through_key_stage(fields: &str) -> AuthContext {
     let decoded: BTreeMap<String, JsonData> =
         serde_json::from_str(fields).expect("the key fields are a JSON object");
     let auth = UserAPIKeyAuth::construct(AuthInput::Dict(decoded)).expect("the key fixture builds");
-    super::key_context(KeyLookupOutcome {
+    super::key_context(&KeyLookupOutcome {
         auth,
         hashed_token: HASHED_KEY.to_owned(),
     })

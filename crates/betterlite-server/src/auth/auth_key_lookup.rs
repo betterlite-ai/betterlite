@@ -104,7 +104,7 @@ pub(crate) async fn prefetch(stage: KeyLookupStageInput) -> Result<StageInput, S
         return Err(StageFailure::from(AuthenticationFailure::Invalid));
     };
     match authenticator.authenticate(credential.expose_secret()).await {
-        Ok(outcome) => Ok(StageInput::Authenticated(Box::new(key_context(outcome)))),
+        Ok(outcome) => Ok(StageInput::Authenticated(Box::new(key_context(&outcome)))),
         Err(error) => Err(StageFailure::KeyLookup(Box::new(
             as_proxy_exception(&error.failure()).exception().clone(),
         ))),
@@ -112,7 +112,7 @@ pub(crate) async fn prefetch(stage: KeyLookupStageInput) -> Result<StageInput, S
 }
 
 // The fallback path projects the key exactly as IdentityStore::resolve_as does, so both paths agree.
-fn key_context(outcome: KeyLookupOutcome) -> AuthContext {
+fn key_context(outcome: &KeyLookupOutcome) -> AuthContext {
     let projection = Projection {
         auth_method: AuthMethod::ApiKey,
         issuer: None,
