@@ -11,9 +11,13 @@ use rust_decimal::Decimal;
 use serde::Serialize;
 
 use crate::auth_key_budgets::spend::{SpendReadError, SpendReader};
+use crate::auth_model_patterns::decision::ModelAccessContext;
 use crate::auth_model_patterns::denial::model_access_denied;
+use crate::auth_model_patterns::pattern::UnresolvedProviderInference;
 use crate::auth_prefetch::rows::CachedProject;
-use crate::auth_pricing::project::{ProjectError, ProjectModelGrant, run_project_checks};
+use crate::auth_pricing::project::{
+    DeploymentProjectGrant, ProjectError, ProjectModelGrant, run_project_checks,
+};
 use crate::auth_request_models::RequestedModels;
 use crate::auth_tenant_budgets::TenantAdmission;
 use crate::auth_tenant_budgets::alerts::{TenantAlert, TenantAlertKind, TenantAlertSink};
@@ -272,6 +276,38 @@ async fn skip_keeps_model_check() {
     assert_eq!(reader.reads(), 0);
     assert!(alerts.kinds().is_empty());
 
+    // the model gate runs only for a truthy request model and a nonempty project list
+    let quiet = GrantRecorder::denying();
+    for skipped in [
+        RequestedModels::None,
+        RequestedModels::Many(Vec::new()),
+        one(""),
+    ] {
+        run_project_checks(
+            Some(&project),
+            &skipped,
+            true,
+            Some(&auth),
+            &quiet,
+            &admission(&reader, &alerts),
+        )
+        .await
+        .expect("an absent or empty request model skips the grant");
+    }
+    let unrestricted = cached_project("proj-2", false, &[], Some(("0", "0")));
+    run_project_checks(
+        Some(&unrestricted),
+        &one("allowed"),
+        true,
+        Some(&auth),
+        &quiet,
+        &admission(&reader, &alerts),
+    )
+    .await
+    .expect("a project without a model list skips the grant");
+    assert_eq!(quiet.calls(), 0);
+    assert_eq!(reader.reads(), 0);
+
     run_project_checks(
         None,
         &one("allowed"),
@@ -284,4 +320,33 @@ async fn skip_keeps_model_check() {
     .expect("a missing project skips every check");
     assert_eq!(allowing.calls(), 1);
     assert_eq!(reader.reads(), 0);
+}
+
+#[test]
+fn deployment_grant_checks_project_models() {
+    let aliases = BTreeMap::new();
+    let provider = UnresolvedProviderInference;
+    let context = ModelAccessContext {
+        view: None,
+        global_model_aliases: &aliases,
+        compaction: None,
+        provider: &provider,
+        max_recurse_depth: 100,
+    };
+    let grant = DeploymentProjectGrant { context };
+    assert_eq!(format!("{grant:?}"), "DeploymentProjectGrant");
+    let no_aliases = BTreeMap::new();
+    let project = cached_project("proj-1", false, &["allowed"], None);
+    grant
+        .check(&one("allowed"), &project.project, &no_aliases)
+        .expect("a model the project lists passes");
+    let error = grant
+        .check(&one("other"), &project.project, &no_aliases)
+        .expect_err("a model outside the project list is denied");
+    assert!(matches!(error, EntityModelAccessError::Denied(_)));
+    let mut alias_targets = BTreeMap::new();
+    alias_targets.insert("requested".to_owned(), "allowed".to_owned());
+    grant
+        .check(&one("requested"), &project.project, &alias_targets)
+        .expect("the key alias target is checked against the project list");
 }

@@ -1,6 +1,9 @@
+use std::collections::BTreeMap;
+
 use betterlite_models::decisions::Json;
 
 use crate::auth_key_budgets::money::Money;
+use crate::auth_pricing::cache::ZeroCostCache;
 use crate::auth_pricing::zero_cost::is_model_cost_zero;
 use crate::auth_request_models::RequestedModels;
 
@@ -364,12 +367,21 @@ fn refresh_clears_cache() {
     explicit_free(&mut catalog, "free");
     assert!(is_model_cost_zero(&one("free"), Some(&catalog)));
     assert_eq!(catalog.cached("free"), Some(true));
+    assert_eq!(
+        catalog.cache.as_ref().map(ZeroCostCache::entries),
+        Some(BTreeMap::from([("free".to_owned(), true)]))
+    );
     catalog.group("free", Some(money("0.5")), Some(money("0")));
     assert!(
         is_model_cost_zero(&one("free"), Some(&catalog)),
         "the cached True still answers before the invalidation"
     );
     catalog.clear_cache();
+    assert_eq!(
+        catalog.cache.as_ref().map(ZeroCostCache::entries),
+        Some(BTreeMap::new()),
+        "the invalidation drops every verdict"
+    );
     assert!(!is_model_cost_zero(&one("free"), Some(&catalog)));
     assert_eq!(catalog.cached("free"), Some(false));
 }

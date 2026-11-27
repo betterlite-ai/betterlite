@@ -9,6 +9,8 @@ use axum::body::{Body, to_bytes};
 use axum::extract::Extension;
 use axum::http::{Request, StatusCode, header};
 use axum::routing::post;
+use betterlite_auth::auth_prefetch::rows::CachedProject;
+use betterlite_auth::current_spend::BUDGET_UNVERIFIABLE_DETAIL;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::auth_pricing::{MaxBudget, Settings};
 use betterlite_config::types::Config;
@@ -26,17 +28,23 @@ use crate::routes::tests::state_for;
 
 // a recognized LLM route, so the auth chain runs before the marking handler
 const MODEL_ROUTE: &str = "/v1/files";
+// the request-level checks the task pins run on the chat route
+const CHAT_ROUTE: &str = "/v1/chat/completions";
 const MASTER_KEY: &str = "secret-master-key";
 
-fn config(max_budget: &str) -> Config {
+fn config_with(general: &str, max_budget: &str) -> Config {
     let source = format!(
-        "general_settings:\n  master_key: {MASTER_KEY}\nlitellm_settings:\n  max_budget: {max_budget}\n"
+        "general_settings:\n  master_key: {MASTER_KEY}\n{general}litellm_settings:\n  max_budget: {max_budget}\n"
     );
     ConfigLoader {
         lookup: BTreeMap::<String, String>::new(),
     }
     .load(&source)
     .expect("the test config loads")
+}
+
+fn config(max_budget: &str) -> Config {
+    config_with("", max_budget)
 }
 
 fn master_context(master_key: &SecretString) -> AuthContext {
@@ -87,6 +95,12 @@ fn stage_is_registered() {
         dispatch(AuthBackend::AuthPricing, &wrong_stage, &master_key),
         Err(StageFailure::Authentication(_))
     ));
+
+    // the rule's debug line names the collaborators without printing the caller's token
+    let printed = format!("{:?}", PricingRule::default());
+    assert!(printed.starts_with("PricingRule {"), "{printed}");
+    assert!(printed.contains("has_auth: false"), "{printed}");
+    assert!(printed.contains("project_id: None"), "{printed}");
 }
 
 async fn mark_called(Extension(reached): Extension<Arc<AtomicBool>>) -> &'static str {
@@ -94,33 +108,36 @@ async fn mark_called(Extension(reached): Extension<Arc<AtomicBool>>) -> &'static
     "reached"
 }
 
-fn request_to(reached: &Arc<AtomicBool>) -> Request<Body> {
+fn request_to(reached: &Arc<AtomicBool>, route: &str, body: &'static str) -> Request<Body> {
     let mut request = Request::builder()
         .method("POST")
-        .uri(MODEL_ROUTE)
+        .uri(route)
         .header(header::AUTHORIZATION, "Bearer secret-master-key")
         .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from("{}"))
+        .body(Body::from(body))
         .expect("the request builds");
     request.extensions_mut().insert(Arc::clone(reached));
     request
 }
 
-async fn run_request(config: &Config, spend: &str) -> (StatusCode, String, bool) {
+async fn run_rule(
+    config: &Config,
+    rule: PricingRule,
+    route: &str,
+    body: &'static str,
+) -> (StatusCode, String, bool) {
     let reached = Arc::new(AtomicBool::new(false));
-    let rule = Arc::new(PricingRule {
-        global_spend: Some(spend.parse().expect("the test spend parses")),
-        ..PricingRule::default()
-    });
     let application = routes::router(
         state_for(config),
         Arc::new(AtomicBool::new(false)),
-        Router::new().route(MODEL_ROUTE, post(mark_called)),
+        Router::new()
+            .route(MODEL_ROUTE, post(mark_called))
+            .route(CHAT_ROUTE, post(mark_called)),
         Router::new(),
     )
-    .layer(Extension(rule));
+    .layer(Extension(Arc::new(rule)));
     let response = application
-        .oneshot(request_to(&reached))
+        .oneshot(request_to(&reached, route, body))
         .await
         .expect("the request reaches the router");
     let status = response.status();
@@ -129,6 +146,14 @@ async fn run_request(config: &Config, spend: &str) -> (StatusCode, String, bool)
         .expect("the response body is readable");
     let text = String::from_utf8(bytes.to_vec()).expect("the response body is UTF-8");
     (status, text, reached.load(Ordering::Acquire))
+}
+
+async fn run_request(config: &Config, spend: &str) -> (StatusCode, String, bool) {
+    let rule = PricingRule {
+        global_spend: Some(spend.parse().expect("the test spend parses")),
+        ..PricingRule::default()
+    };
+    run_rule(config, rule, MODEL_ROUTE, "{}").await
 }
 
 #[tokio::test]
@@ -148,4 +173,58 @@ async fn failure_stops_downstream() {
     let (off_status, _body, off_reached) = run_request(&config("0"), "10").await;
     assert_eq!(off_status, StatusCode::OK);
     assert!(off_reached);
+
+    // a project budget with no spend reader cannot be verified, so the stage answers 503
+    let project: CachedProject = serde_json::from_str(
+        r#"{"project_id":"proj-budget","blocked":false,"models":[],
+            "litellm_budget_table":{"budget_id":"b1","max_budget":5,"soft_budget":0}}"#,
+    )
+    .expect("the project row decodes");
+    let rule = PricingRule {
+        project: Some(project),
+        ..PricingRule::default()
+    };
+    let (project_status, project_body, project_reached) =
+        run_rule(&config("0"), rule, MODEL_ROUTE, "{}").await;
+    assert_eq!(project_status, StatusCode::SERVICE_UNAVAILABLE);
+    assert!(
+        project_body.contains(BUDGET_UNVERIFIABLE_DETAIL),
+        "{project_body}"
+    );
+    assert!(
+        project_body.contains("\"type\":\"auth_error\""),
+        "{project_body}"
+    );
+    assert!(!project_reached);
+
+    // a client-side tags list is a 400 bad_request_error that names the param
+    let tags_config = config_with("  reject_clientside_metadata_tags: true\n", "0");
+    let (tags_status, tags_body, tags_reached) = run_rule(
+        &tags_config,
+        PricingRule::default(),
+        CHAT_ROUTE,
+        r#"{"metadata":{"tags":[]}}"#,
+    )
+    .await;
+    assert_eq!(tags_status, StatusCode::BAD_REQUEST);
+    assert!(
+        tags_body.contains("\"type\":\"bad_request_error\""),
+        "{tags_body}"
+    );
+    assert!(
+        tags_body.contains("\"param\":\"metadata.tags\""),
+        "{tags_body}"
+    );
+    assert!(tags_body.contains("\"code\":\"400\""), "{tags_body}");
+    assert!(!tags_reached);
+
+    // a POST chat request without a user is the ordinary 401 auth_error
+    let user_config = config_with("  enforce_user_param: true\n", "0");
+    let (user_status, user_body, user_reached) =
+        run_rule(&user_config, PricingRule::default(), CHAT_ROUTE, "{}").await;
+    assert_eq!(user_status, StatusCode::UNAUTHORIZED);
+    assert!(user_body.contains("\"type\":\"auth_error\""), "{user_body}");
+    assert!(user_body.contains("\"param\":\"None\""), "{user_body}");
+    assert!(user_body.contains("\"code\":\"401\""), "{user_body}");
+    assert!(!user_reached);
 }

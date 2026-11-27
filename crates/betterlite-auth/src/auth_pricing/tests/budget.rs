@@ -121,6 +121,10 @@ fn each_side_effect_route(#[case] route: &str) {
 
 #[test]
 fn other_non_llm_skips() {
+    assert!(
+        global_proxy_budget_check(money("1"), Some(dec("100")), false, "/key/info").is_none(),
+        "a non-LLM route never pays the proxy budget"
+    );
     assert!(route_skips_budget_checks("/key/info"));
     assert!(request_skips_budget_checks(
         "/key/info",
