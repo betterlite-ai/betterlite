@@ -14,5 +14,8 @@ pub enum SettingsError {
 
 // REQUEST_TIMEOUT as the read transport's fallback: 6000 seconds unless the environment sets it
 pub fn loads_read_timeout(environment: &dyn EnvironmentLookup) -> Result<f64, SettingsError> {
-    Ok(RequestTimeout::resolve(environment)?.seconds)
+    match RequestTimeout::resolve(environment) {
+        Ok(timeout) => Ok(timeout.seconds),
+        Err(source) => Err(SettingsError::Timeout(source)),
+    }
 }
