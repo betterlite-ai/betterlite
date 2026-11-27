@@ -1,0 +1,12 @@
+task: B1536
+deviations:
+  - what: The audio download goes out with no provider headers at all and only the outbound client's transport defaults, where LiteLLM sends it through its cached httpx client with that client's default User-Agent, Accept, Accept-Encoding and Connection headers.
+    why: No job credential is sent on either side, and the URL, the method, and the returned status, content type and bytes are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/runwayml/text_to_speech/transformation.py#L509-L513
+  - what: The poll timeout and the default X-Runway-Version are read from the environment each time a call runs, through B1534's settings, where LiteLLM reads RUNWAYML_POLLING_TIMEOUT and RUNWAYML_DEFAULT_API_VERSION once when its constants module is imported.
+    why: A process that changes those variables between calls sees the new value here and the imported one in LiteLLM; a setup that sets them before the process starts behaves the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/runwayml/text_to_speech/transformation.py#L480-L492
+kept_bugs:
+  - what: The task poll and the audio download always use https://api.dev.runwayml.com, the default host, even when the submission went to another api_base or RUNWAYML_API_BASE.
+    why: The task requires the default-host poll, a direct Runway setup works exactly that way, and polling the submission host instead would change the host LiteLLM contacts for every proxy setup.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/runwayml/text_to_speech/transformation.py#L487-L492
