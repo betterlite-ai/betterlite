@@ -393,6 +393,24 @@ async fn an_unknown_session_is_a_404_with_the_quoted_id() {
     );
 }
 
+// FastAPI binds the query parameters before the endpoint body runs, so a bad query beats the role check
+#[tokio::test]
+async fn a_malformed_query_is_422_before_the_member_403() {
+    let response = benches(
+        None,
+        authenticated(key_principal(r#"{"user_role":"internal_user"}"#)),
+        Some("user_id="),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn a_missing_session_id_is_422_before_the_database_500() {
+    let response = session(None, authenticated(master_principal()), None).await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
 #[test]
 fn a_configured_database_url_opens_the_read_store() {
     let config = ConfigLoader {
