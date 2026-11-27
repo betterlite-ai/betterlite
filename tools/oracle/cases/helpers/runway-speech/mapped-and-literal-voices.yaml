@@ -1,0 +1,56 @@
+kind: helper
+name: runway-speech-mapped-and-literal-voices
+call:
+  runway_speech:
+    operation: mapping
+    params:
+      model: eleven_multilingual_v2
+      environment: {}
+      calls:
+        - voice: alloy
+          optional_params: {}
+          drop_params: false
+calls:
+  - runway_speech:
+      operation: mapping
+      params:
+        model: eleven_multilingual_v2
+        environment: {}
+        calls:
+          - voice: echo
+            optional_params: {}
+            drop_params: false
+          - voice: fable
+            optional_params: {}
+            drop_params: false
+          - voice: onyx
+            optional_params: {}
+            drop_params: false
+          - voice: nova
+            optional_params: {}
+            drop_params: false
+          - voice: shimmer
+            optional_params: {}
+            drop_params: false
+  - runway_speech:
+      operation: mapping
+      params:
+        model: eleven_multilingual_v2
+        environment: {}
+        calls:
+          - voice: Cosmo
+            optional_params: {}
+            drop_params: false
+          - voice:
+              type: custom
+              presetId: Maya
+            optional_params: {}
+            drop_params: false
+          - voice: {}
+            optional_params: {}
+            drop_params: false
+          - voice: null
+            optional_params: {}
+            drop_params: false
+env: {}
+compare: {ignore: []}
