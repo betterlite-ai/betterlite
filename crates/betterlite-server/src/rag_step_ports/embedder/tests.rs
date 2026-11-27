@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use betterlite_rag::s3_vectors_workflow::dimension::{EmbedError, RagEmbedder};
+use rstest::rstest;
 
 use super::ListEmbedder;
 
@@ -87,32 +88,29 @@ async fn list_embedder_uses_the_native_function_without_a_router() {
     );
 }
 
+#[rstest]
+#[case::too_few(vec![vec![0.0_f64], vec![1.0_f64]])]
+#[case::too_many(vec![vec![0.0_f64], vec![1.0_f64], vec![2.0_f64], vec![3.0_f64]])]
 #[tokio::test]
-async fn list_embedder_rejects_a_vector_count_mismatch() {
-    let cases = [
-        vec![vec![0.0_f64], vec![1.0_f64]],
-        vec![vec![0.0_f64], vec![1.0_f64], vec![2.0_f64], vec![3.0_f64]],
-    ];
-    for answer in cases {
-        let returned = answer.len();
-        let embedder = ListEmbedder {
-            router: None,
-            native: Arc::new(scripted(answer)),
-        };
-        let error = embedder
-            .embed(
-                "embed-model",
-                vec!["a".to_owned(), "b".to_owned(), "c".to_owned()],
-            )
-            .await
-            .expect_err("the count differs");
-        assert_eq!(
-            error.to_string(),
-            format!(
-                "the embedding request for 'embed-model' failed: the embedding response returned {returned} vectors for 3 chunks"
-            )
-        );
-    }
+async fn list_embedder_rejects_a_vector_count_mismatch(#[case] answer: Vec<Vec<f64>>) {
+    let returned = answer.len();
+    let embedder = ListEmbedder {
+        router: None,
+        native: Arc::new(scripted(answer)),
+    };
+    let error = embedder
+        .embed(
+            "embed-model",
+            vec!["a".to_owned(), "b".to_owned(), "c".to_owned()],
+        )
+        .await
+        .expect_err("the count differs");
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "the embedding request for 'embed-model' failed: the embedding response returned {returned} vectors for 3 chunks"
+        )
+    );
 }
 
 #[tokio::test]
