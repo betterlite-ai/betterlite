@@ -192,9 +192,8 @@ pub(crate) fn dispatch(
     input: &StageInput,
     master_key: &SecretString,
 ) -> Result<AuthContext, StageFailure> {
-    let key_pass_through =
-        backend == AuthBackend::MasterKey && matches!(input, StageInput::Authenticated(_));
-    if backend != input.backend() && !key_pass_through {
+    let pass = backend == AuthBackend::MasterKey && matches!(input, StageInput::Authenticated(_));
+    if backend != input.backend() && !pass {
         return Err(StageFailure::from(AuthenticationFailure::Missing));
     }
     match input {

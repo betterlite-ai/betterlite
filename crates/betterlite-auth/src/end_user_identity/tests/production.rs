@@ -21,6 +21,7 @@ use super::support::{
 use crate::auth_cache::{WriteTtl, gateway_cache};
 use crate::auth_end_users::object::EndUserObjectError;
 use crate::auth_user_lookup::cache::UserCache;
+use crate::auth_user_lookup::error::UserLookupError;
 use crate::auth_user_lookup::lookup::UserLookup;
 
 fn adapter(
@@ -270,9 +271,12 @@ async fn real_user_lookup_probes_by_email() {
             user_id_upsert: false,
             check_db_only: false,
         })
-        .await
-        .expect("the id probe");
-    assert!(!by_id);
+        .await;
+    // B736 raises UserNotFoundError for a missing user and the validation logs it as a failed probe
+    assert!(matches!(
+        by_id,
+        Err(ExistenceError::User(UserLookupError::NotFound(_)))
+    ));
     assert_eq!(
         store.calls(),
         vec!["find_by_id", "find_by_email", "find_by_id"]
