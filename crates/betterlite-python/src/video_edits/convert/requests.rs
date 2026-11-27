@@ -48,11 +48,6 @@ macro_rules! call_view {
     };
 }
 
-// both character operations declare the openai provider and no timeout of their own
-fn provider(arguments: &RequestMap) -> Result<String, ConvertError> {
-    Ok(text(arguments, "custom_llm_provider")?.unwrap_or_else(|| DEFAULT_PROVIDER.to_owned()))
-}
-
 fn header_map(arguments: &RequestMap) -> Result<Option<BTreeMap<String, String>>, ConvertError> {
     let Some(entries) = texts(arguments, "extra_headers")? else {
         return Ok(None);
@@ -72,7 +67,8 @@ build_call!(CreateCharacterCall, arguments, file, {
     video: video_media(arguments, file)?
         .map_or_else(|| SuppliedMedia::Text(String::new()), |found| found.media),
     timeout: number(arguments, "timeout")?,
-    custom_llm_provider: provider(arguments)?,
+    custom_llm_provider: text(arguments, "custom_llm_provider")?
+        .unwrap_or_else(|| DEFAULT_PROVIDER.to_owned()),
     extra_headers: header_map(arguments)?,
     extra_query: None,
     extra_body: None,
@@ -85,7 +81,8 @@ build_call!(CreateCharacterCall, arguments, file, {
 build_call!(GetCharacterCall, arguments, _file, {
     character_id: text(arguments, "character_id")?.ok_or_else(|| failed("character_id", STRING))?,
     timeout: number(arguments, "timeout")?,
-    custom_llm_provider: provider(arguments)?,
+    custom_llm_provider: text(arguments, "custom_llm_provider")?
+        .unwrap_or_else(|| DEFAULT_PROVIDER.to_owned()),
     extra_headers: header_map(arguments)?,
     extra_query: None,
     extra_body: None,
