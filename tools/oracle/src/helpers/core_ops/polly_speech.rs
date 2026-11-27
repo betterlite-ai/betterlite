@@ -1,8 +1,9 @@
 use std::collections::BTreeMap;
 use std::time::SystemTime;
 
+use async_trait::async_trait;
 use betterlite_core::api::polly::speech::credentials::{
-    self, CredentialResolver, CredentialSources, ResolvedCredentials,
+    self, CredentialResolver, CredentialSources,
 };
 use betterlite_core::api::polly::speech::endpoint::complete_url;
 use betterlite_core::api::polly::speech::error::SpeechError;
@@ -15,10 +16,12 @@ use betterlite_core::api::speech_call::operations::SpeechMappingOptions;
 use betterlite_openai::api::speech_provider_contract::SpeechVoice;
 use betterlite_openai::openai_base_config::Object;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use betterlite_sigv4::credentials::Credentials;
 use indexmap::IndexMap;
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
+use tokio::runtime::{Builder, Runtime};
 
 const MODEL: &str = "aws_polly/neural";
 const EXAMPLE_KEY: &str = "AKIDEXAMPLE";
@@ -57,12 +60,17 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let answers: Vec<Value> = input.calls.iter().map(answer).collect();
+        let runtime = Builder::new_current_thread().build()?;
+        let answers: Vec<Value> = input
+            .calls
+            .iter()
+            .map(|call| answer(&runtime, call))
+            .collect();
         Ok(json!({ "calls": answers }))
     }
 }
 
-fn answer(call: &Call) -> Value {
+fn answer(runtime: &Runtime, call: &Call) -> Value {
     match call.function.as_str() {
         "dispatch" => dispatch_answer(Dispatch {
             voice: call.voice.as_ref(),
@@ -73,20 +81,10 @@ fn answer(call: &Call) -> Value {
             api_key: call.api_key.as_deref(),
             environment: region_environment(&call.environment),
         }),
-        "map_params" => map_answer(
-            call.model.as_deref().unwrap_or(MODEL),
-            call.voice.as_ref(),
-            &call.optional_params,
-            &call.kwargs,
-        ),
-        "url" => url_answer(call.api_base.as_deref(), &call.litellm_params),
-        "request" => request_answer(
-            call.text.as_deref().unwrap_or_default(),
-            call.voice.as_ref(),
-            &call.optional_params,
-            &call.litellm_params,
-        ),
-        "credential_arguments" => credential_answer(&call.litellm_params),
+        "map_params" => map_answer(call),
+        "url" => url_answer(call),
+        "request" => request_answer(runtime, call),
+        "credential_arguments" => credential_answer(call),
         _ => json!({ "ok": false }),
     }
 }
@@ -100,27 +98,24 @@ fn region_kwargs(region: Option<&str>) -> Object {
     kwargs
 }
 
-fn map_answer(
-    model: &str,
-    voice: Option<&SpeechVoice>,
-    optional_params: &Object,
-    kwargs: &Object,
-) -> Value {
+fn map_answer(call: &Call) -> Value {
     let options = SpeechMappingOptions {
-        voice: voice.cloned(),
+        voice: call.voice.cloned(),
         drop_params: false,
-        kwargs: kwargs.clone(),
+        kwargs: call.kwargs.clone(),
     };
-    let (mapped_voice, params) = map_openai_params(model, optional_params, &options);
+    let model = call.model.as_deref().unwrap_or(MODEL);
+    let (mapped_voice, params) = map_openai_params(model, &call.optional_params, &options);
     json!({ "ok": true, "voice": mapped_voice, "params": params })
 }
 
 // get_complete_url takes the base as an argument and reads only the region off litellm_params
-fn url_answer(api_base: Option<&str>, litellm_params: &Object) -> Value {
-    let region = litellm_params
+fn url_answer(call: &Call) -> Value {
+    let region = call
+        .litellm_params
         .get("aws_region_name")
         .and_then(Value::as_str);
-    let url = complete_url(api_base, region);
+    let url = complete_url(call.api_base.as_deref(), region);
     json!({ "ok": true, "url": url })
 }
 
@@ -132,23 +127,18 @@ fn dispatch_answer(call: Dispatch<'_>) -> Value {
     json!({ "ok": true, "voice": dispatched.voice, "optional_params": dispatched.optional_params, "litellm_params": dispatched.litellm_params })
 }
 
-fn request_answer(
-    text: &str,
-    voice: Option<&SpeechVoice>,
-    optional_params: &Object,
-    litellm_params: &Object,
-) -> Value {
-    transform_request(
+fn request_answer(runtime: &Runtime, call: &Call) -> Value {
+    let signed = runtime.block_on(transform_request(
         &SignedRequest {
-            input: text,
-            voice: voice_name(voice),
-            optional_params,
-            litellm_params,
+            input: call.text.as_deref().unwrap_or_default(),
+            voice: voice_name(call.voice.as_ref()),
+            optional_params: &call.optional_params,
+            litellm_params: &call.litellm_params,
             now: SystemTime::now(),
         },
         &FixedResolver,
-    )
-    .map_or_else(|_| json!({ "ok": false }), |signed| signed_answer(&signed))
+    ));
+    signed.map_or_else(|_| json!({ "ok": false }), |signed| signed_answer(&signed))
 }
 
 fn signed_answer(signed: &TextToSpeechRequest) -> Value {
@@ -167,8 +157,8 @@ fn signed_answer(signed: &TextToSpeechRequest) -> Value {
     })
 }
 
-fn credential_answer(litellm_params: &Object) -> Value {
-    let Ok(sources) = credentials::sources(litellm_params) else {
+fn credential_answer(call: &Call) -> Value {
+    let Ok(sources) = credentials::sources(&call.litellm_params) else {
         return json!({ "ok": false });
     };
     json!({
@@ -283,11 +273,12 @@ const fn voice_name(voice: Option<&SpeechVoice>) -> Option<&str> {
 // the case supplies the explicit credentials LiteLLM's get_credentials would hand back unchanged
 struct FixedResolver;
 
+#[async_trait]
 impl CredentialResolver for FixedResolver {
-    fn resolve(&self, sources: &CredentialSources<'_>) -> Result<ResolvedCredentials, SpeechError> {
+    async fn resolve(&self, sources: &CredentialSources<'_>) -> Result<Credentials, SpeechError> {
         let key = sources.aws_access_key_id.unwrap_or(EXAMPLE_KEY);
         let secret = sources.aws_secret_access_key.unwrap_or(EXAMPLE_SECRET);
-        Ok(ResolvedCredentials {
+        Ok(Credentials {
             access_key_id: SecretString::from(key.to_owned()),
             secret_access_key: SecretString::from(secret.to_owned()),
             session_token: sources
