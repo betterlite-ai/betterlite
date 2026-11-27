@@ -49,17 +49,34 @@ description: >-
   independent_apps. Real loopback transport tests prove the five-second deadline,
   non-2xx and redirect handling, body cap and cancellation.
 
-  This task adds no oracle case and no fuzz target: the parser is the only byte
-  decoder on this path, and B10163 owns its cases, its blog_feed fuzz target and its
-  corpus. Stateful cache and network behavior stays in native tests until B077's
-  booted HTTP cases. The cited feed implementation has 85 nonblank noncomment lines
-  excluding docstrings; with bounds, transport and native tests this stays near 600
+  The oracle helper switches to BlogFeed, so get_blog_posts exists once. Today
+  tools/oracle/src/helpers/server/blog_feed/logic.rs keeps its own Cache,
+  get_blog_posts, fetch_rss_feed mock, local_posts copy and validate_blog_posts, and
+  blog_feed.rs's run_get and run_sequence drive them. Delete those from logic.rs and
+  have the helper's LoadLocalBlogPosts, FetchRssFeed, GetBlogPosts and
+  GetBlogPostsSequence run this task's BlogFeed and fetch_rss_feed: a recording transport
+  answers with the case's mock response or connect error and records the url and
+  timeout the helper returns as request, the case's now is the injected clock,
+  local_only the local mode, and cached_posts with last_fetch_time seed the cache
+  through a constructor behind the crate's existing testing feature. BlogFeed hands
+  each fallback warning to an injected warning sink whose production implementation
+  logs at warn level; the helper passes a recording sink and returns its entries as
+  the warnings list with today's subject and LiteLLM's message text. ValidateBlogPosts
+  calls the production validate_blog_posts for a list of posts and answers false with
+  the same warning for any other JSON value, as the validate-non-list, validate-object
+  and validate-scalar cases expect. blog_feed/tests.rs and every blog_feed case stay as
+  they are and must keep matching LiteLLM. The parser is the only byte decoder on this
+  path and B10163 owns its fuzz target and corpus, so this task adds none. The cited
+  feed implementation has 85 nonblank noncomment lines excluding docstrings; with
+  bounds, transport, the helper switch and native tests this stays near 900 changed
   non-test lines.
 scope:
   paths:
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/public_endpoints/blog_feed.rs
     - crates/betterlite-server/src/public_endpoints/blog_feed/**
+    - tools/oracle/src/helpers/server/blog_feed.rs
+    - tools/oracle/src/helpers/server/blog_feed/logic.rs
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_blog_posts.py#L24-L160
@@ -71,6 +88,8 @@ dod:
     proof: [behavior-tests]
   - text: Feed calls use the configured URL, five-second bounded transport, correct cache timestamp and TTL, and uncached warning fallback with propagated backup failures.
     proof: [behavior-tests, transport-tests]
+  - text: The oracle helper's blog_feed operation runs its local, fetch, cache and validate functions through BlogFeed, logic.rs keeps no cache or get_blog_posts of its own, and every blog_feed case still matches LiteLLM.
+    proof: [helper-feed, oracle]
 checks:
   optional: [mutants]
   commands:
@@ -80,7 +99,34 @@ checks:
     - id: transport-tests
       why: Real requests retry, follow redirects, exceed their deadline or buffer unbounded RSS bytes.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^public_endpoints::blog_feed::tests::transport::/)'
-oracle_cases: []
+    - id: helper-feed
+      why: The oracle helper still runs its own cache and get_blog_posts, or a blog_feed case stops matching LiteLLM once it runs through BlogFeed.
+      run: grep -q 'BlogFeed' tools/oracle/src/helpers/server/blog_feed.rs && ! grep -sqE 'fn get_blog_posts|struct Cache' tools/oracle/src/helpers/server/blog_feed.rs tools/oracle/src/helpers/server/blog_feed/logic.rs && cargo nextest run --locked -p betterlite-oracle-server --no-tests=fail -E 'test(/^blog_feed::/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/blog_feed/cache-hit-ttl.yaml
+  - tools/oracle/cases/helpers/blog_feed/cache-miss-fetch.yaml
+  - tools/oracle/cases/helpers/blog_feed/cache-sequential-expiry.yaml
+  - tools/oracle/cases/helpers/blog_feed/crlf-in-description-normalizes.yaml
+  - tools/oracle/cases/helpers/blog_feed/empty-first-channel.yaml
+  - tools/oracle/cases/helpers/blog_feed/fetch-5sec-timeout.yaml
+  - tools/oracle/cases/helpers/blog_feed/fetch-failure-fallback.yaml
+  - tools/oracle/cases/helpers/blog_feed/fetch-timeout-override.yaml
+  - tools/oracle/cases/helpers/blog_feed/invalid-date-raw.yaml
+  - tools/oracle/cases/helpers/blog_feed/local-only-override.yaml
+  - tools/oracle/cases/helpers/blog_feed/local-posts-load.yaml
+  - tools/oracle/cases/helpers/blog_feed/malformed-document-fallback.yaml
+  - tools/oracle/cases/helpers/blog_feed/missing-title-url-skipped.yaml
+  - tools/oracle/cases/helpers/blog_feed/multiple-items-limited.yaml
+  - tools/oracle/cases/helpers/blog_feed/namespace-channel.yaml
+  - tools/oracle/cases/helpers/blog_feed/parse-failure-fallback.yaml
+  - tools/oracle/cases/helpers/blog_feed/parse-nested-tail.yaml
+  - tools/oracle/cases/helpers/blog_feed/parse-rss-items.yaml
+  - tools/oracle/cases/helpers/blog_feed/validate-empty-list.yaml
+  - tools/oracle/cases/helpers/blog_feed/validate-nonempty-list.yaml
+  - tools/oracle/cases/helpers/blog_feed/validate-non-list.yaml
+  - tools/oracle/cases/helpers/blog_feed/validate-object.yaml
+  - tools/oracle/cases/helpers/blog_feed/validate-scalar.yaml
+  - tools/oracle/cases/helpers/blog_feed/validation-failure-fallback.yaml
 deviations:
   - what: RSS responses above 16 MiB or XML nested beyond 64 levels warn and serve the bundled posts.
     why: LiteLLM's synchronous whole-document parser has no corresponding input cap; public requests must not cause unbounded buffering or nesting.
