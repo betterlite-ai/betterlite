@@ -23,8 +23,10 @@ pub(crate) fn stage_failure_response(failure: &StageFailure) -> Response {
         | StageFailure::KeyBudgets(exception)
         | StageFailure::ModelBudgets(exception)
         | StageFailure::TeamBudgets(exception)
+        | StageFailure::OrganizationRoutePolicy(exception)
         | StageFailure::OrgLookup(exception)
-        | StageFailure::EndUsers(exception) => denial_response(exception),
+        | StageFailure::EndUsers(exception)
+        | StageFailure::AuthPolicySupport(exception) => denial_response(exception),
     }
 }
 

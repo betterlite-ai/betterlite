@@ -1,7 +1,7 @@
 id: B043
 milestone: M3 providers
 title: Regional hosts and other native APIs
-status: blocked
+status: todo
 depends_on: [B8312, B006, B082, B083, B085, B8636, B9230, B9231, B9232]
 file: tasks/B043-regional-native-http.yaml
 covers: []
@@ -9,5 +9,5 @@ parent: null
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): niche, GigaChat DashScope Volcengine MiniMax Tencent regional hosts"
+blocked_reason: null
 pr: null

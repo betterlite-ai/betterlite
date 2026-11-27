@@ -1,0 +1,53 @@
+kind: helper
+name: auth-policy-support-guardrail-opt-out-denied
+call:
+  auth_policy_support:
+    function: guardrail
+    body:
+      metadata: {disable_global_guardrails: true}
+    team:
+      team_id: team-denied
+      metadata: {guardrails: {modify_guardrails: false}}
+calls:
+  - auth_policy_support:
+      function: guardrail
+      body:
+        guardrails: []
+      team:
+        team_id: team-denied
+        metadata: {guardrails: {modify_guardrails: false}}
+  - auth_policy_support:
+      function: guardrail
+      body:
+        metadata: '{"opted_out_global_guardrails": ["pii"]}'
+      team:
+        team_id: team-denied
+        metadata: {guardrails: {modify_guardrails: false}}
+  - auth_policy_support:
+      function: guardrail
+      body:
+        litellm_metadata: {disable_global_guardrail: null}
+      team:
+        team_id: team-denied
+        metadata: {guardrails: {modify_guardrails: false}}
+  - auth_policy_support:
+      function: guardrail
+      body:
+        metadata: {disable_global_guardrails: true}
+      team:
+        team_id: team-permitted
+        metadata: {guardrails: {modify_guardrails: true}}
+  - auth_policy_support:
+      function: guardrail
+      body:
+        metadata: {disable_global_guardrails: true}
+      team: null
+  - auth_policy_support:
+      function: guardrail
+      body:
+        messages: [{role: user, content: hello}]
+      team:
+        team_id: team-denied
+        metadata: {guardrails: {modify_guardrails: false}}
+env: {}
+compare: {ignore: []}

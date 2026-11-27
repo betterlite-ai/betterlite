@@ -1,0 +1,27 @@
+task: B4448
+deviations:
+  - what: /health/license always answers the community body, with has_license false and every limit null.
+    why: betterlite has no license check or enterprise tier. This is also what LiteLLM answers when no license data is configured.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L1446-L1477
+  - what: GRACEFUL_SHUTDOWN_TIMEOUT and DRAIN_ENDPOINT_TOKEN are read once when the config loads, not on every drain wait or request.
+    why: the repository rule keeps environment reads inside the config crate, so the shutdown state takes its timeout from config.sections.health_readiness. LiteLLM re-reads the variable on each call, which only matters for a change that no restart would pick up anyway.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/shutdown/graceful_shutdown_manager.py#L53-L70
+  - what: use_aiohttp_transport in the detailed readiness body reports B173's disable toggle only (false when disabled, else true) and ignores LITELLM_HTTP2.
+    why: the Rust client has one transport, so the field is informational and no request path can select another one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L1751
+  - what: The _async_* callback lists in /settings repeat the matching sync list, and every callback name is betterlite's registered name.
+    why: B189's registry has no sync and async split and no Python objects, so Python's __name__ and class-name fallbacks have nothing to read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L1596-L1646
+  - what: litellm_version in the detailed readiness body is betterlite's own version string.
+    why: there is no LiteLLM version to report in a Rust rewrite.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L1749
+  - what: The drain and backlog error text for 401 and 404 keeps LiteLLM's detail strings, and error messages elsewhere are betterlite's own.
+    why: probes and preStop hooks key off the status code, and the oracle ignores only /error/message where LiteLLM's text differs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L1817-L1821
+  - what: general_settings.alerting must be a list of strings in betterlite; any other value is a config error that names the key.
+    why: LiteLLM renders whatever value it holds into the alerting text of /settings, and docs/compatibility.md makes a wrong-typed value an error that names the field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L1593
+kept_bugs:
+  - what: The boolean attempt_db_reconnect returns is ignored and health_check runs again whether or not a reconnect was attempted.
+    why: a working deployment relies on the re-ping that follows every transport error, so the return value's meaning is dropped the way LiteLLM drops it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L1536-L1540

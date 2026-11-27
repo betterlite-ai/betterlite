@@ -1,0 +1,15 @@
+name: auth-policy-support-token-team-provenance
+config: |
+  model_list:
+    - model_name: policy-model-a
+      litellm_params: {model: openai/policy-model-a-upstream}
+    - model_name: policy-model-b
+      litellm_params: {model: azure/policy-model-b-upstream}
+env: {}
+request:
+  method: GET
+  path: /v1/models
+  headers: {authorization: Bearer oracle-master}
+  body: null
+upstream: []
+compare: {headers: [content-type], headers_present: [], upstream_headers: [], ignore: []}

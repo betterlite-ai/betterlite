@@ -115,7 +115,7 @@ deviations: []
 out_of_scope:
   - B9090 retains every function in the playground, compare, compliance, chat_ui and transform-request files, including uploadValidation.ts; B9091 builds them and B146 drives the playground in the browser.
   - "B004, B005, B006, B080, B081, B082, B083, B8253, B1215, B835, B838, B055 and B8598 own the handlers and B8635 the transform request mount. Deferred cases go to their owners: chat-mcp-tools to B140, responses-code-interpreter-file to B3372, interactions-two-turns to B8774, a2a-send-and-stream to B8648 with B8589, B4784 and B8647, compliance-quick-and-batch to B8790, and the realtime handshake reuse to B1125."
-  - MCP tool listing and calling are B9735's and B9762's cases; MCP execution inside a completion is B4727/B4728's behavior, checked here only through the playground body.
+  - MCP tool listing and calling cases stay with B8626 and B9762; this task builds its own listed inference transcripts and consumes no B9735 selector case or component test.
 pitfalls:
   - The SDK calls have no /v1 prefix, so a gateway that only mounts /v1/chat/completions fails every playground request while the generic cases pass.
   - Image edits with several files are several requests, one image each.

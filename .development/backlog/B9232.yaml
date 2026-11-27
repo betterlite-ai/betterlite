@@ -1,7 +1,7 @@
 id: B9232
 milestone: M3 providers
 title: GigaChat upload HTTP proof and generated filename comparison
-status: blocked
+status: todo
 depends_on: [B900, B8312, B004, B9850]
 file: tasks/B9232-gigachat-upload-http.yaml
 covers: []
@@ -9,5 +9,5 @@ parent: B043
 split_from: B043
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): niche, GigaChat upload proof"
+blocked_reason: null
 pr: null

@@ -1,0 +1,40 @@
+kind: helper
+name: organization-route-policy-auth-org-admin-team-scope
+call:
+  organization_route_policy:
+    calls:
+      # an org admin administers the organization they select, on any org-admin-only route
+      - function: role_check
+        user:
+          user_role: internal_user
+          organization_memberships:
+            - {organization_id: org-a, user_role: org_admin}
+        route: /organization/member_update
+        request: {organization_id: org-a}
+      # a proxy admin never reaches the selected-organization checks, even with an ordinary membership
+      - function: role_check
+        user:
+          user_role: proxy_admin
+          organization_memberships:
+            - {organization_id: org-a, user_role: internal_user}
+        route: /organization/member_update
+        request: {organization_id: org-b}
+      - function: role_check
+        user:
+          user_role: internal_user
+          organization_memberships:
+            - {organization_id: org-a, user_role: internal_user}
+            - {organization_id: org-b, user_role: org_admin}
+        route: /organization/member_delete
+        request: {organization_id: org-a}
+      # the same caller may create a team in the organization they administer
+      - function: role_check
+        user:
+          user_role: internal_user
+          organization_memberships:
+            - {organization_id: org-a, user_role: internal_user}
+            - {organization_id: org-b, user_role: org_admin}
+        route: /team/new
+        request: {organization_id: org-b}
+env: {}
+compare: {ignore: []}

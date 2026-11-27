@@ -1,7 +1,7 @@
 id: B995
 milestone: M5 api families
 title: Claude skill read
-status: blocked
+status: todo
 depends_on: [B171, B1087, B726, B858, B994, B1140, B003, B756, B1139, B856]
 file: tasks/B995-claude-skill-read.yaml
 covers:
@@ -10,5 +10,5 @@ parent: B081
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, Claude skill read is new"
+blocked_reason: null
 pr: null

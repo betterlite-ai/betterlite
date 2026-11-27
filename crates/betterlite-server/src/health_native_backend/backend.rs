@@ -16,11 +16,10 @@ use betterlite_sdk::call_wrapper::state::LoggingHandle;
 use betterlite_sdk::call_wrapper::target::CallTarget;
 use secrecy::ExposeSecret as _;
 
-use super::deferred::not_built;
 use super::seams::{
     BatchProbeCall, EmbeddingProbeCall, EvaluationProbeCall, ImageEditProbeCall,
-    ImageGenerationProbeCall, OcrProbeCall, RerankProbeCall, ResponsesProbeCall, SpeechProbeCall,
-    TextCompletionProbeCall, TranscriptionProbeCall, VideoGenerationProbeCall,
+    ImageGenerationProbeCall, OcrProbeCall, RealtimeProbeCall, RerankProbeCall, ResponsesProbeCall,
+    SpeechProbeCall, TextCompletionProbeCall, TranscriptionProbeCall, VideoGenerationProbeCall,
 };
 use crate::health_probe_modes::backend::{CheapestChatModels, HealthProbeBackend};
 use crate::health_probe_modes::calls::{
@@ -47,6 +46,7 @@ pub struct NativeHealthBackend {
     pub ocr: Arc<dyn OcrProbeCall>,
     pub evaluation: Arc<dyn EvaluationProbeCall>,
     pub video_generation: Arc<dyn VideoGenerationProbeCall>,
+    pub realtime_probe: Arc<dyn RealtimeProbeCall>,
     pub prices: Arc<dyn PriceLookup + Send + Sync>,
     pub model_sets: Arc<ProviderModelSets>,
 }
@@ -117,8 +117,8 @@ impl HealthProbeBackend for NativeHealthBackend {
         self.rerank.rerank(call).await
     }
 
-    async fn realtime(&self, _call: RealtimeCall) -> Result<HealthProbeReply, HealthProbeError> {
-        Err(not_built("realtime"))
+    async fn realtime(&self, call: RealtimeCall) -> Result<HealthProbeReply, HealthProbeError> {
+        self.realtime_probe.probe(call).await
     }
 
     async fn batch(&self, call: ProbeCall) -> Result<HealthProbeReply, HealthProbeError> {
