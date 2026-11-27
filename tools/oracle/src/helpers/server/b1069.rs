@@ -99,8 +99,8 @@ async fn answer(call: &Call) -> HelperResult {
     Ok(canonical(json!({
         "status": status,
         "body": body,
-        "database": rows_of(&database),
-        "cache": stores_of(&registry),
+        "database": rows_of(database.as_ref()),
+        "cache": stores_of(registry.as_deref()),
         "writes": events.lock().unwrap_or_else(PoisonError::into_inner).clone(),
     })))
 }
@@ -139,7 +139,7 @@ fn write_state(
 }
 
 // the rows the table holds after the call, or null when the case seeds no database
-fn rows_of(database: &Option<FakeDatabase>) -> Value {
+fn rows_of(database: Option<&FakeDatabase>) -> Value {
     match database {
         Some(database) => {
             let state = database
@@ -153,7 +153,7 @@ fn rows_of(database: &Option<FakeDatabase>) -> Value {
 }
 
 // the stores the registry holds after the call, or null when the case seeds no registry
-fn stores_of(registry: &Option<Arc<Mutex<VectorStoreRegistry>>>) -> Value {
+fn stores_of(registry: Option<&Mutex<VectorStoreRegistry>>) -> Value {
     match registry {
         Some(registry) => json!(
             registry
