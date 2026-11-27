@@ -7,26 +7,29 @@ use rstest::rstest;
 use super::Settings;
 use crate::loader::{ConfigError, ConfigLoader};
 
-fn settings(source: &str, variables: &[(&str, &str)]) -> Settings {
-    let lookup: BTreeMap<String, String> = variables
+fn environment(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
+    pairs
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
-        .collect();
-    ConfigLoader { lookup }
-        .load(source)
-        .expect("the config loads")
-        .sections
-        .sso_callback_input
+        .collect()
+}
+
+fn settings(source: &str, variables: &[(&str, &str)]) -> Settings {
+    ConfigLoader {
+        lookup: environment(variables),
+    }
+    .load(source)
+    .expect("the config loads")
+    .sections
+    .sso_callback_input
 }
 
 fn load_error(source: &str, variables: &[(&str, &str)]) -> ConfigError {
-    let lookup: BTreeMap<String, String> = variables
-        .iter()
-        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
-        .collect();
-    ConfigLoader { lookup }
-        .load(source)
-        .expect_err("the config must not load")
+    ConfigLoader {
+        lookup: environment(variables),
+    }
+    .load(source)
+    .expect_err("the config must not load")
 }
 
 #[rstest]
