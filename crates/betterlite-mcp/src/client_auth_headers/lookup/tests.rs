@@ -198,8 +198,8 @@ fn server_key_order(
 #[case::different_map_sizes(
     &[
         ("team-a", "Authorization", "Bearer test-a"),
-        ("team-a", "X-Extra", "test-extra"),
-        ("team-b", "Authorization", "Bearer test-a")
+        ("team-b", "Authorization", "Bearer test-a"),
+        ("team-b", "X-Extra", "test-extra")
     ],
     None,
     &["team-a", "team-b"],
