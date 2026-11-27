@@ -175,9 +175,14 @@ impl StageInput {
     }
 }
 
-// the master key stage accepts the key lookup's authenticated result
-fn key_pass_through(backend: AuthBackend, input: &StageInput) -> bool {
-    backend == AuthBackend::MasterKey && matches!(input, StageInput::Authenticated(_))
+// every stage dispatches its own input, except the master key stage, which accepts the key lookup result
+fn check_backend(backend: AuthBackend, input: &StageInput) -> Result<(), StageFailure> {
+    if backend != input.backend()
+        && !(backend == AuthBackend::MasterKey && matches!(input, StageInput::Authenticated(_)))
+    {
+        return Err(StageFailure::from(AuthenticationFailure::Missing));
+    }
+    Ok(())
 }
 
 pub(crate) fn dispatch(
@@ -185,9 +190,7 @@ pub(crate) fn dispatch(
     input: &StageInput,
     master_key: &SecretString,
 ) -> Result<AuthContext, StageFailure> {
-    if backend != input.backend() && !key_pass_through(backend, input) {
-        return Err(StageFailure::from(AuthenticationFailure::Missing));
-    }
+    check_backend(backend, input)?;
     match input {
         StageInput::AuthKeyLookup(_) => Err(StageFailure::from(AuthenticationFailure::Missing)),
         StageInput::Authenticated(context) => Ok((**context).clone()),
