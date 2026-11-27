@@ -12,12 +12,13 @@ mod tests;
 
 use std::sync::Arc;
 
+use axum::Json as AxumJson;
+use axum::Router;
 use axum::body::Bytes;
 use axum::extract::{Extension, State};
 use axum::http::Uri;
 use axum::response::{IntoResponse as _, Response};
 use axum::routing::post;
-use axum::{Json, Router};
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_openai::api::vector_store_records::records::pydantic::{
@@ -122,14 +123,14 @@ where
     if uri.path() == NEW_PATH {
         let request: LiteLlmManagedVectorStore = decode_body(&body)?;
         let response = new_vector_store(state.as_ref(), &caller, &request).await?;
-        return Ok(Json(response).into_response());
+        return Ok(AxumJson(response).into_response());
     }
     if uri.path() == DELETE_PATH {
         let request: VectorStoreDeleteRequest = decode_body(&body)?;
         let response = delete_vector_store(state.as_ref(), &caller, &request).await?;
-        return Ok(Json(response).into_response());
+        return Ok(AxumJson(response).into_response());
     }
     let request: VectorStoreUpdateRequest = decode_body(&body)?;
     let response = update_vector_store(state.as_ref(), &caller, &request, &body).await?;
-    Ok(Json(response).into_response())
+    Ok(AxumJson(response).into_response())
 }
