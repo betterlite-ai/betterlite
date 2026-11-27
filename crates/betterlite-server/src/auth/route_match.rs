@@ -12,6 +12,7 @@ use betterlite_auth::route_match::templates::{
 use percent_encoding::percent_decode_str;
 use serde::Serialize;
 
+use crate::auto_router_read_api::READ_PATHS;
 use crate::cache_activity_routes::CACHE_ACTIVITY_PATH;
 use crate::router_settings::ROUTE_PATHS;
 use crate::shadow_eval_results::SHADOW_EVAL_ROUTES;
@@ -67,6 +68,7 @@ pub fn admit(route: &str, method: &str) -> Result<(), RouteMatchError> {
         || AUTHENTICATED_HEALTH_PATHS.contains(&route)
         || route == CACHE_ACTIVITY_PATH
         || ROUTE_PATHS.contains(&route)
+        || READ_PATHS.contains(&route)
         || SHADOW_EVAL_ROUTES
             .iter()
             .any(|pattern| route_matches_pattern(&RouteValue::Text(route), pattern))
