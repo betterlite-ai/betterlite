@@ -1,0 +1,75 @@
+#![cfg(test)]
+
+use betterlite_models::key_digest::hashing::hash_token;
+use rstest::rstest;
+use secrecy::{ExposeSecret as _, SecretString};
+
+use super::master_key_admin_auth;
+use crate::user_roles::UserRole;
+
+const ADMIN_NAME: &str = "master_key_operator";
+const MASTER_KEY_TEXT: &str = "sk-master-key-for-tests";
+const OTHER_KEY_TEXT: &str = "sk-another-master-key";
+
+fn exposed(secret: Option<&SecretString>) -> Option<String> {
+    secret.map(|held| held.expose_secret().to_owned())
+}
+
+#[test]
+fn admits_the_digest_of_the_master_key_as_the_proxy_admin() {
+    let master = SecretString::from(MASTER_KEY_TEXT);
+    let admin = master_key_admin_auth(&hash_token(MASTER_KEY_TEXT), Some(&master), ADMIN_NAME)
+        .unwrap()
+        .unwrap();
+    let api_key = exposed(admin.extra.api_key.0.as_ref());
+    let token = exposed(admin.view.token.token.as_ref());
+    assert_eq!(api_key.as_deref(), Some("litellm_proxy_master_key"));
+    assert_eq!(token.as_deref(), Some("litellm_proxy_master_key"));
+    assert_eq!(admin.extra.user_role, Some(UserRole::ProxyAdmin));
+    assert_eq!(admin.view.token.user_id.as_deref(), Some(ADMIN_NAME));
+    assert!(admin.extra.provenance.via_virtual_key);
+}
+
+#[test]
+fn admits_an_empty_admin_name_as_given() {
+    let master = SecretString::from(MASTER_KEY_TEXT);
+    let admin = master_key_admin_auth(&hash_token(MASTER_KEY_TEXT), Some(&master), "")
+        .unwrap()
+        .unwrap();
+    assert_eq!(admin.view.token.user_id.as_deref(), Some(""));
+}
+
+#[derive(Clone, Copy, Debug)]
+enum Refusal {
+    NoMasterKey,
+    EmptyMasterKey,
+    RawMasterKeyText,
+    UppercaseDigest,
+    OtherKeyDigest,
+    NonAsciiKeyHash,
+}
+
+fn refusal_input(scenario: Refusal) -> (Option<SecretString>, String) {
+    let master = SecretString::from(MASTER_KEY_TEXT);
+    match scenario {
+        Refusal::NoMasterKey => (None, hash_token(MASTER_KEY_TEXT)),
+        Refusal::EmptyMasterKey => (Some(SecretString::from("")), hash_token("")),
+        Refusal::RawMasterKeyText => (Some(master), MASTER_KEY_TEXT.to_owned()),
+        Refusal::UppercaseDigest => (Some(master), hash_token(MASTER_KEY_TEXT).to_uppercase()),
+        Refusal::OtherKeyDigest => (Some(master), hash_token(OTHER_KEY_TEXT)),
+        Refusal::NonAsciiKeyHash => (Some(master), "\u{e9}".repeat(32)),
+    }
+}
+
+#[rstest]
+#[case::no_master_key(Refusal::NoMasterKey)]
+#[case::empty_master_key(Refusal::EmptyMasterKey)]
+#[case::raw_master_key_text(Refusal::RawMasterKeyText)]
+#[case::uppercase_digest(Refusal::UppercaseDigest)]
+#[case::other_key_digest(Refusal::OtherKeyDigest)]
+#[case::non_ascii_key_hash(Refusal::NonAsciiKeyHash)]
+fn refuses_anything_but_the_lowercase_digest_of_a_non_empty_master_key(#[case] scenario: Refusal) {
+    let (master, key_hash) = refusal_input(scenario);
+    let admin = master_key_admin_auth(&key_hash, master.as_ref(), ADMIN_NAME).unwrap();
+    assert!(admin.is_none());
+}
