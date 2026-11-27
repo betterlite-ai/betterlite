@@ -1,4 +1,4 @@
-from typing import TypedDict, cast
+from typing import TypedDict
 
 from litellm.proxy import proxy_server
 from litellm.proxy.management_endpoints import ui_sso
@@ -37,12 +37,12 @@ def validate_call(call: ValidateCall) -> Validation:
         return {"valid": None, "status": error.status_code}
     finally:
         proxy_server.general_settings = {}
-    return {"valid": cast(bool, checked), "status": None}  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2896-L2924
+    return {"valid": checked, "status": None}  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2896-L2924
 
 
 def run(input_value: Input) -> Output:
     same_origin = [
-        cast(bool, ui_sso._is_same_origin_return_path(target))  # noqa: SLF001  # pyright: ignore[reportAny, reportPrivateUsage, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2784-L2797
+        ui_sso._is_same_origin_return_path(target)  # noqa: SLF001  # pyright: ignore[reportAny, reportPrivateUsage, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2784-L2797
         for target in input_value["same_origin"]
     ]
     return {
