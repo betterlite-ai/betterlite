@@ -16,6 +16,8 @@ use tokio::sync::Mutex;
 use super::error::{MAX_AUDIO_BYTES, RivaAudioError};
 use super::{ResampledAudio, TARGET_SAMPLE_RATE_HZ, decode_riva_audio, decode_riva_audio_attached};
 
+mod import_failures;
+
 // the interpreter and sys.modules are shared, so the tests run one at a time
 static PYTHON: Mutex<()> = Mutex::const_new(());
 
