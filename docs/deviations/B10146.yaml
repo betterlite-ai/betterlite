@@ -1,3 +1,6 @@
 task: B10146
-deviations: []
+deviations:
+  - what: "A timeout that is negative or not finite fails with TimeoutError, which the batch calls and the batch listing answer with a 400, where LiteLLM hands the number to float() and then to httpx or the provider handler, whose bare ValueError reaches the route as a 500. B1037 and B7873 documented the same answer for their own copies; the shared conversion now carries it."
+    why: "A malformed timeout is a bad request, and a working setup sends a finite, non-negative number, so nothing that works today depends on the 500."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/main.py#L603
 kept_bugs: []

@@ -31,7 +31,7 @@ pub struct TimeoutPhases {
     pub pool: Option<f64>,
 }
 
-// LiteLLM's _resolve_timeout falls back to ten minutes when a phase object names no read phase
+// LiteLLM reads a phase object's read phase, or ten minutes when the read phase is absent
 const DEFAULT_TIMEOUT_SECONDS: f64 = 600.0;
 
 #[derive(Debug, Error, PartialEq)]
