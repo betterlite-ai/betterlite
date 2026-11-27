@@ -1,0 +1,13 @@
+id: B10112
+milestone: R2 bug fixes
+title: End-user deadline test stalls the read with a table lock, not a zero timer
+status: todo
+depends_on: []
+file: tasks/B10112-end-user-deadline-test-lock.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
