@@ -143,6 +143,7 @@ pub async fn resolve_accessible_mcp_servers<Sources>(
 where
     Sources: AccessibleServerSources,
 {
+    // ast-grep-ignore: no-long-names - the LiteLLM predicate this task owns
     if mode == ManagementMode::ViewAll && !is_restricted_virtual_key_request(auth) {
         return Ok(registry.all_server_tables());
     }

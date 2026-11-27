@@ -231,24 +231,6 @@ impl AccessibleServerSources for FakeSources {
     }
 }
 
-fn not_found_detail(error: ManagementAccessError<AccessFailure>) -> BTreeMap<String, String> {
-    match error {
-        ManagementAccessError::NotFound(detail) => detail,
-        ManagementAccessError::Forbidden(_)
-        | ManagementAccessError::Lookup(_)
-        | ManagementAccessError::Access(_) => panic!("expected a not-found denial"),
-    }
-}
-
-fn forbidden_detail(error: ManagementAccessError<AccessFailure>) -> BTreeMap<String, String> {
-    match error {
-        ManagementAccessError::Forbidden(detail) => detail,
-        ManagementAccessError::NotFound(_)
-        | ManagementAccessError::Lookup(_)
-        | ManagementAccessError::Access(_) => panic!("expected a forbidden denial"),
-    }
-}
-
 #[rstest]
 #[case::without_a_list(NO_ROUTES, false)]
 #[case::null_routes(NULL_ROUTES, false)]
@@ -309,7 +291,9 @@ async fn authorize_admin_gets_the_not_found_text_for_an_unknown_id() {
     let error = authorize_and_fetch_mcp_server(&loaded, &db, &access, &key(ADMIN), "test-ghost")
         .await
         .unwrap_err();
-    let detail = not_found_detail(error);
+    let ManagementAccessError::NotFound(detail) = error else {
+        panic!("expected a not-found denial");
+    };
     assert_eq!(
         detail.get("error").map(String::as_str),
         Some("MCP Server test-ghost not found")
@@ -326,7 +310,9 @@ async fn authorize_view_only_admin_gets_the_not_found_text_for_an_unknown_id() {
         authorize_and_fetch_mcp_server(&loaded, &db, &access, &key(ADMIN_VIEW), "test-ghost")
             .await
             .unwrap_err();
-    let detail = not_found_detail(error);
+    let ManagementAccessError::NotFound(detail) = error else {
+        panic!("expected a not-found denial");
+    };
     assert_eq!(
         detail.get("error").map(String::as_str),
         Some("MCP Server test-ghost not found")
@@ -356,7 +342,9 @@ async fn authorize_non_admin_denied_gets_the_forbidden_text() {
         authorize_and_fetch_mcp_server(&loaded, &db, &access, &key(NON_ADMIN), "test-srv-1")
             .await
             .unwrap_err();
-    let detail = forbidden_detail(error);
+    let ManagementAccessError::Forbidden(detail) = error else {
+        panic!("expected a forbidden denial");
+    };
     assert_eq!(
         detail.get("error").map(String::as_str),
         Some(
@@ -375,7 +363,9 @@ async fn authorize_non_admin_unknown_id_is_forbidden_not_missing() {
         authorize_and_fetch_mcp_server(&loaded, &db, &access, &key(NON_ADMIN), "test-ghost")
             .await
             .unwrap_err();
-    let detail = forbidden_detail(error);
+    let ManagementAccessError::Forbidden(detail) = error else {
+        panic!("expected a forbidden denial");
+    };
     assert_eq!(
         detail.get("error").map(String::as_str),
         Some(
