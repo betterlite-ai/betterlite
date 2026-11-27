@@ -211,6 +211,22 @@ fn list_validates_headers_and_passes_them_to_the_transport() {
     assert_eq!(transform.headers, seen.headers);
 }
 
+// GenericLiteLLMParams(**kwargs) hands the caller's api_key and api_base to validate and to the transform
+#[test]
+fn list_uses_the_kwargs_api_key_and_api_base() {
+    let params = kwargs(r#"{"api_key":"sk-other","api_base":"https://proxy.example.com"}"#);
+    let request = list_args("eval-1", &params);
+
+    let (answer, _fixture, calls) =
+        sync_list(RecordingConfig::without_key(), Recorder::new(), request);
+
+    assert_eq!(answer.expect("the call answers"), runs_fixture());
+    let lists = calls.transport.lists();
+    let seen = lists.first().expect("the list reached the transport");
+    assert_eq!(seen.url, "https://proxy.example.com/v1/evals/eval-1/runs");
+    assert_eq!(header(&seen.headers, "Authorization"), "Bearer sk-other");
+}
+
 // `timeout or request_timeout`: REQUEST_TIMEOUT is the injected standard timeout, 6000 seconds
 #[test]
 fn list_defaults_the_timeout_to_the_request_timeout() {
