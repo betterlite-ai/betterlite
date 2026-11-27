@@ -272,8 +272,10 @@ fn config_token_validation(
 }
 
 fn config_env_vars(config: &McpServerConfig) -> Option<Vec<BTreeMap<String, JsonValue>>> {
-    let entries = config.env_vars.as_ref()?;
-    Some(entries.iter().map(stored_entries).collect())
+    config
+        .env_vars
+        .as_ref()
+        .map(|entries| entries.iter().map(stored_entries).collect())
 }
 
 pub(super) fn config_scopes(config: &McpServerConfig) -> Option<Vec<String>> {
