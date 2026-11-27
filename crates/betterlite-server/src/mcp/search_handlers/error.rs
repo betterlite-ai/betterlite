@@ -24,6 +24,14 @@ pub enum SearchHandlerError {
 
 impl SearchHandlerError {
     #[must_use]
+    pub fn forbidden(detail: &str) -> Self {
+        Self::Http {
+            status: StatusCode::FORBIDDEN,
+            detail: detail.to_owned(),
+        }
+    }
+
+    #[must_use]
     pub const fn status_code(&self) -> StatusCode {
         match self {
             Self::Feature(error) => error.status_code(),

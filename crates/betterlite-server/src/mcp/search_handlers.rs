@@ -12,13 +12,14 @@ use betterlite_core::schema::validate::validate_schema;
 use betterlite_core::skills::search::MAX_SKILL_SEARCH_TOP_K;
 use betterlite_db::mcp_stored_contracts::JsonValue;
 use betterlite_mcp::client::tools::result::{CallToolResult, ContentBlock, TextContent};
+use betterlite_mcp::wire_compat::result_conversion::complete_call_tool_result;
+use betterlite_mcp::wire_compat::tool_outcome::WireCompat;
 use betterlite_prompts::arguments::json::Object;
 use http::StatusCode;
 
-use self::dispatch::{
-    agent_search_text, execute_tool_text, proxy_search, ranked_hits, tool_search_text,
-};
+use self::dispatch::{agent_search_text, proxy_search, ranked_hits, tool_search_text};
 use self::error::SearchHandlerError;
+use self::ports::ToolExecution;
 use self::types::{
     AgentSearchRequest, HandlerContext, McpToolSearchRequest, ProxyToolIdentity, ProxyToolRequest,
     SearchOutcome, SkillSearchRequest, ToolCallRequest, json_string,
@@ -175,17 +176,20 @@ async fn proxy_call_text(
     .await
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "the no-padded hook forbids a one-line delegation"
+)]
 pub async fn handle_mcp_tool_call(
     request: ToolCallRequest<'_>,
     context: &HandlerContext<'_>,
 ) -> Result<CallToolResult, SearchHandlerError> {
-    let allowed_servers = allowed_servers_for_call(context).await?;
-    execute_tool_text(request, &allowed_servers, context).await
-}
-
-async fn allowed_servers_for_call(
-    context: &HandlerContext<'_>,
-) -> Result<Vec<String>, SearchHandlerError> {
+    let ToolCallRequest {
+        tool_name,
+        arguments,
+        requested_server_id,
+        guardrail_context,
+    } = request;
     let allowed_servers = context
         .operations
         ._get_allowed_mcp_servers(context.caller, context.scope)
@@ -202,18 +206,26 @@ async fn allowed_servers_for_call(
             .operations
             .raise_denied_scoped_mcp_access(context.caller, context.scope, servers)
             .await;
-        return Err(SearchHandlerError::Http {
-            status: StatusCode::FORBIDDEN,
-            detail: denial.detail,
-        });
+        return Err(SearchHandlerError::forbidden(&denial.detail));
     }
     if allowed_servers.is_empty() {
-        return Err(SearchHandlerError::Http {
-            status: StatusCode::FORBIDDEN,
-            detail: "User not allowed to call this tool.".to_owned(),
-        });
+        return Err(SearchHandlerError::forbidden(
+            "User not allowed to call this tool.",
+        ));
     }
-    Ok(allowed_servers)
+    let call = ToolExecution {
+        scope: context.scope,
+        caller: context.caller,
+        tool_name,
+        arguments,
+        allowed_servers: &allowed_servers,
+        requested_server_id,
+        guardrail_context,
+    };
+    Ok(complete_call_tool_result(
+        context.operations.execute_mcp_tool(call).await?,
+        WireCompat::Legacy,
+    ))
 }
 
 fn proxy_tools_by_id(tools: &[MCPTool]) -> Result<BTreeMap<String, &MCPTool>, SearchHandlerError> {
