@@ -196,50 +196,42 @@ enum Update {
     Settle,
 }
 
-fn reserve_call(call: &AnalyzeInput, prepared: &Prepared) -> Result<(), Box<HelperError>> {
-    let (month_now, lease_now) = match call.now.as_slice() {
-        [month, lease] => (*month, *lease),
-        _ => return Err(invalid("reserve needs two clock readings")),
-    };
-    let request = ReserveRequest {
-        lens_id: &call.lens.id,
-        job_id: &call.job_id,
-        worker_id: &call.worker_id,
-        month_now,
-        lease_now,
-        estimate: prepared.estimate,
-    };
-    prepared
-        .runtime
-        .block_on(reservation::reserve(&prepared.repository, &request))
-        .map_err(|error| http_error(error.status(), error.to_string()))
-}
-
-fn settle_call(call: &AnalyzeInput, prepared: &Prepared) -> Result<(), Box<HelperError>> {
-    let Some(cost) = call.cost else {
-        return Err(invalid("settle needs the billed cost"));
-    };
-    let Some(month_now) = call.now.first().copied() else {
-        return Err(invalid("settle needs one clock reading"));
-    };
-    let request = SettleRequest {
-        lens_id: &call.lens.id,
-        job_id: &call.job_id,
-        month_now,
-        estimate: prepared.estimate,
-        cost,
-    };
-    prepared
-        .runtime
-        .block_on(settlement::settle(&prepared.repository, &request))
-        .map_err(|error| http_error(500, error.to_string()))
-}
-
 fn update_value(call: &AnalyzeInput, update: Update) -> HelperResult {
     let prepared = prepare(call)?;
     match update {
-        Update::Reserve => reserve_call(call, &prepared)?,
-        Update::Settle => settle_call(call, &prepared)?,
+        Update::Reserve => {
+            let [month_now, lease_now] = call.now.as_slice() else {
+                return Err(invalid("reserve needs two clock readings"));
+            };
+            let request = ReserveRequest {
+                lens_id: &call.lens.id,
+                job_id: &call.job_id,
+                worker_id: &call.worker_id,
+                month_now: *month_now,
+                lease_now: *lease_now,
+                estimate: prepared.estimate,
+            };
+            prepared
+                .runtime
+                .block_on(reservation::reserve(&prepared.repository, &request))
+                .map_err(|error| http_error(error.status(), error.to_string()))?;
+        }
+        Update::Settle => {
+            let Some((cost, month_now)) = call.cost.zip(call.now.first().copied()) else {
+                return Err(invalid("settle needs a cost and a clock reading"));
+            };
+            let request = SettleRequest {
+                lens_id: &call.lens.id,
+                job_id: &call.job_id,
+                month_now,
+                estimate: prepared.estimate,
+                cost,
+            };
+            prepared
+                .runtime
+                .block_on(settlement::settle(&prepared.repository, &request))
+                .map_err(|error| http_error(500, error.to_string()))?;
+        }
     }
     updated_state(&prepared)
 }
