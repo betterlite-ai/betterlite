@@ -1,10 +1,6 @@
-use std::collections::BTreeMap;
-
 use betterlite_cache::envelope::decode::decode_cached;
 use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_models::decisions::Json;
-use indexmap::IndexMap;
-use serde_json::Number;
 
 use crate::api::api_boundaries::{ApiBoundariesInput, ApiLimits, JsonBoundary};
 use crate::api::batch_input_accounting::error::BatchHttpError;
@@ -174,55 +170,13 @@ fn decode(
     clock: &EpochClock,
     limits: ApiLimits,
 ) -> Option<Json> {
-    let value = cache_value(cached)?;
     let bytes = serde_json::to_vec(cached).ok()?;
     let boundary = ApiBoundariesInput::Json(JsonBoundary {
         known_bytes: bytes.len(),
     });
     limits.check(boundary).ok()?;
+    let value: CacheValue = serde_json::from_slice(&bytes).ok()?;
     let decoded = decode_cached(Some(&value), max_age, (clock)()).ok()??;
-    json_value(&decoded)
-}
-
-fn cache_value(value: &Json) -> Option<CacheValue> {
-    match value {
-        Json::Null => Some(CacheValue::Null),
-        Json::Bool(flag) => Some(CacheValue::Boolean(*flag)),
-        Json::Number(number) => number
-            .as_i64()
-            .map(CacheValue::Integer)
-            .or_else(|| number.as_f64().map(CacheValue::Float)),
-        Json::Text(text) => Some(CacheValue::Text(text.clone())),
-        Json::List(items) => items
-            .iter()
-            .map(cache_value)
-            .collect::<Option<Vec<_>>>()
-            .map(CacheValue::Array),
-        Json::Object(fields) => fields
-            .iter()
-            .map(|(key, item)| cache_value(item).map(|entry| (key.clone(), entry)))
-            .collect::<Option<BTreeMap<_, _>>>()
-            .map(CacheValue::Object),
-    }
-}
-
-fn json_value(value: &CacheValue) -> Option<Json> {
-    match value {
-        CacheValue::Null => Some(Json::Null),
-        CacheValue::Boolean(flag) => Some(Json::Bool(*flag)),
-        CacheValue::Integer(number) => Some(Json::Number(Number::from(*number))),
-        CacheValue::Float(number) => Number::from_f64(*number).map(Json::Number),
-        CacheValue::Text(text) => Some(Json::Text(text.clone())),
-        CacheValue::Array(items) => items
-            .iter()
-            .map(json_value)
-            .collect::<Option<Vec<_>>>()
-            .map(Json::List),
-        CacheValue::Object(fields) => fields
-            .iter()
-            .map(|(key, item)| json_value(item).map(|entry| (key.clone(), entry)))
-            .collect::<Option<IndexMap<_, _>>>()
-            .map(Json::Object),
-        CacheValue::Bytes(_) | CacheValue::Credential(_) => None,
-    }
+    let encoded = serde_json::to_vec(&decoded).ok()?;
+    serde_json::from_slice(&encoded).ok()
 }
