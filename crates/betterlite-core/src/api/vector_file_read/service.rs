@@ -128,14 +128,17 @@ pub(super) struct HandlerCall<'call> {
 }
 
 // After the wrapper flag: the credential overlay, GenericLiteLLMParams, the provider's config, the log and B2481's read
-pub(super) async fn read_attachment<S: ClientSource>(
+pub(super) async fn read_attachment<S>(
     ctx: &mut ReadSession<'_, '_, '_, '_, S>,
     operation: Operation,
     mode: ClientKind,
     flag: &str,
-) -> Result<Json, VectorFileReadError> {
+) -> Result<Json, VectorFileReadError>
+where
+    S: ClientSource,
+{
     let mut kwargs = ctx.call.kwargs.clone();
-    kwargs.remove(flag);
+    kwargs.shift_remove(flag);
     let call_id = kwargs.get("litellm_call_id").cloned().unwrap_or(Json::Null);
     let mut overlaid = OperationKwargs(kwargs.clone());
     prepare_registry_credentials(ctx.call.vector_store_id, &mut overlaid, ctx.deps.registry);

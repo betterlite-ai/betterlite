@@ -13,34 +13,36 @@ use crate::api::vector_store_http_write::service::ClientKind;
 // either the file object or content reply, or the failure B011 maps to the SDK exception it raises
 pub type ReadResult = Result<Json, VectorFileReadError>;
 
-// retrieve: the wrapper's own flag is popped, and only a literal true selects the asynchronous handler
-pub async fn retrieve<S: ClientSource>(ctx: &mut ReadSession<'_, '_, '_, '_, S>) -> ReadResult {
-    let flag = "aretrieve";
-    let mode = entry_from_flag(ctx.call.kwargs, flag);
-    read_attachment(ctx, Operation::Retrieve, mode, flag).await
-}
+// The read session's four operations, each picking the handler and the wrapper flag it pops
+impl<S> ReadSession<'_, '_, '_, '_, S>
+where
+    S: ClientSource,
+{
+    // retrieve: only a literal true selects the asynchronous handler
+    pub async fn retrieve(&mut self) -> ReadResult {
+        let flag = "aretrieve";
+        let mode = entry_from_flag(self.call.kwargs, flag);
+        read_attachment(self, Operation::Retrieve, mode, flag).await
+    }
 
-// aretrieve: LiteLLM sets the flag itself, so the retrieve path always takes the asynchronous handler
-pub async fn aretrieve<S: ClientSource>(ctx: &mut ReadSession<'_, '_, '_, '_, S>) -> ReadResult {
-    let flag = "aretrieve";
-    let mode = ClientKind::Asynchronous;
-    read_attachment(ctx, Operation::Retrieve, mode, flag).await
-}
+    // aretrieve: LiteLLM sets the flag itself, so the retrieve path always takes the asynchronous handler
+    pub async fn aretrieve(&mut self) -> ReadResult {
+        let flag = "aretrieve";
+        let mode = ClientKind::Asynchronous;
+        read_attachment(self, Operation::Retrieve, mode, flag).await
+    }
 
-// retrieve_content: the content wrapper's own flag is the one it pops
-pub async fn retrieve_content<S: ClientSource>(
-    ctx: &mut ReadSession<'_, '_, '_, '_, S>,
-) -> ReadResult {
-    let flag = "aretrieve_content";
-    let mode = entry_from_flag(ctx.call.kwargs, flag);
-    read_attachment(ctx, Operation::Content, mode, flag).await
-}
+    // retrieve_content: the content wrapper's own flag is the one it pops
+    pub async fn retrieve_content(&mut self) -> ReadResult {
+        let flag = "aretrieve_content";
+        let mode = entry_from_flag(self.call.kwargs, flag);
+        read_attachment(self, Operation::Content, mode, flag).await
+    }
 
-// aretrieve_content: LiteLLM sets the flag itself, so the content path always takes the asynchronous handler
-pub async fn aretrieve_content<S: ClientSource>(
-    ctx: &mut ReadSession<'_, '_, '_, '_, S>,
-) -> ReadResult {
-    let flag = "aretrieve_content";
-    let mode = ClientKind::Asynchronous;
-    read_attachment(ctx, Operation::Content, mode, flag).await
+    // aretrieve_content: LiteLLM sets the flag itself, so the content path always takes the asynchronous handler
+    pub async fn aretrieve_content(&mut self) -> ReadResult {
+        let flag = "aretrieve_content";
+        let mode = ClientKind::Asynchronous;
+        read_attachment(self, Operation::Content, mode, flag).await
+    }
 }
