@@ -228,6 +228,17 @@ fn refuses_an_empty_master_key() {
     );
 }
 
+// PyJWT 2.15.1 refuses a PEM-shaped HMAC key; betterlite never sniffs the key and signs with it
+#[test]
+fn signs_with_a_pem_shaped_master_key() {
+    let database = TimeZoneDatabase::from_env();
+    let token = sample_token(VIRTUAL_KEY, None, LoginMethod::Sso);
+    let pem = "-----BEGIN PUBLIC KEY-----\nMFwwDQYJKoZIhvcNAQEBBQADSwAwSAJBAK0=\n-----END PUBLIC KEY-----";
+    let encoded =
+        encode_ui_session_jwt(&token, &secret(pem), &settings("24h"), now(), &database).unwrap();
+    assert_eq!(decode_claims(&encoded, pem).user_id, "user-1");
+}
+
 #[test]
 fn checks_the_duration_before_the_master_key() {
     let database = TimeZoneDatabase::from_env();
