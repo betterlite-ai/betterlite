@@ -142,6 +142,15 @@ fn an_environment_reference_carries_the_flag() {
 }
 
 #[test]
+fn a_literal_string_is_refused() {
+    let error = only(&with_value("\"false\"")).unwrap_err();
+    assert_eq!(
+        error,
+        "invalid scalar at model_list.0.litellm_params.complexity_router_config.context_compaction"
+    );
+}
+
+#[test]
 fn every_key_of_a_full_object_resolves() {
     let source =
         object("model: gpt-4o-mini, trigger_ratio: 0.5, max_tokens: 2048, timeout_seconds: 30");

@@ -131,12 +131,12 @@ impl RawRouterConfig {
             RawContextCompaction::Flag(true) => {
                 Err(ConfigError::InvalidScalar { path, value: true })
             }
-            // LiteLLM resolves os.environ/ references over the config, and a false reading becomes Literal[False]
+            // LiteLLM resolves an os.environ/ reference to a bool before pydantic reads the field; any other text is refused
             RawContextCompaction::Text(text) => {
-                let name = text
-                    .strip_prefix(ENV_MARKER)
-                    .unwrap_or(path.as_str())
-                    .to_owned();
+                let Some(reference) = text.strip_prefix(ENV_MARKER) else {
+                    return Err(invalid_scalar(&path));
+                };
+                let name = reference.to_owned();
                 let resolved = resolve_string(text, &path, lookup)?;
                 match betterlite_env::flag(&name, &resolved)? {
                     Some(false) => Ok(ContextCompaction::Off),
