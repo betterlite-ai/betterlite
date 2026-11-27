@@ -13,6 +13,7 @@ use betterlite_prometheus::collector_factory::collector::Collector;
 use super::audit::DeletedKeyAudit;
 use super::caller::RemovalCaller;
 use super::error::BulkRemovalError;
+use super::removal::writes::key_tokens;
 use super::removal::{TeamRemoval, TeamRemovalSession};
 use crate::team_access::access::{TEAM_OR_ORG_ADMIN, TeamAccess};
 use crate::team_membership_effects::metric::emit_team_members_metric;
@@ -73,7 +74,7 @@ impl<Gauge: Collector> BulkTeamRemoval<'_, Gauge> {
                 .schedule_deleted(&removal.deleted_keys, &caller.key_event_caller())?;
         }
         self.invalidation
-            .delete_cache_key_objects(&removal.deleted_key_tokens())
+            .delete_cache_key_objects(&key_tokens(&removal.deleted_keys))
             .await;
         self.invalidation
             .transport

@@ -25,7 +25,7 @@ pub(super) async fn keys_for(
     tables.tokens(team_id, cleanup_ids).await
 }
 
-pub(super) fn key_tokens(keys: &[LiteLLMVerificationToken]) -> Vec<String> {
+pub(crate) fn key_tokens(keys: &[LiteLLMVerificationToken]) -> Vec<String> {
     keys.iter()
         .filter_map(|key| {
             key.token

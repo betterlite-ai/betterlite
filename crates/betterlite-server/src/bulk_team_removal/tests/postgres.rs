@@ -195,15 +195,6 @@ impl Harness {
         client.execute(sql, params).await.unwrap();
     }
 
-    async fn exec_error(
-        &self,
-        sql: &str,
-        params: &[&(dyn ToSql + Sync)],
-    ) -> Result<u64, tokio_postgres::Error> {
-        let client = self.pool.get().await.unwrap();
-        client.execute(sql, params).await
-    }
-
     async fn count(&self, sql: &str, params: &[&(dyn ToSql + Sync)]) -> i64 {
         let client = self.pool.get().await.unwrap();
         client.query_one(sql, params).await.unwrap().get(0)
@@ -317,7 +308,8 @@ async fn run(
     members: &[MemberIdentity],
 ) -> Result<Vec<TeamMemberDeleteResult>, BulkRemovalError> {
     fixture
-        .remove_on(session, team_id, members, &support::proxy_admin())
+        .service(session)
+        .bulk_remove_team_members(team_id, members, &support::proxy_admin())
         .await
 }
 
@@ -532,7 +524,10 @@ async fn write_failures_roll_back() {
 async fn archive_precedes_delete() {
     let harness = Harness::open().await;
     harness.seed_committed_removal().await;
-    let early = harness.exec_error(DELETE_KEY_DIRECTLY, &[&"k1"]).await;
+    let early = {
+        let client = harness.pool.get().await.unwrap();
+        client.execute(DELETE_KEY_DIRECTLY, &[&"k1"]).await
+    };
     assert!(early.is_err());
     let fixture = support::fixture();
     let clock = SystemArchiveClock;
@@ -720,11 +715,20 @@ async fn audit_failure_stops_later_steps() {
     harness.close().await;
 }
 
-async fn cache_failure_is_swallowed() {
+#[derive(Clone, Copy)]
+enum Failure {
+    Cache,
+    Mapping,
+}
+
+async fn failure_case(failure: Failure) -> (support::Fixture, Harness) {
     let harness = Harness::open().await;
     harness.seed_committed_removal().await;
     let fixture = support::fixture();
-    fixture.auth.fail_delete_sync.store(true, Relaxed);
+    match failure {
+        Failure::Cache => fixture.auth.fail_delete_sync.store(true, Relaxed),
+        Failure::Mapping => fixture.auth.fail_delete_memory.store(true, Relaxed),
+    }
     let clock = SystemArchiveClock;
     let removal = PostgresTeamRemoval {
         store: &harness.store,
@@ -736,6 +740,11 @@ async fn cache_failure_is_swallowed() {
         .unwrap();
     assert!(results[0].success);
     harness.assert_committed().await;
+    (fixture, harness)
+}
+
+async fn cache_failure_is_swallowed() {
+    let (fixture, harness) = failure_case(Failure::Cache).await;
     let events = fixture.log.events();
     assert!(events.iter().any(|event| event.starts_with("mapping:")));
     assert!(events.iter().any(|event| event.starts_with("metric:")));
@@ -743,21 +752,7 @@ async fn cache_failure_is_swallowed() {
 }
 
 async fn mapping_failure_is_swallowed() {
-    let harness = Harness::open().await;
-    harness.seed_committed_removal().await;
-    let fixture = support::fixture();
-    fixture.auth.fail_delete_memory.store(true, Relaxed);
-    let clock = SystemArchiveClock;
-    let removal = PostgresTeamRemoval {
-        store: &harness.store,
-        clock: &clock,
-        timeout: BATCH_TX_TIMEOUT,
-    };
-    let results = run(&fixture, &removal, "team-1", &[support::identity_id("u1")])
-        .await
-        .unwrap();
-    assert!(results[0].success);
-    harness.assert_committed().await;
+    let (fixture, harness) = failure_case(Failure::Mapping).await;
     let events = fixture.log.events();
     assert!(
         events

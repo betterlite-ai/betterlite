@@ -57,6 +57,9 @@ use crate::team_access::access::{OrgRoles, TeamAccess};
 use crate::team_access::error::TeamAccessError;
 use crate::team_request_contracts::bulk_members::TeamMemberDeleteResult;
 
+type RemovalDone = Result<(), BulkRemovalError>;
+type TokenRows = Result<Vec<LiteLLMVerificationToken>, BulkRemovalError>;
+
 pub(crate) fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
@@ -103,6 +106,26 @@ pub(crate) struct MemoryState {
     pub(crate) memberships: BTreeSet<(String, String)>,
     pub(crate) keys: BTreeMap<String, LiteLLMVerificationToken>,
     pub(crate) archived: Vec<LiteLLMVerificationToken>,
+}
+
+impl MemoryState {
+    fn matching_keys(&self, team_id: &str, user_ids: &[String]) -> Vec<LiteLLMVerificationToken> {
+        let keys = self
+            .keys
+            .values()
+            .filter(|key| key_matches(key, team_id, user_ids));
+        keys.cloned().collect()
+    }
+
+    fn retain_keys(&mut self, team_id: &str, user_ids: &[String]) {
+        self.keys
+            .retain(|_, key| !key_matches(key, team_id, user_ids));
+    }
+
+    fn retain_memberships(&mut self, team_id: &str, user_ids: &[String]) {
+        self.memberships
+            .retain(|(team, user)| team != team_id || !user_ids.iter().any(|id| id == user));
+    }
 }
 
 // the in-memory tables speak the same removal trait as Postgres, and the trait's steps call the real selection
@@ -185,6 +208,14 @@ fn request_label(member: &MemberIdentity) -> String {
     }
 }
 
+fn key_matches(key: &LiteLLMVerificationToken, team_id: &str, user_ids: &[String]) -> bool {
+    key.team_id.as_deref() == Some(team_id)
+        && key
+            .user_id
+            .as_deref()
+            .is_some_and(|user| user_ids.iter().any(|id| id == user))
+}
+
 #[async_trait]
 impl RemovalTables for MemorySession {
     async fn lock_team(&self, team_id: &str) -> Result<(), BulkRemovalError> {
@@ -210,36 +241,20 @@ impl RemovalTables for MemorySession {
             user_ids.join(","),
             user_emails.join(",")
         ));
-        let users = lock(&self.state).users.clone();
-        Ok(users
-            .into_values()
-            .filter(|user| {
-                user_ids.contains(&user.user_id)
-                    || user
-                        .user_email
-                        .as_ref()
-                        .is_some_and(|email| user_emails.contains(email))
-            })
-            .collect())
+        let mut users: Vec<LiteLLMUserTable> = lock(&self.state).users.values().cloned().collect();
+        users.retain(|user| {
+            user_ids.contains(&user.user_id)
+                || user
+                    .user_email
+                    .as_ref()
+                    .is_some_and(|email| user_emails.contains(email))
+        });
+        Ok(users)
     }
 
-    async fn tokens(
-        &self,
-        team_id: &str,
-        user_ids: &[String],
-    ) -> Result<Vec<LiteLLMVerificationToken>, BulkRemovalError> {
+    async fn tokens(&self, team_id: &str, user_ids: &[String]) -> TokenRows {
         self.log.push(format!("tokens:{}", user_ids.join(",")));
-        let keys = lock(&self.state).keys.clone();
-        Ok(keys
-            .into_values()
-            .filter(|key| {
-                key.team_id.as_deref() == Some(team_id)
-                    && key
-                        .user_id
-                        .as_deref()
-                        .is_some_and(|user| user_ids.iter().any(|id| id == user))
-            })
-            .collect())
+        Ok(lock(&self.state).matching_keys(team_id, user_ids))
     }
 
     async fn write_roster(&self, team_id: &str, kept: &[Member]) -> Result<(), BulkRemovalError> {
@@ -260,24 +275,20 @@ impl RemovalTables for MemorySession {
     ) -> Result<(), BulkRemovalError> {
         self.log
             .push(format!("write-teams:{user_id}:{}", teams.join(",")));
-        let mut state = lock(&self.state);
-        let Some(user) = state.users.get_mut(user_id) else {
-            return Err(BulkRemovalError::MissingRow);
-        };
+        let mut user = lock(&self.state)
+            .users
+            .get(user_id)
+            .cloned()
+            .ok_or(BulkRemovalError::MissingRow)?;
         user.teams = teams.to_vec();
+        lock(&self.state).users.insert(user_id.to_owned(), user);
         Ok(())
     }
 
-    async fn delete_memberships(
-        &self,
-        team_id: &str,
-        user_ids: &[String],
-    ) -> Result<(), BulkRemovalError> {
+    async fn delete_memberships(&self, team_id: &str, user_ids: &[String]) -> RemovalDone {
         self.log
             .push(format!("delete-memberships:{}", user_ids.join(",")));
-        lock(&self.state)
-            .memberships
-            .retain(|(team, user)| team != team_id || !user_ids.iter().any(|id| id == user));
+        lock(&self.state).retain_memberships(team_id, user_ids);
         Ok(())
     }
 
@@ -292,19 +303,9 @@ impl RemovalTables for MemorySession {
         Ok(())
     }
 
-    async fn delete_tokens(
-        &self,
-        team_id: &str,
-        user_ids: &[String],
-    ) -> Result<(), BulkRemovalError> {
+    async fn delete_tokens(&self, team_id: &str, user_ids: &[String]) -> RemovalDone {
         self.log.push(format!("delete-keys:{}", user_ids.join(",")));
-        lock(&self.state).keys.retain(|_, key| {
-            key.team_id.as_deref() != Some(team_id)
-                || !key
-                    .user_id
-                    .as_deref()
-                    .is_some_and(|user| user_ids.iter().any(|id| id == user))
-        });
+        lock(&self.state).retain_keys(team_id, user_ids);
         Ok(())
     }
 }
@@ -657,25 +658,15 @@ impl Fixture {
         }
     }
 
-    pub(crate) async fn remove_on(
-        &self,
-        session: &dyn TeamRemovalSession,
-        team_id: &str,
-        members: &[MemberIdentity],
-        auth: &UserAPIKeyAuth,
-    ) -> Result<Vec<TeamMemberDeleteResult>, BulkRemovalError> {
-        self.service(session)
-            .bulk_remove_team_members(team_id, members, auth)
-            .await
-    }
-
     pub(crate) async fn remove(
         &self,
         team_id: &str,
         members: &[MemberIdentity],
         auth: &UserAPIKeyAuth,
     ) -> Result<Vec<TeamMemberDeleteResult>, BulkRemovalError> {
-        self.remove_on(&self.session, team_id, members, auth).await
+        self.service(&self.session)
+            .bulk_remove_team_members(team_id, members, auth)
+            .await
     }
 }
 

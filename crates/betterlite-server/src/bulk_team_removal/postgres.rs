@@ -29,10 +29,10 @@ use crate::key_archive::persist_deleted_verification_tokens;
 pub const BATCH_TX_TIMEOUT: Duration = Duration::from_secs(60);
 
 const REQUESTED_USERS_SQL: &str = r#"SELECT row_to_json(entry)::TEXT FROM "LiteLLM_UserTable" AS entry WHERE entry."user_id" = ANY($1::TEXT[]) OR entry."user_email" = ANY($2::TEXT[])"#;
-const TEAM_KEYS_SQL: &str = r#"SELECT row_to_json(entry)::TEXT FROM "LiteLLM_VerificationToken" AS entry WHERE entry."team_id" = $1 AND entry."user_id" = ANY($2::TEXT[])"#;
+const KEYS_SQL: &str = r#"SELECT row_to_json(entry)::TEXT FROM "LiteLLM_VerificationToken" AS entry WHERE entry."team_id" = $1 AND entry."user_id" = ANY($2::TEXT[])"#;
 const WRITE_ROSTER_SQL: &str = r#"UPDATE "LiteLLM_TeamTable" SET "members_with_roles" = to_jsonb($2::TEXT), "updated_at" = (NOW() AT TIME ZONE 'UTC') WHERE "team_id" = $1"#;
 const WRITE_TEAMS_SQL: &str = r#"UPDATE "LiteLLM_UserTable" SET "teams" = $2::TEXT[], "updated_at" = (NOW() AT TIME ZONE 'UTC') WHERE "user_id" = $1"#;
-const DELETE_MEMBERSHIPS_SQL: &str =
+const DELETE_MEMBERS_SQL: &str =
     r#"DELETE FROM "LiteLLM_TeamMembership" WHERE "team_id" = $1 AND "user_id" = ANY($2::TEXT[])"#;
 const DELETE_KEYS_SQL: &str = r#"DELETE FROM "LiteLLM_VerificationToken" WHERE "team_id" = $1 AND "user_id" = ANY($2::TEXT[])"#;
 
@@ -45,6 +45,35 @@ pub struct PostgresTeamRemoval<'deps> {
 struct PostgresRemovalTables<'tables, 'client> {
     session: &'tables DbSession<'client>,
     clock: &'tables dyn ArchiveClock,
+}
+
+impl PostgresRemovalTables<'_, '_> {
+    async fn rows<T>(
+        &self,
+        sql: &str,
+        parameters: &[&(dyn ToSql + Sync)],
+        decode: fn(&Row) -> Result<T, BulkRemovalError>,
+    ) -> Result<Vec<T>, BulkRemovalError> {
+        self.session
+            .query(sql, parameters)
+            .await
+            .map_err(backend)?
+            .iter()
+            .map(decode)
+            .collect()
+    }
+
+    async fn exec(
+        &self,
+        sql: &str,
+        parameters: &[&(dyn ToSql + Sync)],
+    ) -> Result<(), BulkRemovalError> {
+        self.session
+            .execute(sql, parameters)
+            .await
+            .map_err(backend)?;
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -116,12 +145,7 @@ impl RemovalTables for PostgresRemovalTables<'_, '_> {
         user_emails: &[String],
     ) -> Result<Vec<LiteLLMUserTable>, BulkRemovalError> {
         let parameters: [&(dyn ToSql + Sync); 2] = [&user_ids, &user_emails];
-        let rows = self
-            .session
-            .query(REQUESTED_USERS_SQL, &parameters)
-            .await
-            .map_err(backend)?;
-        rows.iter().map(user_row).collect()
+        self.rows(REQUESTED_USERS_SQL, &parameters, user_row).await
     }
 
     async fn tokens(
@@ -129,22 +153,12 @@ impl RemovalTables for PostgresRemovalTables<'_, '_> {
         team_id: &str,
         user_ids: &[String],
     ) -> Result<Vec<LiteLLMVerificationToken>, BulkRemovalError> {
-        let parameters: [&(dyn ToSql + Sync); 2] = [&team_id, &user_ids];
-        let rows = self
-            .session
-            .query(TEAM_KEYS_SQL, &parameters)
-            .await
-            .map_err(backend)?;
-        rows.iter().map(key_row).collect()
+        self.rows(KEYS_SQL, &[&team_id, &user_ids], key_row).await
     }
 
     async fn write_roster(&self, team_id: &str, kept: &[Member]) -> Result<(), BulkRemovalError> {
         let roster = serde_json::to_string(kept)?;
-        self.session
-            .execute(WRITE_ROSTER_SQL, &[&team_id, &roster])
-            .await
-            .map_err(backend)?;
-        Ok(())
+        self.exec(WRITE_ROSTER_SQL, &[&team_id, &roster]).await
     }
 
     async fn write_user_teams(
@@ -152,11 +166,7 @@ impl RemovalTables for PostgresRemovalTables<'_, '_> {
         user_id: &str,
         teams: &[String],
     ) -> Result<(), BulkRemovalError> {
-        self.session
-            .execute(WRITE_TEAMS_SQL, &[&user_id, &teams])
-            .await
-            .map_err(backend)?;
-        Ok(())
+        self.exec(WRITE_TEAMS_SQL, &[&user_id, &teams]).await
     }
 
     async fn delete_memberships(
@@ -164,11 +174,7 @@ impl RemovalTables for PostgresRemovalTables<'_, '_> {
         team_id: &str,
         user_ids: &[String],
     ) -> Result<(), BulkRemovalError> {
-        self.session
-            .execute(DELETE_MEMBERSHIPS_SQL, &[&team_id, &user_ids])
-            .await
-            .map_err(backend)?;
-        Ok(())
+        self.exec(DELETE_MEMBERS_SQL, &[&team_id, &user_ids]).await
     }
 
     async fn archive_tokens(
@@ -187,11 +193,7 @@ impl RemovalTables for PostgresRemovalTables<'_, '_> {
         team_id: &str,
         user_ids: &[String],
     ) -> Result<(), BulkRemovalError> {
-        self.session
-            .execute(DELETE_KEYS_SQL, &[&team_id, &user_ids])
-            .await
-            .map_err(backend)?;
-        Ok(())
+        self.exec(DELETE_KEYS_SQL, &[&team_id, &user_ids]).await
     }
 }
 

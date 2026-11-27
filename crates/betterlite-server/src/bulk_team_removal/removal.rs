@@ -21,7 +21,7 @@ use crate::audit_events::identity::CallerIdentity;
 use crate::team_problems::team_not_found;
 
 mod selection;
-mod writes;
+pub(crate) mod writes;
 
 #[async_trait]
 pub trait RemovalTables: Send + Sync {
@@ -105,14 +105,6 @@ struct DeletedKeys<'keys> {
     caller: &'keys CallerIdentity,
 }
 
-impl TeamRemoval {
-    // the token is the verification table's primary key, so a stored key row always carries one
-    #[must_use]
-    pub fn deleted_key_tokens(&self) -> Vec<String> {
-        key_tokens(&self.deleted_keys)
-    }
-}
-
 pub async fn remove_members_from_team(
     tables: &dyn RemovalTables,
     team_id: &str,
@@ -126,8 +118,8 @@ pub async fn remove_members_from_team(
     };
     let selection = select_members(tables, team_id, members, roster).await?;
     let keys = keys_for(tables, team_id, &selection.cleanup_ids).await?;
-    // ast-grep-ignore: no-long-names
     let jwt_mapping_cache_keys =
+        // ast-grep-ignore: no-long-names
         get_jwt_key_mapping_cache_keys_for_tokens(&key_tokens(&keys), jwt).await?;
     write_roster_and_memberships(tables, team_id, &selection).await?;
     archive_and_delete_keys(
