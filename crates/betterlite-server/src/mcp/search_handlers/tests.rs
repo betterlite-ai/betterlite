@@ -833,6 +833,28 @@ async fn mcp_tool_call_denies_explicit_scope() {
 }
 
 #[tokio::test]
+async fn mcp_tool_call_treats_an_empty_scope_as_unrequested() {
+    let mut fake = Fake::default();
+    fake.denial_detail = "denied srv".to_owned();
+    let caller = caller();
+    let mut scope = McpRequestScope::default();
+    scope.mcp_servers = Some(Vec::new());
+    let arguments = BTreeMap::new();
+    let request = ToolCallRequest {
+        tool_name: "alpha",
+        arguments: &arguments,
+        requested_server_id: None,
+        guardrail_context: None,
+    };
+    let error = handle_mcp_tool_call(request, &context(&fake, &caller, &scope))
+        .await
+        .expect_err("an empty scope asks for no server");
+    assert_eq!(error.status_code(), http::StatusCode::FORBIDDEN);
+    assert_eq!(error.detail(), "User not allowed to call this tool.");
+    assert!(fake.seen.lock().unwrap().denials.is_empty());
+}
+
+#[tokio::test]
 async fn mcp_tool_call_preserves_guardrail_context() {
     let mut fake = Fake::default();
     fake.allowed_servers = vec!["srv".to_owned()];
