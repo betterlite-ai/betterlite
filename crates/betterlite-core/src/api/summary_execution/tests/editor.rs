@@ -49,6 +49,10 @@ fn answer(raw: &str) -> Answer {
     Answer::Raw(serde_json::from_str(raw).expect("a completion answer"))
 }
 
+fn decided(raw: &str) -> Vec<DecisionJson> {
+    serde_json::from_str(raw).expect("the messages decode")
+}
+
 fn assert_error(result: &PolyfillResult, code: &str) {
     let edit = result.applied_edits.first().expect("one applied edit");
     assert_eq!(edit.edit_type.as_deref(), Some(COMPACT_EDIT_TYPE));
@@ -56,7 +60,7 @@ fn assert_error(result: &PolyfillResult, code: &str) {
 }
 
 fn assert_untouched_tail(result: &PolyfillResult) {
-    assert_eq!(result.messages, list(TAIL));
+    assert_eq!(result.messages, decided(TAIL));
     assert_eq!(result.system, Some(DecisionJson::Text(augmented("S"))));
     assert!(result.compaction_block.is_none());
     assert!(result.iterations_usage.is_none());
@@ -151,7 +155,7 @@ async fn missing_summary_model_slices_without_counting() {
         .await
         .expect("the editor runs");
     assert_error(&result, "summary_model_not_configured");
-    assert_eq!(result.messages, list(TAIL));
+    assert_eq!(result.messages, decided(TAIL));
     assert_eq!(result.system, Some(DecisionJson::Text(augmented("S"))));
     assert!(fixture.counter.calls().is_empty());
     assert_eq!(fixture.summary_calls(), 0);
@@ -161,7 +165,7 @@ async fn missing_summary_model_slices_without_counting() {
         .await
         .expect("the editor runs");
     assert_error(&configured_result, "summary_model_not_configured");
-    assert_eq!(configured_result.messages, list(TAIL));
+    assert_eq!(configured_result.messages, decided(TAIL));
 }
 
 #[tokio::test]
@@ -177,7 +181,7 @@ async fn slice_only_falls_back_to_the_last_question_only_when_empty() {
         .expect("the editor runs");
     assert_error(&result, "summary_model_not_configured");
     let expected = format!(r#"[{{"role":"user","content":"{CONTINUE_PROMPT}"}}]"#);
-    assert_eq!(result.messages, list(&expected));
+    assert_eq!(result.messages, decided(&expected));
     assert_eq!(
         result.system,
         Some(DecisionJson::Text(
@@ -205,7 +209,7 @@ async fn count_at_the_threshold_stops_before_the_summary() {
             .is_none()
     );
     assert_eq!(fixture.summary_calls(), 0);
-    assert_eq!(result.messages, list(TAIL));
+    assert_eq!(result.messages, decided(TAIL));
     assert_eq!(result.system, Some(DecisionJson::Text(augmented("S"))));
     assert!(logs.contains("DEBUG compact_20260112: current_tokens=150000 trigger=150000"));
 }
@@ -592,7 +596,7 @@ async fn summary_success_replaces_the_old_prefix() {
     assert_eq!(result.system, Some(DecisionJson::Text(augmented("NEW"))));
     assert_eq!(
         result.messages,
-        list(r#"[{"role":"user","content":"recent question"}]"#)
+        decided(r#"[{"role":"user","content":"recent question"}]"#)
     );
     assert_summary_result(&result);
     let edit = result.applied_edits.first().expect("one applied edit");
@@ -632,7 +636,10 @@ async fn the_summary_keeps_only_the_last_real_user_question() {
     let result = run(&fixture, sample.request(MODEL), Port::Routed)
         .await
         .expect("the editor runs");
-    assert_eq!(result.messages, list(r#"[{"role":"user","content":"q1"}]"#));
+    assert_eq!(
+        result.messages,
+        decided(r#"[{"role":"user","content":"q1"}]"#)
+    );
 }
 
 #[tokio::test]
@@ -644,7 +651,7 @@ async fn without_an_eligible_question_the_continuation_prompt_is_kept() {
         .await
         .expect("the editor runs");
     let expected = format!(r#"[{{"role":"user","content":"{CONTINUE_PROMPT}"}}]"#);
-    assert_eq!(result.messages, list(&expected));
+    assert_eq!(result.messages, decided(&expected));
 }
 
 #[tokio::test]
