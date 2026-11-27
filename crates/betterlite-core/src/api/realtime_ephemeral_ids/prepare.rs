@@ -77,8 +77,15 @@ where
         router,
     };
     if session_type == RealtimeSessionType::Realtime {
-        let chosen_model = session_model.or(root_model);
-        return realtime_selection(&context, grants, session_data, chosen_model).await;
+        let model = session_model
+            .or(root_model)
+            .unwrap_or(DEFAULT_REALTIME_MODEL);
+        authorize_model(&context, grants, model).await?;
+        return Ok(PreparedSession {
+            model: model.to_owned(),
+            session: session_data,
+            session_type,
+        });
     }
     transcription_selection(&context, grants, session_data, session_model, root_model).await
 }
@@ -96,18 +103,16 @@ fn session_data_with_type(
     Some(fields)
 }
 
-// the ordinary realtime branch: session.model, then the root model, then the default, and one authorization
-async fn realtime_selection<Router, Grants>(
+// one SessionGrantRequest per model: realtime asks once, transcription once per candidate
+async fn authorize_model<Router, Grants>(
     context: &GrantContext<'_, Router>,
     grants: &Grants,
-    session_data: Option<IndexMap<String, Json>>,
-    chosen_model: Option<&str>,
-) -> Result<PreparedSession, Grants::Error>
+    model: &str,
+) -> Result<(), Grants::Error>
 where
     Router: Sync,
     Grants: SessionModelGrant<Router> + Sync,
 {
-    let model = chosen_model.unwrap_or(DEFAULT_REALTIME_MODEL);
     grants
         .authorize(&SessionGrantRequest {
             model,
@@ -115,12 +120,7 @@ where
             principal: context.principal,
             router: context.router,
         })
-        .await?;
-    Ok(PreparedSession {
-        model: model.to_owned(),
-        session: session_data,
-        session_type: RealtimeSessionType::Realtime,
-    })
+        .await
 }
 
 // the transcription branch: every candidate is authorized first, then both transcription shapes take the first one and session.model goes away
@@ -137,14 +137,7 @@ where
 {
     let (model, candidates) = transcription_plan(session_data.as_ref(), session_model, root_model);
     for candidate in &candidates {
-        grants
-            .authorize(&SessionGrantRequest {
-                model: candidate.as_str(),
-                llm_model_list: context.llm_model_list,
-                principal: context.principal,
-                router: context.router,
-            })
-            .await?;
+        authorize_model(context, grants, candidate).await?;
     }
     if let Some(fields) = session_data.as_mut() {
         set_transcription_model(fields, &model, true);
@@ -193,7 +186,10 @@ fn session_fields(session: &RealtimeSessionConfig) -> IndexMap<String, Json> {
         session.output_modalities.as_deref(),
     );
     insert_value(&mut fields, "tool_choice", session.tool_choice.as_ref());
-    insert_tools(&mut fields, "tools", session.tools.as_deref());
+    if let Some(tools) = session.tools.as_deref() {
+        let items: Vec<Json> = tools.iter().cloned().map(Json::Object).collect();
+        fields.insert("tools".to_owned(), Json::List(items));
+    }
     insert_value(&mut fields, "tracing", session.tracing.as_ref());
     insert_value(&mut fields, "truncation", session.truncation.as_ref());
     insert_object(&mut fields, "prompt", session.prompt.as_ref());
@@ -224,17 +220,6 @@ fn insert_object(
 fn insert_text_list(fields: &mut IndexMap<String, Json>, key: &str, values: Option<&[String]>) {
     if let Some(items) = values {
         let list: Vec<Json> = items.iter().cloned().map(Json::Text).collect();
-        fields.insert(key.to_owned(), Json::List(list));
-    }
-}
-
-fn insert_tools(
-    fields: &mut IndexMap<String, Json>,
-    key: &str,
-    values: Option<&[IndexMap<String, Json>]>,
-) {
-    if let Some(items) = values {
-        let list: Vec<Json> = items.iter().cloned().map(Json::Object).collect();
         fields.insert(key.to_owned(), Json::List(list));
     }
 }
