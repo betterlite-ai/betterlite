@@ -276,7 +276,7 @@ async fn counter_failure_warns_and_continues() {
     assert_eq!(fixture.summary_calls(), 0);
     assert_untouched_tail(&result);
     assert!(logs.contains(
-        "WARN compact_20260112: token_counter failed; assuming under threshold: either text or messages must be provided"
+        "WARN compact_20260112: token_counter failed; assuming under threshold: the history could not be token-counted"
     ));
     assert!(logs.contains("DEBUG compact_20260112: current_tokens=0 trigger=50000"));
 }
