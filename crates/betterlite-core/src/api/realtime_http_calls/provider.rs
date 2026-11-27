@@ -136,22 +136,30 @@ pub fn credentials(
     let config = provider_config(resolved, settings);
     let raw_api_base = resolved.api_base.as_deref().or(api_base);
     let raw_api_key = resolved.api_key.as_ref().or(api_key);
-    let mut base = raw_api_base
-        .or(settings.api_base.as_deref())
-        .unwrap_or(DEFAULT_API_BASE)
-        .to_owned();
-    let mut key = raw_api_key
-        .or(settings.api_key.as_ref())
-        .or(settings.openai_key.as_ref())
-        .or(settings.openai_api_key.as_ref())
-        .map(|secret| secret.expose_secret().to_owned())
-        .unwrap_or_default();
-    if let Some(selected) = &config {
-        base = selected.get_api_base(raw_api_base).unwrap_or_default();
-        key = selected
-            .get_api_key(raw_api_key.map(SecretString::expose_secret))
-            .unwrap_or_default();
-    }
+    let (base, key) = config.as_ref().map_or_else(
+        || {
+            (
+                raw_api_base
+                    .or(settings.api_base.as_deref())
+                    .unwrap_or(DEFAULT_API_BASE)
+                    .to_owned(),
+                raw_api_key
+                    .or(settings.api_key.as_ref())
+                    .or(settings.openai_key.as_ref())
+                    .or(settings.openai_api_key.as_ref())
+                    .map(|secret| secret.expose_secret().to_owned())
+                    .unwrap_or_default(),
+            )
+        },
+        |selected| {
+            (
+                selected.get_api_base(raw_api_base).unwrap_or_default(),
+                selected
+                    .get_api_key(raw_api_key.map(SecretString::expose_secret))
+                    .unwrap_or_default(),
+            )
+        },
+    );
     RealtimeHttpCredentials {
         config,
         api_base: base.trim_end_matches('/').to_owned(),

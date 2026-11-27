@@ -17,7 +17,6 @@ pub mod provider;
 #[path = "realtime_http_calls/tests.rs"]
 mod tests;
 
-use self::SessionOperation::{ClientSecret, Transcription};
 use self::call::{CallCommon, ClientSecretCall, RealtimeCallsCall, TranscriptionSessionCall};
 use self::dispatch::{
     CallsRequest, RealtimeHttpDispatch, RealtimeHttpRequest, SessionEndpoint, SessionRequest,
@@ -50,7 +49,7 @@ struct SessionPlan<'call> {
 
 enum SessionRecords {
     ClientSecret {
-        session: Option<RealtimeSessionConfig>,
+        session: Option<Box<RealtimeSessionConfig>>,
         expires_after: Option<RealtimeExpiresAfter>,
     },
     Transcription(TranscriptionSessionRequest),
@@ -62,15 +61,10 @@ impl SessionRecords {
             Self::ClientSecret {
                 session,
                 expires_after,
-            } => body::client_secret(session.as_ref(), expires_after.as_ref(), model),
+            } => body::client_secret(session.as_deref(), expires_after.as_ref(), model),
             Self::Transcription(record) => body::transcription_body(record, model),
         }
     }
-}
-
-enum SessionOperation<'call> {
-    ClientSecret(&'call ClientSecretCall<'call>),
-    Transcription(&'call TranscriptionSessionCall<'call>),
 }
 
 impl<DispatchError, Dispatch> RealtimeHttpCalls<'_, Dispatch>
@@ -78,13 +72,13 @@ where
     DispatchError: StdError + Send + Sync + 'static,
     Dispatch: RealtimeHttpDispatch<Error = DispatchError>,
 {
-    // ast-grep-ignore: no-one-line-functions - the SDK's public entry point is the shared session flow's only caller
+    // ast-grep-ignore: no-one-line-functions - LiteLLM's public SDK entry point keeps its name
     pub async fn acreate_realtime_client_secret(
         &self,
         call: ClientSecretCall<'_>,
         logging: &mut LoggingState,
     ) -> Result<UpstreamResponse, RealtimeHttpCallsError<DispatchError>> {
-        self.session_call(ClientSecret(&call), logging).await
+        self.session_call(client_secret_plan(&call)?, logging).await
     }
 
     // ast-grep-ignore: no-long-names, no-one-line-functions - LiteLLM's public SDK entry point keeps its name
@@ -93,7 +87,7 @@ where
         call: TranscriptionSessionCall<'_>,
         logging: &mut LoggingState,
     ) -> Result<UpstreamResponse, RealtimeHttpCallsError<DispatchError>> {
-        self.session_call(Transcription(&call), logging).await
+        self.session_call(transcription_plan(&call)?, logging).await
     }
 
     pub async fn arealtime_calls(
@@ -134,10 +128,9 @@ where
     // async_realtime_client_secret_handler and async_realtime_transcription_session_handler: prepare, log and POST one session.
     async fn session_call(
         &self,
-        operation: SessionOperation<'_>,
+        plan: SessionPlan<'_>,
         logging: &mut LoggingState,
     ) -> Result<UpstreamResponse, RealtimeHttpCallsError<DispatchError>> {
-        let plan = session_plan(operation)?;
         let (resolved, provider_credentials) = self.route(&plan.model_name, plan.common)?;
         log_pre_call(
             logging,
@@ -192,7 +185,7 @@ where
         timeout: Option<f64>,
     ) -> Result<Duration, RealtimeHttpCallsError<DispatchError>> {
         let seconds = timeout
-            .filter(|seconds| *seconds != 0.0)
+            .filter(|seconds| *seconds != 0.0_f64)
             .unwrap_or(self.settings.request_timeout_seconds);
         Duration::try_from_secs_f64(seconds)
             .map_err(|_invalid| RealtimeHttpCallsError::Timeout { seconds })
@@ -222,47 +215,47 @@ fn calls_request<'req>(
 }
 
 // The endpoint's routing hint, logged raw params and records, decoded before any provider is resolved.
-fn session_plan(operation: SessionOperation<'_>) -> Result<SessionPlan<'_>, RecordError> {
-    Ok(match operation {
-        ClientSecret(call) => {
-            let session: Option<RealtimeSessionConfig> = body::optional(call.session, "session")?;
-            let expires_after = body::optional(call.expires_after, "expires_after")?;
-            SessionPlan {
-                common: &call.common,
-                model_name: body::model_or_default(
-                    session
-                        .as_ref()
-                        .and_then(|record| record.model.as_deref())
-                        .filter(|name| !name.is_empty())
-                        .or(call.common.model),
-                ),
-                endpoint: SessionEndpoint::ClientSecrets,
-                optional_params: params([
-                    (
-                        "expires_after",
-                        call.expires_after.cloned().unwrap_or(Json::Null),
-                    ),
-                    ("session", call.session.cloned().unwrap_or(Json::Null)),
-                ]),
-                records: SessionRecords::ClientSecret {
-                    session,
-                    expires_after,
-                },
-            }
-        }
-        Transcription(call) => {
-            let (record, model_name) =
-                body::transcription(call.transcription_session, call.common.model)?;
-            SessionPlan {
-                common: &call.common,
-                model_name,
-                endpoint: SessionEndpoint::TranscriptionSessions,
-                optional_params: params([(
-                    "transcription_session",
-                    call.transcription_session.cloned().unwrap_or(Json::Null),
-                )]),
-                records: SessionRecords::Transcription(record),
-            }
-        }
+fn client_secret_plan<'call>(
+    call: &'call ClientSecretCall<'call>,
+) -> Result<SessionPlan<'call>, RecordError> {
+    let session: Option<RealtimeSessionConfig> = body::optional(call.session, "session")?;
+    let expires_after = body::optional(call.expires_after, "expires_after")?;
+    Ok(SessionPlan {
+        common: &call.common,
+        model_name: body::model_or_default(
+            session
+                .as_ref()
+                .and_then(|record| record.model.as_deref())
+                .filter(|name| !name.is_empty())
+                .or(call.common.model),
+        ),
+        endpoint: SessionEndpoint::ClientSecrets,
+        optional_params: params([
+            (
+                "expires_after",
+                call.expires_after.cloned().unwrap_or(Json::Null),
+            ),
+            ("session", call.session.cloned().unwrap_or(Json::Null)),
+        ]),
+        records: SessionRecords::ClientSecret {
+            session: session.map(Box::new),
+            expires_after,
+        },
+    })
+}
+
+fn transcription_plan<'call>(
+    call: &'call TranscriptionSessionCall<'call>,
+) -> Result<SessionPlan<'call>, RecordError> {
+    let (record, model_name) = body::transcription(call.transcription_session, call.common.model)?;
+    Ok(SessionPlan {
+        common: &call.common,
+        model_name,
+        endpoint: SessionEndpoint::TranscriptionSessions,
+        optional_params: params([(
+            "transcription_session",
+            call.transcription_session.cloned().unwrap_or(Json::Null),
+        )]),
+        records: SessionRecords::Transcription(record),
     })
 }

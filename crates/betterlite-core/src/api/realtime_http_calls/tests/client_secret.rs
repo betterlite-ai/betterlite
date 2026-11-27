@@ -41,18 +41,19 @@ fn client_secret_takes_raw_credentials_over_every_fallback() {
     assert_eq!(posting.api_base, "https://raw.example/v1");
     assert_eq!(posting.api_key, "sk-raw");
     assert!(posting.request_data.is_empty());
-    let logging = harness
-        .logging
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner);
-    assert_eq!(logging.model, "gpt-4o-realtime-preview");
-    assert_eq!(logging.custom_llm_provider.as_deref(), Some("openai"));
-    assert_eq!(
-        logging.litellm_params,
-        fields(r#"{"api_base":"https://raw.example/v1"}"#)
-    );
-    let encoded =
-        serde_json::to_string(&logging.model_call_details).expect("the details serialize");
+    let encoded = {
+        let logging = harness
+            .logging
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        assert_eq!(logging.model, "gpt-4o-realtime-preview");
+        assert_eq!(logging.custom_llm_provider.as_deref(), Some("openai"));
+        assert_eq!(
+            logging.litellm_params,
+            fields(r#"{"api_base":"https://raw.example/v1"}"#)
+        );
+        serde_json::to_string(&logging.model_call_details).expect("the details serialize")
+    };
     assert!(!encoded.contains("sk-raw"));
 }
 

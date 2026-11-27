@@ -59,10 +59,10 @@ fn timeout_none_and_zero_select_the_request_timeout() {
         .run_client_secret(client_secret_call(&kwargs, Some(OPENAI_MODEL)))
         .expect("the client secret");
     let mut zero = client_secret_call(&kwargs, Some(OPENAI_MODEL));
-    zero.common.timeout = Some(0.0);
+    zero.common.timeout = Some(0.0_f64);
     harness.run_client_secret(zero).expect("the zero timeout");
     let mut transcription = transcription_call(&kwargs, None);
-    transcription.common.timeout = Some(0.0);
+    transcription.common.timeout = Some(0.0_f64);
     harness
         .run_transcription(transcription)
         .expect("the transcription session");
@@ -79,11 +79,11 @@ fn timeout_a_positive_value_is_kept() {
     let harness = Harness::new(EMPTY_SETTINGS, &[("REQUEST_TIMEOUT", "12.5")]);
     let kwargs = no_kwargs();
     let mut call = client_secret_call(&kwargs, Some(OPENAI_MODEL));
-    call.common.timeout = Some(2.5);
+    call.common.timeout = Some(2.5_f64);
     harness.run_client_secret(call).expect("the client secret");
     let mut calls = calls_call(&kwargs, "ep-caller");
     calls.common.model = Some(OPENAI_MODEL);
-    calls.common.timeout = Some(2.5);
+    calls.common.timeout = Some(2.5_f64);
     harness.run_calls(calls).expect("the realtime call");
     let expected = Duration::try_from_secs_f64(2.5).expect("a duration");
     let seen = harness.seen();
