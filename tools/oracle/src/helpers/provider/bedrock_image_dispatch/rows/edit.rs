@@ -13,7 +13,7 @@ pub(super) async fn edit_row(input: &Input, probe: &Probe) -> Result<Value, Box<
     let images: Vec<EditImage> = probe.images.iter().cloned().map(EditImage::Text).collect();
     let catalog = Catalog::empty().map_err(|error| failure("Catalog", error))?;
     let context = catalog.context();
-    let extra = header_pairs(probe.extra_headers.as_ref());
+    let extra = probe.extra_headers.as_ref().map(header_pairs);
     let operation = EditOperation {
         model: Some(probe.model.as_str()),
         prompt: probe.prompt.as_deref(),

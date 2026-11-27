@@ -47,7 +47,7 @@ pub(super) async fn exchange_row(
 ) -> Result<Value, Box<HelperError>> {
     let outcome = exchange(operation, probe.reply.answer(), credentials(probe)?).await?;
     let request = request_value(&outcome, probe)?;
-    Ok(result_row(&outcome, request))
+    Ok(result_row(&outcome, &request))
 }
 
 // The probe's own aws keys are the identity the credential source hands over; the leaf pops the same keys
@@ -70,19 +70,15 @@ fn text_param(params: &ImageParams, name: &'static str) -> Result<String, Box<He
     }
 }
 
-pub(super) fn header_pairs(
-    headers: Option<&BTreeMap<String, String>>,
-) -> Option<Vec<(String, String)>> {
-    headers.map(|pairs| {
-        pairs
-            .iter()
-            .map(|(name, value)| (name.clone(), value.clone()))
-            .collect()
-    })
+pub(super) fn header_pairs(headers: &BTreeMap<String, String>) -> Vec<(String, String)> {
+    headers
+        .iter()
+        .map(|(name, value)| (name.clone(), value.clone()))
+        .collect()
 }
 
 // One row per probe: the posted request, whether the dispatch succeeded, and what it returned or reported
-fn result_row(outcome: &Outcome, request: Value) -> Value {
+fn result_row(outcome: &Outcome, request: &Value) -> Value {
     match &outcome.result {
         Ok(BedrockImageResult::Generate(response)) => json!({
             "request": request,
@@ -150,10 +146,7 @@ fn extra_header(request: &ImageRequest, probe: &Probe) -> Value {
     else {
         return Value::Null;
     };
-    match header(request, name) {
-        Some(value) => Value::String(value.to_owned()),
-        None => Value::Null,
-    }
+    header(request, name).map_or(Value::Null, |value| Value::String(value.to_owned()))
 }
 
 fn header<'request>(request: &'request ImageRequest, name: &str) -> Option<&'request str> {

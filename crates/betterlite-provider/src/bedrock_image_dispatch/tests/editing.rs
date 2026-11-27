@@ -24,7 +24,7 @@ pub(super) async fn canvas_edit() {
         image: "b3V0",
     })
     .await;
-    assert_eq!(inpainting.cost(), Some(0.25));
+    assert_eq!(inpainting.cost(), Some(0.25_f64));
     canvas_asynchronous().await;
     canvas_requires_an_image().await;
     failures(CANVAS_MODEL, &[(500, r#"{"message": "no"}"#, 500)]).await;
@@ -51,7 +51,7 @@ async fn canvas_variation() {
         run.edit_images(),
         vec!["b3V0".to_owned(), "b3V0Mg==".to_owned()]
     );
-    assert_eq!(run.cost(), Some(0.5));
+    assert_eq!(run.cost(), Some(0.5_f64));
 }
 
 fn canvas_variation_request(run: &Run) {
@@ -122,7 +122,7 @@ pub(super) async fn stability_edit() {
         image: "cXVpZXQ=",
     })
     .await;
-    assert_eq!(prompt_only.cost(), Some(0.07));
+    assert_eq!(prompt_only.cost(), Some(0.07_f64));
     failures(
         STABILITY_MODEL,
         &[
@@ -158,7 +158,7 @@ async fn stability_success() {
     );
     assert_eq!(run.edited().response.created, NOW_SECONDS);
     assert_eq!(run.edit_images(), vec!["c3RhYg==".to_owned()]);
-    assert_eq!(run.cost(), Some(0.07));
+    assert_eq!(run.cost(), Some(0.07_f64));
 }
 
 pub(super) struct EditCase<'case> {

@@ -206,6 +206,15 @@ pub(crate) async fn run_request(
         )
         .await
     };
+    finish(dispatched, &factory, state)
+}
+
+// The dispatch outcome becomes the image record the caller reads, next to the requests the factory saw
+fn finish(
+    dispatched: Result<OperationResult, BedrockImageError>,
+    factory: &Factory,
+    state: LoggingState,
+) -> Run {
     let result = match dispatched {
         Ok(OperationResult::BedrockImage(result)) => Ok(result),
         Ok(_other) => panic!("the image dispatcher returns an image result"),

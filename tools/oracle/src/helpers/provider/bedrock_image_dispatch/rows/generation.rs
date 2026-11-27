@@ -16,7 +16,7 @@ pub(super) async fn generation_row(probe: &Probe) -> Result<Value, Box<HelperErr
         .prompt
         .as_deref()
         .ok_or_else(|| failure("Prompt", "a generation probe carries a prompt"))?;
-    let extra = header_pairs(probe.extra_headers.as_ref());
+    let extra = probe.extra_headers.as_ref().map(header_pairs);
     let operation = GenerateOperation {
         model: Some(probe.model.as_str()),
         prompt,
