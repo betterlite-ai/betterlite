@@ -6,7 +6,7 @@ use rust_decimal::Decimal;
 
 use super::super::fields::{
     CallLog, FailureCostError, completion_start, eligible_route, failure_response_cost,
-    failure_response_result, failure_start_time, lift_call_log,
+    failure_start_time, lift_call_log,
 };
 use super::support::object;
 use crate::spend::payload::CompletionStart;
@@ -35,6 +35,7 @@ fn lift_fills_a_falsey_standard_logging_object(
     let mut request_data = object(request);
     let call_log = CallLog {
         standard_logging_object: logged.map(object).map(Json::Object),
+        // ast-grep-ignore: no-default-struct-update - the test sets only the fields it reads
         ..CallLog::default()
     };
     lift_call_log(&mut request_data, &call_log);
@@ -59,6 +60,7 @@ fn lift_fills_a_null_trace_id(
     let mut request_data = object(request);
     let call_log = CallLog {
         litellm_trace_id: trace.map(str::to_owned),
+        // ast-grep-ignore: no-default-struct-update - the test sets only the fields it reads
         ..CallLog::default()
     };
     lift_call_log(&mut request_data, &call_log);
@@ -86,6 +88,7 @@ fn start_time_prefers_the_request_then_the_call_log_then_now(
     let now = aware("2024-09-09T09:09:09Z");
     let recorded = CallLog {
         start_time: logged.map(aware),
+        // ast-grep-ignore: no-default-struct-update - the test sets only the fields it reads
         ..CallLog::default()
     };
     let call_log = logged.is_some().then_some(&recorded);
@@ -177,16 +180,6 @@ fn an_absent_metadata_bucket_charges_no_guardrail() {
     let request = object(r#"{"combined_usage_object": {}, "response_cost": 3}"#);
     let cost = failure_response_cost(&request, None).expect("the cost reads");
     assert_eq!(cost, Decimal::from(3_i32));
-}
-
-#[test]
-fn the_failure_response_carries_the_exception_as_its_result() {
-    let response = failure_response_result("the provider is down");
-    assert_eq!(response.len(), 1);
-    assert_eq!(
-        response["result"],
-        Json::Text("the provider is down".to_owned())
-    );
 }
 
 #[rstest]

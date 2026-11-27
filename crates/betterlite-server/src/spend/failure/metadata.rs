@@ -7,6 +7,7 @@ use betterlite_core::api::request_principal_metadata::PrincipalFacts;
 use betterlite_core::api::request_principal_metadata::principal::{
     UserKeyLogMetadata, logged_api_key,
 };
+use betterlite_logging::langfuse_projections::steering::truthiness;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use std::mem;
@@ -59,7 +60,7 @@ pub fn trusted_failure_metadata(
         serde_json::from_str(&encoded).map_err(|source| FailureMetadataError::Encode { source })?;
     metadata.insert(
         USER_API_KEY.to_owned(),
-        optional_text(logged_api_key(principal).map(str::to_owned)),
+        logged_api_key(principal).map_or(Json::Null, |key| Json::Text(key.to_owned())),
     );
     metadata.insert(STATUS.to_owned(), Json::Text(FAILURE_STATUS.to_owned()));
     Ok(metadata)
@@ -84,15 +85,6 @@ pub fn used_client_oauth_token(request_data: &JsonObject, route: Option<&str>) -
         Some(Json::Null | Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_))
         | None => None,
     }
-}
-
-pub(crate) fn stamp_used_client_oauth_token(
-    metadata: &mut JsonObject,
-    request_data: &JsonObject,
-    route: Option<&str>,
-) {
-    let stamped = used_client_oauth_token(request_data, route).map_or(Json::Null, Json::Bool);
-    metadata.insert(USED_CLIENT_OAUTH_TOKEN.to_owned(), stamped);
 }
 
 // The bucket the writer's payload reads back: litellm_params.metadata as the merge left it.
@@ -121,23 +113,23 @@ pub(crate) fn merge_failure_metadata(request_data: &mut JsonObject, trusted: Jso
         .get(METADATA)
         .and_then(as_object)
         .and_then(|fields| fields.get(TAGS))
-        .filter(|tags| is_truthy(tags))
+        .filter(|tags| truthiness(tags))
         .cloned();
     let proxy_request = request_data
         .get(PROXY_SERVER_REQUEST)
-        .filter(|value| is_truthy(value))
+        .filter(|value| truthiness(value))
         .cloned()
         .or_else(|| {
             params
                 .get(PROXY_SERVER_REQUEST)
-                .filter(|value| is_truthy(value))
+                .filter(|value| truthiness(value))
                 .cloned()
         })
-        .unwrap_or_else(empty_object);
-    let model = params.get(MODEL).filter(|value| is_truthy(value)).cloned();
+        .unwrap_or_else(|| Json::Object(JsonObject::new()));
+    let model = params.get(MODEL).filter(|value| truthiness(value)).cloned();
     let provider = params
         .get(CUSTOM_LLM_PROVIDER)
-        .filter(|value| is_truthy(value))
+        .filter(|value| truthiness(value))
         .cloned();
     if let Some(nested_tags) = tags {
         existing.insert(TAGS.to_owned(), nested_tags);
@@ -184,10 +176,6 @@ pub(crate) fn take_litellm_params(request_data: &mut JsonObject) -> JsonObject {
     }
 }
 
-pub(crate) fn empty_object() -> Json {
-    Json::Object(JsonObject::new())
-}
-
 pub(crate) fn as_object(value: &Json) -> Option<&JsonObject> {
     match value {
         Json::Object(fields) => Some(fields),
@@ -199,27 +187,5 @@ pub(crate) fn object_mut(value: &mut Json) -> Option<&mut JsonObject> {
     match value {
         Json::Object(fields) => Some(fields),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
-    }
-}
-
-pub(crate) fn missing(value: Option<&Json>) -> bool {
-    value.is_none_or(|value| matches!(value, Json::Null))
-}
-
-pub(crate) fn optional_text(value: Option<String>) -> Json {
-    value.map_or(Json::Null, Json::Text)
-}
-
-#[must_use]
-pub(crate) fn is_truthy(value: &Json) -> bool {
-    match value {
-        Json::Null => false,
-        Json::Bool(flag) => *flag,
-        Json::Number(number) => number
-            .as_f64()
-            .is_none_or(|float| float.to_bits() & 0x7fff_ffff_ffff_ffff != 0),
-        Json::Text(text) => !text.is_empty(),
-        Json::List(items) => !items.is_empty(),
-        Json::Object(fields) => !fields.is_empty(),
     }
 }

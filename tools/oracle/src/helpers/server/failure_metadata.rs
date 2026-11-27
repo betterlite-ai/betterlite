@@ -95,7 +95,7 @@ fn eligibility(case: &EligibilityInput) -> HelperResult {
         SpendUpdates::Allowed
     };
     let identity = TrackingIdentity {
-        user_api_key: case.user_api_key.as_deref(),
+        hashed_user_api_key: case.user_api_key.as_deref(),
         user_id: case.user_id.as_deref(),
         team_id: case.team_id.as_deref(),
         end_user_id: case.end_user_id.as_deref(),

@@ -307,7 +307,7 @@ fn metadata_keys_are_sorted_and_other_values_have_none() {
 #[case::disabled_wins(
     SpendUpdates::Disabled,
     TrackingIdentity {
-        user_api_key: Some("hash"),
+        hashed_user_api_key: Some("hash"),
         ..TrackingIdentity::default()
     },
     Some("pass_through_endpoint"),
@@ -316,7 +316,7 @@ fn metadata_keys_are_sorted_and_other_values_have_none() {
 #[case::a_key_qualifies(
     SpendUpdates::Allowed,
     TrackingIdentity {
-        user_api_key: Some(""),
+        hashed_user_api_key: Some(""),
         ..TrackingIdentity::default()
     },
     None,

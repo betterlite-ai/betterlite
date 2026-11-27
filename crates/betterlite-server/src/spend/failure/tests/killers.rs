@@ -1,3 +1,4 @@
+use betterlite_logging::langfuse_projections::steering::truthiness;
 use betterlite_logging::spend_bodies::session::SpendTimestamp;
 use betterlite_models::decisions::Json;
 use chrono::DateTime;
@@ -7,9 +8,7 @@ use super::super::fields::{
     CallLog, completion_start, eligible_route, failure_start_time, lift_call_log,
     request_tags_for_cost_tracking,
 };
-use super::super::metadata::{
-    as_object, is_truthy, merge_failure_metadata, used_client_oauth_token,
-};
+use super::super::metadata::{as_object, merge_failure_metadata, used_client_oauth_token};
 use super::support::{nested, object};
 use crate::spend::payload::CompletionStart;
 
@@ -23,24 +22,24 @@ fn aware(value: &str) -> SpendTimestamp {
 
 #[test]
 fn falsey_values_are_not_present() {
-    assert!(!is_truthy(&Json::Null));
-    assert!(!is_truthy(&Json::Bool(false)));
-    assert!(!is_truthy(&Json::Number(Number::from(0_u8))));
-    assert!(!is_truthy(&Json::Number(
+    assert!(!truthiness(&Json::Null));
+    assert!(!truthiness(&Json::Bool(false)));
+    assert!(!truthiness(&Json::Number(Number::from(0_u8))));
+    assert!(!truthiness(&Json::Number(
         Number::from_f64(0.0).expect("zero is finite")
     )));
-    assert!(!is_truthy(&text("")));
-    assert!(!is_truthy(&Json::List(Vec::new())));
-    assert!(!is_truthy(&Json::Object(object("{}"))));
+    assert!(!truthiness(&text("")));
+    assert!(!truthiness(&Json::List(Vec::new())));
+    assert!(!truthiness(&Json::Object(object("{}"))));
 }
 
 #[test]
 fn truthy_values_are_present() {
-    assert!(is_truthy(&Json::Bool(true)));
-    assert!(is_truthy(&Json::Number(Number::from(1_u8))));
-    assert!(is_truthy(&text("x")));
-    assert!(is_truthy(&Json::List(vec![Json::Bool(true)])));
-    assert!(is_truthy(&Json::Object(object(r#"{"a": 1}"#))));
+    assert!(truthiness(&Json::Bool(true)));
+    assert!(truthiness(&Json::Number(Number::from(1_u8))));
+    assert!(truthiness(&text("x")));
+    assert!(truthiness(&Json::List(vec![Json::Bool(true)])));
+    assert!(truthiness(&Json::Object(object(r#"{"a": 1}"#))));
 }
 
 #[test]

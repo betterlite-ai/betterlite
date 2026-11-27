@@ -12,7 +12,7 @@ use rust_decimal::Decimal;
 use thiserror::Error;
 use tokio::sync::watch;
 
-use super::fields::{completion_start, failure_response_result};
+use super::fields::completion_start;
 use crate::savings::Context as SpendContext;
 use crate::spend::payload::{
     PayloadRequest, SpendCache, SpendPayloadError, SpendPayloadSettings, SpendResponse,
@@ -56,7 +56,6 @@ where
     async fn record(&self, spend: &FailureSpend<'_>) -> bool {
         let payloads = FailurePayloads {
             kwargs: spend.request_data,
-            response_result: spend.response_result,
             start_time: spend.start_time,
             end_time: spend.end_time,
             cache: self.cache,
@@ -96,7 +95,6 @@ pub enum FailureBuildError {
 
 struct FailurePayloads<'spend> {
     kwargs: &'spend JsonObject,
-    response_result: &'spend str,
     start_time: SpendTimestamp,
     end_time: SpendTimestamp,
     cache: Option<&'spend (dyn SpendCache + Sync)>,
@@ -111,14 +109,13 @@ impl SpendPayloadSource for FailurePayloads<'_> {
 
     fn build(&self) -> PayloadFuture<'_, Self::Error> {
         Box::pin(async move {
-            let response = failure_response_result(self.response_result);
             let cache: Option<&dyn SpendCache> = match self.cache {
                 Some(shared) => Some(shared),
                 None => None,
             };
             let request = PayloadRequest {
                 kwargs: self.kwargs,
-                response: SpendResponse::Mapping(&response),
+                response: SpendResponse::Other,
                 start_time: self.start_time,
                 end_time: self.end_time,
                 completion_start_time: completion_start(self.kwargs),

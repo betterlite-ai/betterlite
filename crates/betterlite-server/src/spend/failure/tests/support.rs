@@ -58,6 +58,7 @@ pub(super) fn principal() -> PrincipalFacts {
         team_id: Some("team-1".to_owned()),
         org_id: Some("org-1".to_owned()),
         project_id: Some("project-1".to_owned()),
+        // ast-grep-ignore: no-default-struct-update - the fixture sets only the fields it reads
         ..PrincipalFacts::default()
     }
 }
@@ -82,6 +83,7 @@ impl Harness {
                 class_name: "ProviderError".to_owned(),
                 message: Some("the provider is down".to_owned()),
                 status_code: Some(503_u16),
+                // ast-grep-ignore: no-default-struct-update - the fixture sets only the fields it reads
                 ..ExceptionFacts::default()
             },
             normalizer: normalizer(),
@@ -231,6 +233,7 @@ impl FailureIdentityLookup for SpyLookup {
         Ok(KeyFacts {
             key_alias: Some("looked-up-alias".to_owned()),
             user_id: Some("looked-up-user".to_owned()),
+            // ast-grep-ignore: no-default-struct-update - the fixture sets only the fields it reads
             ..KeyFacts::default()
         })
     }

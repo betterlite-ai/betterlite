@@ -7,6 +7,7 @@ use betterlite_error::proxy_model_not_found::ProxyModelNotFoundError;
 use betterlite_logging::logging_metadata::error_info::ExceptionLogging;
 use betterlite_logging::spend_bodies::session::SpendTimestamp;
 use betterlite_logging::spend_sanitize::SpendSanitizePolicy;
+use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_redis::request_batch::lock as lock_reservation;
 use thiserror::Error;
@@ -18,8 +19,8 @@ use super::fields::{
     lift_call_log,
 };
 use super::metadata::{
-    ERROR_INFORMATION, FailureMetadataError, merge_failure_metadata, persisted_metadata,
-    stamp_used_client_oauth_token, trusted_failure_metadata,
+    ERROR_INFORMATION, FailureMetadataError, USED_CLIENT_OAUTH_TOKEN, merge_failure_metadata,
+    persisted_metadata, trusted_failure_metadata, used_client_oauth_token,
 };
 use super::write::{FailureSpend, FailureSpendWrite};
 use crate::spend::estimates::ports::Clock;
@@ -129,11 +130,12 @@ async fn trusted_metadata(
         )
         .await;
     }
-    stamp_used_client_oauth_token(
-        &mut trusted,
+    let stamped = used_client_oauth_token(
         record.request_data,
         record.principal.request_route.as_deref(),
-    );
+    )
+    .map_or(Json::Null, Json::Bool);
+    trusted.insert(USED_CLIENT_OAUTH_TOKEN.to_owned(), stamped);
     Ok(trusted)
 }
 

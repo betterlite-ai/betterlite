@@ -22,6 +22,7 @@ impl Lookup {
     fn with_key(facts: KeyFacts) -> Self {
         Self {
             key: Mutex::new(Some(Ok(facts))),
+            // ast-grep-ignore: no-default-struct-update - the fixture sets only the fields it reads
             ..Self::default()
         }
     }
@@ -29,6 +30,7 @@ impl Lookup {
     fn failing_key() -> Self {
         Self {
             key: Mutex::new(Some(Err(KeyLookupError::NoDatabase))),
+            // ast-grep-ignore: no-default-struct-update - the fixture sets only the fields it reads
             ..Self::default()
         }
     }
@@ -36,6 +38,7 @@ impl Lookup {
     fn with_team(alias: Option<&str>) -> Self {
         Self {
             team: Mutex::new(Some(Ok(alias.map(str::to_owned)))),
+            // ast-grep-ignore: no-default-struct-update - the fixture sets only the fields it reads
             ..Self::default()
         }
     }
@@ -43,6 +46,7 @@ impl Lookup {
     fn failing_team() -> Self {
         Self {
             team: Mutex::new(Some(Err(TeamLookupError::NoDatabase))),
+            // ast-grep-ignore: no-default-struct-update - the fixture sets only the fields it reads
             ..Self::default()
         }
     }
@@ -152,6 +156,7 @@ async fn a_present_identity_is_never_overwritten() {
     let lookup = Lookup::with_key(KeyFacts {
         key_alias: Some("alias".to_owned()),
         user_id: Some("new-user".to_owned()),
+        // ast-grep-ignore: no-default-struct-update - the fixture sets only the fields it reads
         ..KeyFacts::default()
     });
     let mut metadata = object(
@@ -189,6 +194,7 @@ async fn an_empty_alias_blocks_the_key_lookup_but_not_the_team_lookup() {
 async fn a_delayed_event_keeps_its_identity_but_fills_the_team_alias() {
     let key = Lookup::with_key(KeyFacts {
         user_id: Some("new-user".to_owned()),
+        // ast-grep-ignore: no-default-struct-update - the fixture sets only the fields it reads
         ..KeyFacts::default()
     });
     let mut metadata = object(

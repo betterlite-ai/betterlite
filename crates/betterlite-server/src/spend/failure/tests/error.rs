@@ -27,6 +27,7 @@ fn provider_facts() -> ExceptionFacts {
         class_name: "ProviderError".to_owned(),
         message: Some("the provider is down".to_owned()),
         status_code: Some(503_u16),
+        // ast-grep-ignore: no-default-struct-update - the test sets only the fields it reads
         ..ExceptionFacts::default()
     }
 }

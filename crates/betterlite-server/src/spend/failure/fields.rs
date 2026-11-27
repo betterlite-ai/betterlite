@@ -3,6 +3,7 @@ use betterlite_auth::route_match::classifier::is_llm_api_route;
 use betterlite_auth::route_match::templates::RouteValue;
 use betterlite_config::spend_storage::SpendUpdates;
 use betterlite_logging::fields::usage::parse::usage_from_mapping;
+use betterlite_logging::langfuse_projections::steering::truthiness;
 use betterlite_logging::spend_bodies::session::SpendTimestamp;
 use betterlite_models::decisions::Json;
 use betterlite_models::guardrail_pricing::GuardrailPricingError;
@@ -18,13 +19,11 @@ use thiserror::Error;
 use super::metadata::{
     COMBINED_USAGE_OBJECT, COMPLETION_START_TIME, GUARDRAIL_INFORMATION, LITELLM_METADATA,
     LITELLM_PARAMS, LITELLM_TRACE_ID, METADATA, RESPONSE_COST, STANDARD_LOGGING_OBJECT, START_TIME,
-    TAGS, USER_API_KEY_PREFIX, as_object, is_truthy, missing, object_mut, optional_text,
-    take_litellm_params,
+    TAGS, USER_API_KEY_PREFIX, as_object, object_mut, take_litellm_params,
 };
 use crate::spend::payload::CompletionStart;
 
 const NAIVE_FORMAT: &str = "%Y-%m-%dT%H:%M:%S%.f";
-const RESULT: &str = "result";
 const SPACED_FORMAT: &str = "%Y-%m-%d %H:%M:%S%.f";
 const REQUEST_TAGS: &str = "request_tags";
 pub(crate) const TRACKABLE_ANONYMOUS_CALL_TYPES: [&str; 5] = [
@@ -68,7 +67,7 @@ pub struct CallLog {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct TrackingIdentity<'facts> {
-    pub user_api_key: Option<&'facts str>,
+    pub hashed_user_api_key: Option<&'facts str>,
     pub user_id: Option<&'facts str>,
     pub team_id: Option<&'facts str>,
     pub end_user_id: Option<&'facts str>,
@@ -78,7 +77,7 @@ pub struct TrackingIdentity<'facts> {
 pub(crate) fn lift_call_log(request_data: &mut JsonObject, call_log: &CallLog) {
     let standard_missing = request_data
         .get(STANDARD_LOGGING_OBJECT)
-        .is_none_or(|value| !is_truthy(value));
+        .is_none_or(|value| !truthiness(value));
     if standard_missing {
         let lifted = call_log
             .standard_logging_object
@@ -92,7 +91,10 @@ pub(crate) fn lift_call_log(request_data: &mut JsonObject, call_log: &CallLog) {
     if trace_missing {
         request_data.insert(
             LITELLM_TRACE_ID.to_owned(),
-            optional_text(call_log.litellm_trace_id.clone()),
+            call_log
+                .litellm_trace_id
+                .clone()
+                .map_or(Json::Null, Json::Text),
         );
     }
 }
@@ -108,14 +110,6 @@ pub(crate) fn failure_start_time(
         .and_then(datetime_value)
         .or_else(|| call_log.and_then(|log| log.start_time))
         .unwrap_or(now)
-}
-
-// get_logging_payload's response_obj for the failure row: the non-mapping exception fills only result.
-#[must_use]
-pub(crate) fn failure_response_result(result: &str) -> JsonObject {
-    let mut response = JsonObject::new();
-    response.insert(RESULT.to_owned(), Json::Text(result.to_owned()));
-    response
 }
 
 #[must_use]
@@ -188,7 +182,10 @@ pub fn write_spend_metadata_to_kwargs(kwargs: &mut JsonObject, metadata: &JsonOb
             continue;
         };
         for (key, value) in &patch {
-            if missing(bucket.get(key)) {
+            if bucket
+                .get(key)
+                .is_none_or(|current| matches!(current, Json::Null))
+            {
                 bucket.insert(key.clone(), value.clone());
             }
         }
@@ -225,7 +222,7 @@ pub fn should_track_cost_callback(
     if spend_updates == SpendUpdates::Disabled {
         return false;
     }
-    if identity.user_api_key.is_some()
+    if identity.hashed_user_api_key.is_some()
         || identity.user_id.is_some()
         || identity.team_id.is_some()
         || identity.end_user_id.is_some()

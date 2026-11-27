@@ -7,7 +7,7 @@ use thiserror::Error;
 
 use super::metadata::{
     USER_API_KEY, USER_API_KEY_ALIAS, USER_API_KEY_ORG_ID, USER_API_KEY_PROJECT_ID,
-    USER_API_KEY_TEAM_ALIAS, USER_API_KEY_TEAM_ID, USER_API_KEY_USER_ID, missing, optional_text,
+    USER_API_KEY_TEAM_ALIAS, USER_API_KEY_TEAM_ID, USER_API_KEY_USER_ID,
 };
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -41,22 +41,29 @@ pub async fn enrich_failure_metadata(
     lookup: Option<&dyn FailureIdentityLookup>,
     resolve_missing_key_identity: bool,
 ) {
-    let Some(token) = truthy_text(metadata.get(USER_API_KEY)).map(str::to_owned) else {
+    let Some(token) = nonempty_text(metadata.get(USER_API_KEY)).map(str::to_owned) else {
         return;
     };
     let Some(resolver) = lookup else {
         return;
     };
-    if resolve_missing_key_identity && missing(metadata.get(USER_API_KEY_ALIAS)) {
+    if resolve_missing_key_identity
+        && metadata
+            .get(USER_API_KEY_ALIAS)
+            .is_none_or(|value| matches!(value, Json::Null))
+    {
         match resolver.key_facts(&token).await {
             Ok(facts) => fill_missing_identity(metadata, facts),
             Err(error) => tracing::debug!(%error, "failure metadata key enrichment failed"),
         }
     }
-    let Some(team_id) = truthy_text(metadata.get(USER_API_KEY_TEAM_ID)).map(str::to_owned) else {
+    let Some(team_id) = nonempty_text(metadata.get(USER_API_KEY_TEAM_ID)).map(str::to_owned) else {
         return;
     };
-    if !missing(metadata.get(USER_API_KEY_TEAM_ALIAS)) {
+    if metadata
+        .get(USER_API_KEY_TEAM_ALIAS)
+        .is_some_and(|value| !matches!(value, Json::Null))
+    {
         return;
     }
     match resolver.team_alias(&team_id).await {
@@ -76,13 +83,16 @@ fn fill_missing_identity(metadata: &mut JsonObject, facts: KeyFacts) {
         (USER_API_KEY_ORG_ID, facts.org_id),
         (USER_API_KEY_PROJECT_ID, facts.project_id),
     ] {
-        if missing(metadata.get(key)) {
-            metadata.insert(key.to_owned(), optional_text(value));
+        if metadata
+            .get(key)
+            .is_none_or(|current| matches!(current, Json::Null))
+        {
+            metadata.insert(key.to_owned(), value.map_or(Json::Null, Json::Text));
         }
     }
 }
 
-fn truthy_text(value: Option<&Json>) -> Option<&str> {
+fn nonempty_text(value: Option<&Json>) -> Option<&str> {
     match value {
         Some(Json::Text(text)) if !text.is_empty() => Some(text),
         Some(
