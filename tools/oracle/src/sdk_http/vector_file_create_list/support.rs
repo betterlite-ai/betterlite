@@ -146,13 +146,13 @@ pub(super) fn registry_of(registry: &Registry, api_base: &str) -> CaseRegistry {
         .credential_values
         .iter()
         .map(|(name, value)| {
-            let value = match value {
+            let resolved = match value {
                 Json::Text(text) if text.as_str() == API_BASE_SENTINEL => {
                     Json::Text(api_base.to_owned())
                 }
                 other => other.clone(),
             };
-            (name.clone(), value)
+            (name.clone(), resolved)
         })
         .collect();
     CaseRegistry {
