@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import Coroutine, Mapping
 from datetime import UTC, datetime
 from typing import ClassVar, Literal, Never, Protocol, TypedDict, Unpack
 
@@ -6,6 +7,7 @@ import litellm
 import litellm.vector_stores.main as vector_store_main
 import openai
 from litellm.litellm_core_utils.litellm_logging import Logging
+from litellm.types.vector_stores import VectorStoreCreateResponse
 from litellm.vector_stores.vector_store_registry import VectorStoreRegistry
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 from typing_extensions import override
@@ -19,10 +21,14 @@ JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 PARAMS: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
 TEXT: TypeAdapter[str] = TypeAdapter(str)
 
+# litellm types the extra fields, the page and an async read's handle with object-shaped values
+ReadHeaders = dict[str, object]
+RetrieveAnswer = VectorStoreCreateResponse | Coroutine[object, object, VectorStoreCreateResponse]
+ListAnswer = Mapping[str, object]
+
 
 # every keyword argument the four reads take, with the extras LiteLLM forwards untouched
-class ReadValues(TypedDict, total=False):
-    vector_store_id: str
+class ReadOptions(TypedDict, total=False):
     after: str | None
     before: str | None
     limit: int | None
@@ -32,23 +38,27 @@ class ReadValues(TypedDict, total=False):
     litellm_call_id: str
     litellm_logging_obj: Logging
     custom_llm_provider: str | None
-    extra_headers: dict[str, str] | None
-    extra_query: dict[str, JsonValue] | None
-    extra_body: dict[str, JsonValue] | None
+    extra_headers: ReadHeaders | None
+    extra_query: ReadHeaders | None
+    extra_body: ReadHeaders | None
     timeout: float | None
 
 
 # litellm's @client decorator leaves the reads untyped, so each mode's view names the calls it makes
 class SyncReads(Protocol):
-    def retrieve(self, /, **values: Unpack[ReadValues]) -> JsonValue: ...
+    def retrieve(
+        self, /, vector_store_id: str, **values: Unpack[ReadOptions]
+    ) -> RetrieveAnswer: ...
 
-    def list(self, /, **values: Unpack[ReadValues]) -> JsonValue: ...
+    def list(self, /, **values: Unpack[ReadOptions]) -> ListAnswer: ...
 
 
 class AsyncReads(Protocol):
-    async def aretrieve(self, /, **values: Unpack[ReadValues]) -> JsonValue: ...
+    async def aretrieve(
+        self, /, vector_store_id: str, **values: Unpack[ReadOptions]
+    ) -> VectorStoreCreateResponse: ...
 
-    async def alist(self, /, **values: Unpack[ReadValues]) -> JsonValue: ...
+    async def alist(self, /, **values: Unpack[ReadOptions]) -> ListAnswer: ...
 
 
 SYNC: SyncReads = vector_store_main
@@ -73,9 +83,9 @@ class Run(Strict):
     limit: int | None = None
     order: str | None = None
     options: RunOptions
-    extra_headers: dict[str, str] | None = None
-    extra_query: dict[str, JsonValue] | None = None
-    extra_body: dict[str, JsonValue] | None = None
+    extra_headers: ReadHeaders | None = None
+    extra_query: ReadHeaders | None = None
+    extra_body: ReadHeaders | None = None
     timeout: float | None = None
     custom_llm_provider: str | None = None
 
@@ -157,8 +167,12 @@ def order_value(run: Run) -> str | None:
     return "desc"
 
 
-def read_options(run: Run, api_base: str, logging_obj: Logging) -> ReadValues:
-    return ReadValues(
+def read_options(run: Run, api_base: str, logging_obj: Logging) -> ReadOptions:
+    return ReadOptions(
+        after=run.after,
+        before=run.before,
+        limit=limit_value(run),
+        order=order_value(run),
         api_base=api_base,
         api_key=run.options.api_key,
         litellm_call_id=run.options.litellm_call_id,
@@ -171,33 +185,20 @@ def read_options(run: Run, api_base: str, logging_obj: Logging) -> ReadValues:
     )
 
 
-def retrieve_options(run: Run, api_base: str, logging_obj: Logging) -> ReadValues:
-    options = read_options(run, api_base, logging_obj)
-    options["vector_store_id"] = require_id(run)
-    return options
-
-
-def list_options(run: Run, api_base: str, logging_obj: Logging) -> ReadValues:
-    options = read_options(run, api_base, logging_obj)
-    options["after"] = run.after
-    options["before"] = run.before
-    options["limit"] = limit_value(run)
-    options["order"] = order_value(run)
-    return options
-
-
 def answer(run: Run, api_base: str, logging_obj: Logging) -> JsonValue:
+    options = read_options(run, api_base, logging_obj)
     if run.operation == "retrieve":
-        return JSON.validate_python(SYNC.retrieve(**retrieve_options(run, api_base, logging_obj)))
-    return JSON.validate_python(SYNC.list(**list_options(run, api_base, logging_obj)))
+        return JSON.validate_python(SYNC.retrieve(vector_store_id=require_id(run), **options))
+    return JSON.validate_python(SYNC.list(**options))
 
 
 async def async_answer(run: Run, api_base: str, logging_obj: Logging) -> JsonValue:
+    options = read_options(run, api_base, logging_obj)
     if run.operation == "retrieve":
         return JSON.validate_python(
-            await ASYNC.aretrieve(**retrieve_options(run, api_base, logging_obj))
+            await ASYNC.aretrieve(vector_store_id=require_id(run), **options)
         )
-    return JSON.validate_python(await ASYNC.alist(**list_options(run, api_base, logging_obj)))
+    return JSON.validate_python(await ASYNC.alist(**options))
 
 
 def logging_fixture(call_type: str) -> Logging:
