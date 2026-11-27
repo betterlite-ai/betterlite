@@ -9,7 +9,7 @@ mod tests;
 #[derive(Clone, Debug, Default)]
 pub struct ModelReconcileLock(Arc<Mutex<()>>);
 
-// Deref, not a lock() method, so clear_cache keeps taking a &Mutex<()> gate
+// ast-grep-ignore: no-deref-impls - clear_cache takes a &Mutex<()> gate, so holders deref to it
 impl Deref for ModelReconcileLock {
     type Target = Mutex<()>;
 
