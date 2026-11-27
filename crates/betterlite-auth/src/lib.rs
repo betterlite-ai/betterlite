@@ -77,6 +77,7 @@ pub mod key_context;
 pub mod managed_admission;
 pub mod management_routes;
 pub mod master_database_auth;
+pub mod master_key_admin;
 pub mod master_key_boot;
 pub mod membership_load;
 pub mod model_budget_limiter;

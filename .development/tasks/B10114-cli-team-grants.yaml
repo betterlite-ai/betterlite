@@ -1,0 +1,118 @@
+id: B10114
+title: CLI team grant records, lookup and selection
+description: >-
+  A `lite login` credential carries the models and model aliases of the team it was minted for, and two flows mint one: B1614's CLI SSO login (its callback stores the user's team snapshots in the login flow, its poll picks one) and B4658's MCP consent and credential mint. Both read team snapshots the same way, through CliSsoTeamDetail, fetch_cli_sso_team_details and selected_cli_sso_team_detail in ui_sso.py (L217-L234, L2248-L2274 and L2287-L2296). B1614 owned them next to its poll route, so B4658 waited on the whole CLI login for about 50 lines. This task builds them on their own; B1614 and B4658 call them.
+
+
+  Layout. Module cli_team_grants in betterlite-server, crates/betterlite-server/src/cli_team_grants.rs, an empty stub the crate's lib.rs already declares, with the submodules records, selection and lookup, each with a tests.rs beside it. It sits outside B1614's cli_poll_grants on purpose, so the two tasks never share a file. SQL is plain tokio-postgres through B700's PostgresStore with `$n` parameters only.
+
+
+  records. `CliSsoTeamDetail { team_id: Option<String>, team_alias: Option<String>, team_models: Vec<String>, team_model_aliases: Option<BTreeMap<String, String>> }` with public fields, deriving Clone, Debug, PartialEq, Serialize and Deserialize. team_models is required when deserializing, with no serde default, while a missing team_id, team_alias or team_model_aliases reads as None and unknown keys are ignored, as pydantic's model does. Serialize writes all four keys with null for None, like model_dump; B1614 stores that list in the login flow and echoes it on poll. `TEAMLESS_CLI_SSO_TEAM_DETAIL` is a const with no team_id, no alias, empty team_models and no aliases: the grant of a login with no team, and it restricts nothing. `TeamGrantRow { team_id: String, team_alias: Option<String>, models: Vec<String>, model_aliases: Option<ModelAliases> }` is LiteLLM's _TeamRowGrants with the alias table's one column pulled up, where ModelAliases is B859's betterlite_db::team_rows::aliases::ModelAliases. `cli_sso_team_detail(row: TeamGrantRow) -> Result<CliSsoTeamDetail, TeamColumnsError>` is _cli_sso_team_detail: team_id becomes Some(team_id), team_alias stays, models becomes team_models, and model_aliases goes through B871's betterlite_auth::identity_grants::team_grants::decode_model_aliases, so alias text holding a JSON object of text values parses into the map, other text reads as None, a stored map of text values is kept and a stored map with any other value is B871's TeamColumnsError::AliasNotText (pydantic's ValidationError). No alias table gives None.
+
+
+  selection. `selected_cli_sso_team_detail(details: &[CliSsoTeamDetail], team_id: Option<&str>) -> Option<CliSsoTeamDetail>` gives TEAMLESS_CLI_SSO_TEAM_DETAIL for no team_id and otherwise a clone of the first detail whose team_id equals it, or None. B4658 calls this one with the details it fetched. `selected_cached_cli_sso_team_detail(cached: Option<&serde_json::Value>, team_id: Option<&str>) -> Option<CliSsoTeamDetail>` is LiteLLM's selected_cli_sso_team_detail over the team_details value a login flow holds. B1614's poll passes that value as it found it. With no team_id it gives the teamless detail before it looks at the value. Otherwise the value must decode with serde_json::from_value as a JSON array of CliSsoTeamDetail (_CLI_SSO_TEAM_DETAILS_ADAPTER), and a missing value, null, anything but an array, or one entry that fails (team_models missing, a number where text belongs) gives None. A decoded list goes to selected_cli_sso_team_detail. None means the team's grants are unknown, and both callers refuse rather than mint a credential without the team's restrictions.
+
+
+  lookup. `fetch_cli_sso_team_details(store: &PostgresStore, teams: &[String]) -> Option<Vec<CliSsoTeamDetail>>`. An empty teams slice gives Some(empty) without opening a session, since a user with no teams is a known answer. Otherwise run one select, `SELECT t.team_id, t.team_alias, t.models, m.aliases FROM "LiteLLM_TeamTable" t LEFT JOIN "LiteLLM_ModelTable" m ON m.id = t.model_id WHERE t.team_id = ANY($1)`, with teams bound as a TEXT[] and no ORDER BY, like Prisma's find_many without an order. B724's team repository reads one team by id or an organization's teams and never joins the alias table, so this select is the lookup's own. Read the jsonb aliases column as a serde_json::Value and convert it with serde_json::from_value into ModelAliases, where SQL NULL and a JSON null both give None. Each row becomes a TeamGrantRow and goes through cli_sso_team_detail. A team id with no row is left out, and that is how a membership in a deleted team disappears. A failed session, query or row read logs at error "Error fetching team details for CLI SSO session: {error}" and gives None. That is the unknown answer, and callers keep it apart from an empty list. A row whose aliases column can't be read as text or a map of text values gives None with the same log line (see deviations).
+
+
+  Tests. records and selection tests are pure. lookup tests run on real Postgres through betterlite-postgres-fixture's PostgresFixture with the baseline catalogs applied, as crates/betterlite-server/src/agent_rows/tests/support.rs does, inserting LiteLLM_ModelTable and LiteLLM_TeamTable rows per case: teams with and without an alias table, alias text, an unknown team id skipped, an empty teams slice that never opens a session (a store whose database is gone still answers Some), a failed query (a database without the team table) giving None, and an alias map with a number value giving None. Compare fetched lists without assuming row order.
+
+
+  Helper. No route reaches this code yet, so the helper operation b10114 compares the two pure functions with LiteLLM and B1614 and B4658 add the HTTP cases through their routes. The Python side calls ui_sso's selected_cli_sso_team_detail with the case's team_details and team_id, and _cli_sso_team_detail with the case's team row (team_id, team_alias, models and litellm_model_table with model_aliases), and returns model_dump() or None. The Rust side calls selected_cached_cli_sso_team_detail and cli_sso_team_detail, building the TeamGrantRow from the same row. Rows in cases hold alias text, a map of text values or no alias table, since a failing row raises in LiteLLM. Add a cli-team-grants-* seed to the helper_case corpus for each of the two calls.
+scope:
+  paths:
+    - crates/betterlite-server/src/cli_team_grants.rs
+    - crates/betterlite-server/src/cli_team_grants/**
+    - tools/oracle/cases/helpers/cli-team-grants/**
+    - "tools/oracle/fuzz/corpus/helper_case/cli-team-grants-*"
+    - tools/oracle/helpers/b10114.py
+    - tools/oracle/helpers/b10114/**
+    - tools/oracle/src/helpers/server/b10114.rs
+    - tools/oracle/src/helpers/server/b10114/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L217-L234
+    why: Owned. _TeamRowGrants, CliSsoTeamDetail, the details adapter and the teamless detail.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2248-L2274
+    why: Owned. _cli_sso_team_detail and fetch_cli_sso_team_details, with None for a failed lookup and an empty tuple for no teams.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2287-L2296
+    why: Owned. selected_cli_sso_team_detail, the teamless answer before validation and None for unknown grants.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2335-L2365
+    why: Call site. The CLI callback fetches the details, refuses a failed lookup with 500 and stores model_dump() of each detail in the flow (B1614).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2533-L2553
+    why: Call site. The poll selects the cached grant and refuses unknown grants with 500 (B1614).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/proxy_api_credentials.py#L27-L92
+    why: Call site. The MCP consent lookup and credential mint fetch and select typed details (B4658).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/team_grants.py#L24-L43
+    why: _decode_model_aliases and TeamModelAliasTable, the alias rules B871's decode_model_aliases ports.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/schema.prisma#L168-L213
+    why: LiteLLM_ModelTable (aliases column) and LiteLLM_TeamTable (team_alias, models, model_id and the litellm_model_table relation).
+dod:
+  - text: CliSsoTeamDetail decodes only with team_models present, reads a missing team_id, team_alias or team_model_aliases as None, ignores unknown keys, and serializes all four keys with null for None.
+    proof: [records-tests]
+  - text: cli_sso_team_detail copies team_id, team_alias and models, parses alias text into a map, reads other text and a missing alias table as no aliases, and refuses a stored alias map with a value that is not text.
+    proof: [records-tests, oracle, helper-python]
+  - text: selected_cli_sso_team_detail gives the teamless detail for no team_id, the first detail with a matching team_id, and None when none matches.
+    proof: [selection-tests]
+  - text: selected_cached_cli_sso_team_detail gives the teamless detail for no team_id whatever the cached value holds, and None for a missing value, null, a value that is not an array or an entry without team_models.
+    proof: [selection-tests, oracle, helper-python]
+  - text: fetch_cli_sso_team_details gives an empty list for no teams without opening a session, the rows of the named teams with their alias tables, leaves out a team id with no row, and gives None for a failed query or a row whose alias column fails.
+    proof: [lookup-tests]
+  - text: The b10114 adapters lint and type-check, and new cli-team-grants seeds replay through the shared helper case parser.
+    proof: [helper-python, helper-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: records-tests
+      why: The team detail decodes without team_models, drops a key when serialized, or the row projection reads aliases differently from LiteLLM.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^cli_team_grants::records::/)'
+    - id: selection-tests
+      why: An unknown grant is selected as a real one, or a teamless login reads the cached value first.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^cli_team_grants::selection::/)'
+    - id: lookup-tests
+      why: The lookup queries for no teams, keeps a deleted team, misses the alias table, or answers a failed lookup with a list.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^cli_team_grants::lookup::/)'
+    - id: helper-python
+      why: The b10114 adapter is missing or fails the strict Python checks.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b10114.py tools/oracle/helpers/b10114)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No new b10114 seed reaches the shared helper case parser.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/cli-team-grants-*")" &&
+        grep -lE '^[[:space:]]+b10114:' tools/oracle/fuzz/corpus/helper_case/cli-team-grants-* &&
+        cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-server --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/cli-team-grants/select-teamless-ignores-cache.yaml
+  - tools/oracle/cases/helpers/cli-team-grants/select-first-match.yaml
+  - tools/oracle/cases/helpers/cli-team-grants/select-no-match.yaml
+  - tools/oracle/cases/helpers/cli-team-grants/select-missing-team-models.yaml
+  - tools/oracle/cases/helpers/cli-team-grants/select-not-a-list.yaml
+  - tools/oracle/cases/helpers/cli-team-grants/select-unknown-keys.yaml
+  - tools/oracle/cases/helpers/cli-team-grants/project-alias-text.yaml
+  - tools/oracle/cases/helpers/cli-team-grants/project-bad-alias-text.yaml
+  - tools/oracle/cases/helpers/cli-team-grants/project-no-alias-table.yaml
+deviations:
+  - what: A team row whose stored alias column is a map with a value that is not text, or is neither text nor a map, makes fetch_cli_sso_team_details give None with the lookup's error log, where LiteLLM lets pydantic's ValidationError escape the function.
+    why: Both callers already refuse on None. B1614's CLI callback answers the same 500 its error mapping gives an escaped exception, and B4658's consent and mint answer unavailable (503 temporarily_unavailable) instead of an uncaught 500. LiteLLM's writers store the column as json.dumps text of a text-to-text map, so only a row written outside LiteLLM gets here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2259-L2274
+out_of_scope:
+  - "_TeamDetailRow and _team_detail_db (ui_sso.py L206-L211): Prisma typing seams with no native counterpart; the lookup runs its own select."
+  - "_cli_sso_session_teams, cli_poll_key, the CLI callback and storing the details in the login flow: B1614 owns them and calls this module."
+  - "lookup_consent_teams, mint_proxy_credential and the SubjectStore port that wraps the lookup: B4658."
+  - "_validate_login in anthropic_endpoints/gateway_endpoints.py also calls selected_cli_sso_team_detail; it belongs to the Claude gateway OAuth task B989."
+  - "The other functions of ui_sso.py: B063's ownership inventory assigns them."
+pitfalls:
+  - "With no team_id, LiteLLM returns the teamless detail before it validates the cached value, so a corrupt cache must not turn a teamless poll into unknown grants."
+  - "Only a missing team_id selects the teamless detail; an empty string goes through the lookup like any other id."
+  - "A missing team_models is unknown authority, not an empty grant, so a serde default on that field would mint an unrestricted credential."
+  - "An empty teams slice is a known answer of no teams and must not query, while None means the lookup itself failed; the callers refuse the second and accept the first."
+  - "The alias column is aliases in the table and model_aliases in Prisma and in the Python row, so the SQL selects m.aliases."
+  - "The team id comes from the row, not from the requested list, so a requested id with no row never shows up as a detail."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

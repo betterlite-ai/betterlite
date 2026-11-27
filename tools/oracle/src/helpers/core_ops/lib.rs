@@ -8,7 +8,7 @@ betterlite_oracle_helper_api::helper_group! {
     "anthropic_beta_config" => anthropic_beta_config,
     "anthropic_beta_filter" => anthropic_beta_filter, "apiserpent_search" => apiserpent_search,
     "assistant_message_options" => assistant_message_options, "b031" => b031, "b045" => b045,
-    "b046" => b046, "b048" => b048, "b095" => b095, "b1000" => b1000, "b10014" => b10014, "b10060" => b10060, "b1010" => b1010,
+    "b046" => b046, "b048" => b048, "b095" => b095, "b1000" => b1000, "b10014" => b10014, "b10060" => b10060, "b10122" => b10122, "b10123" => b10123, "b10124" => b10124, "b1010" => b1010,
     "b1014" => b1014,
     "b1028" => b1028, "b1029" => b1029, "b1030" => b1030, "b1052" => b1052, "b1053" => b1053,
     "b1055" => b1055, "b1056" => b1056, "b1064" => b1064, "b1065" => b1065, "b1066" => b1066,

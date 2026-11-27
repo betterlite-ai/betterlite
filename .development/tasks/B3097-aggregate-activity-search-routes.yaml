@@ -4,11 +4,11 @@ description: >-
   Build the module `aggregate_activity_routes` in betterlite-server. It serves two reports for every entity that
   has daily activity routes: the aggregated report (all days in a range, with totals and breakdowns, no paging) and
   the key search (find API keys by a text fragment, then return their summed metrics). The caller's scope (which
-  users, teams, tags and so on they may see) is decided before any query runs, by B3094 and B3095. B3096 owns the
-  helpers and response types used here; import them, do not copy them: `resolved_scope`, `key_metadata`,
-  `get_daily_activity_prisma_client` and `get_daily_activity_repository` (the two lookups B3096 builds), plus
-  `KeyActivityRow` and `DailyActivityKeySearchResponse`. B3096 owns the module `daily_activity_routes`; this task
-  must not write into it.
+  users, teams, tags and so on they may see) is decided before any query runs, by B3094 and B3095. B10138's module
+  `daily_activity_common` owns the helpers and response types used here; import them, do not copy them:
+  `resolved_scope`, `daily_activity_dependencies` (LiteLLM's get_daily_activity_prisma_client and
+  get_daily_activity_repository in one lookup), `DailyActivityScopeError`, plus `KeyActivityRow` and
+  `DailyActivityKeySearchResponse`. This task writes into neither that module nor B3096's `daily_activity_routes`.
 
   Routes. For each prefix in an entity's resolver (`route_prefixes`: /user, /team, /tag, /organization, /customer
   and /end_user, /agent) register GET `{prefix}/daily/activity/aggregated` and GET
@@ -37,14 +37,14 @@ description: >-
   order (`search`, then `limit`).
 
   Order inside every handler. First the dependencies run: the route-level authentication, the entity query, the
-  caller (B2314's UserAPIKeyAuth), the daily activity repository, the database handle. A missing database stops there with HTTP 500
+  caller (B2314's UserAPIKeyAuth), then B10138's `daily_activity_dependencies` for the daily activity repository and the database handle. A missing database stops there with HTTP 500
   and detail `{"error": <CommonProxyErrors.db_not_connected_error text>}` (litellm/proxy/_types.py L4391-L4395),
-  before any 422 is reported for any parameter. Then `resolved_scope` runs with the `user_aggregated` flag B3096
-  built. The aggregated route passes `true` for the user entity and `false` for the other five. The search route
-  passes `false` for all six. With `true` only the canonical date parser runs, so a missing date answers B3090's
-  `InvalidDateRange` message and a range of more than 400 days is accepted. With `false` B815's
-  `aggregated_date_range_error` runs, including the 400-day cap. A date or scope failure becomes the HTTP error
-  through B3090's `raise_public` (400, 403 or 404, detail `{"error": <reason>}`).
+  before any 422 is reported for any parameter. Then B10138's `resolved_scope` runs with its `user_aggregated`
+  flag. The aggregated route passes `true` for the user entity and `false` for the other five. The search route
+  passes `false` for all six. With `true` only the canonical date parser runs, so a missing or non-canonical date
+  answers B3090's `InvalidDateRange` message, while a reversed range and a range of more than 400 days are accepted. With `false` B815's
+  `aggregated_date_range_error` runs, including the reversed-range check and the 400-day cap. A date or scope failure comes back as
+  `DailyActivityScopeError::Public`, the HTTP error from B3090's `raise_public` (400, 403 or 404, detail `{"error": <reason>}`).
 
   Aggregated handler. After the scope, call B3093's `get_daily_activity_aggregated` with the resolved scope,
   `entity_metadata_field` = the resolved scope's entity_metadata, `include_entity_breakdown` = the resolver's flag
@@ -94,7 +94,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/daily_activity_routes.py#L187-L200
     why: _fold_key_metrics and _search_rows, including the metadata taken from the first day and the dropped keys.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/daily_activity_routes.py#L63-L94
-    why: Database and repository lookups, _date_range_error and _resolved_scope, built by B3096; this task calls them and passes the user_aggregated flag.
+    why: Database and repository lookups, _date_range_error and _resolved_scope, built by B10138; this task calls them and passes the user_aggregated flag.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/daily_activity_routes.py#L560-L579
     why: Which prefixes get which routes and the six resolvers; the loop itself is B8482's.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L1007-L1086
@@ -116,7 +116,7 @@ dod:
     proof: [route-tests]
   - text: The user aggregated route accepts a range of more than 400 days and answers the canonical-date message for a missing date, while the other five aggregated routes and all six search routes answer 400 for a range of more than 400 days.
     proof: [route-tests]
-  - text: A reversed or non-canonical date answers 400 with detail.error before the scope resolver runs.
+  - text: A non-canonical date answers 400 with detail.error before the scope resolver runs on every route, and so does a reversed range on every route except the user aggregated one.
     proof: [route-tests]
   - text: A scope denial answers 403 or 404 with detail.error, and a non-admin asking for another user gets "Non-admin users can only view their own spend data.".
     proof: [route-tests]
@@ -157,12 +157,13 @@ deviations:
   - what: LiteLLM's `exception` log call also prints a stack trace; betterlite logs the one line at error level with the error text and no trace.
     why: A Rust error has no Python traceback to print, and the line text, level and logger match.
 out_of_scope:
-  - "B3096 owns resolved_scope, date_range_error, key_metadata, key_activity_row, key_activity_rows (L63-L162), get_daily_activity_prisma_client, get_daily_activity_repository, the key page, model leaders and cache leakage routes (L313-L353, L405-L452, L516-L557), and the types KeyActivityRow, KeySpendMetrics, KeySpendActivityRow, DailyActivityKeySearchResponse and the other response models."
+  - "B10138 owns resolved_scope, date_range_error, get_daily_activity_prisma_client and get_daily_activity_repository (L63-L94, as daily_activity_dependencies) and the types KeyActivityRow and DailyActivityKeySearchResponse."
+  - "B3096 owns key_metadata, key_activity_row, key_activity_rows (L119-L162), the key page, model leaders and cache leakage routes (L313-L353, L405-L452, L516-L557), and the types KeySpendMetrics, KeySpendActivityRow and the other response models. This task uses none of them: fold_key_metrics takes each key's metadata from the aggregated breakdown, not from key_metadata."
   - "B3098 owns the export route and _export_filename, _content_disposition, _csv_cell, _csv_row and _stream_export_rows (L165-L184, L203-L237, L455-L513)."
   - "B8482 composes the routes of B3096 to B3098 and owns register_daily_activity_routes with its loop over the six resolvers (L560-L579); this task only exposes the per-entity route function."
   - "B3093 owns get_daily_activity_aggregated and the rollup folding; B729 owns the repository's search_keys and aggregated methods and their limit checks; B3094 and B3095 own the resolvers and query shapes; B3090 owns SpendMetrics, KeyMetadata, SpendAnalyticsPaginatedResponse, ScopeDenied, InvalidDateRange and raise_public; B815 owns aggregated_date_range_error."
 pitfalls:
-  - The aggregated route passes user_aggregated true for the user entity only, so /user/daily/activity/aggregated has no 400-day cap and a different missing-date message, while /team, /tag, /organization, /customer, /end_user and /agent keep the cap. The search route passes false for every entity, user included.
+  - The aggregated route passes user_aggregated true for the user entity only, so /user/daily/activity/aggregated has no 400-day cap and no reversed-range check, while /team, /tag, /organization, /customer, /end_user and /agent keep the cap. The search route passes false for every entity, user included.
   - The missing-database 500 comes from a dependency, so it beats the 422 for a bad limit, api_key_limit or timezone; a test with no database and limit=0 must still answer 500, and a missing credential answers 401 before that.
   - The search route replaces the scope's api_keys with the found keys, so an api_key the caller passed only narrows the first search and not the aggregate read that follows.
   - fold_key_metrics takes the metadata from the first day that holds the key, not the last, and a key found by the search but absent from every day is dropped, so the response can have fewer rows than the limit.

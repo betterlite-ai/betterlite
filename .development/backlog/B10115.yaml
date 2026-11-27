@@ -1,0 +1,14 @@
+id: B10115
+milestone: M9 agents and mcp
+title: MCP master key admin credential
+status: todo
+depends_on: [B1715, B2314]
+file: tasks/B10115-master-key-admin.yaml
+covers:
+  - "litellm/proxy/_experimental/mcp_server/bridge_token_flow.py"
+parent: B137
+split_from: B4658
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
