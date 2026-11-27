@@ -224,6 +224,7 @@ pub mod model_prompt_preview;
 pub mod model_ptu_pricing;
 pub mod model_public_settings;
 mod model_query;
+pub mod model_reconcile_lock;
 pub mod model_reload;
 pub mod model_team_assignment;
 pub mod model_team_scope;
