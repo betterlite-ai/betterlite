@@ -44,7 +44,7 @@ fn record_of_row(row: &Row) -> Result<TeamRecord, TeamListQueryError> {
     Ok(record)
 }
 
-pub(super) async fn find_teams(
+pub async fn find_teams(
     client: Option<PrismaClient<'_>>,
     sql: &str,
     params: &[&(dyn ToSql + Sync)],
