@@ -3,6 +3,7 @@ import sys
 from collections.abc import Callable
 from types import ModuleType, SimpleNamespace
 from typing import ClassVar, Final, Literal, NotRequired, TypeAlias, TypedDict, cast
+from unittest.mock import AsyncMock
 
 import litellm
 from fastapi import HTTPException
@@ -131,6 +132,8 @@ class FakeLogging:
     def __init__(self, hook: BaseFileEndpoints | None) -> None:
         self.hook = hook
         self.internal_usage_cache = FakeUsageCache()
+        # log_db_metrics schedules this hook after every successful DB read
+        self.service_logging_obj = SimpleNamespace(async_service_success_hook=AsyncMock())
 
     def get_proxy_hook(self, name: str) -> BaseFileEndpoints | None:
         del name
