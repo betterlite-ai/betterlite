@@ -1,0 +1,29 @@
+kind: helper
+name: polly-speech-signed-unicode-bytes
+call:
+  polly_speech:
+    calls:
+    - function: request
+      text: "héllo 世界 😀 <speak>hi</speak>"
+      optional_params: {LanguageCode: null, LexiconNames: [a, b], SampleRate: "22050"}
+      litellm_params: {aws_access_key_id: AKIDEXAMPLE, aws_secret_access_key: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY", aws_session_token: session-token, aws_region_name: us-east-1}
+    - function: request
+      text: hello
+      voice: Matthew
+      optional_params: {output_format: ogg_vorbis, engine: standard}
+      litellm_params: {aws_access_key_id: AKIDEXAMPLE, aws_secret_access_key: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY", aws_region_name: us-west-2}
+    - function: request
+      text: "<speak>hi</speak>"
+      voice: ""
+      optional_params: {}
+      litellm_params: {api_base: https://example.test, aws_access_key_id: AKIDEXAMPLE, aws_secret_access_key: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY", aws_region_name: eu-west-1}
+    - function: request
+      text: hello
+      optional_params: {}
+      litellm_params: {aws_access_key_id: AKIDEXAMPLE, aws_secret_access_key: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY", aws_session_token: session-token, aws_region_name: us-gov-west-1}
+    - function: request
+      text: hello
+      optional_params: {}
+      litellm_params: {aws_access_key_id: AKIDEXAMPLE, aws_secret_access_key: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY", aws_region_name: cn-north-1}
+compare: {ignore: []}
+env: {}
