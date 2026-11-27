@@ -8,9 +8,9 @@ mod tests;
 
 // What the caller's own credential grants before a team or admitted-user context widens it.
 #[derive(Clone, Copy, Debug)]
-pub struct OwnGrantView<'a> {
+pub struct OwnGrantView<'auth> {
     pub has_object_permission: bool,
-    pub object_permission_id: Option<&'a str>,
+    pub object_permission_id: Option<&'auth str>,
     pub has_admin_view: bool,
 }
 
@@ -40,10 +40,10 @@ pub fn own_grant_view(auth: &UserAPIKeyAuth) -> OwnGrantView<'_> {
     }
 }
 
-pub async fn admitted_user_context<H: DelegatedHuman>(
-    auth: &UserAPIKeyAuth,
-    human: &H,
-) -> Option<UserAPIKeyAuth> {
+pub async fn admitted_user_context<H>(auth: &UserAPIKeyAuth, human: &H) -> Option<UserAPIKeyAuth>
+where
+    H: DelegatedHuman,
+{
     if !is_ui_session_credential(auth) {
         return None;
     }
