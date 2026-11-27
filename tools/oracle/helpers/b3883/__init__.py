@@ -47,7 +47,7 @@ def default_output(row: LiteLLM_BudgetTableFull | None, scripted: ScriptedLookup
     return _JSON.validate_python(payload)
 
 
-def run_entity(call: EntityCall, database: bool) -> JsonValue:
+def run_entity(call: EntityCall, *, database: bool) -> JsonValue:
     scripted = ScriptedLookups(call["lookup"], database=database)
     logger = BudgetLogger(
         call["labels_by_metric"], datetime.fromisoformat(call["now"]), noop=call["noop"]
@@ -72,6 +72,7 @@ def run(input_value: Input) -> JsonValue:
     if input_value["function"] == "org":
         database = input_value["database"]
     if input_value["function"] == "customer":
-        litellm.enable_end_user_cost_tracking_prometheus_only = input_value["enable_prometheus_only"]
+        prometheus_only = input_value["enable_prometheus_only"]
+        litellm.enable_end_user_cost_tracking_prometheus_only = prometheus_only
         litellm.disable_end_user_cost_tracking = input_value["disable_end_user_cost_tracking"]
-    return run_entity(input_value, database)
+    return run_entity(input_value, database=database)
