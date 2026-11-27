@@ -4,7 +4,7 @@ use crate::api::messages_context_clear::result::{
 };
 use crate::api::summary_execution::attribution::{PrincipalRegion, end_user};
 use crate::api::summary_execution::completion::SummaryCall;
-use crate::api::summary_execution::draft::{Draft, PhaseA, tail};
+use crate::api::summary_execution::draft::{Draft, PhaseA, forward};
 use crate::api::summary_execution::editor::{EditorRequest, EditorServices};
 use crate::api::summary_execution::error::SummaryExecutionError;
 use crate::api::summary_execution::extract::{
@@ -72,7 +72,11 @@ where
             tracing::warn!("compact_20260112: summary call failed: {}", failure);
             let mut applied = task.applied;
             applied.error = Some("summary_call_failed".to_owned());
-            Ok(tail(task.phase, applied))
+            Ok(forward(
+                task.phase.downstream.clone(),
+                task.phase.system.clone(),
+                applied,
+            ))
         }
     }
 }
@@ -87,7 +91,11 @@ fn finish<HookError>(
     let Some(summary) = summary else {
         let mut applied = task.applied;
         applied.error = Some("summary_extraction_failed".to_owned());
-        return Ok(tail(task.phase, applied));
+        return Ok(forward(
+            task.phase.downstream.clone(),
+            task.phase.system.clone(),
+            applied,
+        ));
     };
     let usage = extract_usage(answer)?;
     let mut applied = task.applied;

@@ -6,7 +6,7 @@ use crate::api::messages_context_clear::result::PolyfillResult;
 use crate::api::summary_execution::completion::{
     SummaryCall, SummaryCallFailure, SummaryCompletion,
 };
-use crate::api::summary_execution::draft::{PhaseA, phase_a, slice_only, tail};
+use crate::api::summary_execution::draft::{PhaseA, forward, phase_a, slice_only};
 use crate::api::summary_execution::edit_spec::{CompactEditSpec, validate};
 use crate::api::summary_execution::encoding::encode;
 use crate::api::summary_execution::error::SummaryExecutionError;
@@ -102,7 +102,11 @@ where
         tracing::warn!("{}", denial.warning(&summary_model));
         let mut applied = applied;
         applied.error = Some(denial.code().to_owned());
-        return encode(tail(&phase, applied));
+        return encode(forward(
+            phase.downstream.clone(),
+            phase.system.clone(),
+            applied,
+        ));
     }
     let task = SummaryTask {
         request: &request,
