@@ -1,0 +1,6 @@
+task: B10146
+deviations:
+  - what: "A timeout that is negative or not finite fails with the shared TimeoutError, and the batch calls and the batch listing answer a 400 naming the number. LiteLLM's float(timeout) accepts such a number and hands it to httpx or the provider handler, where a negative phase is a deadline already past and a non-finite one is no usable deadline, so the call fails later at the transport instead of being refused. B1037 recorded the same 400 for the non-finite value its own copy saw; the shared conversion now carries it for both crates."
+    why: "A timeout that cannot name a finite, non-negative wait is a bad request the caller can fix, and a working setup sends a number of seconds that is, so nothing that works today depends on where LiteLLM's transport fails instead."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/main.py#L603
+kept_bugs: []

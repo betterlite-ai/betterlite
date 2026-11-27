@@ -2,7 +2,7 @@ id: B8665
 milestone: M8 platform
 title: Guardrail ports for tool policies, OCR, read-through and policy suggestions
 status: todo
-depends_on: [B3682, B3683, B3814, B1606, B888, B8231, B8612, B3680, B036]
+depends_on: [B3682, B3683, B3814, B1606, B888, B8231, B8612, B3680, B036, B10179]
 file: tasks/B8665-guardrail-ports.yaml
 covers: []
 parent: null

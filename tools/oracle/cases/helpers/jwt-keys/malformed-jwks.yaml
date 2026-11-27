@@ -1,0 +1,19 @@
+kind: helper
+name: jwt-keys-malformed-jwks
+call:
+  jwt_keys:
+    scenarios:
+      - settings: {public_key_url: "https://idp.example.com/jwks", public_key_ttl: 600.0, public_key_stale_ttl: 3600.0}
+        steps:
+          # a 200 whose body is not JSON is a parse failure, not an outage and not retried
+          - now: 1000.0
+            kid: a
+            http:
+              - {kind: answer, status: 200, body: '{"keys":['}
+          # without a keys envelope the response itself is the document
+          - now: 1000.0
+            kid: a
+            http:
+              - {kind: answer, status: 200, body: '[{"kid":"a","kty":"RSA","n":"one"}]'}
+env: {}
+compare: {ignore: []}

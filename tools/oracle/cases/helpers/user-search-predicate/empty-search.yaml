@@ -1,0 +1,7 @@
+kind: helper
+name: user-search-predicate-empty-search
+call:
+  b10149:
+    search: ""
+env: {}
+compare: {ignore: []}
