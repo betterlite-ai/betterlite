@@ -22,7 +22,7 @@ request:
     model: end-user-model
     messages:
       - {role: user, content: Say hello.}
-    user: 42
+    user: "42"
     stream: false
 database:
   seed:
