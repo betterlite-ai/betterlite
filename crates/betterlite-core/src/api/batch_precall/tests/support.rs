@@ -761,12 +761,12 @@ impl Rig {
 
 pub(crate) fn seed_counter(counters: &Arc<Mutex<LocalTokenCounters>>, value: i64) {
     let mut held = counters.lock().unwrap();
-    EnqueuedTokenCounters::set(&mut held, COUNTER_KEY, value, 691_200).expect("the counter seeds");
+    EnqueuedTokenCounters::set(&mut *held, COUNTER_KEY, value, 691_200).expect("the counter seeds");
 }
 
 pub(crate) fn stored_counter(counters: &Arc<Mutex<LocalTokenCounters>>) -> Option<i64> {
     let mut held = counters.lock().unwrap();
-    EnqueuedTokenCounters::get(&mut held, COUNTER_KEY).expect("the counter reads")
+    EnqueuedTokenCounters::get(&mut *held, COUNTER_KEY).expect("the counter reads")
 }
 
 pub(crate) fn break_counter(counters: &Arc<Mutex<LocalTokenCounters>>) {
