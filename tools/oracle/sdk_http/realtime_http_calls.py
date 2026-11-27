@@ -1,12 +1,13 @@
 import asyncio
 from collections.abc import Coroutine
 from datetime import UTC, datetime
-from typing import Final, Literal, Protocol, cast
+from typing import Final, Literal, Protocol, TypeAlias, cast
 
 import httpx
 import litellm
 from litellm.litellm_core_utils.litellm_logging import Logging
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
+
 from realtime_http_transport import (
     JSON,
     OBJECTS,
@@ -27,16 +28,18 @@ Operation = Literal["client_secret", "transcription_session", "calls"]
 
 AsyncResponse = Coroutine[object, object, httpx.Response]
 
+Argument: TypeAlias = JsonValue | bytes | dict[str, str] | Logging
+
 
 # litellm's @wrapper_client decorator erases the wrapper signature, so the protocol names the three calls
 class RealtimeCalls(Protocol):
-    def acreate_realtime_client_secret(self, **kwargs: object) -> AsyncResponse: ...
+    def acreate_realtime_client_secret(self, **kwargs: Argument) -> AsyncResponse: ...
 
     def acreate_realtime_transcription_session(  # ast-grep-ignore: no-long-names
-        self, **kwargs: object
+        self, **kwargs: Argument
     ) -> AsyncResponse: ...
 
-    def arealtime_calls(self, **kwargs: object) -> AsyncResponse: ...
+    def arealtime_calls(self, **kwargs: Argument) -> AsyncResponse: ...
 
 
 CALLS: Final[RealtimeCalls] = cast(RealtimeCalls, litellm)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/realtime_api/main.py#L127-L310
@@ -106,7 +109,7 @@ def called(call: CallsCall, api_base: str, log: Logging) -> AsyncResponse:
     litellm.api_base = call.settings.api_base
     litellm.api_key = call.settings.api_key
     litellm.openai_key = call.settings.openai_key
-    forwarded: dict[str, object] = {
+    forwarded: dict[str, Argument] = {
         "api_base": api_base,
         "api_key": call.api_key,
         "extra_headers": call.extra_headers,
