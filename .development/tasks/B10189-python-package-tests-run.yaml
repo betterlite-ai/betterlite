@@ -1,0 +1,82 @@
+id: B10189
+title: test_package.py holds on main and the wheel workflow runs it
+description: >-
+  crates/betterlite-python/tests/test_package.py fails on main, and nothing runs it. test_requires_match_lock (lines
+  134 to 151) builds `declared` as a dict from the installed wheel's Requires-Dist, keyed by name, and compares it
+  with `expected`, which names only pydantic, python-dotenv and typing-extensions. B8082 (#3132, 2026-11-25) added
+  httpx2 to crates/betterlite-python/pyproject.toml, and #3302 (2026-11-27) split it into
+  `"httpx2==2.14.0; python_version < '3.11'"` and `"httpx2==2.16.0; python_version >= '3.11'"`, so `declared` has a
+  fourth key and the assert fails. The skeleton tests from B5369 fail too: test_family_stub_is_empty expects each
+  python/betterlite/_native_<family>.pyi to be empty, and 34 of the 45 are not; test_python_module_is_empty expects
+  the nine modules in PYTHON_MODULES to export nothing, and every one of them has code now. The family and module
+  lists themselves still match src/lib.rs and __init__.py.
+
+
+  Only the task checks of B5369 and B9951 name test_package.py. gate.yml runs the lint part and nextest shards,
+  python-wheels.yml runs check_wheel.py and smoke_wheel.py, and main's required status check is "gate" alone, so the
+  file last ran in B9951's gate (#1520, 2026-11-13).
+
+
+  Make test_requires_match_lock compare every Requires-Dist line as a (name, specifier, marker) triple. pydantic,
+  python-dotenv, typing-extensions and the httpx2 line for Python 3.11 and later pin the version
+  tools/oracle/litellm/uv.lock locks, and the httpx2 line for Python 3.10 pins 2.14.0, which the lock can't show since
+  its requires-python starts at 3.11. Delete test_family_stub_is_empty and test_python_module_is_empty: they guarded
+  the skeleton, and every family and module task since has filled what they expected empty. The other tests stay.
+
+
+  Add a job to .github/workflows/python-wheels.yml that needs the build job, downloads the wheel-linux-x86_64
+  artifact on ubuntu-24.04, and runs test_package.py in tools/oracle/litellm with that wheel, the same command as the
+  package-tests check. Use the checkout, setup-uv (uv 0.11.14) and download-artifact pins the workflows already use,
+  `persist-credentials: false` and `contents: read`. Add tools/oracle/litellm/pyproject.toml and
+  tools/oracle/litellm/uv.lock to the pull_request paths, so a lock bump runs it too.
+scope:
+  paths:
+  - .github/workflows/python-wheels.yml
+  - crates/betterlite-python/tests/test_package.py
+  lint_tables: false
+references:
+- url: https://github.com/betterlite-ai/betterlite/pull/3302
+  why: Why the wheel pins httpx2 2.14.0 on Python 3.10 and 2.16.0 from 3.11.
+- url: https://packaging.pypa.io/en/stable/requirements.html
+  why: Requirement gives name, specifier and marker for each Requires-Dist line.
+dod:
+- text: >-
+    test_requires_match_lock checks every Requires-Dist line of the installed wheel, both httpx2 lines with their
+    markers included: the 3.11 and later pins equal the versions tools/oracle/litellm/uv.lock locks, and the 3.10
+    httpx2 line pins 2.14.0.
+  proof: [package-tests]
+- text: >-
+    test_package.py passes against main's wheel, without test_family_stub_is_empty and test_python_module_is_empty.
+  proof: [package-tests]
+- text: >-
+    python-wheels.yml runs test_package.py against the linux-x86_64 wheel in tools/oracle/litellm on every pull request
+    that touches the package, the release tools or the oracle environment's pyproject.toml or uv.lock.
+  proof: [workflow-runs-package-tests]
+checks:
+  optional: []
+  commands:
+  - id: package-tests
+    why: test_package.py still fails against the wheel main builds.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_package.py
+  - id: workflow-runs-package-tests
+    why: No workflow runs test_package.py, or a lock bump doesn't start it.
+    run: |-
+      set -e
+      grep -q -F 'pytest crates/betterlite-python/tests/test_package.py' .github/workflows/python-wheels.yml
+      grep -q -E '^ +- tools/oracle/litellm/uv\.lock$' .github/workflows/python-wheels.yml
+      grep -q -E '^ +- tools/oracle/litellm/pyproject\.toml$' .github/workflows/python-wheels.yml
+oracle_cases: []
+deviations: []
+out_of_scope:
+- Making python-wheels.yml a required check, or running test_package.py in the gate. Both are repository settings or .development/ changes for the architect.
+- Running the rest of crates/betterlite-python/tests outside their own tasks' checks.
+pitfalls:
+- The wheel's Requires-Dist can spell a marker differently from pyproject.toml, so compare the parsed Requirement's str(marker), which packaging normalizes, never the raw text.
+- The dict comprehension keyed by name keeps only the last httpx2 line; a set or list of triples keeps both.
+- The test runs in tools/oracle/litellm on Python 3.13, so it keeps tomllib and the 3.11 typing forms.
+- zizmor and actionlint check the workflow in the hooks, so pin every action by its full SHA with the version comment, as the build job does.
+- If another test in test_package.py fails for a reason outside these two files, such as a model cost or model set that differs from LiteLLM's, answer blocked with its output.
+review_level: standard
+budget:
+  max_changed_lines: 120
+  max_new_expects: 0
