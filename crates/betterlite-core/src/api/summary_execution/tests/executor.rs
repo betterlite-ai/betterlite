@@ -189,6 +189,12 @@ async fn a_max_tokens_past_u32_fails_the_summary_call() {
     );
 }
 
+const WIRE_MESSAGES: &str = r#"[
+    {"role":"system","content":"SYS"},
+    {"role":"assistant","content":"ack","thinking_blocks":null,"reasoning_content":"why"},
+    {"role":"user","content":"question"}
+]"#;
+
 // litellm.completion drops every None message field before the provider call, so thinking_blocks never reaches the wire
 #[tokio::test]
 async fn the_summary_wire_drops_null_message_fields() {
@@ -202,13 +208,7 @@ async fn the_summary_wire_drops_null_message_fields() {
         executor: &executor,
         deployment: &deployment,
     };
-    let messages = list(
-        r#"[
-            {"role":"system","content":"SYS"},
-            {"role":"assistant","content":"ack","thinking_blocks":null,"reasoning_content":"why"},
-            {"role":"user","content":"question"}
-        ]"#,
-    );
+    let messages = list(WIRE_MESSAGES);
     let metadata = object("{}");
     let call = SummaryCall {
         model: "sum",
@@ -222,6 +222,10 @@ async fn the_summary_wire_drops_null_message_fields() {
     let (answer, request) = tokio::join!(completion.complete(call), answer_with(listener));
     let answer = answer.expect("the summary call runs");
     assert!(answer.usage.is_some(), "the provider answered with usage");
+    assert_the_wire_assistant(&request);
+}
+
+fn assert_the_wire_assistant(request: &str) {
     let body = object(request.split_once("\r\n\r\n").expect("a head and a body").1);
     let Some(Json::List(sent)) = body.get("messages") else {
         panic!("the provider body carries the messages");
