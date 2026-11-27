@@ -438,22 +438,27 @@ fn dependencies(setup: &Setup) -> Dependencies {
         releaser: Arc::clone(&fake),
         client_ip: Arc::new(NoIp),
     };
+    let keys = KeyFake {
+        blocked: setup.key == KeyState::Blocked,
+    };
+    let models = CatalogFake {
+        configured: setup.router == Router::Configured,
+        deployments: setup.deployments.clone(),
+    };
+    let costs = CalculatorFake {
+        amount: setup.calculator,
+    };
+    let clock = ClockFake::new(&setup.readings);
+    let store = Store(Arc::new(Mutex::new(Some(setup.lens.clone()))));
     Dependencies {
         billing,
         log,
-        keys: KeyFake {
-            blocked: setup.key == KeyState::Blocked,
-        },
-        models: CatalogFake {
-            configured: setup.router == Router::Configured,
-            deployments: setup.deployments.clone(),
-        },
+        keys,
+        models,
         prices: PricesFake(setup.catalog.clone()),
-        costs: CalculatorFake {
-            amount: setup.calculator,
-        },
-        clock: ClockFake::new(&setup.readings),
-        store: Store(Arc::new(Mutex::new(Some(setup.lens.clone())))),
+        costs,
+        clock,
+        store,
         lens_analysis,
     }
 }
