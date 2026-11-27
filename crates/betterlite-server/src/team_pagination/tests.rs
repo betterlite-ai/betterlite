@@ -14,6 +14,7 @@ use betterlite_db::team_rows::team::LiteLLMTeamTable;
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use clap::Parser;
 use deadpool_postgres::{Manager, Pool};
+use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::NoTls;
 use tracing::Level;
@@ -241,17 +242,27 @@ async fn missing_pool_failure_returns_empty_and_logs() {
     );
 }
 
+#[rstest]
+#[case::page_zero(2, 0)]
+#[case::multiplication_overflow(2, u64::MAX)]
+#[case::offset_overflow(9_223_372_036_854_775_807, 3)]
+#[case::page_size_overflow(u64::MAX, 1)]
 #[tokio::test]
-async fn page_zero_failure_returns_empty_and_logs() {
-    let fixture = Fixture::database(&seed(&[("t-one", Some("One"))])).await;
+async fn window_failure_returns_empty_and_logs(#[case] page_size: u64, #[case] page: u64) {
+    let missing = PostgresStore { pool: None };
+    let availability = Availability::default();
+    let client = PrismaClient {
+        writer: &missing,
+        reader: &missing,
+        availability: &availability,
+    };
     let (logs, _guard) = capture_error_logs();
-    let (teams, total) = get_paginated_teams(fixture.client(), 2, 0).await;
+    let (teams, total) = get_paginated_teams(client, page_size, page).await;
     assert!(teams.is_empty());
     assert_eq!(total, 0);
     let captured = logs.contents();
     assert!(captured.contains("[Non-Blocking] Error getting paginated teams:"));
-    assert!(captured.contains("team page 0"));
-    fixture.close().await;
+    assert!(captured.contains("has no database offset"));
 }
 
 #[tokio::test]
