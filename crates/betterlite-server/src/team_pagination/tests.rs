@@ -120,7 +120,7 @@ fn capture_error_logs() -> (LogBuffer, DefaultGuard) {
 fn team_insert(team_id: &str, team_alias: Option<&str>, roster: &str) -> String {
     let alias = team_alias.map_or_else(|| String::from("NULL"), |value| format!("'{value}'"));
     format!(
-        r#"INSERT INTO "LiteLLM_TeamTable" (team_id, team_alias, members_with_roles) VALUES ('{team_id}', {alias}, '{roster}'::jsonb);"#
+        r#"INSERT INTO "LiteLLM_TeamTable" (team_id, team_alias, admins, members, members_with_roles, models) VALUES ('{team_id}', {alias}, ARRAY[]::text[], ARRAY[]::text[], '{roster}'::jsonb, ARRAY[]::text[]);"#
     )
 }
 
@@ -203,26 +203,24 @@ async fn reader_store_serves_rows_and_count_until_unavailable() {
     ]))
     .await;
     let writer = Fixture::database(&seed(&[("t-writer", Some("Writer"))])).await;
-    {
-        let client = PrismaClient {
-            writer: &writer.store,
-            reader: &reader.store,
-            availability: &reader.availability,
-        };
-        let (replica_page, replica_count) = get_paginated_teams(client, 10, 1).await;
-        assert_eq!(
-            alias_names(&replica_page),
-            ["Reader One", "Reader Two"].map(Some)
-        );
-        assert_eq!(replica_count, 2);
-        reader
-            .availability
-            .reader_unavailable
-            .store(true, Ordering::SeqCst);
-        let (primary_page, primary_count) = get_paginated_teams(client, 10, 1).await;
-        assert_eq!(alias_names(&primary_page), ["Writer"].map(Some));
-        assert_eq!(primary_count, 1)
+    let client = PrismaClient {
+        writer: &writer.store,
+        reader: &reader.store,
+        availability: &reader.availability,
     };
+    let (replica_page, replica_count) = get_paginated_teams(client, 10, 1).await;
+    assert_eq!(
+        alias_names(&replica_page),
+        ["Reader One", "Reader Two"].map(Some)
+    );
+    assert_eq!(replica_count, 2);
+    reader
+        .availability
+        .reader_unavailable
+        .store(true, Ordering::SeqCst);
+    let (primary_page, primary_count) = get_paginated_teams(client, 10, 1).await;
+    assert_eq!(alias_names(&primary_page), ["Writer"].map(Some));
+    assert_eq!(primary_count, 1);
     reader.close().await;
     writer.close().await;
 }
