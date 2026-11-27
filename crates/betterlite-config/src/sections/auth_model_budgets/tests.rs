@@ -47,8 +47,7 @@ litellm_settings:
     assert!(literal.max_budget > Decimal::ZERO);
 }
 
-// get_global_proxy_spend gates on `max_budget > 0`, so these values never read the aggregate;
-// a quoted NaN is the text LiteLLM's float(value) turns into nan, while an unquoted .nan never reaches this section
+// the spend read gates on `max_budget > 0`: a quoted NaN reads as nan and skips it, and an unquoted .nan never reaches this section
 #[rstest]
 #[case::zero("0")]
 #[case::zero_float("0.0")]
