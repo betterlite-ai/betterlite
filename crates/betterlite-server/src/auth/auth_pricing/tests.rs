@@ -351,3 +351,20 @@ async fn unparsable_form_metadata_keeps_the_user() {
     assert_eq!(status, StatusCode::OK, "{body}");
     assert!(reached);
 }
+
+// an undecodable form body carries no fields, where LiteLLM's pre-read raises a 400 invalid_request_error
+#[tokio::test]
+async fn undecodable_form_has_no_fields() {
+    let user_config = config_with("  enforce_user_param: true\n", "0");
+    let (status, body, reached) = run_rule_with(
+        &user_config,
+        PricingRule::default(),
+        CHAT_ROUTE,
+        "multipart/form-data; boundary=missing",
+        "not a multipart body",
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "{body}");
+    assert!(body.contains("\"type\":\"auth_error\""), "{body}");
+    assert!(!reached);
+}

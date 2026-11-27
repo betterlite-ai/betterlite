@@ -9,6 +9,9 @@ deviations:
   - what: A form request whose metadata field is not valid JSON is passed to json.loads by LiteLLM's auth body reader, and the resulting json.JSONDecodeError leaves the auth path unhandled; betterlite keeps the field's text, so the metadata tag check sees no tags and the enforce_user_param check still sees the other form fields.
     why: A malformed client field must not take the auth path down with a 500 a working setup cannot rely on. The fields around it are still checked as LiteLLM's request.form() hands them over, so a form request without tags proceeds to its own validation.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L221
+  - what: A form body that request.form() cannot decode carries no fields in the pricing stage, so enforce_user_param refuses it with the 401 auth_error, where LiteLLM's pre-read raises a 400 invalid_request_error naming request_body.
+    why: A body the form decoder cannot read stays the route's to reject, the rule request_body_safety's undecodable_forms_are_left_to_the_route pins for the same bytes, and the pricing stage checks only the fields it can see instead of building a second body-error envelope.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L205-L216
 kept_bugs:
   - what: A finite negative per-token rate is never charged, so a model group whose explicit input and output rates are both zero or negative is admitted as free and waives every budget check.
     why: The task pins LiteLLM's > 0 comparison for negative rates rather than != 0, and betterlite keeps it, so a config that relied on a negative rate not counting as spend behaves the same.
