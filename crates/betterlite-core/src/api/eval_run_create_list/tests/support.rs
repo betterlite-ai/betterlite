@@ -336,8 +336,9 @@ impl Recorder {
 
     pub(crate) fn failing(failure: Failure) -> Self {
         Self {
+            creates: Arc::default(),
+            lists: Arc::default(),
             failure: Some(failure),
-            ..Self::default()
         }
     }
 

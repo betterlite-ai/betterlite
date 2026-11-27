@@ -36,22 +36,6 @@ pub struct ListRunsArgs<'call> {
     pub kwargs: &'call IndexMap<String, Json>,
 }
 
-impl<'call> CreateRunArgs<'call> {
-    // the async wrapper writes its flag into kwargs before its sync counterpart reads them
-    #[must_use]
-    pub(crate) fn with_kwargs(self, kwargs: &'call IndexMap<String, Json>) -> Self {
-        Self { kwargs, ..self }
-    }
-}
-
-impl<'call> ListRunsArgs<'call> {
-    // the async wrapper writes its flag into kwargs before its sync counterpart reads them
-    #[must_use]
-    pub(crate) fn with_kwargs(self, kwargs: &'call IndexMap<String, Json>) -> Self {
-        Self { kwargs, ..self }
-    }
-}
-
 // LiteLLM's local_vars = locals() at create_run's entry, so every argument and **kwargs is in it
 pub(crate) fn local_vars_create(request: &CreateRunArgs<'_>) -> IndexMap<String, Json> {
     let mut vars = IndexMap::new();

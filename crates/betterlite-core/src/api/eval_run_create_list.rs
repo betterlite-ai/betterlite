@@ -96,7 +96,10 @@ where
         let provider = request.custom_llm_provider.unwrap_or(DEFAULT_PROVIDER);
         let mut kwargs = request.kwargs.clone();
         kwargs.insert(CREATE_FLAG.to_owned(), Json::Bool(true));
-        let flagged = request.with_kwargs(&kwargs);
+        let flagged = CreateRunArgs {
+            kwargs: &kwargs,
+            ..request
+        };
         match self.create_run(flagged, log) {
             Ok(CreateRunWork::Ready(run)) => Ok(*run),
             Ok(CreateRunWork::Pending(pending)) => pending
@@ -145,7 +148,10 @@ where
         let provider = request.custom_llm_provider.unwrap_or(DEFAULT_PROVIDER);
         let mut kwargs = request.kwargs.clone();
         kwargs.insert(LIST_FLAG.to_owned(), Json::Bool(true));
-        let flagged = request.with_kwargs(&kwargs);
+        let flagged = ListRunsArgs {
+            kwargs: &kwargs,
+            ..request
+        };
         match self.list_runs(flagged, log) {
             Ok(ListRunsWork::Ready(runs)) => Ok(*runs),
             Ok(ListRunsWork::Pending(pending)) => pending
