@@ -101,17 +101,17 @@ fn mono<'py>(
         .and_then(|shape| shape.get_item(1))
         .and_then(|channels| as_int(py, &channels))
         .map_err(|error| call_failure(py, "samples.shape", &error))?;
-    if channels > 1 {
-        let keywords = PyDict::new(py);
-        keywords
-            .set_item("axis", 1_i64)
-            .map_err(|error| call_failure(py, "samples.mean", &error))?;
+    if channels <= 1 {
         return data
-            .call_method("mean", (), Some(&keywords))
-            .map_err(|error| call_failure(py, "samples.mean", &error));
+            .get_item((PySlice::full(py), 0_i64))
+            .map_err(|error| call_failure(py, "samples[:, 0]", &error));
     }
-    data.get_item((PySlice::full(py), 0_i64))
-        .map_err(|error| call_failure(py, "samples[:, 0]", &error))
+    let keywords = PyDict::new(py);
+    keywords
+        .set_item("axis", 1_i64)
+        .map_err(|error| call_failure(py, "samples.mean", &error))?;
+    data.call_method("mean", (), Some(&keywords))
+        .map_err(|error| call_failure(py, "samples.mean", &error))
 }
 
 fn pcm(samples: &Bound<'_, PyAny>) -> Result<ResampledAudio, RivaAudioError> {

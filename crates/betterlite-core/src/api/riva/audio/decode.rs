@@ -204,12 +204,12 @@ fn audioread_samples<'py>(
     let scaled = concatenated_floats(py, numpy, chunks)?
         .call_method1("__truediv__", (32768.0_f64,))
         .map_err(|error| decode_failure(py, &error))?;
-    if channels > 1 {
-        return scaled
-            .call_method1("reshape", (-1_i64, channels))
-            .map_err(|error| decode_failure(py, &error));
+    if channels <= 1 {
+        return Ok(scaled);
     }
-    Ok(scaled)
+    scaled
+        .call_method1("reshape", (-1_i64, channels))
+        .map_err(|error| decode_failure(py, &error))
 }
 
 fn read_chunks<'py>(
