@@ -1,0 +1,14 @@
+kind: helper
+name: mcp-client-auth-headers-sanitize-alias
+call:
+  b10155:
+    calls:
+      - {function: sanitize_alias, alias: MyServer}
+      - {function: sanitize_alias, alias: "  my-server  "}
+      - {function: sanitize_alias, alias: my.server}
+      - {function: sanitize_alias, alias: my___server}
+      - {function: sanitize_alias, alias: "--my-server!!"}
+      - {function: sanitize_alias, alias: "!!!"}
+      - {function: sanitize_alias, alias: "my server"}
+env: {}
+compare: {ignore: []}
