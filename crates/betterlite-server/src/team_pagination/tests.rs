@@ -204,21 +204,23 @@ async fn reader_store_serves_rows_and_count_until_unavailable() {
     ]))
     .await;
     let writer = Fixture::database(&seed(&[("t-writer", Some("Writer"))])).await;
-    let client = PrismaClient {
-        writer: &writer.store,
-        reader: &reader.store,
-        availability: &reader.availability,
-    };
-    let (teams, total) = get_paginated_teams(client, 10, 1).await;
-    assert_eq!(alias_names(&teams), ["Reader One", "Reader Two"].map(Some));
-    assert_eq!(total, 2);
-    reader
-        .availability
-        .reader_unavailable
-        .store(true, Ordering::SeqCst);
-    let (teams, total) = get_paginated_teams(client, 10, 1).await;
-    assert_eq!(alias_names(&teams), ["Writer"].map(Some));
-    assert_eq!(total, 1);
+    {
+        let client = PrismaClient {
+            writer: &writer.store,
+            reader: &reader.store,
+            availability: &reader.availability,
+        };
+        let (teams, total) = get_paginated_teams(client, 10, 1).await;
+        assert_eq!(alias_names(&teams), ["Reader One", "Reader Two"].map(Some));
+        assert_eq!(total, 2);
+        reader
+            .availability
+            .reader_unavailable
+            .store(true, Ordering::SeqCst);
+        let (teams, total) = get_paginated_teams(client, 10, 1).await;
+        assert_eq!(alias_names(&teams), ["Writer"].map(Some));
+        assert_eq!(total, 1);
+    }
     reader.close().await;
     writer.close().await;
 }
