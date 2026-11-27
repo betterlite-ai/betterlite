@@ -45,7 +45,7 @@ fn replay_corpus() -> usize {
                 let ids: Vec<&CustomId> = records.iter().map(|record| &record.custom_id).collect();
                 assert_eq!(
                     ids,
-                    [
+                    vec![
                         &CustomId::Text(String::from("b")),
                         &CustomId::Text(String::from("c")),
                         &CustomId::Text(String::from("d")),
