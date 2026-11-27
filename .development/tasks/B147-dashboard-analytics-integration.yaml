@@ -74,8 +74,8 @@ description: >-
   The direct shared-page dependencies are intentional: B9730 supplies the deleted-key tab patch,
   B9731 supplies team and deleted-team
   selector behavior, B9732 current-user/list contracts, B9733 the organization hook patch
-  removing its subscription guard, and B9735 model/resource selectors used by filters and
-  fetch_models. B059 supplies the customer selector not covered by B9735. Every unchanged
+  removing its subscription guard. The retained model/resource selectors come from B9090/B9091;
+  fetch_models reads B007/B842's model-list routes. B9735 adds separate selector HTTP/component evidence and supplies no implementation used here. B059 supplies the customer selector. Every unchanged
   llm_calls function remains archive intake. fetch_models is reached by the calculator
   picker and is covered by these real reads; chat_completion/responses_api/gateway_client
   and their MCP/code-interpreter/header utilities have playground callers in B146, so this

@@ -1,0 +1,54 @@
+kind: helper
+name: bedrock-other-canvas-results-canvas-response-cost
+call:
+  bedrock_other_canvas_results:
+    model_cost:
+      canvas-fixture-priced: {output_cost_per_image: 0.07}
+      canvas-fixture-null: {output_cost_per_image: null}
+      canvas-fixture-text: {output_cost_per_image: abc}
+      canvas-fixture-numeric-text: {output_cost_per_image: '0.07'}
+      canvas-fixture-array: {output_cost_per_image: [1]}
+      canvas-fixture-object: {output_cost_per_image: {rate: 1}}
+      canvas-fixture-bool: {output_cost_per_image: true}
+      canvas-fixture-int: {output_cost_per_image: 5}
+      canvas-fixture-zero: {output_cost_per_image: 0}
+      canvas-fixture-two: {output_cost_per_image: 0.25}
+    calls:
+      - model: canvas-fixture-priced
+        status: 200
+        body: '{"images":["eA==","","eQ=="]}'
+      - model: canvas-fixture-null
+        status: 200
+        body: '{"images":["eA=="]}'
+      - model: canvas-fixture-text
+        status: 200
+        body: '{"images":["eA=="]}'
+      - model: canvas-fixture-numeric-text
+        status: 200
+        body: '{"images":["eA==","eQ=="]}'
+      - model: canvas-fixture-array
+        status: 200
+        body: '{"images":["eA=="]}'
+      - model: canvas-fixture-object
+        status: 200
+        body: '{"images":["eA=="]}'
+      - model: canvas-fixture-bool
+        status: 200
+        body: '{"images":["eA==","eQ=="]}'
+      - model: canvas-fixture-int
+        status: 200
+        body: '{"images":["eA==","eQ=="]}'
+      - model: canvas-fixture-zero
+        status: 200
+        body: '{"images":["eA=="]}'
+      - model: canvas-fixture-two
+        status: 200
+        body: '{"images":["eA==","eQ==","eQ==","eQ=="]}'
+      - model: canvas-fixture-absent
+        status: 200
+        body: '{"images":["eA==","eQ=="]}'
+      - model: canvas-fixture-priced
+        status: 200
+        body: '{"images":[""]}'
+env: {}
+compare: {ignore: []}

@@ -59,14 +59,13 @@ use betterlite_auth::auth_request_models::MODEL_ROUTING_HEADER_NAME;
 use betterlite_auth::auth_request_models::catalog::{EmptyCatalog, RequestModelResolver};
 use betterlite_models::{decisions::Json, model_registration::JsonObject};
 
-use crate::auth::auth_identity::{AuthBackend, AuthContext, StageFailure, StageInput};
+use crate::auth::auth_identity::{
+    AuthBackend, AuthContext, StageFailure, StageInput, resource_grant_stage_input,
+};
 use crate::auth::auth_model_patterns::{
     ModelPatternStageInput, max_recurse_depth_for_request, rule_for_request,
 };
 use crate::auth::auth_request_models::{CoreDecoders, RequestModelStageInput, resolve};
-use crate::auth::auth_resource_grants::{
-    ResourceGrantStageInput, database_for_request, rule_for_request as grant_rule_for_request,
-};
 use crate::auth::route_match::PUBLIC_HEALTH_PATHS;
 use crate::auth::virtual_key_routes::stage_input as virtual_key_route_stage_input;
 use crate::error_body::AuthenticationFailure;
@@ -137,6 +136,9 @@ fn stage_input(
             auth_end_users::stage_input(request, authenticated)?,
         ))),
         AuthBackend::AuthPolicySupport => auth_policy_support::stage(request, authenticated, body),
+        AuthBackend::ModelGrantIntersection => Ok(StageInput::ModelGrantIntersection(Box::new(
+            model_grant_intersection::stage_input(request, authenticated)?,
+        ))),
     }
 }
 
@@ -208,6 +210,7 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
                 .map_err(StageFailure::EndUsers)?;
             Ok(StageInput::AuthEndUsers(stage))
         }
+        StageInput::ModelGrantIntersection(stage) => StageInput::prefetch_model_grants(stage).await,
         StageInput::EntityModelAccess(stage) => entity_model_access::prefetched(stage).await,
         other @ (StageInput::MasterKey(_)
         | StageInput::AuthRequestPolicy(_)
@@ -221,20 +224,6 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
     }
 }
 
-fn resource_grant_stage_input(
-    request: &Request<Body>,
-    authenticated: Option<&AuthContext>,
-) -> Result<StageInput, AuthenticationFailure> {
-    let context = authenticated
-        .cloned()
-        .ok_or(AuthenticationFailure::Missing)?;
-    let stage = ResourceGrantStageInput {
-        context,
-        rule: grant_rule_for_request(request),
-        database: database_for_request(request),
-    };
-    Ok(StageInput::AuthResourceGrants(Box::new(stage)))
-}
 fn default_resolver() -> Arc<RequestModelResolver> {
     Arc::new(RequestModelResolver {
         catalog: Arc::new(EmptyCatalog),
