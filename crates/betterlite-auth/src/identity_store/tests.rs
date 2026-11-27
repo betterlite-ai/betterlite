@@ -15,6 +15,7 @@ use super::ports::{KeyObjectCache, Ports};
 use super::principal::{Projection, principal_from_key};
 use super::rows;
 use crate::auth_cache::{WriteOptions, gateway_cache};
+use crate::auth_errors::conversion::as_proxy_exception;
 use crate::auth_identity::records::{NetworkContext, PrincipalType, SourceKey, TeamIdentity};
 use crate::auth_identity::roles::{AuthMethod, Role, TeamRole};
 use crate::auth_key_lookup::cache::KeyCacheWriter;
@@ -404,6 +405,23 @@ async fn permission_none_stays_absent() {
     assert!(key.view.token.object_permission.is_none());
     assert_eq!(permissions.calls(), vec![("op-1".to_owned(), false)]);
     assert_eq!(writer.seen_permission(), vec![false]);
+}
+
+#[test]
+fn cache_only_failure_keeps_the_auth_error_envelope() {
+    let failure = IdentityStoreError::KeyLookup(KeyLookupError::NotInCache {
+        key: "hashed-token".to_owned(),
+    })
+    .failure();
+    let client = as_proxy_exception(&failure);
+    let exception = client.exception();
+    assert_eq!(
+        exception.message,
+        "Authentication Error, Key doesn't exist in cache + check_cache_only=True. key=hashed-token."
+    );
+    assert_eq!(exception.error_type, "auth_error");
+    assert_eq!(exception.param.as_deref(), Some("None"));
+    assert_eq!(exception.code, "401");
 }
 
 #[test]
