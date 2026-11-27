@@ -34,19 +34,22 @@ const NAMES: [(&str, &str); 20] = [
     ("SPACE_ID", "space-id"),
 ];
 
+fn exposed(value: Option<&SecretString>) -> Option<&str> {
+    value.map(ExposeSecret::expose_secret)
+}
+
 // each variable beside the field that must read it, so a wrong pairing fails the comparison
 fn values_by_variable(built: &WatsonxEnvironment) -> Vec<(&'static str, Option<&str>)> {
-    let secret = |value: Option<&SecretString>| value.map(ExposeSecret::expose_secret);
     vec![
         ("WATSONX_IAM_URL", built.watsonx_iam_url.as_deref()),
-        ("WX_API_KEY", secret(built.wx_api_key.as_ref())),
-        ("WATSONX_API_KEY", secret(built.watsonx_api_key.as_ref())),
-        ("WATSONX_APIKEY", secret(built.watsonx_apikey.as_ref())),
+        ("WX_API_KEY", exposed(built.wx_api_key.as_ref())),
+        ("WATSONX_API_KEY", exposed(built.watsonx_api_key.as_ref())),
+        ("WATSONX_APIKEY", exposed(built.watsonx_apikey.as_ref())),
         (
             "WATSONX_ZENAPIKEY",
-            secret(built.watsonx_zenapikey.as_ref()),
+            exposed(built.watsonx_zenapikey.as_ref()),
         ),
-        ("WATSONX_TOKEN", secret(built.watsonx_token.as_ref())),
+        ("WATSONX_TOKEN", exposed(built.watsonx_token.as_ref())),
         ("WATSONX_API_BASE", built.watsonx_api_base.as_deref()),
         ("WATSONX_URL", built.watsonx_url.as_deref()),
         ("WX_URL", built.wx_url.as_deref()),
