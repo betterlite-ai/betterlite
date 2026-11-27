@@ -89,8 +89,8 @@ fn passthrough_answer(
     let built = build_server(server)?;
     let per_server = server_auth_headers.map(header_map);
     let top_level = oauth2_headers.map(top_level_map);
-    // ast-grep-ignore: no-long-names - the owned predicate keeps LiteLLM's name
     let has_passthrough =
+        // ast-grep-ignore: no-long-names - the owned predicate keeps LiteLLM's name
         client_has_passthrough_authorization(&built, top_level.as_ref(), per_server.as_ref());
     Ok(json!({ "has_passthrough": has_passthrough }))
 }
