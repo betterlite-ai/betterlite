@@ -15,11 +15,12 @@ use super::super::existence::{
 use super::super::resolve::{DatabaseLookups, EndUserIdResolver};
 use super::support::{
     Answer, RowAnswer, RowCache, ScriptedCache, ScriptedEndUsers, ScriptedRows, ScriptedUserStore,
-    ScriptedUsers, TestCache, UserCachePort, capture_events, debug_messages, end_user_row,
-    registry, request, test_cache, user_lookup,
+    ScriptedUsers, TestCache, capture_events, debug_messages, end_user_row, registry, request,
+    test_cache, user_lookup,
 };
 use crate::auth_cache::{WriteTtl, gateway_cache};
 use crate::auth_end_users::object::EndUserObjectError;
+use crate::auth_user_lookup::cache::UserCache as _;
 use crate::auth_user_lookup::lookup::UserLookup;
 
 fn adapter(
@@ -250,8 +251,8 @@ async fn budget_failure_falls_through_to_the_user() {
 async fn real_user_lookup_probes_by_email() {
     let store = Arc::new(ScriptedUserStore::default());
     store.answer_email("alice", "alice@example.com");
-    let user_cache = Arc::new(UserCachePort::default());
-    let lookup = user_lookup(&user_cache, &store);
+    let cache = Arc::new(test_cache());
+    let lookup = user_lookup(&cache, &store);
     let by_email = lookup
         .user_exists(&UserProbe {
             user_id: "alice@example.com",
@@ -277,9 +278,13 @@ async fn real_user_lookup_probes_by_email() {
         vec!["find_by_id", "find_by_email", "find_by_id"]
     );
     assert!(!store.calls().contains(&"create"));
-    assert_eq!(
-        user_cache.write_keys(),
-        vec!["alice@example.com".to_owned()]
+    assert!(
+        cache
+            .read("alice@example.com")
+            .await
+            .expect("the email row reads back")
+            .is_some(),
+        "the email probe caches the row under the requested id"
     );
     lookup.tasks.close();
     lookup.tasks.wait().await;
@@ -288,8 +293,8 @@ async fn real_user_lookup_probes_by_email() {
 #[tokio::test]
 async fn real_user_lookup_never_creates_a_user() {
     let store = Arc::new(ScriptedUserStore::default());
-    let user_cache = Arc::new(UserCachePort::default());
-    let lookup = Arc::new(user_lookup(&user_cache, &store));
+    let cache = Arc::new(test_cache());
+    let lookup = Arc::new(user_lookup(&cache, &store));
     let users: Arc<dyn UserExistence> = Arc::<UserLookup>::clone(&lookup);
     let end_users = Arc::new(ScriptedEndUsers::new(Answer::Missing));
     let identity = EndUserIdResolver {
@@ -308,7 +313,14 @@ async fn real_user_lookup_never_creates_a_user() {
         .expect("the lookup");
     assert!(resolved.is_none());
     assert!(!store.calls().contains(&"create"));
-    assert!(user_cache.write_keys().is_empty());
+    assert!(
+        cache
+            .read("ghost")
+            .await
+            .expect("the user cache reads back")
+            .is_none(),
+        "the probe caches no user row"
+    );
     lookup.tasks.close();
     lookup.tasks.wait().await;
 }

@@ -12,8 +12,8 @@ use super::super::cache::{NEGATIVE_TTL_SECONDS, POSITIVE_TTL_SECONDS, Validation
 use super::super::existence::{EndUserExistence, ExistenceError, UserExistence, UserProbe};
 use super::super::resolve::{DatabaseLookups, EndUserIdResolver, ResolveError, ResolveRequest};
 use super::support::{
-    Answer, ScriptedCache, ScriptedEndUsers, ScriptedUserStore, ScriptedUsers, UserCachePort,
-    assert_wrote, capture_events, debug_messages, resolver_for, user_lookup,
+    Answer, ScriptedCache, ScriptedEndUsers, ScriptedUserStore, ScriptedUsers, assert_wrote,
+    capture_events, debug_messages, resolver_for, test_cache, user_lookup,
 };
 use crate::auth_user_lookup::lookup::UserLookup;
 
@@ -285,7 +285,7 @@ async fn email_only_with_at() {
 #[tokio::test]
 async fn no_user_upsert() {
     let store = Arc::new(ScriptedUserStore::default());
-    let user_cache = Arc::new(UserCachePort::default());
+    let user_cache = Arc::new(test_cache());
     let lookup = Arc::new(user_lookup(&user_cache, &store));
     let users: Arc<dyn UserExistence> = Arc::<UserLookup>::clone(&lookup);
     let end_users = Arc::new(ScriptedEndUsers::new(Answer::Missing));

@@ -38,7 +38,7 @@ use crate::auth_end_users::cache::EndUserCache;
 use crate::auth_end_users::object::EndUserObjectError;
 use crate::auth_end_users::rows::{BudgetFetchError, BudgetRows, EndUserFetchError, EndUserRows};
 use crate::auth_read::table::AuthReadError;
-use crate::auth_user_lookup::cache::{UserCache, UserCacheError};
+use crate::auth_user_lookup::cache::UserCache;
 use crate::auth_user_lookup::cadence::{Cadence, WallClock};
 use crate::auth_user_lookup::error::UserLookupError;
 use crate::auth_user_lookup::lookup::UserLookup;
@@ -610,56 +610,6 @@ impl UserStore for ScriptedUserStore {
     }
 }
 
-#[derive(Default)]
-pub(super) struct UserCachePort {
-    pub(super) cached: Mutex<BTreeMap<String, LiteLLMUserTable>>,
-    pub(super) reads: Mutex<Vec<String>>,
-    pub(super) writes: Mutex<Vec<String>>,
-}
-
-impl UserCachePort {
-    pub(super) fn write_keys(&self) -> Vec<String> {
-        self.writes.lock().expect("the user cache writes").clone()
-    }
-}
-
-#[async_trait]
-impl UserCache for UserCachePort {
-    async fn read(&self, key: &str) -> Result<Option<LiteLLMUserTable>, UserCacheError> {
-        self.reads
-            .lock()
-            .expect("the user cache reads")
-            .push(key.to_owned());
-        Ok(self
-            .cached
-            .lock()
-            .expect("the cached users")
-            .get(key)
-            .cloned())
-    }
-
-    async fn write(
-        &self,
-        key: &str,
-        user: &LiteLLMUserTable,
-        _ttl: f64,
-    ) -> Result<(), UserCacheError> {
-        self.writes
-            .lock()
-            .expect("the user cache writes")
-            .push(key.to_owned());
-        self.cached
-            .lock()
-            .expect("the cached users")
-            .insert(key.to_owned(), user.clone());
-        Ok(())
-    }
-
-    fn management_ttl(&self) -> f64 {
-        45.0_f64
-    }
-}
-
 struct NoBudgetReset;
 
 impl BudgetResetCalculator for NoBudgetReset {
@@ -668,12 +618,9 @@ impl BudgetResetCalculator for NoBudgetReset {
     }
 }
 
-pub(super) fn user_lookup(
-    cache: &Arc<UserCachePort>,
-    store: &Arc<ScriptedUserStore>,
-) -> UserLookup {
+pub(super) fn user_lookup(cache: &Arc<TestCache>, store: &Arc<ScriptedUserStore>) -> UserLookup {
     lookup_over(
-        Arc::<UserCachePort>::clone(cache),
+        Arc::<TestCache>::clone(cache),
         Arc::<ScriptedUserStore>::clone(store),
     )
 }
