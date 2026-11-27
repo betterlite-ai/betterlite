@@ -1,4 +1,5 @@
 pub mod admitted_key;
+pub mod admitted_user;
 pub mod agent;
 pub mod agent_access;
 pub mod agent_access_groups;
@@ -66,6 +67,7 @@ pub mod jwt_claims;
 pub mod jwt_db_teams;
 pub mod jwt_key_resolution;
 pub mod jwt_keys;
+pub mod jwt_oauth_routing;
 pub mod jwt_permissions;
 pub mod jwt_provisioning;
 pub mod jwt_role_claims;

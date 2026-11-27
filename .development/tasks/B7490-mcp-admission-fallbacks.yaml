@@ -70,7 +70,7 @@ deviations:
     why: betterlite keeps no global manager and no Starlette request in these functions. LiteLLM reads global_mcp_server_manager and the request.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L311-L361
 out_of_scope:
-  - "process_mcp_request, _admit_dcr_bridge_delegate, _open_dcr_bridge_envelope, _admit_dcr_bridge_dual_credential, _admit_dcr_bridge_authorization, _admit_gateway_session, _run_pre_db_read_auth_checks, _reload_admitted_principal and reload_admitted_user: B4673, which calls this task."
+  - "process_mcp_request, _admit_dcr_bridge_delegate, _open_dcr_bridge_envelope, _admit_dcr_bridge_dual_credential, _admit_dcr_bridge_authorization, _admit_gateway_session, _run_pre_db_read_auth_checks and _reload_admitted_principal: B4673, which calls this task. reload_admitted_user: B10126."
   - "extract_target_server_names_from_path, resolve_target_server_names, cold_start_server_names (_parse_mcp_server_names_from_path), the header parsers and the URL builders: B4654."
   - "_is_litellm_auth_admission_error, _is_mcp_admitted_user_subject, _explicit_credential_matches_envelope and the scrub: B4679."
   - "UnloadableEntitlementError, _as_list, _agent_capped_servers, MCPServerAccess: B4671 and the grant tasks."
