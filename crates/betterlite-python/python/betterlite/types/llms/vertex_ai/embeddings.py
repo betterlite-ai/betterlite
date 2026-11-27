@@ -1,7 +1,7 @@
 from enum import Enum
-from typing import Required, TypeAlias
+from typing import TypeAlias
 
-from typing_extensions import TypedDict
+from typing_extensions import Required, TypedDict
 
 from betterlite.types.llms.openai.core.aliases import EmbeddingInput
 from betterlite.types.llms.vertex_ai.content import ContentType

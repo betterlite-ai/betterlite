@@ -1,6 +1,7 @@
-from typing import Final, NotRequired, TypedDict
+from typing import Final
 
 from pydantic import JsonValue, TypeAdapter
+from typing_extensions import NotRequired, TypedDict
 
 
 class WireMessage(TypedDict):

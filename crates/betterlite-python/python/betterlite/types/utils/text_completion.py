@@ -1,9 +1,9 @@
 import time
 from collections.abc import Sequence
-from typing import ClassVar, Unpack
+from typing import ClassVar
 
 from pydantic import JsonValue, PrivateAttr
-from typing_extensions import override
+from typing_extensions import Unpack, override
 
 from betterlite.types.utils.base import (
     DictJsonObject,

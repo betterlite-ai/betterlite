@@ -1,7 +1,8 @@
 from collections.abc import Awaitable
-from typing import Literal, Self
+from typing import Literal
 
 from pydantic import JsonValue
+from typing_extensions import Self
 
 from betterlite._integrations.custom_guardrail_constants import (
     LOGS_GUARDRAIL_INFORMATION_MARKER as MARKER,

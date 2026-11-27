@@ -1,8 +1,8 @@
 import urllib.parse
 from collections.abc import Mapping
-from typing import TypedDict, Unpack
 
 from pydantic import JsonValue
+from typing_extensions import TypedDict, Unpack
 
 from ._transport import Request, send
 

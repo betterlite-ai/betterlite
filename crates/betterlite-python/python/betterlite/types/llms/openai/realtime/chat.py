@@ -1,7 +1,7 @@
-from typing import Literal, Required, TypeAlias
+from typing import Literal, TypeAlias
 
 from pydantic import JsonValue
-from typing_extensions import TypedDict
+from typing_extensions import Required, TypedDict
 
 from betterlite.types.llms.openai.core.batches import OpenAIErrorBody
 

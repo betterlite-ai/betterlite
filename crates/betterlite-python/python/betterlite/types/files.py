@@ -1,10 +1,10 @@
 from collections.abc import Mapping
 from enum import Enum
 from types import MappingProxyType
-from typing import Final, Literal, Required
+from typing import Final, Literal
 
 from pydantic import JsonValue
-from typing_extensions import TypedDict
+from typing_extensions import Required, TypedDict
 
 
 class FileType(Enum):

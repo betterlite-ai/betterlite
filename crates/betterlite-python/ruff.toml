@@ -1,13 +1,19 @@
 extend = "../../ruff.toml"
 src = ["python"]
+target-version = "py310"
+per-file-target-version = { "tests/*" = "py311" }
+
+[lint.flake8-tidy-imports.banned-api]
+"typing.TypedDict".msg = "pydantic refuses a typing.TypedDict below Python 3.12; import TypedDict from typing_extensions"
 
 [lint.per-file-ignores]
 "python/betterlite/__init__.py" = ["F403"] # each later task fills a module that this file star-imports
 "python/betterlite/*.pyi" = ["F403"] # _native.pyi star-imports one stub per native family
-"tests/*" = ["INP001", "S101"] # pytest finds test_package.py by path and checks with assert
+"tests/*" = ["INP001", "S101", "TID251"] # pytest finds test_package.py by path and checks with assert, and the tests run on 3.11 where pydantic accepts typing.TypedDict
 "python/betterlite/_custom_llm/*" = ["A002", "ARG002", "ASYNC109", "FBT001", "PLE0302", "PLR0913", "PLR0917", "PYI036"] # user subclasses override LiteLLM's handler signatures, so these parameters stay as LiteLLM has them
 "python/betterlite/_completion/*" = ["B006", "BLE001", "PLR0913", "PLR0917"] # LiteLLM's 44-parameter completion, its messages: list = [] defaults, the 6-parameter acount_tokens and keyword-only LiteLLM(), and its broad proxy-auth catch stay as LiteLLM has them
 "python/betterlite/_completion/acompletion.py" = ["ASYNC109"] # LiteLLM's acompletion is async and keeps the timeout parameter its signature carries
+"python/betterlite/_completion/retries.py" = ["PERF203"] # the retry loop catches each attempt's error before the next attempt
 "python/betterlite/ocr/*" = ["A003", "N815", "PLR0913", "PLR0917"] # LiteLLM's OCRResponse keeps its object and keyValuePairs fields, and _bind_request its seven keywords
 "python/betterlite/search/*" = ["A003", "ASYNC109", "PLR0913", "PLR0917"] # LiteLLM's search and asearch keep their 11 keywords and its timeout, and SearchResponse its object field
 "python/betterlite/_completion/errors.py" = ["C901", "PLR0912", "PLR0915"] # one dispatch over the native error types, as the task requires, is over ruff's default branch, complexity and statement limits

@@ -1,7 +1,8 @@
 import json
-from typing import Final, Literal, TypedDict
+from typing import Final, Literal
 
 from pydantic import JsonValue, TypeAdapter, ValidationError
+from typing_extensions import TypedDict
 
 from betterlite._native import (
     normalize_input_schema,

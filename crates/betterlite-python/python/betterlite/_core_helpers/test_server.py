@@ -3,10 +3,10 @@ import threading
 from functools import partial
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import TracebackType
-from typing import ClassVar, Final, Self
+from typing import ClassVar, Final
 
 from pydantic import JsonValue, TypeAdapter
-from typing_extensions import override
+from typing_extensions import Self, override
 
 JSON_TYPE: Final = "application/json"
 _JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)

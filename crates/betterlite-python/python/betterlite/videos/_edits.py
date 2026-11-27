@@ -74,7 +74,7 @@ def video_create_character(  # noqa: PLR0913, PLR0917  # https://github.com/Berr
 
 
 async def avideo_create_character(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1086
-    name: CallValue, video: CallValue, timeout: CallValue = 600,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1086
+    name: CallValue, video: CallValue, timeout: CallValue = 600,
     custom_llm_provider: CallValue = None, extra_headers: CallValue = None,
     extra_query: CallValue = None, extra_body: CallValue = None, **kwargs: CallValue,
 ) -> CharacterObject:
@@ -95,7 +95,7 @@ def video_get_character(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI
 
 
 async def avideo_get_character(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1217
-    character_id: CallValue, timeout: CallValue = 600,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1217
+    character_id: CallValue, timeout: CallValue = 600,
     custom_llm_provider: CallValue = None, extra_headers: CallValue = None,
     extra_query: CallValue = None, extra_body: CallValue = None, **kwargs: CallValue,
 ) -> CharacterObject:
@@ -124,7 +124,7 @@ def video_edit(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/
 
 
 async def avideo_edit(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1341
-    video_id: CallValue, prompt: CallValue, timeout: CallValue = 600,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1341
+    video_id: CallValue, prompt: CallValue, timeout: CallValue = 600,
     custom_llm_provider: CallValue = None, extra_headers: CallValue = None,
     extra_query: CallValue = None, extra_body: CallValue = None,
     *, video: CallValue = None, **kwargs: CallValue,
@@ -154,7 +154,7 @@ def video_extension(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/lit
 
 async def avideo_extension(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1477
     video_id: CallValue, prompt: CallValue, seconds: CallValue,
-    timeout: CallValue = 600,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1477
+    timeout: CallValue = 600,
     custom_llm_provider: CallValue = None, extra_headers: CallValue = None,
     extra_query: CallValue = None, extra_body: CallValue = None, **kwargs: CallValue,
 ) -> VideoObject:

@@ -1,6 +1,6 @@
-from typing import Literal, Required, TypeAlias
+from typing import Literal, TypeAlias
 
-from typing_extensions import TypedDict
+from typing_extensions import Required, TypedDict
 
 
 class ChatCompletionToolChoiceFunctionParam(TypedDict):  # ast-grep-ignore: no-long-names

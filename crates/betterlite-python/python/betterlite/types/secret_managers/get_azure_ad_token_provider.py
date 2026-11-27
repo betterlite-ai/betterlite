@@ -1,7 +1,7 @@
-from enum import StrEnum
+from enum import Enum
 
 
-class AzureCredentialType(StrEnum):
+class AzureCredentialType(str, Enum):
     ClientSecretCredential = "ClientSecretCredential"
     ManagedIdentityCredential = "ManagedIdentityCredential"
     CertificateCredential = "CertificateCredential"

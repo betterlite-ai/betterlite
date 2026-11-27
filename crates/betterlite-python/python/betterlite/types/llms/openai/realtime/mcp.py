@@ -1,6 +1,6 @@
-from typing import Literal, Required
+from typing import Literal
 
-from typing_extensions import TypedDict
+from typing_extensions import Required, TypedDict
 
 
 class OpenAIMcpServerTool(TypedDict, total=False):

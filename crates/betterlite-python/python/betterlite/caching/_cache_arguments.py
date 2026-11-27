@@ -1,7 +1,7 @@
-from typing import Annotated, Final, Required
+from typing import Annotated, Final
 
 from pydantic import ConfigDict, Field, JsonValue, TypeAdapter, with_config
-from typing_extensions import TypedDict
+from typing_extensions import Required, TypedDict
 
 from betterlite.caching.base_cache import BaseCache
 

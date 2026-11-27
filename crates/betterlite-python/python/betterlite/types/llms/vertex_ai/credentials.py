@@ -1,4 +1,4 @@
-from enum import StrEnum
+from enum import Enum
 from typing import Final, Literal, Protocol
 
 VERTEX_CREDENTIALS_TYPES = str | dict[str, str]
@@ -13,7 +13,7 @@ class VertexAccessTokenResolver(Protocol):
     ) -> tuple[str, str]: ...
 
 
-class VertexPartnerProvider(StrEnum):
+class VertexPartnerProvider(str, Enum):
     mistralai = "mistralai"
     llama = "llama"
     ai21 = "ai21"

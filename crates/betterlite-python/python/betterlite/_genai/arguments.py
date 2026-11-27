@@ -1,8 +1,9 @@
 import json
 from collections.abc import Mapping
-from typing import Final, TypedDict
+from typing import Final
 
 from pydantic import TypeAdapter
+from typing_extensions import TypedDict
 
 from betterlite._endpoints.payload import LOGGER_FN, REFUSED, CallValue
 from betterlite._endpoints.proxy import proxy_headers

@@ -1,6 +1,6 @@
-from typing import Literal, Required, TypeAlias
+from typing import Literal, TypeAlias
 
-from typing_extensions import TypedDict
+from typing_extensions import Required, TypedDict
 
 from betterlite.types.llms.bedrock.invoke.embeddings import (
     AmazonTitanG1EmbeddingRequest,

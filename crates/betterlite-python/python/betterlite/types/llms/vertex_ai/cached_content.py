@@ -1,6 +1,4 @@
-from typing import Required
-
-from typing_extensions import TypedDict
+from typing_extensions import Required, TypedDict
 
 from betterlite.types.llms.vertex_ai.content import ContentType, SystemInstructions
 from betterlite.types.llms.vertex_ai.generation import GenerationConfig

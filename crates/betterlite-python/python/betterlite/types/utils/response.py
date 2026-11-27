@@ -1,10 +1,10 @@
 import time
 import uuid
 from collections.abc import Mapping, Sequence
-from typing import Final, Unpack
+from typing import Final
 
 from pydantic import JsonValue, PrivateAttr
-from typing_extensions import override
+from typing_extensions import Unpack, override
 
 from betterlite.types.utils.base import (
     DictJsonObject,

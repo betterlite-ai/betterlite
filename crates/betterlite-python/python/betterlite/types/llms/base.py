@@ -1,9 +1,9 @@
 from collections.abc import Callable, ItemsView
-from typing import ClassVar, Literal, Never, Unpack, overload
+from typing import ClassVar, Literal, overload
 
 from pydantic import BaseModel, ConfigDict, JsonValue, PrivateAttr
 from pydantic.main import IncEx
-from typing_extensions import override
+from typing_extensions import Never, Unpack, override
 
 from betterlite.types.utils.base import (
     DictJsonObject,

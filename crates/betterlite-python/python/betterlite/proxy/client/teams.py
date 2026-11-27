@@ -1,7 +1,5 @@
-from typing import Unpack
-
 from pydantic import JsonValue
-from typing_extensions import TypedDict
+from typing_extensions import TypedDict, Unpack
 
 from . import _transport
 from ._transport import UNAUTHORIZED_STATUS, Request

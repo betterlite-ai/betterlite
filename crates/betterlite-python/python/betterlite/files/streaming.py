@@ -1,9 +1,9 @@
 import datetime as dt
 from collections.abc import Awaitable, Iterator
-from typing import Final, Protocol, Self
+from typing import Final, Protocol
 
 from pydantic import JsonValue
-from typing_extensions import override
+from typing_extensions import Self, override
 
 from betterlite._completion.errors import raise_native_error
 from betterlite._native import NativeFileContentError
@@ -71,7 +71,7 @@ class FileContentStreamingResponse(Iterator[bytes]):
         }
         self._logging_completed = False
         self._close_completed = False
-        now = dt.datetime.now(tz=dt.UTC)
+        now = dt.datetime.now(tz=dt.timezone.utc)
         self._start_time = now if logging_obj is None else logging_obj.start_time
 
     @override

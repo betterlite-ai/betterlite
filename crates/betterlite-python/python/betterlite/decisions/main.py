@@ -173,7 +173,7 @@ async def adecisions(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/li
     safety_identifier: str | None = None,
     api_key: str | None = None,
     api_base: str | None = None,
-    timeout: float | TimeoutValues | None = None,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/decisions/main.py#L83
+    timeout: float | TimeoutValues | None = None,
     custom_llm_provider: str | None = None,
     extra_headers: Mapping[str, str] | None = None,
     **kwargs: CallValue,

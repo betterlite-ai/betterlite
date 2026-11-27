@@ -1,9 +1,9 @@
 from datetime import datetime
-from enum import StrEnum
-from typing import ClassVar, Literal, Required, Self
+from enum import Enum
+from typing import ClassVar, Literal
 
 from pydantic import ConfigDict, Field, JsonValue, field_validator, model_validator
-from typing_extensions import ReadOnly, TypedDict
+from typing_extensions import ReadOnly, Required, Self, TypedDict
 
 from betterlite.types.guardrails.content_filter import (
     MCP_SECURITY_ON_VIOLATION,
@@ -256,7 +256,7 @@ class guardrailConfig(TypedDict):  # noqa: N801  # https://github.com/BerriAI/li
     guardrails: list[Guardrail]
 
 
-class GuardrailEventHooks(StrEnum):
+class GuardrailEventHooks(str, Enum):
     pre_call = "pre_call"
     post_call = "post_call"
     during_call = "during_call"
@@ -271,6 +271,6 @@ class DynamicGuardrailParams(TypedDict):
     extra_body: ReadOnly[dict[str, JsonValue]]
 
 
-GUARDRAIL_DEFINITION_LOCATION = StrEnum(
-    "GUARDRAIL_DEFINITION_LOCATION", {"DB": "db", "CONFIG": "config"}
-)
+class GUARDRAIL_DEFINITION_LOCATION(str, Enum):  # noqa: N801  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1320
+    DB = "db"
+    CONFIG = "config"

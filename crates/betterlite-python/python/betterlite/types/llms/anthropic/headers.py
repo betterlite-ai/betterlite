@@ -1,4 +1,4 @@
-from enum import StrEnum
+from enum import Enum
 from typing import Final
 
 ANTHROPIC_API_HEADERS: Final = {"anthropic-version", "anthropic-beta"}
@@ -6,7 +6,7 @@ ANTHROPIC_API_HEADERS: Final = {"anthropic-version", "anthropic-beta"}
 ANTHROPIC_API_ONLY_HEADERS: Final = {"anthropic-beta"}
 
 
-class AnthropicHostedToolNames(StrEnum):
+class AnthropicHostedToolNames(str, Enum):
     WEB_SEARCH = "web_search"
     BASH = "bash"
     TEXT_EDITOR = "text_editor"
@@ -19,7 +19,7 @@ class AnthropicHostedToolNames(StrEnum):
 ANTHROPIC_HOSTED_TOOLS = AnthropicHostedToolNames
 
 
-class AnthropicBetaHeaderValues(StrEnum):
+class AnthropicBetaHeaderValues(str, Enum):
     WEB_FETCH_2025_09_10 = "web-fetch-2025-09-10"
     WEB_SEARCH_2025_03_05 = "web-search-2025-03-05"
     CONTEXT_MANAGEMENT_2025_06_27 = "context-management-2025-06-27"

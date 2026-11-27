@@ -32,7 +32,7 @@ class BaseSecretManager(ABC):
         self,
         secret_name: str,
         optional_params: dict[str, JsonValue] | None = None,
-        timeout: RequestTimeout = None,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/base_secret_manager.py#L34
+        timeout: RequestTimeout = None,
     ) -> str | None: ...
 
     @abstractmethod
@@ -50,7 +50,7 @@ class BaseSecretManager(ABC):
         secret_value: str,
         description: str | None = None,
         optional_params: dict[str, JsonValue] | None = None,
-        timeout: RequestTimeout = None,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/base_secret_manager.py#L74
+        timeout: RequestTimeout = None,
         tags: dict[str, JsonValue] | list[JsonValue] | None = None,
     ) -> dict[str, JsonValue]: ...
 
@@ -60,7 +60,7 @@ class BaseSecretManager(ABC):
         secret_name: str,
         recovery_window_in_days: int | None = 7,
         optional_params: dict[str, JsonValue] | None = None,
-        timeout: RequestTimeout = None,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/base_secret_manager.py#L99
+        timeout: RequestTimeout = None,
     ) -> dict[str, JsonValue]: ...
 
     async def async_rotate_secret(
@@ -69,7 +69,7 @@ class BaseSecretManager(ABC):
         new_secret_name: str,
         new_secret_value: str,
         optional_params: dict[str, JsonValue] | None = None,
-        timeout: RequestTimeout = None,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/base_secret_manager.py#L120
+        timeout: RequestTimeout = None,
     ) -> dict[str, JsonValue]:
         try:
             old_secret: Final = await self.async_read_secret(

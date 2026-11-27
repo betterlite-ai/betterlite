@@ -1,5 +1,5 @@
 from collections.abc import Mapping, Sequence
-from typing import ClassVar, Literal, TypeAlias, Unpack
+from typing import ClassVar, Literal, TypeAlias
 
 from pydantic import (
     ConfigDict,
@@ -8,7 +8,7 @@ from pydantic import (
     PrivateAttr,
     field_validator,
 )
-from typing_extensions import override
+from typing_extensions import Unpack, override
 
 from betterlite.types.responses.main import (
     BaseResponseOutputItem,

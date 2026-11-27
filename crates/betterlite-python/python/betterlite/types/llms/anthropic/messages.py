@@ -1,8 +1,8 @@
 from collections.abc import Iterable, Sequence
-from typing import Literal, Required, TypeAlias
+from typing import Literal, TypeAlias
 
 from pydantic import JsonValue
-from typing_extensions import ReadOnly, TypedDict
+from typing_extensions import ReadOnly, Required, TypedDict
 
 from betterlite.types.llms.anthropic.tools import ToolCaller, ToolReference
 from betterlite.types.llms.openai.core.chat_blocks import (

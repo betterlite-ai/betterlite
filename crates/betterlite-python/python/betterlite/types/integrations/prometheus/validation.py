@@ -1,8 +1,9 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import ClassVar, TypedDict
+from typing import ClassVar
 
 from pydantic import JsonValue
+from typing_extensions import TypedDict
 
 from betterlite.types.integrations.prometheus.core import (
     PROMETHEUS_DEPLOYMENT_AND_LATENCY_CALLER_IDENTITY_METRICS,

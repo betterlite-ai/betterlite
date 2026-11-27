@@ -94,7 +94,7 @@ def request_json(data: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
 
 def settings_of(owner: GuardrailSettingsOwner) -> SettingsJson:
     supported = owner.supported_event_hooks
-    hooks: list[str] | None = None if supported is None else [str(hook) for hook in supported]
+    hooks: list[str] | None = None if supported is None else [hook.value for hook in supported]
     requested = owner.event_hook
     event_hook: JsonValue = None
     match requested:
@@ -103,7 +103,7 @@ def settings_of(owner: GuardrailSettingsOwner) -> SettingsJson:
         case list():
             event_hook = JSON.validate_json(json.dumps(requested))
         case GuardrailEventHooks() | None:
-            event_hook = None if requested is None else str(requested)
+            event_hook = None if requested is None else requested.value
         case str():
             event_hook = requested
     switches = SwitchesJson(
@@ -144,12 +144,12 @@ def selection_answer(
     ordered: list[str] = sorted(suppressed)
     names = json.dumps(ordered)
     return guarded(
-        partial(handle.should_run_guardrail, json.dumps(request_json(data)), str(event_type), names)
+        partial(handle.should_run_guardrail, json.dumps(request_json(data)), event_type.value, names)
     )
 
 
 def event_hook_matches(handle: NativeGuardrail, event_type: GuardrailEventHooks) -> bool:
-    name = str(event_type)
+    name = event_type.value
     return guarded(partial(handle.event_hook_is_event_type, name))
 
 
@@ -198,7 +198,7 @@ def guardrail_summary(
     event_type: GuardrailEventHooks | None,
 ) -> JsonValue:
     baseline_text = None if baseline is None else json.dumps(baseline)
-    event_text = None if event_type is None else str(event_type)
+    event_text = None if event_type is None else event_type.value
     call = partial(
         summarize_guardrail_response, json.dumps(json_projection(response)),
         baseline_text, event_text,

@@ -1,9 +1,9 @@
 import logging
 import os
-from typing import Final, Self
+from typing import Final
 
 from pydantic import BaseModel, Field, model_validator
-from typing_extensions import override
+from typing_extensions import Self, override
 
 from betterlite.types.guardrails.pii import GuardrailParamUITypes
 from betterlite.types.proxy.guardrails.guardrail_hooks.base import GuardrailConfigModel

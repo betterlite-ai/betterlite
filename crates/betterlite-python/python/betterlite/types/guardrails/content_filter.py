@@ -1,4 +1,4 @@
-from enum import StrEnum
+from enum import Enum
 from typing import Final, Literal
 
 from betterlite.types.proxy.guardrails.guardrail_hooks.litellm_content_filter import (
@@ -7,7 +7,7 @@ from betterlite.types.proxy.guardrails.guardrail_hooks.litellm_content_filter im
 from betterlite.types.utils.base import ResponseObject
 
 
-class ContentFilterAction(StrEnum):
+class ContentFilterAction(str, Enum):
     BLOCK = "BLOCK"
     MASK = "MASK"
 

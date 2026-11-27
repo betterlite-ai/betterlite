@@ -1,30 +1,30 @@
-from enum import StrEnum
+from enum import Enum
 
 from pydantic import BaseModel, Field
 
 
-class LAR1Act(StrEnum):
+class LAR1Act(str, Enum):
     INF = "INF"
     OBS = "OBS"
     RET = "RET"
     GEN = "GEN"
 
 
-class LAR1Time(StrEnum):
+class LAR1Time(str, Enum):
     NOW = "NOW"
     MEM = "MEM"
     CTX = "CTX"
     PRE = "PRE"
 
 
-class LAR1Mind(StrEnum):
+class LAR1Mind(str, Enum):
     REF = "REF"
     REC = "REC"
     HYP = "HYP"
     ACT = "ACT"
 
 
-class LAR1Evidence(StrEnum):
+class LAR1Evidence(str, Enum):
     SYNTH = "SYNTH"
     RETRIEVED = "RETRIEVED"
     UNVERIFIED = "UNVERIFIED"

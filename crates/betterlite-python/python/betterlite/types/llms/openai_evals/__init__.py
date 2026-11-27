@@ -1,6 +1,7 @@
-from typing import ClassVar, Literal, Required, TypeAlias, TypedDict
+from typing import ClassVar, Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, JsonValue
+from typing_extensions import Required, TypedDict
 
 
 class _EvalsModel(BaseModel):

@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from enum import Enum, StrEnum
+from enum import Enum
 from typing import ClassVar, Final
 
 from pydantic import ConfigDict, Field
@@ -22,7 +22,7 @@ class RouterBasicRateLimitError(ValueError):
         super().__init__(f"{RouterErrors.no_deployments_available.value}.")
 
 
-class RouterErrorTypes(StrEnum):
+class RouterErrorTypes(str, Enum):
     rate_limit_error = "rate_limit_error"
     all_deployments_in_cooldown = "all_deployments_in_cooldown"
 

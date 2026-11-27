@@ -1,4 +1,4 @@
-from enum import StrEnum
+from enum import Enum
 from typing import Literal, TypeAlias
 
 from pydantic import BaseModel
@@ -11,7 +11,7 @@ class LangfuseOtelConfig(BaseModel):
     protocol: Protocol = "otlp_http"
 
 
-class LangfuseSpanAttributes(StrEnum):
+class LangfuseSpanAttributes(str, Enum):
     LANGFUSE_ENVIRONMENT = "langfuse.environment"
     VERSION = "langfuse.version"
     RELEASE = "langfuse.release"

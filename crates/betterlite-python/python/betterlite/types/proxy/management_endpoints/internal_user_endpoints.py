@@ -1,9 +1,9 @@
 from collections.abc import Mapping, Sequence
 from datetime import datetime
-from typing import Annotated, ClassVar, Final, Literal, Self, TypedDict
+from typing import Annotated, ClassVar, Final, Literal
 
 from pydantic import ConfigDict, Field, ValidationInfo
-from typing_extensions import ReadOnly
+from typing_extensions import ReadOnly, Self, TypedDict
 
 from betterlite.types.proxy.management_endpoints.management_v1 import ResourceResponse
 from betterlite.types.utils import (

@@ -1,4 +1,4 @@
-from enum import StrEnum
+from enum import Enum
 from typing import Final
 
 from pydantic import JsonValue
@@ -16,7 +16,7 @@ LITELLM_PASS_THROUGH_DEPLOYMENT_MODEL_INFO_STATE_KEY: Final = (
 LITELLM_PASS_THROUGH_ENDPOINT_MARKER: Final = "__litellm_" + "pass_through_endpoint__"
 
 
-class EndpointType(StrEnum):
+class EndpointType(str, Enum):
     VERTEX_AI = "vertex-ai"
     GEMINI = "gemini"
     ANTHROPIC = "anthropic"

@@ -1,8 +1,8 @@
-from enum import Enum, StrEnum
-from typing import Final, Unpack
+from enum import Enum
+from typing import Final
 
 from pydantic import BaseModel, Field, JsonValue
-from typing_extensions import TypedDict
+from typing_extensions import TypedDict, Unpack
 
 from betterlite.types.utils.base import DumpOptions
 
@@ -13,7 +13,7 @@ class ServiceMetrics(Enum):
     GAUGE = "gauge"
 
 
-class ServiceTypes(StrEnum):
+class ServiceTypes(str, Enum):
     REDIS = "redis"
     DB = "postgres"
     BATCH_WRITE_TO_DB = "batch_write_to_db"

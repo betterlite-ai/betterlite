@@ -1,16 +1,16 @@
-from enum import StrEnum, auto
+from enum import Enum
 from typing import Annotated, Final, Literal
 
 from pydantic import Field
 
 
-class MCPTransport(StrEnum):
+class MCPTransport(str, Enum):
     sse = "sse"
     http = "http"
     stdio = "stdio"
 
 
-class MCPSpecVersion(StrEnum):
+class MCPSpecVersion(str, Enum):
     nov_2024 = "2024-11-05"
     mar_2025 = "2025-03-26"
     jun_2025 = "2025-06-18"
@@ -18,20 +18,19 @@ class MCPSpecVersion(StrEnum):
     jul_2026 = "2026-07-28"
 
 
-# auto() gives the lowercase member name, each value here; ruff S105 flags a literal on token
-class MCPAuth(StrEnum):
-    none = auto()
-    api_key = auto()
-    bearer_token = auto()
-    basic = auto()
-    authorization = auto()
-    oauth2 = auto()
-    aws_sigv4 = auto()
-    token = auto()
-    oauth2_token_exchange = auto()
-    oauth2_id_jag = auto()
-    true_passthrough = auto()
-    oauth_delegate = auto()
+class MCPAuth(str, Enum):
+    none = "none"
+    api_key = "api_key"
+    bearer_token = "bearer_token"  # noqa: S105  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp.py#L44
+    basic = "basic"
+    authorization = "authorization"
+    oauth2 = "oauth2"
+    aws_sigv4 = "aws_sigv4"
+    token = "token"  # noqa: S105  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp.py#L49
+    oauth2_token_exchange = "oauth2_token_exchange"  # noqa: S105  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp.py#L50
+    oauth2_id_jag = "oauth2_id_jag"
+    true_passthrough = "true_passthrough"
+    oauth_delegate = "oauth_delegate"
 
 
 _URN_PREFIX: Final = "urn:ietf:params:oauth:token-type:"

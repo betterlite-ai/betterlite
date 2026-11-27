@@ -6,9 +6,10 @@ from collections.abc import Mapping, Sequence
 from contextlib import suppress
 from decimal import Decimal
 from pathlib import Path
-from typing import Final, NotRequired, TypedDict
+from typing import Final
 
 from pydantic import JsonValue, TypeAdapter
+from typing_extensions import NotRequired, TypedDict
 
 import betterlite
 from betterlite._core_helpers.budget_http import ModuleClient

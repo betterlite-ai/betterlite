@@ -1,7 +1,7 @@
-from typing import Literal, Required, TypeAlias
+from typing import Literal, TypeAlias
 
 from pydantic import JsonValue
-from typing_extensions import TypedDict, override
+from typing_extensions import Required, TypedDict, override
 
 from betterlite.types.llms.base import BaseLiteLLMOpenAIResponseObject
 from betterlite.types.llms.openai.core.chat_blocks import (

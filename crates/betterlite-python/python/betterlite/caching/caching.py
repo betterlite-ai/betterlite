@@ -1,9 +1,10 @@
 import logging
 from contextlib import suppress
-from enum import StrEnum
-from typing import Final, Unpack
+from enum import Enum
+from typing import Final
 
 from pydantic import JsonValue
+from typing_extensions import Unpack
 
 import betterlite
 from betterlite._cache_ops import CacheOperations
@@ -30,7 +31,7 @@ def print_verbose(print_statement: JsonValue) -> None:
             print(print_statement)  # noqa: T201  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L62-L68
 
 
-class CacheMode(StrEnum):
+class CacheMode(str, Enum):
     default_on = "default_on"
     default_off = "default_off"
 
@@ -171,7 +172,7 @@ class Cache(CacheOperations):
         elif selected == LiteLLMCacheType.DISK:
             backend = DiskCache(disk_cache_dir=disk_cache_dir)
         else:
-            raise NotImplementedError(f"{selected} cache type is not built yet")
+            raise NotImplementedError(f"{selected.value} cache type is not built yet")
         self.cache = backend
         _add_cache_callbacks()
         self.supported_call_types = supported_call_types
@@ -203,7 +204,11 @@ def _selected_type(cache_type: LiteLLMCacheType | str | None) -> LiteLLMCacheTyp
     try:
         return LiteLLMCacheType(cache_type)
     except ValueError:
-        raise NotImplementedError(f"{cache_type} cache type is not built yet") from None
+        match cache_type:
+            case LiteLLMCacheType():
+                raise NotImplementedError(f"{cache_type.value} cache type is not built yet") from None
+            case str():
+                raise NotImplementedError(f"{cache_type} cache type is not built yet") from None
 
 
 def enable_cache(

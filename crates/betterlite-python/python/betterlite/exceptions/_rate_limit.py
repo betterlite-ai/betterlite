@@ -4,14 +4,14 @@ from typing import Final
 from pydantic import JsonValue
 
 
-class RateLimitErrorCategory(enum.StrEnum):
+class RateLimitErrorCategory(str, enum.Enum):
     VENDOR_RATE_LIMIT = "vendor_rate_limit"
     VENDOR_BATCH_RATE_LIMIT = "vendor_batch_rate_limit"
     LITELLM_RATE_LIMIT = "litellm_rate_limit"
     LITELLM_BATCH_RATE_LIMIT = "litellm_batch_rate_limit"
 
 
-class RateLimitType(enum.StrEnum):
+class RateLimitType(str, enum.Enum):
     REQUESTS = "requests"
     TOKENS = "tokens"
     CONCURRENT_REQUESTS = "concurrent_requests"
