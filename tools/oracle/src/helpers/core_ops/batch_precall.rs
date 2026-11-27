@@ -13,9 +13,9 @@ use betterlite_error::rate_limit::{ProxyRateLimitError, ProxyRateLimitErrorInit}
 use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use betterlite_redact::structured::Payload;
 use indexmap::IndexMap;
 use serde::Deserialize;
-use serde_json::json;
 use tokio::runtime::Builder;
 
 use report::report;
@@ -134,9 +134,7 @@ impl Scripted {
         })
     }
 
-    fn service(
-        &self,
-    ) -> BatchPrecall<'_, Scripted, Scripted, Scripted, Scripted, Scripted, Scripted> {
+    fn service(&self) -> BatchPrecall<'_, Self, Self, Self, Self, Self, Self> {
         let clock = 0.0_f64;
         BatchPrecall {
             stages: self,
@@ -164,7 +162,7 @@ fn held(reservation: &Reservation) -> BatchEnqueuedTokenReservation {
 
 fn rejection_init(detail: &str) -> ProxyRateLimitErrorInit {
     ProxyRateLimitErrorInit {
-        detail: json!(detail),
+        detail: Payload::String(detail.to_owned()),
         headers: None,
         category: None,
         rate_limit_type: None,

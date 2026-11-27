@@ -68,8 +68,8 @@ impl BatchPrecallStages for Scripted {
 
     fn reserve(
         &self,
-        _: &BatchLimitPrincipal,
-        _: &RequestData,
+        _principal: &BatchLimitPrincipal,
+        _data: &RequestData,
         usage: &BatchFileUsage,
         scopes: &[BatchEnqueuedTokenScope],
     ) -> impl Future<Output = Result<Option<Box<ProxyRateLimitError>>, StageError>> + Send {
@@ -90,16 +90,16 @@ impl BatchPrecallStages for Scripted {
 
     fn charge(
         &self,
-        _: &BatchLimitPrincipal,
-        _: &RequestData,
-        _: &BatchFileUsage,
-        _: Option<&[BatchLimitDescriptor]>,
+        _principal: &BatchLimitPrincipal,
+        _data: &RequestData,
+        _usage: &BatchFileUsage,
+        _descriptors: Option<&[BatchLimitDescriptor]>,
     ) -> impl Future<Output = Result<Option<Box<ProxyRateLimitError>>, StageError>> + Send {
         ready(charge_answer(self))
     }
 
-    fn http(&self, error: &StageError) -> Option<&BatchHttpError> {
-        error.http.as_ref()
+    fn http(&self, error: &StageError) -> Option<BatchHttpError> {
+        error.http.clone()
     }
 }
 
@@ -126,7 +126,7 @@ impl BatchPrecallStash for Scripted {
 impl BatchRefundSink for Scripted {
     type Error = StageError;
 
-    fn run(
+    fn handle(
         &self,
         input: &BatchEnqueuedRefundInput,
     ) -> impl Future<Output = Result<BatchEnqueuedRefundResult, StageError>> + Send {
