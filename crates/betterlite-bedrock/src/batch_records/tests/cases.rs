@@ -15,6 +15,22 @@ use crate::batch_records::error::BatchRecordsError;
 use crate::batch_records::record::{LINE_BOUNDARIES, OpenAiBatchRecord};
 use crate::request_policy::RequestValue;
 
+fn message_keys(record: &Json, index: usize) -> Vec<&str> {
+    let Json::Object(fields) = record else {
+        panic!("the record is an object");
+    };
+    let Some(Json::Object(input)) = fields.get("modelInput") else {
+        panic!("the record carries the model input");
+    };
+    let Some(Json::List(messages)) = input.get("messages") else {
+        panic!("the model input carries messages");
+    };
+    let Json::Object(message) = &messages[index] else {
+        panic!("the message is an object");
+    };
+    message.keys().map(String::as_str).collect()
+}
+
 pub(super) fn chat_batch_record() {
     let families = Families::empty();
     let records = transform(
@@ -36,6 +52,9 @@ pub(super) fn chat_batch_record() {
             }
         })
     );
+    // Python builds the developer dict with role first and leaves every other dict in the author's order
+    assert_eq!(message_keys(&records[0], 0), ["role", "content"]);
+    assert_eq!(message_keys(&records[0], 1), ["content", "role"]);
     // a passthrough provider names no family, so nothing was mapped for it
     assert!(families.nova_calls().is_empty());
     assert!(families.anthropic_params_calls().is_empty());
