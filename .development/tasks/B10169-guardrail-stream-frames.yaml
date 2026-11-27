@@ -1,0 +1,240 @@
+id: B10169
+title: Stream guardrails keep raw frames
+description: >-
+  Stream guardrails cannot see raw frames. Every stream list that B3661's BaseTranslation, B3246's rewrite step, B3679's emit and registry functions and the B6260 and B6164 loops pass around is a list of GuardrailValue (crates/betterlite-config/src/sections/guardrail_identity/item.rs L8-17), and GuardrailValue has no bytes variant and no way to tell a bytes frame from a str frame. LiteLLM's stream guardrails get three kinds of item: a parsed object, a str and raw bytes. The /v1/messages stream yields bytes (AnthropicMessagesStreamingResponse.__anext__, streaming_iterator.py L375), Google's streamGenerateContent yields raw SSE, and the Chat and Anthropic handlers return their in-stream error frames as bytes. The Anthropic handler scans and rewrites dicts and bytes and leaves a str alone (handler.py L478-L494 and L1529-L1537), and the proxy generator passes bytes through but reads a str that starts with "data: " as an error message and stops (proxy_server.py L9955-L9986). On main a raw Anthropic frame is never scanned: the adapter's to_chunks (crates/betterlite-server/src/guardrails/unified_chat/anthropic.rs L187-199) turns every item that is not an object into SseChunk::Other, while the end check's anthropic_chunk (unified_stream_hook/stream_end.rs L51-69) turns a Text item into SseChunk::Bytes, so the scan and the end check disagree. frames_into_items (unified_chat.rs L116-123) makes the Chat and Anthropic error frames GuardrailValue::Text, a str item the generator would take for an error message.
+
+
+  The lossless item exists already. B3663's `StreamItem { Json(GuardrailValue), Bytes(Vec<u8>) }` (crates/betterlite-guardrails/src/guardrail_message_scope.rs L16-20) holds a str frame as Json(Text) and a bytes frame as Bytes, and the raw-stream readers in anthropic_sse and stream_chunk_events already take it. B3246's step lives in betterlite-core and cannot import betterlite-guardrails, so the enum moves once, unchanged, into crates/betterlite-core/src/guardrails/streaming_rewrite/shapes.rs beside RequestData. guardrail_message_scope.rs replaces its definition with `pub use betterlite_core::guardrails::streaming_rewrite::shapes::StreamItem;`, so its 46 importers keep their path. No second item type is added.
+
+
+  Signatures. Every stream list below becomes StreamItem, and nothing else in these functions changes. B3661 (guardrail_translation.rs L84-115): `process_streaming_response(&mut Vec<StreamItem>, ..)`, `get_streaming_scan_key(&[StreamItem])`, `build_block_sse_chunks(.., Option<&[StreamItem]>)` and `build_stream_error_items(..) -> Option<Vec<StreamItem>>`, forwarded by UnifiedTranslation's forward_fallible! and each_variant! arms (unified_guardrail/translation.rs L154-181). B3246 (streaming_rewrite/step.rs L11-37, traits.rs L118-125): `StreamingStep.streaming_chunks`, `release_original_chunks` and `StreamTranslation::process_streaming_response`. B3679 (unified_dispatch/emit.rs L33-189, registry.rs L34-97): `a2a_request_id`, `handle_streaming_block`, both lists in `StreamErrorEmission`, the items `emit_streaming_http_error` returns, `ResponseKind::of_stream_item` and the first_item of `resolve_endpoint_translation`. A Bytes item gives ResponseKind::Other, since _infer_call_type returns None for bytes (cost_calculator.py L1094-L1118). a2a_request_id skips it, since _get_a2a_request_id reads dicts and str only (unified_guardrail.py L123-L139), and the A2A error chunk is a Json object. B6260 and B6164: the source item of `run_streaming_iterator_hook` and of the incremental loop, `StreamOutput::Item(StreamItem)` (unified_stream.rs L14-19; BlockChunks stays), `StreamBuffers`, the Window lists in unified_stream_hook/block_only.rs L33-42, the lists in unified_stream/run.rs, round.rs and inspect.rs, and `StreamEndCheck::streaming_has_ended(&[StreamItem])`.
+
+
+  Adapters. Anthropic: one conversion, `pub fn stream_item_chunk(item: &StreamItem) -> Result<SseChunk, serde_json::Error>` in crates/betterlite-server/src/guardrails/anthropic_translation/sse_events.rs, maps Json(Object) to Event, Bytes to Bytes and any other item to Other. The adapter and stream_end.rs both call it, and to_chunks and anthropic_chunk go. The adapter's write_chunks writes an Event back as Json(Object) and a Bytes chunk back as Bytes and leaves the Other slots alone; B3676's rewrite already edits Bytes chunks in place. Error items: frames_into_items goes, and the Chat and Anthropic adapters return their frames as StreamItem::Bytes, as LiteLLM does (anthropic_sse.py L135-L145, the OpenAI chat handler.py L720-L731). Chat: object_chunks and write_object_chunks (unified_chat/chat/support.rs L47-71) read and write the Json(Object) slots only, and get_streaming_scan_key hands its items on without the wrap at chat.rs L154-163. Responses (unified_chat/responses.rs): a Bytes slot goes into the event list as JsonValue::Null so positions stay aligned, and write_events writes back only the Json slots. A2A (a2a_translation/stream.rs): parse_streaming_responses reads Json(Object) and Json(Text) and skips Bytes, and a rewritten line stays Json(Text), as LiteLLM's handler does (a2a handler.py L312-L345). Google (unified_guardrail/other_adapters/google_genai.rs L125-136): every item goes through stream_item_value before `converted`, so a Bytes frame reaches accumulated_stream_text as text, as LiteLLM's _chunk_sse_text decodes bytes with errors="replace" (gemini handler.py L130-L148).
+
+
+  Stream items as values. `pub fn stream_item_value(item: &StreamItem) -> GuardrailValue` goes in crates/betterlite-guardrails/src/guardrail_message_scope/stream_chunk_events.rs. A Json item gives its value, and a Bytes frame gives Text decoded by the module's decode_replacing_invalid, made pub here. It builds every GuardrailValue the loops make from stream items: original_response in block_only.rs L228, round.rs L157 and inspect.rs L33, the A2A responses_so_far context in a2a_translation/stream.rs L106-115, and the Google frames. LiteLLM keeps the raw bytes in original_response, and its blocked-usage reader decodes bytes and str the same way (base_llm/guardrail_translation/utils.py L13-L67), so decoded text reads the same. The server's two copies of that decoder, B3673's utf8_replacing_invalid (sse_events.rs L36-46) and B3676's decoded_text (anthropic_translation/process_stream/unended.rs L17-27), go, and their callers call decode_replacing_invalid.
+
+
+  Incremental loop. B6164's loop runs only for the chat route, where no bytes item arrives. A Bytes item there joins responses_so_far and nothing else: it is never sent, never last_chunk and never a round's reference chunk. Json items keep today's path, and the chunk helpers keep reading the GuardrailValue inside. responses_yielded holds the sent items as StreamItem::Json so it can go to handle_streaming_block and StreamErrorEmission unchanged.
+
+
+  Oracle helpers and old tests. The Rust sides of b3246 (tools/oracle/src/helpers/core_ops/b3246.rs and b3246/fakes.rs), b6163 (tools/oracle/src/helpers/server/b6163.rs) and b3679 (tools/oracle/src/helpers/guardrails/b3679/a2a.rs, emit.rs and resolution.rs) wrap their case items in StreamItem::Json and map results back with stream_item_value. Their cases, corpus and Python sides stay as they are and must still agree with LiteLLM. Existing tests that build GuardrailValue stream lists switch to StreamItem::Json the same way and keep their assertions.
+
+
+  New tests. In crates/betterlite-core/src/guardrails/streaming_rewrite/tests.rs: bytes_item_reaches_the_translation_in_place, and bytes_item_survives_a_discarded_rewrite (an undeliverable rewrite restores the original list, Bytes item included). In stream_chunk_events/tests.rs: item_value_decodes_bytes_with_replacement (b"a\xffb" gives "a\u{FFFD}b") and item_value_returns_json_unchanged. In unified_dispatch/tests.rs: raw_bytes_first_item_infers_no_call_type, raw_a2a_request_id_skips_bytes (a Bytes frame holding {"id": "x"} before a Json object with id "y" gives "y") and raw_http_error_keeps_translation_bytes. In the anthropic, chat and responses tests of unified_chat, tests named stream_raw_frame_*: a Bytes text_delta frame is scanned; an ended-stream rewrite with deliver_ended_stream_rewrites lands in the same item, still Bytes; a Json(Text) item holding the same frame is neither scanned nor changed; the Chat and Anthropic error items are Bytes frames; a Bytes slot in a Responses stream comes back unchanged and the events around it are still rewritten. In a2a_translation/stream/tests.rs: bytes_items_are_skipped_and_kept. In other_adapters/google_genai/tests.rs: google_genai_stream_bytes_frames_are_scanned, with one invalid byte that reaches the guardrail as U+FFFD. In unified_stream_hook/tests.rs, tests named frames_*: Bytes and Json items pass through in order when no translation resolves; on the /v1/messages route a Bytes text frame reaches the guardrail; a block after a Bytes prefix ends with the translation's BlockChunks, and the original_response it gets holds each frame as decoded Text; an HTTP error after the first sent item ends with the Anthropic error frame as Item(StreamItem::Bytes). In unified_stream_hook/stream_end/tests.rs: frame_bytes_end_the_anthropic_stream and frame_text_does_not_end_the_anthropic_stream, since _check_streaming_has_ended reads bytes and dicts only (handler.py L1670-L1700). In unified_stream/run/tests.rs: bytes_item_is_never_sent.
+
+
+  Downstream. B3247's ExecuteSteps.streaming_chunks, B6370's wrapper items and buffered list, and B8632's generator bridge take StreamItem from this task; their task files say so.
+scope:
+  paths:
+    - crates/betterlite-core/src/guardrails/streaming_rewrite/shapes.rs
+    - crates/betterlite-core/src/guardrails/streaming_rewrite/step.rs
+    - crates/betterlite-core/src/guardrails/streaming_rewrite/traits.rs
+    - crates/betterlite-core/src/guardrails/streaming_rewrite/tests.rs
+    - crates/betterlite-guardrails/src/guardrail_translation.rs
+    - crates/betterlite-guardrails/src/guardrail_translation/tests.rs
+    - crates/betterlite-guardrails/src/guardrail_message_scope.rs
+    - crates/betterlite-guardrails/src/guardrail_message_scope/stream_chunk_events.rs
+    - crates/betterlite-guardrails/src/guardrail_message_scope/stream_chunk_events/tests.rs
+    - crates/betterlite-guardrails/src/unified_dispatch/emit.rs
+    - crates/betterlite-guardrails/src/unified_dispatch/registry.rs
+    - crates/betterlite-guardrails/src/unified_dispatch/tests.rs
+    - crates/betterlite-guardrails/src/unified_dispatch/tests/**
+    - crates/betterlite-guardrails/src/llm_passthrough_dispatch/tests.rs
+    - crates/betterlite-server/src/guardrails/unified_chat.rs
+    - crates/betterlite-server/src/guardrails/unified_chat/**
+    - crates/betterlite-server/src/guardrails/anthropic_translation/sse_events.rs
+    - crates/betterlite-server/src/guardrails/anthropic_translation/sse_events/tests.rs
+    - crates/betterlite-server/src/guardrails/anthropic_translation/process_stream/unended.rs
+    - crates/betterlite-server/src/guardrails/a2a_translation/stream.rs
+    - crates/betterlite-server/src/guardrails/a2a_translation/stream/tests.rs
+    - crates/betterlite-server/src/guardrails/a2a_translation/adapter.rs
+    - crates/betterlite-server/src/guardrails/a2a_translation/adapter/tests.rs
+    - crates/betterlite-server/src/guardrails/unified_guardrail/translation.rs
+    - crates/betterlite-server/src/guardrails/unified_guardrail/translation/tests.rs
+    - crates/betterlite-server/src/guardrails/unified_guardrail/other_adapters/google_genai.rs
+    - crates/betterlite-server/src/guardrails/unified_guardrail/other_adapters/google_genai/tests.rs
+    - crates/betterlite-server/src/guardrails/unified_guardrail/other_adapters/tests.rs
+    - crates/betterlite-server/src/guardrails/unified_simple/*/tests.rs
+    - crates/betterlite-server/src/guardrails/unified_passthrough/*/tests.rs
+    - crates/betterlite-server/src/guardrails/unified_stream.rs
+    - crates/betterlite-server/src/guardrails/unified_stream/**
+    - crates/betterlite-server/src/guardrails/unified_stream_hook.rs
+    - crates/betterlite-server/src/guardrails/unified_stream_hook/**
+    - tools/oracle/src/helpers/core_ops/b3246.rs
+    - tools/oracle/src/helpers/core_ops/b3246/**
+    - tools/oracle/src/helpers/server/b6163.rs
+    - tools/oracle/src/helpers/guardrails/b3679/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/guardrail_translation/base_translation.py#L179-L248
+    why: The four stream methods of BaseTranslation, all over Sequence[object] items of any kind.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/streaming_iterator.py#L351-L376
+    why: AnthropicMessagesStreamingResponse, whose __anext__ yields the raw bytes of the /v1/messages stream.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py#L1097-L1135
+    why: The block-only loop appends each item as it came and infers the call type from the first one.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py#L711-L760
+    why: The incremental loop, where a non-dict item only joins responses_so_far on the text path.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py#L123-L139
+    why: _get_a2a_request_id reads dicts and str and skips bytes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py#L440-L470
+    why: The mid-stream HTTP error path yields the translation's error items as they are.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1094-L1118
+    why: _infer_call_type gives None for a bytes item.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L327-L363
+    why: build_block_sse_chunks and build_stream_error_items; the error items are anthropic_sse_error_frames bytes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L478-L494
+    why: _iter_sse_events reads a dict or bytes and returns nothing for a str.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L1529-L1537
+    why: _rewrite_buffered_item rewrites dicts and bytes in place and returns any other item unchanged.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L1670-L1700
+    why: _check_streaming_has_ended reads bytes and dicts only.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/anthropic_sse.py#L135-L145
+    why: anthropic_sse_error_frames returns bytes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/guardrail_translation/handler.py#L720-L731
+    why: The chat build_stream_error_items returns one bytes frame.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9955-L9986
+    why: 'The generator passes bytes through and reads a str starting with "data: " as an error message.'
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/a2a/chat/guardrail_translation/handler.py#L312-L345
+    why: The A2A stream parse reads dicts and str lines, skips bytes and writes a rewritten str line back as str.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/google_genai/guardrail_translation/handler.py#L130-L148
+    why: _chunk_sse_text decodes bytes with errors="replace" and joins raw frames after the object texts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/guardrail_translation/utils.py#L13-L67
+    why: The blocked-usage reader decodes bytes and str the same way, so original_response may hold decoded text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/pipeline_executor.py#L429-L470
+    why: _run_streaming_step deep-copies the buffered chunks and hands them to the translation, bytes included.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/pipeline_executor.py#L292-L304
+    why: _release_original_chunks puts the copied chunks back after an undeliverable rewrite.
+dod:
+  - text: A raw Anthropic frame is scanned and rewritten in place as Bytes, a str frame is left alone, and the stream end check reads items through the same conversion.
+    proof: [adapter-frame-tests, stream-end-frame-tests, one-item-type]
+  - text: The Chat and Anthropic error items are Bytes frames, a Bytes first item infers no call type, a2a_request_id skips Bytes, and the emit path returns the translation's items unchanged.
+    proof: [adapter-frame-tests, dispatch-raw-tests]
+  - text: The B6260 hook carries Bytes items in place through pass-through, scanning, blocks and HTTP errors, and its original_response holds the decoded text; the incremental loop never sends a Bytes item.
+    proof: [hook-frame-tests, incremental-bytes-tests, item-value-tests]
+  - text: The core rewrite step hands Bytes items to the translation in place and restores them after an undeliverable rewrite.
+    proof: [core-bytes-tests]
+  - text: A2A skips Bytes items and keeps them, and Google scans a Bytes frame as text decoded with replacement.
+    proof: [a2a-bytes-tests, google-bytes-tests]
+  - text: StreamItem is defined once, in betterlite-core, no stream list of GuardrailValue is left in the contract, the step, the emit and registry functions, the adapters or the loops, and the server's two decoder copies are gone.
+    proof: [one-item-type, old-shapes-gone]
+  - text: The owners' tests and the b3246, b3679 and b6163 helper cases still pass.
+    proof: [translation-contract-tests, scope-tests, dispatch-tests, unified-chat-tests, stream-loop-tests, adapter-tests, core-bytes-tests, streaming-oracle, dispatch-oracle, a2a-oracle]
+checks:
+  optional: [mutants]
+  commands:
+    - id: core-bytes-tests
+      why: the rewrite step drops, moves or changes a Bytes item, or a B3246 rewrite test broke
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^guardrails::streaming_rewrite::tests::bytes_/)' && cargo nextest run --locked -p betterlite-core -p betterlite-server --no-tests=fail -E 'test(streaming_rewrite)'
+    - id: item-value-tests
+      why: a Bytes frame is not decoded with one U+FFFD per invalid sequence, or a Json item does not come back as it was
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_message_scope::stream_chunk_events::tests::item_value_/)'
+    - id: dispatch-raw-tests
+      why: a Bytes item infers a call type, gives an A2A id, or the emit path rewrites the translation's error items
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^unified_dispatch::tests::raw_/)'
+    - id: adapter-frame-tests
+      why: an Anthropic Bytes frame is not scanned or not rewritten in place, a str frame is scanned, an error item is not Bytes, or a Responses Bytes slot moves
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::unified_chat::.*::tests::stream_raw_frame_/)'
+    - id: a2a-bytes-tests
+      why: the A2A stream reads or drops a Bytes item
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::a2a_translation::stream::tests::bytes_/)'
+    - id: google-bytes-tests
+      why: the Google stream scan misses a Bytes frame or decodes it differently from errors="replace"
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::unified_guardrail::other_adapters::google_genai::tests::google_genai_stream_bytes_/)'
+    - id: hook-frame-tests
+      why: the stream hook drops, moves or skips a Bytes item, or its block or error output loses the raw frames
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::unified_stream_hook::tests::frames_/)'
+    - id: stream-end-frame-tests
+      why: the Anthropic end check reads a str frame or misses a Bytes one
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::unified_stream_hook::stream_end::tests::frame_/)'
+    - id: incremental-bytes-tests
+      why: the incremental loop sends a Bytes item or drops it from responses_so_far
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::unified_stream::run::tests::bytes_/)'
+    - id: one-item-type
+      why: StreamItem is still defined in betterlite-guardrails, a second item type or conversion exists, or a decoder copy is left
+      run: >-
+        grep -q 'pub enum StreamItem' crates/betterlite-core/src/guardrails/streaming_rewrite/shapes.rs &&
+        grep -q 'pub use betterlite_core::guardrails::streaming_rewrite::shapes::StreamItem' crates/betterlite-guardrails/src/guardrail_message_scope.rs &&
+        test -z "$(grep -n 'enum StreamItem' crates/betterlite-guardrails/src/guardrail_message_scope.rs)" &&
+        grep -q 'pub fn stream_item_value' crates/betterlite-guardrails/src/guardrail_message_scope/stream_chunk_events.rs &&
+        grep -q 'pub fn decode_replacing_invalid' crates/betterlite-guardrails/src/guardrail_message_scope/stream_chunk_events.rs &&
+        grep -q 'pub fn stream_item_chunk' crates/betterlite-server/src/guardrails/anthropic_translation/sse_events.rs &&
+        test -z "$(grep -nE 'fn (utf8_replacing_invalid|decoded_text|to_chunks|anthropic_chunk|frames_into_items)[(]' crates/betterlite-server/src/guardrails/anthropic_translation/sse_events.rs crates/betterlite-server/src/guardrails/anthropic_translation/process_stream/unended.rs crates/betterlite-server/src/guardrails/unified_chat.rs crates/betterlite-server/src/guardrails/unified_chat/anthropic.rs crates/betterlite-server/src/guardrails/unified_stream_hook/stream_end.rs)"
+    - id: old-shapes-gone
+      why: a stream list, a stream output or a first item is still a GuardrailValue in the contract, the step, emit, registry, an adapter or a loop
+      run: >-
+        test -z "$(grep -nE '\[GuardrailValue\]|Option<Vec<GuardrailValue>>|Item[(]GuardrailValue[)]|Item = Result<GuardrailValue|(responses_so_far|responses_yielded|withheld_items|pending_items|streaming_chunks|originals|assembled): (&[^ ]* )?(mut )?Vec<GuardrailValue>|first_item: Option<&GuardrailValue>|of_stream_item[(]item: &GuardrailValue'
+        crates/betterlite-guardrails/src/guardrail_translation.rs
+        crates/betterlite-guardrails/src/unified_dispatch/emit.rs
+        crates/betterlite-guardrails/src/unified_dispatch/registry.rs
+        crates/betterlite-core/src/guardrails/streaming_rewrite/step.rs
+        crates/betterlite-core/src/guardrails/streaming_rewrite/traits.rs
+        crates/betterlite-server/src/guardrails/unified_chat.rs
+        crates/betterlite-server/src/guardrails/unified_chat/anthropic.rs
+        crates/betterlite-server/src/guardrails/unified_chat/chat.rs
+        crates/betterlite-server/src/guardrails/unified_chat/chat/support.rs
+        crates/betterlite-server/src/guardrails/unified_chat/responses.rs
+        crates/betterlite-server/src/guardrails/a2a_translation/stream.rs
+        crates/betterlite-server/src/guardrails/a2a_translation/adapter.rs
+        crates/betterlite-server/src/guardrails/unified_guardrail/translation.rs
+        crates/betterlite-server/src/guardrails/unified_guardrail/other_adapters/google_genai.rs
+        crates/betterlite-server/src/guardrails/unified_stream.rs
+        crates/betterlite-server/src/guardrails/unified_stream/run.rs
+        crates/betterlite-server/src/guardrails/unified_stream/round.rs
+        crates/betterlite-server/src/guardrails/unified_stream/inspect.rs
+        crates/betterlite-server/src/guardrails/unified_stream_hook/run.rs
+        crates/betterlite-server/src/guardrails/unified_stream_hook/block_only.rs
+        crates/betterlite-server/src/guardrails/unified_stream_hook/stream_end.rs)"
+    - id: translation-contract-tests
+      why: the changed BaseTranslation defaults or the pass-through dispatch broke a B3661 contract test
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^(guardrail_translation|llm_passthrough_dispatch)::/)'
+    - id: scope-tests
+      why: the move of StreamItem broke a B3663 stream chunk reader or an anthropic_sse reader
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^(guardrail_message_scope::stream_chunk_events::|anthropic_sse::)/)'
+    - id: dispatch-tests
+      why: a B3679 dispatch, emit, A2A, transform chunk, stream item or flag test broke
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^unified_dispatch::/) - test(replays_the_helper_case_corpus)'
+    - id: unified-chat-tests
+      why: a B6161 adapter, flag, stream conversion, undeliverable, stamp or table test broke
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::unified_chat::/)'
+    - id: stream-loop-tests
+      why: a B6260 hook test or a B6164 incremental loop test broke
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::(unified_stream|unified_stream_hook)::/)'
+    - id: adapter-tests
+      why: an A2A, Google, MCP, rerank, simple, pass-through or Anthropic translation test broke on the new item type
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::(a2a_translation|unified_guardrail::translation|unified_guardrail::other_adapters|unified_simple|unified_passthrough|anthropic_translation)::/)'
+    - id: streaming-oracle
+      why: the b3246 helper cases no longer agree with LiteLLM after the step took StreamItem
+      run: cargo run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-core-ops -- tools/oracle/cases/streaming
+    - id: dispatch-oracle
+      why: the b3679 helper cases or their corpus no longer agree with LiteLLM
+      run: >-
+        cargo run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-guardrails -- tools/oracle/cases/helpers/unified-guardrail-dispatch &&
+        cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-guardrails --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: a2a-oracle
+      why: the b6163 helper cases no longer agree with LiteLLM
+      run: cargo run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-server -- tools/oracle/cases/helpers/a2a-guardrail-translation
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "HTTP evidence: B8993 runs the Anthropic and Responses stream cases and B8992 the Google and A2A ones. No route reaches the stream hook before B8632, and B3676's helper cases already compare the Bytes rewrite itself with LiteLLM (tools/oracle/cases/helpers/anthropic-guardrail-streaming)."
+  - "The bridge between the generator's stream_chunks::StreamItem and this item type: B8632. The wrapper chain and the pipeline gate over StreamItem: B6370. ExecuteSteps over StreamItem: B3247."
+  - "SSE parsing: iter_sse_events and B3676's rewrite are unchanged and keep the anthropic_sse_events fuzz target; this task adds no decoder of outside bytes."
+  - "Core's StreamTranslation (streaming_rewrite/traits.rs L99-126) and the guardrails crate's BaseTranslation port the same LiteLLM class twice; both only change their item type here."
+  - "Other copies of Python's errors=\"replace\" decoder outside these modules, such as betterlite-vertex google_genai_guardrail/sse.rs L6, betterlite-guardrails headroom/text.rs L1 and betterlite-core api/assistant_records/error.rs L263, stay."
+  - "B6164's chunk helpers (unified_dispatch/stream_items.rs, transform_chunk.rs) keep reading GuardrailValue; the loop hands them the value inside a Json item."
+pitfalls:
+  - "A Json(Text) item is a str frame: the Anthropic adapter and its end check must both leave it out, and only Bytes carries a raw frame there."
+  - "Error items must be Bytes, because the generator reads a str item that starts with \"data: \" as an error message and ends the stream (proxy_server.py L10014-L10018)."
+  - "write_chunks must leave an Other slot as it was; writing an empty object over it drops a str frame from the stream."
+  - "A Bytes slot in a Responses stream stays in the event list as Null; dropping it shifts every rewrite after it by one position."
+  - "release_original_chunks restores a clone taken before the translation ran, so the clone must hold the Bytes items too."
+  - "Only guardrail_message_scope.rs changes for the move; the 46 files that import guardrail_message_scope::StreamItem keep their imports."
+  - "decode_replacing_invalid keeps one U+FFFD per invalid sequence, and clippy.toml bans String::from_utf8_lossy."
+  - "In the incremental loop a Bytes item must never become last_chunk or a round's reference, since build_transform_chunk copies the reference chunk's fields."
+  - "B8665 also edits unified_guardrail/translation.rs to add an OCR arm, so keep the stream methods in the forward_fallible! and each_variant! forwarding and change only their types."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,1 @@
+<s3:ListBucketResult xmlns:s3="urn:s3"><s3:Name>b</s3:Name><s3:Contents><s3:Key>litellm-batch-outputs/x</s3:Key></s3:Contents></s3:ListBucketResult>

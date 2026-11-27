@@ -76,7 +76,7 @@ use axum::extract::State;
 use axum::http::{Request, header};
 use axum::middleware::Next;
 use axum::response::Response;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 pub(crate) async fn authenticate(
     State(master_key_state): State<Option<SecretString>>,
     mut request: Request<Body>,
@@ -110,6 +110,7 @@ fn stage_input(
     match backend {
         AuthBackend::AuthKeyLookup => Ok(auth_key_lookup::lookup_stage_input(request)),
         AuthBackend::MasterKey => Ok(auth_key_lookup::master_stage_input(request, authenticated)),
+        AuthBackend::JwtKeys => Ok(jwt_keys::stage_input(request)),
         AuthBackend::TrustedNetwork => trusted_network::stage_input(request, authenticated),
         AuthBackend::AuthRequestPolicy => Ok(StageInput::AuthRequestPolicy(Box::new(
             auth_request_policy::stage_input(request, authenticated, body)?,
@@ -189,6 +190,7 @@ fn resolver_for(request: &Request<Body>) -> Arc<RequestModelResolver> {
 pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, StageFailure> {
     match input {
         StageInput::AuthKeyLookup(stage) => auth_key_lookup::prefetch(*stage).await,
+        StageInput::JwtKeys(stage) => jwt_keys::prefetched(*stage).await,
         StageInput::AuthTagBudgets(stage) => auth_tag_budgets::prefetched(stage).await,
         StageInput::AuthKeyBudgets(stage) => auth_key_budgets::prefetched(stage).await,
         StageInput::TeamBudgetAdmission(stage) => team_budget_admission::prefetched(stage).await,
@@ -216,6 +218,23 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
         | StageInput::OrganizationRoutePolicy(_)
         | StageInput::AuthPolicySupport(_)) => Ok(other),
     }
+}
+
+fn master_key_stage(
+    input: &StageInput,
+    master_key: &SecretString,
+) -> Result<AuthContext, AuthenticationFailure> {
+    let StageInput::MasterKey(presented) = input else {
+        return Err(AuthenticationFailure::Missing);
+    };
+    if let Some(context) = auth_identity::master_key_context(presented.as_ref(), master_key) {
+        return Ok(context);
+    }
+    let failure = match presented.as_ref() {
+        Some(key) if !key.expose_secret().is_empty() => AuthenticationFailure::Invalid,
+        Some(_) | None => AuthenticationFailure::Missing,
+    };
+    Err(failure)
 }
 
 fn default_resolver() -> Arc<RequestModelResolver> {

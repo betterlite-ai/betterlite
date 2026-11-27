@@ -1,0 +1,13 @@
+kind: helper
+name: project-no-alias-table
+call:
+  b10114:
+    team_details: null
+    team_id: null
+    row:
+      team_id: team-9
+      team_alias: null
+      models: []
+      aliases: null
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,12 @@
+kind: helper
+name: search-handlers-agent-search
+call:
+  b4686:
+    handler: agent_search
+    query: alpha
+    top_k: 2
+    agents:
+      - {id: a1, name: Agent One}
+    caller: {user_id: u1}
+env: {}
+compare: {ignore: []}

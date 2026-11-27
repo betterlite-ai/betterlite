@@ -1,14 +1,14 @@
 id: B761
 milestone: M4 keys, spend and management
 title: JWKS and OIDC discovery caching
-status: todo
+status: done
 depends_on: [B001, B002, B003, B171, B173, B732, B733, B856, B860, B869, B749, B8410]
 file: tasks/B761-jwt-keys.yaml
 covers:
   - "litellm/proxy/auth/handle_jwt.py"
 parent: B053
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3252

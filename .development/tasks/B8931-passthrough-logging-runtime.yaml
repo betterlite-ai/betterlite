@@ -14,7 +14,7 @@ description: >-
   B205 effective model-info lookup, B190 logging payload services, the B191 worker owned by
   B012's logging integration, B173 pooled HTTP
   client and its server-owned task tracker, B198 clock/ID source, B3602 credential router, B8611
-  router views, B594 credential resolver, B595 signer, and B8930's enabled setting. Use the merged
+  router views, B10175's AWS credential chain (a clone of `state.shared.aws_credentials`), B595 signer, and B8930's enabled setting. Use the merged
   public types rather than making a second config or service registry. Expose completion,
   streaming and binder on PassThroughRuntime, using the handles accepted by B3613's HandlerDeps and
   B3612's WebSocketDeps; B3625 (later work) adds speech_rates for its SpeechRates when it mounts its routes. Also expose the provider dispatcher
