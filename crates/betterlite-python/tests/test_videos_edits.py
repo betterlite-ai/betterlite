@@ -452,16 +452,24 @@ def test_calls_match_litellm(shape: Shape) -> None:
     assert_same_record(asynchronous)
 
 
-def check_upload(swapped: Comparison, upload: Upload) -> None:
+def check_upload(
+    swapped: Comparison, upload: Upload, reference_filename: str | None = None,
+) -> None:
     assert_same_call(swapped.reference_call, swapped.ours_call, upload.method, upload.path)
     ours_parts = sent_parts(swapped.ours_call)
     reference_parts = sent_parts(swapped.reference_call)
     expected: Part = {
         "filename": upload.filename, "content_type": MEDIA_TYPE, "body": MEDIA_BYTES,
     }
+    reference_expected: Part = {
+        "filename": upload.filename if reference_filename is None else reference_filename,
+        "content_type": MEDIA_TYPE,
+        "body": MEDIA_BYTES,
+    }
     assert ours_parts[upload.field]["body"] == reference_parts[upload.field]["body"]
     assert ours_parts[upload.field]["body"] == upload.text.encode()
-    assert ours_parts[VIDEO_FIELD] == reference_parts[VIDEO_FIELD] == expected
+    assert ours_parts[VIDEO_FIELD] == expected
+    assert reference_parts[VIDEO_FIELD] == reference_expected
     assert_same_record(swapped)
 
 
@@ -477,10 +485,14 @@ def test_character_create_calls() -> None:
 def test_edit_file_calls(tmp_path: Path) -> None:
     source = tmp_path / CLIP_NAME
     source.write_bytes(MEDIA_BYTES)
-    arguments: dict[str, CallValue] = {"video_id": VIDEO_ID, "prompt": PROMPT, "video": source}
-    with closing(EditServer()) as server:
+    with source.open("rb") as clip, closing(EditServer()) as server:
+        arguments: dict[str, CallValue] = {
+            "video_id": VIDEO_ID, "prompt": PROMPT, "video": clip,
+        }
         swapped = compared(server, SYNC_CALLS["edit"], SYNC_REFERENCES["edit"], arguments)
-    check_upload(swapped, Upload("POST", EDITS_PATH, PROMPT_FIELD, PROMPT, CLIP_NAME))
+    # LiteLLM sends the open file's own name, the full path, where betterlite sends its basename
+    check_upload(swapped, Upload("POST", EDITS_PATH, PROMPT_FIELD, PROMPT, CLIP_NAME),
+                 str(source))
 
 
 def test_extra_body_calls() -> None:
@@ -562,6 +574,7 @@ def test_error_matches_litellm() -> None:
     assert looked_up.value.status_code == UNAUTHORIZED
     payload = ERROR_PAYLOAD.validate_json(str(native_cause(made.value)))
     assert payload["type"] == reference_class.__name__
+    assert "status_code" in payload
     assert payload["status_code"] == UNAUTHORIZED
 
 

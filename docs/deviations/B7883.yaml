@@ -12,8 +12,8 @@ deviations:
   - what: video_edit and video_extension answer 400 not supported for every provider but openai.
     why: The config lookup returns a config only for the OpenAI tag, and the core reports the same not-supported error LiteLLM raises when its own provider lookup misses. LiteLLM's ProviderConfigManager does return a config for other video providers, and its handler would run them.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1430-L1436
-  - what: A video given as a path or an open file is uploaded with its basename as the multipart filename.
-    why: The shared payload layer preserves the file's bytes and names it by basename; LiteLLM sends the file's own name attribute, which is the basename for a Path but the full path for an open file.
+  - what: A video may be given as a path, which LiteLLM's FileContent type does not take, and a path or an open file is uploaded with its basename as the multipart filename.
+    why: The task asks for bytes, a path or an open file; the payload layer reads the path's bytes and names the upload by basename, where LiteLLM hands a Path to httpx and fails reading it, and names an open file by its raw name attribute, the full path.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/transformation.py#L588-L610
   - what: The sync entry points block on the same native async handler the async ones await.
     why: One Rust operation per call serves both Python twins, and the sync wrapper blocks on it, where LiteLLM's sync path builds its own blocking request. The request and the mapped errors on the wire are the same.
