@@ -37,8 +37,15 @@ where
     let Some(org_id) = request.org_id else {
         return Ok(());
     };
+    // the carried path reports no reset time, unlike every other entity
     if let Some(carried) = request.carried {
-        let input = carried_input(org_id, request, carried);
+        let input = OrgBudgetGaugeInput {
+            org_id: org_id.to_owned(),
+            org_alias: request.org_alias.unwrap_or_default().to_owned(),
+            spend: carried.spend.saturating_add(request.response_cost),
+            max_budget: carried.max_budget,
+            budget_reset_at: None,
+        };
         return set_org_budget_metrics(gauges, &input, source, now);
     }
     if !lookups.database_configured() {
@@ -54,21 +61,6 @@ where
             tracing::debug!("[Non-Blocking] Prometheus: Error getting org info: {error}");
             Ok(())
         }
-    }
-}
-
-// the carried path reports no reset time, unlike every other entity
-fn carried_input(
-    org_id: &str,
-    request: &OrgBudgetRequest<'_>,
-    carried: &OrgBudgetSnapshot,
-) -> OrgBudgetGaugeInput {
-    OrgBudgetGaugeInput {
-        org_id: org_id.to_owned(),
-        org_alias: request.org_alias.unwrap_or_default().to_owned(),
-        spend: carried.spend.saturating_add(request.response_cost),
-        max_budget: carried.max_budget,
-        budget_reset_at: None,
     }
 }
 

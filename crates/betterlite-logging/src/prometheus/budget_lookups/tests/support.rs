@@ -33,6 +33,8 @@ use crate::prometheus_helpers::bounded_series_tracker::{
 use crate::prometheus_label_projection::prometheus_label_factory::LabelSource;
 use crate::prometheus_label_schema::PrometheusLabelSettings;
 
+type LookupResult<T> = Result<T, BudgetLookupError>;
+
 pub(crate) const TEAM_GAUGES: [&str; 3] = [
     "litellm_remaining_team_budget_metric",
     "litellm_team_max_budget_metric",
@@ -348,21 +350,17 @@ impl BudgetLookups for RecordingLookups {
         self.database
     }
 
-    async fn team_info(&self, team_id: &str) -> Result<TeamRecord, BudgetLookupError> {
+    async fn team_info(&self, team_id: &str) -> LookupResult<TeamRecord> {
         self.record(LookupCall::TeamInfo {
             team_id: team_id.to_owned(),
         });
         required(self.team.clone())
     }
 
-    async fn org_info(
-        &self,
-        org_id: &str,
-        include_budget_table: bool,
-    ) -> Result<Option<OrgRecord>, BudgetLookupError> {
+    async fn org_info(&self, org_id: &str, include: bool) -> LookupResult<Option<OrgRecord>> {
         self.record(LookupCall::OrgInfo {
             org_id: org_id.to_owned(),
-            include_budget_table,
+            include_budget_table: include,
         });
         answer(self.org.clone())
     }
@@ -371,7 +369,7 @@ impl BudgetLookups for RecordingLookups {
         &self,
         hashed_token: &str,
         check_cache_only: bool,
-    ) -> Result<KeyRecord, BudgetLookupError> {
+    ) -> LookupResult<KeyRecord> {
         self.record(LookupCall::KeyInfo {
             hashed_token: hashed_token.to_owned(),
             check_cache_only,
@@ -383,7 +381,7 @@ impl BudgetLookups for RecordingLookups {
         &self,
         user_id: &str,
         options: UserLookupOptions,
-    ) -> Result<Option<UserRecord>, BudgetLookupError> {
+    ) -> LookupResult<Option<UserRecord>> {
         self.record(LookupCall::UserInfo {
             user_id: user_id.to_owned(),
             options,
@@ -391,10 +389,7 @@ impl BudgetLookups for RecordingLookups {
         answer(self.user.clone())
     }
 
-    async fn cached_customer(
-        &self,
-        end_user_id: &str,
-    ) -> Result<Option<CachedEndUser>, BudgetLookupError> {
+    async fn cached_customer(&self, end_user_id: &str) -> LookupResult<Option<CachedEndUser>> {
         self.record(LookupCall::CachedCustomer {
             cache_key: format!("end_user_id:{end_user_id}"),
         });
@@ -404,7 +399,7 @@ impl BudgetLookups for RecordingLookups {
     async fn default_customer_budget(
         &self,
         budget_id: &str,
-    ) -> Result<Option<BudgetTableSnapshot>, BudgetLookupError> {
+    ) -> LookupResult<Option<BudgetTableSnapshot>> {
         self.record(LookupCall::DefaultCustomerBudget {
             budget_id: budget_id.to_owned(),
         });

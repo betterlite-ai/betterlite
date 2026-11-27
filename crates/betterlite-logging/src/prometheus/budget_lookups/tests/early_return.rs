@@ -32,59 +32,56 @@ fn assert_logged(text: &str, entity: &str) {
     assert!(text.contains(&expected), "missing log line: {expected}");
 }
 
-fn team_request<'request>(team_id: Option<&'request str>) -> TeamBudgetRequest<'request> {
-    TeamBudgetRequest {
-        user_api_team: team_id,
-        user_api_team_alias: Some("Alpha"),
-        team_spend: Some(decimal("1")),
-        team_max_budget: Some(decimal("10")),
-        response_cost: decimal("0.25"),
-        carried: None,
-    }
+struct Requests<'request> {
+    team: TeamBudgetRequest<'request>,
+    org: OrgBudgetRequest<'request>,
+    key: KeyBudgetRequest<'request>,
+    user: UserBudgetRequest<'request>,
+    customer: CustomerBudgetRequest<'request>,
 }
 
-fn org_request<'request>(org_id: Option<&'request str>) -> OrgBudgetRequest<'request> {
-    OrgBudgetRequest {
-        org_id,
-        response_cost: decimal("0.5"),
-        carried: None,
-        org_alias: Some("Org Alpha"),
-    }
-}
-
-fn key_request<'request>(key: Option<&'request str>) -> KeyBudgetRequest<'request> {
-    KeyBudgetRequest {
-        user_api_key: key,
-        user_api_key_alias: Some("Key Alpha"),
-        response_cost: decimal("0.25"),
-        key_max_budget: Some(decimal("10")),
-        key_spend: Some(decimal("1")),
-        carried: None,
-    }
-}
-
-fn user_request<'request>(user_id: Option<&'request str>) -> UserBudgetRequest<'request> {
-    UserBudgetRequest {
-        user_id,
-        user_spend: Some(decimal("1")),
-        user_max_budget: Some(decimal("10")),
-        response_cost: decimal("0.5"),
-        carried: None,
-        user_email: None,
-    }
-}
-
-fn customer_request<'request>(
-    end_user_id: Option<&'request str>,
-) -> CustomerBudgetRequest<'request> {
-    CustomerBudgetRequest {
-        end_user_id,
-        response_cost: decimal("0.25"),
+fn all_requests<'request>(id: Option<&'request str>) -> Requests<'request> {
+    Requests {
+        team: TeamBudgetRequest {
+            user_api_team: id,
+            user_api_team_alias: Some("Alpha"),
+            team_spend: Some(decimal("1")),
+            team_max_budget: Some(decimal("10")),
+            response_cost: decimal("0.25"),
+            carried: None,
+        },
+        org: OrgBudgetRequest {
+            org_id: id,
+            response_cost: decimal("0.5"),
+            carried: None,
+            org_alias: Some("Org Alpha"),
+        },
+        key: KeyBudgetRequest {
+            user_api_key: id,
+            user_api_key_alias: Some("Key Alpha"),
+            response_cost: decimal("0.25"),
+            key_max_budget: Some(decimal("10")),
+            key_spend: Some(decimal("1")),
+            carried: None,
+        },
+        user: UserBudgetRequest {
+            user_id: id,
+            user_spend: Some(decimal("1")),
+            user_max_budget: Some(decimal("10")),
+            response_cost: decimal("0.5"),
+            carried: None,
+            user_email: None,
+        },
+        customer: CustomerBudgetRequest {
+            end_user_id: id,
+            response_cost: decimal("0.25"),
+        },
     }
 }
 
 #[tokio::test]
 async fn noop_gauges_skip_every_function_before_any_lookup() {
+    let requests = all_requests(Some("entity-1"));
     let settings = PrometheusLabelSettings::with_defaults();
     let tracker = BoundedPrometheusSeriesTracker::default();
     let limits = SeriesLimits::default();
@@ -102,7 +99,7 @@ async fn noop_gauges_skip_every_function_before_any_lookup() {
         &gauges[0],
         source(&settings, default_tracking()),
         now,
-        &team_request(Some("team-1")),
+        &requests.team,
     )
     .await
     .unwrap();
@@ -111,7 +108,7 @@ async fn noop_gauges_skip_every_function_before_any_lookup() {
         &gauges[1],
         source(&settings, default_tracking()),
         now,
-        &org_request(Some("org-1")),
+        &requests.org,
     )
     .await
     .unwrap();
@@ -120,7 +117,7 @@ async fn noop_gauges_skip_every_function_before_any_lookup() {
         &gauges[2],
         source(&settings, default_tracking()),
         now,
-        &key_request(Some("key-1")),
+        &requests.key,
     )
     .await
     .unwrap();
@@ -129,7 +126,7 @@ async fn noop_gauges_skip_every_function_before_any_lookup() {
         &gauges[3],
         source(&settings, default_tracking()),
         now,
-        &user_request(Some("user-1")),
+        &requests.user,
     )
     .await
     .unwrap();
@@ -138,7 +135,7 @@ async fn noop_gauges_skip_every_function_before_any_lookup() {
         &gauges[4],
         customer_context(&settings, &tracker, &limits, customer_tracking(), now),
         customer_tracking(),
-        &customer_request(Some("end-1")),
+        &requests.customer,
     )
     .await
     .unwrap();
@@ -148,6 +145,7 @@ async fn noop_gauges_skip_every_function_before_any_lookup() {
 
 #[tokio::test]
 async fn missing_identifiers_skip_every_function_before_any_lookup() {
+    let requests = all_requests(None);
     let settings = PrometheusLabelSettings::with_defaults();
     let tracker = BoundedPrometheusSeriesTracker::default();
     let limits = SeriesLimits::default();
@@ -165,7 +163,7 @@ async fn missing_identifiers_skip_every_function_before_any_lookup() {
         &gauges[0],
         source(&settings, default_tracking()),
         now,
-        &team_request(None),
+        &requests.team,
     )
     .await
     .unwrap();
@@ -174,7 +172,7 @@ async fn missing_identifiers_skip_every_function_before_any_lookup() {
         &gauges[1],
         source(&settings, default_tracking()),
         now,
-        &org_request(None),
+        &requests.org,
     )
     .await
     .unwrap();
@@ -183,7 +181,7 @@ async fn missing_identifiers_skip_every_function_before_any_lookup() {
         &gauges[2],
         source(&settings, default_tracking()),
         now,
-        &key_request(None),
+        &requests.key,
     )
     .await
     .unwrap();
@@ -192,7 +190,7 @@ async fn missing_identifiers_skip_every_function_before_any_lookup() {
         &gauges[3],
         source(&settings, default_tracking()),
         now,
-        &user_request(None),
+        &requests.user,
     )
     .await
     .unwrap();
@@ -201,7 +199,7 @@ async fn missing_identifiers_skip_every_function_before_any_lookup() {
         &gauges[4],
         customer_context(&settings, &tracker, &limits, customer_tracking(), now),
         customer_tracking(),
-        &customer_request(None),
+        &requests.customer,
     )
     .await
     .unwrap();
@@ -211,6 +209,7 @@ async fn missing_identifiers_skip_every_function_before_any_lookup() {
 
 #[tokio::test]
 async fn lookup_errors_are_logged_and_swallowed_by_every_function() {
+    let requests = all_requests(Some("entity-1"));
     let settings = PrometheusLabelSettings::with_defaults();
     let tracker = BoundedPrometheusSeriesTracker::default();
     let limits = SeriesLimits::default();
@@ -235,7 +234,7 @@ async fn lookup_errors_are_logged_and_swallowed_by_every_function() {
         &gauges[0],
         source(&settings, default_tracking()),
         now,
-        &team_request(Some("team-1")),
+        &requests.team,
     )
     .await
     .unwrap();
@@ -244,7 +243,7 @@ async fn lookup_errors_are_logged_and_swallowed_by_every_function() {
         &gauges[1],
         source(&settings, default_tracking()),
         now,
-        &org_request(Some("org-1")),
+        &requests.org,
     )
     .await
     .unwrap();
@@ -253,7 +252,7 @@ async fn lookup_errors_are_logged_and_swallowed_by_every_function() {
         &gauges[2],
         source(&settings, default_tracking()),
         now,
-        &key_request(Some("key-1")),
+        &requests.key,
     )
     .await
     .unwrap();
@@ -262,7 +261,7 @@ async fn lookup_errors_are_logged_and_swallowed_by_every_function() {
         &gauges[3],
         source(&settings, default_tracking()),
         now,
-        &user_request(Some("user-1")),
+        &requests.user,
     )
     .await
     .unwrap();
@@ -271,7 +270,7 @@ async fn lookup_errors_are_logged_and_swallowed_by_every_function() {
         &gauges[4],
         customer_context(&settings, &tracker, &limits, customer_tracking(), now),
         customer_tracking(),
-        &customer_request(Some("end-1")),
+        &requests.customer,
     )
     .await
     .unwrap();
