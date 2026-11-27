@@ -9,7 +9,7 @@ description: >-
 
 
   Sdk side, module `router_video` in betterlite-sdk. It plugs the nine calls into B6021's `RouterGeneric`: one `GenericCallExecutor` per call kind (a small struct holding the matching B3338-B3342 entry point by constructor), named
-  `VideoCallExecutor`, plus `RouterVideo`, which implements B9944's `VideoRouterCalls` by building a B6021 generic request and running the dispatch for that call type name. B6021's `GenericRequest` is a JSON map, so `RouterVideo` turns each `VideoUpload`
+  `VideoCallExecutor`, plus `RouterVideo`, which implements B9944's `VideoRouterCalls` by building a B10154 generic request and running the dispatch for that call type name. B10154's `GenericRequest` is a JSON map, so `RouterVideo` turns each `VideoUpload`
   into a JSON object `{"filename", "content_type", "data_base64"}` under its `field` key, and the executor turns it back into the named buffer the SDK call takes (add `base64` to betterlite-sdk's Cargo.toml). An executor reads its arguments from the
   map by the same names the route tasks use for the SDK call (B3338 for generation, B3339 for status and content, B3340 for remix and list, B3341 for the two character calls, B3342 for edit and extension), passes every other key as a loose keyword, and
   returns `VideoReply::Json` of the result, or `VideoReply::Bytes` for avideo_content. `RouterVideo::new` takes the `RouterGeneric` handle and returns the nine executors through `video_executors(...)`, a function that returns `Vec<(String, Arc<dyn GenericCallExecutor>)>`
@@ -17,7 +17,7 @@ description: >-
   parameters; the deployment's own provider (B014's `provider_for_generic_call`) is put back by B6021's attempt. A plan's `specific_deployment` goes into the generic request, where B6021's attempt takes it out before selection.
 
 
-  Errors. Core cannot name B6021's `GenericError` or the B3338-B3342 failure types, so `RouterVideo` maps every failure into B9944's `VideoRouterError::Mapped { class, message }`. A failure of an SDK call keeps the `ErrorClass` its exception_type
+  Errors. Core cannot name B10154's `GenericError` or the B3338-B3342 failure types, so `RouterVideo` maps every failure into B9944's `VideoRouterError::Mapped { class, message }`. A failure of an SDK call keeps the `ErrorClass` its exception_type
   mapping gave it, a failure of the generic call itself (no deployment, an unknown call type) takes the class that error maps to, and `message` is the failure's text, which is what the client reads. Never answer `NotFound` from here; that case
   comes from the route entries' plan.
 
@@ -66,7 +66,7 @@ checks:
 oracle_cases: []
 deviations:
   - what: Uploads cross the generic call as base64 inside the JSON argument map.
-    why: B6021's GenericRequest is a JSON map and cannot hold raw buffers. The provider sees the same filename and bytes, so no client can tell.
+    why: B10154's GenericRequest is a JSON map and cannot hold raw buffers. The provider sees the same filename and bytes, so no client can tell.
   - what: The nine synchronous Router.video_* methods are not built.
     why: Nothing calls them at the pin and the gateway has no blocking SDK surface; see out_of_scope.
 out_of_scope:
