@@ -27,6 +27,7 @@ use crate::auth::auth_identity::AuthContext;
 use crate::auth::route_match::admit;
 use crate::auto_router_read_api::error::ReadApiError;
 use crate::auto_router_read_api::postgres::reads_from_state;
+use crate::auto_router_read_api::query::MAX_READ_QUERY_BYTES;
 use crate::auto_router_read_api::service::SessionResponse;
 use crate::auto_router_read_api::store::AutoRouterReadStore;
 use crate::benchmark_aggregates::group::Benchmarks;
@@ -340,6 +341,28 @@ async fn an_unparsable_day_is_a_400_detail() {
     assert_eq!(
         body.detail,
         "Invalid date format: 2024-13-01. Expected: 'YYYY-MM-DD'"
+    );
+}
+
+// the byte bound answers through the status table rather than the validation envelope
+#[tokio::test]
+async fn an_oversized_query_is_a_422_detail() {
+    let store: Arc<dyn AutoRouterReadStore> = Arc::new(RecordingStore::default());
+    let oversized = "a".repeat(MAX_READ_QUERY_BYTES.saturating_add(1));
+    let response = benches(
+        Some(store),
+        authenticated(master_principal()),
+        Some(&oversized),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let body: Detail = decode(response).await;
+    assert_eq!(
+        body.detail,
+        format!(
+            "the auto-router read query has {} bytes, past the {MAX_READ_QUERY_BYTES}-byte limit",
+            oversized.len()
+        )
     );
 }
 
