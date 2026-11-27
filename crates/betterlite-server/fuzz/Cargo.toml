@@ -658,3 +658,10 @@ path = "fuzz_targets/oauth_callback_query.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "config_update"
+path = "fuzz_targets/config_update.rs"
+test = false
+doc = false
+bench = false

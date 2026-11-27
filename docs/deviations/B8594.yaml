@@ -1,0 +1,30 @@
+task: B8594
+deviations:
+  - what: general_settings is stored as sent instead of through ConfigGeneralSettings, so an unknown key is persisted and a wrongly typed known key is stored rather than answering 422.
+    why: this route owns the per-key merge and the config-file guard, while the general-settings model belongs to the config sections; the file-owned keys are still refused before any write.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2698
+  - what: model_list and worker_registry are ignored without validation; LiteLLM parses both as ConfigYAML fields and answers 422 for a malformed entry even though update_config never writes them.
+    why: neither section is written by this route, and the task gives it only the four settings sections.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3241-L3272
+  - what: routing_groups are stored as sent, so unknown per-group keys and null fields survive; LiteLLM stores the dumped RoutingGroup models, which keep only the five declared fields with nulls dropped.
+    why: group validation is B323's parse_routing_groups, which checks routing semantics and not the stored shape.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L55-L84
+  - what: an invalid routing_groups value answers 400 with parse_routing_groups' message, where LiteLLM's body validation answers 422 for anything pydantic rejects and only reaches its 400 for errors pydantic lets through.
+    why: the task routes group validation through B323 and asks for its message at 400.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L17997-L18002
+  - what: a success_callback entry that is not a string is deduplicated by value; Python's list(set(...)) raises TypeError for a dict or list entry and answers 400.
+    why: the union exists to dedupe additive callback names, so a non-string entry is kept instead of failing the whole update.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L18128
+  - what: a weights map with an integer weight passes the body build and is then refused by the allowlist with 400; LiteLLM's strict RouterWeights float rejects that integer with 422 before the allowlist runs.
+    why: weights is never a valid runtime setting, so both answer an error; only its status differs, and the typed check still refuses a blank identifier, a negative or infinite weight and a group with no positive weight.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router_weights.py#L13-L18
+  - what: the unsupported-router-settings, invalid-routing-groups and config-owned-write refusals answer with their plain detail message, while LiteLLM raises each as an HTTPException whose dict detail ProxyException stringifies into a Python dict repr.
+    why: docs/compatibility.md does not port Python repr text, and the task names the plain message for the first two; the config-owned refusal comes from B8380 as a typed error, so it takes this route's Authentication Error prefix.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4338
+  - what: when a request sends both alerting and alert_to_webhook_url, the slack side effect runs after the sent alerting list is applied, so slack is always kept; LiteLLM walks the request keys in JSON order and can overwrite the slack it just appended when alert_to_webhook_url precedes alerting.
+    why: betterlite's settings maps are sorted BTreeMaps that do not keep the request's key order, and the task says the webhook adds slack to alerting, so the outcome is made order-independent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L18075-L18088
+  - what: the success_callback union keeps the first occurrence of each name with stored names first, where LiteLLM's list(set(...)) order follows Python's randomized string hashing and differs between runs.
+    why: a set's iteration order is a Python runtime detail no caller can rely on and the union's contents stay the same; the deterministic order keeps the stored row and its audit value stable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L18128-L18130
+kept_bugs: []
