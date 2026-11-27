@@ -73,16 +73,18 @@ impl Ports {
                 ports: missing.join(", "),
             });
         }
-        let (Some(cache), Some(permissions), Some(writer)) = (cache, permissions, writer) else {
+        let (Some(cache_port), Some(permissions_port), Some(writer_port)) =
+            (cache, permissions, writer)
+        else {
             return Err(IdentityStoreError::MissingPorts {
                 ports: missing.join(", "),
             });
         };
         Ok(Dependencies {
             reader,
-            cache,
-            permissions,
-            writer,
+            cache: cache_port,
+            permissions: permissions_port,
+            writer: writer_port,
         })
     }
 }

@@ -233,12 +233,18 @@ pub(super) struct StoreSetup {
 
 impl StoreSetup {
     pub(super) fn store(&self) -> IdentityStore {
+        let fake_cache = Arc::clone(&self.cache);
+        let cache: Arc<dyn KeyObjectCache> = fake_cache;
+        let fake_permissions = Arc::clone(&self.permissions);
+        let permissions: Arc<dyn KeyPermissionLookup> = fake_permissions;
+        let fake_writer = Arc::clone(&self.writer);
+        let writer: Arc<dyn KeyCacheWriter> = fake_writer;
         IdentityStore::new(
             Dependencies {
                 reader: self.reader.clone(),
-                cache: Arc::clone(&self.cache),
-                permissions: Arc::clone(&self.permissions),
-                writer: Arc::clone(&self.writer),
+                cache,
+                permissions,
+                writer,
             },
             self.span.clone(),
             self.check_cache_only,
