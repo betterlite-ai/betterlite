@@ -10,6 +10,7 @@ mod tests;
 
 use betterlite_error::proxy_error_types::ProxyErrorTypes;
 use betterlite_http::user_url::error::UrlParseError;
+use http::header::InvalidHeaderValue;
 use thiserror::Error;
 
 use self::login_code::CacheWriteError;
@@ -27,9 +28,9 @@ pub enum SsoReturnTargetError {
     #[error("the login code cache write failed")]
     CacheWrite(#[from] CacheWriteError),
     #[error("the redirect response could not be built")]
-    Response(#[source] axum::http::Error),
+    Response(#[source] http::Error),
     #[error("the response header could not be built")]
-    Header(#[source] axum::http::header::InvalidHeaderValue),
+    Header(#[source] InvalidHeaderValue),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -171,10 +171,13 @@ where
 }
 
 // both cache slots share this test's recorder type unless the case supplies a Redis cache
-fn login_caches<'caches, Cache: LoginCodeCache>(
+fn login_caches<'caches, Cache>(
     user: &'caches Cache,
     redis: Option<&'caches Cache>,
-) -> LoginCodeCaches<'caches, Cache, Cache> {
+) -> LoginCodeCaches<'caches, Cache, Cache>
+where
+    Cache: LoginCodeCache,
+{
     LoginCodeCaches { redis, user }
 }
 

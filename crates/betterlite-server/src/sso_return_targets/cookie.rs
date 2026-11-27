@@ -120,7 +120,7 @@ fn append_cookie(response: &mut Response<Body>, cookie: &str) -> Result<(), SsoR
 
 // http.cookies.SimpleCookie's value encoding: an illegal value is quoted and its illegal letters escaped
 fn cookie_value(value: &str) -> Option<String> {
-    if value.chars().any(char::is_ascii_control) {
+    if value.chars().any(|character| character.is_ascii_control()) {
         return None;
     }
     if !value.is_empty() && value.chars().all(is_legal_value_letter) {

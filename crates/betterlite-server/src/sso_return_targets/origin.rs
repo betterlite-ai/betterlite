@@ -16,13 +16,13 @@ pub struct Origin {
 // SSOAuthenticationHandler._origin: (scheme, hostname, parsed.port or the scheme's default), both lowercased
 pub fn origin(url: &str) -> Result<Origin, UrlParseError> {
     let parsed: Parsed = urlparse(url, "")?;
-    let scheme = parsed.scheme;
     let host = parsed.hostname().unwrap_or_default();
-    let port = parsed.port()?.unwrap_or(if scheme == "https" {
+    let port = parsed.port()?.unwrap_or(if parsed.scheme == "https" {
         HTTPS_PORT
     } else {
         HTTP_PORT
     });
+    let scheme = parsed.scheme;
     Ok(Origin { scheme, host, port })
 }
 
