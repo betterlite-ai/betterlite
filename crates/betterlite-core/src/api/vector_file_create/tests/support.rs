@@ -221,28 +221,17 @@ pub(crate) async fn call(
     }
 }
 
-pub(crate) async fn recorded(
+pub(crate) async fn attempt(
     which: Which,
     spy: &Spy,
     fixture: &Fixture,
     registry: Option<&dyn CredentialLookup>,
     request_timeout_seconds: f64,
-) -> Recorded {
-    call(which, spy, fixture, registry, request_timeout_seconds)
-        .await
-        .expect("the attachment call succeeds");
-    spy.seen().expect("the service saw the call")
-}
-
-pub(crate) async fn refused(
-    which: Which,
-    spy: &Spy,
-    fixture: &Fixture,
-    registry: Option<&dyn CredentialLookup>,
-) -> SdkFailure {
-    *call(which, spy, fixture, registry, REQUEST_TIMEOUT)
-        .await
-        .expect_err("the attachment call fails")
+) -> Result<Recorded, SdkFailure> {
+    match call(which, spy, fixture, registry, request_timeout_seconds).await {
+        Ok(_) => Ok(spy.seen().expect("the service saw the call")),
+        Err(failure) => Err(*failure),
+    }
 }
 
 // what the service saw: the call's fields and the logging state the call left behind
