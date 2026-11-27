@@ -3,16 +3,23 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use betterlite_cache::backend::memory::local::LocalMemoryOps;
+use betterlite_cache::dual_cache::{DualCacheSettings, MAX_REDIS_BATCH_CACHE_SIZE};
 use betterlite_db::budget_permission_rows::JsonData;
 use opentelemetry::trace::SpanContext;
 use rust_decimal::Decimal;
 
 use super::IdentityStore;
 use super::error::IdentityStoreError;
+use super::ports::{KeyObjectCache, Ports};
+use super::principal::{Projection, principal_from_key};
 use super::rows;
-use crate::auth_identity::records::SourceKey;
-use crate::auth_identity::roles::AuthMethod;
+use crate::auth_cache::{WriteOptions, gateway_cache};
+use crate::auth_identity::records::{PrincipalType, SourceKey, TeamIdentity};
+use crate::auth_identity::roles::{AuthMethod, Role, TeamRole};
+use crate::auth_key_lookup::cache::KeyCacheWriter;
 use crate::auth_key_lookup::error::KeyLookupError;
+use crate::auth_key_lookup::permission::KeyPermissionLookup;
 use crate::auth_prefetch::permission::lookup::PermissionError;
 use crate::resolved_key::auth::AuthError;
 
@@ -313,4 +320,164 @@ async fn carrier_roundtrip_and_missing_source_key() {
         &error,
         IdentityStoreError::PrincipalMissingSourceKey
     ));
+}
+
+const fn projection(subject_fallback: Option<&'static str>) -> Projection<'static> {
+    Projection {
+        auth_method: AuthMethod::ApiKey,
+        issuer: None,
+        subject_fallback,
+        scopes: &[],
+        credential_ref: None,
+        network: None,
+    }
+}
+
+#[test]
+fn debug_names_the_store() {
+    let store = setup().store();
+    assert_eq!(
+        format!("{store:?}"),
+        "IdentityStore { check_cache_only: false, .. }"
+    );
+}
+
+#[test]
+fn ports_require_assembles_the_dependencies() {
+    let cache: Arc<dyn KeyObjectCache> = FakeCache::new(CacheAnswer::Miss);
+    let permissions: Arc<dyn KeyPermissionLookup> = FakePermissions::new(Vec::new());
+    let writer: Arc<dyn KeyCacheWriter> = FakeWriter::new(false);
+    let ports = Ports {
+        reader: None,
+        cache: Some(cache),
+        permissions: Some(permissions),
+        writer: Some(writer),
+    };
+    ports.require().unwrap();
+    let error = Ports::default()
+        .require()
+        .err()
+        .expect("incomplete ports fail");
+    assert_eq!(
+        error.to_string(),
+        "the identity store is missing required ports: cache, permissions, writer"
+    );
+}
+
+#[test]
+fn projection_reads_principal_type() {
+    let human_key =
+        auth_from_fields(r#"{"token":"hashed-token","key_name":"key-1","user_id":"u1"}"#);
+    let human = principal_from_key(&human_key, projection(None));
+    assert_eq!(human.principal_type, PrincipalType::Human);
+    assert_eq!(human.user.expect("the user record is present").id, "u1");
+
+    let service_key =
+        auth_from_fields(r#"{"token":"hashed-token","key_name":"key-1","user_id":""}"#);
+    let service_account = principal_from_key(&service_key, projection(None));
+    assert_eq!(
+        service_account.principal_type,
+        PrincipalType::ServiceAccount
+    );
+    assert_eq!(
+        service_account
+            .user
+            .expect("the empty user record is present")
+            .id,
+        ""
+    );
+}
+
+#[test]
+fn projection_subject_precedence() {
+    let user_and_alias = auth_from_fields(
+        r#"{"token":"hashed-token","key_name":"key-1","user_id":"u1","key_alias":"alias-1"}"#,
+    );
+    assert_eq!(
+        principal_from_key(&user_and_alias, projection(None)).subject,
+        "u1"
+    );
+
+    let empty_user_and_alias = auth_from_fields(
+        r#"{"token":"hashed-token","key_name":"key-1","user_id":"","key_alias":"alias-empty"}"#,
+    );
+    assert_eq!(
+        principal_from_key(&empty_user_and_alias, projection(None)).subject,
+        "alias-empty"
+    );
+
+    let without_candidates = auth_from_fields(r#"{"token":"hashed-token","key_name":"key-1"}"#);
+    assert_eq!(
+        principal_from_key(&without_candidates, projection(Some("fallback-subject"))).subject,
+        "fallback-subject"
+    );
+    assert_eq!(
+        principal_from_key(&without_candidates, projection(None)).subject,
+        ""
+    );
+}
+
+#[test]
+fn projection_reads_teams_and_roles() {
+    let admin = auth_from_fields(
+        r#"{"token":"hashed-token","key_name":"key-1","team_id":"t1","team_alias":"team-one","team_member":{"user_id":"u1","role":"admin"},"user_role":"org_admin"}"#,
+    );
+    let projected = principal_from_key(&admin, projection(None));
+    assert_eq!(
+        projected.teams,
+        vec![TeamIdentity {
+            id: "t1".to_owned(),
+            name: Some("team-one".to_owned()),
+            role: TeamRole::Admin,
+        }]
+    );
+    assert_eq!(projected.roles, vec![Role::OrgAdmin]);
+
+    let plain = auth_from_fields(
+        r#"{"token":"hashed-token","key_name":"key-1","team_id":"t2","user_role":"internal_user"}"#,
+    );
+    let member = principal_from_key(&plain, projection(None));
+    assert_eq!(member.teams.len(), 1);
+    let team = member.teams.first().expect("the team is present");
+    assert_eq!(team.role, TeamRole::Member);
+    assert!(member.roles.is_empty());
+}
+
+#[test]
+fn null_row_fields_read_as_defaults() {
+    let fields: BTreeMap<String, JsonData> =
+        serde_json::from_str(r#"{"token":"hashed-token","team_models":null}"#).unwrap();
+    let key = rows::auth_from_fields(fields).unwrap();
+    assert!(key.view.team_models.is_empty());
+}
+
+#[tokio::test]
+async fn cache_port_returns_the_stored_key() {
+    let clock: Arc<dyn Fn() -> f64 + Send + Sync> = Arc::new(|| 1000.0_f64);
+    let ordinary =
+        LocalMemoryOps::new(1024, Arc::clone(&clock)).expect("the local memory tier builds");
+    let key_objects =
+        LocalMemoryOps::new(1024, Arc::clone(&clock)).expect("the local memory tier builds");
+    let cache = gateway_cache(
+        Arc::new(ordinary),
+        Arc::new(key_objects),
+        None,
+        DualCacheSettings {
+            default_in_memory_ttl: None,
+            default_redis_ttl: None,
+            batch_cache_expiry: None,
+            max_redis_batch_cache_size: MAX_REDIS_BATCH_CACHE_SIZE,
+            redis_delete_chunk_size: MAX_REDIS_BATCH_CACHE_SIZE,
+        },
+        45.0_f64,
+    );
+    let hashed = "a".repeat(64);
+    let key = auth_from_fields(KEY_ROW);
+    cache
+        .async_set(Some(hashed.as_str()), &key, WriteOptions::default())
+        .await
+        .unwrap();
+    let stored = cache.read_key_object(&hashed).await.unwrap();
+    let stored = stored.expect("the stored key object comes back");
+    assert_eq!(stored.view.token.key_name.as_deref(), Some("key-1"));
 }
