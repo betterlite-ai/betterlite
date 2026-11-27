@@ -182,6 +182,10 @@ pub(super) fn invalid_xml() {
         decode_s3_listing(b"<a/><b/>", &DecodeLimits::DEFAULT),
         Err(S3ListingError::Trailing)
     ));
+    assert!(matches!(
+        decode_s3_listing(b"<a/><?xml version=\"1.0\"?>", &DecodeLimits::DEFAULT),
+        Err(S3ListingError::Trailing)
+    ));
     let truncated = b"<ListBucketResult><Contents><Key>litellm-bedrock-files-a</Key>";
     assert!(matches!(
         decode_s3_listing(truncated, &DecodeLimits::DEFAULT),

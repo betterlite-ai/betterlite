@@ -53,6 +53,11 @@ fn s3_listing_rejects_dtd_and_limits() {
         decode_s3_listing(b"<root/>", &limits),
         Err(S3ListingError::BodyTooLarge { limit: 4 })
     ));
+    let exact = DecodeLimits {
+        body_bytes: 7,
+        depth: 8,
+    };
+    decode_s3_listing(b"<root/>", &exact).unwrap();
     let shallow = DecodeLimits {
         body_bytes: 1024,
         depth: 1,

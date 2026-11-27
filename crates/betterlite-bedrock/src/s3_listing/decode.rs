@@ -76,17 +76,17 @@ impl Parser {
             self.has_child = true;
             return Ok(());
         }
-        let slot = match (self.depth, local) {
-            (2, b"Name") => Some(Slot::BucketName),
-            (2, b"NextContinuationToken") => Some(Slot::Token),
-            (2, b"Contents") => {
+        let slot = match (self.depth, local, self.in_contents) {
+            (2, b"Name", _) => Some(Slot::BucketName),
+            (2, b"NextContinuationToken", _) => Some(Slot::Token),
+            (2, b"Contents", _) => {
                 self.in_contents = true;
                 self.entry = S3ListedEntry::default();
                 None
             }
-            (3, b"Key") if self.in_contents => Some(Slot::Key),
-            (3, b"Size") if self.in_contents => Some(Slot::Size),
-            (3, b"LastModified") if self.in_contents => Some(Slot::Modified),
+            (3, b"Key", true) => Some(Slot::Key),
+            (3, b"Size", true) => Some(Slot::Size),
+            (3, b"LastModified", true) => Some(Slot::Modified),
             _ => None,
         };
         if slot.is_some() {

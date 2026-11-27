@@ -777,6 +777,14 @@ pub(super) fn last_modified_and_size() {
         parse_created_at(Some("1970-01-01T00:30:00.500+01:00")).unwrap(),
         -1799
     );
+    assert_eq!(
+        parse_created_at(Some("1970-01-01T00:00:00.500Z")).unwrap(),
+        0
+    );
+    assert!(matches!(
+        parse_created_at(Some("0000-01-01T00:00:00Z")),
+        Err(S3ListingError::Timestamp { .. })
+    ));
     assert!(matches!(
         parse_created_at(Some("not-a-date")),
         Err(S3ListingError::Timestamp { .. })
