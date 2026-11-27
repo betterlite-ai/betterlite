@@ -594,10 +594,12 @@ pub(super) fn read_state(setup: Setup) -> Arc<VectorManagementReadState<FakeData
 pub(super) fn build(setup: Setup) -> Arc<VectorManagementWriteState<FakeDatabase>> {
     let cache = setup.cache.clone();
     let events = setup.events.clone();
-    let reads = read_state(setup);
     let cache: Option<Arc<dyn VectorStoreCache>> =
         cache.map(|store| Arc::new(store.with_events(events)));
-    Arc::new(VectorManagementWriteState { reads, cache })
+    Arc::new(VectorManagementWriteState {
+        reads: read_state(setup),
+        cache,
+    })
 }
 
 fn principal(roles: &[Role], key: Option<UserAPIKeyAuth>) -> AuthContext {
