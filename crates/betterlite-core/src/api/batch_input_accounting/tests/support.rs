@@ -503,13 +503,13 @@ impl Harness {
     pub(super) fn run(&self, wire: &str) -> Result<BatchInputAccountingResult, FakeError> {
         let input: BatchInputAccountingInput =
             serde_json::from_str(wire).map_err(BatchInputAccountingError::Fields)?;
-        let service = BatchInputAccounting::new(
-            &self.calls,
-            &self.files,
-            &self.access,
-            &self.counter,
-            self.limits,
-        );
+        let service = BatchInputAccounting {
+            calls: &self.calls,
+            files: &self.files,
+            access: &self.access,
+            counter: &self.counter,
+            limits: self.limits,
+        };
         let guard = set_default(tracing_subscriber::registry().with(self.logs.clone()));
         let outcome = block_on(service.run(&input));
         drop(guard);

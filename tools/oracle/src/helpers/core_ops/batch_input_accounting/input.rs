@@ -4,6 +4,7 @@ use betterlite_core::api::batch_limit_descriptors::input::BatchLimitPrincipal;
 use betterlite_core::api::request_destination::RequestData;
 use betterlite_models::decisions::Json;
 use serde::Deserialize;
+use serde_with::{As, DefaultOnNull};
 
 #[derive(Debug, Clone, Copy, Default, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -78,8 +79,8 @@ pub(crate) struct Input {
     pub(super) custom_llm_provider: BatchInputProvider,
     #[serde(default)]
     pub(super) caller: Option<BatchLimitPrincipal>,
-    #[serde(default)]
-    pub(super) data: Option<RequestData>,
+    #[serde(default, deserialize_with = "As::<DefaultOnNull>::deserialize")]
+    pub(super) data: RequestData,
     #[serde(default)]
     pub(super) descriptors: Vec<BatchLimitDescriptor>,
     #[serde(default)]

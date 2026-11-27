@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use serde_with::{As, DefaultOnNull};
 
 use crate::api::batch_limit_descriptors::descriptors::BatchLimitDescriptor;
 use crate::api::batch_limit_descriptors::input::BatchLimitPrincipal;
@@ -34,8 +35,8 @@ pub struct BatchInputAccountingInput {
     pub custom_llm_provider: BatchInputProvider,
     #[serde(default)]
     pub caller: Option<BatchLimitPrincipal>,
-    #[serde(default)]
-    pub data: Option<RequestData>,
+    #[serde(default, deserialize_with = "As::<DefaultOnNull>::deserialize")]
+    pub data: RequestData,
     #[serde(default)]
     pub descriptors: Vec<BatchLimitDescriptor>,
 }

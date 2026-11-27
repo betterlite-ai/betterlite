@@ -36,8 +36,13 @@ impl Helper for Op {
             limits: ApiLimits::default(),
             warned_unsupported_model_skip: AtomicBool::new(false),
         };
-        let accounting =
-            BatchInputAccounting::new(&service, &files, &access, &counter, ApiLimits::default());
+        let accounting = BatchInputAccounting {
+            calls: &service,
+            files: &files,
+            access: &access,
+            counter: &counter,
+            limits: ApiLimits::default(),
+        };
         let record = BatchInputAccountingInput {
             file_id: input.file_id.clone(),
             custom_llm_provider: input.custom_llm_provider,

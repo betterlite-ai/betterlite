@@ -86,13 +86,13 @@ fn estimates_and_fetch_params_run_through_the_descriptor_service() {
     let descriptors = limit_descriptors(2, 0);
     let harness = Harness::new(&format!("{CAP_ROW}\n{MALFORMED_ROW}"));
     harness.counter.script(&[3]);
-    let service = BatchInputAccounting::new(
-        &descriptors,
-        &harness.files,
-        &harness.access,
-        &harness.counter,
-        harness.limits,
-    );
+    let service = BatchInputAccounting {
+        calls: &descriptors,
+        files: &harness.files,
+        access: &harness.access,
+        counter: &harness.counter,
+        limits: harness.limits,
+    };
     let input: BatchInputAccountingInput =
         serde_json::from_str(&input_wire("file-abc", Some(OTPM_CALLER), "[]"))
             .expect("the input decodes");

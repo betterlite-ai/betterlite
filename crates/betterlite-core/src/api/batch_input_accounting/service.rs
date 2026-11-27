@@ -43,11 +43,11 @@ struct Pass {
 
 // _PROXY_BatchRateLimiter.count_input_file_usage over an already fetched file
 pub struct BatchInputAccounting<'slice, Calls, Files, Access> {
-    calls: &'slice Calls,
-    files: &'slice Files,
-    access: &'slice Access,
-    counter: &'slice (dyn BatchTokenCounter + 'static),
-    limits: ApiLimits,
+    pub calls: &'slice Calls,
+    pub files: &'slice Files,
+    pub access: &'slice Access,
+    pub counter: &'slice (dyn BatchTokenCounter + 'static),
+    pub limits: ApiLimits,
 }
 
 impl<'slice, Calls, Files, Access> BatchInputAccounting<'slice, Calls, Files, Access>
@@ -56,23 +56,6 @@ where
     Files: BatchFileSource,
     Access: BatchModelAccess,
 {
-    #[must_use]
-    pub const fn new(
-        calls: &'slice Calls,
-        files: &'slice Files,
-        access: &'slice Access,
-        counter: &'slice (dyn BatchTokenCounter + 'static),
-        limits: ApiLimits,
-    ) -> Self {
-        Self {
-            calls,
-            files,
-            access,
-            counter,
-            limits,
-        }
-    }
-
     pub async fn run(
         &self,
         input: &BatchInputAccountingInput,
@@ -137,10 +120,13 @@ where
                 .map_err(BatchInputAccountingError::Files)?;
             (fetched, Some(names))
         } else {
-            let data = input.data.clone().unwrap_or_default();
             let params = self
                 .calls
-                .resolve_fetch_params(&input.file_id, input.custom_llm_provider.slug(), &data)
+                .resolve_fetch_params(
+                    &input.file_id,
+                    input.custom_llm_provider.slug(),
+                    &input.data,
+                )
                 .map_err(BatchInputAccountingError::Calls)?;
             let request = BatchFileRequest::Provider {
                 file_id: &params.file_id,
