@@ -31,20 +31,16 @@ where
             let input = BatchEnqueuedRefundInput::Refund {
                 reservation: record.clone(),
             };
-            match self.refunds.run(&input).await {
-                Ok(outcome) if outcome == BatchEnqueuedRefundResult::Refunded => {
-                    refunded = Some(record);
-                }
-                Ok(_other) => {}
-                Err(failure) => {
-                    diagnostics.push(error(format!("{FAILURE_PREFIX}{failure}")));
-                    return BatchCreateFailureResult {
-                        refunded: None,
-                        applied: Vec::new(),
-                        diagnostics,
-                    };
-                }
+            // the store's refund either releases the reservation or fails, and a returned call cleared the stash in the source
+            if let Err(failure) = self.refunds.run(&input).await {
+                diagnostics.push(error(format!("{FAILURE_PREFIX}{failure}")));
+                return BatchCreateFailureResult {
+                    refunded: None,
+                    applied: Vec::new(),
+                    diagnostics,
+                };
             }
+            refunded = Some(record);
         }
         let operations = self.stash.take_refund_operations();
         let applied = if operations.is_empty() {
