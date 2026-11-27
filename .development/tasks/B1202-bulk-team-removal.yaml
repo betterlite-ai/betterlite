@@ -51,8 +51,7 @@ description: >-
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_helpers/bulk_user_deletion.py:
   _TeamRemoval.deleted_key_tokens (L99-L100; 2 source lines),
   _team_tx_db (L153-L154; 2 source lines), _membership_tx_db (L161-L162; 2 source lines),
-  _remove_members_from_team (L219-L288; 67 source lines), _emit_team_members_metric (L291-L298;
-  8 source lines), bulk_remove_team_members (L313-L365; 48 source lines), _user_tx_db (L157-L158;
+  _remove_members_from_team (L219-L288; 67 source lines), bulk_remove_team_members (L313-L365; 48 source lines), _user_tx_db (L157-L158;
   2 source lines), _token_tx_db (L165-L166; 2 source lines).
 
 
@@ -61,9 +60,9 @@ description: >-
   commit-before-cache-failure, rather than invoking it through a purportedly pure helper adapter.
 
 
-  After moving 32 matching/filter lines to B2363 and the 13 problem lines to B10130, 133 helper lines and
-  approximately 20 declaration lines remain before docstring exclusion. Allow 215 production, 360
-  transaction/integration tests and 30 wiring, totaling 605. No setting or byte decoder is introduced by the service.
+  After moving 32 matching/filter lines to B2363 and the 13 problem lines to B10130, and calling B10140's emit_team_members_metric for _emit_team_members_metric (L291-L298, the same function as team_endpoints.py L3063), 125 helper lines and
+  approximately 20 declaration lines remain before docstring exclusion. Allow 207 production, 360
+  transaction/integration tests and 30 wiring, totaling 597. No setting or byte decoder is introduced by the service.
 
 
   Use betterlite-postgres-fixture as a dev-dependency, selecting POSTGRES_TEST_URL when set and testcontainers
@@ -95,7 +94,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L219-L288
     why: Own _remove_members_from_team; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L291-L298
-    why: Own _emit_team_members_metric; preserve caller-visible values and failure ordering.
+    why: B10140 owns emit_team_members_metric, the twin of team_endpoints.py L3063; call it after the roster change, never port it again.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L301-L310
     why: B2363 supplies original duplicate indexes before this service opens its transaction.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L313-L365
