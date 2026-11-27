@@ -158,21 +158,19 @@ fn a_spend_outside_the_decimal_range_is_an_overflow() {
     huge.spent = Decimal::MIN;
     let error = settle_transform(huge, &request("job-1", "4.0")).unwrap_err();
     assert!(matches!(error, SettlementError::Overflow));
-    assert_eq!(error.status(), 500);
     assert_eq!(
-        error.detail(),
+        error.to_string(),
         "the settled lens spend is outside the decimal range"
     );
 }
 
 #[tokio::test]
-async fn a_stored_lens_that_cannot_be_read_is_a_500() {
+async fn a_stored_lens_that_cannot_be_read_is_a_repository_error() {
     let repository = LensRepository { database: Corrupt };
     let error = settle(&repository, &request("job-1", "4.0"))
         .await
         .unwrap_err();
     assert!(matches!(error, SettlementError::Repository(_)));
-    assert_eq!(error.status(), 500);
 }
 
 #[tokio::test]

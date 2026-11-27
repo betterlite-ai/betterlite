@@ -46,18 +46,7 @@ pub trait ClientIp: Send + Sync {
 
 // request.state.message_logging_privacy: inherit_message_logging_privacy(True) sets it for the chat call
 #[derive(Clone, Debug, Default)]
-pub struct MessagePrivacy(Arc<Mutex<PrivacyContext>>);
-
-impl MessagePrivacy {
-    #[must_use]
-    pub fn context(&self) -> PrivacyContext {
-        *lock(&self.0)
-    }
-
-    pub fn set(&self, context: PrivacyContext) {
-        *lock(&self.0) = context;
-    }
-}
+pub struct MessagePrivacy(pub(crate) Arc<Mutex<PrivacyContext>>);
 
 // the token inherit_message_logging_privacy resets on exit, restoring what a nested scope found
 #[must_use]
@@ -68,8 +57,8 @@ pub struct MessagePrivacyScope {
 
 impl MessagePrivacyScope {
     pub fn enter(privacy: &MessagePrivacy, context: PrivacyContext) -> Self {
-        let previous = privacy.context();
-        privacy.set(context);
+        let previous = *lock(&privacy.0);
+        *lock(&privacy.0) = context;
         Self {
             privacy: privacy.clone(),
             previous,
@@ -79,7 +68,7 @@ impl MessagePrivacyScope {
 
 impl Drop for MessagePrivacyScope {
     fn drop(&mut self) {
-        self.privacy.set(self.previous);
+        *lock(&self.privacy.0) = self.previous;
     }
 }
 
@@ -95,11 +84,6 @@ impl ReservationCell {
                 "a second budget reservation replaced the one already stamped for the lens analysis request"
             );
         }
-    }
-
-    #[must_use]
-    pub fn get(&self) -> Option<ReservationHandle> {
-        lock(&self.0).clone()
     }
 }
 

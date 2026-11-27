@@ -34,11 +34,6 @@ impl ReservationError {
         }
     }
 
-    #[must_use]
-    pub fn detail(&self) -> String {
-        self.to_string()
-    }
-
     fn from_update(error: LensUpdateError<Self>) -> Self {
         match error {
             LensUpdateError::Repository(source) => Self::Repository(source),

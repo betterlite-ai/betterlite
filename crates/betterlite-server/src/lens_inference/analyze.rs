@@ -65,7 +65,7 @@ impl AnalyzeError {
     pub fn detail(&self) -> String {
         match self {
             Self::Key(error) => error.detail(),
-            Self::Reservation(error) => error.detail(),
+            Self::Reservation(error) => error.to_string(),
             Self::Billing(error) => error.detail(),
             Self::Quote(_)
             | Self::Settlement(_)
@@ -127,7 +127,10 @@ impl<Db: Database> ReserveBudget for BudgetReservation<'_, Db> {
         };
         reservation::reserve(self.repository, &request)
             .await
-            .map_err(|error| BillingError::http(error.status(), error.detail()))
+            .map_err(|error| BillingError::Http {
+                status: error.status(),
+                detail: error.to_string(),
+            })
     }
 }
 

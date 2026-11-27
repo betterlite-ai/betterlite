@@ -20,6 +20,7 @@ use betterlite_models::model_registration::JsonObject;
 use betterlite_openai::chat::response::ChatResponse;
 use betterlite_redis::request_batch::lock;
 use chrono::{DateTime, Utc};
+use rstest::rstest;
 use rust_decimal::Decimal;
 
 use super::{AnalysisInput, AnalyzeError, InferencePorts, analyze};
@@ -143,11 +144,14 @@ impl ChatRunner for BillingFake {
         request: &InternalRequest,
         _data: &AnalysisBody<'_>,
     ) -> Result<ChatAnswer, BillingError> {
-        let privacy = request.privacy.context().message_logging_disabled;
+        let privacy = lock(&request.privacy.0).message_logging_disabled;
         let active = self.lens_analysis.is_lens_analysis();
         lock(&self.log).push(format!("run privacy={privacy} lens_analysis={active}"));
         if self.run_failure {
-            return Err(BillingError::http(502, "upstream failed".to_owned()));
+            return Err(BillingError::Http {
+                status: 502,
+                detail: "upstream failed".to_owned(),
+            });
         }
         Ok(ChatAnswer {
             response: response(self.content, self.choices),
@@ -615,13 +619,17 @@ async fn a_chat_failure_drops_both_scopes() {
     assert_eq!(facts.log.last().map(String::as_str), Some("release"));
 }
 
+#[rstest]
+#[case(None, "{}")]
+#[case(Some(""), "{}")]
+#[case(Some("answer"), "answer")]
 #[tokio::test]
-async fn the_answer_content_falls_back_to_an_empty_object() {
-    let cases = [(None, "{}"), (Some(""), "{}"), (Some("answer"), "answer")];
-    for (content, expected) in cases {
-        let mut setup = setup();
-        setup.content = content;
-        let (result, _facts) = execute(&setup).await;
-        assert_eq!(result.unwrap().content, expected);
-    }
+async fn the_answer_content_falls_back_to_an_empty_object(
+    #[case] content: Option<&'static str>,
+    #[case] expected: &'static str,
+) {
+    let mut setup = setup();
+    setup.content = content;
+    let (result, _facts) = execute(&setup).await;
+    assert_eq!(result.unwrap().content, expected);
 }

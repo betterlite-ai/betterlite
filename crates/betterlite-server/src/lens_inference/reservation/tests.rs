@@ -208,5 +208,5 @@ async fn a_lens_that_cannot_be_written_is_not_reserved() {
         .unwrap_err();
     assert!(matches!(error, ReservationError::NotReserved));
     assert_eq!(error.status(), 409);
-    assert_eq!(error.detail(), "Could not reserve analysis budget");
+    assert_eq!(error.to_string(), "Could not reserve analysis budget");
 }

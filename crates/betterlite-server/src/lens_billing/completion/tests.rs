@@ -7,6 +7,7 @@ use async_trait::async_trait;
 use betterlite_auth::reservation_settlement::handle::ReservationHandle;
 use betterlite_openai::chat::response::ChatResponse;
 use betterlite_redis::request_batch::lock;
+use rstest::rstest;
 use rust_decimal::Decimal;
 
 use super::{
@@ -275,35 +276,35 @@ async fn an_unstamped_reservation_is_not_released() {
     assert_eq!(releases(&log), 0);
 }
 
+#[rstest]
+#[case(None, None)]
+#[case(Some(""), None)]
+#[case(Some("None"), None)]
+#[case(Some("0"), Some("0"))]
+#[case(Some("4.5"), Some("4.5"))]
 #[tokio::test]
-async fn the_billed_cost_header_is_parsed() {
-    let cases = [
-        (None, None),
-        (Some(""), None),
-        (Some("None"), None),
-        (Some("0"), Some("0")),
-        (Some("4.5"), Some("4.5")),
-    ];
-    for (billed, expected) in cases {
-        let mut plan = Plan::default();
-        plan.billed = billed;
-        let (billing, fake, _log) = harness(plan);
-        let answer = complete(
-            &billing,
-            "key-1",
-            &body(),
-            fake.as_ref(),
-            &Incoming::default(),
-        )
-        .await
-        .unwrap();
-        let expected_cost = expected.map(|text| Decimal::from_str(text).unwrap());
-        assert_eq!(answer.billed_cost, expected_cost);
-    }
+async fn the_billed_cost_header_is_parsed(
+    #[case] billed: Option<&'static str>,
+    #[case] expected: Option<&'static str>,
+) {
+    let mut plan = Plan::default();
+    plan.billed = billed;
+    let (billing, fake, _log) = harness(plan);
+    let answer = complete(
+        &billing,
+        "key-1",
+        &body(),
+        fake.as_ref(),
+        &Incoming::default(),
+    )
+    .await
+    .unwrap();
+    let expected_cost = expected.map(|text| Decimal::from_str(text).unwrap());
+    assert_eq!(answer.billed_cost, expected_cost);
 }
 
 #[tokio::test]
-async fn an_unparseable_billed_cost_fails_the_call() {
+async fn an_unparsable_billed_cost_fails_the_call() {
     let mut plan = Plan::default();
     plan.billed = Some("cheap");
     plan.reservation = Some(stamped_reservation());

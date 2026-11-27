@@ -7,7 +7,7 @@ use betterlite_lens::models::job::Lens;
 use betterlite_redis::request_batch::lock;
 
 #[derive(Clone, Default)]
-pub(crate) struct Store(Arc<Mutex<Option<Lens>>>);
+pub(crate) struct Store(pub(crate) Arc<Mutex<Option<Lens>>>);
 
 pub(crate) struct FakeDatabase(pub(crate) Store);
 
@@ -78,14 +78,4 @@ fn count(value: &str) -> Vec<Row> {
     vec![Row {
         data: value.to_owned(),
     }]
-}
-
-pub(crate) fn lens_store(lens: Lens) -> Store {
-    let state = Some(lens);
-    Store(Arc::new(Mutex::new(state)))
-}
-
-pub(crate) fn stored(store: &Store) -> Option<Lens> {
-    let guard = lock(&store.0);
-    guard.clone()
 }

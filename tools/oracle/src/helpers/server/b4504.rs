@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::fmt::Display;
+use std::sync::{Arc, Mutex};
 
 use betterlite_auth::reservation_cost::ModelInfoSource;
 use betterlite_auth::reservation_cost::error::ModelInfoError;
@@ -9,6 +9,7 @@ use betterlite_models::model_registration::JsonObject;
 use betterlite_openai::chat::response::ChatResponse;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use betterlite_redis::request_batch::lock;
 use betterlite_server::lens_inference::charge::{self, CostCalculator, CostError, CustomRates};
 use betterlite_server::lens_inference::quote::{self, Deployment};
 use betterlite_server::lens_inference::request_body::{AnalysisBody, RequestIds};
@@ -21,7 +22,7 @@ use tokio::runtime::{Builder, Runtime};
 
 mod store;
 
-use self::store::{FakeDatabase, Store, lens_store};
+use self::store::{FakeDatabase, Store};
 
 pub(crate) struct Op;
 
@@ -134,7 +135,7 @@ fn estimate_value(call: &QuoteInput) -> HelperResult {
     let catalog = Catalog(call.model_info.clone());
     let estimate = quote::quote(&call.deployments, &call.prompt, &catalog)
         .map_err(|error| http_error(500, error.to_string()))?;
-    serde_json::to_value(FloatAmount(estimate)).map_err(helper_error)
+    serde_json::to_value(FloatAmount(estimate)).map_err(|error| invalid(&error.to_string()))
 }
 
 fn charge_value(call: &ChargeInput) -> HelperResult {
@@ -145,7 +146,7 @@ fn charge_value(call: &ChargeInput) -> HelperResult {
         &CustomCosts,
     )
     .map_err(|error| http_error(500, error.to_string()))?;
-    serde_json::to_value(FloatAmount(cost)).map_err(helper_error)
+    serde_json::to_value(FloatAmount(cost)).map_err(|error| invalid(&error.to_string()))
 }
 
 fn lens_state(lens: &Lens) -> LensState {
@@ -157,24 +158,42 @@ fn lens_state(lens: &Lens) -> LensState {
     }
 }
 
-fn stored(store: &Store) -> Result<Lens, Box<HelperError>> {
-    let lens = store::stored(store);
-    lens.ok_or_else(|| invalid("the lens store lost its lens"))
+struct Prepared {
+    store: Store,
+    repository: LensRepository<FakeDatabase>,
+    runtime: Runtime,
+    estimate: Decimal,
 }
 
-fn runtime() -> Result<Runtime, Box<HelperError>> {
-    Builder::new_current_thread().build().map_err(helper_error)
+fn prepare(call: &AnalyzeInput) -> Result<Prepared, Box<HelperError>> {
+    let estimate = estimate(call)?;
+    let store = Store(Arc::new(Mutex::new(Some(call.lens.clone()))));
+    let repository = LensRepository {
+        database: FakeDatabase(store.clone()),
+    };
+    let runtime = Builder::new_current_thread()
+        .build()
+        .map_err(|error| invalid(&error.to_string()))?;
+    Ok(Prepared {
+        store,
+        repository,
+        runtime,
+        estimate,
+    })
+}
+
+fn updated_state(prepared: &Prepared) -> HelperResult {
+    let lens = lock(&prepared.store.0)
+        .clone()
+        .ok_or_else(|| invalid("the lens store lost its lens"))?;
+    serde_json::to_value(lens_state(&lens)).map_err(|error| invalid(&error.to_string()))
 }
 
 fn reserve_value(call: &AnalyzeInput) -> HelperResult {
-    let estimate = estimate(call)?;
+    let prepared = prepare(call)?;
     let (month_now, lease_now) = match call.now.as_slice() {
         [month, lease] => (*month, *lease),
         _ => return Err(invalid("reserve needs two clock readings")),
-    };
-    let store = lens_store(call.lens.clone());
-    let repository = LensRepository {
-        database: FakeDatabase(store.clone()),
     };
     let request = ReserveRequest {
         lens_id: &call.lens.id,
@@ -182,41 +201,35 @@ fn reserve_value(call: &AnalyzeInput) -> HelperResult {
         worker_id: &call.worker_id,
         month_now,
         lease_now,
-        estimate,
+        estimate: prepared.estimate,
     };
-    let runtime = runtime()?;
-    runtime
-        .block_on(reservation::reserve(&repository, &request))
-        .map_err(|error| http_error(error.status(), error.detail()))?;
-    let lens = stored(&store)?;
-    serde_json::to_value(lens_state(&lens)).map_err(helper_error)
+    prepared
+        .runtime
+        .block_on(reservation::reserve(&prepared.repository, &request))
+        .map_err(|error| http_error(error.status(), error.to_string()))?;
+    updated_state(&prepared)
 }
 
 fn settle_value(call: &AnalyzeInput) -> HelperResult {
-    let estimate = estimate(call)?;
+    let prepared = prepare(call)?;
     let Some(cost) = call.cost else {
         return Err(invalid("settle needs the billed cost"));
     };
     let Some(month_now) = call.now.first().copied() else {
         return Err(invalid("settle needs one clock reading"));
     };
-    let store = lens_store(call.lens.clone());
-    let repository = LensRepository {
-        database: FakeDatabase(store.clone()),
-    };
     let request = SettleRequest {
         lens_id: &call.lens.id,
         job_id: &call.job_id,
         month_now,
-        estimate,
+        estimate: prepared.estimate,
         cost,
     };
-    let runtime = runtime()?;
-    runtime
-        .block_on(settlement::settle(&repository, &request))
-        .map_err(|error| http_error(error.status(), error.detail()))?;
-    let lens = stored(&store)?;
-    serde_json::to_value(lens_state(&lens)).map_err(helper_error)
+    prepared
+        .runtime
+        .block_on(settlement::settle(&prepared.repository, &request))
+        .map_err(|error| http_error(500, error.to_string()))?;
+    updated_state(&prepared)
 }
 
 fn body_value(call: &AnalyzeInput) -> HelperResult {
@@ -240,7 +253,7 @@ fn body_value(call: &AnalyzeInput) -> HelperResult {
             team_id: call.team_id.as_deref(),
         },
     );
-    serde_json::to_value(&data).map_err(helper_error)
+    serde_json::to_value(&data).map_err(|error| invalid(&error.to_string()))
 }
 
 fn invalid(message: &str) -> Box<HelperError> {
@@ -252,10 +265,6 @@ fn invalid(message: &str) -> Box<HelperError> {
         code: None,
         message: message.to_owned(),
     })
-}
-
-fn helper_error<E: Display>(error: E) -> Box<HelperError> {
-    invalid(&error.to_string())
 }
 
 fn http_error(status: u16, detail: String) -> Box<HelperError> {

@@ -40,10 +40,10 @@ pub struct Deployment {
 pub struct Prices {
     pub input_cost_per_token: Decimal,
     pub output_cost_per_token: Decimal,
-    pub input_cost_per_token_above_200k_tokens: Decimal,
-    pub output_cost_per_token_above_200k_tokens: Decimal,
-    pub input_cost_per_token_above_128k_tokens: Decimal,
-    pub output_cost_per_token_above_128k_tokens: Decimal,
+    pub input_cost_above_200k: Decimal,
+    pub output_cost_above_200k: Decimal,
+    pub input_cost_above_128k: Decimal,
+    pub output_cost_above_128k: Decimal,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -73,17 +73,18 @@ pub enum QuoteError {
 }
 
 fn rate(model: &str, info: &JsonObject, key: &'static str) -> Result<Option<Decimal>, QuoteError> {
-    match info.get(key) {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Number(number)) => {
-            Decimal::from_str(&number.to_string())
-                .map(Some)
-                .map_err(|_| QuoteError::InvalidRate {
-                    model: model.to_owned(),
-                    rate: key,
-                })
-        }
-        Some(Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
+    let Some(value) = info.get(key) else {
+        return Ok(None);
+    };
+    match value {
+        Json::Null => Ok(None),
+        Json::Number(number) => Decimal::from_str(&number.to_string())
+            .map(Some)
+            .map_err(|_| QuoteError::InvalidRate {
+                model: model.to_owned(),
+                rate: key,
+            }),
+        Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => {
             Err(QuoteError::InvalidRate {
                 model: model.to_owned(),
                 rate: key,
@@ -93,10 +94,12 @@ fn rate(model: &str, info: &JsonObject, key: &'static str) -> Result<Option<Deci
 }
 
 fn base_rate(model: &str, info: &JsonObject, key: &'static str) -> Result<Decimal, QuoteError> {
-    let amount = rate(model, info, key)?.ok_or_else(|| QuoteError::MissingRate {
-        model: model.to_owned(),
-        rate: key,
-    })?;
+    let Some(amount) = rate(model, info, key)? else {
+        return Err(QuoteError::MissingRate {
+            model: model.to_owned(),
+            rate: key,
+        });
+    };
     if amount.is_sign_negative() {
         return Err(QuoteError::NegativeRate {
             model: model.to_owned(),
@@ -109,17 +112,20 @@ fn base_rate(model: &str, info: &JsonObject, key: &'static str) -> Result<Decima
 
 // a tier the catalog leaves out or nulls prices at zero, which LiteLLM's Prices model rejects
 fn tier_rate(model: &str, info: &JsonObject, key: &'static str) -> Result<Decimal, QuoteError> {
-    Ok(rate(model, info, key)?.unwrap_or(Decimal::ZERO))
+    match rate(model, info, key)? {
+        Some(amount) => Ok(amount),
+        None => Ok(Decimal::ZERO),
+    }
 }
 
 fn prices_from_info(model: &str, info: &JsonObject) -> Result<Prices, QuoteError> {
     Ok(Prices {
         input_cost_per_token: base_rate(model, info, INPUT_RATE)?,
         output_cost_per_token: base_rate(model, info, OUTPUT_RATE)?,
-        input_cost_per_token_above_200k_tokens: tier_rate(model, info, INPUT_200K_RATE)?,
-        output_cost_per_token_above_200k_tokens: tier_rate(model, info, OUTPUT_200K_RATE)?,
-        input_cost_per_token_above_128k_tokens: tier_rate(model, info, INPUT_128K_RATE)?,
-        output_cost_per_token_above_128k_tokens: tier_rate(model, info, OUTPUT_128K_RATE)?,
+        input_cost_above_200k: tier_rate(model, info, INPUT_200K_RATE)?,
+        output_cost_above_200k: tier_rate(model, info, OUTPUT_200K_RATE)?,
+        input_cost_above_128k: tier_rate(model, info, INPUT_128K_RATE)?,
+        output_cost_above_128k: tier_rate(model, info, OUTPUT_128K_RATE)?,
     })
 }
 
@@ -142,10 +148,10 @@ fn deployment_prices(
         return Ok(Prices {
             input_cost_per_token: input,
             output_cost_per_token: output,
-            input_cost_per_token_above_200k_tokens: Decimal::ZERO,
-            output_cost_per_token_above_200k_tokens: Decimal::ZERO,
-            input_cost_per_token_above_128k_tokens: Decimal::ZERO,
-            output_cost_per_token_above_128k_tokens: Decimal::ZERO,
+            input_cost_above_200k: Decimal::ZERO,
+            output_cost_above_200k: Decimal::ZERO,
+            input_cost_above_128k: Decimal::ZERO,
+            output_cost_above_128k: Decimal::ZERO,
         });
     }
     let info = prices
@@ -160,10 +166,6 @@ fn deployment_prices(
     prices_from_info(&params.model, &info)
 }
 
-fn float_amount(rate: Decimal) -> f64 {
-    rate.to_f64().unwrap_or(f64::INFINITY)
-}
-
 // inference.quote: the worst-case prompt plus a full completion, at the highest rate any deployment charges
 pub fn quote(
     deployments: &[Deployment],
@@ -176,23 +178,17 @@ pub fn quote(
     let mut input_rate = 0.0_f64;
     let mut output_rate = 0.0_f64;
     for deployment in deployments {
-        let deployment = deployment_prices(deployment, prices)?;
-        input_rate = input_rate
-            .max(float_amount(deployment.input_cost_per_token))
-            .max(float_amount(
-                deployment.input_cost_per_token_above_200k_tokens,
-            ))
-            .max(float_amount(
-                deployment.input_cost_per_token_above_128k_tokens,
-            ));
-        output_rate = output_rate
-            .max(float_amount(deployment.output_cost_per_token))
-            .max(float_amount(
-                deployment.output_cost_per_token_above_200k_tokens,
-            ))
-            .max(float_amount(
-                deployment.output_cost_per_token_above_128k_tokens,
-            ));
+        let rates = deployment_prices(deployment, prices)?;
+        let input = rates
+            .input_cost_per_token
+            .max(rates.input_cost_above_200k)
+            .max(rates.input_cost_above_128k);
+        let output = rates
+            .output_cost_per_token
+            .max(rates.output_cost_above_200k)
+            .max(rates.output_cost_above_128k);
+        input_rate = input_rate.max(input.to_f64().unwrap_or(f64::INFINITY));
+        output_rate = output_rate.max(output.to_f64().unwrap_or(f64::INFINITY));
     }
     let overhead = prompt
         .len()

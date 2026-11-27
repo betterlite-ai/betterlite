@@ -46,11 +46,6 @@ impl BillingError {
             Self::Request(_) | Self::BilledCost { .. } => self.to_string(),
         }
     }
-
-    #[must_use]
-    pub fn http(status: u16, detail: String) -> Self {
-        Self::Http { status, detail }
-    }
 }
 
 // authorize_internal_virtual_key, wired by B052 over the proxy's key authorization
@@ -116,7 +111,7 @@ fn parse_cost(billed: Option<&str>) -> Result<Option<Decimal>, BillingError> {
 }
 
 async fn release_unbound(billing: &Billing, request: &InternalRequest) {
-    let Some(reservation) = request.reservation.get() else {
+    let Some(reservation) = lock(&request.reservation.0).clone() else {
         return;
     };
     if lock(&reservation.0).callback_bound {

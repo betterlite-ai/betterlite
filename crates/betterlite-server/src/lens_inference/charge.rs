@@ -27,8 +27,7 @@ pub enum CostError {
     Unavailable,
 }
 
-// inference.completion_charge: one deployment with both custom rates prices the response itself,
-// otherwise the provider cost wins when it is positive and the estimate stands in when it is not
+// inference.completion_charge: custom rates price it, else the positive provider cost, else the estimate
 pub fn completion_charge(
     deployments: &[Deployment],
     response: &ChatResponse,

@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use betterlite_auth::reservation_settlement::handle::ReservationHandle;
 use betterlite_logging::logging_privacy::PrivacyContext;
+use betterlite_redis::request_batch::lock;
 use rust_decimal::Decimal;
 
 use super::{ClientIp, Incoming, MessagePrivacy, MessagePrivacyScope, build_request};
@@ -93,12 +94,12 @@ fn a_missing_or_empty_client_address_sends_no_client() {
 #[test]
 fn the_reservation_cell_keeps_the_last_stamp() {
     let request = build_request(&sample_body(), &incoming(), &ForwardedIp).unwrap();
-    assert!(request.reservation.get().is_none());
+    assert!(lock(&request.reservation.0).clone().is_none());
     let first = ReservationHandle::new(Decimal::ONE, Vec::new(), Decimal::ZERO);
     let second = ReservationHandle::new(Decimal::TWO, Vec::new(), Decimal::ZERO);
     request.reservation.set(first.clone());
     request.reservation.set(second.clone());
-    let kept = request.reservation.get().unwrap();
+    let kept = lock(&request.reservation.0).clone().unwrap();
     assert!(Arc::ptr_eq(&kept.0, &second.0));
     assert!(!Arc::ptr_eq(&kept.0, &first.0));
 }
@@ -137,7 +138,7 @@ fn the_request_carries_the_worker_request_privacy_cell() {
             message_logging_disabled: true,
         },
     );
-    assert!(request.privacy.context().message_logging_disabled);
+    assert!(lock(&request.privacy.0).message_logging_disabled);
     drop(scope);
-    assert!(!request.privacy.context().message_logging_disabled);
+    assert!(!lock(&request.privacy.0).message_logging_disabled);
 }

@@ -18,16 +18,6 @@ pub enum SettlementError {
 }
 
 impl SettlementError {
-    #[must_use]
-    pub const fn status(&self) -> u16 {
-        500
-    }
-
-    #[must_use]
-    pub fn detail(&self) -> String {
-        self.to_string()
-    }
-
     fn from_update(error: LensUpdateError<Self>) -> Self {
         match error {
             LensUpdateError::Repository(source) => Self::Repository(source),
