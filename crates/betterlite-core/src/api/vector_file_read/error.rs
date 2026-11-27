@@ -46,8 +46,7 @@ pub struct SdkFailure {
 #[must_use]
 pub fn failure(error: &VectorFileReadError, redactor: &Redactor) -> SdkFailure {
     let (provider, status, class, message) = raised(error);
-    // an answered status names the class on its own, the way get_error_class does; only a failure with
-    // no response behind it lets exception_type read its text for a family
+    // an answered status names the class itself; only a failure without one reads its text for a family
     let (error_str, dispatch_message) = if status.is_some() && !synthesized(error) {
         (String::new(), None)
     } else {
