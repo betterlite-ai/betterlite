@@ -12,7 +12,7 @@ use betterlite_redact::secret::Redactor;
 use indexmap::IndexMap;
 
 use self::error::{VectorStoreReadError, VectorStoreReadFailure, failure};
-use self::prepare::{call_timeout, list_options, retrieve_options};
+use self::prepare::{Arguments, call_timeout, options};
 use self::service::{
     LIST_FLAG, ListQuery, Operation, RETRIEVE_FLAG, ReadCall, ReadProvider, VectorStoreReadConfigs,
     mode,
@@ -70,18 +70,18 @@ pub struct VectorStoreReads<'service, Provider: ReadProvider> {
     pub deps: VectorStoreReadDeps<'service, Provider::Client>,
 }
 
-// what one read adds to the shared target: retrieve's id, or list's four arguments with their defaults applied
-#[derive(Clone, Copy)]
+// what one read adds to the shared target: the id or the four arguments with their defaults applied, and the payload pre-call logging reports
 pub(crate) struct Content<'call> {
     vector_store_id: Option<&'call str>,
     query: ListQuery<'call>,
+    optional_params: IndexMap<String, Json>,
 }
 
 impl<Provider: ReadProvider> VectorStoreReads<'_, Provider> {
     // retrieve: the sync handler unless the caller's kwargs carry a boolean aretrieve
     pub async fn retrieve(&self, request: &VectorStoreReadRequest<'_>) -> ReadResult {
         let target = prepare::target(Operation::Retrieve, &request.transport, &self.deps)?;
-        let content = retrieve_options(&self.deps, request, &target.name)?;
+        let content = options(&self.deps, &target, Arguments::Retrieve(request))?;
         self.send(target, request.transport, content).await
     }
 
@@ -97,7 +97,7 @@ impl<Provider: ReadProvider> VectorStoreReads<'_, Provider> {
     // list: the sync handler unless the caller's kwargs carry a boolean alist
     pub async fn list(&self, request: &VectorStoreListRequest<'_>) -> ReadResult {
         let target = prepare::target(Operation::List, &request.transport, &self.deps)?;
-        let content = list_options(&self.deps, request, &target.name)?;
+        let content = options(&self.deps, &target, Arguments::List(request))?;
         self.send(target, request.transport, content).await
     }
 
