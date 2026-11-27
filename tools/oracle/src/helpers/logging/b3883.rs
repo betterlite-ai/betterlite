@@ -1,6 +1,7 @@
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod entities;
+mod gauges;
 mod input;
 mod lookups;
 mod output;
@@ -17,11 +18,11 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input.function {
-            Function::Team => entities::team_value(input),
-            Function::Org => entities::org_value(input),
-            Function::Customer => entities::customer_value(input),
-            Function::Key => entities::key_value(input),
-            Function::User => entities::user_value(input),
+            Function::Team => entities::team::team_value(input),
+            Function::Org => entities::org::org_value(input),
+            Function::Customer => entities::customer::customer_value(input),
+            Function::Key => entities::key::key_value(input),
+            Function::User => entities::user::user_value(input),
             Function::DefaultCustomerBudget => entities::default_value(input),
         }
     }

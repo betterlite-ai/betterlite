@@ -24,6 +24,10 @@ pub(crate) struct Input {
     pub(super) org_id: Option<String>,
     pub(super) org_alias: Option<String>,
     pub(super) end_user_id: Option<String>,
+    #[serde(default)]
+    pub(super) enable_prometheus_only: Option<bool>,
+    #[serde(default)]
+    pub(super) disable_end_user_cost_tracking: Option<bool>,
     pub(super) user_api_key: Option<String>,
     pub(super) user_api_key_alias: Option<String>,
     pub(super) key_max_budget: Option<Decimal>,

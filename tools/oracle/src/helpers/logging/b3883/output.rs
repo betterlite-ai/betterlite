@@ -7,12 +7,7 @@ use serde_json::{Value, json};
 use super::probe::RecordedSample;
 
 // samples keep the order the setters wrote them: remaining, max budget, remaining hours
-pub(super) fn samples_output(samples: &[RecordedSample], calls: &[Value]) -> Value {
-    let rows: Vec<Value> = samples.iter().map(sample_row).collect();
-    json!({ "samples": rows, "lookups": calls })
-}
-
-fn sample_row(sample: &RecordedSample) -> Value {
+pub(super) fn sample_row(sample: &RecordedSample) -> Value {
     let labels: BTreeMap<String, String> = sample.labels.iter().cloned().collect();
     json!({
         "metric": sample.metric.clone(),

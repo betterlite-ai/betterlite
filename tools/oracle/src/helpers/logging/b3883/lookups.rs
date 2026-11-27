@@ -35,11 +35,12 @@ impl ScriptedLookups {
             .clone()
     }
 
-    fn note(&self, name: &str, args: Value) {
+    fn note(&self, name: &str, args: Value) -> Option<&LookupCall> {
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(json!({ "name": name, "args": args }));
+        self.lookup.record()
     }
 }
 
@@ -63,10 +64,8 @@ impl BudgetLookups for ScriptedLookups {
     }
 
     async fn team_info(&self, team_id: &str) -> Result<TeamRecord, BudgetLookupError> {
-        self.note("team_info", json!({ "team_id": team_id }));
         let record = self
-            .lookup
-            .record()
+            .note("team_info", json!({ "team_id": team_id }))
             .ok_or_else(|| lookup_error("the team is not in the database"))?;
         Ok(TeamRecord {
             budget_reset_at: record.budget_reset_at,
@@ -79,11 +78,10 @@ impl BudgetLookups for ScriptedLookups {
         org_id: &str,
         include_budget_table: bool,
     ) -> Result<Option<OrgRecord>, BudgetLookupError> {
-        self.note(
+        let Some(record) = self.note(
             "org_info",
             json!({ "org_id": org_id, "include_budget_table": include_budget_table }),
-        );
-        let Some(record) = self.lookup.record() else {
+        ) else {
             return Ok(None);
         };
         Ok(Some(OrgRecord {
@@ -98,13 +96,11 @@ impl BudgetLookups for ScriptedLookups {
         hashed_token: &str,
         check_cache_only: bool,
     ) -> Result<KeyRecord, BudgetLookupError> {
-        self.note(
-            "key_info",
-            json!({ "hashed_token": hashed_token, "check_cache_only": check_cache_only }),
-        );
         let record = self
-            .lookup
-            .record()
+            .note(
+                "key_info",
+                json!({ "hashed_token": hashed_token, "check_cache_only": check_cache_only }),
+            )
             .ok_or_else(|| lookup_error("the key is not in the cache"))?;
         Ok(KeyRecord {
             budget_reset_at: record.budget_reset_at,
@@ -116,15 +112,14 @@ impl BudgetLookups for ScriptedLookups {
         user_id: &str,
         options: UserLookupOptions,
     ) -> Result<Option<UserRecord>, BudgetLookupError> {
-        self.note(
+        let Some(record) = self.note(
             "user_info",
             json!({
                 "user_id": user_id,
                 "user_id_upsert": options.user_id_upsert,
                 "check_db_only": options.check_db_only,
             }),
-        );
-        let Some(record) = self.lookup.record() else {
+        ) else {
             return Ok(None);
         };
         Ok(Some(UserRecord {
@@ -140,8 +135,7 @@ impl BudgetLookups for ScriptedLookups {
         end_user_id: &str,
     ) -> Result<Option<CachedEndUser>, BudgetLookupError> {
         let cache_key = format!("end_user_id:{end_user_id}");
-        self.note("cached_customer", json!({ "cache_key": cache_key }));
-        let Some(record) = self.lookup.record() else {
+        let Some(record) = self.note("cached_customer", json!({ "cache_key": cache_key })) else {
             return Ok(None);
         };
         Ok(Some(CachedEndUser {
@@ -154,10 +148,7 @@ impl BudgetLookups for ScriptedLookups {
         &self,
         budget_id: &str,
     ) -> Result<Option<BudgetTableSnapshot>, BudgetLookupError> {
-        self.note("default_customer_budget", json!({ "budget_id": budget_id }));
-        let Some(record) = self.lookup.record() else {
-            return Ok(None);
-        };
-        Ok(record.budget.as_ref().map(snapshot))
+        let record = self.note("default_customer_budget", json!({ "budget_id": budget_id }));
+        Ok(record.and_then(|record| record.budget.as_ref().map(snapshot)))
     }
 }

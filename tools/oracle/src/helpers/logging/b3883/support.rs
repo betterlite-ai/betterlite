@@ -7,7 +7,7 @@ use betterlite_logging::end_user::EndUserCostTrackingSettings;
 use betterlite_logging::prometheus::budget_gauges::customer::{
     BudgetGaugeClock, CustomerGaugeContext,
 };
-use betterlite_logging::prometheus::budget_gauges::gauge::{EntityBudgetGauges, GaugeField};
+use betterlite_logging::prometheus::budget_gauges::gauge::GaugeField;
 use betterlite_logging::prometheus_helpers::bounded_series_tracker::{
     BoundedPrometheusSeriesTracker, SeriesLimits,
 };
@@ -18,10 +18,11 @@ use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_prometheus::collector_factory::collector::MetricLike;
 use betterlite_prometheus::no_op_metric::NoOpMetric;
 use chrono::{DateTime, Utc};
+use serde_json::{Value, json};
 use tokio::runtime::{Builder, Runtime};
 
 use super::lookups::ScriptedLookups;
-use super::output::samples_output;
+use super::output::sample_row;
 use super::probe::{ProbeLog, RecordingGauge};
 
 pub(super) const TEAM_REMAINING: &str = "litellm_remaining_team_budget_metric";
@@ -57,18 +58,10 @@ pub(super) fn helper_error(class: &str, message: &str) -> Box<HelperError> {
     })
 }
 
-pub(super) fn shape_error() -> Box<HelperError> {
-    helper_error("InvalidInput", SHAPE_ERROR_MESSAGE)
-}
-
-pub(super) fn runtime_error(message: &str) -> Box<HelperError> {
-    helper_error("RuntimeError", message)
-}
-
 pub(super) fn runtime() -> Result<Runtime, Box<HelperError>> {
     Builder::new_current_thread()
         .build()
-        .map_err(|error| runtime_error(&error.to_string()))
+        .map_err(|error| helper_error("RuntimeError", &error.to_string()))
 }
 
 // runs one setter on a fresh runtime and answers with the samples it recorded and the lookups it made
@@ -83,25 +76,12 @@ where
 {
     runtime()?
         .block_on(emission)
-        .map_err(|error| runtime_error(&error.to_string()))?;
-    Ok(samples_output(&probe.drain(), &lookups.calls()))
+        .map_err(|error| helper_error("RuntimeError", &error.to_string()))?;
+    let rows: Vec<Value> = probe.drain().iter().map(sample_row).collect();
+    Ok(json!({ "samples": rows, "lookups": lookups.calls() }))
 }
 
-pub(super) fn entity_gauges(
-    metrics: [&'static str; 3],
-    labels: &BTreeMap<String, Vec<String>>,
-    noop: bool,
-    log: &ProbeLog,
-) -> Result<EntityBudgetGauges<MetricLike<RecordingGauge>>, Box<HelperError>> {
-    let [remaining, max, hours] = metrics;
-    Ok(EntityBudgetGauges {
-        remaining: field(remaining, labels, noop, log)?,
-        max: field(max, labels, noop, log)?,
-        remaining_hours: field(hours, labels, noop, log)?,
-    })
-}
-
-fn field(
+pub(super) fn field(
     metric: &'static str,
     labels: &BTreeMap<String, Vec<String>>,
     noop: bool,
