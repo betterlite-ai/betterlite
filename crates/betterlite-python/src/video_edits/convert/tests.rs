@@ -4,18 +4,24 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use betterlite_core::api::bfl::edit::media::SuppliedMedia;
+use betterlite_core::api::video_character_calls::error::CharacterProviderFailure;
 use betterlite_core::api::video_character_calls::{CreateCharacterCall, GetCharacterCall};
-use betterlite_core::api::video_character_transport::config::{CharacterConfig, CharacterContext};
+use betterlite_core::api::video_character_transport::config::{
+    CharacterConfig, CharacterContext, CharacterEnvironment,
+};
 use betterlite_core::api::video_edit_call::VideoEditConfigLookup;
 use betterlite_core::api::video_edit_transport::config::{
-    BaseVideoConfig, Headers, Params, VideoEditInput, VideoExtensionInput, VideoLogging,
-    VideoReply, VideoRequestContext,
+    BaseVideoConfig, Headers, Params, VideoEditInput, VideoEnvironment, VideoExtensionInput,
+    VideoLogging, VideoReply, VideoRequestContext,
 };
 use betterlite_core::api::video_extension_call::VideoExtensionConfigLookup;
 use betterlite_core::api::video_selection::VideoConfigTag;
-use betterlite_http::interactions::base::{Params as HttpParams, RequestHeaders};
+use betterlite_http::interactions::base::{
+    ErrorClasses, Params as HttpParams, RequestHeaders, ResponseHeaders,
+};
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_logging::logging_state::LoggingState;
+use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
 use betterlite_openai::openai_video_identifiers::ids::{
     decode_video_id_with_provider, encode_character_id, encode_video_id_with_provider,
@@ -23,6 +29,7 @@ use betterlite_openai::openai_video_identifiers::ids::{
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use http::HeaderMap;
 use indexmap::IndexMap;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::video_edits::adapter::OpenAiEditConfig;
 use crate::video_edits::session::logging as call_logging;
@@ -637,7 +644,7 @@ fn request_adapter_wraps_the_extension_reply_with_the_provider() {
 #[test]
 fn request_adapter_maps_provider_errors() {
     let config = openai_config(None);
-    let failure = config.get_error_class("boom", 429, &Headers::new());
+    let failure = BaseVideoConfig::get_error_class(&config, "boom", 429, &Headers::new());
     assert_eq!(failure.status_code, 429);
     assert_eq!(failure.message, "boom");
 }
@@ -649,4 +656,153 @@ fn request_adapter_serves_only_the_openai_tag() {
     assert!(VideoEditConfigLookup::video_config(&config, &VideoConfigTag::Gemini).is_none());
     VideoExtensionConfigLookup::video_config(&config, &VideoConfigTag::OpenAi).unwrap();
     assert!(VideoExtensionConfigLookup::video_config(&config, &VideoConfigTag::FalAi).is_none());
+}
+
+#[test]
+fn request_adapter_reports_the_character_provider_failure() {
+    let config = openai_config(None);
+    let failure = ErrorClasses::get_error_class(&config, "boom", 429, &ResponseHeaders::new());
+    assert_eq!(failure.status_code(), Some(429));
+    assert_eq!(failure.message(), "boom");
+}
+
+#[test]
+fn request_adapter_reports_a_malformed_character_reply() {
+    let config = openai_config(None);
+    let reply = UpstreamResponse {
+        status: 200,
+        headers: HeaderMap::new(),
+        body: b"not json".to_vec(),
+    };
+    let mut state = logging_state();
+    let error = config
+        .transform_create_response(&reply, &mut state)
+        .err()
+        .unwrap();
+    assert!(!error.message.is_empty());
+}
+
+#[test]
+fn request_adapter_character_headers_use_the_environment_key() {
+    let config = OpenAiEditConfig {
+        environment: BTreeMap::from([(String::from("OPENAI_API_KEY"), String::from("sk-env"))]),
+        global_api_key: None,
+        openai_key: None,
+        video_name: None,
+    };
+    let params = HttpParams::new();
+    let headers = CharacterConfig::validate_environment(
+        &config,
+        CharacterEnvironment {
+            api_key: None,
+            headers: RequestHeaders::new(),
+            model: "",
+            litellm_params: &params,
+        },
+    );
+    assert_eq!(
+        headers
+            .get("Authorization")
+            .map(|value| value.expose_secret()),
+        Some("Bearer sk-env")
+    );
+}
+
+#[test]
+fn request_adapter_character_headers_use_the_call_key() {
+    let config = openai_config(None);
+    let mut params = HttpParams::new();
+    params.insert(
+        String::from("api_key"),
+        JsonValue::Text(String::from("sk-params")),
+    );
+    let headers = CharacterConfig::validate_environment(
+        &config,
+        CharacterEnvironment {
+            api_key: None,
+            headers: RequestHeaders::new(),
+            model: "",
+            litellm_params: &params,
+        },
+    );
+    assert_eq!(
+        headers
+            .get("Authorization")
+            .map(|value| value.expose_secret()),
+        Some("Bearer sk-params")
+    );
+}
+
+#[test]
+fn request_adapter_edit_headers_use_the_call_key() {
+    let config = openai_config(None);
+    let params = Params::from([(
+        String::from("api_key"),
+        Json::Text(String::from("sk-params")),
+    )]);
+    let headers = Headers::new();
+    let validated = BaseVideoConfig::validate_environment(
+        &config,
+        VideoEnvironment {
+            headers: &headers,
+            model: "",
+            api_key: None,
+            litellm_params: Some(&params),
+        },
+    );
+    assert_eq!(
+        validated.get("Authorization").map(String::as_str),
+        Some("Bearer sk-params")
+    );
+}
+
+#[test]
+fn request_adapter_edit_headers_fall_back_to_the_configured_key() {
+    let config = OpenAiEditConfig {
+        environment: BTreeMap::new(),
+        global_api_key: None,
+        openai_key: Some(SecretString::from("sk-openai")),
+        video_name: None,
+    };
+    let params = Params::new();
+    let headers = Headers::new();
+    let validated = BaseVideoConfig::validate_environment(
+        &config,
+        VideoEnvironment {
+            headers: &headers,
+            model: "",
+            api_key: None,
+            litellm_params: Some(&params),
+        },
+    );
+    assert_eq!(
+        validated.get("Authorization").map(String::as_str),
+        Some("Bearer sk-openai")
+    );
+}
+
+#[test]
+fn request_adapter_completes_the_video_base() {
+    let config = openai_config(None);
+    let params = HttpParams::new();
+    let character_url =
+        CharacterConfig::complete_url(&config, "", Some("http://host.test/v1"), &params).unwrap();
+    assert_eq!(character_url, "http://host.test/v1/videos");
+    let edit_params = Params::new();
+    let edit_url = config
+        .get_complete_url("", Some("http://host.test/v1"), &edit_params)
+        .unwrap();
+    assert_eq!(edit_url, "http://host.test/v1/videos");
+}
+
+#[test]
+fn request_adapter_has_no_edit_prefetch_params() {
+    let config = openai_config(None);
+    let params = Params::new();
+    let headers = Headers::new();
+    assert!(
+        config
+            .get_video_edit_prefetch_params("vid-1", request_context(&params, &headers))
+            .is_none()
+    );
 }

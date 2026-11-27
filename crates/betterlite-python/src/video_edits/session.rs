@@ -218,3 +218,5 @@ impl VideoLoggingHandle for SilentLog {
         VideoLogging::default()
     }
 }
+
+mod tests;
