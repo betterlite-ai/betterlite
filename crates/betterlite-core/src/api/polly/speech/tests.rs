@@ -240,6 +240,13 @@ fn a_kwargs_region_is_used_without_validation() {
     assert_eq!(resolved.unwrap(), "US-EAST-1");
 }
 
+#[test]
+fn an_uppercase_optional_region_is_used_as_given() {
+    let resolved = dispatch_region(None, Some("US-EAST-1"), environment(None, None));
+
+    assert_eq!(resolved.unwrap(), "US-EAST-1");
+}
+
 // dispatch_text_to_speech over the effective parameters and the voice
 
 #[test]
