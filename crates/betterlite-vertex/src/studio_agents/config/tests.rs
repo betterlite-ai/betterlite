@@ -391,6 +391,8 @@ fn delete_answers_the_name_and_deleted(#[case] status: u16) {
     .expect("the delete succeeds");
     let sent = server.finish().expect("the fixture saw the request");
     assert_eq!(sent.line, "DELETE /v1beta/agents/my-agent HTTP/1.1");
+    let key = header(&sent.head, "x-goog-api-key");
+    assert_eq!(key.as_deref(), Some("param-key"));
     assert_eq!(deleted.name, "my-agent");
     assert!(deleted.deleted);
 }
@@ -431,7 +433,8 @@ fn a_failing_status_becomes_the_gemini_error() {
 
 #[test]
 fn a_get_failure_keeps_the_gemini_studio_error() {
-    let server = serving(404, "gone");
+    let answer = reply("404 fixture", &[("x-goog-request", "r")], "gone");
+    let server = serve(answer, Duration::ZERO).expect("the fixture starts");
     let params = authenticated(&server);
     let mut clients = clients();
     let request = GetAgentRequest {
@@ -452,11 +455,18 @@ fn a_get_failure_keeps_the_gemini_studio_error() {
     let AgentRequestError::Provider(error) = failure else {
         panic!("a failing status is the provider's error");
     };
-    assert!(matches!(
-        &error,
-        GeminiAgentError::Studio(StudioAgentError::Gemini { status: 404, body, .. })
-            if body.as_str() == "gone"
-    ));
+    let GeminiAgentError::Studio(StudioAgentError::Gemini {
+        status,
+        body,
+        headers,
+    }) = &error
+    else {
+        panic!("a get failure keeps the Gemini body");
+    };
+    assert_eq!(*status, 404);
+    assert_eq!(body.as_str(), "gone");
+    let header_value = headers.get("x-goog-request").map(String::as_str);
+    assert_eq!(header_value, Some("r"));
     assert_eq!(ProviderFailure::status_code(&error), 404);
     assert_eq!(ProviderFailure::message(&error), "gone");
 }
@@ -486,14 +496,8 @@ fn a_wrong_typed_api_key_names_the_field() {
     params.insert("api_key".to_owned(), JsonValue::Number(Number::from(5_i64)));
     let mut clients = clients();
     let request = create_request("my-agent", &params);
-    let failure = create_agent(
-        &config(Some("env-key")),
-        &mut clients,
-        &mut Recorder,
-        None,
-        &request,
-    )
-    .expect_err("a number is not a key");
+    let failure = create_agent(&config(None), &mut clients, &mut Recorder, None, &request)
+        .expect_err("a number is not a key");
     let AgentRequestError::Provider(error) = failure else {
         panic!("the parameters are the provider's error");
     };
