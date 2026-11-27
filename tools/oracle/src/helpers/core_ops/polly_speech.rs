@@ -9,7 +9,7 @@ use betterlite_core::api::polly::speech::error::SpeechError;
 use betterlite_core::api::polly::speech::mapping::map_openai_params;
 use betterlite_core::api::polly::speech::region::RegionEnvironment;
 use betterlite_core::api::polly::speech::request::{
-    Dispatch, SignedRequest, dispatch, transform_request,
+    Dispatch, SignedRequest, TextToSpeechRequest, dispatch, transform_request,
 };
 use betterlite_core::api::speech_call::operations::SpeechMappingOptions;
 use betterlite_openai::api::speech_provider_contract::SpeechVoice;
@@ -64,122 +64,127 @@ impl Helper for Op {
 
 fn answer(call: &Call) -> Value {
     match call.function.as_str() {
-        "dispatch" => dispatch_answer(call),
-        "map_params" => map_answer(call),
-        "url" => url_answer(call),
-        "request" => request_answer(call),
-        "credential_arguments" => credential_answer(call),
+        "dispatch" => dispatch_answer(Dispatch {
+            voice: call.voice.as_ref(),
+            optional_params: call.optional_params.clone(),
+            litellm_params: call.litellm_params.clone(),
+            kwargs: &region_kwargs(call.kwargs_region.as_deref()),
+            api_base: call.api_base.as_deref(),
+            api_key: call.api_key.as_deref(),
+            environment: region_environment(&call.environment),
+        }),
+        "map_params" => map_answer(
+            call.model.as_deref().unwrap_or(MODEL),
+            call.voice.as_ref(),
+            &call.optional_params,
+            &call.kwargs,
+        ),
+        "url" => url_answer(call.api_base.as_deref(), &call.litellm_params),
+        "request" => request_answer(
+            call.text.as_deref().unwrap_or_default(),
+            call.voice.as_ref(),
+            &call.optional_params,
+            &call.litellm_params,
+        ),
+        "credential_arguments" => credential_answer(&call.litellm_params),
         _ => json!({ "ok": false }),
     }
 }
 
-// the handler receives the mapped voice, the untouched options and the rewritten litellm_params
-fn dispatch_answer(call: &Call) -> Value {
+// dispatch reads the kwargs region and folds it into the stream of arguments the handler takes
+fn region_kwargs(region: Option<&str>) -> Object {
     let mut kwargs = Object::new();
-    if let Some(region) = &call.kwargs_region {
-        kwargs.insert(String::from("aws_region_name"), json!(region));
+    if let Some(name) = region {
+        kwargs.insert(String::from("aws_region_name"), json!(name));
     }
-    match dispatch(Dispatch {
-        voice: call.voice.as_ref(),
-        optional_params: call.optional_params.clone(),
-        litellm_params: call.litellm_params.clone(),
-        kwargs: &kwargs,
-        api_base: call.api_base.as_deref(),
-        api_key: call.api_key.as_deref(),
-        environment: region_environment(&call.environment),
-    }) {
-        Ok(dispatched) => json!({
-            "ok": true,
-            "voice": dispatched.voice,
-            "optional_params": dispatched.optional_params,
-            "litellm_params": dispatched.litellm_params,
-        }),
-        Err(_) => json!({ "ok": false }),
-    }
+    kwargs
 }
 
-fn map_answer(call: &Call) -> Value {
+fn map_answer(
+    model: &str,
+    voice: Option<&SpeechVoice>,
+    optional_params: &Object,
+    kwargs: &Object,
+) -> Value {
     let options = SpeechMappingOptions {
-        voice: call.voice.clone(),
+        voice: voice.cloned(),
         drop_params: false,
-        kwargs: call.kwargs.clone(),
+        kwargs: kwargs.clone(),
     };
-    let (voice, params) = map_openai_params(
-        call.model.as_deref().unwrap_or(MODEL),
-        &call.optional_params,
-        &options,
-    );
-    json!({ "ok": true, "voice": voice, "params": params })
+    let (mapped_voice, params) = map_openai_params(model, optional_params, &options);
+    json!({ "ok": true, "voice": mapped_voice, "params": params })
 }
 
 // get_complete_url takes the base as an argument and reads only the region off litellm_params
-fn url_answer(call: &Call) -> Value {
-    let region = call
-        .litellm_params
+fn url_answer(api_base: Option<&str>, litellm_params: &Object) -> Value {
+    let region = litellm_params
         .get("aws_region_name")
         .and_then(Value::as_str);
-    let url = complete_url(call.api_base.as_deref(), region);
+    let url = complete_url(api_base, region);
     json!({ "ok": true, "url": url })
 }
 
-fn request_answer(call: &Call) -> Value {
-    let signed = match transform_request(
+// the handler receives the mapped voice, the untouched options and the rewritten litellm_params
+fn dispatch_answer(call: Dispatch<'_>) -> Value {
+    let Ok(dispatched) = dispatch(call) else {
+        return json!({ "ok": false });
+    };
+    json!({ "ok": true, "voice": dispatched.voice, "optional_params": dispatched.optional_params, "litellm_params": dispatched.litellm_params })
+}
+
+fn request_answer(
+    text: &str,
+    voice: Option<&SpeechVoice>,
+    optional_params: &Object,
+    litellm_params: &Object,
+) -> Value {
+    transform_request(
         &SignedRequest {
-            input: call.text.as_deref().unwrap_or_default(),
-            voice: voice_name(call.voice.as_ref()),
-            optional_params: &call.optional_params,
-            litellm_params: &call.litellm_params,
+            input: text,
+            voice: voice_name(voice),
+            optional_params,
+            litellm_params,
             now: SystemTime::now(),
         },
         &FixedResolver,
-    ) {
-        Ok(signed) => signed,
-        Err(_) => return json!({ "ok": false }),
+    )
+    .map_or_else(|_| json!({ "ok": false }), |signed| signed_answer(&signed))
+}
+
+fn signed_answer(signed: &TextToSpeechRequest) -> Value {
+    let Some(body) = signed.data.ssml_body.as_deref() else {
+        return json!({ "ok": false });
     };
-    let (Some(body), Some(headers)) = (&signed.data.ssml_body, &signed.data.headers) else {
+    let Some(headers) = signed.data.headers.as_ref() else {
         return json!({ "ok": false });
     };
     let Some(fields) = signed_fields(headers) else {
         return json!({ "ok": false });
     };
     json!({
-        "ok": true,
-        "url": signed.url,
-        "dict_body_absent": signed.data.dict_body.is_none(),
-        "body": body,
-        "signed": {
-            "scheme": fields.scheme,
-            "credential": fields.credential,
-            "scope": fields.scope,
-            "signed_headers": fields.signed_headers,
-            "signature_ok": fields.signature_ok,
-            "date_ok": fields.date_ok,
-            "header_names": fields.header_names,
-            "content_type": fields.content_type,
-            "security_token": fields.security_token,
-        },
+        "ok": true, "url": signed.url, "dict_body_absent": signed.data.dict_body.is_none(), "body": body,
+        "signed": { "scheme": fields.scheme, "credential": fields.credential, "scope": fields.scope, "signed_headers": fields.signed_headers, "signature_ok": fields.signature_ok, "date_ok": fields.date_ok, "header_names": fields.header_names, "content_type": fields.content_type, "security_token": fields.security_token },
     })
 }
 
-fn credential_answer(call: &Call) -> Value {
-    match credentials::sources(&call.litellm_params) {
-        Ok(sources) => json!({
-            "ok": true,
-            "arguments": {
-                "aws_access_key_id": sources.aws_access_key_id,
-                "aws_secret_access_key": sources.aws_secret_access_key,
-                "aws_session_token": sources.aws_session_token,
-                "aws_region_name": sources.aws_region_name,
-                "aws_session_name": sources.aws_session_name,
-                "aws_profile_name": sources.aws_profile_name,
-                "aws_role_name": sources.aws_role_name,
-                "aws_web_identity_token": sources.aws_web_identity_token,
-                "aws_sts_endpoint": sources.aws_sts_endpoint,
-                "aws_external_id": sources.aws_external_id,
-            }
-        }),
-        Err(_) => json!({ "ok": false }),
-    }
+fn credential_answer(litellm_params: &Object) -> Value {
+    let Ok(sources) = credentials::sources(litellm_params) else {
+        return json!({ "ok": false });
+    };
+    json!({
+        "ok": true, "arguments": {
+            "aws_access_key_id": sources.aws_access_key_id,
+            "aws_secret_access_key": sources.aws_secret_access_key,
+            "aws_session_token": sources.aws_session_token,
+            "aws_region_name": sources.aws_region_name,
+            "aws_session_name": sources.aws_session_name,
+            "aws_profile_name": sources.aws_profile_name,
+            "aws_role_name": sources.aws_role_name,
+            "aws_web_identity_token": sources.aws_web_identity_token,
+            "aws_sts_endpoint": sources.aws_sts_endpoint,
+            "aws_external_id": sources.aws_external_id,
+        }
+    })
 }
 
 // the signing region, the credential key, the token and the payload shape; the signature and date values differ by clock
