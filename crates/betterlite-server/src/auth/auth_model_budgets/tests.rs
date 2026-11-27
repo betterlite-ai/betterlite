@@ -392,6 +392,13 @@ fn error_translation_preserves_fields_and_default_message() {
         exception.message,
         "Budget has been exceeded! Current cost: 6, Max budget: 5"
     );
+    let mut empty = exceeded_details("key", "key");
+    empty.message = Some(String::new());
+    let empty_exception = super::key_budget_exception(&KeyBudgetError::Budget(Box::new(empty)));
+    assert_eq!(
+        empty_exception.message,
+        "Budget has been exceeded! Current cost: 6, Max budget: 5"
+    );
     let other = super::key_budget_exception(&KeyBudgetError::Rewrite(RewriteFailure));
     assert_eq!(other.code, "401");
     assert_eq!(other.error_type, "auth_error");

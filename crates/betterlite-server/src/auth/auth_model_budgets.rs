@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use axum::body::{Body, Bytes};
 use axum::http::Request;
-use betterlite_auth::auth_errors::conversion::{AuthFailure, as_proxy_exception};
+use betterlite_auth::auth_errors::conversion::{budget_details_exception, other_message_exception};
 use betterlite_auth::auth_model_budgets::checks::{
     check_team_model_budget, check_user_model_budget,
 };
@@ -19,7 +19,6 @@ use betterlite_auth::auth_model_patterns::pattern::UnresolvedProviderInference;
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 use betterlite_config::sections::auth_model_budgets::Settings;
 use betterlite_config::sections::database_reencryption::DEFAULT_RECURSE_DEPTH;
-use betterlite_error::error::details::BudgetExceededDetails;
 use betterlite_error::error::{ErrorClass, class_message};
 use betterlite_error::proxy_exception::ProxyException;
 use betterlite_models::model_registration::JsonObject;
@@ -201,47 +200,19 @@ async fn check_key_budget(
 
 fn key_budget_exception(error: &KeyBudgetError) -> ProxyException {
     match error {
-        KeyBudgetError::Budget(details) => budget_exception(details),
+        KeyBudgetError::Budget(details) => budget_details_exception(details),
         KeyBudgetError::Limiter(class) => failure_exception(class),
         KeyBudgetError::Access(access) => access.denial().map_or_else(
-            || other_exception(&access.to_string()),
+            || other_message_exception(&access.to_string()),
             |denial| denial.as_proxy_exception().clone(),
         ),
-        KeyBudgetError::Rewrite(_) => other_exception(&error.to_string()),
+        KeyBudgetError::Rewrite(_) => other_message_exception(&error.to_string()),
     }
 }
 
 fn failure_exception(error: &ErrorClass) -> ProxyException {
     if let ErrorClass::BudgetExceeded(details) = error {
-        return budget_exception(details);
+        return budget_details_exception(details);
     }
-    other_exception(&class_message(error))
-}
-
-// a budget rejection is budget_exceeded with the rejection's own status and a null param
-fn budget_exception(details: &BudgetExceededDetails) -> ProxyException {
-    let failure = AuthFailure::BudgetExceeded {
-        message: details
-            .message
-            .clone()
-            .unwrap_or_else(|| default_message(details)),
-        status_code: Some(details.status_code),
-        llm_provider: details.provider.clone(),
-    };
-    as_proxy_exception(&failure).exception().clone()
-}
-
-fn other_exception(message: &str) -> ProxyException {
-    let failure = AuthFailure::Other {
-        message: message.to_owned(),
-        param: None,
-    };
-    as_proxy_exception(&failure).exception().clone()
-}
-
-fn default_message(details: &BudgetExceededDetails) -> String {
-    format!(
-        "Budget has been exceeded! Current cost: {}, Max budget: {}",
-        details.current_cost, details.max_budget
-    )
+    other_message_exception(&class_message(error))
 }
