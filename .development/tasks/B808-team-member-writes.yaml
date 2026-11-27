@@ -186,8 +186,9 @@ out_of_scope:
     (L3170-L3197), _schedule_team_member_add_audit_logs (L3200-L3242).'
   - 'litellm/proxy/management_endpoints/team_endpoints.py: B809 owns _check_not_resetting_own_spend (L3918-L3928),
     _raise_reset_spend_error (L3931-L3933), _validate_team_member_reset_spend_value (L3936-L3961), reset_team_member_spend_fn
-    (L3970-L4033), _team_default_budget_id (L4040-L4043), _existing_team_default_budget_id (L4046-L4053),
-    _member_budget_source (L4056-L4059), reset_team_member_budget_fn (L4069-L4123).'
+    (L3970-L4033), _existing_team_default_budget_id (L4046-L4053), reset_team_member_budget_fn (L4069-L4123).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B10151 owns _TeamMetadataView (L4036-L4037), _team_default_budget_id
+    (L4040-L4043), _member_budget_source (L4056-L4059).'
   - 'litellm/proxy/management_endpoints/team_endpoints.py: B810 owns _create_results_from_response (L4126-L4162),
     bulk_team_member_add (L4172-L4308), team_member_permissions (L6256-L6313), update_team_member_permissions
     (L6321-L6374), bulk_update_team_member_permissions (L6384-L6436), _compute_and_batch_updates (L6439-L6460),

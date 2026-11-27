@@ -386,6 +386,7 @@ pub mod tag_writes;
 pub mod team_access;
 pub mod team_activity;
 pub mod team_admin_fields;
+pub mod team_budget_source;
 pub mod team_callback_policy;
 pub mod team_callbacks;
 pub mod team_create;
