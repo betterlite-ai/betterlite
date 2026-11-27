@@ -137,34 +137,27 @@ where
                 .map_err(BatchInputAccountingError::Files)?;
             (fetched, Some(names))
         } else {
-            (self.fetch_provider(input, caller).await?, None)
+            let data = input.data.clone().unwrap_or_default();
+            let params = self
+                .calls
+                .resolve_fetch_params(&input.file_id, input.custom_llm_provider.slug(), &data)
+                .map_err(BatchInputAccountingError::Calls)?;
+            let request = BatchFileRequest::Provider {
+                file_id: &params.file_id,
+                params: &params.params,
+                caller,
+            };
+            let fetched = self
+                .files
+                .fetch(request)
+                .await
+                .map_err(BatchInputAccountingError::Files)?;
+            (fetched, None)
         };
         Ok(LoadedBatch {
             bytes: Self::fetched_bytes(fetched, &input.file_id)?,
             target_models: target_models.filter(|names| !names.is_empty()),
         })
-    }
-
-    // Any other file id resolves its provider file id and fetch kwargs through the descriptor service
-    async fn fetch_provider(
-        &self,
-        input: &BatchInputAccountingInput,
-        caller: Option<&UserAPIKeyAuth>,
-    ) -> Result<BatchFileFetch, SliceError<Calls, Files, Access>> {
-        let data = input.data.clone().unwrap_or_default();
-        let params = self
-            .calls
-            .resolve_fetch_params(&input.file_id, input.custom_llm_provider.slug(), &data)
-            .map_err(BatchInputAccountingError::Calls)?;
-        let request = BatchFileRequest::Provider {
-            file_id: &params.file_id,
-            params: &params.params,
-            caller,
-        };
-        self.files
-            .fetch(request)
-            .await
-            .map_err(BatchInputAccountingError::Files)
     }
 
     // The fetched bytes, or the failure LiteLLM raises for the other fetch outcomes
