@@ -86,7 +86,7 @@ pub(super) fn guardrail_json(
 }
 
 fn secret_value(value: Option<&SecretString>) -> Option<&str> {
-    value.map(|secret| secret.expose_secret())
+    value.map(secrecy::ExposeSecret::expose_secret)
 }
 
 fn secret_headers_json(headers: &BTreeMap<String, BTreeMap<String, SecretString>>) -> JsonValue {

@@ -91,9 +91,12 @@ pub(crate) struct Input {
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct CallerInput {
-    pub(super) user_id: Option<String>,
-    pub(super) team_id: Option<String>,
-    pub(super) end_user_id: Option<String>,
+    #[serde(rename = "user_id")]
+    pub(super) user: Option<String>,
+    #[serde(rename = "team_id")]
+    pub(super) team: Option<String>,
+    #[serde(rename = "end_user_id")]
+    pub(super) end_user: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

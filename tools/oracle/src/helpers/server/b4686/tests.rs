@@ -23,7 +23,7 @@ fn agent_search_returns_hits_for_the_clamped_top_k() {
     let input = decode(json!({
         "handler": "agent_search",
         "query": "alpha agents",
-        "top_k": 0,
+        "top_k": 0_i64,
         "agents": [{"id": "a1", "name": "Agent One"}, {"id": "a2", "name": "Agent Two"}],
         "agent_embedding_model": "embed-small",
         "caller": {"user_id": "u1", "team_id": "t1", "end_user_id": "e1"},
@@ -40,7 +40,7 @@ fn agent_search_returns_hits_for_the_clamped_top_k() {
     );
     assert_eq!(
         value.pointer("/observed/agent_searches/0/top_k"),
-        Some(&json!(1))
+        Some(&json!(1_i64))
     );
     assert_eq!(
         value.pointer("/observed/agent_searches/0/query"),
@@ -90,7 +90,7 @@ fn skill_search_clamps_top_k_to_the_maximum() {
     let input = decode(json!({
         "handler": "skill_search",
         "query": "alpha",
-        "top_k": 500,
+        "top_k": 500_i64,
         "skills": [{"id": "s1", "name": "Skill One", "description": "does alpha"}],
         "caller": {"user_id": "u1"},
     }));
@@ -98,7 +98,7 @@ fn skill_search_clamps_top_k_to_the_maximum() {
     assert_eq!(value.pointer("/isError"), Some(&json!(false)));
     assert_eq!(
         value.pointer("/observed/skill_searches/0/top_k"),
-        Some(&json!(100))
+        Some(&json!(100_i64))
     );
     assert_eq!(
         value.pointer("/content/0/json/0/display_title"),
@@ -111,7 +111,7 @@ fn invalid_tool_search_settings_become_error_text_without_listing() {
     let input = decode(json!({
         "handler": "mcp_tool_search",
         "query": "alpha",
-        "settings": {"top_k": 0},
+        "settings": {"top_k": 0_i64},
         "tools": [{"name": "alpha-tool", "server_id": "srv"}],
     }));
     let value = run(&input).expect("the invalid settings envelope");
@@ -142,7 +142,7 @@ fn semantic_tool_search_records_one_embedding_batch() {
     let input = decode(json!({
         "handler": "mcp_tool_search",
         "query": "alpha",
-        "settings": {"embedding_model": "embed-small", "top_k": 5},
+        "settings": {"embedding_model": "embed-small", "top_k": 5_i64},
         "has_router": true,
         "tools": [
             {"name": "alpha-tool", "server_id": "srv", "description": "finds alpha"},
@@ -155,7 +155,10 @@ fn semantic_tool_search_records_one_embedding_batch() {
         value.pointer("/content/0/json/0/name"),
         Some(&json!("alpha-tool"))
     );
-    assert_eq!(value.pointer("/content/0/json/0/score"), Some(&json!(1.0)));
+    assert_eq!(
+        value.pointer("/content/0/json/0/score"),
+        Some(&json!(1.0_f64))
+    );
     assert_eq!(
         value.pointer("/observed/embeddings/0/model"),
         Some(&json!("embed-small"))
@@ -172,7 +175,7 @@ fn proxy_search_ranks_matching_tools_by_keyword() {
         "handler": "mcp_proxy_tool",
         "name": "search_tools",
         "arguments": {"query": "alpha"},
-        "settings": {"top_k": 5},
+        "settings": {"top_k": 5_i64},
         "tools": [
             {"name": "alpha-tool", "server_id": "srv", "description": "finds alpha"},
             {"name": "beta-tool", "server_id": "srv", "description": "finds beta"},
@@ -272,7 +275,7 @@ fn proxy_call_rejects_arguments_that_miss_the_schema() {
     let request = decode(json!({
         "handler": "mcp_proxy_tool",
         "name": "call_tool",
-        "arguments": {"tool_id": tool_id, "arguments": {"q": 1}},
+        "arguments": {"tool_id": tool_id, "arguments": {"q": 1_i64}},
         "tools": [{
             "name": "alpha-tool",
             "server_id": "srv",
@@ -286,12 +289,11 @@ fn proxy_call_rejects_arguments_that_miss_the_schema() {
     assert_eq!(value.pointer("/observed/executions/0"), None);
 }
 
-#[test]
-fn tool_call_records_the_guardrail_context_and_request_scope() {
-    let input = decode(json!({
+fn scoped_call_input() -> Input {
+    decode(json!({
         "handler": "mcp_tool_call",
         "tool_name": "alpha-tool",
-        "call_arguments": {"q": 1},
+        "call_arguments": {"q": 1_i64},
         "allowed_servers": ["srv"],
         "mcp_servers": ["srv"],
         "requested_server_id": "srv",
@@ -302,46 +304,48 @@ fn tool_call_records_the_guardrail_context_and_request_scope() {
         "client_ip": "10.0.0.7",
         "guardrail_context": {"model": "gpt-4o", "metadata": {"trace": "t1"}},
         "caller": {"user_id": "u1"},
-    }));
-    let value = run(&input).expect("the execution envelope");
+    }))
+}
+
+fn execution_record(value: &JsonValue) -> &JsonValue {
+    value
+        .pointer("/observed/executions/0")
+        .expect("one recorded execution")
+}
+
+#[test]
+fn tool_call_records_the_guardrail_context_and_request_scope() {
+    let value = run(&scoped_call_input()).expect("the execution envelope");
     assert_eq!(value.pointer("/isError"), Some(&json!(false)));
     assert_eq!(text_of(&value), "executed alpha-tool");
+    let execution = execution_record(&value);
+    assert_eq!(execution.pointer("/tool_name"), Some(&json!("alpha-tool")));
+    assert_eq!(execution.pointer("/arguments/q"), Some(&json!(1_i64)));
     assert_eq!(
-        value.pointer("/observed/executions/0/tool_name"),
-        Some(&json!("alpha-tool"))
-    );
-    assert_eq!(
-        value.pointer("/observed/executions/0/arguments/q"),
-        Some(&json!(1))
-    );
-    assert_eq!(
-        value.pointer("/observed/executions/0/guardrail_context/model"),
+        execution.pointer("/guardrail_context/model"),
         Some(&json!("gpt-4o"))
     );
     assert_eq!(
-        value.pointer("/observed/executions/0/guardrail_context/metadata/trace"),
+        execution.pointer("/guardrail_context/metadata/trace"),
         Some(&json!("t1"))
     );
     assert_eq!(
-        value.pointer("/observed/executions/0/requested_server_id"),
+        execution.pointer("/requested_server_id"),
         Some(&json!("srv"))
     );
     assert_eq!(
-        value.pointer("/observed/executions/0/scope/mcp_auth_header"),
+        execution.pointer("/scope/mcp_auth_header"),
         Some(&json!("Bearer auth"))
     );
     assert_eq!(
-        value.pointer("/observed/executions/0/scope/mcp_server_auth_headers/srv/authorization"),
+        execution.pointer("/scope/mcp_server_auth_headers/srv/authorization"),
         Some(&json!("Bearer server"))
     );
     assert_eq!(
-        value.pointer("/observed/executions/0/scope/raw_headers/x-request-id"),
+        execution.pointer("/scope/raw_headers/x-request-id"),
         Some(&json!("abc"))
     );
-    assert_eq!(
-        value.pointer("/observed/executions/0/scope/mcp_servers"),
-        None
-    );
+    assert_eq!(execution.pointer("/scope/mcp_servers"), None);
 }
 
 #[test]

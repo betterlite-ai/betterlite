@@ -39,9 +39,9 @@ impl<'input> Fakes<'input> {
             seen: Arc::new(Mutex::new(Records::default())),
             index: AsyncMutex::new(SemanticTextIndex::new(16)),
             caller: CallerScope {
-                user_id: input.caller.user_id.clone(),
-                team_id: input.caller.team_id.clone(),
-                end_user_id: input.caller.end_user_id.clone(),
+                user_id: input.caller.user.clone(),
+                team_id: input.caller.team.clone(),
+                end_user_id: input.caller.end_user.clone(),
                 api_key_hash: None,
                 role: None,
             },

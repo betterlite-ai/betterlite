@@ -3,11 +3,11 @@ use betterlite_core::skills::search::SkillSearchResult;
 use super::{FromFixture, NamedInput, SKILL_SCORE};
 
 impl FromFixture<NamedInput> for SkillSearchResult {
-    fn from_fixture(skill: &NamedInput) -> Self {
+    fn from_fixture(input: &NamedInput) -> Self {
         Self {
-            skill_id: skill.id.clone(),
-            display_title: Some(skill.name.clone()),
-            description: skill.description.clone(),
+            skill_id: input.id.clone(),
+            display_title: Some(input.name.clone()),
+            description: input.description.clone(),
             score: SKILL_SCORE,
         }
     }

@@ -3,20 +3,20 @@ use betterlite_server::mcp::search_handlers::types::{AccessibleAgent, Accessible
 use super::{FromFixture, NamedInput};
 
 impl FromFixture<NamedInput> for AccessibleAgent {
-    fn from_fixture(agent: &NamedInput) -> Self {
+    fn from_fixture(input: &NamedInput) -> Self {
         Self {
-            agent_id: agent.id.clone(),
-            agent_name: agent.name.clone(),
+            agent_id: input.id.clone(),
+            agent_name: input.name.clone(),
         }
     }
 }
 
 impl FromFixture<NamedInput> for AccessibleSkill {
-    fn from_fixture(skill: &NamedInput) -> Self {
+    fn from_fixture(input: &NamedInput) -> Self {
         Self {
-            skill_id: skill.id.clone(),
-            display_title: Some(skill.name.clone()),
-            description: skill.description.clone(),
+            skill_id: input.id.clone(),
+            display_title: Some(input.name.clone()),
+            description: input.description.clone(),
         }
     }
 }
