@@ -6,14 +6,35 @@ build-backend = "maturin"
 name = "betterlite"
 dynamic = ["version"]
 description = "betterlite: LiteLLM's SDK and proxy with Rust inside"
+readme = "README.md"
 license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+  { name = "Max Azatian" },
+]
 requires-python = ">=3.10"
+classifiers = [
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: MacOS",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Programming Language :: Rust",
+]
 dependencies = [
-  "httpx2==2.16.0",
+  "httpx2==2.14.0; python_version < '3.11'",
+  "httpx2==2.16.0; python_version >= '3.11'",
   "pydantic==2.14.1",
   "python-dotenv==1.2.4",
   "typing-extensions==4.16.0",
 ]
+
+[project.urls]
+Repository = "https://github.com/betterlite-ai/betterlite"
 
 [tool.maturin]
 python-source = "python"
