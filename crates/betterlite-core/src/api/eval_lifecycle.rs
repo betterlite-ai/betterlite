@@ -14,7 +14,8 @@ use betterlite_redact::secret::Redactor;
 use indexmap::IndexMap;
 
 use self::error::{EvalLifecycleError, EvalLifecycleFailure, failure};
-use self::prepare::{EvalAction, prepare};
+use self::prepare::{EvalAction, Prepared, prepare};
+use crate::api::eval_http::error::EvalHttpError;
 use crate::api::eval_http::exchange::{EvalConnection, EvalLogging};
 use crate::api::eval_http::handlers::{cancel_eval_handler, delete_eval_handler};
 
@@ -53,105 +54,94 @@ pub struct EvalLifecycleCall<'call> {
     pub kwargs: &'call IndexMap<String, Json>,
 }
 
-// delete_eval and its adelete_eval wrapper are one async operation here, because betterlite's evals transport is async only
-pub async fn delete_eval<Configs>(
-    deps: &EvalLifecycleDeps<'_, Configs>,
-    call: &EvalLifecycleCall<'_>,
-    log: &mut EvalLogging<'_, '_>,
-) -> Result<DeleteEvalResponse, EvalLifecycleFailure>
+impl EvalLifecycleCall<'_> {
+    // the same call over a copy of its keywords that carries the flag an async wrapper leaves for prepare to pop
+    const fn flagged<'flagged>(
+        &'flagged self,
+        kwargs: &'flagged IndexMap<String, Json>,
+    ) -> EvalLifecycleCall<'flagged> {
+        EvalLifecycleCall {
+            eval_id: self.eval_id,
+            extra_headers: self.extra_headers,
+            extra_query: self.extra_query,
+            timeout: self.timeout,
+            custom_llm_provider: self.custom_llm_provider,
+            kwargs,
+        }
+    }
+}
+
+pub type EvalDeleteResult = Result<DeleteEvalResponse, EvalLifecycleFailure>;
+pub type EvalCancelResult = Result<CancelEvalResponse, EvalLifecycleFailure>;
+
+// delete/cancel and their async façades: the provider factory and the logging state are passed once
+pub struct EvalLifecycles<'deps, 'state, 'env, Configs: ?Sized> {
+    pub deps: &'deps EvalLifecycleDeps<'deps, Configs>,
+    pub log: &'deps mut EvalLogging<'state, 'env>,
+}
+
+impl<Configs: EvalLifecycleConfigLookup + ?Sized> EvalLifecycles<'_, '_, '_, Configs> {
+    // LiteLLM's delete_eval: prepare, connect, send, then map the handler's failure
+    pub async fn delete_eval(&mut self, call: &EvalLifecycleCall<'_>) -> EvalDeleteResult {
+        let prepared = prepare(self.deps, call, EvalAction::Delete, self.log.state)?;
+        let connection = connect(self.deps, &prepared);
+        let reply = delete_eval_handler(&connection, self.log, Some(prepared.timeout)).await;
+        mapped(reply, &prepared, self.deps)
+    }
+
+    // adelete_eval sets the flag itself, as LiteLLM does before calling delete_eval
+    pub async fn adelete_eval(&mut self, call: &EvalLifecycleCall<'_>) -> EvalDeleteResult {
+        let mut kwargs = call.kwargs.clone();
+        kwargs.insert(String::from(DELETE_ASYNC_FLAG), Json::Bool(true));
+        self.delete_eval(&call.flagged(&kwargs)).await
+    }
+
+    // LiteLLM's cancel_eval: the same steps with the cancel transform and handler
+    pub async fn cancel_eval(&mut self, call: &EvalLifecycleCall<'_>) -> EvalCancelResult {
+        let prepared = prepare(self.deps, call, EvalAction::Cancel, self.log.state)?;
+        let connection = connect(self.deps, &prepared);
+        let reply = cancel_eval_handler(&connection, self.log, Some(prepared.timeout)).await;
+        mapped(reply, &prepared, self.deps)
+    }
+
+    // acancel_eval sets the flag itself, as LiteLLM does before calling cancel_eval
+    pub async fn acancel_eval(&mut self, call: &EvalLifecycleCall<'_>) -> EvalCancelResult {
+        let mut kwargs = call.kwargs.clone();
+        kwargs.insert(String::from(CANCEL_ASYNC_FLAG), Json::Bool(true));
+        self.cancel_eval(&call.flagged(&kwargs)).await
+    }
+}
+
+// the connection a handler call holds: this call's config, URL and headers, and the shared client
+fn connect<'call, Configs>(
+    deps: &'call EvalLifecycleDeps<'_, Configs>,
+    prepared: &'call Prepared<Configs::Config>,
+) -> EvalConnection<'call>
 where
     Configs: EvalLifecycleConfigLookup + ?Sized,
 {
-    let prepared = prepare(deps, call, EvalAction::Delete, log.state)?;
-    let connection = EvalConnection {
+    EvalConnection {
         config: &prepared.config,
         client: deps.client,
         url: &prepared.url,
         headers: &prepared.headers,
-    };
-    delete_eval_handler(&connection, log, Some(prepared.timeout))
-        .await
-        .map_err(|error| {
-            failure(
-                EvalLifecycleError::Handler(error),
-                &prepared.provider,
-                deps.redactor,
-            )
-        })
+    }
 }
 
-// LiteLLM's adelete_eval: the async keyword, then the same body whose result it awaits
-pub async fn adelete_eval<Configs>(
+// the handler's reply, or the failure exception_type maps its error to, named and redacted here
+fn mapped<Reply, Configs>(
+    reply: Result<Reply, EvalHttpError>,
+    prepared: &Prepared<Configs::Config>,
     deps: &EvalLifecycleDeps<'_, Configs>,
-    call: &EvalLifecycleCall<'_>,
-    log: &mut EvalLogging<'_, '_>,
-) -> Result<DeleteEvalResponse, EvalLifecycleFailure>
+) -> Result<Reply, EvalLifecycleFailure>
 where
     Configs: EvalLifecycleConfigLookup + ?Sized,
 {
-    let kwargs = flagged_kwargs(call, DELETE_ASYNC_FLAG);
-    let flagged = EvalLifecycleCall {
-        eval_id: call.eval_id,
-        extra_headers: call.extra_headers,
-        extra_query: call.extra_query,
-        timeout: call.timeout,
-        custom_llm_provider: call.custom_llm_provider,
-        kwargs: &kwargs,
-    };
-    delete_eval(deps, &flagged, log).await
-}
-
-// cancel_eval and its acancel_eval wrapper are one async operation here, because betterlite's evals transport is async only
-pub async fn cancel_eval<Configs>(
-    deps: &EvalLifecycleDeps<'_, Configs>,
-    call: &EvalLifecycleCall<'_>,
-    log: &mut EvalLogging<'_, '_>,
-) -> Result<CancelEvalResponse, EvalLifecycleFailure>
-where
-    Configs: EvalLifecycleConfigLookup + ?Sized,
-{
-    let prepared = prepare(deps, call, EvalAction::Cancel, log.state)?;
-    let connection = EvalConnection {
-        config: &prepared.config,
-        client: deps.client,
-        url: &prepared.url,
-        headers: &prepared.headers,
-    };
-    cancel_eval_handler(&connection, log, Some(prepared.timeout))
-        .await
-        .map_err(|error| {
-            failure(
-                EvalLifecycleError::Handler(error),
-                &prepared.provider,
-                deps.redactor,
-            )
-        })
-}
-
-// LiteLLM's acancel_eval: the async keyword, then the same body whose result it awaits
-pub async fn acancel_eval<Configs>(
-    deps: &EvalLifecycleDeps<'_, Configs>,
-    call: &EvalLifecycleCall<'_>,
-    log: &mut EvalLogging<'_, '_>,
-) -> Result<CancelEvalResponse, EvalLifecycleFailure>
-where
-    Configs: EvalLifecycleConfigLookup + ?Sized,
-{
-    let kwargs = flagged_kwargs(call, CANCEL_ASYNC_FLAG);
-    let flagged = EvalLifecycleCall {
-        eval_id: call.eval_id,
-        extra_headers: call.extra_headers,
-        extra_query: call.extra_query,
-        timeout: call.timeout,
-        custom_llm_provider: call.custom_llm_provider,
-        kwargs: &kwargs,
-    };
-    cancel_eval(deps, &flagged, log).await
-}
-
-// the keyword an async wrapper leaves in the call keywords, which prepare pops before GenericLiteLLMParams reads them
-fn flagged_kwargs(call: &EvalLifecycleCall<'_>, flag: &str) -> IndexMap<String, Json> {
-    let mut kwargs = call.kwargs.clone();
-    kwargs.insert(flag.to_owned(), Json::Bool(true));
-    kwargs
+    reply.map_err(|error| {
+        failure(
+            EvalLifecycleError::Handler(error),
+            &prepared.provider,
+            deps.redactor,
+        )
+    })
 }

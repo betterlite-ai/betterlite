@@ -9,9 +9,7 @@ use super::support::{
     assert_no_request, call, deleted, head_value, headers, json_server, kwargs, object,
     openai_kwargs, provider, run, text, url,
 };
-use crate::api::eval_lifecycle::{
-    DEFAULT_OPENAI_API_BASE, DELETE_ASYNC_FLAG, EvalLifecycleCall, flagged_kwargs,
-};
+use crate::api::eval_lifecycle::{DEFAULT_OPENAI_API_BASE, DELETE_ASYNC_FLAG, EvalLifecycleCall};
 
 #[tokio::test]
 async fn delete_eval_returns_the_provider_delete_response() {
@@ -337,14 +335,17 @@ async fn delete_eval_pops_the_async_flag_from_the_parameters() {
     );
 }
 
-// adelete_eval raises the async keyword on its own copy of the keywords, which delete_eval pops before the provider sees them
+// adelete_eval hands delete_eval a copy of the keywords that carries its flag; the caller's map never changes
 #[test]
 fn adelete_eval_flags_the_call_keywords() {
     let params = kwargs(&[("api_key", text("sk-test"))]);
     let request = call("eval_1", &params);
-    let flagged = flagged_kwargs(&request, DELETE_ASYNC_FLAG);
-    assert_eq!(flagged.get("adelete_eval"), Some(&Json::Bool(true)));
-    assert_eq!(flagged.get("api_key"), Some(&text("sk-test")));
+    let mut flagged_kwargs = params.clone();
+    flagged_kwargs.insert(String::from(DELETE_ASYNC_FLAG), Json::Bool(true));
+    let flagged = request.flagged(&flagged_kwargs);
+    assert_eq!(flagged.kwargs.get("adelete_eval"), Some(&Json::Bool(true)));
+    assert_eq!(flagged.eval_id, "eval_1");
+    assert_eq!(flagged.kwargs.get("api_key"), Some(&text("sk-test")));
     assert_eq!(
         params.get("adelete_eval"),
         None,

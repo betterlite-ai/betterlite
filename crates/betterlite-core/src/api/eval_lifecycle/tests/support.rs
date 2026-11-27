@@ -41,8 +41,7 @@ use crate::api::eval_http::error::EvalHttpError;
 use crate::api::eval_http::exchange::EvalLogging;
 use crate::api::eval_lifecycle::error::{EvalLifecycleError, EvalLifecycleFailure};
 use crate::api::eval_lifecycle::{
-    EvalLifecycleCall, EvalLifecycleConfigLookup, EvalLifecycleDeps, acancel_eval, adelete_eval,
-    cancel_eval, delete_eval,
+    EvalLifecycleCall, EvalLifecycleConfigLookup, EvalLifecycleDeps, EvalLifecycles,
 };
 
 pub(crate) const REQUEST_TIMEOUT: Duration = Duration::from_secs(600);
@@ -504,11 +503,12 @@ where
     let env = rig.fixture.env.pre_post();
     let deps = EvalLifecycleDeps { configs: &rig.configs, client: &rig.client, redactor: &rig.redactor, request_timeout: rig.request_timeout };
     let mut log = EvalLogging { state: &mut rig.fixture.state, env: &env };
+    let mut operations = EvalLifecycles { deps: &deps, log: &mut log };
     match operation {
-        Operation::Delete => delete_eval(&deps, call, &mut log).await.map(|reply| Answer::Deleted(Box::new(reply))),
-        Operation::AsyncDelete => adelete_eval(&deps, call, &mut log).await.map(|reply| Answer::Deleted(Box::new(reply))),
-        Operation::Cancel => cancel_eval(&deps, call, &mut log).await.map(|reply| Answer::Cancelled(Box::new(reply))),
-        Operation::AsyncCancel => acancel_eval(&deps, call, &mut log).await.map(|reply| Answer::Cancelled(Box::new(reply))),
+        Operation::Delete => operations.delete_eval(call).await.map(|reply| Answer::Deleted(Box::new(reply))),
+        Operation::AsyncDelete => operations.adelete_eval(call).await.map(|reply| Answer::Deleted(Box::new(reply))),
+        Operation::Cancel => operations.cancel_eval(call).await.map(|reply| Answer::Cancelled(Box::new(reply))),
+        Operation::AsyncCancel => operations.acancel_eval(call).await.map(|reply| Answer::Cancelled(Box::new(reply))),
     }
 }
 
