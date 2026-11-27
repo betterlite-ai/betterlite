@@ -37,7 +37,7 @@ fn recording() -> (Arc<RecordingExecutor>, Arc<dyn GenericCallExecutor>) {
     let handle = Arc::new(RecordingExecutor {
         calls: Mutex::new(Vec::new()),
     });
-    let executor: Arc<dyn GenericCallExecutor> = Arc::clone(&handle);
+    let executor: Arc<dyn GenericCallExecutor> = Arc::<RecordingExecutor>::clone(&handle);
     (handle, executor)
 }
 
