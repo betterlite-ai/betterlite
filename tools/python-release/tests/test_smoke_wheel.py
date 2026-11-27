@@ -28,4 +28,5 @@ def test_module_list() -> None:
 
 
 def test_main_passes() -> None:
-    assert smoke_wheel.main([betterlite.__version__]) == 0
+    installed_version = betterlite.__version__
+    assert smoke_wheel.main([installed_version]) == 0
