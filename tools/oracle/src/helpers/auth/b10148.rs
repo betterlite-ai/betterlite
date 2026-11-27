@@ -25,17 +25,20 @@ struct ClientView {
 
 #[derive(Debug, Serialize)]
 struct DiscoveryView {
-    authorization_endpoint: String,
-    token_endpoint: String,
-    userinfo_endpoint: String,
+    #[serde(rename = "authorization_endpoint")]
+    authorization: String,
+    #[serde(rename = "token_endpoint")]
+    token: String,
+    #[serde(rename = "userinfo_endpoint")]
+    userinfo: String,
 }
 
 impl From<&OAuthDiscoveryDocument> for DiscoveryView {
     fn from(document: &OAuthDiscoveryDocument) -> Self {
         Self {
-            authorization_endpoint: document.authorization_endpoint.clone(),
-            token_endpoint: document.token_endpoint.clone(),
-            userinfo_endpoint: document.userinfo_endpoint.clone(),
+            authorization: document.authorization_endpoint.clone(),
+            token: document.token_endpoint.clone(),
+            userinfo: document.userinfo_endpoint.clone(),
         }
     }
 }
