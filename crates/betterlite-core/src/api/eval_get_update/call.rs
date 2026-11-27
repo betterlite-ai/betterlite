@@ -5,8 +5,6 @@ use indexmap::IndexMap;
 
 use crate::api::eval_create_list::call::EvalsCallParams;
 
-use super::error::EvalsGetUpdateError;
-
 // get_eval's own arguments: the id the path is built from
 pub struct GetEvalCall<'call> {
     pub eval_id: &'call str,
@@ -37,25 +35,4 @@ pub struct EvalUpdate<'call, 'env> {
     pub call: &'call UpdateEvalCall<'call>,
     pub logging: &'call mut LoggingState,
     pub env: &'call PrePostEnv<'env>,
-}
-
-// which operation asks, for the ValueError LiteLLM raises when the manager answers None
-#[derive(Clone, Copy)]
-pub enum Operation {
-    Get,
-    Update,
-}
-
-impl Operation {
-    #[must_use]
-    pub fn unsupported(self, provider: &str) -> EvalsGetUpdateError {
-        match self {
-            Self::Get => EvalsGetUpdateError::GetUnsupported {
-                provider: provider.to_owned(),
-            },
-            Self::Update => EvalsGetUpdateError::UpdateUnsupported {
-                provider: provider.to_owned(),
-            },
-        }
-    }
 }
