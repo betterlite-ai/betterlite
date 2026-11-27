@@ -14,6 +14,14 @@ use betterlite_models::model_registration::JsonObject;
 use super::error::VectorFileResolutionError;
 use super::{Caller, RequestFacts, RoutingDeps, header_text, last_query_value};
 
+// The request a routing branch rewrites: the body, the managed file id, the caller and the router ports.
+struct RoutingCall<'call, Catalog, Grants> {
+    data: &'call mut JsonObject,
+    file_id: &'call str,
+    caller: &'call Caller<'call>,
+    deps: &'call RoutingDeps<'call, Catalog, Grants>,
+}
+
 // _update_request_data_with_managed_file_id: B1021's gate first, then the unified id's routing, then the legacy id routing.
 pub async fn unified_file_routing<Catalog, Grants>(
     data: &mut JsonObject,
@@ -35,27 +43,47 @@ where
     )
     .await?;
     let Some(decoded) = decode_unified_id(file_id) else {
-        return legacy_file_routing(data, file_id, facts, caller, deps).await;
+        let hints = legacy_hints(data, facts);
+        return legacy_file_routing(
+            RoutingCall {
+                data,
+                file_id,
+                caller,
+                deps,
+            },
+            &hints,
+        )
+        .await;
     };
-    unified_id_routing(data, file_id, &decoded, deps)
+    unified_id_routing(
+        RoutingCall {
+            data,
+            file_id,
+            caller,
+            deps,
+        },
+        &decoded,
+    )
 }
 
 // The non-unified id: handle_model_based_routing with check_file_id_encoding=true, applying the credentials it resolved.
 async fn legacy_file_routing<Catalog, Grants>(
-    data: &mut JsonObject,
-    file_id: &str,
-    facts: &RequestFacts<'_>,
-    caller: &Caller<'_>,
-    deps: &RoutingDeps<'_, Catalog, Grants>,
+    call: RoutingCall<'_, Catalog, Grants>,
+    hints: &ModelHints,
 ) -> Result<Option<String>, VectorFileResolutionError<Catalog::Error, Grants::Error>>
 where
     Catalog: CredentialCatalog + Sync,
     Grants: ModelGrant<Catalog> + Sync,
 {
-    let hints = legacy_hints(data, facts);
+    let RoutingCall {
+        data,
+        file_id,
+        caller,
+        deps,
+    } = call;
     let request = RoutingRequest {
         file_id,
-        hints: &hints,
+        hints,
         check_file_id_encoding: true,
     };
     let RoutingOutcome {
@@ -102,27 +130,26 @@ fn legacy_hints(data: &JsonObject, facts: &RequestFacts<'_>) -> ModelHints {
 
 // A decoded unified id: its first target model's credentials, else the provider id the id carries.
 fn unified_id_routing<Catalog, Grants>(
-    data: &mut JsonObject,
-    file_id: &str,
+    call: RoutingCall<'_, Catalog, Grants>,
     decoded: &str,
-    deps: &RoutingDeps<'_, Catalog, Grants>,
 ) -> Result<Option<String>, VectorFileResolutionError<Catalog::Error, Grants::Error>>
 where
     Catalog: CredentialCatalog,
     Grants: ModelGrant<Catalog>,
 {
+    let data = call.data;
     let provider_file_id = extract_provider_file_id(decoded);
-    if let Some(parts) = parse_unified_id(file_id) {
+    if let Some(parts) = parse_unified_id(call.file_id) {
         if let Some(model_name) = parts.target_model_names.first() {
-            if apply_unified_model(data, model_name, provider_file_id.as_deref(), deps)? {
-                return Ok(Some(file_id.to_owned()));
+            if apply_unified_model(data, model_name, provider_file_id.as_deref(), call.deps)? {
+                return Ok(Some(call.file_id.to_owned()));
             }
         }
         if let Some(found) = provider_file_id.filter(|found| !found.is_empty()) {
             data.insert("file_id".to_owned(), Json::Text(found));
         }
     }
-    Ok(Some(file_id.to_owned()))
+    Ok(Some(call.file_id.to_owned()))
 }
 
 // The first target model becomes data.model, and its non-empty deployment credentials are applied with the provider id.

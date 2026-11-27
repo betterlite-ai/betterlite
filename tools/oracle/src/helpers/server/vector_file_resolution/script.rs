@@ -168,13 +168,12 @@ impl Grants {
     }
 
     pub(super) fn asked_json(&self) -> Value {
-        Value::Array(
-            locked(&self.asked)
-                .iter()
-                .cloned()
-                .map(Value::String)
-                .collect(),
-        )
+        let asked = locked(&self.asked).clone();
+        let mut names = Vec::with_capacity(asked.len());
+        for name in asked {
+            names.push(Value::String(name));
+        }
+        Value::Array(names)
     }
 }
 
