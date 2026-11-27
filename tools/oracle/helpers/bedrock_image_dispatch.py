@@ -64,7 +64,7 @@ class Logger(Protocol):
     def post_call(self, **values: JsonValue) -> None: ...
 
 
-class Recorder:
+class Recorder(Logger):
     def __init__(self) -> None:
         self.pre: dict[str, JsonValue] | None = None
         self.post: dict[str, JsonValue] | None = None
@@ -126,12 +126,14 @@ class EditBinding(BaseModel):
 
 
 def generation_handler() -> GenerationHandler:
-    binding = GenerationBinding.model_validate({"handler": BedrockImageGeneration()})
+    values = {"handler": BedrockImageGeneration()}
+    binding = GenerationBinding.model_validate(values)
     return binding.handler
 
 
 def edit_handler() -> EditHandler:
-    binding = EditBinding.model_validate({"handler": BedrockImageEdit()})
+    values = {"handler": BedrockImageEdit()}
+    binding = EditBinding.model_validate(values)
     return binding.handler
 
 
@@ -167,8 +169,14 @@ def first_header_name(headers: dict[str, str] | None) -> str | None:
     return next(iter(sorted(headers)), None)
 
 
+def header(request: httpx.Request, name: str) -> str | None:
+    if name in request.headers:
+        return request.headers[name]
+    return None
+
+
 def authorization(request: httpx.Request) -> JsonValue:
-    value = request.headers.get("authorization")
+    value = header(request, "authorization")
     if value is None:
         return None
     if value.startswith("AWS4-HMAC-SHA256"):
@@ -179,7 +187,7 @@ def authorization(request: httpx.Request) -> JsonValue:
 def extra_header(request: httpx.Request, name: str | None) -> JsonValue:
     if name is None:
         return None
-    return request.headers.get(name)
+    return header(request, name)
 
 
 def request_view(fixture: Fixture) -> dict[str, JsonValue]:
@@ -245,13 +253,35 @@ def generation_prompt(probe: Probe) -> str:
     return prompt
 
 
-def generation_row(probe: Probe) -> JsonValue:
+def case_row(probe: Probe, *, edit: bool) -> JsonValue:
     fixture = Fixture(probe.reply, first_header_name(probe.extra_headers))
     logger = Recorder()
+    if edit:
+        try:
+            response = edit_handler().image_edit(
+                model=probe.model,
+                image=probe.images,
+                prompt=probe.prompt,
+                model_response=ImageResponse(),
+                optional_params=dict(probe.optional_params),
+                logging_obj=logger,
+                timeout=None,
+                aimage_edit=False,
+                api_base=None,
+                extra_headers=probe.extra_headers,
+                client=fixture.client(),
+                api_key=None,
+            )
+        except BedrockError as error:
+            return failure_row(fixture, logger, error.status_code)
+        except ValueError:
+            return failure_row(fixture, logger, None)
+        return success_row(fixture, logger, images_of(response), edit_cost(response))
+    prompt = generation_prompt(probe)
     try:
         response = generation_handler().image_generation(
             model=probe.model,
-            prompt=generation_prompt(probe),
+            prompt=prompt,
             model_response=ImageResponse(created=NOW),
             optional_params=dict(probe.optional_params),
             logging_obj=logger,
@@ -267,39 +297,11 @@ def generation_row(probe: Probe) -> JsonValue:
     return success_row(fixture, logger, images_of(response), None)
 
 
-def edit_row(probe: Probe) -> JsonValue:
-    fixture = Fixture(probe.reply, first_header_name(probe.extra_headers))
-    logger = Recorder()
-    try:
-        response = edit_handler().image_edit(
-            model=probe.model,
-            image=probe.images,
-            prompt=probe.prompt,
-            model_response=ImageResponse(),
-            optional_params=dict(probe.optional_params),
-            logging_obj=logger,
-            timeout=None,
-            aimage_edit=False,
-            api_base=None,
-            extra_headers=probe.extra_headers,
-            client=fixture.client(),
-            api_key=None,
-        )
-    except BedrockError as error:
-        return failure_row(fixture, logger, error.status_code)
-    except ValueError:
-        return failure_row(fixture, logger, None)
-    return success_row(fixture, logger, images_of(response), edit_cost(response))
-
-
 def run(input_value: Input) -> JsonValue:
     litellm.model_cost = input_value["model_cost"]
     edit = input_value["case"] not in GENERATION_CASES
     rows: list[JsonValue] = []
     for probe in input_value["probes"]:
         parsed = PROBE.validate_python(probe)
-        if edit:
-            rows.append(edit_row(parsed))
-        else:
-            rows.append(generation_row(parsed))
+        rows.append(case_row(parsed, edit=edit))
     return rows
