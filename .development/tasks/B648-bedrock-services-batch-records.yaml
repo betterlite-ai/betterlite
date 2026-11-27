@@ -130,6 +130,13 @@ description: >-
   wiring lines; 790 planned, 800 maximum changed lines.
 scope:
   paths:
+  - "tools/oracle/src/helpers/bedrock/services_batch_records*"
+  - "crates/betterlite-config/tests/fixtures/unsupported/**"
+  - "crates/betterlite-config/src/sections/bedrock_services_batch_records*"
+  - "crates/betterlite-bedrock/src/request_policy/aws_params.rs"
+  - "crates/betterlite-bedrock/src/batch_status/request.rs"
+  - "crates/betterlite-bedrock/src/batch_records*"
+  - "crates/betterlite-bedrock/src/batch_create/request/sign.rs"
   - crates/betterlite-bedrock/Cargo.toml
   - crates/betterlite-bedrock/src/batch_records.rs
   - crates/betterlite-bedrock/src/batch_records/**
