@@ -134,7 +134,7 @@ deviations:
 out_of_scope:
   - "The production RealtimeSessionRelay, the OpenAI, xAI and Azure direct sessions and the executor of B1011's connection plans: B10213."
   - "Python _arealtime: B10212. The proxy's realtime route: B1125. The pass-through socket adapters: B8642, and it opens its socket through this client."
-  - "Building a production RealtimeProbe with this dialer in the server's health backend: not planned yet (see the notes)."
+  - "Building a production RealtimeProbe with this dialer in the server's health backend: B8540."
 pitfalls:
   - "tungstenite never sends pings, so the 20 second keepalive is the receiver's job, and it only runs while something polls recv; the relay always polls the backend source, so do not spawn a ping task."
   - "B1008 turns a backend close without a received frame into code 1006 with the error text as the client's close reason, so the source's messages must be websockets' exact `sent 1011 (internal error) keepalive ping timeout; no close frame received` and `no close frame received or sent`."

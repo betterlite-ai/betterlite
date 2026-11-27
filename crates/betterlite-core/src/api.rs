@@ -175,6 +175,7 @@ pub mod realtime_guardrail_policy;
 pub mod realtime_guardrails;
 pub mod realtime_http_calls;
 pub mod realtime_sender;
+pub mod realtime_session_logging;
 pub mod realtime_session_relay;
 pub mod realtime_session_state;
 pub mod realtime_setup_buffer;
