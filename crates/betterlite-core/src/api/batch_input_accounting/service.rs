@@ -50,7 +50,7 @@ pub struct BatchInputAccounting<'slice, Calls, Files, Access> {
     pub limits: ApiLimits,
 }
 
-impl<'slice, Calls, Files, Access> BatchInputAccounting<'slice, Calls, Files, Access>
+impl<Calls, Files, Access> BatchInputAccounting<'_, Calls, Files, Access>
 where
     Calls: BatchAccountingCalls,
     Files: BatchFileSource,
