@@ -66,8 +66,8 @@ deviations:
 kept_bugs:
   - what: >-
       A get run call never applies its timeout. The operation resolves timeout or request_timeout and
-      passes it to get_run_handler, and that handler, owned by B9371, does not put it on the GET, so the
-      request runs on the pooled client's read deadline.
+      carries it on the handler request, while get_run_handler, owned by B9371, takes no timeout, so the
+      GET runs on the pooled client's read deadline.
     why: >-
       The pinned get_run_handler accepts the timeout and drops it the same way, so a working setup's get
       calls run on the client's deadline; docs/deviations/B9371.yaml records the handler's side of it.
