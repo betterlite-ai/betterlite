@@ -69,11 +69,8 @@ async def _awaited(pending: Model | Awaitable[Model]) -> Model:
 def create_eval(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L114
     data_source_config: DataSourceConfig,
     testing_criteria: list[GraderConfig],
-    name: str | None = None,
-    metadata: dict[str, JsonValue] | None = None,
-    extra_headers: Headers = None,
-    extra_query: Query = None,
-    extra_body: Body = None,
+    name: str | None = None, metadata: dict[str, JsonValue] | None = None,
+    extra_headers: Headers = None, extra_query: Query = None, extra_body: Body = None,
     timeout: float | TimeoutValues | None = None,
     custom_llm_provider: str | None = None,
     **kwargs: CallValue,
@@ -83,8 +80,7 @@ def create_eval(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm
         extra_headers, extra_query, timeout, custom_llm_provider,
         data_source_config=JSON.validate_python(data_source_config),
         testing_criteria=JSON.validate_python(testing_criteria),
-        name=name, metadata=metadata, extra_body=extra_body,
-        **kwargs,
+        name=name, metadata=metadata, extra_body=extra_body, **kwargs,
     )
     match asynchronous:
         case True:
@@ -96,11 +92,8 @@ def create_eval(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm
 async def acreate_eval(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L45
     data_source_config: DataSourceConfig,
     testing_criteria: list[GraderConfig],
-    name: str | None = None,
-    metadata: dict[str, JsonValue] | None = None,
-    extra_headers: Headers = None,
-    extra_query: Query = None,
-    extra_body: Body = None,
+    name: str | None = None, metadata: dict[str, JsonValue] | None = None,
+    extra_headers: Headers = None, extra_query: Query = None, extra_body: Body = None,
     timeout: float | TimeoutValues | None = None,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L53
     custom_llm_provider: str | None = None,
     **kwargs: CallValue,
@@ -114,13 +107,9 @@ async def acreate_eval(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/
 
 
 def list_evals(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L299
-    limit: int | None = None,
-    after: str | None = None,
-    before: str | None = None,
-    order: str | None = None,
-    order_by: str | None = None,
-    extra_headers: Headers = None,
-    extra_query: Query = None,
+    limit: int | None = None, after: str | None = None, before: str | None = None,
+    order: str | None = None, order_by: str | None = None,
+    extra_headers: Headers = None, extra_query: Query = None,
     timeout: float | TimeoutValues | None = None,
     custom_llm_provider: str | None = None,
     **kwargs: CallValue,
@@ -142,13 +131,9 @@ def list_evals(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/
 
 
 async def alist_evals(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L230
-    limit: int | None = None,
-    after: str | None = None,
-    before: str | None = None,
-    order: str | None = None,
-    order_by: str | None = None,
-    extra_headers: Headers = None,
-    extra_query: Query = None,
+    limit: int | None = None, after: str | None = None, before: str | None = None,
+    order: str | None = None, order_by: str | None = None,
+    extra_headers: Headers = None, extra_query: Query = None,
     timeout: float | TimeoutValues | None = None,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L238
     custom_llm_provider: str | None = None,
     **kwargs: CallValue,
@@ -166,8 +151,7 @@ async def alist_evals(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/l
 
 def get_eval(
     eval_id: str,
-    extra_headers: Headers = None,
-    extra_query: Query = None,
+    extra_headers: Headers = None, extra_query: Query = None,
     timeout: float | TimeoutValues | None = None,
     custom_llm_provider: str | None = None,
     **kwargs: CallValue,
@@ -185,8 +169,7 @@ def get_eval(
 
 async def aget_eval(
     eval_id: str,
-    extra_headers: Headers = None,
-    extra_query: Query = None,
+    extra_headers: Headers = None, extra_query: Query = None,
     timeout: float | TimeoutValues | None = None,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L420
     custom_llm_provider: str | None = None,
     **kwargs: CallValue,
@@ -200,11 +183,8 @@ async def aget_eval(
 
 def update_eval(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L632
     eval_id: str,
-    name: str | None = None,
-    metadata: dict[str, JsonValue] | None = None,
-    extra_headers: Headers = None,
-    extra_query: Query = None,
-    extra_body: Body = None,
+    name: str | None = None, metadata: dict[str, JsonValue] | None = None,
+    extra_headers: Headers = None, extra_query: Query = None, extra_body: Body = None,
     timeout: float | TimeoutValues | None = None,
     custom_llm_provider: str | None = None,
     **kwargs: CallValue,
@@ -212,8 +192,7 @@ def update_eval(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm
     asynchronous = kwargs.pop("aupdate_eval", None) is True
     payload = _payload(
         extra_headers, extra_query, timeout, custom_llm_provider,
-        eval_id=eval_id, name=name, metadata=metadata, extra_body=extra_body,
-        **kwargs,
+        eval_id=eval_id, name=name, metadata=metadata, extra_body=extra_body, **kwargs,
     )
     if asynchronous:
         return _aanswer(Eval, payload, _session().aupdate_eval)
@@ -222,11 +201,8 @@ def update_eval(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm
 
 async def aupdate_eval(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L566
     eval_id: str,
-    name: str | None = None,
-    metadata: dict[str, JsonValue] | None = None,
-    extra_headers: Headers = None,
-    extra_query: Query = None,
-    extra_body: Body = None,
+    name: str | None = None, metadata: dict[str, JsonValue] | None = None,
+    extra_headers: Headers = None, extra_query: Query = None, extra_body: Body = None,
     timeout: float | TimeoutValues | None = None,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L573
     custom_llm_provider: str | None = None,
     **kwargs: CallValue,
@@ -234,16 +210,14 @@ async def aupdate_eval(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/
     kwargs.update(aupdate_eval=True)
     payload = _payload(
         extra_headers, extra_query, timeout, custom_llm_provider,
-        eval_id=eval_id, name=name, metadata=metadata, extra_body=extra_body,
-        **kwargs,
+        eval_id=eval_id, name=name, metadata=metadata, extra_body=extra_body, **kwargs,
     )
     return await _aanswer(Eval, payload, _session().aupdate_eval)
 
 
 def delete_eval(
     eval_id: str,
-    extra_headers: Headers = None,
-    extra_query: Query = None,
+    extra_headers: Headers = None, extra_query: Query = None,
     timeout: float | TimeoutValues | None = None,
     custom_llm_provider: str | None = None,
     **kwargs: CallValue,
@@ -262,8 +236,7 @@ def delete_eval(
 
 async def adelete_eval(
     eval_id: str,
-    extra_headers: Headers = None,
-    extra_query: Query = None,
+    extra_headers: Headers = None, extra_query: Query = None,
     timeout: float | TimeoutValues | None = None,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L790
     custom_llm_provider: str | None = None,
     **kwargs: CallValue,
@@ -278,8 +251,7 @@ async def adelete_eval(
 
 def cancel_eval(
     eval_id: str,
-    extra_headers: Headers = None,
-    extra_query: Query = None,
+    extra_headers: Headers = None, extra_query: Query = None,
     timeout: float | TimeoutValues | None = None,
     custom_llm_provider: str | None = None,
     **kwargs: CallValue,
@@ -299,8 +271,7 @@ def cancel_eval(
 
 async def acancel_eval(
     eval_id: str,
-    extra_headers: Headers = None,
-    extra_query: Query = None,
+    extra_headers: Headers = None, extra_query: Query = None,
     timeout: float | TimeoutValues | None = None,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L940
     custom_llm_provider: str | None = None,
     **kwargs: CallValue,
