@@ -177,9 +177,7 @@ pub(crate) fn dispatch(
     input: &StageInput,
     master_key: &SecretString,
 ) -> Result<AuthContext, StageFailure> {
-    if backend != input.backend() && !(backend == MasterKey && matches!(input, Authenticated(_))) {
-        return Err(StageFailure::from(AuthenticationFailure::Missing));
-    }
+    ensure_backend(backend, input)?;
     match input {
         StageInput::AuthKeyLookup(_) => Err(StageFailure::from(AuthenticationFailure::Missing)),
         Authenticated(context) => Ok((**context).clone()),
@@ -218,6 +216,14 @@ pub(crate) fn dispatch(
         }
         StageInput::ModelGrantIntersection(stage) => Ok(stage.context.clone()),
     }
+}
+
+// the master-key stage alone may run on the authenticated input of the key-lookup stage
+fn ensure_backend(backend: AuthBackend, input: &StageInput) -> Result<(), StageFailure> {
+    if backend != input.backend() && !(backend == MasterKey && matches!(input, Authenticated(_))) {
+        return Err(StageFailure::from(AuthenticationFailure::Missing));
+    }
+    Ok(())
 }
 
 fn auth_request_models_stage(stage: &RequestModelStageInput) -> Result<AuthContext, StageFailure> {
