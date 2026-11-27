@@ -21,6 +21,8 @@ use crate::auth::auth_tag_budgets::TagBudgetStageInput;
 use crate::auth::auth_tenant_budgets::TenantBudgetStageInput;
 use crate::auth::end_user_identity::EndUserIdentityStageInput;
 use crate::auth::entity_model_access::EntityModelStageInput;
+pub(crate) use crate::auth::failures::StageFailure;
+use crate::auth::identity_store::IdentityStageInput;
 use crate::auth::jwt_keys::{self, JwtKeyStageInput};
 use crate::auth::master_key_stage;
 use crate::auth::model_grant_intersection::{self, GrantStageInput};
@@ -30,8 +32,6 @@ use crate::auth::team_budget_admission::TeamBudgetStageInput;
 use crate::auth::trusted_network::{self, TrustedNetworkStageInput};
 use crate::auth::virtual_key_routes::{self, VirtualKeyRouteStageInput};
 use crate::error_body::AuthenticationFailure;
-
-pub(crate) use crate::auth::failures::StageFailure;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AuthBackend {
@@ -88,6 +88,7 @@ pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
 #[derive(Clone, Debug)]
 pub enum StageInput {
     AuthKeyLookup(Box<KeyLookupStageInput>),
+    AuthIdentity(Box<IdentityStageInput>),
     Authenticated(Box<AuthContext>),
     JwtKeys(Box<JwtKeyStageInput>),
     MasterKey(Option<SecretString>),
@@ -146,7 +147,9 @@ impl StageInput {
 
     const fn backend(&self) -> AuthBackend {
         match self {
-            Self::AuthKeyLookup(_) | Self::Authenticated(_) => AuthBackend::AuthKeyLookup,
+            Self::AuthKeyLookup(_) | Self::AuthIdentity(_) | Self::Authenticated(_) => {
+                AuthBackend::AuthKeyLookup
+            }
             Self::JwtKeys(_) => AuthBackend::JwtKeys,
             Self::MasterKey(_) => MasterKey,
             Self::TrustedNetwork(_) => AuthBackend::TrustedNetwork,
@@ -179,8 +182,20 @@ pub(crate) fn dispatch(
 ) -> Result<AuthContext, StageFailure> {
     ensure_backend(backend, input)?;
     match input {
-        StageInput::AuthKeyLookup(_) => Err(StageFailure::from(AuthenticationFailure::Missing)),
         Authenticated(context) => Ok((**context).clone()),
+        StageInput::EntityModelAccess(stage) => Ok(stage.context.clone()),
+        StageInput::AuthModelGrants(stage) => Ok(stage.context.clone()),
+        StageInput::AuthTagBudgets(stage) => Ok(stage.context.clone()),
+        StageInput::AuthKeyBudgets(stage) => Ok(stage.context.clone()),
+        StageInput::TeamBudgetAdmission(stage) => Ok(stage.context.clone()),
+        StageInput::AuthTenantBudgets(stage) => Ok(stage.context.clone()),
+        StageInput::AuthOrgLookup(stage) => Ok(stage.context.clone()),
+        StageInput::AuthEndUserIdentity(stage) => Ok(stage.context.clone()),
+        StageInput::AuthEndUsers(stage) => Ok(stage.context.clone()),
+        StageInput::ModelGrantIntersection(stage) => Ok(stage.context.clone()),
+        StageInput::AuthKeyLookup(_) | StageInput::AuthIdentity(_) => {
+            Err(StageFailure::from(AuthenticationFailure::Missing))
+        }
         StageInput::JwtKeys(_) => jwt_keys::run_stage(input),
         StageInput::MasterKey(_) => master_key_stage(input, master_key).map_err(StageFailure::from),
         StageInput::TrustedNetwork(stage) => trusted_network::run_stage(stage),
@@ -194,27 +209,15 @@ pub(crate) fn dispatch(
             virtual_key_routes::run_stage(stage).map_err(StageFailure::VirtualKeyRoutes)
         }
         StageInput::AuthRequestModels(stage) => auth_request_models_stage(stage),
-        StageInput::AuthModelPatterns(stage) => {
-            run_stage(stage).map_err(|rejection| StageFailure::ModelAccess(Box::new(rejection)))
-        }
-        StageInput::EntityModelAccess(stage) => Ok(stage.context.clone()),
-        StageInput::AuthModelGrants(stage) => Ok(stage.context.clone()),
+        StageInput::AuthModelPatterns(stage) => run_stage(stage).map_err(StageFailure::from),
         StageInput::AuthResourceGrants(stage) => {
             auth_resource_grants::run_stage(stage).map_err(StageFailure::ResourceGrants)
         }
-        StageInput::AuthTagBudgets(stage) => Ok(stage.context.clone()),
-        StageInput::AuthKeyBudgets(stage) => Ok(stage.context.clone()),
-        StageInput::TeamBudgetAdmission(stage) => Ok(stage.context.clone()),
-        StageInput::AuthTenantBudgets(stage) => Ok(stage.context.clone()),
         StageInput::OrganizationRoutePolicy(stage) => organization_route_policy::run_stage(stage)
             .map_err(StageFailure::OrganizationRoutePolicy),
-        StageInput::AuthOrgLookup(stage) => Ok(stage.context.clone()),
-        StageInput::AuthEndUserIdentity(stage) => Ok(stage.context.clone()),
-        StageInput::AuthEndUsers(stage) => Ok(stage.context.clone()),
         StageInput::AuthPolicySupport(stage) => {
             auth_policy_support::run_stage(stage).map_err(StageFailure::AuthPolicySupport)
         }
-        StageInput::ModelGrantIntersection(stage) => Ok(stage.context.clone()),
     }
 }
 

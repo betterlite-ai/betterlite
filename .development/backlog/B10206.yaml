@@ -1,0 +1,13 @@
+id: B10206
+milestone: R2 bug fixes
+title: The sync places that read secrets get async seams before the secret lookup turns async
+status: todo
+depends_on: [B10193, B10194]
+file: tasks/B10206-async-secret-seams.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

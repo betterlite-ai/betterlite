@@ -62,6 +62,7 @@ scope:
     - crates/betterlite-server/src/invitation_routes/queue/request.rs
     - crates/betterlite-server/src/management/gateway_request_activity/auth.rs
     - crates/betterlite-server/src/organization_create/caller.rs
+    - crates/betterlite-server/src/config_audit.rs
     - crates/betterlite-server/src/organization_create/creation.rs
     - crates/betterlite-server/src/plugin_routes/routes.rs
     - crates/betterlite-server/src/reload_routes/caller.rs

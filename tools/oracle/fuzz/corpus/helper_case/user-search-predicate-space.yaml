@@ -1,0 +1,5 @@
+kind: helper
+name: user-search-predicate-space-seed
+call: {b10149: {search: " "}}
+env: {}
+compare: {ignore: []}

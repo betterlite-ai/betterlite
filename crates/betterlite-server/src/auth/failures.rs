@@ -40,6 +40,12 @@ impl From<AuthenticationFailure> for StageFailure {
     }
 }
 
+impl From<ModelAccessRejection> for StageFailure {
+    fn from(rejection: ModelAccessRejection) -> Self {
+        Self::ModelAccess(Box::new(rejection))
+    }
+}
+
 pub(crate) fn stage_failure_response(failure: &StageFailure) -> Response {
     match failure {
         StageFailure::Authentication(authentication) => authentication_error(authentication),
