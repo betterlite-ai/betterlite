@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex};
 
 use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_core::api::batch_enqueued_reserve::{
@@ -149,32 +149,6 @@ impl Scripted {
             clock: Arc::new(move || clock),
             limits: ApiLimits::default(),
         }
-    }
-
-    pub(super) fn state(&self) -> MutexGuard<'_, State> {
-        self.state.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
-    pub(super) fn record(&self, effect: &'static str) {
-        self.state().effects.push(effect);
-    }
-
-    fn effects(&self) -> Vec<&'static str> {
-        self.state().effects.clone()
-    }
-
-    fn held(&self) -> Option<BatchEnqueuedTokenReservation> {
-        self.state().held.clone()
-    }
-
-    pub(super) fn hold(&self, tokens: i64, scopes: &[BatchEnqueuedTokenScope]) {
-        self.state().held = Some(BatchEnqueuedTokenReservation {
-            tokens,
-            scopes: scopes.to_vec(),
-            backend: self.stages.backend.unwrap_or(ReservationBackend::Memory),
-            owner: self.stages.owner.clone(),
-            reserved_at_monotonic: 0.0_f64,
-        });
     }
 }
 

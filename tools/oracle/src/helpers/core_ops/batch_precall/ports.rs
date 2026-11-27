@@ -1,12 +1,13 @@
 use std::convert::Infallible;
 use std::future::{Future, ready};
+use std::sync::PoisonError;
 
 use betterlite_core::api::batch_enqueued_refund::{
     BATCH_ENQUEUED_REFUND_STATUSES, BatchEnqueuedRefundInput, BatchEnqueuedRefundResult,
     PostCallOutcome,
 };
 use betterlite_core::api::batch_enqueued_reserve::{
-    BatchEnqueuedTokenReservation, BatchEnqueuedTokenScope,
+    BatchEnqueuedTokenReservation, BatchEnqueuedTokenScope, ReservationBackend,
 };
 use betterlite_core::api::batch_input_accounting::error::BatchHttpError;
 use betterlite_core::api::batch_limit_counters::records::{
@@ -42,7 +43,8 @@ impl BatchPrecallStages for Scripted {
         _data: &RequestData,
         _has_enqueued_scopes: bool,
     ) -> Result<BatchPrecallSkip, StageError> {
-        self.record("should_skip");
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        state.effects.push("should_skip");
         Ok(BatchPrecallSkip {
             skip: self.stages.skip,
             descriptors: None,
@@ -54,39 +56,44 @@ impl BatchPrecallStages for Scripted {
         _principal: &BatchLimitPrincipal,
         _request: &BatchAccountRequest<'_>,
     ) -> impl Future<Output = Result<BatchFileUsage, StageError>> + Send {
-        self.record("account");
+        self.state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .effects
+            .push("account");
         ready(Ok(self.stages.usage.clone()))
     }
 
     fn reserve(
         &self,
-        _principal: &BatchLimitPrincipal,
-        _data: &RequestData,
+        _: &BatchLimitPrincipal,
+        _: &RequestData,
         usage: &BatchFileUsage,
         scopes: &[BatchEnqueuedTokenScope],
     ) -> impl Future<Output = Result<Option<Box<ProxyRateLimitError>>, StageError>> + Send {
-        self.record("reserve");
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        state.effects.push("reserve");
         if self.stages.reject {
             return ready(Ok(Some(self.rejection.clone())));
         }
-        self.hold(usage.total_tokens, scopes);
+        state.held = Some(BatchEnqueuedTokenReservation {
+            tokens: usage.total_tokens,
+            scopes: scopes.to_vec(),
+            backend: self.stages.backend.unwrap_or(ReservationBackend::Memory),
+            owner: self.stages.owner.clone(),
+            reserved_at_monotonic: 0.0_f64,
+        });
         ready(Ok(None))
     }
 
     fn charge(
         &self,
-        _principal: &BatchLimitPrincipal,
-        _data: &RequestData,
-        _usage: &BatchFileUsage,
-        _descriptors: Option<&[BatchLimitDescriptor]>,
+        _: &BatchLimitPrincipal,
+        _: &RequestData,
+        _: &BatchFileUsage,
+        _: Option<&[BatchLimitDescriptor]>,
     ) -> impl Future<Output = Result<Option<Box<ProxyRateLimitError>>, StageError>> + Send {
-        self.record("charge");
-        let rejection = if self.stages.reject {
-            Some(self.rejection.clone())
-        } else {
-            None
-        };
-        ready(Ok(rejection))
+        ready(charge_answer(self))
     }
 
     fn http(&self, error: &StageError) -> Option<&BatchHttpError> {
@@ -96,11 +103,21 @@ impl BatchPrecallStages for Scripted {
 
 impl BatchPrecallStash for Scripted {
     fn take_reservation(&self) -> Option<BatchEnqueuedTokenReservation> {
-        self.state().held.take()
+        self.state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .held
+            .take()
     }
 
     fn take_refund_operations(&self) -> Vec<BatchTpdRefundOperation> {
-        std::mem::take(&mut self.state().operations)
+        std::mem::take(
+            &mut self
+                .state
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .operations,
+        )
     }
 }
 
@@ -153,13 +170,21 @@ impl BatchTokenApplier for Scripted {
 
 impl BatchPrecallMemory for Scripted {
     fn keys(&self) -> Vec<String> {
-        self.state().memory.keys().cloned().collect()
+        self.state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .memory
+            .keys()
+            .cloned()
+            .collect()
     }
 
     fn get(&self, key: &str) -> Result<Option<Json>, BatchCacheError> {
+        let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        let value = state.memory.get(key).cloned();
         match cache_error(&self.memory_faults, Function::Get) {
             Some(error) => Err(error),
-            None => Ok(self.state().memory.get(key).cloned()),
+            None => Ok(value),
         }
     }
 
@@ -169,14 +194,15 @@ impl BatchPrecallMemory for Scripted {
         value: Json,
         _ttl_seconds: f64,
     ) -> impl Future<Output = Result<(), BatchCacheError>> + Send {
-        let outcome = match cache_error(&self.memory_faults, Function::Set) {
-            Some(error) => Err(error),
-            None => {
-                self.state().memory.insert(key.to_owned(), value);
-                Ok(())
-            }
-        };
-        ready(outcome)
+        if let Some(error) = cache_error(&self.memory_faults, Function::Set) {
+            return ready(Err(error));
+        }
+        self.state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .memory
+            .insert(key.to_owned(), value);
+        ready(Ok(()))
     }
 
     fn set_many(
@@ -184,14 +210,17 @@ impl BatchPrecallMemory for Scripted {
         entries: Vec<(String, Json)>,
         _ttl_seconds: f64,
     ) -> impl Future<Output = Result<(), BatchCacheError>> + Send {
-        let outcome = match cache_error(&self.memory_faults, Function::SetMany) {
-            Some(error) => Err(error),
+        match cache_error(&self.memory_faults, Function::SetMany) {
+            Some(error) => ready(Err(error)),
             None => {
-                self.state().memory.extend(entries);
-                Ok(())
+                self.state
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .memory
+                    .extend(entries);
+                ready(Ok(()))
             }
-        };
-        ready(outcome)
+        }
     }
 }
 
@@ -209,42 +238,65 @@ impl BatchPrecallRemote for Scripted {
         _pattern: &str,
         _count: usize,
     ) -> impl Future<Output = Result<Vec<String>, BatchCacheError>> + Send {
-        self.record("scan");
-        let outcome = match cache_error(&self.remote.faults, Function::Scan) {
-            Some(error) => Err(error),
-            None => Ok(self.remote.scan_keys.clone()),
-        };
-        ready(outcome)
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        state.effects.push("scan");
+        if let Some(error) = cache_error(&self.remote.faults, Function::Scan) {
+            return ready(Err(error));
+        }
+        ready(Ok(self.remote.scan_keys.clone()))
     }
 
     fn batch_get(
         &self,
         _keys: &[String],
     ) -> impl Future<Output = Result<Vec<(String, Json)>, BatchCacheError>> + Send {
-        self.record("batch_get");
-        let outcome = match cache_error(&self.remote.faults, Function::BatchGet) {
-            Some(error) => Err(error),
-            None => Ok(self
-                .remote
-                .batch_entries
-                .iter()
-                .map(|(key, value)| (key.clone(), value.clone()))
-                .collect()),
-        };
-        ready(outcome)
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        state.effects.push("batch_get");
+        let entries = self
+            .remote
+            .batch_entries
+            .iter()
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect();
+        if let Some(error) = cache_error(&self.remote.faults, Function::BatchGet) {
+            return ready(Err(error));
+        }
+        ready(Ok(entries))
     }
 
     fn get(
         &self,
         _key: &str,
     ) -> impl Future<Output = Result<Option<Json>, BatchCacheError>> + Send {
-        self.record("get");
-        let outcome = match cache_error(&self.remote.faults, Function::Get) {
-            Some(error) => Err(error),
-            None => Ok(self.remote.get_value.clone()),
-        };
-        ready(outcome)
+        ready(remote_get_answer(self))
     }
+}
+
+// the backing store's read: record the call, then the scripted fault or the stored value
+fn remote_get_answer(scripted: &Scripted) -> Result<Option<Json>, BatchCacheError> {
+    let mut state = scripted
+        .state
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    state.effects.push("get");
+    match cache_error(&scripted.remote.faults, Function::Get) {
+        Some(error) => Err(error),
+        None => Ok(scripted.remote.get_value.clone()),
+    }
+}
+
+// the counters stage: record the call, then the scripted refusal or a pass
+fn charge_answer(scripted: &Scripted) -> Result<Option<Box<ProxyRateLimitError>>, StageError> {
+    let mut state = scripted
+        .state
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    state.effects.push("charge");
+    Ok(if scripted.stages.reject {
+        Some(scripted.rejection.clone())
+    } else {
+        None
+    })
 }
 
 fn cache_error(faults: &[Fault], function: Function) -> Option<BatchCacheError> {

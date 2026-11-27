@@ -1,3 +1,5 @@
+use std::sync::PoisonError;
+
 use betterlite_core::api::batch_enqueued_refund::record::ReservationRecord;
 use betterlite_core::api::batch_enqueued_reserve::BatchEnqueuedTokenReservation;
 use betterlite_core::api::batch_precall::result::{
@@ -8,12 +10,16 @@ use serde_json::{Value, json};
 use super::Scripted;
 
 pub(super) fn report(scripted: &Scripted, result: &BatchPrecallResult) -> Value {
+    let state = scripted
+        .state
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
     match result {
         BatchPrecallResult::Create(create) => json!({
             "data": &create.data,
             "diagnostics": diagnostics(&create.diagnostics),
-            "effects": scripted.effects(),
-            "reservation": scripted.held().as_ref().map(reservation_json),
+            "effects": &state.effects,
+            "reservation": state.held.as_ref().map(reservation_json),
         }),
         BatchPrecallResult::CreateFailure(failure) => json!({
             "refunded": failure.refunded.as_ref().map(record_json),
@@ -23,7 +29,7 @@ pub(super) fn report(scripted: &Scripted, result: &BatchPrecallResult) -> Value 
             "data": &retrieve.data,
             "cached": &retrieve.cached,
             "diagnostics": diagnostics(&retrieve.diagnostics),
-            "effects": scripted.effects(),
+            "effects": &state.effects,
         }),
         BatchPrecallResult::TerminalRetrieve(terminal) => json!({
             "batch_id": &terminal.batch_id,
