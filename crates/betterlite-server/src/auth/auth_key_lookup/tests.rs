@@ -10,16 +10,20 @@ use axum::body::{Body, to_bytes};
 use axum::extract::Extension;
 use axum::http::{Request, StatusCode, header};
 use axum::routing::post;
+use betterlite_auth::auth_identity::records::UserIdentity;
+use betterlite_auth::auth_identity::roles::{PrincipalType, Role};
 use betterlite_auth::auth_key_lookup::error::KeyLookupError;
 use betterlite_auth::auth_key_lookup::{KeyAuthenticator, KeyLookupOutcome};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::types::Config;
+use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::database_failures::deadline::DbLookupError;
 use betterlite_db::database_faults::{DbError, ErrorType};
+use betterlite_db::model_secrets::DEFAULT_USER_ID;
 use secrecy::{ExposeSecret as _, SecretString};
 use tower::ServiceExt as _;
 
-use crate::auth::auth_identity::{AuthBackend, INSTALLED_STAGES, dispatch};
+use crate::auth::auth_identity::{AuthBackend, AuthContext, INSTALLED_STAGES, dispatch};
 use crate::auth::parse_key_header;
 use crate::routes;
 use crate::routes::tests::state_for;
@@ -30,6 +34,7 @@ use super::KeyLookupStageInput;
 const CHAT_ROUTE: &str = "/v1/chat/completions";
 const COMPLIANCE_ROUTE: &str = "/compliance/eu-ai-act";
 const PRESENTED: &str = "sk-virtual-key";
+const HASHED_KEY: &str = "hashed-key";
 
 #[derive(Clone, Copy)]
 enum Answer {
@@ -270,4 +275,85 @@ fn master_input_before_lookup() {
         panic!("the master stage extracts an unprocessed credential");
     };
     assert_eq!(key.expose_secret(), "master");
+}
+
+pub(crate) fn caller_through_key_stage(fields: &str) -> AuthContext {
+    let decoded: BTreeMap<String, JsonData> =
+        serde_json::from_str(fields).expect("the key fields are a JSON object");
+    let auth = UserAPIKeyAuth::construct(AuthInput::Dict(decoded)).expect("the key fixture builds");
+    super::key_context(KeyLookupOutcome {
+        auth,
+        hashed_token: HASHED_KEY.to_owned(),
+    })
+}
+
+#[test]
+fn key_context_fills_the_key_user() {
+    let principal = caller_through_key_stage(
+        r#"{"key_name":"key-name","key_alias":"alias-1","user_id":"u1","user_email":"u1@example.com","team_id":"t1"}"#,
+    )
+    .principal;
+    assert_eq!(
+        principal.user,
+        Some(UserIdentity {
+            id: "u1".to_owned(),
+            external_id: None,
+            user_name: None,
+            email: Some("u1@example.com".to_owned()),
+            display_name: None,
+        })
+    );
+    assert_eq!(principal.subject, "u1");
+    assert_eq!(principal.principal_type, PrincipalType::Human);
+    assert_eq!(principal.credential_ref.key_id, None);
+    assert_eq!(
+        principal.credential_ref.token_id.as_deref(),
+        Some(HASHED_KEY)
+    );
+    assert_eq!(principal.teams.len(), 1);
+    assert_eq!(principal.teams[0].id, "t1");
+}
+
+#[test]
+fn key_context_fills_an_empty_user_id() {
+    let principal = caller_through_key_stage(r#"{"user_id":""}"#).principal;
+    assert_eq!(
+        principal.user.as_ref().map(|user| user.id.as_str()),
+        Some("")
+    );
+    assert_eq!(principal.principal_type, PrincipalType::ServiceAccount);
+    assert_eq!(principal.subject, HASHED_KEY);
+}
+
+#[test]
+fn key_context_leaves_a_userless_key_without_a_user() {
+    let principal =
+        caller_through_key_stage(r#"{"key_name":"svc","key_alias":"svc-alias","team_id":"t1"}"#)
+            .principal;
+    assert_eq!(principal.user, None);
+    assert_eq!(principal.subject, "svc-alias");
+    assert_eq!(principal.principal_type, PrincipalType::ServiceAccount);
+}
+
+#[test]
+fn master_key_context_carries_the_admin_user_and_role() {
+    let master = SecretString::from("master".to_owned());
+    let Some(context) = super::master_key_context(Some(&master), &master) else {
+        panic!("the matching master key authenticates");
+    };
+    let principal = context.principal;
+    assert_eq!(
+        principal.user,
+        Some(UserIdentity {
+            id: DEFAULT_USER_ID.to_owned(),
+            external_id: None,
+            user_name: None,
+            email: None,
+            display_name: None,
+        })
+    );
+    assert_eq!(principal.roles, vec![Role::PlatformAdmin]);
+    assert_eq!(principal.subject, "master_key");
+    assert_eq!(principal.principal_type, PrincipalType::ServiceAccount);
+    assert!(principal.source_key.0.is_none());
 }

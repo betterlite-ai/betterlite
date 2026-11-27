@@ -5,20 +5,21 @@ use axum::body::Body;
 use axum::http::Request;
 use betterlite_auth::auth_errors::conversion::as_proxy_exception;
 use betterlite_auth::auth_identity::records::{
-    CredentialRef, NetworkContext, Principal, SourceKey, TeamIdentity,
+    CredentialRef, NetworkContext, Principal, SourceKey, UserIdentity,
 };
-use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType, TeamRole};
-use betterlite_auth::auth_key_lookup::{
-    KeyAuthenticator, KeyLookupOutcome, key_identity, key_roles,
-};
+use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType, Role};
+use betterlite_auth::auth_key_lookup::{KeyAuthenticator, KeyLookupOutcome};
+use betterlite_auth::identity_store::principal::{Projection, principal_from_key};
+use betterlite_db::model_secrets::DEFAULT_USER_ID;
 use secrecy::{ExposeSecret as _, SecretString};
+use subtle::ConstantTimeEq as _;
 
-use crate::auth::auth_identity::{AuthContext, StageFailure, StageInput, master_key_context};
+use crate::auth::auth_identity::{AuthContext, StageFailure, StageInput};
 use crate::error_body::AuthenticationFailure;
 use crate::state::ServerState;
 
 pub(crate) mod key_headers;
-mod tests;
+pub(crate) mod tests;
 
 // authenticate copies it from the middleware state, so a route merged after the state layer still compares it
 #[derive(Clone)]
@@ -110,40 +111,60 @@ pub(crate) async fn prefetch(stage: KeyLookupStageInput) -> Result<StageInput, S
     }
 }
 
+// The fallback path projects the key exactly as IdentityStore::resolve_as does, so both paths agree.
 fn key_context(outcome: KeyLookupOutcome) -> AuthContext {
-    let identity = key_identity(&outcome.auth);
-    let subject = identity
-        .user_id
-        .clone()
-        .or_else(|| identity.key_name.clone())
-        .unwrap_or_else(|| outcome.hashed_token.clone());
-    let teams = identity.team_id.clone().map_or_else(Vec::new, |id| {
-        vec![TeamIdentity {
-            id,
-            name: identity.team_alias.clone(),
-            role: TeamRole::Member,
-        }]
-    });
+    let projection = Projection {
+        auth_method: AuthMethod::ApiKey,
+        issuer: None,
+        subject_fallback: Some(&outcome.hashed_token),
+        scopes: &[],
+        credential_ref: Some(CredentialRef {
+            key_id: None,
+            token_id: Some(outcome.hashed_token.clone()),
+        }),
+        network: None,
+    };
     AuthContext {
+        principal: principal_from_key(&outcome.auth, projection),
+    }
+}
+
+// The master key authenticates as LiteLLM's proxy admin: litellm_proxy_admin_name with the PROXY_ADMIN role.
+pub(crate) fn master_key_context(
+    presented: Option<&SecretString>,
+    master_key: &SecretString,
+) -> Option<AuthContext> {
+    let key = presented?;
+    let equal = key
+        .expose_secret()
+        .as_bytes()
+        .ct_eq(master_key.expose_secret().as_bytes());
+    if key.expose_secret().is_empty() || !bool::from(equal) {
+        return None;
+    }
+    Some(AuthContext {
         principal: Principal {
-            principal_type: PrincipalType::Human,
-            subject,
+            principal_type: PrincipalType::ServiceAccount,
+            subject: "master_key".to_owned(),
             issuer: None,
             audience: Vec::new(),
-            user: None,
+            user: Some(UserIdentity {
+                id: DEFAULT_USER_ID.to_owned(),
+                external_id: None,
+                user_name: None,
+                email: None,
+                display_name: None,
+            }),
             organization: None,
-            teams,
+            teams: Vec::new(),
             project: None,
             end_user: None,
-            roles: key_roles(identity.user_role),
+            roles: vec![Role::PlatformAdmin],
             scopes: Vec::new(),
             auth_method: AuthMethod::ApiKey,
-            credential_ref: CredentialRef {
-                key_id: identity.key_name,
-                token_id: Some(outcome.hashed_token),
-            },
+            credential_ref: CredentialRef::default(),
             network: NetworkContext::default(),
-            source_key: SourceKey(Some(outcome.auth)),
+            source_key: SourceKey::default(),
         },
-    }
+    })
 }

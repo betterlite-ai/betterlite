@@ -1,0 +1,6 @@
+task: B10165
+deviations:
+  - what: The master key's Principal keeps subject "master_key", the service_account principal type and an empty source_key, where LiteLLM's master key is a UserAPIKeyAuth with user_id default_user_id and PROXY_ADMIN, whose principal has subject "default_user_id", the human principal type and the master key record as its source key.
+    why: About 28 route modules on main grant master rights by comparing principal.subject to "master_key"; B10171 replaces those comparisons and gives the master principal LiteLLM's whole master key record. The user id default_user_id and the PlatformAdmin role already match LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L2085-L2098
+kept_bugs: []
