@@ -3,4 +3,17 @@ deviations:
   - what: MS_TEAMS_WEBHOOK_URL is masked for a PROXY_ADMIN and replaced with REDACTED for every other caller in the ms_teams alert entry of /get/config/callbacks.
     why: LiteLLM's alerting key sets leave the Teams webhook URL plaintext for every caller, but the URL carries its access token in the path, as the Slack webhook URL LiteLLM masks does.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1674
+  - what: >-
+      /config/callback/delete and /config/yaml read the request body as JSON
+      whatever the Content-Type header says. LiteLLM's FastAPI, created with
+      strict_content_type off, reads a body as JSON only when the header is
+      absent or names application/json or an application/*+json type, and
+      validates any other body as raw bytes, answering 422
+      model_attributes_type.
+    why: >-
+      betterlite's routes decode the body their handler declares with serde_json
+      and have no content-type-sensitive body handling, as B8271 and B3867
+      record for their routes, and reads_the_body_whatever_the_content_type pins
+      the difference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1731-L1742
 kept_bugs: []

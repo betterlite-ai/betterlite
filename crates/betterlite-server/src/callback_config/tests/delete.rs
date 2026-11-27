@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use axum::body::Body;
-use axum::http::{Request, StatusCode};
+use axum::http::{HeaderValue, Request, StatusCode, header};
 use rstest::rstest;
 
 use betterlite_config::sections::settings::JsonValue;
@@ -97,6 +97,19 @@ async fn removes_the_first_match_and_saves_the_config() {
         json("true")
     );
     assert_eq!(harness.deployment_calls(), 1);
+}
+
+// docs/deviations/B8596.yaml: LiteLLM answers 422 for a body whose content type is not JSON, betterlite parses it anyway
+#[tokio::test]
+async fn reads_the_body_whatever_the_content_type() {
+    let harness = Harness::new(success_config(r#"["langfuse"]"#));
+    let mut request = delete_call("langfuse");
+    request
+        .headers_mut()
+        .insert(header::CONTENT_TYPE, HeaderValue::from_static("text/plain"));
+    let (status, body) = harness.call(request, Some(master_key())).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["removed_callback"], json(r#""langfuse""#));
 }
 
 #[tokio::test]
