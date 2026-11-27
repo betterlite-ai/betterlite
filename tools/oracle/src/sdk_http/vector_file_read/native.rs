@@ -8,10 +8,6 @@ use betterlite_core::api::vector_file_read::error::{
     VectorFileReadError, failure as project_failure,
 };
 use betterlite_core::api::vector_file_read::service::{ReadCall, ReadSession, SdkDeps};
-use betterlite_core::api::vector_file_read::{
-    aretrieve, aretrieve_content, retrieve, retrieve_content,
-};
-use betterlite_core::api::vector_store_registry::store::VectorStoreRegistry;
 use betterlite_error::envelope::WireField;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
@@ -37,10 +33,15 @@ pub(super) async fn execute(
     let request_timeout_seconds =
         loads_read_timeout(env).map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))?;
     let origin = source(&config, env)?;
+    // the lookup is boxed so the deps can borrow it as the trait object B1111's seam takes
+    let registry: Option<Box<dyn CredentialLookup>> = call
+        .registry
+        .as_ref()
+        .map(|registry| -> Box<dyn CredentialLookup> { Box::new(registry_of(registry)) });
     let fixtures = Fixtures {
         configs: Configs::new(&config),
         source: &origin,
-        registry: call.registry.as_ref().map(registry_of),
+        registry,
         assets: Assets::new()?,
         request_timeout_seconds,
     };
@@ -57,7 +58,7 @@ pub(super) async fn execute(
 struct Fixtures<'source> {
     configs: Configs,
     source: &'source Source,
-    registry: Option<VectorStoreRegistry>,
+    registry: Option<Box<dyn CredentialLookup>>,
     assets: Assets,
     request_timeout_seconds: f64,
 }
@@ -89,10 +90,10 @@ async fn run_once(
         log: &mut log,
     };
     let answer = match (run.operation, run.mode) {
-        (Operation::Retrieve, Mode::Sync) => retrieve(&mut session).await,
-        (Operation::Retrieve, Mode::Asynchronous) => aretrieve(&mut session).await,
-        (Operation::Content, Mode::Sync) => retrieve_content(&mut session).await,
-        (Operation::Content, Mode::Asynchronous) => aretrieve_content(&mut session).await,
+        (Operation::Retrieve, Mode::Sync) => session.retrieve().await,
+        (Operation::Retrieve, Mode::Asynchronous) => session.aretrieve().await,
+        (Operation::Content, Mode::Sync) => session.retrieve_content().await,
+        (Operation::Content, Mode::Asynchronous) => session.aretrieve_content().await,
     };
     let failure = match &answer {
         Ok(_) => None,
@@ -110,10 +111,7 @@ async fn run_once(
 fn deps_of<'fixtures>(fixtures: &'fixtures Fixtures<'_>) -> SdkDeps<'fixtures, Source> {
     SdkDeps {
         configs: &fixtures.configs,
-        registry: fixtures
-            .registry
-            .as_ref()
-            .map(|registry| registry as &dyn CredentialLookup),
+        registry: fixtures.registry.as_deref(),
         source: fixtures.source,
         supplied: None,
         request_timeout_seconds: fixtures.request_timeout_seconds,

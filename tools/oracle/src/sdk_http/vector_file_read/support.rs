@@ -138,7 +138,7 @@ impl Assets {
             },
             &self.redactor,
             || String::from("generated"),
-            Duration::default(),
+            Duration::default,
         )
         .map_err(SdkHttpError::LoggingState)
     }
