@@ -7,6 +7,7 @@ use betterlite_error::proxy_exception::ProxyException;
 use secrecy::{ExposeSecret as _, SecretString};
 use subtle::ConstantTimeEq as _;
 
+use self::{AuthBackend::MasterKey, StageInput::Authenticated};
 use crate::auth::auth_end_users::EndUserStageInput;
 use crate::auth::auth_key_budgets::KeyBudgetStageInput;
 use crate::auth::auth_key_lookup::KeyLookupStageInput;
@@ -24,6 +25,7 @@ use crate::auth::model_grant_intersection::{self, GrantStageInput};
 use crate::auth::organization_route_policy::{self, OrganizationPolicyStageInput};
 use crate::auth::request_body_safety::{self, RequestBodySafetyStageInput};
 use crate::auth::team_budget_admission::TeamBudgetStageInput;
+use crate::auth::trusted_network::{self, TrustedNetworkStageInput};
 use crate::auth::virtual_key_routes::{self, VirtualKeyRouteStageInput};
 use crate::error_body::AuthenticationFailure;
 
@@ -31,6 +33,7 @@ use crate::error_body::AuthenticationFailure;
 pub enum AuthBackend {
     AuthKeyLookup,
     MasterKey,
+    TrustedNetwork,
     AuthRequestPolicy,
     RequestBodySafety,
     AuthVirtualKeyRoutes,
@@ -53,7 +56,8 @@ pub enum AuthBackend {
 // B052 owns the final stage order; the master-key stage authenticates before the model stages run.
 pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
     AuthBackend::AuthKeyLookup,
-    AuthBackend::MasterKey,
+    MasterKey,
+    AuthBackend::TrustedNetwork,
     AuthBackend::AuthRequestPolicy,
     AuthBackend::RequestBodySafety,
     AuthBackend::AuthVirtualKeyRoutes,
@@ -78,6 +82,7 @@ pub enum StageInput {
     AuthKeyLookup(Box<KeyLookupStageInput>),
     Authenticated(Box<AuthContext>),
     MasterKey(Option<SecretString>),
+    TrustedNetwork(Box<TrustedNetworkStageInput>),
     AuthRequestPolicy(Box<AuthRequestPolicyStageInput>),
     RequestBodySafety(Box<RequestBodySafetyStageInput>),
     AuthVirtualKeyRoutes(Box<VirtualKeyRouteStageInput>),
@@ -124,6 +129,7 @@ pub(crate) enum StageFailure {
     ModelAccess(Box<ModelAccessRejection>),
     AuthModelGrants(Box<ProxyException>),
     EntityModelAccess(Box<ProxyException>),
+    TrustedNetwork(Box<ProxyException>),
     AuthRequestPolicy(Box<ProxyException>),
     ResourceGrants(Box<ProxyException>),
     TagBudgets(Box<ProxyException>),
@@ -159,7 +165,8 @@ impl StageInput {
     const fn backend(&self) -> AuthBackend {
         match self {
             Self::AuthKeyLookup(_) | Self::Authenticated(_) => AuthBackend::AuthKeyLookup,
-            Self::MasterKey(_) => AuthBackend::MasterKey,
+            Self::MasterKey(_) => MasterKey,
+            Self::TrustedNetwork(_) => AuthBackend::TrustedNetwork,
             Self::AuthRequestPolicy(_) => AuthBackend::AuthRequestPolicy,
             Self::RequestBodySafety(_) => AuthBackend::RequestBodySafety,
             Self::AuthVirtualKeyRoutes(_) => AuthBackend::AuthVirtualKeyRoutes,
@@ -186,15 +193,14 @@ pub(crate) fn dispatch(
     input: &StageInput,
     master_key: &SecretString,
 ) -> Result<AuthContext, StageFailure> {
-    let key_pass_through =
-        backend == AuthBackend::MasterKey && matches!(input, StageInput::Authenticated(_));
-    if backend != input.backend() && !key_pass_through {
+    if backend != input.backend() && !(backend == MasterKey && matches!(input, Authenticated(_))) {
         return Err(StageFailure::from(AuthenticationFailure::Missing));
     }
     match input {
         StageInput::AuthKeyLookup(_) => Err(StageFailure::from(AuthenticationFailure::Missing)),
-        StageInput::Authenticated(context) => Ok((**context).clone()),
+        Authenticated(context) => Ok((**context).clone()),
         StageInput::MasterKey(_) => master_key_stage(input, master_key).map_err(StageFailure::from),
+        StageInput::TrustedNetwork(stage) => trusted_network::run_stage(stage),
         StageInput::AuthRequestPolicy(stage) => {
             auth_request_policy::run_stage(stage).map_err(StageFailure::AuthRequestPolicy)
         }
