@@ -27,6 +27,11 @@ use crate::prometheus_label_schema::PrometheusLabelSettings;
 
 const READ_FAILED: &str = "the scripted read failed";
 
+fn assert_logged(text: &str, entity: &str) {
+    let expected = format!("Error getting {entity} info: {READ_FAILED}");
+    assert!(text.contains(&expected), "missing log line: {expected}");
+}
+
 fn team_request<'request>(team_id: Option<&'request str>) -> TeamBudgetRequest<'request> {
     TeamBudgetRequest {
         user_api_team: team_id,
@@ -83,10 +88,7 @@ async fn noop_gauges_skip_every_function_before_any_lookup() {
     let settings = PrometheusLabelSettings::with_defaults();
     let tracker = BoundedPrometheusSeriesTracker::default();
     let limits = SeriesLimits::default();
-    let lookups = RecordingLookups {
-        database: true,
-        ..RecordingLookups::default()
-    };
+    let lookups = RecordingLookups::default().with_database(true);
     let gauges = [
         entity_gauges(TEAM_GAUGES, &["team"], true),
         entity_gauges(ORG_GAUGES, &["org_id"], true),
@@ -140,9 +142,7 @@ async fn noop_gauges_skip_every_function_before_any_lookup() {
     )
     .await
     .unwrap();
-    for entity in &gauges {
-        assert!(all_samples(entity).is_empty());
-    }
+    assert!(gauges.iter().all(|entity| all_samples(entity).is_empty()));
     assert!(lookups.calls().is_empty());
 }
 
@@ -151,10 +151,7 @@ async fn missing_identifiers_skip_every_function_before_any_lookup() {
     let settings = PrometheusLabelSettings::with_defaults();
     let tracker = BoundedPrometheusSeriesTracker::default();
     let limits = SeriesLimits::default();
-    let lookups = RecordingLookups {
-        database: true,
-        ..RecordingLookups::default()
-    };
+    let lookups = RecordingLookups::default().with_database(true);
     let gauges = [
         entity_gauges(TEAM_GAUGES, &["team"], false),
         entity_gauges(ORG_GAUGES, &["org_id"], false),
@@ -208,9 +205,7 @@ async fn missing_identifiers_skip_every_function_before_any_lookup() {
     )
     .await
     .unwrap();
-    for entity in &gauges {
-        assert!(all_samples(entity).is_empty());
-    }
+    assert!(gauges.iter().all(|entity| all_samples(entity).is_empty()));
     assert!(lookups.calls().is_empty());
 }
 
@@ -220,15 +215,13 @@ async fn lookup_errors_are_logged_and_swallowed_by_every_function() {
     let tracker = BoundedPrometheusSeriesTracker::default();
     let limits = SeriesLimits::default();
     let (logs, _guard) = capture_logs();
-    let lookups = RecordingLookups {
-        database: true,
-        team: Answer::Failed(READ_FAILED),
-        org: Answer::Failed(READ_FAILED),
-        key: Answer::Failed(READ_FAILED),
-        user: Answer::Failed(READ_FAILED),
-        customer: Answer::Failed(READ_FAILED),
-        ..RecordingLookups::default()
-    };
+    let lookups = RecordingLookups::default()
+        .with_database(true)
+        .with_team(Answer::Failed(READ_FAILED))
+        .with_org(Answer::Failed(READ_FAILED))
+        .with_key(Answer::Failed(READ_FAILED))
+        .with_user(Answer::Failed(READ_FAILED))
+        .with_customer(Answer::Failed(READ_FAILED));
     let gauges = [
         entity_gauges(TEAM_GAUGES, &["team"], false),
         entity_gauges(ORG_GAUGES, &["org_id"], false),
@@ -284,8 +277,9 @@ async fn lookup_errors_are_logged_and_swallowed_by_every_function() {
     .unwrap();
     assert_eq!(lookups.calls().len(), 5);
     let text = logs.text();
-    for entity in ["team", "org", "key", "user", "customer"] {
-        let expected = format!("Error getting {entity} info: {READ_FAILED}");
-        assert!(text.contains(&expected), "missing log line: {expected}");
-    }
+    assert_logged(&text, "team");
+    assert_logged(&text, "org");
+    assert_logged(&text, "key");
+    assert_logged(&text, "user");
+    assert_logged(&text, "customer");
 }

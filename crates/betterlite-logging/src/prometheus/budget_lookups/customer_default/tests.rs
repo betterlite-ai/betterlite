@@ -15,10 +15,7 @@ fn budget_table() -> BudgetTableSnapshot {
 
 #[tokio::test]
 async fn a_configured_id_reads_the_budget_table() {
-    let lookups = RecordingLookups {
-        default_budget: Answer::Found(budget_table()),
-        ..RecordingLookups::default()
-    };
+    let lookups = RecordingLookups::default().with_default_budget(Answer::Found(budget_table()));
     let budget = get_default_customer_budget(&lookups, Some("budget-1")).await;
     assert_eq!(budget, Some(budget_table()));
     assert_eq!(
@@ -31,10 +28,7 @@ async fn a_configured_id_reads_the_budget_table() {
 
 #[tokio::test]
 async fn no_configured_id_skips_the_read() {
-    let lookups = RecordingLookups {
-        default_budget: Answer::Found(budget_table()),
-        ..RecordingLookups::default()
-    };
+    let lookups = RecordingLookups::default().with_default_budget(Answer::Found(budget_table()));
     let budget = get_default_customer_budget(&lookups, None).await;
     assert_eq!(budget, None);
     assert!(lookups.calls().is_empty());
@@ -51,10 +45,8 @@ async fn a_missing_budget_row_returns_none() {
 #[tokio::test]
 async fn a_lookup_error_returns_none_and_logs_it() {
     let (logs, _guard) = capture_logs();
-    let lookups = RecordingLookups {
-        default_budget: Answer::Failed("the budget read failed"),
-        ..RecordingLookups::default()
-    };
+    let lookups =
+        RecordingLookups::default().with_default_budget(Answer::Failed("the budget read failed"));
     let budget = get_default_customer_budget(&lookups, Some("budget-1")).await;
     assert_eq!(budget, None);
     assert!(

@@ -1,9 +1,7 @@
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 
-// The auth-carried budget state a request can carry. These mirror the snapshots in
-// betterlite-core, which depends on this crate, so the two sets of types cannot be shared;
-// B8561 maps the carried snapshots into these shapes.
+// The auth-carried budget state a request can carry. These mirror the snapshots in betterlite-core, which depends on this crate, so the two sets of types cannot be shared; B8561 maps the carried snapshots into these shapes.
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct KeyBudgetSnapshot {

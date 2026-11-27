@@ -78,12 +78,9 @@ async fn a_carried_snapshot_uses_its_reset() {
 async fn the_cache_only_fetch_reads_the_reset() {
     let settings = PrometheusLabelSettings::with_defaults();
     let reset_at = time("2026-01-06T00:00:00Z");
-    let lookups = RecordingLookups {
-        key: Answer::Found(KeyRecord {
-            budget_reset_at: Some(reset_at),
-        }),
-        ..RecordingLookups::default()
-    };
+    let lookups = RecordingLookups::default().with_key(Answer::Found(KeyRecord {
+        budget_reset_at: Some(reset_at),
+    }));
     let gauges = entity_gauges(KEY_GAUGES, &LABELS, false);
     let now = time("2026-01-01T00:00:00Z");
     let key_request = request(Some("key-1"), Some("Key Alpha"), None, None, "0.5", None);
@@ -116,12 +113,9 @@ async fn the_cache_only_fetch_reads_the_reset() {
 #[tokio::test]
 async fn a_fetched_key_without_a_reset_emits_no_hours() {
     let settings = PrometheusLabelSettings::with_defaults();
-    let lookups = RecordingLookups {
-        key: Answer::Found(KeyRecord {
-            budget_reset_at: None,
-        }),
-        ..RecordingLookups::default()
-    };
+    let lookups = RecordingLookups::default().with_key(Answer::Found(KeyRecord {
+        budget_reset_at: None,
+    }));
     let gauges = entity_gauges(KEY_GAUGES, &LABELS, false);
     let now = time("2026-01-01T00:00:00Z");
     let key_request = request(Some("key-1"), None, Some("0"), Some("10"), "0.5", None);
@@ -148,10 +142,7 @@ async fn a_fetched_key_without_a_reset_emits_no_hours() {
 async fn a_cache_miss_keeps_the_partial_key_and_logs_it() {
     let settings = PrometheusLabelSettings::with_defaults();
     let (logs, _guard) = capture_logs();
-    let lookups = RecordingLookups {
-        key: Answer::Failed("the key cache read failed"),
-        ..RecordingLookups::default()
-    };
+    let lookups = RecordingLookups::default().with_key(Answer::Failed("the key cache read failed"));
     let gauges = entity_gauges(KEY_GAUGES, &LABELS, false);
     let now = time("2026-01-01T00:00:00Z");
     let key_request = request(

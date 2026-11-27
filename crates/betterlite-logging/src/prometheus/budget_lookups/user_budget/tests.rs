@@ -114,15 +114,12 @@ async fn a_request_max_budget_wins_over_the_carried_one() {
 async fn the_fetched_user_fills_the_reset_email_and_alias() {
     let settings = PrometheusLabelSettings::with_defaults();
     let reset_at = time("2026-01-06T00:00:00Z");
-    let lookups = RecordingLookups {
-        user: Answer::Found(UserRecord {
-            budget_reset_at: Some(reset_at),
-            max_budget: Some(decimal("30")),
-            user_email: Some("db@example.com".to_owned()),
-            user_alias: Some("Db User".to_owned()),
-        }),
-        ..RecordingLookups::default()
-    };
+    let lookups = RecordingLookups::default().with_user(Answer::Found(UserRecord {
+        budget_reset_at: Some(reset_at),
+        max_budget: Some(decimal("30")),
+        user_email: Some("db@example.com".to_owned()),
+        user_alias: Some("Db User".to_owned()),
+    }));
     let gauges = entity_gauges(USER_GAUGES, &LABELS, false);
     let now = time("2026-01-01T00:00:00Z");
     let user_request = request(
@@ -170,15 +167,12 @@ async fn the_fetched_user_fills_the_reset_email_and_alias() {
 async fn a_request_max_budget_keeps_the_fetched_one_off() {
     let settings = PrometheusLabelSettings::with_defaults();
     let reset_at = time("2026-01-06T00:00:00Z");
-    let lookups = RecordingLookups {
-        user: Answer::Found(UserRecord {
-            budget_reset_at: Some(reset_at),
-            max_budget: Some(decimal("30")),
-            user_email: None,
-            user_alias: None,
-        }),
-        ..RecordingLookups::default()
-    };
+    let lookups = RecordingLookups::default().with_user(Answer::Found(UserRecord {
+        budget_reset_at: Some(reset_at),
+        max_budget: Some(decimal("30")),
+        user_email: None,
+        user_alias: None,
+    }));
     let gauges = entity_gauges(USER_GAUGES, &LABELS, false);
     let now = time("2026-01-01T00:00:00Z");
     let user_request = request(Some("user-1"), None, Some("2"), Some("10"), None);
@@ -205,15 +199,12 @@ async fn a_request_max_budget_keeps_the_fetched_one_off() {
 #[tokio::test]
 async fn a_fetched_user_without_an_email_or_alias_keeps_them_empty() {
     let settings = PrometheusLabelSettings::with_defaults();
-    let lookups = RecordingLookups {
-        user: Answer::Found(UserRecord {
-            budget_reset_at: None,
-            max_budget: None,
-            user_email: None,
-            user_alias: None,
-        }),
-        ..RecordingLookups::default()
-    };
+    let lookups = RecordingLookups::default().with_user(Answer::Found(UserRecord {
+        budget_reset_at: None,
+        max_budget: None,
+        user_email: None,
+        user_alias: None,
+    }));
     let gauges = entity_gauges(USER_GAUGES, &LABELS, false);
     let now = time("2026-01-01T00:00:00Z");
     let user_request = request(
@@ -278,10 +269,7 @@ async fn a_user_the_lookup_cannot_find_keeps_the_partial_object() {
 async fn a_lookup_error_keeps_the_partial_user_and_logs_it() {
     let settings = PrometheusLabelSettings::with_defaults();
     let (logs, _guard) = capture_logs();
-    let lookups = RecordingLookups {
-        user: Answer::Failed("the user read failed"),
-        ..RecordingLookups::default()
-    };
+    let lookups = RecordingLookups::default().with_user(Answer::Failed("the user read failed"));
     let gauges = entity_gauges(USER_GAUGES, &LABELS, false);
     let now = time("2026-01-01T00:00:00Z");
     let user_request = request(Some("user-1"), None, Some("1"), Some("10"), None);

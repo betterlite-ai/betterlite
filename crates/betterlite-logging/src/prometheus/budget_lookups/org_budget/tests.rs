@@ -99,15 +99,13 @@ async fn a_carried_snapshot_without_an_alias_writes_an_empty_label() {
 async fn the_database_reads_the_joined_budget_table() {
     let settings = PrometheusLabelSettings::with_defaults();
     let reset_at = time("2026-01-06T00:00:00Z");
-    let lookups = RecordingLookups {
-        database: true,
-        org: Answer::Found(OrgRecord {
+    let lookups = RecordingLookups::default()
+        .with_database(true)
+        .with_org(Answer::Found(OrgRecord {
             spend: Some(decimal("2")),
             organization_alias: Some("Db Org".to_owned()),
             litellm_budget_table: Some(budget_table(Some("15"), Some(reset_at))),
-        }),
-        ..RecordingLookups::default()
-    };
+        }));
     let gauges = entity_gauges(ORG_GAUGES, &LABELS, false);
     let now = time("2026-01-01T00:00:00Z");
     let org_request = request(Some("org-1"), Some("Request Org"), None);
@@ -141,15 +139,13 @@ async fn the_database_reads_the_joined_budget_table() {
 #[tokio::test]
 async fn an_org_without_a_budget_table_reports_no_limit() {
     let settings = PrometheusLabelSettings::with_defaults();
-    let lookups = RecordingLookups {
-        database: true,
-        org: Answer::Found(OrgRecord {
+    let lookups = RecordingLookups::default()
+        .with_database(true)
+        .with_org(Answer::Found(OrgRecord {
             spend: None,
             organization_alias: None,
             litellm_budget_table: None,
-        }),
-        ..RecordingLookups::default()
-    };
+        }));
     let gauges = entity_gauges(ORG_GAUGES, &LABELS, false);
     let now = time("2026-01-01T00:00:00Z");
     let org_request = request(Some("org-1"), Some("Request Org"), None);
@@ -194,10 +190,7 @@ async fn a_missing_database_client_skips_before_the_lookup() {
 #[tokio::test]
 async fn no_org_id_skips_before_the_lookup() {
     let settings = PrometheusLabelSettings::with_defaults();
-    let lookups = RecordingLookups {
-        database: true,
-        ..RecordingLookups::default()
-    };
+    let lookups = RecordingLookups::default().with_database(true);
     let gauges = entity_gauges(ORG_GAUGES, &LABELS, false);
     let now = time("2026-01-01T00:00:00Z");
     let org_request = request(None, Some("Org Alpha"), None);
@@ -218,11 +211,9 @@ async fn no_org_id_skips_before_the_lookup() {
 async fn a_lookup_error_emits_nothing_and_logs_it() {
     let settings = PrometheusLabelSettings::with_defaults();
     let (logs, _guard) = capture_logs();
-    let lookups = RecordingLookups {
-        database: true,
-        org: Answer::Failed("the org read failed"),
-        ..RecordingLookups::default()
-    };
+    let lookups = RecordingLookups::default()
+        .with_database(true)
+        .with_org(Answer::Failed("the org read failed"));
     let gauges = entity_gauges(ORG_GAUGES, &LABELS, false);
     let now = time("2026-01-01T00:00:00Z");
     let org_request = request(Some("org-1"), Some("Org Alpha"), None);
@@ -245,10 +236,7 @@ async fn a_lookup_error_emits_nothing_and_logs_it() {
 #[tokio::test]
 async fn an_org_the_lookup_cannot_find_emits_nothing() {
     let settings = PrometheusLabelSettings::with_defaults();
-    let lookups = RecordingLookups {
-        database: true,
-        ..RecordingLookups::default()
-    };
+    let lookups = RecordingLookups::default().with_database(true);
     let gauges = entity_gauges(ORG_GAUGES, &LABELS, false);
     let now = time("2026-01-01T00:00:00Z");
     let org_request = request(Some("org-1"), Some("Org Alpha"), None);
@@ -268,10 +256,7 @@ async fn an_org_the_lookup_cannot_find_emits_nothing() {
 #[tokio::test]
 async fn a_noop_remaining_gauge_skips_before_the_lookup() {
     let settings = PrometheusLabelSettings::with_defaults();
-    let lookups = RecordingLookups {
-        database: true,
-        ..RecordingLookups::default()
-    };
+    let lookups = RecordingLookups::default().with_database(true);
     let gauges = entity_gauges(ORG_GAUGES, &LABELS, true);
     let now = time("2026-01-01T00:00:00Z");
     let org_request = request(Some("org-1"), Some("Org Alpha"), None);

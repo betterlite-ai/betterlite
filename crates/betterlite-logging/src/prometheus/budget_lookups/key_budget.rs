@@ -21,7 +21,7 @@ pub struct KeyBudgetRequest<'request> {
     pub carried: Option<&'request KeyBudgetSnapshot>,
 }
 
-// LiteLLM's _set_api_key_budget_metrics_after_api_request: the no-op gauge and the key come first, then the assembly
+// ast-grep-ignore: no-long-names - LiteLLM's _set_api_key_budget_metrics_after_api_request: the no-op gauge and the key come first, then the assembly
 pub async fn set_key_budget_metrics_after_api_request<Gauge>(
     lookups: &dyn BudgetLookups,
     gauges: &EntityBudgetGauges<MetricLike<Gauge>>,

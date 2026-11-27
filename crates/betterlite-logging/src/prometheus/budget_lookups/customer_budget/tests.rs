@@ -27,13 +27,10 @@ async fn a_cache_hit_adds_the_cost_and_emits_the_cached_limit() {
     let settings = PrometheusLabelSettings::with_defaults();
     let tracker = BoundedPrometheusSeriesTracker::default();
     let limits = SeriesLimits::default();
-    let lookups = RecordingLookups {
-        customer: Answer::Found(CachedEndUser {
-            spend: decimal("1.5"),
-            litellm_budget_table: Some(budget_table(Some("10"), Some("2026-01-06T00:00:00Z"))),
-        }),
-        ..RecordingLookups::default()
-    };
+    let lookups = RecordingLookups::default().with_customer(Answer::Found(CachedEndUser {
+        spend: decimal("1.5"),
+        litellm_budget_table: Some(budget_table(Some("10"), Some("2026-01-06T00:00:00Z"))),
+    }));
     let gauges = entity_gauges(CUSTOMER_GAUGES, &LABELS, false);
     let now = time("2026-01-01T00:00:00Z");
     let customer_request = CustomerBudgetRequest {
@@ -70,13 +67,10 @@ async fn a_cache_hit_without_a_table_emits_only_the_remaining_gauge() {
     let settings = PrometheusLabelSettings::with_defaults();
     let tracker = BoundedPrometheusSeriesTracker::default();
     let limits = SeriesLimits::default();
-    let lookups = RecordingLookups {
-        customer: Answer::Found(CachedEndUser {
-            spend: decimal("2"),
-            litellm_budget_table: None,
-        }),
-        ..RecordingLookups::default()
-    };
+    let lookups = RecordingLookups::default().with_customer(Answer::Found(CachedEndUser {
+        spend: decimal("2"),
+        litellm_budget_table: None,
+    }));
     let gauges = entity_gauges(CUSTOMER_GAUGES, &LABELS, false);
     let now = time("2026-01-01T00:00:00Z");
     let customer_request = CustomerBudgetRequest {
@@ -129,10 +123,8 @@ async fn a_lookup_error_emits_nothing_and_logs_it() {
     let tracker = BoundedPrometheusSeriesTracker::default();
     let limits = SeriesLimits::default();
     let (logs, _guard) = capture_logs();
-    let lookups = RecordingLookups {
-        customer: Answer::Failed("the end-user cache read failed"),
-        ..RecordingLookups::default()
-    };
+    let lookups =
+        RecordingLookups::default().with_customer(Answer::Failed("the end-user cache read failed"));
     let gauges = entity_gauges(CUSTOMER_GAUGES, &LABELS, false);
     let now = time("2026-01-01T00:00:00Z");
     let customer_request = CustomerBudgetRequest {
@@ -211,13 +203,10 @@ async fn a_cache_hit_with_a_limit_gauge_but_no_max_writes_no_max() {
     let settings = PrometheusLabelSettings::with_defaults();
     let tracker = BoundedPrometheusSeriesTracker::default();
     let limits = SeriesLimits::default();
-    let lookups = RecordingLookups {
-        customer: Answer::Found(CachedEndUser {
-            spend: decimal("2"),
-            litellm_budget_table: Some(budget_table(None, Some("2026-01-06T00:00:00Z"))),
-        }),
-        ..RecordingLookups::default()
-    };
+    let lookups = RecordingLookups::default().with_customer(Answer::Found(CachedEndUser {
+        spend: decimal("2"),
+        litellm_budget_table: Some(budget_table(None, Some("2026-01-06T00:00:00Z"))),
+    }));
     let gauges = entity_gauges(CUSTOMER_GAUGES, &LABELS, false);
     let now = time("2026-01-01T00:00:00Z");
     let customer_request = CustomerBudgetRequest {

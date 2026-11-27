@@ -266,6 +266,44 @@ pub(crate) struct RecordingLookups {
 }
 
 impl RecordingLookups {
+    pub(crate) fn with_database(mut self, database: bool) -> Self {
+        self.database = database;
+        self
+    }
+
+    pub(crate) fn with_team(mut self, team: Answer<TeamRecord>) -> Self {
+        self.team = team;
+        self
+    }
+
+    pub(crate) fn with_org(mut self, org: Answer<OrgRecord>) -> Self {
+        self.org = org;
+        self
+    }
+
+    pub(crate) fn with_key(mut self, key: Answer<KeyRecord>) -> Self {
+        self.key = key;
+        self
+    }
+
+    pub(crate) fn with_user(mut self, user: Answer<UserRecord>) -> Self {
+        self.user = user;
+        self
+    }
+
+    pub(crate) fn with_customer(mut self, customer: Answer<CachedEndUser>) -> Self {
+        self.customer = customer;
+        self
+    }
+
+    pub(crate) fn with_default_budget(
+        mut self,
+        default_budget: Answer<BudgetTableSnapshot>,
+    ) -> Self {
+        self.default_budget = default_budget;
+        self
+    }
+
     pub(crate) fn calls(&self) -> Vec<LookupCall> {
         self.calls
             .lock()

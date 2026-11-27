@@ -34,10 +34,7 @@ async fn emit_with(
     let settings = PrometheusLabelSettings::with_defaults();
     let tracker = BoundedPrometheusSeriesTracker::default();
     let limits = SeriesLimits::default();
-    let lookups = RecordingLookups {
-        customer: cached_customer(),
-        ..RecordingLookups::default()
-    };
+    let lookups = RecordingLookups::default().with_customer(cached_customer());
     let gauges = entity_gauges(CUSTOMER_GAUGES, &LABELS, noop);
     let now = time("2026-01-01T00:00:00Z");
     let customer_request = CustomerBudgetRequest {

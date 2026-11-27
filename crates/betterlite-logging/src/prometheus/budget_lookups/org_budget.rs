@@ -20,8 +20,7 @@ pub struct OrgBudgetRequest<'request> {
     pub org_alias: Option<&'request str>,
 }
 
-// LiteLLM's _set_org_budget_metrics_after_api_request: a carried snapshot skips the database, and a missing
-// database client or org id skips everything
+// ast-grep-ignore: no-long-names - LiteLLM's _set_org_budget_metrics_after_api_request: a carried snapshot skips the database, and a missing database client or org id skips everything
 pub async fn set_org_budget_metrics_after_api_request<Gauge>(
     lookups: &dyn BudgetLookups,
     gauges: &EntityBudgetGauges<MetricLike<Gauge>>,

@@ -18,9 +18,7 @@ pub struct UserLookupOptions {
     pub check_db_only: bool,
 }
 
-// The cache and database reads LiteLLM's assembly calls make, one method each:
-// get_team_object, get_org_object, get_key_object, get_user_object, the end-user cache read
-// and the default-budget table read. The implementation lives where those clients do.
+// The cache and database reads LiteLLM's assembly calls make, one method each: get_team_object, get_org_object, get_key_object, get_user_object, the end-user cache read and the default-budget table read. The implementation lives where those clients do.
 #[async_trait]
 pub trait BudgetLookups: Send + Sync {
     fn database_configured(&self) -> bool;

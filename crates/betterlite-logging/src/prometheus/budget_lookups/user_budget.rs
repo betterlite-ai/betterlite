@@ -22,7 +22,7 @@ pub struct UserBudgetRequest<'request> {
     pub user_email: Option<&'request str>,
 }
 
-// LiteLLM's _set_user_budget_metrics_after_api_request: the no-op gauge and the user id come first, then the assembly
+// ast-grep-ignore: no-long-names - LiteLLM's _set_user_budget_metrics_after_api_request: the no-op gauge and the user id come first, then the assembly
 pub async fn set_user_budget_metrics_after_api_request<Gauge>(
     lookups: &dyn BudgetLookups,
     gauges: &EntityBudgetGauges<MetricLike<Gauge>>,

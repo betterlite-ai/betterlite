@@ -7,7 +7,9 @@ use crate::prometheus::budget_gauges::customer::{
     CustomerGaugeContext, set_customer_budget_metrics,
 };
 use crate::prometheus::budget_gauges::customer_gate::{
-    budget_gauges_are_noop, customer_budget_metrics_enabled,
+    budget_gauges_are_noop,
+    // ast-grep-ignore: no-long-names
+    customer_budget_metrics_enabled as customer_metrics_enabled,
 };
 use crate::prometheus::budget_gauges::gauge::EntityBudgetGauges;
 use crate::prometheus::budget_gauges::inputs::CustomerBudgetGaugeInput;
@@ -20,8 +22,7 @@ pub struct CustomerBudgetRequest<'request> {
     pub response_cost: Decimal,
 }
 
-// LiteLLM's _set_customer_budget_metrics_after_api_request: the config gate and the no-op gauges come first, the
-// cache is the only source, and a cache miss emits nothing
+// ast-grep-ignore: no-long-names - LiteLLM's _set_customer_budget_metrics_after_api_request: the config gate and the no-op gauges come first, the cache is the only source, and a cache miss emits nothing
 pub async fn set_customer_budget_metrics_after_api_request<Gauge>(
     lookups: &dyn BudgetLookups,
     gauges: &EntityBudgetGauges<MetricLike<Gauge>>,
@@ -32,7 +33,7 @@ pub async fn set_customer_budget_metrics_after_api_request<Gauge>(
 where
     MetricLike<Gauge>: Collector + RemovableMetric + Sync,
 {
-    if budget_gauges_are_noop(gauges) || !customer_budget_metrics_enabled(&settings) {
+    if budget_gauges_are_noop(gauges) || !customer_metrics_enabled(&settings) {
         return Ok(());
     }
     let Some(end_user_id) = request.end_user_id else {

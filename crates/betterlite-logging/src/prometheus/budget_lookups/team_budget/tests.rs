@@ -112,13 +112,10 @@ async fn a_request_max_budget_wins_over_the_carried_one() {
 async fn a_fetched_team_fills_the_reset_and_the_missing_max_budget() {
     let settings = PrometheusLabelSettings::with_defaults();
     let reset_at = time("2026-01-06T00:00:00Z");
-    let lookups = RecordingLookups {
-        team: Answer::Found(TeamRecord {
-            budget_reset_at: Some(reset_at),
-            max_budget: Some(decimal("30")),
-        }),
-        ..RecordingLookups::default()
-    };
+    let lookups = RecordingLookups::default().with_team(Answer::Found(TeamRecord {
+        budget_reset_at: Some(reset_at),
+        max_budget: Some(decimal("30")),
+    }));
     let gauges = entity_gauges(TEAM_GAUGES, &LABELS, false);
     let now = time("2026-01-01T00:00:00Z");
     let team_request = request(Some("team-1"), Some("Alpha"), Some("2"), None, None);
@@ -152,13 +149,10 @@ async fn a_fetched_team_fills_the_reset_and_the_missing_max_budget() {
 async fn a_request_max_budget_keeps_the_fetched_one_off() {
     let settings = PrometheusLabelSettings::with_defaults();
     let reset_at = time("2026-01-06T00:00:00Z");
-    let lookups = RecordingLookups {
-        team: Answer::Found(TeamRecord {
-            budget_reset_at: Some(reset_at),
-            max_budget: Some(decimal("30")),
-        }),
-        ..RecordingLookups::default()
-    };
+    let lookups = RecordingLookups::default().with_team(Answer::Found(TeamRecord {
+        budget_reset_at: Some(reset_at),
+        max_budget: Some(decimal("30")),
+    }));
     let gauges = entity_gauges(TEAM_GAUGES, &LABELS, false);
     let now = time("2026-01-01T00:00:00Z");
     let team_request = request(Some("team-1"), Some("Alpha"), Some("2"), Some("10"), None);
@@ -185,13 +179,10 @@ async fn a_request_max_budget_keeps_the_fetched_one_off() {
 #[tokio::test]
 async fn a_fetched_team_without_a_max_budget_reports_no_limit() {
     let settings = PrometheusLabelSettings::with_defaults();
-    let lookups = RecordingLookups {
-        team: Answer::Found(TeamRecord {
-            budget_reset_at: None,
-            max_budget: None,
-        }),
-        ..RecordingLookups::default()
-    };
+    let lookups = RecordingLookups::default().with_team(Answer::Found(TeamRecord {
+        budget_reset_at: None,
+        max_budget: None,
+    }));
     let gauges = entity_gauges(TEAM_GAUGES, &LABELS, false);
     let now = time("2026-01-01T00:00:00Z");
     let team_request = request(Some("team-1"), Some("Alpha"), Some("3"), None, None);
@@ -244,10 +235,7 @@ async fn an_absent_spend_and_alias_start_from_zero_and_an_empty_label() {
 async fn a_lookup_error_keeps_the_partial_team_and_logs_it() {
     let settings = PrometheusLabelSettings::with_defaults();
     let (logs, _guard) = capture_logs();
-    let lookups = RecordingLookups {
-        team: Answer::Failed("the team read failed"),
-        ..RecordingLookups::default()
-    };
+    let lookups = RecordingLookups::default().with_team(Answer::Failed("the team read failed"));
     let gauges = entity_gauges(TEAM_GAUGES, &LABELS, false);
     let now = time("2026-01-01T00:00:00Z");
     let team_request = request(Some("team-1"), Some("Alpha"), Some("1"), Some("10"), None);

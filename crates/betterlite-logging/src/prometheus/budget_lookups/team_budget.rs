@@ -21,7 +21,7 @@ pub struct TeamBudgetRequest<'request> {
     pub carried: Option<&'request TeamBudgetSnapshot>,
 }
 
-// LiteLLM's _set_team_budget_metrics_after_api_request: the no-op gauge and the team id come first, then the assembly
+// ast-grep-ignore: no-long-names - LiteLLM's _set_team_budget_metrics_after_api_request: the no-op gauge and the team id come first, then the assembly
 pub async fn set_team_budget_metrics_after_api_request<Gauge>(
     lookups: &dyn BudgetLookups,
     gauges: &EntityBudgetGauges<MetricLike<Gauge>>,

@@ -20,10 +20,7 @@ async fn rows_for(cached: CachedEndUser) -> Vec<SampleRow> {
     let settings = PrometheusLabelSettings::with_defaults();
     let tracker = BoundedPrometheusSeriesTracker::default();
     let limits = SeriesLimits::default();
-    let lookups = RecordingLookups {
-        customer: Answer::Found(cached),
-        ..RecordingLookups::default()
-    };
+    let lookups = RecordingLookups::default().with_customer(Answer::Found(cached));
     let gauges = entity_gauges(CUSTOMER_GAUGES, &LABELS, false);
     let now = time("2026-01-01T00:00:00Z");
     let customer_request = CustomerBudgetRequest {
