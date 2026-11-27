@@ -469,6 +469,28 @@ async fn a_repeated_form_field_keeps_the_last_value() {
 }
 
 #[tokio::test]
+async fn the_post_refuses_a_form_with_too_many_fields() {
+    let cookies = cookie(&ui_claims(), MASTER_KEY);
+    let mut body = String::new();
+    for index in 0..=1000 {
+        if !body.is_empty() {
+            body.push('&');
+        }
+        body.push_str(&format!("field{index}=1"));
+    }
+    let response = send(
+        signed_in(AuthCodeStore::new()),
+        post_with_cookie(AUTHORIZE_PATH, &body, &cookies),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        text(response).await,
+        r#"{"detail":"Too many fields. Maximum number of fields is 1000."}"#
+    );
+}
+
+#[tokio::test]
 async fn the_post_refuses_a_non_loopback_redirect_uri() {
     let cookies = cookie(&ui_claims(), MASTER_KEY);
     let body = "redirect_uri=https://example.com/cb&code_challenge=challenge&api_key=sk-user";
