@@ -22,8 +22,8 @@ use betterlite_openai::vector_stores::files::create_request as file_create;
 use betterlite_openai::vector_stores::store::create_request as store_create;
 
 use self::wire::{
-    OpenAiPortError, file_params, openai_headers, port_error, post, reply_text, status_error,
-    store_id, store_params,
+    OpenAiPortError, file_params, openai_headers, port_error, post, reply_text, store_id,
+    store_params,
 };
 
 mod tests;
@@ -83,7 +83,12 @@ impl VectorStorePort for OpenAiStorePort {
             .map_err(|source| port_error(OpenAiPortError::Encode { source }))?;
         let reply = post(&self.client, &url, headers, RequestBody::Json(payload)).await?;
         if !(200..300).contains(&reply.status) {
-            return Err(status_error(config, &reply));
+            let message = reply_text(&reply.body);
+            return Err(port_error(config.error_class(
+                &message,
+                reply.status,
+                header_map(&reply.headers),
+            )));
         }
         store_id(config, &reply)
     }

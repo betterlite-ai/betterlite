@@ -3,7 +3,6 @@ use std::error::Error as StdError;
 use std::str::from_utf8;
 
 use betterlite_core::api::vector_store_http_write::config::WriteConfig;
-use betterlite_core::api::vector_store_http_write::error::header_map;
 use betterlite_core::rag::openai_ingestion::{AttachFile, CreateStore, PortError};
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::UpstreamResponse;
@@ -152,11 +151,6 @@ pub(super) fn reply_text(body: &[u8]) -> String {
         |_error| format!("{} bytes that are not UTF-8", body.len()),
         str::to_owned,
     )
-}
-
-pub(super) fn status_error(provider: &dyn WriteConfig, reply: &UpstreamResponse) -> PortError {
-    let message = reply_text(&reply.body);
-    port_error(provider.error_class(&message, reply.status, header_map(&reply.headers)))
 }
 
 pub(super) fn store_id(
