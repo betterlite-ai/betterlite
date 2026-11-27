@@ -1,0 +1,14 @@
+id: B10159
+milestone: M3 providers
+title: Vertex partner response-config selector and reply transforms
+status: todo
+depends_on: [B3638, B1333, B1335, B504, B1425]
+file: tasks/B10159-vertex-partner-response-config.yaml
+covers:
+  - "litellm/llms/vertex_ai/vertex_ai_partner_models/__init__.py"
+parent: B032
+split_from: B032
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,6 @@
+{
+  "include": ["../b10137.py"],
+  "typeCheckingMode": "strict",
+  "reportAny": "error",
+  "reportMissingTypeStubs": "none"
+}

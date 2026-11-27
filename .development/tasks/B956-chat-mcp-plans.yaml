@@ -42,8 +42,8 @@ description: >-
 
   Direct inputs come from B014 (Call dispatch across providers and call types, shared settings and helpers), B171
   (Direct helper oracle and URL path encoding), B948 (Responses mcp selection), B949 (Responses mcp discovery),
-  B1087 (Api boundaries), B950 (Responses mcp execute). These are callable/type/config owners, not provider-family
-  umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
+  B1087 (Api boundaries), B10122 (should_auto_execute_tools, the auto-execution decision at
+  chat_completions_handler.py L153). These are callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml

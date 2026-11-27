@@ -84,12 +84,12 @@ out_of_scope:
   - "B1635 owns user extraction, metadata, setting readers and role recomputation at L305-L484."
   - "B1636 owns ensure/provision/resolve/extract functions at L764-L787, L854-L949 and L1097-L1142."
   - "B1637 owns user membership changes and key/reference/active helpers at L966-L1094, roster failure/add/remove/batch functions at L2200-L2322 and group reconciliation at L2819-L2864."
-  - "B1638 owns email upsert at L164-L232 and POST/PUT/DELETE Users at L1661-L1879."
+  - "B1638 owns email upsert at L164-L232 and POST/PUT/DELETE Users at L1661-L1879; the deletion inside DELETE at L1836-L1875 is B10150's, and B1643's merge calls it too."
   - "B1639 owns member/path parsing and all user patch helpers at L1965-L2197 plus PATCH Users at L2325-L2397."
   - "B1640 owns team defaults and POST/PUT/DELETE Groups at L2511-L2708."
   - "B1641 owns user equality parsing and user reads at L1556-L1658 plus group reads at L2405-L2508."
   - "B1642 owns schema/resource builders and every discovery route at L1171-L1553."
-  - "B1643 owns placeholder listing, rejection and merge at L1882-L1962; B1644 supplies eligible oracle startup only."
+  - "B1643 independently owns placeholder listing, rejection and merge at L1882-L1962; group PATCH uses none of those services. B1644 supplies eligible oracle startup only."
 pitfalls:
   - An absolute members replace must not be rebased onto a concurrently changed roster, or a member explicitly removed by the IdP can survive.
   - Group PATCH rereads after roster changes and can therefore return different member data from otherwise similar group PUT operations.

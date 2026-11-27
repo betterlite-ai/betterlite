@@ -1,0 +1,38 @@
+kind: helper
+name: realtime-probe-vertex-and-failures
+call:
+  realtime_probe_websocket:
+    scenarios:
+      - model: probe-live-model
+        custom_llm_provider: vertex_ai
+        api_base: https://vertex.example
+        vertex_token: ya29-token
+        vertex_project: probe-project
+        vertex_location: europe-west4
+        model_params: {vertex_location: europe-west4}
+      - model: probe-live-model
+        custom_llm_provider: vertex_ai
+        vertex_token: ya29-token
+        vertex_project: probe-project
+        vertex_location: europe-west4
+        model_params: {vertex_location: europe-west4}
+      - model: probe-live-model
+        custom_llm_provider: vertex_ai
+        vertex_token: ya29-token
+        vertex_project: probe-project
+      - model: chirp_2
+        custom_llm_provider: vertex_ai
+        api_key: sk-vertex
+        api_base: https://vertex.example
+        catalog:
+          vertex_ai/chirp_2:
+            litellm_provider: vertex_ai
+            mode: audio_transcription
+            supported_endpoints: ["/v1/audio/transcriptions", "/v1/realtime"]
+      - model: probe-model
+        custom_llm_provider: cohere
+        api_key: sk-unsupported
+        api_base: https://unsupported.example
+env:
+  REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES: "16777216"
+compare: {ignore: []}

@@ -8,9 +8,9 @@ description: >-
   projection at _types.py L3789-L3791 below B124: output only user_id and user_email (default null), never
   other columns or a pagination envelope.
 
-  Call B066 get_ui_settings_cached and read scope_user_search_to_org with default false. This is stored
+  Call B1659 get_ui_settings_cached and read scope_user_search_to_org with default false. This is stored
   in litellm_uisettings, row id ui_settings, not general_settings or a dedicated environment variable.
-  B066 owns cache key ui_settings:settings_dict, TTL 600, stored-JSON decoding and allowed-field filtering.
+  B1659 owns cache key ui_settings:settings_dict, TTL 600, stored-JSON decoding and allowed-field filtering.
   A falsey value permits any authenticated caller to search all users. A truthy value first permits B2314
   admin-view roles proxy_admin and proxy_admin_viewer without scoping. Otherwise fetch a non-null caller
   user_id through B736 with user_id_upsert=false, swallowing only ValueError. Collect ALL organization
@@ -29,9 +29,10 @@ description: >-
 
   Reject a missing database before the try block with HTTPException 500 and detail.error No db connected.
   Inside the try block, scope first, then compute skip=(page-1)*page_size. Truthy user_id and user_email
-  each add an insensitive contains condition, combined with AND. Truthy search adds an OR of those same
-  two contains predicates, ANDed with the individual filters. Empty strings add nothing. A non-null org
-  list adds organization_memberships.some.organization_id.in. Drop None-valued predicates and call B790's
+  each add an insensitive contains condition, combined with AND in one UserSearchTerm rendered by B10149's user_term_sql. The search OR is B10149's: call its
+  user_search_where(search) and, when it gives Some, AND its user_search_sql fragment with the individual
+  filters, writing no OR of your own. Empty strings add nothing. A non-null org
+  list adds organization_memberships.some.organization_id.in through B10149's organization_membership_sql. Drop None-valued predicates and call B790's
   user-table accessor once with take=page_size and created_at descending, without a tiebreaker or count.
   No rows returns []; populated rows validate through the two-field response projection.
 
@@ -51,11 +52,11 @@ description: >-
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/internal_user_endpoints.py:
   _resolve_org_filter_for_user_search (L2653-L2716; 52 source lines), _resolve_team_org_filter (L2719-L2754;
-  33 source lines), ui_view_users (L2766-L2860; 77 source lines), _user_search_where (L2205-L2215; 11
-  source lines).
+  33 source lines), ui_view_users (L2766-L2860; 77 source lines). B10149 owns _user_search_where
+  (L2205-L2215) and its SQL fragment; this route calls them.
 
 
-  B001 HTTP cases run this route through the actual authenticated proxy. Seed B066's persisted UI settings
+  B001 HTTP cases run this route through the actual authenticated proxy. Seed B1659's persisted UI settings
   and cache state, then prove absent/false/true flag behavior and cached-setting consumption. Missing bearer
   exercises B052's rejection; an unrelated authenticated user is allowed when the flag is off. An unknown
   searched user produces [] rather than an invalid-target error. No cookies, redirects or changed-by header
@@ -65,12 +66,12 @@ description: >-
   Use POSTGRES_TEST_URL when supplied, otherwise testcontainers via betterlite-postgres-fixture. Native
   Postgres tests inspect the actual predicates, page offsets and response redaction, plus failures from UI
   settings/cache/user/team loading and user queries. An unavailable selected fixture fails the test. The
-  flag's stored-data and cache boundary belongs to B066, so do not add a fake config-loader acceptance test.
+  flag's stored-data and cache boundary belongs to B1659, so do not add a fake config-loader acceptance test.
 
 
-  Sizing starts with 173 helper/route lines before docstring exclusion and the response projection:
+  Sizing starts with 162 helper/route lines before docstring exclusion and the response projection:
   allow 210 production, 380 behavior/Postgres tests and 100 HTTP integration/wiring lines, totaling 690
-  within 750. B003 parses query parameters; B066 decodes stored settings. Neither decoder is duplicated.
+  within 750. B003 parses query parameters; B1659 decodes stored settings. Neither decoder is duplicated.
 
 
   HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
@@ -98,9 +99,9 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L2757-L2860
     why: Own ui_view_users; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L2205-L2215
-    why: Own _user_search_where; preserve caller-visible values and failure ordering.
+    why: B10149 owns _user_search_where and user_search_sql; ui_view_users merges the predicate at L2836.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L1667-L1703
-    why: B066 owns the actual stored UI-setting lookup and cache, not a YAML setting.
+    why: B1659 owns the actual stored UI-setting lookup and cache, not a YAML setting.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3789-L3791
     why: The response exposes exactly user_id and nullable user_email.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L368-L419
@@ -111,8 +112,9 @@ dod:
       user_value_error_falls_back_to_team, other_user_error_propagates, query_team_before_key_team,
       empty_query_team_uses_key_team, four_exact_scope_forbidden_details, team_http_error_maps_to_not_found,
       missing_database_before_scope, no_match_empty_array, contains_insensitive_and_combined_or,
-      empty_search_no_predicate, page_defaults_bounds_and_offset, created_desc_without_tiebreaker,
-      response_only_id_and_nullable_email, outage_chain_503 and other_exception_500 cover the owned branches.'
+      page_defaults_bounds_and_offset, created_desc_without_tiebreaker,
+      response_only_id_and_nullable_email, outage_chain_503 and other_exception_500 cover the owned branches;
+      contains_insensitive_and_combined_or runs the search through B10149''s user_search_sql.'
     proof:
       - behavior-tests
   - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
@@ -147,7 +149,9 @@ oracle_cases:
   - tools/oracle/cases/management/user-search-scope/missing-database-and-query-errors.yaml
 deviations: []
 out_of_scope:
-  - B066 owns get_ui_settings_cached, its cache constants, UISettingsRepository access and settings mutation routes.
+  - B1659 owns get_ui_settings_cached, its cache constants and UISettingsRepository access; settings mutation routes remain outside this task.
+  - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B10149 owns _user_search_where (L2205-L2215)
+    and its user_search_sql fragment; ui_view_users calls both.'
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B056 owns new_user (L482-L672).'
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B790 owns _user_table (L121-L125),
     _team_table (L128-L132), _verification_token_table (L135-L141), _organization_membership_table (L148-L154),
@@ -173,8 +177,8 @@ out_of_scope:
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B796 owns get_user_key_counts (L2067-L2101),
     _validate_sort_params (L2104-L2133), _authorize_user_list_request (L2136-L2199), get_users (L2224-L2388).'
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B797 owns delete_user (L2397-L2604).'
-  - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B798 owns resolve_user_daily_activity_entity_ids
-    (L2866-L2875), _resolve_user_email_metadata (L2878-L2889), get_user_daily_activity (L2899-L3004).'
+  - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B10158 owns resolve_user_daily_activity_entity_ids
+    (L2866-L2875); B798 owns _resolve_user_email_metadata (L2878-L2889), get_user_daily_activity (L2899-L3004).'
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B1226 owns check_if_default_team_set
     (L413-L434), add_new_user_to_default_team (L437-L467).'
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py::add_internal_user_to_organization

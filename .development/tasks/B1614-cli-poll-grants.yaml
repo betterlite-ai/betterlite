@@ -2,12 +2,12 @@ id: B1614
 title: Bind CLI poll credentials to known team grants
 description: >-
   Build cli_poll_grants in betterlite-server and register GET /sso/cli/poll/{key_id}
-  as a public endpoint authenticated by x-litellm-cli-poll-secret. Own _TeamDetailRow,
-  _team_detail_db, _TeamRowGrants, CliSsoTeamDetail, the two team-detail constants,
-  _cli_sso_team_detail, fetch_cli_sso_team_details, _cli_sso_session_teams,
-  selected_cli_sso_team_detail and cli_poll_key. Query B724's teams including their alias
-  tables; a failed lookup returns unknown, an empty result means no teams, and deleted
-  membership targets disappear. Reuse B1613's flow decoding/secret comparison. Respond
+  as a public endpoint authenticated by x-litellm-cli-poll-secret. Own _cli_sso_session_teams
+  and cli_poll_key. The team grants come from B10114's betterlite_server::cli_team_grants:
+  CliSsoTeamDetail, fetch_cli_sso_team_details (None for a failed lookup, an empty list for
+  no teams, deleted membership targets left out) and selected_cached_cli_sso_team_detail.
+  The poll gives that function the flow's cached team_details as they are. Call these
+  names; don't rebuild them. Reuse B1613's flow decoding/secret comparison. Respond
   pending until both SSO and browser verification finish. With multiple teams and no team_id,
   return selection details without minting a token; zero or one team selects automatically.
   An explicit nonmember team is 403. Unknown selected grants are 500, never unrestricted;
@@ -18,10 +18,10 @@ description: >-
   when B1611 produces a nonempty map. B1613 owns JSON bytes; this task converts already
   decoded records and uses the server's query extractor for optional team_id. Exercise
   ready flows with injected cache/clock and PostgreSQL team rows; run malformed/expired and
-  bad-secret HTTP cases against both real proxies. Owned source is 168 lines including
-  records; 240 implementation, 200 tests and 60 integration/corpus lines fit a 575-line cap.
+  bad-secret HTTP cases against both real proxies. Owned source is about 116 lines, since
+  B10114 builds the 52 lines of team records, lookup and selection.
 
-  CLI callback arm. B1615 registers GET /sso/callback without the CLI half and answers a state starting with litellm-session-token with 501 "the CLI SSO login is not installed". Add that arm in B1615's oauth_callback module: own _build_cli_sso_user_defined_values, _complete_cli_sso_callback_session and cli_sso_callback (ui_sso.py L2224-L2245 and L2299-L2463), route that state to CLI completion by splitting at most twice and keep an optional code suffix verbatim for the verification page. CLI completion first reads the flow, then checks DB and result, uses B1624's identity and domain policy and async custom-SSO contract, enforces restricted groups, reconciles the user through B1616, requires a nonempty user ID, retains the assertion with B10011's retain, warns through B1617, resolves this task's team grants (unknown grants fail 500 before marking completion), enrolls any trusted Microsoft subject, merges B1611 attribution, stores the resolved teams and models and a fresh 32-byte browser completion token hash in the flow, sets sso_complete=true and refreshes the TTL through B1613, and serves B1612's code-verification form without marking the code verified. Preserve ProxyException and HTTPException and map other CLI failures to 500. A complete browser and CLI transcript (start, authenticate, capture the hidden browser token, confirm the displayed code and poll with each proxy's own secret) cannot yield a token until both the provider login and the browser code verification succeed; CLI completion stores only currently resolvable team rows.
+  CLI callback arm. B1615 registers GET /sso/callback without the CLI half and answers a state starting with litellm-session-token with 501 "the CLI SSO login is not installed". Add that arm in B1615's oauth_callback module: own _build_cli_sso_user_defined_values, _complete_cli_sso_callback_session and cli_sso_callback (ui_sso.py L2224-L2245 and L2299-L2463), route that state to CLI completion by splitting at most twice and keep an optional code suffix verbatim for the verification page. CLI completion first reads the flow, then checks DB and result, uses B1624's identity and domain policy and async custom-SSO contract, enforces restricted groups, reconciles the user through B1616, requires a nonempty user ID, retains the assertion with B10011's retain, warns through B1617, resolves the team grants with B10114's fetch_cli_sso_team_details (unknown grants fail 500 before marking completion), enrolls any trusted Microsoft subject, merges B1611 attribution, stores the resolved teams and models and a fresh 32-byte browser completion token hash in the flow, sets sso_complete=true and refreshes the TTL through B1613, and serves B1612's code-verification form without marking the code verified. Preserve ProxyException and HTTPException and map other CLI failures to 500. A complete browser and CLI transcript (start, authenticate, capture the hidden browser token, confirm the displayed code and poll with each proxy's own secret) cannot yield a token until both the provider login and the browser code verification succeed; CLI completion stores only currently resolvable team rows.
 
   Mount. B063 lands first with the CLI routers left out of its public routes. Add this task's router there (crates/betterlite-server/src/sso.rs, no auth layer) and write tools/oracle/cases/sso/services/cli-then-browser-login.yaml and tools/oracle/cases/sso/oauth-callback/cli-code-and-browser-token-required.yaml through the booted proxy.
 scope:
@@ -41,9 +41,9 @@ scope:
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L206-L234
-    why: Team snapshots and the explicit teamless empty grant.
+    why: Team snapshots and the explicit teamless empty grant, built by B10114.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2248-L2296
-    why: Lookup failure, deleted teams and selected-grant resolution.
+    why: _cli_sso_session_teams (owned), and B10114's lookup and selection the callback and poll call.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2466-L2595
     why: Poll route, secret header, selection response and mint-before-delete sequence.
 dod:
@@ -73,8 +73,9 @@ deviations: []
 out_of_scope:
   - B1615 gathers user/session attributes and B1613 implements browser-code confirmation; neither is repeated in the poll handler.
   - The non-CLI functions of ui_sso.py are allocated by B063's ownership inventory.
+  - "_TeamDetailRow, _team_detail_db, _TeamRowGrants, CliSsoTeamDetail, the details adapter, the teamless constant, _cli_sso_team_detail, fetch_cli_sso_team_details and selected_cli_sso_team_detail: B10114, and this task calls them."
 pitfalls:
-  - A cached team_id with missing team_models is unknown authority and must not be repaired into an empty unrestricted grant.
+  - A cached team_id with missing team_models is unknown authority, so hand the cached team_details to selected_cached_cli_sso_team_detail unchanged; repairing them first into an empty grant would mint an unrestricted credential.
   - The ready response for several teams has requires_team_selection=true and no key until a team is selected.
 budget:
   max_changed_lines: 1500

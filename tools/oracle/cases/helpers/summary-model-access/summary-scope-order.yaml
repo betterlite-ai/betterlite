@@ -1,0 +1,65 @@
+kind: helper
+name: summary-model-access-summary-scope-order
+call:
+  summary_model_access:
+    action: access
+    summary_model: sum
+    scenarios:
+      - principal: {models: [key-model], team_models: [team-model], team_model_aliases: {sum: team-model}, team_id: team-1, user_id: user-1, project_id: project-1}
+        proxy: true
+        database: true
+        checks: scripted
+        outcomes: []
+        user: {kind: found, row: {user_id: user-1, models: [key-model]}}
+        project: {kind: found, row: {project_id: project-1, models: [team-model]}}
+        membership: {kind: found, row: {user_id: user-1, team_id: team-1, litellm_budget_table: {allowed_models: [member-model]}}}
+      - principal: {models: [], team_models: [], team_model_aliases: null, team_id: null, user_id: user-1, project_id: null}
+        proxy: true
+        database: true
+        checks: scripted
+        outcomes: []
+        user: {kind: found, row: {user_id: user-1, models: []}}
+        project: {kind: missing}
+        membership: {kind: missing}
+      - principal: null
+        proxy: true
+        database: true
+        checks: scripted
+        outcomes: []
+        user: {kind: missing}
+        project: {kind: missing}
+        membership: {kind: missing}
+      - principal: {models: [key-model], team_id: team-1, user_id: user-1}
+        proxy: false
+        database: true
+        checks: scripted
+        outcomes: []
+        user: {kind: missing}
+        project: {kind: missing}
+        membership: {kind: missing}
+      - principal: {models: [key-model], team_models: [team-model], team_model_aliases: {sum: team-model}, team_id: team-1, user_id: user-1, project_id: project-1}
+        proxy: true
+        database: true
+        checks: scripted
+        outcomes: [allow, deny]
+        user: {kind: missing}
+        project: {kind: missing}
+        membership: {kind: missing}
+      - principal: {models: [other-model], team_model_aliases: {sum: team-model}, team_id: team-1}
+        proxy: true
+        database: true
+        checks: real
+        outcomes: []
+        user: {kind: missing}
+        project: {kind: missing}
+        membership: {kind: missing}
+      - principal: {models: [other-model]}
+        proxy: true
+        database: true
+        checks: real
+        outcomes: []
+        user: {kind: missing}
+        project: {kind: missing}
+        membership: {kind: missing}
+env: {}
+compare: {ignore: []}

@@ -1,16 +1,14 @@
 id: B6592
-title: MCP server health checks, instructions prefetch and toolset cache
+title: MCP server health checks and instructions prefetch
 description: >-
-  Build the health side of the MCP server registry: the health check of one server, the batch runs behind the admin list routes, the reachability and OpenAPI probes, the upstream initialize instructions cache, and the toolset name cache. In LiteLLM these are `health_check_server`, `_run_health_checks`, `get_all_mcp_servers_with_health_and_teams`, `get_all_mcp_servers_with_health_unfiltered`, `get_all_allowed_mcp_servers`, `_mcp_server_reachability`, `_openapi_spec_health`, `_OpenAPIHealthProbe`, `_remember_upstream_initialize_instructions`, `_ensure_upstream_initialize_instructions_cached`, `invalidate_toolset_cache` and `get_toolset_by_name_cached` in mcp_server_manager.py. The registry mutation parts of the old B6592 entry moved to B6760 to B6765.
+  Build the health side of the MCP server registry: the health check of one server, the batch runs behind the admin list routes, the reachability and OpenAPI probes and the upstream initialize instructions cache. In LiteLLM these are `health_check_server`, `_run_health_checks`, `get_all_mcp_servers_with_health_and_teams`, `get_all_mcp_servers_with_health_unfiltered`, `get_all_allowed_mcp_servers`, `_mcp_server_reachability`, `_openapi_spec_health`, `_OpenAPIHealthProbe`, `_remember_upstream_initialize_instructions` and `_ensure_upstream_initialize_instructions_cached` in mcp_server_manager.py. The registry mutation parts of the old B6592 entry moved to B6760 to B6765, and `invalidate_toolset_cache` and `get_toolset_by_name_cached` moved to B10147's toolset_cache module, which HealthService neither takes nor calls.
 
 
-  Code goes in the new betterlite-mcp module server_health: crates/betterlite-mcp/src/server_health.rs, server_health/** and tests beside each file. A HealthService struct takes in its constructor: SharedRegistry (B4731), a ProbeClient trait, a SessionProbe trait, an EnvVarCheck trait, an AllowedServers source, a ToolsetCache trait, a ToolsetLookup trait and a Clock trait (now_monotonic() -> Duration, now_utc() -> DateTime<Utc>). Traits:
+  Code goes in the new betterlite-mcp module server_health: crates/betterlite-mcp/src/server_health.rs, server_health/** and tests beside each file. A HealthService struct takes in its constructor: SharedRegistry (B4731), a ProbeClient trait, a SessionProbe trait, an EnvVarCheck trait, an AllowedServers source and a Clock trait (now_monotonic() -> Duration, now_utc() -> DateTime<Utc>). Traits:
   - ProbeClient.get_stream_status(url, accept, timeout) -> Result<(), ProbeError>. It issues a GET without auth and without redirects, reads no body, and is implemented by B8620 over betterlite-http (B171, B173). ProbeError has Timeout and Failed(kind name).
   - SessionProbe.run_noop(server, static_headers, timeout) -> Result<Option<String>, SessionError>. It opens an MCP session, runs a no-op and returns the instructions text from the initialize result. SessionError has Timeout, Cancelled and Failed(text). The real one wraps `_create_mcp_client` and `_resolve_static_headers_with_env_vars` (no owner found, see notes).
   - EnvVarCheck.references_per_user_env_var(server) -> bool (`_references_per_user_env_var`, L3928-3946).
-  - AllowedServers.allowed_server_ids(auth) -> Vec<String> from B6591 (get_allowed_mcp_servers).
-  - ToolsetCache.get(key) -> Option<CachedToolset>, set(key, value, ttl), and remove_where(predicate on key) for the in-memory layer. CachedToolset is Found(MCPToolset) or NotFound (the "__not_found__" sentinel).
-  - ToolsetLookup.by_name(name) -> Option<MCPToolset>, implemented over B4681's get_mcp_toolset_by_name.
+  - Declare AllowedServers.allowed_server_ids(auth) -> Vec<String> here over B2314's resolved-key auth; HealthService consumes this injected source and tests supply a fake. The later composition root adapts B6591's get_allowed_mcp_servers to this port; this task imports no ServerUnion implementation.
 
 
   Constants: MCP_HEALTH_CHECK_TIMEOUT (env LITELLM_MCP_HEALTH_CHECK_TIMEOUT, default 10.0 seconds, read once into HealthSettings, invalid or non-positive values fall back to 10.0), the OpenAPI probe cache of 30 seconds, the spec size limit of 10 MiB (10 * 1024 * 1024), the batch size of 10.
@@ -27,9 +25,7 @@ description: >-
 
   5. Instructions cache, kept in HealthService (not module state): a map server_id to trimmed text and a map server_id to the last probe time. `remember_instructions` (`_remember_upstream_initialize_instructions`) stores the trimmed text when it is non-blank. `ensure_instructions_cached` (`_ensure_upstream_initialize_instructions_cached`) returns at once when the server has a spec_path, has non-blank instructions of its own, already has a cached text, requires per-user auth, references a per-user env var, or has an auth_type outside none and aws_sigv4 with no token; or when it was probed less than the health timeout ago. Else record the probe time before the call, run SessionProbe.run_noop and remember the instructions, and log failures at debug only. HealthService implements the InstructionsCache trait of B6764 (one method, clear(), which empties both maps).
 
-  6. `invalidate_toolset_cache` (`invalidate_toolset_cache`), input: Option<toolset_id>. Remove from the in-memory layer every key that starts with "toolset_" when the id is None, else every key that starts with "toolset_perms:" and contains the id, plus every key that starts with "toolset_name:". Redis entries are left to expire. `toolset_by_name_cached` (`get_toolset_by_name_cached`): key "toolset_name:<name>"; a cached NotFound gives None, a cached toolset gives it; on a miss call ToolsetLookup and store the toolset, or NotFound, with the management object ttl (the cache trait's default ttl method, see B4726/B4720 for the helper get_management_object_ttl).
-
-  Tests use fakes for every trait and tokio::test with paused time. Cover each status branch and message above, the 30 s probe cache edge (29.9 s hit, 30.0 s miss), batch size with 25 ids, dedupe, not-found rows, the toolset key rules and the sentinel.
+  Tests use fakes for every trait and tokio::test with paused time. Cover each status branch and message above, the 30 s probe cache edge (29.9 s hit, 30.0 s miss), batch size with 25 ids, dedupe and not-found rows.
 
 scope:
   paths:
@@ -44,8 +40,6 @@ references:
     why: reachability probe, OpenAPI spec health and its 30 second cache.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L2303-L2375
     why: upstream initialize instructions cache.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L3660-L3732
-    why: toolset cache invalidation and cached lookup.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L3928-L3946
     why: references_per_user_env_var, the rule behind the reachability probe.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L7141-L7331
@@ -70,8 +64,6 @@ dod:
     proof: [health-batch-tests]
   - text: The instructions cache skips on each listed precondition and the cooldown, records the attempt before the call and ignores failures.
     proof: [health-instructions-tests]
-  - text: invalidate_toolset_cache removes only the stated keys, and toolset_by_name_cached caches both a toolset and the not-found sentinel.
-    proof: [health-toolset-tests]
 
 checks:
   optional: []
@@ -94,14 +86,11 @@ checks:
     - id: health-instructions-tests
       why: the instructions prefetch skips, cooldown or storage is wrong
       run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^server_health::tests::instructions_/)'
-    - id: health-toolset-tests
-      why: toolset cache invalidation or the sentinel is wrong
-      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^server_health::tests::toolset_/)'
 
 oracle_cases: []
 
 deviations:
-  - what: Probes, the allowed-server source and the toolset cache are injected traits, and the OpenAPI probe cache and instructions maps are HealthService fields.
+  - what: Probes and the allowed-server source are injected traits, and the OpenAPI probe cache and instructions maps are HealthService fields.
     why: the repo wires dependencies through constructors and has no module-level state; LiteLLM uses a global manager and proxy_server imports.
   - what: asyncio.gather in batches becomes futures::future::join_all per batch of 10.
     why: same concurrency bound, no behaviour change.
@@ -110,6 +99,7 @@ out_of_scope:
   - "Registry reads and server_table: B4731. Allowed-server union and get_allowed_mcp_servers: B6591."
   - "Registry reload, add, update, remove: B6765. Config loading: B6764. Record build: B6763."
   - "OpenAPI spec loading (load_openapi_spec_async): B4683. Toolset storage (get_mcp_toolset_by_name): B4681."
+  - "invalidate_toolset_cache and get_toolset_by_name_cached: B10147, in betterlite-mcp's toolset_cache."
   - "_create_mcp_client, _resolve_static_headers_with_env_vars and _references_per_user_env_var: B8461; this task takes them as traits."
   - "filter_server_ids_by_ip and the other methods outside the health section: their own entries."
 
@@ -117,7 +107,6 @@ pitfalls:
   - "A per-user auth server is never opened with a session during a health check; it only gets the reachability GET, so its best status is reachable, not healthy."
   - "The reachability GET sends no auth and does not follow redirects; a redirect response still counts as reachable."
   - "Record the instructions probe time before the call, so a failing upstream is not retried on every initialize."
-  - "toolset_name keys are always evicted on any invalidation, since the name may have changed; toolset_perms keys only match when they contain the id."
   - "Error text from a failed probe must carry the error kind only for reachability (no url), but the full text for the session probe, as in Python."
   - "run_health_checks keeps duplicates out but must not reorder the ids."
 

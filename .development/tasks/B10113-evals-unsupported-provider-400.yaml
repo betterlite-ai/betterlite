@@ -1,0 +1,102 @@
+id: B10113
+title: Every evals call answers 400 for a provider it cannot serve
+description: >-
+  Architect decision (2026-11-27, B3425 review): a provider name that is unknown, or known but without that evals
+  call, is the caller's input and the call can never succeed, so betterlite answers it with a BadRequest (400) whose
+  model is "" and whose provider is the name the caller sent. LiteLLM raises a ValueError in every evals function
+  (litellm/evals/main.py at the pinned commit, lines 163, 348, 514, 679, 884, 1034, 1213, 1397, 1567, 1723 and 1888)
+  and exception_type turns it into an APIConnectionError (500), which tells the client the server broke.
+
+
+  Today the evals family disagrees with itself. B3423's eval_lifecycle (delete_eval, cancel_eval) already answers
+  400 through the private fn unsupported in crates/betterlite-core/src/api/eval_lifecycle/error.rs, with a row in
+  docs/deviations/B3423.yaml. eval_create_list (B3421), eval_get_update (B3422), eval_run_create_list (B3424) and
+  eval_run_lifecycle (B3425) still send UnknownProvider and their Unsupported variants through the ValueError path
+  (value_error or a RawFailure with exception_type "ValueError"), so they answer 500.
+
+
+  Move unsupported out of eval_lifecycle/error.rs into crates/betterlite-core/src/api/eval_http/error.rs as
+  pub(crate) fn unsupported_provider(message: String, provider: &str) -> ErrorClass, keeping its body and its one
+  comment line, and call it from all five modules' failure mapping for the unknown-provider and unsupported-call
+  variants only. Every other variant keeps the class it has now. Tests: for each of the eleven calls, an unknown
+  name ("not-a-provider") and a known provider without that call (for example "azure") answer
+  ErrorClass::BadRequest with status 400, model "" and the provider set; change the existing tests that asserted the
+  500 class for these inputs instead of adding parallel ones.
+
+
+  Deviations: add docs/deviations/B10113.yaml with one row per LiteLLM function group (evals create and list, get
+  and update, runs create and list, runs get, cancel and delete), each with what LiteLLM does, what betterlite does,
+  the why above and the pinned link to the raise line. In docs/deviations/B3421.yaml, change the unknown-provider
+  row: its "Both are ValueErrors and map to the same class" no longer holds, so say the name is in the message and
+  the class is the 400 from B10113.
+scope:
+  paths:
+  - "crates/betterlite-core/src/api/eval_run_lifecycle/tests.rs"
+  - "crates/betterlite-core/src/api/eval_run_lifecycle/**"
+  - crates/betterlite-core/src/api/eval_http/error.rs
+  - crates/betterlite-core/src/api/eval_lifecycle/error.rs
+  - crates/betterlite-core/src/api/eval_lifecycle/tests/**
+  - crates/betterlite-core/src/api/eval_create_list/error.rs
+  - crates/betterlite-core/src/api/eval_create_list/tests/**
+  - crates/betterlite-core/src/api/eval_get_update/error.rs
+  - crates/betterlite-core/src/api/eval_get_update/tests/**
+  - crates/betterlite-core/src/api/eval_run_create_list/error.rs
+  - crates/betterlite-core/src/api/eval_run_create_list/tests/**
+  - crates/betterlite-core/src/api/eval_run_lifecycle/error.rs
+  - crates/betterlite-core/src/api/eval_run_lifecycle/tests/**
+  - docs/deviations/B10113.yaml
+  - docs/deviations/B3421.yaml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L160-L163
+    why: "create_eval's ValueError for a provider without the call; the other ten functions raise the same way"
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1885-L1888
+    why: "delete_run's ValueError, the last of the eleven"
+dod:
+- text: >-
+    All eleven evals calls answer a 400 BadRequest with model "" and the caller's provider for an unknown provider
+    and for a known provider without that call, through one shared builder in eval_http/error.rs, and every other
+    error keeps its class.
+  proof: [evals-tests, shared-builder, no-private-copy, five-callers]
+- text: >-
+    docs/deviations/B10113.yaml records the change per function group with pinned links, and B3421's row no longer
+    says the classes match.
+  proof: [deviations-file, b3421-row]
+checks:
+  optional:
+    - mutants
+  commands:
+  - id: evals-tests
+    why: An evals test failed, or the 400 tests are missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::eval_(create_list|get_update|lifecycle|run_create_list|run_lifecycle)::/)'
+  - id: shared-builder
+    why: The 400 builder is not in eval_http/error.rs.
+    run: grep -q -E 'pub\(crate\) fn unsupported_provider\(' crates/betterlite-core/src/api/eval_http/error.rs
+  - id: no-private-copy
+    why: eval_lifecycle still keeps its own copy of the builder.
+    run: "! grep -n -E '^fn unsupported\\(' crates/betterlite-core/src/api/eval_lifecycle/error.rs"
+  - id: five-callers
+    why: A module still maps an unsupported provider without the shared builder.
+    run: for m in eval_lifecycle eval_create_list eval_get_update eval_run_create_list eval_run_lifecycle; do grep -q 'unsupported_provider' crates/betterlite-core/src/api/$m/error.rs || exit 1; done
+  - id: deviations-file
+    why: The deviations file is missing or has no pinned link to the evals raise lines.
+    run: test -f docs/deviations/B10113.yaml && grep -q 'd665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L' docs/deviations/B10113.yaml
+  - id: b3421-row
+    why: B3421's deviation row still says both providers map to the same class.
+    run: "! grep -n -F 'Both are ValueErrors and map to the same class' docs/deviations/B3421.yaml"
+oracle_cases: []
+deviations:
+- what: An unknown provider or a provider without the evals call answers 400 BadRequest instead of LiteLLM's 500 APIConnectionError.
+  why: The provider name is the caller's input and the call can never succeed.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L160-L163
+out_of_scope:
+- Provider errors from the handler, api_base, timeout, params, logging and runtime errors; they keep their classes.
+- The evals HTTP routes; they map the class the operations return.
+pitfalls:
+- 'B3423 already answers 400; move its builder, do not write a second one next to it.'
+- 'Keep the message text each module builds today ("CREATE eval is not supported for azure", the unknown-name text); only the class changes.'
+- 'A known provider with the call (openai) must still reach the handler; test that it is not caught by the new arm.'
+review_level: standard
+budget:
+  max_changed_lines: 500
+  max_new_expects: 0

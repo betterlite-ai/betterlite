@@ -1,0 +1,17 @@
+kind: helper
+name: summary-model-access-loads-summary-settings
+call:
+  summary_model_access:
+    action: settings
+    scenarios:
+      - general_settings: null
+      - general_settings: {}
+      - general_settings: {context_management_summary_model: null, context_management_summary_max_tokens: null}
+      - general_settings: {context_management_summary_model: "", context_management_summary_max_tokens: 0}
+      - general_settings: {context_management_summary_model: " ", context_management_summary_max_tokens: -1}
+      - general_settings: {context_management_summary_model: "openai/gpt-4o-mini", context_management_summary_max_tokens: 2}
+      - general_settings: {context_management_summary_model: 42, context_management_summary_max_tokens: 1.5}
+      - general_settings: {context_management_summary_model: false, context_management_summary_max_tokens: "2"}
+      - general_settings: {context_management_summary_max_tokens: false}
+env: {}
+compare: {ignore: []}

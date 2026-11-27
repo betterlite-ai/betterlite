@@ -62,26 +62,19 @@ pub mod zerobus;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use betterlite_config::loader::EnvironmentLookup;
-use betterlite_config::sections::callback_settings::CallbackEntry;
-use betterlite_config::sections::callback_settings::names::CallbackName;
-use betterlite_config::types::Config;
+use betterlite_config::sections::callback_settings::{CallbackEntry, names::CallbackName};
+use betterlite_config::{loader::EnvironmentLookup, types::Config};
 use betterlite_http::proxy::ProxiedClient;
 use thiserror::Error;
-use tokio_util::sync::CancellationToken;
-use tokio_util::task::TaskTracker;
+use tokio_util::{sync::CancellationToken, task::TaskTracker};
 
-use self::otel::maybe::push_once;
-use self::otel::phoenix_auto;
-use self::otel::shared::SharedOtel;
+use self::otel::{maybe::push_once, phoenix_auto, shared::SharedOtel};
 use super::error::RegistryError;
-use crate::callback_config::error::ValidationError;
 use crate::callback_config::family::{conflicting_span_scope_error, cross_entry_family_error};
-use crate::callback_config::options::callback_config_error;
 use crate::callback_config::{CallbackVars, FeatureFlags};
-use crate::callback_logger::CallbackLogger;
-use crate::callback_logger::resolver::LoggerResolver;
-use crate::otel::logger_runtime::LoggerRuntime;
+use crate::callback_config::{error::ValidationError, options::callback_config_error};
+use crate::callback_logger::{CallbackLogger, resolver::LoggerResolver};
+use crate::otel::{callbacks::agentops::AgentOpsCallback, logger_runtime::LoggerRuntime};
 
 pub fn validate_callback_vars(
     callback_name: Option<&str>,
@@ -109,6 +102,17 @@ pub struct CatalogInputs {
     pub callback_settings: BTreeMap<String, CallbackEntry>,
     pub tracker: TaskTracker,
     pub shutdown: CancellationToken,
+}
+
+// the callback names litellm_settings lists, in any of its three lists
+fn listed_in_settings(inputs: &CatalogInputs, name: &str) -> bool {
+    let settings = &inputs.config.sections.callback_settings;
+    settings
+        .callbacks
+        .iter()
+        .chain(settings.success_callback.iter())
+        .chain(settings.failure_callback.iter())
+        .any(|listed| listed == name)
 }
 
 struct BaseLogger {
@@ -163,6 +167,12 @@ impl LoggerCatalog {
         self
     }
 
+    #[must_use]
+    pub fn with_agentops(mut self, callback: AgentOpsCallback) -> Self {
+        self.build = agentops::wrap(Arc::clone(&self.build), callback);
+        self
+    }
+
     // clippy's same_name_method refuses this name while the type also implements the resolver trait
     pub fn resolve_logger(
         &self,
@@ -177,19 +187,18 @@ impl LoggerCatalog {
             return Ok(Some(logger));
         }
         let shared = self.shared();
-        let built = {
-            let mut in_memory = self
-                .in_memory
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
-            (self.build)(
-                callback,
-                &self.inputs,
-                self.runtime.as_deref(),
-                &shared,
-                &mut in_memory,
-            )
-        };
+        let mut in_memory = self
+            .in_memory
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let built = (self.build)(
+            callback,
+            &self.inputs,
+            self.runtime.as_deref(),
+            &shared,
+            &mut in_memory,
+        );
+        drop(in_memory);
         let resolved = self.resolve_built(callback, built)?;
         if callback == CallbackName::Otel && resolved.is_some() {
             self.auto_start_phoenix();
@@ -208,11 +217,9 @@ impl LoggerCatalog {
     // built on the first OTel arm: the snapshot never changes and the clients are shared by every arm
     fn shared(&self) -> Arc<SharedOtel> {
         let mut slot = self.shared.lock().unwrap_or_else(PoisonError::into_inner);
-        if let Some(shared) = slot.as_ref() {
-            return Arc::clone(shared);
-        }
-        let shared = Arc::new(SharedOtel::new(&self.inputs));
-        *slot = Some(Arc::clone(&shared));
+        let shared =
+            Arc::clone(slot.get_or_insert_with(|| Arc::new(SharedOtel::new(&self.inputs))));
+        drop(slot);
         shared
     }
 
@@ -282,6 +289,7 @@ impl LoggerResolver for LoggerCatalog {
 macro_rules! dispatch_logger {
     (
         arms { $($arm:ident => $arm_builder:ident),+ $(,)? }
+        connected { $($connected:ident => $connected_fn:ident),+ $(,)? }
         builders { $($builder:ident => $builder_fn:ident),+ $(,)? }
         refused { $($refused:ident),+ $(,)? }
     ) => {
@@ -294,6 +302,7 @@ macro_rules! dispatch_logger {
         ) -> Result<Arc<dyn CallbackLogger>, CatalogError> {
             let logger = match callback {
                 $(CallbackName::$arm => $arm_builder::build(inputs, runtime, shared, in_memory)?,)+
+                $(CallbackName::$connected => $connected_fn::build(inputs, runtime, shared, in_memory, None)?,)+
                 $(CallbackName::$builder => $builder_fn::build(inputs)?,)+
                 $(CallbackName::$refused)|+ => {
                     return Err(CatalogError::Unavailable {
@@ -307,24 +316,17 @@ macro_rules! dispatch_logger {
     };
 }
 
-// the OTel arms take the runtime and the in-memory list; every other builder keeps its build(inputs)
+// the OTel arms take the runtime and the in-memory list, the connected arm also takes its startup callback
 dispatch_logger! {
     arms {
-        Arize => arize,
-        ArizePhoenix => arize_phoenix,
-        LangfuseOtel => langfuse_otel,
-        Langtrace => langtrace,
-        Levo => levo,
-        Logfire => logfire,
-        Newrelic => newrelic,
-        Otel => otel,
-        Signoz => signoz,
-        Traceloop => traceloop,
-        WeaveOtel => weave_otel,
+        Arize => arize, ArizePhoenix => arize_phoenix, LangfuseOtel => langfuse_otel,
+        Langtrace => langtrace, Levo => levo, Logfire => logfire,
+        Newrelic => newrelic, Otel => otel, Signoz => signoz,
+        Traceloop => traceloop, WeaveOtel => weave_otel,
     }
+    connected { Agentops => agentops, }
     builders {
-        Agentops => agentops, Argilla => argilla,
-        Athina => athina, AwsSqs => aws_sqs,
+        Argilla => argilla, Athina => athina, AwsSqs => aws_sqs,
         AzureSentinel => azure_sentinel, AzureStorage => azure_storage,
         Bitbucket => bitbucket, Braintrust => braintrust,
         Clickhouse => clickhouse, Cloudzero => cloudzero,

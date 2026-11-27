@@ -2,7 +2,7 @@ id: B950
 milestone: M5 api families
 title: Responses mcp execute
 status: todo
-depends_on: [B171, B1087, B732, B1106, B002, B200, B710, B8195, B8465, B9650]
+depends_on: [B171, B1087, B732, B1106, B002, B200, B710, B8195, B9650, B905, B10121, B10122]
 file: tasks/B950-responses-mcp-execute.yaml
 covers:
   - "litellm/responses/mcp/litellm_proxy_mcp_handler.py"

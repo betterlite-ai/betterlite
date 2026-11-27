@@ -10,7 +10,7 @@ use betterlite_error::error::details::BudgetExceededDetails;
 use betterlite_error::proxy_exception::ProxyException;
 use rust_decimal::Decimal;
 
-use crate::auth::auth_identity::AuthContext;
+use crate::auth::auth_identity::{AuthContext, StageFailure, StageInput};
 use crate::error_body::AuthenticationFailure;
 use crate::state::ServerState;
 
@@ -86,6 +86,11 @@ pub(crate) fn stage_input(
         route: request.uri().path().to_owned(),
         database: database_for_request(request),
     })
+}
+
+pub(crate) async fn prefetched(stage: Box<EndUserStageInput>) -> Result<StageInput, StageFailure> {
+    prefetch(&stage).await.map_err(StageFailure::EndUsers)?;
+    Ok(StageInput::AuthEndUsers(stage))
 }
 
 // LiteLLM's get_end_user_object never runs without a database, and an unusable lookup proves nothing.

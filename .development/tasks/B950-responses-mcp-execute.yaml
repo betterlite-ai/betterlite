@@ -1,12 +1,15 @@
 id: B950
 title: Responses mcp execute
 description: >-
-  Execute extracted MCP function/custom calls through B8465's MCPServerManager.call_tool (mcp::tool_call), with B8195's _resolve_display_name_to_original for display names, using typed parsed arguments and normalized
+  Execute extracted MCP function/custom calls through this task's McpToolExecution::call_tool port, with B8195's _resolve_display_name_to_original mirrored by its display-name port, using typed parsed arguments and normalized
   tool results. The four MCP header values (mcp_auth_header, mcp_server_auth_headers, oauth2_headers, raw_headers)
-  arrive as arguments (B905's McpHeaders on main holds the same four) and go to call_tool unchanged; B8465's call_tool
-  turns them into upstream credentials through B8196's checks and B4667's resolver, so this task resolves no
-  credential. Preserve source authorization and failure logging for every call; do not treat a model-emitted tool
+  arrive as B905's McpHeaders, already on main, and go to the port unchanged; B140 later binds that port to
+  B8465's call_tool and its B8196/B4667 credential resolution. Build and test this task against its own port,
+  without waiting for those server implementations. Preserve source authorization and failure logging for every call; do not treat a model-emitted tool
   name as permission to access another server.
+
+
+  Tool calls reach _execute_tool_calls as B10122's McpToolCall values (crates/betterlite-core/src/api/responses_mcp_tool_selection.rs), and each one is read with B10122's extract_tool_call_details; _extract_tool_calls_from_chat_response here returns its dumped chat calls as that enum's Fields arm. Each executed call becomes one of B10121's McpToolResult records (api::responses_mcp_results), and ResponsesMcpExecuteResult carries that list. This task calls both and builds neither, and it does not build the auto-execution predicate either: callers ask B10122's should_auto_execute_tools before they get here.
 
 
   call_tool, _resolve_display_name_to_original and the two proxy hooks live in betterlite-server, and betterlite-core
@@ -55,11 +58,8 @@ description: >-
   diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
 
 
-  Callable ownership: litellm/responses/mcp/litellm_proxy_mcp_handler.py: LiteLLM_Proxy_MCP_Handler._should_auto_execute_tools
-  (L540-L563); litellm/responses/mcp/litellm_proxy_mcp_handler.py: LiteLLM_Proxy_MCP_Handler._extract_tool_calls_from_response
-  (L566-L577); litellm/responses/mcp/litellm_proxy_mcp_handler.py: LiteLLM_Proxy_MCP_Handler._extract_tool_calls_from_chat_response
-  (L580-L601); litellm/responses/mcp/litellm_proxy_mcp_handler.py: LiteLLM_Proxy_MCP_Handler._extract_tool_call_details
-  (L604-L635); litellm/responses/mcp/litellm_proxy_mcp_handler.py: LiteLLM_Proxy_MCP_Handler._parse_tool_arguments
+  Callable ownership: litellm/responses/mcp/litellm_proxy_mcp_handler.py: LiteLLM_Proxy_MCP_Handler._extract_tool_calls_from_chat_response
+  (L580-L601); litellm/responses/mcp/litellm_proxy_mcp_handler.py: LiteLLM_Proxy_MCP_Handler._parse_tool_arguments
   (L638-L648); litellm/responses/mcp/litellm_proxy_mcp_handler.py: LiteLLM_Proxy_MCP_Handler._parse_mcp_result (L651-L684);
   litellm/responses/mcp/litellm_proxy_mcp_handler.py: LiteLLM_Proxy_MCP_Handler._execute_tool_calls (L687-L972);
   litellm/responses/mcp/litellm_proxy_mcp_handler.py: LiteLLM_Proxy_MCP_Handler._log_mcp_tool_failure (L1121-L1143).
@@ -68,17 +68,18 @@ description: >-
   the following stage.
 
 
-  Sizing: 388 owned nonblank/non-comment/non-docstring Python lines (405 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 408 implementation,
-  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 60 decoder fuzz/replay, 33 config tests/seeds
-  and 30 wiring; 751 total within the 760-line cap. The estimate includes tests and adapters, not just production
+  Sizing: 338 owned nonblank/non-comment/non-docstring Python lines (343 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap, after the approval predicate and the two
+  tool call readers moved to B10122. Estimated changed lines: 358 implementation, 70 behavior tests, 60 oracle
+  fixtures, 90 Rust/Python adapters, 60 decoder fuzz/replay, 33 config tests/seeds and 30 wiring; 701 total. The estimate includes tests and adapters, not just production
   code.
 
 
-  Direct inputs come from B8465 (the call_tool McpToolExecution mirrors), B8195 (the display name resolution it mirrors),
+  This task declares the call_tool contract in McpToolExecution; B140 owns the later B8465 binding. Direct inputs come from B905 (McpHeaders), B8195 (the display name resolution the port mirrors),
   B171 (Direct helper oracle and URL path encoding),
   B1087 (Api boundaries), B732 (Typed authentication principals and grant resolution), B1106 (Principal metadata
-  and tags), B002 (Load LiteLLM config.yaml into typed config). These are callable/type/config owners, not provider-family
+  and tags), B002 (Load LiteLLM config.yaml into typed config), B10121 (McpToolResult) and B10122 (McpToolCall and
+  extract_tool_call_details). These are callable/type/config owners, not provider-family
   umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
 scope:
   paths:
@@ -105,7 +106,9 @@ scope:
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1551-L1551
   why: Setting env.MAXIMUM_TRACEBACK_LINES_TO_LOG and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L540-L972
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L579-L601
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L637-L972
   why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1120-L1143
   why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
@@ -217,9 +220,14 @@ out_of_scope:
   L235-L352, LiteLLM_Proxy_MCP_Handler._process_mcp_tools_to_openai_format L417-L447, LiteLLM_Proxy_MCP_Handler._process_mcp_tools_without_openai_transform
   L450-L503, LiteLLM_Proxy_MCP_Handler._transform_mcp_tools_to_openai L507-L510, LiteLLM_Proxy_MCP_Handler._transform_mcp_tools_to_openai
   L514-L517, LiteLLM_Proxy_MCP_Handler._transform_mcp_tools_to_openai L520-L537.'
-- 'litellm/responses/mcp/litellm_proxy_mcp_handler.py: B951 owns LiteLLM_Proxy_MCP_Handler._create_follow_up_messages_for_chat
-  L975-L1017, LiteLLM_Proxy_MCP_Handler._is_persistence_disabled L1020-L1022, LiteLLM_Proxy_MCP_Handler._create_follow_up_input
-  L1025-L1101, LiteLLM_Proxy_MCP_Handler._make_follow_up_call L1104-L1118, LiteLLM_Proxy_MCP_Handler._create_mcp_streaming_response
+- 'litellm/responses/mcp/litellm_proxy_mcp_handler.py: B10121 owns MCPToolResult L54-L57, the record each executed call returns.'
+- 'litellm/responses/mcp/litellm_proxy_mcp_handler.py: B10122 owns LiteLLM_Proxy_MCP_Handler._should_auto_execute_tools L540-L563,
+  LiteLLM_Proxy_MCP_Handler._extract_tool_calls_from_response L566-L577 and LiteLLM_Proxy_MCP_Handler._extract_tool_call_details
+  L604-L635; _execute_tool_calls calls the last one for every tool call.'
+- 'litellm/responses/mcp/litellm_proxy_mcp_handler.py: B10123 owns LiteLLM_Proxy_MCP_Handler._create_follow_up_messages_for_chat
+  L975-L1017, and B10124 owns LiteLLM_Proxy_MCP_Handler._is_persistence_disabled L1020-L1022 and LiteLLM_Proxy_MCP_Handler._create_follow_up_input
+  L1025-L1101.'
+- 'litellm/responses/mcp/litellm_proxy_mcp_handler.py: B951 owns LiteLLM_Proxy_MCP_Handler._make_follow_up_call L1104-L1118, LiteLLM_Proxy_MCP_Handler._create_mcp_streaming_response
   L1146-L1188, LiteLLM_Proxy_MCP_Handler._build_request_params L1191-L1222, LiteLLM_Proxy_MCP_Handler._create_tool_execution_events
   L1225-L1272, LiteLLM_Proxy_MCP_Handler._prepare_initial_call_params L1275-L1288, LiteLLM_Proxy_MCP_Handler._prepare_follow_up_call_params
   L1291-L1308, LiteLLM_Proxy_MCP_Handler._add_mcp_output_elements_to_response L1311-L1357.'

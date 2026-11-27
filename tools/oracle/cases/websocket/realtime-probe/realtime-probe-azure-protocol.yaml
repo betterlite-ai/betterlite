@@ -1,0 +1,33 @@
+kind: helper
+name: realtime-probe-azure-protocol
+call:
+  realtime_probe_websocket:
+    scenarios:
+      - model: realtime-a
+        custom_llm_provider: azure
+        api_key: sk-azure
+        api_base: https://azure.example
+        model_params: {realtime_protocol: beta}
+      - model: realtime-a
+        custom_llm_provider: azure
+        api_key: sk-azure
+        api_base: https://azure.example
+      - model: realtime-a
+        custom_llm_provider: azure
+        api_key: sk-azure
+        api_base: https://azure.example
+        realtime_protocol: v1
+        model_params: {realtime_protocol: beta}
+      - model: realtime-a
+        custom_llm_provider: azure
+        api_base: https://azure.example
+        azure_ad_token: ad-token-123
+      - model: realtime-a
+        custom_llm_provider: azure
+        api_base: https://azure.example
+        model_params: {api_key: ""}
+        azure_ad_token: ad-token-123
+env:
+  AZURE_AD_TOKEN: ad-token-123
+  REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES: "16777216"
+compare: {ignore: []}

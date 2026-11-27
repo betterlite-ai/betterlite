@@ -1,0 +1,33 @@
+kind: probe
+name: auto-router-read-api-bounded-session-lookup
+probes:
+  - clock: {unix_millis: 1710504000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      auto_router_read_api:
+        now_unix_millis: 1710504000000
+        steps:
+          - kind: session
+            api_key: hash-a
+            session_id: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+            sessions:
+              - last_turn_at: "2024-01-02T00:00:00"
+                row:
+                  api_key: hash-a
+                  session_id: "sha256:e8d95cc2b4bc198c54b40bd214df958afb65f5e73d2c2eafe0593cf5c635c1f0"
+                  router_name: complexity-auto
+                  router_type: complexity
+                  first_turn_at: "2024-01-02T00:00:00"
+                  last_turn_at: "2024-01-02T00:00:00"
+                  last_model: gpt-4o
+                  turns: 4
+                  spend: 2.0
+                  saved_spend: 2.0
+                  savings_estimated_turns: 4
+                  savings_estimated_actual_spend: 1.5
+                  savings_estimated_saved_spend: 2.5
+                  classifier_cost: 0.5
+                  tier_turns: {SIMPLE: 1}
+                  baseline_models: {gpt-4o-mini: 3}
+compare:
+  ignore: []

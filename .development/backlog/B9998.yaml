@@ -2,7 +2,7 @@ id: B9998
 milestone: M8 platform
 title: Vector store registries for Shared, their config and database loading and the startup wiring
 status: todo
-depends_on: [B8614, B8613, B8610, B8384, B8590, B8380, B1062, B726, B700, B8641, B1060, B1061, B10014, B1063, B7892]
+depends_on: [B8614, B8613, B8610, B8384, B8590, B8380, B1062, B726, B700, B8641, B1060, B1061, B10014, B1063]
 file: tasks/B9998-vector-boot-registry.yaml
 covers:
   - "litellm/proxy/proxy_server.py"

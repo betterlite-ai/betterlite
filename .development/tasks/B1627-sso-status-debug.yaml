@@ -6,7 +6,8 @@ description: >-
   Register authenticated GET /sso/get/ui_settings and /sso/readiness, plus public
   GET /sso/debug/login and /sso/debug/callback gated by ENABLE_SSO_DEBUG (absent unless
   explicitly true, otherwise 404). Readiness selects the first present Google/Microsoft/
-  generic client ID and reports missing variables in source order; missing requirements
+  generic client ID and reports missing variables in source order (MICROSOFT_CLIENT_SECRET and
+  MICROSOFT_TENANT come from B10148's microsoft_sso section); missing requirements
   yield 503. It deliberately ignores SAML, while UI settings call B881's SAML-aware
   has_user_setup_sso. UI output includes PROXY_BASE_URL, PROXY_LOGOUT_URL and
   LITELLM_UI_API_DOC_BASE_URL, all absent by default, and B4172's spend_logs_row_count (written by B8396, initially
@@ -15,7 +16,7 @@ description: >-
   forces true when its lowercased value is true, never forces a configured true back to false.
   Debug login uses B1628 authorization with the debug callback URL and no paid-tier check.
   Debug callback derives its URL from PROXY_BASE_URL or request base directly, without the
-  regular root-path helper. Reuse B1615's query decoder and SSO-specific group projection,
+  regular root-path helper. Reuse B10119's query decoder and SSO-specific group projection,
   dispatch raw Google/Microsoft responses or generic B1623 output, and show a 400 HTML
   failure when no provider returns data. Remove null/private-name fields, preserve scalar
   values and use Python-compatible string representations for compound parsed fields.

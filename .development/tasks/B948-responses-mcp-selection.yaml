@@ -1,7 +1,7 @@
 id: B948
 title: Responses mcp selection
 description: >-
-  Select Responses MCP tools through the registered server/toolset view (B4731's get_registry and get_mcp_server_by_name, B6592's get_toolset_by_name_cached, B6591's resolve_toolset_tool_permissions), enforce B137 permission context and
+  Select Responses MCP tools through the registered server/toolset view (B4731's get_registry and get_mcp_server_by_name, B10147's toolset_by_name_cached, B6591's resolve_toolset_tool_permissions), enforce B137 permission context and
   normalize/deduplicate allowed tools. A request server_url only identifies an already configured gateway server
   and is never an outbound destination; return a typed selected-tool set.
 
@@ -53,7 +53,7 @@ description: >-
   30 wiring; 441 total within the 450-line cap. The estimate includes tests and adapters, not just production code.
 
 
-  Direct inputs come from B4731 (MCP server registry reads), B6591 (toolset permissions), B6592 (cached toolset lookup), B137 (MCP auth, OAuth flows,
+  Direct inputs come from B4731 (MCP server registry reads), B6591 (toolset permissions), B10147 (cached toolset lookup), B137 (MCP auth, OAuth flows,
   BYOK and outbound credentials), B171 (Direct helper oracle and URL path encoding), B902 (Responses shapes), B1087
   (Api boundaries). These are callable/type/config owners, not provider-family umbrellas; the external B500-B859
   ids retain ownership on the provider and keys/data branches.
@@ -159,14 +159,14 @@ out_of_scope:
   L235-L352, LiteLLM_Proxy_MCP_Handler._process_mcp_tools_to_openai_format L417-L447, LiteLLM_Proxy_MCP_Handler._process_mcp_tools_without_openai_transform
   L450-L503, LiteLLM_Proxy_MCP_Handler._transform_mcp_tools_to_openai L507-L510, LiteLLM_Proxy_MCP_Handler._transform_mcp_tools_to_openai
   L514-L517, LiteLLM_Proxy_MCP_Handler._transform_mcp_tools_to_openai L520-L537.'
-- 'litellm/responses/mcp/litellm_proxy_mcp_handler.py: B950 owns LiteLLM_Proxy_MCP_Handler._should_auto_execute_tools
-  L540-L563, LiteLLM_Proxy_MCP_Handler._extract_tool_calls_from_response L566-L577, LiteLLM_Proxy_MCP_Handler._extract_tool_calls_from_chat_response
-  L580-L601, LiteLLM_Proxy_MCP_Handler._extract_tool_call_details L604-L635, LiteLLM_Proxy_MCP_Handler._parse_tool_arguments
+- 'litellm/responses/mcp/litellm_proxy_mcp_handler.py: B10121 owns MCPToolResult L54-L57. B10122 owns LiteLLM_Proxy_MCP_Handler._should_auto_execute_tools
+  L540-L563, LiteLLM_Proxy_MCP_Handler._extract_tool_calls_from_response L566-L577 and LiteLLM_Proxy_MCP_Handler._extract_tool_call_details
+  L604-L635. B950 owns LiteLLM_Proxy_MCP_Handler._extract_tool_calls_from_chat_response L580-L601, LiteLLM_Proxy_MCP_Handler._parse_tool_arguments
   L638-L648, LiteLLM_Proxy_MCP_Handler._parse_mcp_result L651-L684, LiteLLM_Proxy_MCP_Handler._execute_tool_calls
   L687-L972, LiteLLM_Proxy_MCP_Handler._log_mcp_tool_failure L1121-L1143.'
-- 'litellm/responses/mcp/litellm_proxy_mcp_handler.py: B951 owns LiteLLM_Proxy_MCP_Handler._create_follow_up_messages_for_chat
-  L975-L1017, LiteLLM_Proxy_MCP_Handler._is_persistence_disabled L1020-L1022, LiteLLM_Proxy_MCP_Handler._create_follow_up_input
-  L1025-L1101, LiteLLM_Proxy_MCP_Handler._make_follow_up_call L1104-L1118, LiteLLM_Proxy_MCP_Handler._create_mcp_streaming_response
+- 'litellm/responses/mcp/litellm_proxy_mcp_handler.py: B10123 owns LiteLLM_Proxy_MCP_Handler._create_follow_up_messages_for_chat
+  L975-L1017. B10124 owns LiteLLM_Proxy_MCP_Handler._is_persistence_disabled L1020-L1022 and LiteLLM_Proxy_MCP_Handler._create_follow_up_input
+  L1025-L1101. B951 owns LiteLLM_Proxy_MCP_Handler._make_follow_up_call L1104-L1118, LiteLLM_Proxy_MCP_Handler._create_mcp_streaming_response
   L1146-L1188, LiteLLM_Proxy_MCP_Handler._build_request_params L1191-L1222, LiteLLM_Proxy_MCP_Handler._create_tool_execution_events
   L1225-L1272, LiteLLM_Proxy_MCP_Handler._prepare_initial_call_params L1275-L1288, LiteLLM_Proxy_MCP_Handler._prepare_follow_up_call_params
   L1291-L1308, LiteLLM_Proxy_MCP_Handler._add_mcp_output_elements_to_response L1311-L1357.'

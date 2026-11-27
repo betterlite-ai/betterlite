@@ -1,0 +1,171 @@
+name: Python wheels
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/python-wheels.yml
+      - crates/betterlite-python/**
+      - tools/python-release/**
+      - Cargo.lock
+  workflow_dispatch:
+  push:
+    tags:
+      - "python-v*"
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    name: wheel ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            runner: ubuntu-24.04
+            container: quay.io/pypa/manylinux_2_28_x86_64@sha256:55a36963bc0504cdf004011001c1072306402f0b8b83be5a5eba7068f93eec53
+            python: /opt/python/cp310-cp310/bin/python3
+            maturin_args: "--compatibility manylinux_2_28"
+            platform: "^manylinux_2_28_x86_64$"
+          - name: linux-aarch64
+            runner: ubuntu-24.04-arm
+            container: quay.io/pypa/manylinux_2_28_aarch64@sha256:126d9eea9d6b1717f3e17b2b3ac51da04ef159a5f935dac36fe92d621dc8f246
+            python: /opt/python/cp310-cp310/bin/python3
+            maturin_args: "--compatibility manylinux_2_28"
+            platform: "^manylinux_2_28_aarch64$"
+          - name: macos-x86_64
+            runner: macos-15-intel
+            container: null
+            python: "3.10"
+            maturin_args: ""
+            platform: "^macosx_[0-9]+_[0-9]+_x86_64$"
+          - name: macos-arm64
+            runner: macos-15
+            container: null
+            python: "3.10"
+            maturin_args: ""
+            platform: "^macosx_[0-9]+_[0-9]+_arm64$"
+          - name: windows-x86_64
+            runner: windows-2025
+            container: null
+            python: "3.10"
+            maturin_args: ""
+            platform: "^win_amd64$"
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Trust the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Install Rust in the manylinux container
+        if: matrix.container != null
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+          "$HOME/.cargo/bin/rustup" toolchain install 1.98.0 --profile minimal
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Install the pinned Rust toolchain
+        if: matrix.container == null
+        run: rustup toolchain install 1.98.0 --profile minimal
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          version: "0.11.14"
+          enable-cache: false
+
+      - name: Build the wheel
+        env:
+          BUILD_PYTHON: ${{ matrix.python }}
+          MATURIN_PEP517_ARGS: ${{ matrix.maturin_args }}
+        run: uv build --wheel --python "$BUILD_PYTHON" --out-dir dist crates/betterlite-python
+
+      - name: Check the wheel
+        env:
+          PLATFORM_PATTERN: ${{ matrix.platform }}
+        run: |
+          shopt -s nullglob
+          wheels=(dist/*.whl)
+          if (( ${#wheels[@]} != 1 )); then
+            echo "expected one wheel, found ${#wheels[@]}"
+            exit 1
+          fi
+          uv run --no-project python -I tools/python-release/check_wheel.py "${wheels[0]}" --platform "$PLATFORM_PATTERN"
+
+      - name: Smoke test on Python 3.10
+        run: |
+          shopt -s nullglob
+          wheels=(dist/*.whl)
+          version=$(basename "${wheels[0]}" .whl)
+          version=${version#"betterlite-"}
+          uv run --no-project --python 3.10 --with "${wheels[0]}" python -I tools/python-release/smoke_wheel.py "${version%%-*}"
+
+      - name: Smoke test on Python 3.14
+        run: |
+          shopt -s nullglob
+          wheels=(dist/*.whl)
+          version=$(basename "${wheels[0]}" .whl)
+          version=${version#"betterlite-"}
+          uv run --no-project --python 3.14 --with "${wheels[0]}" python -I tools/python-release/smoke_wheel.py "${version%%-*}"
+
+      - name: Upload the wheel
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: wheel-${{ matrix.name }}
+          path: dist/*.whl
+          if-no-files-found: error
+
+  publish:
+    name: Publish to PyPI
+    needs: build
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/python-v')
+    runs-on: ubuntu-24.04
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          version: "0.11.14"
+          enable-cache: false
+
+      - name: Download the wheels
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Check the wheels
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: |
+          shopt -s nullglob
+          wheels=(dist/*.whl)
+          if (( ${#wheels[@]} != 5 )); then
+            echo "expected five wheels, found ${#wheels[@]}"
+            exit 1
+          fi
+          for wheel in "${wheels[@]}"; do
+            uv run --no-project python -I tools/python-release/check_wheel.py "$wheel" --platform '.*' --tag "$GITHUB_REF_NAME"
+          done
+
+      - name: Publish to PyPI
+        run: uv publish --trusted-publishing always dist/*.whl

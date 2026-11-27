@@ -13,7 +13,6 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
 use serde_with::{As, FromIntoRef};
 
-pub(crate) mod request;
 mod tests;
 mod timeout;
 
