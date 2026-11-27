@@ -25,30 +25,52 @@ pub(crate) struct Harness<'probe> {
     supplied: Option<Client>,
 }
 
+fn environment<'probe>(
+    probe: &'probe Probe,
+    bearer: Option<&'probe SecretString>,
+) -> EditEnvironment<'probe> {
+    EditEnvironment {
+        region_name: probe.environment.region_name.as_deref(),
+        region: probe.environment.region.as_deref(),
+        session_region: probe.environment.session_region.as_deref(),
+        runtime_endpoint: probe.environment.runtime_endpoint.as_deref(),
+        bearer_token: bearer,
+    }
+}
+
 impl<'probe> Harness<'probe> {
     pub(crate) fn new(probe: &'probe Probe) -> Self {
+        let params = probe.optional_params.clone();
+        let images = probe.images.iter().cloned().map(EditImage::Text).collect();
+        let api_key = probe
+            .api_key
+            .as_ref()
+            .map(|key| SecretString::from(key.clone()));
+        let bearer = probe
+            .configured_bearer_token
+            .as_ref()
+            .map(|token| SecretString::from(token.clone()));
+        let now = UNIX_EPOCH + Duration::from_secs(NOW_EPOCH_SECONDS);
+        let extra_headers = probe.extra_headers.as_ref().map(|headers| {
+            headers
+                .iter()
+                .map(|(name, value)| (name.clone(), value.clone()))
+                .collect()
+        });
+        let source = Source::new(probe);
+        let factory = Factory::new(&probe.reply);
+        let supplied = (probe.supplied != Supplied::None).then(|| Client::new(&probe.reply));
         Self {
             probe,
-            params: probe.optional_params.clone(),
-            images: probe.images.iter().cloned().map(EditImage::Text).collect(),
-            api_key: probe
-                .api_key
-                .as_ref()
-                .map(|key| SecretString::from(key.clone())),
-            bearer: probe
-                .configured_bearer_token
-                .as_ref()
-                .map(|token| SecretString::from(token.clone())),
-            now: UNIX_EPOCH + Duration::from_secs(NOW_EPOCH_SECONDS),
-            extra_headers: probe.extra_headers.as_ref().map(|headers| {
-                headers
-                    .iter()
-                    .map(|(name, value)| (name.clone(), value.clone()))
-                    .collect()
-            }),
-            source: Source::new(probe),
-            factory: Factory::new(&probe.reply),
-            supplied: (probe.supplied != Supplied::None).then(|| Client::new(&probe.reply)),
+            params,
+            images,
+            api_key,
+            bearer,
+            now,
+            extra_headers,
+            source,
+            factory,
+            supplied,
         }
     }
 
@@ -63,23 +85,19 @@ impl<'probe> Harness<'probe> {
             api_key: self.api_key.as_ref(),
             timeout: self.probe.timeout_ms.map(Duration::from_millis),
             aimage_edit: self.probe.aimage_edit,
-            environment: EditEnvironment {
-                region_name: self.probe.environment.region_name.as_deref(),
-                region: self.probe.environment.region.as_deref(),
-                session_region: self.probe.environment.session_region.as_deref(),
-                runtime_endpoint: self.probe.environment.runtime_endpoint.as_deref(),
-                bearer_token: self.bearer.as_ref(),
-            },
+            environment: environment(self.probe, self.bearer.as_ref()),
             now: self.now,
         }
     }
 
     pub(crate) fn supplied(&self) -> Option<SuppliedClient<'_, Client>> {
-        self.supplied.as_ref().map(|client| SuppliedClient {
-            kind: match self.probe.supplied {
-                Supplied::Async => ClientKind::Async,
-                Supplied::None | Supplied::Sync => ClientKind::Sync,
-            },
+        let client = self.supplied.as_ref()?;
+        let kind = match self.probe.supplied {
+            Supplied::Async => ClientKind::Async,
+            Supplied::None | Supplied::Sync => ClientKind::Sync,
+        };
+        Some(SuppliedClient {
+            kind,
             transport: client,
         })
     }

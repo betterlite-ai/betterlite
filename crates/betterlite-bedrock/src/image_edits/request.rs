@@ -22,30 +22,25 @@ pub fn request_body(
         plan.resolution,
         &mut ModelCostKeys::default(),
     )?;
+    // LiteLLM hands the first image only to the transform, whatever the rest of the list holds.
     let image = call.images.first();
     match config {
-        ImageEditConfig::Stability => stability_body(call, image),
-        ImageEditConfig::NovaCanvas => canvas_body(call, image),
-    }
-}
-
-// LiteLLM hands the first image only to the transform, whatever the rest of the list holds.
-fn stability_body(
-    call: &EditCall<'_>,
-    image: Option<&EditImage>,
-) -> Result<ImageParams, ImageEditError> {
-    let options: EditOptions = call
-        .optional_params
-        .iter()
-        .map(|(name, value)| (name.clone(), EditValue::from(value.clone())))
-        .collect();
-    let input = image.map(stability_image);
-    let request = stability_request(call.model, call.prompt, input.as_ref(), &options)?;
-    match request.body {
-        Json::Object(fields) => Ok(fields),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-            Err(ImageEditError::BodyShape)
+        ImageEditConfig::Stability => {
+            let options: EditOptions = call
+                .optional_params
+                .iter()
+                .map(|(name, value)| (name.clone(), EditValue::from(value.clone())))
+                .collect();
+            let input = image.map(stability_image);
+            let request = stability_request(call.model, call.prompt, input.as_ref(), &options)?;
+            match request.body {
+                Json::Object(fields) => Ok(fields),
+                Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+                    Err(ImageEditError::BodyShape)
+                }
+            }
         }
+        ImageEditConfig::NovaCanvas => canvas_body(call, image),
     }
 }
 

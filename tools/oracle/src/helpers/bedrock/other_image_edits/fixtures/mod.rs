@@ -180,11 +180,15 @@ pub(super) struct Catalog {
 
 impl Catalog {
     pub(super) fn new() -> Result<Self, CatalogError> {
+        let typed = ModelCatalog::parse(b"{}", UnknownFields::Warn)?;
+        let known = BTreeSet::new();
+        let custom = BTreeSet::new();
+        let environment = BTreeMap::new();
         Ok(Self {
-            typed: ModelCatalog::parse(b"{}", UnknownFields::Warn)?,
-            known: BTreeSet::new(),
-            custom: BTreeSet::new(),
-            environment: BTreeMap::new(),
+            typed,
+            known,
+            custom,
+            environment,
         })
     }
 
