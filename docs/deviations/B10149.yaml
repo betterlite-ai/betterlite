@@ -1,0 +1,15 @@
+task: B10149
+deviations: []
+kept_bugs:
+  - what: >-
+      The user search's contains filters reach SQL as unescaped ILIKE patterns over user_id and
+      user_email, so a percent or underscore in the search acts as a wildcard and a backslash acts
+      as LIKE's escape character.
+    why: >-
+      LiteLLM builds {"contains": search, "mode": "insensitive"} for both columns and Prisma wraps
+      the value in percent signs without escaping, so a search for "a_b" matches any single
+      character between a and b and one for "100%" matches every user whose id or email starts with
+      100. A proxy that has always searched users this way can rely on those matches, as B897 and
+      B1209 already decided for the key and team lists, so betterlite reproduces the pattern and
+      the Postgres tests pin percent, underscore and backslash behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L2209-L2214
