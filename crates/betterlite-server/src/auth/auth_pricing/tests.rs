@@ -10,6 +10,7 @@ use axum::extract::Extension;
 use axum::http::{Request, StatusCode, header};
 use axum::routing::post;
 use betterlite_auth::auth_prefetch::rows::CachedProject;
+use betterlite_auth::auth_request_models::RequestedModels;
 use betterlite_auth::current_spend::BUDGET_UNVERIFIABLE_DETAIL;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::auth_pricing::{MaxBudget, Settings};
@@ -150,8 +151,16 @@ async fn run_rule(
 
 async fn run_request(config: &Config, spend: &str) -> (StatusCode, String, bool) {
     let rule = PricingRule {
+        auth: None,
+        project: None,
+        model: RequestedModels::None,
+        catalog: None,
+        view: None,
+        provider: None,
+        global_model_aliases: BTreeMap::new(),
+        reader: None,
+        alerts: None,
         global_spend: Some(spend.parse().expect("the test spend parses")),
-        ..PricingRule::default()
     };
     run_rule(config, rule, MODEL_ROUTE, "{}").await
 }
@@ -181,8 +190,16 @@ async fn failure_stops_downstream() {
     )
     .expect("the project row decodes");
     let rule = PricingRule {
+        auth: None,
         project: Some(project),
-        ..PricingRule::default()
+        model: RequestedModels::None,
+        catalog: None,
+        view: None,
+        provider: None,
+        global_model_aliases: BTreeMap::new(),
+        reader: None,
+        alerts: None,
+        global_spend: None,
     };
     let (project_status, project_body, project_reached) =
         run_rule(&config("0"), rule, MODEL_ROUTE, "{}").await;

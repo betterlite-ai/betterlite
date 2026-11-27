@@ -28,7 +28,7 @@ fn pricing_policy_defaults(#[case] source: &str) {
     let defaults = Settings::default();
     assert_eq!(load(source).unwrap(), defaults);
     assert!(!defaults.enforce_user_param);
-    assert!(!defaults.reject_clientside_metadata_tags);
+    assert!(!defaults.reject_clientside_tags);
     assert_eq!(defaults.max_budget, MaxBudget::Finite(Decimal::ZERO));
 }
 
@@ -47,10 +47,7 @@ fn enforce_user_loaded(#[case] written: &str, #[case] expected: bool) {
 #[case::null_defaults("null", false)]
 fn reject_tags_loaded(#[case] written: &str, #[case] expected: bool) {
     let source = format!("general_settings:\n  reject_clientside_metadata_tags: {written}\n");
-    assert_eq!(
-        load(&source).unwrap().reject_clientside_metadata_tags,
-        expected
-    );
+    assert_eq!(load(&source).unwrap().reject_clientside_tags, expected);
 }
 
 #[rstest]

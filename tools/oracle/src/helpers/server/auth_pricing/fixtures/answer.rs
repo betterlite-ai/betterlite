@@ -6,8 +6,7 @@ use betterlite_auth::auth_pricing::project::{
     ProjectCollaborators, ProjectError, run_project_checks,
 };
 use betterlite_auth::auth_pricing::request::{
-    RequestFacts, enforce_user_param_check, global_proxy_budget_check,
-    reject_clientside_metadata_tags_check,
+    RequestFacts, enforce_user_param_check, global_proxy_budget_check, reject_clientside_tags_check,
 };
 use betterlite_auth::auth_pricing::routes::{
     request_skips_budget_checks, route_skips_budget_checks,
@@ -89,7 +88,7 @@ fn request_checks(
         body: &call.body,
     };
     let skip = request_skips_budget_checks(route, model, Some(catalog));
-    let tags = reject_clientside_metadata_tags_check(call.reject, &facts)
+    let tags = reject_clientside_tags_check(call.reject, &facts)
         .err()
         .map(|exception| envelope(&exception));
     let user = enforce_user_param_check(call.enforce, &facts)

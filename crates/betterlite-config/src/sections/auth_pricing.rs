@@ -19,8 +19,8 @@ pub struct Raw {
 struct RawGeneral {
     #[serde(default)]
     enforce_user_param: Option<bool>,
-    #[serde(default)]
-    reject_clientside_metadata_tags: Option<bool>,
+    #[serde(default, rename = "reject_clientside_metadata_tags")]
+    reject_clientside_tags: Option<bool>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -67,7 +67,7 @@ impl MaxBudget {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Settings {
     pub enforce_user_param: bool,
-    pub reject_clientside_metadata_tags: bool,
+    pub reject_clientside_tags: bool,
     pub max_budget: MaxBudget,
 }
 
@@ -75,7 +75,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             enforce_user_param: false,
-            reject_clientside_metadata_tags: false,
+            reject_clientside_tags: false,
             max_budget: MaxBudget::Finite(Decimal::ZERO),
         }
     }
@@ -91,9 +91,7 @@ impl Section for Raw {
         let general = self.general_settings;
         Ok(Settings {
             enforce_user_param: general.enforce_user_param.unwrap_or_default(),
-            reject_clientside_metadata_tags: general
-                .reject_clientside_metadata_tags
-                .unwrap_or_default(),
+            reject_clientside_tags: general.reject_clientside_tags.unwrap_or_default(),
             max_budget: self
                 .litellm_settings
                 .max_budget

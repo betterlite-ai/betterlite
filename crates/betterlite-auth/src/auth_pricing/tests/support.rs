@@ -196,7 +196,10 @@ impl<S: Subscriber> Layer<S> for DebugLogs {
     }
 }
 
-pub fn captured<T>(run: impl FnOnce() -> T) -> (T, Vec<String>) {
+pub fn captured<T, F>(run: F) -> (T, Vec<String>)
+where
+    F: FnOnce() -> T,
+{
     let logs = DebugLogs::default();
     let value = with_default(registry().with(logs.clone()), run);
     let messages = logs

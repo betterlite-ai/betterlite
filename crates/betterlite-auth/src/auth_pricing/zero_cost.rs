@@ -46,9 +46,10 @@ fn check_candidate(
         remember_not_free(cache, model_name);
         return false;
     };
+    // the name is stripped of newlines, so a logged model name cannot forge a log line
     debug!(
         "Model {} has zero cost explicitly configured (input: {}, output: {})",
-        safe_name(model_name),
+        model_name.replace(['\n', '\r'], ""),
         cost_text(costs.input_cost_per_token),
         cost_text(costs.output_cost_per_token)
     );
@@ -104,7 +105,7 @@ fn explicit_zero_cost(model: &str, catalog: &dyn PricingCatalog) -> Result<bool,
     if !is_cost_explicitly_configured(model, catalog)? {
         debug!(
             "Model {} has zero cost but no explicit cost configuration in model_cost entry, treating as unknown cost (enforce budget)",
-            safe_name(model)
+            model.replace(['\n', '\r'], "")
         );
         return Ok(false);
     }
@@ -121,7 +122,7 @@ fn explicit_zero_cost(model: &str, catalog: &dyn PricingCatalog) -> Result<bool,
         if ptu_count && hourly {
             debug!(
                 "Model {} prices reserved PTU capacity as a flat cost, so its zero per-token rate is not a free model (enforce budget)",
-                safe_name(model)
+                model.replace(['\n', '\r'], "")
             );
             return Ok(false);
         }
@@ -141,30 +142,22 @@ pub(super) fn is_cost_explicitly_configured(
     model: &str,
     catalog: &dyn PricingCatalog,
 ) -> Result<bool, PricingError> {
-    for deployment in catalog.model_list(model)? {
+    let deployments = catalog.model_list(model)?;
+    Ok(deployments.iter().any(|deployment| {
         let Some(model_id) = model_info_id(&deployment.model_info) else {
-            continue;
+            return false;
         };
         let Some(entry) = catalog.raw_cost_entry(model_id) else {
-            continue;
+            return false;
         };
-        if entry.contains_key("input_cost_per_token") || entry.contains_key("output_cost_per_token")
-        {
-            return Ok(true);
-        }
-    }
-    Ok(false)
+        entry.contains_key("input_cost_per_token") || entry.contains_key("output_cost_per_token")
+    }))
 }
 
 fn remember_not_free(store: Option<&ZeroCostCache>, model: &str) {
     if let Some(cache) = store {
         cache.record(model, false);
     }
-}
-
-// the explicit-cost, PTU and success lines carry the model name, so a newline in it cannot forge a log line
-fn safe_name(model: &str) -> String {
-    model.replace(['\n', '\r'], "")
 }
 
 fn cost_text(cost: Option<Money>) -> String {

@@ -1,8 +1,9 @@
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
+use rstest::rstest;
 
 use crate::auth_pricing::request::{
-    RequestFacts, UserParamError, enforce_user_param_check, reject_clientside_metadata_tags_check,
+    RequestFacts, UserParamError, enforce_user_param_check, reject_clientside_tags_check,
 };
 
 use super::support::{number, object, text};
@@ -40,20 +41,19 @@ fn post_user_presence() {
     assert_eq!(enforce_user_param_check(true, &with_user), Ok(()));
 }
 
-#[test]
-fn null_user_present() {
-    let null_user = object(&[("user", Json::Null)]);
-    let empty_user = object(&[("user", text(""))]);
-    let zero_user = object(&[("user", number("0"))]);
-    let false_user = object(&[("user", Json::Bool(false))]);
-    for body in [&null_user, &empty_user, &zero_user, &false_user] {
-        let request = facts(Some("POST"), "/v1/chat/completions", body);
-        assert_eq!(
-            enforce_user_param_check(true, &request),
-            Ok(()),
-            "the key's presence is what the check requires"
-        );
-    }
+#[rstest]
+#[case::null(Json::Null)]
+#[case::empty(text(""))]
+#[case::zero(number("0"))]
+#[case::false_value(Json::Bool(false))]
+fn null_user_present(#[case] user: Json) {
+    let body = object(&[("user", user)]);
+    let request = facts(Some("POST"), "/v1/chat/completions", &body);
+    assert_eq!(
+        enforce_user_param_check(true, &request),
+        Ok(()),
+        "the key's presence is what the check requires"
+    );
 }
 
 #[test]
@@ -79,9 +79,8 @@ fn tags_presence_rejected() {
         "metadata",
         Json::Object(object(&[("other", Json::Bool(true))])),
     )]);
-    let rejected =
-        reject_clientside_metadata_tags_check(true, &facts(Some("POST"), chat, &empty_tags))
-            .expect_err("client-side tags are rejected");
+    let rejected = reject_clientside_tags_check(true, &facts(Some("POST"), chat, &empty_tags))
+        .expect_err("client-side tags are rejected");
     assert_eq!(rejected.error_type, "bad_request_error");
     assert_eq!(rejected.param.as_deref(), Some("metadata.tags"));
     assert_eq!(rejected.code, "400");
@@ -90,11 +89,11 @@ fn tags_presence_rejected() {
         "Client-side 'metadata.tags' not allowed in request. \
          'reject_clientside_metadata_tags'=true. Tags can only be set via API key metadata."
     );
-    reject_clientside_metadata_tags_check(true, &facts(Some("POST"), chat, &null_tags))
+    reject_clientside_tags_check(true, &facts(Some("POST"), chat, &null_tags))
         .expect_err("a null tags value is rejected on key presence");
-    reject_clientside_metadata_tags_check(true, &facts(Some("POST"), chat, &other_metadata))
+    reject_clientside_tags_check(true, &facts(Some("POST"), chat, &other_metadata))
         .expect("metadata without a tags key is allowed");
-    reject_clientside_metadata_tags_check(false, &facts(Some("POST"), chat, &empty_tags))
+    reject_clientside_tags_check(false, &facts(Some("POST"), chat, &empty_tags))
         .expect("the switch off allows client tags");
 }
 
@@ -105,8 +104,7 @@ fn non_llm_tags_ignored() {
         Json::Object(object(&[("tags", Json::List(vec![text("a")]))])),
     )]);
     let request = facts(Some("POST"), "/key/info", &tags);
-    reject_clientside_metadata_tags_check(true, &request)
-        .expect("a non-LLM route is outside the tag check");
+    reject_clientside_tags_check(true, &request).expect("a non-LLM route is outside the tag check");
 }
 
 #[test]
@@ -117,9 +115,11 @@ fn litellm_metadata_unchecked() {
     )]);
     let text_metadata = object(&[("metadata", text("not a dict"))]);
     let null_metadata = object(&[("metadata", Json::Null)]);
-    for body in [&litellm_metadata, &text_metadata, &null_metadata] {
-        let request = facts(Some("POST"), "/v1/chat/completions", body);
-        reject_clientside_metadata_tags_check(true, &request)
-            .expect("metadata and litellm_metadata without client tags are allowed");
-    }
+    let route = "/v1/chat/completions";
+    reject_clientside_tags_check(true, &facts(Some("POST"), route, &litellm_metadata))
+        .expect("litellm_metadata tags are outside the check");
+    reject_clientside_tags_check(true, &facts(Some("POST"), route, &text_metadata))
+        .expect("non-dict metadata is outside the check");
+    reject_clientside_tags_check(true, &facts(Some("POST"), route, &null_metadata))
+        .expect("null metadata is outside the check");
 }

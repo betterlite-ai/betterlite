@@ -53,11 +53,11 @@ fn is_mcp_route(route: &str) -> bool {
 }
 
 // _reject_clientside_metadata_tags_check: key presence is enough, a null or empty tags value is rejected
-pub fn reject_clientside_metadata_tags_check(
-    reject_clientside_metadata_tags: bool,
+pub fn reject_clientside_tags_check(
+    reject_clientside_tags: bool,
     request: &RequestFacts<'_>,
 ) -> Result<(), Box<ProxyException>> {
-    if !reject_clientside_metadata_tags || !is_llm_api_route(&RouteValue::Text(request.route)) {
+    if !reject_clientside_tags || !is_llm_api_route(&RouteValue::Text(request.route)) {
         return Ok(());
     }
     let Some(Json::Object(metadata)) = request.body.get("metadata") else {

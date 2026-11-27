@@ -21,8 +21,7 @@ use betterlite_auth::auth_pricing::project::{
     DeploymentProjectGrant, ProjectCollaborators, ProjectError, run_project_checks,
 };
 use betterlite_auth::auth_pricing::request::{
-    RequestFacts, enforce_user_param_check, global_proxy_budget_check,
-    reject_clientside_metadata_tags_check,
+    RequestFacts, enforce_user_param_check, global_proxy_budget_check, reject_clientside_tags_check,
 };
 use betterlite_auth::auth_pricing::routes::request_skips_budget_checks;
 use betterlite_auth::auth_request_models::RequestedModels;
@@ -153,7 +152,7 @@ pub(crate) async fn prefetch(stage: &PricingStageInput) -> Result<(), Box<ProxyE
         route: &stage.route,
         body: &stage.body,
     };
-    reject_clientside_metadata_tags_check(stage.settings.reject_clientside_metadata_tags, &facts)?;
+    reject_clientside_tags_check(stage.settings.reject_clientside_tags, &facts)?;
     enforce_user_param_check(stage.settings.enforce_user_param, &facts)
         .map_err(|error| Box::new(ordinary_exception(&error.to_string())))?;
     let budget = global_proxy_budget_check(

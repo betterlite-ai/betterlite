@@ -7,6 +7,7 @@ use async_trait::async_trait;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::resource_rows::project::ProjectTable;
 use betterlite_error::proxy_error_types::ModelAccessObject;
+use rstest::rstest;
 use rust_decimal::Decimal;
 use serde::Serialize;
 
@@ -287,26 +288,8 @@ async fn skip_keeps_model_check() {
     assert_eq!(reader.reads(), 0);
     assert!(alerts.kinds().is_empty());
 
-    // the model gate runs only for a truthy request model and a nonempty project list
+    // the model gate needs a nonempty project model list
     let quiet = GrantRecorder::denying();
-    for skipped in [
-        RequestedModels::None,
-        RequestedModels::Many(Vec::new()),
-        one(""),
-    ] {
-        run_project_checks(
-            Some(&project),
-            &skipped,
-            true,
-            Some(&auth),
-            &ProjectCollaborators {
-                grant: &quiet,
-                admission: admission(&reader, &alerts),
-            },
-        )
-        .await
-        .expect("an absent or empty request model skips the grant");
-    }
     let unrestricted = cached_project("proj-2", false, &[], Some(("0", "0")));
     run_project_checks(
         Some(&unrestricted),
@@ -336,6 +319,33 @@ async fn skip_keeps_model_check() {
     .await
     .expect("a missing project skips every check");
     assert_eq!(allowing.calls(), 1);
+    assert_eq!(reader.reads(), 0);
+}
+
+#[rstest]
+#[case::none(RequestedModels::None)]
+#[case::empty_many(RequestedModels::Many(Vec::new()))]
+#[case::empty_one(one(""))]
+#[tokio::test]
+async fn absent_model_skips_grant(#[case] skipped: RequestedModels) {
+    let reader = ScriptedSpend::new("6");
+    let alerts = AlertRecorder::default();
+    let grants = GrantRecorder::denying();
+    let auth = token("sk-absent");
+    let project = cached_project("proj-1", false, &["allowed"], Some(("0", "0")));
+    run_project_checks(
+        Some(&project),
+        &skipped,
+        true,
+        Some(&auth),
+        &ProjectCollaborators {
+            grant: &grants,
+            admission: admission(&reader, &alerts),
+        },
+    )
+    .await
+    .expect("an absent or empty request model skips the grant");
+    assert_eq!(grants.calls(), 0);
     assert_eq!(reader.reads(), 0);
 }
 

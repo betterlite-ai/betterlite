@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_models::decisions::Json;
+use rstest::rstest;
 
 use crate::auth_key_budgets::money::Money;
 use crate::auth_pricing::cache::ZeroCostCache;
@@ -235,59 +236,42 @@ fn ptu_zero_values_not_free() {
     );
 }
 
-#[test]
-fn negative_nonfinite_price_edges() {
+#[rstest]
+#[case::negative("negative", money("-0.001"), money("0"), true, None)]
+#[case::nan("nan", Money::Nan, money("0"), false, Some("input: NaN"))]
+#[case::positive_infinity(
+    "positive-inf",
+    money("0"),
+    Money::PositiveInfinity,
+    false,
+    Some("output: Infinity")
+)]
+#[case::negative_infinity(
+    "negative-inf",
+    Money::NegativeInfinity,
+    money("0"),
+    false,
+    Some("input: -Infinity")
+)]
+fn negative_nonfinite_price_edges(
+    #[case] model: &str,
+    #[case] input: Money,
+    #[case] output: Money,
+    #[case] free: bool,
+    #[case] log_fragment: Option<&str>,
+) {
     let mut catalog = FakeCatalog::with_cache();
-    explicit_free(&mut catalog, "negative");
-    catalog.group("negative", Some(money("-0.001")), Some(money("0")));
-    catalog.group("nan", Some(Money::Nan), Some(money("0")));
-    catalog.group(
-        "positive-inf",
-        Some(money("0")),
-        Some(Money::PositiveInfinity),
-    );
-    catalog.group(
-        "negative-inf",
-        Some(Money::NegativeInfinity),
-        Some(money("0")),
-    );
-    for model in ["nan", "positive-inf", "negative-inf"] {
-        let mut deployment = model.to_owned();
-        deployment.push_str("-dep");
-        catalog.deployed(model, object(&[]), object(&[("id", text(&deployment))]));
-        catalog.raw(
-            &deployment,
-            object(&[("input_cost_per_token", number("0"))]),
+    explicit_free(&mut catalog, model);
+    catalog.group(model, Some(input), Some(output));
+    let (verdict, logs) = captured(|| is_model_cost_zero(&one(model), Some(&catalog)));
+    assert_eq!(verdict, free, "the {model} rate classification");
+    if let Some(fragment) = log_fragment {
+        assert!(
+            logs.iter().any(|line| line.contains(fragment)),
+            "{model} logs {fragment}"
         );
     }
-
-    assert!(
-        is_model_cost_zero(&one("negative"), Some(&catalog)),
-        "a negative rate passes LiteLLM's > 0 comparison"
-    );
-    let (nan_verdict, nan_logs) = captured(|| is_model_cost_zero(&one("nan"), Some(&catalog)));
-    let (inf_verdict, inf_logs) =
-        captured(|| is_model_cost_zero(&one("positive-inf"), Some(&catalog)));
-    let (neg_inf_verdict, neg_inf_logs) =
-        captured(|| is_model_cost_zero(&one("negative-inf"), Some(&catalog)));
-    assert!(!nan_verdict);
-    assert!(!inf_verdict);
-    assert!(!neg_inf_verdict);
-    assert!(nan_logs.iter().any(|line| line.contains("input: NaN")));
-    assert!(
-        inf_logs
-            .iter()
-            .any(|line| line.contains("output: Infinity"))
-    );
-    assert!(
-        neg_inf_logs
-            .iter()
-            .any(|line| line.contains("input: -Infinity"))
-    );
-    assert_eq!(catalog.cached("negative"), Some(true));
-    assert_eq!(catalog.cached("nan"), Some(false));
-    assert_eq!(catalog.cached("positive-inf"), Some(false));
-    assert_eq!(catalog.cached("negative-inf"), Some(false));
+    assert_eq!(catalog.cached(model), Some(free));
 }
 
 #[test]

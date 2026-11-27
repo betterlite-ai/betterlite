@@ -28,8 +28,7 @@ pub enum PricingError {
     Unavailable,
 }
 
-// the router facts the pricing checks read: model group info, the deployment list, resolved model
-// info, the raw model_cost map, and this router's zero-cost cache
+// the router catalog these checks read, including its zero-cost cache
 pub trait PricingCatalog: Debug + Send + Sync {
     fn model_group_info(&self, model: &str) -> Result<Option<ModelGroupCosts>, PricingError>;
 

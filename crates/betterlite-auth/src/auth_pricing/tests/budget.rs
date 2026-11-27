@@ -39,11 +39,12 @@ fn zero_negative_budget_disabled() {
     assert!(global_proxy_budget_check(money("-1"), Some(dec("5")), false, CHAT).is_none());
 }
 
-#[test]
-fn nonfinite_budget_no_rejection() {
-    for budget in [Money::Nan, Money::PositiveInfinity, Money::NegativeInfinity] {
-        assert!(global_proxy_budget_check(budget, Some(dec("100")), false, CHAT).is_none());
-    }
+#[rstest]
+#[case::nan(Money::Nan)]
+#[case::positive_infinity(Money::PositiveInfinity)]
+#[case::negative_infinity(Money::NegativeInfinity)]
+fn nonfinite_budget_no_rejection(#[case] budget: Money) {
+    assert!(global_proxy_budget_check(budget, Some(dec("100")), false, CHAT).is_none());
 }
 
 #[test]
@@ -76,14 +77,14 @@ fn proxy_budget_error_fields() {
     );
 }
 
-#[test]
-fn models_aliases_exempt() {
-    for route in ["/v1/models", "/models"] {
-        assert!(
-            global_proxy_budget_check(money("1"), Some(dec("100")), false, route).is_none(),
-            "the model discovery aliases skip the global budget"
-        );
-    }
+#[rstest]
+#[case::v1_models("/v1/models")]
+#[case::models("/models")]
+fn models_aliases_exempt(#[case] route: &str) {
+    assert!(
+        global_proxy_budget_check(money("1"), Some(dec("100")), false, route).is_none(),
+        "the model discovery aliases skip the global budget"
+    );
 }
 
 #[rstest]
