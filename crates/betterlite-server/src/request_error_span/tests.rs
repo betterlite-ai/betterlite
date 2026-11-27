@@ -8,6 +8,7 @@ use betterlite_config::sections::provider_url_destination::pattern::AllowedDesti
 use betterlite_error::normalize::Normalizer;
 use betterlite_error::proxy_exception::model_access_denied::ModelAccessDeniedProxyException;
 use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExceptionInit};
+use betterlite_logging::logging_metadata::exception::ExceptionFacts;
 use betterlite_logging::otel::config::destination::SpanScope;
 use betterlite_logging::otel::config::{CaptureMessageContent, ExporterSpec, Settings};
 use betterlite_logging::otel::emitter::span_emission::MapperKind;
