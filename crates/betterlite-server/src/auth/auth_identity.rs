@@ -205,11 +205,15 @@ pub(crate) fn dispatch(
     master_key: &SecretString,
 ) -> Result<AuthContext, StageFailure> {
     require_backend(backend, input)?;
+    run_input(input, master_key)
+}
+
+fn run_input(input: &StageInput, master_key: &SecretString) -> Result<AuthContext, StageFailure> {
     match input {
         StageInput::AuthKeyLookup(_) => Err(StageFailure::from(AuthenticationFailure::Missing)),
         Authenticated(context) => Ok((**context).clone()),
         StageInput::JwtKeys(_) => jwt_keys::run_stage(input),
-        StageInput::MasterKey(_) => master_key_stage(input, master_key).map_err(StageFailure::from),
+        StageInput::MasterKey(presented) => master_key_stage(presented.as_ref(), master_key)?,
         StageInput::TrustedNetwork(stage) => trusted_network::run_stage(stage),
         StageInput::AuthRequestPolicy(stage) => {
             auth_request_policy::run_stage(stage).map_err(StageFailure::AuthRequestPolicy)

@@ -137,10 +137,11 @@ fn stage_input(
             request_body_safety::stage_input(request, authenticated, body)?,
         ))),
         AuthBackend::AuthVirtualKeyRoutes => virtual_key_route_stage_input(request, authenticated),
-        AuthBackend::AuthRequestModels
-        | AuthBackend::AuthModelPatterns
-        | AuthBackend::AuthContextSources => {
-            resolver_stage_input(backend, request, authenticated, resolver, body)
+        AuthBackend::AuthRequestModels | AuthBackend::AuthModelPatterns => {
+            resolver_stage_input(backend, request, authenticated, resolver)
+        }
+        AuthBackend::AuthContextSources => {
+            auth_context_sources::stage_input(request, authenticated, resolver, body)
         }
         AuthBackend::AuthModelGrants => auth_model_grants::stage_input(request, authenticated),
         AuthBackend::EntityModelAccess => entity_model_access::stage_input(request, authenticated),
@@ -201,17 +202,13 @@ fn resource_grant_stage_input(
     )))
 }
 
-// The stages that read the request model against the resolver: the two model stages and the context sources stage.
+// the two model stages read the request model against the resolver before the patterns stage is built
 fn resolver_stage_input(
     backend: AuthBackend,
     request: &Request<Body>,
     authenticated: Option<&AuthContext>,
     resolver: &Arc<RequestModelResolver>,
-    body: Option<&Bytes>,
 ) -> Result<StageInput, StageFailure> {
-    if backend == AuthBackend::AuthContextSources {
-        return auth_context_sources::stage_input(request, authenticated, resolver, body);
-    }
     let context = authenticated
         .cloned()
         .ok_or(AuthenticationFailure::Missing)?;
@@ -290,20 +287,13 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
 }
 
 fn master_key_stage(
-    input: &StageInput,
+    presented: Option<&SecretString>,
     master_key: &SecretString,
 ) -> Result<AuthContext, AuthenticationFailure> {
-    let StageInput::MasterKey(presented) = input else {
-        return Err(AuthenticationFailure::Missing);
-    };
-    if let Some(context) = auth_identity::master_key_context(presented.as_ref(), master_key) {
-        return Ok(context);
-    }
-    let failure = match presented.as_ref() {
+    auth_identity::master_key_context(presented, master_key).ok_or_else(|| match presented {
         Some(key) if !key.expose_secret().is_empty() => AuthenticationFailure::Invalid,
         Some(_) | None => AuthenticationFailure::Missing,
-    };
-    Err(failure)
+    })
 }
 
 fn model_stage_input(
