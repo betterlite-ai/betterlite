@@ -141,7 +141,7 @@ impl StageInput {
             Self::AuthKeyLookup(_) | Self::AuthIdentity(_) | Self::Authenticated(_) => {
                 AuthBackend::AuthKeyLookup
             }
-            Self::MasterKey(_) => AuthBackend::MasterKey,
+            Self::MasterKey(_) => MasterKey,
             Self::TrustedNetwork(_) => AuthBackend::TrustedNetwork,
             Self::AuthRequestPolicy(_) => AuthBackend::AuthRequestPolicy,
             Self::RequestBodySafety(_) => AuthBackend::RequestBodySafety,
@@ -162,34 +162,6 @@ impl StageInput {
             Self::ModelGrantIntersection(_) => AuthBackend::ModelGrantIntersection,
         }
     }
-
-    // the stages that resolve nothing carry the context an earlier stage resolved, and every other input has none
-    fn forwarded_context(&self) -> Result<AuthContext, StageFailure> {
-        match self {
-            Self::Authenticated(context) => Ok((**context).clone()),
-            Self::EntityModelAccess(stage) => Ok(stage.context.clone()),
-            Self::AuthModelGrants(stage) => Ok(stage.context.clone()),
-            Self::AuthTagBudgets(stage) => Ok(stage.context.clone()),
-            Self::AuthKeyBudgets(stage) => Ok(stage.context.clone()),
-            Self::TeamBudgetAdmission(stage) => Ok(stage.context.clone()),
-            Self::AuthTenantBudgets(stage) => Ok(stage.context.clone()),
-            Self::AuthOrgLookup(stage) => Ok(stage.context.clone()),
-            Self::AuthEndUsers(stage) => Ok(stage.context.clone()),
-            Self::ModelGrantIntersection(stage) => Ok(stage.context.clone()),
-            Self::AuthKeyLookup(_)
-            | Self::AuthIdentity(_)
-            | Self::MasterKey(_)
-            | Self::TrustedNetwork(_)
-            | Self::AuthRequestPolicy(_)
-            | Self::RequestBodySafety(_)
-            | Self::AuthVirtualKeyRoutes(_)
-            | Self::AuthRequestModels(_)
-            | Self::AuthModelPatterns(_)
-            | Self::AuthResourceGrants(_)
-            | Self::OrganizationRoutePolicy(_)
-            | Self::AuthPolicySupport(_) => Err(StageFailure::from(AuthenticationFailure::Missing)),
-        }
-    }
 }
 
 pub(crate) fn dispatch(
@@ -201,16 +173,16 @@ pub(crate) fn dispatch(
         return Err(StageFailure::from(AuthenticationFailure::Missing));
     }
     match input {
-        StageInput::Authenticated(_)
-        | StageInput::EntityModelAccess(_)
-        | StageInput::AuthModelGrants(_)
-        | StageInput::AuthTagBudgets(_)
-        | StageInput::AuthKeyBudgets(_)
-        | StageInput::TeamBudgetAdmission(_)
-        | StageInput::AuthTenantBudgets(_)
-        | StageInput::AuthOrgLookup(_)
-        | StageInput::AuthEndUsers(_)
-        | StageInput::ModelGrantIntersection(_) => input.forwarded_context(),
+        Authenticated(context) => Ok((**context).clone()),
+        StageInput::EntityModelAccess(stage) => Ok(stage.context.clone()),
+        StageInput::AuthModelGrants(stage) => Ok(stage.context.clone()),
+        StageInput::AuthTagBudgets(stage) => Ok(stage.context.clone()),
+        StageInput::AuthKeyBudgets(stage) => Ok(stage.context.clone()),
+        StageInput::TeamBudgetAdmission(stage) => Ok(stage.context.clone()),
+        StageInput::AuthTenantBudgets(stage) => Ok(stage.context.clone()),
+        StageInput::AuthOrgLookup(stage) => Ok(stage.context.clone()),
+        StageInput::AuthEndUsers(stage) => Ok(stage.context.clone()),
+        StageInput::ModelGrantIntersection(stage) => Ok(stage.context.clone()),
         StageInput::AuthKeyLookup(_) | StageInput::AuthIdentity(_) => {
             Err(StageFailure::from(AuthenticationFailure::Missing))
         }
