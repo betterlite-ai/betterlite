@@ -19,7 +19,6 @@ use betterlite_core::api::vector_file_http_create_list::service::{
 use betterlite_core::api::vector_file_provider::CredentialLookup;
 use betterlite_core::api::vector_store_search::error::SdkFailure;
 use betterlite_error::envelope::WireField;
-use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_openai::credentials::LiteLlmGlobals;
 use indexmap::IndexMap;
@@ -28,9 +27,8 @@ use super::super::error::SdkHttpError;
 use super::super::result::kinds::SdkResult;
 use super::super::result::{Failure, Nullable};
 use super::support::{Assets, CaseRegistry, Source, logging_state, registry_of, source};
-use super::{Call, Context, CreateArgs, ListArgs, Mode, Operation, Outcome, Run, RunOutcome};
+use super::{Call, CreateArgs, ListArgs, Mode, Operation, Outcome, Run, RunOutcome};
 
-// The production service over the mock's base: the same config sections and pooled client a request would build
 pub(super) async fn execute(
     call: &Call,
     api_base: &str,
@@ -67,7 +65,6 @@ pub(super) async fn execute(
         value: Box::new(Outcome { runs }),
     })
 }
-
 fn file_service<'config, 'assets>(
     config: &'config Config,
     origin: &'assets Source,
@@ -94,7 +91,7 @@ async fn run_once(
     request_timeout_seconds: f64,
 ) -> Result<RunOutcome, SdkHttpError> {
     let logging = Mutex::new(logging_state(call_type(run.operation))?);
-    let lookup: Option<&dyn CredentialLookup> = registry.map(|found| found);
+    let lookup = registry.map(|found: &CaseRegistry| -> &dyn CredentialLookup { found });
     let deps = VectorFileCreateDeps {
         logging: &logging,
         redactor: &service.assets.redactor,
@@ -113,16 +110,13 @@ async fn run_once(
         }
     };
     let failure = answer.as_ref().err().map(project);
-    let state = logging.lock().unwrap_or_else(PoisonError::into_inner);
     Ok(RunOutcome {
         operation: run.operation,
         mode: run.mode,
         result: answer.ok(),
         failure,
-        context: context_of(&state),
     })
 }
-
 const fn call_type(operation: Operation) -> &'static str {
     match operation {
         Operation::Create => "vector_store_file_create",
@@ -171,7 +165,6 @@ async fn list_run(
         Mode::Asynchronous => files.alist(&request).await,
     }
 }
-
 fn transport<'run>(run: &'run Run, kwargs: &'run IndexMap<String, Json>) -> TransportRequest<'run> {
     TransportRequest {
         vector_store_id: &run.vector_store_id,
@@ -199,34 +192,11 @@ fn kwargs_of(run: &Run, api_base: &str) -> IndexMap<String, Json> {
     }
     kwargs
 }
-
-// update_from_kwargs is what names the provider; a call that failed before it has no context to record
-fn context_of(state: &LoggingState) -> Option<Context> {
-    let provider = state.custom_llm_provider.as_ref()?;
-    Some(Context {
-        model: state.model.clone(),
-        optional_params: state.optional_params.clone(),
-        custom_llm_provider: provider.clone(),
-        litellm_call_id: state
-            .litellm_params
-            .get("litellm_call_id")
-            .cloned()
-            .unwrap_or(Json::Null),
-        vector_store_id: state
-            .litellm_params
-            .get("vector_store_id")
-            .cloned()
-            .unwrap_or(Json::Null),
-    })
-}
-
 fn missing(operation: &str) -> SdkHttpError {
     SdkHttpError::Invalid(format!(
         "a {operation} run carries the {operation} arguments"
     ))
 }
-
-// The exception the public function raises, as `result::Failure` renders it for both sides
 fn project(failure: &SdkFailure) -> Failure {
     Failure {
         class: failure.class.clone(),
@@ -238,7 +208,6 @@ fn project(failure: &SdkFailure) -> Failure {
     }
 }
 
-// mirrors getattr(e, field, "None"): absent, present and null, or text
 const fn field(wire: WireField) -> Nullable {
     match wire {
         WireField::Missing(_) => None,
@@ -255,7 +224,24 @@ impl FileService for Service<'_, '_> {
             source: self.source,
             supplied: None,
         };
-        let transport = http_call(call);
+        let target = FileTarget {
+            vector_store_id: call.vector_store_id,
+            params: call.params,
+            extra_headers: call.extra_headers,
+            timeout: Some(call.timeout),
+        };
+        let transport = match call.operation {
+            CoreOperation::Create => HttpFileCall::Create(CreateCall {
+                target,
+                create_request: call.fields,
+                extra_body: call.extra_body,
+            }),
+            CoreOperation::List => HttpFileCall::List(ListCall {
+                target,
+                query_params: call.fields,
+                extra_query: call.extra_query,
+            }),
+        };
         let env = self.assets.env();
         let prepared = {
             let mut state = call.logging.lock().unwrap_or_else(PoisonError::into_inner);
@@ -270,27 +256,6 @@ impl FileService for Service<'_, '_> {
             )?
         };
         send(prepared).await
-    }
-}
-
-fn http_call<'call>(call: &FileCall<'call>) -> HttpFileCall<'call> {
-    let target = FileTarget {
-        vector_store_id: call.vector_store_id,
-        params: call.params,
-        extra_headers: call.extra_headers,
-        timeout: Some(call.timeout),
-    };
-    match call.operation {
-        CoreOperation::Create => HttpFileCall::Create(CreateCall {
-            target,
-            create_request: call.fields,
-            extra_body: call.extra_body,
-        }),
-        CoreOperation::List => HttpFileCall::List(ListCall {
-            target,
-            query_params: call.fields,
-            extra_query: call.extra_query,
-        }),
     }
 }
 

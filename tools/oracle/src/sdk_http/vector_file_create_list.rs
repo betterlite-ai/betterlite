@@ -21,7 +21,6 @@ pub enum Operation {
     Create,
     List,
 }
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Mode {
@@ -29,8 +28,6 @@ pub enum Mode {
     #[serde(rename = "async")]
     Asynchronous,
 }
-
-// vector_store_file_create's named arguments
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CreateArgs {
@@ -40,8 +37,6 @@ pub struct CreateArgs {
     #[serde(default)]
     pub chunking_strategy: Option<IndexMap<String, Json>>,
 }
-
-// vector_store_file_list's five named optional arguments
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ListArgs {
@@ -56,8 +51,6 @@ pub struct ListArgs {
     #[serde(default)]
     pub order: Option<String>,
 }
-
-// The caller's kwargs the case sets beyond the named arguments
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RunOptions {
@@ -65,8 +58,6 @@ pub struct RunOptions {
     pub api_key: Option<String>,
     pub litellm_call_id: String,
 }
-
-// One public SDK call of either operation and mode, with the three overrides both functions take
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Run {
@@ -92,8 +83,6 @@ pub struct Run {
     #[serde(default)]
     pub unknown: Option<Json>,
 }
-
-// The registry record B1111 overlays before the provider is read; $API_BASE stands for the mock's address
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Registry {
@@ -112,17 +101,6 @@ pub struct Call {
     pub registry: Option<Registry>,
 }
 
-// The logging object's state after update_from_kwargs, as both sides record it
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Context {
-    pub model: String,
-    pub optional_params: IndexMap<String, Json>,
-    pub custom_llm_provider: String,
-    pub litellm_call_id: Json,
-    pub vector_store_id: Json,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RunOutcome {
@@ -130,7 +108,6 @@ pub struct RunOutcome {
     pub mode: Mode,
     pub result: Option<Json>,
     pub failure: Option<Failure>,
-    pub context: Option<Context>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

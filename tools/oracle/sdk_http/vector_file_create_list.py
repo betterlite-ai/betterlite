@@ -3,7 +3,7 @@ import json
 from collections.abc import Coroutine
 from datetime import UTC, datetime
 from functools import partial
-from typing import Final, Literal, NotRequired, Protocol, TypeAlias, TypedDict, cast
+from typing import Final, Literal, Protocol, TypeAlias, cast
 
 import litellm
 import litellm.vector_store_files.main as vector_file_main
@@ -20,7 +20,6 @@ Mode = Literal["sync", "async"]
 Answer: TypeAlias = JsonValue | Coroutine[None, None, JsonValue]
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
-# a registry value of $API_BASE is the mock the harness started, which a static case cannot name
 API_BASE_SENTINEL: Final = "$API_BASE"
 
 
@@ -73,35 +72,13 @@ class Call(Strict):
     registry: Registry | None = None
 
 
-class Context(Strict):
-    model: str
-    optional_params: dict[str, JsonValue]
-    custom_llm_provider: str
-    litellm_call_id: JsonValue
-    vector_store_id: JsonValue
-
-
 class RunOutcome(Strict):
     operation: Operation
     mode: Mode
     result: JsonValue = None
     failure: Failure | None = None
-    context: Context | None = None
 
 
-class SeenParams(TypedDict, total=False):
-    litellm_call_id: JsonValue
-    vector_store_id: JsonValue
-
-
-class SeenDetails(TypedDict):
-    model: str
-    optional_params: dict[str, JsonValue]
-    custom_llm_provider: NotRequired[str]
-    litellm_params: SeenParams
-
-
-# The two pairs are keyword-only **kwargs functions, so the calls go through the maps they read
 class VectorFiles(Protocol):
     def create(self, **options: object) -> Answer: ...
 
@@ -180,21 +157,6 @@ def logging_fixture(run: Run) -> Logging:
     )
 
 
-def context_of(logging_obj: Logging) -> Context | None:
-    details = cast(SeenDetails, logging_obj.model_call_details)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py
-    provider = details.get("custom_llm_provider")
-    if provider is None:
-        return None
-    params = details["litellm_params"]
-    return Context(
-        model=details["model"],
-        optional_params=details["optional_params"],
-        custom_llm_provider=provider,
-        litellm_call_id=params.get("litellm_call_id"),
-        vector_store_id=params.get("vector_store_id"),
-    )
-
-
 def run_once(run: Run, api_base: str) -> RunOutcome:
     logging_obj = logging_fixture(run)
     try:
@@ -203,20 +165,8 @@ def run_once(run: Run, api_base: str) -> RunOutcome:
         failure = chat_failure(error).failure
         if failure is None:
             raise ValueError("the projected exception carries no failure") from error
-        return RunOutcome(
-            operation=run.operation,
-            mode=run.mode,
-            result=None,
-            failure=failure,
-            context=context_of(logging_obj),
-        )
-    return RunOutcome(
-        operation=run.operation,
-        mode=run.mode,
-        result=result,
-        failure=None,
-        context=context_of(logging_obj),
-    )
+        return RunOutcome(operation=run.operation, mode=run.mode, failure=failure)
+    return RunOutcome(operation=run.operation, mode=run.mode, result=result)
 
 
 def credentials_for(

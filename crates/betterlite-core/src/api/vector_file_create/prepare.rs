@@ -20,7 +20,6 @@ pub(crate) fn files_params(kwargs: &IndexMap<String, Json>) -> Result<FilesParam
     })
 }
 
-// create's named arguments as local_vars holds them, before the kwargs overlay
 pub(crate) fn create_locals(
     file_id: &str,
     attributes: Option<&Attributes>,
@@ -40,7 +39,6 @@ pub(crate) fn create_locals(
     Ok(locals)
 }
 
-// list's six named arguments as local_vars holds them, every absent one left out
 pub(crate) fn list_locals(
     after: Option<&str>,
     before: Option<&str>,
@@ -63,7 +61,6 @@ pub(crate) fn list_locals(
     Ok(locals)
 }
 
-// update_from_kwargs(kwargs, model=None, optional_params={"vector_store_id": ..., **filtered}, litellm_params={...})
 pub(crate) fn log_call(
     logging: &Mutex<LoggingState>,
     kwargs: &IndexMap<String, Json>,
@@ -92,7 +89,6 @@ pub(crate) fn log_call(
     .map_err(FileCallError::Logging)
 }
 
-// the request fields the handler call logs untransformed, after vector_store_id
 fn optional_params_of(
     vector_store_id: &str,
     filtered: &FileParams,
@@ -149,7 +145,6 @@ fn generic_params_dump(kwargs: &IndexMap<String, Json>) -> IndexMap<String, Json
     dump
 }
 
-// `timeout or request_timeout`: an explicit zero is falsy, and the module constant is never absent
 pub(crate) fn call_timeout(
     requested: Option<f64>,
     request_timeout_seconds: f64,

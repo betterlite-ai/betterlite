@@ -11,7 +11,6 @@ use crate::api::assistant_records::error::class_name;
 use crate::api::vector_file_http_create_list::error::FileTransportError;
 use crate::api::vector_store_search::error::SdkFailure;
 
-// exception_type() maps every attachment failure with model None and the provider the call resolved to
 const MODEL: &str = "";
 
 #[derive(Debug, Error)]
@@ -28,7 +27,6 @@ pub enum FileCallError {
         field: &'static str,
         expected: &'static str,
     },
-    // the Json-to-FileParams bridge; a failure here is a local ValueError, not a provider answer
     #[error("the attachment parameters are not valid")]
     Params(#[source] serde_json::Error),
     #[error("the request timeout of {seconds} seconds is not a valid duration")]
@@ -39,7 +37,6 @@ pub enum FileCallError {
     },
     #[error(transparent)]
     Logging(#[from] LoggingStateError),
-    // B2480's file service, whose provider errors carry the status exception_type() maps by
     #[error(transparent)]
     Service(#[from] FileTransportError),
 }

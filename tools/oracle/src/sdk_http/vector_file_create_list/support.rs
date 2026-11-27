@@ -29,16 +29,13 @@ use indexmap::IndexMap;
 use super::super::error::SdkHttpError;
 use super::Registry;
 
-// a registry value of "$API_BASE" is the mock the harness started, which a static case cannot name
 pub(super) const API_BASE_SENTINEL: &str = "$API_BASE";
 
-// The pooled client the selected deployment would get; the case env only carries the key and the proxy settings
 pub(super) struct Source {
     pool: ClientPool,
     tls: TlsPolicy,
     routing: Arc<ProxyPolicy>,
 }
-
 impl ClientSource for Source {
     type Client = ProxiedClient;
 
@@ -48,7 +45,6 @@ impl ClientSource for Source {
             .map_err(ClientError::Pool)
     }
 }
-
 pub(super) fn source(
     config: &Config,
     env: &BTreeMap<String, String>,
@@ -64,13 +60,10 @@ pub(super) fn source(
         routing,
     })
 }
-
-// The pre-call a production request runs, over one case
 pub(super) struct Assets {
     pub(super) redactor: Redactor,
     now: DateTime<FixedOffset>,
 }
-
 impl Assets {
     pub(super) fn new() -> Result<Self, SdkHttpError> {
         let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(SdkHttpError::Redactor)?;
@@ -105,7 +98,6 @@ fn moment() -> Result<DateTime<FixedOffset>, SdkHttpError> {
         .map_err(|error| SdkHttpError::Invalid(error.to_string()))
 }
 
-// the SDK functions run with model None, which the logging fixture holds as the empty model
 pub(super) fn logging_state(call_type: &str) -> Result<LoggingState, SdkHttpError> {
     let text = format!(
         r#"{{"model":"","call_type":"{call_type}","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}}"#
@@ -126,7 +118,6 @@ pub(super) fn logging_state(call_type: &str) -> Result<LoggingState, SdkHttpErro
     .map_err(SdkHttpError::LoggingState)
 }
 
-// The case registry B1111 reads: one store's credential values, or a lookup that raises
 pub(super) struct CaseRegistry {
     vector_store_id: String,
     values: IndexMap<String, Json>,

@@ -15,7 +15,6 @@ use crate::api::vector_file_http_create_list::config::FilesParams;
 use crate::api::vector_file_http_create_list::error::FileTransportError;
 use crate::api::vector_store_http_write::service::ClientKind;
 
-// the kwargs key each operation's async facade sets, and its sync form's caller may set
 pub(crate) const ACREATE_FLAG: &str = "acreate";
 pub(crate) const ALIST_FLAG: &str = "alist";
 
@@ -50,7 +49,6 @@ impl Operation {
     }
 }
 
-// One attachment call as B2480's HTTP handler takes it: the filtered fields, the operation's own overlay and the logging state it reports through
 pub struct FileCall<'call> {
     pub operation: Operation,
     pub mode: ClientKind,
@@ -58,17 +56,14 @@ pub struct FileCall<'call> {
     pub config: VectorStoreFilesConfigTag,
     pub vector_store_id: &'call str,
     pub params: &'call FilesParams,
-    // B1071's filter output, with create's file_id argument put back
     pub fields: &'call FileParams,
     pub extra_headers: Option<&'call BTreeMap<String, String>>,
-    // create forwards only its body overlay, list only its query overlay
     pub extra_body: Option<&'call IndexMap<String, Json>>,
     pub extra_query: Option<&'call IndexMap<String, Json>>,
     pub timeout: Duration,
     pub logging: &'call Mutex<LoggingState>,
 }
 
-// The provider's HTTP attachment service; a local failure and a provider answer both come back as FileTransportError
 pub trait FileService: Send + Sync {
     fn file(
         &self,

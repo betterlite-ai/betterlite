@@ -29,7 +29,6 @@ use crate::api::vector_file_provider::{
 };
 use crate::api::vector_store_search::error::SdkFailure;
 
-// either the attachment the provider returned or the failure B011 maps to the SDK exception it raises
 pub type FileResult = Result<Json, SdkFailure>;
 
 #[derive(Clone, Copy)]
@@ -41,14 +40,11 @@ pub struct VectorFileCreateDeps<'deps> {
     pub request_timeout_seconds: f64,
 }
 
-// the named arguments create and list share, with every optional one defaulting to None
 #[derive(Clone, Copy)]
 pub struct TransportRequest<'request> {
     pub vector_store_id: &'request str,
     pub extra_headers: Option<&'request BTreeMap<String, String>>,
-    // create drops this overlay before the handler; list forwards it
     pub extra_query: Option<&'request IndexMap<String, Json>>,
-    // list has no body overlay; create forwards this one
     pub extra_body: Option<&'request IndexMap<String, Json>>,
     pub timeout: Option<f64>,
     pub custom_llm_provider: Option<&'request str>,
@@ -73,7 +69,6 @@ impl<'request> TransportRequest<'request> {
     }
 }
 
-// vector_store_file_create's named arguments
 pub struct CreateFileRequest<'request> {
     pub transport: TransportRequest<'request>,
     pub file_id: &'request str,
@@ -81,7 +76,6 @@ pub struct CreateFileRequest<'request> {
     pub chunking_strategy: Option<&'request IndexMap<String, Json>>,
 }
 
-// vector_store_file_list's named arguments
 pub struct ListFileRequest<'request> {
     pub transport: TransportRequest<'request>,
     pub after: Option<&'request str>,
@@ -91,7 +85,6 @@ pub struct ListFileRequest<'request> {
     pub order: Option<&'request str>,
 }
 
-// create/list and their async facades: the service and its collaborators are passed once
 pub struct VectorFileCreates<'service, Service> {
     pub service: &'service Service,
     pub deps: VectorFileCreateDeps<'service>,
@@ -207,7 +200,6 @@ impl<Service: FileService> VectorFileCreates<'_, Service> {
     }
 }
 
-// the async flag popped, then _prepare_registry_credentials over a copy of the caller's kwargs
 fn overlay_credentials(
     operation: Operation,
     transport: &TransportRequest<'_>,
@@ -219,14 +211,12 @@ fn overlay_credentials(
     credentials.0
 }
 
-// LlmProviders(custom_llm_provider), whose ValueError the SDK projection renders
 fn resolve_provider(provider_name: &str) -> Result<ProviderId, FileCallError> {
     ProviderId::from_str(provider_name).map_err(|_invalid| FileCallError::InvalidProvider {
         provider: provider_name.to_owned(),
     })
 }
 
-// B010's provider-config selection, None meaning the provider has no attachment config
 fn store_config(
     operation: Operation,
     provider: ProviderId,
@@ -238,7 +228,6 @@ fn store_config(
     })
 }
 
-// create forwards only its body overlay; list forwards only its query overlay
 const fn create_overlay(
     operation: Operation,
     extra_body: Option<&IndexMap<String, Json>>,
@@ -259,7 +248,6 @@ const fn list_overlay(
     }
 }
 
-// local_vars.update(kwargs), then B1071's non-null filter; create puts its file_id argument back after it
 fn merge_fields(
     kind: FileParamsKind,
     locals: FileParams,

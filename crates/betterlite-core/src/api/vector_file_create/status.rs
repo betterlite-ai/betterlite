@@ -8,7 +8,6 @@ use crate::api::vector_store_http_write::error::{
 };
 
 // LiteLLM's httpx client calls raise_for_status before either transform, so a list reply with an error status
-// fails exactly as a create one does; B2480's send maps only create statuses itself, so a caller wraps the config
 pub struct StatusCheckedFilesConfig<Config: FilesConfig> {
     inner: Config,
 }
