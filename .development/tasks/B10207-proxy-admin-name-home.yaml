@@ -1,0 +1,107 @@
+id: B10207
+title: LiteLLM's proxy admin name and master key alias are defined once, in betterlite-error's proxy_enums
+description: >-
+  LiteLLM spells two proxy identity strings once each. LITELLM_PROXY_ADMIN_NAME, "default_user_id", is the user id the master key acts as and the creator an admin write records when the caller has no user id (constants.py L1738; _types.py L3939 has the same value as SpecialProxyStrings.default_user_id). LITELLM_PROXY_MASTER_KEY_ALIAS, "litellm_proxy_master_key", is the stand-in that replaces the master key on its auth record, so the real key never reaches logs or spend rows (constants.py L1699). On main b1e2a3ce466 betterlite writes the first value in ten production consts and the second in seven, one per module. B10171 deletes six of the first (MASTER_KEY_USER_ID in api/claude_plugin_write/access.rs, invitation_routes/invitations/update.rs, invitation_routes/queue/request.rs and routes/prompts/write/state.rs, DEFAULT_ADMIN_USER_ID in organization_create/caller.rs and plugin_routes/routes.rs) and four of the second (MASTER_KEY_ALIAS in auto_router_read_api/access.rs, spend/reports/caller.rs and invitation_routes/queue/request.rs, and core's LITELLM_PROXY_MASTER_KEY_ALIAS), makes betterlite-auth's MASTER_KEY_ALIAS pub, and passes betterlite_db::model_secrets::DEFAULT_USER_ID to the master key record. This task starts once B10171 has merged and moves every copy that is left onto one home. Lines below are at main b1e2a3ce466.
+
+
+  The home. A new module crates/betterlite-error/src/proxy_enums/special_proxy_strings.rs holds `pub const LITELLM_PROXY_ADMIN_NAME: &str = "default_user_id";` and `pub const LITELLM_PROXY_MASTER_KEY_ALIAS: &str = "litellm_proxy_master_key";`. proxy_enums.rs declares it with `pub mod special_proxy_strings;` between special_headers and supported_db_object_type; lib.rs stays as it is. proxy_enums already ports the _types.py enums that sit beside SpecialProxyStrings (SpecialHeaders, SupportedDbObjectType), and betterlite-error depends only on betterlite-redact, which depends only on betterlite-env, so every crate that holds a copy can reach it without a cycle. A one-variant enum would only wrap the string, so the two values stay plain consts. proxy_enums/tests.rs gains `special_proxy_strings_keep_litellms_values`, which compares each const with LiteLLM's literal text.
+
+
+  betterlite-db adds `betterlite-error = { path = "../betterlite-error" }` to [dependencies] in name order. model_secrets.rs drops DEFAULT_USER_ID and its comment (L12-L13), and prepare_encrypted_model's `actor.unwrap_or(DEFAULT_USER_ID)` (L78) takes LITELLM_PROXY_ADMIN_NAME. model_secrets/tests.rs imports LITELLM_PROXY_ADMIN_NAME in DEFAULT_USER_ID's place (L13, L145-L146).
+
+
+  betterlite-server. cache_settings_update/audit.rs drops its pub DEFAULT_USER_ID (L13), and the fallback at L74 uses LITELLM_PROXY_ADMIN_NAME. invitation_routes/store.rs drops PROXY_ADMIN_NAME and its comment (L14-L15) and passes LITELLM_PROXY_ADMIN_NAME to create_invitation_for_user at L90. credentials/rotation.rs (L13, L156) and credentials/rotation/tests/stages.rs (L4, L140, L182, L213) import LITELLM_PROXY_ADMIN_NAME instead of betterlite_db::model_secrets::DEFAULT_USER_ID, and so do organization_create/creation.rs and auth/auth_key_lookup.rs with its tests.rs, where B10165 and B10171 import that db constant. config_audit.rs passes LITELLM_PROXY_ADMIN_NAME as `litellm_proxy_admin_name` (L30), in place of whatever constant it imports once B10171 has dropped DEFAULT_ADMIN_USER_ID (imported at L7 on main). auth/auth_key_lookup.rs and its tests.rs import LITELLM_PROXY_MASTER_KEY_ALIAS where B10171 has them import betterlite_auth::master_key_admin::MASTER_KEY_ALIAS.
+
+
+  The alias in the other crates. betterlite-auth's master_key_admin.rs drops MASTER_KEY_ALIAS and its comment (L13-L14) and builds the record's api_key (L41) from LITELLM_PROXY_MASTER_KEY_ALIAS. betterlite-core's api/request_metadata_safety/identity.rs compares api_key with it (L31), whichever alias it imports after B10171. betterlite-logging's spend_metadata/redaction.rs puts it first in NON_SECRET_KEY_ALIASES (L7-L11), the port of LiteLLM's _NON_SECRET_KEY_ALIASES. betterlite-guardrails adds `betterlite-error = { path = "../betterlite-error" }` to [dependencies] in name order, and straiker/v3.rs builds PLACEHOLDER_IDENTITIES (L44) from the two consts, as LiteLLM builds _PLACEHOLDER_IDENTITIES from SpecialProxyStrings.default_user_id and the alias. betterlite-auth, betterlite-core, betterlite-logging and betterlite-server already depend on betterlite-error.
+
+
+  Tests keep the literal values "default_user_id" and "litellm_proxy_master_key": they assert what LiteLLM stores and sends, and a test that compared a const with itself could never fail. A test that imports a moved name changes only its import.
+
+
+  What users see: nothing. Every stored creator, audit row, auth record, spend-log key and guardrail payload carries the same strings.
+scope:
+  paths:
+    - crates/betterlite-error/src/proxy_enums.rs
+    - crates/betterlite-error/src/proxy_enums/special_proxy_strings.rs
+    - crates/betterlite-error/src/proxy_enums/tests.rs
+    - Cargo.lock
+    - crates/betterlite-db/Cargo.toml
+    - crates/betterlite-db/src/model_secrets.rs
+    - crates/betterlite-db/src/model_secrets/tests.rs
+    - crates/betterlite-server/src/cache_settings_update/audit.rs
+    - crates/betterlite-server/src/invitation_routes/store.rs
+    - crates/betterlite-server/src/credentials/rotation.rs
+    - crates/betterlite-server/src/credentials/rotation/tests/stages.rs
+    - crates/betterlite-server/src/organization_create/creation.rs
+    - crates/betterlite-server/src/config_audit.rs
+    - crates/betterlite-server/src/auth/auth_key_lookup.rs
+    - crates/betterlite-server/src/auth/auth_key_lookup/tests.rs
+    - crates/betterlite-auth/src/master_key_admin.rs
+    - crates/betterlite-core/src/api/request_metadata_safety/identity.rs
+    - crates/betterlite-logging/src/spend_metadata/redaction.rs
+    - crates/betterlite-guardrails/Cargo.toml
+    - crates/betterlite-guardrails/src/straiker/v3.rs
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1738-L1740
+    why: LITELLM_PROXY_ADMIN_NAME "default_user_id", and GLOBAL_PROXY_SPEND_CACHE_KEY, which LiteLLM builds from it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1696-L1699
+    why: LITELLM_PROXY_MASTER_KEY_ALIAS "litellm_proxy_master_key" and why it replaces the master key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3938-L3939
+    why: SpecialProxyStrings.default_user_id, the enum form of the admin name, in the file whose enums proxy_enums ports.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L2090-L2101
+    why: the master key's auth record, api_key the alias and user_id litellm_proxy_admin_name, which master_key_admin builds.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L100-L106
+    why: _NON_SECRET_KEY_ALIASES, the alias first, which spend_metadata/redaction.rs ports.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L380-L382
+    why: _PLACEHOLDER_IDENTITIES, built from both strings, which straiker/v3.rs ports.
+dod:
+  - text: betterlite-error's proxy_enums::special_proxy_strings holds LITELLM_PROXY_ADMIN_NAME and LITELLM_PROXY_MASTER_KEY_ALIAS with LiteLLM's values, and a test pins both.
+    proof: [home-values]
+  - text: No production Rust file outside that module spells "default_user_id" or "litellm_proxy_master_key", and MASTER_KEY_USER_ID, DEFAULT_ADMIN_USER_ID, PROXY_ADMIN_NAME, MASTER_KEY_ALIAS and the DEFAULT_USER_ID copies in db and server are gone.
+    proof: [no-copies]
+  - text: Model records, secret rotation, the cache settings audit, invitations, organization creation, the config audit and the master key context still record default_user_id where the caller has no user id.
+    proof: [no-copies, db-tests, server-tests]
+  - text: The master key record, the request metadata check and the spend-log redaction still treat litellm_proxy_master_key as the master key's alias.
+    proof: [no-copies, alias-tests]
+  - text: Straiker v3 still drops both placeholder identities.
+    proof: [no-copies, guardrails-tests]
+checks:
+  optional: []
+  commands:
+    - id: no-copies
+      why: a production file still spells one of the two values, a short-named copy is left, or db or server still defines or imports DEFAULT_USER_ID
+      run: test -z "$(grep -rnE --include='*.rs' --exclude=tests.rs --exclude-dir=tests '"(default_user_id|litellm_proxy_master_key)"' crates | grep -v '^crates/betterlite-error/src/proxy_enums/special_proxy_strings.rs:')" && test -z "$(grep -rnwE --include='*.rs' 'MASTER_KEY_USER_ID|DEFAULT_ADMIN_USER_ID|PROXY_ADMIN_NAME|MASTER_KEY_ALIAS' crates)" && test -z "$(grep -rnw DEFAULT_USER_ID crates/betterlite-db/src crates/betterlite-server/src/cache_settings_update crates/betterlite-server/src/credentials crates/betterlite-server/src/organization_create crates/betterlite-server/src/auth crates/betterlite-server/src/config_audit.rs)"
+    - id: home-values
+      why: the home module or its test is missing, or a const no longer holds LiteLLM's text
+      run: cargo nextest run --locked -p betterlite-error --no-tests=fail -E 'test(/^proxy_enums::tests::special_proxy_strings_keep_litellms_values$/)'
+    - id: db-tests
+      why: a model record no longer falls back to the admin name for created_by and updated_by
+      run: grep -q special_proxy_strings crates/betterlite-db/src/model_secrets.rs && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^model_secrets::/)'
+    - id: server-tests
+      why: an audit row, invitation, organization, rotation or master key context lost the admin name fallback or the master key alias
+      run: grep -q special_proxy_strings crates/betterlite-server/src/invitation_routes/store.rs && grep -q special_proxy_strings crates/betterlite-server/src/cache_settings_update/audit.rs && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^(cache_settings_update|invitation_routes|organization_create|config_audit|credentials::rotation|auth::auth_key_lookup)::/)'
+    - id: alias-tests
+      why: the master key record, the request metadata check or the spend-log redaction no longer knows the master key's alias
+      run: grep -q special_proxy_strings crates/betterlite-auth/src/master_key_admin.rs && grep -q special_proxy_strings crates/betterlite-logging/src/spend_metadata/redaction.rs && cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^master_key_admin::/)' && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::request_metadata_safety::/)' && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^spend_metadata::redaction::/)'
+    - id: guardrails-tests
+      why: Straiker v3 forwards the admin name or the alias as a user identity
+      run: grep -q special_proxy_strings crates/betterlite-guardrails/src/straiker/v3.rs && cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^straiker::v3::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "GLOBAL_PROXY_SPEND_CACHE_KEY \"default_user_id:spend\" in betterlite-db budget_reset_policy/cache_invalidation.rs L6: LiteLLM builds it from the admin name (constants.py L1740), but it is its own constant with one home already, its tests pin the value, and a Rust const cannot join a const into a new &str without a macro or a new crate."
+  - "The six admin-name copies and four alias copies around the master key branches, with the branches themselves: B10171."
+  - "The litellm_proxy_admin_name fields of the audit entries (agent_endpoints/admin_actions.rs L46, key_events/audit.rs L38, team_callback_policy/audit.rs L37, kill_switch_management/audit.rs L13): they carry the name as a parameter and hold no literal."
+  - "Other LiteLLM constants copied the same way, such as LITELLM_PROXY_BUDGET_NAME \"litellm-proxy-budget\" in betterlite-db and the betterlite crate, and UI_TEAM_ID \"litellm-dashboard\" in betterlite-auth and betterlite-server."
+pitfalls:
+  - "\"default_user_id:spend\" in cache_invalidation.rs is the spend cache key, not a copy; leave it, since no-copies matches the name only with its closing quote."
+  - "pass_through_logging/anthropic_batch.rs has its own DEFAULT_USER_ID = \"default-user\", the fallback of LiteLLM's Anthropic and Vertex pass-through loggers (anthropic_passthrough_logging_handler.py L1125); it is a different value, so leave it."
+  - "Name the two consts exactly LITELLM_PROXY_ADMIN_NAME and LITELLM_PROXY_MASTER_KEY_ALIAS: no-copies refuses PROXY_ADMIN_NAME and MASTER_KEY_ALIAS as whole words anywhere in crates, tests included."
+  - "betterlite-db and betterlite-guardrails gain betterlite-error under [dependencies] only; betterlite-error must never gain a betterlite crate other than betterlite-redact, or the move makes a cycle."
+  - "PLACEHOLDER_IDENTITIES and NON_SECRET_KEY_ALIASES stay const arrays; a const can stand in an array literal, so neither needs a LazyLock or a function."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
