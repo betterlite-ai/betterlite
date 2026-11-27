@@ -31,7 +31,7 @@ use super::output::budget_output;
 use super::probe::ProbeLog;
 use super::support::{
     CUSTOMER_GAUGES, KEY_GAUGES, ORG_GAUGES, TEAM_GAUGES, USER_GAUGES, customer_context,
-    entity_gauges, finish, label_source, runtime, runtime_error, shape_error,
+    entity_gauges, finish, label_source, runtime, shape_error,
 };
 
 impl TeamSnapshotCall {
