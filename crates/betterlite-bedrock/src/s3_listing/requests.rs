@@ -81,7 +81,7 @@ fn set_listing_value(params: &mut Params, name: &str, value: Option<&str>) {
     params.insert(name.to_owned(), stored);
 }
 
-fn encode_query(query: &[(String, String)]) -> String {
+pub(crate) fn encode_query(query: &[(String, String)]) -> String {
     let mut encoded = String::new();
     for (index, (name, value)) in query.iter().enumerate() {
         if index > 0 {

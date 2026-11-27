@@ -6,7 +6,7 @@ use super::super::prefix::{
     BATCH_LISTING_PREFIX, BATCH_OUTPUT_LISTING_PREFIX, listing_bucket_name, listing_query,
     managed_listing_prefix, output_location_still_unlisted, setting_text, walked_listing_purpose,
 };
-use super::super::requests::{list_files_next_request, list_files_request};
+use super::super::requests::{encode_query, list_files_next_request, list_files_request};
 use super::super::responses::{S3ResponseContext, list_files_response};
 use super::super::{LIST_FILES_LOCATION_PARAM, LIST_FILES_PURPOSE_PARAM, S3ListingError};
 use super::support::{
@@ -409,6 +409,23 @@ pub(super) fn pagination_continuation() {
     empty_tokens_stop_pagination();
     a_token_continues_the_walk();
     batch_listing_requests_are_signed();
+    encoded_queries_match_python_urlencode();
+}
+
+// Python urlencode(..., quote_via=quote, safe="") joins the pairs with & and escapes / and spaces
+fn encoded_queries_match_python_urlencode() {
+    assert_eq!(
+        encode_query(&[
+            ("list-type".to_owned(), "2".to_owned()),
+            ("prefix".to_owned(), "p/litellm-b".to_owned()),
+        ]),
+        "list-type=2&prefix=p%2Flitellm-b"
+    );
+    assert_eq!(
+        encode_query(&[("continuation-token".to_owned(), "a/b c".to_owned())]),
+        "continuation-token=a%2Fb%20c"
+    );
+    assert!(encode_query(&[]).is_empty());
 }
 
 fn error_statuses_skip_pagination() {
