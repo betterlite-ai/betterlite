@@ -17,6 +17,8 @@ use tokio::runtime::Builder;
 use super::fixtures::fakes::Fakes;
 use super::input::{DEFAULT_TOP_K, Handler, Input, invalid_input};
 
+type HandlerOutcome = Result<CallToolResult, SearchHandlerError>;
+
 pub(super) fn run(input: &Input) -> HelperResult {
     let fakes = Fakes::new(input)?;
     let runtime = Builder::new_current_thread()
@@ -28,70 +30,66 @@ pub(super) fn run(input: &Input) -> HelperResult {
 
 async fn dispatch(input: &Input, fakes: &Fakes<'_>) -> Result<CallToolResult, Box<HelperError>> {
     let context = HandlerContext {
-        caller: fakes.caller(),
-        scope: fakes.scope(),
+        caller: &fakes.caller,
+        scope: &fakes.scope,
         ports: fakes,
         operations: fakes,
         settings: fakes,
     };
     let outcome = match input.handler {
-        Handler::AgentSearch => {
-            handle_agent_search(
-                AgentSearchRequest {
-                    query: input.query.as_deref().unwrap_or_default(),
-                    top_k: input.top_k.unwrap_or(DEFAULT_TOP_K),
-                },
-                &context,
-            )
-            .await
-        }
-        Handler::SkillSearch => {
-            handle_skill_search(
-                SkillSearchRequest {
-                    query: input.query.as_deref().unwrap_or_default(),
-                    top_k: input.top_k.unwrap_or(DEFAULT_TOP_K),
-                },
-                &context,
-            )
-            .await
-        }
-        Handler::McpToolSearch => {
-            handle_mcp_tool_search(
-                McpToolSearchRequest {
-                    query: input.query.as_deref().unwrap_or_default(),
-                    top_k: input.top_k.unwrap_or(DEFAULT_TOP_K),
-                },
-                &context,
-            )
-            .await
-        }
-        Handler::McpProxyTool => {
-            handle_mcp_proxy_tool(
-                ProxyToolRequest {
-                    name: input.name.as_deref().unwrap_or_default(),
-                    arguments: &input.arguments,
-                },
-                &context,
-            )
-            .await
-        }
-        Handler::McpToolCall => {
-            handle_mcp_tool_call(
-                ToolCallRequest {
-                    tool_name: input.tool_name.as_deref().unwrap_or_default(),
-                    arguments: &input.call_arguments,
-                    requested_server_id: input.requested_server_id.as_deref(),
-                    guardrail_context: input.guardrail_context.as_ref(),
-                },
-                &context,
-            )
-            .await
-        }
+        Handler::AgentSearch => agent_search(input, &context).await,
+        Handler::SkillSearch => skill_search(input, &context).await,
+        Handler::McpToolSearch => mcp_tool_search(input, &context).await,
+        Handler::McpProxyTool => mcp_proxy_tool(input, &context).await,
+        Handler::McpToolCall => mcp_tool_call(input, &context).await,
     };
-    outcome.map_err(handler_error)
+    outcome.map_err(|error| handler_error(&error))
 }
 
-fn handler_error(error: SearchHandlerError) -> Box<HelperError> {
+async fn agent_search(input: &Input, context: &HandlerContext<'_>) -> HandlerOutcome {
+    let request = AgentSearchRequest {
+        query: input.query.as_deref().unwrap_or_default(),
+        top_k: input.top_k.unwrap_or(DEFAULT_TOP_K),
+    };
+    handle_agent_search(request, context).await
+}
+
+async fn skill_search(input: &Input, context: &HandlerContext<'_>) -> HandlerOutcome {
+    let request = SkillSearchRequest {
+        query: input.query.as_deref().unwrap_or_default(),
+        top_k: input.top_k.unwrap_or(DEFAULT_TOP_K),
+    };
+    handle_skill_search(request, context).await
+}
+
+async fn mcp_tool_search(input: &Input, context: &HandlerContext<'_>) -> HandlerOutcome {
+    let request = McpToolSearchRequest {
+        query: input.query.as_deref().unwrap_or_default(),
+        top_k: input.top_k.unwrap_or(DEFAULT_TOP_K),
+    };
+    handle_mcp_tool_search(request, context).await
+}
+
+async fn mcp_proxy_tool(input: &Input, context: &HandlerContext<'_>) -> HandlerOutcome {
+    let name = input.name.as_deref().unwrap_or_default();
+    let request = ProxyToolRequest {
+        name,
+        arguments: &input.arguments,
+    };
+    handle_mcp_proxy_tool(request, context).await
+}
+
+async fn mcp_tool_call(input: &Input, context: &HandlerContext<'_>) -> HandlerOutcome {
+    let request = ToolCallRequest {
+        tool_name: input.tool_name.as_deref().unwrap_or_default(),
+        arguments: &input.call_arguments,
+        requested_server_id: input.requested_server_id.as_deref(),
+        guardrail_context: input.guardrail_context.as_ref(),
+    };
+    handle_mcp_tool_call(request, context).await
+}
+
+fn handler_error(error: &SearchHandlerError) -> Box<HelperError> {
     Box::new(HelperError {
         class: "SearchHandlerError".to_owned(),
         status: Some(error.status_code().as_u16()),

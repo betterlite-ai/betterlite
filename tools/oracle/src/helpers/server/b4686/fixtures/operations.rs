@@ -10,21 +10,7 @@ use betterlite_server::mcp::search_handlers::types::{CallerScope, McpRequestScop
 use serde_json::json;
 
 use super::fakes::Fakes;
-use super::records::{
-    allowed_call_json, caller_json, execution_scope_json, guardrail_json, scope_json,
-};
-
-impl Fakes<'_> {
-    fn allowed_response(&self, caller: &CallerScope, scope: &McpRequestScope) -> Vec<String> {
-        let record = allowed_call_json(caller, scope);
-        self.seen
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .allowed_calls
-            .push(record);
-        self.input.allowed_servers.clone()
-    }
-}
+use super::records::{caller_json, execution_scope_json, guardrail_json, scope_json};
 
 #[async_trait]
 impl McpOperations for Fakes<'_> {

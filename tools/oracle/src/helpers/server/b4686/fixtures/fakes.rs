@@ -10,8 +10,8 @@ use betterlite_server::mcp::search_handlers::ports::{
     RouterEmbedders, SearchPortError, SearchPorts, SearchSettings,
 };
 use betterlite_server::mcp::search_handlers::types::{
-    AccessibleAgent, AccessibleSkill, AgentSearchOutcome, CallerScope, McpRequestScope,
-    SkillSearchOutcome,
+    AccessibleAgent, AccessibleSkill, AgentSearchOutcome, AgentSearchRequest, CallerScope,
+    McpRequestScope, SkillSearchOutcome, SkillSearchRequest,
 };
 use betterlite_server::mcp::tool_search::settings::{
     MCPToolSearchSettings, MCPToolSearchSettingsError,
@@ -22,18 +22,18 @@ use serde_json::json;
 use tokio::sync::Mutex as AsyncMutex;
 
 use super::super::input::{Input, fixture_vec, invalid_input};
-use super::records::{Records, caller_json, feature_name};
+use super::records::{Records, allowed_call_json, caller_json, feature_name};
 
-pub(crate) struct Fakes<'a> {
-    pub(super) input: &'a Input,
+pub(crate) struct Fakes<'input> {
+    pub(super) input: &'input Input,
     pub(super) seen: Arc<Mutex<Records>>,
     index: AsyncMutex<SemanticTextIndex>,
-    caller: CallerScope,
-    scope: McpRequestScope,
+    pub(crate) caller: CallerScope,
+    pub(crate) scope: McpRequestScope,
 }
 
-impl<'a> Fakes<'a> {
-    pub(crate) fn new(input: &'a Input) -> Result<Self, Box<HelperError>> {
+impl<'input> Fakes<'input> {
+    pub(crate) fn new(input: &'input Input) -> Result<Self, Box<HelperError>> {
         Ok(Self {
             input,
             seen: Arc::new(Mutex::new(Records::default())),
@@ -47,14 +47,6 @@ impl<'a> Fakes<'a> {
             },
             scope: request_scope(input)?,
         })
-    }
-
-    pub(crate) fn caller(&self) -> &CallerScope {
-        &self.caller
-    }
-
-    pub(crate) fn scope(&self) -> &McpRequestScope {
-        &self.scope
     }
 
     pub(crate) fn observations(&self) -> JsonValue {
@@ -92,6 +84,20 @@ impl<'a> Fakes<'a> {
             .unwrap_or_else(PoisonError::into_inner)
             .skill_searches
             .push(record);
+    }
+
+    pub(super) fn allowed_response(
+        &self,
+        caller: &CallerScope,
+        scope: &McpRequestScope,
+    ) -> Vec<String> {
+        let record = allowed_call_json(caller, scope);
+        self.seen
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .allowed_calls
+            .push(record);
+        self.input.allowed_servers.clone()
     }
 }
 
@@ -159,16 +165,15 @@ impl SearchPorts for Fakes<'_> {
 
     async fn search_agents(
         &self,
-        query: &str,
+        request: AgentSearchRequest<'_>,
         agents: &[AccessibleAgent],
-        top_k: i64,
         embedding_model: Option<&str>,
         caller: &CallerScope,
     ) -> Result<AgentSearchOutcome, SearchPortError> {
         let agent_ids: Vec<&str> = agents.iter().map(|agent| agent.agent_id.as_str()).collect();
         let record = json!({
-            "query": query,
-            "top_k": top_k,
+            "query": request.query,
+            "top_k": request.top_k,
             "embedding_model": embedding_model,
             "agent_ids": agent_ids,
             "caller": caller_json(caller),
@@ -190,13 +195,12 @@ impl SearchPorts for Fakes<'_> {
 
     async fn search_skills(
         &self,
-        query: &str,
+        request: SkillSearchRequest<'_>,
         skills: &[AccessibleSkill],
-        top_k: i64,
         embedding_model: Option<&str>,
         _caller: &CallerScope,
     ) -> Result<SkillSearchOutcome, SearchPortError> {
-        self.record_skill_search(query, skills, top_k, embedding_model);
+        self.record_skill_search(request.query, skills, request.top_k, embedding_model);
         Ok(self.input.skill_outcome())
     }
 }
@@ -218,11 +222,7 @@ impl SearchSettings for Fakes<'_> {
     }
 
     fn llm_router(&self) -> Option<&dyn RouterEmbedders> {
-        if self.input.has_router {
-            Some(self as &dyn RouterEmbedders)
-        } else {
-            None
-        }
+        self.input.has_router.then_some(self)
     }
 
     fn mcp_search_index(&self) -> &AsyncMutex<SemanticTextIndex> {
