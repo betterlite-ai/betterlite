@@ -1,0 +1,29 @@
+kind: helper
+name: budget-lookups-org-assembly-carried-snapshot-path
+call:
+  b3883:
+    function: org
+    org_id: org-1
+    org_alias: Org Carried
+    response_cost: 0.5
+    carried:
+      spend: 3.0
+      max_budget: 10.0
+    database: true
+    lookup:
+      kind: missing
+    now: '2026-01-01T00:00:00Z'
+    noop: false
+    labels_by_metric:
+      litellm_remaining_org_budget_metric:
+      - org_id
+      - org_alias
+      litellm_org_max_budget_metric:
+      - org_id
+      - org_alias
+      litellm_org_budget_remaining_hours_metric:
+      - org_id
+      - org_alias
+env: {}
+compare:
+  ignore: []

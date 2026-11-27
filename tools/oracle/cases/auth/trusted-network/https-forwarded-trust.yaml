@@ -1,0 +1,37 @@
+name: auth-trusted-network-https-forwarded-trust
+config: |
+  general_settings:
+    master_key: oracle-master
+    use_x_forwarded_for: true
+    trusted_proxy_ranges: [127.0.0.0/8]
+    mcp_trusted_proxy_ranges: [127.0.0.0/8]
+  model_list:
+    - model_name: trusted-model
+      litellm_params:
+        model: openai/trusted-upstream
+        api_base: "{{upstream}}"
+        api_key: oracle-key
+env: {}
+request:
+  method: POST
+  path: /v1/chat/completions
+  headers:
+    content-type: application/json
+    authorization: Bearer oracle-master
+    x-forwarded-for: 203.0.113.9
+    x-forwarded-proto: https
+  body:
+    model: trusted-model
+    messages:
+      - {role: user, content: Say hello.}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: chatcmpl-forwarded-https
+      object: chat.completion
+      created: 1700000023
+      model: trusted-upstream
+      choices: [{index: 0, message: {role: assistant, content: Hello!}, finish_reason: stop}]
+      usage: {prompt_tokens: 1, completion_tokens: 1, total_tokens: 2}
+compare: {headers: [content-type], headers_present: [], upstream_headers: [authorization, content-type], ignore: []}

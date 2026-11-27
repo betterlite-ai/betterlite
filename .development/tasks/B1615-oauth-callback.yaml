@@ -3,33 +3,29 @@ title: Dispatch OAuth callbacks and complete CLI sign-in
 description: >-
   Register public GET /sso/callback in betterlite-server::oauth_callback. Own auth_callback
   in ui_sso.py. The CLI half (_build_cli_sso_user_defined_values, _complete_cli_sso_callback_session
-  and cli_sso_callback) is later work: B1614 adds it next to the CLI login it builds. A truthy OAuth error query produces 401 before database/master-key checks.
-  Otherwise require DB, build the optional SSO-specific JWT projection from
-  general_settings.ui_access_mode.sso_group_jwt_field=None with zero leeway, then require
+  and cli_sso_callback) is later work: B1614 adds it next to the CLI login it builds. Read state, error and
+  error_description with B10119's decode_oauth_callback_query; a truthy OAuth error produces 401 before database/master-key checks.
+  Otherwise require DB, take the optional SSO-specific JWT handler from B10119's
+  sso_jwt_handler over config.sections.sso_callback_input, then require
   master_key. Select Google, Microsoft or generic by present client ID in that order,
   including empty strings, and delegate to B1629/B1622/B1623. No provider result means 401.
   A state beginning litellm-session-token: belongs to that CLI arm; until B1614 adds it, such a
   callback answers 501 with detail "the CLI SSO login is not installed" and mints nothing. Other callbacks
   use B1624 and the litellm_cp_return_to cookie. This OAuth callback has no DISABLE_ADMIN_UI
   check; preserve its difference from the SAML callback.
-  Add decode_oauth_callback_query for URL-encoded query bytes with last-value semantics,
-  fuzzed as oauth_callback_query. loads_callback_group_claim proves the nested config field.
+  B10119 owns the query decoder, its oauth_callback_query fuzz target and the group claim
+  section; this task adds no decoder and no config.
   Use B1630 browser transcripts for the browser callback; the CLI transcript (start,
   authenticate, capture the hidden browser token, confirm the displayed code and poll) moves
   to B1614 with the CLI arm. Compare status, error
   provenance, form controls and headers; inspect minted claims and DB effects in Rust tests.
-  The 274 source lines fit 310 service, 220 tests/transcript support and 120 decoder/config
-  lines within 750; existing providers and session services are not reimplemented.
+  About 245 source lines remain after B10119's split and fit 310 service and 220
+  tests/transcript support lines within 750; existing providers, session services and
+  B10119's input pieces are not reimplemented.
 scope:
   paths:
     - crates/betterlite-server/src/oauth_callback.rs
     - crates/betterlite-server/src/oauth_callback/**
-    - crates/betterlite-server/fuzz/Cargo.toml
-    - crates/betterlite-server/fuzz/fuzz_targets/oauth_callback_query.rs
-    - crates/betterlite-server/fuzz/corpus/oauth_callback_query/**
-    - crates/betterlite-config/src/oauth_callback.rs
-    - crates/betterlite-config/src/oauth_callback/**
-    - crates/betterlite-config/fuzz/corpus/config_yaml/oauth-callback-*
     - tools/oracle/fixtures/multipart-oracle/oauth-callback/**
     - tools/oracle/helpers/b1615.py
     - tools/oracle/helpers/b1615/**
@@ -42,28 +38,21 @@ references:
 dod:
   - text: The handlers are tested with tower's oneshot over this task's own Router and fake ports; B8770 mounts them through B063 and proves them over HTTP.
     proof: [callback-tests]
-  - text: Real OAuth callback requests select the expected provider and preserve OAuth-error, database and master-key failure order.
+  - text: Real OAuth callback requests select the expected provider, hand the generic branch B10119's SSO group handler and preserve OAuth-error, database and master-key failure order.
     proof: [callback-tests]
   - text: A callback whose state starts with the litellm-session-token prefix answers the 501 CLI error and mints nothing until B1614 adds the CLI arm.
     proof: [callback-tests]
-  - text: Restricted-group claim configuration and callback query bytes use their real loaders and replay corpora.
-    proof: [callback-config, callback-corpora]
 checks:
   optional: [mutants]
   commands:
     - id: callback-tests
       why: Callback dispatch changes authority before all identity checks finish.
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^oauth_callback::/) - test(replays_the_oauth_callback_query_corpus)'
-    - id: callback-config
-      why: The SSO-specific group claim field is not loaded into the callback's JWT projection.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^oauth_callback::tests::loads_callback_group_claim/)'
-    - id: callback-corpora
-      why: Callback query parsing or its nested config setting has no added replay inputs.
-      run: test -f crates/betterlite-server/fuzz/fuzz_targets/oauth_callback_query.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/oauth_callback_query)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/oauth-callback-*')" && cargo nextest run --locked -p betterlite-server -p betterlite-config --no-tests=fail -E 'test(replays_the_oauth_callback_query_corpus) | test(replays_the_config_yaml_corpus)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^oauth_callback::/)'
 oracle_cases: []
 deviations: []
 out_of_scope:
   - B063 owns the login entry route and assembles this callback router exactly once; B1626 owns the separate SAML POST callback.
+  - decode_oauth_callback_query, the oauth_callback_query fuzz target, the sso_callback_input config section and sso_jwt_handler (the SSO group projection) are B10119's; this task calls them.
   - ui_sso.py definitions not named here remain with the owners in B063's inventory.
 pitfalls: []
 budget:

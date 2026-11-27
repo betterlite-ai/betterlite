@@ -1,0 +1,11 @@
+kind: helper
+name: budget-lookups-default-customer-budget-id-none
+call:
+  b3883:
+    function: default_customer_budget
+    default_budget_id: null
+    lookup:
+      kind: missing
+env: {}
+compare:
+  ignore: []

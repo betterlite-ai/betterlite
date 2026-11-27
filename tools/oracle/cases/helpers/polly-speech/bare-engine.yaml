@@ -1,0 +1,20 @@
+kind: helper
+name: polly-speech-bare-engine
+call:
+  polly_speech:
+    calls:
+    - {function: map_params, model: aws_polly/standard, optional_params: {}, kwargs: {}}
+    - {function: map_params, model: aws_polly/STANDARD, optional_params: {}, kwargs: {}}
+    - {function: map_params, model: standard, optional_params: {}, kwargs: {}}
+    - {function: map_params, model: aws_polly, optional_params: {}, kwargs: {}}
+    - {function: map_params, model: aws_polly/neural, optional_params: {}, kwargs: {}}
+    - {function: map_params, model: aws_polly/Long-Form, optional_params: {}, kwargs: {}}
+    - {function: map_params, model: aws_polly/generative, optional_params: {}, kwargs: {}}
+    - {function: map_params, model: aws_polly/bogus, optional_params: {}, kwargs: {}}
+    - {function: map_params, model: "aws_polly//neural", optional_params: {}, kwargs: {}}
+    - {function: map_params, model: aws_polly/neural/standard, optional_params: {}, kwargs: {}}
+    - {function: map_params, model: a/b/standard, optional_params: {}, kwargs: {}}
+    - {function: map_params, model: "", optional_params: {}, kwargs: {}}
+    - {function: map_params, model: aws_polly/, optional_params: {}, kwargs: {}}
+compare: {ignore: []}
+env: {}

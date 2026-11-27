@@ -37,7 +37,7 @@ description: >-
   enabled; severity is info/warning/error, unknown update fields are ignored. PATCH does not
   require store_model_in_db. Read and parse the old banner, replace all fields from update
   defaults, generate a fresh lowercase 32-hex revision even for identical republishes, and
-  upsert JSON-string settings at B726's user_banner row. Only after that save submit B8594's
+  upsert JSON-string settings at B726's user_banner row. Only after that save submit B10137's
   config audit via B065 with action updated and the UI-settings table name. Return the exact
   success message and new banner. No compare-and-swap or revision precondition is added.
   HTTP sequences verify republish revisions, partial-body replacement, enabled-message

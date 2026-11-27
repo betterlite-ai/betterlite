@@ -1,0 +1,70 @@
+kind: helper
+name: auth-tenant-budgets-project-hard-denial
+call:
+  auth_tenant_budgets:
+    calls:
+      # spend past the ceiling denies; the read carries the row spend as its fallback and the token alerts first
+      - function: project_hard
+        database: true
+        project:
+          project_id: proj-1
+          spend: 3.5
+          budget_id: budget-1
+          litellm_budget_table:
+            budget_id: budget-1
+            max_budget: 10.0
+        token: {token: sk-project, user_id: user-1, team_id: team-1, team_alias: Alpha, org_id: org-1}
+        spends: [11.0]
+      # spend equal to the ceiling denies, including a zero ceiling at zero spend
+      - function: project_hard
+        database: true
+        project:
+          project_id: proj-1
+          spend: 10.0
+          litellm_budget_table: {max_budget: 10.0}
+        token: {token: sk-equal, user_id: user-1}
+        spends: [10.0]
+      - function: project_hard
+        database: true
+        project:
+          project_id: proj-1
+          spend: 0.0
+          litellm_budget_table: {max_budget: 0.0}
+        token: {token: sk-zero}
+        spends: [0.0]
+      # a cent under the ceiling passes
+      - function: project_hard
+        database: true
+        project:
+          project_id: proj-1
+          spend: 0.0
+          litellm_budget_table: {max_budget: 10.0}
+        spends: [9.99]
+      # a missing budget relation, a null ceiling and an absent project all skip before any read
+      - function: project_hard
+        database: true
+        project:
+          project_id: proj-1
+          spend: 0.0
+        spends: []
+      - function: project_hard
+        database: true
+        project:
+          project_id: proj-1
+          spend: 0.0
+          litellm_budget_table: {budget_id: budget-1}
+        spends: []
+      - function: project_hard
+        database: false
+        spends: []
+      # without a token the denial still raises, with no alert queued
+      - function: project_hard
+        database: true
+        project:
+          project_id: proj-1
+          spend: 20.0
+          litellm_budget_table: {max_budget: 20.0}
+        spends: [20.0]
+env: {}
+compare:
+  ignore: []

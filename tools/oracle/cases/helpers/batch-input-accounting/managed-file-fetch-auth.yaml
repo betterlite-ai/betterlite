@@ -1,0 +1,76 @@
+kind: helper
+name: batch-input-accounting-managed-file-fetch-auth
+call:
+  batch_input_accounting:
+    file_id: bGl0ZWxsbV9wcm94eTphcHBsaWNhdGlvbi9vY3RldC1zdHJlYW07dW5pZmllZF9pZCxhYmM7dGFyZ2V0X21vZGVsX25hbWVzLGdwdC00bw==
+    caller:
+      api_key: sk-managed
+      models: ["*"]
+    content:
+      contents: |-
+        {"body": {"model": "gpt-4o", "prompt": "hi"}}
+    tokens: [5]
+calls:
+  - batch_input_accounting:
+      file_id: bGl0ZWxsbV9wcm94eTphcHBsaWNhdGlvbi9vY3RldC1zdHJlYW07dW5pZmllZF9pZCxhYmM7dGFyZ2V0X21vZGVsX25hbWVzLGdwdC00bw==
+      content:
+        contents: |-
+          {"body": {"model": "gpt-4o", "prompt": "hi"}}
+      tokens: [5]
+  - batch_input_accounting:
+      file_id: bGl0ZWxsbV9wcm94eTphcHBsaWNhdGlvbi9vY3RldC1zdHJlYW07dW5pZmllZF9pZCxhYmM7dGFyZ2V0X21vZGVsX25hbWVzLGdwdC00bw==
+      caller:
+        api_key: sk-managed
+        models: ["*"]
+      managed:
+        logging: false
+  - batch_input_accounting:
+      file_id: bGl0ZWxsbV9wcm94eTphcHBsaWNhdGlvbi9vY3RldC1zdHJlYW07dW5pZmllZF9pZCxhYmM7dGFyZ2V0X21vZGVsX25hbWVzLGdwdC00bw==
+      caller:
+        api_key: sk-managed
+        models: ["*"]
+      managed:
+        hook: missing
+  - batch_input_accounting:
+      file_id: bGl0ZWxsbV9wcm94eTphcHBsaWNhdGlvbi9vY3RldC1zdHJlYW07dW5pZmllZF9pZCxhYmM7dGFyZ2V0X21vZGVsX25hbWVzLGdwdC00bw==
+      caller:
+        api_key: sk-managed
+        models: ["*"]
+      managed:
+        hook: plain
+  - batch_input_accounting:
+      file_id: bGl0ZWxsbV9wcm94eTphcHBsaWNhdGlvbi9vY3RldC1zdHJlYW07dW5pZmllZF9pZCxhYmM7dGFyZ2V0X21vZGVsX25hbWVzLGdwdC00bw==
+      caller:
+        api_key: sk-managed
+        models: ["*"]
+      managed:
+        router: false
+  - batch_input_accounting:
+      file_id: bGl0ZWxsbV9wcm94eTphcHBsaWNhdGlvbi9vY3RldC1zdHJlYW07dW5pZmllZF9pZCxhYmM7dGFyZ2V0X21vZGVsX25hbWVzLGdwdC00bw==
+      caller:
+        api_key: sk-managed
+        models: ["*"]
+      content:
+        not_bytes: not bytes
+  - batch_input_accounting:
+      file_id: file-provider-http
+      caller:
+        api_key: sk-managed
+        models: ["*"]
+      content:
+        http:
+          status: 400
+          detail:
+            error: bad request
+  - batch_input_accounting:
+      file_id: file-provider-403
+      caller:
+        api_key: sk-managed
+        models: ["*"]
+      content:
+        http:
+          status: 403
+          detail:
+            error: rejected
+env: {}
+compare: {ignore: []}

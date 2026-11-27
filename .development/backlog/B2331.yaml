@@ -1,15 +1,15 @@
 id: B2331
 milestone: M4 keys, spend and management
 title: Ordered master-key re-encryption service
-status: todo
-depends_on: [B001, B003, B4144, B10010, B171, B725, B730, B732, B836, B856, B860, B2303, B2305, B2332, B8382]
+status: done
+depends_on: [B001, B003, B4144, B10010, B171, B725, B730, B732, B1700, B856, B860, B2303, B2305, B2332, B8382]
 file: tasks/B2331-master-rotation-service.yaml
 covers:
   - "litellm/proxy/management_endpoints/key_management_endpoints.py"
   - "litellm/proxy/credential_endpoints/endpoints.py"
 parent: B055
 split_from: null
-resolution: null
-superseded_by: null
+resolution: duplicate
+superseded_by: B1700
 blocked_reason: null
 pr: null

@@ -41,7 +41,10 @@ description: >-
   Own _USER_BUDGET_CACHE_INVALIDATION_BATCH_SIZE=50 at L117: await gather in chunks of 50 in
   snapshot order, aborting on a cache exception. Metadata/duration/spend alone do not broadcast.
   Fast results contain snapshot ID/email,success=true,updated_user={user_id,...prepared_patch};
-  they are not reread rows. Build one asynchronous B797 audit for caller.user_id or empty string,
+  they are not reread rows. Build one asynchronous audit, LiteLLM's create_internal_user_audit_log, for caller.user_id
+  or empty string: hand B2330's AuditTaskSpawner (as key_events::audit::SinkScheduler does,
+  never a detached spawn) a future that awaits B065's AuditService::create_object_audit_log with
+  AuditTable::User,
   action=updated, changed-by header-or-caller, before='Updated {N} users', after=json.dumps(patch).
   Audit scheduling/serialization errors warn and leave success intact (e.g. a datetime reset_at).
   Cases invalidate_chunks_fifty, fast_invalidation_field_set, fast_result_is_patch,
@@ -188,7 +191,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
   - B2334 owns public body/response contracts; B786 owns password screening/settings; B792 owns
-    per-user mutation and callback encryption delegation; B797 owns the user-audit sink.
+    per-user mutation and callback encryption delegation; B065 owns the audit sink create_object_audit_log.
     B793/B794 are not called by this legacy route.
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B056 owns new_user (L482-L672).'
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B790 owns _user_table (L121-L125),

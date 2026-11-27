@@ -2,7 +2,7 @@ id: B785
 title: Master key and encrypted credential rotation routes
 description: >-
   Implement POST /credentials/migrate-encryption and GET /credentials/migrate-encryption/check.
-  Split the concrete master rotation service into B2331 and its MCP primitives into B2332 so the
+  B1700 (done) built the concrete master rotation service and B2332 builds its MCP primitives, so the
   HTTP task does not create a reverse dependency on B139 or B061's same-key migration caller.
   B895 owns the actual /key/regenerate master-key branch; do not register it here or invent an
   old/new-key request body. _rotate_master_key's current_master_key argument is unused in source.
@@ -105,7 +105,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5368-L5445
     why: Pinned implementation and exact ownership boundary for master_key_rotation.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5211-L5365
-    why: B2331 owns _rotate_master_key; it is shared with B061 migration and B895 regeneration.
+    why: B1700 (done, betterlite-server credentials::rotation) owns _rotate_master_key; it is shared with B061 migration and B895 regeneration.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5368-L5375
     why: Own _require_proxy_admin; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5378-L5415
@@ -149,7 +149,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
   - B061 owns migration/check scanning and reporting; B2303 owns ciphertext codecs, algorithm and
-    salt settings. B2331 owns master re-encryption and credential projection; B2332 owns MCP
+    salt settings. B1700 (done) owns master re-encryption and credential projection; B2332 owns MCP
     rotation primitives. No migration service calls a FastAPI wrapper from this task.
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B055 owns generate_key_fn (L1947-L2150),
     generate_service_account_key_fn (L2159-L2322).'

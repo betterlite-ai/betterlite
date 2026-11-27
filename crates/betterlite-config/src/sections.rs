@@ -274,6 +274,7 @@ pub mod mcp_client_side_auth;
 pub mod mcp_discovery;
 pub mod mcp_env_values;
 pub mod mcp_gateway_env;
+pub mod mcp_management_mode;
 pub mod mcp_redirect_trust;
 pub mod mcp_registry;
 pub mod mcp_required_fields;
@@ -409,6 +410,7 @@ pub mod settings;
 pub mod smtp_transport;
 pub mod speech_call;
 pub mod spend_reseed;
+pub mod sso_callback_input;
 pub mod sso_presence;
 pub mod static_eligibility;
 pub mod stream_usage_cost;
@@ -432,6 +434,7 @@ pub mod trusted_network;
 pub mod two_solver_classifier;
 pub mod ui_discovery;
 pub mod ui_session_cleanup;
+pub mod ui_session_token;
 pub mod usage_routing;
 pub mod usage_routing_v2;
 pub mod usage_v2_accounting;
@@ -617,7 +620,7 @@ sections! {
     lemonade_model_metadata, llm_classifier, local_ttl_cache, logging_privacy, login_form,
     login_return, login_routes, login_throttle, management_rbac, mcp_access_requirements,
     mcp_allow_all_scope, mcp_bearer_credentials, mcp_client_side_auth, mcp_env_values,
-    mcp_gateway_env, mcp_redirect_trust, mcp_registry, mcp_required_fields, mcp_sso_assertion_cache, mcp_tool_helpers, mcp_tools, mcp_toolset_storage, member_row_write, messages_advisor, messages_dispatch, messages_mcp,
+    mcp_gateway_env, mcp_management_mode, mcp_redirect_trust, mcp_registry, mcp_required_fields, mcp_sso_assertion_cache, mcp_tool_helpers, mcp_tools, mcp_toolset_storage, member_row_write, messages_advisor, messages_dispatch, messages_mcp,
     messages_native_call, messages_native_stream, messages_response_call,
     messages_responses_output, messages_thinking, migration_drift, migration_ledger,
     migration_recovery, mistral_credentials, mistral_options, mistral_resources, mock_response, mock_testing_params,
@@ -641,10 +644,10 @@ sections! {
     routing_timeouts, s3_response_cache, sandbox_dispatch, scheduled_job_stagger, secret_manager_bootstrap,
     security_headers, self_hosted_dispatch, semantic_embedding_inputs, semantic_router, sensitive_data_routing, service_callback,
     session_iteration_limits, session_token_codec, settings, speech_call, spend_reseed,
-    sso_presence, static_eligibility, stream_usage_cost, streaming_logging, studio_identity, summary_model_access, tag_matchers, tag_routing,
+    sso_callback_input, sso_presence, static_eligibility, stream_usage_cost, streaming_logging, studio_identity, summary_model_access, tag_matchers, tag_routing,
     team_admin_fields, team_create, team_fields, team_limits, team_state, tier_artifact_predictor,
     tier_definitions, tinyfish_route, token_counting, tokenizer_engines, transcription_call, trusted_network,
-    two_solver_classifier, ui_discovery, ui_session_cleanup, usage_routing, usage_routing_v2,
+    two_solver_classifier, ui_discovery, ui_session_cleanup, ui_session_token, usage_routing, usage_routing_v2,
     usage_v2_accounting, user_delete, user_fields, user_info, user_update, user_url_policy,
     vector_context_shaping, vector_store_registry, verbose_hooks, vertex_credential_sources, vertex_embedding_dispatch,
     vertex_gcs_settings, vertex_image_credentials, vertex_schema_shaping, vigil_runtime, virtual_key_auth, voyage_credentials,

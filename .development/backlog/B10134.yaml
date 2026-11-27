@@ -1,0 +1,14 @@
+id: B10134
+milestone: M9 agents and mcp
+title: MCP admin credential view
+status: todo
+depends_on: [B858, B2305, B10020, B10079]
+file: tasks/B10134-mcp-admin-credential-view.yaml
+covers:
+  - "litellm/proxy/management_endpoints/mcp_management_endpoints.py"
+parent: B139
+split_from: B4717
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
