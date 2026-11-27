@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
-use std::future::{Future, ready};
-use std::sync::{Arc, Mutex};
+use std::future::{Future, Ready, ready};
+use std::mem;
+use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_context::local_ttl_cache::{CacheValue, LocalTtlCache};
 use betterlite_db::budget_permission_rows::JsonData;
@@ -357,45 +358,47 @@ impl BatchPrecallStages for ScriptedStages {
         Ok(self.skip.clone())
     }
 
-    async fn account(
+    fn account(
         &self,
         _principal: &BatchLimitPrincipal,
         request: &BatchAccountRequest<'_>,
-    ) -> Result<BatchFileUsage, StagesError> {
+    ) -> impl Future<Output = Result<BatchFileUsage, StagesError>> + Send {
         self.record(Effect::Account {
             file_id: request.file_id.to_owned(),
             provider: request.custom_llm_provider.to_owned(),
             descriptors: request.descriptors.map(<[_]>::to_vec),
         });
-        self.fail(StageName::Account)?;
-        Ok(self.usage.clone())
+        if let Err(failure) = self.fail(StageName::Account) {
+            return ready(Err(failure));
+        }
+        ready(Ok(self.usage.clone()))
     }
 
-    async fn reserve(
+    fn reserve(
         &self,
         _principal: &BatchLimitPrincipal,
         _data: &RequestData,
-        file_usage: &BatchFileUsage,
+        usage: &BatchFileUsage,
         scopes: &[BatchEnqueuedTokenScope],
-    ) -> Result<Option<Box<ProxyRateLimitError>>, StagesError> {
-        self.stage_answer(
+    ) -> impl Future<Output = Result<Option<Box<ProxyRateLimitError>>, StagesError>> + Send {
+        ready(self.stage_answer(
             Effect::Reserve {
-                tokens: file_usage.total_tokens,
+                tokens: usage.total_tokens,
                 scopes: scopes.to_vec(),
             },
             StageName::Reserve,
-        )
+        ))
     }
 
     fn charge(
         &self,
         _principal: &BatchLimitPrincipal,
         _data: &RequestData,
-        file_usage: &BatchFileUsage,
+        usage: &BatchFileUsage,
         descriptors: Option<&[BatchLimitDescriptor]>,
-    ) -> impl Future<Output = Result<Option<Box<ProxyRateLimitError>>, StagesError>> + Send {
+    ) -> Ready<Result<Option<Box<ProxyRateLimitError>>, StagesError>> {
         let effect = Effect::Charge {
-            tokens: file_usage.total_tokens,
+            tokens: usage.total_tokens,
             descriptors: descriptors.map(<[_]>::to_vec),
         };
         ready(self.stage_answer(effect, StageName::Charge))
@@ -438,7 +441,7 @@ impl BatchPrecallStash for ScriptedStash {
     }
 
     fn take_refund_operations(&self) -> Vec<BatchTpdRefundOperation> {
-        std::mem::take(&mut *self.operations.lock().unwrap())
+        mem::take(&mut *self.operations.lock().unwrap())
     }
 }
 
@@ -463,14 +466,19 @@ impl ScriptedApplier {
 impl BatchTokenApplier for ScriptedApplier {
     type Error = ApplierError;
 
-    async fn apply(&self, operations: &[BatchTpdRefundOperation]) -> Result<(), ApplierError> {
+    fn apply(
+        &self,
+        operations: &[BatchTpdRefundOperation],
+    ) -> impl Future<Output = Result<(), ApplierError>> + Send {
         self.applied.lock().unwrap().push(operations.to_vec());
-        match &self.failure {
-            Some(message) => Err(ApplierError {
-                message: message.clone(),
-            }),
-            None => Ok(()),
-        }
+        ready(self.failure.as_ref().map_or_else(
+            || Ok(()),
+            |message| {
+                Err(ApplierError {
+                    message: message.clone(),
+                })
+            },
+        ))
     }
 }
 
@@ -537,14 +545,24 @@ impl BatchPrecallMemory for ScriptedMemory {
                 message: message.clone(),
             });
         }
-        Ok(self.values.lock().unwrap().get(key).cloned())
+        Ok(self
+            .values
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(key)
+            .cloned())
     }
 
-    async fn set(&self, key: &str, value: Json, ttl_seconds: f64) -> Result<(), BatchCacheError> {
+    fn set(
+        &self,
+        key: &str,
+        value: Json,
+        ttl_seconds: f64,
+    ) -> impl Future<Output = Result<(), BatchCacheError>> + Send {
         if let Some(message) = &self.set_failure {
-            return Err(BatchCacheError::Failed {
+            return ready(Err(BatchCacheError::Failed {
                 message: message.clone(),
-            });
+            }));
         }
         self.values
             .lock()
@@ -554,18 +572,18 @@ impl BatchPrecallMemory for ScriptedMemory {
             .lock()
             .unwrap()
             .push((key.to_owned(), value, ttl_seconds));
-        Ok(())
+        ready(Ok(()))
     }
 
-    async fn set_many(
+    fn set_many(
         &self,
         entries: Vec<(String, Json)>,
         ttl_seconds: f64,
-    ) -> Result<(), BatchCacheError> {
+    ) -> impl Future<Output = Result<(), BatchCacheError>> + Send {
         if let Some(message) = &self.set_many_failure {
-            return Err(BatchCacheError::Failed {
+            return ready(Err(BatchCacheError::Failed {
                 message: message.clone(),
-            });
+            }));
         }
         let keys = entries.iter().map(|(key, _value)| key.clone()).collect();
         {
@@ -575,7 +593,7 @@ impl BatchPrecallMemory for ScriptedMemory {
             }
         }
         self.pipelines.lock().unwrap().push((keys, ttl_seconds));
-        Ok(())
+        ready(Ok(()))
     }
 }
 
@@ -665,19 +683,26 @@ impl BatchPrecallRemote for ScriptedRemote {
         self.key.clone()
     }
 
-    async fn scan(&self, pattern: &str, count: usize) -> Result<Vec<String>, BatchCacheError> {
+    fn scan(
+        &self,
+        pattern: &str,
+        count: usize,
+    ) -> impl Future<Output = Result<Vec<String>, BatchCacheError>> + Send {
         self.scans.lock().unwrap().push((pattern.to_owned(), count));
-        resolved(&self.scan)
+        ready(resolved(&self.scan))
     }
 
-    async fn batch_get(&self, keys: &[String]) -> Result<Vec<(String, Json)>, BatchCacheError> {
+    fn batch_get(
+        &self,
+        keys: &[String],
+    ) -> impl Future<Output = Result<Vec<(String, Json)>, BatchCacheError>> + Send {
         self.batches.lock().unwrap().push(keys.to_vec());
-        resolved(&self.batch_get)
+        ready(resolved(&self.batch_get))
     }
 
-    async fn get(&self, key: &str) -> Result<Option<Json>, BatchCacheError> {
+    fn get(&self, key: &str) -> impl Future<Output = Result<Option<Json>, BatchCacheError>> + Send {
         self.gets.lock().unwrap().push(key.to_owned());
-        resolved(&self.get)
+        ready(resolved(&self.get))
     }
 }
 
@@ -687,40 +712,34 @@ pub(crate) struct NoScriptsError;
 
 pub(crate) struct NoScripts;
 
+// the store without Lua scripts answers every script call with the same typed failure, already resolved
+type NoScriptsReply<T> = Ready<Result<T, NoScriptsError>>;
+
 impl ReservationScripts for NoScripts {
     type Error = NoScriptsError;
 
-    async fn reserve(
+    fn reserve(
         &self,
         _counter_key: &str,
         _tokens: i64,
         _ttl_seconds: i64,
         _limit: i64,
-    ) -> Result<ReserveScriptReply, NoScriptsError> {
-        Err(NoScriptsError)
+    ) -> NoScriptsReply<ReserveScriptReply> {
+        ready(Err(NoScriptsError))
     }
 
-    async fn refund(&self, _counter_key: &str, _tokens: i64) -> Result<(), NoScriptsError> {
-        Err(NoScriptsError)
+    fn refund(&self, _counter_key: &str, _tokens: i64) -> NoScriptsReply<()> {
+        ready(Err(NoScriptsError))
     }
 }
 
 impl ReservationRecordScripts for NoScripts {
-    async fn save(
-        &self,
-        _record_key: &str,
-        _record: &str,
-        _ttl_seconds: i64,
-    ) -> Result<(), NoScriptsError> {
-        Err(NoScriptsError)
+    fn save(&self, _record_key: &str, _record: &str, _ttl_seconds: i64) -> NoScriptsReply<()> {
+        ready(Err(NoScriptsError))
     }
 
-    async fn pop(
-        &self,
-        _record_key: &str,
-        _ttl_seconds: i64,
-    ) -> Result<Option<Vec<u8>>, NoScriptsError> {
-        Err(NoScriptsError)
+    fn pop(&self, _record_key: &str, _ttl_seconds: i64) -> NoScriptsReply<Option<Vec<u8>>> {
+        ready(Err(NoScriptsError))
     }
 }
 
