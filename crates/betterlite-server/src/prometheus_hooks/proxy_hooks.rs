@@ -131,7 +131,11 @@ impl PrometheusHooks {
         push_value(
             &mut entries,
             "requested_model",
-            self.proxy_requested_model(&requested),
+            bounded_requested_model_label(
+                Some(&requested),
+                false,
+                requested_catalog(self.catalog().as_ref()),
+            ),
         );
         push_value(&mut entries, "status_code", Some(status_text.clone()));
         push_value(&mut entries, "exception_status", Some(status_text));
@@ -164,11 +168,6 @@ impl PrometheusHooks {
             push_value(&mut entries, "stream", Some(proxy_stream_text(fields)));
         }
         Ok(entries)
-    }
-
-    fn proxy_requested_model(&self, requested: &Json) -> Option<String> {
-        let catalog = self.catalog();
-        bounded_requested_model_label(Some(requested), false, requested_catalog(catalog.as_ref()))
     }
 
     fn proxy_api_provider(
