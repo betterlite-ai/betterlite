@@ -394,13 +394,17 @@ def test_calls_delete() -> None:
             api_key=GOOD_KEY,
         )
         reference_call = server.calls[-1]
-    assert ours_call["method"] == "DELETE"
-    assert ours_call["method"] == reference_call["method"]
+    removed = DELETED.validate_python(ours)
+    assert removed["id"] == FILE_ID
+    assert removed["object"] == "vector_store.file.deleted"
+    assert removed["deleted"] is True
+    assert ours_call["method"] == reference_call["method"] == "DELETE"
     assert ours_call["route"] == reference_call["route"] == FILE_PATH
+    assert ours_call["body"] == reference_call["body"] == {}
     assert ours_call["query"] == reference_call["query"] == {}
     assert header_of(ours_call, "Authorization") == f"Bearer {GOOD_KEY}"
-    assert header_of(ours_call, "X-Custom") == "yes"
-    compare(JSON.validate_python(ours), reference)
+    assert header_of(ours_call, "X-Custom") == header_of(reference_call, "X-Custom") == "yes"
+    compare(JSON.validate_python(removed), reference)
 
 
 def set_module_globals(
