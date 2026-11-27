@@ -70,7 +70,7 @@ pub async fn benchmarks_for(
         .map(ConfiguredRouter::deployment)
         .collect();
     // an empty registry and LiteLLM's absent router both leave the idle list empty
-    Ok(benchmarks(&window, &rows, Some(&configured)))
+    Ok(benchmarks(&window, &rows, Some(configured.as_slice())))
 }
 
 // get_auto_router_session: one row under the caller's own key, bounded the way the writer bounded the id

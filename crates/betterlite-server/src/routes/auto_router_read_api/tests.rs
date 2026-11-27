@@ -352,7 +352,7 @@ async fn an_oversized_query_is_a_422_detail() {
     let response = benches(
         Some(store),
         authenticated(master_principal()),
-        Some(&oversized),
+        Some(oversized.as_str()),
     )
     .await;
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
@@ -486,7 +486,12 @@ async fn an_oversized_session_id_reaches_the_store_bounded() {
     let store = Arc::new(RecordingStore::with_session(session_row(&bounded)));
     let handle: Arc<dyn AutoRouterReadStore> = store.clone();
     let raw = format!("session_id={oversized}");
-    let response = session(Some(handle), authenticated(master_principal()), Some(&raw)).await;
+    let response = session(
+        Some(handle),
+        authenticated(master_principal()),
+        Some(raw.as_str()),
+    )
+    .await;
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(
         store.calls(),
