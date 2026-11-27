@@ -1,4 +1,4 @@
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_bedrock::aws_settings::sources::Credentials;
