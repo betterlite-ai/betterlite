@@ -33,28 +33,24 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Input::DefaultId(fields) => Ok(default_ids(fields)),
-            Input::Source(fields) => Ok(sources(fields)),
+            Input::DefaultId(fields) => {
+                let ids: Vec<Option<&str>> = fields
+                    .metadata
+                    .iter()
+                    .map(|metadata| team_default_budget_id(metadata.as_ref()))
+                    .collect();
+                Ok(serde_json::json!(ids))
+            }
+            Input::Source(fields) => {
+                let labels: Vec<TeamMemberBudgetSource> = fields
+                    .pairs
+                    .iter()
+                    .map(|(budget_id, default_id)| {
+                        member_budget_source(budget_id.as_deref(), default_id.as_deref())
+                    })
+                    .collect();
+                Ok(serde_json::json!(labels))
+            }
         }
     }
-}
-
-fn default_ids(fields: &DefaultIdInput) -> serde_json::Value {
-    let ids: Vec<Option<&str>> = fields
-        .metadata
-        .iter()
-        .map(|metadata| team_default_budget_id(metadata.as_ref()))
-        .collect();
-    serde_json::json!(ids)
-}
-
-fn sources(fields: &SourceInput) -> serde_json::Value {
-    let labels: Vec<TeamMemberBudgetSource> = fields
-        .pairs
-        .iter()
-        .map(|(budget_id, default_id)| {
-            member_budget_source(budget_id.as_deref(), default_id.as_deref())
-        })
-        .collect();
-    serde_json::json!(labels)
 }
