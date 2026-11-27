@@ -165,8 +165,12 @@ fn trusted_untrusted_proxy_ignores_headers() {
     let untrusted = TrustedCase {
         base_url: "http://internal.example:4000",
         redirect_uri: "https://proxy.example.com/callback",
+        proxy_base_url: "",
         forwarded: Some(("https", "proxy.example.com", "443")),
-        ..TrustedCase::default()
+        from_trusted_proxy: false,
+        origins: &[],
+        native_callbacks: &[],
+        rejection: None,
     };
     let rejection = trusted_outcome(untrusted).unwrap_err();
     assert_eq!(

@@ -1,4 +1,3 @@
-// Starlette's cookie_parser: chunks split on ';', each at the first '=', trimmed, and the last token entry wins.
 #[must_use]
 pub fn session_token_cookie(header: Option<&str>) -> Option<String> {
     let header = header?;
@@ -41,8 +40,7 @@ fn unquote(value: &str) -> String {
     decoded
 }
 
-// _unquote's escape alternatives: three octal digits with a first digit up to 3, any other character but a newline,
-// or a backslash that has nothing to escape.
+// _unquote's escape: three octal digits, any character but a newline, or a dangling backslash.
 fn escaped_character(characters: &[char], index: usize) -> (char, usize) {
     let octal = match (
         characters.get(index.saturating_add(1)),

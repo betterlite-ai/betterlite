@@ -11,8 +11,7 @@ use crate::oauth_resource::python_url;
 
 const TRUSTED_REDIRECT_HINT: &str = "Align the proxy public URL with the browser URL. Set PROXY_BASE_URL to your HTTPS origin (e.g. https://litellm.example.com), or enable general_settings.use_x_forwarded_for with mcp_trusted_proxy_ranges for your ingress. If the redirect_uri is a legitimate separate-origin OAuth client (e.g. a web app registering with the proxy from another host via dynamic client registration), add its origin to MCP_TRUSTED_REDIRECT_ORIGINS. Verify: curl https://<host>/.well-known/oauth-authorization-server | jq .issuer \u{2014} issuer must match window.location.origin in the UI.";
 
-// LiteLLM's validate_trusted_redirect_uri: native callbacks and http(s) hygiene first, then the proxy's
-// own origin, loopback, or the https ops allowlist.
+// LiteLLM's validate_trusted_redirect_uri: native callbacks and http(s) hygiene first, then the origin checks.
 pub fn validate_trusted_redirect_uri(
     origin: &RequestOrigin<'_>,
     proxy_base_url: &str,
@@ -36,8 +35,7 @@ pub fn validate_trusted_redirect_uri(
             None
         }
     };
-    if trusted_redirect_uri_is_allowed(&parsed, &redirect_netloc, proxy_base.as_deref(), allowlists)
-    {
+    if trusted_redirect_uri_allowed(&parsed, &redirect_netloc, proxy_base.as_deref(), allowlists) {
         return Ok(());
     }
     let rejection = trusted_rejection(
@@ -61,9 +59,8 @@ pub fn validate_trusted_redirect_uri(
     Err(rejection)
 }
 
-// LiteLLM's _trusted_redirect_uri_is_allowed: same-origin with the proxy, any loopback host, or an
-// https origin the ops allowlist names.
-fn trusted_redirect_uri_is_allowed(
+// LiteLLM's _trusted_redirect_uri_is_allowed: same-origin, any loopback host, or an allowlisted https origin.
+fn trusted_redirect_uri_allowed(
     parsed: &Parsed,
     redirect_netloc: &str,
     proxy_base: Option<&str>,
@@ -100,8 +97,7 @@ pub fn matches_trusted_origin_entry(netloc: &str, entry: &str) -> bool {
     host != suffix && host.ends_with(&format!(".{suffix}"))
 }
 
-// LiteLLM's _build_trusted_redirect_rejection_message: the proxy origin stays out of the client text,
-// and the hint names the allowlists the ops can change.
+// LiteLLM's _build_trusted_redirect_rejection_message: the client text hides the proxy origin.
 fn trusted_rejection(
     redirect_uri: &str,
     parsed: &Parsed,

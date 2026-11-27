@@ -1,7 +1,6 @@
 use crate::oauth_resource::base_url::strip_default_port;
 
-// LiteLLM's _parse_trusted_redirect_origins: comma-separated hosts, lowercased, scheme and path dropped,
-// with a bare :443 stripped from entries that are not wildcards.
+// LiteLLM's _parse_trusted_redirect_origins: comma-separated hosts, lowercased, scheme and path dropped.
 #[must_use]
 pub fn parse_trusted_redirect_origins(text: &str) -> Vec<String> {
     let raw = text.trim();

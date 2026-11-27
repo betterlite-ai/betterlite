@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use std::fs;
-use std::path::Path;
+use std::path::PathBuf;
 
 use aws_lc_rs::hmac;
 use base64::Engine as _;
@@ -259,25 +259,16 @@ fn segment_padding_follows_the_compact_encoding_rules() {
     );
 }
 
-#[test]
-fn replays_the_decode_session_cookie_corpus() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/decode_session_cookie");
-    let mut seeds: Vec<(String, Vec<u8>)> = fs::read_dir(&corpus)
+#[rstest]
+fn replays_the_decode_session_cookie_corpus(
+    #[files("fuzz/corpus/decode_session_cookie/*")] path: PathBuf,
+) {
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
         .unwrap()
-        .map(|entry| {
-            let path = entry.unwrap().path();
-            let name = path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .unwrap()
-                .to_owned();
-            (name, fs::read(path).unwrap())
-        })
-        .collect();
-    seeds.sort();
-    assert!(!seeds.is_empty());
-    for (name, bytes) in &seeds {
-        let decoded = decode_session_cookie(bytes).is_ok();
-        assert_eq!(decoded, name.starts_with("ok-"), "seed {name}");
-    }
+        .to_owned();
+    let bytes = fs::read(path).unwrap();
+    let decoded = decode_session_cookie(&bytes).is_ok();
+    assert_eq!(decoded, name.starts_with("ok-"), "seed {name}");
 }

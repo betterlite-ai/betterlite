@@ -1,7 +1,6 @@
 use super::shape::{RedirectUriRejected, is_loopback_redirect_host, parse_redirect_uri};
 
-// LiteLLM's validate_loopback_redirect_uri: the BYOK endpoints serve native MCP clients, whose callback
-// must be a loopback listener so a malicious client cannot point it at its own server.
+// LiteLLM's validate_loopback_redirect_uri: the callback must be a loopback listener.
 pub fn validate_loopback_redirect_uri(redirect_uri: &str) -> Result<(), RedirectUriRejected> {
     let parsed = parse_redirect_uri(redirect_uri)?;
     if parsed.scheme != "http" && parsed.scheme != "https" {

@@ -89,9 +89,11 @@ async fn admits(cookie_header: Option<&str>, master_key: &str, resolves: bool) -
 fn ui_claims() -> Claims<'static> {
     Claims {
         exp: Some(FUTURE_EXPIRY),
+        iat: None,
         login_method: Some("sso"),
         user_id: Some("user-1"),
-        ..Claims::default()
+        key: None,
+        token_type: None,
     }
 }
 
@@ -117,9 +119,12 @@ async fn cookie_wrong_signature() {
 #[tokio::test]
 async fn cookie_missing_exp() {
     let claims = Claims {
+        exp: None,
+        iat: None,
         login_method: Some("sso"),
         user_id: Some("user-1"),
-        ..Claims::default()
+        key: None,
+        token_type: None,
     };
     assert_eq!(
         admits(Some(&token(claims, MASTER_KEY)), MASTER_KEY, true).await,

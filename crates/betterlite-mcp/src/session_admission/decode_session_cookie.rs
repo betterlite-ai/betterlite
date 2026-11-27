@@ -9,8 +9,7 @@ use indexmap::IndexMap;
 use std::str;
 use thiserror::Error;
 
-// The untrusted ``token`` cookie bytes, structurally decoded. The signature and the clock comparisons are the
-// caller's trust decision: PyJWT receives the master key and its own clock, this decoder receives neither.
+// The untrusted token cookie bytes, decoded structurally; the caller checks the signature and the clock.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionCookie {
     pub claims: SessionClaims,
@@ -136,8 +135,7 @@ impl SessionCookie {
     }
 }
 
-// PyJWT's segment rules: at most two trailing '=', a padded segment of whole quads, and a canonical
-// re-encoding. The engine rejects a stripped length that is one past a quad, which PyJWT checks itself.
+// PyJWT's segment rules: at most two trailing '=', whole quads when padded, and a canonical re-encoding.
 fn segment(segment: &[u8]) -> Option<Vec<u8>> {
     let padding = segment
         .iter()
@@ -229,8 +227,7 @@ fn integer(value: &JsonValue) -> Option<i64> {
     }
 }
 
-// PyJWT compares Python's unbounded ints, so an integer literal outside i64 keeps its side of every
-// comparison when clamped; a float literal stays a wrong-typed claim.
+// An integer literal outside i64 keeps its comparison side when clamped; a float literal is a wrong-typed claim.
 fn time_value(number: &serde_json::Number) -> Option<i64> {
     if let Some(value) = number.as_i64() {
         return Some(value);

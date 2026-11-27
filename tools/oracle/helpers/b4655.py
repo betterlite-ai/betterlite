@@ -80,9 +80,14 @@ def run(input_value: Input) -> JsonValue:
         if cookie_header is not None:
             headers["cookie"] = cookie_header
         client = TestClient(APP, follow_redirects=False)
+        form: dict[str, str] = {
+            "redirect_uri": CALLBACK,
+            "code_challenge": "challenge",
+            "api_key": "sk-oracle",
+        }
         response = client.post(
             "/v1/mcp/oauth/authorize",
-            data={"redirect_uri": CALLBACK, "code_challenge": "challenge", "api_key": "sk-oracle"},
+            data=form,
             headers=headers,
         )
         admitted = response.status_code == ADMITTED_STATUS

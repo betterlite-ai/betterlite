@@ -10,8 +10,7 @@ pub struct SessionIdentity {
     pub session_key: Option<String>,
 }
 
-// LiteLLM's _session_identity_from_cookie: the master key signs UI cookies, the type claim keeps MCP
-// tokens out, and login_method separates UI tokens from every other master-key token.
+// LiteLLM's _session_identity_from_cookie: the master key signs UI cookies and login_method separates UI tokens.
 #[must_use]
 pub fn session_identity_from_cookie(
     cookie_header: Option<&str>,
