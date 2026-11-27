@@ -8,6 +8,7 @@ use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
+use betterlite_azure::realtime::http_config::RealtimeHttpSettings as AzureSettings;
 use betterlite_config::api::realtime_http_calls::{RealtimeHttpCallSettings, load_settings};
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
@@ -24,6 +25,7 @@ use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::{ResolutionContext, ResolutionError};
+use betterlite_openai::realtime::http_config::RealtimeHttpSettings as OpenAiSettings;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use http::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
 use indexmap::IndexMap;
@@ -38,6 +40,8 @@ use super::dispatch::{RealtimeHttpDispatch, RealtimeHttpRequest, SessionEndpoint
 use super::error::{RealtimeHttpCallsError, RecordError};
 use super::provider::RealtimeHttpConfig;
 use super::{DEFAULT_REALTIME_MODEL, DEFAULT_TRANSCRIPTION_MODEL};
+use crate::api::realtime_contracts::config::{BaseRealtimeHttpConfig, Environment, RealtimeUrl};
+use crate::api::realtime_contracts::error::HeaderMap as JsonHeaders;
 use crate::api::vector_store_http_write::service::ClientKind;
 
 const INIT: &str = r#"{"model":"gpt-4o-realtime-preview","call_type":"realtime","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#;
@@ -339,6 +343,136 @@ fn calls_forwards_the_api_base_version_and_the_callers_client() {
     assert_eq!(posting.api_base, "https://calls.example/v1");
     assert_eq!(posting.api_version.as_deref(), Some("2024-10-01"));
     assert_eq!(posting.client_kind, Some(ClientKind::Sync));
+}
+
+fn provider_configs() -> (RealtimeHttpConfig, RealtimeHttpConfig) {
+    (
+        RealtimeHttpConfig::OpenAi(OpenAiSettings {
+            litellm_api_base: None,
+            litellm_api_key: None,
+            litellm_openai_key: None,
+            openai_api_base: None,
+            openai_api_key: None,
+        }),
+        RealtimeHttpConfig::Azure(AzureSettings {
+            litellm_api_base: None,
+            litellm_api_key: None,
+            azure_api_base: None,
+            azure_api_key: None,
+            azure_api_version: None,
+        }),
+    )
+}
+
+#[test]
+fn provider_configs_build_the_openai_urls() {
+    let (openai, _) = provider_configs();
+    let base = Some("https://openai.example");
+    let url = RealtimeUrl {
+        api_base: base,
+        model: DEFAULT_REALTIME_MODEL,
+        api_version: None,
+    };
+    assert_eq!(
+        openai.get_complete_url(base, DEFAULT_REALTIME_MODEL, None),
+        "https://openai.example/v1/realtime/client_secrets"
+    );
+    assert_eq!(
+        openai.get_transcription_session_url(&url),
+        "https://openai.example/v1/realtime/transcription_sessions"
+    );
+    assert_eq!(
+        openai.get_realtime_calls_url(&url),
+        "https://openai.example/v1/realtime/calls"
+    );
+}
+
+#[test]
+fn provider_configs_build_the_azure_urls() {
+    let (_, azure) = provider_configs();
+    let base = Some("https://azure.example");
+    let url = RealtimeUrl {
+        api_base: base,
+        model: "deployment-a",
+        api_version: Some("2024-10-01"),
+    };
+    assert_eq!(
+        azure.get_complete_url(base, "deployment-a", Some("2024-10-01")),
+        "https://azure.example/openai/realtime/client_secrets?api-version=2024-10-01"
+    );
+    assert_eq!(
+        azure.get_transcription_session_url(&url),
+        "https://azure.example/openai/realtime/transcription_sessions?api-version=2024-10-01"
+    );
+    assert_eq!(
+        azure.get_realtime_calls_url(&url),
+        "https://azure.example/openai/realtime/calls?api-version=2024-10-01"
+    );
+}
+
+#[test]
+fn provider_configs_merge_the_openai_environment_headers() {
+    let (openai, _) = provider_configs();
+    let inbound = JsonHeaders::from([(String::from("x-in"), Json::Text(String::from("1")))]);
+    let environment = Environment {
+        headers: &inbound,
+        model: DEFAULT_REALTIME_MODEL,
+        api_key: Some("sk-live"),
+    };
+    assert_eq!(
+        openai
+            .validate_environment(&environment)
+            .expect("the openai headers"),
+        JsonHeaders::from([
+            (String::from("x-in"), Json::Text(String::from("1"))),
+            (
+                String::from("Authorization"),
+                Json::Text(String::from("Bearer sk-live"))
+            ),
+            (
+                String::from("Content-Type"),
+                Json::Text(String::from("application/json"))
+            ),
+        ])
+    );
+    assert_eq!(
+        openai.get_realtime_calls_headers("ek-1"),
+        JsonHeaders::from([(
+            String::from("Authorization"),
+            Json::Text(String::from("Bearer ek-1"))
+        )])
+    );
+}
+
+#[test]
+fn provider_configs_merge_the_azure_environment_headers() {
+    let (_, azure) = provider_configs();
+    let inbound = JsonHeaders::from([(String::from("x-in"), Json::Text(String::from("1")))]);
+    let environment = Environment {
+        headers: &inbound,
+        model: "deployment-a",
+        api_key: Some("sk-azure"),
+    };
+    assert_eq!(
+        azure
+            .validate_environment(&environment)
+            .expect("the azure headers"),
+        JsonHeaders::from([
+            (String::from("x-in"), Json::Text(String::from("1"))),
+            (
+                String::from("api-key"),
+                Json::Text(String::from("sk-azure"))
+            ),
+            (
+                String::from("Content-Type"),
+                Json::Text(String::from("application/json"))
+            ),
+        ])
+    );
+    assert_eq!(
+        azure.get_realtime_calls_headers("ek-2"),
+        JsonHeaders::from([(String::from("api-key"), Json::Text(String::from("ek-2")))])
+    );
 }
 
 #[test]
