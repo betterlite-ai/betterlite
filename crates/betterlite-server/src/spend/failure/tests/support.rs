@@ -1,10 +1,12 @@
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Mutex, PoisonError};
 
 use async_trait::async_trait;
 use betterlite_auth::reservation_settlement::adjust::AdjustmentMode;
 use betterlite_auth::reservation_settlement::error::SettlementError;
 use betterlite_auth::reservation_settlement::handle::ReservationHandle;
 use betterlite_auth::reservation_settlement::reconcile::ReservationFinality;
+use betterlite_config::collector::TracebackPolicy;
 use betterlite_core::api::request_principal_metadata::PrincipalFacts;
 use betterlite_error::normalize::Normalizer;
 use betterlite_logging::logging_metadata::exception::ExceptionFacts;
@@ -45,7 +47,7 @@ pub(super) fn policy(store_bodies: bool, max_string_length: i64) -> SpendSanitiz
 pub(super) fn settings() -> FailureSettings {
     FailureSettings {
         disable_error_logs: false,
-        tracebacks: betterlite_config::collector::TracebackPolicy::default(),
+        tracebacks: TracebackPolicy::default(),
         sanitize: policy(false, 2048),
     }
 }
@@ -110,7 +112,7 @@ pub(super) struct Written {
 
 #[derive(Default)]
 pub(super) struct RecordingWriter {
-    pub charged: bool,
+    charged: bool,
     written: Mutex<Vec<Written>>,
 }
 
@@ -157,17 +159,21 @@ impl Clock for FixedClock {
     }
 }
 
+pub(super) enum SettlementOutcome {
+    BothSucceed,
+    ReleaseFails,
+    BothFail,
+}
+
 pub(super) struct Settlement {
-    pub release_ok: bool,
-    pub invalidate_ok: bool,
+    pub outcome: SettlementOutcome,
     pub calls: Mutex<Vec<&'static str>>,
 }
 
 impl Settlement {
-    pub(super) const fn new(release_ok: bool, invalidate_ok: bool) -> Self {
+    pub(super) const fn new(outcome: SettlementOutcome) -> Self {
         Self {
-            release_ok,
-            invalidate_ok,
+            outcome,
             calls: Mutex::new(Vec::new()),
         }
     }
@@ -177,7 +183,10 @@ impl Settlement {
     }
 
     fn record(&self, call: &'static str, ok: bool) -> Result<(), SettlementError> {
-        self.calls.lock().expect("the settlement lock").push(call);
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(call);
         if ok {
             Ok(())
         } else {
@@ -199,11 +208,17 @@ impl ReservationSettlement for Settlement {
     }
 
     async fn release(&self, _reservation: &ReservationHandle) -> Result<(), SettlementError> {
-        self.record("release", self.release_ok)
+        self.record(
+            "release",
+            matches!(self.outcome, SettlementOutcome::BothSucceed),
+        )
     }
 
     async fn invalidate(&self, _reservation: &ReservationHandle) -> Result<(), SettlementError> {
-        self.record("invalidate", self.invalidate_ok)
+        self.record(
+            "invalidate",
+            !matches!(self.outcome, SettlementOutcome::BothFail),
+        )
     }
 }
 
@@ -213,25 +228,24 @@ pub(super) fn reservation() -> ReservationHandle {
 
 #[derive(Default)]
 pub(super) struct SpyLookup {
-    pub key_calls: Mutex<u32>,
-    pub team_calls: Mutex<u32>,
+    key_calls: AtomicU32,
+    team_calls: AtomicU32,
 }
 
 impl SpyLookup {
     pub(super) fn key_calls(&self) -> u32 {
-        *self.key_calls.lock().expect("the key counter")
+        self.key_calls.load(Ordering::SeqCst)
     }
 
     pub(super) fn team_calls(&self) -> u32 {
-        *self.team_calls.lock().expect("the team counter")
+        self.team_calls.load(Ordering::SeqCst)
     }
 }
 
 #[async_trait]
 impl FailureIdentityLookup for SpyLookup {
     async fn key_facts(&self, _hashed_token: &str) -> Result<KeyFacts, IdentityLookupError> {
-        let mut calls = self.key_calls.lock().expect("the key counter");
-        *calls = calls.saturating_add(1);
+        self.key_calls.fetch_add(1, Ordering::SeqCst);
         Ok(KeyFacts {
             key_alias: Some("looked-up-alias".to_owned()),
             user_id: Some("looked-up-user".to_owned()),
@@ -241,8 +255,7 @@ impl FailureIdentityLookup for SpyLookup {
     }
 
     async fn team_alias(&self, _team_id: &str) -> Result<Option<String>, IdentityLookupError> {
-        let mut calls = self.team_calls.lock().expect("the team counter");
-        *calls = calls.saturating_add(1);
+        self.team_calls.fetch_add(1, Ordering::SeqCst);
         Ok(Some("looked-up-team".to_owned()))
     }
 }

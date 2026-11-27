@@ -18,8 +18,8 @@ use super::super::record::{
     FailureSettings, record_failure,
 };
 use super::support::{
-    FixedClock, Harness, RecordingWriter, Settlement, SpyLookup, Written, nested, object,
-    reservation, settings,
+    FixedClock, Harness, RecordingWriter, Settlement, SettlementOutcome, SpyLookup, Written,
+    nested, object, reservation, settings,
 };
 
 struct Scenario {
@@ -43,7 +43,7 @@ impl Scenario {
             harness: Harness::new(),
             writer: RecordingWriter::new(true),
             clock: FixedClock(now()),
-            settlement: Settlement::new(true, true),
+            settlement: Settlement::new(SettlementOutcome::BothSucceed),
             handle: reservation(),
             lookup: SpyLookup::default(),
             failure_settings: settings(),
@@ -158,7 +158,7 @@ async fn an_ineligible_route_still_releases_the_reservation() {
 #[tokio::test]
 async fn a_failed_release_invalidates_and_finalizes_on_success() {
     let mut scenario = Scenario::new();
-    scenario.settlement = Settlement::new(false, true);
+    scenario.settlement = Settlement::new(SettlementOutcome::ReleaseFails);
     let outcome = scenario.run().await.expect("recording succeeds");
     assert_eq!(outcome, FailureRecording::Recorded { charged: true });
     assert_eq!(scenario.settlement.calls(), vec!["release", "invalidate"]);
@@ -168,7 +168,7 @@ async fn a_failed_release_invalidates_and_finalizes_on_success() {
 #[tokio::test]
 async fn a_failed_invalidation_leaves_the_reservation_unfinalized() {
     let mut scenario = Scenario::new();
-    scenario.settlement = Settlement::new(false, false);
+    scenario.settlement = Settlement::new(SettlementOutcome::BothFail);
     scenario.run().await.expect("recording succeeds");
     assert_eq!(scenario.settlement.calls(), vec!["release", "invalidate"]);
     assert!(!scenario.settled());

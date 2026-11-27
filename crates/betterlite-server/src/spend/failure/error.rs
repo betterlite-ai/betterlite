@@ -34,7 +34,7 @@ pub(crate) fn failure_error_information(
     let information = get_error_information(&error.logging, error.traceback);
     let mut fields = encoded_fields(&information)?;
     if error.suppress_traceback {
-        fields.remove(TRACEBACK);
+        fields.shift_remove(TRACEBACK);
     }
     let value = SpendValue::from(&Json::Object(fields));
     let SpendValue::Mapping(mapping) = value else {

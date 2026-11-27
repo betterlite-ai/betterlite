@@ -121,14 +121,12 @@ fn a_naive_request_start_time_is_read_as_naive() {
 #[case::a_number(r#"{"completion_start_time": 3}"#, "absent")]
 fn completion_start_reads_only_a_datetime(#[case] request: &str, #[case] expected: &str) {
     let start = completion_start(&object(request));
-    let matched = match (start, expected) {
+    let matched = matches!(
+        (start, expected),
         (CompletionStart::Absent, "absent")
-        | (CompletionStart::Null, "null")
-        | (CompletionStart::At(_), "at") => true,
-        (CompletionStart::Absent, _) | (CompletionStart::Null, _) | (CompletionStart::At(_), _) => {
-            false
-        }
-    };
+            | (CompletionStart::Null, "null")
+            | (CompletionStart::At(_), "at")
+    );
     assert!(matched);
 }
 

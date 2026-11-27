@@ -19,11 +19,13 @@ use betterlite_logging::payload::deps::SystemPayloadClock;
 use betterlite_logging::spend_bodies::SpendStoragePolicy;
 use betterlite_logging::spend_bodies::session::SpendTimestamp;
 use betterlite_logging::spend_sanitize::SpendSanitizePolicy;
+use betterlite_models::model_registration::JsonObject;
 use chrono::DateTime;
 use rust_decimal::Decimal;
 use tokio::sync::watch;
 
-use super::super::write::{DatabaseFailureSpendWrite, FailureSpend, FailureSpendWrite};
+use super::super::write::FailureSpendWrite as _;
+use super::super::write::{DatabaseFailureSpendWrite, FailureSpend};
 use super::support::object;
 use crate::spend::payload::SpendPayloadSettings;
 
@@ -119,28 +121,23 @@ fn timestamp(text: &str) -> SpendTimestamp {
     SpendTimestamp::Aware(DateTime::parse_from_rfc3339(text).expect("the fixture is rfc3339"))
 }
 
-#[tokio::test]
-async fn a_failure_row_joins_the_log_queue_and_keeps_its_project_and_org() {
-    let table = NotABatchRow;
-    let queue = SpendLogQueue::new(usize::MAX);
-    let admission = RecordingAdmission::default();
-    let writer = DbSpendUpdateWriter {
+fn failure_writer<'work>(
+    table: &'work NotABatchRow,
+    queue: &'work SpendLogQueue,
+    admission: &'work RecordingAdmission,
+) -> DbSpendUpdateWriter<'work, NotABatchRow> {
+    DbSpendUpdateWriter {
         settings: SpendWriterSettings::default(),
         queues: SpendWriterQueues::default(),
-        attachment: Some(SpendLogAttachment {
-            table: &table,
-            queue: &queue,
-        }),
+        attachment: Some(SpendLogAttachment { table, queue }),
         failures: &NoSpendWriterFailureSink,
-        admission: &admission,
-    };
-    let (_sender, tracebacks) = watch::channel(TracebackPolicy::default());
-    let request_data = object(
-        r#"{"model": "gpt-4o",
-            "litellm_params": {"metadata": {"status": "failure"}}}"#,
-    );
-    let spend = FailureSpend {
-        request_data: &request_data,
+        admission,
+    }
+}
+
+fn failure_spend(request_data: &JsonObject) -> FailureSpend<'_> {
+    FailureSpend {
+        request_data,
         response_result: "the provider is down",
         response_cost: Decimal::from(1_i32),
         token: Some("hashed-key"),
@@ -151,19 +148,10 @@ async fn a_failure_row_joins_the_log_queue_and_keeps_its_project_and_org() {
         project_id: Some("project-1"),
         start_time: timestamp("2024-01-01T00:00:00Z"),
         end_time: timestamp("2024-01-01T00:00:01Z"),
-    };
-    let failure_write = DatabaseFailureSpendWrite {
-        writer: &writer,
-        settings: payload_settings(),
-        cache: None,
-        clock: &SystemPayloadClock,
-        session_uuid: "00000000-0000-0000-0000-000000000001",
-        tracebacks: &tracebacks,
-    };
-    assert!(
-        failure_write.record(&spend).await,
-        "the failure row owns its charge"
-    );
+    }
+}
+
+fn assert_failure_attribution(queue: &SpendLogQueue, admission: &RecordingAdmission) {
     let rows = queue.dequeue(1);
     assert_eq!(rows.len(), 1, "the failure log waits for the flush");
     assert_eq!(
@@ -182,4 +170,32 @@ async fn a_failure_row_joins_the_log_queue_and_keeps_its_project_and_org() {
     );
     assert_eq!(charged_work[0].project_id.as_deref(), Some("project-1"));
     assert_eq!(charged_work[0].org_id.as_deref(), Some("org-1"));
+}
+
+#[tokio::test]
+async fn a_failure_row_joins_the_log_queue_and_keeps_its_project_and_org() {
+    let table = NotABatchRow;
+    let queue = SpendLogQueue::new(usize::MAX);
+    let admission = RecordingAdmission::default();
+    let writer = failure_writer(&table, &queue, &admission);
+    let (_sender, tracebacks) = watch::channel(TracebackPolicy::default());
+    let request_data = object(
+        r#"{"model": "gpt-4o",
+            "litellm_params": {"metadata": {"status": "failure"}}}"#,
+    );
+    let spend = failure_spend(&request_data);
+    assert!(
+        DatabaseFailureSpendWrite {
+            writer: &writer,
+            settings: payload_settings(),
+            cache: None,
+            clock: &SystemPayloadClock,
+            session_uuid: "00000000-0000-0000-0000-000000000001",
+            tracebacks: &tracebacks,
+        }
+        .record(&spend)
+        .await,
+        "the failure row owns its charge"
+    );
+    assert_failure_attribution(&queue, &admission);
 }

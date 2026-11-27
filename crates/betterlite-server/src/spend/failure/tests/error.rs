@@ -91,7 +91,7 @@ fn a_model_not_found_message_is_replaced_with_the_safe_one() {
     .expect("the information encodes");
     assert_eq!(
         fields(&information)["error_message"],
-        Json::Text(not_found.spend_log_error_message.clone())
+        Json::Text(not_found.spend_log_error_message)
     );
 }
 

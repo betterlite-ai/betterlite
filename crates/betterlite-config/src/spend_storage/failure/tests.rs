@@ -2,7 +2,7 @@
 
 use rstest::rstest;
 
-use super::loads_spend_failure_settings;
+use super::loads_spend_failure_settings as load_failure_settings;
 use crate::spend_storage::SpendUpdates;
 
 #[rstest]
@@ -48,14 +48,14 @@ fn loads_spend_failure_settings(
     #[case] disable_error_logs: bool,
     #[case] spend_updates: SpendUpdates,
 ) {
-    let settings = loads_spend_failure_settings(source).expect("the failure settings load");
+    let settings = load_failure_settings(source).expect("the failure settings load");
     assert_eq!(settings.disable_error_logs, disable_error_logs);
     assert_eq!(settings.spend_updates, spend_updates);
 }
 
 #[test]
 fn rejects_a_yaml_document_that_does_not_parse() {
-    let error = loads_spend_failure_settings("general_settings: [unclosed\n")
+    let error = load_failure_settings("general_settings: [unclosed\n")
         .expect_err("the document is malformed");
     assert!(!error.to_string().is_empty());
 }

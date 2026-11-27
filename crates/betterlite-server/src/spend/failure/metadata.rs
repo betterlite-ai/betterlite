@@ -69,13 +69,11 @@ pub fn trusted_failure_metadata(
 // _proxy_stamped_used_client_oauth_token: only a bool in the proxy's route-selected bucket counts.
 #[must_use]
 pub fn used_client_oauth_token(request_data: &JsonObject, route: Option<&str>) -> Option<bool> {
-    let bucket = match route {
-        Some(route) => {
-            // ast-grep-ignore: no-long-names
-            metadata_variable_name_for_route(route)
-        }
-        None => metadata_name_from_data(request_data),
-    };
+    let bucket = route.map_or_else(
+        || metadata_name_from_data(request_data),
+        // ast-grep-ignore: no-long-names
+        metadata_variable_name_for_route,
+    );
     match request_data
         .get(bucket.as_str())
         .and_then(as_object)
@@ -99,15 +97,7 @@ pub(crate) fn persisted_metadata(request_data: &JsonObject) -> Option<&JsonObjec
 
 // request_data.get("metadata") or {}, mutated in place only when a non-empty mapping was already there.
 pub(crate) fn merge_failure_metadata(request_data: &mut JsonObject, trusted: JsonObject) {
-    let had_metadata =
-        matches!(request_data.get(METADATA), Some(Json::Object(fields)) if !fields.is_empty());
-    let mut existing = match request_data.get(METADATA) {
-        Some(Json::Object(fields)) => fields.clone(),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))
-        | None => JsonObject::new(),
-    };
-    existing.extend(trusted);
-    copy_guardrail_information(request_data, &mut existing);
+    let (had_metadata, mut existing) = caller_metadata(request_data, trusted);
     let mut params = take_litellm_params(request_data);
     let tags = params
         .get(METADATA)
@@ -115,17 +105,7 @@ pub(crate) fn merge_failure_metadata(request_data: &mut JsonObject, trusted: Jso
         .and_then(|fields| fields.get(TAGS))
         .filter(|tags| truthiness(tags))
         .cloned();
-    let proxy_request = request_data
-        .get(PROXY_SERVER_REQUEST)
-        .filter(|value| truthiness(value))
-        .cloned()
-        .or_else(|| {
-            params
-                .get(PROXY_SERVER_REQUEST)
-                .filter(|value| truthiness(value))
-                .cloned()
-        })
-        .unwrap_or_else(|| Json::Object(JsonObject::new()));
+    let proxy_request = failure_proxy_request(request_data, &params);
     let model = params.get(MODEL).filter(|value| truthiness(value)).cloned();
     let provider = params
         .get(CUSTOM_LLM_PROVIDER)
@@ -137,20 +117,46 @@ pub(crate) fn merge_failure_metadata(request_data: &mut JsonObject, trusted: Jso
     params.insert(PROXY_SERVER_REQUEST.to_owned(), proxy_request);
     params.insert(METADATA.to_owned(), Json::Object(existing.clone()));
     request_data.insert(LITELLM_PARAMS.to_owned(), Json::Object(params));
-    if !request_data.contains_key(MODEL) {
-        request_data.insert(
-            MODEL.to_owned(),
-            model.unwrap_or_else(|| Json::Text(String::new())),
-        );
-    }
-    if !request_data.contains_key(CUSTOM_LLM_PROVIDER) {
-        request_data.insert(
-            CUSTOM_LLM_PROVIDER.to_owned(),
-            provider.unwrap_or_else(|| Json::Text(String::new())),
-        );
-    }
+    fill_absent(request_data, MODEL, model);
+    fill_absent(request_data, CUSTOM_LLM_PROVIDER, provider);
     if had_metadata {
         request_data.insert(METADATA.to_owned(), Json::Object(existing));
+    }
+}
+
+fn caller_metadata(request_data: &JsonObject, trusted: JsonObject) -> (bool, JsonObject) {
+    let had_metadata =
+        matches!(request_data.get(METADATA), Some(Json::Object(fields)) if !fields.is_empty());
+    let mut existing = match request_data.get(METADATA) {
+        Some(Json::Object(fields)) => fields.clone(),
+        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))
+        | None => JsonObject::new(),
+    };
+    existing.extend(trusted);
+    copy_guardrail_information(request_data, &mut existing);
+    (had_metadata, existing)
+}
+
+fn failure_proxy_request(request_data: &JsonObject, params: &JsonObject) -> Json {
+    request_data
+        .get(PROXY_SERVER_REQUEST)
+        .filter(|value| truthiness(value))
+        .cloned()
+        .or_else(|| {
+            params
+                .get(PROXY_SERVER_REQUEST)
+                .filter(|value| truthiness(value))
+                .cloned()
+        })
+        .unwrap_or_else(|| Json::Object(JsonObject::new()))
+}
+
+fn fill_absent(request_data: &mut JsonObject, key: &str, value: Option<Json>) {
+    if !request_data.contains_key(key) {
+        request_data.insert(
+            key.to_owned(),
+            value.unwrap_or_else(|| Json::Text(String::new())),
+        );
     }
 }
 
@@ -176,14 +182,14 @@ pub(crate) fn take_litellm_params(request_data: &mut JsonObject) -> JsonObject {
     }
 }
 
-pub(crate) fn as_object(value: &Json) -> Option<&JsonObject> {
+pub(crate) const fn as_object(value: &Json) -> Option<&JsonObject> {
     match value {
         Json::Object(fields) => Some(fields),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
     }
 }
 
-pub(crate) fn object_mut(value: &mut Json) -> Option<&mut JsonObject> {
+pub(crate) const fn object_mut(value: &mut Json) -> Option<&mut JsonObject> {
     match value {
         Json::Object(fields) => Some(fields),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,

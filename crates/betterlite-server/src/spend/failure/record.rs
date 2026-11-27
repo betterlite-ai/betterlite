@@ -149,8 +149,8 @@ async fn release_reservation(reservation: Option<&FailureReservation<'_>>) {
     tracing::error!(%error, "Failed to release budget reservation during failure handling");
     match active.settlement.invalidate(active.handle).await {
         Ok(()) => lock_reservation(&active.handle.0).finalized = true,
-        Err(error) => tracing::error!(
-            %error,
+        Err(invalidate_error) => tracing::error!(
+            %invalidate_error,
             "Failed to invalidate budget reservation counters after failure release failed"
         ),
     }

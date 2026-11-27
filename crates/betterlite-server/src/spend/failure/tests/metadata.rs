@@ -171,7 +171,7 @@ fn merge_preserves_truthy_nested_tags(#[case] params: &str, #[case] preserved: b
     r#"{"litellm_params": {"proxy_server_request": {"url": "params"}}}"#,
     "params"
 )]
-#[case::defaults_to_an_empty_object(r#"{}"#, "{}", "")]
+#[case::defaults_to_an_empty_object("{}", "{}", "")]
 fn merge_preserves_the_proxy_server_request(
     #[case] request: &str,
     #[case] extra: &str,
@@ -276,8 +276,8 @@ fn the_patch_creates_litellm_params_when_it_is_absent() {
     r#"{"tags": ["metadata"]}"#,
     Some(r#"["metadata"]"#)
 )]
-#[case::metadata_only(r#"{}"#, r#"{"tags": ["metadata"]}"#, Some(r#"["metadata"]"#))]
-#[case::nothing_is_none(r#"{}"#, "{}", None)]
+#[case::metadata_only("{}", r#"{"tags": ["metadata"]}"#, Some(r#"["metadata"]"#))]
+#[case::nothing_is_none("{}", "{}", None)]
 fn request_tags_prefer_the_standard_payload(
     #[case] standard: &str,
     #[case] metadata: &str,

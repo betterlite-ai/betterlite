@@ -105,10 +105,11 @@ pub(crate) fn failure_start_time(
     call_log: Option<&CallLog>,
     now: SpendTimestamp,
 ) -> SpendTimestamp {
+    let logged_start = call_log.and_then(|log| log.start_time);
     request_data
         .get(START_TIME)
         .and_then(datetime_value)
-        .or_else(|| call_log.and_then(|log| log.start_time))
+        .or(logged_start)
         .unwrap_or(now)
 }
 
@@ -246,10 +247,8 @@ pub fn metadata_keys(metadata: Option<&Json>) -> Vec<String> {
 
 #[must_use]
 pub(crate) fn eligible_route(route: Option<&str>) -> bool {
-    match route {
-        None => true,
-        Some(route) => is_llm_api_route(&RouteValue::Text(route)) || INFO_ROUTES.contains(&route),
-    }
+    route
+        .is_none_or(|name| is_llm_api_route(&RouteValue::Text(name)) || INFO_ROUTES.contains(&name))
 }
 
 fn datetime_value(value: &Json) -> Option<SpendTimestamp> {
