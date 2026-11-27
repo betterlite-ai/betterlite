@@ -6,7 +6,7 @@ use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 
 use super::otel::shared::SharedOtel;
 use super::otel::{legacy, maybe};
-use super::{CatalogError, CatalogInputs, LoggerCatalog};
+use super::{ArmBuild, CatalogError, CatalogInputs};
 use crate::callback_logger::CallbackLogger;
 use crate::otel::callbacks::agentops::transport::AuthTransport;
 use crate::otel::callbacks::agentops::{AgentOpsCallback, AgentOpsConfig};
@@ -73,10 +73,8 @@ pub fn build(
 }
 
 // with_agentops hands the connected callback to the arm through the catalog's own build closure
-#[must_use]
-pub(crate) fn install(mut catalog: LoggerCatalog, callback: AgentOpsCallback) -> LoggerCatalog {
-    let dispatch = Arc::clone(&catalog.build);
-    catalog.build = Arc::new(
+pub(super) fn wrap(dispatch: ArmBuild, callback: AgentOpsCallback) -> ArmBuild {
+    Arc::new(
         move |name: CallbackName,
               inputs: &CatalogInputs,
               runtime: Option<&LoggerRuntime>,
@@ -90,8 +88,7 @@ pub(crate) fn install(mut catalog: LoggerCatalog, callback: AgentOpsCallback) ->
             }
             dispatch(name, inputs, runtime, shared, in_memory)
         },
-    );
-    catalog
+    )
 }
 
 // B8746's legacy path with the AgentOps exporter config and its resource attributes in the environment

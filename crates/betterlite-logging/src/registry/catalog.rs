@@ -70,10 +70,9 @@ use tokio_util::{sync::CancellationToken, task::TaskTracker};
 
 use self::otel::{maybe::push_once, phoenix_auto, shared::SharedOtel};
 use super::error::RegistryError;
-use crate::callback_config::error::ValidationError;
 use crate::callback_config::family::{conflicting_span_scope_error, cross_entry_family_error};
-use crate::callback_config::options::callback_config_error;
 use crate::callback_config::{CallbackVars, FeatureFlags};
+use crate::callback_config::{error::ValidationError, options::callback_config_error};
 use crate::callback_logger::{CallbackLogger, resolver::LoggerResolver};
 use crate::otel::{callbacks::agentops::AgentOpsCallback, logger_runtime::LoggerRuntime};
 
@@ -158,8 +157,9 @@ impl LoggerCatalog {
     }
 
     #[must_use]
-    pub fn with_agentops(self, callback: AgentOpsCallback) -> Self {
-        agentops::install(self, callback)
+    pub fn with_agentops(mut self, callback: AgentOpsCallback) -> Self {
+        self.build = agentops::wrap(Arc::clone(&self.build), callback);
+        self
     }
 
     // clippy's same_name_method refuses this name while the type also implements the resolver trait
