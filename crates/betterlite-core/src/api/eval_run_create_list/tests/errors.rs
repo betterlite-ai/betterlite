@@ -39,6 +39,7 @@ fn unsupported_create_provider_is_a_bad_request() {
     let ErrorClass::BadRequest(details) = &failure.class else {
         panic!("expected a bad request, got {:?}", failure.class);
     };
+    assert_eq!(details.status.0, 400);
     assert_eq!(details.provider.as_deref(), Some("azure"));
     assert_eq!(details.model.as_deref(), Some(""));
     assert!(calls.transport.creates().is_empty());
@@ -70,7 +71,9 @@ fn unsupported_list_provider_is_a_bad_request() {
     let ErrorClass::BadRequest(details) = &failure.class else {
         panic!("expected a bad request, got {:?}", failure.class);
     };
+    assert_eq!(details.status.0, 400);
     assert_eq!(details.provider.as_deref(), Some("azure"));
+    assert_eq!(details.model.as_deref(), Some(""));
     assert!(calls.transport.lists().is_empty());
 }
 
@@ -80,7 +83,7 @@ fn unknown_provider_is_a_bad_request() {
     let params = kwargs("{}");
     let data_source = object(r#"{"type":"jsonl"}"#);
     let request = CreateRunArgs {
-        custom_llm_provider: Some("bogus"),
+        custom_llm_provider: Some("not-a-provider"),
         ..create_args("eval-1", &data_source, &params)
     };
 
@@ -97,13 +100,48 @@ fn unknown_provider_is_a_bad_request() {
     ));
     assert_eq!(
         failure.error.to_string(),
-        "'bogus' is not a valid LlmProviders"
+        "'not-a-provider' is not a valid LlmProviders"
     );
     let ErrorClass::BadRequest(details) = &failure.class else {
         panic!("expected a bad request, got {:?}", failure.class);
     };
-    assert_eq!(details.provider.as_deref(), Some("bogus"));
+    assert_eq!(details.status.0, 400);
+    assert_eq!(details.model.as_deref(), Some(""));
+    assert_eq!(details.provider.as_deref(), Some("not-a-provider"));
     assert!(calls.transport.creates().is_empty());
+}
+
+// list_runs goes through the same LlmProviders lookup, so an unknown name never reaches the provider
+#[test]
+fn list_rejects_an_unknown_provider_name() {
+    let params = kwargs("{}");
+    let request = ListRunsArgs {
+        custom_llm_provider: Some("not-a-provider"),
+        ..list_args("eval-1", &params)
+    };
+
+    let (answer, _fixture, calls) = sync_list(
+        RecordingConfig::with_key("sk-test"),
+        Recorder::new(),
+        request,
+    );
+
+    let failure = error(answer);
+    assert!(matches!(
+        &failure.error,
+        EvalRunCallError::UnknownProvider { .. }
+    ));
+    assert_eq!(
+        failure.error.to_string(),
+        "'not-a-provider' is not a valid LlmProviders"
+    );
+    let ErrorClass::BadRequest(details) = &failure.class else {
+        panic!("expected a bad request, got {:?}", failure.class);
+    };
+    assert_eq!(details.status.0, 400);
+    assert_eq!(details.model.as_deref(), Some(""));
+    assert_eq!(details.provider.as_deref(), Some("not-a-provider"));
+    assert!(calls.transport.lists().is_empty());
 }
 
 #[test]
