@@ -162,6 +162,12 @@ impl From<AuthenticationFailure> for StageFailure {
     }
 }
 
+impl From<ModelAccessRejection> for StageFailure {
+    fn from(rejection: ModelAccessRejection) -> Self {
+        Self::ModelAccess(Box::new(rejection))
+    }
+}
+
 impl StageInput {
     const fn backend(&self) -> AuthBackend {
         match self {
@@ -205,10 +211,6 @@ pub(crate) fn dispatch(
     master_key: &SecretString,
 ) -> Result<AuthContext, StageFailure> {
     require_backend(backend, input)?;
-    run_input(input, master_key)
-}
-
-fn run_input(input: &StageInput, master_key: &SecretString) -> Result<AuthContext, StageFailure> {
     match input {
         StageInput::AuthKeyLookup(_) => Err(StageFailure::from(AuthenticationFailure::Missing)),
         Authenticated(context) => Ok((**context).clone()),
@@ -225,9 +227,7 @@ fn run_input(input: &StageInput, master_key: &SecretString) -> Result<AuthContex
             virtual_key_routes::run_stage(stage).map_err(StageFailure::VirtualKeyRoutes)
         }
         StageInput::AuthRequestModels(stage) => auth_request_models_stage(stage),
-        StageInput::AuthModelPatterns(stage) => {
-            run_stage(stage).map_err(|rejection| StageFailure::ModelAccess(Box::new(rejection)))
-        }
+        StageInput::AuthModelPatterns(stage) => run_stage(stage).map_err(StageFailure::from),
         StageInput::EntityModelAccess(stage) => Ok(stage.context.clone()),
         StageInput::AuthModelGrants(stage) => Ok(stage.context.clone()),
         StageInput::AuthResourceGrants(stage) => {
