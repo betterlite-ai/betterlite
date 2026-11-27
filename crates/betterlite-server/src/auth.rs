@@ -119,6 +119,7 @@ fn stage_input(
         AuthBackend::AuthRequestModels | AuthBackend::AuthModelPatterns => {
             model_pattern_input(backend, request, authenticated, resolver)
         }
+        AuthBackend::AuthModelGrants => auth_model_grants::stage_input(request, authenticated),
         AuthBackend::EntityModelAccess => entity_model_access::stage_input(request, authenticated),
         AuthBackend::AuthResourceGrants => resource_grant_stage_input(request, authenticated),
         AuthBackend::AuthTagBudgets => Ok(StageInput::AuthTagBudgets(Box::new(
@@ -201,6 +202,7 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
         }
         StageInput::AuthEndUsers(stage) => end_user_identity::prefetch_budget(stage).await,
         StageInput::ModelGrantIntersection(stage) => StageInput::prefetch_model_grants(stage).await,
+        StageInput::AuthModelGrants(stage) => auth_model_grants::prefetched(stage).await,
         StageInput::EntityModelAccess(stage) => entity_model_access::prefetched(stage).await,
         other @ (StageInput::Authenticated(_)
         | StageInput::MasterKey(_)
