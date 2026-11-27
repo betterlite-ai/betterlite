@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::error::Error as _;
-use std::future::{Future, ready};
+use std::future::{Future, Ready, ready};
 use std::sync::Mutex;
 
 use betterlite_db::budget_permission_rows::LiteLLMObjectPermissionTable;
@@ -38,14 +38,8 @@ fn limits() -> BTreeMap<String, BTreeMap<String, i64>> {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum ReadCall {
-    User {
-        user_id: String,
-        fresh: bool,
-    },
-    Permission {
-        object_permission_id: String,
-        fresh: bool,
-    },
+    User(String, bool),
+    Permission(String, bool),
 }
 
 struct FakeUsers {
@@ -71,6 +65,15 @@ impl FakeUsers {
     fn calls(&self) -> Vec<ReadCall> {
         self.calls.lock().unwrap().clone()
     }
+
+    fn record<T: Clone>(
+        &self,
+        call: ReadCall,
+        answer: &Result<Option<T>, ReadFault>,
+    ) -> Ready<Result<Option<T>, ReadFault>> {
+        self.calls.lock().unwrap().push(call);
+        ready(answer.clone())
+    }
 }
 
 impl UserReads for FakeUsers {
@@ -83,11 +86,7 @@ impl UserReads for FakeUsers {
         user_id: &str,
         fresh: bool,
     ) -> impl Future<Output = Result<Option<LiteLLMUserTable>, ReadFault>> + Send {
-        self.calls.lock().unwrap().push(ReadCall::User {
-            user_id: user_id.to_owned(),
-            fresh,
-        });
-        ready(self.user.clone())
+        self.record(ReadCall::User(user_id.to_owned(), fresh), &self.user)
     }
 
     fn object_permission(
@@ -95,11 +94,10 @@ impl UserReads for FakeUsers {
         object_permission_id: &str,
         fresh: bool,
     ) -> impl Future<Output = Result<Option<LiteLLMObjectPermissionTable>, ReadFault>> + Send {
-        self.calls.lock().unwrap().push(ReadCall::Permission {
-            object_permission_id: object_permission_id.to_owned(),
-            fresh,
-        });
-        ready(self.permission.clone())
+        self.record(
+            ReadCall::Permission(object_permission_id.to_owned(), fresh),
+            &self.permission,
+        )
     }
 }
 
@@ -226,10 +224,7 @@ async fn reload_reads_the_user_with_the_fresh_flag_it_was_given(#[case] fresh: b
     reloader.reload("test-subject", fresh).await.unwrap();
     assert_eq!(
         reloader.users.calls(),
-        vec![ReadCall::User {
-            user_id: "test-subject".to_owned(),
-            fresh,
-        }]
+        vec![ReadCall::User("test-subject".to_owned(), fresh)]
     );
 }
 
@@ -244,14 +239,8 @@ async fn reload_loads_a_missing_object_permission_with_the_same_fresh_flag(#[cas
     assert_eq!(
         reloader.users.calls(),
         vec![
-            ReadCall::User {
-                user_id: "test-user".to_owned(),
-                fresh,
-            },
-            ReadCall::Permission {
-                object_permission_id: "test-permission".to_owned(),
-                fresh,
-            },
+            ReadCall::User("test-user".to_owned(), fresh),
+            ReadCall::Permission("test-permission".to_owned(), fresh),
         ]
     );
     assert_eq!(
@@ -268,10 +257,7 @@ async fn reload_keeps_the_rows_own_object_permission_without_a_second_read() {
     let auth = reloader.reload("test-user", false).await.unwrap();
     assert_eq!(
         reloader.users.calls(),
-        vec![ReadCall::User {
-            user_id: "test-user".to_owned(),
-            fresh: false,
-        }]
+        vec![ReadCall::User("test-user".to_owned(), false)]
     );
     assert_eq!(
         auth.view.token.object_permission,
@@ -289,10 +275,7 @@ async fn reload_reads_no_object_permission_when_the_row_names_none() {
     let auth = reloader.reload("test-user", false).await.unwrap();
     assert_eq!(
         reloader.users.calls(),
-        vec![ReadCall::User {
-            user_id: "test-user".to_owned(),
-            fresh: false,
-        }]
+        vec![ReadCall::User("test-user".to_owned(), false)]
     );
     assert_eq!(auth.view.token.object_permission, None);
 }
@@ -305,14 +288,8 @@ async fn reload_passes_a_missing_object_permission_row_as_no_permission() {
     assert_eq!(
         reloader.users.calls(),
         vec![
-            ReadCall::User {
-                user_id: "test-user".to_owned(),
-                fresh: false,
-            },
-            ReadCall::Permission {
-                object_permission_id: "test-permission".to_owned(),
-                fresh: false,
-            },
+            ReadCall::User("test-user".to_owned(), false),
+            ReadCall::Permission("test-permission".to_owned(), false),
         ]
     );
     assert_eq!(auth.view.token.object_permission, None);
@@ -371,10 +348,7 @@ async fn reload_gives_401_for_a_missing_user_row() {
     );
     assert_eq!(
         reloader.users.calls(),
-        vec![ReadCall::User {
-            user_id: "test-user".to_owned(),
-            fresh: false,
-        }]
+        vec![ReadCall::User("test-user".to_owned(), false)]
     );
 }
 
@@ -509,10 +483,7 @@ async fn delegated_human_forwards_both_arguments() {
     assert_eq!(auth.view.token.user_id.as_deref(), Some("test-user"));
     assert_eq!(
         reloader.users.calls(),
-        vec![ReadCall::User {
-            user_id: "test-user".to_owned(),
-            fresh: true,
-        }]
+        vec![ReadCall::User("test-user".to_owned(), true)]
     );
 }
 
