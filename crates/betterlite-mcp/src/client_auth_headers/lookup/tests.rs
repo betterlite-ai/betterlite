@@ -122,6 +122,16 @@ enum Expected {
     &[],
     Expected::Headers("beta")
 )]
+#[case::empty_alias_skips_to_server_name_not_empty_key(
+    &[
+        ("", "Authorization", "Bearer test-empty"),
+        ("beta", "Authorization", "Bearer test-beta")
+    ],
+    Some(""),
+    Some("Beta"),
+    &[],
+    Expected::Headers("beta")
+)]
 #[case::lowercase_before_sanitized(
     &[
         ("my server", "Authorization", "Bearer test-raw"),
