@@ -7,3 +7,4 @@ mod killers;
 mod metadata;
 mod record;
 mod support;
+mod write;
