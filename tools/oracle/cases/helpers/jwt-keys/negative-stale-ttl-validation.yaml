@@ -1,0 +1,14 @@
+kind: helper
+name: jwt-keys-negative-stale-ttl-validation
+call:
+  jwt_keys:
+    scenarios:
+      # a negative stale ttl is a settings validation failure, so the scripted provider is never asked
+      - settings: {public_key_url: "https://idp.example.com/jwks", public_key_ttl: 600.0, public_key_stale_ttl: -1.0}
+        steps:
+          - now: 1000.0
+            kid: a
+            http:
+              - {kind: answer, status: 200, body: '{"keys":[{"kid":"a","kty":"RSA","n":"one"}]}'}
+env: {}
+compare: {ignore: []}
