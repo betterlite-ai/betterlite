@@ -537,6 +537,30 @@ async fn redirects_a_relative_target_with_the_session_cookie() {
 }
 
 #[tokio::test]
+async fn redirects_a_relative_target_without_secure_over_http() {
+    let secure = is_secure_request(&http_request(), &TrustedNetworkSettings::default());
+    let cache = RecordingCache::default();
+    let response = sso_return_to_redirect(&redirect_to(
+        Some("/dashboard?tab=1"),
+        Some(CONTROL_PLANE),
+        secure,
+        login_caches(&cache, None),
+    ))
+    .await
+    .unwrap()
+    .unwrap();
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        header_values(&response, header::SET_COOKIE),
+        vec![
+            "token=jwt.token-value; Path=/; SameSite=lax".to_owned(),
+            DELETED.to_owned(),
+        ]
+    );
+}
+
+#[tokio::test]
 async fn redirects_a_cross_origin_target_behind_a_login_code() {
     let secure = is_secure_request(&https_request(), &https_settings());
     let cache = RecordingCache::default();
