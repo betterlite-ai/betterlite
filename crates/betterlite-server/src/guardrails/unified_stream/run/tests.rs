@@ -3,8 +3,12 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_guardrails::guardrail_message_scope::StreamItem;
+use futures_util::StreamExt as _;
+use futures_util::stream;
 
 use crate::guardrails::unified_stream::error::StreamLoopError;
+use crate::guardrails::unified_stream::run::incremental_transform_stream;
 use crate::guardrails::unified_stream::tests::support::{
     FakeGuardrail, FakeTranslation, Plan, SinkUse, SourceFailure, block_texts, collect_outputs,
     collect_results, finishing_tool_chunk, item, mixed_tool_chunk, modify_response, params,
@@ -393,6 +397,40 @@ async fn tool_call_passthrough_defers_the_finish_reason_while_text_is_held() {
     assert_eq!(calls[1].sink, SinkUse::Empty);
     assert_eq!(calls[2].sink, SinkUse::Absent);
     assert_eq!(calls[3].sink, SinkUse::Empty);
+}
+
+#[tokio::test]
+async fn bytes_item_is_never_sent() {
+    let translation = FakeTranslation::planned(vec![Plan::Rewrite {
+        index: 0,
+        text: "hi",
+        holdback: 0,
+    }]);
+    let guardrail = FakeGuardrail;
+    let mut data = BTreeMap::new();
+    let keys = BTreeMap::new();
+    let frame = String::from("event: message\ndata: {\"raw\": true}\n\n");
+    let source = vec![
+        Ok(StreamItem::Json(text_chunk("hi"))),
+        Ok(StreamItem::Bytes(frame.as_bytes().to_vec())),
+        Ok(StreamItem::Json(metadata_chunk())),
+    ];
+    let outputs = incremental_transform_stream(
+        params(&translation, &guardrail, &mut data, &keys),
+        stream::iter(source),
+    )
+    .collect()
+    .await;
+    assert_eq!(
+        outputs,
+        vec![
+            Ok(item(synthetic("hi", Some("assistant"), None))),
+            Ok(item(metadata_chunk())),
+        ]
+    );
+    let calls = translation.calls();
+    assert_eq!(calls[0].items.len(), 3);
+    assert_eq!(calls[0].items[1], GuardrailValue::Text(frame));
 }
 
 #[tokio::test]

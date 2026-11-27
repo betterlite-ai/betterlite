@@ -9,11 +9,14 @@ use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_core::routes::CallType;
 use betterlite_guardrails::guardrail_base::GuardrailBase;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
+use betterlite_guardrails::guardrail_message_scope::StreamItem;
 use indexmap::IndexMap;
 use rstest::rstest;
 
 use super::StreamFlagSources;
 use super::settings::{InvalidFlag, StreamSettings, TransformMode};
+use crate::guardrails::anthropic_translation::block_continuation;
+use crate::guardrails::unified_stream::StreamOutput;
 use support::{
     Harness, KeyMode, NAME, ScanCall, SourceFailure, capture_logs, chunk, content, lines,
     modify_response, settings, texts,
@@ -511,6 +514,77 @@ async fn transform_route_incremental_diff_on_a_chat_route_runs_the_transform_loo
     assert_eq!(harness.calls(CallType::Completion), expected);
     assert_eq!(lines(&outputs), [""]);
     assert!(!logs.contents().contains(FALLBACK_WARNING));
+}
+
+#[tokio::test]
+async fn frames_pass_through_in_order_without_a_translation() {
+    let mut harness = Harness::new(KeyMode::Texts, Vec::new()).rate(0);
+    harness.guarded = false;
+    let outputs = harness
+        .run_frames(vec![
+            StreamItem::Bytes(b"event: one\n\n".to_vec()),
+            StreamItem::Json(chunk("a", None)),
+            StreamItem::Bytes(b"event: two\n\n".to_vec()),
+        ])
+        .await;
+    assert_eq!(
+        lines(&outputs),
+        ["bytes event: one\n\n", "a", "bytes event: two\n\n"]
+    );
+}
+
+#[tokio::test]
+async fn frames_bytes_scan_on_the_anthropic_route() {
+    let mut harness = Harness::new(KeyMode::Texts, Vec::new()).rate(1);
+    harness.route = Some("/v1/messages");
+    let frame = b"event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"hi\"}}\n\n".to_vec();
+    let outputs = harness.run_frames(vec![StreamItem::Bytes(frame)]).await;
+    assert_eq!(harness.calls(CallType::AnthropicMessages), scans(&[1]));
+    assert_eq!(lines(&outputs).len(), 1);
+}
+
+#[tokio::test]
+async fn frames_block_after_a_bytes_prefix_keeps_the_frames_in_the_original() {
+    let plans = vec![Err(modify_response("blocked", None))];
+    let mut harness = Harness::new(KeyMode::Texts, plans).rate(2);
+    harness.route = Some("/chat");
+    let outputs = harness
+        .run_frames(vec![
+            StreamItem::Bytes(b"event: first\n\n".to_vec()),
+            StreamItem::Bytes(b"event: second\n\n".to_vec()),
+        ])
+        .await;
+    let expected =
+        "block started=true sent=1:event: first\n\n original=event: first\n\nevent: second\n\n";
+    assert_eq!(lines(&outputs), ["bytes event: first\n\n", expected]);
+}
+
+#[tokio::test]
+async fn frames_http_error_keeps_the_anthropic_bytes_frame() {
+    let built = block_continuation::build_stream_error_items("blocked by policy").unwrap();
+    let frames: Vec<StreamItem> = built.into_iter().map(StreamItem::Bytes).collect();
+    let mut harness = Harness::new(KeyMode::Texts, Vec::new())
+        .plans(CallType::AnthropicMessages, vec![Ok(()), http(405)])
+        .rate(1)
+        .error_items(frames.clone());
+    harness.route = Some("/v1/messages");
+    let outputs = harness
+        .run_frames(vec![
+            StreamItem::Bytes(b"event: first\n\n".to_vec()),
+            StreamItem::Bytes(b"event: second\n\n".to_vec()),
+        ])
+        .await;
+    assert_eq!(lines(&outputs).len(), 2);
+    assert_eq!(lines(&outputs)[0], "bytes event: first\n\n");
+    assert_eq!(outputs[1], Ok(StreamOutput::Item(frames[0].clone())));
+    let Ok(StreamOutput::Item(StreamItem::Bytes(frame))) = &outputs[1] else {
+        panic!("expected the raw error frame, got {:?}", outputs[1]);
+    };
+    assert!(
+        String::from_utf8(frame.clone())
+            .unwrap()
+            .contains("blocked by policy")
+    );
 }
 
 #[rstest]

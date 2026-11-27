@@ -11,6 +11,8 @@ use betterlite_guardrails::guardrail_base::contract::GuardrailContract;
 use betterlite_guardrails::guardrail_base::failure::{GuardrailFailure, ModifyResponseFailure};
 use betterlite_guardrails::guardrail_base::inputs::GuardrailLogTarget;
 use betterlite_guardrails::guardrail_base::settings::{GuardrailSettings, GuardrailSwitches};
+use betterlite_guardrails::guardrail_message_scope::StreamItem;
+use betterlite_guardrails::guardrail_message_scope::stream_chunk_events::stream_item_value;
 use betterlite_guardrails::guardrail_translation::{
     BaseTranslation, StreamingScanKey, TranslationCall,
 };
@@ -54,6 +56,7 @@ pub(crate) struct FakeTranslation {
     plans: Mutex<VecDeque<Result<(), GuardrailFailure>>>,
     calls: Mutex<Vec<ScanCall>>,
     key: KeyMode,
+    error_items: Option<Vec<StreamItem>>,
 }
 
 impl FakeTranslation {
@@ -66,6 +69,9 @@ impl FakeTranslation {
 }
 
 pub(crate) fn content(item: &GuardrailValue) -> String {
+    if let GuardrailValue::Text(text) = item {
+        return text.clone();
+    }
     let GuardrailValue::Object(fields) = item else {
         return String::from("?");
     };
@@ -86,6 +92,11 @@ pub(crate) fn content(item: &GuardrailValue) -> String {
 
 fn joined(items: &[GuardrailValue]) -> String {
     items.iter().map(content).collect::<String>()
+}
+
+fn joined_items(items: &[StreamItem]) -> String {
+    let values: Vec<GuardrailValue> = items.iter().map(stream_item_value).collect();
+    joined(&values)
 }
 
 impl BaseTranslation for FakeTranslation {
@@ -113,7 +124,7 @@ impl BaseTranslation for FakeTranslation {
 
     fn process_streaming_response(
         &self,
-        responses_so_far: &mut Vec<GuardrailValue>,
+        responses_so_far: &mut Vec<StreamItem>,
         _guardrail: &Self::Guardrail,
         call: TranslationCall<'_, Self::LogTarget>,
     ) -> impl Future<Output = Result<(), Self::Failure>> + Send {
@@ -132,17 +143,14 @@ impl BaseTranslation for FakeTranslation {
         ready(plan.unwrap_or(Ok(())))
     }
 
-    fn get_streaming_scan_key(
-        &self,
-        responses_so_far: &[GuardrailValue],
-    ) -> Option<StreamingScanKey> {
+    fn get_streaming_scan_key(&self, responses_so_far: &[StreamItem]) -> Option<StreamingScanKey> {
         let in_flight = match self.key {
             KeyMode::Missing => return None,
             KeyMode::Texts => false,
             KeyMode::ToolsInFlight => true,
         };
         Some(StreamingScanKey {
-            texts: vec![joined(responses_so_far)],
+            texts: vec![joined_items(responses_so_far)],
             tool_calls: Vec::new(),
             stream_ended: false,
             tool_calls_in_flight: in_flight,
@@ -153,7 +161,7 @@ impl BaseTranslation for FakeTranslation {
         &self,
         failure: &Self::Failure,
         stream_started: bool,
-        responses_so_far: Option<&[GuardrailValue]>,
+        responses_so_far: Option<&[StreamItem]>,
     ) -> Option<Vec<Vec<u8>>> {
         let GuardrailFailure::ModifyResponse(details) = failure else {
             return None;
@@ -170,7 +178,7 @@ impl BaseTranslation for FakeTranslation {
         let summary = format!(
             "block started={stream_started} sent={}:{} original={original}",
             sent.len(),
-            joined(sent)
+            joined_items(sent)
         );
         Some(vec![summary.into_bytes()])
     }
@@ -178,8 +186,11 @@ impl BaseTranslation for FakeTranslation {
     fn build_stream_error_items(
         &self,
         failure: &Self::Failure,
-        responses_so_far: Option<&[GuardrailValue]>,
-    ) -> Option<Vec<GuardrailValue>> {
+        responses_so_far: Option<&[StreamItem]>,
+    ) -> Option<Vec<StreamItem>> {
+        if let Some(items) = &self.error_items {
+            return Some(items.clone());
+        }
         let status = match failure {
             GuardrailFailure::Http { status, .. } | GuardrailFailure::HttpObject { status, .. } => {
                 *status
@@ -190,17 +201,20 @@ impl BaseTranslation for FakeTranslation {
             | GuardrailFailure::SensitiveDataRoute(_)
             | GuardrailFailure::Other(_) => return None,
         };
-        let sent = joined(responses_so_far.unwrap_or_default());
-        Some(vec![GuardrailValue::Text(format!(
+        let sent = joined_items(responses_so_far.unwrap_or_default());
+        Some(vec![StreamItem::Json(GuardrailValue::Text(format!(
             "error status={status} sent={sent}"
-        ))])
+        )))])
     }
 }
 
 impl StreamEndCheck for FakeTranslation {
     // the fake probes only the last chunk, like the responses translation, so a pending chunk can outlive the end
-    fn streaming_has_ended(&self, items: &[GuardrailValue]) -> bool {
-        items.last().is_some_and(chunk_has_finish_reason)
+    fn streaming_has_ended(&self, items: &[StreamItem]) -> bool {
+        let Some(StreamItem::Json(last)) = items.last() else {
+            return false;
+        };
+        chunk_has_finish_reason(last)
     }
 }
 
@@ -259,8 +273,11 @@ pub(crate) fn lines(outputs: &Outputs) -> Vec<String> {
     outputs
         .iter()
         .map(|output| match output {
-            Ok(StreamOutput::Item(GuardrailValue::Text(text))) => text.clone(),
-            Ok(StreamOutput::Item(item)) => content(item),
+            Ok(StreamOutput::Item(StreamItem::Json(GuardrailValue::Text(text)))) => text.clone(),
+            Ok(StreamOutput::Item(StreamItem::Json(item))) => content(&item),
+            Ok(StreamOutput::Item(StreamItem::Bytes(bytes))) => {
+                format!("bytes {}", String::from_utf8(bytes.clone()).unwrap())
+            }
             Ok(StreamOutput::BlockChunks(chunks)) => String::from_utf8(chunks.concat()).unwrap(),
             Err(StreamHookError::InvalidFlag(invalid)) => format!("invalid {}", invalid.name),
             Err(StreamHookError::Gate { .. }) => String::from("gate error"),
@@ -308,6 +325,7 @@ fn fake(key: KeyMode, plans: Vec<Result<(), GuardrailFailure>>) -> FakeTranslati
         plans: Mutex::new(VecDeque::from(plans)),
         calls: Mutex::new(Vec::new()),
         key,
+        error_items: None,
     }
 }
 
@@ -331,6 +349,11 @@ impl Harness {
                 translation: fake(key, Vec::new()),
                 chat_completions: false,
             },
+            TranslationEntry {
+                call_type: CallType::AnthropicMessages,
+                translation: fake(key, Vec::new()),
+                chat_completions: false,
+            },
         ];
         Self {
             base: GuardrailBase {
@@ -344,6 +367,7 @@ impl Harness {
                 routes: vec![
                     route("/chat", CallType::Completion),
                     route("/responses", CallType::Responses),
+                    route("/v1/messages", CallType::AnthropicMessages),
                     route("/embed", CallType::Embedding),
                     RouteEntry {
                         route: String::from("/empty"),
@@ -375,13 +399,56 @@ impl Harness {
         self.registry.get(call_type).unwrap().translation.calls()
     }
 
+    pub(crate) fn error_items(mut self, items: Vec<StreamItem>) -> Self {
+        for entry in &mut self.registry.entries {
+            entry.translation.error_items = Some(items.clone());
+        }
+        self
+    }
+
+    pub(crate) fn plans(
+        mut self,
+        call_type: CallType,
+        plans: Vec<Result<(), GuardrailFailure>>,
+    ) -> Self {
+        if let Some(entry) = self
+            .registry
+            .entries
+            .iter_mut()
+            .find(|entry| entry.call_type == call_type)
+        {
+            *entry
+                .translation
+                .plans
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner) = VecDeque::from(plans);
+        }
+        self
+    }
+
     pub(crate) async fn run(&mut self, items: Vec<GuardrailValue>) -> Outputs {
-        self.run_source(items.into_iter().map(Ok).collect()).await
+        let items = items.into_iter().map(StreamItem::Json);
+        self.run_frames_source(items.map(Ok).collect()).await
+    }
+
+    pub(crate) async fn run_frames(&mut self, items: Vec<StreamItem>) -> Outputs {
+        self.run_frames_source(items.into_iter().map(Ok).collect())
+            .await
     }
 
     pub(crate) async fn run_source(
         &mut self,
         source: Vec<Result<GuardrailValue, SourceFailure>>,
+    ) -> Outputs {
+        let items = source
+            .into_iter()
+            .map(|result| result.map(StreamItem::Json));
+        self.run_frames_source(items.collect()).await
+    }
+
+    pub(crate) async fn run_frames_source(
+        &mut self,
+        source: Vec<Result<StreamItem, SourceFailure>>,
     ) -> Outputs {
         let user_api_key_dict = BTreeMap::new();
         let params = StreamHookParams {

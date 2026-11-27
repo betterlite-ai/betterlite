@@ -13,10 +13,10 @@ use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::guardrail_base::contract::GuardrailContract;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 use betterlite_guardrails::guardrail_base::inputs::{GuardrailApiInputs, GuardrailLogTarget};
-use betterlite_guardrails::guardrail_message_scope::Object;
 use betterlite_guardrails::guardrail_message_scope::scoped_indices::{
     GlobalSkipFlags, GuardrailSkipFlags,
 };
+use betterlite_guardrails::guardrail_message_scope::{Object, StreamItem};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 
 use crate::guardrails::chat_guardrail_translation::rewrites::error::RewriteError;
@@ -155,9 +155,9 @@ pub(crate) fn object(json: &str) -> Object {
     fields
 }
 
-pub(crate) fn items(json: &str) -> Vec<GuardrailValue> {
+pub(crate) fn items(json: &str) -> Vec<StreamItem> {
     match value(json) {
-        GuardrailValue::Array(items) => items,
+        GuardrailValue::Array(values) => values.into_iter().map(StreamItem::Json).collect(),
         other @ (GuardrailValue::Null
         | GuardrailValue::Boolean(_)
         | GuardrailValue::SignedInteger(_)

@@ -21,7 +21,7 @@ use betterlite_guardrails::guardrail_message_scope::scoped_indices::{
 use indexmap::IndexMap;
 
 use self::support::{FakeGuardrail, context, principal, texts_reply};
-use super::{GuardrailToApply, failure_message, failure_parts, frames_into_items, modify_response};
+use super::{GuardrailToApply, failure_message, failure_parts, modify_response};
 
 struct DefaultGuardrail;
 
@@ -130,18 +130,6 @@ fn helper_modify_response_only_matches_a_modify_failure() {
         Some(String::from("blocked"))
     );
     assert!(modify_response(&GuardrailFailure::Other(String::from("boom"))).is_none());
-}
-
-#[test]
-fn helper_frames_into_items_keeps_their_text() {
-    let frames = vec![b"data: one\n\n".to_vec(), b"data: two\n\n".to_vec()];
-    assert_eq!(
-        frames_into_items(frames),
-        Some(vec![
-            GuardrailValue::Text(String::from("data: one\n\n")),
-            GuardrailValue::Text(String::from("data: two\n\n")),
-        ])
-    );
 }
 
 #[tokio::test]

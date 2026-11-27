@@ -5,6 +5,7 @@ use std::marker::PhantomData;
 
 use betterlite_core::routes::CallType;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
+use betterlite_guardrails::guardrail_message_scope::StreamItem;
 use betterlite_guardrails::guardrail_translation::{BaseTranslation, TranslationCall};
 
 use super::{A2A_CALL_TYPES, A2ATranslation};
@@ -88,8 +89,12 @@ async fn adapter_output_returns_the_rewritten_response() {
 async fn adapter_stream_rewrites_the_chunks() {
     let guardrail = FakeGuardrail::replying(&["rewritten"]);
     let mut responses = vec![
-        value(r#"{"result":{"parts":[{"kind":"text","text":"a"}]}}"#),
-        value(r#"{"result":{"parts":[{"kind":"text","text":"b"}]}}"#),
+        StreamItem::Json(value(
+            r#"{"result":{"parts":[{"kind":"text","text":"a"}]}}"#,
+        )),
+        StreamItem::Json(value(
+            r#"{"result":{"parts":[{"kind":"text","text":"b"}]}}"#,
+        )),
     ];
     let call = TranslationCall {
         user_api_key_dict: None,
@@ -107,16 +112,25 @@ async fn adapter_stream_rewrites_the_chunks() {
         Some(vec!["ab".to_owned()])
     );
     assert_eq!(
-        serde_json::to_string(&responses).unwrap(),
-        r#"[{"result":{"parts":[{"kind":"text","text":"rewritten"}]}},{"result":{"parts":[{"kind":"text","text":""}]}}]"#
+        responses,
+        vec![
+            StreamItem::Json(value(
+                r#"{"result":{"parts":[{"kind":"text","text":"rewritten"}]}}"#
+            )),
+            StreamItem::Json(value(r#"{"result":{"parts":[{"kind":"text","text":""}]}}"#)),
+        ]
     );
 }
 
 #[test]
 fn adapter_scan_key_holds_the_combined_text() {
     let responses = vec![
-        value(r#"{"result":{"parts":[{"kind":"text","text":"a"}]}}"#),
-        value(r#"{"result":{"parts":[{"kind":"text","text":"b"}]}}"#),
+        StreamItem::Json(value(
+            r#"{"result":{"parts":[{"kind":"text","text":"a"}]}}"#,
+        )),
+        StreamItem::Json(value(
+            r#"{"result":{"parts":[{"kind":"text","text":"b"}]}}"#,
+        )),
     ];
     let key = translation().get_streaming_scan_key(&responses).unwrap();
     assert_eq!(key.texts, vec!["ab".to_owned()]);

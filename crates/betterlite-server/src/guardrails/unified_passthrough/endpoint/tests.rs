@@ -5,6 +5,7 @@ use betterlite_core::passthrough_guardrail::errors::PassthroughGuardrailError;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 use betterlite_guardrails::guardrail_base::inputs::GuardrailLogTarget;
+use betterlite_guardrails::guardrail_message_scope::StreamItem;
 use betterlite_guardrails::guardrail_translation::BaseTranslation;
 use betterlite_models::decisions::Json;
 
@@ -151,7 +152,7 @@ async fn endpoint_default_methods_keep_the_base_behavior() {
         assert!(!<Adapter as BaseTranslation>::ASSEMBLES_STREAMED_RESPONSE);
     }
     let response = json_value(r#"{"ok": true}"#);
-    let mut responses = vec![response.clone()];
+    let mut responses = vec![StreamItem::Json(response.clone())];
     assert_eq!(adapter.post_call_hook_response(response.clone()), response);
     assert_eq!(adapter.get_streaming_scan_key(&responses), None);
     assert!(adapter.get_structured_messages(&map_body("{}")).is_none());
@@ -164,7 +165,7 @@ async fn endpoint_default_methods_keep_the_base_behavior() {
         .process_streaming_response(&mut responses, &fake, response_call(None, None, None))
         .await
         .expect("the default keeps the list");
-    assert_eq!(responses, vec![response.clone()]);
+    assert_eq!(responses, vec![StreamItem::Json(response.clone())]);
     let failure = PassthroughGuardrailError::Guardrail(refusal());
     assert!(
         adapter

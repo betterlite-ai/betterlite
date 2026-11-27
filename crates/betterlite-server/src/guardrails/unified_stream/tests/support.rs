@@ -7,6 +7,8 @@ use betterlite_core::routes::CallType;
 use betterlite_guardrails::guardrail_base::contract::GuardrailContract;
 use betterlite_guardrails::guardrail_base::failure::{GuardrailFailure, ModifyResponseFailure};
 use betterlite_guardrails::guardrail_base::inputs::GuardrailLogTarget;
+use betterlite_guardrails::guardrail_message_scope::StreamItem;
+use betterlite_guardrails::guardrail_message_scope::stream_chunk_events::stream_item_value;
 use betterlite_guardrails::guardrail_translation::{
     BaseTranslation, StreamTransformSink, TranslationCall,
 };
@@ -90,7 +92,7 @@ impl FakeTranslation {
 
     fn record_call(
         &self,
-        responses_so_far: &[GuardrailValue],
+        responses_so_far: &[StreamItem],
         call: &mut TranslationCall<'_, GuardrailLogTarget>,
     ) -> Plan {
         let mut state = self.state.lock().unwrap();
@@ -98,7 +100,7 @@ impl FakeTranslation {
         let sink = sink_use(call.stream_transform_sink.as_deref_mut());
         state.calls.push(CallRecord {
             sink,
-            items: responses_so_far.to_vec(),
+            items: responses_so_far.iter().map(stream_item_value).collect(),
             log_target: call.logging_obj.as_deref().cloned(),
         });
         drop(state);
@@ -143,7 +145,7 @@ impl BaseTranslation for FakeTranslation {
 
     fn process_streaming_response(
         &self,
-        responses_so_far: &mut Vec<GuardrailValue>,
+        responses_so_far: &mut Vec<StreamItem>,
         _guardrail: &Self::Guardrail,
         mut call: TranslationCall<'_, Self::LogTarget>,
     ) -> impl Future<Output = Result<(), Self::Failure>> + Send {
@@ -174,7 +176,7 @@ impl BaseTranslation for FakeTranslation {
         &self,
         failure: &Self::Failure,
         stream_started: bool,
-        responses_so_far: Option<&[GuardrailValue]>,
+        responses_so_far: Option<&[StreamItem]>,
     ) -> Option<Vec<Vec<u8>>> {
         self.terminator
             .then(|| vec![block_summary(failure, stream_started, responses_so_far)])
@@ -183,8 +185,8 @@ impl BaseTranslation for FakeTranslation {
     fn build_stream_error_items(
         &self,
         failure: &Self::Failure,
-        responses_so_far: Option<&[GuardrailValue]>,
-    ) -> Option<Vec<GuardrailValue>> {
+        responses_so_far: Option<&[StreamItem]>,
+    ) -> Option<Vec<StreamItem>> {
         let status = match failure {
             GuardrailFailure::Http { status, .. } | GuardrailFailure::HttpObject { status, .. } => {
                 *status
@@ -196,18 +198,20 @@ impl BaseTranslation for FakeTranslation {
             | GuardrailFailure::Other(_) => return None,
         };
         let items = responses_so_far.unwrap_or(&[]);
-        Some(vec![GuardrailValue::Text(format!(
+        Some(vec![StreamItem::Json(GuardrailValue::Text(format!(
             "status={status};items={};texts={}",
             items.len(),
             joined_contents(items)
-        ))])
+        )))])
     }
 }
 
-fn mutate_last_content(items: &mut [GuardrailValue]) {
+fn mutate_last_content(items: &mut [StreamItem]) {
     for item in items.iter_mut().rev() {
-        if let GuardrailValue::Object(fields) = item
-            && let Some(GuardrailValue::Array(choices)) = fields.get_mut("choices")
+        let StreamItem::Json(GuardrailValue::Object(fields)) = item else {
+            continue;
+        };
+        if let Some(GuardrailValue::Array(choices)) = fields.get_mut("choices")
             && let Some(GuardrailValue::Object(choice)) = choices.first_mut()
             && let Some(GuardrailValue::Object(delta)) = choice.get_mut("delta")
         {
@@ -223,7 +227,7 @@ fn mutate_last_content(items: &mut [GuardrailValue]) {
 fn block_summary(
     failure: &GuardrailFailure,
     stream_started: bool,
-    responses_so_far: Option<&[GuardrailValue]>,
+    responses_so_far: Option<&[StreamItem]>,
 ) -> Vec<u8> {
     let items = responses_so_far.unwrap_or(&[]);
     let original = match failure {
@@ -248,10 +252,10 @@ fn block_summary(
     .into_bytes()
 }
 
-pub(crate) fn joined_contents(items: &[GuardrailValue]) -> String {
+pub(crate) fn joined_contents(items: &[StreamItem]) -> String {
     items
         .iter()
-        .map(|item| choice_text(item).unwrap_or_default())
+        .map(|item| choice_text(&stream_item_value(item)).unwrap_or_default())
         .collect::<Vec<String>>()
         .join("|")
 }
@@ -444,7 +448,7 @@ pub(crate) fn modify_response(original_response: Option<GuardrailValue>) -> Guar
 }
 
 pub(crate) const fn item(value: GuardrailValue) -> StreamOutput {
-    StreamOutput::Item(value)
+    StreamOutput::Item(StreamItem::Json(value))
 }
 
 pub(crate) fn block_texts<E>(outputs: &[Result<StreamOutput, StreamLoopError<E>>]) -> Vec<String> {
@@ -493,7 +497,10 @@ pub(crate) async fn collect_results(
     params: StreamLoopParams<'_, FakeTranslation, FakeGuardrail>,
     source: Vec<Result<GuardrailValue, SourceFailure>>,
 ) -> Vec<Result<StreamOutput, StreamLoopError<SourceFailure>>> {
-    incremental_transform_stream(params, stream::iter(source))
+    let items = source
+        .into_iter()
+        .map(|result| result.map(StreamItem::Json));
+    incremental_transform_stream(params, stream::iter(items))
         .collect()
         .await
 }

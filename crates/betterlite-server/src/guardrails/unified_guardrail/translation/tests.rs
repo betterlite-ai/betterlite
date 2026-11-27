@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 
 use betterlite_core::routes::CallType;
 use betterlite_guardrails::guardrail_base::failure::{GuardrailFailure, ModifyResponseFailure};
+use betterlite_guardrails::guardrail_message_scope::StreamItem;
 use betterlite_guardrails::guardrail_translation::BaseTranslation as _;
 use rstest::rstest;
 
@@ -130,9 +131,9 @@ async fn output_rewrite_runs_the_held_variant() {
 async fn streaming_scan_runs_the_held_variant() {
     let built = registry::<FakeGuardrail>();
     let guardrail = FakeGuardrail::failing(blocked());
-    let mut frames = vec![value(
+    let mut frames = vec![StreamItem::Json(value(
         r#"{"candidates": [{"content": {"parts": [{"text": "secret"}]}}]}"#,
-    )];
+    ))];
     let failure = held(&built, CallType::GenerateContentStream)
         .process_streaming_response(&mut frames, &applied(&guardrail), no_call())
         .await
