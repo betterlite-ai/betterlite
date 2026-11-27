@@ -2,7 +2,7 @@ id: B8701
 milestone: M9 agents and mcp
 title: Mount the /v1/mcp toolset routes
 status: todo
-depends_on: [B8620, B8621, B8610, B4681, B4717, B4725, B6591]
+depends_on: [B8620, B8621, B8610, B4681, B4717, B4725, B6591, B10147]
 file: tasks/B8701-mcp-toolset-mount.yaml
 covers: []
 parent: B139

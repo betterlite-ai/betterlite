@@ -11,6 +11,7 @@ use crate::auth::auth_resource_grants::denial_response;
 use crate::error_body::{AuthenticationFailure, authentication_error};
 
 pub(crate) enum StageFailure {
+    JwtKeys(Box<ProxyException>),
     Authentication(Box<AuthenticationFailure>),
     KeyLookup(Box<ProxyException>),
     ModelAccess(Box<ModelAccessRejection>),
@@ -45,6 +46,7 @@ pub(crate) fn stage_failure_response(failure: &StageFailure) -> Response {
         StageFailure::ModelAccess(rejection) => rejection_response(rejection),
         StageFailure::KeyLookup(exception)
         | StageFailure::AuthModelGrants(exception)
+        | StageFailure::JwtKeys(exception)
         | StageFailure::EntityModelAccess(exception)
         | StageFailure::AuthRequestPolicy(exception)
         | StageFailure::TrustedNetwork(exception)

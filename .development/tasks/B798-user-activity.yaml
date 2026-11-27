@@ -2,17 +2,19 @@ id: B798
 title: User daily activity reports
 description: >-
   Register GET /user/daily/activity with B052 authentication and B865's management wrapper. Own
-  resolve_user_daily_activity_entity_ids (2866-2875), _resolve_user_email_metadata (2878-2889) and
-  get_user_daily_activity (2899-3004) in internal_user_endpoints.py. Build user_activity in betterlite-server.
-  B2314's admin-view predicate allows a global report when user_id is absent, otherwise one requested
-  user, including an empty string. A non-admin uses B861's required caller identity; absent caller ID
-  is 403, and a different requested ID is ScopeDenied 403. Omitted user_id selects the caller despite
+  _resolve_user_email_metadata (2878-2889) and get_user_daily_activity (2899-3004) in
+  internal_user_endpoints.py. Build user_activity in betterlite-server. The scope comes from B10158's
+  resolve_user_daily_activity_entity_ids (module user_activity_scope), called with the query's user_id and
+  the caller's UserAPIKeyAuth: an admin view gets a global report when user_id is absent, otherwise one
+  requested user, including an empty string. A non-admin key without a user_id gets B861's
+  ServiceAccountAnalytics 403, and a different requested ID gets ScopeDenied 403 through B3090's raise_public.
+  Omitted user_id selects the caller despite
   the query documentation saying it is required. An unknown admin-selected user yields an empty report.
 
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/internal_user_endpoints.py:
-  resolve_user_daily_activity_entity_ids (L2866-L2875; 9 source lines), _resolve_user_email_metadata (L2878-L2889;
-  12 source lines), get_user_daily_activity (L2899-L3004; 98 source lines).
+  _resolve_user_email_metadata (L2878-L2889; 12 source lines), get_user_daily_activity (L2899-L3004; 98 source
+  lines). B10158 owns resolve_user_daily_activity_entity_ids (L2866-L2875); this task only calls it.
 
 
   start_date/end_date/model/api_key/user_id/timezone default None; page=1 (minimum 1), page_size=50
@@ -32,8 +34,8 @@ description: >-
 
   Exercise independent B860 Postgres databases through POSTGRES_TEST_URL (CI supplies it), using
   testcontainers only when that variable is absent; a configured connection failure fails the test.
-  Sizing: 119 nonblank, noncomment source lines, including docstrings; allow 120 production,
-  260 behavior/database tests and 65 route wiring lines, 445 within a 475-line gate.
+  Sizing: 110 nonblank, noncomment source lines, including docstrings; allow 110 production,
+  260 behavior/database tests and 65 route wiring lines, 435 within a 475-line gate.
   B1100 registers routes/user_activity.rs as a stub, so fill only crates/betterlite-server/src/routes/user_activity.rs and leave routes.rs and state.rs as they are.
 
 
@@ -51,16 +53,16 @@ scope:
     - tools/oracle/src/helpers/server/b798/**
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L2866-L3004
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L2878-L3004
     why: Pinned implementation and exact ownership boundary for user_activity.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L2866-L2875
-    why: Own resolve_user_daily_activity_entity_ids; preserve caller-visible values and failure ordering.
+    why: resolve_user_daily_activity_entity_ids, built by B10158; the route calls it inside its try and raises a returned denial.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L2878-L2889
     why: Own _resolve_user_email_metadata; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L2892-L3004
     why: Own get_user_daily_activity; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_utils.py#L126-L150
-    why: B861 rejects unbound service-account analytics with 403.
+    why: The service-account 403, which reaches this route through B10158 as B861's ServiceAccountAnalytics.
 dod:
   - text: 'Named tests: self_activity, omitted_user_uses_caller, admin_global, admin_other_user,
       admin_empty_id, unknown_user_empty, service_account_denied, cross_user_denied, missing_database,
@@ -99,7 +101,8 @@ oracle_cases:
 deviations: []
 out_of_scope:
   - B3091 owns get_daily_activity and B3090 raise_public in common_daily_activity.py; B2314 owns
-    user_api_key_has_admin_view, imported here as _user_has_admin_view.
+    user_api_key_has_admin_view, imported here as _user_has_admin_view; B10158 owns
+    resolve_user_daily_activity_entity_ids (L2866-L2875).
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B056 owns new_user (L482-L672).'
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B790 owns _user_table (L121-L125),
     _team_table (L128-L132), _verification_token_table (L135-L141), _organization_membership_table (L148-L154),
@@ -126,8 +129,8 @@ out_of_scope:
     _validate_sort_params (L2104-L2133), _authorize_user_list_request (L2136-L2199), get_users (L2224-L2388).'
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B797 owns delete_user (L2397-L2604).'
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B1203 owns _resolve_org_filter_for_user_search
-    (L2653-L2716), _resolve_team_org_filter (L2719-L2754), ui_view_users (L2766-L2860), _user_search_where
-    (L2205-L2215).'
+    (L2653-L2716), _resolve_team_org_filter (L2719-L2754), ui_view_users (L2766-L2860).'
+  - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B10149 owns _user_search_where (L2205-L2215).'
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B1226 owns check_if_default_team_set
     (L413-L434), add_new_user_to_default_team (L437-L467).'
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py::add_internal_user_to_organization:
@@ -135,6 +138,7 @@ out_of_scope:
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
   - Metadata is resolved only for IDs on this page; fetching all users would leak unrelated identities.
+  - A master-key principal carries no source key, so pass B10158 the record caller_key in crates/betterlite-server/src/lens_access/scope.rs returns (the source key, or a proxy_admin record for the master key) instead of a second rebuild.
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

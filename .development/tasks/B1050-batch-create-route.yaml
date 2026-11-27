@@ -14,7 +14,7 @@ description: >-
 
 
   The router branch (endpoints.py L391-L398) is Router.acreate_batch, built by B10143. Build it once in routes(state) with
-  B10143's app::inference::router_calls::batch_create::batch_create(state, executor), where the executor is a B6021
+  B10143's app::inference::router_calls::batch_create::batch_create(state, executor), where the executor is a B10154
   GenericCallExecutor for the call type acreate_batch over the same B1036 provider create the direct branch calls.
   BatchProviderCreateInput is deny_unknown_fields, so the executor reads its fields out of the merged map by name and
   never deserializes the whole map, which also holds litellm_metadata, model_info, caching and the deployment's other params.

@@ -1,0 +1,14 @@
+litellm_settings:
+  model_alias_map:
+    global-alias: amazon.nova-pro-v1:0
+    shared: anthropic.claude-3-haiku-20240307-v1:0
+model_list:
+  - model_name: first
+    litellm_params:
+      model: bedrock/first
+      model_alias_map:
+        deployment-alias: openai.gpt-oss-20b-1:0
+        shared: amazon.nova-lite-v1:0
+  - model_name: second
+    litellm_params:
+      model: bedrock/second

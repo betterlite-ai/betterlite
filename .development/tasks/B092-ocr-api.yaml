@@ -15,7 +15,8 @@ description: >-
   Also add the server wiring `api::ocr_wiring`. It builds B6800's `OcrClient` from the proxy HTTP
   clients, settings and secret source, and implements the three injected traits over the credential
   services other tasks own: `AzureTokenSource` over B529's Azure credential selection,
-  `AwsRequestSigner` over B594 and B595's signing, and `VertexTokenSource` over B1301's credential
+  `AwsRequestSigner` over B595's signing with credentials from `state.shared.aws_credentials` (B10175's AWS
+  credential chain, B594's resolution behind it), and `VertexTokenSource` over B1301's credential
   sources. Each adapter only calls the existing service and adds no credential logic.
   Where this entry's coverage ends: B3300 owns the response types and request parsing, B6800 to B6809
   own the SDK side of OCR (providers, provider choice, request preparation and the aocr function).

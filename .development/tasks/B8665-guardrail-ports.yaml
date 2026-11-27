@@ -38,11 +38,14 @@ description: >-
 
 
   3. OCR entries. B3680 builds the unified guardrail translation registry without the `ocr` and `aocr` call types,
-  because B036 (which builds the Mistral OCR translation in crates/betterlite-core/src/mistral_ocr_guardrail.rs) comes
+  because B036 (which builds the Mistral OCR translation in crates/betterlite-guardrails/src/mistral_ocr_guardrail.rs) comes
   after it. Add one variant to B3680's `UnifiedTranslation` in
   crates/betterlite-server/src/guardrails/unified_guardrail/translation.rs that wraps B036's translation and forwards every
   `BaseTranslation` method to it, and in entries.rs add one entry for `ocr` and one for `aocr` in `build_registry`,
-  the same way the other tables add theirs. LiteLLM registers both call types for the OCR handler
+  the same way the other tables add theirs. B10179 lands first: UnifiedTranslation has no guardrail type parameter
+  (`UnifiedTranslation<S, A, H>`) and its guardrail methods take `&GuardrailToApply<G>` on each call, so the new arm
+  holds the OCR translation as it is and forwards those methods through forward_fallible! like the other arms.
+  LiteLLM registers both call types for the OCR handler
   (litellm/llms/mistral/ocr/guardrail_translation/__init__.py). Change nothing else in those two files.
 
 

@@ -19,6 +19,7 @@ use crate::batches::tests::fake::{
     supplied,
 };
 
+mod conversions;
 mod fake;
 mod http;
 

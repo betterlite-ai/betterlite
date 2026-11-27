@@ -1,14 +1,14 @@
 id: B10114
 milestone: M4 keys, spend and management
 title: CLI team grant records, lookup and selection
-status: todo
+status: done
 depends_on: [B171, B700, B859, B871]
 file: tasks/B10114-cli-team-grants.yaml
 covers:
   - "litellm/proxy/management_endpoints/ui_sso.py"
 parent: B063
 split_from: B1614
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3333

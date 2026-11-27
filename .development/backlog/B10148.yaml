@@ -1,0 +1,14 @@
+id: B10148
+milestone: M4 keys, spend and management
+title: Microsoft OAuth client and endpoint settings
+status: todo
+depends_on: [B002, B171, B1617, B1629]
+file: tasks/B10148-microsoft-sso-client.yaml
+covers:
+  - "litellm/proxy/management_endpoints/sso/{__init__,custom_microsoft_sso}.py"
+parent: B063
+split_from: B1622
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

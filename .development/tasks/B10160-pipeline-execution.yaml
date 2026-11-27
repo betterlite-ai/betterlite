@@ -1,0 +1,104 @@
+id: B10160
+title: Guardrail pipeline runs and pipeline result mapping
+description: >-
+  ProxyLogging runs a request's guardrail pipelines twice: before the provider call in B8393's pre-call hook and after it in B8394's post-call hook. Both go through `_maybe_execute_pipelines`. It runs each pipeline through B3247's executor, and `_handle_pipeline_result` turns the result into changed data, a replacement response or an error (litellm/proxy/utils.py L2183-L2317). These two functions sat inside B8393, so B8394 waited for the whole pre-call walk; this task builds them alone, and B8393, B8394 and B6370's stream gate (through B8399's PipelineSource) call this one copy. Code goes in crates/betterlite-server/src/guardrails/pipeline_execution.rs and pipeline_execution/ (result.rs, tests.rs). The stub file and its `pub mod` line in guardrails.rs are on main.
+
+  Runner, in pipeline_execution.rs. `PipelineExecution::new(executor: Arc<PipelineExecutor>, hooks: Arc<HookExecution>)` holds B3247's executor and B8392's `HookExecution`; B8399 builds the real one. `maybe_execute_pipelines(&self, call: PipelineCall<'_>) -> Result<Option<JsonValue>, ProxyHookError>` takes `data: &mut JsonMap`, the key (`&UserAPIKeyAuth`), the `CallType`, `event_hook: PipelineMode`, `raw_snapshot: Option<&JsonMap>`, `response: Option<&JsonValue>` and `callbacks: &[Arc<dyn ProxyCallback>]` (B8390's resolved callbacks, for the block lookup). It reads the pipelines once with B8391's `policy_pipelines(data)` and returns Ok(None) at once when there are none. For each pipeline whose mode equals event_hook, in order: the step input is data itself while there is no current response, else a copy of data with `response` set to the current response. Call B3247's `execute_steps` with the pipeline's steps and mode, the step input, the key as ExecuteSteps takes it, the call type's LiteLLM name, the policy name and the snapshot, with no chunks and no translation. Pass the result to handle_pipeline_result with the current response as original_response. Then, when there is a current response and the result's modified_data holds `response`, that value becomes the current response for the next pipeline. Return the current response only when it differs from the one passed in, else None.
+
+  The data crosses into B3247's `BTreeMap<String, GuardrailValue>` the way B8392's hook_execution/bridge.rs moves metadata buckets, through `OpaqueParams`, so a number keeps its text. What execute_steps writes into the step input comes back: all of it when the step input is data. With a response, LiteLLM's step input `{**data, "response": ...}` is a shallow copy, so only writes into a `metadata` or `litellm_metadata` map that data already held reach data; a new top-level key, or a bucket execute_steps had to create, stays in the copy. An error out of execute_steps (B3247's `PipelineExecError`) goes up as `ProxyHookError::Other` with its text.
+
+  Result, in result.rs. `handle_pipeline_result(hooks: &HookExecution, callbacks: &[Arc<dyn ProxyCallback>], result: PipelineExecutionResult, data: &mut JsonMap, policy_name: &str, original_response: Option<&JsonValue>) -> Result<(), ProxyHookError>` is a plain function, as LiteLLM's is a staticmethod. original_response is the response on the post-call path, the buffered chunk list as a JSON array on B6370's stream path and None on pre-call. On allow with modified_data, its keys replace data's when original_response is None; with an original response only B8391's `merge_pipeline_metadata_writes` runs, since the request body already went upstream. Every other action first runs merge_pipeline_metadata_writes when modified_data is set, so the failure spend record keeps guardrail cost and status.
+
+  Block. The blocking step is the last step result (none when the list is empty). Its callback is the first in callbacks whose `guardrail()` has that `guardrail_name`, LiteLLM's find_guardrail_callback over litellm.callbacks; when found, record it with B8392's `record_raising_guardrail`. original_exception holds the step's failure, B5471's `GuardrailFailure` boxed by B3247: downcast it and turn it into the ProxyHookError for the same LiteLLM exception. Http stays Http, HttpObject becomes Http with the object as JSON text (the form B8392's enrich_error reads), GuardrailRaised and BlockedPii become GuardrailRaised with their message text, status and blocked_content (false for BlockedPii), ModifyResponse and SensitiveDataRoute keep their variant, and Other stays Other; a box holding any other error type becomes Other with its text. When B8390's `changes_request_flow` is false for that error, enrich it with B8392's `enrich_error` if the callback was found and return it. Otherwise, and when there is no original exception, fail with `ProxyHookError::Http` status 400 and as detail the JSON text of `{"error": {"message": "Content blocked by guardrail pipeline '<policy>'", "type": "guardrail_pipeline_error", "pipeline_context": {"policy": "<policy>", "step_results": [{"guardrail": ..., "outcome": ..., "action": ...}]}}}`, one entry per step result in order, each from guardrail_name, outcome and action_taken.
+
+  Modify response and next. modify_response fails with `ProxyHookError::ModifyResponse` whose message is modify_response_message or "Response modified by pipeline", model is data's `model` text or "unknown", guardrail_name is `pipeline:<policy>`, detection_info is empty and original_response is the one passed in. B3240's `PipelineAction::Next` can reach this function by type though the executor never returns it: after the metadata merge it returns Ok, as LiteLLM's last `return data` does.
+
+  Tests in pipeline_execution/tests.rs build B3247's PipelineExecutor over fake guardrails the way its own tests do, a HookExecution over fakes the way hook_execution/tests does, and fake ProxyCallback guardrails. `run_` tests cover no pipelines, the mode filter, two post_call pipelines chaining a response, None for an unchanged response and on pre-call, the raw snapshot reaching a scan_raw_request step, a block from the second pipeline after the first allowed, and the write-back rule with and without a response. `result_` tests cover each action, the 400 body text, a found callback being recorded and its HTTP detail getting guardrail_name and guardrail_mode, every GuardrailFailure variant's mapping, and recording that still happens when the original failure was a SensitiveDataRoute.
+
+  Oracle. Helper operation b10160 runs handle_pipeline_result alone. A call carries `result` (terminal_action; step_results with guardrail_name, outcome and action_taken; modified_data; modify_response_message; original_exception as null or one of `{kind: http, status, detail}`, `{kind: guardrail_raised, guardrail_name, message, status}`, `{kind: modify_response, message, model}` and `{kind: sensitive_route, route_to_model, session_id}`), `data`, `policy_name` and `original_response`. It answers `{"data": <data after the call>, "raised": null}` or with `raised` set to `{"type": "http", "status_code", "detail"}`, `{"type": "guardrail_raised", "message", "status_code"}` or `{"type": "modify_response", "message", "model", "guardrail_name", "original_response"}`. The Python side builds LiteLLM's PipelineExecutionResult and the exception (HTTPException, GuardrailRaisedException with should_wrap_with_default_message false, ModifyResponseException, SensitiveDataRouteException) and calls `ProxyLogging._handle_pipeline_result` with litellm.callbacks empty, so no guardrail is found or recorded. The Rust side builds B3240's result with the matching boxed GuardrailFailure, a HookExecution from no-op parts and an empty callback list, and answers an Http detail that parses as a JSON object as that object. Add helper_case corpus seeds named pipeline-execution-*.
+scope:
+  paths:
+    - crates/betterlite-server/src/guardrails/pipeline_execution.rs
+    - crates/betterlite-server/src/guardrails/pipeline_execution/**
+    - tools/oracle/cases/helpers/pipeline-execution/**
+    - "tools/oracle/fuzz/corpus/helper_case/pipeline-execution-*"
+    - tools/oracle/helpers/b10160.py
+    - tools/oracle/helpers/b10160/**
+    - tools/oracle/src/helpers/server/b10160.rs
+    - tools/oracle/src/helpers/server/b10160/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L2183-L2238
+    why: _maybe_execute_pipelines, the mode filter, the step input with the response, response chaining and the identity check on return.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L2240-L2317
+    why: _handle_pipeline_result with the allow merge, the block lookup, re-raise and 400 body, and the modify_response exception.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L495-L498
+    why: _record_raising_guardrail, ported as B8392's record_raising_guardrail.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L537-L544
+    why: _exception_changes_request_flow, ported as B8390's changes_request_flow.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/pipeline_executor.py#L618-L625
+    why: find_guardrail_callback, the lookup by guardrail_name over litellm.callbacks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/exception_utils.py#L15-L30
+    why: enrich_http_exception_with_guardrail_context, ported as B8392's enrich_error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/policy_engine/pipeline_types.py#L84-L105
+    why: PipelineStepResult and PipelineExecutionResult, the helper's input shape.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L3476-L3492
+    why: The post_call caller; it passes the response and reads the call type from the logging object.
+dod:
+  - text: maybe_execute_pipelines runs only the pipelines of the given mode in order with the snapshot, chains a replacement response from one pipeline to the next, and returns it only when it changed.
+    proof: [run-tests]
+  - text: What execute_steps writes into the step input reaches data in full without a response, and only through metadata buckets data already held with one.
+    proof: [run-tests]
+  - text: allow merges the modified data fully on pre-call and only the metadata buckets when an original response is given; block and modify_response merge the metadata buckets before failing.
+    proof: [result-tests, oracle, helper-python]
+  - text: block records the blocking guardrail, re-raises an original failure that does not change the request flow with the guardrail context added, and otherwise fails with LiteLLM's 400 guardrail_pipeline_error body.
+    proof: [result-tests, oracle, helper-python]
+  - text: modify_response fails with ModifyResponse carrying the message or its default, the model or "unknown", "pipeline:<policy>" and the original response.
+    proof: [result-tests, oracle, helper-python]
+  - text: New pipeline-execution seeds for b10160 replay through the shared helper case parser.
+    proof: [helper-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: run-tests
+      why: a pipeline runs in the wrong mode or order, a response does not chain, the replacement comes back unchanged, or step input writes are lost or leak
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::pipeline_execution::tests::run_/)'
+    - id: result-tests
+      why: an allow merge, the block lookup, re-raise or 400 body, a failure mapping or the modify_response error is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::pipeline_execution::tests::result_/)'
+    - id: helper-python
+      why: The b10160 adapter is missing or fails the strict Python checks.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b10160.py tools/oracle/helpers/b10160)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No new b10160 seed reaches the shared helper case parser.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/pipeline-execution-*")" &&
+        grep -lE 'b10160"?:' tools/oracle/fuzz/corpus/helper_case/pipeline-execution-* &&
+        cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-server --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/pipeline-execution/allow-pre-call-full-merge.yaml
+  - tools/oracle/cases/helpers/pipeline-execution/allow-post-call-metadata-only.yaml
+  - tools/oracle/cases/helpers/pipeline-execution/block-generic-pipeline-error.yaml
+  - tools/oracle/cases/helpers/pipeline-execution/block-reraises-http-exception.yaml
+  - tools/oracle/cases/helpers/pipeline-execution/block-flow-changing-original-gives-400.yaml
+  - tools/oracle/cases/helpers/pipeline-execution/modify-response-message-and-defaults.yaml
+deviations: []
+out_of_scope:
+  - "The pre-call walk, has_pre_call_guardrails, prompt templates and guardrail metadata: B8393. The post-call hooks that call the runner with event post_call: B8394."
+  - "PipelineExecutor.execute_steps and its step runner: B3247; the executor's own find_guardrail_callback: B3246. _policy_pipelines and _merge_pipeline_metadata_writes: B8391. _record_raising_guardrail and enrich_http_exception_with_guardrail_context: B8392's bridge.rs. _exception_changes_request_flow: B8390's changes_request_flow."
+  - "_pipeline_gated_stream, the streaming caller of _handle_pipeline_result at L4067: B6370, through B8399's PipelineSource."
+  - "Building PipelineExecution from the real executor and hook execution, and the HTTP oracle cases through the booted proxy: B8399."
+pitfalls:
+  - A block whose original failure is a SensitiveDataRoute or ModifyResponse fails with the generic 400, not with that failure, since a step set to block must block.
+  - Pass record_raising_guardrail the error the block raises, never the original SensitiveDataRoute; B8392's function skips a SensitiveDataRoute, while LiteLLM records the blocking guardrail on every pipeline block.
+  - An empty modify_response_message falls back to "Response modified by pipeline" the same as a missing one, because LiteLLM uses `or`.
+  - Pipelines are read once before the loop, so `_guardrail_pipelines` written by a step changes nothing for this run.
+  - On pre-call there is no current response, so the runner returns None even when a step's modified_data holds a `response` key.
+  - merge_pipeline_metadata_writes drops the `guardrails` key of each bucket, so a post-call allow never rewrites the request's own guardrail list.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

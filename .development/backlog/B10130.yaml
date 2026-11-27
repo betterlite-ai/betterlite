@@ -1,14 +1,14 @@
 id: B10130
 milestone: M4 keys, spend and management
 title: Team management problem constructors
-status: todo
+status: done
 depends_on: [B171, B1665, B1701]
 file: tasks/B10130-team-problems.yaml
 covers:
   - "litellm/proxy/management_helpers/bulk_user_deletion.py"
 parent: B056
 split_from: B1202
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3344

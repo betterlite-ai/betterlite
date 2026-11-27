@@ -1,0 +1,38 @@
+kind: helper
+name: ui-session-token-personal-key-flag
+call:
+  b10118:
+    function: personal_key_flag
+calls:
+  - b10118:
+      function: personal_key_flag
+      key_generation_settings: null
+  - b10118:
+      function: personal_key_flag
+      key_generation_settings: {}
+  - b10118:
+      function: personal_key_flag
+      key_generation_settings:
+        personal_key_generation: {}
+  - b10118:
+      function: personal_key_flag
+      key_generation_settings:
+        personal_key_generation:
+          allowed_user_roles: []
+  - b10118:
+      function: personal_key_flag
+      key_generation_settings:
+        personal_key_generation:
+          allowed_user_roles: [proxy_admin]
+  - b10118:
+      function: personal_key_flag
+      key_generation_settings:
+        personal_key_generation:
+          allowed_user_roles: [internal_user, proxy_admin]
+  - b10118:
+      function: personal_key_flag
+      key_generation_settings:
+        personal_key_generation:
+          allowed_user_roles: [PROXY_ADMIN]
+env: {}
+compare: {ignore: []}

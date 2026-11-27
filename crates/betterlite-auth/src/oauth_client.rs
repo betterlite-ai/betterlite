@@ -9,6 +9,7 @@ pub mod document;
 pub mod error;
 pub mod exchange;
 pub mod google;
+pub mod microsoft;
 
 mod tests;
 
