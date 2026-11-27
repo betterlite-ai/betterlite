@@ -141,10 +141,13 @@ fn explicit_raw_key_required() {
     catalog.group("m", Some(money("0")), Some(money("0")));
     catalog.deployed("m", object(&[]), object(&[("id", text("m-dep"))]));
     catalog.deployed("m", object(&[]), object(&[]));
+    // a sparse auto-registration entry carries the deployment id and no token price
+    catalog.deployed("m", object(&[]), object(&[("id", text("m-sparse"))]));
+    catalog.raw("m-sparse", object(&[("id", text("m-sparse"))]));
     let (verdict, logs) = captured(|| is_model_cost_zero(&one("m"), Some(&catalog)));
     assert!(
         !verdict,
-        "an absent explicit token-price key is not a free model"
+        "an absent or sparse token-price key is not a free model"
     );
     assert!(logs.iter().any(|line| {
         line.contains(

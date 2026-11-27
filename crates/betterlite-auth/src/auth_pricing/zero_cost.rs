@@ -1,4 +1,5 @@
 use betterlite_models::decisions::Json;
+use betterlite_models::model_registration::JsonObject;
 use rust_decimal::Decimal;
 use tracing::debug;
 
@@ -144,14 +145,20 @@ pub(super) fn is_cost_explicitly_configured(
 ) -> Result<bool, PricingError> {
     let deployments = catalog.model_list(model)?;
     Ok(deployments.iter().any(|deployment| {
-        let Some(model_id) = model_info_id(&deployment.model_info) else {
-            return false;
-        };
-        let Some(entry) = catalog.raw_cost_entry(model_id) else {
-            return false;
-        };
-        entry.contains_key("input_cost_per_token") || entry.contains_key("output_cost_per_token")
+        model_info_id(&deployment.model_info)
+            .and_then(|model_id| catalog.raw_cost_entry(model_id))
+            .is_some_and(declares_token_price)
     }))
+}
+
+// a key counts even when its value is null, since LiteLLM tests membership rather than the value
+fn declares_token_price(entry: &JsonObject) -> bool {
+    for key in ["input_cost_per_token", "output_cost_per_token"] {
+        if entry.contains_key(key) {
+            return true;
+        }
+    }
+    false
 }
 
 fn remember_not_free(store: Option<&ZeroCostCache>, model: &str) {
