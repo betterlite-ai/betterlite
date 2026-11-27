@@ -729,22 +729,18 @@ fn identity(role: Option<&str>) -> Identity {
 }
 
 fn member_forbidden() {
-    assert!(
-        require_admin(
-            &identity(Some("proxy_admin_viewer")),
-            VIEW_ACTION,
-            AdminRole::Viewer
-        )
-        .is_ok()
-    );
-    assert!(
-        require_admin(
-            &identity(Some("proxy_admin")),
-            VIEW_ACTION,
-            AdminRole::Viewer
-        )
-        .is_ok()
-    );
+    require_admin(
+        &identity(Some("proxy_admin_viewer")),
+        VIEW_ACTION,
+        AdminRole::Viewer,
+    )
+    .unwrap();
+    require_admin(
+        &identity(Some("proxy_admin")),
+        VIEW_ACTION,
+        AdminRole::Viewer,
+    )
+    .unwrap();
     for role in [None, Some("internal_user"), Some("org_admin")] {
         let error = require_admin(&identity(role), VIEW_ACTION, AdminRole::Viewer).unwrap_err();
         let failure = ReadApiError::from(error);

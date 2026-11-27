@@ -16,6 +16,7 @@ from probes.protocol import Operation, ProbeError, Strict
 
 PROXY_MODULE: Final = "litellm.proxy.proxy_server"
 RESPONSE: Final = TypeAdapter(dict[str, JsonValue])
+ORDER: Final = TypeAdapter(dict[str, str])
 
 
 class Deployment(Strict):
@@ -94,6 +95,7 @@ class FakeTable:
     async def find_first(
         self, where: Mapping[str, object], order: Mapping[str, str]
     ) -> dict[str, JsonValue] | None:
+        _ = ORDER.validate_python(order)
         api_key = where.get("api_key")
         session_id = where.get("session_id")
         if not (isinstance(api_key, str) and isinstance(session_id, str)):
