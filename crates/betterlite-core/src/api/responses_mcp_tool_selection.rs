@@ -25,6 +25,8 @@ pub struct McpToolCallDetails {
     pub call_id: Option<String>,
 }
 
+type Details = (Option<String>, Option<Json>);
+
 #[must_use]
 pub fn should_auto_execute_tools(references: &[Json]) -> bool {
     !references.is_empty()
@@ -87,9 +89,7 @@ fn is_function_call(item: &ResponseOutputItem) -> bool {
     }
 }
 
-fn output_details(
-    item: &ResponseOutputItem,
-) -> Result<(Option<String>, Option<Json>), ToolSelectionError> {
+fn output_details(item: &ResponseOutputItem) -> Result<Details, ToolSelectionError> {
     match item {
         ResponseOutputItem::Sdk(output) => {
             let SdkOutput::FunctionCall(call) = output.as_ref() else {
@@ -128,37 +128,33 @@ fn output_details(
     }
 }
 
-fn mapping_details(
-    entries: &BTreeMap<String, Json>,
-) -> Result<(Option<String>, Option<Json>), ToolSelectionError> {
+fn mapping_details(entries: &BTreeMap<String, Json>) -> Result<Details, ToolSelectionError> {
     if let Some(Json::Object(function)) = entries.get("function") {
-        let name = text_field(function, "name")?;
+        let name = text_field(function.get("name"), "name")?;
         return Ok((name, value_before_null(function.get("arguments"))));
     }
     top_level_details(entries)
 }
 
-fn top_level_details(
-    entries: &BTreeMap<String, Json>,
-) -> Result<(Option<String>, Option<Json>), ToolSelectionError> {
-    let name = text_field(entries, "name")?;
+fn top_level_details(entries: &BTreeMap<String, Json>) -> Result<Details, ToolSelectionError> {
+    let name = text_field(entries.get("name"), "name")?;
     let arguments = value_before_null(entries.get("arguments"))
         .or_else(|| value_before_null(entries.get("input")));
     Ok((name, arguments))
 }
 
 fn mapping_call_id(entries: &BTreeMap<String, Json>) -> Result<Option<String>, ToolSelectionError> {
-    match text_field(entries, "call_id")? {
+    match text_field(entries.get("call_id"), "call_id")? {
         Some(call_id) if !call_id.is_empty() => Ok(Some(call_id)),
-        Some(_) | None => text_field(entries, "id"),
+        Some(_) | None => text_field(entries.get("id"), "id"),
     }
 }
 
 fn text_field(
-    entries: &BTreeMap<String, Json>,
+    value: Option<&Json>,
     field: &'static str,
 ) -> Result<Option<String>, ToolSelectionError> {
-    match entries.get(field) {
+    match value {
         None | Some(Json::Null) => Ok(None),
         Some(Json::Text(text)) => Ok(Some(text.clone())),
         Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
