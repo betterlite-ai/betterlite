@@ -1,1 +1,101 @@
+pub mod error;
+pub mod file_routing;
+pub mod model_hint;
+pub mod provider_permissions;
+pub mod response_ids;
+pub mod store_overlay;
+pub mod team_fallback;
 
+mod tests;
+
+use betterlite_auth::auth_identity::records::Principal;
+use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
+use betterlite_auth::route_match::canonical::RequestRouteSource;
+use betterlite_core::api::file_routing_ids::ManagedResourceAccessChecker;
+use betterlite_core::api::request_body::JsonObject as RequestBody;
+use betterlite_core::api::vector_store_registry::store::VectorStoreRegistry;
+use betterlite_models::decisions::Json;
+use betterlite_models::model_registration::JsonObject;
+use betterlite_openai::api::vector_store_records::records::vector::LiteLlmManagedVectorStore;
+use http::HeaderMap;
+use serde::Deserialize;
+
+// What a files route reads off the request besides the request data it already decoded.
+pub struct RequestFacts<'a> {
+    pub method: &'a str,
+    pub query: Option<&'a str>,
+    pub headers: &'a HeaderMap,
+    pub body: &'a RequestBody,
+    pub route: RequestRouteSource<'a>,
+}
+
+// The authenticated caller: the principal the grant checks run for, and the key whose team and metadata these helpers read.
+pub struct Caller<'a> {
+    pub principal: &'a Principal,
+    pub auth: &'a UserAPIKeyAuth,
+}
+
+// The router, grant and managed-file ports a routing helper calls; a route with no router passes None.
+pub struct RoutingDeps<'a, Catalog, Grants> {
+    pub catalog: Option<&'a Catalog>,
+    pub grants: &'a Grants,
+    pub managed_files: Option<&'a dyn ManagedResourceAccessChecker>,
+    pub require_managed_files: bool,
+}
+
+// The store a route already resolved and the registry B1062 loaded, for the legacy overlay path.
+pub struct StoreDeps<'a> {
+    pub managed_store: Option<&'a LiteLlmManagedVectorStore>,
+    pub registry: Option<&'a VectorStoreRegistry>,
+    pub should_lookup_registry: bool,
+}
+
+// The key fields these helpers read, taken from the auth's serde form as B1020 and B1061 read their grants.
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct KeyFacts {
+    team_id: Option<String>,
+    team_models: Option<Json>,
+    metadata: Option<JsonObject>,
+    team_metadata: Option<JsonObject>,
+}
+
+impl Caller<'_> {
+    fn key_facts(&self) -> Result<KeyFacts, serde_json::Error> {
+        serde_json::to_value(self.auth).and_then(serde_json::from_value)
+    }
+}
+
+// Python's `if value:` on decoded JSON, which the `or` chains and truthy checks in the source helpers follow.
+fn truthy(value: &Json) -> bool {
+    match value {
+        Json::Null => false,
+        Json::Bool(flag) => *flag,
+        Json::Number(number) => number.as_f64().is_none_or(|value| value != 0.0),
+        Json::Text(text) => !text.is_empty(),
+        Json::List(items) => !items.is_empty(),
+        Json::Object(fields) => !fields.is_empty(),
+    }
+}
+
+// A header as starlette decodes it (latin-1, first value), the reading B10059's provider getter uses.
+fn header_text(headers: &HeaderMap, name: &str) -> Option<String> {
+    headers.get(name).map(|value| {
+        value
+            .as_bytes()
+            .iter()
+            .map(|byte| char::from(*byte))
+            .collect()
+    })
+}
+
+// starlette's query_params.get: the last value carrying the name, and None when the name is absent.
+fn last_query_value(query: Option<&str>, name: &str) -> Option<String> {
+    let mut found = None;
+    for (key, value) in form_urlencoded::parse(query?.as_bytes()) {
+        if key == name {
+            found = Some(value.into_owned());
+        }
+    }
+    found
+}
