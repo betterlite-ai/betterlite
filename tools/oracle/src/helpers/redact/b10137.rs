@@ -49,7 +49,9 @@ impl Helper for Op {
             } => redact_setting_value(name, value, *is_full_admin),
             Input::DumpRedactedConfig { value, redact_all } => {
                 match dump_redacted_config(value.as_ref(), *redact_all) {
-                    Some(text) => serde_json::from_str(&text).map_err(invalid_dump)?,
+                    Some(text) => {
+                        serde_json::from_str(&text).map_err(|source| invalid_dump(&source))?
+                    }
                     None => Payload::Null,
                 }
             }
@@ -59,7 +61,7 @@ impl Helper for Op {
 }
 
 // the dumped text is serde_json's own output, so a parse failure is a broken build rather than case input
-fn invalid_dump(source: serde_json::Error) -> Box<HelperError> {
+fn invalid_dump(source: &serde_json::Error) -> Box<HelperError> {
     Box::new(HelperError {
         class: "ValueError".to_owned(),
         status: None,
