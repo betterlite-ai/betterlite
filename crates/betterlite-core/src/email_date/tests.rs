@@ -179,6 +179,18 @@ fn zone_offset_follows_parsedate_tz(#[case] zone: &str, #[case] expected: Option
         zone_offset: Some(0),
     }
 )]
+#[case::comma_after_the_day(
+    "Wed, 21, Oct 2015 07:28:00 GMT",
+    ParsedDate {
+        year: 2015,
+        month: 10,
+        day: 21,
+        hour: 7,
+        minute: 28,
+        second: 0,
+        zone_offset: Some(0),
+    }
+)]
 fn parsedate_tz_reads_the_fields(#[case] text: &str, #[case] expected: ParsedDate) {
     assert_eq!(parsedate_tz(text), Some(expected));
 }

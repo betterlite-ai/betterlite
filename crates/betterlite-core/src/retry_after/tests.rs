@@ -98,6 +98,7 @@ fn retry_after_should_retry_only_on_408_409_429_and_500_up(
 #[case::underscore_seconds(Some("1_0"), 10)]
 #[case::year_past_9999(Some("21 Oct 10000 07:28:00 GMT"), -1)]
 #[case::past_the_timestamp_range(Some("31 Dec 9999 23:59:60 GMT"), -1)]
+#[case::day_past_i64(Some("9999999999999999999999999 Oct 2015 07:28:00 GMT"), -1)]
 fn retry_after_header_reads_seconds_or_an_http_date(
     #[case] header: Option<&str>,
     #[case] expected: i64,
