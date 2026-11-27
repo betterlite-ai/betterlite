@@ -119,11 +119,13 @@ fn write_state(
     registry: Option<Arc<Mutex<VectorStoreRegistry>>>,
 ) -> Arc<VectorManagementWriteState<FakeDatabase>> {
     let world = Arc::new(World);
+    let permissions = Arc::clone(&world);
+    let teams = Arc::clone(&world);
     let reads = Arc::new(VectorManagementReadState {
         database,
         registry,
-        permissions: Arc::clone(&world),
-        teams: Arc::clone(&world),
+        permissions,
+        teams,
         session_teams: world,
         privileges: Arc::new(NoPrivileges),
         settings: Settings {
@@ -140,27 +142,20 @@ fn write_state(
 
 // the rows the table holds after the call, or null when the case seeds no database
 fn rows_of(database: Option<&FakeDatabase>) -> Value {
-    match database {
-        Some(database) => {
-            let state = database
+    database.map_or(Value::Null, |table| {
+        json!(
+            table
                 .inner
                 .lock()
-                .unwrap_or_else(PoisonError::into_inner);
-            json!(state.rows)
-        }
-        None => Value::Null,
-    }
+                .unwrap_or_else(PoisonError::into_inner)
+                .rows
+        )
+    })
 }
 
 // the stores the registry holds after the call, or null when the case seeds no registry
 fn stores_of(registry: Option<&Mutex<VectorStoreRegistry>>) -> Value {
-    match registry {
-        Some(registry) => json!(
-            registry
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .stores
-        ),
-        None => Value::Null,
-    }
+    registry.map_or(Value::Null, |cache| {
+        json!(cache.lock().unwrap_or_else(PoisonError::into_inner).stores)
+    })
 }

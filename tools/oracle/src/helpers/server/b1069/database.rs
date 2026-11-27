@@ -91,7 +91,9 @@ impl FakeDatabase {
             .rows
             .iter()
             .position(|row| row.vector_store_id.as_deref() == Some(vector_store_id));
-        position.map(|index| state.rows.remove(index))
+        let removed = position.map(|index| state.rows.remove(index));
+        drop(state);
+        removed
     }
 }
 
@@ -144,28 +146,31 @@ fn record_to_store(record: &NewVectorStoreRecord) -> LiteLlmManagedVectorStore {
 fn apply_changes(row: &mut LiteLlmManagedVectorStore, changes: &VectorStoreChanges) {
     apply(
         &mut row.custom_llm_provider,
-        &changes.custom_llm_provider,
+        changes.custom_llm_provider.as_ref().map(Option::as_deref),
         |text: &str| text.to_owned(),
     );
     apply(
         &mut row.vector_store_name,
-        &changes.vector_store_name,
+        changes.vector_store_name.as_ref().map(Option::as_deref),
         |text: &str| text.to_owned(),
     );
     apply(
         &mut row.vector_store_description,
-        &changes.vector_store_description,
+        changes
+            .vector_store_description
+            .as_ref()
+            .map(Option::as_deref),
         |text: &str| text.to_owned(),
     );
     apply(
         &mut row.vector_store_metadata,
-        &changes.vector_store_metadata,
+        changes.vector_store_metadata.as_ref().map(Option::as_deref),
         |text: &str| Value::String(text.to_owned()),
     );
     row.updated_at = Some(String::from(UPDATED_AT));
 }
 
-fn apply<T, F>(field: &mut Option<T>, change: &FieldChange<String>, convert: F)
+fn apply<T, F>(field: &mut Option<T>, change: FieldChange<&str>, convert: F)
 where
     F: Fn(&str) -> T,
 {

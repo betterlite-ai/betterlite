@@ -112,8 +112,8 @@ async fn delete_removes_whichever_store_exists(#[case] case: StoreCase) {
         .collect();
     assert_eq!(expected, events.entries());
     assert!(database.rows().is_empty());
-    if let Some(cache) = cache {
-        assert!(cache.stores().is_empty());
+    if let Some(stored) = cache {
+        assert!(stored.stores().is_empty());
     }
 }
 
