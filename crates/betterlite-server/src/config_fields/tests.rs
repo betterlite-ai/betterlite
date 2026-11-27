@@ -889,7 +889,7 @@ async fn ui_field_reload_reset_sets_the_default_and_pops_the_stored_key() {
         r#"{"litellm_settings": {"max_ui_session_budget": 5.0}}"#,
     ));
     let mut state = state_with_general("{}");
-    state.replace_snapshot(object(
+    state.replace_snapshot(&object(
         r#"{"litellm_settings": {"max_ui_session_budget": 5.0}}"#,
     ));
     let written = delete_config_general_settings(
