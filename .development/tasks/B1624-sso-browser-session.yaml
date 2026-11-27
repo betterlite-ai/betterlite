@@ -1,8 +1,8 @@
 id: B1624
 title: Issue dashboard sessions after SSO identity reconciliation
 description: >-
-  Implement sso_browser_session in betterlite-server, owning _CustomSsoCall,
-  get_disabled_non_admin_personal_key_creation and SSOAuthenticationHandler's
+  Implement sso_browser_session in betterlite-server, owning _CustomSsoCall
+  and SSOAuthenticationHandler's
   verify_user_in_restricted_sso_group, _get_user_email_and_id_from_result and
   get_redirect_response_from_openid. This service consumes typed provider results and
   creates the shared UI session; B063 and B1626 supply HTTP routes. ALLOWED_EMAIL_DOMAINS
@@ -15,19 +15,21 @@ description: >-
   enforce general_settings.ui_access_mode=None or its restricted_sso_group object using
   identity team_ids. Call B1616's user upsert, JWT role-map sync (access-token claims before
   received claims), then value merge. Issue the dashboard key through B893 with team_id
-  litellm-dashboard, duration LITELLM_UI_SESSION_DURATION=24h and litellm.max_ui_session_budget=1.0.
+  litellm-dashboard, duration from B10118's config.sections.ui_session_token (LITELLM_UI_SESSION_DURATION=24h)
+  and litellm.max_ui_session_budget=1.0.
   Preserve the subsequent order: PROXY_ADMIN_ID promotion, admin_only role check, Microsoft
   enrollment, assertion retention (B10011's retain) and B1617's capture diagnostics, UI token construction and redirect. An admin_only
   rejection is 401 after the key was written; no rollback is claimed. EXPERIMENTAL_UI_LOGIN
   defaults absent/disabled and replaces the returned key with B1223's session token only
-  after ordinary key creation. Encode the outer JWT with B788, then use B1618's return-target
+  after ordinary key creation. Encode the outer JWT with B10118's encode_ui_session_jwt, passing an
+  empty master key when none is set as LiteLLM's `master_key or ""` does, then use B1618's return-target
   handler or a 303 dashboard redirect and token cookie. Returned metadata keeps login_method=sso,
   password_reset_required=false, general_settings.litellm_key_header_name=Authorization and
-  B7323's root path. litellm.key_generation_settings defaults None; the UI personal-key hint is
-  true whenever personal_key_generation.allowed_user_roles contains proxy_admin.
+  B7323's root path. The UI personal-key hint is B10118's disabled_non_admin_personal_key_creation
+  over config.sections.key_access.key_generation; this task calls it and does not rebuild the check.
   Test loads_browser_session_policy through config and compare pure identity/access projection
   in sso_session_policy. PostgreSQL tests prove key-before-denial and experimental-login writes.
-  The 254 owned source lines budget 290 service, 220 tests, 80 adapters and 100 config lines,
+  The 247 owned source lines budget 285 service, 215 tests, 80 adapters and 100 config lines,
   capped at 775; all inputs use dependency-owned decoders.
 scope:
   paths:
@@ -49,7 +51,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L237-L238
     why: Async custom-SSO result contract.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L1744-L1750
-    why: Personal-key creation hint derived from allowed roles.
+    why: Personal-key creation hint; B10118 owns it and this session service calls it.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L3319-L3353
     why: Restricted SSO group rejection before user writes.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L3468-L3735
@@ -81,7 +83,6 @@ oracle_cases:
   - tools/oracle/cases/helpers/sso-session-policy/name-fallback-before-email.yaml
   - tools/oracle/cases/helpers/sso-session-policy/plain-mapping-has-no-identity-attributes.yaml
   - tools/oracle/cases/helpers/sso-session-policy/restricted-group-object-versus-string.yaml
-  - tools/oracle/cases/helpers/sso-session-policy/proxy-admin-anywhere-in-personal-role-list.yaml
 deviations:
   - what: The dashboard JWT's premium_user field is true for every successful SSO login, without a license check.
     why: The README removes paid tiers and enables the retained dashboard's available features.
@@ -91,6 +92,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L3627-L3631
 out_of_scope:
   - The function ownership inventory in B063 assigns provider exchanges, login dispatch, CLI flows and diagnostic routes outside this session service.
+  - "get_disabled_non_admin_personal_key_creation, encode_ui_session_jwt, its exp stamp and the LITELLM_UI_SESSION_DURATION section: B10118, which this task calls."
 pitfalls:
   - 'The oracle helper for this task is pre-registered as sso_session_policy in the server group. Replace the stub Op in tools/oracle/src/helpers/server/sso_session_policy.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/sso_session_policy.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - admin_only is checked after generate_key_helper_fn, so moving that check earlier changes observable database state on a denied login.

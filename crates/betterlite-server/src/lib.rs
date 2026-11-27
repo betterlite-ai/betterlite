@@ -415,6 +415,7 @@ pub mod trace_lifecycle;
 pub mod tracing_routes;
 pub mod ui_discovery;
 pub mod ui_session_cleanup;
+pub mod ui_session_token;
 pub mod ui_sessions;
 pub mod ui_settings_routes;
 pub mod ui_settings_state;
