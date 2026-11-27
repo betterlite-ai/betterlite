@@ -1,0 +1,11 @@
+kind: helper
+name: riva-audio-same-rate
+call:
+  riva_audio:
+    calls:
+      - file_hex: "524946462a00000057415645666d74201000000001000100803e0000007d0000020010006461746106000000004000c00020"
+        soundfile_error: null
+        audioread: null
+        resamplers: []
+compare: {ignore: []}
+env: {}
