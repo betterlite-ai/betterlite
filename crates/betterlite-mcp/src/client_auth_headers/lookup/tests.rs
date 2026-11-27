@@ -146,6 +146,13 @@ enum Expected {
     &[],
     Expected::None
 )]
+#[case::empty_sanitized_alias(
+    &[("", "Authorization", "Bearer test-empty")],
+    Some("!!!"),
+    None,
+    &[],
+    Expected::None
+)]
 fn server_key_order(
     #[case] entries: &[(&str, &str, &str)],
     #[case] alias: Option<&str>,
@@ -185,6 +192,16 @@ fn server_key_order(
         ("team-b", "Authorization", "Bearer test-b")
     ],
     Some("unrelated"),
+    &["team-a", "team-b"],
+    Expected::Ambiguous
+)]
+#[case::different_map_sizes(
+    &[
+        ("team-a", "Authorization", "Bearer test-a"),
+        ("team-a", "X-Extra", "test-extra"),
+        ("team-b", "Authorization", "Bearer test-a")
+    ],
+    None,
     &["team-a", "team-b"],
     Expected::Ambiguous
 )]
