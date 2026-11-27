@@ -26,10 +26,8 @@ impl RouterEmbedders for FailingRouter {
 }
 
 fn failing_search_fake() -> Fake {
-    let mut fake = Fake {
-        router: Some(Box::new(FailingRouter)),
-        ..Fake::default()
-    };
+    let mut fake = Fake::default();
+    fake.router = Some(Box::new(FailingRouter));
     fake.tools = vec![tool("alpha-tool", "finds alpha", "{}", "srv")];
     fake.settings.embedding_model = Some("embed".to_owned());
     fake
