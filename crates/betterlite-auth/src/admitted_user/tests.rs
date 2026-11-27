@@ -218,8 +218,8 @@ async fn reload_without_a_database_gives_no_database_before_any_read() {
 }
 
 #[rstest]
-#[case::fresh(false)]
-#[case::stale(true)]
+#[case::cached(false)]
+#[case::fresh(true)]
 #[tokio::test]
 async fn reload_reads_the_user_with_the_fresh_flag_it_was_given(#[case] fresh: bool) {
     let users = fake_users(Ok(Some(row(r#"{"user_id":"test-user"}"#))), Ok(None));
@@ -232,8 +232,8 @@ async fn reload_reads_the_user_with_the_fresh_flag_it_was_given(#[case] fresh: b
 }
 
 #[rstest]
-#[case::fresh(false)]
-#[case::stale(true)]
+#[case::cached(false)]
+#[case::fresh(true)]
 #[tokio::test]
 async fn reload_loads_a_missing_object_permission_with_the_same_fresh_flag(#[case] fresh: bool) {
     let users = fake_users(Ok(Some(row(ROW))), Ok(Some(permission(PERMISSION))));
@@ -434,8 +434,8 @@ async fn reload_keeps_the_row_fields_it_does_not_have_absent() {
 }
 
 #[rstest]
-#[case::fresh(false)]
-#[case::stale(true)]
+#[case::cached(false)]
+#[case::fresh(true)]
 #[tokio::test]
 async fn reload_stamps_the_admitted_marker_and_the_fresh_flag(#[case] fresh: bool) {
     let reloader = build_reloader(
