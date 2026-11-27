@@ -6,6 +6,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use betterlite_models::controls::json_value::JsonValue;
 use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
+use std::str;
 use thiserror::Error;
 
 // The untrusted ``token`` cookie bytes, structurally decoded. The signature and the clock comparisons are the
@@ -74,7 +75,7 @@ pub enum DecodeError {
 }
 
 pub fn decode_session_cookie(bytes: &[u8]) -> Result<SessionCookie, DecodeError> {
-    let compact = std::str::from_utf8(bytes).map_err(|_source| DecodeError::NotText)?;
+    let compact = str::from_utf8(bytes).map_err(|_source| DecodeError::NotText)?;
     let (signing_input, signature_segment) =
         compact.rsplit_once('.').ok_or(DecodeError::NotCompact)?;
     let (header_segment, payload_segment) = signing_input

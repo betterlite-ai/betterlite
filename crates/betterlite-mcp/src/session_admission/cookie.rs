@@ -29,46 +29,45 @@ fn unquote(value: &str) -> String {
     let mut decoded = String::with_capacity(quoted.len());
     let mut index = 0_usize;
     while let Some(character) = characters.get(index).copied() {
-        if character != '\\' {
-            decoded.push(character);
-            index = index.saturating_add(1);
+        if character == '\\' {
+            let (escaped, consumed) = escaped_character(&characters, index);
+            decoded.push(escaped);
+            index = index.saturating_add(consumed);
             continue;
         }
-        let escaped = characters.get(index.saturating_add(1)).copied();
-        let octal = match (
-            characters.get(index.saturating_add(1)),
-            characters.get(index.saturating_add(2)),
-            characters.get(index.saturating_add(3)),
-        ) {
-            (Some(first @ '0'..='3'), Some(second @ '0'..='7'), Some(third @ '0'..='7')) => {
-                let code = u32::from(*first)
-                    .wrapping_sub(u32::from('0'))
-                    .wrapping_mul(64)
-                    .wrapping_add(
-                        u32::from(*second)
-                            .wrapping_sub(u32::from('0'))
-                            .wrapping_mul(8),
-                    )
-                    .wrapping_add(u32::from(*third).wrapping_sub(u32::from('0')));
-                char::from_u32(code)
-            }
-            _ => None,
-        };
-        if let Some(character) = octal {
-            decoded.push(character);
-            index = index.saturating_add(4);
-            continue;
-        }
-        match escaped {
-            Some(character) if character != '\n' => {
-                decoded.push(character);
-                index = index.saturating_add(2);
-            }
-            _ => {
-                decoded.push('\\');
-                index = index.saturating_add(1);
-            }
-        }
+        decoded.push(character);
+        index = index.saturating_add(1);
     }
     decoded
+}
+
+// _unquote's escape alternatives: three octal digits with a first digit up to 3, any other character but a newline,
+// or a backslash that has nothing to escape.
+fn escaped_character(characters: &[char], index: usize) -> (char, usize) {
+    let octal = match (
+        characters.get(index.saturating_add(1)),
+        characters.get(index.saturating_add(2)),
+        characters.get(index.saturating_add(3)),
+    ) {
+        (Some(first @ '0'..='3'), Some(second @ '0'..='7'), Some(third @ '0'..='7')) => {
+            let code = u32::from(*first)
+                .wrapping_sub(u32::from('0'))
+                .wrapping_mul(64)
+                .wrapping_add(
+                    u32::from(*second)
+                        .wrapping_sub(u32::from('0'))
+                        .wrapping_mul(8),
+                )
+                .wrapping_add(u32::from(*third).wrapping_sub(u32::from('0')));
+            char::from_u32(code)
+        }
+        _ => None,
+    };
+    if let Some(character) = octal {
+        return (character, 4);
+    }
+    match characters.get(index.saturating_add(1)).copied() {
+        Some(character) if character != '\n' => (character, 2),
+        Some(_) | None => ('\\', 1),
+    }
 }
