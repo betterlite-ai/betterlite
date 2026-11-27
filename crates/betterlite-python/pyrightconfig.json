@@ -2,6 +2,7 @@
   "include": ["python", "tests"],
   "extraPaths": ["python"],
   "typeCheckingMode": "strict",
-  "pythonVersion": "3.11",
-  "reportMissingModuleSource": "none"
+  "pythonVersion": "3.10",
+  "reportMissingModuleSource": "none",
+  "executionEnvironments": [{"root": "tests", "pythonVersion": "3.11"}]
 }
