@@ -19,7 +19,6 @@ use betterlite_auth::resolved_key::credential::safe_hash_api_key;
 use betterlite_auth::route_match::classifier::is_llm_api_route;
 use betterlite_auth::route_match::templates::RouteValue;
 use betterlite_auth::trusted_network::request::NetworkRequest;
-use betterlite_config::sections::oauth_tokens::Settings;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::auth::auth_identity::{AuthContext, StageFailure};
@@ -47,29 +46,17 @@ pub(crate) async fn pre_stage(request: &Request<Body>) -> PreStage {
     let llm_or_info =
         is_llm_api_route(&RouteValue::Text(&route)) || INFO_ROUTES.contains(&route.as_str());
     if settings.enable_oauth2_auth && llm_or_info {
-        return introspection(state, settings, request).await;
+        // LiteLLM introspects an absent token as the literal text None; betterlite refuses it here
+        let Some(token) = extract_key(request.headers()) else {
+            return PreStage::Rejected(StageFailure::from(AuthenticationFailure::Missing));
+        };
+        let transport = state.oauth_tokens.transport.as_ref();
+        let result = check_oauth2_token(settings, transport, &token).await;
+        return stage_from_result(result, AuthMethod::Oauth2Introspection, Some(&token));
     }
-    if settings.enable_oauth2_proxy_auth {
-        return proxy(state, settings, request);
+    if !settings.enable_oauth2_proxy_auth {
+        return PreStage::Skipped;
     }
-    PreStage::Skipped
-}
-
-async fn introspection(
-    state: &ServerState,
-    settings: &Settings,
-    request: &Request<Body>,
-) -> PreStage {
-    // LiteLLM introspects an absent token as the literal text None; betterlite refuses it here
-    let Some(token) = extract_key(request.headers()) else {
-        return PreStage::Rejected(StageFailure::from(AuthenticationFailure::Missing));
-    };
-    let transport = state.oauth_tokens.transport.as_ref();
-    let result = check_oauth2_token(settings, transport, &token).await;
-    stage_from_result(result, AuthMethod::Oauth2Introspection, Some(&token))
-}
-
-fn proxy(state: &ServerState, settings: &Settings, request: &Request<Body>) -> PreStage {
     let peer = request
         .extensions()
         .get::<ConnectInfo<SocketAddr>>()
