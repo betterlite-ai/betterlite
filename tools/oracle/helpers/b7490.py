@@ -1,4 +1,3 @@
-from collections.abc import Mapping
 from typing import Final, Literal, NotRequired, TypeAlias, TypedDict
 from urllib.parse import urlsplit
 
@@ -25,22 +24,22 @@ class ClientAuthInput(TypedDict):
     server_headers: NotRequired[dict[str, dict[str, str]] | None]
 
 
-class GatewayChallengeInput(TypedDict):
+class RequestInput(TypedDict):
+    base_url: str
+    path: str
+    root_path: NotRequired[str | None]
+
+
+class GatewayChallengeInput(RequestInput):
     function: Literal["gateway_challenge"]
     route: str
     mcp_servers: NotRequired[list[str] | None]
     invalid_token: bool
-    base_url: str
-    path: str
-    root_path: NotRequired[str | None]
 
 
-class BridgeChallengeInput(TypedDict):
+class BridgeChallengeInput(RequestInput):
     function: Literal["bridge_challenge"]
     requested_name: str
-    base_url: str
-    path: str
-    root_path: NotRequired[str | None]
 
 
 class ChallengeScopeInput(TypedDict):
@@ -57,7 +56,7 @@ Input: TypeAlias = (
 )
 
 
-def request_for(input_value: GatewayChallengeInput | BridgeChallengeInput) -> Request:
+def request_for(input_value: RequestInput) -> Request:
     parts = urlsplit(input_value["base_url"])
     host = parts.hostname
     if host is None:
@@ -83,11 +82,14 @@ def request_for(input_value: GatewayChallengeInput | BridgeChallengeInput) -> Re
 
 
 def exception_value(error: StarletteHTTPException) -> JsonValue:
-    headers: Mapping[str, str] = {} if error.headers is None else error.headers
+    headers = error.headers
+    pairs: list[list[str]] = []
+    if headers is not None:
+        pairs = [[name, value] for name, value in headers.items()]
     outcome = {
         "status": error.status_code,
         "detail": error.detail,
-        "headers": [[name, value] for name, value in headers.items()],
+        "headers": pairs,
     }
     return JSON.validate_python(outcome)
 
