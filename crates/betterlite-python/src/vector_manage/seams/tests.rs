@@ -10,14 +10,6 @@ use secrecy::{ExposeSecret, SecretString};
 
 use super::{Configs, globals};
 
-fn resolved(provider: ProviderId, tag: VectorStoresConfigTag) -> ResolvedProvider {
-    ResolvedProvider {
-        provider,
-        api_type: None,
-        tag,
-    }
-}
-
 #[test]
 fn configs_serve_openai_and_refuse_the_other_tags() {
     let credentials = OpenAiCredentialsSettings::default();
@@ -28,13 +20,18 @@ fn configs_serve_openai_and_refuse_the_other_tags() {
         globals: &module_globals,
         env_api_key: &env_api_key,
     };
-    let openai = configs.read_config(&resolved(ProviderId::Openai, VectorStoresConfigTag::OpenAI));
-    let azure = configs.read_config(&resolved(
-        ProviderId::Azure,
-        VectorStoresConfigTag::AzureOpenAI,
-    ));
-    assert!(openai.is_some());
-    assert!(azure.is_none());
+    let openai = ResolvedProvider {
+        provider: ProviderId::Openai,
+        api_type: None,
+        tag: VectorStoresConfigTag::OpenAI,
+    };
+    let azure = ResolvedProvider {
+        provider: ProviderId::Azure,
+        api_type: None,
+        tag: VectorStoresConfigTag::AzureOpenAI,
+    };
+    assert!(configs.read_config(&openai).is_some());
+    assert!(configs.read_config(&azure).is_none());
 }
 
 #[test]
