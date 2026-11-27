@@ -1,5 +1,7 @@
 use std::time::Duration;
 
+use rstest::rstest;
+
 use super::support::{
     Fixture, REQUEST_TIMEOUT, Spy, Which, attributes, chunking, file, json, listing, object,
     params, recorded,
@@ -9,22 +11,25 @@ use crate::api::vector_store_http_write::service::ClientKind;
 const CHUNKING: &str =
     r#"{"type":"static","static":{"max_chunk_size_tokens":800,"chunk_overlap_tokens":400}}"#;
 
+#[rstest]
+#[case::unset(None, REQUEST_TIMEOUT, 6000)]
+#[case::zero(Some(0.0_f64), REQUEST_TIMEOUT, 6000)]
+#[case::seven(Some(7.0_f64), REQUEST_TIMEOUT, 7)]
+#[case::unset_with_request_timeout(None, 12.0_f64, 12)]
+#[case::zero_with_request_timeout(Some(0.0_f64), 12.0_f64, 12)]
+#[case::seven_with_request_timeout(Some(7.0_f64), 12.0_f64, 7)]
 #[tokio::test]
-async fn attachment_timeout_context() {
+async fn attachment_timeout_context(
+    #[case] requested: Option<f64>,
+    #[case] request_timeout_seconds: f64,
+    #[case] expected: u64,
+) {
     let mut fixture = Fixture::new();
-    for (requested, expected) in [(None, 6000_u64), (Some(0.0_f64), 6000), (Some(7.0_f64), 7)] {
-        fixture.timeout = requested;
-        let spy = Spy::replying(file());
-        let seen = recorded(Which::Create, &spy, &fixture, None, REQUEST_TIMEOUT).await;
-        assert_eq!(seen.timeout, Duration::from_secs(expected));
-        assert_eq!(spy.call_count(), 1);
-    }
-    for (requested, expected) in [(None, 12_u64), (Some(0.0_f64), 12), (Some(7.0_f64), 7)] {
-        fixture.timeout = requested;
-        let spy = Spy::replying(file());
-        let seen = recorded(Which::Create, &spy, &fixture, None, 12.0_f64).await;
-        assert_eq!(seen.timeout, Duration::from_secs(expected));
-    }
+    fixture.timeout = requested;
+    let spy = Spy::replying(file());
+    let seen = recorded(Which::Create, &spy, &fixture, None, request_timeout_seconds).await;
+    assert_eq!(seen.timeout, Duration::from_secs(expected));
+    assert_eq!(spy.call_count(), 1);
 }
 
 #[tokio::test]
