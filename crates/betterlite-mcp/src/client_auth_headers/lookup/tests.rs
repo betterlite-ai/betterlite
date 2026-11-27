@@ -174,7 +174,7 @@ fn server_key_order(
     let found = lookup_server_auth(&built, alias, server_name, &groups(access_groups));
     match expected {
         Expected::Headers(key) => {
-            assert_eq!(found.map(exposed), Some(exposed(built.get(key).unwrap())))
+            assert_eq!(found.map(exposed), Some(exposed(&built[key])));
         }
         Expected::None | Expected::Ambiguous => assert!(found.is_none()),
     }
@@ -248,7 +248,7 @@ fn group_default(
     let found = lookup_server_auth(&built, alias, None, &groups(access_groups));
     match expected {
         Expected::Headers(key) => {
-            assert_eq!(found.map(exposed), Some(exposed(built.get(key).unwrap())));
+            assert_eq!(found.map(exposed), Some(exposed(&built[key])));
             assert!(logs.events().is_empty());
         }
         Expected::None => {

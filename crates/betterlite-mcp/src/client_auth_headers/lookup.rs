@@ -16,7 +16,9 @@ pub fn sanitize_alias_for_header(alias: &str) -> String {
     for character in alias.to_lowercase().trim().chars() {
         if character.is_ascii_lowercase() || character.is_ascii_digit() {
             sanitized.push(character);
-        } else if !sanitized.ends_with('_') {
+            continue;
+        }
+        if !sanitized.ends_with('_') {
             sanitized.push('_');
         }
     }
@@ -52,10 +54,10 @@ pub fn lookup_server_auth<'headers>(
         .map(|(name, value)| (name.to_lowercase(), value))
         .collect();
     for identifier in [alias, server_name] {
-        let Some(identifier) = identifier.filter(|text| !text.is_empty()) else {
+        let Some(candidate) = identifier.filter(|text| !text.is_empty()) else {
             continue;
         };
-        if let Some(found) = matching_header(&normalized, identifier) {
+        if let Some(found) = matching_header(&normalized, candidate) {
             return Some(found);
         }
     }
@@ -83,9 +85,7 @@ fn group_default<'headers>(
             group_matches.push(found);
         }
     }
-    let Some(first) = group_matches.first().copied() else {
-        return None;
-    };
+    let first = group_matches.first().copied()?;
     if group_matches
         .iter()
         .skip(1)
