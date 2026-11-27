@@ -11,6 +11,8 @@ use tokio_postgres::types::ToSql;
 use super::query;
 use crate::auto_router_read_api::postgres::PgAutoRouterReads;
 use crate::auto_router_read_api::service::benchmarks_for;
+use crate::auto_router_read_api::store::AutoRouterReadStore;
+use crate::benchmark_aggregates::window::BenchmarkWindow;
 
 const SCHEMA: &str = r#"
 CREATE TABLE "LiteLLM_AutoRouterSession" (
@@ -432,6 +434,21 @@ async fn the_latest_session_reads_the_newest_row_under_the_key() {
             .is_none()
     );
     database.close().await;
+}
+
+#[tokio::test]
+async fn a_store_without_a_pool_reports_the_database_failure() {
+    let reads = PgAutoRouterReads {
+        store: PostgresStore { pool: None },
+        availability: Availability::default(),
+    };
+    let window =
+        BenchmarkWindow::resolve(Some("2024-01-01"), Some("2024-01-01"), day(1, 5)).unwrap();
+    let error = reads.agg_rows(&window, None, None).await.unwrap_err();
+    assert_eq!(error.status_code(), 500);
+    assert!(error.to_string().contains("No DB Connected"));
+    let error = reads.latest_session("hash-a", "s1").await.unwrap_err();
+    assert_eq!(error.status_code(), 500);
 }
 
 fn money(text: &str) -> rust_decimal::Decimal {

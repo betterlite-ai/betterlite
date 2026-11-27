@@ -12,6 +12,7 @@ use betterlite_auth::auth_identity::records::{
 };
 use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType};
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
+use betterlite_config::loader::ConfigLoader;
 use betterlite_db::autorouter_facts::session::bounded_session_id;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::managed_resource_rows::autorouter::AutoRouterSession;
@@ -388,6 +389,17 @@ async fn an_unknown_session_is_a_404_with_the_quoted_id() {
         body.detail,
         "No auto-routed turns recorded for session \"it's\" under this key"
     );
+}
+
+#[test]
+fn a_configured_database_url_opens_the_read_store() {
+    let config = ConfigLoader {
+        lookup: BTreeMap::<String, String>::new(),
+    }
+    .load("general_settings:\n  database_url: postgres://probe:secret@localhost:5432/probe")
+    .unwrap();
+    let state = crate::routes::tests::state_for(&config);
+    assert!(super::store_of_state(&state).is_some());
 }
 
 #[tokio::test]

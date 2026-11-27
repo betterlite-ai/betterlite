@@ -12,6 +12,7 @@ use betterlite_auth::auth_identity::records::{
 };
 use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType};
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
+use betterlite_config::types::{LiteLlmParams, ModelDeployment, ModelInfo};
 use betterlite_db::autorouter_facts::session::bounded_session_id;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::managed_resource_rows::autorouter::AutoRouterSession;
@@ -35,7 +36,7 @@ use super::store::AutoRouterReadStore;
 use crate::benchmark_aggregates::row::SessionAggRow;
 use crate::benchmark_aggregates::window::{BenchmarkWindow, WindowError};
 use crate::plugin_routes::routes::Identity;
-use crate::routing::auto_router_read_api::ConfiguredRouter;
+use crate::routing::auto_router_read_api::{ConfiguredRouter, configured_deployments};
 use crate::shadow_eval_lifecycle::access::require_admin;
 use crate::shadow_eval_validation::access::AdminRole;
 
@@ -907,30 +908,55 @@ async fn baseline_model_coverage() {
     assert_eq!(named.baseline_model.as_deref(), Some("m2"));
 }
 
-fn principal(subject: &str, key: Option<&str>) -> Principal {
-    let source_key = key.map(|raw| {
-        let fields = BTreeMap::from([(
-            "api_key".to_owned(),
-            betterlite_db::budget_permission_rows::JsonData::String(raw.to_owned()),
-        )]);
-        betterlite_auth::auth_identity::records::SourceKey(Some(
-            betterlite_auth::resolved_key::auth::UserAPIKeyAuth::construct(
-                betterlite_auth::resolved_key::auth::AuthInput::Dict(fields),
-            )
-            .unwrap(),
-        ))
-    });
+fn principal(subject: &str, source_key: SourceKey) -> Principal {
     Principal {
-        principal_type: betterlite_auth::auth_identity::roles::PrincipalType::Human,
+        principal_type: PrincipalType::Human,
         subject: subject.to_owned(),
-        source_key: source_key.unwrap_or(betterlite_auth::auth_identity::records::SourceKey(None)),
-        ..Principal::default()
+        issuer: None,
+        audience: Vec::new(),
+        user: None,
+        organization: None,
+        teams: Vec::new(),
+        project: None,
+        end_user: None,
+        roles: Vec::new(),
+        scopes: Vec::new(),
+        auth_method: AuthMethod::ApiKey,
+        credential_ref: CredentialRef::default(),
+        network: NetworkContext::default(),
+        source_key,
+    }
+}
+
+fn key_principal(subject: &str, raw: &str) -> Principal {
+    let fields = BTreeMap::from([("api_key".to_owned(), JsonData::String(raw.to_owned()))]);
+    let key = UserAPIKeyAuth::construct(AuthInput::Dict(fields)).unwrap();
+    principal(subject, SourceKey(Some(key)))
+}
+
+fn configured(model_name: &str, model: Option<&str>) -> ModelDeployment {
+    ModelDeployment {
+        model_name: model_name.to_owned(),
+        litellm_params: LiteLlmParams {
+            ssl_verify: None,
+            model: model.map(str::to_owned),
+            api_base: None,
+            api_key: None,
+            api_version: None,
+            timeout: None,
+            stream_timeout: None,
+            max_retries: None,
+            rpm: None,
+            tpm: None,
+            weight: None,
+        },
+        model_info: ModelInfo { id: None },
     }
 }
 
 #[test]
 fn the_master_key_uses_the_stable_alias() {
-    let master = principal("master_key", None);
+    let master = principal("master_key", SourceKey(None));
     assert_eq!(
         caller_api_key(&master).unwrap().as_deref(),
         Some("litellm_proxy_master_key")
@@ -939,13 +965,32 @@ fn the_master_key_uses_the_stable_alias() {
 
 #[test]
 fn a_virtual_key_is_read_in_its_canonical_form() {
-    let keyed = principal("key-owner", Some("sk-test"));
-    let expected = format!("{}", hex::encode(Sha256::digest(b"sk-test")));
+    let keyed = key_principal("key-owner", "sk-test");
+    let expected = hex::encode(Sha256::digest(b"sk-test"));
     assert_eq!(caller_api_key(&keyed).unwrap(), Some(expected));
 }
 
 #[test]
 fn a_caller_without_a_key_has_none() {
-    let bare = principal("jwt-user", None);
+    let bare = principal("jwt-user", SourceKey(None));
     assert_eq!(caller_api_key(&bare).unwrap(), None);
+}
+
+#[test]
+fn the_registry_narrows_to_the_router_key() {
+    let deployments = configured_deployments(&[
+        configured("complexity-auto", Some("auto_router/complexity_router")),
+        configured("plain", Some("gpt-4o")),
+        configured("unnamed", None),
+    ]);
+    assert_eq!(deployments.len(), 3);
+    assert_eq!(
+        deployments[0].deployment().model_name,
+        Some("complexity-auto")
+    );
+    assert_eq!(
+        deployments[0].deployment().model,
+        Some("auto_router/complexity_router")
+    );
+    assert_eq!(deployments[2].deployment().model, None);
 }
