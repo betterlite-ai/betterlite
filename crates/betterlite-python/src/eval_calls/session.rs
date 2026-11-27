@@ -76,89 +76,65 @@ impl NativeEvalSession {
     }
 
     fn create_eval(&self, py: Python<'_>, request: &str, _blobs: Blobs) -> PyResult<String> {
-        let outcome =
-            py.detach(|| get_runtime().block_on(self.core.execute(Mode::Create, request)));
-        outcome.map_err(EvalOperationFailure::into_py)
+        self.blocking(py, Mode::Create, request)
     }
 
     fn acreate_eval<'py>(&self, py: Python<'py>, request: &str, _blobs: Blobs) -> Answer<'py> {
-        let core = Arc::clone(&self.core);
-        let request = request.to_owned();
-        future_into_py(py, async move {
-            let outcome = core.execute(Mode::Create, &request).await;
-            Python::attach(|_attached| outcome.map_err(EvalOperationFailure::into_py))
-        })
+        self.pending(py, Mode::Create, request)
     }
 
     fn list_evals(&self, py: Python<'_>, request: &str, _blobs: Blobs) -> PyResult<String> {
-        let outcome = py.detach(|| get_runtime().block_on(self.core.execute(Mode::List, request)));
-        outcome.map_err(EvalOperationFailure::into_py)
+        self.blocking(py, Mode::List, request)
     }
 
     fn alist_evals<'py>(&self, py: Python<'py>, request: &str, _blobs: Blobs) -> Answer<'py> {
-        let core = Arc::clone(&self.core);
-        let request = request.to_owned();
-        future_into_py(py, async move {
-            let outcome = core.execute(Mode::List, &request).await;
-            Python::attach(|_attached| outcome.map_err(EvalOperationFailure::into_py))
-        })
+        self.pending(py, Mode::List, request)
     }
 
     fn get_eval(&self, py: Python<'_>, request: &str, _blobs: Blobs) -> PyResult<String> {
-        let outcome = py.detach(|| get_runtime().block_on(self.core.execute(Mode::Get, request)));
-        outcome.map_err(EvalOperationFailure::into_py)
+        self.blocking(py, Mode::Get, request)
     }
 
     fn aget_eval<'py>(&self, py: Python<'py>, request: &str, _blobs: Blobs) -> Answer<'py> {
-        let core = Arc::clone(&self.core);
-        let request = request.to_owned();
-        future_into_py(py, async move {
-            let outcome = core.execute(Mode::Get, &request).await;
-            Python::attach(|_attached| outcome.map_err(EvalOperationFailure::into_py))
-        })
+        self.pending(py, Mode::Get, request)
     }
 
     fn update_eval(&self, py: Python<'_>, request: &str, _blobs: Blobs) -> PyResult<String> {
-        let outcome =
-            py.detach(|| get_runtime().block_on(self.core.execute(Mode::Update, request)));
-        outcome.map_err(EvalOperationFailure::into_py)
+        self.blocking(py, Mode::Update, request)
     }
 
     fn aupdate_eval<'py>(&self, py: Python<'py>, request: &str, _blobs: Blobs) -> Answer<'py> {
-        let core = Arc::clone(&self.core);
-        let request = request.to_owned();
-        future_into_py(py, async move {
-            let outcome = core.execute(Mode::Update, &request).await;
-            Python::attach(|_attached| outcome.map_err(EvalOperationFailure::into_py))
-        })
+        self.pending(py, Mode::Update, request)
     }
 
     fn delete_eval(&self, py: Python<'_>, request: &str, _blobs: Blobs) -> PyResult<String> {
-        let outcome =
-            py.detach(|| get_runtime().block_on(self.core.execute(Mode::Delete, request)));
-        outcome.map_err(EvalOperationFailure::into_py)
+        self.blocking(py, Mode::Delete, request)
     }
 
     fn adelete_eval<'py>(&self, py: Python<'py>, request: &str, _blobs: Blobs) -> Answer<'py> {
-        let core = Arc::clone(&self.core);
-        let request = request.to_owned();
-        future_into_py(py, async move {
-            let outcome = core.execute(Mode::Delete, &request).await;
-            Python::attach(|_attached| outcome.map_err(EvalOperationFailure::into_py))
-        })
+        self.pending(py, Mode::Delete, request)
     }
 
     fn cancel_eval(&self, py: Python<'_>, request: &str, _blobs: Blobs) -> PyResult<String> {
-        let outcome =
-            py.detach(|| get_runtime().block_on(self.core.execute(Mode::Cancel, request)));
-        outcome.map_err(EvalOperationFailure::into_py)
+        self.blocking(py, Mode::Cancel, request)
     }
 
     fn acancel_eval<'py>(&self, py: Python<'py>, request: &str, _blobs: Blobs) -> Answer<'py> {
+        self.pending(py, Mode::Cancel, request)
+    }
+}
+
+impl NativeEvalSession {
+    fn blocking(&self, py: Python<'_>, mode: Mode, request: &str) -> PyResult<String> {
+        let outcome = py.detach(|| get_runtime().block_on(self.core.execute(mode, request)));
+        outcome.map_err(EvalOperationFailure::into_py)
+    }
+
+    fn pending<'py>(&self, py: Python<'py>, mode: Mode, request: &str) -> Answer<'py> {
         let core = Arc::clone(&self.core);
         let request = request.to_owned();
         future_into_py(py, async move {
-            let outcome = core.execute(Mode::Cancel, &request).await;
+            let outcome = core.execute(mode, &request).await;
             Python::attach(|_attached| outcome.map_err(EvalOperationFailure::into_py))
         })
     }

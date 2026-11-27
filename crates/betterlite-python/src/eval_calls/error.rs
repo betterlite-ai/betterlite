@@ -63,26 +63,9 @@ impl From<SessionError> for PyErr {
 // Everything one eval operation can fail with: a wrong-typed argument, its payload, a core service's failure, or an answer that would not encode.
 #[derive(Debug)]
 pub(crate) enum EvalOperationFailure {
-    Request {
-        class: ErrorClass,
-        provider: String,
-    },
+    Mapped { class: ErrorClass, provider: String },
     Session(#[from] SessionError),
-    CreateList {
-        failure: EvalsCreateListFailureError,
-        provider: String,
-    },
-    GetUpdate {
-        failure: EvalsGetUpdateFailureError,
-        provider: String,
-    },
-    Lifecycle {
-        failure: EvalLifecycleFailure,
-        provider: String,
-    },
-    Encode {
-        source: serde_json::Error,
-    },
+    Encode { source: serde_json::Error },
 }
 
 impl From<ConvertError> for EvalOperationFailure {
@@ -92,7 +75,7 @@ impl From<ConvertError> for EvalOperationFailure {
             ConvertError::Json { source } => {
                 Self::Session(SessionError::Json(ConvertError::Json { source }))
             }
-            ConvertError::FieldType { provider, name } => Self::Request {
+            ConvertError::FieldType { provider, name } => Self::Mapped {
                 class: field_class(message, name, &provider),
                 provider,
             },
@@ -116,16 +99,20 @@ fn field_class(message: String, name: &str, provider: &str) -> ErrorClass {
 }
 
 impl EvalOperationFailure {
+    fn mapped(class: ErrorClass, params: &EvalsCallParams<'_>) -> Self {
+        Self::Mapped {
+            class,
+            provider: provider_of(params),
+        }
+    }
+
     // A failure before the service ran: the logging state could not be built, which LiteLLM's exception_type maps the same way.
     pub(crate) fn create_list(
         error: EvalsCreateListError,
         params: &EvalsCallParams<'_>,
         redactor: &Redactor,
     ) -> Self {
-        Self::CreateList {
-            failure: create_list_failure(error, params, redactor),
-            provider: provider_of(params),
-        }
+        Self::mapped(create_list_failure(error, params, redactor).class, params)
     }
 
     pub(crate) fn get_update(
@@ -133,10 +120,7 @@ impl EvalOperationFailure {
         params: &EvalsCallParams<'_>,
         redactor: &Redactor,
     ) -> Self {
-        Self::GetUpdate {
-            failure: get_update_failure(error, params, redactor),
-            provider: provider_of(params),
-        }
+        Self::mapped(get_update_failure(error, params, redactor).class, params)
     }
 
     pub(crate) fn lifecycle(
@@ -145,8 +129,8 @@ impl EvalOperationFailure {
         redactor: &Redactor,
     ) -> Self {
         let provider = provider_of(params);
-        Self::Lifecycle {
-            failure: lifecycle_failure(error, &provider, redactor),
+        Self::Mapped {
+            class: lifecycle_failure(error, &provider, redactor).class,
             provider,
         }
     }
@@ -156,10 +140,7 @@ impl EvalOperationFailure {
         params: &EvalsCallParams<'_>,
     ) -> Result<String, Self> {
         reply
-            .map_err(|failure| Self::CreateList {
-                failure,
-                provider: provider_of(params),
-            })
+            .map_err(|failure| Self::mapped(failure.class, params))
             .and_then(encode)
     }
 
@@ -168,10 +149,7 @@ impl EvalOperationFailure {
         params: &EvalsCallParams<'_>,
     ) -> Result<String, Self> {
         reply
-            .map_err(|failure| Self::GetUpdate {
-                failure,
-                provider: provider_of(params),
-            })
+            .map_err(|failure| Self::mapped(failure.class, params))
             .and_then(encode)
     }
 
@@ -180,20 +158,14 @@ impl EvalOperationFailure {
         params: &EvalsCallParams<'_>,
     ) -> Result<String, Self> {
         reply
-            .map_err(|failure| Self::Lifecycle {
-                failure,
-                provider: provider_of(params),
-            })
+            .map_err(|failure| Self::mapped(failure.class, params))
             .and_then(encode)
     }
 
     pub(crate) fn into_py(self) -> PyErr {
         match self {
-            Self::Request { class, provider } => native_error(&class, &provider),
+            Self::Mapped { class, provider } => native_error(&class, &provider),
             Self::Session(error) => error.into(),
-            Self::CreateList { failure, provider } => native_error(&failure.class, &provider),
-            Self::GetUpdate { failure, provider } => native_error(&failure.class, &provider),
-            Self::Lifecycle { failure, provider } => native_error(&failure.class, &provider),
             Self::Encode { source } => PyRuntimeError::new_err(source.to_string()),
         }
     }
@@ -227,8 +199,7 @@ pub(crate) struct NativeErrorPayload {
 
 // The provider error class Python raises, keeping the class and cause exception_type chose for it.
 pub(crate) fn native_error(class: &ErrorClass, provider: &str) -> PyErr {
-    let payload = payload(class, provider);
-    match serde_json::to_string(&payload) {
+    match serde_json::to_string(&payload(class, provider)) {
         Ok(text) => NativeEvalError::new_err(text),
         Err(_encoding) => PyRuntimeError::new_err(class_message(class)),
     }
@@ -262,13 +233,10 @@ fn error_body(class: &ErrorClass) -> Option<Json> {
 }
 
 fn insert_field(body: &mut IndexMap<String, Json>, name: &str, field: &WireField) {
-    match field {
-        WireField::Missing(_) => {}
-        WireField::Null => {
-            body.insert(name.to_owned(), Json::Null);
-        }
-        WireField::Text(text) => {
-            body.insert(name.to_owned(), Json::Text(text.clone()));
-        }
-    }
+    let value = match field {
+        WireField::Missing(_) => return,
+        WireField::Null => Json::Null,
+        WireField::Text(text) => Json::Text(text.clone()),
+    };
+    body.insert(name.to_owned(), value);
 }
