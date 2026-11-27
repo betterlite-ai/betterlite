@@ -239,16 +239,26 @@ async fn database_rows_and_conflicting_spend() {
 async fn end_user_read_carries_the_lookup_deadline() {
     let (fixture, pool) = database().await;
     seed(&pool).await;
+    let holder = pool.get().await.expect("the lock-holding connection");
+    holder
+        .batch_execute(r#"BEGIN; LOCK TABLE "LiteLLM_EndUserTable" IN ACCESS EXCLUSIVE MODE"#)
+        .await
+        .expect("the lock on the end-user table");
     let mut rows = database_rows(&pool);
-    rows.default_deadline_seconds = 0.0_f64;
+    rows.default_deadline_seconds = 0.2_f64;
     let error = rows
         .find_end_user("with-budget")
         .await
-        .expect_err("a zero lookup deadline fails the bounded read");
+        .expect_err("a lookup blocked behind the table lock exceeds the deadline");
     let EndUserFetchError::Read(source) = error;
     assert!(matches!(
         *source,
         AuthReadError::Lookup(DbLookupError::Deadline(_))
     ));
+    holder
+        .batch_execute("ROLLBACK")
+        .await
+        .expect("the lock release");
+    drop(holder);
     close(fixture, pool).await;
 }

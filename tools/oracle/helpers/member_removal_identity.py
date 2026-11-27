@@ -44,7 +44,7 @@ def run_addresses_member(input_value: dict[str, Json]) -> Json:
 def run_addresses_user(input_value: dict[str, Json]) -> Json:
     request = request_from(input_value)
     user = LiteLLM_UserTable.model_validate(input_value["user"])
-    return _addresses_user(user, request)
+    return _addresses_user(user, request)  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L193
 
 
 def run_with_row_email(input_value: dict[str, Json]) -> Json:
