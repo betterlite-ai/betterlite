@@ -103,5 +103,5 @@ pitfalls:
   - "This task builds _preserve_redacted_plugin_keys (proxy_server.py L18225; its only caller is update_config_general_settings at L18341) and the _types.py records ConfigFieldDelete (L2560) and FieldDetail (L2569); no other task builds them."
 review_level: security
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2500
   max_new_expects: 0
