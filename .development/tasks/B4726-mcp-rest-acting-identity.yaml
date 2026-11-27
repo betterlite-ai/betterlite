@@ -14,7 +14,7 @@ description: >-
 
   1. and 2. B10155 builds sanitize_alias_for_header (sanitize_mcp_alias_for_header) and lookup_server_auth (lookup_mcp_server_auth_in_headers) in betterlite-mcp's client_auth_headers::lookup. lookup_server_auth takes B4654's server_auth_headers map, the server's alias, server_name and access_groups, and returns Option<&BTreeMap<String, SecretString>>. This task builds neither; step 3 calls the lookup.
 
-  3. server_auth_header (_get_server_auth_header) takes the server, the per-server map (optional) and the shared mcp_auth_header (optional text). It returns ServerAuthHeader, an enum with PerServer(BTreeMap<String, String>) and Shared(String), or None. A non-empty per-server map that lookup_server_auth resolves gives PerServer. Anything else falls back to the shared header.
+  3. server_auth_header (_get_server_auth_header) takes the server, the per-server map (optional) and the shared mcp_auth_header (optional text). It returns ServerAuthHeader, an enum with PerServer(BTreeMap<String, SecretString>) and Shared(SecretString), or None, so the header values stay secret the way B4654's maps keep them. A non-empty per-server map that lookup_server_auth resolves gives PerServer. Anything else falls back to the shared header.
 
   4. extract_mcp_headers (_extract_mcp_headers_from_request) takes B4654's RawHeaders and returns McpRequestHeaders { mcp_auth_header, server_auth_headers, raw_headers }: the first from client_headers::mcp_auth_header, the second from client_headers::server_auth_headers, the third the full header list as a name to value map (B4654's collapse rule for repeated names). It reads no global. The OAuth2 header reader client_headers::oauth2_headers stays with B4654, and the callers use it directly.
 

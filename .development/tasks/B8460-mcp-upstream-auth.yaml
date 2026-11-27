@@ -36,7 +36,7 @@ description: >-
   headers to forward and the credential for B8465's resolve_openapi_upstream_auth. A per-server
   x-mcp-{alias}-* map (B10155's lookup_server_auth) wins: its Authorization is used
   verbatim, its other headers merge over the forwarded ones through B6594's merge_mcp_headers, and
-  without an Authorization in it the BYOK header is formatted. A per-server string is used verbatim.
+  without an Authorization in it the BYOK header is formatted.
   Otherwise the BYOK header is formatted, else nothing.
 
 
