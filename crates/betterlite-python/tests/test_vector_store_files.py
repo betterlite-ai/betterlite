@@ -22,6 +22,7 @@ from vector_files_server import (
 )
 
 import betterlite
+from betterlite import vector_store_files as vector_file_package
 from betterlite._completion.errors import UnsupportedCallArgument
 from betterlite._endpoints.payload import LOGGER_FN_DROPPED
 from betterlite._native import NativeVectorFileError
@@ -152,6 +153,36 @@ def test_signature_matches_litellm() -> None:
     assert parameter_rows(inspect.signature(adelete)) == parameter_rows(
         inspect.signature(LITELLM.adelete)
     )
+
+
+def test_signature_exports() -> None:
+    exported: Final[tuple[str, ...]] = (
+        "acreate",
+        "adelete",
+        "alist",
+        "aretrieve",
+        "aretrieve_content",
+        "aupdate",
+        "create",
+        "delete",
+        "list",
+        "retrieve",
+        "retrieve_content",
+        "update",
+    )
+    assert tuple(vector_file_package.__all__) == exported
+    assert vector_file_package.acreate is acreate
+    assert vector_file_package.adelete is adelete
+    assert vector_file_package.alist is alist
+    assert vector_file_package.aretrieve is aretrieve
+    assert vector_file_package.aretrieve_content is aretrieve_content
+    assert vector_file_package.aupdate is aupdate
+    assert vector_file_package.create is create
+    assert vector_file_package.delete is delete
+    assert vector_file_package.list is list_files
+    assert vector_file_package.retrieve is retrieve
+    assert vector_file_package.retrieve_content is retrieve_content
+    assert vector_file_package.update is update
 
 
 def test_calls_create() -> None:
