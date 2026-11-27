@@ -15,6 +15,22 @@ fn load(source: &str, environment: &[(&str, &str)]) -> Result<Settings, ConfigEr
     Ok(ConfigLoader { lookup }.load(source)?.sections.oauth_tokens)
 }
 
+const LOADED_ENVIRONMENT: [(&str, &str); 6] = [
+    (
+        "OAUTH_TOKEN_INFO_ENDPOINT",
+        "https://idp.example/introspect",
+    ),
+    ("OAUTH_USER_ID_FIELD_NAME", "user_id"),
+    ("OAUTH_USER_ROLE_FIELD_NAME", "user_role"),
+    ("OAUTH_USER_TEAM_ID_FIELD_NAME", "team_id"),
+    ("OAUTH_CLIENT_ID", "client"),
+    ("OAUTH_CLIENT_SECRET", "secret"),
+];
+
+const SCALAR_MAPPING: &str = "general_settings:\n  oauth2_config_mappings:\n    user_id: 1\n";
+const MISSING_MAPPING: &str =
+    "general_settings:\n  oauth2_config_mappings:\n    user_id: os.environ/NO_SUCH_HEADER\n";
+
 #[test]
 fn loads_settings() {
     let source = "\
@@ -25,21 +41,7 @@ general_settings:
     user_id: X-User-Id
     models: X-Models
 ";
-    let settings = load(
-        source,
-        &[
-            (
-                "OAUTH_TOKEN_INFO_ENDPOINT",
-                "https://idp.example/introspect",
-            ),
-            ("OAUTH_USER_ID_FIELD_NAME", "user_id"),
-            ("OAUTH_USER_ROLE_FIELD_NAME", "user_role"),
-            ("OAUTH_USER_TEAM_ID_FIELD_NAME", "team_id"),
-            ("OAUTH_CLIENT_ID", "client"),
-            ("OAUTH_CLIENT_SECRET", "secret"),
-        ],
-    )
-    .unwrap();
+    let settings = load(source, &LOADED_ENVIRONMENT).unwrap();
     // every value below is read by betterlite-auth::oauth_tokens as this exact text
     assert_eq!(
         settings.token_info_endpoint.as_deref(),
@@ -139,18 +141,10 @@ general_settings:
     );
 
     // a mapping value that is not a string is a load error rather than a runtime fallback
-    let scalar = load(
-        "general_settings:\n  oauth2_config_mappings:\n    user_id: 1\n",
-        &[],
-    )
-    .unwrap_err();
+    let scalar = load(SCALAR_MAPPING, &[]).unwrap_err();
     assert!(matches!(scalar, ConfigError::Yaml { .. }));
 
-    let missing = load(
-        "general_settings:\n  oauth2_config_mappings:\n    user_id: os.environ/NO_SUCH_HEADER\n",
-        &[],
-    )
-    .unwrap_err();
+    let missing = load(MISSING_MAPPING, &[]).unwrap_err();
     assert!(matches!(
         missing,
         ConfigError::MissingEnvironment { variable, path }

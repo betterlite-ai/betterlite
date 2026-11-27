@@ -274,19 +274,42 @@ fn redirect(listener: &TcpListener) -> String {
     )
 }
 
+struct Head {
+    method: String,
+    target: String,
+    content_type: Option<String>,
+    authorization: Option<String>,
+    length: usize,
+}
+
 async fn read_request(stream: &mut TcpStream) -> io::Result<Seen> {
     let mut buffer = Vec::new();
-    let head_end = loop {
+    let head_end = read_head(stream, &mut buffer).await?;
+    let head = parse_head(&buffer[..head_end])?;
+    let body = read_body(stream, &mut buffer, head_end, head.length).await?;
+    Ok(Seen {
+        method: head.method,
+        target: head.target,
+        content_type: head.content_type,
+        authorization: head.authorization,
+        body,
+    })
+}
+
+async fn read_head(stream: &mut TcpStream, buffer: &mut Vec<u8>) -> io::Result<usize> {
+    loop {
         if let Some(position) = buffer.windows(4).position(|window| window == b"\r\n\r\n") {
-            break position.saturating_add(4);
+            return Ok(position.saturating_add(4));
         }
-        if stream.read(&mut buffer).await? == 0 {
+        if stream.read(buffer).await? == 0 {
             return Err(io::Error::from(io::ErrorKind::UnexpectedEof));
         }
-    };
-    let head = from_utf8(&buffer[..head_end])
-        .map_err(|_error| io::Error::from(io::ErrorKind::InvalidData))?;
-    let mut lines = head.split("\r\n");
+    }
+}
+
+fn parse_head(head: &[u8]) -> io::Result<Head> {
+    let text = from_utf8(head).map_err(|_error| io::Error::from(io::ErrorKind::InvalidData))?;
+    let mut lines = text.split("\r\n");
     let mut request_line = lines.next().unwrap_or_default().split(' ');
     let method = request_line.next().unwrap_or_default().to_owned();
     let target = request_line.next().unwrap_or_default().to_owned();
@@ -305,22 +328,30 @@ async fn read_request(stream: &mut TcpStream) -> io::Result<Seen> {
             _ => {}
         }
     }
-    let end = head_end.saturating_add(length);
-    while buffer.len() < end {
-        if stream.read(&mut buffer).await? == 0 {
-            break;
-        }
-    }
-    let body = from_utf8(&buffer[head_end..end.min(buffer.len())])
-        .unwrap_or_default()
-        .to_owned();
-    Ok(Seen {
+    Ok(Head {
         method,
         target,
         content_type,
         authorization,
-        body,
+        length,
     })
+}
+
+async fn read_body(
+    stream: &mut TcpStream,
+    buffer: &mut Vec<u8>,
+    head_end: usize,
+    length: usize,
+) -> io::Result<String> {
+    let end = head_end.saturating_add(length);
+    while buffer.len() < end {
+        if stream.read(buffer).await? == 0 {
+            break;
+        }
+    }
+    Ok(from_utf8(&buffer[head_end..end.min(buffer.len())])
+        .unwrap_or_default()
+        .to_owned())
 }
 
 #[derive(Clone, Default)]

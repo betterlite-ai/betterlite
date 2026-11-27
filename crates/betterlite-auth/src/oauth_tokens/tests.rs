@@ -828,7 +828,12 @@ fn proxy_all_identity_fields() {
         vec![JsonData::String("oauth-model".to_owned())]
     );
     assert_eq!(auth.extra.user_role, None);
-    let joined = events(&logs).join("\n");
+    assert_logged_names_only(&logs);
+}
+
+// the log names the mapped fields and never their values, which are the caller's identity
+fn assert_logged_names_only(logs: &Logs) {
+    let joined = events(logs).join("\n");
     assert!(joined.contains("user_id"), "{joined}");
     assert!(joined.contains("user_email"), "{joined}");
     assert!(joined.contains("team_id"), "{joined}");
