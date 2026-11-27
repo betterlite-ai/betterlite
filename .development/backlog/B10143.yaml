@@ -1,0 +1,14 @@
+id: B10143
+milestone: M12 python
+title: Router batch create with fallbacks
+status: todo
+depends_on: [B017, B6020, B6021, B8631, B10154]
+file: tasks/B10143-router-batch-create.yaml
+covers:
+  - "litellm/router.py"
+parent: B162
+split_from: B8353
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

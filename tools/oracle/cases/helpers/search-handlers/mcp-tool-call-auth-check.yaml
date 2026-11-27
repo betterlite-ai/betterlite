@@ -1,0 +1,19 @@
+kind: helper
+name: mcp-tool-call-auth-check
+call:
+  b4686:
+    handler: mcp_tool_call
+    tool_name: alpha-tool
+    call_arguments: {q: 1}
+    allowed_servers: [srv]
+    mcp_servers: [srv]
+    requested_server_id: srv
+    guardrail_context: {model: gpt-4o, metadata: {trace: t1}}
+    mcp_auth_header: "Bearer auth"
+    mcp_server_auth_headers: {srv: {authorization: "Bearer server"}}
+    oauth2_headers: {authorization: "Bearer oauth"}
+    raw_headers: {x-request-id: req-9}
+    client_ip: 10.0.0.9
+    caller: {user_id: u1, team_id: t1, end_user_id: e1}
+env: {}
+compare: {ignore: []}

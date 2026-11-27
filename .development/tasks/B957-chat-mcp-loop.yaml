@@ -1,7 +1,7 @@
 id: B957
 title: Chat mcp loop
 description: >-
-  Execute chat MCP tool results and its single follow-up call with responses-mcp-execute and responses-mcp-followup,
+  Execute chat MCP tool results and its single follow-up call with responses-mcp-execute and B10123's chat follow-up messages,
   preserving completion logging, usage and streamed terminal behavior. Drain the initial inner stream so its terminal
   logging completes, and set trusted skip_mcp_handler on the streaming follow-up. Do not impose the separate Responses
   five-round state machine on this chat-specific two-phase flow.
@@ -41,8 +41,8 @@ description: >-
 
 
   Direct inputs come from B014 (Call dispatch across providers and call types, shared settings and helpers), B171
-  (Direct helper oracle and URL path encoding), B950 (Responses mcp execute), B951 (Responses mcp followup), B956
-  (Chat mcp plans), B1087 (Api boundaries). These are callable/type/config owners, not provider-family umbrellas;
+  (Direct helper oracle and URL path encoding), B950 (Responses mcp execute), B10121 (McpToolResult records), B10123
+  (create_follow_up_messages_for_chat), B956 (Chat mcp plans), B1087 (Api boundaries). These are callable/type/config owners, not provider-family umbrellas;
   the external B500-B859 ids retain ownership on the provider and keys/data branches.
 scope:
   paths:

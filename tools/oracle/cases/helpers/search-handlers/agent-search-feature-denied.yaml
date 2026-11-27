@@ -1,0 +1,10 @@
+kind: helper
+name: agent-search-feature-denied
+call:
+  b4686:
+    handler: agent_search
+    query: alpha
+    feature_denied: true
+    caller: {user_id: u1}
+env: {}
+compare: {ignore: []}

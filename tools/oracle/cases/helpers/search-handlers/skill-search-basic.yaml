@@ -1,0 +1,14 @@
+kind: helper
+name: skill-search-basic
+call:
+  b4686:
+    handler: skill_search
+    query: alpha skills
+    top_k: 2
+    skills:
+      - {id: s1, name: Skill One, description: does alpha work}
+      - {id: s2, name: Skill Two}
+    skill_embedding_model: text-embedding-3-small
+    caller: {user_id: u1}
+env: {}
+compare: {ignore: []}

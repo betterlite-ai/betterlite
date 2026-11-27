@@ -1,0 +1,46 @@
+kind: helper
+name: bedrock-services-s3-listing-invalid-xml
+call:
+  bedrock_services_s3_listing:
+    operation: list_response
+    listings:
+      - status: 200
+        body: '<ListBucketResult><'
+        trusted: [[s3_bucket_name, in-bucket]]
+      - status: 200
+        body: '<ListBucketResult><Contents></ListBucketResult>'
+        trusted: [[s3_bucket_name, in-bucket]]
+      - status: 200
+        body: '<ListBucketResult><Contents><Key>litellm-bedrock-files-a</Key></Contents>'
+        trusted: [[s3_bucket_name, in-bucket]]
+      - status: 200
+        body: not xml
+        trusted: [[s3_bucket_name, in-bucket]]
+      - status: 204
+        body: ""
+        trusted: [[s3_bucket_name, in-bucket]]
+      - status: 302
+        body: ""
+        trusted: [[s3_bucket_name, in-bucket]]
+calls:
+  - bedrock_services_s3_listing:
+      operation: next_request
+      next:
+        - status: 200
+          body: not xml
+          litellm_params: {aws_region_name: us-east-1}
+          trusted: [[s3_bucket_name, in], [s3_output_bucket_name, out]]
+        - status: 200
+          body: '<ListBucketResult><Contents>'
+          litellm_params: {aws_region_name: us-east-1}
+          trusted: [[s3_bucket_name, in], [s3_output_bucket_name, out]]
+        - status: 200
+          body: ""
+          litellm_params: {aws_region_name: us-east-1}
+          trusted: [[s3_bucket_name, in], [s3_output_bucket_name, out]]
+        - status: 503
+          body: not xml
+          litellm_params: {aws_region_name: us-east-1}
+          trusted: [[s3_bucket_name, in], [s3_output_bucket_name, out]]
+env: {}
+compare: {ignore: []}

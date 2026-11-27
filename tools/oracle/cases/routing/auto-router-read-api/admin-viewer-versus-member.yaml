@@ -1,0 +1,63 @@
+kind: probe
+name: auto-router-read-api-admin-viewer-versus-member
+probes:
+  - clock: {unix_millis: 1710504000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      auto_router_read_api:
+        now_unix_millis: 1710504000000
+        deployments:
+          - {model_name: complexity-auto, model: auto_router/complexity_router}
+          - {model_name: idle-quality, model: auto_router/quality_router}
+        steps:
+          - kind: benchmarks
+            role: proxy_admin
+            database: true
+            start_date: "2024-01-01"
+            end_date: "2024-01-02"
+            rows:
+              - router_name: complexity-auto
+                router_type: complexity
+                tier_turns: {SIMPLE: 1, MEDIUM: 2}
+                sessions: 2
+                turns: 4
+                unordered_turns: 0
+                covered_turns: 4
+                cache_hits: 2
+                same_model_turns: 1
+                same_model_hits: 1
+                first_visit_turns: 1
+                first_visit_hits: 0
+                return_turns: 2
+                return_hits: 1
+                return_expired_misses: 0
+                return_within_ttl_misses: 0
+                ttl_5m_turns: 2
+                ttl_1h_turns: 0
+                total_tokens: 1024
+                spend: 2.0
+                saved_spend: 2.0
+                savings_estimated_turns: 2
+                savings_estimated_actual_spend: 1.5
+                savings_estimated_classifier_cost: 0.5
+                savings_estimated_saved_spend: 2.5
+                classifier_cost: 0.5
+                classifier_cost_recorded_turns: 4
+                session_seconds: 7200.0
+          - kind: benchmarks
+            role: proxy_admin_viewer
+            database: true
+            start_date: "2024-01-01"
+            end_date: "2024-01-02"
+          - kind: benchmarks
+            role: internal_user
+            database: true
+            start_date: "2024-01-01"
+            end_date: "2024-01-02"
+          - kind: benchmarks
+            role: internal_user
+            database: false
+            start_date: "2024-01-01"
+            end_date: "2024-01-02"
+compare:
+  ignore: []

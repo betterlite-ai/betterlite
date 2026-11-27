@@ -33,14 +33,10 @@ description: >-
   the betterlite-auth side builds B10086's AuthModeFlags from them (betterlite-config cannot name that type).
 
 
-  A null routing selector matches anything. Otherwise stringify scalar/list selectors and claims;
-  absent claims fail, empty lists never match. All iss/client_id/scope/aud selectors must match, with
-  any cross-product value accepted per selector. Only scope splits a stripped string containing an
-  internal ASCII space; tabs alone do not split. Case-sensitive fnmatch runs only if selector has * or ?;
-  a bracket-only selector is literal. For nonscope wildcard matching, any claim whitespace blocks a
-  match; exact full-string matches may contain spaces. Empty/missing overrides or unreadable B760
-  unverified claims return false. First matching path=oauth2 logs DEBUG and selects introspection,
-  without granting identity. B890 is_admin maps get_rbac_role to PROXY_ADMIN or TEAM.
+  B10161 owns the JWT routing override selectors as betterlite-auth jwt_oauth_routing; the mode selection
+  calls its should_route_jwt_to_oauth2_override with the token and B869's typed routing_overrides and
+  records introspection as the chosen validator, without granting identity. Build no selector, scope
+  split or fnmatch here. B890 is_admin maps get_rbac_role to PROXY_ADMIN or TEAM.
 
 
   Build the production auth_headers module in betterlite-auth; reuse the typed dependencies listed in
@@ -50,18 +46,18 @@ description: >-
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/auth/user_api_key_auth.py:
   _normalize_public_auth_route (L160-L163; 4 source lines), _route_requires_auth_despite_public (L166-L171;
-  5 source lines), _routing_selector_matches_claim
-  (L514-L552; 26 source lines), _matches_routing_override (L555-L565; 11 source lines), _should_route_jwt_to_oauth2_override
-  (L568-L582; 12 source lines), get_rbac_role (L793-L798;
+  5 source lines), get_rbac_role (L793-L798;
   6 source lines), get_api_key (L801-L858; 57 source lines), check_api_key_for_custom_headers_or_pass_through_endpoints
   (L861-L905; 34 source lines), get_api_key_from_custom_header (L3580-L3612; 30 source lines). B10086 owns
   _get_bearer_token_or_received_api_key (L491-L511), _get_bearer_token (L585-L610) and is_no_auth_dev_mode (L2747-L2751).
+  B10161 owns _routing_selector_matches_claim (L514-L552), _matches_routing_override (L555-L565) and
+  _should_route_jwt_to_oauth2_override (L568-L582).
 
 
   Pinned settings read by this component (resolve once in betterlite-config, pass typed values): litellm_settings.require_auth_for_metrics_endpoint=True.
-  It also reads litellm_jwtauth.routing_overrides=None. That is a LiteLLM_JWTAuth field, and B869's jwt_settings
-  section (config.sections.jwt_settings) parses and validates that whole object; read the typed value from there.
-  The auth_headers section does not parse it again.
+  It also passes litellm_jwtauth.routing_overrides=None to B10161's selector. That is a LiteLLM_JWTAuth field, and
+  B869's jwt_settings section (config.sections.jwt_settings) parses and validates that whole object; read the typed
+  value from there. The auth_headers section does not parse it again.
 
 
   general_settings.litellm_key_header_name=None; query ?key=
@@ -108,8 +104,8 @@ description: >-
   the passthrough registry later through B2302; configured unavailable modes fail initialization.
 
 
-  Sizing: allow 228 production, 260 table-driven tests, 80 helper adapters, 90 wiring, 55 decoder/fuzz
-  and 60 config lines, 773 changed lines within an 800-line gate. Only the repository fixture/corpus/lock
+  Sizing: allow 180 production, 200 table-driven tests, 80 helper adapters, 90 wiring, 55 decoder/fuzz
+  and 60 config lines, 665 changed lines within an 800-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -157,8 +153,6 @@ scope:
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L160-L171
     why: Pinned implementation and exact ownership boundary for auth_headers.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L514-L582
-    why: Pinned implementation and exact ownership boundary for auth_headers.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L793-L905
     why: Pinned implementation and exact ownership boundary for auth_headers.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L3580-L3612
@@ -167,12 +161,6 @@ references:
     why: Own _normalize_public_auth_route; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L166-L171
     why: Own _route_requires_auth_despite_public; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L514-L552
-    why: Own _routing_selector_matches_claim; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L555-L565
-    why: Own _matches_routing_override; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L568-L582
-    why: Own _should_route_jwt_to_oauth2_override; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L793-L798
     why: Own get_rbac_role; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L801-L858
@@ -183,7 +171,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L191-L196
     why: litellm_settings.require_auth_for_metrics_endpoint default and read site.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L568-L582
-    why: Actual routing_overrides read; B869 owns the typed settings default and validation.
+    why: The routing_overrides read in B10161's selector, the one the mode selection calls; B869 owns the typed settings default and validation.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
     why: Auth exceptions become public HTTP type, param and code.
 dod:
@@ -192,10 +180,7 @@ dod:
       mapped_prefix_root_and_empty_override, passthrough_auth_exact_true_default,
       langfuse_base64_colons_padding_and_invalid_utf8, normal_headers_skip_dict_only_branch,
       custom_header_casefold_missing_empty_and_strict_parse, metrics_trailing_slashes_exact_false,
-      selector_null_missing_empty_and_stringification,
-      scope_space_not_tab_splitting, wildcard_case_whitespace_and_bracket_rules,
-      selectors_and_values_cross_product, only_oauth2_override_debug_no_identity,
-      invalid_unverified_claims_no_override, admin_scope_role_mapping.'
+      admin_scope_role_mapping.'
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -268,7 +253,6 @@ oracle_cases:
   - tools/oracle/cases/helpers/auth-headers/six-headers-precedence.yaml
   - tools/oracle/cases/helpers/auth-headers/malformed-bearer.yaml
   - tools/oracle/cases/helpers/auth-headers/custom-header.yaml
-  - tools/oracle/cases/helpers/auth-headers/jwt-routing-selector.yaml
   - tools/oracle/cases/helpers/auth-headers/pass-through-credential.yaml
   - tools/oracle/cases/helpers/auth-headers/public-protected-route.yaml
   - tools/oracle/cases/helpers/auth-headers/generate-content-query-key.yaml
@@ -297,6 +281,8 @@ out_of_scope:
     and authenticate after mode selection. No credentials are stored here.
   - "litellm/proxy/auth/user_api_key_auth.py: B10086 owns _get_bearer_token (L585-L610), _get_bearer_token_or_received_api_key
     (L491-L511) and is_no_auth_dev_mode (L2747-L2751) as get_bearer_token, AuthModeFlags and is_no_auth_dev_mode; this task calls them."
+  - "litellm/proxy/auth/user_api_key_auth.py: B10161 owns _routing_selector_matches_claim (L514-L552), _matches_routing_override
+    (L555-L565) and _should_route_jwt_to_oauth2_override (L568-L582) as jwt_oauth_routing; this task calls it."
   - 'litellm/proxy/auth/user_api_key_auth.py: B052 owns user_api_key_auth (L3433-L3529), authorize_internal_virtual_key
     (L3938-L3977), _user_api_key_auth_builder.preflight (L1475-L1602), _user_api_key_auth_builder.credential_gate
     (L1858-L1895), _user_api_key_auth_builder.master_and_database (L2078-L2208), user_api_key_auth_websocket_for_model

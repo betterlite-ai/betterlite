@@ -1,0 +1,36 @@
+kind: helper
+name: bedrock-services-batch-records-chat
+call:
+  bedrock_services_batch_records:
+    function: transform_records
+    target_model: ""
+    model_alias_map: {}
+    model_cost:
+      "anthropic.claude-3-5-sonnet-20241022-v2:0": {litellm_provider: bedrock, supports_prompt_caching: true}
+    records:
+      - custom_id: no-messages
+        url: /v1/chat/completions
+        body:
+          model: custom-model-v1
+          max_tokens: 64
+      - custom_id: developer-role
+        body:
+          model: custom-model-v1
+          messages:
+            - {role: developer, content: be nice}
+            - {role: user, content: hi}
+          stop: ["\n\n"]
+      - custom_id: anthropic
+        body:
+          model: "anthropic.claude-3-5-sonnet-20241022-v2:0"
+          messages:
+            - {role: developer, content: be brief}
+            - {role: user, content: hello}
+          max_tokens: 256
+          temperature: 0.4
+          top_p: 0.9
+          top_k: 5
+          allowed_openai_params: [top_k]
+          api_key: sk-should-not-reach-the-mapper
+env: {}
+compare: {ignore: []}

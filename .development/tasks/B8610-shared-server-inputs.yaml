@@ -38,7 +38,8 @@ description: >-
   its Slot::new in state/model_read_through.rs to clone this field. `credentials: Arc<CredentialRegistry>` (B1601's
   one registry, so B097, B7171 and B2306 share it and a credential added through POST /credentials is seen by all) and
   `pass_through: Arc<PassThroughState>` (B8614; the pass-through credential router, Vertex token state and route table
-  that startup, B8384 and B8640 share). Shared holds no MCP or vector store registry yet: those features are deferred
+  that startup, B8384 and B8640 share). `aws_credentials: AwsCredentialChain` (B10175's betterlite-bedrock chain, already in Shared on main, built in server/shared_state.rs): it stays one instance, now built over `secrets` instead of B10175's environment-only lookup, and vertex_embedding_calls, the AWS pass-through routes and the Bedrock port clone it.
+  Shared holds no MCP or vector store registry yet: those features are deferred
   until the core is done, and B9997 adds `mcp_registry: Arc<McpRegistry>` and B9998 `vector_stores:
   Arc<VectorStores>`, each with its StartupOutputs field, when they build them.
   `pass_through_logging: std::sync::OnceLock<Arc<PassThroughRuntime>>` (B8931), created empty here: B8640 fills it once
@@ -67,7 +68,7 @@ description: >-
   prompt routes. B8293's init_prompts and B4060's mutations take &mut, so it is an Arc of a RwLock: use the lock type
   the merged prompt route modules (B4061, B4062) take. `periodic_reloads: Arc<PeriodicReloads>` (B10055, a
   betterlite-server type): the one reload state the lifespan timer checks write and B8586's routes read.
-  `deployment_sync: Arc<dyn DeploymentSyncPort>` (B8611's port; B8613 implements it over B8381's DeploymentSync, which
+  `deployment_sync: Arc<dyn DeploymentSyncPort>` (B10136's port; B8613 implements it over B8381's DeploymentSync, which
   lives in crates/betterlite) for the add_deployment call of B8594 and B8596, and `auto_router_catalog: Arc<dyn
   AutoRouterCatalog>` (B10021's trait, backed by the same DeploymentSync) for B379's availability route. `config_overlay: Arc<dyn
   ConfigOverlayPort>` (B8379's port in betterlite-server's config_overlay_port; B8379's OverlayPortAdapter implements it

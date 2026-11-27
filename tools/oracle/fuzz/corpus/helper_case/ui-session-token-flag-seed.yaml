@@ -1,0 +1,10 @@
+kind: helper
+name: ui-session-token-flag-seed
+call:
+  b10118:
+    function: personal_key_flag
+    key_generation_settings:
+      personal_key_generation:
+        allowed_user_roles: [proxy_admin]
+env: {}
+compare: {ignore: []}

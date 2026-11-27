@@ -136,7 +136,7 @@ deviations:
 
 out_of_scope:
   - Manager _get_tools_from_server, ID/name lookup and server resolution functions (part of Q2 manager leaves).
-  - filter_server_ids_by_ip_with_info, filter_tools_by_allowed_tools, filter_tools_by_key_team_permissions (Q2 manager).
+  - filter_server_ids_by_ip_with_info (B10145, module registry_ip_filter), filter_tools_by_allowed_tools, filter_tools_by_key_team_permissions (Q2 manager).
   - scan_tool_descriptions, apply_description_overrides, get_server_prefix (Q4 catalog/OpenAPI leaves).
   - classify_list_exception, list_fault_http_status, outcome_wire_value, _aggregate_server_key (Q4 catalog/OpenAPI).
   - MCPUpstreamAuthError.to_http_exception, get_request_base_url (Q4 catalog/OpenAPI).

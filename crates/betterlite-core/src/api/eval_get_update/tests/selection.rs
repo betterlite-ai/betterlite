@@ -96,7 +96,12 @@ async fn get_eval_rejects_a_provider_without_an_evals_config() {
         &failure.error,
         EvalsGetUpdateError::GetUnsupported { .. }
     ));
-    assert!(matches!(failure.class, ErrorClass::ApiConnection(_)));
+    let ErrorClass::BadRequest(details) = &failure.class else {
+        panic!("a bad request, got {:?}", failure.class);
+    };
+    assert_eq!(details.status.0, 400);
+    assert_eq!(details.model.as_deref(), Some(""));
+    assert_eq!(details.provider.as_deref(), Some("anthropic"));
     assert_eq!(
         failure.error.to_string(),
         "GET eval is not supported for anthropic"
@@ -127,7 +132,12 @@ async fn aupdate_eval_rejects_a_provider_without_an_evals_config() {
         &failure.error,
         EvalsGetUpdateError::UpdateUnsupported { .. }
     ));
-    assert!(matches!(failure.class, ErrorClass::ApiConnection(_)));
+    let ErrorClass::BadRequest(details) = &failure.class else {
+        panic!("a bad request, got {:?}", failure.class);
+    };
+    assert_eq!(details.status.0, 400);
+    assert_eq!(details.model.as_deref(), Some(""));
+    assert_eq!(details.provider.as_deref(), Some("anthropic"));
     assert_eq!(
         failure.error.to_string(),
         "UPDATE eval is not supported for anthropic"
@@ -140,7 +150,7 @@ async fn aupdate_eval_rejects_a_provider_without_an_evals_config() {
 async fn get_eval_rejects_an_unknown_provider_name() {
     let harness = Harness::new();
     let mut calls = Calls::empty();
-    calls.provider = Some("nonsense".to_owned());
+    calls.provider = Some("not-a-provider".to_owned());
     let call = get_call(&calls, "eval_1");
     let mut state = harness.logging_state("aget_eval");
     let env = harness.env.pre_post();
@@ -158,10 +168,15 @@ async fn get_eval_rejects_an_unknown_provider_name() {
         &failure.error,
         EvalsGetUpdateError::UnknownProvider { .. }
     ));
-    assert!(matches!(failure.class, ErrorClass::ApiConnection(_)));
+    let ErrorClass::BadRequest(details) = &failure.class else {
+        panic!("a bad request, got {:?}", failure.class);
+    };
+    assert_eq!(details.status.0, 400);
+    assert_eq!(details.model.as_deref(), Some(""));
+    assert_eq!(details.provider.as_deref(), Some("not-a-provider"));
     assert_eq!(
         failure.error.to_string(),
-        "\"nonsense\" is not a provider betterlite knows"
+        "\"not-a-provider\" is not a provider betterlite knows"
     );
     assert!(harness.handler.gets().is_empty());
 }
@@ -170,7 +185,7 @@ async fn get_eval_rejects_an_unknown_provider_name() {
 async fn update_eval_rejects_an_unknown_provider_name() {
     let harness = Harness::new();
     let mut calls = Calls::empty();
-    calls.provider = Some("nonsense".to_owned());
+    calls.provider = Some("not-a-provider".to_owned());
     let call = update_call(&calls, "eval_1", None, None);
     let mut state = harness.logging_state("aupdate_eval");
     let env = harness.env.pre_post();
@@ -188,7 +203,12 @@ async fn update_eval_rejects_an_unknown_provider_name() {
         &failure.error,
         EvalsGetUpdateError::UnknownProvider { .. }
     ));
-    assert!(matches!(failure.class, ErrorClass::ApiConnection(_)));
+    let ErrorClass::BadRequest(details) = &failure.class else {
+        panic!("a bad request, got {:?}", failure.class);
+    };
+    assert_eq!(details.status.0, 400);
+    assert_eq!(details.model.as_deref(), Some(""));
+    assert_eq!(details.provider.as_deref(), Some("not-a-provider"));
     assert!(harness.handler.updates().is_empty());
 }
 
@@ -213,7 +233,12 @@ async fn get_eval_does_not_fall_back_when_the_config_is_missing() {
         failure.error.to_string(),
         "GET eval is not supported for openai"
     );
-    assert!(matches!(failure.class, ErrorClass::ApiConnection(_)));
+    let ErrorClass::BadRequest(details) = &failure.class else {
+        panic!("a bad request, got {:?}", failure.class);
+    };
+    assert_eq!(details.status.0, 400);
+    assert_eq!(details.model.as_deref(), Some(""));
+    assert_eq!(details.provider.as_deref(), Some("openai"));
     assert!(harness.handler.gets().is_empty());
 }
 
@@ -238,6 +263,11 @@ async fn update_eval_does_not_fall_back_when_the_config_is_missing() {
         failure.error.to_string(),
         "UPDATE eval is not supported for openai"
     );
-    assert!(matches!(failure.class, ErrorClass::ApiConnection(_)));
+    let ErrorClass::BadRequest(details) = &failure.class else {
+        panic!("a bad request, got {:?}", failure.class);
+    };
+    assert_eq!(details.status.0, 400);
+    assert_eq!(details.model.as_deref(), Some(""));
+    assert_eq!(details.provider.as_deref(), Some("openai"));
     assert!(harness.handler.updates().is_empty());
 }

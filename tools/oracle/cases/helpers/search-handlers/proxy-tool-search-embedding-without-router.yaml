@@ -1,0 +1,13 @@
+kind: helper
+name: proxy-tool-search-embedding-without-router
+call:
+  b4686:
+    handler: mcp_proxy_tool
+    name: search_tools
+    arguments: {query: alpha}
+    settings: {embedding_model: embed-small}
+    tools:
+      - {name: alpha-tool, server_id: srv, description: finds alpha}
+    caller: {user_id: u1}
+env: {}
+compare: {ignore: []}

@@ -6,12 +6,18 @@ description: >-
   team_model_delete and append_team_models services, including their authorization and cache effects;
   do not substitute a direct array write for these calls. No route is registered in this task.
 
-  _add_model_to_db encrypts EVERY non-null litellm_params value with B2303.encrypt_value_helper and the
-  optional new_encryption_key, not just api_key. Non-string values follow that helper's unchanged-value
-  behavior; encryption errors abort before insertion. It mutates the supplied deployment, serializes
-  both JSON blobs, uses model_info.id and sets created_by/updated_by to user_id or LITELLM_PROXY_ADMIN_NAME.
-  should_create_model_in_db=false returns the encrypted row without writing or entering a slot; otherwise
-  write through the supplied capability slot, or the ordinary model table if no slot was supplied.
+  _add_model_to_db's record preparation is done B1700's prepare_encrypted_model in betterlite-db::model_secrets:
+  it encrypts EVERY non-null litellm_params value through B2303's DbCipher, not just api_key, keeps non-string
+  values unchanged, drops nulls, serializes both JSON blobs, takes model_info.id and sets created_by/updated_by
+  to user_id or default_user_id (LITELLM_PROXY_ADMIN_NAME). Call it; don't write a second one. Its key is a
+  required &SecretString because B1700's rotation always passes the new master key, while
+  _add_team_model_to_db calls with new_encryption_key=None, which seals with the configured key. Widen that
+  parameter to Option<&SecretString>, hand it to DbCipher::encrypt_value as is, and make the one caller in
+  crates/betterlite-server/src/credentials/rotation.rs pass Some(new_master_key). The new test
+  model_secrets::tests::prepared_model_seals_with_the_configured_key opens a None-key record with the
+  cipher's own key. An encryption error aborts before insertion. Only _rotate_master_key passes
+  should_create_model_in_db=false, and B1700 calls prepare_encrypted_model for it, so this task's insert
+  always writes: through the supplied capability slot, or the ordinary model table if no slot was supplied.
 
   _add_team_model_to_db returns None without a team ID. Otherwise capture the original public model_name,
   put a truthy name in model_info.team_public_model_name and replace the database name with
@@ -51,8 +57,8 @@ description: >-
   B1230's prefix-and-model_info filter. After commit, publish a config change with object_type
   litellm_proxymodeltable only when IDs were deleted. Then under the model reconcile lock remove
   those IDs from the auto-router catalog and, if a router exists, call B302.delete_deployment for each.
-  That lock is LiteLLM's MODEL_RECONCILE_LOCK (proxy_server.py L2595). This task defines it as `ModelReconcileLock`, a
-  cloneable handle over one tokio::sync::Mutex<()> built once at startup and passed in (no static); B8381 and B8384 take the same handle.
+  That lock is LiteLLM's MODEL_RECONCILE_LOCK (proxy_server.py L2595), B10132's `ModelReconcileLock` in
+  betterlite-server's model_reconcile_lock: delete_team_models takes the one handle it is given, the same one B8381 and B8384 hold, and never builds its own.
   A publish failure leaves rows deleted and prevents the later local removal. A database rollback
   prevents both publication and router removal. Return the deleted IDs, including an empty list.
 
@@ -63,7 +69,8 @@ description: >-
 
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/model_management_endpoints.py:
-  update_db_model (L975-L1085; 89 source lines), _add_model_to_db (L1495-L1525; 30 source lines),
+  update_db_model (L975-L1085; 89 source lines), _add_model_to_db (L1495-L1525; 30 source lines, its record
+  preparation already built by B1700),
   _add_team_model_to_db (L1528-L1580; 38 source lines),
   _update_team_model_in_db (L1583-L1669; 62 source lines), _get_public_model_name (L1672-L1715; 37 source
   lines), _setup_new_team_model_assignment (L1718-L1731; 14 source lines), delete_team_models (L1769-L1809;
@@ -118,6 +125,9 @@ scope:
     - tools/oracle/fuzz/corpus/helper_case/model-team-assignment-*
     - crates/betterlite-server/src/model_team_assignment/fixtures.rs
     - crates/betterlite-server/src/model_team_assignment/fixtures/**
+    - crates/betterlite-db/src/model_secrets.rs
+    - crates/betterlite-db/src/model_secrets/**
+    - crates/betterlite-server/src/credentials/rotation.rs
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L975-L1085
@@ -127,7 +137,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5577-L5583
     why: PrismaCompatibleUpdateDBModel request/response fields and defaults.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L1495-L1525
-    why: Own _add_model_to_db; preserve caller-visible values and failure ordering.
+    why: Own _add_model_to_db's insert and slot branches; its record preparation is B1700's prepare_encrypted_model.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L1528-L1580
     why: Own _add_team_model_to_db; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L1583-L1669
@@ -153,15 +163,18 @@ dod:
       - oracle
       - helper-python
       - helper-case-corpus
-  - text: 'postgres_pinned_rows covers encrypted_create, actor_fallback, dry_run_no_slot,
-      capability_slot_create, no_team_no_create, team_public_name_before_internal_name,
-      empty_public_name_no_grant, team_move_new_internal_name, same_team_keeps_internal_name,
-      sibling_db_grant_retained, first_public_name_add, unchanged_name_no_op and multi_team_delete_ids.
+  - text: 'postgres_pinned_rows covers encrypted_create, actor_fallback, capability_slot_create,
+      no_team_no_create, team_public_name_before_internal_name, empty_public_name_no_grant,
+      team_move_new_internal_name, same_team_keeps_internal_name, sibling_db_grant_retained, first_public_name_add, unchanged_name_no_op and multi_team_delete_ids.
       postgres_failure_effects covers cipher_failure_no_write, write_failure_no_grant,
       grant_failure_keeps_row, add_before_delete_failure, missing_db_warn_skip_rename,
       delete_transaction_rollback, publish_failure_after_commit and reconcile_lock_before_router_removal.'
     proof:
       - postgres-tests
+  - text: prepare_encrypted_model takes its key as an Option and seals a None-key record with the configured
+      key, and B1700's model_secrets and credentials::rotation tests still pass with the widened parameter.
+    proof:
+      - model-secrets-tests
 checks:
   optional: []
   commands:
@@ -183,13 +196,20 @@ checks:
       why: Actual Postgres row and failure-effect tests are absent or fail.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/model_team_assignment::tests::postgres_pinned_rows$/)'
         && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/model_team_assignment::tests::postgres_failure_effects$/)'
+    - id: model-secrets-tests
+      why: Record preparation cannot seal with the configured key, or the widened key broke B1700's preparation or rotation.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^model_secrets::tests::prepared_model_seals_with_the_configured_key$/)'
+        && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^model_secrets::/)'
+        && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^credentials::rotation::/)'
 oracle_cases:
   - tools/oracle/cases/helpers/model-team-assignment/team-public-model-name.yaml
   - tools/oracle/cases/helpers/model-team-assignment/internal-name-echo.yaml
   - tools/oracle/cases/helpers/model-team-assignment/legacy-public-name-fallback.yaml
 deviations: []
 out_of_scope:
-  - B2303 owns the concrete StoredCipher and both supported stored-value formats; model writes use it directly.
+  - B2303 owns the concrete StoredCipher and both supported stored-value formats; model writes reach it through B1700's prepare_encrypted_model.
+  - B1700 owns prepare_encrypted_model (the record preparation of _add_model_to_db) and _rotate_master_key; this task only widens that function's key to an Option and calls it.
+  - B10132 owns ModelReconcileLock; delete_team_models only holds the handle it is given.
   - 'litellm/proxy/management_endpoints/model_management_endpoints.py: B832 owns _canonical_session_tags
     (L1985-L1986), ModelManagementAuthChecks.can_user_make_team_model_call (L1995-L2015), ModelManagementAuthChecks.can_user_attach_credential
     (L2018-L2042), ModelManagementAuthChecks.can_user_set_aws_session_tags (L2045-L2064), ModelManagementAuthChecks.allow_team_model_action
@@ -242,6 +262,7 @@ pitfalls:
   - A team model's UUID-based internal name must never replace its public grant after a dashboard echo.
   - A new team assignment writes the model before updating grants and does not undo it when grant work fails.
   - _update_existing_team_model_assignment looks only at DB siblings, unlike B1230's broader cleanup path.
+  - LiteLLM's _add_model_to_db writes the sealed params back into the caller's deployment, but nothing reads them afterwards (add_new_model L2486-L2497 reads only model_name and model_info), so prepare_encrypted_model's borrowed input is enough and needs no write-back.
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

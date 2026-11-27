@@ -1,0 +1,17 @@
+kind: helper
+name: select-unknown-keys
+call:
+  b10114:
+    team_details:
+      - team_id: team-1
+        team_models: [gpt-4]
+        unknown:
+          nested: true
+    team_id: team-1
+    row:
+      team_id: team-1
+      team_alias: Team One
+      models: [gpt-4]
+      aliases: null
+env: {}
+compare: {ignore: []}

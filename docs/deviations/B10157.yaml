@@ -1,0 +1,5 @@
+task: B10157
+deviations:
+  - what: GIGACHAT_API_BASE comes from the process environment only.
+    why: get_secret_str asks a configured secret manager before the environment, but a config section only gets the EnvironmentLookup it is loaded with. B7325's gigachat_auth settings are read the same way; whether these names should also go through B8500's SecretLookup is an open question for the architect.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/main.py#L316-L359

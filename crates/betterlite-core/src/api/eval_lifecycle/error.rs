@@ -1,13 +1,12 @@
 use betterlite_error::dispatch::{DispatchInput, RawException, dispatch};
 use betterlite_error::error::ErrorClass;
-use betterlite_error::error::details::ResponseDetails;
 use betterlite_logging::logging_state::LoggingStateError;
 use betterlite_openai::error::ProviderError;
 use betterlite_openai::evals::error::EvalsError;
 use betterlite_redact::secret::Redactor;
 use thiserror::Error;
 
-use crate::api::eval_http::error::EvalHttpError;
+use crate::api::eval_http::error::{EvalHttpError, unsupported_provider};
 
 // exception_type() maps every eval lifecycle failure with model ""
 const MODEL: &str = "";
@@ -48,7 +47,7 @@ pub fn failure(
     redactor: &Redactor,
 ) -> EvalLifecycleFailure {
     let class = match &error {
-        EvalLifecycleError::Unsupported { .. } => unsupported(&error, provider),
+        EvalLifecycleError::Unsupported { .. } => unsupported_provider(error.to_string(), provider),
         EvalLifecycleError::Config(EvalsError::Provider { provider: cause })
         | EvalLifecycleError::Handler(EvalHttpError::Api(EvalsError::Provider {
             provider: cause,
@@ -61,15 +60,6 @@ pub fn failure(
         }
     };
     EvalLifecycleFailure { error, class }
-}
-
-// the provider name is the caller's input and the call can never succeed, so LiteLLM's ValueError becomes a 400
-fn unsupported(error: &EvalLifecycleError, provider: &str) -> ErrorClass {
-    ErrorClass::BadRequest(Box::new(ResponseDetails::for_provider(
-        error.to_string(),
-        Some(MODEL.to_owned()),
-        provider,
-    )))
 }
 
 // get_error_class's BaseLLMException is raised by the handler, so exception_type sees its message and status

@@ -1,0 +1,107 @@
+id: B10140
+title: Team membership metric and audit effects
+description: >-
+  After a team's roster changes, LiteLLM runs two small effects: it sets the litellm_team_members_metric gauge, and it schedules one audit row holding the roster before and after the change. Member add and role update (B808 and B807's add audit logs), member delete (B1207) and team delete (B811, metric only) call them. None of these effects needs B807's identity resolution, permission preflight or locked roster writes, so they are their own task, and B1207 and B811 no longer wait for B807. Code goes in betterlite-server, module team_membership_effects (crates/betterlite-server/src/team_membership_effects.rs), with the submodules metric and audit, each with a tests.rs beside it. The file is an empty stub that lib.rs already declares.
+
+
+  metric. emit_team_members_metric is _emit_team_members_metric. LiteLLM finds the registered PrometheusLogger with PrometheusLogger.get_instance() and does nothing when there is none. betterlite has no global for it, so the caller passes an Option of the team_members GaugeField from B3882's BudgetGauges together with the LabelSource those gauges use, generic over the same Collector bound as B3882's set_team_members_metric, plus the team id, the team alias and the roster as a slice of B859's Member. None returns at once and logs nothing. Otherwise build B3882's TeamMembersGaugeInput (team_id, team_alias, member_count as the roster length) and call set_team_members_metric. Its LabelFactoryError never reaches the caller: log it at debug level as `Prometheus: failed to emit team members metric: <error>` and return, because LiteLLM catches every exception here so a metric can never fail a team request. The roster is a parameter rather than a team row field because B811 emits for a deleted team with an empty roster, as LiteLLM's model_copy with members_with_roles=() does.
+
+
+  audit, the value. members_audit_value(team_alias: Option<&str>, members: &[Member]) is _members_audit_value and returns the JSON text or B192's PrivateJsonError. The text is one object, {"team_alias": the alias or null, "members_with_roles": [each member's user_id, user_email and role]}, written with B192's safe_dumps, DEFAULT_MAX_RECURSE_DEPTH and no transform. The list sits under a key because the audit columns hold an object, never a top-level array. Keep null fields (an email-only member shows "user_id": null) and the roster order; B859's Member already serializes those three keys with their nulls. safe_dumps drops NUL bytes from strings, as LiteLLM's safe_json_structure does.
+
+
+  audit, the schedule. schedule_team_membership_audit_log is _schedule_team_membership_audit_log. It takes B065's Arc<AuditService>, B2330's Arc<dyn AuditTaskSpawner>, the team id, the team alias, the before and after rosters, the caller's B2330 CallerIdentity and litellm_proxy_admin_name as Option<&str>.
+
+  1. When service.settings.config.is_audit_logging_enabled(None) is false, return without spawning. AuditService::create_object_audit_log checks the same setting again; checking here first keeps a disabled audit from building values or spawning a task.
+
+  2. When the two rosters are equal (same length, equal members in the same order, Member's PartialEq), return without spawning. LiteLLM compares the two tuples with ==.
+
+  3. Otherwise build both texts with members_audit_value and hand the spawner one future that awaits AuditService::create_object_audit_log with object_id the team id, AuditAction::Updated, litellm_changed_by None, AuditTable::Team ("LiteLLM_TeamTable") and both texts as before_value and after_value. ObjectAuditLog borrows its strings, so the future owns the two texts, a clone of the caller identity, the proxy admin name and the Arc, and builds the entry inside. key_events::audit::SinkScheduler spawns its write the same way.
+
+  The function returns before the write runs: the spawner is LiteLLM's asyncio.create_task, so never await the write here and never call a detached tokio::spawn. A PrivateJsonError from members_audit_value is returned to the caller and nothing is spawned, because in LiteLLM an exception from the value reaches the route before create_task.
+
+
+  Tests. The metric tests build the gauge over a recording collector, as prometheus_remaining_budget/tests/support.rs builds BudgetGauges over fake gauges, since betterlite-logging's own budget gauge test support is private to that crate. A LabelSource::Context built for other label values makes set_team_members_metric fail with ContextMismatch, which is how the failure test gets its error. The audit tests start B065's AuditService over a recording repository, as audit/tests/service.rs does, with store_audit_logs set as each case needs, and a spawner that keeps the futures it is given without running them, so a test can see that nothing is written until it runs a future. Member values in tests use test- user ids and test emails.
+scope:
+  paths:
+    - crates/betterlite-server/src/team_membership_effects.rs
+    - crates/betterlite-server/src/team_membership_effects/**
+    - tools/oracle/cases/helpers/team-membership-effects/**
+    - tools/oracle/fuzz/corpus/helper_case/team-membership-effects-*
+    - tools/oracle/helpers/b10140.py
+    - tools/oracle/helpers/b10140/**
+    - tools/oracle/src/helpers/server/b10140.rs
+    - tools/oracle/src/helpers/server/b10140/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L3063-L3075
+    why: Owned. _emit_team_members_metric, the absent logger and the swallowed failure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L3156-L3167
+    why: Owned. _members_audit_value and the nested object shape.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L3170-L3197
+    why: Owned. _schedule_team_membership_audit_log, its two early returns and the scheduled create_object_audit_log arguments.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L257-L265
+    why: PrometheusLogger.get_instance, which the Option replaces.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4062-L4072
+    why: set_team_members_metric, already built by B3882; this task calls it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/safe_json_dumps.py#L87-L93
+    why: safe_dumps, already built by B192; this task calls it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L3486-L3497
+    why: Call sites in team_member_add (B808), the metric and then B807's add audit logs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L3562-L3575
+    why: Call site in team_member_delete (B1207), the membership audit with the fresh rosters.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L4506-L4508
+    why: Call site in delete_team (B811), the metric with an empty roster.
+dod:
+  - text: With no gauge emit_team_members_metric records nothing; with one it sets litellm_team_members_metric to the roster length under the team and team_alias labels, team_alias "" when the alias is None, and an empty roster sets 0.
+    proof: [metric-tests]
+  - text: A failed label build inside set_team_members_metric is logged at debug level and emit_team_members_metric returns normally.
+    proof: [metric-tests]
+  - text: members_audit_value nests the roster under members_with_roles beside team_alias, keeps null alias and null member fields and the roster order, and matches LiteLLM's _members_audit_value.
+    proof: [audit-tests, oracle, helper-python, helper-case-corpus]
+  - text: schedule_team_membership_audit_log spawns nothing when audit logging is off or the two rosters are equal.
+    proof: [audit-tests]
+  - text: For a changed roster it spawns exactly one future and returns before any write; running that future writes one updated LiteLLM_TeamTable row for the team id with both values and the changed_by B065 picks for a None litellm_changed_by.
+    proof: [audit-tests]
+checks:
+  optional: []
+  commands:
+    - id: metric-tests
+      why: The absent gauge, the member count, the alias label or the swallowed label failure differs from LiteLLM.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^team_membership_effects::metric::/)'
+    - id: audit-tests
+      why: The audit value shape, the two early returns or the scheduled write differs from LiteLLM.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^team_membership_effects::audit::/)'
+    - id: helper-python
+      why: The b10140 adapter is missing or fails the strict Python checks.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b10140.py tools/oracle/helpers/b10140)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No new b10140 seed reaches the shared helper case parser.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/team-membership-effects-*")" &&
+        grep -lE 'b10140"?:' tools/oracle/fuzz/corpus/helper_case/team-membership-effects-* &&
+        cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-server --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/team-membership-effects/audit-before-after.yaml
+  - tools/oracle/cases/helpers/team-membership-effects/audit-null-fields.yaml
+deviations:
+  - what: The Prometheus gauge reaches the metric effect as an Option passed by the caller instead of a lookup in litellm.callbacks.
+    why: The Rust rules forbid globals; None gives the same no-op LiteLLM's missing PrometheusLogger gives.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L257-L265
+out_of_scope:
+  - "_schedule_team_member_add_audit_logs, which schedules the created-user rows and then calls this task's membership audit: B807."
+  - "set_team_members_metric and the BudgetGauges holder: B3882. safe_dumps: B192. AuditService, create_object_audit_log and audit enablement: B065. AuditTaskSpawner, AuditTable, AuditAction and CallerIdentity: B2330. This task calls them."
+  - "Building the gauges from the registered Prometheus callback and handing them to the team routes: the server wiring that constructs those routes."
+  - "bulk_user_deletion.py's own _emit_team_members_metric: B1202."
+  - "Every other team_endpoints.py function: B807 for the membership preflight and role update, B10141 for the locked member addition, and otherwise the owner B807's out_of_scope names."
+pitfalls:
+  - "LiteLLM checks is_audit_logging_enabled before the roster comparison, so a disabled audit returns even for a changed roster; keep that order so the disabled test cannot pass by accident."
+  - "litellm_changed_by is always None here, so a litellm-changed-by header never reaches a membership audit row even when the caller's metadata sets allow_litellm_changed_by_header."
+  - "An awaited create_object_audit_log makes the route wait for the audit write; LiteLLM returns first, so only the spawner may run the future."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
