@@ -469,9 +469,10 @@ async fn async_calls_keep_the_callers_context() {
     let mut logs = Logs::new();
     let call = read_call(&kwargs, None, None, None);
     let deps = fakes.deps();
-    run(&mut logs, &deps, &call, Which::ARetrieve)
+    let answer = run(&mut logs, &deps, &call, Which::ARetrieve)
         .await
         .expect("the mock answers");
+    assert_eq!(answer, json(RETRIEVE_BODY));
     assert_eq!(logs.state.litellm_trace_id, "trace-1");
     assert_eq!(
         logs.detail("model"),
@@ -492,7 +493,7 @@ async fn async_calls_keep_the_callers_context() {
     let deps = fakes.deps();
     run(&mut logs, &deps, &call, Which::Retrieve)
         .await
-        .expect("a non-boolean flag keeps the sync handler");
+        .expect("the flag reaches the async handler through the sync entry");
     assert!(fakes.requests().len() == 1);
 }
 
