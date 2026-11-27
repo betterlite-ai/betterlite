@@ -1,0 +1,45 @@
+kind: sdk_http
+name: vector-store-read-list-defaults-and-cursors
+env: {OPENAI_API_KEY: sk-provider}
+call:
+  vector_store_read:
+    runs:
+      - operation: list
+        mode: sync
+        options: {api_key: sk-caller, litellm_call_id: call-defaults}
+        extra_query: {limit: 99}
+      - operation: list
+        mode: async
+        after: ""
+        before: vs_z
+        limit: 0
+        order: asc
+        options: {api_key: sk-caller, litellm_call_id: call-cursors}
+      - operation: list
+        mode: sync
+        limit: null
+        order: null
+        options: {api_key: sk-caller, litellm_call_id: call-nulls}
+      - operation: list
+        mode: sync
+        order: sideways
+        options: {api_key: sk-caller, litellm_call_id: call-sideways}
+        extra_body: {order: rejected}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [], first_id: null, last_id: null, has_more: false}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [], first_id: null, last_id: null, has_more: false}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [], first_id: null, last_id: null, has_more: false}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [], first_id: null, last_id: null, has_more: false}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type, openai-beta]
+  ignore: []

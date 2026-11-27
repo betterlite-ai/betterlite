@@ -1,0 +1,18 @@
+kind: helper
+name: mcp-admin-credential-view-legacy-public-internet
+call:
+  b10134:
+    server:
+      server_id: test-srv-6
+      transport: http
+      mcp_info:
+        protocol_version: "2025-03-26"
+        is_public: false
+        is_public_explicit: true
+    config_servers: []
+    db_servers:
+      - {server_id: test-srv-6, name: Test Server, transport: http, available_on_public_internet: true}
+    public_mcp_servers: []
+    public_hub_strict: false
+env: {}
+compare: {ignore: []}

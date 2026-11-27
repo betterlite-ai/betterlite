@@ -1,7 +1,7 @@
 id: B10118
 milestone: M4 keys, spend and management
 title: Shared UI session token encoder
-status: todo
+status: done
 depends_on: [B002, B171, B199, B771, B1608]
 file: tasks/B10118-ui-session-token.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/management_endpoints/ui_sso.py"
 parent: B056
 split_from: B788
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3337

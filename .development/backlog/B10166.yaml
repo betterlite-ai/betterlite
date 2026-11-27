@@ -1,0 +1,13 @@
+id: B10166
+milestone: R2 bug fixes
+title: The SDK pass-through call signs Bedrock and reads the AWS and Mantle environment through a port
+status: todo
+depends_on: [B10164, B8690, B658, B625, B2207, B595, B590, B591, B639, B7890, B8692]
+file: tasks/B10166-passthrough-aws-port.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
