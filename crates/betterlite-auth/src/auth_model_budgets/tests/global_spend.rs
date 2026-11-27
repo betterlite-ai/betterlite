@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -6,6 +7,7 @@ use crate::auth_model_budgets::rows::SpendReadError;
 use async_trait::async_trait;
 use betterlite_cache::backend::{BackendError, CacheBackend, CacheResult, Ttl};
 use betterlite_cache::coordinator::{CoordinatorError, EventDrivenCacheCoordinator};
+use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::auth_model_budgets::Settings;
 use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_db::budget_reset_policy::cache_invalidation::GLOBAL_PROXY_SPEND_CACHE_KEY;
@@ -141,6 +143,67 @@ fn enabled_settings() -> Settings {
     Settings {
         max_budget: Decimal::new(50, 1),
     }
+}
+
+fn loaded_settings(source: &str, variables: &[(&str, &str)]) -> Settings {
+    let lookup: BTreeMap<String, String> = variables
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+        .collect();
+    ConfigLoader { lookup }
+        .load(source)
+        .expect("the configuration loads")
+        .sections
+        .auth_model_budgets
+}
+
+async fn spend_reads(max_budget: Decimal) -> (Option<Decimal>, usize) {
+    let rows = Arc::new(FakeRows::new(Some(Decimal::ZERO)));
+    let fetcher = make_fetcher(
+        Arc::clone(&rows),
+        Arc::new(FakeCache::default()),
+        Arc::new(Alerts::default()),
+        5.0,
+        Duration::from_secs(5),
+    );
+    let spend = get_global_proxy_spend(max_budget, Some(&fetcher), "admin", "token")
+        .await
+        .unwrap();
+    (spend, rows.calls.load(Ordering::SeqCst))
+}
+
+// the production loader's value decides the read, so a positive ceiling reads the aggregate once
+#[tokio::test]
+async fn loaded_budget_positive_reads_aggregate() {
+    let source = "\
+litellm_settings:
+  max_budget: os.environ/PROXY_MAX_BUDGET";
+    let settings = loaded_settings(source, &[("PROXY_MAX_BUDGET", "250.50")]);
+    assert_eq!(settings.max_budget, Decimal::new(25050, 2));
+    assert_eq!(
+        spend_reads(settings.max_budget).await,
+        (Some(Decimal::ZERO), 1)
+    );
+}
+
+#[rstest::rstest]
+#[case::zero("0")]
+#[case::zero_float("0.0")]
+#[case::negative("-5")]
+#[case::nan(".nan")]
+#[tokio::test]
+async fn loaded_budget_nonpositive_skips_read(#[case] value: &str) {
+    let source = format!("litellm_settings:\n  max_budget: {value}");
+    let settings = loaded_settings(&source, &[]);
+    assert!(settings.max_budget <= Decimal::ZERO, "{value}");
+    assert_eq!(spend_reads(settings.max_budget).await, (None, 0));
+}
+
+#[tokio::test]
+async fn loaded_budget_default_zero_skips_read() {
+    let settings = loaded_settings("litellm_settings: {}", &[]);
+    assert_eq!(settings.max_budget, Decimal::ZERO);
+    assert_eq!(spend_reads(settings.max_budget).await, (None, 0));
 }
 
 #[tokio::test]
