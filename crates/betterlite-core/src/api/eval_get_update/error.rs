@@ -74,7 +74,7 @@ pub fn failure(
         })) => dispatch(
             &DispatchInput::Raw(Box::new(raw_exception(
                 provider,
-                FailureSource::Provider(provider_error),
+                &FailureSource::Provider(provider_error),
             ))),
             redactor,
         ),
@@ -88,7 +88,7 @@ pub fn failure(
         | EvalsGetUpdateError::Handler(_) => dispatch(
             &DispatchInput::Raw(Box::new(raw_exception(
                 provider,
-                FailureSource::Local(&error),
+                &FailureSource::Local(&error),
             ))),
             redactor,
         ),
@@ -112,7 +112,7 @@ struct ExceptionFacts {
 }
 
 // the raw exception exception_type's dispatch classifies
-fn raw_exception(provider: &str, source: FailureSource<'_>) -> RawException {
+fn raw_exception(provider: &str, source: &FailureSource<'_>) -> RawException {
     let facts = match source {
         FailureSource::Provider(error) => ExceptionFacts {
             message: error.message.clone(),

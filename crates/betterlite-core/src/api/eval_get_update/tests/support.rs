@@ -132,7 +132,7 @@ macro_rules! recording_request {
                     headers: context.headers.clone(),
                     litellm_params: context.litellm_params.clone(),
                 });
-            self.inner.$method($($arg,)* context)
+            self.inner.$method($($arg,)+ context)
         }
     };
 }

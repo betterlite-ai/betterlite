@@ -93,6 +93,7 @@ async fn update_eval_passes_the_resolved_headers_to_the_transform() {
     let harness = Harness::new();
     let mut calls = Calls::empty();
     calls.extra_headers = Some(headers(&[("x-test", "yes")]));
+    calls.kwargs = map(&[("api_key", json("\"sk-test\""))]);
     let call = update_call(&calls, "eval_1", None, None);
     let mut state = harness.logging_state("aupdate_eval");
     let env = harness.env.pre_post();
@@ -120,6 +121,13 @@ async fn update_eval_passes_the_resolved_headers_to_the_transform() {
         Some("Bearer sk-test")
     );
     assert_eq!(resolved.get("x-test").map(String::as_str), Some("yes"));
+    assert_eq!(
+        recorded.updates[0]
+            .litellm_params
+            .get("api_key")
+            .and_then(|value| value.as_str()),
+        Some("sk-test")
+    );
 }
 
 #[tokio::test]

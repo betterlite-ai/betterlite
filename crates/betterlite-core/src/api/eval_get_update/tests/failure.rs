@@ -4,7 +4,7 @@ use betterlite_openai::evals::error::EvalsError;
 use crate::api::eval_get_update::call::{EvalRetrieval, EvalUpdate};
 use crate::api::eval_get_update::error::EvalsGetUpdateError;
 use crate::api::eval_get_update::tests::support::{
-    Calls, Harness, eval, get_call, json, map, object, provider_failure, update_call,
+    Calls, Harness, get_call, json, map, object, provider_failure, update_call,
 };
 use crate::api::eval_http::error::EvalHttpError;
 
