@@ -58,7 +58,7 @@ use std::{collections::BTreeSet, sync::Arc};
 use betterlite_auth::auth_request_models::catalog::{EmptyCatalog, RequestModelResolver};
 use betterlite_models::{decisions::Json, model_registration::JsonObject};
 
-use crate::auth::auth_identity::AuthBackend::TeamBudgetAdmission;
+use crate::auth::auth_identity::AuthBackend::{OrganizationRoutePolicy, TeamBudgetAdmission};
 use crate::auth::auth_identity::{AuthBackend, AuthContext, StageFailure, StageInput};
 use crate::auth::auth_key_lookup::ConfiguredMasterKey;
 use crate::auth::auth_key_lookup::key_headers::{extract_key, headers_json};
@@ -68,6 +68,7 @@ use crate::auth::auth_model_patterns::{
 use crate::auth::auth_request_models::{CoreDecoders, RequestModelStageInput, resolve};
 use crate::auth::auth_resource_grants::ResourceGrantStageInput;
 use crate::auth::auth_route_policy::stage_input as route_policy_stage_input;
+use crate::auth::organization_route_policy::stage_input as organization_stage_input;
 use crate::auth::route_match::PUBLIC_HEALTH_PATHS;
 use crate::auth::virtual_key_routes::stage_input as virtual_key_route_stage_input;
 use crate::error_body::AuthenticationFailure;
@@ -133,9 +134,7 @@ fn stage_input(
         ))),
         TeamBudgetAdmission => team_budget_admission::stage_input(request, authenticated),
         AuthBackend::AuthTenantBudgets => auth_tenant_budgets::stage(request, authenticated, body),
-        AuthBackend::OrganizationRoutePolicy => {
-            organization_route_policy::stage_input(request, authenticated, body)
-        }
+        OrganizationRoutePolicy => organization_stage_input(request, authenticated, body),
         AuthBackend::AuthRoutePolicy => route_policy_stage_input(request, authenticated, body),
         AuthBackend::AuthOrgLookup => Ok(StageInput::AuthOrgLookup(Box::new(
             auth_org_lookup::stage_input(request, authenticated)?,

@@ -216,9 +216,7 @@ pub(crate) fn dispatch(
         StageInput::AuthTenantBudgets(stage) => Ok(stage.context.clone()),
         StageInput::OrganizationRoutePolicy(stage) => organization_route_policy::run_stage(stage)
             .map_err(StageFailure::OrganizationRoutePolicy),
-        StageInput::AuthRoutePolicy(stage) => {
-            auth_route_policy::run_stage(stage).map_err(StageFailure::AuthRoutePolicy)
-        }
+        StageInput::AuthRoutePolicy(stage) => auth_route_policy::run_stage(stage),
         StageInput::AuthOrgLookup(stage) => Ok(stage.context.clone()),
         StageInput::AuthEndUsers(stage) => Ok(stage.context.clone()),
         StageInput::AuthPolicySupport(stage) => {

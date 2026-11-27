@@ -12,7 +12,6 @@ use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 use betterlite_auth::route_match::classifier::is_llm_api_route;
 use betterlite_auth::route_match::templates::RouteValue;
 use betterlite_db::identity_rows::user::LiteLLMUserTable;
-use betterlite_error::proxy_exception::ProxyException;
 use betterlite_models::model_registration::JsonObject;
 
 use crate::auth::auth_identity::{AuthContext, StageFailure, StageInput};
@@ -84,7 +83,7 @@ pub(crate) fn stage_input(
 }
 
 // RouteChecks.non_proxy_admin_allowed_routes_check once the auth chain resolved the caller's key and row
-pub(crate) fn run_stage(stage: &RoutePolicyStageInput) -> Result<AuthContext, Box<ProxyException>> {
+pub(crate) fn run_stage(stage: &RoutePolicyStageInput) -> Result<AuthContext, StageFailure> {
     let token = stage
         .context
         .principal
@@ -106,7 +105,7 @@ pub(crate) fn run_stage(stage: &RoutePolicyStageInput) -> Result<AuthContext, Bo
         admin_only_routes: &stage.admin_only_routes,
         team_allowed_routes: &stage.team_allowed_routes,
     };
-    is_api_route_allowed(&input)?;
+    is_api_route_allowed(&input).map_err(StageFailure::AuthRoutePolicy)?;
     Ok(stage.context.clone())
 }
 
