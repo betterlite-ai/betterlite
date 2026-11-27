@@ -69,6 +69,14 @@ fn key_is_active_compares_a_text_expiry_with_the_instant(
     assert_eq!(key_is_active(&key_row(&fields), now()), expected);
 }
 
+#[test]
+fn key_is_active_parses_a_bare_date_with_z_as_midnight() {
+    assert!(key_is_active(
+        &key_row(r#"{"user_id":"user-1","expires":"2099-01-01Z"}"#),
+        now()
+    ));
+}
+
 #[rstest]
 #[case::active_key(r#"{"user_id":"user-1"}"#, Some("user-1"))]
 #[case::blocked_key(r#"{"user_id":"user-1","blocked":true}"#, None)]

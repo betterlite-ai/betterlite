@@ -261,6 +261,41 @@ async fn mint_refusal_user_that_is_not_live(
 }
 
 #[tokio::test]
+async fn mint_refusal_without_a_signing_key_is_unresolvable() {
+    let store = FakeStore {
+        user: UserAnswer::Found(user_row(r#"{"user_id":"user-1"}"#)),
+        details: Some(Vec::new()),
+        ..FakeStore::new()
+    };
+    let mut active = subjects(store);
+    active.secret = None;
+    let outcome = active.mint("user-1", None).await;
+    assert_eq!(
+        outcome.unwrap_err(),
+        ProxyCredentialMintFailure::Unresolvable
+    );
+}
+
+#[rstest]
+#[case::zero(0_i64)]
+#[case::negative(-1_i64)]
+#[tokio::test]
+async fn mint_refusal_with_a_non_positive_lifetime_is_unresolvable(#[case] hours: i64) {
+    let store = FakeStore {
+        user: UserAnswer::Found(user_row(r#"{"user_id":"user-1"}"#)),
+        details: Some(Vec::new()),
+        ..FakeStore::new()
+    };
+    let mut active = subjects(store);
+    active.settings.cli_token_hours = hours;
+    let outcome = active.mint("user-1", None).await;
+    assert_eq!(
+        outcome.unwrap_err(),
+        ProxyCredentialMintFailure::Unresolvable
+    );
+}
+
+#[tokio::test]
 async fn mint_token_carries_the_grant_team_and_its_scope() {
     let scoped = CliSsoTeamDetail {
         team_id: Some("team-a".to_owned()),
