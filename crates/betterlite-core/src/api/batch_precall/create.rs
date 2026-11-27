@@ -1,13 +1,14 @@
 use betterlite_error::rate_limit::ProxyRateLimitError;
 
 use crate::api::batch_enqueued_reserve::BatchEnqueuedTokenScope;
+use crate::api::batch_limit_counters::records::BatchFileUsage;
 use crate::api::batch_limit_descriptors::input::BatchLimitPrincipal;
 use crate::api::request_destination::RequestData;
 
 use super::BatchPrecallError;
 use super::fields;
 use super::input::BatchCreateCall;
-use super::ports::{BatchAccountRequest, BatchPrecallStages};
+use super::ports::{BatchAccountRequest, BatchPrecallSkip, BatchPrecallStages};
 use super::result::{BatchCreateOutcome, BatchCreateResult, BatchDiagnostic, debug, error};
 
 const CREATE_CALL_TYPE: &str = "acreate_batch";
@@ -95,7 +96,7 @@ struct CreateAttempt<'a> {
 
 impl CreateAttempt<'_> {
     async fn run<Stages: BatchPrecallStages>(
-        self,
+        mut self,
         stages: &Stages,
     ) -> Result<BatchCreateOutcome, AttemptFailure<Stages::Error>> {
         let decision = stages
@@ -104,6 +105,16 @@ impl CreateAttempt<'_> {
         if decision.skip {
             return Ok(BatchCreateOutcome::Passed);
         }
+        let usage = self.record_usage(stages, &decision).await?;
+        self.settle(stages, &decision, &usage).await
+    }
+
+    // count_input_file_usage, then the two counters the route reads afterwards
+    async fn record_usage<Stages: BatchPrecallStages>(
+        &mut self,
+        stages: &Stages,
+        decision: &BatchPrecallSkip,
+    ) -> Result<BatchFileUsage, AttemptFailure<Stages::Error>> {
         // the source reads the provider only once the file will be processed
         let custom_llm_provider =
             fields::custom_llm_provider(self.data).map_err(AttemptFailure::Field)?;
@@ -126,12 +137,22 @@ impl CreateAttempt<'_> {
             usage.total_tokens, usage.request_count
         )));
         fields::insert_usage(self.data, &usage);
-        let rejection = if self.scopes.is_empty() {
+        Ok(usage)
+    }
+
+    // enqueued scopes reserve, a plain key charges, and a refusal returns without a success line
+    async fn settle<Stages: BatchPrecallStages>(
+        &mut self,
+        stages: &Stages,
+        decision: &BatchPrecallSkip,
+        usage: &BatchFileUsage,
+    ) -> Result<BatchCreateOutcome, AttemptFailure<Stages::Error>> {
+        if self.scopes.is_empty() {
             let rejection = stages
                 .charge(
                     self.principal,
                     self.data,
-                    &usage,
+                    usage,
                     decision.descriptors.as_deref(),
                 )
                 .await
@@ -141,19 +162,17 @@ impl CreateAttempt<'_> {
                     "Batch rate limit check passed, counters incremented",
                 )));
             }
-            rejection
-        } else {
-            let rejection = stages
-                .reserve(self.principal, self.data, &usage, self.scopes)
-                .await
-                .map_err(AttemptFailure::Stage)?;
-            if rejection.is_none() {
-                self.diagnostics.push(debug(String::from(
-                    "Batch enqueued-token reservation succeeded",
-                )));
-            }
-            rejection
-        };
+            return Ok(judge(rejection));
+        }
+        let rejection = stages
+            .reserve(self.principal, self.data, usage, self.scopes)
+            .await
+            .map_err(AttemptFailure::Stage)?;
+        if rejection.is_none() {
+            self.diagnostics.push(debug(String::from(
+                "Batch enqueued-token reservation succeeded",
+            )));
+        }
         Ok(judge(rejection))
     }
 }
