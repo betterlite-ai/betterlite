@@ -20,6 +20,7 @@ use betterlite_models::model_registration::JsonObject;
 use secrecy::SecretString;
 
 use crate::api::request_body::read_request_body;
+use crate::auth::auth_errors::FailureContext;
 use crate::auth::auth_identity::{AuthBackend, StageFailure, dispatch};
 use crate::auth::auth_key_lookup;
 use crate::auth::body_buffering::{BufferError, max_body_bytes, read_body};
@@ -69,10 +70,17 @@ pub(crate) async fn prepare(
         return Ok(request);
     }
     // Authenticate before buffering with the same lookup the stage loop runs first, and let that stage forward this identity.
-    let context = prefetch_stage(auth_key_lookup::lookup_stage_input(&request))
+    let context = match prefetch_stage(auth_key_lookup::lookup_stage_input(&request))
         .await
         .and_then(|input| dispatch(AuthBackend::AuthKeyLookup, &input, master_key))
-        .map_err(|failure| Box::new(failure_response(&failure)))?;
+    {
+        Ok(context) => context,
+        // the stage loop answers its failures through the auth error hook, so this early lookup does the same
+        Err(failure) => {
+            let failed = FailureContext::of(&request, None);
+            return Err(Box::new(failed.respond(&failure, failure_response).await));
+        }
+    };
     request.extensions_mut().insert(PreAuthenticated(context));
     let Some(state) = request
         .extensions()
