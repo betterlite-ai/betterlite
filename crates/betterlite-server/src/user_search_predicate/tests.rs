@@ -205,13 +205,25 @@ fn sql_organization_membership_binds_one_list_after_the_callers_params() {
     );
 }
 
-fn alice_seed() -> String {
+fn postgres_seed() -> String {
     [
         user_insert("alice-1", Some("alice@example.com")),
         user_insert("alice-2", None),
         user_insert("bob-1", Some("bob@example.com")),
         user_insert("carol-9", Some("alice-carol@example.com")),
         user_insert("x alice", Some("x alice@example.com")),
+        user_insert("pct", Some("a%b")),
+        user_insert("plain", Some("ab")),
+        user_insert("slash", Some("a\\b")),
+        user_insert("under", Some("a_b")),
+        user_insert("x", Some("axb")),
+        user_insert("member-a", Some("a@example.com")),
+        user_insert("member-b", Some("b@example.com")),
+        user_insert("outsider", Some("o@example.com")),
+        organization_insert("org-1"),
+        organization_insert("org-2"),
+        membership_insert("member-a", "org-1"),
+        membership_insert("member-b", "org-2"),
     ]
     .concat()
 }
@@ -230,7 +242,7 @@ async fn search_matches(
 
 #[tokio::test]
 async fn postgres_search_matches_the_id_or_the_email_ignoring_case() {
-    let fixture = database(&alice_seed()).await;
+    let fixture = database(&postgres_seed()).await;
     let predicate = user_search_where(Some("ALICE")).unwrap();
     let mut params = vec![SqlValue::Text(String::from("alice-1"))];
     let fragment = user_search_sql(&predicate, &mut params);
@@ -250,7 +262,7 @@ async fn postgres_search_matches_the_id_or_the_email_ignoring_case() {
 
 #[tokio::test]
 async fn postgres_keeps_a_leading_space_in_the_search() {
-    let fixture = database(&alice_seed()).await;
+    let fixture = database(&postgres_seed()).await;
     let predicate = user_search_where(Some(" alice")).unwrap();
     let mut params = Vec::new();
     assert_eq!(
@@ -260,20 +272,9 @@ async fn postgres_keeps_a_leading_space_in_the_search() {
     fixture.close().await;
 }
 
-fn wildcard_seed() -> String {
-    [
-        user_insert("pct", Some("a%b")),
-        user_insert("plain", Some("ab")),
-        user_insert("slash", Some("a\\b")),
-        user_insert("under", Some("a_b")),
-        user_insert("x", Some("axb")),
-    ]
-    .concat()
-}
-
 #[tokio::test]
 async fn postgres_percent_matches_any_run() {
-    let fixture = database(&wildcard_seed()).await;
+    let fixture = database(&postgres_seed()).await;
     let predicate = user_search_where(Some("a%b")).unwrap();
     let mut params = Vec::new();
     assert_eq!(
@@ -291,7 +292,7 @@ async fn postgres_percent_matches_any_run() {
 
 #[tokio::test]
 async fn postgres_underscore_matches_exactly_one_character() {
-    let fixture = database(&wildcard_seed()).await;
+    let fixture = database(&postgres_seed()).await;
     let predicate = user_search_where(Some("a_b")).unwrap();
     let mut params = Vec::new();
     assert_eq!(
@@ -308,7 +309,7 @@ async fn postgres_underscore_matches_exactly_one_character() {
 
 #[tokio::test]
 async fn postgres_backslash_escapes_the_percent() {
-    let fixture = database(&wildcard_seed()).await;
+    let fixture = database(&postgres_seed()).await;
     let predicate = user_search_where(Some(r"a\%b")).unwrap();
     let mut params = Vec::new();
     assert_eq!(
@@ -318,22 +319,9 @@ async fn postgres_backslash_escapes_the_percent() {
     fixture.close().await;
 }
 
-fn membership_seed() -> String {
-    [
-        organization_insert("org-1"),
-        organization_insert("org-2"),
-        user_insert("member-a", Some("a@example.com")),
-        user_insert("member-b", Some("b@example.com")),
-        user_insert("outsider", Some("o@example.com")),
-        membership_insert("member-a", "org-1"),
-        membership_insert("member-b", "org-2"),
-    ]
-    .concat()
-}
-
 #[tokio::test]
 async fn postgres_membership_filter_matches_the_listed_organizations() {
-    let fixture = database(&membership_seed()).await;
+    let fixture = database(&postgres_seed()).await;
     let mut params = Vec::new();
     let both =
         organization_membership_sql(&[String::from("org-1"), String::from("org-2")], &mut params);
@@ -357,7 +345,7 @@ async fn postgres_membership_filter_matches_the_listed_organizations() {
 
 #[tokio::test]
 async fn postgres_empty_membership_list_matches_nobody() {
-    let fixture = database(&membership_seed()).await;
+    let fixture = database(&postgres_seed()).await;
     let mut params = Vec::new();
     let fragment = organization_membership_sql(&[], &mut params);
     let sql = format!(
