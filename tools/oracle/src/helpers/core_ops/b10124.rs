@@ -22,7 +22,7 @@ pub(crate) enum Call {
         call_params: BTreeMap<String, Value>,
     },
     FollowUp {
-        response: ResponsesApiResponse,
+        response: Box<ResponsesApiResponse>,
         tool_results: Vec<McpToolResult>,
         original_input: Option<ResponsesInput>,
         preserve_reasoning: bool,
