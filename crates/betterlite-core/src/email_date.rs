@@ -201,12 +201,12 @@ pub fn mktime_tz(date: &ParsedDate) -> Option<i64> {
     }
     let first_of_month = NaiveDate::from_ymd_opt(calendar_year, date.month, 1)?;
     let days = i64::from(first_of_month.num_days_from_ce())
-        .saturating_sub(EPOCH_ORDINAL)
-        .saturating_add(date.day)
-        .saturating_sub(1);
-    let hours = days.saturating_mul(24).saturating_add(date.hour);
-    let minutes = hours.saturating_mul(60).saturating_add(date.minute);
-    let seconds = minutes.saturating_mul(60).saturating_add(date.second);
+        .checked_sub(EPOCH_ORDINAL)?
+        .checked_add(date.day)?
+        .checked_sub(1)?;
+    let hours = days.checked_mul(24)?.checked_add(date.hour)?;
+    let minutes = hours.checked_mul(60)?.checked_add(date.minute)?;
+    let seconds = minutes.checked_mul(60)?.checked_add(date.second)?;
     Some(seconds.saturating_sub(date.zone_offset.unwrap_or(0)))
 }
 
