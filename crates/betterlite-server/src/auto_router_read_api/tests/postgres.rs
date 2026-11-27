@@ -4,6 +4,7 @@ use betterlite_postgres_fixture::connection::PostgresFixture;
 use chrono::NaiveDate;
 use clap::Parser;
 use deadpool_postgres::{Manager, Pool};
+use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::NoTls;
 use tokio_postgres::types::ToSql;
@@ -204,6 +205,7 @@ impl Database {
     }
 }
 
+#[derive(Clone, Copy)]
 enum Scope {
     Session,
     User,
@@ -219,7 +221,7 @@ struct Seed<'a> {
     last: &'a str,
     model: &'a str,
     turns: i32,
-    spend: rust_decimal::Decimal,
+    spend: Decimal,
     saved: f64,
     estimate: i32,
     actual: f64,
@@ -342,7 +344,10 @@ async fn the_rollup_query_groups_compares_and_filters() {
     assert_eq!(answer.groups.len(), 3);
     assert_eq!(answer.groups[0].router_name, "adaptive-auto");
     assert_eq!(answer.groups[0].spend, money("4.0"));
-    assert_eq!(answer.groups[0].savings_classifier_cost, None);
+    assert_eq!(
+        answer.groups[0].savings_classifier_cost,
+        Some(Decimal::ZERO)
+    );
     assert_eq!(answer.groups[2].router_name, "quality-auto");
     assert_eq!(answer.groups[2].turns, 3);
     assert_eq!(answer.groups[1].router_name, "complexity-auto");
@@ -461,6 +466,6 @@ async fn a_store_without_a_pool_reports_the_database_failure() {
     assert_eq!(error.status_code(), 500);
 }
 
-fn money(text: &str) -> rust_decimal::Decimal {
+fn money(text: &str) -> Decimal {
     text.parse().unwrap()
 }
