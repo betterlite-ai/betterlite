@@ -38,7 +38,7 @@ use crate::api::vector_file_http_read::service::{
 };
 use crate::api::vector_file_provider::{CredentialLookup, CredentialLookupError, OperationKwargs};
 use crate::api::vector_store_http_write::error::ClientError;
-use crate::api::vector_store_http_write::service::ClientKind;
+use crate::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
 
 const RETRIEVE_BODY: &str = r#"{"id":"file_a","object":"vector_store.file","status":"completed"}"#;
 const CONTENT_BODY: &str = r#"{"file_id":"file_a","filename":"a","attributes":{"tag":"x"},"content":[{"type":"text","text":"hello"},{"type":"text","text":"world"}]}"#;
@@ -57,6 +57,7 @@ type Answer = (u16, HeaderMap, Vec<u8>);
 #[derive(Default)]
 struct Seen {
     requests: Vec<ReadRequest>,
+    ssl_verifies: Vec<Option<bool>>,
 }
 
 #[derive(Clone, Default)]
@@ -79,7 +80,8 @@ struct Source {
 impl ClientSource for Source {
     type Client = FakeClient;
 
-    fn client(&self, _ssl_verify: Option<bool>) -> Result<FakeClient, ClientError> {
+    fn client(&self, ssl_verify: Option<bool>) -> Result<FakeClient, ClientError> {
+        self.seen.with(|seen| seen.ssl_verifies.push(ssl_verify));
         Ok(FakeClient {
             answer: self.answer.clone(),
             seen: self.seen.clone(),
@@ -264,6 +266,10 @@ impl Fakes {
     fn requests(&self) -> Vec<ReadRequest> {
         self.source.seen.with(|seen| seen.requests.clone())
     }
+
+    fn ssl_verifies(&self) -> Vec<Option<bool>> {
+        self.source.seen.with(|seen| seen.ssl_verifies.clone())
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -332,7 +338,7 @@ fn assert_get(requests: &[ReadRequest], path: &str) {
 }
 
 // the wait a read handler runs with, when the call's other arguments stay at the test's defaults
-fn handler_timeout(call: &ReadCall<'_>, request_timeout_seconds: f64) -> Duration {
+fn handler_timeout(call: &ReadCall<'_>, request_timeout_seconds: f64) -> Option<Duration> {
     handler_call(
         call,
         ReadParams::default(),
@@ -340,7 +346,6 @@ fn handler_timeout(call: &ReadCall<'_>, request_timeout_seconds: f64) -> Duratio
         Operation::Retrieve,
         request_timeout_seconds,
     )
-    .expect("the handler call builds")
     .timeout
 }
 
@@ -470,7 +475,7 @@ async fn content_has_no_pagination() {
     );
 }
 
-// LiteLLM hands get_vector_store_files the caller's params with the ids written first
+// update_from_kwargs receives the ids first, then GenericLiteLLMParams' dump
 #[tokio::test]
 async fn litellm_params_start_with_the_ids() {
     let kwargs = params(
@@ -519,15 +524,104 @@ async fn async_calls_keep_the_callers_context() {
     let litellm_params = logs.litellm_params();
     assert_eq!(litellm_params.get("litellm_call_id"), Some(&Json::Null));
     assert_eq!(litellm_params.get("aretrieve"), None);
+}
 
-    let flag_fakes = Fakes::new(RETRIEVE_BODY);
-    let mut flag_logs = Logs::new();
-    let flag_call = read_call(&kwargs, None, None, None);
-    let flag_deps = flag_fakes.deps();
-    run(&mut flag_logs, &flag_deps, &flag_call, Which::Retrieve)
+// the client a read takes: one supplied in its own kind, the pool for every other call
+#[rstest]
+#[case::retrieve_sync(Which::Retrieve, None, ClientKind::Sync, true)]
+#[case::retrieve_sync_drops_async(Which::Retrieve, None, ClientKind::Asynchronous, false)]
+#[case::retrieve_flag(Which::Retrieve, Some("aretrieve"), ClientKind::Asynchronous, true)]
+#[case::retrieve_flag_drops_sync(Which::Retrieve, Some("aretrieve"), ClientKind::Sync, false)]
+#[case::content_sync(Which::Content, None, ClientKind::Sync, true)]
+#[case::content_sync_drops_async(Which::Content, None, ClientKind::Asynchronous, false)]
+#[case::content_flag(
+    Which::Content,
+    Some("aretrieve_content"),
+    ClientKind::Asynchronous,
+    true
+)]
+#[case::content_flag_drops_sync(Which::Content, Some("aretrieve_content"), ClientKind::Sync, false)]
+#[case::aretrieve(Which::ARetrieve, None, ClientKind::Asynchronous, true)]
+#[case::aretrieve_drops_sync(Which::ARetrieve, None, ClientKind::Sync, false)]
+#[case::acontent(Which::AContent, None, ClientKind::Asynchronous, true)]
+#[case::acontent_drops_sync(Which::AContent, None, ClientKind::Sync, false)]
+#[tokio::test]
+async fn reads_reuse_only_a_client_of_their_kind(
+    #[case] which: Which,
+    #[case] flag: Option<&'static str>,
+    #[case] supplied_kind: ClientKind,
+    #[case] reused: bool,
+) {
+    let mut kwargs = params(r#"{"api_base":"http://mock.invalid/v1","api_key":"sk-caller"}"#);
+    if let Some(name) = flag {
+        kwargs.insert(String::from(name), Json::Bool(true));
+    }
+    let fakes = Fakes::new(RETRIEVE_BODY);
+    let supplied = FakeClient {
+        answer: (200, HeaderMap::new(), CONTENT_BODY.as_bytes().to_vec()),
+        seen: Shared::default(),
+    };
+    let deps = SdkDeps {
+        configs: &fakes.configs,
+        registry: Some(&fakes.registry),
+        source: &fakes.source,
+        supplied: Some(SuppliedClient {
+            kind: supplied_kind,
+            transport: &supplied,
+        }),
+        request_timeout_seconds: 6000.0_f64,
+    };
+    let mut logs = Logs::new();
+    let call = read_call(&kwargs, None, None, None);
+    let answer = run(&mut logs, &deps, &call, which)
         .await
-        .expect("the flag reaches the async handler through the sync entry");
-    assert_eq!(flag_fakes.requests().len(), 1);
+        .expect("the mock answers");
+    let supplied_requests = supplied.seen.with(|seen| seen.requests.len());
+    let expected = if reused {
+        json(CONTENT_BODY)
+    } else {
+        json(RETRIEVE_BODY)
+    };
+    assert_eq!(answer, expected);
+    assert_eq!(fakes.requests().len(), usize::from(!reused));
+    assert_eq!(supplied_requests, usize::from(reused));
+}
+
+// the pool client follows ssl_verify, and a registry value overwrites the caller's
+#[rstest]
+#[case::retrieve_default(Which::Retrieve, None, None, None)]
+#[case::retrieve_verify(Which::Retrieve, Some(true), None, Some(true))]
+#[case::retrieve_no_verify(Which::Retrieve, Some(false), None, Some(false))]
+#[case::content_verify(Which::Content, Some(true), None, Some(true))]
+#[case::content_no_verify(Which::Content, Some(false), None, Some(false))]
+#[case::registry_wins(Which::Retrieve, Some(false), Some(true), Some(true))]
+#[tokio::test]
+async fn a_pool_client_follows_ssl_verify(
+    #[case] which: Which,
+    #[case] ssl_verify: Option<bool>,
+    #[case] registry_value: Option<bool>,
+    #[case] expected: Option<bool>,
+) {
+    let mut kwargs = params(r#"{"api_base":"http://mock.invalid/v1","api_key":"sk-caller"}"#);
+    if let Some(value) = ssl_verify {
+        kwargs.insert(String::from("ssl_verify"), Json::Bool(value));
+    }
+    let mut fakes = Fakes::new(RETRIEVE_BODY);
+    if let Some(value) = registry_value {
+        fakes.registry = Credentials {
+            values: Ok(JsonObject::from([(
+                String::from("ssl_verify"),
+                Json::Bool(value),
+            )])),
+        };
+    }
+    let mut logs = Logs::new();
+    let call = read_call(&kwargs, None, None, None);
+    let deps = fakes.deps();
+    run(&mut logs, &deps, &call, which)
+        .await
+        .expect("the mock answers");
+    assert_eq!(fakes.ssl_verifies(), vec![expected]);
 }
 
 #[rstest]
@@ -695,20 +789,58 @@ async fn an_empty_missing_body_maps_by_status() {
 fn read_timeout_argument() {
     let kwargs = JsonObject::new();
     let mut call = read_call(&kwargs, None, None, None);
-    assert_eq!(handler_timeout(&call, 6000.0_f64), Duration::from_mins(100));
+    assert_eq!(
+        handler_timeout(&call, 6000.0_f64),
+        Some(Duration::from_mins(100))
+    );
     call.timeout = Some(0.0_f64);
-    assert_eq!(handler_timeout(&call, 6000.0_f64), Duration::from_mins(100));
+    assert_eq!(
+        handler_timeout(&call, 6000.0_f64),
+        Some(Duration::from_mins(100))
+    );
     call.timeout = Some(7.0_f64);
-    assert_eq!(handler_timeout(&call, 6000.0_f64), Duration::from_secs(7));
+    assert_eq!(
+        handler_timeout(&call, 6000.0_f64),
+        Some(Duration::from_secs(7))
+    );
 
     let environment = BTreeMap::from([(String::from("REQUEST_TIMEOUT"), String::from("12"))]);
     let configured = loads_read_timeout(&environment).expect("the environment value loads");
     call.timeout = None;
-    assert_eq!(handler_timeout(&call, configured), Duration::from_secs(12));
+    assert_eq!(
+        handler_timeout(&call, configured),
+        Some(Duration::from_secs(12))
+    );
     call.timeout = Some(0.0_f64);
-    assert_eq!(handler_timeout(&call, configured), Duration::from_secs(12));
+    assert_eq!(
+        handler_timeout(&call, configured),
+        Some(Duration::from_secs(12))
+    );
     call.timeout = Some(7.0_f64);
-    assert_eq!(handler_timeout(&call, configured), Duration::from_secs(7));
+    assert_eq!(
+        handler_timeout(&call, configured),
+        Some(Duration::from_secs(7))
+    );
+}
+
+// a negative wait is no wait at all, and the read still runs: LiteLLM forwards it and the GET never uses it
+#[tokio::test]
+async fn a_negative_timeout_still_reads() {
+    let kwargs = params(r#"{"api_base":"http://mock.invalid/v1","api_key":"sk-caller"}"#);
+    let fakes = Fakes::new(RETRIEVE_BODY);
+    let mut logs = Logs::new();
+    let mut call = read_call(&kwargs, None, Some(-1.0_f64), None);
+    assert_eq!(handler_timeout(&call, 6000.0_f64), None);
+    let deps = fakes.deps();
+    let answer = run(&mut logs, &deps, &call, Which::Retrieve)
+        .await
+        .expect("the mock answers");
+    assert_eq!(answer, json(RETRIEVE_BODY));
+    assert_eq!(fakes.requests().len(), 1);
+    let environment = BTreeMap::from([(String::from("REQUEST_TIMEOUT"), String::from("-1"))]);
+    let negative_seconds = loads_read_timeout(&environment).expect("a negative value loads");
+    call.timeout = None;
+    assert_eq!(handler_timeout(&call, negative_seconds), None);
 }
 
 #[rstest]
