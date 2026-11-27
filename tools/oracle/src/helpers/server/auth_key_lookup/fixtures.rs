@@ -176,7 +176,7 @@ impl ReadFixture {
     }
 }
 
-pub(super) fn read_fixture(input: &KeyObjectInput) -> Result<ReadFixture, Box<HelperError>> {
+pub(super) fn key_object_fixture(input: &KeyObjectInput) -> Result<ReadFixture, Box<HelperError>> {
     let source = Arc::new(ScriptedSource {
         answers: Mutex::new(read_answers(&input.rows)?),
         calls: Mutex::new(Vec::new()),
@@ -227,8 +227,10 @@ fn cached_auth(stored: Option<&Value>) -> Result<Option<UserAPIKeyAuth>, Box<Hel
     let Some(cached) = stored else {
         return Ok(None);
     };
-    let fields: BTreeMap<String, JsonData> =
+    let mut fields: BTreeMap<String, JsonData> =
         serde_json::from_value(cached.clone()).or_value_error()?;
+    // UserAPIKeyAuth.model_validate reads a null optional field as absent
+    fields.retain(|_, value| !matches!(value, JsonData::Null));
     Ok(Some(
         UserAPIKeyAuth::construct(AuthInput::Dict(fields)).or_value_error()?,
     ))

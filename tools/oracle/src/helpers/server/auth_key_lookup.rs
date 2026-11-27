@@ -184,7 +184,9 @@ fn token_fields(auth: &UserAPIKeyAuth) -> Result<Value, Box<HelperError>> {
 }
 
 fn auth_from_fields(value: &Value) -> Result<UserAPIKeyAuth, Box<HelperError>> {
-    let fields: BTreeMap<String, JsonData> =
+    let mut fields: BTreeMap<String, JsonData> =
         serde_json::from_value(value.clone()).or_value_error()?;
+    // UserAPIKeyAuth.model_validate reads a null optional field as absent
+    fields.retain(|_, field| !matches!(field, JsonData::Null));
     UserAPIKeyAuth::construct(AuthInput::Dict(fields)).or_value_error()
 }

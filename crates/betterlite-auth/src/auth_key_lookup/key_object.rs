@@ -63,8 +63,9 @@ pub async fn get_key_object(
 // UserAPIKeyAuth.model_validate(row.model_dump(exclude_none=True)): a null row field reads as its default.
 fn auth_from_view(view: &CombinedKeyView) -> Result<UserAPIKeyAuth, KeyLookupError> {
     let text = serde_json::to_string(view).map_err(KeyLookupError::Json)?;
-    let fields: BTreeMap<String, JsonData> =
+    let mut fields: BTreeMap<String, JsonData> =
         serde_json::from_str(&text).map_err(KeyLookupError::Json)?;
+    fields.retain(|_, value| !matches!(value, JsonData::Null));
     UserAPIKeyAuth::construct(AuthInput::Dict(fields))
         .map_err(|error| KeyLookupError::Row(Box::new(error)))
 }

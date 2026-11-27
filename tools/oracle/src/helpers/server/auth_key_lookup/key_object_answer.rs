@@ -7,11 +7,11 @@ use betterlite_oracle_helper_api::helper::HelperResult;
 use serde_json::{Value, json};
 
 use super::KeyObjectInput;
-use super::fixtures::read_fixture;
+use super::fixtures::key_object_fixture;
 use super::token_fields;
 
 pub(super) async fn key_object(input: &KeyObjectInput) -> HelperResult {
-    let fixture = read_fixture(input)?;
+    let fixture = key_object_fixture(input)?;
     let lookups = fixture.lookups();
     let request = KeyRequest {
         hashed_token: &input.hashed_token,

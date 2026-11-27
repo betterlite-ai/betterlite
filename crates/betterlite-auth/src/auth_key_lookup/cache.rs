@@ -1,9 +1,12 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use betterlite_models::decisions::Json;
 
 use crate::auth_cache::AuthCache;
 use crate::auth_cache::backend::AuthCacheTier;
+use crate::auth_cache::decode::decode_auth_payload;
+use crate::auth_cache::payload::ReadOperation;
 use crate::auth_invalidation::AuthInvalidation;
 use crate::auth_invalidation::error::InvalidationError;
 use crate::resolved_key::auth::UserAPIKeyAuth;
@@ -20,8 +23,13 @@ where
     Tier: AuthCacheTier,
 {
     async fn read_key(&self, hashed_token: &str) -> Option<UserAPIKeyAuth> {
-        self.async_get_auth(hashed_token, false)
-            .await
+        let mut cached = self.async_get(hashed_token, false).await?;
+        let Json::Object(entries) = &mut cached else {
+            return None;
+        };
+        // model_validate keeps a null optional field as None, and serde's flatten rejects the null before the field reads it
+        entries.retain(|_, value| !matches!(value, Json::Null));
+        decode_auth_payload(&cached, ReadOperation::AsyncGet)
             .ok()
             .flatten()
     }
