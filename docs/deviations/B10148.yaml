@@ -1,3 +1,6 @@
 task: B10148
-deviations: []
+deviations:
+  - what: The three endpoint overrides are resolved once, when microsoft_sso_client builds the client, and every later read of the client's discovery document uses those values. LiteLLM reads MICROSOFT_AUTHORIZATION_ENDPOINT, MICROSOFT_TOKEN_ENDPOINT and MICROSOFT_USERINFO_ENDPOINT inside get_discovery_document, so its document follows the environment until it is asked for.
+    why: The task fixes the document in the client so both call sites pass B1629's DiscoverySource::Inline instead of fetching, and each call site reads the document in the same request that builds the client, so no working setup sees a different document.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/sso/custom_microsoft_sso.py#L59-L61
 kept_bugs: []
