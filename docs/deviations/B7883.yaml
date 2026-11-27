@@ -31,3 +31,9 @@ kept_bugs:
   - what: extra_body and extra_query are accepted by both character calls and never sent to the provider.
     why: LiteLLM's signatures carry both keywords but its handler call forwards only extra_headers, so a working setup can pass them and see them ignored; betterlite drops them the same way instead of rejecting the call.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1193-L1204
+  - what: video_edit and avideo_edit accept extra_query and never send it to the provider.
+    why: LiteLLM's signature carries the keyword but its handler call forwards extra_headers and extra_body only, so a working setup can pass extra_query and see it ignored; betterlite drops it the same way instead of rejecting the call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1451
+  - what: video_extension and avideo_extension accept extra_query and never send it to the provider.
+    why: LiteLLM's signature carries the keyword but its handler call forwards extra_headers and extra_body only, so a working setup can pass extra_query and see it ignored; betterlite drops it the same way instead of rejecting the call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1589
