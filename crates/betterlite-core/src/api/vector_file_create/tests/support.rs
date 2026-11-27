@@ -167,44 +167,6 @@ impl Fixture {
             redactor: redactor(),
         }
     }
-
-    pub(crate) fn transport(&self) -> TransportRequest<'_> {
-        TransportRequest {
-            vector_store_id: &self.vector_store_id,
-            extra_headers: self.extra_headers.as_ref(),
-            extra_query: self.extra_query.as_ref(),
-            extra_body: self.extra_body.as_ref(),
-            timeout: self.timeout,
-            custom_llm_provider: self.provider.as_deref(),
-            kwargs: &self.kwargs,
-        }
-    }
-
-    fn create_request<'fixture>(
-        &'fixture self,
-        transport: TransportRequest<'fixture>,
-    ) -> CreateFileRequest<'fixture> {
-        CreateFileRequest {
-            transport,
-            file_id: &self.file_id,
-            attributes: self.attributes.as_ref(),
-            chunking_strategy: self.chunking_strategy.as_ref(),
-        }
-    }
-
-    fn list_request<'fixture>(
-        &'fixture self,
-        transport: TransportRequest<'fixture>,
-    ) -> ListFileRequest<'fixture> {
-        ListFileRequest {
-            transport,
-            after: self.after.as_deref(),
-            before: self.before.as_deref(),
-            filter: self.filter.as_deref(),
-            limit: self.limit,
-            order: self.order.as_deref(),
-        }
-    }
 }
 
 // which public entry point runs; the sync forms still let an acreate/alist flag in kwargs select async
@@ -230,12 +192,34 @@ pub(crate) async fn call(
         request_timeout_seconds,
     };
     let files = VectorFileCreates { service: spy, deps };
-    let transport = fixture.transport();
+    let transport = TransportRequest {
+        vector_store_id: &fixture.vector_store_id,
+        extra_headers: fixture.extra_headers.as_ref(),
+        extra_query: fixture.extra_query.as_ref(),
+        extra_body: fixture.extra_body.as_ref(),
+        timeout: fixture.timeout,
+        custom_llm_provider: fixture.provider.as_deref(),
+        kwargs: &fixture.kwargs,
+    };
+    let create_request = CreateFileRequest {
+        transport,
+        file_id: &fixture.file_id,
+        attributes: fixture.attributes.as_ref(),
+        chunking_strategy: fixture.chunking_strategy.as_ref(),
+    };
+    let list_request = ListFileRequest {
+        transport,
+        after: fixture.after.as_deref(),
+        before: fixture.before.as_deref(),
+        filter: fixture.filter.as_deref(),
+        limit: fixture.limit,
+        order: fixture.order.as_deref(),
+    };
     match which {
-        Which::Create => files.create(&fixture.create_request(transport)).await,
-        Which::Acreate => files.acreate(&fixture.create_request(transport)).await,
-        Which::List => files.list(&fixture.list_request(transport)).await,
-        Which::Alist => files.alist(&fixture.list_request(transport)).await,
+        Which::Create => files.create(&create_request).await,
+        Which::Acreate => files.acreate(&create_request).await,
+        Which::List => files.list(&list_request).await,
+        Which::Alist => files.alist(&list_request).await,
     }
 }
 

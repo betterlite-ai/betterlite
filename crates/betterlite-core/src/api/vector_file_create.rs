@@ -85,6 +85,12 @@ pub struct ListFileRequest<'request> {
     pub order: Option<&'request str>,
 }
 
+// the untransformed locals and the create-only file_id that filtering must restore
+struct Attachment<'request> {
+    locals: Result<FileParams, serde_json::Error>,
+    file_id: Option<&'request str>,
+}
+
 pub struct VectorFileCreates<'service, Service> {
     pub service: &'service Service,
     pub deps: VectorFileCreateDeps<'service>,
@@ -92,18 +98,9 @@ pub struct VectorFileCreates<'service, Service> {
 
 impl<Service: FileService> VectorFileCreates<'_, Service> {
     pub async fn create(&self, request: &CreateFileRequest<'_>) -> FileResult {
-        let locals = create_locals(
-            request.file_id,
-            request.attributes,
-            request.chunking_strategy,
-        );
-        self.run(
-            Operation::Create,
-            &request.transport,
-            locals,
-            Some(request.file_id),
-        )
-        .await
+        let attachment = request.attachment();
+        self.run(Operation::Create, &request.transport, attachment)
+            .await
     }
 
     // acreate sets the flag itself, as LiteLLM does before calling create, so the async handler always runs
@@ -111,24 +108,13 @@ impl<Service: FileService> VectorFileCreates<'_, Service> {
         let mut kwargs = request.transport.kwargs.clone();
         kwargs.insert(String::from(service::ACREATE_FLAG), Json::Bool(true));
         let transport = request.transport.flagged(&kwargs);
-        let locals = create_locals(
-            request.file_id,
-            request.attributes,
-            request.chunking_strategy,
-        );
-        self.run(Operation::Create, &transport, locals, Some(request.file_id))
-            .await
+        let attachment = request.attachment();
+        self.run(Operation::Create, &transport, attachment).await
     }
 
     pub async fn list(&self, request: &ListFileRequest<'_>) -> FileResult {
-        let locals = list_locals(
-            request.after,
-            request.before,
-            request.filter,
-            request.limit,
-            request.order,
-        );
-        self.run(Operation::List, &request.transport, locals, None)
+        let attachment = request.attachment();
+        self.run(Operation::List, &request.transport, attachment)
             .await
     }
 
@@ -137,44 +123,38 @@ impl<Service: FileService> VectorFileCreates<'_, Service> {
         let mut kwargs = request.transport.kwargs.clone();
         kwargs.insert(String::from(service::ALIST_FLAG), Json::Bool(true));
         let transport = request.transport.flagged(&kwargs);
-        let locals = list_locals(
-            request.after,
-            request.before,
-            request.filter,
-            request.limit,
-            request.order,
-        );
-        self.run(Operation::List, &transport, locals, None).await
+        let attachment = request.attachment();
+        self.run(Operation::List, &transport, attachment).await
     }
 
     async fn run(
         &self,
         operation: Operation,
         transport: &TransportRequest<'_>,
-        named: Result<FileParams, serde_json::Error>,
-        file_id: Option<&str>,
+        attachment: Attachment<'_>,
     ) -> FileResult {
-        let provider_name = ensure_provider(transport.custom_llm_provider);
-        let locals =
-            named.map_err(|source| self.failed(FileCallError::Params(source), provider_name))?;
+        let Attachment { locals, file_id } = attachment;
+        let name = ensure_provider(transport.custom_llm_provider);
+        let redactor = self.deps.redactor;
+        let entries =
+            locals.map_err(|source| failure(&FileCallError::Params(source), name, redactor))?;
         let kwargs = overlay_credentials(operation, transport, self.deps.registry);
-        let params = files_params(&kwargs).map_err(|error| self.failed(error, provider_name))?;
-        let provider =
-            resolve_provider(provider_name).map_err(|error| self.failed(error, provider_name))?;
-        let config = store_config(operation, provider, provider_name)
-            .map_err(|error| self.failed(error, provider_name))?;
-        let fields = merge_fields(operation.kind(), locals, &kwargs, file_id)
-            .map_err(|source| self.failed(FileCallError::Params(source), provider_name))?;
+        let params = files_params(&kwargs).map_err(|error| failure(&error, name, redactor))?;
+        let provider = resolve_provider(name).map_err(|error| failure(&error, name, redactor))?;
+        let config = store_config(operation, provider, name)
+            .map_err(|error| failure(&error, name, redactor))?;
+        let fields = merge_fields(operation.kind(), entries, &kwargs, file_id)
+            .map_err(|source| failure(&FileCallError::Params(source), name, redactor))?;
         log_call(
             self.deps.logging,
             &kwargs,
             transport.vector_store_id,
             &fields,
-            provider_name,
+            name,
         )
-        .map_err(|error| self.failed(error, provider_name))?;
+        .map_err(|error| failure(&error, name, redactor))?;
         let timeout = call_timeout(transport.timeout, self.deps.request_timeout_seconds)
-            .map_err(|error| self.failed(error, provider_name))?;
+            .map_err(|error| failure(&error, name, redactor))?;
         let call = FileCall {
             operation,
             mode: mode(operation, transport.kwargs),
@@ -184,19 +164,39 @@ impl<Service: FileService> VectorFileCreates<'_, Service> {
             params: &params,
             fields: &fields,
             extra_headers: transport.extra_headers,
-            extra_body: create_overlay(operation, transport.extra_body),
-            extra_query: list_overlay(operation, transport.extra_query),
+            extra_body: match operation {
+                Operation::Create => transport.extra_body,
+                Operation::List => None,
+            },
+            extra_query: match operation {
+                Operation::Create => None,
+                Operation::List => transport.extra_query,
+            },
             timeout,
             logging: self.deps.logging,
         };
         self.service
             .file(&call)
             .await
-            .map_err(|source| self.failed(FileCallError::Service(source), provider_name))
+            .map_err(|source| failure(&FileCallError::Service(source), name, redactor))
     }
+}
 
-    fn failed(&self, error: FileCallError, provider: &str) -> SdkFailure {
-        failure(&error, provider, self.deps.redactor)
+impl<'request> CreateFileRequest<'request> {
+    fn attachment(&self) -> Attachment<'request> {
+        Attachment {
+            locals: create_locals(self.file_id, self.attributes, self.chunking_strategy),
+            file_id: Some(self.file_id),
+        }
+    }
+}
+
+impl<'request> ListFileRequest<'request> {
+    fn attachment(&self) -> Attachment<'request> {
+        Attachment {
+            locals: list_locals(self.after, self.before, self.filter, self.limit, self.order),
+            file_id: None,
+        }
     }
 }
 
@@ -226,26 +226,6 @@ fn store_config(
         operation,
         provider: provider_name.to_owned(),
     })
-}
-
-const fn create_overlay(
-    operation: Operation,
-    extra_body: Option<&IndexMap<String, Json>>,
-) -> Option<&IndexMap<String, Json>> {
-    match operation {
-        Operation::Create => extra_body,
-        Operation::List => None,
-    }
-}
-
-const fn list_overlay(
-    operation: Operation,
-    extra_query: Option<&IndexMap<String, Json>>,
-) -> Option<&IndexMap<String, Json>> {
-    match operation {
-        Operation::Create => None,
-        Operation::List => extra_query,
-    }
 }
 
 fn merge_fields(

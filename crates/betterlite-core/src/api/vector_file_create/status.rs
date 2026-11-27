@@ -9,14 +9,7 @@ use crate::api::vector_store_http_write::error::{
 
 // LiteLLM's httpx client calls raise_for_status before either transform, so a list reply with an error status
 pub struct StatusCheckedFilesConfig<Config: FilesConfig> {
-    inner: Config,
-}
-
-impl<Config: FilesConfig> StatusCheckedFilesConfig<Config> {
-    #[must_use]
-    pub const fn new(inner: Config) -> Self {
-        Self { inner }
-    }
+    pub inner: Config,
 }
 
 impl<Config: FilesConfig> FilesConfig for StatusCheckedFilesConfig<Config> {

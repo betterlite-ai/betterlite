@@ -60,7 +60,7 @@ fn params() -> FilesParams {
 
 #[test]
 fn status_check_rejects_error_replies() {
-    let config = StatusCheckedFilesConfig::new(Inner);
+    let config = StatusCheckedFilesConfig { inner: Inner };
     let failure = config
         .transform_response(&reply(401))
         .expect_err("an error status fails before the provider transform");
@@ -78,7 +78,7 @@ fn status_check_rejects_error_replies() {
 
 #[test]
 fn status_check_delegates_provider_answers() {
-    let config = StatusCheckedFilesConfig::new(Inner);
+    let config = StatusCheckedFilesConfig { inner: Inner };
     let headers = config.validate_environment(Headers::new(), &params());
     assert!(headers.contains_key("x-inner"));
     assert_eq!(

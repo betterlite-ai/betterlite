@@ -13,10 +13,40 @@ use crate::api::vector_file_http_create_list::config::FilesParams;
 
 // GenericLiteLLMParams(**kwargs) read through the three fields the handler calls use
 pub(crate) fn files_params(kwargs: &IndexMap<String, Json>) -> Result<FilesParams, FileCallError> {
+    let api_base = match kwargs.get("api_base") {
+        None | Some(Json::Null) => None,
+        Some(Json::Text(value)) => Some(value.clone()),
+        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+            return Err(FileCallError::Field {
+                field: "api_base",
+                expected: "a string",
+            });
+        }
+    };
+    let api_key = match kwargs.get("api_key") {
+        None | Some(Json::Null) => None,
+        Some(Json::Text(value)) => Some(value.clone()),
+        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+            return Err(FileCallError::Field {
+                field: "api_key",
+                expected: "a string",
+            });
+        }
+    };
+    let ssl_verify = match kwargs.get("ssl_verify") {
+        None | Some(Json::Null) => None,
+        Some(Json::Bool(value)) => Some(*value),
+        Some(Json::Text(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+            return Err(FileCallError::Field {
+                field: "ssl_verify",
+                expected: "a boolean",
+            });
+        }
+    };
     Ok(FilesParams {
-        api_base: text(kwargs, "api_base")?,
-        api_key: text(kwargs, "api_key")?.map(SecretString::from),
-        ssl_verify: flag(kwargs, "ssl_verify")?,
+        api_base,
+        api_key: api_key.map(SecretString::from),
+        ssl_verify,
     })
 }
 
@@ -106,21 +136,14 @@ fn optional_params_of(
     Ok(optional_params)
 }
 
-fn litellm_params_of(
-    kwargs: &IndexMap<String, Json>,
-    vector_store_id: &str,
-) -> IndexMap<String, Json> {
-    let mut litellm_params = IndexMap::from([
-        (
-            String::from("vector_store_id"),
-            Json::Text(vector_store_id.to_owned()),
-        ),
-        (
-            String::from("litellm_call_id"),
-            kwargs.get("litellm_call_id").cloned().unwrap_or(Json::Null),
-        ),
-    ]);
-    litellm_params.extend(generic_params_dump(kwargs));
+fn litellm_params_of(kwargs: &IndexMap<String, Json>, store: &str) -> IndexMap<String, Json> {
+    let mut litellm_params = generic_params_dump(kwargs);
+    let call_id = kwargs.get("litellm_call_id").cloned().unwrap_or(Json::Null);
+    litellm_params.insert(
+        String::from("vector_store_id"),
+        Json::Text(store.to_owned()),
+    );
+    litellm_params.insert(String::from("litellm_call_id"), call_id);
     litellm_params
 }
 
@@ -155,36 +178,4 @@ pub(crate) fn call_timeout(
     };
     Duration::try_from_secs_f64(seconds)
         .map_err(|source| FileCallError::Timeout { seconds, source })
-}
-
-fn text(
-    kwargs: &IndexMap<String, Json>,
-    field: &'static str,
-) -> Result<Option<String>, FileCallError> {
-    match kwargs.get(field) {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Text(value)) => Ok(Some(value.clone())),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(FileCallError::Field {
-                field,
-                expected: "a string",
-            })
-        }
-    }
-}
-
-fn flag(
-    kwargs: &IndexMap<String, Json>,
-    field: &'static str,
-) -> Result<Option<bool>, FileCallError> {
-    match kwargs.get(field) {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Bool(value)) => Ok(Some(*value)),
-        Some(Json::Text(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(FileCallError::Field {
-                field,
-                expected: "a boolean",
-            })
-        }
-    }
 }
