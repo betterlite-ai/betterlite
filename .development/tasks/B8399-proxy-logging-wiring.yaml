@@ -15,6 +15,9 @@ description: >-
 
   ports.rs. The services other tasks inject: the ProxyLogging hooks service B084 and B1126 take (pre_call, post_call_failure), the guardrails-only pre-call port B1023 declares in betterlite-core (api::file_batch_guardrails), implemented here with `guardrails_only` and `has_pre_call_guardrails`, the failure hook port B941 records, and the disconnect release B2400 selects. Each forwards to the part that owns the behavior.
 
+
+  Route hook methods. `ProxyLogging` (state.rs) has four pub methods that forward to their owners with its own state: `during_call_hook(data, key, call_type)` to B8392's during_call.rs (L2925-L3030), `update_request_status(call_id, status)` to B8395's alerts.rs, spawning the write the way LiteLLM's create_task does (L1427-L1445), and `post_call_success_hook(data, key, response)` and `post_call_response_headers_hook(data, key, response, request_headers)` to B8394's post-call hooks (L3476-L3662, L3718-L3810). B10178's Google generation pipeline (app::inference::google_generation) calls them directly on `state.shared.proxy_logging`, so they are its whole hook surface and it declares no port of its own. The wiring tests check that each method reaches its owner. Test support: proxy_logging.rs declares `#[cfg(any(test, feature = "testing"))] pub mod testing;` (the pattern of cost_estimate_route/testing.rs) with a ProxyLogging whose four route hook methods and post_call_failure record each call and answer what the test sets; B10178's and B8693's tests use it.
+
   HTTP oracle cases in tools/oracle/cases/guardrails/proxy-logging/ boot the proxy with `generic_guardrail_api` guardrails (B3771) against the mock provider: a pre_call guardrail that blocks a chat request (status, error type and message), a during_call guardrail that blocks, a post_call guardrail that blocks the response, and a passing guardrail whose name shows in the x-litellm-applied-guardrails response header.
 
 
@@ -48,7 +51,7 @@ dod:
     proof: [wiring-tests]
   - text: startup_event starts the daily report, hanging request and deprecation tasks once each, and init_callbacks registers the open-source proxy hooks, skipping database hooks without a database.
     proof: [wiring-tests]
-  - text: The adapters and ports forward to the parts that own each behavior.
+  - text: The adapters, the ports and the four pub route hook methods forward to the parts that own each behavior.
     proof: [wiring-tests]
   - text: Pre, during and post call guardrail blocks and the applied guardrails header match LiteLLM through the booted proxy.
     proof: [oracle]
