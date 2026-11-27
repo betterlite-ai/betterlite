@@ -4,7 +4,7 @@ description: >-
   Implement the JWT/OAuth dispatch stage of authentication using installed AuthBackend ports. Preserve
   OAuth override selection only for inference/info routes, JWT mapped-key flow, managed-agent mapping
   prohibition (403), SCIM inactive-user refusal (401), and the user-model budget sequence. B053 installs
-  JWT/OAuth and B054 custom callables; this stage cannot treat an absent configured backend as authenticated.
+  JWT, B768 the two OAuth arms and B054 custom callables; this stage cannot treat an absent configured backend as authenticated.
   Define AgentIdentity::resolve(VerifiedClaims)->Result<Option<ManagedAgent>,AuthError> and record(ManagedAgent)->Result<IdentityEvidence,AuthError>
   ports; B8646 installs their implementations.
 
@@ -20,7 +20,21 @@ description: >-
   operation accepts the validated team/user/org/end-user/agent identity and pending claim/cache fields.
 
 
-  B768 supplies OAuth introspection and trusted proxy-header authentication. The standard JWT builder
+  Define the two OAuth ports here too, beside AuthBackend::jwt: OAuth2TokenCheck::check_oauth2_token(SecretString)
+  for introspection and OAuth2ProxyRequest::handle_oauth2_proxy_request(safe headers, NetworkContext) for trusted
+  proxy headers, both async and returning B2314's UserAPIKeyAuth or an AuthError. The server's slot in
+  state/auth_backend_dispatch.rs holds each as an empty Option<Arc<dyn ...>>; B768 depends on this task, implements
+  both over its OAuthTokenValidator and TrustedOAuthProxy, and fills the two fields in this Slot::new. Until then,
+  enable_oauth2_auth True, enable_oauth2_proxy_auth True, or a non-empty routing_overrides with enable_jwt_auth True
+  over an empty slot is the same named startup error as an unregistered JWT operation, shaped like CatalogError::Unavailable
+  in betterlite-logging's registry catalog; never skip the arm, fall through or authenticate. Test the selection and
+  the propagated errors through injected fakes of both ports, and the empty-slot error through the real stage.
+
+
+  On main the server's stage kinds are the AuthBackend enum in auth/auth_identity.rs with its StageInput and
+  StageFailure, picked by the stage_input match in auth.rs; dispatch there is synchronous, so the OAuth and JWT
+  calls run in prefetch_stage on the owned input, as auth_key_lookup's prefetch does. The port traits above live in
+  betterlite-auth and are not that enum. The standard JWT builder
   remains an injected operation owned by this stage and installed by B053, avoiding a call back into
   its installer. Its verified result conversion is part of that operation's contract, not another
   call to B053. JWT recognition/claim accessors come from B760 and verification from B762, safe headers from
@@ -28,7 +42,9 @@ description: >-
   classification from B750, model extraction from B881 and user budget enforcement from B753.
 
   All three enable flags activate only on literal True. Global OAuth applies only to LLM/info routes
-  and non-JWT inputs; an explicit routing override can send a JWT to OAuth on those routes. This
+  and non-JWT inputs; an explicit routing override can send a JWT to OAuth on those routes. B10161's
+  jwt_oauth_routing::should_route_jwt_to_oauth2_override(token, routing_overrides) decides that override, called
+  only when enable_jwt_auth is True and the token is a JWT; build no selector here. This
   choice precedes enable_oauth2_proxy_auth, which otherwise returns immediately before JWT handling.
   Non-JWT tokens fall through. Mapping verifies claims first; a managed-agent match raises HTTP 403
   auth_error with param "None". Resolved mappings replace api_key with token or empty string and
@@ -131,7 +147,8 @@ dod:
       mapped_email_identity_match, backfill_failure_debug_drop, managed_agent_mapping_403,
       pending_policy_before_create, scim_literal_false_401, admin_sentinel_ttl_and_early_return,
       pending_without_db, registration_none_keeps_identity, registration_keeps_user_budget,
-      zero_cost_logs_skip_budget, project_fields_before_budget and budget_429_envelope.'
+      zero_cost_logs_skip_budget, project_fields_before_budget, budget_429_envelope,
+      oauth_port_error_propagates and configured_oauth_arm_unavailable.'
     proof:
       - behavior-tests
   - text: Disabled JWT/OAuth and ordinary bearer fallthrough match the MIT HTTP server; native server tests
@@ -200,9 +217,10 @@ out_of_scope:
     (L733-L757), get_global_proxy_spend (L760-L790).'
   - 'litellm/proxy/auth/user_api_key_auth.py: B755 owns validate_resolved_virtual_key (L2211-L2622).'
   - 'litellm/proxy/auth/user_api_key_auth.py: B756 owns _normalize_public_auth_route (L160-L163), _route_requires_auth_despite_public
-    (L166-L171), _routing_selector_matches_claim (L514-L552), _matches_routing_override (L555-L565),
-    _should_route_jwt_to_oauth2_override (L568-L582), get_rbac_role (L793-L798), get_api_key (L801-L858),
+    (L166-L171), get_rbac_role (L793-L798), get_api_key (L801-L858),
     check_api_key_for_custom_headers_or_pass_through_endpoints (L861-L905), get_api_key_from_custom_header (L3580-L3612);
+    B10161 owns _routing_selector_matches_claim (L514-L552), _matches_routing_override (L555-L565) and
+    _should_route_jwt_to_oauth2_override (L568-L582);
     B10086 owns _get_bearer_token_or_received_api_key (L491-L511), _get_bearer_token (L585-L610) and is_no_auth_dev_mode
     (L2747-L2751).'
   - 'litellm/proxy/auth/user_api_key_auth.py: B757 owns _ensure_litellm_received_at_on_request_state (L1310-L1327),
