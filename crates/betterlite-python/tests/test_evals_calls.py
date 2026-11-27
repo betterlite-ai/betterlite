@@ -716,7 +716,7 @@ def test_error_not_found() -> None:
     for ours, theirs in ((deleted, reference_deleted), (cancelled, reference_cancelled)):
         assert ours.value.status_code == theirs.value.status_code == NOT_FOUND
         assert MISSING_MESSAGE in str(theirs.value)
-        assert "openai: the provider could not find the requested resource" in str(ours.value)
+        assert MISSING_MESSAGE in str(ours.value)
 
 
 def test_error_unsupported() -> None:
