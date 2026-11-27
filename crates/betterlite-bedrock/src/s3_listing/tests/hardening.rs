@@ -194,11 +194,21 @@ fn bedrock_services_s3_listing_secret_safe_failure() {
     secret_params_hide_their_values();
 }
 
-fn bad_regions_hide_secrets() {
+fn listing_failure(entries: &[(&str, &str)]) -> S3ListingError {
     let optional = region_params();
     let environment = empty_environment();
     let access = bucket_access("in-bucket");
-    let mut bad_region = text_params(&[
+    let mut litellm = text_params(entries);
+    block_on(list_files_request(
+        listing_request(&optional, &mut litellm, &access, &environment),
+        None,
+        unavailable_credentials,
+    ))
+    .unwrap_err()
+}
+
+fn bad_regions_hide_secrets() {
+    let error = listing_failure(&[
         ("aws_region_name", "NOT A REGION"),
         ("s3_access_key_id", "S3SECRETACCESS"),
         ("s3_secret_access_key", "S3SECRETVALUE"),
@@ -206,12 +216,6 @@ fn bad_regions_hide_secrets() {
         ("aws_secret_access_key", "AWSSECRETVALUE"),
         ("aws_session_token", "AWSSECRETTOKEN"),
     ]);
-    let error = block_on(list_files_request(
-        listing_request(&optional, &mut bad_region, &access, &environment),
-        None,
-        unavailable_credentials,
-    ))
-    .unwrap_err();
     assert_secret_absent(
         &error,
         &[
@@ -225,10 +229,7 @@ fn bad_regions_hide_secrets() {
 }
 
 fn unavailable_credentials_hide_secrets() {
-    let optional = region_params();
-    let environment = empty_environment();
-    let access = bucket_access("in-bucket");
-    let mut unavailable = text_params(&[
+    let error = listing_failure(&[
         ("aws_region_name", "us-east-1"),
         ("aws_access_key_id", "AWSSECRETACCESS"),
         ("aws_secret_access_key", "AWSSECRETVALUE"),
@@ -236,12 +237,6 @@ fn unavailable_credentials_hide_secrets() {
         ("s3_access_key_id", ""),
         ("s3_secret_access_key", ""),
     ]);
-    let error = block_on(list_files_request(
-        listing_request(&optional, &mut unavailable, &access, &environment),
-        None,
-        unavailable_credentials,
-    ))
-    .unwrap_err();
     assert_secret_absent(
         &error,
         &["AWSSECRETACCESS", "AWSSECRETVALUE", "AWSSECRETTOKEN"],

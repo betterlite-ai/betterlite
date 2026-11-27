@@ -1,4 +1,5 @@
 use betterlite_openai::files::records::{FileKind, FileStatus, FilesPurpose};
+use rstest::rstest;
 
 use super::super::decode::{DecodeLimits, decode_s3_listing, parse_created_at, parse_size};
 use super::super::prefix::{
@@ -18,17 +19,6 @@ use crate::request_policy::{Params, RequestValue};
 use crate::s3_access::{S3AccessParams, TrustedValue};
 
 pub(super) fn list_purpose_prefix() {
-    managed_prefixes();
-    listing_queries();
-    setting_text_reads_strings();
-    walked_purpose_prefers_the_location();
-    an_empty_location_is_used_as_given();
-    batch_purpose_reaches_the_listing();
-    absent_purpose_stores_null();
-    unknown_purpose_asks_for_no_keys();
-}
-
-fn managed_prefixes() {
     assert_eq!(
         managed_listing_prefix("", None).as_deref(),
         Some("litellm-b")
@@ -50,6 +40,13 @@ fn managed_prefixes() {
         managed_listing_prefix("base/prefix", Some("batch")).as_deref(),
         Some("base/prefix/litellm-bedrock-files")
     );
+    listing_queries();
+    setting_text_reads_strings();
+    walked_purpose_prefers_the_location();
+    an_empty_location_is_used_as_given();
+    batch_purpose_reaches_the_listing();
+    absent_purpose_stores_null();
+    unknown_purpose_asks_for_no_keys();
 }
 
 fn listing_queries() {
@@ -779,12 +776,10 @@ fn requested_purposes_filter_the_entries() {
 
 pub(super) fn last_modified_and_size() {
     parses_sizes();
-    rejects_malformed_sizes();
-    rejects_overflowing_sizes();
     parses_timestamps();
-    rejects_unsupported_timestamps();
+    rejects_bad_sizes();
+    rejects_bad_timestamps("2024-01-02");
     offsets_and_pre_epoch_times();
-    rejects_bad_calendar_times();
     managed_files_carry_size_and_time();
     bad_size_and_bad_date_fail();
 }
@@ -799,7 +794,7 @@ fn parses_sizes() {
     assert_eq!(parse_size(Some("-0")).unwrap(), 0);
 }
 
-fn rejects_malformed_sizes() {
+fn rejects_bad_sizes() {
     assert!(
         matches!(parse_size(Some("1__0")), Err(S3ListingError::Size { text }) if text == "1__0")
     );
@@ -811,9 +806,6 @@ fn rejects_malformed_sizes() {
         parse_size(Some("_1")),
         Err(S3ListingError::Size { .. })
     ));
-}
-
-fn rejects_overflowing_sizes() {
     assert!(matches!(
         parse_size(Some("12a")),
         Err(S3ListingError::Size { .. })
@@ -829,45 +821,45 @@ fn rejects_overflowing_sizes() {
 }
 
 fn parses_timestamps() {
+    let base = "2024-01-02T03:04:05";
+    let expected = 1_704_164_645;
     assert_eq!(parse_created_at(None).unwrap(), 0);
     assert_eq!(parse_created_at(Some("")).unwrap(), 0);
+    assert_eq!(parse_created_at(Some(base)).unwrap(), expected);
     assert_eq!(
-        parse_created_at(Some("2024-01-02T03:04:05Z")).unwrap(),
-        1_704_164_645
+        parse_created_at(Some(format!("{base}Z").as_str())).unwrap(),
+        expected
     );
     assert_eq!(
-        parse_created_at(Some("2024-01-02T03:04:05.500Z")).unwrap(),
-        1_704_164_645
+        parse_created_at(Some(format!("{base}.500Z").as_str())).unwrap(),
+        expected
     );
     assert_eq!(
-        parse_created_at(Some("2024-01-02T03:04:05.1234567Z")).unwrap(),
-        1_704_164_645
+        parse_created_at(Some(format!("{base}.1234567Z").as_str())).unwrap(),
+        expected
     );
     assert_eq!(
-        parse_created_at(Some("2024-01-02T03:04:05,5Z")).unwrap(),
-        1_704_164_645
-    );
-    assert_eq!(
-        parse_created_at(Some("2024-01-02T03:04:05")).unwrap(),
-        1_704_164_645
+        parse_created_at(Some(format!("{base},5Z").as_str())).unwrap(),
+        expected
     );
 }
 
-fn rejects_unsupported_timestamps() {
-    for unsupported in [
-        "20240102T030405Z",
-        "2024-01-02",
-        "2024-01-02T03:04:05+0200",
-        "2024-01-02T03:04:05+02",
-    ] {
-        assert!(
-            matches!(
-                parse_created_at(Some(unsupported)),
-                Err(S3ListingError::Timestamp { .. })
-            ),
-            "{unsupported}"
-        );
-    }
+#[rstest]
+#[case::basic_format("20240102T030405Z")]
+#[case::date_without_a_time("2024-01-02")]
+#[case::compact_offset("2024-01-02T03:04:05+0200")]
+#[case::hour_offset("2024-01-02T03:04:05+02")]
+#[case::zero_year("0000-01-01T00:00:00Z")]
+#[case::not_a_date("not-a-date")]
+#[case::lowercase_z("2024-01-02T03:04:05z")]
+#[case::february_30("2024-02-30T00:00:00Z")]
+#[case::hour_24("2024-01-02T24:00:00Z")]
+#[case::offset_24("2024-01-02T03:04:05+24:00")]
+fn rejects_bad_timestamps(#[case] text: &str) {
+    assert!(matches!(
+        parse_created_at(Some(text)),
+        Err(S3ListingError::Timestamp { .. })
+    ));
 }
 
 fn offsets_and_pre_epoch_times() {
@@ -895,33 +887,6 @@ fn offsets_and_pre_epoch_times() {
         parse_created_at(Some("1970-01-01T00:00:00.500Z")).unwrap(),
         0
     );
-}
-
-fn rejects_bad_calendar_times() {
-    assert!(matches!(
-        parse_created_at(Some("0000-01-01T00:00:00Z")),
-        Err(S3ListingError::Timestamp { .. })
-    ));
-    assert!(matches!(
-        parse_created_at(Some("not-a-date")),
-        Err(S3ListingError::Timestamp { .. })
-    ));
-    assert!(matches!(
-        parse_created_at(Some("2024-01-02T03:04:05z")),
-        Err(S3ListingError::Timestamp { .. })
-    ));
-    assert!(matches!(
-        parse_created_at(Some("2024-02-30T00:00:00Z")),
-        Err(S3ListingError::Timestamp { .. })
-    ));
-    assert!(matches!(
-        parse_created_at(Some("2024-01-02T24:00:00Z")),
-        Err(S3ListingError::Timestamp { .. })
-    ));
-    assert!(matches!(
-        parse_created_at(Some("2024-01-02T03:04:05+24:00")),
-        Err(S3ListingError::Timestamp { .. })
-    ));
 }
 
 fn managed_files_carry_size_and_time() {

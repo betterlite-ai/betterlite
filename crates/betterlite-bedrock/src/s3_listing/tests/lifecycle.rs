@@ -96,12 +96,26 @@ fn object_requests_require_a_file_id() {
 }
 
 fn content_request_is_signed() {
+    assert_object_request_signed(
+        S3FileMethod::Content,
+        "9911713a01b83beb7cfdc8b16ff8c86ed12eade33399b8d8107dfed6c27e128c",
+    );
+}
+
+fn delete_request_is_signed() {
+    assert_object_request_signed(
+        S3FileMethod::Delete,
+        "67f7305849bc15f5b462815692fa5eaedc6ae429f2a91ded713113f3e39ab960",
+    );
+}
+
+fn assert_object_request_signed(method: S3FileMethod, signature: &str) {
     let mut litellm = token_params();
     let access = bucket_access("in-bucket");
     let signed = signed_object_request(
         &mut litellm,
         &access,
-        S3FileMethod::Content,
+        method,
         Some("s3://in-bucket/litellm-batch-outputs/x.jsonl"),
     )
     .unwrap();
@@ -122,35 +136,10 @@ fn content_request_is_signed() {
                     "AKIDEXAMPLE",
                     "us-east-1",
                     "host;x-amz-content-sha256;x-amz-date;x-amz-security-token",
-                    "9911713a01b83beb7cfdc8b16ff8c86ed12eade33399b8d8107dfed6c27e128c"
+                    signature
                 )
             ),
         ]
-    );
-}
-
-fn delete_request_is_signed() {
-    let mut litellm = token_params();
-    let access = bucket_access("in-bucket");
-    let deletion = signed_object_request(
-        &mut litellm,
-        &access,
-        S3FileMethod::Delete,
-        Some("s3://in-bucket/litellm-batch-outputs/x.jsonl"),
-    )
-    .unwrap();
-    assert_eq!(
-        deletion.url,
-        "https://s3.us-east-1.amazonaws.com/in-bucket/litellm-batch-outputs%2Fx.jsonl"
-    );
-    assert_eq!(
-        header_value(&litellm, "Authorization").unwrap(),
-        authorization(
-            "AKIDEXAMPLE",
-            "us-east-1",
-            "host;x-amz-content-sha256;x-amz-date;x-amz-security-token",
-            "67f7305849bc15f5b462815692fa5eaedc6ae429f2a91ded713113f3e39ab960"
-        )
     );
 }
 
@@ -528,22 +517,33 @@ pub(super) fn bodiless_s3_signature() {
     custom_endpoint_headers_carry_the_session_token();
 }
 
+fn expected_signed_headers(
+    region: &str,
+    token: Option<&str>,
+    signature: &str,
+) -> Vec<(String, String)> {
+    let mut headers = vec![("X-Amz-Date".to_owned(), "20240101T000000Z".to_owned())];
+    let mut signed = "host;x-amz-content-sha256;x-amz-date";
+    if let Some(value) = token {
+        headers.push(("X-Amz-Security-Token".to_owned(), value.to_owned()));
+        signed = "host;x-amz-content-sha256;x-amz-date;x-amz-security-token";
+    }
+    headers.push(("X-Amz-Content-SHA256".to_owned(), EMPTY_SHA256.to_owned()));
+    headers.push((
+        "Authorization".to_owned(),
+        authorization("AKIDEXAMPLE", region, signed, signature),
+    ));
+    headers
+}
+
 fn assert_default_headers(litellm: &Params) {
     assert_eq!(
         header_pairs(litellm),
-        vec![
-            ("X-Amz-Date".to_owned(), "20240101T000000Z".to_owned()),
-            ("X-Amz-Content-SHA256".to_owned(), EMPTY_SHA256.to_owned()),
-            (
-                "Authorization".to_owned(),
-                authorization(
-                    "AKIDEXAMPLE",
-                    "us-east-1",
-                    "host;x-amz-content-sha256;x-amz-date",
-                    "f2c6f153494cd7f15cc4726db61cfec89d62b1e441f98adc110b242901b1d978"
-                )
-            ),
-        ]
+        expected_signed_headers(
+            "us-east-1",
+            None,
+            "f2c6f153494cd7f15cc4726db61cfec89d62b1e441f98adc110b242901b1d978"
+        )
     );
 }
 
@@ -677,25 +677,17 @@ fn custom_endpoint_headers_carry_the_session_token() {
 }
 
 fn assert_custom_endpoint_headers(custom: &Params) {
+    let headers = header_pairs(custom);
     assert_eq!(
-        header_pairs(custom),
-        vec![
-            ("X-Amz-Date".to_owned(), "20240101T000000Z".to_owned()),
-            ("X-Amz-Security-Token".to_owned(), "tokEXAMPLE".to_owned()),
-            ("X-Amz-Content-SHA256".to_owned(), EMPTY_SHA256.to_owned()),
-            (
-                "Authorization".to_owned(),
-                authorization(
-                    "AKIDEXAMPLE",
-                    "eu-west-1",
-                    "host;x-amz-content-sha256;x-amz-date;x-amz-security-token",
-                    "3facd560b39c9c5cbc5b97e65256b253b542ceee696d6e5bf0770233519bc3f5"
-                )
-            ),
-        ]
+        headers,
+        expected_signed_headers(
+            "eu-west-1",
+            Some("tokEXAMPLE"),
+            "3facd560b39c9c5cbc5b97e65256b253b542ceee696d6e5bf0770233519bc3f5"
+        )
     );
     assert_eq!(
-        header_pairs(custom).len(),
+        headers.len(),
         4,
         "a bodiless request adds no content headers"
     );

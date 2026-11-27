@@ -96,58 +96,44 @@ pub(super) fn access_params(trusted: &[(&str, TrustedValue)]) -> S3AccessParams 
     }
 }
 
-pub(super) fn input_output_access() -> S3AccessParams {
+fn paired_access(input: &str, output: &str) -> S3AccessParams {
     access_params(&[
-        ("s3_bucket_name", TrustedValue::Text("in-bucket".to_owned())),
+        ("s3_bucket_name", TrustedValue::Text(input.to_owned())),
         (
             "s3_output_bucket_name",
-            TrustedValue::Text("out-bucket".to_owned()),
+            TrustedValue::Text(output.to_owned()),
         ),
     ])
 }
 
+pub(super) fn input_output_access() -> S3AccessParams {
+    paired_access("in-bucket", "out-bucket")
+}
+
 pub(super) fn bucket_pair_access() -> S3AccessParams {
-    access_params(&[
-        ("s3_bucket_name", TrustedValue::Text("bucket/in".to_owned())),
+    paired_access("bucket/in", "bucket/out")
+}
+
+fn location_params(purpose: RequestValue) -> Params {
+    params(vec![
         (
-            "s3_output_bucket_name",
-            TrustedValue::Text("bucket/out".to_owned()),
+            "aws_region_name",
+            RequestValue::Text("us-east-1".to_owned()),
+        ),
+        (LIST_FILES_PURPOSE_PARAM, purpose),
+        (
+            LIST_FILES_LOCATION_PARAM,
+            RequestValue::Raw("null".to_owned()),
         ),
     ])
 }
 
 pub(super) fn null_location_params() -> Params {
-    params(vec![
-        (
-            "aws_region_name",
-            RequestValue::Text("us-east-1".to_owned()),
-        ),
-        (
-            LIST_FILES_PURPOSE_PARAM,
-            RequestValue::Raw("null".to_owned()),
-        ),
-        (
-            LIST_FILES_LOCATION_PARAM,
-            RequestValue::Raw("null".to_owned()),
-        ),
-    ])
+    location_params(RequestValue::Raw("null".to_owned()))
 }
 
 pub(super) fn batch_params() -> Params {
-    params(vec![
-        (
-            "aws_region_name",
-            RequestValue::Text("us-east-1".to_owned()),
-        ),
-        (
-            LIST_FILES_PURPOSE_PARAM,
-            RequestValue::Text("batch".to_owned()),
-        ),
-        (
-            LIST_FILES_LOCATION_PARAM,
-            RequestValue::Raw("null".to_owned()),
-        ),
-    ])
+    location_params(RequestValue::Text("batch".to_owned()))
 }
 
 pub(super) fn bucket_access(bucket: &str) -> S3AccessParams {
