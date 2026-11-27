@@ -1,9 +1,9 @@
 import asyncio
-from collections.abc import Coroutine
 from datetime import UTC, datetime
-from typing import ClassVar, Literal, Never, Protocol, TypedDict, TypeVar, Unpack
+from typing import ClassVar, Literal, Never, Protocol, TypedDict, Unpack
 
 import litellm
+import litellm.vector_stores.main as vector_store_main
 import openai
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.vector_stores.vector_store_registry import VectorStoreRegistry
@@ -14,21 +14,14 @@ from openai_chat import Failure, project_failure
 
 Operation = Literal["retrieve", "list"]
 Mode = Literal["sync", "async"]
-Work = Coroutine[object, object, JsonValue]
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 PARAMS: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
 TEXT: TypeAdapter[str] = TypeAdapter(str)
-Answer_co = TypeVar("Answer_co", covariant=True)
 
 
-# every keyword argument the four reads take
-class ReadValues(TypedDict, total=False):
-    vector_store_id: str
-    after: str | None
-    before: str | None
-    limit: int | None
-    order: str | None
+# every keyword argument the reads share, with the extras LiteLLM forwards untouched
+class ReadOptions(TypedDict, total=False):
     api_base: str
     api_key: str | None
     litellm_call_id: str
@@ -40,27 +33,42 @@ class ReadValues(TypedDict, total=False):
     timeout: float | None
 
 
-class ReadCall(Protocol[Answer_co]):
-    def __call__(self, **values: Unpack[ReadValues]) -> Answer_co: ...
+# litellm's @client decorator leaves the reads untyped, so each mode's view names the calls it makes
+class SyncReads(Protocol):
+    def retrieve(self, /, vector_store_id: str, **values: Unpack[ReadOptions]) -> JsonValue: ...
+
+    def list(
+        self,
+        /,
+        after: str | None = None,
+        before: str | None = None,
+        limit: int | None = None,
+        order: str | None = None,
+        **values: Unpack[ReadOptions],
+    ) -> JsonValue: ...
 
 
-class Reads(Protocol[Answer_co]):
-    def __getattr__(self, name: str) -> ReadCall[Answer_co]: ...
+class AsyncReads(Protocol):
+    async def aretrieve(
+        self,
+        /,
+        vector_store_id: str,
+        **values: Unpack[ReadOptions],
+    ) -> JsonValue: ...
+
+    async def alist(
+        self,
+        /,
+        after: str | None = None,
+        before: str | None = None,
+        limit: int | None = None,
+        order: str | None = None,
+        **values: Unpack[ReadOptions],
+    ) -> JsonValue: ...
 
 
-class VectorStores(Protocol[Answer_co]):
-    def __getattr__(self, name: str) -> Reads[Answer_co]: ...
-
-
-class LitellmModule(Protocol[Answer_co]):
-    def __getattr__(self, name: str) -> VectorStores[Answer_co]: ...
-
-
-# the @client decorator erases each read's signature, so a typed attribute view reaches the four
-SYNC_LITELLM: LitellmModule[JsonValue] = litellm
-ASYNC_LITELLM: LitellmModule[Work] = litellm
-SYNC: Reads[JsonValue] = SYNC_LITELLM.vector_stores.main
-ASYNC: Reads[Work] = ASYNC_LITELLM.vector_stores.main
+SYNC: SyncReads = vector_store_main
+ASYNC: AsyncReads = vector_store_main
 
 
 class Strict(BaseModel):
@@ -141,8 +149,8 @@ class RefusingRegistry(VectorStoreRegistry):
 
     @override
     # ast-grep-ignore: no-long-names
-    def get_credentials_for_vector_store(self, _vector_store_id: str) -> Never:
-        raise RuntimeError(self.refusal)
+    def get_credentials_for_vector_store(self, vector_store_id: str) -> Never:
+        raise RuntimeError(f"{self.refusal}: {vector_store_id}")
 
 
 def require_id(run: Run) -> str:
@@ -165,8 +173,8 @@ def order_value(run: Run) -> str | None:
     return "desc"
 
 
-def read_options(run: Run, api_base: str, logging_obj: Logging) -> ReadValues:
-    return ReadValues(
+def read_options(run: Run, api_base: str, logging_obj: Logging) -> ReadOptions:
+    return ReadOptions(
         api_base=api_base,
         api_key=run.options.api_key,
         litellm_call_id=run.options.litellm_call_id,
@@ -179,33 +187,36 @@ def read_options(run: Run, api_base: str, logging_obj: Logging) -> ReadValues:
     )
 
 
-def retrieve_options(run: Run, api_base: str, logging_obj: Logging) -> ReadValues:
-    options = read_options(run, api_base, logging_obj)
-    options["vector_store_id"] = require_id(run)
-    return options
-
-
-def list_options(run: Run, api_base: str, logging_obj: Logging) -> ReadValues:
-    options = read_options(run, api_base, logging_obj)
-    options["after"] = run.after
-    options["before"] = run.before
-    options["limit"] = limit_value(run)
-    options["order"] = order_value(run)
-    return options
-
-
 def answer(run: Run, api_base: str, logging_obj: Logging) -> JsonValue:
+    options = read_options(run, api_base, logging_obj)
     if run.operation == "retrieve":
-        return JSON.validate_python(SYNC.retrieve(**retrieve_options(run, api_base, logging_obj)))
-    return JSON.validate_python(SYNC.list(**list_options(run, api_base, logging_obj)))
+        return JSON.validate_python(SYNC.retrieve(vector_store_id=require_id(run), **options))
+    return JSON.validate_python(
+        SYNC.list(
+            after=run.after,
+            before=run.before,
+            limit=limit_value(run),
+            order=order_value(run),
+            **options,
+        )
+    )
 
 
 async def async_answer(run: Run, api_base: str, logging_obj: Logging) -> JsonValue:
+    options = read_options(run, api_base, logging_obj)
     if run.operation == "retrieve":
         return JSON.validate_python(
-            await ASYNC.aretrieve(**retrieve_options(run, api_base, logging_obj))
+            await ASYNC.aretrieve(vector_store_id=require_id(run), **options)
         )
-    return JSON.validate_python(await ASYNC.alist(**list_options(run, api_base, logging_obj)))
+    return JSON.validate_python(
+        await ASYNC.alist(
+            after=run.after,
+            before=run.before,
+            limit=limit_value(run),
+            order=order_value(run),
+            **options,
+        )
+    )
 
 
 def logging_fixture(call_type: str) -> Logging:
