@@ -30,7 +30,8 @@ pub(crate) fn stage_failure_response(failure: &StageFailure) -> Response {
         | StageFailure::OrgLookup(exception)
         | StageFailure::EndUsers(exception)
         | StageFailure::AuthPolicySupport(exception)
-        | StageFailure::ModelGrants(exception) => denial_response(exception),
+        | StageFailure::ModelGrants(exception)
+        | StageFailure::OauthTokens(exception) => denial_response(exception),
     }
 }
 

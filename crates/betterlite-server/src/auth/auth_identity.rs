@@ -143,6 +143,7 @@ pub(crate) enum StageFailure {
     EndUsers(Box<ProxyException>),
     AuthPolicySupport(Box<ProxyException>),
     ModelGrants(Box<ProxyException>),
+    OauthTokens(Box<ProxyException>),
 }
 
 impl From<AuthenticationFailure> for StageFailure {

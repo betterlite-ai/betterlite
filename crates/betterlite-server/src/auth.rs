@@ -85,6 +85,18 @@ pub(crate) async fn authenticate(
     if PUBLIC_HEALTH_PATHS.contains(&request.uri().path()) {
         return next.run(request).await;
     }
+    // both OAuth2 branches run before LiteLLM reads the master key, so they run here too
+    match oauth_tokens::pre_stage(&request).await {
+        oauth_tokens::PreStage::Skipped => {}
+        oauth_tokens::PreStage::Authenticated(context) => {
+            request.extensions_mut().insert(context);
+            return next.run(request).await;
+        }
+        oauth_tokens::PreStage::Rejected(failure) => {
+            let context = auth_errors::FailureContext::of(&request, None);
+            return context.respond(&failure, failure_response).await;
+        }
+    }
     let Some(master_key) = master_key_state.as_ref() else {
         return next.run(request).await;
     };
