@@ -72,9 +72,10 @@ pub fn decode_batch_input_line(
     if trimmed.is_empty() {
         return Ok(None);
     }
-    let classified: BatchRecord = serde_json::from_str(trimmed).map_err(BatchRecordsError::Json)?;
+    // json.loads reads the line as splitlines returns it, so only the four JSON whitespace bytes are skipped.
+    let classified: BatchRecord = serde_json::from_str(text).map_err(BatchRecordsError::Json)?;
     let fields: IndexMap<String, Json> =
-        serde_json::from_str(trimmed).map_err(BatchRecordsError::Json)?;
+        serde_json::from_str(text).map_err(BatchRecordsError::Json)?;
     let custom_id = match fields.get(CUSTOM_ID_FIELD) {
         None => CustomId::Missing,
         Some(Json::Null) => CustomId::Null,
