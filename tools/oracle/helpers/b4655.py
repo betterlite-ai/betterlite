@@ -13,6 +13,8 @@ APP: Final = FastAPI()
 APP.include_router(byok_oauth_endpoints.router)
 CALLBACK: Final = "http://127.0.0.1:1456/callback"
 PROXY_MODULE: Final = "litellm.proxy.proxy_server"
+PRISMA_NAME: Final = "litellm.proxy.proxy_server.prisma"
+LOGGING_NAME: Final = "litellm.proxy.proxy_server.logging"
 ADMITTED_STATUS: Final = 302
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 
@@ -30,19 +32,11 @@ class ServiceLogging(ModuleType):
 
 
 class ProxyLogging(ModuleType):
-    service_logging_obj: ServiceLogging
-
-    def __init__(self) -> None:
-        super().__init__("litellm.proxy.proxy_server.logging")
-        self.service_logging_obj = ServiceLogging("litellm.proxy.proxy_server.logging.service")
+    service_logging_obj: ServiceLogging = ServiceLogging(f"{LOGGING_NAME}.service")
 
 
 class PrismaClient(ModuleType):
-    resolves: bool
-
-    def __init__(self, *, resolves: bool) -> None:
-        super().__init__("litellm.proxy.proxy_server.prisma")
-        self.resolves = resolves
+    resolves: bool = True
 
     async def get_data(self, **kwargs: JsonValue) -> UserAPIKeyAuth:
         del kwargs
@@ -52,24 +46,34 @@ class PrismaClient(ModuleType):
 
 
 class ProxyServer(ModuleType):
-    master_key: str
-    prisma_client: PrismaClient
-    proxy_logging_obj: ProxyLogging
-    user_api_key_cache: UserApiKeyCache
+    master_key: str = ""
+    prisma_client: ModuleType | None = None
+    proxy_logging_obj: ModuleType | None = None
+    user_api_key_cache: UserApiKeyCache | None = None
 
-    def __init__(self, master_key: str, *, resolves: bool) -> None:
-        super().__init__(PROXY_MODULE)
-        self.master_key = master_key
-        self.prisma_client = PrismaClient(resolves=resolves)
-        self.proxy_logging_obj = ProxyLogging()
-        self.user_api_key_cache = UserApiKeyCache()
+
+def install_proxy(master_key: str, *, resolves: bool) -> ModuleType | None:
+    prisma = PrismaClient(PRISMA_NAME)
+    prisma.resolves = resolves
+    module = ProxyServer(PROXY_MODULE)
+    module.master_key = master_key
+    module.prisma_client = prisma
+    module.proxy_logging_obj = ProxyLogging(LOGGING_NAME)
+    module.user_api_key_cache = UserApiKeyCache()
+    saved = sys.modules.get(PROXY_MODULE)
+    sys.modules[PROXY_MODULE] = module
+    return saved
+
+
+def restore_proxy(saved: ModuleType | None) -> None:
+    if saved is None:
+        del sys.modules[PROXY_MODULE]
+        return
+    sys.modules[PROXY_MODULE] = saved
 
 
 def run(input_value: Input) -> JsonValue:
-    saved = sys.modules.get(PROXY_MODULE)
-    sys.modules[PROXY_MODULE] = ProxyServer(
-        input_value["master_key"], resolves=input_value["key_resolves"]
-    )
+    saved = install_proxy(input_value["master_key"], resolves=input_value["key_resolves"])
     try:
         headers: dict[str, str] = {}
         cookie_header = input_value["cookie_header"]
@@ -83,9 +87,6 @@ def run(input_value: Input) -> JsonValue:
         )
         admitted = response.status_code == ADMITTED_STATUS
     finally:
-        if saved is None:
-            sys.modules.pop(PROXY_MODULE, None)
-        else:
-            sys.modules[PROXY_MODULE] = saved
+        restore_proxy(saved)
     report: dict[str, JsonValue] = {"admitted": admitted}
     return JSON.validate_python(report)
