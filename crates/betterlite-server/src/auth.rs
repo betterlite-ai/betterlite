@@ -98,7 +98,6 @@ pub(crate) async fn authenticate(
         Err(response) => *response,
     }
 }
-
 fn stage_input(
     backend: AuthBackend,
     request: &Request<Body>,
@@ -131,6 +130,7 @@ fn stage_input(
         AuthBackend::TeamBudgetAdmission => {
             team_budget_admission::stage_input(request, authenticated)
         }
+        AuthBackend::AuthTenantBudgets => auth_tenant_budgets::stage(request, authenticated, body),
         AuthBackend::OrganizationRoutePolicy => {
             organization_route_policy::stage_input(request, authenticated, body)
         }
@@ -200,28 +200,16 @@ fn resolver_for(request: &Request<Body>) -> Arc<RequestModelResolver> {
         .get::<Arc<RequestModelResolver>>()
         .map_or_else(default_resolver, Arc::clone)
 }
-
 // stage_input cannot await while holding the request borrow (Request<Body> is Send but not Sync), so the caller awaits the stage prefetch on the owned input
 pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, StageFailure> {
     match input {
         StageInput::AuthKeyLookup(stage) => auth_key_lookup::prefetch(*stage).await,
-        StageInput::AuthTagBudgets(stage) => auth_tag_budgets::prefetch(&stage)
-            .await
-            .map_err(StageFailure::TagBudgets)
-            .map(|()| StageInput::AuthTagBudgets(stage)),
-        StageInput::AuthKeyBudgets(stage) => auth_key_budgets::prefetch(&stage)
-            .await
-            .map_err(StageFailure::KeyBudgets)
-            .map(|()| StageInput::AuthKeyBudgets(stage)),
+        StageInput::AuthTagBudgets(stage) => auth_tag_budgets::prefetched(stage).await,
+        StageInput::AuthKeyBudgets(stage) => auth_key_budgets::prefetched(stage).await,
         StageInput::TeamBudgetAdmission(stage) => team_budget_admission::prefetched(stage).await,
-        StageInput::AuthOrgLookup(stage) => auth_org_lookup::prefetch(&stage)
-            .await
-            .map_err(StageFailure::OrgLookup)
-            .map(|()| StageInput::AuthOrgLookup(stage)),
-        StageInput::AuthEndUsers(stage) => auth_end_users::prefetch(&stage)
-            .await
-            .map_err(StageFailure::EndUsers)
-            .map(|()| StageInput::AuthEndUsers(stage)),
+        StageInput::AuthTenantBudgets(stage) => auth_tenant_budgets::prefetched(stage).await,
+        StageInput::AuthOrgLookup(stage) => auth_org_lookup::prefetched(stage).await,
+        StageInput::AuthEndUsers(stage) => auth_end_users::prefetched(stage).await,
         StageInput::ModelGrantIntersection(stage) => StageInput::prefetch_model_grants(stage).await,
         StageInput::AuthModelGrants(stage) => auth_model_grants::prefetched(stage).await,
         StageInput::EntityModelAccess(stage) => entity_model_access::prefetched(stage).await,
