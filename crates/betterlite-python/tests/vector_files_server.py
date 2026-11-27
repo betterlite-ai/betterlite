@@ -51,7 +51,7 @@ def file_payload() -> dict[str, JsonValue]:
 
 
 def list_payload() -> dict[str, JsonValue]:
-    files = [file_payload()]
+    files: list[JsonValue] = [file_payload()]
     return {
         "object": "list",
         "data": files,

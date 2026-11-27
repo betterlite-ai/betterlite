@@ -77,11 +77,7 @@ def call_values(kwargs: dict[str, CallValue], **named: CallValue) -> dict[str, C
 
 # A setting the caller left unset stays absent, so the fallback it would hide applies instead
 def connection_values(**named: CallValue) -> dict[str, CallValue]:
-    present: dict[str, CallValue] = {}
-    for name, value in named.items():
-        if value is not None:
-            present[name] = value
-    return present
+    return {name: value for name, value in named.items() if value is not None}
 
 
 def create_now(values: dict[str, CallValue]) -> VectorStoreFileObject:

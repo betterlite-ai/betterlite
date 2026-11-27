@@ -152,10 +152,8 @@ def retrieve(
         custom_llm_provider=custom_llm_provider,
     )
     if kwargs.pop("aretrieve", None) is True:
-        answer = retrieve_async(values)
-    else:
-        answer = retrieve_now(values)
-    return answer
+        return retrieve_async(values)
+    return retrieve_now(values)
 
 
 async def aretrieve(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_store_files/main.py#L307

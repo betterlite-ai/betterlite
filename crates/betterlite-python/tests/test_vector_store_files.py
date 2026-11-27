@@ -42,10 +42,12 @@ from betterlite.vector_store_files.main import (
     aupdate,
     create,
     delete,
-    list as list_files,
     retrieve,
     retrieve_content,
     update,
+)
+from betterlite.vector_store_files.main import (
+    list as list_files,
 )
 
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
@@ -368,11 +370,8 @@ def test_calls_delete() -> None:
 def set_module_globals(
     monkeypatch: pytest.MonkeyPatch, module: ModuleType, url: str, key: str
 ) -> None:
-    # ast-grep-ignore: no-string-mocking
     monkeypatch.setattr(module, "api_base", url)
-    # ast-grep-ignore: no-string-mocking
     monkeypatch.setattr(module, "api_key", key)
-    # ast-grep-ignore: no-string-mocking
     monkeypatch.setattr(module, "openai_key", key)
 
 

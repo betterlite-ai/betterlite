@@ -8,7 +8,8 @@ use betterlite_http_fixture::reply::reply;
 use betterlite_http_fixture::server::serve;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::{PyAnyMethods as _, PyDict, PyDictMethods as _, PyList, PyModule};
+use pyo3::types::{PyAnyMethods as _, PyDict, PyDictMethods as _, PyModule};
+use rstest::rstest;
 
 use super::NativeVectorFileSession;
 use crate::vector_files::register;
@@ -114,34 +115,30 @@ fn a_malformed_session_text_is_an_error_not_a_panic() {
     });
 }
 
-#[test]
-fn a_malformed_payload_is_a_value_error() {
+#[rstest]
+#[case::create("create")]
+#[case::list("list")]
+#[case::retrieve("retrieve")]
+#[case::retrieve_content("retrieve_content")]
+#[case::update("update")]
+#[case::delete("delete")]
+#[case::acreate("acreate")]
+#[case::alist("alist")]
+#[case::aretrieve("aretrieve")]
+#[case::aretrieve_content("aretrieve_content")]
+#[case::aupdate("aupdate")]
+#[case::adelete("adelete")]
+fn a_malformed_payload_is_a_value_error(#[case] method: &str) {
     Python::initialize();
     Python::attach(|py| {
-        let session = NativeVectorFileSession::new(r#"{"environment":{}}"#).unwrap();
-        let blobs = PyList::empty(py);
-        for error in [
-            session.create(py, "not a call", &blobs).err().unwrap(),
-            session.list(py, "not a call", &blobs).err().unwrap(),
-            session.retrieve(py, "not a call", &blobs).err().unwrap(),
-            session
-                .retrieve_content(py, "not a call", &blobs)
-                .err()
-                .unwrap(),
-            session.update(py, "not a call", &blobs).err().unwrap(),
-            session.delete(py, "not a call", &blobs).err().unwrap(),
-            session.acreate(py, "not a call", &blobs).err().unwrap(),
-            session.alist(py, "not a call", &blobs).err().unwrap(),
-            session.aretrieve(py, "not a call", &blobs).err().unwrap(),
-            session
-                .aretrieve_content(py, "not a call", &blobs)
-                .err()
-                .unwrap(),
-            session.aupdate(py, "not a call", &blobs).err().unwrap(),
-            session.adelete(py, "not a call", &blobs).err().unwrap(),
-        ] {
-            assert!(error.is_instance_of::<PyValueError>(py));
-        }
+        let module = PyModule::new(py, "vector_file_payload_test").unwrap();
+        register(&module).unwrap();
+        let class = module.getattr("NativeVectorFileSession").unwrap();
+        let session = class.call1((r#"{"environment":{}}"#,)).unwrap();
+        let error = session
+            .call_method1(method, ("not a call", Vec::<Vec<u8>>::new()))
+            .unwrap_err();
+        assert!(error.is_instance_of::<PyValueError>(py));
     });
 }
 
