@@ -1,0 +1,21 @@
+task: B7490
+deviations:
+  - what: The server registry, the challenge context and the client IP are arguments, and the caught exception arrives as error_is_401 plus the original error value.
+    why: betterlite keeps no global MCP server manager and no Starlette request in these functions; the caller holds the registry lock and classifies the admission error with B4679.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L311-L361
+  - what: The challenge and fallback functions take grouped values, TargetQuery (registry, route, header list, client IP), McpAuthHeaders (the header text and the alias map) and FallbackFlags (the two bools), where LiteLLM passes the same values as up to ten separate parameters.
+    why: clippy's too-many-arguments threshold is 5 and the task allows no new expect attribute, so the registry, route, header list and client IP are one TargetQuery, the two client auth values one McpAuthHeaders, and the two bools one FallbackFlags.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L252-L308
+  - what: ChallengeContext carries the request origin value (which holds from_trusted_proxy) and borrows proxy_base_url as a string, where the task text lists a separate from_trusted_proxy field and an owned Option<String>.
+    why: B4654's RequestOrigin already carries from_trusted_proxy into get_request_base_url, and a second copy could disagree with it; borrowing keeps ChallengeContext Copy. get_request_base_url normalizes PROXY_BASE_URL itself, so the borrowed text behaves the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L138-L177
+  - what: ChallengeResponse is the existing McpHttpError from mcp::transport_checks, which has exactly the status, detail and headers fields the task names, instead of a new struct.
+    why: the route already renders McpHttpError into a response, so one value type keeps the challenge path and the transport error path on the same renderer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L301-L308
+  - what: FallbackError has a third variant, DefaultKey, for the case where the empty anonymous principal cannot be built. LiteLLM's UserAPIKeyAuth() constructor cannot fail.
+    why: betterlite has no Default for UserAPIKeyAuth and its typed constructor returns a Result; the caller fails closed with the original admission error, the same shape search_tool_routes::list::ListError::DefaultKey uses.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L347-L361
+  - what: A request base URL that cannot be parsed still produces the 401 challenge, built from the request's own base URL text, and a warning is logged. LiteLLM lets the ValueError escape, so the request fails with an unhandled 500.
+    why: a hostile Host header or a stray bracket in the configured URL must not turn an authentication challenge into a 500; the fallback advertises the address the client actually reached, which is the address the proxy is answering on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L138-L177
+kept_bugs: []
