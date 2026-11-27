@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import importlib
 import inspect
 import json
@@ -96,6 +97,20 @@ EXTENDED_RECORD: Final[dict[str, JsonValue]] = {
     "seconds": "12",
 }
 JSON_RECORD: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
+REQUESTED_PARAMS: Final[dict[str, JsonValue]] = {
+    "prompt": PROMPT,
+    "model": MODEL,
+    "seconds": SECONDS,
+    "timeout": 600,
+    "api_key": GOOD_KEY,
+    "custom_llm_provider": PROVIDER,
+    "extra_body": {"style": STYLE, "skip": None},
+    "kwargs": {
+        "extra_body": {"style": "loose", "second": "2"},
+        "user": "user-1",
+        "unused": None,
+    },
+}
 
 
 class RecordedCall(TypedDict):
@@ -229,6 +244,14 @@ class Comparison(NamedTuple):
     reference_call: RecordedCall
 
 
+class Upload(NamedTuple):
+    method: str
+    path: str
+    field: str
+    text: str
+    filename: str
+
+
 class FixedConfig:
     def map_openai_params(
         self,
@@ -304,6 +327,12 @@ def assert_same_call(
 ) -> None:
     assert ours_call["method"] == reference_call["method"] == method
     assert ours_call["path"] == reference_call["path"] == path
+
+
+def assert_same_record(swapped: Comparison) -> None:
+    ours = JSON_RECORD.validate_json(swapped.ours.model_dump_json())
+    reference = JSON_RECORD.validate_json(swapped.reference.model_dump_json())
+    assert ours == reference
 
 
 class EditServer(ThreadingHTTPServer):
@@ -413,61 +442,39 @@ def test_calls_match_litellm(shape: Shape) -> None:
     assert_same_call(swapped.reference_call, swapped.ours_call, shape.method, shape.path)
     assert_same_call(
         asynchronous.reference_call, asynchronous.ours_call, shape.method, shape.path)
-    ours_swapped = JSON_RECORD.validate_json(swapped.ours.model_dump_json())
-    reference_swapped = JSON_RECORD.validate_json(swapped.reference.model_dump_json())
-    ours_asynchronous = JSON_RECORD.validate_json(asynchronous.ours.model_dump_json())
-    reference_asynchronous = JSON_RECORD.validate_json(
-        asynchronous.reference.model_dump_json())
-    assert ours_swapped == reference_swapped
-    assert ours_asynchronous == reference_asynchronous
+    assert_same_record(swapped)
+    assert_same_record(asynchronous)
+
+
+def check_upload(swapped: Comparison, upload: Upload) -> None:
+    assert_same_call(swapped.reference_call, swapped.ours_call, upload.method, upload.path)
+    ours_parts = sent_parts(swapped.ours_call)
+    reference_parts = sent_parts(swapped.reference_call)
+    expected: Part = {
+        "filename": upload.filename, "content_type": MEDIA_TYPE, "body": MEDIA_BYTES,
+    }
+    assert ours_parts[upload.field]["body"] == reference_parts[upload.field]["body"]
+    assert ours_parts[upload.field]["body"] == upload.text.encode()
+    assert ours_parts[VIDEO_FIELD] == reference_parts[VIDEO_FIELD] == expected
+    assert_same_record(swapped)
 
 
 def test_character_create_calls() -> None:
-    arguments: dict[str, CallValue] = {"name": CHARACTER_NAME, "video": MEDIA_BYTES}
     with closing(EditServer()) as server:
         swapped = compared(
             server, SYNC_CALLS["create_character"], SYNC_REFERENCES["create_character"],
-            arguments)
-        ours_parts = sent_parts(swapped.ours_call)
-        reference_parts = sent_parts(swapped.reference_call)
-    assert_same_call(swapped.reference_call, swapped.ours_call, "POST", CHARACTERS_PATH)
-    assert ours_parts[NAME_FIELD]["body"] == reference_parts[NAME_FIELD]["body"]
-    assert ours_parts[NAME_FIELD]["body"] == CHARACTER_NAME.encode()
-    expected: Part = {
-        "filename": MEDIA_FILENAME,
-        "content_type": MEDIA_TYPE,
-        "body": MEDIA_BYTES,
-    }
-    assert ours_parts[VIDEO_FIELD] == expected
-    assert reference_parts[VIDEO_FIELD] == expected
-    ours_body = JSON_RECORD.validate_json(swapped.ours.model_dump_json())
-    reference_body = JSON_RECORD.validate_json(swapped.reference.model_dump_json())
-    assert ours_body == reference_body
+            {"name": CHARACTER_NAME, "video": MEDIA_BYTES})
+    check_upload(swapped, Upload("POST", CHARACTERS_PATH, NAME_FIELD, CHARACTER_NAME,
+                                 MEDIA_FILENAME))
 
 
 def test_edit_file_calls(tmp_path: Path) -> None:
     source = tmp_path / CLIP_NAME
     source.write_bytes(MEDIA_BYTES)
-    arguments: dict[str, CallValue] = {
-        "video_id": VIDEO_ID, "prompt": PROMPT, "video": source,
-    }
+    arguments: dict[str, CallValue] = {"video_id": VIDEO_ID, "prompt": PROMPT, "video": source}
     with closing(EditServer()) as server:
         swapped = compared(server, SYNC_CALLS["edit"], SYNC_REFERENCES["edit"], arguments)
-        ours_parts = sent_parts(swapped.ours_call)
-        reference_parts = sent_parts(swapped.reference_call)
-    assert_same_call(swapped.reference_call, swapped.ours_call, "POST", EDITS_PATH)
-    assert ours_parts[PROMPT_FIELD]["body"] == reference_parts[PROMPT_FIELD]["body"]
-    assert ours_parts[PROMPT_FIELD]["body"] == PROMPT.encode()
-    expected: Part = {
-        "filename": CLIP_NAME,
-        "content_type": MEDIA_TYPE,
-        "body": MEDIA_BYTES,
-    }
-    assert ours_parts[VIDEO_FIELD] == expected
-    assert reference_parts[VIDEO_FIELD] == expected
-    ours_body = JSON_RECORD.validate_json(swapped.ours.model_dump_json())
-    reference_body = JSON_RECORD.validate_json(swapped.reference.model_dump_json())
-    assert ours_body == reference_body
+    check_upload(swapped, Upload("POST", EDITS_PATH, PROMPT_FIELD, PROMPT, CLIP_NAME))
 
 
 def test_extra_body_calls() -> None:
@@ -518,8 +525,8 @@ def test_utils_optional_calls() -> None:
 
 
 def test_utils_requested_calls() -> None:
-    ours_params: dict[str, JsonValue] = _requested_params()
-    reference_params: dict[str, JsonValue] = _requested_params()
+    ours_params: dict[str, JsonValue] = copy.deepcopy(REQUESTED_PARAMS)
+    reference_params: dict[str, JsonValue] = copy.deepcopy(REQUESTED_PARAMS)
     ours = get_requested_video_generation_optional_param(ours_params)
     reference_utils = REQUESTED_UTILS.VideoGenerationRequestUtils
     reference = reference_utils.get_requested_video_generation_optional_param(reference_params)
@@ -528,24 +535,6 @@ def test_utils_requested_calls() -> None:
     assert ours["style"] == "loose"
     assert ours["second"] == "2"
     assert "extra_body" in ours
-
-
-def _requested_params() -> dict[str, JsonValue]:
-    params: dict[str, JsonValue] = {
-        "prompt": PROMPT,
-        "model": MODEL,
-        "seconds": SECONDS,
-        "timeout": 600,
-        "api_key": GOOD_KEY,
-        "custom_llm_provider": PROVIDER,
-        "extra_body": {"style": STYLE, "skip": None},
-        "kwargs": {
-            "extra_body": {"style": "loose", "second": "2"},
-            "user": "user-1",
-            "unused": None,
-        },
-    }
-    return params
 
 
 def test_error_matches_litellm() -> None:

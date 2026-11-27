@@ -1,9 +1,9 @@
 from collections.abc import Collection, Mapping
 from typing import Final, Protocol
 
-import betterlite
 from pydantic import JsonValue
 
+import betterlite
 from betterlite._native import is_litellm_owned_kwarg
 from betterlite.types.videos.main import VideoCreateOptionalRequestParams as CreateParams
 
