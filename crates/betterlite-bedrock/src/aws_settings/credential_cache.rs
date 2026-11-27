@@ -107,47 +107,40 @@ impl CredentialCache {
         let lock = self.stripes.get(stripe).ok_or(CacheError::Unavailable)?;
         let _guard = lock.lock().await;
         if let Some(CacheValue::Credential(handle)) = self.storage.get(&key) {
-            return Credentials::try_from(handle);
+            return credentials_from_handle(handle);
         }
         let resolved = fetch().await?;
         self.storage.set(
             &key,
-            CacheValue::Credential(CredentialHandle::from(resolved.credentials.clone())),
+            CacheValue::Credential(credential_handle(resolved.credentials.clone())),
             Ttl::Explicit(resolved.cache_ttl.map(|ttl| ttl.as_secs_f64())),
         );
         Ok(resolved.credentials)
     }
 }
 
-impl From<Credentials> for CredentialHandle {
-    fn from(credentials: Credentials) -> Self {
-        // These private fields store signing material, never outbound HTTP headers.
-        let mut fields =
-            BTreeMap::from([("aws_access_key_id".to_owned(), credentials.access_key_id)]);
-        if let Some(token) = credentials.session_token {
-            fields.insert("aws_session_token".to_owned(), token);
-        }
-        Self(Arc::new(Credential {
-            token: credentials.secret_access_key,
-            headers: fields,
-        }))
+// the cache keeps signing material inside a Credential handle, never as outbound HTTP headers
+fn credential_handle(credentials: Credentials) -> CredentialHandle {
+    let mut fields = BTreeMap::from([("aws_access_key_id".to_owned(), credentials.access_key_id)]);
+    if let Some(token) = credentials.session_token {
+        fields.insert("aws_session_token".to_owned(), token);
     }
+    CredentialHandle(Arc::new(Credential {
+        token: credentials.secret_access_key,
+        headers: fields,
+    }))
 }
 
-impl TryFrom<CredentialHandle> for Credentials {
-    type Error = CacheError;
-
-    fn try_from(handle: CredentialHandle) -> Result<Self, Self::Error> {
-        let access_key_id = handle
-            .0
-            .headers
-            .get("aws_access_key_id")
-            .ok_or(CacheError::Handle)?
-            .clone();
-        Ok(Self {
-            access_key_id,
-            secret_access_key: handle.0.token.clone(),
-            session_token: handle.0.headers.get("aws_session_token").cloned(),
-        })
-    }
+fn credentials_from_handle(handle: CredentialHandle) -> Result<Credentials, CacheError> {
+    let access_key_id = handle
+        .0
+        .headers
+        .get("aws_access_key_id")
+        .ok_or(CacheError::Handle)?
+        .clone();
+    Ok(Credentials {
+        access_key_id,
+        secret_access_key: handle.0.token.clone(),
+        session_token: handle.0.headers.get("aws_session_token").cloned(),
+    })
 }
