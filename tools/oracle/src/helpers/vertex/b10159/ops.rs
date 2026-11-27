@@ -2,8 +2,6 @@ use std::convert::Infallible;
 use std::error::Error as StdError;
 
 use betterlite_anthropic::usage::ReasoningTokenCounter;
-use betterlite_logging::logging_pre_post::env::PrePostEnv;
-use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_vertex::partner_response_config::error::PartnerResponseError;
@@ -11,7 +9,6 @@ use betterlite_vertex::partner_response_config::{
     PartnerResponseCall, PartnerResponseConfig, PartnerResponseInput, partner_response_config,
 };
 use betterlite_vertex::vertex_relay_metadata::types::VertexPublisher;
-use http::HeaderMap;
 use serde_json::{Map, Value, json};
 use uuid::Uuid;
 
@@ -37,37 +34,28 @@ pub(super) fn run(input: &Input) -> Result<Value, Box<HelperError>> {
     let (mut state, env) = logging.setup()?;
     let counter = FixedCounter;
     let call = PartnerResponseCall {
-        input: partner_input(input, &headers, &mut state, &env),
+        input: PartnerResponseInput {
+            model: input.model.as_str(),
+            starting_id: STARTING_ID,
+            status: input.status,
+            headers: &headers,
+            body: input.raw_text.as_bytes(),
+            messages: input.messages.as_slice(),
+            request_data: &input.request_data,
+            optional_params: &input.optional_params,
+            litellm_params: &input.litellm_params,
+            json_mode: input.json_mode,
+            now: 0,
+            identifier: Uuid::nil,
+            disable_add_prefix_to_prompt: false,
+            state: &mut state,
+            env: &env,
+        },
         counter: &counter,
     };
     match config.transform_response(call) {
         Ok(answer) => projection(&config, &answer),
         Err(error) => Err(helper_error(&error)),
-    }
-}
-
-fn partner_input<'call>(
-    input: &'call Input,
-    headers: &'call HeaderMap,
-    state: &'call mut LoggingState,
-    env: &'call PrePostEnv<'call>,
-) -> PartnerResponseInput<'call> {
-    PartnerResponseInput {
-        model: &input.model,
-        starting_id: STARTING_ID,
-        status: input.status,
-        headers,
-        body: input.raw_text.as_bytes(),
-        messages: &input.messages,
-        request_data: &input.request_data,
-        optional_params: &input.optional_params,
-        litellm_params: &input.litellm_params,
-        json_mode: input.json_mode,
-        now: 0,
-        identifier: Uuid::nil,
-        disable_add_prefix_to_prompt: false,
-        state,
-        env,
     }
 }
 
@@ -108,8 +96,8 @@ where
     })
 }
 
-fn projection(config: &PartnerResponseConfig, answer: &Json) -> Result<Value, Box<HelperError>> {
-    let answer = serde_json::to_value(answer).or_value_error()?;
+fn projection(config: &PartnerResponseConfig, reply: &Json) -> Result<Value, Box<HelperError>> {
+    let answer = serde_json::to_value(reply).or_value_error()?;
     let choice_items = answer
         .get("choices")
         .and_then(Value::as_array)
