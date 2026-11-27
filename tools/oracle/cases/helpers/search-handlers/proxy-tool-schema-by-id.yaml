@@ -1,0 +1,19 @@
+kind: helper
+name: proxy-tool-schema-by-id
+call:
+  b4686:
+    handler: mcp_proxy_tool
+    name: get_tool_schema
+    arguments: {tool_id: "234af1383b1b5ef9ff5a3da9eac8bdb1"}
+    tools:
+      - name: alpha-tool
+        server_id: srv
+        description: finds alpha
+        inputSchema:
+          type: object
+          properties: {q: {type: string}}
+          required: [q]
+        outputSchema: {type: object}
+    caller: {user_id: u1}
+env: {}
+compare: {ignore: []}

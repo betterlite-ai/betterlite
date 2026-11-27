@@ -1,0 +1,107 @@
+id: B10182
+title: The pipeline streaming step runs on BaseTranslation
+description: >-
+  B3246 ported LiteLLM's pipeline streaming step (_run_streaming_step, _StreamRewriteObserver, _ScannedTextRecorder and _LegacyHookStreamAdapter, litellm/proxy/policy_engine/pipeline_executor.py L115-L266 and L429-L484) into crates/betterlite-core/src/guardrails/streaming_rewrite/ over its own copies of three LiteLLM types: StreamTranslation for BaseTranslation (traits.rs L99-L126), StreamGuardrail for CustomGuardrail.apply_guardrail (traits.rs L31-L42) and StreamInputs for GenericGuardrailAPIInputs (shapes.rs L7-L13, "reduced to the keys the rewrite step reads"), with InputType standing in for GuardrailInputType. No production type implements StreamTranslation, StreamGuardrail or core's GuardrailCallback, so B3247 has nothing real to hand run_streaming_step. B10179 gives B3661's BaseTranslation the guardrail per call, the shape the step needs, and keeps undeliverable rewrites typed as GuardrailFailure::Undeliverable through UnifiedTranslation. This task moves the step, the observer, the recorder and the legacy adapter onto BaseTranslation, GuardrailContract, GuardrailApiInputs and GuardrailFailure, and deletes the copies, so the class is ported once. Line numbers here are main at 1b9a032aedd; B10169 and B10179 land first and shift some of them.
+
+
+  Home. The moved code goes in crates/betterlite-guardrails/src/streaming_rewrite.rs and streaming_rewrite/ (callback.rs, observer.rs, recorder.rs, legacy.rs, step.rs, tests.rs); the module is declared with an empty file already. It cannot stay in betterlite-core, since betterlite-guardrails depends on core and BaseTranslation lives in guardrails. betterlite-core keeps what is no copy and what other code reads: shapes.rs with RequestData, StreamItem, ToolShape, tool_call_shape, rewrote, count_change and tool_call_mismatch_reason (model_armor reads RequestData); failure.rs with UndeliverableStreamRewrite (six betterlite-server files and GuardrailFailure read it); capability.rs with find_guardrail_callback; and in traits.rs UserApiKey, NamedGuardrail, HookSurface, ApplySurface, PostCallSurface, PostCallHook and CallbackEntry. From core go StreamTranslation, StreamCall, StreamGuardrail, GuardrailCall, InputType, RewriteFailure and GuardrailCallback (traits.rs), StreamInputs with its tool_shapes method (shapes.rs), and step.rs, legacy.rs, observer.rs and recorder.rs with their mod lines in streaming_rewrite.rs.
+
+
+  callback.rs. Core's GuardrailCallback (traits.rs L69-L90) becomes `pub trait StepCallback: GuardrailContract + NamedGuardrail + Send + Sync` with hook_surface, records_own_information, `async_post_call_success_hook(&self, call: PostCallHook<'_>) -> impl Future<Output = Result<Option<GuardrailValue>, GuardrailFailure>> + Send` and the default supports_unified_execution and supports_streaming_execution unchanged. It takes &self because GuardrailContract::apply_guardrail does, and StreamGuardrail's covers_full_request is GuardrailContract's messages_cover_full_request (LiteLLM's structured_messages_cover_full_request). It is not called GuardrailCallback, because betterlite-guardrails already has a GuardrailCallback struct (guardrail_registry/callback.rs L20).
+
+
+  observer.rs. `StreamRewriteObserver<'inner, Inner>` holds `inner: &'inner Inner` and a std Mutex over its three records (rewrote_texts, rewrote_tool_calls, tool_call_count_change), since GuardrailContract takes &self and must be Sync. It implements NamedGuardrail with the inner name and GuardrailContract with apply_guardrail and messages_cover_full_request; apply_guardrail records the same way as observer.rs L53-L70 and pipeline_executor.py L137-L153, taking the lock only after the inner call's await returns, and every other GuardrailContract method keeps its default, as LiteLLM's observer is a fresh CustomGuardrail. discard_reason keeps its two texts. `pub fn tool_shapes(inputs: &GuardrailApiInputs) -> Option<Vec<ToolShape>>` maps core's tool_call_shape over inputs.tool_calls for the observer and the legacy adapter. recorder.rs: `ScannedTextRecorder { guardrail_name: String, inputs: Mutex<Option<GuardrailApiInputs>> }` names itself with Some(guardrail_name), and its apply_guardrail stores a clone of the inputs and returns them; its PhantomData goes.
+
+
+  legacy.rs. `LegacyHookStreamAdapter<'adapter, Callback, Translation>` holds `inner: &Callback`, `endpoint_translation: &Translation`, `user_api_key_dict: &UserApiKey` and `principal: &Principal`, names itself with the inner name, and runs today's legacy.rs L38-L149 in GuardrailContract::apply_guardrail (pipeline_executor.py L214-L265). post_call_hook_response gets request_data["response"], or Null when the key is missing, and a Null it returns counts as no response, as legacy.rs L93-L96 does for None. The hook gets `PostCallHook { data: request_data, user_api_key_dict, response: &mut hooked }`. The rescan calls `endpoint_translation.process_output_response(rewrite, &recorder, call)` where recorder is `GuardrailToApply { guardrail: Arc::new(ScannedTextRecorder::new(name)), guardrail_name: Some(name), principal: principal.clone(), skip_flags: Default::default(), global_flags: Default::default() }` and call is `TranslationCall { user_api_key_dict: Some(user_api_key_dict), request_data: None, logging_obj, stream_transform_sink: None, deliver_ended_stream_rewrites: false }`, then reads the recorder's inputs and ignores the returned value, as LiteLLM does. The two refusals fail with GuardrailFailure::Undeliverable carrying today's reasons, and a rewrite comes back as `GuardrailApiInputs { texts: Some(texts), ..inputs }`.
+
+
+  step.rs. `StreamingStep<'step>` holds guardrail, `streaming_chunks: &mut Vec<StreamItem>`, hook_input, user_api_key_dict, `principal: &Principal` and `logging_obj: Option<&mut GuardrailLogTarget>`. StepOutcome and release_original_chunks, warning text included, stay as they are. `pub async fn run_streaming_step<Callback, Translation>(callback: &Callback, endpoint_translation: &Translation, step: StreamingStep<'_>, record_applied: fn(&mut RequestData, &str)) -> Result<StepOutcome, GuardrailFailure>` with `Callback: StepCallback` and `Translation: BaseTranslation<LogTarget = GuardrailLogTarget, Failure = GuardrailFailure> + Sync` keeps today's flow (step.rs L40-L113, pipeline_executor.py L450-L484). observe_step wraps the scanner as `GuardrailToApply { guardrail: Arc::new(StreamRewriteObserver::new(scanner)), guardrail_name, principal, skip_flags and global_flags at their defaults }` and calls process_streaming_response with request_data Some(hook_input), user_api_key_dict Some, no sink and deliver_ended_stream_rewrites set to Translation::DELIVERS_ENDED_STREAM_REWRITES. `Err(GuardrailFailure::Undeliverable(undeliverable))` releases the originals with its reason and gives Discarded, and every other failure is returned. The skip flags stay at their defaults because only process_input_messages reads them and the step never calls it, and LiteLLM's observer is a CustomGuardrail built with nothing but the name.
+
+
+  Oracle helper. The Rust side of b3246 (tools/oracle/src/helpers/core_ops/b3246.rs, b3246/fakes.rs and b3246/input.rs) moves its fakes onto the new traits: the scripted guardrail implements NamedGuardrail, GuardrailContract and StepCallback, the scripted translation implements BaseTranslation with LogTarget GuardrailLogTarget and Failure GuardrailFailure (process_input_messages does nothing), StepError goes (its undeliverable arm is GuardrailFailure::Undeliverable and the missing request data a GuardrailFailure::Other with the same text), and b3246.rs passes a principal to the step. The cases, the corpus and the Python side stay as they are and must still agree with LiteLLM.
+
+
+  Tests. The step tests in core's streaming_rewrite/tests.rs (streaming_rewrite_delivers, _no_write_back, _errors, _drops_stale_response, _legacy_hook, _legacy_tool_only, _legacy_hook_error, _adapter_error, _observer_sticks, _capabilities, _logs_discard and B10169's bytes_ tests) move to crates/betterlite-guardrails/src/streaming_rewrite/tests.rs on the new traits with their names and assertions; the tests of code that stays in core (streaming_rewrite_find_callback, _undeliverable_message, _tool_shape, _mismatch) stay there. New in crates/betterlite-server/src/guardrails/unified_guardrail/tests.rs, tests named pipeline_step_*, run run_streaming_step over the acompletion translation build_registry gives (UnifiedTranslation::Chat): a unified callback that rewrites the text of an ended single-choice chat stream gives Applied, the chunks carry its text and record_applied ran; a legacy callback (own_success_hook true, own_apply_guardrail false) whose post-call hook replaces the assembled response's text is rescanned by the same translation and its text reaches the chunks; and a unified callback that changes a tool call's arguments on a two-choice stream gives Discarded with the chat translation's reason, the chunks equal the originals and record_applied did not run.
+
+
+  Downstream. B3247 calls run_streaming_step and StepCallback's two capability checks from here and find_guardrail_callback from core; its task file says so.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/streaming_rewrite.rs
+    - crates/betterlite-guardrails/src/streaming_rewrite/**
+    - crates/betterlite-core/src/guardrails/streaming_rewrite.rs
+    - crates/betterlite-core/src/guardrails/streaming_rewrite/**
+    - crates/betterlite-server/src/guardrails/unified_guardrail/tests.rs
+    - crates/betterlite-server/src/guardrails/unified_guardrail/tests/**
+    - tools/oracle/src/helpers/core_ops/b3246.rs
+    - tools/oracle/src/helpers/core_ops/b3246/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/pipeline_executor.py#L115-L184
+    why: _StreamRewriteObserver and _ScannedTextRecorder are CustomGuardrail subclasses built with only the inner guardrail's name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/pipeline_executor.py#L186-L265
+    why: _LegacyHookStreamAdapter runs the post-call hook and rescans the result through the same translation with a recorder.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/pipeline_executor.py#L292-L304
+    why: _release_original_chunks puts the copied chunks back and logs the reason.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/pipeline_executor.py#L429-L484
+    why: _run_streaming_step hands the translation the observer and catches UndeliverableStreamRewrite.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/guardrail_translation/base_translation.py#L148-L201
+    why: The translation methods the step and the legacy adapter call, with the guardrail as a call argument.
+dod:
+  - text: The step, observer, recorder and legacy adapter run on BaseTranslation and GuardrailContract in betterlite-guardrails, and their moved tests pass.
+    proof: [step-tests, one-translation-trait]
+  - text: A real chat translation from the registry delivers a unified rewrite, delivers a legacy hook rewrite through its own rescan, and releases the originals for an undeliverable one.
+    proof: [pipeline-step-tests]
+  - text: StreamTranslation, StreamGuardrail, StreamInputs, InputType, GuardrailCall, StreamCall, RewriteFailure and core's step files are gone, and the code that stays in core still passes its tests.
+    proof: [one-translation-trait, core-kept-tests]
+  - text: The b3246 helper cases still agree with LiteLLM.
+    proof: [streaming-oracle]
+checks:
+  optional: [mutants]
+  commands:
+    - id: step-tests
+      why: a moved step, observer, recorder, legacy adapter, capability or bytes test is missing from betterlite-guardrails or fails on the new traits
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^streaming_rewrite::tests::/)'
+    - id: pipeline-step-tests
+      why: the step cannot run on a production translation, or it delivers, discards or records the wrong outcome on one
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::unified_guardrail::tests::pipeline_step_/)'
+    - id: core-kept-tests
+      why: the lookup, the undeliverable message or the tool-shape helpers that stay in core broke
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^guardrails::streaming_rewrite::tests::streaming_rewrite_(find_callback|undeliverable_message|tool_shape|mismatch)/)'
+    - id: one-translation-trait
+      why: a second translation, guardrail or inputs type is left in core, a core step file is left, or the step and its callback trait are not in betterlite-guardrails
+      run: >-
+        test -z "$(grep -rnE '\b(StreamTranslation|StreamGuardrail|StreamInputs|RewriteFailure|StreamCall|GuardrailCall)\b|enum InputType\b|trait GuardrailCallback\b'
+        crates/betterlite-core/src/guardrails
+        crates/betterlite-guardrails/src/streaming_rewrite.rs
+        crates/betterlite-guardrails/src/streaming_rewrite
+        tools/oracle/src/helpers/core_ops/b3246.rs
+        tools/oracle/src/helpers/core_ops/b3246)" &&
+        test ! -e crates/betterlite-core/src/guardrails/streaming_rewrite/step.rs &&
+        test ! -e crates/betterlite-core/src/guardrails/streaming_rewrite/legacy.rs &&
+        test ! -e crates/betterlite-core/src/guardrails/streaming_rewrite/observer.rs &&
+        test ! -e crates/betterlite-core/src/guardrails/streaming_rewrite/recorder.rs &&
+        grep -q 'pub async fn run_streaming_step' crates/betterlite-guardrails/src/streaming_rewrite/step.rs &&
+        grep -qE 'pub trait StepCallback\b.*GuardrailContract' crates/betterlite-guardrails/src/streaming_rewrite/callback.rs
+    - id: streaming-oracle
+      why: the b3246 helper cases no longer agree with LiteLLM after the step moved
+      run: cargo run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-core-ops -- tools/oracle/cases/streaming
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "BaseTranslation's per-call guardrail, GuardrailToApply's move into betterlite-guardrails and GuardrailFailure::Undeliverable: B10179."
+  - "find_guardrail_callback, CallbackEntry, NamedGuardrail, PostCallHook, the hook surfaces, UndeliverableStreamRewrite and the shape helpers stay in betterlite-core as B3246 built them."
+  - "The executor that calls the step (_run_step, execute_steps): B3247."
+  - "Other partial ports of CustomGuardrail (betterlite-server's callback_caps GuardrailCallback and ProxyCallback, and the guardrail_registry GuardrailCallback struct) stay as they are."
+pitfalls:
+  - "The observer's lock must not be held across the inner apply_guardrail's await: lock after it returns, with .lock().unwrap_or_else(PoisonError::into_inner) as compresr_writeback.rs does, or the future stops being Send."
+  - "tool_call_count_change keeps the first change it saw (or_else), and rewrote_texts and rewrote_tool_calls stay true once set, across every apply_guardrail call of one step."
+  - "The step removes hook_input[\"response\"] before the translation runs, so a legacy hook never sees the response an earlier step stored."
+  - "post_call_hook_response takes and returns a GuardrailValue now, so the adapter's missing response is Null going in and a Null coming out means no response."
+  - "Only a translation with ASSEMBLES_STREAMED_RESPONSE stores the assembled response under request_data[\"response\"], so the legacy pipeline_step test runs on the Chat translation, and a simple adapter would leave the hook nothing to replace."
+  - "record_applied runs only for Applied and only when records_own_information is false, as add_guardrail_to_applied_guardrails_header does in LiteLLM."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

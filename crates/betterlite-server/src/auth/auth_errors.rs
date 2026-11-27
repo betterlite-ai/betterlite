@@ -32,6 +32,7 @@ mod tests;
 
 // the failure each auth stage yields; this module turns it into the response the proxy sends
 pub(crate) enum StageFailure {
+    JwtKeys(Box<ProxyException>),
     Authentication(Box<AuthenticationFailure>),
     KeyLookup(Box<ProxyException>),
     ModelAccess(Box<ModelAccessRejection>),
@@ -202,6 +203,7 @@ impl FailureContext {
 fn raised_exception(failure: &StageFailure) -> Option<ProxyException> {
     match failure {
         StageFailure::AuthModelGrants(exception)
+        | StageFailure::JwtKeys(exception)
         | StageFailure::EntityModelAccess(exception)
         | StageFailure::AuthRequestPolicy(exception)
         | StageFailure::TrustedNetwork(exception)

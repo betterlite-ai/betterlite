@@ -1,0 +1,21 @@
+kind: helper
+name: jwt-keys-zero-stale-ttl-fail-closed
+call:
+  jwt_keys:
+    scenarios:
+      # zero disables the stale copy entirely: only the fresh entry is written
+      - settings: {public_key_url: "https://idp.example.com/jwks", public_key_ttl: 600.0, public_key_stale_ttl: 0.0}
+        steps:
+          - now: 1000.0
+            kid: a
+            http:
+              - {kind: answer, status: 200, body: '{"keys":[{"kid":"a","kty":"RSA","n":"one"}]}'}
+          # the outage is backed off, then rethrown without a stale lookup or stale warning
+          - now: 1700.0
+            kid: a
+            http:
+              - {kind: transport}
+              - {kind: transport}
+              - {kind: transport}
+env: {}
+compare: {ignore: []}

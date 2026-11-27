@@ -1,0 +1,19 @@
+kind: helper
+name: bedrock-services-batch-records-transform
+call:
+  bedrock_services_batch_records:
+    function: transform_records
+    target_model: ""
+    model_alias_map:
+      alias-a: amazon.nova-pro-v1:0
+    model_cost:
+      "amazon.nova-pro-v1:0": {litellm_provider: bedrock}
+      "anthropic.claude-3-5-sonnet-20241022-v2:0": {litellm_provider: bedrock}
+    records:
+      - {custom_id: chat, url: /v1/chat/completions, body: {model: custom-model-v1, messages: [{role: user, content: hi}], max_tokens: 4}}
+      - {url: /v1/completions, body: {model: custom-model-v1, prompt: p}}
+      - {custom_id: null, url: /v1/responses, body: {model: custom-model-v1, input: hi}}
+      - {body: {model: alias-a, messages: []}}
+      - {body: {}}
+env: {}
+compare: {ignore: []}

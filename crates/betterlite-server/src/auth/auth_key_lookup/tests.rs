@@ -125,7 +125,6 @@ async fn run_request(authenticator: Arc<dyn KeyAuthenticator>) -> (StatusCode, S
 #[test]
 fn stage_is_registered() {
     assert!(INSTALLED_STAGES.contains(&AuthBackend::AuthKeyLookup));
-    assert_eq!(INSTALLED_STAGES.first(), Some(&AuthBackend::AuthKeyLookup));
     let state = state_for(&config());
     assert!(state.auth_key_lookup.authenticator.is_none());
 }

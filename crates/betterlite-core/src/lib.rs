@@ -28,7 +28,6 @@ pub mod message_utilities;
 pub mod messages_host_binding;
 pub mod messages_selector_chain;
 pub mod meta_muse_realtime;
-pub mod mistral_ocr_guardrail;
 pub mod mock;
 pub mod native_messages_hosts;
 pub mod openai_classification;

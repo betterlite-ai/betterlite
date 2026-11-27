@@ -1,0 +1,12 @@
+kind: helper
+name: mcp-tool-call-scoped-denial
+call:
+  b4686:
+    handler: mcp_tool_call
+    tool_name: alpha-tool
+    mcp_servers: [srv]
+    denial_detail: the key may not reach srv
+    client_ip: 10.0.0.5
+    caller: {user_id: u1}
+env: {}
+compare: {ignore: []}
