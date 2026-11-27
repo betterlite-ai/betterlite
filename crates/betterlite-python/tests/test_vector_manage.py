@@ -203,8 +203,9 @@ class _Handler(BaseHTTPRequestHandler):
         self.answer("DELETE")
 
     def answer(self, method: str) -> None:
-        declared = self.headers.get("Content-Length")
-        raw = b"{}" if declared is None else self.rfile.read(int(declared))
+        # the Rust transport sends an empty body with Content-Length: 0, where httpx sends none
+        declared = int(self.headers.get("Content-Length", "0"))
+        raw = self.rfile.read(declared) if declared else b"{}"
         body = BODY.validate_json(raw)
         self.owner.record(method, self.path, dict(self.headers.items()), body)
         if self.headers.get("Authorization") != f"Bearer {GOOD_KEY}":
