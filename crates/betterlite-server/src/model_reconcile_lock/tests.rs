@@ -13,7 +13,7 @@ async fn clones_share_one_lock() {
     let held = lock.lock().await;
     other_handle.try_lock().unwrap_err();
     drop(held);
-    other_handle.try_lock().unwrap();
+    let _reacquired = other_handle.try_lock().unwrap();
 }
 
 #[tokio::test]
@@ -21,7 +21,7 @@ async fn separate_locks_do_not_block_each_other() {
     let first = ModelReconcileLock::default();
     let second = ModelReconcileLock::default();
     let held = first.lock().await;
-    second.try_lock().unwrap();
+    let _second_guard = second.try_lock().unwrap();
     drop(held);
 }
 
