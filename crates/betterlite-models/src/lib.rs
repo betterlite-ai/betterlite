@@ -79,5 +79,6 @@ pub mod tool_fees;
 pub mod tool_signals;
 pub mod tool_spend;
 pub mod usage_sum;
+pub mod utf8_text;
 pub mod vantage_endpoints;
 pub mod zero_cost;
