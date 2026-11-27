@@ -1,0 +1,54 @@
+task: B3883
+deviations:
+  - what: >-
+      Key object assembly reads the reset time from a cache-only key lookup and never from the database.
+    why: >-
+      LiteLLM calls get_key_object with check_cache_only=True for the same reason, to keep the per-request
+      metrics path off the database.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4366-L4372
+  - what: >-
+      Customer budget metrics read only from the end-user cache and emit nothing on a cache miss or a lookup error.
+    why: >-
+      LiteLLM's customer path has no database fallback either; a miss returns before the setter runs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4200-L4209
+  - what: >-
+      Customer budget metrics are off unless litellm.enable_end_user_cost_tracking_prometheus_only is True and
+      litellm.disable_end_user_cost_tracking is not True; both default to None.
+    why: >-
+      The two keys are LiteLLM's own opt-in gate, so a setup that never sets them emits no customer budget metrics.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L161-L162
+  - what: >-
+      The customer cache-hit path always passes budget_reset_at=None to the setter, even when the cached budget
+      table carries a reset time.
+    why: >-
+      LiteLLM hardcodes None there, unlike the team, user and org paths which read the reset time from the fetched
+      object.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4211-L4217
+  - what: >-
+      An org request that carries a snapshot reports budget_reset_at=None, not the carried reset time.
+    why: >-
+      LiteLLM passes None on the org carried path, unlike the team and user carried paths.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4093-L4100
+  - what: >-
+      The five lookups take plain request structs and a BudgetLookups trait instead of building LiteLLM_TeamTable,
+      UserAPIKeyAuth or LiteLLM_UserTable objects, and the carried snapshots are this module's own structs rather
+      than B3890's betterlite-core types.
+    why: >-
+      betterlite-logging cannot depend on the auth, table or core crates, and LiteLLM reaches the database and the
+      cache through module-level prisma_client and user_api_key_cache imports, which betterlite passes in through
+      the trait instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3982-L3983
+  - what: >-
+      The default customer budget id is an argument of get_default_customer_budget rather than litellm's
+      max_end_user_budget_id global, and the result is a BudgetTableSnapshot with max_budget and budget_reset_at
+      instead of the joined budget row.
+    why: >-
+      the server reads its config and passes the id in, and the two fields are all the budget metric setters read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4219-L4228
+  - what: >-
+      The spend sums are rust_decimal::Decimal and are added with saturating_add, so a sum past Decimal's range
+      saturates instead of becoming a float infinity.
+    why: >-
+      money is never a float in betterlite, and an overflow here must not turn a spend gauge infinite.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3985
+kept_bugs: []
