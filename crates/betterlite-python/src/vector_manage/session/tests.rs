@@ -84,43 +84,38 @@ fn a_session_reads_the_injected_clock_and_ids() {
 
 #[test]
 fn each_pending_names_the_call_type_it_runs() {
-    let cases = [
-        (
-            "retrieve",
-            Pending::Retrieve(parse(RETRIEVE_TEXT, 0).expect("the wire parses")),
-        ),
-        (
-            "aretrieve",
-            Pending::Aretrieve(parse(RETRIEVE_TEXT, 0).expect("the wire parses")),
-        ),
-        (
-            "list",
-            Pending::List(parse(LIST_TEXT, 0).expect("the wire parses")),
-        ),
-        (
-            "alist",
-            Pending::Alist(parse(LIST_TEXT, 0).expect("the wire parses")),
-        ),
-        (
-            "update",
-            Pending::Update(parse(UPDATE_TEXT, 0).expect("the wire parses")),
-        ),
-        (
-            "aupdate",
-            Pending::Aupdate(parse(UPDATE_TEXT, 0).expect("the wire parses")),
-        ),
-        (
-            "delete",
-            Pending::Delete(parse(RETRIEVE_TEXT, 0).expect("the wire parses")),
-        ),
-        (
-            "adelete",
-            Pending::Adelete(parse(RETRIEVE_TEXT, 0).expect("the wire parses")),
-        ),
-    ];
-    for (expected, pending) in cases {
-        assert_eq!(pending.call_type(), expected);
-    }
+    assert_eq!(
+        Pending::Retrieve(parse(RETRIEVE_TEXT, 0).expect("the wire parses")).call_type(),
+        "retrieve"
+    );
+    assert_eq!(
+        Pending::Aretrieve(parse(RETRIEVE_TEXT, 0).expect("the wire parses")).call_type(),
+        "aretrieve"
+    );
+    assert_eq!(
+        Pending::List(parse(LIST_TEXT, 0).expect("the wire parses")).call_type(),
+        "list"
+    );
+    assert_eq!(
+        Pending::Alist(parse(LIST_TEXT, 0).expect("the wire parses")).call_type(),
+        "alist"
+    );
+    assert_eq!(
+        Pending::Update(parse(UPDATE_TEXT, 0).expect("the wire parses")).call_type(),
+        "update"
+    );
+    assert_eq!(
+        Pending::Aupdate(parse(UPDATE_TEXT, 0).expect("the wire parses")).call_type(),
+        "aupdate"
+    );
+    assert_eq!(
+        Pending::Delete(parse(RETRIEVE_TEXT, 0).expect("the wire parses")).call_type(),
+        "delete"
+    );
+    assert_eq!(
+        Pending::Adelete(parse(RETRIEVE_TEXT, 0).expect("the wire parses")).call_type(),
+        "adelete"
+    );
 }
 
 #[test]
