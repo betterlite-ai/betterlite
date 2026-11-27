@@ -1,0 +1,7 @@
+{
+  "include": ["."],
+  "extraPaths": [".", "../../crates/betterlite-python/python"],
+  "typeCheckingMode": "strict",
+  "pythonVersion": "3.11",
+  "reportMissingModuleSource": "none"
+}
