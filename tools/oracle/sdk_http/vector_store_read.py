@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import Coroutine, Mapping
+from collections.abc import Awaitable, Coroutine, Mapping
 from datetime import UTC, datetime
 from typing import ClassVar, Literal, Never, Protocol, TypedDict, Unpack
 
@@ -26,6 +26,9 @@ ReadHeaders = dict[str, object]
 RetrieveAnswer = VectorStoreCreateResponse | Coroutine[object, object, VectorStoreCreateResponse]
 ListAnswer = Mapping[str, object]
 
+# the unannotated sync list also holds its handler's awaitable branch
+SyncListAnswer = ListAnswer | Awaitable[ListAnswer]
+
 
 # every keyword argument the four reads take, with the extras LiteLLM forwards untouched
 class ReadOptions(TypedDict, total=False):
@@ -50,7 +53,7 @@ class SyncReads(Protocol):
         self, /, vector_store_id: str, **values: Unpack[ReadOptions]
     ) -> RetrieveAnswer: ...
 
-    def list(self, /, **values: Unpack[ReadOptions]) -> ListAnswer: ...
+    def list(self, /, **values: Unpack[ReadOptions]) -> SyncListAnswer: ...
 
 
 class AsyncReads(Protocol):
