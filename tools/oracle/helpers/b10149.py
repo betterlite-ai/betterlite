@@ -13,4 +13,4 @@ class Input(TypedDict):
 
 def run(input_value: Input) -> dict[str, JsonValue]:
     predicate = _user_search_where(input_value["search"])
-    return PREDICATE.validate_json(json.dumps(dict(predicate)))
+    return PREDICATE.validate_json(json.dumps(predicate, default=dict))
