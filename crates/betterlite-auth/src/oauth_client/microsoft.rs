@@ -96,7 +96,7 @@ fn discovery_with_overrides(settings: &Settings, tenant: &str) -> OAuthDiscovery
         let Some(value) = override_value.as_deref().filter(|value| !value.is_empty()) else {
             continue;
         };
-        *endpoint = value.to_owned();
+        value.clone_into(endpoint);
         custom = true;
     }
     if custom {

@@ -9,7 +9,8 @@ use betterlite_config::sections::microsoft_sso::{
     USERINFO_ENDPOINT_ENV,
 };
 use betterlite_error::proxy_error_types::ProxyErrorTypes;
-use secrecy::ExposeSecret;
+use secrecy::ExposeSecret as _;
+use tracing::subscriber::with_default;
 
 use crate::oauth_client::authorization::{AuthorizationRequest, authorization_url};
 use crate::oauth_client::microsoft::{
@@ -230,12 +231,12 @@ fn overrides_that_are_absent_or_empty_log_nothing() {
 struct LogWriter(Arc<Mutex<Vec<u8>>>);
 
 impl Write for LogWriter {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.0
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .extend_from_slice(buffer);
-        Ok(buffer.len())
+            .extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -256,7 +257,7 @@ where
         .with_target(false)
         .with_writer(move || writer.clone())
         .finish();
-    let output = tracing::subscriber::with_default(subscriber, operation);
+    let output = with_default(subscriber, operation);
     let text =
         String::from_utf8(bytes.lock().unwrap_or_else(PoisonError::into_inner).clone()).unwrap();
     (output, text)
