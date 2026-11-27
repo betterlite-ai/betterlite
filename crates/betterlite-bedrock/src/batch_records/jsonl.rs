@@ -9,7 +9,7 @@ use super::error::BatchRecordsError;
 use super::families::BatchFamilies;
 use super::params::map_openai_to_bedrock_params;
 use super::record::{BedrockBatchRecord, OpenAiBatchRecord};
-use super::resolve::resolve_record_model_and_provider;
+use super::resolve::record_model_and_provider;
 use crate::batch_embeddings::classify::BatchRecordKind;
 use crate::batch_embeddings::mapping::{EmbeddingRequest, map_embedding_to_bedrock};
 use crate::bedrock_model_capabilities::ModelInfoLookup;
@@ -39,7 +39,7 @@ where
             return Err(BatchRecordsError::RecordShape);
         };
         let record_model = body_model(fields)?;
-        let (model, provider) = resolve_record_model_and_provider(
+        let (model, provider) = record_model_and_provider(
             record_model,
             target_model,
             context.aliases,

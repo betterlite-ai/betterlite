@@ -1,6 +1,5 @@
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
-use serde::{Deserialize, Deserializer};
 
 use super::error::BatchRecordsError;
 use crate::batch_embeddings::classify::{BatchRecord, BatchRecordKind, classify_batch_record};
@@ -10,7 +9,9 @@ pub const LINE_BOUNDARIES: [char; 10] = [
     '\n', '\r', '\u{b}', '\u{c}', '\u{1c}', '\u{1d}', '\u{1e}', '\u{85}', '\u{2028}', '\u{2029}',
 ];
 
+const BODY_FIELD: &str = "body";
 const CALL_PREFIX: &str = "CALL";
+const CUSTOM_ID_FIELD: &str = "custom_id";
 
 // One line of an OpenAI batch file, as the JSONL transformer reads it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,31 +57,6 @@ impl OpenAiBatchRecord {
     }
 }
 
-#[derive(Debug, Deserialize)]
-struct RawRecord {
-    #[serde(default, deserialize_with = "custom_id_value")]
-    custom_id: CustomId,
-    #[serde(default, deserialize_with = "body_value")]
-    body: Option<Json>,
-}
-
-// The field is only deserialized when present, so a missing key keeps CustomId::Missing.
-fn custom_id_value<'de, D>(deserializer: D) -> Result<CustomId, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let value = Option::<String>::deserialize(deserializer)?;
-    Ok(value.map_or(CustomId::Null, CustomId::Text))
-}
-
-// An explicit null is a body that is not an object, not an absent one.
-fn body_value<'de, D>(deserializer: D) -> Result<Option<Json>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    Ok(Some(Json::deserialize(deserializer)?))
-}
-
 // One uploaded JSONL line: UTF-8, blank lines skipped, and the OpenAI record read with its kind.
 pub fn decode_batch_input_line(
     line: &[u8],
@@ -93,14 +69,28 @@ pub fn decode_batch_input_line(
         return Ok(None);
     }
     let classified: BatchRecord = serde_json::from_str(trimmed).map_err(BatchRecordsError::Json)?;
-    let raw: RawRecord = serde_json::from_str(trimmed).map_err(BatchRecordsError::Json)?;
-    let body = raw.body.unwrap_or_else(|| Json::Object(IndexMap::new()));
+    let fields: IndexMap<String, Json> =
+        serde_json::from_str(trimmed).map_err(BatchRecordsError::Json)?;
+    let custom_id = match fields.get(CUSTOM_ID_FIELD) {
+        None => CustomId::Missing,
+        Some(Json::Null) => CustomId::Null,
+        Some(Json::Text(text)) => CustomId::Text(text.clone()),
+        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+            return Err(BatchRecordsError::Field {
+                field: CUSTOM_ID_FIELD,
+            });
+        }
+    };
+    let body = fields
+        .get(BODY_FIELD)
+        .cloned()
+        .unwrap_or_else(|| Json::Object(IndexMap::new()));
     if !matches!(body, Json::Object(_)) {
         return Err(BatchRecordsError::RecordShape);
     }
     Ok(Some(OpenAiBatchRecord {
         kind: classify_batch_record(&classified),
-        custom_id: raw.custom_id,
+        custom_id,
         body,
     }))
 }

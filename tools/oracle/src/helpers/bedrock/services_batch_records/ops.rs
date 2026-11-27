@@ -74,16 +74,17 @@ fn transform_records(call: &TransformRecords) -> HelperResult {
 }
 
 fn request_value(value: &Value) -> RequestValue {
-    match value {
-        Value::String(text) => RequestValue::Text(text.clone()),
-        Value::Object(fields) => RequestValue::Mapping(
-            fields
-                .iter()
-                .map(|(name, entry)| (name.clone(), request_value(entry)))
-                .collect(),
-        ),
-        other => RequestValue::Raw(other.to_string()),
+    if let Value::String(text) = value {
+        return RequestValue::Text(text.clone());
     }
+    let Value::Object(fields) = value else {
+        return RequestValue::Raw(value.to_string());
+    };
+    let mut mapped = RequestParams::new();
+    for (name, entry) in fields {
+        mapped.insert(name.clone(), request_value(entry));
+    }
+    RequestValue::Mapping(mapped)
 }
 
 fn request_params(value: &Value) -> Result<RequestParams, Box<HelperError>> {

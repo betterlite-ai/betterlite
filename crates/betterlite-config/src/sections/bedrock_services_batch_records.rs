@@ -5,7 +5,6 @@ use serde::Deserialize;
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::sections::Section;
 
-#[cfg(test)]
 mod tests;
 
 #[derive(Debug, Default, Deserialize)]

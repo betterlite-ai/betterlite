@@ -26,7 +26,7 @@ use uuid::Uuid;
 
 use crate::aws_settings::sources::Credentials;
 use crate::batch_records::error::BatchRecordsError;
-use crate::batch_records::families::{BatchFamilies, Params};
+use crate::batch_records::families::{BatchFamilies, Failure, Params};
 use crate::batch_records::jsonl::{BatchRecordContext, transform_openai_jsonl};
 use crate::batch_records::record::{
     BedrockBatchRecord, OpenAiBatchRecord, decode_batch_input_line,
@@ -39,9 +39,11 @@ use crate::credentials::error::CredentialError;
 use crate::request_policy::{Params as RequestParams, RequestValue};
 use crate::signing::target::RegionInputs;
 
+type Attempt<T> = Result<T, Failure>;
+
 pub(super) const FIXED_UUID: Uuid = Uuid::from_u128(0x0000_0000_0000_4000_8000_0000_0000_0001);
 pub(super) const SECRET_KEY: &str = "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY";
-pub(super) const OTHER_SECRET_KEY: &str = "OTHERsEcReTkEyF0rIsOlAtIoNtEsTs00000000000000";
+pub(super) const OTHER_SECRET_KEY: &str = "other-secret-key-for-isolation-tests";
 pub(super) const ACCESS_KEY: &str = "AKIDEXAMPLE";
 pub(super) const OTHER_ACCESS_KEY: &str = "AKIDOTHEREXAMPLE";
 pub(super) const GATEWAY_MODEL: &str = "openai.gpt-oss-20b-1:0";
@@ -78,6 +80,20 @@ pub(super) struct Call {
     pub(super) optional_params: Params,
 }
 
+impl Call {
+    fn of(model: &str, messages: &[Json], params: &Params) -> Self {
+        Self {
+            model: model.to_owned(),
+            messages: messages.to_vec(),
+            optional_params: params.clone(),
+        }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("the fixture holds no body")]
+struct MissingFixture;
+
 #[derive(Default)]
 pub(super) struct Families {
     pub(super) nova_calls: Mutex<Vec<Call>>,
@@ -92,19 +108,11 @@ pub(super) struct Families {
 }
 
 impl Families {
-    pub(super) fn nova() -> Self {
-        Self {
-            nova_body: Some(json(r#"{"messages":[],"inferenceConfig":{}}"#)),
-            ..Self::default()
-        }
-    }
-
     pub(super) fn batch() -> Self {
-        Self {
-            batch: true,
-            nova_body: Some(json(r#"{"messages":[],"inferenceConfig":{}}"#)),
-            ..Self::default()
-        }
+        let mut families = Self::default();
+        families.batch = true;
+        families.nova_body = Some(json(r#"{"messages":[],"inferenceConfig":{}}"#));
+        families
     }
 
     pub(super) fn nova_calls(&self) -> Vec<Call> {
@@ -138,61 +146,48 @@ impl Families {
 
 #[async_trait::async_trait]
 impl BatchFamilies for Families {
-    async fn anthropic_params(
-        &self,
-        mapping_model: &str,
-        optional_params: &Params,
-    ) -> Result<Params, crate::batch_records::families::Failure> {
+    async fn anthropic_params(&self, mapping_model: &str, params: &Params) -> Attempt<Params> {
         self.anthropic_params_calls
             .lock()
             .expect("no panic held the lock")
-            .push((mapping_model.to_owned(), optional_params.clone()));
-        Ok(self.anthropic_params.clone().unwrap_or_default())
+            .push((mapping_model.to_owned(), params.clone()));
+        match &self.anthropic_params {
+            Some(mapped) => Ok(mapped.clone()),
+            None => Ok(Params::new()),
+        }
     }
 
     async fn anthropic_body(
         &self,
         model: &str,
         messages: &[Json],
-        optional_params: &Params,
-    ) -> Result<Json, crate::batch_records::families::Failure> {
+        params: &Params,
+    ) -> Attempt<Json> {
+        let call = Call::of(model, messages, params);
         self.anthropic_body_calls
             .lock()
             .expect("no panic held the lock")
-            .push(Call {
-                model: model.to_owned(),
-                messages: messages.to_vec(),
-                optional_params: optional_params.clone(),
-            });
-        Ok(self.anthropic_body.clone().unwrap_or(Json::Null))
+            .push(call);
+        self.anthropic_body
+            .clone()
+            .ok_or_else(|| Failure::from(MissingFixture))
     }
 
-    async fn nova_body(
-        &self,
-        model: &str,
-        messages: &[Json],
-        optional_params: &Params,
-    ) -> Result<Json, crate::batch_records::families::Failure> {
+    async fn nova_body(&self, model: &str, messages: &[Json], params: &Params) -> Attempt<Json> {
         self.nova_calls
             .lock()
             .expect("no panic held the lock")
-            .push(Call {
-                model: model.to_owned(),
-                messages: messages.to_vec(),
-                optional_params: optional_params.clone(),
-            });
+            .push(Call::of(model, messages, params));
         Ok(self.nova_body.clone().unwrap_or(Json::Null))
     }
 
-    async fn responses_to_chat(
-        &self,
-        body: &Json,
-    ) -> Result<Json, crate::batch_records::families::Failure> {
+    async fn responses_to_chat(&self, body: &Json) -> Attempt<Json> {
         self.responses_calls
             .lock()
             .expect("no panic held the lock")
             .push(body.clone());
-        Ok(self.responses_body.clone().unwrap_or(Json::Null))
+        let recorded = self.responses_body.clone();
+        Ok(recorded.unwrap_or(Json::Null))
     }
 
     fn is_batch_jsonl(

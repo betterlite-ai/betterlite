@@ -1,4 +1,3 @@
-// Bedrock batch records: an OpenAI batch JSONL upload becomes the InvokeModel records Bedrock runs.
 pub mod chat_body;
 pub mod error;
 pub mod families;

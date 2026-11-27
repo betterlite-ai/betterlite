@@ -19,6 +19,8 @@ use betterlite_oracle_runner::helpers::{HelperCall, invoke};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use serde_json::{Value, json};
 
+type Attempt<T> = Result<T, Failure>;
+
 struct NoParameters;
 
 impl SupportedParameterSource for NoParameters {
@@ -81,7 +83,7 @@ impl Families {
         })
     }
 
-    fn call(&self, operation: &str, input: Value) -> Result<Value, Failure> {
+    fn call(&self, operation: &str, input: Value) -> Attempt<Value> {
         let output = invoke(
             &[crate::GROUP],
             &HelperCall {
@@ -97,32 +99,76 @@ impl Families {
             .ok_or_else(|| failure("the nested helper returned no value"))
     }
 
-    fn nova_params(&self, model: &str, optional_params: &Params) -> Result<Value, Failure> {
-        let mapped = self.call(
+    fn part(&self, operation: &str, input: Value, pointer: &str) -> Attempt<Value> {
+        let value = self.call(operation, input)?;
+        value
+            .pointer(pointer)
+            .cloned()
+            .ok_or_else(|| failure("the family pass returned no value"))
+    }
+
+    fn claude(
+        &self,
+        function: &str,
+        model: &str,
+        messages: &[Json],
+        params: &Params,
+    ) -> Attempt<Value> {
+        let (call, pointer) = match function {
+            "map_params" => (
+                json!({
+                    "model": model,
+                    "non_default_params": params,
+                    "optional_params": {},
+                    "drop_params": false,
+                }),
+                "/calls/0/optional_params",
+            ),
+            "transform" => (
+                json!({
+                    "model": model,
+                    "messages": messages,
+                    "optional_params": params,
+                    "litellm_params": {},
+                    "headers": {},
+                }),
+                "/calls/0/body",
+            ),
+            other => return Err(failure(format!("unknown Claude pass {other}"))),
+        };
+        let input = json!({
+            "function": function,
+            "model_cost": self.model_cost,
+            "calls": [call],
+        });
+        self.part("bedrock_claude_invoke", input, pointer)
+    }
+
+    fn claude_params(&self, mapping_model: &str, params: &Params) -> Attempt<Params> {
+        self.claude("map_params", mapping_model, &[], params)
+            .and_then(|mapped| serde_json::from_value(mapped).map_err(failure))
+    }
+
+    fn claude_body(&self, model: &str, messages: &[Json], params: &Params) -> Attempt<Json> {
+        self.claude("transform", model, messages, params)
+            .and_then(|body| serde_json::from_value(body).map_err(failure))
+    }
+
+    fn converse_body(&self, model: &str, messages: &[Json], params: &Params) -> Attempt<Json> {
+        let mapped_params = self.part(
             "bedrock_converse_params",
             json!({
                 "function": "map_params",
                 "model": model,
                 "model_cost": self.model_cost,
                 "environment": {},
-                "non_default_params": optional_params,
+                "non_default_params": params,
                 "optional_params": {},
                 "global_drop": false,
                 "call_drop": false,
             }),
+            "/params",
         )?;
-        mapped
-            .get("params")
-            .cloned()
-            .ok_or_else(|| failure("the Converse mapper returned no parameters"))
-    }
-
-    fn nova_request(
-        &self,
-        model: &str,
-        messages: &[Json],
-        mapped_params: &Value,
-    ) -> Result<Json, Failure> {
         let value = self.call(
             "bedrock_converse_request",
             json!({
@@ -137,84 +183,34 @@ impl Families {
             }),
         )?;
         let body = value
-            .get("body")
+            .pointer("/body")
+            .cloned()
             .ok_or_else(|| failure("the Converse request returned no body"))?;
-        serde_json::from_value(body.clone()).map_err(failure)
+        serde_json::from_value(body).map_err(failure)
     }
-}
-
-fn params_of(value: &Value) -> Result<Params, Failure> {
-    serde_json::from_value(value.clone()).map_err(failure)
-}
-
-fn body_of(value: &Value) -> Result<Json, Failure> {
-    let body = value
-        .pointer("/calls/0/body")
-        .ok_or_else(|| failure("the request transformer returned no body"))?;
-    serde_json::from_value(body.clone()).map_err(failure)
 }
 
 #[async_trait::async_trait]
 impl BatchFamilies for Families {
-    async fn anthropic_params(
-        &self,
-        mapping_model: &str,
-        optional_params: &Params,
-    ) -> Result<Params, Failure> {
-        let value = self.call(
-            "bedrock_claude_invoke",
-            json!({
-                "function": "map_params",
-                "model_cost": self.model_cost,
-                "calls": [{
-                    "model": mapping_model,
-                    "non_default_params": optional_params,
-                    "optional_params": {},
-                    "drop_params": false,
-                }],
-            }),
-        )?;
-        let mapped = value
-            .pointer("/calls/0/optional_params")
-            .ok_or_else(|| failure("the Claude mapper returned no parameters"))?;
-        params_of(mapped)
+    async fn anthropic_params(&self, mapping_model: &str, params: &Params) -> Attempt<Params> {
+        self.claude_params(mapping_model, params)
     }
 
     async fn anthropic_body(
         &self,
         model: &str,
         messages: &[Json],
-        optional_params: &Params,
-    ) -> Result<Json, Failure> {
-        let value = self.call(
-            "bedrock_claude_invoke",
-            json!({
-                "function": "transform",
-                "model_cost": self.model_cost,
-                "calls": [{
-                    "model": model,
-                    "messages": messages,
-                    "optional_params": optional_params,
-                    "litellm_params": {},
-                    "headers": {},
-                }],
-            }),
-        )?;
-        body_of(&value)
+        params: &Params,
+    ) -> Attempt<Json> {
+        let body = self.claude_body(model, messages, params)?;
+        Ok(body)
     }
 
-    async fn nova_body(
-        &self,
-        model: &str,
-        messages: &[Json],
-        optional_params: &Params,
-    ) -> Result<Json, Failure> {
-        let mapped_params = self.nova_params(model, optional_params)?;
-        // transform_request neutralizes orphaned tool blocks at the pinned default, with modify_params off
-        self.nova_request(model, messages, &mapped_params)
+    async fn nova_body(&self, model: &str, messages: &[Json], params: &Params) -> Attempt<Json> {
+        self.converse_body(model, messages, params)
     }
 
-    async fn responses_to_chat(&self, body: &Json) -> Result<Json, Failure> {
+    async fn responses_to_chat(&self, body: &Json) -> Attempt<Json> {
         let mut assembly = RequestAssembly {
             limits: ApiLimits::default(),
             cache: &self.cache,

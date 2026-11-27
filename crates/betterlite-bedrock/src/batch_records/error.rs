@@ -48,9 +48,3 @@ pub enum BatchRecordsError {
     #[error("the batch value cannot be encoded as JSON")]
     Wire(#[source] serde_json::Error),
 }
-
-impl BatchRecordsError {
-    pub fn family(family: &'static str, source: Failure) -> Self {
-        Self::Family { family, source }
-    }
-}

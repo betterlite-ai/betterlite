@@ -8,14 +8,14 @@ import botocore.auth  # type: ignore[import-untyped]  # https://github.com/Berri
 import fastuuid
 import litellm
 from fastuuid import UUID
-from litellm.llms.bedrock.files.transformation import BedrockFilesConfig
+from litellm.llms.bedrock.files.transformation import BedrockFilesConfig, _OpenAIBatchRecord
 from pydantic import JsonValue, TypeAdapter
 
 litellm.suppress_debug_info = True
 
 JSON: Final = TypeAdapter(JsonValue)
 DEFAULT_ACCESS_KEY: Final = "AKIDEXAMPLE"
-DEFAULT_SECRET_KEY: Final = "secret"
+DEFAULT_SECRET_KEY: Final = "secret"  # noqa: S105  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L1125
 
 Purpose = Literal["assistants", "batch", "fine-tune", "messages"]
 
@@ -28,7 +28,7 @@ class FileInput(TypedDict):
 
 class TransformRecords(TypedDict):
     function: Literal["transform_records"]
-    records: list[dict[str, JsonValue]]
+    records: list[_OpenAIBatchRecord]
     target_model: str
     model_alias_map: dict[str, str]
     model_cost: dict[str, JsonValue]
@@ -71,10 +71,10 @@ class FixedNow:
         return self.moment
 
 
-# The owned entries are private, so the subclass reaches them through self and nothing public is copied.
+# The owned entries are private, so the subclass reaches them through self.
 class BatchRecordsConfig(BedrockFilesConfig):
-    def converted(self, records: list[dict[str, JsonValue]], target_model: str) -> JsonValue:
-        transformed = self._transform_openai_jsonl_content_to_bedrock_jsonl_content(  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L967
+    def converted(self, records: list[_OpenAIBatchRecord], target_model: str) -> JsonValue:
+        transformed = self._transform_openai_jsonl_content_to_bedrock_jsonl_content(
             records, target_model=target_model
         )
         answer: dict[str, JsonValue] = {"records": JSON.validate_json(json.dumps(transformed))}
@@ -82,13 +82,13 @@ class BatchRecordsConfig(BedrockFilesConfig):
 
     def upload_request(self, call: CreateFileRequest, data: CreateFileData) -> JsonValue:
         params = dict(call["litellm_params"])
-        handoff = self.transform_create_file_request(  # pyright: ignore[reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L1026
+        handoff = self.transform_create_file_request(  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L1026
             model=call["model"],
             create_file_data=data,  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L1029
             optional_params=call["optional_params"],
             litellm_params=params,
         )
-        view = TypeAdapter(Handoff).validate_json(json.dumps(handoff))
+        view = TypeAdapter(Handoff).validate_json(json.dumps(handoff))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L1026
         answer: dict[str, JsonValue] = {
             "failed": False,
             "method": view["method"],
@@ -124,7 +124,7 @@ def upload(config: BatchRecordsConfig, call: CreateFileRequest) -> JsonValue:
     }
     if call["purpose"] is not None:
         data["purpose"] = call["purpose"]
-    fastuuid.uuid4 = partial(UUID, call["uuid"])  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L477
+    fastuuid.uuid4 = partial(UUID, call["uuid"])  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L477
     try:
         return config.upload_request(call, data)
     except (ValueError, RuntimeError):

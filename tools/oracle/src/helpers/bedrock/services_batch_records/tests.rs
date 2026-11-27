@@ -46,6 +46,14 @@ fn helper_seeds_select_bedrock_services_batch_records() {
 
 #[test]
 fn replays_the_bedrock_services_batch_records_cases() {
+    let replayed = replay_cases();
+    assert!(
+        replayed >= 10,
+        "only {replayed} batch record cases replayed"
+    );
+}
+
+fn replay_cases() -> usize {
     let cases =
         Path::new(ORACLE_DIR).join("cases/helpers/providers/bedrock-services-batch-records");
     let mut replayed = 0_usize;
@@ -62,8 +70,5 @@ fn replays_the_bedrock_services_batch_records_cases() {
         );
         replayed = replayed.saturating_add(1);
     }
-    assert!(
-        replayed >= 10,
-        "only {replayed} batch record cases replayed"
-    );
+    replayed
 }

@@ -34,7 +34,10 @@ pub async fn map_openai_to_bedrock_params(
         Some(BedrockInvokeProvider::Nova) => families
             .nova_body(model, &messages, &optional)
             .await
-            .map_err(|source| BatchRecordsError::family("nova", source)),
+            .map_err(|source| BatchRecordsError::Family {
+                family: "nova",
+                source,
+            }),
         Some(_) | None => Ok(passthrough_body(messages, optional)),
     }
 }
@@ -50,14 +53,20 @@ async fn anthropic_body(
     let mapped = families
         .anthropic_params(&invoke_route_model(model, resolution), &filtered)
         .await
-        .map_err(|source| BatchRecordsError::family("anthropic", source))?;
+        .map_err(|source| BatchRecordsError::Family {
+            family: "anthropic",
+            source,
+        })?;
     let mut stripped = mapped;
     // _MAPPED_PARAMS_THE_REQUEST_HANDLER_STRIPS: the handler strips json_mode after the mapper adds it.
     stripped.shift_remove(JSON_MODE_FIELD);
     families
         .anthropic_body(model, messages, &stripped)
         .await
-        .map_err(|source| BatchRecordsError::family("anthropic", source))
+        .map_err(|source| BatchRecordsError::Family {
+            family: "anthropic",
+            source,
+        })
 }
 
 // `{k: v for k, v in body.items() if k not in ["model", "messages"]}`, in body order.

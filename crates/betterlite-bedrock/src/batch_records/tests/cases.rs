@@ -41,13 +41,11 @@ pub(super) fn chat_batch_record() {
     assert!(families.responses_calls().is_empty());
 
     // the anthropic family maps through the invoke route model and the filtered body params
-    let anthropic = Families {
-        anthropic_params: Some(params(r#"{"max_tokens":256,"json_mode":true}"#)),
-        anthropic_body: Some(json(
-            r#"{"anthropic_version":"bedrock-2023-05-31","messages":[]}"#,
-        )),
-        ..Families::default()
-    };
+    let mut anthropic = Families::default();
+    anthropic.anthropic_params = Some(params(r#"{"max_tokens":256,"json_mode":true}"#));
+    anthropic.anthropic_body = Some(json(
+        r#"{"anthropic_version":"bedrock-2023-05-31","messages":[]}"#,
+    ));
     let anthropic_records = transform(
         &anthropic,
         r#"{"custom_id":"t","url":"/v1/chat/completions","body":{"model":"anthropic.claude-3-5-sonnet-20241022-v2:0","messages":[{"role":"developer","content":"be nice"},{"content":"hi","role":"user"}],"max_tokens":256,"top_k":5,"allowed_openai_params":["top_k"],"api_key":"sk-fixture"}}"#,
@@ -150,12 +148,10 @@ pub(super) fn text_completion_to_chat_case() {
 }
 
 pub(super) fn responses_to_chat() {
-    let families = Families {
-        responses_body: Some(json(
-            r#"{"messages":[{"role":"user","content":"hi"}],"max_output_tokens":5}"#,
-        )),
-        ..Families::default()
-    };
+    let mut families = Families::default();
+    families.responses_body = Some(json(
+        r#"{"messages":[{"role":"user","content":"hi"}],"max_output_tokens":5}"#,
+    ));
     let source = json(
         r#"{"custom_id":"r","url":"/v1/responses","body":{"model":"qwen.qwen3-32b-v1:0","input":"hi","max_output_tokens":5}}"#,
     );
@@ -195,7 +191,7 @@ pub(super) fn embedding_batch_record() {
 }
 
 pub(super) fn alias_and_target_model() {
-    let aliased_families = Families::nova();
+    let aliased_families = nova_families();
     let aliases = BTreeMap::from([(
         String::from("my-alias"),
         String::from("amazon.nova-pro-v1:0"),
@@ -208,7 +204,7 @@ pub(super) fn alias_and_target_model() {
     let calls = aliased_families.nova_calls();
     assert_eq!(calls[0].model, "amazon.nova-pro-v1:0");
 
-    let target_families = Families::nova();
+    let target_families = nova_families();
     let unnamed = record(
         r#"{"custom_id":"b","url":"/v1/chat/completions","body":{"model":"my-custom","messages":[{"content":"hi","role":"user"}]}}"#,
     );
@@ -374,7 +370,7 @@ pub(super) fn malformed_jsonl_line() {
 }
 
 pub(super) fn nova_batch_record() {
-    let families = Families::nova();
+    let families = nova_families();
     let records = transform(
         &families,
         r#"{"custom_id":"n","url":"/v1/chat/completions","body":{"model":"amazon.nova-pro-v1:0","messages":[{"role":"developer","content":"be nice"},{"content":"hi","role":"user"}],"max_tokens":16,"top_k":5}}"#,
@@ -400,6 +396,12 @@ pub(super) fn nova_batch_record() {
         params(r#"{"max_tokens":16,"top_k":5}"#)
     );
     assert!(families.anthropic_params_calls().is_empty());
+}
+
+fn nova_families() -> Families {
+    let mut families = Families::default();
+    families.nova_body = Some(json(r#"{"messages":[],"inferenceConfig":{}}"#));
+    families
 }
 
 pub(super) fn upload_signing_handoff() {

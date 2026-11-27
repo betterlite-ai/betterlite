@@ -6,7 +6,7 @@ use crate::aws_endpoints::provider::{BedrockInvokeProvider, invoke_provider};
 use crate::s3_access::models::strip_llm_routing_prefix;
 
 // litellm.model_alias_map, then the record model unless only the target model names a provider.
-pub fn resolve_record_model_and_provider<'source>(
+pub fn record_model_and_provider<'source>(
     record_model: &'source str,
     target_model: &'source str,
     aliases: &'source BTreeMap<String, String>,

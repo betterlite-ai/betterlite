@@ -3,6 +3,11 @@ use crate::batch_records::record::{CustomId, decode_batch_input_line};
 
 #[test]
 fn replays_the_bedrock_services_batch_records_corpus() {
+    let seeds = replay_corpus();
+    assert!(seeds >= 6, "the corpus holds {seeds} seeds");
+}
+
+fn replay_corpus() -> usize {
     let directory = concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/fuzz/corpus/bedrock_services_batch_records"
@@ -44,5 +49,5 @@ fn replays_the_bedrock_services_batch_records_corpus() {
         }
         seeds = seeds.saturating_add(1);
     }
-    assert!(seeds >= 6, "the corpus holds {seeds} seeds");
+    seeds
 }

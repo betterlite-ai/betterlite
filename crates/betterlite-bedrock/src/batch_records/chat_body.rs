@@ -19,10 +19,15 @@ pub async fn to_chat_body(
     match kind {
         BatchRecordKind::Chat => Ok(body.clone()),
         BatchRecordKind::TextCompletion => text_completion_to_chat(body),
-        BatchRecordKind::Responses => families
-            .responses_to_chat(body)
-            .await
-            .map_err(|source| BatchRecordsError::family("responses", source)),
+        BatchRecordKind::Responses => {
+            families
+                .responses_to_chat(body)
+                .await
+                .map_err(|source| BatchRecordsError::Family {
+                    family: "responses",
+                    source,
+                })
+        }
         BatchRecordKind::Embedding => Err(BatchRecordsError::EmbeddingChatBody),
     }
 }
