@@ -27,7 +27,7 @@ pub enum RivaAudioError {
         type_name: String,
         message: String,
         #[source]
-        source: PythonError,
+        source: Box<PythonError>,
     },
     #[error("the audio could not be staged for the decoder: {0}")]
     Staging(#[from] TempError),
@@ -96,6 +96,6 @@ pub(super) fn call_failure(
         operation,
         type_name: failure.type_name.clone(),
         message: failure.message.clone(),
-        source: failure,
+        source: Box::new(failure),
     }
 }
