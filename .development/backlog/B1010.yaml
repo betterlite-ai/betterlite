@@ -1,7 +1,7 @@
 id: B1010
 milestone: M5 api families
 title: Realtime http calls
-status: blocked
+status: todo
 depends_on: [B002, B174, B198, B528, B545, B1004, B2401, B2456, B5360, B9952, B247]
 file: tasks/B1010-realtime-http-calls.yaml
 covers:
@@ -10,5 +10,5 @@ parent: B084
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, Realtime WebSocket API is used by few deployments"
+blocked_reason: null
 pr: null

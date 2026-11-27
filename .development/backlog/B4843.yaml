@@ -1,7 +1,7 @@
 id: B4843
 milestone: M9 agents and mcp
 title: Serve authenticated per-session harness model endpoints
-status: blocked
+status: todo
 depends_on: [B173, B4841, B4842]
 file: tasks/B4843-harness-endpoint-server.yaml
 covers:
@@ -10,5 +10,5 @@ parent: B143
 split_from: B143
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, agent harnesses can wait"
+blocked_reason: null
 pr: null

@@ -1,7 +1,7 @@
 id: B079
 milestone: M6 guardrails
 title: Policy engine, policy templates and policy API
-status: blocked
+status: todo
 depends_on: [B9320, B9321, B8669, B8803, B9750, B9942]
 file: tasks/B079-policy-composition-http.yaml
 covers:
@@ -12,5 +12,5 @@ parent: null
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, policy engine over guardrails is new; guardrails attach to keys without it"
+blocked_reason: null
 pr: null

@@ -1,0 +1,18 @@
+task: B888
+deviations:
+  - what: "A bundled route catalog that does not parse leaves the tool allowlist unenforced, with one startup error."
+    why: "The bytes are compiled in and the core crate parses the same fixture in its tests, so this is a broken build, not a request fact."
+    link: ""
+  - what: "The centralized auth fetch debug lines carry the label and the error text as structured fields, without LiteLLM's exception class name."
+    why: "betterlite logs typed errors through tracing instead of formatting Python type names; the failed/swallowed distinction is kept."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L2625-L2651
+  - what: "A token whose team_models list holds a non-string entry fails the team reconstruction with NonStringModel."
+    why: "The cached team's declared models type is list[str], so a working setup never stores such an entry."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L2654-L2673
+kept_bugs:
+  - what: "Only a literal false in team metadata guardrails.modify_guardrails denies the modification; the strings \"false\" and \"0\" and the number 0 allow it."
+    why: "LiteLLM compares against False without coercion, and a working setup stores the boolean, so the literal comparison is kept."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_helpers.py#L13-L23
+  - what: "A litellm-dashboard sentinel key vouches for its team fields even when the team row is provably absent."
+    why: "LiteLLM documents these keys as UI-only and other checks confine them to UI routes, so denying them would break the dashboard."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L2676-L2703

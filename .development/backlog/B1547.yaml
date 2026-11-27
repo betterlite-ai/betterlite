@@ -1,7 +1,7 @@
 id: B1547
 milestone: M3 providers
 title: Execute Riva recognition through the optional streaming SDK
-status: blocked
+status: todo
 depends_on: [B1545, B1546, B165, B1001, B004, B249, B171]
 file: tasks/B1547-riva-streaming-call.yaml
 covers:
@@ -10,5 +10,5 @@ parent: B047
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): niche, NVIDIA Riva transcription"
+blocked_reason: null
 pr: null
