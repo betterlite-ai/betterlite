@@ -19,7 +19,7 @@ use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExce
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 
-use crate::auth::auth_identity::AuthContext;
+use crate::auth::auth_identity::{AuthContext, StageFailure, StageInput};
 use crate::auth::current_spend::spend_failure_exception;
 use crate::error_body::AuthenticationFailure;
 use crate::state::ServerState;
@@ -116,6 +116,13 @@ pub(crate) fn stage_input(
         rule: rule_for_request(request),
         settings: settings_for_request(request),
     })
+}
+
+pub(crate) async fn prefetched(
+    stage: Box<KeyBudgetStageInput>,
+) -> Result<StageInput, StageFailure> {
+    prefetch(&stage).await.map_err(StageFailure::KeyBudgets)?;
+    Ok(StageInput::AuthKeyBudgets(stage))
 }
 
 // the builder runs the alert, hard, soft and window checks in order; a hard denial and an unverifiable read are the failures it reports

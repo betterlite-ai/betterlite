@@ -122,7 +122,8 @@ fn master_context(master_key: &SecretString) -> AuthContext {
             | StageFailure::EndUsers(_)
             | StageFailure::AuthPolicySupport(_)
             | StageFailure::ModelGrants(_)
-            | StageFailure::KeyLookup(_),
+            | StageFailure::KeyLookup(_)
+            | StageFailure::TenantBudgets(_),
         ) => panic!("the master key stage runs no other auth check"),
     }
 }
