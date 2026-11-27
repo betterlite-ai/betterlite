@@ -60,9 +60,10 @@ description: >-
   only generated ids and timing fields already normalized by the endpoint's cases;
   never ignore delta text, usage, terminal status or error payloads. Reuse the oracle's
   existing SSE fixtures and decoder and run the ordinary betterlite-versus-LiteLLM
-  check. A new case missing on base is red automatically. Any production bridge fix
-  belongs to B8632/B6370/B6260, whose contracts must carry raw text/bytes through
-  guardrail scanning before this task runs; do not hide a bypass in expected differences.
+  check. A new case missing on base is red automatically. B10169 carries raw frames
+  through the guardrail contract as StreamItem::Bytes, B8632 hands them to B6370's
+  wrapper in place, and B7980 puts those production hooks on /v1/messages. A case that
+  still differs points at one of them; do not hide a bypass in expected differences.
 scope:
   paths:
     - tools/oracle/cases/guardrails/native-stream-http/**
@@ -107,7 +108,7 @@ deviations: []
 out_of_scope:
   - B3672 implements Responses streaming transformations; B3673/B3676 implement Anthropic stream interpretation and writeback.
   - B3246 owns rewrite observation and restoration, B3247 pipeline execution, B6370 pipeline/iterator composition and B6260 sampling/buffering.
-  - B080/B081 register the HTTP routes, B8636 provides Responses production ports, and B8632 alone builds the streaming bridge.
+  - B080/B081 register the HTTP routes, B7980 gives /v1/messages the production stream hooks, B8636 provides Responses production ports, B8632 alone builds the streaming bridge, and B10169 carries raw frames through the guardrail contract.
   - Chat stream tests remain B6260/B6370 and B105; native Google/A2A stream cases are B8992.
 pitfalls:
   - Pipeline writeback is a different switch from ordinary streaming_buffer_until_moderated.
