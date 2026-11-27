@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use betterlite_logging::callback_logger::event::LoggerEvent;
 use betterlite_logging::fields::payload::StandardLoggingPayload;
 use betterlite_logging::fields::payload::records::ErrorInformation;
-use betterlite_logging::prometheus::budget_lookups::lists::BudgetTableSnapshot;
+use betterlite_logging::prometheus::budget_gauges::lists::BudgetTableSnapshot;
 use betterlite_logging::prometheus::budget_lookups::lookups::{
     BudgetLookupError, BudgetLookups, UserLookupOptions,
 };
@@ -22,9 +22,9 @@ use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use serde_json::Number;
 
-use crate::prometheus_hooks::{
-    BudgetLookupPort, PrometheusHookPorts, PrometheusHookSettings, PrometheusHooks,
-};
+use crate::prometheus_hooks::budget::BudgetLookupPort;
+use crate::prometheus_hooks::hooks::{PrometheusHookPorts, PrometheusHooks};
+use crate::prometheus_hooks::settings::PrometheusHookSettings;
 use crate::prometheus_remaining_budget::fan_out::RemainingBudgetFanOut;
 
 pub(crate) const REQUESTS: &str = "litellm_requests_metric";
@@ -169,8 +169,9 @@ pub(crate) fn fixture_with_settings(settings: PrometheusHookSettings) -> Fixture
         .expect("the collectors register"),
     );
     let lookups = Arc::new(RecordingLookups::new());
+    let port_lookups = Arc::clone(&lookups);
     let port = Arc::new(BudgetLookupPort::new(
-        Arc::clone(&lookups),
+        port_lookups,
         Arc::clone(&collectors),
         settings.labels.clone(),
         settings.limits,

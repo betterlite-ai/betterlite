@@ -6,7 +6,6 @@ use betterlite_logging::end_user::{
     get_end_user_id_for_cost_tracking as end_user_for_cost_tracking, // ast-grep-ignore: no-long-names
 };
 use betterlite_logging::fields::payload::StandardLoggingPayload;
-use betterlite_logging::prometheus::failure::RequestedModelCatalog;
 use betterlite_logging::prometheus::failure::exception::LabelException;
 use betterlite_logging::prometheus::failure::invalid_key::should_skip_metrics_for_invalid_key as skip_invalid_key; // ast-grep-ignore: no-long-names
 use betterlite_logging::prometheus_deployment::failure::set_llm_deployment_failure_metrics as deployment_failure_metrics; // ast-grep-ignore: no-long-names
@@ -24,6 +23,7 @@ use super::event::HookCall;
 use super::hooks::PrometheusHooks;
 use super::labels::{EventLabels, event_values, payload_exception, zero_cost_diagnostic};
 use super::metrics::{CounterWrite, HookMetrics};
+use super::provider::requested_catalog;
 
 const FAILURE_KEYS: [&str; 3] = ["standard_logging_object", "litellm_params", "model"];
 
@@ -64,7 +64,7 @@ impl PrometheusHooks {
         let metrics = self.metrics();
         let now = Instant::now();
         self.emit_failed_counter(&values, &metrics, now)?;
-        self.emit_failure_zero_cost(payload, &values, &metrics, now)?;
+        self.emit_failure_zero_cost(payload, &values, &metrics)?;
         self.emit_deployment_failure(&call, payload, exception.as_ref(), now);
         self.budget_lookups
             .org_after_failure(values.org_id.as_deref())
@@ -98,7 +98,6 @@ impl PrometheusHooks {
         payload: Option<&StandardLoggingPayload>,
         values: &UserApiKeyLabelValues,
         metrics: &HookMetrics<'_>,
-        now: Instant,
     ) -> Result<(), PrometheusHookError> {
         let context = PrometheusLabelFactoryContext::new(
             values,
@@ -133,9 +132,7 @@ impl PrometheusHooks {
                 exception,
                 litellm_params: &call.litellm_params,
                 payload,
-                catalog: catalog
-                    .as_ref()
-                    .map(|adapter| adapter as &dyn RequestedModelCatalog),
+                catalog: requested_catalog(catalog.as_ref()),
                 now,
             },
         );

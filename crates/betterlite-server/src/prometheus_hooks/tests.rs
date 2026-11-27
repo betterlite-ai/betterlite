@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-mod support;
+pub(crate) mod support;
 
 use std::sync::Arc;
 

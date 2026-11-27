@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use betterlite_logging::callback_logger::CallbackLogger as _;
-use betterlite_logging::prometheus::budget_lookups::lists::BudgetTableSnapshot;
+use betterlite_logging::prometheus::budget_gauges::lists::BudgetTableSnapshot;
 use betterlite_logging::prometheus::budget_lookups::records::OrgRecord;
 use betterlite_logging::prometheus_helpers::bounded_series_tracker::SeriesLimits;
 use rust_decimal::Decimal;

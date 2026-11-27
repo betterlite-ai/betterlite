@@ -16,7 +16,7 @@ use serde_json::json;
 use super::super::tests::support::{
     PROXY_FAILED, PROXY_TOTAL, fixture, fixture_with_limits, labels_seen, totals,
 };
-use crate::prometheus_hooks::PrometheusHooks;
+use crate::prometheus_hooks::hooks::PrometheusHooks;
 
 fn auth(api_key: &str) -> UserAPIKeyAuth {
     let source = format!(r#"{{"api_key": "{api_key}", "user_id": "user-1"}}"#);

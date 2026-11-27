@@ -33,7 +33,7 @@ mod user;
 pub struct BudgetLookupPort {
     lookups: Arc<dyn BudgetLookups>,
     collectors: Arc<PrometheusCollectors>,
-    pub gauges: BudgetGauges<Handle>,
+    pub(crate) gauges: BudgetGauges<Handle>,
     settings: PrometheusLabelSettings,
     limits: SeriesLimits,
     end_user: EndUserCostTrackingSettings,

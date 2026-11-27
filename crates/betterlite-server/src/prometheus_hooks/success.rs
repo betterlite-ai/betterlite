@@ -235,13 +235,15 @@ impl PrometheusHooks {
 fn usage_phase(record: &SuccessRecord<'_>) -> Result<(), PrometheusHookError> {
     increment_request_and_spend(&record.metrics, record.payload, record.labels, record.now)?;
     zero_cost_phase(record)?;
-    increment_token_metrics(&record.metrics, record.payload, record.labels, record.now)
+    increment_token_metrics(&record.metrics, record.payload, record.labels, record.now)?;
+    Ok(())
 }
 
 fn zero_cost_phase(record: &SuccessRecord<'_>) -> Result<(), PrometheusHookError> {
     // litellm writes the zero-cost counter between the request and spend counters and the token counters
     let diagnostic = zero_cost_diagnostic(record.payload);
-    increment_zero_cost_requests(&record.metrics, diagnostic.as_ref(), record.labels)
+    increment_zero_cost_requests(&record.metrics, diagnostic.as_ref(), record.labels)?;
+    Ok(())
 }
 
 fn usage_tail_phase(record: &SuccessRecord<'_>) -> Result<(), PrometheusHookError> {

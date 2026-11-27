@@ -6,7 +6,6 @@ use betterlite_core::api::request_principal_metadata::PrincipalFacts;
 use betterlite_core::api::request_principal_metadata::principal::logged_api_key;
 use betterlite_logging::logging_metadata::params::LitellmParams;
 use betterlite_logging::logging_metadata::tags::{ProxyHeaders, TagSettings, get_request_tags};
-use betterlite_logging::prometheus::failure::RequestedModelCatalog;
 use betterlite_logging::prometheus::failure::exception::LabelException;
 use betterlite_logging::prometheus::failure::exception_name::exception_class_name;
 use betterlite_logging::prometheus::failure::model_cardinality::bounded_requested_model_label;
@@ -30,6 +29,7 @@ use super::hooks::PrometheusHooks;
 use super::json::{as_object, as_text, metadata_text, request_json};
 use super::labels::text_tags;
 use super::metrics::CounterWrite;
+use super::provider::requested_catalog;
 
 impl PrometheusHooks {
     #[must_use]
@@ -168,13 +168,7 @@ impl PrometheusHooks {
 
     fn proxy_requested_model(&self, requested: &Json) -> Option<String> {
         let catalog = self.catalog();
-        bounded_requested_model_label(
-            Some(requested),
-            false,
-            catalog
-                .as_ref()
-                .map(|adapter| adapter as &dyn RequestedModelCatalog),
-        )
+        bounded_requested_model_label(Some(requested), false, requested_catalog(catalog.as_ref()))
     }
 
     fn proxy_api_provider(

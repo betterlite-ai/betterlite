@@ -70,7 +70,8 @@ impl<'metrics> HookMetrics<'metrics> {
             tracker: &self.collectors.bounded_series_tracker,
             limits: self.limits,
         };
-        emission.inc_labeled_counter(write.values, write.source, write.amount, write.now)
+        emission.inc_labeled_counter(write.values, write.source, write.amount, write.now)?;
+        Ok(())
     }
 }
 

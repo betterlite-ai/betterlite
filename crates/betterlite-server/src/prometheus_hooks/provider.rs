@@ -48,3 +48,12 @@ impl RequestedModelCatalog for CatalogAdapter {
         self.0.matches_pattern_route(model)
     }
 }
+
+// both failure emitters take the catalog as a borrowed trait object, so the adapter coerces once here
+pub(crate) fn requested_catalog(
+    catalog: Option<&CatalogAdapter>,
+) -> Option<&dyn RequestedModelCatalog> {
+    let adapter = catalog?;
+    let requested: &dyn RequestedModelCatalog = adapter;
+    Some(requested)
+}

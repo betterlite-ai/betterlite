@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use super::super::tests::support::fixture;
-use crate::prometheus_hooks::PrometheusHooks;
+use crate::prometheus_hooks::hooks::PrometheusHooks;
 
 #[test]
 fn shared_builds_one_instance_for_every_call() {

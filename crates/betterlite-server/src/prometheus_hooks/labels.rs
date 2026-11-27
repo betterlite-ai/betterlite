@@ -35,12 +35,12 @@ pub(crate) fn event_values(
     let mut entries = common_entries(labels);
     if labels.success {
         success_entries(&mut entries, labels);
-    } else if let Some(record) = labels.payload {
-        push_text(
-            &mut entries,
-            "model_id",
-            Some(record.model_id.as_deref().unwrap_or_default()),
-        );
+    } else {
+        // a failure payload with no model_id still names the deployment, with the empty text litellm writes
+        let model_id = labels
+            .payload
+            .map(|record| record.model_id.as_deref().unwrap_or_default());
+        push_text(&mut entries, "model_id", model_id);
     }
     let metadata = labels.payload.map(|record| &record.metadata);
     let custom = custom_labels(metadata, labels.settings)?;
@@ -187,27 +187,33 @@ pub(crate) fn zero_cost_diagnostic(payload: &StandardLoggingPayload) -> Option<Z
         .and_then(as_text)
         .unwrap_or_default()
         .to_owned();
-    let mut missing = Vec::new();
-    if let Some(Json::List(items)) = fields.get("missing_pricing_keys") {
-        for item in items {
-            let key = as_text(item).unwrap_or_default();
-            for known in [
-                TEXT_INPUT_RATE,
-                AUDIO_INPUT_RATE,
-                TEXT_OUTPUT_RATE,
-                AUDIO_OUTPUT_RATE,
-            ] {
-                if known == key {
-                    missing.push(known);
-                }
-            }
-        }
-    }
     Some(ZeroCostDiagnostic {
         reason,
         pricing_model,
-        missing_pricing_keys: missing,
+        missing_pricing_keys: missing_rate_keys(fields.get("missing_pricing_keys")),
     })
+}
+
+// the diagnostic lists one key per entry, and only the four rates B3877 names survive in the listed order
+fn missing_rate_keys(value: Option<&Json>) -> Vec<&'static str> {
+    let Some(Json::List(items)) = value else {
+        return Vec::new();
+    };
+    let mut missing = Vec::new();
+    for item in items {
+        let key = as_text(item).unwrap_or_default();
+        for known in [
+            TEXT_INPUT_RATE,
+            AUDIO_INPUT_RATE,
+            TEXT_OUTPUT_RATE,
+            AUDIO_OUTPUT_RATE,
+        ] {
+            if known == key {
+                missing.push(known);
+            }
+        }
+    }
+    missing
 }
 
 // litellm reads response.service_tier, the usage object's service_tier, then the requested tier that survives the known list

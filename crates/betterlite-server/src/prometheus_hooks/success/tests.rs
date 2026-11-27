@@ -15,7 +15,7 @@ use super::super::tests::support::{
     error_information, event, event_with_metadata, fixture, fixture_with_limits, labels_seen,
     observations, payload, totals,
 };
-use crate::prometheus_hooks::PrometheusHookError;
+use crate::prometheus_hooks::error::PrometheusHookError;
 
 #[tokio::test]
 async fn missing_payload_is_an_error() {
