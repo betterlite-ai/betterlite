@@ -13,32 +13,30 @@ use crate::prometheus_remaining_budget::lookups::{CustomerBudgetLookup, LookupEr
 
 use super::{BudgetLookupPort, budget_error};
 
-impl BudgetLookupPort {
-    pub(super) async fn customer_after_api_request(
-        &self,
-        lookup: CustomerBudgetLookup<'_>,
-    ) -> Result<(), LookupError> {
-        let request = CustomerBudgetRequest {
-            end_user_id: lookup.end_user_id,
-            response_cost: lookup.response_cost,
-        };
-        let context = CustomerGaugeContext {
-            source: self.source(),
-            clock: BudgetGaugeClock {
-                reset: Utc::now(),
-                monotonic: Instant::now(),
-            },
-            tracker: &self.collectors.bounded_series_tracker,
-            limits: &self.limits,
-        };
-        write_customer_budget(
-            self.lookups.as_ref(),
-            &self.gauges.customer,
-            context,
-            self.end_user,
-            &request,
-        )
-        .await
-        .map_err(budget_error)
-    }
+pub(super) async fn customer_after_api_request(
+    port: &BudgetLookupPort,
+    lookup: CustomerBudgetLookup<'_>,
+) -> Result<(), LookupError> {
+    let request = CustomerBudgetRequest {
+        end_user_id: lookup.end_user_id,
+        response_cost: lookup.response_cost,
+    };
+    let context = CustomerGaugeContext {
+        source: port.source(),
+        clock: BudgetGaugeClock {
+            reset: Utc::now(),
+            monotonic: Instant::now(),
+        },
+        tracker: &port.collectors.bounded_series_tracker,
+        limits: &port.limits,
+    };
+    write_customer_budget(
+        port.lookups.as_ref(),
+        &port.gauges.customer,
+        context,
+        port.end_user,
+        &request,
+    )
+    .await
+    .map_err(|error| budget_error(&error))
 }

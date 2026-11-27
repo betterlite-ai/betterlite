@@ -1,3 +1,4 @@
+use std::error::Error;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -75,7 +76,7 @@ impl BudgetLookupPort {
             &request,
         )
         .await
-        .map_err(budget_error)
+        .map_err(|error| budget_error(&error))
     }
 
     const fn source(&self) -> LabelSource<'_> {
@@ -89,29 +90,29 @@ impl BudgetLookupPort {
 #[async_trait]
 impl RequestBudgetLookups for Arc<BudgetLookupPort> {
     async fn key(&self, lookup: KeyBudgetLookup<'_>) -> Result<(), LookupError> {
-        self.key_after_api_request(lookup).await
+        key::key_after_api_request(self, lookup).await
     }
 
     async fn team(&self, lookup: TeamBudgetLookup<'_>) -> Result<(), LookupError> {
-        self.team_after_api_request(lookup).await
+        team::team_after_api_request(self, lookup).await
     }
 
     async fn user(&self, lookup: UserBudgetLookup<'_>) -> Result<(), LookupError> {
-        self.user_after_api_request(lookup).await
+        user::user_after_api_request(self, lookup).await
     }
 
     async fn org(&self, lookup: OrgBudgetLookup<'_>) -> Result<(), LookupError> {
-        self.org_after_api_request(lookup).await
+        org::org_after_api_request(self, lookup).await
     }
 
     async fn customer(&self, lookup: CustomerBudgetLookup<'_>) -> Result<(), LookupError> {
-        self.customer_after_api_request(lookup).await
+        customer::customer_after_api_request(self, lookup).await
     }
 }
 
-fn budget_error<MetricError>(error: BudgetGaugeError<MetricError>) -> LookupError
+fn budget_error<MetricError>(error: &BudgetGaugeError<MetricError>) -> LookupError
 where
-    MetricError: std::error::Error + 'static,
+    MetricError: Error + 'static,
 {
     LookupError {
         message: error.to_string(),

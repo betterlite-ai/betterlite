@@ -8,14 +8,14 @@ use betterlite_openai::openai_base_config::Object as JsonMap;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 
-pub(crate) fn as_object(value: &Json) -> Option<&IndexMap<String, Json>> {
+pub(crate) const fn as_object(value: &Json) -> Option<&IndexMap<String, Json>> {
     match value {
         Json::Object(fields) => Some(fields),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
     }
 }
 
-pub(crate) fn as_text(value: &Json) -> Option<&str> {
+pub(crate) const fn as_text(value: &Json) -> Option<&str> {
     match value {
         Json::Text(text) => Some(text.as_str()),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,

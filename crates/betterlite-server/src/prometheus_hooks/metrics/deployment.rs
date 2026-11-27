@@ -1,7 +1,7 @@
 use betterlite_logging::prometheus_deployment::metric::DeploymentMetric;
 use betterlite_logging::prometheus_exporter::{Handle, PrometheusCollectors};
 
-pub(super) fn deployment_handle(
+pub(super) const fn deployment_handle(
     collectors: &PrometheusCollectors,
     metric: DeploymentMetric,
 ) -> &Handle {

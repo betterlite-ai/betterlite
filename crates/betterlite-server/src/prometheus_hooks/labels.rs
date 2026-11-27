@@ -52,6 +52,17 @@ pub(crate) fn event_values(
 }
 
 fn common_entries(labels: &EventLabels<'_>) -> Vec<(String, LabelDumpValue)> {
+    common_values(labels)
+        .into_iter()
+        .filter_map(|(name, value)| {
+            value.map(|text| (name.to_owned(), LabelDumpValue::String(text.to_owned())))
+        })
+        .collect()
+}
+
+fn common_values<'values>(
+    labels: &'values EventLabels<'_>,
+) -> [(&'static str, Option<&'values str>); 9] {
     let metadata = labels.payload.map(|record| &record.metadata);
     [
         ("end_user", labels.end_user.as_deref()),
@@ -89,11 +100,6 @@ fn common_entries(labels: &EventLabels<'_>) -> Vec<(String, LabelDumpValue)> {
                 .and_then(|record| record.custom_llm_provider.as_deref()),
         ),
     ]
-    .into_iter()
-    .filter_map(|(name, value)| {
-        value.map(|text| (name.to_owned(), LabelDumpValue::String(text.to_owned())))
-    })
-    .collect()
 }
 
 fn success_entries(entries: &mut Vec<(String, LabelDumpValue)>, labels: &EventLabels<'_>) {
@@ -101,9 +107,19 @@ fn success_entries(entries: &mut Vec<(String, LabelDumpValue)>, labels: &EventLa
         return;
     };
     let metadata = &record.metadata;
+    success_head_entries(entries, labels.model, record, metadata);
+    success_tail_entries(entries, labels, record);
+}
+
+fn success_head_entries(
+    entries: &mut Vec<(String, LabelDumpValue)>,
+    model: &str,
+    record: &StandardLoggingPayload,
+    metadata: &StandardLoggingMetadata,
+) {
     push_text(entries, "model_id", record.model_id.as_deref());
     push_text(entries, "model_group", record.model_group.as_deref());
-    push_text(entries, "litellm_model_name", Some(labels.model));
+    push_text(entries, "litellm_model_name", Some(model));
     push_text(entries, "status_code", Some("200"));
     push_text(
         entries,
@@ -127,6 +143,13 @@ fn success_entries(entries: &mut Vec<(String, LabelDumpValue)>, labels: &EventLa
         "org_alias",
         metadata.user_api_key_org_alias.as_deref(),
     );
+}
+
+fn success_tail_entries(
+    entries: &mut Vec<(String, LabelDumpValue)>,
+    labels: &EventLabels<'_>,
+    record: &StandardLoggingPayload,
+) {
     push_text(entries, "service_tier", service_tier(record));
     push_text(entries, "api_base", Some(record.api_base.as_str()));
     if labels.settings.emit_stream_label {
@@ -241,13 +264,11 @@ pub(crate) fn service_tier(payload: &StandardLoggingPayload) -> Option<&str> {
 }
 
 pub(crate) fn hashed_key(key: Option<&str>) -> Option<String> {
-    key.map(|token| {
-        if token.starts_with("sk-") {
-            hash_token(token)
-        } else {
-            token.to_owned()
-        }
-    })
+    match key {
+        Some(token) if token.starts_with("sk-") => Some(hash_token(token)),
+        Some(token) => Some(token.to_owned()),
+        None => None,
+    }
 }
 
 pub(crate) fn text_tags(tags: &[Json]) -> Vec<String> {

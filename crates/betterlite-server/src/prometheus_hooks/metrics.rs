@@ -55,18 +55,18 @@ impl<'metrics> HookMetrics<'metrics> {
         }
     }
 
-    fn labels_for(&self, metric_name: &str) -> &[String] {
+    fn registered_labels(&self, metric_name: &str) -> &[String] {
         self.collectors
             .cached_labels
             .get(metric_name)
             .map_or(&[], Vec::as_slice)
     }
 
-    pub(crate) fn emit(&self, write: CounterWrite<'_>) -> Result<(), PrometheusHookError> {
+    pub(crate) fn emit(&self, write: &CounterWrite<'_>) -> Result<(), PrometheusHookError> {
         let emission = CounterEmission {
             counter: write.counter,
             metric_name: write.metric_name,
-            supported_labels: self.labels_for(write.metric_name),
+            supported_labels: self.registered_labels(write.metric_name),
             tracker: &self.collectors.bounded_series_tracker,
             limits: self.limits,
         };
@@ -83,7 +83,7 @@ impl UsageCounters for HookMetrics<'_> {
     }
 
     fn supported_labels(&self, metric: UsageMetric) -> &[String] {
-        self.labels_for(metric.name())
+        self.registered_labels(metric.name())
     }
 
     fn tracker(&self) -> &BoundedPrometheusSeriesTracker {
@@ -117,7 +117,7 @@ impl DeploymentMetrics for HookMetrics<'_> {
     }
 
     fn labels_for(&self, metric: DeploymentMetric) -> &[String] {
-        self.labels_for(metric.name())
+        self.registered_labels(metric.name())
     }
 
     fn settings(&self) -> &PrometheusLabelSettings {
