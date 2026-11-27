@@ -5,7 +5,8 @@ from typing import Literal, Protocol
 import litellm
 import litellm.vector_store_files.main as vector_file_main
 import openai
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from litellm.vector_stores.vector_store_registry import VectorStoreRegistry
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 from typing_extensions import override
 
 from openai_chat import Failure, project_failure
@@ -13,8 +14,10 @@ from openai_chat import Failure, project_failure
 Operation = Literal["update", "delete"]
 Mode = Literal["sync", "async"]
 
+JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 
-# Both entries are wrapped by @client, which leaves their signatures untyped, and their keyword-only arguments do not fit a named parameter here
+
+# The @client wrappers leave these signatures untyped, so a facade declares the keywords they take
 class WriteFacade(Protocol):
     def update(self, **options: JsonValue) -> JsonValue: ...
 
@@ -85,7 +88,7 @@ class VectorFileWriteResult(BaseModel):
 
 
 # The case's registry: the credentials it overlays, or a lookup that raises and LiteLLM swallows
-class CaseRegistry(litellm.VectorStoreRegistry):
+class CaseRegistry(VectorStoreRegistry):
     credentials: Mapping[str, object]  # ast-grep-ignore: no-loose-types
     failing: bool
 
@@ -103,7 +106,7 @@ class CaseRegistry(litellm.VectorStoreRegistry):
         return dict(self.credentials)
 
 
-# Every keyword the case sends: update always gets its attributes, even a null, and a delete's extra_body rides in **kwargs
+# Update always gets its attributes, a null included; a delete's extra_body rides in **kwargs
 def write_options(run: Run, api_base: str) -> dict[str, JsonValue]:
     options: dict[str, JsonValue] = {
         "vector_store_id": run.vector_store_id,
@@ -126,19 +129,23 @@ def write_options(run: Run, api_base: str) -> dict[str, JsonValue]:
 
 
 def update_write(run: Run, api_base: str) -> JsonValue:
-    return WRITES.update(**write_options(run, api_base))
+    answer = WRITES.update(**write_options(run, api_base))
+    return JSON.validate_python(answer)
 
 
 def delete_write(run: Run, api_base: str) -> JsonValue:
-    return WRITES.delete(**write_options(run, api_base))
+    answer = WRITES.delete(**write_options(run, api_base))
+    return JSON.validate_python(answer)
 
 
 async def aupdate_write(run: Run, api_base: str) -> JsonValue:
-    return await WRITES.aupdate(**write_options(run, api_base))
+    answer = await WRITES.aupdate(**write_options(run, api_base))
+    return JSON.validate_python(answer)
 
 
 async def adelete_write(run: Run, api_base: str) -> JsonValue:
-    return await WRITES.adelete(**write_options(run, api_base))
+    answer = await WRITES.adelete(**write_options(run, api_base))
+    return JSON.validate_python(answer)
 
 
 def written(run: Run, api_base: str) -> JsonValue:

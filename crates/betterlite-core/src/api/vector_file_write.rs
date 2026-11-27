@@ -75,20 +75,6 @@ impl FileWriteRequest<'_> {
     }
 }
 
-impl FileUpdateRequest<'_> {
-    // aupdate inserts its flag into a copy of the kwargs, as LiteLLM does before its shared update
-    const fn flagged<'flagged>(
-        &'flagged self,
-        kwargs: &'flagged IndexMap<String, Json>,
-    ) -> FileUpdateRequest<'flagged> {
-        FileUpdateRequest {
-            write: self.write.flagged(kwargs),
-            attributes: self.attributes,
-            extra_body: self.extra_body,
-        }
-    }
-}
-
 // update/delete and their async façades: the service and its collaborators are passed once
 pub struct VectorFileWrites<'service, Service> {
     pub service: &'service Service,
@@ -107,6 +93,9 @@ struct Prepared<'call> {
     update_request: VectorStoreFileUpdateRequest,
     extra_headers: Option<&'call BTreeMap<String, String>>,
     extra_body: Option<&'call IndexMap<String, Json>>,
+    // the update's argument and the merged kwargs: the log call reads both once the call is prepared
+    attributes: Option<&'call Attributes>,
+    merged: IndexMap<String, Json>,
     timeout: Duration,
 }
 
@@ -119,6 +108,7 @@ impl<Service: WriteService> VectorFileWrites<'_, Service> {
             request.attributes,
             request.extra_body,
         )?;
+        self.log(Operation::Update, &request.write, &prepared)?;
         self.send(prepared).await
     }
 
@@ -126,11 +116,17 @@ impl<Service: WriteService> VectorFileWrites<'_, Service> {
     pub async fn aupdate(&self, request: &FileUpdateRequest<'_>) -> WriteResult {
         let mut kwargs = request.write.kwargs.clone();
         kwargs.insert(String::from(UPDATE_FLAG), Json::Bool(true));
-        self.update(&request.flagged(&kwargs)).await
+        let flagged = FileUpdateRequest {
+            write: request.write.flagged(&kwargs),
+            attributes: request.attributes,
+            extra_body: request.extra_body,
+        };
+        self.update(&flagged).await
     }
 
     pub async fn delete(&self, request: &FileWriteRequest<'_>) -> WriteResult {
         let prepared = self.prepare(Operation::Delete, request, None, None)?;
+        self.log(Operation::Delete, request, &prepared)?;
         self.send(prepared).await
     }
 
@@ -141,11 +137,35 @@ impl<Service: WriteService> VectorFileWrites<'_, Service> {
         self.delete(&request.flagged(&kwargs)).await
     }
 
+    // both handlers log once the provider is resolved and the registry's credentials are merged in
+    fn log(
+        &self,
+        operation: Operation,
+        request: &FileWriteRequest<'_>,
+        prepared: &Prepared<'_>,
+    ) -> Result<(), VectorFileWriteFailure> {
+        let entry = FileUpdateRequest {
+            write: *request,
+            attributes: prepared.attributes,
+            extra_body: prepared.extra_body,
+        };
+        let logging = self.deps.logging;
+        match operation {
+            Operation::Update => {
+                log_update(logging, &entry, &prepared.merged, &prepared.provider_name)
+            }
+            Operation::Delete => {
+                log_delete(logging, request, &prepared.merged, &prepared.provider_name)
+            }
+        }
+        .map_err(|error| failure(error, &prepared.provider_name, self.deps.redactor))
+    }
+
     fn prepare<'call>(
         &self,
         operation: Operation,
         request: &'call FileWriteRequest<'_>,
-        attributes: Option<&Attributes>,
+        attributes: Option<&'call Attributes>,
         extra_body: Option<&'call IndexMap<String, Json>>,
     ) -> Result<Prepared<'call>, VectorFileWriteFailure> {
         let mut forwarded = request.kwargs.clone();
@@ -166,16 +186,6 @@ impl<Service: WriteService> VectorFileWrites<'_, Service> {
             Operation::Update => update_values(attributes).map_err(deny)?,
             Operation::Delete => VectorStoreFileUpdateRequest::default(),
         };
-        let entry = FileUpdateRequest {
-            write: *request,
-            attributes,
-            extra_body,
-        };
-        match operation {
-            Operation::Update => log_update(self.deps.logging, &entry, &merged, provider),
-            Operation::Delete => log_delete(self.deps.logging, request, &merged, provider),
-        }
-        .map_err(deny)?;
         let timeout =
             call_timeout(request.timeout, self.deps.request_timeout_seconds).map_err(deny)?;
         Ok(Prepared {
@@ -190,6 +200,8 @@ impl<Service: WriteService> VectorFileWrites<'_, Service> {
             update_request,
             extra_headers: request.extra_headers,
             extra_body,
+            attributes,
+            merged,
             timeout,
         })
     }

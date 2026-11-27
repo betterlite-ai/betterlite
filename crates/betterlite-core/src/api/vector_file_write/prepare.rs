@@ -51,10 +51,22 @@ pub(crate) fn target(
 pub(crate) fn write_params(
     kwargs: &IndexMap<String, Json>,
 ) -> Result<WriteParams, VectorFileWriteError> {
+    let api_base = optional_text(kwargs, "api_base")?;
+    let api_key = optional_text(kwargs, "api_key")?;
+    let ssl_verify = match kwargs.get("ssl_verify") {
+        None | Some(Json::Null) => None,
+        Some(Json::Bool(flag)) => Some(*flag),
+        Some(_other) => {
+            return Err(VectorFileWriteError::FieldType {
+                field: "ssl_verify",
+                expected: "a boolean",
+            });
+        }
+    };
     Ok(WriteParams {
-        api_base: optional_text(kwargs, "api_base")?,
-        api_key: optional_text(kwargs, "api_key")?.map(SecretString::from),
-        ssl_verify: optional_bool(kwargs, "ssl_verify")?,
+        api_base,
+        api_key: api_key.map(SecretString::from),
+        ssl_verify,
     })
 }
 
@@ -68,20 +80,6 @@ fn optional_text(
         Some(_other) => Err(VectorFileWriteError::FieldType {
             field,
             expected: "a string",
-        }),
-    }
-}
-
-fn optional_bool(
-    kwargs: &IndexMap<String, Json>,
-    field: &'static str,
-) -> Result<Option<bool>, VectorFileWriteError> {
-    match kwargs.get(field) {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Bool(flag)) => Ok(Some(*flag)),
-        Some(_other) => Err(VectorFileWriteError::FieldType {
-            field,
-            expected: "a boolean",
         }),
     }
 }
@@ -101,6 +99,17 @@ pub(crate) fn update_values(
     Ok(request)
 }
 
+// the two ids every file write logs, whichever handler runs
+fn ids(store_id: &str, file_id: &str) -> IndexMap<String, Json> {
+    IndexMap::from([
+        (
+            String::from("vector_store_id"),
+            Json::Text(store_id.to_owned()),
+        ),
+        (String::from("file_id"), Json::Text(file_id.to_owned())),
+    ])
+}
+
 // update_from_kwargs(kwargs, model=None, optional_params={"vector_store_id", "file_id", "attributes"}, ...)
 pub(crate) fn log_update(
     logging: &Mutex<LoggingState>,
@@ -108,15 +117,7 @@ pub(crate) fn log_update(
     kwargs: &IndexMap<String, Json>,
     provider: &str,
 ) -> Result<(), VectorFileWriteError> {
-    let mut optional_params = IndexMap::new();
-    optional_params.insert(
-        String::from("vector_store_id"),
-        Json::Text(request.write.vector_store_id.to_owned()),
-    );
-    optional_params.insert(
-        String::from("file_id"),
-        Json::Text(request.write.file_id.to_owned()),
-    );
+    let mut optional_params = ids(request.write.vector_store_id, request.write.file_id);
     optional_params.insert(
         String::from("attributes"),
         attributes_value(request.attributes)?,
@@ -138,21 +139,12 @@ pub(crate) fn log_delete(
     kwargs: &IndexMap<String, Json>,
     provider: &str,
 ) -> Result<(), VectorFileWriteError> {
-    let mut optional_params = IndexMap::new();
-    optional_params.insert(
-        String::from("vector_store_id"),
-        Json::Text(request.vector_store_id.to_owned()),
-    );
-    optional_params.insert(
-        String::from("file_id"),
-        Json::Text(request.file_id.to_owned()),
-    );
     log_call(LogEntry {
         logging,
         store_id: request.vector_store_id,
         kwargs,
         flag: DELETE_FLAG,
-        optional_params,
+        optional_params: ids(request.vector_store_id, request.file_id),
         provider,
     })
 }

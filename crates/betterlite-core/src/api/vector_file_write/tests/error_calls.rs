@@ -4,8 +4,7 @@ use rstest::rstest;
 use super::super::error::VectorFileWriteFailure;
 use super::support::{Fixture, PROVIDER_ERROR, REQUEST_TIMEOUT, Spy, Which, call};
 
-// "invalid_request_error" outranks the status: a 404 carrying it raises BadRequestError with null wire fields,
-// as the merged vector store write case proves for the same body.
+// "invalid_request_error" outranks the status: a 404 carrying it raises BadRequestError with null wire fields
 fn assert_bad_request(failure: &VectorFileWriteFailure) {
     let raised = failure.raised().expect("BadRequestError has a projection");
     assert_eq!(raised.class, "BadRequestError");
