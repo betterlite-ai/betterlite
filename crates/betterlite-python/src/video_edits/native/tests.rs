@@ -77,9 +77,13 @@ fn failure_message(method: &str, payload: &str) -> String {
     Python::initialize();
     Python::attach(|py| {
         let session = new_session(py);
-        let error = session
-            .call_method1(py, method, (payload, Vec::<Vec<u8>>::new()))
-            .unwrap_err();
+        let globals = PyDict::new(py);
+        globals.set_item("session", session).unwrap();
+        globals.set_item("method", method).unwrap();
+        globals.set_item("payload", payload).unwrap();
+        globals.set_item("blobs", Vec::<Vec<u8>>::new()).unwrap();
+        // The async twins need a running loop, so run both through asyncio.run.
+        let error = py.run(INVOKE, Some(&globals), None).unwrap_err();
         assert!(error.is_instance_of::<NativeVideoEditError>(py), "{error}");
         error.value(py).to_string()
     })
