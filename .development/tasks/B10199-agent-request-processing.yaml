@@ -125,7 +125,7 @@ deviations:
   - what: The agent calls run none of LiteLLM's @client success or failure callbacks, so logging integrations and spend logs get no row for them; the pre-call and the ProxyLogging hooks still run.
     why: No production port of LiteLLM's client wrapper runs for proxy-side SDK calls yet; these calls cost nothing, so no budget or spend total changes.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L1976-L2000
-  - what: A create body with stream true answers the agent as JSON, where LiteLLM takes its streaming branch for a response that is not a stream and answers an event stream with no agent in it.
+  - what: A create body with stream true answers the agent as JSON, where LiteLLM takes its streaming branch for a response that is not a stream, async_data_generator's `async for` over the record raises, and the 200 event stream carries only the error frame (proxy_server.py L9899, L10031-L10069).
     why: The streaming branch over a pydantic record is a bug no setup relies on; the agent calls have no stream form.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L2665-L2668
 out_of_scope:
@@ -140,6 +140,7 @@ pitfalls:
   - "page_size and page_token reach the config through kwargs, not as named arguments; B10200's config sends them only when truthy, so pass them through unchanged."
   - "Hold the call's LoggingState in the dispatch value and never hold a std Mutex guard across the SDK call's await; take it out, run the call, put it back."
   - "MessagesCallSteps takes read_through None here: these route types carry no model, so route_request's read-through retry never fires for them."
+  - "The template scan reads the slot from the Arc<ServerState> extension that routes.rs L303 layers over every app::mount route, so in production it always runs; the google_agents tests that drive collection_routes::routes directly add `Extension(Arc::clone(&state))` themselves, or the 401 test passes for the wrong reason. B3508's own route tests carry no extension and skip the scan by design."
   - "B10183 renames ROUTE_TYPE to a field and B10196 adds router_routing; read messages_call.rs and app/inference on main when this task starts."
 review_level: security
 budget:
