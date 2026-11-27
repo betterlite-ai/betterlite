@@ -1,0 +1,3 @@
+[default.extend-words]
+# LiteLLM's health_services_endpoint logs "Exception occured", and log matchers key on that line.
+occured = "occured"

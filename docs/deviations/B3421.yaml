@@ -1,0 +1,36 @@
+task: B3421
+deviations:
+  - what: "acreate_eval and alist_evals are async functions that run the same body as create_eval and list_evals and await the handler's future; there is no loop.run_in_executor hop and no contextvars.copy_context()."
+    why: "betterlite's operations are async end to end and its library code may not spawn a blocking task, so the sync and async names share one async body. Both names still wait for the handler to finish, whether it answers at once or suspends, and the suspended-handler tests prove it."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L44-L110
+  - what: "The @client decorator's work is not done here: the operation receives a LoggingState and a PrePostEnv and performs the pre-call update itself, where LiteLLM's decorator builds the logging object and chooses the call type before the body runs."
+    why: "The decorator belongs to betterlite's routing and observability layers, which inject those collaborators; the body's update_from_kwargs call and its arguments are the same."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L113-L125
+  - what: "The value handed to validate_environment and to the transforms is the caller's kwargs as one JSON object, where LiteLLM builds a GenericLiteLLMParams pydantic model from the same kwargs."
+    why: "GenericLiteLLMParams allows extra keys and the OpenAI eval config reads only api_key and api_base from it, so the object carries the same fields a working call passes; validating unrelated kwargs through a typed model is not replicated."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L381-L519
+  - what: "The exception mapping receives the call's local variables as the typed EvalsCallParams captured at the operation's entry, where LiteLLM takes a local_vars = locals() dict and passes it on as completion_kwargs."
+    why: "exception_type reads only the messages key out of completion_kwargs, and no evals call passes messages; the typed params carry the provider, extra_headers, extra_query, timeout and kwargs the mapping reads, so the mapped exception has the same status, body fields and text."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2405
+  - what: "The user's metadata argument is carried in the call and never added to the request; only extra_body can put a metadata body field on the wire."
+    why: "LiteLLM accepts metadata and never reads it while building create_request, so a working call never sends it. Keeping that behavior is deliberate."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L166-L175
+  - what: "An extra_body or extra_query value that does not fit the field it overrides, and a name, data_source_config, testing_criteria or pagination value of the wrong type, raise a 400 that names the field; LiteLLM's dict update passes any Python object through and the transform or httpx fails later."
+    why: "docs/compatibility.md reads a value outside its declared type as an error naming the field, and the typed request model cannot carry the wrong shape."
+    link: ""
+  - what: "A configured request timeout that is not a usable Duration (negative or unrepresentable) raises a typed error mapped to the ValueError class before the transform and the pre-call update; LiteLLM passes the float on and httpx raises inside the handler."
+    why: "Durations are typed in betterlite, so the bad value is rejected where it is read; the HTTP result is the same 500-class failure."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L573-L574
+  - what: "The handler is a stateless BASE_LLM_HTTP_HANDLER const behind the EvalsCreateListHandler trait that delegates to B9370's free functions; the pooled client comes from the service and there are no per-call client or shared_session kwargs."
+    why: "Rust has no module-level mutable handler instance, and B9370 owns the transport. The service is handed the client the proxy builds, so a call still runs on the pooled connection LiteLLM's shared handler would use."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L204-L216
+  - what: "An unknown provider name fails with \"<name>\" is not a provider betterlite knows, where LiteLLM fails inside LlmProviders(name) with Python's enum ValueError text."
+    why: "Both are ValueErrors and map to the same class; the text names the provider instead of Python's enum mechanics."
+    link: ""
+kept_bugs:
+  - what: "list_evals resolves timeout or request_timeout and hands it to the handler call, but B9370's list handler takes no timeout and sends none, so the GET runs on the pooled client's read deadline."
+    why: "LiteLLM's pinned list handler accepts the timeout and never puts it on the request; honoring it here would time out list calls LiteLLM lets run."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L12713-L12719
+  - what: "create_eval accepts extra_query and never forwards it; the argument exists for signature parity only."
+    why: "LiteLLM's create_eval takes extra_query and never reads it, so a working call never sends those query parameters."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L113-L175
