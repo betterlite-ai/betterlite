@@ -8,7 +8,10 @@ import botocore.auth  # type: ignore[import-untyped]  # https://github.com/Berri
 import fastuuid
 import litellm
 from fastuuid import UUID
-from litellm.llms.bedrock.files.transformation import BedrockFilesConfig, _OpenAIBatchRecord  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L123
+from litellm.llms.bedrock.files.transformation import (
+    BedrockFilesConfig,
+    _OpenAIBatchRecord,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L123
+)
 from pydantic import JsonValue, TypeAdapter
 
 litellm.suppress_debug_info = True
