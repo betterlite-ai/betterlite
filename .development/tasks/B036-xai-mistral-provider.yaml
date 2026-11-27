@@ -30,8 +30,10 @@ description: >-
   responses/ occurrence from the model. Implement MistralEmbeddingConfig's empty defaults
   and encoding_format-only mapping, including an explicit null, over B006 transport.
 
-  Also implement mistral_ocr_guardrail using B3661's translation interface and metadata
-  projection. Request hooks see a nonempty string document_url or image_url as text;
+  Also implement mistral_ocr_guardrail in crates/betterlite-guardrails/src/mistral_ocr_guardrail.rs
+  as an implementer of B3661's BaseTranslation in B10179's shape, where the guardrail comes on each call
+  as `&GuardrailToApply<G>`, and use its metadata projection. It lives in betterlite-guardrails because
+  betterlite-core cannot import that trait. Request hooks see a nonempty string document_url or image_url as text;
   ignore their replacement text. Response hooks receive only truthy page markdown and
   write returned texts back to those original indices; short results leave trailing
   pages intact and extra texts are ignored. Include truthy model, preserve request_data,
@@ -72,8 +74,9 @@ scope:
     - crates/betterlite-provider/Cargo.toml
     - crates/betterlite-core/src/{dispatch,operation}.rs
     - crates/betterlite-core/src/xai_mistral.rs
-    - crates/betterlite-core/src/mistral_ocr_guardrail.rs
-    - crates/betterlite-core/src/{xai_mistral,mistral_ocr_guardrail}/**
+    - crates/betterlite-core/src/xai_mistral/**
+    - crates/betterlite-guardrails/src/mistral_ocr_guardrail.rs
+    - crates/betterlite-guardrails/src/mistral_ocr_guardrail/**
     - crates/betterlite-core/Cargo.toml
     - crates/betterlite-openai/src/mistral_embedding.rs
     - crates/betterlite-config/src/sections/mistral_credentials.rs
@@ -121,7 +124,7 @@ checks:
   optional: [mutants]
   commands:
     - id: xai-mistral-tests
-      run: cargo nextest run --locked -p betterlite-provider -p betterlite-core -p betterlite-openai --no-tests=fail -E 'test(/^xai_mistral::/) | test(/^mistral_ocr_guardrail::/) | test(/^mistral_embedding::/)'
+      run: cargo nextest run --locked -p betterlite-provider -p betterlite-core -p betterlite-guardrails -p betterlite-openai --no-tests=fail -E 'test(/^xai_mistral::/) | test(/^mistral_ocr_guardrail::/) | test(/^mistral_embedding::/)'
       why: Each binding and the two remaining transformations require executable assertions.
     - id: xai-mistral-settings
       run: cargo nextest run --locked -p betterlite-config --test xai_mistral_settings --no-tests=fail

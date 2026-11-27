@@ -1,0 +1,6 @@
+task: B10154
+deviations:
+  - what: A call type with no executor answers GenericError::UnknownCallType naming it, where LiteLLM's async_wrapper has no branch for an unknown name and returns None.
+    why: betterlite does not answer a call it never made with an empty result.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L6835-L7009
+kept_bugs: []

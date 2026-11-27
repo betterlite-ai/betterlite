@@ -1,0 +1,131 @@
+id: B10191
+title: The SigV4 header signers in secret-managers, SQS, DynamoDB, MCP and Strands sign through betterlite-sigv4
+description: >-
+  Five crates still sign AWS requests with their own copy of the steps that B10173 puts in betterlite-sigv4's `sign_request`: each builds an aws-sigv4 identity, `v4::SigningParams` with `SigningSettings::default()` and a `SignableRequest`, calls `sign` and copies the returned headers out. They are `signed_headers` in crates/betterlite-secret-managers/src/aws/request_signing/sigv4.rs L17-L82, the SQS `sign_request` in crates/betterlite-logging/src/sqs_logging/signing.rs L38-L95, the DynamoDB `signed_headers` in crates/betterlite-logging/src/legacy_dynamodb/signing.rs L34-L62, the MCP `sign_request` in crates/betterlite-http/src/mcp_sigv4/signing.rs L16-L142 and `sign_json_post` in crates/betterlite-openai/src/providers/strands_decider/signing.rs L105-L155 (lines at main 6a51ccf2b26). All five port botocore's SigV4Auth, which is what LiteLLM calls in each place (references). None of them can call betterlite-bedrock, which sits above them, so they move onto betterlite-sigv4, which depends on no betterlite crate. The decision is .development/decisions/2026-11-27-aws-credential-chain.md. The S3 signer and the two query presigners follow in B10190.
+
+
+  What betterlite-sigv4 gains. credentials.rs gets `impl From<&aws_credential_types::Credentials> for Credentials`, which copies the access key, the secret key and the session token into SecretStrings. Secret-managers, SQS, DynamoDB and MCP hold the aws type from their credential side, which stays as it is, and convert at the call with `Credentials::from(&held)`. A new module `sign::header_map` (crates/betterlite-sigv4/src/sign/header_map.rs, declared with `pub mod header_map;` in sign.rs, since lib.rs stays as B10173 leaves it) holds two functions. `insert_signed(headers: &mut HeaderMap, signed: Vec<(String, String)>) -> Result<(), SigV4Error>` inserts each header sign_request returned, through `HeaderName::from_bytes`, which lowercases botocore's spelling, and marks every one but X-Amz-Date sensitive. That is secret-managers' rule today (sigv4.rs L75, checked by prepare_request/tests/signing.rs L256-L258); aws-sigv4 itself marks only the token, which SQS and MCP copy now. `sign_in_place<Body: AsRef<[u8]>>(request: &mut http::Request<Body>, credentials: &Credentials, service: &str, region: &str, now: SystemTime) -> Result<(), SigV4Error>` does botocore's add_auth on an http request, the way MCP does it now. It removes Authorization and X-Amz-Date, and X-Amz-Security-Token when the credentials carry a token (mcp_sigv4/signing.rs L115-L119, botocore's _modify_request_before_signing). It reads every remaining header with repeated values joined by ", ", the loop MCP (L34-L54) and SQS (L38-L52) each have. It signs with sign_request, mode `SigV4Auth`, the request's method, URI and body, and inserts the result with insert_signed. SigV4Error gains `HeaderText { name: String, #[source] source: ToStrError }` with MCP's text "the header {name} cannot be signed because its value is not visible ASCII" (error.rs L31) and `SignedHeader { name: String, #[source] source: http::Error }` with "the signed header {name} is not a valid header value". betterlite-sigv4 adds `http = "1.5.0"`, the version the other crates pin.
+
+
+  Secret-managers. `signed_headers` keeps its signature. It signs the two headers it signs today, Content-Type `application/x-amz-json-1.1` and X-Amz-Target `secretsmanager.<action>`, through sign_request with POST, the endpoint, the body, service `secretsmanager`, the region and credentials from AwsCredentialsInfo, `now` and `SigV4Auth`. `response_headers` still inserts Content-Type and X-Amz-Target first and hands the rest to insert_signed. AwsRequestError (request_signing.rs L134-L164) loses `SigningParams` and `HeaderName`, and `Signing` wraps SigV4Error with its text kept, "failed to sign the Secrets Manager request: {0}"; `HeaderValue` stays for the target header. The match in aws_secret_reads.rs L116-L121 drops the two arms. The crate drops aws-sigv4 and aws-smithy-runtime-api, which only these two files use, keeps aws-credential-types and adds betterlite-sigv4.
+
+
+  SQS and DynamoDB in betterlite-logging. Once the shared code signs, both signing modules would only forward, so they go with their tests and their `pub mod signing;` lines (sqs_logging.rs L9, legacy_dynamodb.rs L4). `build_post` (sqs_logging/sender.rs L120) calls sign_in_place with `Credentials::from(credentials)`, service `sqs` and the region; the service constant moves into sender.rs, and `SendError::Signing` (L36-L37) wraps SigV4Error with its text kept. DynamoDB's `request_headers` (legacy_dynamodb/client.rs L121-L143) calls sign_request with POST, the URL, its two headers, the body, service `dynamodb` (the constant moves into client.rs), the region, the converted credentials, `now` and `SigV4Auth`, and `header_map` stays as it is. `PutItemError::Signing` (L58-L59) wraps SigV4Error with its text kept. betterlite-logging adds betterlite-sigv4 and keeps its AWS dependencies, which s3_transport still uses until B10190.
+
+
+  MCP in betterlite-http. mcp_sigv4/signing.rs keeps `sign_request` with its signature and the Date check (L112-L114), then calls sign_in_place with the converted credentials. UNSIGNED_HEADERS, `signable_headers`, `precomputed_hash`, `apply_instructions` and `signing_params` go: the shared `unsigned` list is the same fourteen names and its `payload` reads X-Amz-Content-SHA256 the same way. McpSigV4Error's `HeaderValue`, `SigningParams`, `SignableRequest`, `Sign` and `SignatureHeader` (error.rs L31-L36 and L39-L59; `DateHeader` stays) become one `Signing { #[source] source: SigV4Error }` with the text "signing the request failed". The test at mcp_sigv4/tests/signing.rs L152-L160 then matches `McpSigV4Error::Signing { source: SigV4Error::HeaderText { name, .. } }` with name `x-bytes`. betterlite-http drops aws-sigv4, keeps aws-smithy-runtime-api (aws_duplex.rs and mcp_sigv4.rs use it) and aws-credential-types, and adds betterlite-sigv4.
+
+
+  Strands in betterlite-openai. `AwsCredentials` (signing.rs L40-L45) is a copy of `Credentials` and goes: `credentials_from_params`, `JsonPost`, `StrandsDeciderDecisionsConfig.credentials` (strands_decider.rs L39) and strands_signing/tests.rs use `betterlite_sigv4::credentials::Credentials`, which has the same three fields. `sign_json_post` passes the session headers as pairs to sign_request with POST, the URL, the body, service `bedrock-agentcore`, the region, the credentials, `now` and `SigV4Auth`. It then inserts the returned headers, already in botocore's spelling, and Content-Length into a copy of the session headers, as it does now. PROVIDER_NAME and `litellm_casing` go, and SigningError's three variants become `Sign(#[source] SigV4Error)` with the text "signing the request failed". betterlite-openai drops aws-credential-types, aws-sigv4 and aws-smithy-runtime-api, which only signing.rs uses, and adds betterlite-sigv4.
+
+
+  Tests. sign/header_map/tests.rs holds the botocore answers that leave with sqs_logging/signing/tests.rs: `signs_an_sqs_post_like_botocore` and `signs_an_sqs_post_with_a_session_token_like_botocore` sign the SQS request of that file (POST https://sqs.us-east-1.amazonaws.com/123456789012/test-queue, Content-Type application/x-www-form-urlencoded, body `Action=SendMessage&Version=2012-11-05&MessageBody=test-body`, key AKIAIOSFODNN7EXAMPLE, region us-east-1, 2026-01-02T03:04:05Z) and expect its two Authorization values (L13-L14), X-Amz-Date 20260102T030405Z, the token and the body untouched. `replaces_stale_signing_headers` sends a stale Authorization, X-Amz-Date and X-Amz-Security-Token: the first two are replaced, and the token stays as sent without a session token and is replaced with one. `joins_repeated_header_values` checks that a header sent twice as `a` and `b` signs like one sent once as `a, b`. `marks_every_signed_header_but_the_date_sensitive` and `refuses_a_header_value_that_is_not_text` cover insert_signed and HeaderText. The From impl is covered by the SQS answers, which start from aws credentials. legacy_dynamodb/client/tests.rs gains `signs_the_put_item_for_the_dynamodb_service_and_region`: the recorded Authorization starts with `AWS4-HMAC-SHA256 Credential=access/20260102/us-east-1/dynamodb/aws4_request`, the check the deleted signing tests made (legacy_dynamodb/signing/tests.rs L59-L67). The MCP tests and the Strands helper cases already compare the signed output with botocore byte for byte and must pass unchanged, apart from the one match above.
+
+
+  What users see: the same signed requests, with two moves toward botocore. A header a Strands caller forwards that botocore never signs (User-Agent, X-Amzn-Trace-Id and the rest of `unsigned`) leaves the signature, and SQS and MCP mark Authorization sensitive, so it no longer prints in Debug output.
+scope:
+  paths:
+    - crates/betterlite-sigv4/Cargo.toml
+    - crates/betterlite-sigv4/src/credentials.rs
+    - crates/betterlite-sigv4/src/error.rs
+    - crates/betterlite-sigv4/src/sign.rs
+    - crates/betterlite-sigv4/src/sign/header_map.rs
+    - crates/betterlite-sigv4/src/sign/header_map/**
+    - Cargo.lock
+    - crates/betterlite-secret-managers/Cargo.toml
+    - crates/betterlite-secret-managers/src/aws/request_signing.rs
+    - crates/betterlite-secret-managers/src/aws/request_signing/sigv4.rs
+    - crates/betterlite-secret-managers/src/aws_secret_reads.rs
+    - crates/betterlite-logging/Cargo.toml
+    - crates/betterlite-logging/src/sqs_logging.rs
+    - crates/betterlite-logging/src/sqs_logging/signing.rs
+    - crates/betterlite-logging/src/sqs_logging/signing/tests.rs
+    - crates/betterlite-logging/src/sqs_logging/sender.rs
+    - crates/betterlite-logging/src/legacy_dynamodb.rs
+    - crates/betterlite-logging/src/legacy_dynamodb/signing.rs
+    - crates/betterlite-logging/src/legacy_dynamodb/signing/tests.rs
+    - crates/betterlite-logging/src/legacy_dynamodb/client.rs
+    - crates/betterlite-logging/src/legacy_dynamodb/client/tests.rs
+    - crates/betterlite-http/Cargo.toml
+    - crates/betterlite-http/src/mcp_sigv4/signing.rs
+    - crates/betterlite-http/src/mcp_sigv4/error.rs
+    - crates/betterlite-http/src/mcp_sigv4/tests/signing.rs
+    - crates/betterlite-openai/Cargo.toml
+    - crates/betterlite-openai/src/providers/strands_decider.rs
+    - crates/betterlite-openai/src/providers/strands_decider/signing.rs
+    - crates/betterlite-openai/src/providers/strands_decider/strands_signing/tests.rs
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/aws_secret_manager_v2.py#L641-L699
+    why: _prepare_request, the SigV4Auth POST with Content-Type and X-Amz-Target that secret-managers ports.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/sqs.py#L247-L300
+    why: async_send_message, the SigV4Auth form POST the SQS sender ports.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/dynamodb.py#L24-L28
+    why: the boto3 DynamoDB resource whose put_item botocore signs with SigV4Auth.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L353-L372
+    why: MCPSigV4Auth.auth_flow, SigV4Auth.add_auth over every httpx header, which sign_in_place now does for MCP and SQS.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/strands_decider/decisions/transformation.py#L127-L143
+    why: the Strands decider signs the AgentCore POST through sign_aws_json_post.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L1733-L1749
+    why: sign_aws_json_post, SigV4Auth over the session headers, the step sign_json_post shares.
+dod:
+  - text: No crate outside betterlite-sigv4 and betterlite-bedrock builds aws-sigv4 signing parameters for these five signers; the SQS and DynamoDB signing modules, MCP's own header loops and Strands' AwsCredentials are gone, and the three crates that no longer sign drop aws-sigv4.
+    proof: [no-signing-copies]
+  - text: betterlite-sigv4's sign_in_place and insert_signed sign SQS's request like botocore, replace stale signing headers, join repeated values, mark every header but X-Amz-Date sensitive and refuse a value that is not text.
+    proof: [header-map-tests]
+  - text: Secret-managers still signs and maps its errors as before, with Authorization and the token sensitive.
+    proof: [no-signing-copies, secret-managers-tests]
+  - text: SQS and DynamoDB still sign their requests for their own service and region.
+    proof: [no-signing-copies, sqs-tests, dynamodb-tests]
+  - text: MCP's signed requests still match the AWS vectors and LiteLLM's helper cases, and a header that is not text fails as SigV4Error::HeaderText.
+    proof: [no-signing-copies, mcp-tests, mcp-cases]
+  - text: Strands signs with betterlite_sigv4's Credentials, and its tests and helper cases still match LiteLLM's signed headers.
+    proof: [no-signing-copies, strands-tests, strands-cases]
+checks:
+  optional: [mutants]
+  commands:
+    - id: no-signing-copies
+      why: a crate still builds its own aws-sigv4 signing parameters, a forwarding signing module or AwsCredentials is left, or a crate that no longer signs keeps aws-sigv4
+      run: test ! -e crates/betterlite-logging/src/sqs_logging/signing.rs && test ! -e crates/betterlite-logging/src/legacy_dynamodb/signing.rs && test -z "$(grep -rlE 'v4::SigningParams|SigningSettings|SignableRequest' crates/betterlite-secret-managers/src crates/betterlite-logging/src/sqs_logging crates/betterlite-logging/src/legacy_dynamodb crates/betterlite-http/src crates/betterlite-openai/src)" && test -z "$(grep -rn 'pub struct AwsCredentials' crates/betterlite-openai/src)" && test -z "$(grep -nE '^aws-sigv4 ' crates/betterlite-secret-managers/Cargo.toml crates/betterlite-http/Cargo.toml crates/betterlite-openai/Cargo.toml)"
+    - id: header-map-tests
+      why: sign_in_place or insert_signed is missing, signs differently from botocore, keeps a stale header, or marks the wrong headers sensitive
+      run: cargo nextest run --locked -p betterlite-sigv4 --no-tests=fail -E 'test(/^sign::header_map::/)'
+    - id: secret-managers-tests
+      why: the Secrets Manager request lost a signed header, its sensitivity or its error mapping
+      run: grep -rq betterlite_sigv4 crates/betterlite-secret-managers/src/aws && cargo nextest run --locked -p betterlite-secret-managers --no-tests=fail -E 'test(/^aws::request_signing::aws_request_signing::/) | test(/^aws_secret_reads::/)'
+    - id: sqs-tests
+      why: the SQS sender no longer signs its POST or maps the signing error
+      run: grep -q sign_in_place crates/betterlite-logging/src/sqs_logging/sender.rs && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^sqs_logging::/)'
+    - id: dynamodb-tests
+      why: the PutItem request is not signed for the dynamodb service and region, or the DynamoDB logger changed
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^legacy_dynamodb::client::tests::signs_the_put_item_for_the_dynamodb_service_and_region$/)' && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(legacy_dynamodb|registry::catalog::dynamodb)::/) - test(/replays_the_/)'
+    - id: mcp-tests
+      why: an MCP signed request changed against the AWS vectors, or the header-text error no longer reaches the caller
+      run: grep -q sign_in_place crates/betterlite-http/src/mcp_sigv4/signing.rs && cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^mcp_sigv4::/) - test(/replays_the_/)'
+    - id: mcp-cases
+      why: the MCP helper cases no longer match LiteLLM's signed headers
+      run: grep -q sign_in_place crates/betterlite-http/src/mcp_sigv4/signing.rs && cargo run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-http -- tools/oracle/cases/helpers/mcp-sigv4
+    - id: strands-tests
+      why: the Strands decider lost a signed header, its casing or Content-Length
+      run: grep -q betterlite_sigv4 crates/betterlite-openai/src/providers/strands_decider/signing.rs && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^providers::strands_decider::/)'
+    - id: strands-cases
+      why: the Strands helper cases no longer match LiteLLM's signed AgentCore request
+      run: grep -q betterlite_sigv4 crates/betterlite-openai/src/providers/strands_decider/signing.rs && cargo run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-openai -- tools/oracle/cases/decisions
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The S3 signer in betterlite-logging s3_transport/signing.rs with its five callers, and the ElastiCache and RDS query presigners: B10190."
+  - "The credential side of each signer: secret-managers' CredentialResolver and AwsCredentialsInfo, SQS's and DynamoDB's CredentialSource, MCP's credential cache and STS flows, and Strands' credentials_from_params keep their types and their logic. B10174 and B10175 own the AWS credential chain."
+  - "Strands' JSON POST wrapper is a smaller twin of betterlite-bedrock's sign_aws_json_post (signing/json_post.rs), whose header preparation lives in betterlite-bedrock's signing/headers.rs and cannot be reached from betterlite-openai. Moving that layer down is a separate change."
+  - "betterlite-bedrock's own signers already call betterlite_sigv4 after B10173."
+pitfalls:
+  - "sign_request returns Authorization, X-Amz-Date and X-Amz-Security-Token in botocore's spelling; `HeaderName::from_static` panics on capitals, so insert_signed goes through `HeaderName::from_bytes`, and the X-Amz-Date test compares names with eq_ignore_ascii_case."
+  - "sign_in_place keeps X-Amz-Security-Token when the credentials carry no token, as botocore and MCP do; drop it only when it is about to be replaced."
+  - "MCP's Date check stays in mcp_sigv4/signing.rs and runs before sign_in_place: the shared function never sees a Date header from MCP, and SQS never sends one."
+  - "Secret-managers' test expects Authorization sensitive (prepare_request/tests/signing.rs L256), so insert_signed marks every header but X-Amz-Date, not aws-sigv4's own flags."
+  - "Strands' Headers is a BTreeMap, so the returned botocore names land as new keys exactly as litellm_casing put them; don't lowercase them."
+  - "Deleting sqs_logging/signing.rs and legacy_dynamodb/signing.rs needs their `pub mod signing;` lines gone too, or the crate stops compiling."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

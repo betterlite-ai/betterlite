@@ -1,14 +1,14 @@
 id: B10156
 milestone: M8 platform
 title: Close the dangling OTel server span on error answers
-status: todo
+status: done
 depends_on: [B253, B3853, B3858, B8410, B8910]
 file: tasks/B10156-request-error-span.yaml
 covers:
   - "litellm/proxy/proxy_server.py"
 parent: B124
 split_from: B8389
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3389

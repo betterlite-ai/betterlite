@@ -1,14 +1,14 @@
 id: B10127
 milestone: M9 agents and mcp
 title: MCP dashboard session auth contexts
-status: todo
+status: done
 depends_on: [B10126, B10070, B2314]
 file: tasks/B10127-mcp-session-auth-contexts.yaml
 covers:
   - "litellm/proxy/_experimental/mcp_server/ui_session_utils.py"
 parent: B137
 split_from: B4672
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3373
