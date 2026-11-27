@@ -4,6 +4,8 @@
     reason = "each case scripts one fake field at a time"
 )]
 
+mod ranking_errors;
+
 use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::sync::Mutex;
