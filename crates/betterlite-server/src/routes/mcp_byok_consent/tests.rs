@@ -172,6 +172,19 @@ async fn the_get_page_needs_no_cookie_and_serves_html() {
 }
 
 #[tokio::test]
+async fn the_get_falls_back_until_the_registry_is_wired_into_the_state() {
+    let base = valid_query();
+    let query = format!("{base}&server_id=srv-1");
+    let response = send(
+        app(AuthCodeStore::new(), None, None),
+        get(&authorize_uri(&query)),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(text(response).await.contains("Connect MCP Server MCP"));
+}
+
+#[tokio::test]
 async fn the_get_refuses_a_missing_code_challenge() {
     let query = "response_type=code&redirect_uri=http://127.0.0.1:1456/callback";
     let response = send(
