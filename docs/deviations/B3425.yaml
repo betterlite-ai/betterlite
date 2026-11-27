@@ -25,11 +25,13 @@ deviations:
       Errors surface as EvalRunFailure with the typed cause in error and the error class one
       litellm.exception_type call produced in class, instead of being raised. An already-classified
       exception is not classified twice, and a preparation error is mapped with the provider the call
-      resolved, as LiteLLM's sync body does.
+      resolved, as LiteLLM's sync body does. local_vars and kwargs, which LiteLLM hands to
+      exception_type as completion_kwargs and extra_kwargs, are not carried.
     why: >-
       Rust has no exception unwinding across the SDK boundary; every call module returns this pair. The
       provider, message and status of each class are the ones exception_type builds from the same
-      original exception and the same custom_llm_provider.
+      original exception and the same custom_llm_provider. The logging state already holds the call's
+      kwargs and identifiers, and betterlite's dispatch classifies the exception itself.
     link: >-
       https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1608-L1615
   - what: >-

@@ -364,6 +364,7 @@ async fn eval_run_lifecycle_async_variants_await_the_handler_with_the_flag() {
     let deps = run_deps(&fake, &config, &redactor);
     let mut kwargs = auth_kwargs();
     kwargs.insert("aget_run".to_owned(), Json::Bool(false));
+    kwargs.insert("trace_extra".to_owned(), Json::Bool(true));
     let request = base_request(&kwargs);
     let mut logging = state("aget_run");
     let run = aget_run(&deps, &request, &mut logging)
@@ -396,6 +397,7 @@ async fn eval_run_lifecycle_async_variants_await_the_handler_with_the_flag() {
     assert!(!params.contains_key("acancel_run"));
     assert!(!params.contains_key("adelete_run"));
     assert!(params.contains_key("api_key"));
+    assert!(params.contains_key("trace_extra"));
 }
 
 // An error the async handler raises is mapped once, with the provider the call resolved
