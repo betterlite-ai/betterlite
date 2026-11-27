@@ -7,27 +7,26 @@ from litellm.exceptions import Timeout
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.bedrock.common_utils import BedrockError
 from litellm.llms.bedrock.image_edit.handler import BedrockImageEdit
-from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler, HTTPHandler
 from litellm.types.utils import ImageResponse
 from pydantic import JsonValue
 
-from .contracts import Fixture, Probe
+from .contracts import Client, Fixture, Probe, client_for
 from .recording import JSON, Recorder, cost_of, image_entries, shown_headers
 
 HANDLER: Final[type[BedrockImageEdit]] = BedrockImageEdit
-Client = HTTPHandler | AsyncHTTPHandler | None
 
 
 class EditHandler(Protocol):
     def __call__(
         self,
-        model: str,
-        image: list[str],
-        prompt: str | None,
-        model_response: ImageResponse,
-        optional_params: dict[str, JsonValue],
-        logging_obj: Logging,
-        timeout: float | None,
+        _model: str,
+        _image: list[str],
+        _prompt: str | None,
+        _model_response: ImageResponse,
+        _optional_params: dict[str, JsonValue],
+        _logging_obj: Logging,
+        _timeout: float | None,
+        /,
         *,
         aimage_edit: bool,
         api_base: str | None,
@@ -35,17 +34,6 @@ class EditHandler(Protocol):
         client: Client,
         api_key: str | None,
     ) -> ImageResponse | Coroutine[None, None, ImageResponse]: ...
-
-
-def client_for(probe: Probe, fixture: Fixture) -> HTTPHandler | AsyncHTTPHandler:
-    transport = httpx.MockTransport(fixture.respond)
-    match probe.supplied:
-        case "sync":
-            return HTTPHandler(client=httpx.Client(transport=transport))
-        case "async":
-            return AsyncHTTPHandler(transport=transport)
-        case "none":
-            raise ValueError("the oracle case supplies a client")
 
 
 def perform(probe: Probe, logging: Logging) -> tuple[Fixture, ImageResponse]:
@@ -77,12 +65,13 @@ def prepare_answer(probe: Probe) -> JsonValue:
     logging = Recorder()
     fixture, _ = perform(probe, logging)
     request = fixture.requests[0]
+    remaining: list[str] = sorted(probe.optional_params)
     return {
         "endpoint_url": str(request.url),
         "headers": JSON.validate_python(shown_headers(request)),
         "body": request.content.decode("utf-8"),
         "data": JSON.validate_python(JSON.validate_json(request.content)),
-        "remaining_params": JSON.validate_python(sorted(probe.optional_params)),
+        "remaining_params": JSON.validate_python(remaining),
         "pre_call": logging.pre,
     }
 

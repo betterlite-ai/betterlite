@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from typing import Final, Literal, TypedDict
 
 import httpx
+from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler, HTTPHandler
 from pydantic import JsonValue, TypeAdapter
 
 
@@ -89,3 +90,17 @@ class Fixture:
                     headers=reply.headers,
                     content=reply.body.encode(),
                 )
+
+
+Client = HTTPHandler | AsyncHTTPHandler | None
+
+
+def client_for(probe: Probe, fixture: Fixture) -> HTTPHandler | AsyncHTTPHandler:
+    transport = httpx.MockTransport(fixture.respond)
+    match probe.supplied:
+        case "sync":
+            return HTTPHandler(client=httpx.Client(transport=transport))
+        case "async":
+            return AsyncHTTPHandler(transport=transport)
+        case "none":
+            raise ValueError("the oracle case supplies a client")
