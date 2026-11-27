@@ -46,9 +46,10 @@ pub fn merge_aws_request_params(deployment: &Params, request: &Params) -> Params
 pub fn raw_params(params: &Params) -> Result<BTreeMap<String, Box<RawValue>>, serde_json::Error> {
     let mut raw = BTreeMap::new();
     for (name, value) in params {
-        let text = match value {
-            RequestValue::Raw(text) => text.clone(),
-            other => serde_json::to_string(&policy_json(other))?,
+        let text = if let RequestValue::Raw(text) = value {
+            text.clone()
+        } else {
+            serde_json::to_string(&policy_json(value))?
         };
         raw.insert(name.clone(), RawValue::from_string(text)?);
     }
