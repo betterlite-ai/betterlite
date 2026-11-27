@@ -100,10 +100,10 @@ fn invalid_scalar_rejected(#[case] source: &str) {
 #[test]
 fn budget_text_names_the_field() {
     let error = load("litellm_settings:\n  max_budget: soon\n").unwrap_err();
-    assert!(matches!(
-        error,
-        ConfigError::InvalidFloat { ref path, .. } if path == "litellm_settings.max_budget"
-    ));
+    let ConfigError::InvalidFloat { path, .. } = error else {
+        panic!("text the float parser cannot read is an invalid float");
+    };
+    assert_eq!(path, "litellm_settings.max_budget");
 }
 
 #[test]
