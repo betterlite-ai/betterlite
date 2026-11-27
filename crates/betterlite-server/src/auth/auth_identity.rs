@@ -13,6 +13,7 @@ use crate::auth::auth_key_lookup::KeyLookupStageInput;
 use crate::auth::auth_model_patterns::{ModelAccessRejection, ModelPatternStageInput, run_stage};
 use crate::auth::auth_org_lookup::OrgStageInput;
 use crate::auth::auth_policy_support::{self, AuthPolicySupportStageInput};
+use crate::auth::auth_pricing::PricingStageInput;
 use crate::auth::auth_request_models::{RequestModelStageInput, resolve};
 use crate::auth::auth_request_policy::{self, AuthRequestPolicyStageInput};
 use crate::auth::auth_resource_grants::{self, ResourceGrantStageInput};
@@ -37,6 +38,7 @@ pub enum AuthBackend {
     AuthModelPatterns,
     EntityModelAccess,
     AuthResourceGrants,
+    AuthPricing,
     AuthTagBudgets,
     AuthKeyBudgets,
     TeamBudgetAdmission,
@@ -59,6 +61,7 @@ pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
     AuthBackend::AuthModelPatterns,
     AuthBackend::EntityModelAccess,
     AuthBackend::AuthResourceGrants,
+    AuthBackend::AuthPricing,
     AuthBackend::AuthTagBudgets,
     AuthBackend::AuthKeyBudgets,
     AuthBackend::TeamBudgetAdmission,
@@ -82,6 +85,7 @@ pub enum StageInput {
     AuthModelPatterns(Box<ModelPatternStageInput>),
     EntityModelAccess(Box<EntityModelStageInput>),
     AuthResourceGrants(Box<ResourceGrantStageInput>),
+    AuthPricing(Box<PricingStageInput>),
     AuthTagBudgets(Box<TagBudgetStageInput>),
     AuthKeyBudgets(Box<KeyBudgetStageInput>),
     TeamBudgetAdmission(Box<TeamBudgetStageInput>),
@@ -121,6 +125,7 @@ pub(crate) enum StageFailure {
     EntityModelAccess(Box<ProxyException>),
     AuthRequestPolicy(Box<ProxyException>),
     ResourceGrants(Box<ProxyException>),
+    Pricing(Box<ProxyException>),
     TagBudgets(Box<ProxyException>),
     RequestBodySafety(Box<ProxyException>),
     VirtualKeyRoutes(Box<ProxyException>),
@@ -162,6 +167,7 @@ impl StageInput {
             Self::AuthModelPatterns(_) => AuthBackend::AuthModelPatterns,
             Self::EntityModelAccess(_) => AuthBackend::EntityModelAccess,
             Self::AuthResourceGrants(_) => AuthBackend::AuthResourceGrants,
+            Self::AuthPricing(_) => AuthBackend::AuthPricing,
             Self::AuthTagBudgets(_) => AuthBackend::AuthTagBudgets,
             Self::AuthKeyBudgets(_) => AuthBackend::AuthKeyBudgets,
             Self::TeamBudgetAdmission(_) => AuthBackend::TeamBudgetAdmission,
@@ -206,6 +212,7 @@ pub(crate) fn dispatch(
         StageInput::AuthResourceGrants(stage) => {
             auth_resource_grants::run_stage(stage).map_err(StageFailure::ResourceGrants)
         }
+        StageInput::AuthPricing(stage) => Ok(stage.context.clone()),
         StageInput::AuthTagBudgets(stage) => Ok(stage.context.clone()),
         StageInput::AuthKeyBudgets(stage) => Ok(stage.context.clone()),
         StageInput::TeamBudgetAdmission(stage) => Ok(stage.context.clone()),

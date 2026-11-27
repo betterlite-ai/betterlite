@@ -112,6 +112,7 @@ fn master_context(master_key: &SecretString) -> AuthContext {
             | StageFailure::EntityModelAccess(_)
             | StageFailure::AuthRequestPolicy(_)
             | StageFailure::ResourceGrants(_)
+            | StageFailure::Pricing(_)
             | StageFailure::TagBudgets(_)
             | StageFailure::RequestBodySafety(_)
             | StageFailure::VirtualKeyRoutes(_)
