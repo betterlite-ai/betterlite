@@ -62,8 +62,7 @@ impl RealtimeSession {
         )]))?;
         let http_settings = load_http_settings(&document, environment.clone())
             .map_err(SessionError::HttpSettings)?;
-        let client = outbound_client(&environment)
-            .map_err(|error| SessionError::Client(error.to_string()))?;
+        let client = outbound_client(&environment)?;
         let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(SessionError::Redact)?;
         Ok(Self {
             catalog: BundledCatalog::default().get(),

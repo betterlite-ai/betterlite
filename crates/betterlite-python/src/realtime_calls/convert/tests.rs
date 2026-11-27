@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 
 use betterlite_core::api::realtime_http_calls::error::{RealtimeHttpCallsError, RecordError};
 use betterlite_models::decisions::Json;
+use betterlite_models::resolution::ResolutionError;
 use betterlite_provider::api::realtime_http_transport::error::{
     ProviderError, RealtimeHttpError, StatusFailure, TimeoutFailure,
 };
@@ -54,7 +55,16 @@ fn request_transcription_keeps_the_session_body() {
         request.common.model.as_deref(),
         Some("gpt-realtime-whisper")
     );
-    assert!(request.transcription_session.is_some());
+    assert_eq!(
+        request.transcription_session,
+        Some(Json::Object(IndexMap::from([(
+            String::from("input_audio_transcription"),
+            Json::Object(IndexMap::from([(
+                String::from("model"),
+                Json::Text(String::from("gpt-4o-transcribe")),
+            )])),
+        )])))
+    );
 }
 
 #[test]
@@ -75,7 +85,13 @@ fn request_calls_takes_the_sdp_from_the_last_blob() {
     let request = calls(arguments(payload), vec![b"offer".to_vec()]).unwrap();
     assert_eq!(request.ephemeral_key.as_str(), "ek_1");
     assert_eq!(request.sdp, b"offer".to_vec());
-    assert!(request.session.is_some());
+    assert_eq!(
+        request.session,
+        Some(Json::Object(IndexMap::from([(
+            String::from("type"),
+            Json::Text(String::from("realtime")),
+        )])))
+    );
 }
 
 #[test]
@@ -125,6 +141,17 @@ fn error_timeout_is_litellm_timeout() {
     ));
     assert_eq!(failure.kind.as_str(), "Timeout");
     assert_eq!(failure.status_code, None);
+}
+
+#[test]
+fn error_resolution_is_a_bad_request() {
+    let failure = http_failure(&RealtimeHttpCallsError::Resolution(
+        ResolutionError::MissingProvider {
+            model: String::from("gpt-4o-realtime-preview"),
+        },
+    ));
+    assert_eq!(failure.kind.as_str(), "BadRequestError");
+    assert_eq!(failure.status_code, Some(400));
 }
 
 #[test]

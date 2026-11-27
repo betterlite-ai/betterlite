@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use crate::completion::error::SessionError as CompletionSessionError;
 use betterlite_config::api::realtime_http_calls::SettingsError;
 use betterlite_redact::error::RedactionError;
 use pyo3::PyErr;
@@ -46,8 +47,8 @@ pub(crate) enum SessionError {
     Json(#[from] serde_json::Error),
     #[error("the realtime HTTP settings are invalid: {0}")]
     HttpSettings(#[source] SettingsError),
-    #[error("the outbound client could not be built: {0}")]
-    Client(String),
+    #[error(transparent)]
+    Completion(#[from] CompletionSessionError),
     #[error("the redactor could not be built: {0}")]
     Redact(#[source] RedactionError),
 }

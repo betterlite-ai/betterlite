@@ -130,9 +130,12 @@ pub(crate) fn calls(
 pub(crate) fn http_failure(error: &RealtimeHttpCallsError<RealtimeHttpError>) -> CallFailure {
     match error {
         RealtimeHttpCallsError::Dispatch(inner) => dispatch_failure(inner),
-        RealtimeHttpCallsError::Resolution(source) => {
-            CallFailure::class("BadRequestError", source.to_string())
-        }
+        RealtimeHttpCallsError::Resolution(source) => CallFailure {
+            kind: String::from("BadRequestError"),
+            message: source.to_string(),
+            status_code: Some(400),
+            headers: None,
+        },
         RealtimeHttpCallsError::Record(source) => {
             CallFailure::class("ValueError", source.to_string())
         }
