@@ -39,6 +39,7 @@ from typing_extensions import override
 JSON: Final = TypeAdapter(JsonValue)
 BATCH_USAGE: Final = TypeAdapter(BatchFileUsage)
 RESERVATION: Final = TypeAdapter(BatchEnqueuedTokenReservation)
+REDACTED: Final = "REDACTED"
 
 
 class StagesJson(TypedDict):
@@ -67,8 +68,9 @@ class Input(TypedDict):
 
 
 class Sink(logging.Handler):
-    def __init__(self) -> None:
+    def __init__(self, api_key: str | None) -> None:
         super().__init__(level=logging.DEBUG)
+        self._api_key = api_key
         self.lines: list[JsonValue] = []
         logging.getLogger("LiteLLM Proxy").setLevel(logging.DEBUG)
         logging.getLogger("LiteLLM Proxy").addHandler(self)
@@ -76,6 +78,10 @@ class Sink(logging.Handler):
     @override
     def emit(self, record: logging.LogRecord) -> None:
         message = record.getMessage()
+        api_key = self._api_key
+        if api_key is not None:
+            # the same redaction betterlite applies, so the rest of each line still compares
+            message = message.replace(api_key, REDACTED)
         if not message.startswith("Traceback (most recent call last)"):
             self.lines.append({"level": record.levelname.lower(), "message": message})
 
@@ -213,7 +219,7 @@ async def lifecycle_answer(value: Input, auth: UserAPIKeyAuth) -> JsonValue:
     call = value["call"]
     effects: list[JsonValue] = []
     limiter, store = scripted(value, effects)
-    diagnostics = Sink()
+    diagnostics = Sink(auth.api_key)
     if call["op"] == "create":
         hook = ScriptedHook(value["stages"], effects, limiter)
         await hook.async_pre_call_hook(  # type: ignore[misc]  # pyright: ignore[reportAny, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L1180
@@ -264,7 +270,7 @@ async def retrieve_answer(value: Input, auth: UserAPIKeyAuth) -> JsonValue:
     memory.cache_dict = dict(cast(dict[str, JsonValue], value["memory"]["entries"]))  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L158
     remote = ScriptedRedis(value["remote"], effects)
     litellm.cache = Cache(_backend=remote, type=LiteLLMCacheType.REDIS)
-    diagnostics = Sink()
+    diagnostics = Sink(auth.api_key)
     hook = BatchRedisRequests()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_redis_get.py#L18
     await hook.async_pre_call_hook(  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_redis_get.py#L34
         user_api_key_dict=auth,
