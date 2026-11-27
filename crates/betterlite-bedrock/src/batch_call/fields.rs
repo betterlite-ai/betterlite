@@ -1,7 +1,8 @@
 use betterlite_models::decisions::Json;
 use betterlite_openai::batches::records::BatchStatus;
 use indexmap::IndexMap;
-use serde_json::Number;
+
+use crate::converse_events::wire::non_empty;
 
 use super::error::BatchCallError;
 
@@ -84,35 +85,11 @@ pub fn falsey_text(
     let Some(value) = fields.get(field) else {
         return Ok(String::new());
     };
-    if falsey(value) {
+    if !non_empty(value) {
         return Ok(String::new());
     }
     let Json::Text(text) = value else {
         return Err(BatchCallError::Field { field });
     };
     Ok(text.clone())
-}
-
-// Python's falsey values are null, false, zero, an empty string, list and object
-fn falsey(value: &Json) -> bool {
-    match value {
-        Json::Null => true,
-        Json::Bool(flag) => !flag,
-        Json::Number(number) => zero(number),
-        Json::Text(text) => text.is_empty(),
-        Json::List(items) => items.is_empty(),
-        Json::Object(entries) => entries.is_empty(),
-    }
-}
-
-// both 0 and 0.0 are falsey in Python, and -0.0's absolute value has no bits set either
-fn zero(number: &Number) -> bool {
-    number.as_i64().map_or_else(
-        || {
-            number
-                .as_f64()
-                .is_some_and(|value| value.abs().to_bits() == 0)
-        },
-        |value| value == 0,
-    )
 }
