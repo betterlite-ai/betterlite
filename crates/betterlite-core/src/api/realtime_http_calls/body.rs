@@ -24,13 +24,6 @@ where
     }
 }
 
-// (req.session.model if req.session is not None else None) or req.model or "gpt-4o-realtime-preview"
-#[must_use]
-pub fn client_secret_model(session: Option<&RealtimeSessionConfig>, model: Option<&str>) -> String {
-    let nested = session.and_then(|record| record.model.as_deref());
-    model_or_default(nested.filter(|name| !name.is_empty()).or(model))
-}
-
 #[must_use]
 pub fn model_or_default(model: Option<&str>) -> String {
     model

@@ -104,6 +104,9 @@ where
         let model_name = body::model_or_default(call.common.model);
         let (resolved, provider_credentials) = self.route(&model_name, &call.common)?;
         let session = body::calls_session(call.session, &resolved.model)?;
+        let logged_session = session
+            .as_ref()
+            .map_or(Json::Null, |fields| Json::Object(fields.clone()));
         let timeout = self.timeout(call.common.timeout)?;
         let request = calls_request(
             &call,
@@ -117,7 +120,10 @@ where
             &call.common,
             &resolved,
             &provider_credentials.api_base,
-            calls_params(session.as_ref()),
+            params([
+                ("realtime_calls", Json::Bool(true)),
+                ("session", logged_session),
+            ]),
         )?;
         self.dispatch
             .exchange(request, logging)
@@ -193,12 +199,6 @@ where
     }
 }
 
-// arealtime_calls' logged params: the rewritten session the call carries.
-fn calls_params(session: Option<&IndexMap<String, Json>>) -> IndexMap<String, Json> {
-    let entry = session.map_or(Json::Null, |fields| Json::Object(fields.clone()));
-    params([("realtime_calls", Json::Bool(true)), ("session", entry)])
-}
-
 // async_realtime_calls_handler's request: the caller's ephemeral key, the SDP offer and the rewritten session.
 fn calls_request<'req>(
     call: &'req RealtimeCallsCall<'req>,
@@ -229,7 +229,13 @@ fn session_plan(operation: SessionOperation<'_>) -> Result<SessionPlan<'_>, Reco
             let expires_after = body::optional(call.expires_after, "expires_after")?;
             SessionPlan {
                 common: &call.common,
-                model_name: body::client_secret_model(session.as_ref(), call.common.model),
+                model_name: body::model_or_default(
+                    session
+                        .as_ref()
+                        .and_then(|record| record.model.as_deref())
+                        .filter(|name| !name.is_empty())
+                        .or(call.common.model),
+                ),
                 endpoint: SessionEndpoint::ClientSecrets,
                 optional_params: params([
                     (
