@@ -166,6 +166,18 @@ async fn cookie_missing_login_method() {
 }
 
 #[tokio::test]
+async fn cookie_unknown_login_method() {
+    let claims = Claims {
+        login_method: Some("api_key"),
+        ..ui_claims()
+    };
+    assert_eq!(
+        admits(Some(&token(claims, MASTER_KEY)), MASTER_KEY, true).await,
+        None
+    );
+}
+
+#[tokio::test]
 async fn cookie_missing_user_id() {
     let claims = Claims {
         user_id: None,

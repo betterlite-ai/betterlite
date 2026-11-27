@@ -163,6 +163,13 @@ fn header_errors_are_refused(#[case] header: &str, #[case] expected: DecodeError
 }
 
 #[test]
+fn a_critical_b64_header_is_accepted() {
+    let header = r#"{"alg":"HS256","crit":["b64"],"b64":true}"#;
+    let cookie = decode_session_cookie(&token(header, VALID_PAYLOAD)).unwrap();
+    assert_eq!(cookie.claims.exp, FUTURE_EXPIRY);
+}
+
+#[test]
 fn byte_input_that_is_not_text_or_a_compact_jwt_is_refused() {
     assert_eq!(
         decode_session_cookie(&[0xff, 0xfe]),
@@ -241,8 +248,9 @@ fn segment_padding_follows_the_compact_encoding_rules() {
         decode_session_cookie(format!("{header}====.{payload}.AAAA").as_bytes()),
         Err(DecodeError::Header)
     );
+    let padded_payload = format!("{}=", segment(r#"{"exp":1}"#));
     assert_eq!(
-        decode_session_cookie(format!("{header}.{}.AAAA", segment(r#"{"exp":1}"#)).as_bytes()),
+        decode_session_cookie(format!("{header}.{padded_payload}.AAAA").as_bytes()),
         Err(DecodeError::Payload)
     );
     assert_eq!(
