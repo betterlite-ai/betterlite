@@ -9,7 +9,7 @@ use betterlite_http_fixture::request::Request;
 use betterlite_http_fixture::server::serve;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::types::{PyAnyMethods as _, PyDict, PyDictMethods as _, PyModule};
-use pyo3::{Py, Python};
+use pyo3::{Py, PyResult, Python};
 
 use super::{NativeVideoEditSession, is_litellm_owned_kwarg};
 use crate::video_edits::error::NativeVideoEditError;
@@ -33,25 +33,23 @@ fn new_session(py: Python<'_>) -> Py<NativeVideoEditSession> {
     Py::new(py, session).unwrap()
 }
 
-fn invoke(method: &str, payload: &str, blobs: Vec<Vec<u8>>) -> String {
+// The async twins need a running loop, so run every method through asyncio.run as Python does.
+fn run_method(method: &str, payload: &str, blobs: Vec<Vec<u8>>) -> PyResult<String> {
     Python::initialize();
     Python::attach(|py| {
-        let module = PyModule::new(py, "video_edit_test").unwrap();
-        register(&module).unwrap();
-        assert!(module.hasattr("NativeVideoEditError").unwrap());
+        let module = PyModule::new(py, "video_edit_test")?;
+        register(&module)?;
+        assert!(module.hasattr("NativeVideoEditError")?);
         let session = module
-            .getattr("NativeVideoEditSession")
-            .unwrap()
-            .call1((r#"{"environment":{}}"#,))
-            .unwrap();
+            .getattr("NativeVideoEditSession")?
+            .call1((r#"{"environment":{}}"#,))?;
         let globals = PyDict::new(py);
-        globals.set_item("session", session).unwrap();
-        globals.set_item("method", method).unwrap();
-        globals.set_item("payload", payload).unwrap();
-        globals.set_item("blobs", blobs).unwrap();
-        py.run(INVOKE, Some(&globals), None).unwrap();
-        let answer = globals.get_item("answer").unwrap().unwrap();
-        answer.extract().unwrap()
+        globals.set_item("session", session)?;
+        globals.set_item("method", method)?;
+        globals.set_item("payload", payload)?;
+        globals.set_item("blobs", blobs)?;
+        py.run(INVOKE, Some(&globals), None)?;
+        globals.get_item("answer")?.unwrap().extract()
     })
 }
 
@@ -68,22 +66,14 @@ fn call(method: &str, arguments: &str, response: &str, blobs: Vec<Vec<u8>>) -> (
     )
     .unwrap();
     let request_payload = payload(&serving.address, arguments);
-    let answer = invoke(method, &request_payload, blobs);
+    let answer = run_method(method, &request_payload, blobs).unwrap();
     let request = serving.finish().unwrap();
     (answer, request)
 }
 
 fn failure_message(method: &str, payload: &str) -> String {
-    Python::initialize();
+    let error = run_method(method, payload, Vec::new()).unwrap_err();
     Python::attach(|py| {
-        let session = new_session(py);
-        let globals = PyDict::new(py);
-        globals.set_item("session", session).unwrap();
-        globals.set_item("method", method).unwrap();
-        globals.set_item("payload", payload).unwrap();
-        globals.set_item("blobs", Vec::<Vec<u8>>::new()).unwrap();
-        // The async twins need a running loop, so run both through asyncio.run.
-        let error = py.run(INVOKE, Some(&globals), None).unwrap_err();
         assert!(error.is_instance_of::<NativeVideoEditError>(py), "{error}");
         error.value(py).to_string()
     })
@@ -211,7 +201,7 @@ fn check_refused(method: &str, arguments: &str) {
 
 fn check_mock(method: &str, arguments: &str, expected: &str) {
     let address: SocketAddr = "127.0.0.1:1".parse().unwrap();
-    let answer = invoke(method, &payload(&address, arguments), Vec::new());
+    let answer = run_method(method, &payload(&address, arguments), Vec::new()).unwrap();
     assert!(answer.contains(expected), "{answer}");
 }
 
