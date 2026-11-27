@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use betterlite_core::api::riva::audio::decode_riva_audio_attached;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
-use betterlite_oracle_runner::helpers::ORACLE_DIR;
+use betterlite_oracle_runner::helpers::{ORACLE_DIR, sync_litellm};
 use betterlite_pyhost::host::{DEFAULT_SHUTDOWN_GRACE, HostConfig, PythonHost};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -79,6 +79,11 @@ fn host() -> Result<PythonHost, Box<HelperError>> {
 
 fn site_packages() -> Result<PathBuf, Box<HelperError>> {
     let lib = Path::new(ORACLE_DIR).join("litellm/.venv/lib");
+    if !lib.is_dir() {
+        // the answer side syncs the same pinned venv, and the first native case runs before it does
+        sync_litellm(&Path::new(ORACLE_DIR).join("../.."))
+            .map_err(|error| helper_error("PyHostError", error.to_string()))?;
+    }
     let Ok(entries) = fs::read_dir(&lib) else {
         return Err(helper_error(
             "PyHostError",
