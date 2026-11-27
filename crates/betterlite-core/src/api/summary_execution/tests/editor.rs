@@ -459,15 +459,18 @@ async fn declared_tools_add_the_no_tools_suffix() {
     run(&fixture, sample.request(MODEL), Port::Routed)
         .await
         .expect("the editor runs");
+    let prompt = summary_prompt(&fixture);
+    assert!(prompt.ends_with(&format!("{COMPACT_NO_TOOL_CALLS_SUFFIX}\"}}")));
+}
+
+fn summary_prompt(fixture: &Fixture) -> String {
     let call = fixture
         .router
         .calls()
         .first()
         .expect("one summary call")
         .clone();
-    let prompt = serde_json::to_string(call.messages.last().expect("the prompt turn"))
-        .expect("the prompt encodes");
-    assert!(prompt.ends_with(&format!("{COMPACT_NO_TOOL_CALLS_SUFFIX}\"}}")));
+    encoded(call.messages.last().expect("the prompt turn"))
 }
 
 #[tokio::test]
@@ -480,14 +483,7 @@ async fn client_instructions_replace_the_summary_prompt() {
     run(&fixture, sample.request(MODEL), Port::Routed)
         .await
         .expect("the editor runs");
-    let call = fixture
-        .router
-        .calls()
-        .first()
-        .expect("one summary call")
-        .clone();
-    let prompt = serde_json::to_string(call.messages.last().expect("the prompt turn"))
-        .expect("the prompt encodes");
+    let prompt = summary_prompt(&fixture);
     assert!(prompt.ends_with(&format!("{INSTRUCTIONS}\"}}")));
     assert!(!prompt.contains(COMPACT_DEFAULT_INSTRUCTIONS));
 }
