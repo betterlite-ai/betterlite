@@ -1,0 +1,69 @@
+kind: helper
+name: gigachat-key-order
+call:
+  b8312:
+    op: gigachat_chat
+    model: GigaChat-2
+    api_base: "{{upstream}}/api"
+    env:
+      GIGACHAT_AUTH_URL: "{{upstream}}/oauth"
+      GIGACHAT_API_KEY: "sk-env-key"
+      GIGACHAT_CREDENTIALS: "sk-env-credentials"
+    answer: {status: 200, body: '{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"oracle","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}'}
+calls:
+  - b8312:
+      op: gigachat_embedding
+      model: Embeddings
+      input: hello
+      api_base: "{{upstream}}/api"
+      env:
+        GIGACHAT_AUTH_URL: "{{upstream}}/oauth"
+        GIGACHAT_API_KEY: "sk-env-key"
+        GIGACHAT_CREDENTIALS: "sk-env-credentials"
+      answer: {status: 200, body: '{"object":"list","data":[{"object":"embedding","embedding":[0.1,0.2],"index":0}],"model":"oracle","usage":{"prompt_tokens":2,"total_tokens":2}}'}
+  - b8312:
+      op: gigachat_chat
+      model: GigaChat-2
+      api_base: "{{upstream}}/api"
+      gigachat_key: "sk-gigachat"
+      env:
+        GIGACHAT_AUTH_URL: "{{upstream}}/oauth"
+        GIGACHAT_API_KEY: "sk-env-key"
+        GIGACHAT_CREDENTIALS: "sk-env-credentials"
+      answer: {status: 200, body: '{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"oracle","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}'}
+  - b8312:
+      op: gigachat_embedding
+      model: Embeddings
+      input: hello
+      api_base: "{{upstream}}/api"
+      litellm_api_key: "sk-global"
+      env:
+        GIGACHAT_AUTH_URL: "{{upstream}}/oauth"
+        GIGACHAT_API_KEY: "sk-env-key"
+        GIGACHAT_CREDENTIALS: "sk-env-credentials"
+      answer: {status: 200, body: '{"object":"list","data":[{"object":"embedding","embedding":[0.1,0.2],"index":0}],"model":"oracle","usage":{"prompt_tokens":2,"total_tokens":2}}'}
+  - b8312:
+      op: gigachat_chat
+      model: GigaChat-2
+      api_base: "{{upstream}}/api"
+      api_key: "sk-request"
+      litellm_api_key: "sk-global"
+      gigachat_key: "sk-gigachat"
+      env:
+        GIGACHAT_AUTH_URL: "{{upstream}}/oauth"
+        GIGACHAT_API_KEY: "sk-env-key"
+        GIGACHAT_CREDENTIALS: "sk-env-credentials"
+      answer: {status: 200, body: '{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"oracle","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}'}
+  - b8312:
+      op: gigachat_embedding
+      model: Embeddings
+      input: hello
+      api_base: "{{upstream}}/api"
+      api_key: ""
+      env:
+        GIGACHAT_AUTH_URL: "{{upstream}}/oauth"
+        GIGACHAT_API_KEY: ""
+        GIGACHAT_CREDENTIALS: "sk-credentials"
+      answer: {status: 200, body: '{"object":"list","data":[{"object":"embedding","embedding":[0.1,0.2],"index":0}],"model":"oracle","usage":{"prompt_tokens":2,"total_tokens":2}}'}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,13 @@
+kind: helper
+name: nlp-cloud-chat
+call:
+  b8312:
+    op: nlp_cloud_chat
+    model: dolphin
+    api_base: "{{upstream}}/v1/gpu/"
+    api_key: "sk-nlpcloud"
+    answer:
+      status: 200
+      body: '{"generated_text":"ok","nb_input_tokens":1,"nb_generated_tokens":1}'
+env: {}
+compare: {ignore: []}

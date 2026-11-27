@@ -1,0 +1,13 @@
+kind: helper
+name: minimax-chat
+call:
+  b8312:
+    op: minimax_chat
+    model: MiniMax-M2
+    api_base: "{{upstream}}/v1"
+    api_key: "sk-request"
+    answer:
+      status: 200
+      body: '{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"oracle","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}'
+env: {}
+compare: {ignore: []}

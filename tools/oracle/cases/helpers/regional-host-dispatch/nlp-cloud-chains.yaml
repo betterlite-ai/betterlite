@@ -1,0 +1,55 @@
+kind: helper
+name: nlp-cloud-chains
+call:
+  b8312:
+    op: nlp_cloud_chat
+    model: dolphin
+    api_base: "{{upstream}}/passed/"
+    api_key: "sk-passed"
+    litellm_api_base: "{{upstream}}/global/"
+    litellm_api_key: "sk-global"
+    nlp_cloud_key: "sk-nlpcloud"
+    env:
+      NLP_CLOUD_API_BASE: "{{upstream}}/env/"
+      NLP_CLOUD_API_KEY: "sk-env"
+    answer: {status: 200, body: '{"generated_text":"ok","nb_input_tokens":1,"nb_generated_tokens":1}'}
+calls:
+  - b8312:
+      op: nlp_cloud_chat
+      model: dolphin
+      litellm_api_base: "{{upstream}}/global/"
+      nlp_cloud_key: "sk-nlpcloud"
+      env:
+        NLP_CLOUD_API_BASE: "{{upstream}}/env/"
+        NLP_CLOUD_API_KEY: "sk-env"
+      answer: {status: 200, body: '{"generated_text":"ok","nb_input_tokens":1,"nb_generated_tokens":1}'}
+  - b8312:
+      op: nlp_cloud_chat
+      model: dolphin
+      env:
+        NLP_CLOUD_API_BASE: "{{upstream}}/env/"
+        NLP_CLOUD_API_KEY: "sk-env"
+      answer: {status: 200, body: '{"generated_text":"ok","nb_input_tokens":1,"nb_generated_tokens":1}'}
+  - b8312:
+      op: nlp_cloud_chat
+      model: dolphin
+      litellm_api_key: "sk-global"
+      env:
+        NLP_CLOUD_API_BASE: "{{upstream}}/env/"
+      answer: {status: 200, body: '{"generated_text":"ok","nb_input_tokens":1,"nb_generated_tokens":1}'}
+  - b8312:
+      op: nlp_cloud_chat
+      model: dolphin
+      env:
+        NLP_CLOUD_API_BASE: "{{upstream}}/env/"
+      answer: {status: 200, body: '{"generated_text":"ok","nb_input_tokens":1,"nb_generated_tokens":1}'}
+  - b8312:
+      op: nlp_cloud_chat
+      model: dolphin
+      litellm_api_base: ""
+      env:
+        NLP_CLOUD_API_BASE: "{{upstream}}/env/"
+        NLP_CLOUD_API_KEY: "sk-env"
+      answer: {status: 200, body: '{"generated_text":"ok","nb_input_tokens":1,"nb_generated_tokens":1}'}
+env: {}
+compare: {ignore: []}

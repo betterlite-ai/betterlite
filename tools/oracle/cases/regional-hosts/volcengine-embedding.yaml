@@ -1,0 +1,33 @@
+kind: helper
+name: volcengine-embedding
+call:
+  b8312:
+    op: volcengine_embedding
+    model: doubao-embedding
+    input: hello
+    api_base: "{{upstream}}"
+    api_key: "sk-ark"
+    answer:
+      status: 200
+      body: '{"object":"list","data":[{"object":"embedding","embedding":[0.1,0.2],"index":0}],"model":"oracle","usage":{"prompt_tokens":2,"total_tokens":2}}'
+calls:
+  - b8312:
+      op: volcengine_embedding
+      model: doubao-embedding
+      input: hello
+      api_base: "{{upstream}}"
+      litellm_api_key: "sk-global"
+      answer:
+        status: 200
+        body: '{"object":"list","data":[{"object":"embedding","embedding":[0.1,0.2],"index":0}],"model":"oracle","usage":{"prompt_tokens":2,"total_tokens":2}}'
+  - b8312:
+      op: volcengine_embedding
+      model: doubao-embedding
+      input: hello
+      api_base: "{{upstream}}"
+      env: {ARK_API_KEY: "sk-ark"}
+      answer:
+        status: 200
+        body: '{"object":"list","data":[{"object":"embedding","embedding":[0.1,0.2],"index":0}],"model":"oracle","usage":{"prompt_tokens":2,"total_tokens":2}}'
+env: {}
+compare: {ignore: []}
