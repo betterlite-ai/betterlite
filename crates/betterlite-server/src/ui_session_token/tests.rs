@@ -33,11 +33,11 @@ struct DecodedClaims {
     user_email: Option<String>,
     user_role: String,
     login_method: String,
-    premium_user: bool,
+    premium_user: RowFlag,
     auth_header_name: String,
-    disabled_non_admin_personal_key_creation: bool,
+    disabled_non_admin_personal_key_creation: RowFlag,
     server_root_path: String,
-    password_reset_required: bool,
+    password_reset_required: RowFlag,
     exp: i64,
 }
 
@@ -103,11 +103,11 @@ fn signs_every_field_of_an_sso_token() {
             user_email: Some("user@example.com".to_owned()),
             user_role: "internal_user".to_owned(),
             login_method: "sso".to_owned(),
-            premium_user: true,
+            premium_user: RowFlag(true),
             auth_header_name: "Authorization".to_owned(),
-            disabled_non_admin_personal_key_creation: false,
+            disabled_non_admin_personal_key_creation: RowFlag(false),
             server_root_path: "/litellm".to_owned(),
-            password_reset_required: false,
+            password_reset_required: RowFlag(false),
             exp: 1_767_355_200,
         }
     );
@@ -237,22 +237,39 @@ fn checks_the_duration_before_the_master_key() {
     assert!(matches!(error, UiSessionTokenError::Duration(_)), "{error}");
 }
 
-#[test]
-fn error_text_never_carries_a_key() {
+#[derive(Clone, Copy, Debug)]
+enum FailingCall {
+    Duration,
+    EmptyMasterKey,
+    Overflow,
+    Encode,
+}
+
+#[rstest]
+#[case::invalid_duration(FailingCall::Duration)]
+#[case::empty_master_key(FailingCall::EmptyMasterKey)]
+#[case::overflow(FailingCall::Overflow)]
+#[case::encode(FailingCall::Encode)]
+fn error_text_never_carries_a_key(#[case] call: FailingCall) {
     let database = TimeZoneDatabase::from_env();
     let token = sample_token(VIRTUAL_KEY, None, LoginMethod::Sso);
-    let errors = [
-        encode_ui_session_jwt(&token, &secret(MASTER), &settings("abc"), now(), &database)
-            .unwrap_err(),
-        encode_ui_session_jwt(&token, &secret(""), &settings("24h"), now(), &database).unwrap_err(),
-        ui_session_exp_timestamp(&settings("9300000000000000s"), now(), &database).unwrap_err(),
-        UiSessionTokenError::Encode(JwtError::from(ErrorKind::InvalidToken)),
-    ];
-    for error in errors {
-        let text = format!("{error} {error:?}");
-        assert!(!text.contains(MASTER), "{text}");
-        assert!(!text.contains(VIRTUAL_KEY), "{text}");
-    }
+    let error = match call {
+        FailingCall::Duration => {
+            encode_ui_session_jwt(&token, &secret(MASTER), &settings("abc"), now(), &database)
+                .unwrap_err()
+        }
+        FailingCall::EmptyMasterKey => {
+            encode_ui_session_jwt(&token, &secret(""), &settings("24h"), now(), &database)
+                .unwrap_err()
+        }
+        FailingCall::Overflow => {
+            ui_session_exp_timestamp(&settings("9300000000000000s"), now(), &database).unwrap_err()
+        }
+        FailingCall::Encode => UiSessionTokenError::Encode(JwtError::from(ErrorKind::InvalidToken)),
+    };
+    let text = format!("{error} {error:?}");
+    assert!(!text.contains(MASTER), "{text}");
+    assert!(!text.contains(VIRTUAL_KEY), "{text}");
 }
 
 fn personal(roles: Option<Vec<String>>) -> KeyGeneration {
@@ -269,7 +286,8 @@ fn personal(roles: Option<Vec<String>>) -> KeyGeneration {
 fn configured_without_personal() -> KeyGeneration {
     KeyGeneration {
         configured: true,
-        ..KeyGeneration::default()
+        team: TeamKeyGeneration::default(),
+        personal: None,
     }
 }
 
