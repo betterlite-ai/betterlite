@@ -15,8 +15,14 @@ const OAUTH_PASSTHROUGH: &str = r#"{"server_id":"srv-op","name":"op","transport"
 const LEGACY_DELEGATE: &str = r#"{"server_id":"srv-legacy","name":"legacy","transport":"http","auth_type":"oauth2","delegate_auth_to_upstream":true}"#;
 const CLIENT_CREDENTIALS_DELEGATE: &str = r#"{"server_id":"srv-legacy-cc","name":"legacy-cc","transport":"http","auth_type":"oauth2","delegate_auth_to_upstream":true,"oauth2_flow":"client_credentials"}"#;
 const BRIDGE: &str = r#"{"server_id":"srv-bridge","name":"bridge","transport":"http","auth_type":"oauth_delegate","dcr_bridge":true,"server_name":"bridge-name","alias":"bridge-alias"}"#;
+const BRIDGE_NAME_ONLY: &str = r#"{"server_id":"srv-bridge-name","name":"bridge-name-only","transport":"http","auth_type":"oauth_delegate","dcr_bridge":true,"server_name":"bridge-name-only"}"#;
+const BRIDGE_ALIAS_ONLY: &str = r#"{"server_id":"srv-bridge-alias","name":"bridge-alias-only","transport":"http","auth_type":"oauth_delegate","dcr_bridge":true,"alias":"bridge-alias-only"}"#;
 const BRIDGE_UNNAMED: &str = r#"{"server_id":"srv-bridge-plain","name":"bridge-plain","transport":"http","auth_type":"oauth_delegate","dcr_bridge":true}"#;
 const BRIDGE_EMPTY_ALIAS: &str = r#"{"server_id":"srv-bridge-empty","name":"bridge-empty","transport":"http","auth_type":"oauth_delegate","dcr_bridge":true,"alias":""}"#;
+const BRIDGE_EMPTY_NAME: &str = r#"{"server_id":"srv-bridge-empty-name","name":"bridge-empty-name","transport":"http","auth_type":"oauth_delegate","dcr_bridge":true,"server_name":""}"#;
+const OAUTH2_NO_DELEGATE: &str =
+    r#"{"server_id":"srv-oauth2","name":"oauth2-plain","transport":"http","auth_type":"oauth2"}"#;
+const BEARER_DELEGATE: &str = r#"{"server_id":"srv-bearer-delegate","name":"bearer-delegate","transport":"http","auth_type":"bearer_token","delegate_auth_to_upstream":true}"#;
 const DELEGATE_ONLY: &str = r#"{"server_id":"srv-delegate","name":"delegate","transport":"http","auth_type":"oauth_delegate","server_name":"delegate-name"}"#;
 
 fn server(source: &str) -> MCPServer {
@@ -118,10 +124,20 @@ fn single_bridge_target_refuses_more_than_one_target() {
 }
 
 #[test]
+fn single_bridge_target_accepts_either_egress_name() {
+    let registry = registry(&[BRIDGE_NAME_ONLY, BRIDGE_ALIAS_ONLY]);
+    let by_name = single_bridge_target(&query(&registry, "/mcp/bridge-name-only", None)).unwrap();
+    let by_alias = single_bridge_target(&query(&registry, "/mcp/bridge-alias-only", None)).unwrap();
+    assert_eq!(by_name.requested_name, "bridge-name-only");
+    assert_eq!(by_alias.requested_name, "bridge-alias-only");
+}
+
+#[test]
 fn single_bridge_target_refuses_a_server_without_an_egress_name() {
-    let registry = registry(&[BRIDGE_UNNAMED, BRIDGE_EMPTY_ALIAS]);
+    let registry = registry(&[BRIDGE_UNNAMED, BRIDGE_EMPTY_ALIAS, BRIDGE_EMPTY_NAME]);
     assert!(single_bridge_target(&query(&registry, "/mcp/bridge-plain", None)).is_none());
     assert!(single_bridge_target(&query(&registry, "/mcp/bridge-empty", None)).is_none());
+    assert!(single_bridge_target(&query(&registry, "/mcp/bridge-empty-name", None)).is_none());
 }
 
 #[test]
@@ -149,10 +165,26 @@ fn passthrough_cold_start_needs_every_name_passthrough() {
 
 #[test]
 fn legacy_delegate_cold_start_follows_the_effective_flow() {
-    let registry = registry(&[LEGACY_DELEGATE, CLIENT_CREDENTIALS_DELEGATE, PLAIN]);
+    let registry = registry(&[
+        LEGACY_DELEGATE,
+        CLIENT_CREDENTIALS_DELEGATE,
+        OAUTH2_NO_DELEGATE,
+        BEARER_DELEGATE,
+        PLAIN,
+    ]);
     let delegate = names(&["legacy"]);
     assert!(is_legacy_delegate_cold_start(&registry, &delegate, None));
     assert!(!is_legacy_delegate_cold_start(&registry, &[], None));
+    assert!(!is_legacy_delegate_cold_start(
+        &registry,
+        &names(&["oauth2-plain"]),
+        None
+    ));
+    assert!(!is_legacy_delegate_cold_start(
+        &registry,
+        &names(&["bearer-delegate"]),
+        None
+    ));
     assert!(!is_legacy_delegate_cold_start(
         &registry,
         &names(&["missing"]),
