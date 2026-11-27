@@ -13,7 +13,8 @@ use serde_json::Number;
 use crate::api::realtime_contracts::records::RealtimeClientSecretRequest;
 
 use super::prepare::{
-    PreparedSession, SessionGrantRequest, SessionModelGrant, prepare_client_secret_session,
+    PrepareError, PreparedSession, SessionGrantRequest, SessionModelGrant,
+    prepare_client_secret_session,
 };
 use super::session::{
     DEFAULT_REALTIME_MODEL, DEFAULT_TRANSCRIPTION_MODEL, RealtimeSessionType, model_candidates,
@@ -423,7 +424,7 @@ async fn authorized_transcription_session_selection() {
     )
     .await
     .unwrap_err();
-    assert_eq!(failure, Denied);
+    assert!(matches!(failure, PrepareError::Grant(Denied)));
     assert_eq!(models_asked(&grants), ["allowed", "forbidden"]);
 
     let second_grants = Grants::new();

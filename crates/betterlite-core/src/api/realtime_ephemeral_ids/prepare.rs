@@ -4,15 +4,21 @@ use async_trait::async_trait;
 use betterlite_auth::auth_identity::records::Principal;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
-use serde_json::Number;
 
-use crate::api::realtime_contracts::records::{
-    MaxOutputTokens, RealtimeClientSecretRequest, RealtimeSessionConfig,
-};
+use crate::api::realtime_contracts::records::{RealtimeClientSecretRequest, RealtimeSessionConfig};
 use crate::api::realtime_ephemeral_ids::session::{
     DEFAULT_REALTIME_MODEL, DEFAULT_TRANSCRIPTION_MODEL, RealtimeSessionType,
     append_model_candidate, model_candidates, set_transcription_model,
 };
+
+// what preparing a session can fail with: encoding the session dump, or the injected authorizer's refusal
+#[derive(Debug, thiserror::Error)]
+pub enum PrepareError<GrantError: Error + Send + Sync + 'static> {
+    #[error("the session could not be encoded")]
+    Encode(#[source] serde_json::Error),
+    #[error(transparent)]
+    Grant(#[from] GrantError),
+}
 
 // can_key_call_resolved_model's arguments for a session model, injected because the auth reads belong to the caller
 pub struct SessionGrantRequest<'request, Router> {
@@ -53,7 +59,7 @@ pub async fn prepare_client_secret_session<Router, Grants>(
     llm_model_list: Option<&[String]>,
     router: Option<&Router>,
     grants: &Grants,
-) -> Result<PreparedSession, Grants::Error>
+) -> Result<PreparedSession, PrepareError<Grants::Error>>
 where
     Router: Sync,
     Grants: SessionModelGrant<Router> + Sync,
@@ -64,7 +70,8 @@ where
             .as_ref()
             .and_then(|configured| configured.session_type.as_deref()),
     );
-    let session_data = session_data_with_type(request.session.as_ref(), session_type);
+    let session_data = session_data_with_type(request.session.as_ref(), session_type)
+        .map_err(PrepareError::Encode)?;
     let session_model = request
         .session
         .as_ref()
@@ -94,13 +101,18 @@ where
 fn session_data_with_type(
     session: Option<&RealtimeSessionConfig>,
     session_type: RealtimeSessionType,
-) -> Option<IndexMap<String, Json>> {
-    let mut fields = session.map(session_fields)?;
+) -> Result<Option<IndexMap<String, Json>>, serde_json::Error> {
+    let Some(configured) = session else {
+        return Ok(None);
+    };
+    let encoded = serde_json::to_value(configured)?;
+    let mut fields: IndexMap<String, Json> = serde_json::from_value(encoded)?;
+    fields.retain(|_, value| !matches!(value, Json::Null));
     fields.insert(
         "type".to_owned(),
         Json::Text(session_type.as_str().to_owned()),
     );
-    Some(fields)
+    Ok(Some(fields))
 }
 
 // one SessionGrantRequest per model: realtime asks once, transcription once per candidate
@@ -108,7 +120,7 @@ async fn authorize_model<Router, Grants>(
     context: &GrantContext<'_, Router>,
     grants: &Grants,
     model: &str,
-) -> Result<(), Grants::Error>
+) -> Result<(), PrepareError<Grants::Error>>
 where
     Router: Sync,
     Grants: SessionModelGrant<Router> + Sync,
@@ -120,7 +132,8 @@ where
             principal: context.principal,
             router: context.router,
         })
-        .await
+        .await?;
+    Ok(())
 }
 
 // the transcription branch: every candidate is authorized first, then both transcription shapes take the first one and session.model goes away
@@ -130,7 +143,7 @@ async fn transcription_selection<Router, Grants>(
     mut session_data: Option<IndexMap<String, Json>>,
     session_model: Option<&str>,
     root_model: Option<&str>,
-) -> Result<PreparedSession, Grants::Error>
+) -> Result<PreparedSession, PrepareError<Grants::Error>>
 where
     Router: Sync,
     Grants: SessionModelGrant<Router> + Sync,
@@ -169,73 +182,4 @@ fn transcription_plan(
     append_model_candidate(&mut candidates, session_model);
     append_model_candidate(&mut candidates, root_model);
     (chosen.to_owned(), candidates)
-}
-
-// RealtimeSessionConfig.model_dump(exclude_none=True): the declared fields in declaration order, then the extras, with None dropped
-fn session_fields(session: &RealtimeSessionConfig) -> IndexMap<String, Json> {
-    let mut fields = IndexMap::new();
-    insert_text(&mut fields, "type", session.session_type.as_deref());
-    insert_text(&mut fields, "model", session.model.as_deref());
-    insert_text(&mut fields, "instructions", session.instructions.as_deref());
-    insert_object(&mut fields, "audio", session.audio.as_ref());
-    insert_text_list(&mut fields, "include", session.include.as_deref());
-    insert_max_output_tokens(&mut fields, session.max_output_tokens.as_ref());
-    insert_text_list(
-        &mut fields,
-        "output_modalities",
-        session.output_modalities.as_deref(),
-    );
-    insert_value(&mut fields, "tool_choice", session.tool_choice.as_ref());
-    if let Some(tools) = session.tools.as_deref() {
-        let items: Vec<Json> = tools.iter().cloned().map(Json::Object).collect();
-        fields.insert("tools".to_owned(), Json::List(items));
-    }
-    insert_value(&mut fields, "tracing", session.tracing.as_ref());
-    insert_value(&mut fields, "truncation", session.truncation.as_ref());
-    insert_object(&mut fields, "prompt", session.prompt.as_ref());
-    for (key, value) in &session.extra {
-        if !matches!(value, Json::Null) {
-            fields.insert(key.clone(), value.clone());
-        }
-    }
-    fields
-}
-
-fn insert_text(fields: &mut IndexMap<String, Json>, key: &str, value: Option<&str>) {
-    if let Some(text) = value {
-        fields.insert(key.to_owned(), Json::Text(text.to_owned()));
-    }
-}
-
-fn insert_object(
-    fields: &mut IndexMap<String, Json>,
-    key: &str,
-    value: Option<&IndexMap<String, Json>>,
-) {
-    if let Some(object) = value {
-        fields.insert(key.to_owned(), Json::Object(object.clone()));
-    }
-}
-
-fn insert_text_list(fields: &mut IndexMap<String, Json>, key: &str, values: Option<&[String]>) {
-    if let Some(items) = values {
-        let list: Vec<Json> = items.iter().cloned().map(Json::Text).collect();
-        fields.insert(key.to_owned(), Json::List(list));
-    }
-}
-
-fn insert_max_output_tokens(fields: &mut IndexMap<String, Json>, value: Option<&MaxOutputTokens>) {
-    if let Some(tokens) = value {
-        let count = match tokens {
-            MaxOutputTokens::Count(count) => Json::Number(Number::from(*count)),
-            MaxOutputTokens::Text(text) => Json::Text(text.clone()),
-        };
-        fields.insert("max_output_tokens".to_owned(), count);
-    }
-}
-
-fn insert_value(fields: &mut IndexMap<String, Json>, key: &str, value: Option<&Json>) {
-    if let Some(item) = value {
-        fields.insert(key.to_owned(), item.clone());
-    }
 }
