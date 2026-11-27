@@ -61,4 +61,13 @@ deviations:
       Error messages are betterlite's own under rule errors-match-litellm, and the line prefix and its ERROR level
       match LiteLLM's.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_redis_get.py#L82
+  - what: >-
+      A refund hook takes the stashed enqueued-token reservation before it calls the refund store, so a store error
+      leaves the stash without it. LiteLLM clears the stash field only after the save or refund returned, so its
+      stash still holds the reservation when the store raises.
+    why: >-
+      The store's typed post-call input carries the reservation record, and nothing in either flow reads a
+      reservation left behind after a failed post-call save or a failed failure-hook refund; the error line, the
+      unaffected response and the refund itself are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L5271-L5277
 kept_bugs: []
