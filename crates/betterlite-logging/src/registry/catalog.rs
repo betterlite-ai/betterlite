@@ -217,8 +217,8 @@ impl LoggerCatalog {
     // built on the first OTel arm: the snapshot never changes and the clients are shared by every arm
     fn shared(&self) -> Arc<SharedOtel> {
         let mut slot = self.shared.lock().unwrap_or_else(PoisonError::into_inner);
-        slot.get_or_insert_with(|| Arc::new(SharedOtel::new(&self.inputs)))
-            .clone()
+        let shared = slot.get_or_insert_with(|| Arc::new(SharedOtel::new(&self.inputs)));
+        Arc::clone(shared)
     }
 
     fn auto_start_phoenix(&self) {
