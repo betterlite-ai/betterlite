@@ -10,8 +10,10 @@ use axum::body::{Body, to_bytes};
 use axum::extract::Extension;
 use axum::http::{Request, StatusCode, header};
 use axum::routing::post;
-use betterlite_auth::auth_identity::records::UserIdentity;
-use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType, Role};
+use betterlite_auth::auth_identity::records::{
+    EndUserIdentity, OrganizationIdentity, ProjectIdentity, TeamIdentity, UserIdentity,
+};
+use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType, Role, TeamRole};
 use betterlite_auth::auth_key_lookup::error::KeyLookupError;
 use betterlite_auth::auth_key_lookup::{KeyAuthenticator, KeyLookupOutcome};
 use betterlite_config::loader::ConfigLoader;
@@ -336,6 +338,50 @@ fn key_context_leaves_a_userless_key_without_a_user() {
     assert_eq!(principal.user, None);
     assert_eq!(principal.subject, "svc-alias");
     assert_eq!(principal.principal_type, PrincipalType::ServiceAccount);
+}
+
+#[test]
+fn key_context_takes_the_key_organization_project_and_end_user() {
+    let principal = caller_through_key_stage(
+        r#"{"org_id":"o1","organization_alias":"Org","project_id":"p1","project_alias":"Project","end_user_id":"e1"}"#,
+    )
+    .principal;
+    assert_eq!(
+        principal.organization,
+        Some(OrganizationIdentity {
+            id: "o1".to_owned(),
+            name: Some("Org".to_owned()),
+        })
+    );
+    assert_eq!(
+        principal.project,
+        Some(ProjectIdentity {
+            id: "p1".to_owned(),
+            name: Some("Project".to_owned()),
+        })
+    );
+    assert_eq!(
+        principal.end_user,
+        Some(EndUserIdentity {
+            id: "e1".to_owned(),
+        })
+    );
+}
+
+#[test]
+fn key_context_takes_the_team_role_from_the_team_member_row() {
+    let principal = caller_through_key_stage(
+        r#"{"team_id":"t1","team_alias":"Team","team_member":{"user_id":"u1","role":"admin"}}"#,
+    )
+    .principal;
+    assert_eq!(
+        principal.teams,
+        vec![TeamIdentity {
+            id: "t1".to_owned(),
+            name: Some("Team".to_owned()),
+            role: TeamRole::Admin,
+        }]
+    );
 }
 
 #[test]
