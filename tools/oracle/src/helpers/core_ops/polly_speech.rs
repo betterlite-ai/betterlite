@@ -118,10 +118,8 @@ fn url_answer(call: &Call) -> Value {
         .litellm_params
         .get("aws_region_name")
         .and_then(Value::as_str);
-    json!({
-        "ok": true,
-        "url": complete_url(call.api_base.as_deref(), region),
-    })
+    let url = complete_url(call.api_base.as_deref(), region);
+    json!({ "ok": true, "url": url })
 }
 
 fn request_answer(call: &Call) -> Value {
@@ -285,16 +283,11 @@ struct FixedResolver;
 
 impl CredentialResolver for FixedResolver {
     fn resolve(&self, sources: &CredentialSources<'_>) -> Result<ResolvedCredentials, SpeechError> {
+        let key = sources.aws_access_key_id.unwrap_or(EXAMPLE_KEY);
+        let secret = sources.aws_secret_access_key.unwrap_or(EXAMPLE_SECRET);
         Ok(ResolvedCredentials {
-            access_key_id: SecretString::from(
-                sources.aws_access_key_id.unwrap_or(EXAMPLE_KEY).to_owned(),
-            ),
-            secret_access_key: SecretString::from(
-                sources
-                    .aws_secret_access_key
-                    .unwrap_or(EXAMPLE_SECRET)
-                    .to_owned(),
-            ),
+            access_key_id: SecretString::from(key.to_owned()),
+            secret_access_key: SecretString::from(secret.to_owned()),
             session_token: sources
                 .aws_session_token
                 .map(|token| SecretString::from(token.to_owned())),
