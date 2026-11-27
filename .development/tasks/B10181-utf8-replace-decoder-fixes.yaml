@@ -1,0 +1,168 @@
+id: B10181
+title: Response text decodes like httpx where ten copies cut, drop or re-read bytes
+description: >-
+  Ten readers port httpx's `Response.text` (or, in the CLI, requests' `Response.text`) but decode an invalid byte differently from LiteLLM. httpx 0.28.1 decodes the body with the declared charset or UTF-8 and errors="replace", so each invalid sequence becomes one U+FFFD and the rest of the body stays. B10180 put that decoder in one place, `betterlite_models::utf8_text::decode_replacing_invalid`. This task deletes the ten readers, points their callers at it and updates the tests and deviation rows that pinned the old answers. Every crate touched already depends on betterlite-models.
+
+
+  Cut at the first invalid byte, so the rest of the text is lost. (1) betterlite-core api/runway/video_lifecycle/content.rs L76-L84 `error_text`, used at L88: LiteLLM's _handle_error reads e.response.text (llm_http_handler.py L6082-L6083). (2) betterlite-http gigachat_tokens/authenticator.rs L202-L213 `rejected` builds the Rejected body from a cut prefix: GigaChat's authenticator puts e.response.text into its message (gigachat/authenticator.py L184-L188). (3) betterlite-http interactions/agents_delete_versions.rs L197-L204 `reply_text`, used at L193 for the error body and L207 for post_call's original_response: LiteLLM logs response.text (interactions/agents/http_handler.py L332) and its _handle_error passes e.response.text (interactions/http_handler.py L46-L51). (4) betterlite-logging mavvrik_delivery/transport.rs L43-L56 `text_prefix`: the Mavvrik destination formats resp.text[:200] and [:400] (focus/destinations/mavvrik_destination.py L159, L180, L221, L260, L294, L319); the decode changes and the byte limit with its floor_char_boundary stays, as B3063's row allows. (5) betterlite-logging zerobus/client/failure.rs L15-L22 `body_text`, used by status_failure at L7: `_status_failure` formats error.response.text and cuts the whole detail to 500 characters (zerobus/client.py L84-L89), and the chars().take(500) stays. (6) betterlite-vertex vertex_batch_create/execution.rs L176-L184 `body_text`, used at L162 and L207: the batch handler reads response.text in the fine-tuned endpoint lookup and e.response.text in the create (vertex_ai/batches/handler.py L235, L268). (7) betterlite-vertex vertex_batch_lifecycle/execution.rs L76-L84 `body_text`, imported by page.rs L7 (L18), cancel.rs L22 (L117, L156) and retrieve.rs L19 (L80): the same handler's retrieve, list and cancel paths (handler.py L391, L445, L517, L544, L625, L638, L642, L671).
+
+
+  Other readers. (8) betterlite-http interactions/agents_create_read.rs L147-L153 `body_text` falls back to Latin-1, so b"a\xff" reads "a\u{ff}" where httpx gives "a\u{FFFD}"; its callers are create_call.rs L9, L85, L128, read_call.rs L8, L92 and tests/support.rs L13, L86, and LiteLLM logs response.text (agents/http_handler.py L85, L130). (9) betterlite-cli commands/debug/fetch.rs L105-L110 keeps only the valid chunks, so an invalid byte disappears; LiteLLM's _transport_failure shows error.response.text[:500] (proxy/client/cli/commands/debug.py L137-L140). The body becomes `decode_replacing_invalid(&response.body).chars().take(TRANSPORT_BODY_CHARS).collect()`. (10) betterlite-openai image_variations/request.rs L75-L76 calls encoding_rs's `UTF_8.decode`, which sniffs a byte order mark: it drops a leading UTF-8 BOM and decodes a body that starts with FF FE or FE FF as UTF-16, where httpx's UTF-8 decoder keeps the BOM as U+FEFF and replaces those bytes. LiteLLM's message is the masked e.text, which _raise_masked_sync_error fills from response.text (custom_httpx/http_handler.py L474-L479, L526-L529; image_variations/handler.py L103-L110).
+
+
+  Tests. Rename and re-pin the tests that held the old answers. core api/runway/video_lifecycle/tests.rs `content_keeps_the_valid_prefix_of_a_non_utf8_failure_body` becomes `content_replaces_invalid_bytes_in_a_failure_body` with message "bad \u{FFFD} bytes". http gigachat_tokens/tests/oauth_request.rs `oauth_request_keeps_the_text_up_to_an_invalid_byte` becomes `oauth_request_replaces_an_invalid_byte` with body "denied\u{FFFD}more". http agents_delete_versions/tests/delete.rs `delete_agent_records_a_reply_that_is_not_text` logs "deleted \u{FFFD}". http agents_create_read/tests/create_tests.rs `body_text_reads_non_utf8_bytes_as_latin1` (L275-L278) goes, and `create_agent_replaces_bytes_that_are_not_text` sends a reply body b"a\xffb" through the create call and finds "a\u{FFFD}b" in post_call's original_response, the way the delete test reads it. vertex vertex_batch_create/execution/tests.rs `an_error_body_keeps_the_text_before_its_first_invalid_byte` becomes `an_error_body_replaces_invalid_bytes` with the create case ending ": bad \u{FFFD} job" and the lookup case ": gone \u{FFFD}". vertex vertex_batch_lifecycle/execution/tests.rs (L171-L180) gets the same rename with ": bad \u{FFFD} job", and page/tests.rs `a_refused_page_keeps_the_text_before_its_first_invalid_byte` becomes `a_refused_page_replaces_invalid_bytes` with ": page \u{FFFD} gone". cli commands/debug/fetch/tests.rs `fetch_drops_bytes_that_are_not_text_from_the_status_body` becomes `fetch_replaces_bytes_that_are_not_text_in_the_status_body` with body "o\u{FFFD}k". New: `an_error_body_replaces_invalid_bytes` in logging mavvrik_delivery/tests/mavvrik_delivery/error_handling.rs (an API failure whose body is b"bad \xff body" reports "bad \u{FFFD} body"), `an_insert_rejection_replaces_invalid_bytes` in logging zerobus/client/tests/zerobus/ingest_status.rs (an insert answered 400 with b"bad \xff row" fails with detail "insert returned 400: bad \u{FFFD} row") and `an_error_body_keeps_its_byte_order_mark` in openai image_variations/tests.rs (an error body b"\xef\xbb\xbfbad" gives message "\u{feff}bad").
+
+
+  Deviation rows. Five owners logged the old answer on purpose under the refuse-instead-of-mangle reading of clippy.toml, and the row goes or loses that clause. docs/deviations/B1538.yaml L9 becomes "An artifact error body is decoded as UTF-8 with one U+FFFD per invalid sequence, whatever charset its Content-Type declares, where LiteLLM's response.text honours a declared charset." with the same link. docs/deviations/B3503.yaml L30 becomes "A reply body is decoded as UTF-8 with one U+FFFD per invalid sequence, in post_call's original_response and in the provider error message; a charset the Content-Type declares is not honoured." docs/deviations/B3502.yaml L15 becomes "The response text a stage records is the body decoded as UTF-8 with one U+FFFD per invalid sequence; a charset the Content-Type declares is not honoured." docs/deviations/B3063.yaml L6 keeps only "the 200 and 400 limits count bytes" and its why loses the lossy-decoding reason. docs/deviations/B1372.yaml L9 and docs/deviations/B1373.yaml L3 drop the "keeps the text before its first invalid byte" clause from what and the "httpx decodes response.text with replacement characters" clause from why, and keep the rest. Each why says only what still differs.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/runway/video_lifecycle/content.rs
+    - crates/betterlite-core/src/api/runway/video_lifecycle/tests.rs
+    - crates/betterlite-http/src/gigachat_tokens/authenticator.rs
+    - crates/betterlite-http/src/gigachat_tokens/tests/oauth_request.rs
+    - crates/betterlite-http/src/interactions/agents_delete_versions.rs
+    - crates/betterlite-http/src/interactions/agents_delete_versions/tests/delete.rs
+    - crates/betterlite-http/src/interactions/agents_create_read.rs
+    - crates/betterlite-http/src/interactions/agents_create_read/create_call.rs
+    - crates/betterlite-http/src/interactions/agents_create_read/read_call.rs
+    - crates/betterlite-http/src/interactions/agents_create_read/tests/support.rs
+    - crates/betterlite-http/src/interactions/agents_create_read/tests/create_tests.rs
+    - crates/betterlite-logging/src/mavvrik_delivery/transport.rs
+    - crates/betterlite-logging/src/mavvrik_delivery/tests/mavvrik_delivery/error_handling.rs
+    - crates/betterlite-logging/src/zerobus/client/failure.rs
+    - crates/betterlite-logging/src/zerobus/client/tests/zerobus/ingest_status.rs
+    - crates/betterlite-vertex/src/vertex_batch_create/execution.rs
+    - crates/betterlite-vertex/src/vertex_batch_create/execution/tests.rs
+    - crates/betterlite-vertex/src/vertex_batch_lifecycle/execution.rs
+    - crates/betterlite-vertex/src/vertex_batch_lifecycle/execution/tests.rs
+    - crates/betterlite-vertex/src/vertex_batch_lifecycle/page.rs
+    - crates/betterlite-vertex/src/vertex_batch_lifecycle/page/tests.rs
+    - crates/betterlite-vertex/src/vertex_batch_lifecycle/cancel.rs
+    - crates/betterlite-vertex/src/vertex_batch_lifecycle/retrieve.rs
+    - crates/betterlite-cli/src/commands/debug/fetch.rs
+    - crates/betterlite-cli/src/commands/debug/fetch/tests.rs
+    - crates/betterlite-openai/src/image_variations/request.rs
+    - crates/betterlite-openai/src/image_variations/tests.rs
+    - docs/deviations/B1538.yaml
+    - docs/deviations/B3503.yaml
+    - docs/deviations/B3502.yaml
+    - docs/deviations/B3063.yaml
+    - docs/deviations/B1372.yaml
+    - docs/deviations/B1373.yaml
+  lint_tables: false
+references:
+  - url: https://github.com/encode/httpx/blob/0.28.1/httpx/_models.py#L641-L672
+    why: Response.text decodes with the declared charset or UTF-8 through TextDecoder; nothing is cut and no Latin-1 fallback exists.
+  - url: https://github.com/encode/httpx/blob/0.28.1/httpx/_decoders.py#L306-L318
+    why: TextDecoder's errors="replace", the one U+FFFD per invalid sequence the home gives.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6052-L6111
+    why: _handle_error reads e.response.text for the RunwayML artifact error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/authenticator.py#L184-L188
+    why: The GigaChat OAuth failure message quotes e.response.text whole.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/http_handler.py#L80-L135
+    why: Agent create and read log response.text as original_response; delete does the same at L332.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/http_handler.py#L46-L53
+    why: The interactions _handle_error hands e.response.text to the provider error class.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/destinations/mavvrik_destination.py#L155-L182
+    why: The Mavvrik register and signed URL failures slice resp.text by characters.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/zerobus/client.py#L84-L89
+    why: _status_failure formats error.response.text and cuts the detail to 500 characters.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/batches/handler.py#L262-L272
+    why: The batch create failure reads e.response.text; the retrieve, list and cancel paths at L391-L671 read response.text the same way.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/debug.py#L137-L140
+    why: _transport_failure shows error.response.text[:500] from requests.
+  - url: https://requests.readthedocs.io/en/latest/api/#requests.Response.text
+    why: requests decodes with errors="replace" in the encoding the headers name, UTF-8 for application/json.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L474-L529
+    why: _safe_get_response_text returns response.text, which _raise_masked_sync_error puts into the error's text for the image variation handler.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/image_variations/handler.py#L103-L110
+    why: The image variation failure raises OpenAIError with that text as its message.
+dod:
+  - text: The RunwayML artifact error, the GigaChat OAuth rejection, the agent delete error and log, the Mavvrik and Zerobus failure details and the Vertex batch create, retrieve, list, cancel and page errors keep the whole body with one U+FFFD per invalid sequence.
+    proof: [runway-tests, gigachat-tests, agent-delete-tests, mavvrik-tests, zerobus-tests, batch-create-tests, batch-lifecycle-tests]
+  - text: Agent create and read log U+FFFD where they read Latin-1, the CLI debug failure keeps a replaced byte instead of dropping it, and an image variation error keeps a leading byte order mark.
+    proof: [agent-create-tests, cli-debug-tests, image-variation-tests]
+  - text: None of the ten readers is left, and each caller calls betterlite_models::utf8_text::decode_replacing_invalid.
+    proof: [no-copies]
+  - text: The six deviation rows no longer claim a cut or a Latin-1 fallback, and B3063's row keeps its byte limits.
+    proof: [deviation-rows]
+checks:
+  optional: []
+  commands:
+    - id: runway-tests
+      why: The RunwayML artifact error still cuts at the first invalid byte, or another lifecycle test broke.
+      run: grep -q 'fn content_replaces_invalid_bytes_in_a_failure_body' crates/betterlite-core/src/api/runway/video_lifecycle/tests.rs && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::runway::video_lifecycle::/)'
+    - id: gigachat-tests
+      why: The GigaChat rejection body is still cut, or an OAuth request test broke.
+      run: grep -q 'fn oauth_request_replaces_an_invalid_byte' crates/betterlite-http/src/gigachat_tokens/tests/oauth_request.rs && cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^gigachat_tokens::/)'
+    - id: agent-delete-tests
+      why: The agent delete log or error still holds a cut body.
+      run: cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^interactions::agents_delete_versions::/)'
+    - id: agent-create-tests
+      why: Agent create or read still reads an invalid byte as Latin-1.
+      run: grep -q 'fn create_agent_replaces_bytes_that_are_not_text' crates/betterlite-http/src/interactions/agents_create_read/tests/create_tests.rs && cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^interactions::agents_create_read::/)'
+    - id: mavvrik-tests
+      why: A Mavvrik failure body is still cut where the valid text ends.
+      run: grep -q 'fn an_error_body_replaces_invalid_bytes' crates/betterlite-logging/src/mavvrik_delivery/tests/mavvrik_delivery/error_handling.rs && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^mavvrik_delivery::/)'
+    - id: zerobus-tests
+      why: A Zerobus failure detail is still cut at the first invalid byte.
+      run: grep -q 'fn an_insert_rejection_replaces_invalid_bytes' crates/betterlite-logging/src/zerobus/client/tests/zerobus/ingest_status.rs && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^zerobus::/)'
+    - id: batch-create-tests
+      why: A Vertex batch create or lookup error is still cut.
+      run: grep -q 'fn an_error_body_replaces_invalid_bytes' crates/betterlite-vertex/src/vertex_batch_create/execution/tests.rs && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_batch_create::/)'
+    - id: batch-lifecycle-tests
+      why: A Vertex batch retrieve, list, cancel or page error is still cut.
+      run: grep -q 'fn an_error_body_replaces_invalid_bytes' crates/betterlite-vertex/src/vertex_batch_lifecycle/execution/tests.rs && grep -q 'fn a_refused_page_replaces_invalid_bytes' crates/betterlite-vertex/src/vertex_batch_lifecycle/page/tests.rs && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_batch_lifecycle::/)'
+    - id: cli-debug-tests
+      why: The debug command still drops an invalid byte from a failure body.
+      run: grep -q 'fn fetch_replaces_bytes_that_are_not_text_in_the_status_body' crates/betterlite-cli/src/commands/debug/fetch/tests.rs && cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^commands::debug::/)'
+    - id: image-variation-tests
+      why: An image variation error still drops a byte order mark or decodes a UTF-16 mark.
+      run: grep -q 'fn an_error_body_keeps_its_byte_order_mark' crates/betterlite-openai/src/image_variations/tests.rs && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^image_variations::/)'
+    - id: no-copies
+      why: One of the ten readers or its cut, Latin-1 or BOM-sniffing decode is still in place.
+      run: >-
+        test -z "$(grep -nE 'fn (error_text|reply_text|body_text)[(]|valid_up_to|UTF_8[.]decode|chunk[.]valid[(][)][.]chars'
+        crates/betterlite-core/src/api/runway/video_lifecycle/content.rs
+        crates/betterlite-http/src/gigachat_tokens/authenticator.rs
+        crates/betterlite-http/src/interactions/agents_delete_versions.rs
+        crates/betterlite-http/src/interactions/agents_create_read.rs
+        crates/betterlite-logging/src/mavvrik_delivery/transport.rs
+        crates/betterlite-logging/src/zerobus/client/failure.rs
+        crates/betterlite-vertex/src/vertex_batch_create/execution.rs
+        crates/betterlite-vertex/src/vertex_batch_lifecycle/execution.rs
+        crates/betterlite-cli/src/commands/debug/fetch.rs
+        crates/betterlite-openai/src/image_variations/request.rs)"
+        && grep -q 'decode_replacing_invalid' crates/betterlite-logging/src/mavvrik_delivery/transport.rs
+        && grep -q 'decode_replacing_invalid' crates/betterlite-cli/src/commands/debug/fetch.rs
+        && grep -q 'decode_replacing_invalid' crates/betterlite-openai/src/image_variations/request.rs
+    - id: deviation-rows
+      why: A deviation row still says a body is cut or read as Latin-1, or B3063 lost its byte limits.
+      run: >-
+        test -z "$(grep -nE 'first invalid byte|valid text ends|Latin-1 when that fails|refuse lossy decoding'
+        docs/deviations/B1538.yaml docs/deviations/B3503.yaml docs/deviations/B3502.yaml
+        docs/deviations/B3063.yaml docs/deviations/B1372.yaml docs/deviations/B1373.yaml)"
+        && grep -q 'count bytes' docs/deviations/B3063.yaml
+        && grep -q 'U+FFFD' docs/deviations/B1538.yaml
+        && grep -q 'U+FFFD' docs/deviations/B3503.yaml
+        && grep -q 'U+FFFD' docs/deviations/B3502.yaml
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The 33 copies that already decode like Python, the home and its tests: B10180."
+  - "A charset the Content-Type declares: httpx and requests honour it, while the home and every caller decode UTF-8; the rows above keep saying so where they did."
+  - "The 'N bytes that are not UTF-8' readers that refuse a body instead of decoding it keep their own deviation rows."
+  - "cli's pkce_login/wire.rs response_text reads requests' Latin-1 fallback for an undeclared charset on purpose and is not one of these readers."
+  - "Mavvrik's limits stay in bytes, as B3063's row says; only the decode changes."
+pitfalls:
+  - "Zerobus cuts the formatted detail, not the body, to 500 characters, so the replacement character counts as one of the 500."
+  - "Mavvrik's floor_char_boundary must run on the decoded text, since U+FFFD is three bytes and a limit can fall inside it."
+  - "The debug command's take(TRANSPORT_BODY_CHARS) counts characters after decoding, like Python's [:500] on the decoded text."
+  - "requests decodes text/* without a charset as ISO-8859-1, so UTF-8 with replacement is right only for the proxy's JSON error bodies the debug command reads; say so in a one-line comment above the decode."
+  - "agents_create_read's body_text is pub(crate) and imported by create_call.rs, read_call.rs and tests/support.rs, so all three switch in the same change."
+  - "vertex_batch_lifecycle's body_text has importers in page.rs, cancel.rs and retrieve.rs; deleting it without them breaks the crate."
+  - "image_variations' existing case with b\"bad \\xFF body\" already expects U+FFFD and keeps passing; only the byte order mark case shows the fix."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
