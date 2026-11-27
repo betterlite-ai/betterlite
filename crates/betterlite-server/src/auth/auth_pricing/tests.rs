@@ -32,6 +32,8 @@ const MODEL_ROUTE: &str = "/v1/files";
 // the request-level checks the task pins run on the chat route
 const CHAT_ROUTE: &str = "/v1/chat/completions";
 const MASTER_KEY: &str = "secret-master-key";
+const JSON_BODY: &str = "application/json";
+const FORM_BODY: &str = "application/x-www-form-urlencoded";
 
 fn config_with(general: &str, max_budget: &str) -> Config {
     let source = format!(
@@ -110,11 +112,20 @@ async fn mark_called(Extension(reached): Extension<Arc<AtomicBool>>) -> &'static
 }
 
 fn request_to(reached: &Arc<AtomicBool>, route: &str, body: &'static str) -> Request<Body> {
+    request_with(reached, route, JSON_BODY, body)
+}
+
+fn request_with(
+    reached: &Arc<AtomicBool>,
+    route: &str,
+    content_type: &'static str,
+    body: &'static str,
+) -> Request<Body> {
     let mut request = Request::builder()
         .method("POST")
         .uri(route)
         .header(header::AUTHORIZATION, "Bearer secret-master-key")
-        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::CONTENT_TYPE, content_type)
         .body(Body::from(body))
         .expect("the request builds");
     request.extensions_mut().insert(Arc::clone(reached));
@@ -125,6 +136,16 @@ async fn run_rule(
     config: &Config,
     rule: PricingRule,
     route: &str,
+    body: &'static str,
+) -> (StatusCode, String, bool) {
+    run_rule_with(config, rule, route, JSON_BODY, body).await
+}
+
+async fn run_rule_with(
+    config: &Config,
+    rule: PricingRule,
+    route: &str,
+    content_type: &'static str,
     body: &'static str,
 ) -> (StatusCode, String, bool) {
     let reached = Arc::new(AtomicBool::new(false));
@@ -138,7 +159,7 @@ async fn run_rule(
     )
     .layer(Extension(Arc::new(rule)));
     let response = application
-        .oneshot(request_to(&reached, route, body))
+        .oneshot(request_with(&reached, route, content_type, body))
         .await
         .expect("the request reaches the router");
     let status = response.status();
@@ -246,4 +267,87 @@ async fn request_checks_refuse() {
     assert!(user_body.contains("\"param\":\"None\""), "{user_body}");
     assert!(user_body.contains("\"code\":\"401\""), "{user_body}");
     assert!(!user_reached);
+}
+
+// a form body is dict(request.form()), so its user field satisfies enforce_user_param
+#[tokio::test]
+async fn form_request_carries_its_user() {
+    let user_config = config_with("  enforce_user_param: true\n", "0");
+    let (status, body, reached) = run_rule_with(
+        &user_config,
+        PricingRule::default(),
+        CHAT_ROUTE,
+        FORM_BODY,
+        "model=gpt-4o&user=alice",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(reached);
+}
+
+// a form metadata string goes through json.loads before the tag check, urlencoded and multipart alike
+#[tokio::test]
+async fn form_metadata_tags_are_refused() {
+    let tags_config = config_with("  reject_clientside_metadata_tags: true\n", "0");
+    let (urlencoded, urlencoded_body, urlencoded_reached) = run_rule_with(
+        &tags_config,
+        PricingRule::default(),
+        CHAT_ROUTE,
+        FORM_BODY,
+        "metadata=%7B%22tags%22%3A%5B%5D%7D",
+    )
+    .await;
+    assert_eq!(urlencoded, StatusCode::BAD_REQUEST, "{urlencoded_body}");
+    assert!(
+        urlencoded_body.contains("\"param\":\"metadata.tags\""),
+        "{urlencoded_body}"
+    );
+    assert!(!urlencoded_reached);
+
+    let multipart_body = "--b\r\nContent-Disposition: form-data; name=\"metadata\"\r\n\r\n{\"tags\":[]}\r\n--b--\r\n";
+    let (multipart, multipart_response, multipart_reached) = run_rule_with(
+        &tags_config,
+        PricingRule::default(),
+        CHAT_ROUTE,
+        "multipart/form-data; boundary=b",
+        multipart_body,
+    )
+    .await;
+    assert_eq!(multipart, StatusCode::BAD_REQUEST, "{multipart_response}");
+    assert!(
+        multipart_response.contains("\"param\":\"metadata.tags\""),
+        "{multipart_response}"
+    );
+    assert!(!multipart_reached);
+}
+
+// only request.form() hands metadata to json.loads; in a JSON body a string metadata stays text
+#[tokio::test]
+async fn json_metadata_text_is_left_alone() {
+    let tags_config = config_with("  reject_clientside_metadata_tags: true\n", "0");
+    let (status, body, reached) = run_rule(
+        &tags_config,
+        PricingRule::default(),
+        CHAT_ROUTE,
+        r#"{"metadata":"{\"tags\":[]}"}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(reached);
+}
+
+// a form metadata string Python's json.loads cannot read leaves the other fields, the user among them, intact
+#[tokio::test]
+async fn unparseable_form_metadata_keeps_the_user() {
+    let user_config = config_with("  enforce_user_param: true\n", "0");
+    let (status, body, reached) = run_rule_with(
+        &user_config,
+        PricingRule::default(),
+        CHAT_ROUTE,
+        FORM_BODY,
+        "metadata=not-json&user=alice",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(reached);
 }

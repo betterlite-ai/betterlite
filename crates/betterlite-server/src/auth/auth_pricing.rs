@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use axum::body::{Body, Bytes};
-use axum::http::Request;
+use axum::http::{Request, header};
 use betterlite_auth::auth_errors::conversion::{AuthFailure, as_proxy_exception};
 use betterlite_auth::auth_key_budgets::key_budget::Denial;
 use betterlite_auth::auth_key_budgets::money::Money;
@@ -32,13 +32,16 @@ use betterlite_auth::current_spend::SpendQuery;
 use betterlite_auth::entity_model_access::error::EntityModelAccessError;
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 use betterlite_config::sections::auth_pricing::{MaxBudget, Settings};
+use betterlite_core::api::request_body::{MediaTypeKind, classify_media_type, form_body};
 use betterlite_error::proxy_exception::ProxyException;
+use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use rust_decimal::Decimal;
 
 use crate::auth::auth_identity::{AuthContext, StageFailure, StageInput};
 use crate::auth::auth_model_patterns::max_recurse_depth_for_request;
 use crate::auth::current_spend::spend_failure_exception;
+use crate::auth::request_body_safety::request_object;
 use crate::auth::team_budget_admission::team_budget_exception;
 use crate::error_body::AuthenticationFailure;
 use crate::state::ServerState;
@@ -128,12 +131,40 @@ pub(crate) fn stage_input(
         rule,
         method: Some(request.method().as_str().to_owned()),
         route: request.uri().path().to_owned(),
-        body: body
-            .and_then(|bytes| serde_json::from_slice::<JsonObject>(bytes).ok())
-            .unwrap_or_default(),
+        body: request_body(request, body),
         settings,
         max_recurse_depth: max_recurse_depth_for_request(request),
     })))
+}
+
+// LiteLLM's auth read: a JSON dict, or dict(request.form()) with its metadata string parsed by json.loads
+fn request_body(request: &Request<Body>, body: Option<&Bytes>) -> JsonObject {
+    let Some(bytes) = body else {
+        return JsonObject::new();
+    };
+    let content_type = request
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default();
+    let mut object = request_object(bytes, content_type).unwrap_or_default();
+    if let Some(metadata) = form_metadata(&object, content_type) {
+        object.insert("metadata".to_owned(), metadata);
+    }
+    object
+}
+
+// request.form() hands a string metadata to json.loads; a body it cannot read carries no tags to check
+fn form_metadata(body: &JsonObject, content_type: &str) -> Option<Json> {
+    if !matches!(classify_media_type(content_type), MediaTypeKind::Form) {
+        return None;
+    }
+    let Json::Text(metadata) = body.get("metadata")? else {
+        return None;
+    };
+    let fields = BTreeMap::from([("metadata".to_owned(), metadata.clone())]);
+    let resolved = form_body(&fields).ok()?;
+    serde_json::from_value::<Json>(resolved.get("metadata")?.clone()).ok()
 }
 
 pub(crate) async fn prefetched(stage: Box<PricingStageInput>) -> Result<StageInput, StageFailure> {
