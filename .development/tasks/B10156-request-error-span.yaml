@@ -1,0 +1,101 @@
+id: B10156
+title: Close the dangling OTel server span on error answers
+description: >-
+  When a route or an exception handler turns a failure into a JSON answer, the exception never reaches the HTTP instrumentation, so LiteLLM's _close_dangling_otel_server_span (proxy_server.py L1928-L1963) finishes the request's OTel SERVER span by hand. B081's Anthropic error answer and B8591's five exception handlers call it, so it lives once, here, and neither of them waits for B8389's admin settings routes. Build module `request_error_span` in crates/betterlite-server/src/request_error_span.rs, with its tests in request_error_span/tests.rs. The skeleton has the empty file and its `pub mod` line in lib.rs. Nothing here can fail, so the module has no error enum.
+
+
+  Inputs, all passed in by the caller, since Rust keeps no proxy_server globals:
+
+  - The span slot, `&mut Option<LiveSpan>` (B3853's betterlite_logging::otel::v2_callback::live_span::LiveSpan). It is LiteLLM's request.state.parent_otel_span: the caller hands in the slot it keeps for the request.
+
+  - The logger, `Option<&ServerSpanLogger>`. It is the proxy's open_telemetry_logger slot and is None when no OTel callback is configured. `ServerSpanLogger` is a public enum with one variant per class LiteLLM can hold there: `Legacy(ErrorInformationConfig)` for the legacy OpenTelemetry class, carrying the ErrorInformationConfig its error recorder needs (betterlite_logging::otel::v2_callback::span_error), and `V2(Arc<V2Callback>)` for OpenTelemetryV2 (B3853's callback).
+
+  - `otel_v2: bool`, the LITELLM_OTEL_V2 flag B3842's otel_settings section resolves at load. It is the same value the auth code passes as SpanRequest.otel_v2. LiteLLM's "import failed, treat V2 as off" branch has no counterpart, since the flag is already a bool here.
+
+  - `status: u16`, the status of the answer being sent, and `error: Option<&ExceptionFacts>` (B253's betterlite_logging::logging_metadata::exception::ExceptionFacts).
+
+
+  `close_error_span(span, logger, otel_v2, status, error)`, in LiteLLM's order:
+
+  1. No span in the slot, or no logger: return and leave the slot as it is.
+
+  2. otel_v2 true: when status is 400 or more, call the logger's record_error_attributes_on_span. For Legacy that is B3858's betterlite_logging::otel::service::error_attributes::record_error_attributes(Some(span), error, i64::from(status), &config). For V2 it is B3853's betterlite_logging::otel::v2_callback::proxy::record_error_on_span(&callback, Some(span), error, status). Then return. Do not set the span status yourself, do not end the span and do not clear the slot: under V2 the HTTP instrumentation owns the span and ends it with its own http.* attributes.
+
+  3. otel_v2 false with the Legacy logger: B8910's betterlite_logging::otel::logger_runtime::legacy::set_response_status_code(Some(span), Some(i64::from(status))) writes http.response.status_code. When status is 400 or more, record the error attributes as in step 2. Then set the span status on the locked span to `Status::error("")` for 400 or more and `Status::Ok` below, the way otel/legacy_lifecycle/failure.rs and success.rs do. End the span and take it out of the slot, so the slot is None afterwards.
+
+  4. otel_v2 false with the V2 logger: OpenTelemetryV2 has no set_response_status_code_attribute, so LiteLLM's call raises AttributeError and its except block logs at debug "Error closing dangling OTEL SERVER span: 'OpenTelemetryV2' object has no attribute 'set_response_status_code_attribute'". Its finally block then clears request.state.parent_otel_span. Do the same: log that line at debug through tracing, leave the span unstamped and open, and set the slot to None.
+
+
+  `exception_facts(class_name: &str, error: &ProxyException) -> ExceptionFacts` builds what LiteLLM's get_error_information reads off a ProxyException (B8410's betterlite_error::proxy_exception::ProxyException): class_name as given, message Some(error.message) (str(exc) is the message), code Some(error.code) as written, headers Some of error.headers in key order, and every other field at its default. class_name is LiteLLM's type(exc).__name__: "ProxyException", or "ModelAccessDeniedProxyException" when the caller holds B8410's ModelAccessDeniedProxyException and passes its as_proxy_exception(). B081 and B8591 both close the span for a ProxyException, so they both call this instead of building the facts twice. An HTTPException, a ManagementProblem or a validation error has no shared conversion; B8591 builds those facts itself.
+
+
+  Tests (request_error_span::tests) build real spans the way management_effects/fixtures/harness.rs does: an SdkTracerProvider with a simple InMemorySpanExporter and LiveSpan::from(tracer.start(..)). An ended span shows up in the exporter with its status and attributes. To check a span this module left open, assert that the exporter is still empty, then end the span in the test and read it. The Legacy logger carries an ErrorInformationConfig with Normalizer::new(), no redactor and log_client_error_tracebacks false. The V2 logger is a V2Callback::new over CallbackParts, built the way crates/betterlite-logging/src/otel/v2_callback/tests/otel_v2_callback/support.rs does. Errors are synthetic: exception_facts("ProxyException", ..) over a ProxyException with message test-failure and code "503".
+
+  - legacy_ tests: status 503 with an error ends the span with http.response.status_code 503, error.type ProxyException, ERROR status and an empty slot. Status 200 ends it with http.response.status_code 200, OK status and no error.* attribute. Status 400 is ERROR and 399 is OK. Status 503 with no error ends it as ERROR without error.* attributes.
+
+  - v2_ tests: with otel_v2 true and the V2 logger, status 500 stamps error.type on the span, leaves it open and leaves it in the slot. Status 302 writes nothing and keeps the slot. With otel_v2 true and the Legacy logger, status 500 stamps the legacy error attributes and the span stays open and in the slot.
+
+  - skip_ tests: an empty slot with a logger stays empty and the exporter stays empty. A span with no logger stays in the slot, open and without attributes. The V2 logger with otel_v2 false empties the slot and leaves the span open and unstamped.
+
+  - facts_ tests: exception_facts keeps the class name, message, code and headers it was given, so "None" stays "None" and "ModelAccessDeniedProxyException" stays that class name.
+scope:
+  paths:
+    - crates/betterlite-server/src/request_error_span.rs
+    - crates/betterlite-server/src/request_error_span/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1928-L1963
+    why: Owned. _close_dangling_otel_server_span with the no-span and no-logger returns, the V2 branch, the legacy close and the finally that clears the slot.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325-L4359
+    why: ProxyException keeps message as str(exc), code as str(code) and headers as a dict, and exception_facts copies all three.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L3543-L3580
+    why: The legacy set_response_status_code_attribute (B8910) and record_error_attributes_on_span (B3858) this module calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L761-L787
+    why: OpenTelemetryV2.record_error_attributes_on_span (B3853). It stamps the span but never ends it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/endpoints.py#L65-L83
+    why: Call site in B081. The Anthropic JSON error answer closes the span with the status it answers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1892-L1919
+    why: Call sites in B8591. openai_exception_handler and otlp_http_exception_handler close the span before answering.
+dod:
+  - text: With the Legacy logger and otel_v2 false, close_error_span writes http.response.status_code, stamps the error attributes only for a status of 400 or more, sets ERROR at 400 or more and OK below, ends the span and empties the slot.
+    proof: [legacy-tests]
+  - text: With otel_v2 true, close_error_span stamps the error attributes through the logger's own class only for a status of 400 or more and leaves the span open and in the slot.
+    proof: [v2-tests]
+  - text: An empty slot or a missing logger changes nothing, and the V2 logger with otel_v2 false empties the slot without stamping or ending the span.
+    proof: [skip-tests]
+  - text: exception_facts carries a ProxyException's class name, message, code and headers as LiteLLM's get_error_information reads them.
+    proof: [facts-tests]
+checks:
+  optional: []
+  commands:
+    - id: legacy-tests
+      why: The legacy close skips the status attribute, stamps errors below 400, sets the wrong span status, leaves the span open or keeps it in the slot.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^request_error_span::tests::legacy_/)'
+    - id: v2-tests
+      why: Under V2 the close ends the span, clears the slot, or stamps errors below 400.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^request_error_span::tests::v2_/)'
+    - id: skip-tests
+      why: A missing span or logger still touches the slot, or the V2 logger with V2 off stamps or ends the span or keeps it in the slot.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^request_error_span::tests::skip_/)'
+    - id: facts-tests
+      why: exception_facts drops or rewrites the class name, message, code or headers.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^request_error_span::tests::facts_/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "_log_model_access_denial and the /model/settings and /alerting/settings routes with their helpers: B8389."
+  - "general_settings_view: no code. It is B8380's ProxyConfigState.general_settings read through B4140's SettingsStore::resolved, and B081 reads include_call_id_in_error_body from B011's error_body_call_id section."
+  - "The callers: openai_exception_handler, otlp_http_exception_handler, management_problem_exception_handler, otel_request_validation_exception_handler and otel_unhandled_exception_handler are B8591; _anthropic_error_json_response is B081. Each keeps the span slot for its request and passes it in."
+  - "Putting the server span on the request (_ensure_parent_otel_span_on_request_state): B751's ensure_parent_span."
+  - "set_response_status_code: B8910. The legacy record_error_attributes: B3858. record_error_on_span, V2Callback and LiveSpan: B3853. The LITELLM_OTEL_V2 flag: B3842. ExceptionFacts: B253. ProxyException and ModelAccessDeniedProxyException: B8410."
+  - "Every other proxy_server.py function: the owners B124's out_of_scope lists."
+pitfalls:
+  - "Under V2 the span stays in the slot and stays open: the HTTP instrumentation ends it, so ending or clearing it here cuts the server span short."
+  - "The status attribute and the error attributes go on before set_status and end; an ended SdkSpan ignores later writes, so ending first loses them."
+  - "Error attributes are stamped only for a status of 400 or more, but the legacy close sets a span status on every call, OK below 400."
+  - "The no-span and no-logger returns leave the slot alone; only steps 3 and 4 empty it."
+  - "ProxyException.code is text and is the string None when LiteLLM got no code; exception_facts copies it as written and never parses it, since callers work out the numeric status themselves."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

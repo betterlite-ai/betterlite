@@ -22,7 +22,9 @@ description: >-
   Result<PipelineExecutionResult, PipelineExecError>` where `T` is B3661's `BaseTranslation` type. `ExecuteSteps<'a, T>` holds `steps:
   &'a [PipelineStep]`, `mode: PipelineMode`, `data: &'a mut BTreeMap<String, GuardrailValue>`, `user_api_key_dict: &'a` B732's principal,
   `call_type: &'a str`, `policy_name: &'a str`, `raw_request_snapshot: Option<&'a BTreeMap<String, GuardrailValue>>`, `streaming_chunks:
-  Option<&'a mut Vec<serde_json::Value>>` and `endpoint_translation: Option<&'a T>`. These are LiteLLM's nine arguments in the same order.
+  Option<&'a mut Vec<StreamItem>>` and `endpoint_translation: Option<&'a T>`. These are LiteLLM's nine arguments in the same order.
+  StreamItem is the stream item B10169 moves into betterlite-core (guardrails::streaming_rewrite::shapes), a parsed object as Json and a
+  raw frame as Bytes, the same list B3246's `StreamingStep.streaming_chunks` takes, so the buffered stream reaches the step as it came.
   B6370's `PipelineRunner::execute_steps(...)` is a thin forward to this call, so keep this one struct and do not add a second entry point.
 
   `execute_steps` (pipeline_executor.py L311-L426). Make `working_data` a copy of `data`, with its own copy of `metadata` when the key
@@ -251,7 +253,7 @@ out_of_scope:
   - "B3240 owns PipelineStep, GuardrailPipeline, PipelineStepResult, PipelineExecutionResult and the action and mode validation (pipeline_types.py)."
   - "B3680 owns UnifiedLLMGuardrails pre_call and post_call_success; B3666 owns mark_pre_call_hook_ran; B5471 owns CustomGuardrail's is_guardrail_intervention (as GuardrailFailure::is_intervention) and scan_raw_request."
   - "B2204 owns independent_snapshot; B206 owns get_metadata_variable_name_from_kwargs and get_or_create_metadata_bucket."
-  - "B3244 and B3248 own the other routes of policy_endpoints.py; B8393 owns ProxyLogging._handle_pipeline_result and _maybe_execute_pipelines (the execute_steps caller at L2218 of litellm/proxy/utils.py), B8391 owns _policy_pipelines, and B6370 owns _pipeline_gated_stream (the caller at L4056)."
+  - "B3244 and B3248 own the other routes of policy_endpoints.py; B10160 owns ProxyLogging._handle_pipeline_result and _maybe_execute_pipelines (the execute_steps caller at L2218 of litellm/proxy/utils.py), B8391 owns _policy_pipelines, and B6370 owns _pipeline_gated_stream (the caller at L4056)."
   - "B8666 implements the guardrail handle's own pre-call and post-call hooks for registered non-unified guardrails; this task defines how it calls them (see notes) and tests with fakes."
 
 pitfalls:

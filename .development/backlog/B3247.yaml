@@ -2,7 +2,7 @@ id: B3247
 milestone: M6 guardrails
 title: Pipeline execution and pipeline test route
 status: todo
-depends_on: [B003, B732, B855, B756, B3240, B3246, B3661, B3666, B3680, B5471, B206, B2204]
+depends_on: [B003, B732, B855, B756, B3240, B3246, B3661, B3666, B3680, B5471, B206, B2204, B10169]
 file: tasks/B3247-pipeline-executor.yaml
 covers:
   - "litellm/proxy/policy_engine/pipeline_executor.py"
