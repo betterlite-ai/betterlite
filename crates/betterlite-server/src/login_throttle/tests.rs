@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+mod oracle;
 mod stores;
 
 use std::sync::Arc;
@@ -297,14 +298,22 @@ async fn local_shared_maximum() {
         proxy_topology: direct_topology(),
         ..Settings::default()
     };
-    let built = fixture(&settings, Some("10.1.1.1"), 1000.0);
-    assert_eq!(fail(&built, "bob").await.user, 0);
-    assert_eq!(fail(&built, "bob").await.user, 300);
+    let built = fixture_request(
+        &settings,
+        &NetworkRequest {
+            peer: Some("10.1.1.1"),
+            ..NetworkRequest::default()
+        },
+        1000.0,
+        Some(NO_FAULTS),
+    );
     let keys = keys_of(&built, "bob");
     built
-        .redis
-        .as_ref()
-        .expect("shared")
+        .blocks
+        .set(&keys.pair_block, CacheValue::Float(1300.0), 300)
+        .expect("the local block");
+    let shared = Arc::clone(built.redis.as_ref().expect("shared"));
+    shared
         .record_failure(
             &keys,
             FailureLimits {
@@ -317,9 +326,21 @@ async fn local_shared_maximum() {
         .await
         .expect("shared block");
     match built.throttle.attempt("bob").await.expect("attempt") {
-        Attempt::Refused(refused) => assert_eq!(refused.retry_after, 900),
+        Attempt::Refused(refused) => {
+            assert_eq!(refused.retry_after, 900);
+            assert_eq!(refused.scope, Scope::User);
+        }
         Attempt::Allowed(_) => panic!("shared block should refuse"),
     }
+    assert_eq!(shared.counter(&keys.pair_counter), Some(1));
+    assert_eq!(shared.counter(&keys_of(&built, "dave").pair_counter), None);
+    built.clock.set(1061.0);
+    assert_eq!(shared.counter(&keys.pair_counter), None);
+    let live = shared.block_ttls(&keys).await.expect("the live ttls");
+    assert_eq!(live.user, 839);
+    built.clock.set(1900.0);
+    let expired = shared.block_ttls(&keys).await.expect("the expired ttls");
+    assert_eq!(expired.user, -2);
 }
 
 #[tokio::test]
@@ -328,7 +349,15 @@ async fn source_precedes_longer_pair() {
         proxy_topology: direct_topology(),
         ..Settings::default()
     };
-    let built = fixture(&settings, Some("10.1.1.1"), 1000.0);
+    let built = fixture_request(
+        &settings,
+        &NetworkRequest {
+            peer: Some("10.1.1.1"),
+            ..NetworkRequest::default()
+        },
+        1000.0,
+        Some(NO_FAULTS),
+    );
     let keys = keys_of(&built, "bob");
     let shared = Arc::clone(built.redis.as_ref().expect("shared store"));
     shared.block(&keys.pair_block, 30);
@@ -513,6 +542,14 @@ async fn redis_failure_classes_fall_back() {
     assert_eq!(fail(&built, "bob").await.user, 0);
     assert_eq!(built.counters.value(&keys.pair_counter), Some(1.0_f64));
     assert_eq!(
+        built
+            .redis
+            .as_ref()
+            .expect("shared")
+            .counter(&keys.pair_counter),
+        None
+    );
+    assert_eq!(
         built.warnings.drain_classified(),
         vec!["redis_fallback".to_owned()]
     );
@@ -536,14 +573,13 @@ async fn redis_success_does_not_mirror_local() {
     let keys = keys_of(&built, "bob");
     assert_eq!(fail(&built, "bob").await.user, 0);
     assert!(!built.counters.contains(&keys.pair_counter));
-    assert_eq!(
-        built
-            .redis
-            .as_ref()
-            .expect("shared")
-            .counter(&keys.pair_counter),
-        Some(1)
-    );
+    let shared = built.redis.as_ref().expect("shared");
+    assert_eq!(shared.counter(&keys.pair_counter), Some(1));
+    assert_eq!(shared.counter(&keys.source_counter), None);
+    assert!(matches!(
+        built.throttle.attempt("bob").await.expect("attempt"),
+        Attempt::Allowed(_)
+    ));
 }
 
 #[tokio::test]
@@ -667,6 +703,238 @@ fn topology_blank_or_malformed_entry() {
         Some(Vec::new())
     );
     assert_eq!(declared_proxy_ranges(&ProxyTopology::Unknown), None);
+}
+
+#[test]
+fn scoped_addresses() {
+    assert_eq!(source_group("fe80::1%eth0"), "fe80::/64");
+    assert_eq!(source_group("10.1.2.3%eth0"), "10.1.2.3%eth0");
+    assert_eq!(source_group("fe80::1%"), "fe80::1%");
+    assert_eq!(source_group("::%a%b"), "::%a%b");
+    assert_eq!(source_group("::%"), "::%");
+}
+
+#[test]
+fn local_store_expires_on_read() {
+    let clock = FakeClock::at(1000.0);
+    let store = FakeLocalStore::new(clock.clock());
+    store.set("k", CacheValue::Float(1.0), 10).expect("the set");
+    clock.set(1005.0);
+    assert_eq!(
+        store.get("k").expect("the live read"),
+        Some(CacheValue::Float(1.0))
+    );
+    clock.set(1010.0);
+    assert!(store.get("k").expect("the expired read").is_none());
+}
+
+#[test]
+fn local_store_set_keeps_a_live_ttl() {
+    let clock = FakeClock::at(1000.0);
+    let store = FakeLocalStore::new(clock.clock());
+    store
+        .set("k", CacheValue::Float(1.0), 10)
+        .expect("the first set");
+    clock.set(1005.0);
+    store
+        .set("k", CacheValue::Float(2.0), 60)
+        .expect("the live reset");
+    clock.set(1011.0);
+    assert!(store.get("k").expect("the kept expiry").is_none());
+
+    let exact = FakeClock::at(1000.0);
+    let other = FakeLocalStore::new(exact.clock());
+    other
+        .set("k", CacheValue::Float(1.0), 10)
+        .expect("the first set");
+    exact.set(1010.0);
+    other
+        .set("k", CacheValue::Float(2.0), 60)
+        .expect("the reset at the expiry");
+    exact.set(1020.0);
+    assert!(matches!(
+        other.get("k").expect("the refreshed read"),
+        Some(CacheValue::Float(_))
+    ));
+}
+
+#[tokio::test]
+async fn exempt_override_disables_the_throttle() {
+    let settings = Settings {
+        source_limit_overrides: SourceOverrides::Mapping(vec![SourceOverride {
+            range: "10.1.1.1".to_owned(),
+            limit: OverrideLimit::Exempt,
+        }]),
+        proxy_topology: direct_topology(),
+        ..Settings::default()
+    };
+    let built = fixture(&settings, Some("10.1.1.1"), 1000.0);
+    assert!(!built.throttle.enabled);
+    assert_eq!(built.throttle.source_limit, None);
+    assert_eq!(built.throttle.user_limit, 1);
+    let attempt = match built.throttle.attempt("bob").await.expect("attempt") {
+        Attempt::Allowed(attempt) => attempt,
+        Attempt::Refused(_) => panic!("an exempt source is never refused"),
+    };
+    attempt.failed().await.expect("the exempt failure");
+    assert!(
+        !built
+            .counters
+            .contains(&keys_of(&built, "bob").pair_counter)
+    );
+}
+
+#[tokio::test]
+async fn undeclared_topology_ignores_a_source_block() {
+    let settings = Settings {
+        source_limit: 4,
+        ..Settings::default()
+    };
+    let built = fixture(&settings, Some("10.1.1.1"), 1000.0);
+    assert_eq!(built.throttle.source_limit, None);
+    assert_eq!(built.throttle.user_limit, 2);
+    built
+        .blocks
+        .set(
+            &keys_of(&built, "bob").source_block,
+            CacheValue::Float(1300.0),
+            300,
+        )
+        .expect("the source block");
+    assert!(matches!(
+        built.throttle.attempt("bob").await.expect("attempt"),
+        Attempt::Allowed(_)
+    ));
+}
+
+#[tokio::test]
+async fn shared_source_counts_when_declared() {
+    let settings = Settings {
+        source_limit: 6,
+        proxy_topology: direct_topology(),
+        ..Settings::default()
+    };
+    let built = fixture_request(
+        &settings,
+        &NetworkRequest {
+            peer: Some("10.1.1.1"),
+            ..NetworkRequest::default()
+        },
+        1000.0,
+        Some(NO_FAULTS),
+    );
+    let keys = keys_of(&built, "bob");
+    let shared = Arc::clone(built.redis.as_ref().expect("shared"));
+    assert_eq!(fail(&built, "bob").await, BlockTtls { user: 0, source: 0 });
+    assert_eq!(fail(&built, "bob").await, BlockTtls { user: 0, source: 0 });
+    assert_eq!(fail(&built, "bob").await, BlockTtls { user: 0, source: 0 });
+    assert_eq!(
+        fail(&built, "bob").await,
+        BlockTtls {
+            user: 300,
+            source: 0
+        }
+    );
+    assert_eq!(shared.counter(&keys.pair_counter), Some(4));
+    assert_eq!(shared.counter(&keys.source_counter), Some(3));
+    built.clock.set(1005.0);
+    assert_eq!(
+        fail(&built, "bob").await,
+        BlockTtls {
+            user: 295,
+            source: 0
+        }
+    );
+    assert_eq!(shared.counter(&keys.pair_counter), Some(4));
+    assert_eq!(
+        fail(&built, "carol").await,
+        BlockTtls { user: 0, source: 0 }
+    );
+    assert_eq!(
+        fail(&built, "carol").await,
+        BlockTtls { user: 0, source: 0 }
+    );
+    assert_eq!(
+        fail(&built, "carol").await,
+        BlockTtls { user: 0, source: 0 }
+    );
+    assert_eq!(
+        fail(&built, "carol").await,
+        BlockTtls {
+            user: 300,
+            source: 0
+        }
+    );
+    assert_eq!(
+        fail(&built, "dave").await,
+        BlockTtls {
+            user: 0,
+            source: 300
+        }
+    );
+    assert_eq!(shared.counter(&keys.source_counter), Some(7));
+    match built.throttle.attempt("dave").await.expect("attempt") {
+        Attempt::Refused(refused) => {
+            assert_eq!(refused.scope, Scope::Source);
+            assert_eq!(refused.retry_after, 300);
+        }
+        Attempt::Allowed(_) => panic!("the source block should refuse"),
+    }
+    built.throttle.clear_pair("bob").await.expect("the clear");
+    assert_eq!(shared.counter(&keys.pair_counter), None);
+    assert_eq!(shared.counter(&keys.source_counter), Some(7));
+}
+
+#[tokio::test]
+async fn failed_attempt_records_and_warns() {
+    let settings = Settings {
+        source_limit: 4,
+        proxy_topology: direct_topology(),
+        ..Settings::default()
+    };
+    let built = fixture(&settings, Some("10.1.1.1"), 1000.0);
+    assert_eq!(built.throttle.user_limit, 2);
+    fail_attempt(&built, "bob").await;
+    fail_attempt(&built, "bob").await;
+    assert!(built.warnings.drain_classified().is_empty());
+    fail_attempt(&built, "bob").await;
+    let bob = built.warnings.messages();
+    assert_eq!(bob.len(), 1);
+    assert!(bob[0].contains("for 300 seconds"), "{bob:?}");
+    assert!(bob[0].contains("scope=user username=\"bob\""), "{bob:?}");
+    built.warnings.drain_classified();
+    fail_attempt(&built, "carol").await;
+    fail_attempt(&built, "carol").await;
+    fail_attempt(&built, "carol").await;
+    built.warnings.drain_classified();
+    fail_attempt(&built, "dave").await;
+    let dave = built.warnings.messages();
+    assert_eq!(dave.len(), 1);
+    assert!(dave[0].contains("for 300 seconds"), "{dave:?}");
+    assert!(
+        dave[0].contains("scope=source username=\"dave\""),
+        "{dave:?}"
+    );
+    built.warnings.drain_classified();
+    match built.throttle.attempt("bob").await.expect("attempt") {
+        Attempt::Refused(refused) => {
+            assert_eq!(refused.scope, Scope::User);
+            assert_eq!(refused.retry_after, 300);
+        }
+        Attempt::Allowed(_) => panic!("bob's pair block should refuse"),
+    }
+    match built.throttle.attempt("dave").await.expect("attempt") {
+        Attempt::Refused(refused) => assert_eq!(refused.scope, Scope::Source),
+        Attempt::Allowed(_) => panic!("dave's source should refuse"),
+    }
+}
+
+async fn fail_attempt(fixture: &Fixture, username: &str) {
+    let attempt = match fixture.throttle.attempt(username).await.expect("attempt") {
+        Attempt::Allowed(attempt) => attempt,
+        Attempt::Refused(_) => panic!("{username} is not blocked yet"),
+    };
+    attempt.failed().await.expect("the failed attempt");
 }
 
 #[test]

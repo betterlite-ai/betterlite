@@ -264,4 +264,34 @@ fn bounded_local_stores_evict_at_the_documented_capacities() {
             .expect("the second block read")
             .is_some()
     );
+    // the store's own counter and expiry, not just this crate's fake: an increment adds one
+    assert_eq!(
+        LocalStore::increment(stores.counters.as_ref(), "inc", 60)
+            .expect("the first increment")
+            .to_bits(),
+        1.0_f64.to_bits()
+    );
+    assert_eq!(
+        LocalStore::increment(stores.counters.as_ref(), "inc", 60)
+            .expect("the second increment")
+            .to_bits(),
+        2.0_f64.to_bits()
+    );
+    // a zero-second ttl has already expired once the clock moves past it
+    LocalStore::set(stores.blocks.as_ref(), "short", CacheValue::Float(9.0), 0)
+        .expect("the short block");
+    clock.set(1003.5);
+    assert!(
+        LocalStore::get(stores.blocks.as_ref(), "short")
+            .expect("the short read")
+            .is_none()
+    );
+    LocalStore::set(stores.blocks.as_ref(), "doomed", CacheValue::Float(1.0), 60)
+        .expect("the doomed block");
+    LocalStore::delete(stores.blocks.as_ref(), "doomed").expect("the block delete");
+    assert!(
+        LocalStore::get(stores.blocks.as_ref(), "doomed")
+            .expect("the deleted read")
+            .is_none()
+    );
 }

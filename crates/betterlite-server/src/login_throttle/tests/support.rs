@@ -189,14 +189,6 @@ impl FakeRedis {
     }
 
     #[must_use]
-    pub fn contains_counter(&self, key: &str) -> bool {
-        let now = (*self.clock)();
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        state.purge(now);
-        state.counters.contains_key(key)
-    }
-
-    #[must_use]
     pub fn counter(&self, key: &str) -> Option<i64> {
         let now = (*self.clock)();
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
@@ -485,12 +477,6 @@ pub struct RequestSpec {
     pub x_forwarded_for: Option<String>,
     #[serde(default)]
     pub host: Option<String>,
-    #[serde(default = "http_scheme")]
-    pub scheme: String,
-}
-
-fn http_scheme() -> String {
-    "http".to_owned()
 }
 
 #[derive(Debug, Deserialize)]
@@ -556,7 +542,7 @@ fn network_request(spec: &RequestSpec) -> NetworkRequest<'_> {
         x_forwarded_for: spec.x_forwarded_for.as_deref(),
         x_forwarded_proto: None,
         host: spec.host.as_deref(),
-        scheme: &spec.scheme,
+        scheme: "http",
     }
 }
 
