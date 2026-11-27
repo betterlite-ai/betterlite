@@ -18,7 +18,7 @@ use betterlite_auth::auth_org_lookup::error::proxy_exception as org_lookup_excep
 use betterlite_auth::auth_prefetch::rows::CachedProject;
 use betterlite_auth::auth_pricing::catalog::PricingCatalog;
 use betterlite_auth::auth_pricing::project::{
-    DeploymentProjectGrant, ProjectError, run_project_checks,
+    DeploymentProjectGrant, ProjectCollaborators, ProjectError, run_project_checks,
 };
 use betterlite_auth::auth_pricing::request::{
     RequestFacts, enforce_user_param_check, global_proxy_budget_check,
@@ -139,19 +139,41 @@ pub(crate) fn stage_input(
 }
 
 pub(crate) async fn prefetched(stage: Box<PricingStageInput>) -> Result<StageInput, StageFailure> {
-    prefetch(&stage).await.map_err(StageFailure::AuthPricing)?;
+    prefetch(&stage).await.map_err(StageFailure::Pricing)?;
     Ok(StageInput::AuthPricing(stage))
 }
 
 // common_checks' project checks, then the client tag refusal, the user requirement and the global ceiling
 pub(crate) async fn prefetch(stage: &PricingStageInput) -> Result<(), Box<ProxyException>> {
     let rule = &stage.rule;
+    let skip = request_skips_budget_checks(&stage.route, &rule.model, rule.catalog.as_deref());
+    prefetch_project(stage, skip).await?;
     let facts = RequestFacts {
         method: stage.method.as_deref(),
         route: &stage.route,
         body: &stage.body,
     };
-    let skip = request_skips_budget_checks(&stage.route, &rule.model, rule.catalog.as_deref());
+    reject_clientside_metadata_tags_check(stage.settings.reject_clientside_metadata_tags, &facts)?;
+    enforce_user_param_check(stage.settings.enforce_user_param, &facts)
+        .map_err(|error| Box::new(ordinary_exception(&error.to_string())))?;
+    let budget = global_proxy_budget_check(
+        money(stage.settings.max_budget),
+        rule.global_spend,
+        skip,
+        &stage.route,
+    );
+    if let Some(denial) = budget {
+        return Err(Box::new(budget_exception(&denial)));
+    }
+    Ok(())
+}
+
+// the project row's blocked flag, model grant and budgets, with the request's router view and key aliases
+async fn prefetch_project(
+    stage: &PricingStageInput,
+    skip_budget_checks: bool,
+) -> Result<(), Box<ProxyException>> {
+    let rule = &stage.rule;
     let context = ModelAccessContext {
         view: rule.view.as_deref(),
         global_model_aliases: &rule.global_model_aliases,
@@ -165,28 +187,19 @@ pub(crate) async fn prefetch(stage: &PricingStageInput) -> Result<(), Box<ProxyE
         reader: rule.reader.as_deref().unwrap_or(&unconfigured),
         alerts: rule.alerts.as_deref(),
     };
+    let collaborators = ProjectCollaborators {
+        grant: &grant,
+        admission,
+    };
     run_project_checks(
         rule.project.as_ref(),
         &rule.model,
-        skip,
+        skip_budget_checks,
         rule.auth.as_ref(),
-        &grant,
-        &admission,
+        &collaborators,
     )
     .await
-    .map_err(|error| Box::new(project_exception(&error)))?;
-    reject_clientside_metadata_tags_check(stage.settings.reject_clientside_metadata_tags, &facts)?;
-    enforce_user_param_check(stage.settings.enforce_user_param, &facts)
-        .map_err(|error| Box::new(ordinary_exception(&error.to_string())))?;
-    if let Some(denial) = global_proxy_budget_check(
-        money(stage.settings.max_budget),
-        rule.global_spend,
-        skip,
-        &stage.route,
-    ) {
-        return Err(Box::new(budget_exception(&denial)));
-    }
-    Ok(())
+    .map_err(|error| Box::new(project_exception(&error)))
 }
 
 // B757's ordinary mapping: a bare project, user or tag failure is the 401 auth_error

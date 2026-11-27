@@ -14,16 +14,16 @@ pub fn model_has_no_cost_mapping(
     model: Option<&str>,
     catalog: Option<&dyn PricingCatalog>,
 ) -> Result<bool, PricingError> {
-    let (Some(model), Some(catalog)) = (model, catalog) else {
+    let (Some(name), Some(pricing)) = (model, catalog) else {
         return Ok(false);
     };
-    if model.is_empty() || catalog.model_group_info(model)?.is_none() {
+    if name.is_empty() || pricing.model_group_info(name)?.is_none() {
         return Ok(false);
     }
-    if model_group_has_pricing(model, catalog)? {
+    if model_group_has_pricing(name, pricing)? {
         return Ok(false);
     }
-    Ok(!is_cost_explicitly_configured(model, catalog)?)
+    Ok(!is_cost_explicitly_configured(name, pricing)?)
 }
 
 // _unpriced_models_in_request: the model order and its duplicates survive the filter

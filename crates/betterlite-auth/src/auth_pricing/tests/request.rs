@@ -90,18 +90,12 @@ fn tags_presence_rejected() {
         "Client-side 'metadata.tags' not allowed in request. \
          'reject_clientside_metadata_tags'=true. Tags can only be set via API key metadata."
     );
-    assert!(
-        reject_clientside_metadata_tags_check(true, &facts(Some("POST"), chat, &null_tags))
-            .is_err()
-    );
-    assert!(
-        reject_clientside_metadata_tags_check(true, &facts(Some("POST"), chat, &other_metadata))
-            .is_ok()
-    );
-    assert!(
-        reject_clientside_metadata_tags_check(false, &facts(Some("POST"), chat, &empty_tags))
-            .is_ok()
-    );
+    reject_clientside_metadata_tags_check(true, &facts(Some("POST"), chat, &null_tags))
+        .expect_err("a null tags value is rejected on key presence");
+    reject_clientside_metadata_tags_check(true, &facts(Some("POST"), chat, &other_metadata))
+        .expect("metadata without a tags key is allowed");
+    reject_clientside_metadata_tags_check(false, &facts(Some("POST"), chat, &empty_tags))
+        .expect("the switch off allows client tags");
 }
 
 #[test]
@@ -111,10 +105,8 @@ fn non_llm_tags_ignored() {
         Json::Object(object(&[("tags", Json::List(vec![text("a")]))])),
     )]);
     let request = facts(Some("POST"), "/key/info", &tags);
-    assert!(
-        reject_clientside_metadata_tags_check(true, &request).is_ok(),
-        "a non-LLM route is outside the tag check"
-    );
+    reject_clientside_metadata_tags_check(true, &request)
+        .expect("a non-LLM route is outside the tag check");
 }
 
 #[test]
@@ -127,6 +119,7 @@ fn litellm_metadata_unchecked() {
     let null_metadata = object(&[("metadata", Json::Null)]);
     for body in [&litellm_metadata, &text_metadata, &null_metadata] {
         let request = facts(Some("POST"), "/v1/chat/completions", body);
-        assert!(reject_clientside_metadata_tags_check(true, &request).is_ok());
+        reject_clientside_metadata_tags_check(true, &request)
+            .expect("metadata and litellm_metadata without client tags are allowed");
     }
 }

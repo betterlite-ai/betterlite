@@ -16,7 +16,8 @@ use crate::auth_model_patterns::denial::model_access_denied;
 use crate::auth_model_patterns::pattern::UnresolvedProviderInference;
 use crate::auth_prefetch::rows::CachedProject;
 use crate::auth_pricing::project::{
-    DeploymentProjectGrant, ProjectError, ProjectModelGrant, run_project_checks,
+    DeploymentProjectGrant, ProjectCollaborators, ProjectError, ProjectModelGrant,
+    run_project_checks,
 };
 use crate::auth_request_models::RequestedModels;
 use crate::auth_tenant_budgets::TenantAdmission;
@@ -142,14 +143,14 @@ fn cached_project(
     budget: Option<(&str, &str)>,
 ) -> CachedProject {
     let models = serde_json::to_string(models).expect("the model list encodes");
-    let budget = budget.map_or_else(
+    let budget_table = budget.map_or_else(
         || "null".to_owned(),
         |(max_budget, soft_budget)| {
             format!(r#"{{"budget_id":"b1","max_budget":{max_budget},"soft_budget":{soft_budget}}}"#)
         },
     );
     let row = format!(
-        r#"{{"project_id":"{project_id}","blocked":{blocked},"models":{models},"spend":6,"litellm_budget_table":{budget}}}"#
+        r#"{{"project_id":"{project_id}","blocked":{blocked},"models":{models},"spend":6,"litellm_budget_table":{budget_table}}}"#
     );
     serde_json::from_str(&row).expect("the project row decodes")
 }
@@ -179,8 +180,10 @@ async fn blocked_project_first() {
         &one("requested"),
         false,
         None,
-        &grants,
-        &admission(&reader, &alerts),
+        &ProjectCollaborators {
+            grant: &grants,
+            admission: admission(&reader, &alerts),
+        },
     )
     .await
     .expect_err("a blocked project stops the request");
@@ -206,8 +209,10 @@ async fn grant_before_budgets() {
         &one("requested"),
         false,
         Some(&auth),
-        &grants,
-        &admission(&reader, &alerts),
+        &ProjectCollaborators {
+            grant: &grants,
+            admission: admission(&reader, &alerts),
+        },
     )
     .await
     .expect_err("the model grant denies before any budget is read");
@@ -229,8 +234,10 @@ async fn hard_before_soft() {
         &one("allowed"),
         false,
         Some(&auth),
-        &grants,
-        &admission(&reader, &alerts),
+        &ProjectCollaborators {
+            grant: &grants,
+            admission: admission(&reader, &alerts),
+        },
     )
     .await
     .expect_err("the hard budget denies before the soft check");
@@ -252,8 +259,10 @@ async fn skip_keeps_model_check() {
         &one("requested"),
         true,
         Some(&auth),
-        &denying,
-        &admission(&reader, &alerts),
+        &ProjectCollaborators {
+            grant: &denying,
+            admission: admission(&reader, &alerts),
+        },
     )
     .await
     .expect_err("the model grant still runs when budgets are skipped");
@@ -267,8 +276,10 @@ async fn skip_keeps_model_check() {
         &one("allowed"),
         true,
         Some(&auth),
-        &allowing,
-        &admission(&reader, &alerts),
+        &ProjectCollaborators {
+            grant: &allowing,
+            admission: admission(&reader, &alerts),
+        },
     )
     .await
     .expect("a skipped budget cannot deny");
@@ -288,8 +299,10 @@ async fn skip_keeps_model_check() {
             &skipped,
             true,
             Some(&auth),
-            &quiet,
-            &admission(&reader, &alerts),
+            &ProjectCollaborators {
+                grant: &quiet,
+                admission: admission(&reader, &alerts),
+            },
         )
         .await
         .expect("an absent or empty request model skips the grant");
@@ -300,8 +313,10 @@ async fn skip_keeps_model_check() {
         &one("allowed"),
         true,
         Some(&auth),
-        &quiet,
-        &admission(&reader, &alerts),
+        &ProjectCollaborators {
+            grant: &quiet,
+            admission: admission(&reader, &alerts),
+        },
     )
     .await
     .expect("a project without a model list skips the grant");
@@ -313,8 +328,10 @@ async fn skip_keeps_model_check() {
         &one("allowed"),
         false,
         Some(&auth),
-        &allowing,
-        &admission(&reader, &alerts),
+        &ProjectCollaborators {
+            grant: &allowing,
+            admission: admission(&reader, &alerts),
+        },
     )
     .await
     .expect("a missing project skips every check");

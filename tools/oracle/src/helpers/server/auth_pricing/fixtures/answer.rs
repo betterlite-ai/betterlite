@@ -2,7 +2,9 @@ use betterlite_auth::auth_errors::conversion::{AuthFailure, as_proxy_exception};
 use betterlite_auth::auth_key_budgets::key_budget::Denial;
 use betterlite_auth::auth_key_budgets::money::Money;
 use betterlite_auth::auth_pricing::catalog::PricingError;
-use betterlite_auth::auth_pricing::project::{ProjectError, run_project_checks};
+use betterlite_auth::auth_pricing::project::{
+    ProjectCollaborators, ProjectError, run_project_checks,
+};
 use betterlite_auth::auth_pricing::request::{
     RequestFacts, enforce_user_param_check, global_proxy_budget_check,
     reject_clientside_metadata_tags_check,
@@ -128,14 +130,18 @@ async fn project(
         reader: &reader,
         alerts: Some(&alerts),
     };
+    let grant = NoGrant;
+    let collaborators = ProjectCollaborators {
+        grant: &grant,
+        admission,
+    };
     let token = token_of(call)?;
     let outcome = run_project_checks(
         call.project.as_ref(),
         model,
         skip,
         token.as_ref(),
-        &NoGrant,
-        &admission,
+        &collaborators,
     )
     .await;
     let mut record = project_record(outcome)?;
@@ -168,16 +174,18 @@ fn project_record(outcome: Result<(), ProjectError>) -> Result<Value, Failure> {
                 "envelope": envelope(client.exception()),
             }))
         }
-        Err(ProjectError::Budget(TenantBudgetError::Denied(denied))) => Ok(json!({
-            "class": "denied",
-            "denial": denial_value(&denied),
-            "message": Value::Null,
-            "envelope": envelope(&budget_exception(&denied)),
-        })),
-        Err(
-            error @ (ProjectError::Grant(_)
-            | ProjectError::Budget(TenantBudgetError::Spend(_) | TenantBudgetError::Tag(_))),
-        ) => Err(Failure::Project(error)),
+        Err(ProjectError::Budget(budget)) => match *budget {
+            TenantBudgetError::Denied(denied) => Ok(json!({
+                "class": "denied",
+                "denial": denial_value(&denied),
+                "message": Value::Null,
+                "envelope": envelope(&budget_exception(&denied)),
+            })),
+            other @ (TenantBudgetError::Spend(_) | TenantBudgetError::Tag(_)) => {
+                Err(Failure::Project(ProjectError::Budget(Box::new(other))))
+            }
+        },
+        Err(error @ ProjectError::Grant(_)) => Err(Failure::Project(error)),
     }
 }
 

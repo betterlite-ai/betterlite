@@ -56,14 +56,19 @@ pub enum ProjectError {
     Budget(#[source] Box<TenantBudgetError>),
 }
 
+// the collaborators the project checks call: the model grant and the tenant budget admission
+pub struct ProjectCollaborators<'deps> {
+    pub grant: &'deps dyn ProjectModelGrant,
+    pub admission: TenantAdmission<'deps>,
+}
+
 // _run_project_checks: blocked first, then the model grant, then the hard budget, then the soft alert
 pub async fn run_project_checks(
     project_row: Option<&CachedProject>,
     model: &RequestedModels,
     skip_budget_checks: bool,
     token: Option<&UserAPIKeyAuth>,
-    grants: &dyn ProjectModelGrant,
-    admission: &TenantAdmission<'_>,
+    collaborators: &ProjectCollaborators<'_>,
 ) -> Result<(), ProjectError> {
     let Some(checked) = project_row else {
         return Ok(());
@@ -83,16 +88,17 @@ pub async fn run_project_checks(
         let alias_targets = token.map_or_else(BTreeMap::new, |valid| {
             key_model_aliases(&valid.view.token.aliases.0)
         });
-        grants
+        collaborators
+            .grant
             .check(model, row, &alias_targets)
             .map_err(|error| ProjectError::Grant(Box::new(error)))?;
     }
     if skip_budget_checks {
         return Ok(());
     }
-    project::max_budget_check(checked, token, admission)
+    project::max_budget_check(checked, token, &collaborators.admission)
         .await
         .map_err(|error| ProjectError::Budget(Box::new(error)))?;
-    let _soft = project::soft_budget_check(checked, token, admission.alerts);
+    let _soft = project::soft_budget_check(checked, token, collaborators.admission.alerts);
     Ok(())
 }

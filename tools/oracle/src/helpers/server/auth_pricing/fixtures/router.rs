@@ -65,6 +65,7 @@ impl DeploymentFixture {
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct ScriptedCatalog {
     groups: BTreeMap<String, ModelGroupCosts>,
     deployments: BTreeMap<String, Vec<PricingDeployment>>,
@@ -86,9 +87,9 @@ impl ScriptedCatalog {
             .deployments
             .iter()
             .map(|(name, rows)| {
-                let rows: Vec<PricingDeployment> =
+                let resolved: Vec<PricingDeployment> =
                     rows.iter().map(DeploymentFixture::deployment).collect();
-                (name.clone(), rows)
+                (name.clone(), resolved)
             })
             .collect();
         let cache = fixture.cache.as_ref().map(|entries| {
