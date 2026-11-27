@@ -140,10 +140,10 @@ where
     let data = call.data;
     let provider_file_id = extract_provider_file_id(decoded);
     if let Some(parts) = parse_unified_id(call.file_id) {
-        if let Some(model_name) = parts.target_model_names.first() {
-            if apply_unified_model(data, model_name, provider_file_id.as_deref(), call.deps)? {
-                return Ok(Some(call.file_id.to_owned()));
-            }
+        if let Some(model_name) = parts.target_model_names.first()
+            && apply_unified_model(data, model_name, provider_file_id.as_deref(), call.deps)?
+        {
+            return Ok(Some(call.file_id.to_owned()));
         }
         if let Some(found) = provider_file_id.filter(|found| !found.is_empty()) {
             data.insert("file_id".to_owned(), Json::Text(found));
@@ -173,10 +173,10 @@ where
             })?,
         None => None,
     };
-    let Some(credentials) = credentials.filter(|credentials| !credentials.is_empty()) else {
+    let Some(deployment) = credentials.filter(|deployment| !deployment.is_empty()) else {
         return Ok(false);
     };
-    let _snapshot = prepare_data_with_credentials(data, &credentials, provider_file_id, false);
+    let _snapshot = prepare_data_with_credentials(data, &deployment, provider_file_id, false);
     Ok(true)
 }
 
