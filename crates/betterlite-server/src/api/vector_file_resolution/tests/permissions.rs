@@ -57,6 +57,7 @@ fn permissions_falsy_data_falls_through() {
         r#"{"custom_llm_provider":0}"#,
         r#"{"custom_llm_provider":false}"#,
         r#"{"custom_llm_provider":[]}"#,
+        r#"{"custom_llm_provider":{}}"#,
     ] {
         let candidate = object(text);
         assert_eq!(

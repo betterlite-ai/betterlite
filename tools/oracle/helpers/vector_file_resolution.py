@@ -148,7 +148,7 @@ class Checker:
 class ScriptedAuthorize:
     def __init__(self, denied: list[str] | None) -> None:
         self.denied = [] if denied is None else denied
-        self.asked: list[str] = []
+        self.asked: list[JsonValue] = []
 
     async def __call__(
         self, model_id: str, llm_router: Router | None, user_api_key_dict: UserAPIKeyAuth
