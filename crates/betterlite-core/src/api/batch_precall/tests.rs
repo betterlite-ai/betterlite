@@ -568,7 +568,7 @@ async fn retrieve_cache_value_over_limit() {
 // an integer at i64::MAX still has a CacheValue form and decodes unchanged
 #[tokio::test]
 async fn retrieve_cache_value_decodes_an_i64_max_integer() {
-    let mut rig = Rig::new();
+    let rig = Rig::new();
     rig.memory.store(
         CACHE_KEY,
         envelope(None, Json::Number(Number::from(i64::MAX))),
@@ -586,7 +586,7 @@ async fn retrieve_cache_value_decodes_an_i64_max_integer() {
 // an integer past i64 has no CacheValue number form, so the shared mapper answers a miss instead of a rounded float
 #[tokio::test]
 async fn retrieve_cache_value_refuses_an_integer_past_i64() {
-    let mut rig = Rig::new();
+    let rig = Rig::new();
     rig.memory.store(
         CACHE_KEY,
         envelope(None, Json::Number(Number::from(u64::MAX))),
