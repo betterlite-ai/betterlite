@@ -32,8 +32,8 @@ deviations:
     why: >-
       owned-behavior-is-built fixes a 500 from an unhandled validation error on input LiteLLM already
       fails, where a 4xx belongs, and docs/compatibility.md answers a request value the declared type
-      cannot hold with a 400 that names the field. LiteLLM rethrows an HTTPException without logging,
-      so the create catch-all does not log this client error either.
+      cannot hold with a 400 that names the field. A 4xx is a handled client error, so the create
+      catch-all does not log it, as LiteLLM rethrows its own HTTPException without logging.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/management_endpoints.py#L339-L341
 kept_bugs:
   - what: >-
