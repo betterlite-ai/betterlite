@@ -920,7 +920,7 @@ fn template_int_and_float_convertors() {
     assert!(!template_matches("/x/{value:int}", "/x/seven"));
     assert!(!template_matches("/x/{value:int}", "/x/7.5"));
     assert!(!template_matches("/x/{value:int}", "/x/"));
-    assert!(!template_matches("{first:int}{second:int}", "1\u{e9}"));
+    assert!(!template_matches("/x/{value:int}", "/x/\u{e9}"));
     assert!(template_matches("/x/{value:float}", "/x/7"));
     assert!(template_matches("/x/{value:float}", "/x/7.5"));
     assert!(!template_matches("/x/{value:float}", "/x/7."));
