@@ -763,6 +763,32 @@ fn the_signed_request_is_the_botocore_unicode_payload() {
 }
 
 #[test]
+fn the_signing_region_defaults_to_us_east_1_when_the_params_lack_one() {
+    let params = object(r#"{"engine": "standard", "output_format": "ogg_vorbis"}"#);
+    let litellm_params = object(&format!(
+        r#"{{"aws_access_key_id": "{EXAMPLE_KEY}", "aws_secret_access_key": "{EXAMPLE_SECRET}"}}"#
+    ));
+    let signed = transform(
+        "hello",
+        Some("Matthew"),
+        &params,
+        &litellm_params,
+        &FixedResolver { with_token: false },
+    );
+
+    assert_eq!(
+        signed.url,
+        "https://polly.us-east-1.amazonaws.com/v1/speech"
+    );
+    let headers = signed.data.headers.expect("signed headers");
+    assert!(
+        headers["Authorization"].contains("/us-east-1/polly/aws4_request"),
+        "{}",
+        headers["Authorization"]
+    );
+}
+
+#[test]
 fn the_simple_payload_is_signed_for_us_west_2_without_a_token() {
     check_simple(&SimpleVector {
         region: "us-west-2",
