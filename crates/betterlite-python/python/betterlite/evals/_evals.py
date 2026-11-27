@@ -83,12 +83,14 @@ def create_eval(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm
         extra_headers, extra_query, timeout, custom_llm_provider,
         data_source_config=JSON.validate_python(data_source_config),
         testing_criteria=JSON.validate_python(testing_criteria),
-        name=name, metadata=metadata,
+        name=name, metadata=metadata, extra_body=extra_body,
         **kwargs,
     )
-    if asynchronous:
-        return _aanswer(Eval, payload, _session().acreate_eval)
-    return _answer(Eval, payload, _session().create_eval)
+    match asynchronous:
+        case True:
+            return _aanswer(Eval, payload, _session().acreate_eval)
+        case False:
+            return _answer(Eval, payload, _session().create_eval)
 
 
 async def acreate_eval(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L45
@@ -124,15 +126,19 @@ def list_evals(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/
     **kwargs: CallValue,
 ) -> ListEvalsResponse | Awaitable[ListEvalsResponse]:
     asynchronous = kwargs.pop("alist_evals", None) is True
+    pagination: dict[str, CallValue] = {
+        "limit": limit, "after": after, "before": before,
+        "order": order, "order_by": order_by,
+    }
     payload = _payload(
-        extra_headers, extra_query, timeout, custom_llm_provider,
-        limit=limit, after=after, before=before,
-        order=order, order_by=order_by,
-        **kwargs,
+        extra_headers, extra_query, timeout, custom_llm_provider, **pagination, **kwargs
     )
-    if asynchronous:
-        return _aanswer(ListEvalsResponse, payload, _session().alist_evals)
-    return _answer(ListEvalsResponse, payload, _session().list_evals)
+    session = _session()
+    return (
+        _aanswer(ListEvalsResponse, payload, session.alist_evals)
+        if asynchronous
+        else _answer(ListEvalsResponse, payload, session.list_evals)
+    )
 
 
 async def alist_evals(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L230
@@ -147,12 +153,15 @@ async def alist_evals(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/l
     custom_llm_provider: str | None = None,
     **kwargs: CallValue,
 ) -> ListEvalsResponse:
-    kwargs["alist_evals"] = True
-    pending = list_evals(
-        limit, after, before, order, order_by, extra_headers, extra_query, timeout,
-        custom_llm_provider, **kwargs,
+    pagination: dict[str, CallValue] = {
+        "limit": limit, "after": after, "before": before,
+        "order": order, "order_by": order_by,
+    }
+    payload = _payload(
+        extra_headers, extra_query, timeout, custom_llm_provider, **pagination, **kwargs
     )
-    return await _awaited(pending)
+    answer = await acall_native(_session().alist_evals, payload, NativeEvalError)
+    return ListEvalsResponse.model_validate(answer)
 
 
 def get_eval(
@@ -163,14 +172,14 @@ def get_eval(
     custom_llm_provider: str | None = None,
     **kwargs: CallValue,
 ) -> Eval | Awaitable[Eval]:
-    asynchronous = kwargs.pop("aget_eval", None) is True
+    if kwargs.pop("aget_eval", False) is True:
+        return aget_eval(
+            eval_id, extra_headers, extra_query, timeout, custom_llm_provider, **kwargs
+        )
     payload = _payload(
         extra_headers, extra_query, timeout, custom_llm_provider,
-        eval_id=eval_id,
-        **kwargs,
+        eval_id=eval_id, **kwargs,
     )
-    if asynchronous:
-        return _aanswer(Eval, payload, _session().aget_eval)
     return _answer(Eval, payload, _session().get_eval)
 
 
@@ -182,9 +191,11 @@ async def aget_eval(
     custom_llm_provider: str | None = None,
     **kwargs: CallValue,
 ) -> Eval:
-    kwargs["aget_eval"] = True
-    pending = get_eval(eval_id, extra_headers, extra_query, timeout, custom_llm_provider, **kwargs)
-    return await _awaited(pending)
+    payload = _payload(
+        extra_headers, extra_query, timeout, custom_llm_provider,
+        eval_id=eval_id, **kwargs,
+    )
+    return await _aanswer(Eval, payload, _session().aget_eval)
 
 
 def update_eval(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L632
@@ -201,7 +212,7 @@ def update_eval(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm
     asynchronous = kwargs.pop("aupdate_eval", None) is True
     payload = _payload(
         extra_headers, extra_query, timeout, custom_llm_provider,
-        eval_id=eval_id, name=name, metadata=metadata,
+        eval_id=eval_id, name=name, metadata=metadata, extra_body=extra_body,
         **kwargs,
     )
     if asynchronous:
@@ -220,12 +231,13 @@ async def aupdate_eval(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/
     custom_llm_provider: str | None = None,
     **kwargs: CallValue,
 ) -> Eval:
-    kwargs["aupdate_eval"] = True
-    pending = update_eval(
-        eval_id, name, metadata, extra_headers, extra_query, extra_body, timeout,
-        custom_llm_provider, **kwargs,
+    kwargs.update(aupdate_eval=True)
+    payload = _payload(
+        extra_headers, extra_query, timeout, custom_llm_provider,
+        eval_id=eval_id, name=name, metadata=metadata, extra_body=extra_body,
+        **kwargs,
     )
-    return await _awaited(pending)
+    return await _aanswer(Eval, payload, _session().aupdate_eval)
 
 
 def delete_eval(
@@ -236,15 +248,16 @@ def delete_eval(
     custom_llm_provider: str | None = None,
     **kwargs: CallValue,
 ) -> DeleteEvalResponse | Awaitable[DeleteEvalResponse]:
-    asynchronous = kwargs.pop("adelete_eval", None) is True
+    if kwargs.pop("adelete_eval", False) is True:
+        return adelete_eval(
+            eval_id, extra_headers, extra_query, timeout, custom_llm_provider, **kwargs
+        )
     payload = _payload(
         extra_headers, extra_query, timeout, custom_llm_provider,
-        eval_id=eval_id,
-        **kwargs,
+        eval_id=eval_id, **kwargs,
     )
-    if asynchronous:
-        return _aanswer(DeleteEvalResponse, payload, _session().adelete_eval)
-    return _answer(DeleteEvalResponse, payload, _session().delete_eval)
+    answer = call_native(_session().delete_eval, payload, NativeEvalError)
+    return DeleteEvalResponse.model_validate(answer)
 
 
 async def adelete_eval(
@@ -255,11 +268,12 @@ async def adelete_eval(
     custom_llm_provider: str | None = None,
     **kwargs: CallValue,
 ) -> DeleteEvalResponse:
-    kwargs["adelete_eval"] = True
-    pending = delete_eval(
-        eval_id, extra_headers, extra_query, timeout, custom_llm_provider, **kwargs
+    payload = _payload(
+        extra_headers, extra_query, timeout, custom_llm_provider,
+        eval_id=eval_id, **kwargs,
     )
-    return await _awaited(pending)
+    answer = await acall_native(_session().adelete_eval, payload, NativeEvalError)
+    return DeleteEvalResponse.model_validate(answer)
 
 
 def cancel_eval(
@@ -273,12 +287,14 @@ def cancel_eval(
     asynchronous = kwargs.pop("acancel_eval", None) is True
     payload = _payload(
         extra_headers, extra_query, timeout, custom_llm_provider,
-        eval_id=eval_id,
-        **kwargs,
+        eval_id=eval_id, **kwargs,
     )
-    if asynchronous:
-        return _aanswer(CancelEvalResponse, payload, _session().acancel_eval)
-    return _answer(CancelEvalResponse, payload, _session().cancel_eval)
+    session = _session()
+    match asynchronous:
+        case True:
+            return _aanswer(CancelEvalResponse, payload, session.acancel_eval)
+        case False:
+            return _answer(CancelEvalResponse, payload, session.cancel_eval)
 
 
 async def acancel_eval(

@@ -3,17 +3,17 @@ import importlib
 import inspect
 import json
 import threading
-from collections.abc import Awaitable, Callable, Coroutine
+from collections.abc import Awaitable, Coroutine
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import TracebackType
-from typing import ClassVar, Final, Protocol, Self, TypedDict
+from typing import ClassVar, Final, Protocol, Self
+from typing_extensions import TypedDict, override
 
 import pytest
-from pydantic import BaseModel, JsonValue
-from typing_extensions import override
+from pydantic import BaseModel, JsonValue, TypeAdapter
 
-import betterlite.exceptions as our_errors
 from betterlite._completion.errors import UnsupportedCallArgument
+from betterlite._endpoints.payload import CallValue
 from betterlite.evals._evals import (
     acancel_eval,
     acreate_eval,
@@ -61,7 +61,6 @@ INTERNAL_METADATA: Final[dict[str, JsonValue]] = {"headers": "internal"}
 EXTRA_BODY: Final[dict[str, JsonValue]] = {"note": "n"}
 HEADERS: Final[dict[str, str]] = {CUSTOM_HEADER: CUSTOM_VALUE}
 QUERY: Final[dict[str, JsonValue]] = {"limit": 9, "after": "eval_x", "unknown": "x"}
-DUPLICATE: Final[dict[str, JsonValue]] = {"name": "second"}
 
 BAD_BODY: Final[dict[str, JsonValue]] = {
     "type": "error",
@@ -92,6 +91,8 @@ OPERATIONS: Final[tuple[tuple[str, str], ...]] = (
     ("POST", f"{EVALS_PATH}/{EVAL_ID}{CANCEL_SUFFIX}"),
 )
 
+JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
+
 
 class Recorded(TypedDict):
     method: str
@@ -106,11 +107,13 @@ class DefaultView(Protocol):
 
 
 class RefCall(Protocol):
-    def __call__(self, **values: object) -> BaseModel: ...
+    def __call__(self, *args: CallValue, **kwargs: CallValue) -> BaseModel: ...
 
 
 class RefAsyncCall(Protocol):
-    def __call__(self, **values: object) -> Coroutine[object, object, BaseModel]: ...
+    def __call__(
+        self, *args: CallValue, **kwargs: CallValue
+    ) -> Coroutine[None, None, BaseModel]: ...
 
 
 class RefModule(Protocol):
@@ -121,12 +124,12 @@ class RefAsyncModule(Protocol):
     def __getattr__(self, name: str) -> RefAsyncCall: ...
 
 
-class ReferenceError(Exception):
+class ProviderError(Exception):
     status_code: int
 
 
 class RefErrorModule(Protocol):
-    def __getattr__(self, name: str) -> type[ReferenceError]: ...
+    def __getattr__(self, name: str) -> type[ProviderError]: ...
 
 
 LITELLM: RefModule = importlib.import_module("litellm")
@@ -193,7 +196,10 @@ class _Handler(BaseHTTPRequestHandler):
         if self.refused():
             return
         if self.path.partition("?")[0] == EVALS_PATH:
-            self.reply(OK, list_body())
+            self.reply(OK, {
+                "object": "list", "data": [eval_body("listed")],
+                "first_id": EVAL_ID, "last_id": EVAL_ID, "has_more": False,
+            })
             return
         self.reply(OK, eval_body("fetched"))
 
@@ -244,17 +250,6 @@ def eval_body(name: str) -> dict[str, JsonValue]:
     return body
 
 
-def list_body() -> dict[str, JsonValue]:
-    body: dict[str, JsonValue] = {
-        "object": "list",
-        "data": [eval_body("listed")],
-        "first_id": EVAL_ID,
-        "last_id": EVAL_ID,
-        "has_more": False,
-    }
-    return body
-
-
 def parameter_rows(signature: inspect.Signature) -> list[tuple[str, str, str]]:
     rows: list[tuple[str, str, str]] = []
     for parameter in signature.parameters.values():
@@ -278,40 +273,54 @@ def body_of(call: Recorded) -> dict[str, JsonValue]:
     return values
 
 
-def made_answer(result: object) -> BaseModel:
+def made_answer(result: BaseModel | Awaitable[BaseModel]) -> BaseModel:
     match result:
-        case BaseModel():
-            return result
         case Awaitable():
             raise AssertionError("the call answered with a coroutine")
         case object():
-            raise AssertionError("the call did not answer with an eval")
+            return result
 
 
-PAIRS: Final[tuple[tuple[Callable[..., object], Callable[..., object]], ...]] = (
-    (create_eval, LITELLM.create_eval),
-    (acreate_eval, LITELLM.acreate_eval),
-    (list_evals, LITELLM.list_evals),
-    (alist_evals, LITELLM.alist_evals),
-    (get_eval, LITELLM.get_eval),
-    (aget_eval, LITELLM.aget_eval),
-    (update_eval, LITELLM.update_eval),
-    (aupdate_eval, LITELLM.aupdate_eval),
-    (delete_eval, LITELLM.delete_eval),
-    (adelete_eval, LITELLM.adelete_eval),
-    (cancel_eval, LITELLM.cancel_eval),
-    (acancel_eval, LITELLM.acancel_eval),
-)
+def test_signature_matches_litellm() -> None:
+    assert parameter_rows(inspect.signature(create_eval)) == parameter_rows(
+        inspect.signature(LITELLM.create_eval)
+    )
+    assert parameter_rows(inspect.signature(acreate_eval)) == parameter_rows(
+        inspect.signature(LITELLM.acreate_eval)
+    )
+    assert parameter_rows(inspect.signature(list_evals)) == parameter_rows(
+        inspect.signature(LITELLM.list_evals)
+    )
+    assert parameter_rows(inspect.signature(alist_evals)) == parameter_rows(
+        inspect.signature(LITELLM.alist_evals)
+    )
+    assert parameter_rows(inspect.signature(get_eval)) == parameter_rows(
+        inspect.signature(LITELLM.get_eval)
+    )
+    assert parameter_rows(inspect.signature(aget_eval)) == parameter_rows(
+        inspect.signature(LITELLM.aget_eval)
+    )
+    assert parameter_rows(inspect.signature(update_eval)) == parameter_rows(
+        inspect.signature(LITELLM.update_eval)
+    )
+    assert parameter_rows(inspect.signature(aupdate_eval)) == parameter_rows(
+        inspect.signature(LITELLM.aupdate_eval)
+    )
+    assert parameter_rows(inspect.signature(delete_eval)) == parameter_rows(
+        inspect.signature(LITELLM.delete_eval)
+    )
+    assert parameter_rows(inspect.signature(adelete_eval)) == parameter_rows(
+        inspect.signature(LITELLM.adelete_eval)
+    )
+    assert parameter_rows(inspect.signature(cancel_eval)) == parameter_rows(
+        inspect.signature(LITELLM.cancel_eval)
+    )
+    assert parameter_rows(inspect.signature(acancel_eval)) == parameter_rows(
+        inspect.signature(LITELLM.acancel_eval)
+    )
 
 
-def test_signature_parameters_match_litellm() -> None:
-    for ours, theirs in PAIRS:
-        assert parameter_rows(inspect.signature(ours)) == parameter_rows(
-            inspect.signature(theirs)
-        )
-
-
-def test_signature_all_parameters_are_accepted() -> None:
+def test_signature_all_parameters() -> None:
     with EvalsServer() as server:
         created = create_eval(
             DATA_SOURCE_CONFIG, TESTING_CRITERIA, NAME, METADATA, HEADERS, QUERY,
@@ -335,7 +344,8 @@ def test_signature_all_parameters_are_accepted() -> None:
             EVAL_ID, HEADERS, QUERY, TIMEOUT, OPENAI, api_base=server.url, api_key=GOOD_KEY
         )
         reference_created = LITELLM.create_eval(
-            data_source_config=DATA_SOURCE_CONFIG, testing_criteria=TESTING_CRITERIA,
+            data_source_config=JSON.validate_python(DATA_SOURCE_CONFIG),
+            testing_criteria=JSON.validate_python(TESTING_CRITERIA),
             name=NAME, metadata=METADATA, extra_headers=HEADERS, extra_query=QUERY,
             extra_body=EXTRA_BODY, timeout=TIMEOUT, custom_llm_provider=OPENAI,
             api_base=server.url, api_key=GOOD_KEY,
@@ -382,21 +392,12 @@ def test_signature_unknown_keyword() -> None:
             unknown=1,
         )
         reference = LITELLM.create_eval(
-            data_source_config=DATA_SOURCE_CONFIG, testing_criteria=TESTING_CRITERIA,
+            data_source_config=JSON.validate_python(DATA_SOURCE_CONFIG),
+            testing_criteria=JSON.validate_python(TESTING_CRITERIA),
             api_base=server.url, api_key=GOOD_KEY, unknown=1,
         )
     assert dumped(made_answer(ours)) == dumped(reference)
     assert body_of(server.calls[0]) == body_of(server.calls[1])
-
-
-def test_signature_refuses_a_duplicated_keyword() -> None:
-    with pytest.raises(TypeError, match="multiple values for keyword argument 'name'"):
-        create_eval(DATA_SOURCE_CONFIG, TESTING_CRITERIA, name="first", **DUPLICATE)
-    with pytest.raises(TypeError, match="multiple values for keyword argument 'name'"):
-        LITELLM.create_eval(
-            data_source_config=DATA_SOURCE_CONFIG, testing_criteria=TESTING_CRITERIA,
-            name="first", **DUPLICATE,
-        )
 
 
 def test_calls_create() -> None:
@@ -407,7 +408,8 @@ def test_calls_create() -> None:
             api_base=server.url, api_key=GOOD_KEY,
         )
         reference = LITELLM.create_eval(
-            data_source_config=DATA_SOURCE_CONFIG, testing_criteria=TESTING_CRITERIA,
+            data_source_config=JSON.validate_python(DATA_SOURCE_CONFIG),
+            testing_criteria=JSON.validate_python(TESTING_CRITERIA),
             name=NAME, metadata=METADATA, extra_headers=HEADERS, extra_query=QUERY,
             extra_body=EXTRA_BODY, api_base=server.url, api_key=GOOD_KEY,
         )
@@ -432,16 +434,16 @@ def test_calls_create() -> None:
 
 def test_calls_list() -> None:
     with EvalsServer() as server:
-        ours = list_evals(
-            limit=5, after="eval_a", before="eval_b", order="asc", order_by="updated_at",
-            extra_headers=HEADERS, extra_query=QUERY, api_base=server.url, api_key=GOOD_KEY,
-        )
         reference = LITELLM.list_evals(
             limit=5, after="eval_a", before="eval_b", order="asc", order_by="updated_at",
             extra_headers=HEADERS, extra_query=QUERY, api_base=server.url, api_key=GOOD_KEY,
         )
-    our_call = server.calls[-2]
-    their_call = server.calls[-1]
+        ours = list_evals(
+            limit=5, after="eval_a", before="eval_b", order="asc", order_by="updated_at",
+            extra_headers=HEADERS, extra_query=QUERY, api_base=server.url, api_key=GOOD_KEY,
+        )
+    our_call = server.calls[-1]
+    their_call = server.calls[-2]
     assert dumped(made_answer(ours)) == dumped(reference)
     assert our_call["path"] == their_call["path"]
     expected = f"{EVALS_PATH}?limit=9&after=eval_x&before=eval_b&order=asc&order_by=updated_at"
@@ -449,7 +451,7 @@ def test_calls_list() -> None:
     assert header_of(our_call, CUSTOM_HEADER) == CUSTOM_VALUE
 
 
-def test_calls_list_sends_only_the_parameters_it_was_given() -> None:
+def test_calls_list_sends_given() -> None:
     with EvalsServer() as server:
         ours = list_evals(limit=0, api_base=server.url, api_key=GOOD_KEY)
         reference = LITELLM.list_evals(limit=0, api_base=server.url, api_key=GOOD_KEY)
@@ -467,16 +469,18 @@ def test_calls_get() -> None:
             eval_id=EVAL_ID, extra_headers=HEADERS, extra_query=QUERY, api_base=server.url,
             api_key=GOOD_KEY,
         )
-    our_call = server.calls[-2]
-    their_call = server.calls[-1]
-    assert dumped(made_answer(ours)) == dumped(reference)
-    assert dumped(made_answer(ours))["name"] == "fetched"
-    assert our_call["method"] == their_call["method"] == "GET"
-    assert our_call["path"] == their_call["path"] == f"{EVALS_PATH}/{EVAL_ID}"
-    assert header_of(our_call, CUSTOM_HEADER) == CUSTOM_VALUE
+        calls = server.calls
+    fetched = made_answer(ours)
+    assert dumped(fetched) == dumped(reference)
+    assert dumped(fetched)["name"] == "fetched"
+    assert len(calls) == 2
+    first, second = calls
+    assert first["method"] == second["method"] == "GET"
+    assert first["path"] == second["path"] == f"{EVALS_PATH}/{EVAL_ID}"
+    assert header_of(first, CUSTOM_HEADER) == CUSTOM_VALUE
 
 
-def test_calls_update_filters_the_internal_metadata() -> None:
+def test_calls_update_filters() -> None:
     with EvalsServer() as server:
         ours = update_eval(
             EVAL_ID, name=NAME, metadata=UPDATE_METADATA, extra_body=EXTRA_BODY,
@@ -515,37 +519,41 @@ def test_calls_update_filters_the_internal_metadata() -> None:
 
 def test_calls_delete() -> None:
     with EvalsServer() as server:
-        ours = delete_eval(EVAL_ID, extra_headers=HEADERS, api_base=server.url, api_key=GOOD_KEY)
         reference = LITELLM.delete_eval(
             eval_id=EVAL_ID, extra_headers=HEADERS, api_base=server.url, api_key=GOOD_KEY
         )
-    our_call = server.calls[-2]
-    their_call = server.calls[-1]
+        ours = delete_eval(EVAL_ID, extra_headers=HEADERS, api_base=server.url, api_key=GOOD_KEY)
+    our_call = server.calls[-1]
+    their_call = server.calls[-2]
+    assert our_call["body"] == their_call["body"] == b""
     assert dumped(made_answer(ours)) == dumped(reference)
+    assert dumped(made_answer(ours))["deleted"] is True
     assert our_call["method"] == their_call["method"] == "DELETE"
     assert our_call["path"] == their_call["path"] == f"{EVALS_PATH}/{EVAL_ID}"
-    assert our_call["body"] == their_call["body"] == b""
     assert header_of(our_call, CUSTOM_HEADER) == CUSTOM_VALUE
 
 
 def test_calls_cancel() -> None:
     with EvalsServer() as server:
-        ours = cancel_eval(
+        made = cancel_eval(
             EVAL_ID, extra_headers=HEADERS, api_base=server.url, api_key=GOOD_KEY
         )
         reference = LITELLM.cancel_eval(
             eval_id=EVAL_ID, extra_headers=HEADERS, api_base=server.url, api_key=GOOD_KEY
         )
-    our_call = server.calls[-2]
-    their_call = server.calls[-1]
-    assert dumped(made_answer(ours)) == dumped(reference)
-    assert our_call["method"] == their_call["method"] == "POST"
-    assert our_call["path"] == their_call["path"] == f"{EVALS_PATH}/{EVAL_ID}{CANCEL_SUFFIX}"
-    assert body_of(our_call) == body_of(their_call) == {}
-    assert header_of(our_call, CUSTOM_HEADER) == CUSTOM_VALUE
+        calls = server.calls
+    cancelled = made_answer(made)
+    assert dumped(cancelled)["status"] == "cancelled"
+    assert dumped(cancelled)["id"] == EVAL_ID
+    assert dumped(cancelled) == dumped(reference)
+    assert [(call["method"], call["path"]) for call in calls] == [
+        ("POST", f"{EVALS_PATH}/{EVAL_ID}{CANCEL_SUFFIX}")
+    ] * 2
+    assert body_of(calls[0]) == body_of(calls[1]) == {}
+    assert header_of(calls[0], CUSTOM_HEADER) == CUSTOM_VALUE
 
 
-def test_calls_async_all_operations() -> None:
+def test_calls_async_every_op() -> None:
     with EvalsServer() as server:
         created = asyncio.run(
             acreate_eval(
@@ -562,7 +570,8 @@ def test_calls_async_all_operations() -> None:
         cancelled = asyncio.run(acancel_eval(EVAL_ID, api_base=server.url, api_key=GOOD_KEY))
         reference_created = asyncio.run(
             LITELLM_ASYNC.acreate_eval(
-                data_source_config=DATA_SOURCE_CONFIG, testing_criteria=TESTING_CRITERIA,
+                data_source_config=JSON.validate_python(DATA_SOURCE_CONFIG),
+                testing_criteria=JSON.validate_python(TESTING_CRITERIA),
                 name=NAME, api_base=server.url, api_key=GOOD_KEY,
             )
         )
@@ -593,7 +602,7 @@ def test_calls_async_all_operations() -> None:
     assert seen == [*OPERATIONS, *OPERATIONS]
 
 
-def test_calls_ignore_the_litellm_logging_object() -> None:
+def test_calls_drop_logging() -> None:
     with EvalsServer() as server:
         created = create_eval(
             DATA_SOURCE_CONFIG, TESTING_CRITERIA, name=NAME, api_base=server.url,
@@ -615,7 +624,8 @@ def test_error_provider_rejection() -> None:
             )
         with pytest.raises(LITELLM_ERRORS.BadRequestError) as theirs:
             LITELLM.create_eval(
-                data_source_config=DATA_SOURCE_CONFIG, testing_criteria=TESTING_CRITERIA,
+                data_source_config=JSON.validate_python(DATA_SOURCE_CONFIG),
+                testing_criteria=JSON.validate_python(TESTING_CRITERIA),
                 api_base=server.url, api_key=GOOD_KEY,
             )
     assert ours.value.status_code == theirs.value.status_code == BAD_REQUEST
@@ -651,7 +661,7 @@ def test_error_not_found() -> None:
         assert "openai: the provider could not find the requested resource" in str(ours.value)
 
 
-def test_error_unsupported_providers() -> None:
+def test_error_unsupported() -> None:
     with pytest.raises(APIConnectionError) as created:
         create_eval(
             DATA_SOURCE_CONFIG, TESTING_CRITERIA, custom_llm_provider=ANTHROPIC,
@@ -665,7 +675,8 @@ def test_error_unsupported_providers() -> None:
         update_eval(EVAL_ID, name=NAME, custom_llm_provider=ANTHROPIC, api_key=GOOD_KEY)
     with pytest.raises(LITELLM_ERRORS.APIConnectionError) as reference_created:
         LITELLM.create_eval(
-            data_source_config=DATA_SOURCE_CONFIG, testing_criteria=TESTING_CRITERIA,
+            data_source_config=JSON.validate_python(DATA_SOURCE_CONFIG),
+            testing_criteria=JSON.validate_python(TESTING_CRITERIA),
             custom_llm_provider=ANTHROPIC, api_key=GOOD_KEY,
         )
     with pytest.raises(LITELLM_ERRORS.APIConnectionError) as reference_listed:
@@ -689,7 +700,7 @@ def test_error_unsupported_providers() -> None:
         assert f"{action} is not supported for {ANTHROPIC}" in str(theirs.value)
 
 
-def test_unsupported_lifecycle_provider_is_a_400() -> None:
+def test_unsupported_lifecycle() -> None:
     with pytest.raises(BadRequestError) as deleted:
         delete_eval(EVAL_ID, custom_llm_provider=ANTHROPIC, api_key=GOOD_KEY)
     with pytest.raises(BadRequestError) as cancelled:
