@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use crate::loader::EnvironmentLookup;
 
-use super::{Borrowed, loads_read_timeout};
+use super::{Borrowed, loads_read_timeout as load_read_timeout};
 
 fn environment(variables: &[(&str, &str)]) -> BTreeMap<String, String> {
     variables
@@ -44,13 +44,13 @@ fn forwards_the_system_home() {
 #[test]
 fn loads_read_timeout() {
     let unset = environment(&[]);
-    let default_seconds = loads_read_timeout(&unset).expect("the default loads");
+    let default_seconds = load_read_timeout(&unset).expect("the default loads");
     assert_eq!(seconds(default_seconds), Duration::from_mins(100));
     let configured = environment(&[("REQUEST_TIMEOUT", "12")]);
-    let environment_seconds = loads_read_timeout(&configured).expect("the value loads");
+    let environment_seconds = load_read_timeout(&configured).expect("the value loads");
     assert_eq!(seconds(environment_seconds), Duration::from_secs(12));
     let invalid = environment(&[("REQUEST_TIMEOUT", "bad")]);
-    let error = loads_read_timeout(&invalid).expect_err("the value is not a number");
+    let error = load_read_timeout(&invalid).expect_err("the value is not a number");
     assert!(error.to_string().contains("REQUEST_TIMEOUT"));
     assert!(error.to_string().contains("must be a number"));
 }
