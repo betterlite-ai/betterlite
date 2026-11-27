@@ -19,6 +19,9 @@ use betterlite_prometheus::label_value_record::UserApiKeyLabelValues;
 
 use super::error::PrometheusHookError;
 
+mod deployment;
+mod usage;
+
 // the collectors one hook writes through, with the settings the B3876, B3877, B3878, B3879 and B3881 emitters take
 pub(crate) struct HookMetrics<'metrics> {
     pub(crate) collectors: &'metrics PrometheusCollectors,
@@ -75,7 +78,7 @@ impl UsageCounters for HookMetrics<'_> {
     type Counter = Handle;
 
     fn counter(&self, metric: UsageMetric) -> Handle {
-        usage_handle(self.collectors, metric)
+        usage::usage_handle(self.collectors, metric)
     }
 
     fn supported_labels(&self, metric: UsageMetric) -> &[String] {
@@ -109,7 +112,7 @@ impl RateLimitGauges for HookMetrics<'_> {
 
 impl DeploymentMetrics for HookMetrics<'_> {
     fn metric(&self, metric: DeploymentMetric) -> Handle {
-        deployment_handle(self.collectors, metric).clone()
+        deployment::deployment_handle(self.collectors, metric).clone()
     }
 
     fn labels_for(&self, metric: DeploymentMetric) -> &[String] {
@@ -126,91 +129,5 @@ impl DeploymentMetrics for HookMetrics<'_> {
 
     fn limits(&self) -> &SeriesLimits {
         self.limits
-    }
-}
-
-fn usage_handle(collectors: &PrometheusCollectors, metric: UsageMetric) -> Handle {
-    match metric {
-        UsageMetric::Requests => collectors.litellm_requests_metric.clone(),
-        UsageMetric::Spend => collectors.litellm_spend_metric.clone(),
-        UsageMetric::ZeroCostRequests => collectors.litellm_zero_cost_requests_total.clone(), // ast-grep-ignore: no-long-names
-        UsageMetric::TotalTokens => collectors.litellm_tokens_metric.clone(),
-        UsageMetric::InputTokens => collectors.litellm_input_tokens_metric.clone(),
-        UsageMetric::OutputTokens => collectors.litellm_output_tokens_metric.clone(),
-        UsageMetric::InputCachedTokens => collectors.litellm_input_cached_tokens_metric.clone(), // ast-grep-ignore: no-long-names
-        UsageMetric::InputCacheCreationTokens => {
-            collectors
-                // ast-grep-ignore: no-long-names
-                .litellm_input_cache_creation_tokens_metric
-                .clone()
-        }
-        UsageMetric::InputAudioTokens => collectors.litellm_input_audio_tokens_metric.clone(), // ast-grep-ignore: no-long-names
-        UsageMetric::OutputReasoningTokens => {
-            collectors.litellm_output_reasoning_tokens_metric.clone() // ast-grep-ignore: no-long-names
-        }
-        UsageMetric::OutputAudioTokens => collectors.litellm_output_audio_tokens_metric.clone(), // ast-grep-ignore: no-long-names
-        UsageMetric::VideoDurationSeconds => {
-            collectors.litellm_video_duration_seconds_metric.clone() // ast-grep-ignore: no-long-names
-        }
-        UsageMetric::ImagesGenerated => collectors.litellm_images_generated_metric.clone(), // ast-grep-ignore: no-long-names
-        UsageMetric::CacheHits => collectors.litellm_cache_hits_metric.clone(),
-        UsageMetric::CacheMisses => collectors.litellm_cache_misses_metric.clone(),
-        UsageMetric::CachedTokens => collectors.litellm_cached_tokens_metric.clone(),
-        UsageMetric::ProviderCacheReadTokens => {
-            collectors
-                // ast-grep-ignore: no-long-names
-                .litellm_provider_cache_read_input_tokens_metric
-                .clone()
-        }
-        UsageMetric::ProviderCacheCreationTokens => {
-            collectors
-                // ast-grep-ignore: no-long-names
-                .litellm_provider_cache_creation_input_tokens_metric
-                .clone()
-        }
-        UsageMetric::McpToolCalls => collectors.litellm_mcp_tool_calls_total.clone(),
-        UsageMetric::McpToolCallSpend => collectors.litellm_mcp_tool_call_spend_metric.clone(), // ast-grep-ignore: no-long-names
-        UsageMetric::SpendCaptureRate => collectors.litellm_spend_capture_rate.clone(),
-    }
-}
-
-fn deployment_handle(collectors: &PrometheusCollectors, metric: DeploymentMetric) -> &Handle {
-    match metric {
-        DeploymentMetric::CallbackLoggingFailures => {
-            &collectors.litellm_callback_logging_failures_metric // ast-grep-ignore: no-long-names
-        }
-        DeploymentMetric::CooledDown => &collectors.litellm_deployment_cooled_down,
-        DeploymentMetric::DeploymentState => &collectors.litellm_deployment_state,
-        DeploymentMetric::FailedFallbacks => &collectors.litellm_deployment_failed_fallbacks, // ast-grep-ignore: no-long-names
-        DeploymentMetric::FailureResponses => {
-            &collectors.litellm_deployment_failure_responses // ast-grep-ignore: no-long-names
-        }
-        DeploymentMetric::LatencyPerOutputToken => {
-            &collectors.litellm_deployment_latency_per_output_token // ast-grep-ignore: no-long-names
-        }
-        DeploymentMetric::ManagedBatchCreated => {
-            &collectors.litellm_managed_batch_created_total // ast-grep-ignore: no-long-names
-        }
-        DeploymentMetric::OverheadLatency => {
-            &collectors.litellm_overhead_latency_metric // ast-grep-ignore: no-long-names
-        }
-        DeploymentMetric::OverheadWithGuardrails => {
-            &collectors.litellm_overhead_with_guardrails_latency_metric // ast-grep-ignore: no-long-names
-        }
-        DeploymentMetric::RemainingRequests => {
-            &collectors.litellm_remaining_requests_metric // ast-grep-ignore: no-long-names
-        }
-        DeploymentMetric::RemainingTokens => {
-            &collectors.litellm_remaining_tokens_metric // ast-grep-ignore: no-long-names
-        }
-        DeploymentMetric::SuccessResponses => {
-            &collectors.litellm_deployment_success_responses // ast-grep-ignore: no-long-names
-        }
-        DeploymentMetric::SuccessfulFallbacks => {
-            &collectors.litellm_deployment_successful_fallbacks // ast-grep-ignore: no-long-names
-        }
-        DeploymentMetric::TotalRequests => {
-            &collectors.litellm_deployment_total_requests // ast-grep-ignore: no-long-names
-        }
     }
 }
