@@ -18,7 +18,7 @@ use betterlite_redact::secret::Redactor;
 use indexmap::IndexMap;
 
 use self::error::{VectorFileWriteError, VectorFileWriteFailure, failure};
-use self::prepare::{call_timeout, log_delete, log_update, target, update_values, write_params};
+use self::prepare::{LogWrite, call_timeout, log_write, target, update_values, write_params};
 use self::service::{DELETE_FLAG, UPDATE_FLAG, WriteCall, WriteService, flag, take_mode};
 use crate::api::vector_file_http_write::config::WriteParams;
 use crate::api::vector_file_provider::{
@@ -116,11 +116,8 @@ impl<Service: WriteService> VectorFileWrites<'_, Service> {
     pub async fn aupdate(&self, request: &FileUpdateRequest<'_>) -> WriteResult {
         let mut kwargs = request.write.kwargs.clone();
         kwargs.insert(String::from(UPDATE_FLAG), Json::Bool(true));
-        let flagged = FileUpdateRequest {
-            write: request.write.flagged(&kwargs),
-            attributes: request.attributes,
-            extra_body: request.extra_body,
-        };
+        let mut flagged = *request;
+        flagged.write.kwargs = &kwargs;
         self.update(&flagged).await
     }
 
@@ -144,20 +141,15 @@ impl<Service: WriteService> VectorFileWrites<'_, Service> {
         request: &FileWriteRequest<'_>,
         prepared: &Prepared<'_>,
     ) -> Result<(), VectorFileWriteFailure> {
-        let entry = FileUpdateRequest {
-            write: *request,
+        log_write(LogWrite {
+            logging: self.deps.logging,
+            operation,
+            store_id: request.vector_store_id,
+            file_id: request.file_id,
             attributes: prepared.attributes,
-            extra_body: prepared.extra_body,
-        };
-        let logging = self.deps.logging;
-        match operation {
-            Operation::Update => {
-                log_update(logging, &entry, &prepared.merged, &prepared.provider_name)
-            }
-            Operation::Delete => {
-                log_delete(logging, request, &prepared.merged, &prepared.provider_name)
-            }
-        }
+            kwargs: &prepared.merged,
+            provider: &prepared.provider_name,
+        })
         .map_err(|error| failure(error, &prepared.provider_name, self.deps.redactor))
     }
 

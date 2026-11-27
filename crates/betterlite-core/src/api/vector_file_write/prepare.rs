@@ -15,9 +15,9 @@ use betterlite_openai::api::vector_file_contracts::records::{
 use indexmap::IndexMap;
 use secrecy::SecretString;
 
+use super::VectorFileWriteDeps;
 use super::error::{VectorFileWriteError, VectorFileWriteFailure, failure};
-use super::service::{DELETE_FLAG, UPDATE_FLAG};
-use super::{FileUpdateRequest, FileWriteRequest, VectorFileWriteDeps};
+use super::service::flag;
 use crate::api::vector_file_http_write::config::WriteParams;
 use crate::api::vector_store_http_write::service::Operation;
 
@@ -110,45 +110,6 @@ fn ids(store_id: &str, file_id: &str) -> IndexMap<String, Json> {
     ])
 }
 
-// update_from_kwargs(kwargs, model=None, optional_params={"vector_store_id", "file_id", "attributes"}, ...)
-pub(crate) fn log_update(
-    logging: &Mutex<LoggingState>,
-    request: &FileUpdateRequest<'_>,
-    kwargs: &IndexMap<String, Json>,
-    provider: &str,
-) -> Result<(), VectorFileWriteError> {
-    let mut optional_params = ids(request.write.vector_store_id, request.write.file_id);
-    optional_params.insert(
-        String::from("attributes"),
-        attributes_value(request.attributes)?,
-    );
-    log_call(LogEntry {
-        logging,
-        store_id: request.write.vector_store_id,
-        kwargs,
-        flag: UPDATE_FLAG,
-        optional_params,
-        provider,
-    })
-}
-
-// a delete logs both ids and nothing else: the extra_body and extra_query in kwargs never reach the handler
-pub(crate) fn log_delete(
-    logging: &Mutex<LoggingState>,
-    request: &FileWriteRequest<'_>,
-    kwargs: &IndexMap<String, Json>,
-    provider: &str,
-) -> Result<(), VectorFileWriteError> {
-    log_call(LogEntry {
-        logging,
-        store_id: request.vector_store_id,
-        kwargs,
-        flag: DELETE_FLAG,
-        optional_params: ids(request.vector_store_id, request.file_id),
-        provider,
-    })
-}
-
 fn attributes_value(attributes: Option<&Attributes>) -> Result<Json, VectorFileWriteError> {
     let Some(values) = attributes else {
         return Ok(Json::Null);
@@ -157,31 +118,32 @@ fn attributes_value(attributes: Option<&Attributes>) -> Result<Json, VectorFileW
     serde_json::from_value(encoded).map_err(VectorFileWriteError::Params)
 }
 
-struct LogEntry<'entry> {
-    logging: &'entry Mutex<LoggingState>,
-    store_id: &'entry str,
-    kwargs: &'entry IndexMap<String, Json>,
-    flag: &'static str,
-    optional_params: IndexMap<String, Json>,
-    provider: &'entry str,
+// One file write's log call: update_from_kwargs(kwargs, model=None, optional_params={ids, attributes for an update}, ...)
+pub(crate) struct LogWrite<'write> {
+    pub(crate) logging: &'write Mutex<LoggingState>,
+    pub(crate) operation: Operation,
+    pub(crate) store_id: &'write str,
+    pub(crate) file_id: &'write str,
+    pub(crate) attributes: Option<&'write Attributes>,
+    pub(crate) kwargs: &'write IndexMap<String, Json>,
+    pub(crate) provider: &'write str,
 }
 
-// the async flag is popped before LiteLLM logs, so it is read and then kept out of the forwarded kwargs
-fn log_call(entry: LogEntry<'_>) -> Result<(), VectorFileWriteError> {
+pub(crate) fn log_write(entry: LogWrite<'_>) -> Result<(), VectorFileWriteError> {
+    // the async flag is popped before LiteLLM logs, so it stays out of the forwarded kwargs
     let mut forwarded = entry.kwargs.clone();
-    forwarded.shift_remove(entry.flag);
-    let mut litellm_params = IndexMap::new();
-    litellm_params.insert(
-        String::from("vector_store_id"),
-        Json::Text(entry.store_id.to_owned()),
-    );
-    litellm_params.insert(
-        String::from("litellm_call_id"),
-        forwarded
-            .get("litellm_call_id")
-            .cloned()
-            .unwrap_or(Json::Null),
-    );
+    forwarded.shift_remove(flag(entry.operation));
+    let call_id = forwarded
+        .get("litellm_call_id")
+        .cloned()
+        .unwrap_or(Json::Null);
+    let mut litellm_params = IndexMap::from([
+        (
+            String::from("vector_store_id"),
+            Json::Text(entry.store_id.to_owned()),
+        ),
+        (String::from("litellm_call_id"), call_id),
+    ]);
     litellm_params.extend(generic_params_dump(&forwarded));
     let mut additional_params = IndexMap::new();
     additional_params.insert(
@@ -196,11 +158,23 @@ fn log_call(entry: LogEntry<'_>) -> Result<(), VectorFileWriteError> {
         CallUpdate {
             model: None,
             user: None,
-            optional_params: entry.optional_params,
+            optional_params: logged_params(&entry)?,
             additional_params,
         },
     )
     .map_err(VectorFileWriteError::Logging)
+}
+
+// an update logs the argument it was handed; a delete keeps both ids alone
+fn logged_params(entry: &LogWrite<'_>) -> Result<IndexMap<String, Json>, VectorFileWriteError> {
+    let mut params = ids(entry.store_id, entry.file_id);
+    if entry.operation == Operation::Update {
+        params.insert(
+            String::from("attributes"),
+            attributes_value(entry.attributes)?,
+        );
+    }
+    Ok(params)
 }
 
 // GenericLiteLLMParams.model_dump(exclude_none=True): the five fields defaulting to False, then every non-null kwarg
