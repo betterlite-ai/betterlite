@@ -31,7 +31,7 @@ fn unquote(value: &str) -> String {
         if character == '\\' {
             let (escaped, consumed) = escaped_character(&characters, index);
             decoded.push(escaped);
-            index = index.saturating_add(consumed);
+            index = index.saturating_add(consumed.max(1));
             continue;
         }
         decoded.push(character);
