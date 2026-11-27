@@ -195,12 +195,8 @@ where
 
 // arealtime_calls' logged params: the rewritten session the call carries.
 fn calls_params(session: Option<&IndexMap<String, Json>>) -> IndexMap<String, Json> {
-    let mut logged = params([("realtime_calls", Json::Bool(true))]);
-    logged.insert(
-        String::from("session"),
-        session.map_or(Json::Null, |fields| Json::Object(fields.clone())),
-    );
-    logged
+    let entry = session.map_or(Json::Null, |fields| Json::Object(fields.clone()));
+    params([("realtime_calls", Json::Bool(true)), ("session", entry)])
 }
 
 // async_realtime_calls_handler's request: the caller's ephemeral key, the SDP offer and the rewritten session.
