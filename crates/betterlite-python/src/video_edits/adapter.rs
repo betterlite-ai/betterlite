@@ -11,6 +11,8 @@ use betterlite_openai::openai_video_identifiers::multipart::{
 use betterlite_openai::videos::config::{VideoCredentials, validate_environment};
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 use super::error::CharacterProviderError;
 
@@ -71,6 +73,17 @@ fn edit_params_key(params: &IndexMap<String, Json>) -> Option<SecretString> {
         Json::Text(text) => Some(SecretString::from(text.clone())),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
     }
+}
+
+// LiteLLM's own record type crosses from the provider crate into the core's as the same JSON fields
+fn record<T, V>(value: &V) -> Result<T, CharacterProviderError>
+where
+    T: DeserializeOwned,
+    V: Serialize,
+{
+    let encoded = serde_json::to_value(value).map_err(|source| provider_fault(&source))?;
+    let decoded = serde_json::from_value(encoded).map_err(|source| provider_fault(&source))?;
+    Ok(decoded)
 }
 
 fn provider_fault<E>(error: &E) -> CharacterProviderError

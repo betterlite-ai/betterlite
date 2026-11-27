@@ -19,7 +19,7 @@ use betterlite_openai::video_edits::response::{
 use betterlite_openai::videos::config::complete_url;
 use betterlite_openai::videos::error::get_error_class as provider_error_class;
 
-use super::{OpenAiEditConfig, media_body, named_part};
+use super::{OpenAiEditConfig, media_body, named_part, record};
 
 impl VideoEditConfigLookup for OpenAiEditConfig {
     fn video_config(&self, tag: &VideoConfigTag) -> Option<&dyn BaseVideoConfig> {
@@ -89,11 +89,12 @@ impl BaseVideoConfig for OpenAiEditConfig {
         reply: VideoReply<'_>,
         _request_data: Option<&Params>,
     ) -> Result<VideoObject, BoxError> {
-        let object = video_response(&OpenAiReply {
+        let reply_object = video_response(&OpenAiReply {
             body: &reply.raw_response.body,
             custom_llm_provider: reply.custom_llm_provider,
             request_data: None,
         })?;
+        let object: VideoObject = record(&reply_object)?;
         Ok(object)
     }
 
@@ -119,11 +120,12 @@ impl BaseVideoConfig for OpenAiEditConfig {
         &self,
         reply: VideoReply<'_>,
     ) -> Result<VideoObject, BoxError> {
-        let object = video_response(&OpenAiReply {
+        let reply_object = video_response(&OpenAiReply {
             body: &reply.raw_response.body,
             custom_llm_provider: reply.custom_llm_provider,
             request_data: None,
         })?;
+        let object: VideoObject = record(&reply_object)?;
         Ok(object)
     }
 

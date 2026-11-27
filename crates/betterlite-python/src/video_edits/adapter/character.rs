@@ -20,7 +20,7 @@ use secrecy::SecretString;
 
 use crate::video_edits::error::CharacterProviderError;
 
-use super::{OpenAiEditConfig, media_body, named_part, provider_fault};
+use super::{OpenAiEditConfig, media_body, named_part, provider_fault, record};
 
 fn character_params_key(params: &HttpParams) -> Option<SecretString> {
     match params.get("api_key")? {
@@ -129,7 +129,9 @@ impl CharacterConfig for OpenAiEditConfig {
         reply: &UpstreamResponse,
         _logging: &mut LoggingState,
     ) -> Result<CharacterObject, Self::Error> {
-        decode_character_reply(&reply.body).map_err(|source| provider_fault(&source))
+        let character =
+            decode_character_reply(&reply.body).map_err(|source| provider_fault(&source))?;
+        record(&character)
     }
 
     fn transform_get_response(
@@ -137,6 +139,8 @@ impl CharacterConfig for OpenAiEditConfig {
         reply: &UpstreamResponse,
         _logging: &mut LoggingState,
     ) -> Result<CharacterObject, Self::Error> {
-        decode_character_reply(&reply.body).map_err(|source| provider_fault(&source))
+        let character =
+            decode_character_reply(&reply.body).map_err(|source| provider_fault(&source))?;
+        record(&character)
     }
 }

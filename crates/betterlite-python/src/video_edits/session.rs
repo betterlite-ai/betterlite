@@ -50,7 +50,6 @@ pub(crate) struct EditSession {
     tls: TlsPolicy,
     pub(crate) request_timeout_seconds: f64,
     pub(crate) redactor: Redactor,
-    pub(crate) sink: SilentSink,
 }
 
 impl EditSession {
@@ -68,7 +67,6 @@ impl EditSession {
             environment,
             tls,
             redactor,
-            sink: SilentSink,
         })
     }
 
@@ -121,7 +119,7 @@ pub(crate) fn logging(redactor: &Redactor, call_type: &str) -> Result<LoggingSta
         },
         redactor,
         || Uuid::new_v4().to_string(),
-        Duration::default(),
+        Duration::default,
     )
     .map_err(SessionError::Logging)
 }

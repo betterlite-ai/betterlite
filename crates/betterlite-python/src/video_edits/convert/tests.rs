@@ -15,14 +15,17 @@ use betterlite_core::api::video_extension_call::VideoExtensionConfigLookup;
 use betterlite_core::api::video_selection::VideoConfigTag;
 use betterlite_http::interactions::base::{Params as HttpParams, RequestHeaders};
 use betterlite_http::proxy::UpstreamResponse;
+use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_openai::openai_video_identifiers::ids::{
     decode_video_id_with_provider, encode_character_id, encode_video_id_with_provider,
 };
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use http::HeaderMap;
 use indexmap::IndexMap;
 
 use crate::video_edits::adapter::OpenAiEditConfig;
+use crate::video_edits::session::logging as call_logging;
 
 use super::requests::{Build, OwnedEdit, OwnedExtension};
 use super::{ConvertError, VideoEditWire, VideoFile, parse};
@@ -89,6 +92,11 @@ fn request_context<'call>(
         litellm_params: params,
         headers,
     }
+}
+
+fn logging_state() -> LoggingState {
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
+    call_logging(&redactor, "video_create_character").unwrap()
 }
 
 #[test]
@@ -566,6 +574,53 @@ fn request_adapter_wraps_the_edit_reply_with_the_provider() {
             },
             None,
         )
+        .unwrap();
+    assert_eq!(object.status, "queued");
+    assert_eq!(decode_video_id_with_provider(&object.id).video_id, "vid-1");
+    assert_eq!(
+        decode_video_id_with_provider(&object.id)
+            .custom_llm_provider
+            .as_deref(),
+        Some("openai")
+    );
+}
+
+#[test]
+fn request_adapter_decodes_the_character_replies() {
+    let config = openai_config(None);
+    let reply = UpstreamResponse {
+        status: 200,
+        headers: HeaderMap::new(),
+        body: br#"{"id": "char-1", "object": "character", "created_at": 7, "name": "hero"}"#
+            .to_vec(),
+    };
+    let mut state = logging_state();
+    let created = config
+        .transform_create_response(&reply, &mut state)
+        .unwrap();
+    assert_eq!(created.id, "char-1");
+    assert_eq!(created.created_at, 7);
+    assert_eq!(created.name, "hero");
+    let looked_up = config.transform_get_response(&reply, &mut state).unwrap();
+    assert_eq!(looked_up.id, "char-1");
+    assert_eq!(looked_up.name, "hero");
+}
+
+#[test]
+fn request_adapter_wraps_the_extension_reply_with_the_provider() {
+    let config = openai_config(None);
+    let reply = UpstreamResponse {
+        status: 200,
+        headers: HeaderMap::new(),
+        body: br#"{"id": "vid-1", "object": "video", "status": "queued"}"#.to_vec(),
+    };
+    let mut logging = VideoLogging::default();
+    let object = config
+        .transform_video_extension_response(VideoReply {
+            raw_response: &reply,
+            logging_obj: &mut logging,
+            custom_llm_provider: Some("openai"),
+        })
         .unwrap();
     assert_eq!(object.status, "queued");
     assert_eq!(decode_video_id_with_provider(&object.id).video_id, "vid-1");
