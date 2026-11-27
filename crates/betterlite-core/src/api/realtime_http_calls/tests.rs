@@ -289,6 +289,36 @@ fn transcription_logs_the_raw_transcription_session() {
 }
 
 #[test]
+fn transcription_forwards_headers_api_version_and_the_callers_client() {
+    let harness = Harness::new(EMPTY_SETTINGS, &[]);
+    let environment = BTreeMap::new();
+    let policy = Arc::new(
+        ProxyPolicy::resolve(&ProxyTrust::default(), &environment).expect("the proxy policy"),
+    );
+    let client = ProxiedClient::outbound(&policy).expect("the proxied client");
+    let extra_headers = BTreeMap::from([
+        (String::from("x-extra"), String::from("1")),
+        (String::from("x-second"), String::from("2")),
+    ]);
+    let kwargs = no_kwargs();
+    let mut call = transcription_call(&kwargs, None);
+    call.common.extra_headers = Some(&extra_headers);
+    call.common.api_version = Some("2024-10-01");
+    call.common.client = Some(SuppliedClient {
+        kind: ClientKind::Sync,
+        transport: &client,
+    });
+    harness
+        .run_transcription(call)
+        .expect("the transcription session");
+    let seen = harness.seen();
+    let posting = only_session(&seen);
+    assert_eq!(posting.extra_headers, Some(extra_headers));
+    assert_eq!(posting.api_version.as_deref(), Some("2024-10-01"));
+    assert_eq!(posting.client_kind, Some(ClientKind::Sync));
+}
+
+#[test]
 fn calls_rejects_the_default_model_without_a_request() {
     let harness = Harness::new(EMPTY_SETTINGS, &[]);
     let kwargs = no_kwargs();
