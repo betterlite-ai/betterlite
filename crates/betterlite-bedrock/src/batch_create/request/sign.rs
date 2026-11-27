@@ -106,8 +106,11 @@ fn merged_params(
     deployment: &BTreeMap<String, Box<RawValue>>,
     request: &BTreeMap<String, Box<RawValue>>,
 ) -> Result<BTreeMap<String, Box<RawValue>>, BatchCreateError> {
-    let merged = merge_aws_request_params(&policy_params(deployment), &policy_params(request));
-    raw_params(&merged).map_err(BatchCreateError::RequestJson)
+    raw_params(&merge_aws_request_params(
+        &policy_params(deployment),
+        &policy_params(request),
+    ))
+    .map_err(BatchCreateError::RequestJson)
 }
 
 fn policy_params(params: &BTreeMap<String, Box<RawValue>>) -> Params {
