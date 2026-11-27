@@ -1,10 +1,9 @@
 #![cfg(test)]
 
 use std::io;
-use std::panic::PoisonError;
 use std::str;
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_db::auxiliary_repository::repository::PrismaClient;
 use betterlite_db::database_replica::availability::Availability;
@@ -149,18 +148,18 @@ async fn pages_ascend_by_alias_with_the_full_count() {
         ("t-delta", Some("Delta")),
     ]))
     .await;
-    let (first, total) = get_paginated_teams(fixture.client(), 2, 1).await;
-    assert_eq!(alias_names(&first), ["Alpha", "Bravo"].map(Some));
-    assert_eq!(total, 5);
-    let (second, total) = get_paginated_teams(fixture.client(), 2, 2).await;
-    assert_eq!(alias_names(&second), ["Charlie", "Delta"].map(Some));
-    assert_eq!(total, 5);
-    let (third, total) = get_paginated_teams(fixture.client(), 2, 3).await;
-    assert_eq!(alias_names(&third), ["Echo"].map(Some));
-    assert_eq!(total, 5);
-    let (fourth, total) = get_paginated_teams(fixture.client(), 2, 4).await;
-    assert!(fourth.is_empty());
-    assert_eq!(total, 5);
+    let (first_page, first_count) = get_paginated_teams(fixture.client(), 2, 1).await;
+    assert_eq!(alias_names(&first_page), ["Alpha", "Bravo"].map(Some));
+    assert_eq!(first_count, 5);
+    let (second_page, second_count) = get_paginated_teams(fixture.client(), 2, 2).await;
+    assert_eq!(alias_names(&second_page), ["Charlie", "Delta"].map(Some));
+    assert_eq!(second_count, 5);
+    let (third_page, third_count) = get_paginated_teams(fixture.client(), 2, 3).await;
+    assert_eq!(alias_names(&third_page), ["Echo"].map(Some));
+    assert_eq!(third_count, 5);
+    let (fourth_page, fourth_count) = get_paginated_teams(fixture.client(), 2, 4).await;
+    assert!(fourth_page.is_empty());
+    assert_eq!(fourth_count, 5);
     fixture.close().await;
 }
 
@@ -210,16 +209,19 @@ async fn reader_store_serves_rows_and_count_until_unavailable() {
             reader: &reader.store,
             availability: &reader.availability,
         };
-        let (teams, total) = get_paginated_teams(client, 10, 1).await;
-        assert_eq!(alias_names(&teams), ["Reader One", "Reader Two"].map(Some));
-        assert_eq!(total, 2);
+        let (replica_page, replica_count) = get_paginated_teams(client, 10, 1).await;
+        assert_eq!(
+            alias_names(&replica_page),
+            ["Reader One", "Reader Two"].map(Some)
+        );
+        assert_eq!(replica_count, 2);
         reader
             .availability
             .reader_unavailable
             .store(true, Ordering::SeqCst);
-        let (teams, total) = get_paginated_teams(client, 10, 1).await;
-        assert_eq!(alias_names(&teams), ["Writer"].map(Some));
-        assert_eq!(total, 1);
+        let (primary_page, primary_count) = get_paginated_teams(client, 10, 1).await;
+        assert_eq!(alias_names(&primary_page), ["Writer"].map(Some));
+        assert_eq!(primary_count, 1);
     }
     reader.close().await;
     writer.close().await;
@@ -247,7 +249,7 @@ async fn missing_pool_failure_returns_empty_and_logs() {
 #[rstest]
 #[case::page_zero(2, 0)]
 #[case::multiplication_overflow(2, u64::MAX)]
-#[case::offset_overflow(9_223_372_036_854_775_807, 3)]
+#[case::offset_overflow(0x7FFF_FFFF_FFFF_FFFF, 3)]
 #[case::page_size_overflow(u64::MAX, 1)]
 #[tokio::test]
 async fn window_failure_returns_empty_and_logs(#[case] page_size: u64, #[case] page: u64) {
