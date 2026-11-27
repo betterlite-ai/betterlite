@@ -2,17 +2,15 @@
 
 use betterlite_redact::secret::Redactor;
 
-use super::cases::{STABILITY_MODEL, answered, auth_params, call, image_list, run};
+use super::cases::{Run, STABILITY_MODEL, answered, auth_params, call, image_list, run};
 use super::fixture::Reply;
 use crate::bedrock_settings::BedrockError;
 use crate::image_edits::error::ImageEditError;
 
 pub(super) fn edit_http_error(redactor: &Redactor) {
     throttled_error(redactor);
-    redirect_error(redactor);
-    binary_error(redactor);
-    timeout_error(redactor);
-    transport_error(redactor);
+    binary_and_timeout_errors(redactor);
+    redirect_and_transport_errors(redactor);
 }
 
 fn provider_error(error: &ImageEditError) -> (u16, &BedrockError) {
@@ -32,19 +30,21 @@ fn provider_error(error: &ImageEditError) -> (u16, &BedrockError) {
     }
 }
 
-fn throttled_error(redactor: &Redactor) {
+fn failed_call(redactor: &Redactor, reply: Reply) -> Run {
     let supplied = image_list(&["aW1n"]);
-    let mut throttled_call = call(STABILITY_MODEL, Some("edit it"), auth_params());
-    throttled_call.images = &supplied;
-    let throttled = run(
-        throttled_call,
-        "{}",
-        answered(Reply::status(
+    let mut broken_call = call(STABILITY_MODEL, Some("edit it"), auth_params());
+    broken_call.images = &supplied;
+    run(broken_call, "{}", answered(reply), redactor)
+}
+
+fn throttled_error(redactor: &Redactor) {
+    let throttled = failed_call(
+        redactor,
+        Reply::status(
             429,
             &[("x-amzn-errortype", "ThrottlingException")],
             r#"{"message": "slow down"}"#,
-        )),
-        redactor,
+        ),
     );
     let (status, error) = provider_error(throttled.error());
     assert_eq!(status, 429);
@@ -64,54 +64,27 @@ fn throttled_error(redactor: &Redactor) {
     );
 }
 
-fn redirect_error(redactor: &Redactor) {
-    // httpx treats every non-2xx as an error, so a redirect is a provider error too
-    let supplied = image_list(&["aW1n"]);
-    let mut redirect_call = call(STABILITY_MODEL, Some("edit it"), auth_params());
-    redirect_call.images = &supplied;
-    let redirect = run(
-        redirect_call,
-        "{}",
-        answered(Reply::status(302, &[], r#"{"images": []}"#)),
-        redactor,
-    );
-    assert_eq!(redirect.error().status(), Some(302));
-    assert!(redirect.post_call().is_none());
-}
-
-fn binary_error(redactor: &Redactor) {
+fn binary_and_timeout_errors(redactor: &Redactor) {
     // a body that is not UTF-8 still reports a provider error, naming its byte count
-    let supplied = image_list(&["aW1n"]);
-    let mut binary_call = call(STABILITY_MODEL, Some("edit it"), auth_params());
-    binary_call.images = &supplied;
-    let binary = run(
-        binary_call,
-        "{}",
-        answered(Reply::bytes(500, &[], vec![0xFF, 0xFE])),
-        redactor,
-    );
-    let (status, error) = provider_error(binary.error());
-    assert_eq!(status, 500);
-    assert_eq!(error.error.message, "2 bytes that are not UTF-8");
-}
-
-fn timeout_error(redactor: &Redactor) {
+    let binary = failed_call(redactor, Reply::bytes(500, &[], vec![0xFF, 0xFE]));
+    let (binary_status, binary_detail) = provider_error(binary.error());
+    assert_eq!(binary_status, 500);
+    assert_eq!(binary_detail.error.message, "2 bytes that are not UTF-8");
     // a timeout reports 408, and a failed transfer keeps the transport error
-    let supplied = image_list(&["aW1n"]);
-    let mut timed_call = call(STABILITY_MODEL, Some("edit it"), auth_params());
-    timed_call.images = &supplied;
-    let timed = run(timed_call, "{}", answered(Reply::Timeout), redactor);
-    let (status, error) = provider_error(timed.error());
-    assert_eq!(status, 408);
-    assert_eq!(error.error.message, "the provider request timed out");
+    let timed = failed_call(redactor, Reply::Timeout);
+    let (timed_status, timed_detail) = provider_error(timed.error());
+    assert_eq!(timed_status, 408);
+    assert_eq!(timed_detail.error.message, "the provider request timed out");
     assert!(timed.post_call().is_none());
 }
 
-fn transport_error(redactor: &Redactor) {
-    let supplied = image_list(&["aW1n"]);
-    let mut broken_call = call(STABILITY_MODEL, Some("edit it"), auth_params());
-    broken_call.images = &supplied;
-    let broken = run(broken_call, "{}", answered(Reply::Failed), redactor);
+fn redirect_and_transport_errors(redactor: &Redactor) {
+    // httpx treats every non-2xx as an error, so a redirect is a provider error too
+    let redirect = failed_call(redactor, Reply::status(302, &[], r#"{"images": []}"#));
+    assert_eq!(redirect.error().status(), Some(302));
+    assert!(redirect.post_call().is_none());
+    // a failed transfer hides as a transport error and logs no post_call
+    let broken = failed_call(redactor, Reply::Failed);
     assert!(matches!(broken.error(), ImageEditError::Transport(_)));
     assert!(broken.post_call().is_none());
 }

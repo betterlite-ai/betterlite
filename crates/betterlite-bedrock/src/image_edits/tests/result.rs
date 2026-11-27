@@ -5,7 +5,7 @@ use betterlite_openai::api::image_contracts::records::ImageUsage;
 use betterlite_redact::secret::Redactor;
 
 use super::cases::{
-    CANVAS_COST, CANVAS_MODEL, STABILITY_COST, STABILITY_MODEL, answered, auth_params, call,
+    CANVAS_COST, CANVAS_MODEL, Run, STABILITY_COST, STABILITY_MODEL, answered, auth_params, call,
     image_list, run,
 };
 use super::fixture::{NOW_SECONDS, Reply, capture};
@@ -15,9 +15,7 @@ use crate::stability_edits::error::{StabilityEditError, StabilityReplyError};
 pub(super) fn edit_result_projection(redactor: &Redactor) {
     canvas_projection(redactor);
     stability_projection(redactor);
-    null_reply(redactor);
-    malformed_reply(redactor);
-    list_reply(redactor);
+    reply_errors(redactor);
     canvas_error_reply(redactor);
 }
 
@@ -67,41 +65,28 @@ fn stability_projection(redactor: &Redactor) {
     assert_eq!(stability.cost().as_deref(), Some("0.07"));
 }
 
-fn null_reply(redactor: &Redactor) {
-    // a body of null stops at the handler's own check, after post_call already recorded the text
+fn stability_reply(redactor: &Redactor, prompt: Option<&str>, reply: Reply) -> Run {
     let supplied = image_list(&["aW1n"]);
-    let mut null_call = call(STABILITY_MODEL, None, auth_params());
-    null_call.images = &supplied;
-    let null = run(null_call, "{}", answered(Reply::ok("null")), redactor);
+    let mut reply_call = call(STABILITY_MODEL, prompt, auth_params());
+    reply_call.images = &supplied;
+    run(reply_call, "{}", answered(reply), redactor)
+}
+
+fn reply_errors(redactor: &Redactor) {
+    // a body of null stops at the handler's own check, after post_call already recorded the text
+    let null = stability_reply(redactor, None, Reply::ok("null"));
     assert!(matches!(null.error(), ImageEditError::NullReply));
     assert_eq!(
         null.error().to_string(),
         "Error in response object format, got None"
     );
     assert!(null.post_call().is_some());
-}
-
-fn malformed_reply(redactor: &Redactor) {
     // text that is not JSON is the outer parse failure, and post_call still ran first
-    let supplied = image_list(&["aW1n"]);
-    let mut malformed_call = call(STABILITY_MODEL, None, auth_params());
-    malformed_call.images = &supplied;
-    let malformed = run(
-        malformed_call,
-        "{}",
-        answered(Reply::ok("{not json")),
-        redactor,
-    );
+    let malformed = stability_reply(redactor, None, Reply::ok("{not json"));
     assert!(matches!(malformed.error(), ImageEditError::Json(_)));
     assert!(malformed.post_call().is_some());
-}
-
-fn list_reply(redactor: &Redactor) {
     // a parsed list passes the outer check and the family names the shape
-    let supplied = image_list(&["aW1n"]);
-    let mut list_call = call(STABILITY_MODEL, None, auth_params());
-    list_call.images = &supplied;
-    let list = run(list_call, "{}", answered(Reply::ok("[]")), redactor);
+    let list = stability_reply(redactor, None, Reply::ok("[]"));
     assert!(matches!(
         list.error(),
         ImageEditError::Stability(StabilityEditError::Reply(StabilityReplyError::NotAnObject))

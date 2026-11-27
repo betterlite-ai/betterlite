@@ -4,144 +4,52 @@ use std::time::Duration;
 
 use betterlite_redact::secret::Redactor;
 
-use super::cases::{Answer, STABILITY_MODEL, answered, auth_params, call, image_list, run};
+use super::cases::{Answer, Run, STABILITY_MODEL, auth_params, call, image_list, run};
 use super::fixture::Reply;
 use crate::image_call::transport::ClientKind;
 
 pub(super) fn edit_transport_selection(redactor: &Redactor) {
-    sync_default_client(redactor);
-    supplied_async_on_sync(redactor);
-    supplied_sync_client(redactor);
-    async_default_client(redactor);
-    async_none_timeout(redactor);
-    supplied_async_client(redactor);
-    sync_client_on_async(redactor);
+    // sync: the factory builds the default client, a supplied async client is no match, a supplied sync one replaces it
+    let from_factory = edit_run(redactor, false, None, None);
+    assert_eq!(from_factory.sync_calls, 1);
+    assert!(from_factory.async_calls.is_empty());
+    assert_eq!(from_factory.factory_requests.len(), 1);
+    let given_async = edit_run(redactor, false, None, Some(ClientKind::Async));
+    assert_eq!(given_async.sync_calls, 1);
+    assert!(given_async.supplied_requests.is_empty());
+    let given_sync = edit_run(redactor, false, None, Some(ClientKind::Sync));
+    assert_eq!(given_sync.sync_calls, 0);
+    assert_eq!(given_sync.supplied_requests.len(), 1);
+    // async: the default client takes the call timeout, including None, and a sync client is rejected here
+    let timeout = Some(Duration::from_millis(2500));
+    let timed = edit_run(redactor, true, timeout, None);
+    assert_eq!(timed.async_calls, vec![timeout]);
+    assert_eq!(timed.factory_requests.len(), 1);
+    let untimed = edit_run(redactor, true, None, None);
+    assert_eq!(untimed.async_calls, vec![None]);
+    assert_eq!(untimed.factory_requests.len(), 1);
+    let supplied_async = edit_run(redactor, true, None, Some(ClientKind::Async));
+    assert!(supplied_async.async_calls.is_empty());
+    assert_eq!(supplied_async.supplied_requests.len(), 1);
+    let rejected_sync = edit_run(redactor, true, timeout, Some(ClientKind::Sync));
+    assert_eq!(rejected_sync.async_calls, vec![timeout]);
+    assert!(rejected_sync.supplied_requests.is_empty());
 }
 
-fn sync_default_client(redactor: &Redactor) {
-    // sync: the factory builds the default client, a supplied sync client replaces it
-    let supplied = image_list(&["aW1n"]);
-    let mut default_call = call(STABILITY_MODEL, Some("edit it"), auth_params());
-    default_call.images = &supplied;
-    let built = run(
-        default_call,
-        "{}",
-        Answer {
-            reply: Reply::ok(r#"{"images": ["aQ=="]}"#),
-            supplied: None,
-        },
-        redactor,
-    );
-    assert_eq!(built.sync_calls, 1);
-    assert!(built.async_calls.is_empty());
-    assert_eq!(built.factory_requests.len(), 1);
-}
-
-fn supplied_async_on_sync(redactor: &Redactor) {
-    // an async client on a sync call is not a match, so the factory builds the sync one
-    let supplied = image_list(&["aW1n"]);
-    let mut async_given_call = call(STABILITY_MODEL, Some("edit it"), auth_params());
-    async_given_call.images = &supplied;
-    let ignored = run(
-        async_given_call,
-        "{}",
-        Answer {
-            reply: Reply::ok(r#"{"images": ["aQ=="]}"#),
-            supplied: Some(ClientKind::Async),
-        },
-        redactor,
-    );
-    assert_eq!(ignored.sync_calls, 1);
-    assert!(ignored.supplied_requests.is_empty());
-}
-
-fn supplied_sync_client(redactor: &Redactor) {
-    let supplied = image_list(&["aW1n"]);
-    let mut sync_given_call = call(STABILITY_MODEL, Some("edit it"), auth_params());
-    sync_given_call.images = &supplied;
-    let given = run(
-        sync_given_call,
-        "{}",
-        answered(Reply::ok(r#"{"images": ["aQ=="]}"#)),
-        redactor,
-    );
-    assert_eq!(given.sync_calls, 0);
-    assert_eq!(given.supplied_requests.len(), 1);
-}
-
-fn async_default_client(redactor: &Redactor) {
-    // async: the default client takes the call timeout
-    let supplied = image_list(&["aW1n"]);
-    let mut async_call = call(STABILITY_MODEL, Some("edit it"), auth_params());
-    async_call.images = &supplied;
-    async_call.aimage_edit = true;
-    async_call.timeout = Some(Duration::from_millis(2500));
-    let built = run(
-        async_call,
-        "{}",
-        Answer {
-            reply: Reply::ok(r#"{"images": ["aQ=="]}"#),
-            supplied: None,
-        },
-        redactor,
-    );
-    assert_eq!(built.async_calls, vec![Some(Duration::from_millis(2500))]);
-    assert_eq!(built.factory_requests.len(), 1);
-}
-
-fn async_none_timeout(redactor: &Redactor) {
-    // a caller with no timeout hands the async client a None timeout all the same
-    let supplied = image_list(&["aW1n"]);
-    let mut untimed_call = call(STABILITY_MODEL, Some("edit it"), auth_params());
-    untimed_call.images = &supplied;
-    untimed_call.aimage_edit = true;
-    let built = run(
-        untimed_call,
-        "{}",
-        Answer {
-            reply: Reply::ok(r#"{"images": ["aQ=="]}"#),
-            supplied: None,
-        },
-        redactor,
-    );
-    assert_eq!(built.async_calls, vec![None]);
-    assert_eq!(built.factory_requests.len(), 1);
-}
-
-fn supplied_async_client(redactor: &Redactor) {
-    let supplied = image_list(&["aW1n"]);
-    let mut async_supplied_call = call(STABILITY_MODEL, Some("edit it"), auth_params());
-    async_supplied_call.images = &supplied;
-    async_supplied_call.aimage_edit = true;
-    let given = run(
-        async_supplied_call,
-        "{}",
-        Answer {
-            reply: Reply::ok(r#"{"images": ["aQ=="]}"#),
-            supplied: Some(ClientKind::Async),
-        },
-        redactor,
-    );
-    assert!(given.async_calls.is_empty());
-    assert_eq!(given.supplied_requests.len(), 1);
-}
-
-fn sync_client_on_async(redactor: &Redactor) {
-    // a sync client on the async path is not accepted, so the factory builds the async one
-    let supplied = image_list(&["aW1n"]);
-    let mut sync_on_async_call = call(STABILITY_MODEL, Some("edit it"), auth_params());
-    sync_on_async_call.images = &supplied;
-    sync_on_async_call.aimage_edit = true;
-    sync_on_async_call.timeout = Some(Duration::from_millis(2500));
-    let replaced = run(
-        sync_on_async_call,
-        "{}",
-        answered(Reply::ok(r#"{"images": ["aQ=="]}"#)),
-        redactor,
-    );
-    assert_eq!(
-        replaced.async_calls,
-        vec![Some(Duration::from_millis(2500))]
-    );
-    assert!(replaced.supplied_requests.is_empty());
+fn edit_run(
+    redactor: &Redactor,
+    aimage_edit: bool,
+    timeout: Option<Duration>,
+    supplied: Option<ClientKind>,
+) -> Run {
+    let images = image_list(&["aW1n"]);
+    let mut edit_call = call(STABILITY_MODEL, Some("edit it"), auth_params());
+    edit_call.images = &images;
+    edit_call.aimage_edit = aimage_edit;
+    edit_call.timeout = timeout;
+    let answer = Answer {
+        reply: Reply::ok(r#"{"images": ["aQ=="]}"#),
+        supplied,
+    };
+    run(edit_call, "{}", answer, redactor)
 }

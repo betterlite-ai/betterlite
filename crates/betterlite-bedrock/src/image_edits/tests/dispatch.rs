@@ -89,8 +89,7 @@ fn canvas_background_removal(redactor: &Redactor) {
 
 pub(super) fn stability_edit_dispatch(redactor: &Redactor) {
     stability_named_edit(redactor);
-    stability_style_transfer(redactor);
-    stability_promptless(redactor);
+    stability_transfer_and_promptless(redactor);
     stability_imageless(redactor);
 }
 
@@ -117,7 +116,7 @@ fn stability_named_edit(redactor: &Redactor) {
     );
 }
 
-fn stability_style_transfer(redactor: &Redactor) {
+fn stability_transfer_and_promptless(redactor: &Redactor) {
     // a style-transfer model names its source image init_image
     let supplied = image_list(&["aW1n"]);
     let mut transfer = call(STYLE_MODEL, Some("edit it"), auth_params());
@@ -134,11 +133,7 @@ fn stability_style_transfer(redactor: &Redactor) {
     );
     // an unmapped stability model still answers, at the zero price
     assert_eq!(styled.cost().as_deref(), Some("0.0"));
-}
-
-fn stability_promptless(redactor: &Redactor) {
     // without a prompt the key is absent, and pre_call records a null input
-    let supplied = image_list(&["aW1n"]);
     let mut bare = call(STABILITY_MODEL, None, auth_params());
     bare.images = &supplied;
     let promptless = run(
