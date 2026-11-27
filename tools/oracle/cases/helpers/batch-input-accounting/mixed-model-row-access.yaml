@@ -1,0 +1,97 @@
+kind: helper
+name: batch-input-accounting-mixed-model-row-access
+call:
+  batch_input_accounting:
+    file_id: file-mixed
+    caller:
+      api_key: sk-key
+      models: ["*"]
+    content:
+      contents: |-
+        {"body": {"model": "gpt-4o", "messages": [{"role": "user", "content": "hello"}]}}
+        {"body": {"model": "claude-3", "prompt": "hi"}}
+    tokens: [5, 7]
+calls:
+  - batch_input_accounting:
+      file_id: file-mixed
+      caller:
+        api_key: sk-key
+        models: ["gpt-4o"]
+      access:
+        key: deny
+      content:
+        contents: |-
+          {"body": {"model": "gpt-4o", "messages": [{"role": "user", "content": "hello"}]}}
+          {"body": {"model": "claude-3", "prompt": "hi"}}
+      tokens: [5, 7]
+  - batch_input_accounting:
+      file_id: file-mixed
+      caller:
+        api_key: sk-key
+        models: []
+      content:
+        contents: |-
+          {"body": {"model": "gpt-4o", "messages": [{"role": "user", "content": "hello"}]}}
+          {"body": {"model": "claude-3", "prompt": "hi"}}
+      tokens: [5, 7]
+  - batch_input_accounting:
+      file_id: file-mixed
+      content:
+        contents: |-
+          {"body": {"model": "gpt-4o", "messages": [{"role": "user", "content": "hello"}]}}
+          {"body": {"model": "claude-3", "prompt": "hi"}}
+      tokens: [5, 7]
+  - batch_input_accounting:
+      file_id: file-team
+      caller:
+        api_key: sk-key
+        team_id: team-1
+        models: ["all-team-models"]
+      access:
+        database: true
+        team_models: []
+      content:
+        contents: |-
+          {"body": {"model": "gpt-4o", "prompt": "hi"}}
+      tokens: [9]
+  - batch_input_accounting:
+      file_id: file-team
+      caller:
+        api_key: sk-key
+        team_id: team-1
+        models: ["all-team-models"]
+      access:
+        database: true
+        team_models: ["other-model"]
+      content:
+        contents: |-
+          {"body": {"model": "gpt-4o", "prompt": "hi"}}
+      tokens: [9]
+  - batch_input_accounting:
+      file_id: file-team
+      caller:
+        api_key: sk-key
+        team_id: team-1
+        models: ["all-team-models"]
+      access:
+        database: true
+        team: failed
+      content:
+        contents: |-
+          {"body": {"model": "gpt-4o", "prompt": "hi"}}
+      tokens: [9]
+  - batch_input_accounting:
+      file_id: file-team
+      caller:
+        api_key: sk-key
+        team_id: team-1
+        models: ["all-team-models"]
+      access:
+        database: true
+        team: http
+      content:
+        contents: |-
+          {"body": {"model": "gpt-4o", "prompt": "hi"}}
+      tokens: [9]
+env: {}
+compare: {ignore: []}
