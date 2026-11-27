@@ -143,9 +143,8 @@ def selection_answer(
 ) -> bool:
     ordered: list[str] = sorted(suppressed)
     names = json.dumps(ordered)
-    return guarded(
-        partial(handle.should_run_guardrail, json.dumps(request_json(data)), event_type.value, names)
-    )
+    request_text = json.dumps(request_json(data))
+    return guarded(partial(handle.should_run_guardrail, request_text, event_type.value, names))
 
 
 def event_hook_matches(handle: NativeGuardrail, event_type: GuardrailEventHooks) -> bool:

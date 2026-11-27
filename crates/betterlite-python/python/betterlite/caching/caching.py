@@ -206,9 +206,11 @@ def _selected_type(cache_type: LiteLLMCacheType | str | None) -> LiteLLMCacheTyp
     except ValueError:
         match cache_type:
             case LiteLLMCacheType():
-                raise NotImplementedError(f"{cache_type.value} cache type is not built yet") from None
+                message = f"{cache_type.value} cache type is not built yet"
+                raise NotImplementedError(message) from None
             case str():
-                raise NotImplementedError(f"{cache_type} cache type is not built yet") from None
+                message = f"{cache_type} cache type is not built yet"
+                raise NotImplementedError(message) from None
 
 
 def enable_cache(
