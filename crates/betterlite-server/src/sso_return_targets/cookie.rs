@@ -6,6 +6,7 @@ use axum::http::{Request, Response, header};
 use betterlite_auth::trusted_network::request::{NetworkRequest, is_request_https};
 use betterlite_auth::trusted_network::settings::TrustedNetworkSettings;
 use chrono::{DateTime, Utc};
+use secrecy::{ExposeSecret as _, SecretString};
 
 use super::SsoReturnTargetError;
 use super::origin::validate_return_to;
@@ -46,7 +47,7 @@ pub fn set_session_token_cookie(
     response: &mut Response<Body>,
     request: &Request<Body>,
     settings: &TrustedNetworkSettings,
-    jwt_token: &str,
+    jwt_token: &SecretString,
 ) -> Result<(), SsoReturnTargetError> {
     append_cookie(
         response,
@@ -54,8 +55,11 @@ pub fn set_session_token_cookie(
     )
 }
 
-pub fn session_token_cookie(jwt_token: &str, secure: bool) -> Result<String, SsoReturnTargetError> {
-    let coded = cookie_value(jwt_token).ok_or(SsoReturnTargetError::CookieValue)?;
+pub fn session_token_cookie(
+    jwt_token: &SecretString,
+    secure: bool,
+) -> Result<String, SsoReturnTargetError> {
+    let coded = cookie_value(jwt_token.expose_secret()).ok_or(SsoReturnTargetError::CookieValue)?;
     let mut cookie = format!("{TOKEN_COOKIE}={coded}; Path=/; SameSite=lax");
     if secure {
         cookie.push_str("; Secure");

@@ -28,6 +28,7 @@ use betterlite_redis::redis_client_reuse::transport::RedisCacheFamily;
 use betterlite_redis::redis_connection_settings::model::settings::RedisOverrides;
 use betterlite_redis::redis_live_client::LiveClientFactory;
 use rstest::rstest;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use super::SsoReturnTargetError;
 use super::callback::get_redirect_url_for_sso;
@@ -109,7 +110,7 @@ impl LoginCodeCache for RecordingCache {
         }
         self.writes.lock().unwrap().push(Write {
             key: cache_key.to_owned(),
-            token: code.token.to_owned(),
+            token: code.token.expose_secret().to_owned(),
             redirect_url: code.redirect_url.to_owned(),
             ttl_seconds,
         });
@@ -149,6 +150,7 @@ fn header_values(response: &Response<Body>, name: header::HeaderName) -> Vec<Str
 }
 
 fn redirect_to<'request, Redis, User>(
+    jwt_token: &'request SecretString,
     return_to: Option<&'request str>,
     control_plane_url: Option<&'request str>,
     secure: bool,
@@ -161,7 +163,7 @@ where
     ReturnToRedirect {
         now_unix: NOW,
         return_to,
-        jwt_token: JWT,
+        jwt_token,
         control_plane_url,
         secure,
         caches,
@@ -315,15 +317,16 @@ fn reports_a_malformed_port_instead_of_a_mismatch(
 
 #[test]
 fn builds_the_session_cookie_without_httponly() {
+    let jwt = SecretString::from(JWT);
     assert_eq!(
-        session_token_cookie(JWT, false).unwrap(),
+        session_token_cookie(&jwt, false).unwrap(),
         "token=jwt.token-value; Path=/; SameSite=lax"
     );
     assert_eq!(
-        session_token_cookie(JWT, true).unwrap(),
+        session_token_cookie(&jwt, true).unwrap(),
         "token=jwt.token-value; Path=/; SameSite=lax; Secure"
     );
-    let error = session_token_cookie("bad\ntoken", false).unwrap_err();
+    let error = session_token_cookie(&SecretString::from("bad\ntoken"), false).unwrap_err();
     assert!(matches!(error, SsoReturnTargetError::CookieValue));
     assert_eq!(error.response().status, 400);
 }
@@ -391,8 +394,9 @@ fn derives_secure_from_the_trusted_network() {
 
 #[test]
 fn sets_the_token_cookie_on_a_response() {
+    let jwt = SecretString::from(JWT);
     let mut response = Response::new(Body::empty());
-    set_session_token_cookie(&mut response, &https_request(), &https_settings(), JWT).unwrap();
+    set_session_token_cookie(&mut response, &https_request(), &https_settings(), &jwt).unwrap();
     assert_eq!(
         header_values(&response, header::SET_COOKIE),
         vec!["token=jwt.token-value; Path=/; SameSite=lax; Secure".to_owned()]
@@ -509,9 +513,11 @@ fn builds_the_sso_callback_url(
 
 #[tokio::test]
 async fn redirects_a_relative_target_with_the_session_cookie() {
+    let jwt = SecretString::from(JWT);
     let secure = is_secure_request(&https_request(), &https_settings());
     let cache = RecordingCache::default();
     let response = sso_return_to_redirect(&redirect_to(
+        &jwt,
         Some("/dashboard?tab=1"),
         Some(CONTROL_PLANE),
         secure,
@@ -538,9 +544,11 @@ async fn redirects_a_relative_target_with_the_session_cookie() {
 
 #[tokio::test]
 async fn redirects_a_relative_target_without_secure_over_http() {
+    let jwt = SecretString::from(JWT);
     let secure = is_secure_request(&http_request(), &TrustedNetworkSettings::default());
     let cache = RecordingCache::default();
     let response = sso_return_to_redirect(&redirect_to(
+        &jwt,
         Some("/dashboard?tab=1"),
         Some(CONTROL_PLANE),
         secure,
@@ -562,9 +570,11 @@ async fn redirects_a_relative_target_without_secure_over_http() {
 
 #[tokio::test]
 async fn redirects_a_cross_origin_target_behind_a_login_code() {
+    let jwt = SecretString::from(JWT);
     let secure = is_secure_request(&https_request(), &https_settings());
     let cache = RecordingCache::default();
     let response = sso_return_to_redirect(&redirect_to(
+        &jwt,
         Some("https://cp.example.com/done?x=1"),
         Some(CONTROL_PLANE),
         secure,
@@ -609,10 +619,12 @@ async fn redirects_a_cross_origin_target_behind_a_login_code() {
 
 #[tokio::test]
 async fn prefers_the_redis_usage_cache_and_appends_with_a_question_mark() {
+    let jwt = SecretString::from(JWT);
     let secure = is_secure_request(&https_request(), &https_settings());
     let redis = RecordingCache::default();
     let user = RecordingCache::default();
     let response = sso_return_to_redirect(&redirect_to(
+        &jwt,
         Some("https://cp.example.com/done"),
         Some(CONTROL_PLANE),
         secure,
@@ -631,10 +643,12 @@ async fn prefers_the_redis_usage_cache_and_appends_with_a_question_mark() {
 
 #[tokio::test]
 async fn returns_none_for_missing_or_untrusted_targets() {
+    let jwt = SecretString::from(JWT);
     let secure = is_secure_request(&https_request(), &https_settings());
     let cache = RecordingCache::default();
 
     let missing = sso_return_to_redirect(&redirect_to(
+        &jwt,
         None,
         Some(CONTROL_PLANE),
         secure,
@@ -645,6 +659,7 @@ async fn returns_none_for_missing_or_untrusted_targets() {
     assert!(missing.is_none());
 
     let unconfigured = sso_return_to_redirect(&redirect_to(
+        &jwt,
         Some("https://cp.example.com/done"),
         None,
         secure,
@@ -655,6 +670,7 @@ async fn returns_none_for_missing_or_untrusted_targets() {
     assert!(unconfigured.is_none());
 
     let mismatch = sso_return_to_redirect(&redirect_to(
+        &jwt,
         Some("https://evil.example.com/done"),
         Some(CONTROL_PLANE),
         secure,
@@ -668,9 +684,11 @@ async fn returns_none_for_missing_or_untrusted_targets() {
 
 #[tokio::test]
 async fn reports_a_cache_write_failure() {
+    let jwt = SecretString::from(JWT);
     let secure = is_secure_request(&https_request(), &https_settings());
     let cache = RecordingCache::failing();
     let error = sso_return_to_redirect(&redirect_to(
+        &jwt,
         Some("https://cp.example.com/done"),
         Some(CONTROL_PLANE),
         secure,
@@ -682,11 +700,21 @@ async fn reports_a_cache_write_failure() {
     assert_eq!(error.response().status, 500);
 }
 
+#[test]
+fn keeps_the_login_code_token_out_of_its_debug_output() {
+    let stored = LoginCode {
+        token: SecretString::from(JWT),
+        redirect_url: "/dashboard",
+    };
+    let rendered = format!("{stored:?}");
+    assert!(!rendered.contains(JWT));
+}
+
 #[tokio::test]
 async fn stores_the_login_code_in_the_user_cache() {
     let cache = local_auth_cache();
     let stored = LoginCode {
-        token: JWT,
+        token: SecretString::from(JWT),
         redirect_url: "https://cp.example.com/done",
     };
     cache
@@ -708,7 +736,7 @@ async fn stores_the_login_code_in_the_user_cache() {
 async fn reports_a_redis_usage_cache_write_failure() {
     let cache = open_breaker_redis_cache().await;
     let stored = LoginCode {
-        token: JWT,
+        token: SecretString::from(JWT),
         redirect_url: "https://cp.example.com/done",
     };
     let error = cache

@@ -1,5 +1,5 @@
 use betterlite_http::user_url::error::UrlParseError;
-use betterlite_http::user_url::split::{Parsed, urlparse};
+use betterlite_http::user_url::split::urlparse;
 
 use super::SsoReturnTargetError;
 
@@ -15,7 +15,7 @@ pub struct Origin {
 
 // SSOAuthenticationHandler._origin: (scheme, hostname, parsed.port or the scheme's default), both lowercased
 pub fn origin(url: &str) -> Result<Origin, UrlParseError> {
-    let parsed: Parsed = urlparse(url, "")?;
+    let parsed = urlparse(url, "")?;
     let host = parsed.hostname().unwrap_or_default();
     let port = parsed.port()?.unwrap_or(if parsed.scheme == "https" {
         HTTPS_PORT

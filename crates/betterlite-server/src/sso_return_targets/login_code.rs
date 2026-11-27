@@ -6,7 +6,8 @@ use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use betterlite_auth::auth_cache::AuthCacheError;
 use betterlite_redis::redis_cache_values::error::RedisCacheValuesError;
-use serde::Serialize;
+use secrecy::{ExposeSecret as _, SecretString};
+use serde::{Serialize, Serializer};
 use thiserror::Error;
 
 use super::SsoReturnTargetError;
@@ -16,9 +17,18 @@ pub const LOGIN_CODE_PREFIX: &str = "login_code:";
 pub const LOGIN_CODE_TTL_SECONDS: f64 = 60.0;
 const LOGIN_CODE_RANDOM_BYTES: usize = 32;
 
+// the cache stores the plain token, so the adapter exposes it while the secret's own Debug stays redacted
+fn serialize_exposed_token<S>(token: &SecretString, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(token.expose_secret())
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct LoginCode<'code> {
-    pub token: &'code str,
+    #[serde(serialize_with = "serialize_exposed_token")]
+    pub token: SecretString,
     pub redirect_url: &'code str,
 }
 

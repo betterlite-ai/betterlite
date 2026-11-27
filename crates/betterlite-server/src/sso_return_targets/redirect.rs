@@ -1,6 +1,7 @@
 use axum::body::Body;
 use axum::http::{Response, StatusCode, header};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
+use secrecy::SecretString;
 
 use super::SsoReturnTargetError;
 use super::cookie::{delete_return_to_cookie, session_token_cookie};
@@ -41,7 +42,7 @@ const LOCATION_SAFE: &AsciiSet = &NON_ALPHANUMERIC
 pub struct ReturnToRedirect<'request, Redis, User, Entropy> {
     pub now_unix: i64,
     pub return_to: Option<&'request str>,
-    pub jwt_token: &'request str,
+    pub jwt_token: &'request SecretString,
     pub control_plane_url: Option<&'request str>,
     // axum's Body is not Sync, so a request reference is not Send; the caller resolves the Secure flag instead
     pub secure: bool,
@@ -71,7 +72,7 @@ where
     }
     let code = generate_login_code(input.entropy)?;
     let stored = LoginCode {
-        token: input.jwt_token,
+        token: input.jwt_token.clone(),
         redirect_url: return_to,
     };
     let cache_key = format!("{LOGIN_CODE_PREFIX}{code}");
