@@ -18,8 +18,8 @@ use super::super::record::{
     FailureSettings, record_failure,
 };
 use super::support::{
-    FixedClock, Harness, RecordingWriter, Settlement, SpyLookup, Written, object, reservation,
-    settings,
+    FixedClock, Harness, RecordingWriter, Settlement, SpyLookup, Written, nested, object,
+    reservation, settings,
 };
 
 struct Scenario {
@@ -201,7 +201,7 @@ async fn a_null_route_records_the_failure_and_its_identity() {
         Json::Text("openai".to_owned())
     );
     assert_eq!(
-        row.request_data["metadata"]["status"],
+        *nested(&row.request_data, &["metadata", "status"]),
         Json::Text("failure".to_owned())
     );
 }
@@ -230,9 +230,9 @@ async fn the_default_start_and_end_are_the_clock_now() {
     let mut scenario = Scenario::new();
     scenario.run().await.expect("recording succeeds");
     let row = scenario.only_row();
-    let now = SpendTimestamp::Aware(now().fixed_offset());
-    assert_eq!(row.start_time, now);
-    assert_eq!(row.end_time, now);
+    let stamp = SpendTimestamp::Aware(now().fixed_offset());
+    assert_eq!(row.start_time, stamp);
+    assert_eq!(row.end_time, stamp);
 }
 
 #[tokio::test]

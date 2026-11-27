@@ -38,12 +38,12 @@ fn lift_fills_a_falsey_standard_logging_object(
         ..CallLog::default()
     };
     lift_call_log(&mut request_data, &call_log);
-    let expected = if expected == "null" {
+    let expected_value = if expected == "null" {
         Json::Null
     } else {
         Json::Object(object(expected))
     };
-    assert_eq!(request_data["standard_logging_object"], expected);
+    assert_eq!(request_data["standard_logging_object"], expected_value);
 }
 
 #[rstest]
@@ -84,15 +84,11 @@ fn start_time_prefers_the_request_then_the_call_log_then_now(
     #[case] expected: &str,
 ) {
     let now = aware("2024-09-09T09:09:09Z");
-    let call_log = CallLog {
+    let recorded = CallLog {
         start_time: logged.map(aware),
         ..CallLog::default()
     };
-    let call_log = if logged.is_some() {
-        Some(&call_log)
-    } else {
-        None
-    };
+    let call_log = logged.is_some().then_some(&recorded);
     let start = failure_start_time(&object(request), call_log, now);
     assert_eq!(start, aware(expected));
 }
@@ -146,8 +142,8 @@ fn completion_start_reads_only_a_datetime(#[case] request: &str, #[case] expecte
 )]
 fn response_cost_counts_only_a_typed_combined_usage(#[case] request: &str, #[case] expected: &str) {
     let cost = failure_response_cost(&object(request), None).expect("the cost reads");
-    let expected = expected.parse::<Decimal>().expect("the fixture is decimal");
-    assert_eq!(cost, expected);
+    let expected_value = expected.parse::<Decimal>().expect("the fixture is decimal");
+    assert_eq!(cost, expected_value);
 }
 
 #[test]
@@ -170,10 +166,10 @@ fn a_text_response_cost_is_an_error() {
 )]
 fn guardrail_charges_add_to_the_recovered_cost(#[case] metadata: &str, #[case] expected: &str) {
     let request = object(r#"{"combined_usage_object": {}, "response_cost": 1}"#);
-    let metadata = object(metadata);
-    let cost = failure_response_cost(&request, Some(&metadata)).expect("the cost reads");
-    let expected = expected.parse::<Decimal>().expect("the fixture is decimal");
-    assert_eq!(cost, expected);
+    let metadata_bucket = object(metadata);
+    let cost = failure_response_cost(&request, Some(&metadata_bucket)).expect("the cost reads");
+    let expected_value = expected.parse::<Decimal>().expect("the fixture is decimal");
+    assert_eq!(cost, expected_value);
 }
 
 #[test]

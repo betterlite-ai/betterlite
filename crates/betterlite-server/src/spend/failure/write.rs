@@ -112,7 +112,10 @@ impl SpendPayloadSource for FailurePayloads<'_> {
     fn build(&self) -> PayloadFuture<'_, Self::Error> {
         Box::pin(async move {
             let response = failure_response_result(self.response_result);
-            let cache = self.cache.map(|cache| cache as &dyn SpendCache);
+            let cache: Option<&dyn SpendCache> = match self.cache {
+                Some(shared) => Some(shared),
+                None => None,
+            };
             let request = PayloadRequest {
                 kwargs: self.kwargs,
                 response: SpendResponse::Mapping(&response),

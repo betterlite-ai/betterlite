@@ -10,7 +10,7 @@ use super::super::fields::{
 use super::super::metadata::{
     as_object, is_truthy, merge_failure_metadata, used_client_oauth_token,
 };
-use super::support::object;
+use super::support::{nested, object};
 use crate::spend::payload::CompletionStart;
 
 fn text(value: &str) -> Json {
@@ -80,7 +80,7 @@ fn a_null_guardrail_source_is_not_copied() {
     let mut request_data =
         object(r#"{"litellm_metadata": {"standard_logging_guardrail_information": null}}"#);
     merge_failure_metadata(&mut request_data, object("{}"));
-    let metadata = as_object(&request_data["litellm_params"]["metadata"]);
+    let metadata = as_object(nested(&request_data, &["litellm_params", "metadata"]));
     assert!(
         !metadata
             .is_some_and(|fields| fields.contains_key("standard_logging_guardrail_information"))
@@ -92,7 +92,7 @@ fn an_absent_proxy_request_becomes_an_empty_object() {
     let mut request_data = object("{}");
     merge_failure_metadata(&mut request_data, object("{}"));
     assert_eq!(
-        request_data["litellm_params"]["proxy_server_request"],
+        *nested(&request_data, &["litellm_params", "proxy_server_request"]),
         Json::Object(object("{}"))
     );
 }

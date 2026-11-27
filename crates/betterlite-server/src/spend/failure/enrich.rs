@@ -44,11 +44,11 @@ pub async fn enrich_failure_metadata(
     let Some(token) = truthy_text(metadata.get(USER_API_KEY)).map(str::to_owned) else {
         return;
     };
-    let Some(lookup) = lookup else {
+    let Some(resolver) = lookup else {
         return;
     };
     if resolve_missing_key_identity && missing(metadata.get(USER_API_KEY_ALIAS)) {
-        match lookup.key_facts(&token).await {
+        match resolver.key_facts(&token).await {
             Ok(facts) => fill_missing_identity(metadata, facts),
             Err(error) => tracing::debug!(%error, "failure metadata key enrichment failed"),
         }
@@ -59,7 +59,7 @@ pub async fn enrich_failure_metadata(
     if !missing(metadata.get(USER_API_KEY_TEAM_ALIAS)) {
         return;
     }
-    match lookup.team_alias(&team_id).await {
+    match resolver.team_alias(&team_id).await {
         Ok(Some(alias)) => {
             metadata.insert(USER_API_KEY_TEAM_ALIAS.to_owned(), Json::Text(alias));
         }

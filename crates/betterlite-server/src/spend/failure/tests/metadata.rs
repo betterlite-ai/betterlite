@@ -10,7 +10,7 @@ use super::super::fields::{
 use super::super::metadata::{
     as_object, merge_failure_metadata, trusted_failure_metadata, used_client_oauth_token,
 };
-use super::support::{object, principal};
+use super::support::{nested, object, principal};
 
 fn text(value: &str) -> Json {
     Json::Text(value.to_owned())
@@ -81,12 +81,12 @@ fn merge_lets_trusted_fields_win_and_updates_a_non_empty_caller_bucket() {
     let mut trusted = object(r#"{"user_api_key": "fresh", "status": "failure"}"#);
     trusted.insert(TAGS_TRUSTED.to_owned(), Json::List(vec![text("t")]));
     merge_failure_metadata(&mut request_data, trusted);
-    let merged = &request_data["metadata"];
+    let merged = as_object(&request_data["metadata"]).expect("the caller bucket survives");
     assert_eq!(merged["keep"], Json::Number(Number::from(1_u8)));
     assert_eq!(merged["user_api_key"], text("fresh"));
     assert_eq!(merged["tags"], Json::List(vec![text("t")]));
     assert_eq!(
-        request_data["litellm_params"]["metadata"]["status"],
+        *nested(&request_data, &["litellm_params", "metadata", "status"]),
         text("failure")
     );
 }
@@ -99,7 +99,7 @@ fn merge_does_not_create_a_top_level_metadata_bucket() {
     merge_failure_metadata(&mut request_data, object(r#"{"status": "failure"}"#));
     assert!(!request_data.contains_key("metadata"));
     assert_eq!(
-        request_data["litellm_params"]["metadata"]["status"],
+        *nested(&request_data, &["litellm_params", "metadata", "status"]),
         text("failure")
     );
 }
@@ -116,7 +116,7 @@ fn merge_does_not_create_a_top_level_metadata_bucket() {
 fn merge_copies_guardrail_information(#[case] request: &str, #[case] copied: bool) {
     let mut request_data = object(request);
     merge_failure_metadata(&mut request_data, object("{}"));
-    let metadata = as_object(&request_data["litellm_params"]["metadata"]);
+    let metadata = as_object(nested(&request_data, &["litellm_params", "metadata"]));
     assert_eq!(
         metadata
             .is_some_and(|fields| fields.contains_key("standard_logging_guardrail_information")),
@@ -132,7 +132,14 @@ fn merge_keeps_an_existing_guardrail_key_even_when_null() {
     );
     merge_failure_metadata(&mut request_data, object("{}"));
     assert_eq!(
-        request_data["litellm_params"]["metadata"]["standard_logging_guardrail_information"],
+        *nested(
+            &request_data,
+            &[
+                "litellm_params",
+                "metadata",
+                "standard_logging_guardrail_information"
+            ]
+        ),
         Json::Null
     );
 }
@@ -143,9 +150,9 @@ fn merge_keeps_an_existing_guardrail_key_even_when_null() {
 fn merge_preserves_truthy_nested_tags(#[case] params: &str, #[case] preserved: bool) {
     let mut request_data = object(&format!(r#"{{"litellm_params": {params}}}"#));
     merge_failure_metadata(&mut request_data, object(r#"{"tags": ["header"]}"#));
-    let tags = request_data["litellm_params"]["metadata"]["tags"].clone();
+    let tags = nested(&request_data, &["litellm_params", "metadata", "tags"]);
     let expected = if preserved { "internal" } else { "header" };
-    assert_eq!(tags, Json::List(vec![text(expected)]));
+    assert_eq!(tags, &Json::List(vec![text(expected)]));
 }
 
 #[rstest]
@@ -171,13 +178,13 @@ fn merge_preserves_the_proxy_server_request(
     #[case] url: &str,
 ) {
     let mut request_data = object(request);
-    let extra = object(extra);
-    if let Some(params) = extra.get("litellm_params") {
+    let extra_request = object(extra);
+    if let Some(params) = extra_request.get("litellm_params") {
         request_data.insert("litellm_params".to_owned(), params.clone());
     }
     merge_failure_metadata(&mut request_data, object("{}"));
     assert_eq!(
-        request_data["litellm_params"]["proxy_server_request"],
+        *nested(&request_data, &["litellm_params", "proxy_server_request"]),
         Json::Object(object(&format!(r#"{{"url": "{url}"}}"#)))
     );
 }
@@ -213,20 +220,31 @@ fn the_patch_fills_only_nulls_in_existing_buckets() {
         r#"{"user_api_key_alias": "new", "user_api_key": null, "tags": ["trusted"], "score": 4}"#,
     );
     write_spend_metadata_to_kwargs(&mut kwargs, &metadata);
-    let params = &kwargs["litellm_params"];
     assert_eq!(
-        params["litellm_metadata"]["user_api_key_alias"],
+        *nested(
+            &kwargs,
+            &["litellm_params", "litellm_metadata", "user_api_key_alias"]
+        ),
         text("new")
     );
     assert_eq!(
-        params["litellm_metadata"]["tags"],
+        *nested(&kwargs, &["litellm_params", "litellm_metadata", "tags"]),
         Json::List(vec![text("trusted")])
     );
-    assert_eq!(params["metadata"]["user_api_key_alias"], text("old"));
-    assert_eq!(params["metadata"]["tags"], Json::List(vec![text("caller")]));
-    let litellm_metadata = as_object(&params["litellm_metadata"]);
-    let metadata_bucket = as_object(&params["metadata"]);
-    assert!(!metadata_bucket.is_some_and(|fields| fields.contains_key("score")));
+    assert_eq!(
+        *nested(
+            &kwargs,
+            &["litellm_params", "metadata", "user_api_key_alias"]
+        ),
+        text("old")
+    );
+    assert_eq!(
+        *nested(&kwargs, &["litellm_params", "metadata", "tags"]),
+        Json::List(vec![text("caller")])
+    );
+    let litellm_metadata = as_object(nested(&kwargs, &["litellm_params", "litellm_metadata"]));
+    let caller_bucket = as_object(nested(&kwargs, &["litellm_params", "metadata"]));
+    assert!(!caller_bucket.is_some_and(|fields| fields.contains_key("score")));
     assert!(!litellm_metadata.is_some_and(|fields| fields.contains_key("user_api_key")));
 }
 
@@ -265,15 +283,15 @@ fn request_tags_prefer_the_standard_payload(
     #[case] metadata: &str,
     #[case] expected: Option<&str>,
 ) {
-    let standard = object(standard);
-    let standard = if standard.is_empty() {
+    let standard_payload = object(standard);
+    let standard_value = if standard_payload.is_empty() {
         None
     } else {
-        Some(Json::Object(standard))
+        Some(Json::Object(standard_payload))
     };
-    let metadata = Json::Object(object(metadata));
-    let tags = request_tags_for_cost_tracking(standard.as_ref(), Some(&metadata));
-    let rendered = tags.map(|tags| serde_json::to_string(tags).expect("the tags serialize"));
+    let metadata_payload = Json::Object(object(metadata));
+    let tags = request_tags_for_cost_tracking(standard_value.as_ref(), Some(&metadata_payload));
+    let rendered = tags.map(|value| serde_json::to_string(value).expect("the tags serialize"));
     assert_eq!(rendered, expected.map(str::to_owned));
 }
 

@@ -138,15 +138,15 @@ async fn trusted_metadata(
 }
 
 async fn release_reservation(reservation: Option<&FailureReservation<'_>>) {
-    let Some(reservation) = reservation else {
+    let Some(active) = reservation else {
         return;
     };
-    let Err(error) = reservation.settlement.release(reservation.handle).await else {
+    let Err(error) = active.settlement.release(active.handle).await else {
         return;
     };
     tracing::error!(%error, "Failed to release budget reservation during failure handling");
-    match reservation.settlement.invalidate(reservation.handle).await {
-        Ok(()) => lock_reservation(&reservation.handle.0).finalized = true,
+    match active.settlement.invalidate(active.handle).await {
+        Ok(()) => lock_reservation(&active.handle.0).finalized = true,
         Err(error) => tracing::error!(
             %error,
             "Failed to invalidate budget reservation counters after failure release failed"

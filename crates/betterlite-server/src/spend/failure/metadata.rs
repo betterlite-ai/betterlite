@@ -139,8 +139,8 @@ pub(crate) fn merge_failure_metadata(request_data: &mut JsonObject, trusted: Jso
         .get(CUSTOM_LLM_PROVIDER)
         .filter(|value| is_truthy(value))
         .cloned();
-    if let Some(tags) = tags {
-        existing.insert(TAGS.to_owned(), tags);
+    if let Some(nested_tags) = tags {
+        existing.insert(TAGS.to_owned(), nested_tags);
     }
     params.insert(PROXY_SERVER_REQUEST.to_owned(), proxy_request);
     params.insert(METADATA.to_owned(), Json::Object(existing.clone()));

@@ -10,6 +10,7 @@ use betterlite_error::normalize::Normalizer;
 use betterlite_logging::logging_metadata::exception::ExceptionFacts;
 use betterlite_logging::spend_bodies::session::SpendTimestamp;
 use betterlite_logging::spend_sanitize::SpendSanitizePolicy;
+use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
@@ -22,6 +23,16 @@ use crate::spend::settlement::ports::ReservationSettlement;
 
 pub(super) fn object(text: &str) -> JsonObject {
     serde_json::from_str(text).expect("the fixture is an object")
+}
+
+pub(super) fn nested<'json>(root: &'json JsonObject, path: &[&str]) -> &'json Json {
+    let (head, rest) = path.split_first().expect("the fixture path is not empty");
+    let next = root.get(*head).expect("the fixture keeps the path");
+    match (rest.is_empty(), next) {
+        (true, _) => next,
+        (false, Json::Object(fields)) => nested(fields, rest),
+        (false, _) => panic!("the fixture path crosses a non-object"),
+    }
 }
 
 pub(super) fn policy(store_bodies: bool, max_string_length: i64) -> SpendSanitizePolicy {
@@ -215,7 +226,8 @@ impl SpyLookup {
 #[async_trait]
 impl FailureIdentityLookup for SpyLookup {
     async fn key_facts(&self, _hashed_token: &str) -> Result<KeyFacts, IdentityLookupError> {
-        *self.key_calls.lock().expect("the key counter") += 1;
+        let mut calls = self.key_calls.lock().expect("the key counter");
+        *calls = calls.saturating_add(1);
         Ok(KeyFacts {
             key_alias: Some("looked-up-alias".to_owned()),
             user_id: Some("looked-up-user".to_owned()),
@@ -224,7 +236,8 @@ impl FailureIdentityLookup for SpyLookup {
     }
 
     async fn team_alias(&self, _team_id: &str) -> Result<Option<String>, IdentityLookupError> {
-        *self.team_calls.lock().expect("the team counter") += 1;
+        let mut calls = self.team_calls.lock().expect("the team counter");
+        *calls = calls.saturating_add(1);
         Ok(Some("looked-up-team".to_owned()))
     }
 }
