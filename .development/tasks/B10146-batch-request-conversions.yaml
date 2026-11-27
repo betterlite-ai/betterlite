@@ -1,0 +1,61 @@
+id: B10146
+title: Batch request and timeout conversions live beside their types in betterlite-openai
+description: >-
+  betterlite-python holds the same timeout conversion twice. batch_calls/convert/request.rs (B1036, B1037) and batch_listing/transport.rs (B7873) each declare DurationError with the message "the timeout must be a finite, non-negative number of seconds, not {seconds}", a 600 second default and a duration_of(&Timeout) that takes the seconds, or a phase object's read phase or the default, and turns them into a std Duration. batch_calls/convert/request.rs also holds batch_create (CreateBatchRequest to BatchCreate) and batch_query (RetrieveBatchRequest to BatchQuery) as pub(crate), and B1050 and B1051 need the same two conversions for their routes. All four types and Timeout live in betterlite-openai, so the conversions move there once and every caller uses them.
+
+
+  In betterlite-openai, batches::sdk gains `impl Timeout { pub fn duration(&self) -> Result<Duration, TimeoutError> }` with the same rule, a private DEFAULT_TIMEOUT_SECONDS of 600.0 and `pub enum TimeoutError { Invalid { seconds: f64 } }` (thiserror, the message above word for word). batches::records gains `BatchCreate::from_request(body: &CreateBatchRequest) -> Result<BatchCreate, MissingBatchField>` and `BatchQuery::from_request(request: &RetrieveBatchRequest) -> Result<BatchQuery, MissingBatchField>`, with `pub enum MissingBatchField { Missing { field: &'static str } }` and the message "the batch request is missing its {field}". The field checks, their order (completion_window, endpoint, input_file_id for a create; batch_id for a query) and the copied fields stay exactly as batch_create and batch_query have them today.
+
+
+  In betterlite-python, batch_calls/convert/request.rs goes away with its mod line in batch_calls/convert.rs; batch_calls/transport.rs and batch_calls/error.rs call and wrap the betterlite-openai items instead (BatchCallError keeps its Request and Timeout variants, now over MissingBatchField and TimeoutError). batch_listing/transport.rs drops its DurationError, DEFAULT_TIMEOUT_SECONDS and duration_of, and calls Timeout::duration; batch_listing/error.rs wraps TimeoutError. Python callers see the same exception classes and messages as before.
+
+
+  Tests. The four request_create_body_carries_the_typed_fields, request_create_body_names_the_missing_field, request_query_carries_the_batch_id and request_duration_follows_the_timeout_pieces tests in batch_calls/convert/tests.rs, and transport_timeouts_follow_the_read_phase in batch_listing/tests.rs, move to crates/betterlite-openai/src/batches/tests/conversions.rs (declared with `mod conversions;` in batches/tests.rs) as create_from_request_carries_the_fields, create_from_request_names_the_missing_field, query_from_request_carries_the_batch_id and timeout_duration_follows_the_pieces, with the same inputs and assertions. The remaining betterlite-python batch tests stay and still pass.
+scope:
+  paths:
+    - crates/betterlite-openai/src/batches/sdk.rs
+    - crates/betterlite-openai/src/batches/records.rs
+    - crates/betterlite-openai/src/batches/tests.rs
+    - crates/betterlite-openai/src/batches/tests/conversions.rs
+    - crates/betterlite-python/src/batch_calls/convert.rs
+    - crates/betterlite-python/src/batch_calls/convert/request.rs
+    - crates/betterlite-python/src/batch_calls/convert/tests.rs
+    - crates/betterlite-python/src/batch_calls/transport.rs
+    - crates/betterlite-python/src/batch_calls/error.rs
+    - crates/betterlite-python/src/batch_listing/transport.rs
+    - crates/betterlite-python/src/batch_listing/error.rs
+    - crates/betterlite-python/src/batch_listing/tests.rs
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/main.py
+    why: The create, retrieve and list calls whose requests and timeouts these conversions build; the behavior does not change.
+dod:
+  - text: Timeout::duration, BatchCreate::from_request and BatchQuery::from_request in betterlite-openai give the same values and the same errors with the same messages as the betterlite-python functions they replace.
+    proof: [case-conversions]
+  - text: betterlite-python declares no duration_of, DurationError, batch_create, batch_query or BodyError of its own, and its batch calls and batch listing use the betterlite-openai items.
+    proof: [no-python-copies, python-batch-tests]
+checks:
+  optional: []
+  commands:
+    - id: case-conversions
+      why: a moved conversion changed a value, a field check, its order or an error message
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^batches::tests::conversions::/)'
+    - id: no-python-copies
+      why: a copy of the conversions stayed in betterlite-python
+      run: test -z "$(grep -rlE 'fn (duration_of|batch_create|batch_query)[(]|enum (DurationError|BodyError)' crates/betterlite-python/src)"
+    - id: python-batch-tests
+      why: the batch calls or the batch listing broke when they switched to the moved conversions
+      run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^(batch_calls|batch_listing)::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The batch create and retrieval routes that will call these conversions: B1050 and B1051."
+  - "The provider create and read calls themselves: done B1036 and B1037. The Python list and cancel calls: done B7873."
+  - "batch_calls/convert/timeout.rs, which turns the payload's timeout value into the core timeout types and has nothing to do with Duration: it stays."
+pitfalls:
+  - "Keep the two error messages word for word: batch_error and the batch listing error map them into the Python exception text that callers compare."
+  - "A phase object without a read phase means the 600 second default, not an error and not the connect phase."
+review_level: standard
+budget:
+  max_changed_lines: 500
+  max_new_expects: 0

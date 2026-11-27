@@ -57,8 +57,8 @@ description: >-
 
 
   Config audit. B1656's `ConfigAudit` port (settings_services) takes the setting name, the before and after values and
-  the acting admin. `ConfigAuditLog` implements it with B8594's `config_audit_log(param, action, before, after, auth)`
-  (config_update) and the action "updated", the value LiteLLM's update routes pass to create_config_audit_log
+  the acting admin. `ConfigAuditLog` implements it with B10137's `config_audit_log` (config_audit) over B2330's AuditEventSink
+  and the action "updated", the value LiteLLM's update routes pass to create_config_audit_log
   (L18432-L18445).
 
 

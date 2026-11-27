@@ -1,0 +1,14 @@
+id: B10135
+milestone: M9 agents and mcp
+title: MCP management server access and management mode
+status: todo
+depends_on: [B4731, B10020, B858, B2314, B883, B002]
+file: tasks/B10135-mcp-management-server-access.yaml
+covers:
+  - "litellm/proxy/management_endpoints/mcp_management_endpoints.py"
+parent: B139
+split_from: B4717
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

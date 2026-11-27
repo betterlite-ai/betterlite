@@ -1,4 +1,5 @@
 pub mod admitted_key;
+pub mod admitted_user;
 pub mod agent;
 pub mod agent_access;
 pub mod agent_access_groups;
@@ -76,6 +77,7 @@ pub mod key_context;
 pub mod managed_admission;
 pub mod management_routes;
 pub mod master_database_auth;
+pub mod master_key_admin;
 pub mod master_key_boot;
 pub mod membership_load;
 pub mod model_budget_limiter;
