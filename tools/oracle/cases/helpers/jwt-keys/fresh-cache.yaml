@@ -1,0 +1,24 @@
+kind: helper
+name: jwt-keys-fresh-cache
+call:
+  jwt_keys:
+    scenarios:
+      - settings: {public_key_url: "https://idp.example.com/jwks", public_key_ttl: 600.0, public_key_stale_ttl: 3600.0}
+        steps:
+          - now: 1000.0
+            kid: a
+            http:
+              - {kind: answer, status: 200, body: '{"keys":[{"kid":"a","kty":"RSA","n":"one"}]}'}
+          # inside the ttl: served from cache, no fetch and no write
+          - now: 1599.0
+            kid: a
+          # the entry stays readable until the clock passes its expiry, not at it
+          - now: 1600.0
+            kid: a
+          # one second past: refetched and rewritten
+          - now: 1601.0
+            kid: a
+            http:
+              - {kind: answer, status: 200, body: '{"keys":[{"kid":"a","kty":"RSA","n":"one"}]}'}
+env: {}
+compare: {ignore: []}

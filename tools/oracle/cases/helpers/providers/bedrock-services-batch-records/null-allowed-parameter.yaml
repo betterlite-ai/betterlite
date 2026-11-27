@@ -1,0 +1,21 @@
+kind: helper
+name: bedrock-services-batch-records-null-allowed-parameter
+call:
+  bedrock_services_batch_records:
+    function: transform_records
+    target_model: ""
+    model_alias_map: {}
+    model_cost:
+      "anthropic.claude-3-5-sonnet-20241022-v2:0": {litellm_provider: bedrock}
+    records:
+      - custom_id: null-allowed
+        url: /v1/chat/completions
+        body:
+          model: "anthropic.claude-3-5-sonnet-20241022-v2:0"
+          messages:
+            - {role: user, content: hi}
+          max_tokens: 16
+          presence_penalty: null
+          allowed_openai_params: [presence_penalty]
+env: {}
+compare: {ignore: []}

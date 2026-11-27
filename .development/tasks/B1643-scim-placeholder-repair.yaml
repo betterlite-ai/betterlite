@@ -11,7 +11,7 @@ description: >-
   non-null sso_user_id (even an empty string), any owned key, no matched account, or more
   than one matched account. These refusals occur before memberships are changed.
   On the single-target path, snapshot placeholder.teams, add the real account to each team
-  through B1637's idempotent add helper, invoke B1638's complete user-deletion service for
+  through B10024's patch_team_membership (one Add per team, where an existing member is a no-op), invoke B10150's ScimUserDeletion::delete_user for
   the placeholder, then recompute the target's global role through B1635. Return
   placeholder_user_id, merged_into_user_id and the original ordered team_ids, with default
   200 JSON semantics. The merge has no encompassing transaction: an add or delete failure
@@ -74,7 +74,8 @@ deviations: []
 out_of_scope:
   - "The shadowing-placeholder SQL and SCIMPlaceholder row model are B723, not a second query implementation here."
   - "Shared scim_v2.py code: B1633 L81-L157/L272-L302/L952-L963/L1145-L1168; B1634 L487-L753/L790-L851; B1635 L305-L484; B1636 L764-L787/L854-L949/L1097-L1142; B1637 L966-L1094/L2200-L2322/L2819-L2864."
-  - "Other scim_v2.py handlers/helpers: B1638 L164-L232/L1661-L1879; B1639 L1965-L2197/L2325-L2397; B1640 L2511-L2708; B1641 L1556-L1658/L2405-L2508; B1642 L1171-L1553; B064 L2711-L2816/L2867-L2945."
+  - "The deletion merge_placeholder runs through delete_user (L1836-L1875): B10150. This task converts its error once, since LiteLLM's second conversion returns it unchanged."
+  - "Other scim_v2.py handlers/helpers: B1638 L164-L232/L1661-L1879 apart from that deletion; B1639 L1965-L2197/L2325-L2397; B1640 L2511-L2708; B1641 L1556-L1658/L2405-L2508; B1642 L1171-L1553; B064 L2711-L2816/L2867-L2945."
 pitfalls:
   - An empty sso_user_id is still non-null and therefore prevents merging that account.
   - Only listing uses an explicit transaction; wrapping the entire merge in one would hide the source's partial successes.

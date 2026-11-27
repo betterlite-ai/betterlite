@@ -1,0 +1,195 @@
+kind: helper
+name: mcp-tool-selection-tool-call-details-precedence
+call:
+  b10122:
+    calls:
+      - function: extract_tool_call_details
+        tool_call:
+          kind: mapping
+          fields:
+            call_id: c
+            name: outer
+            input:
+              a: 1
+            function:
+              name: inner
+              arguments: '{"b":2}'
+calls:
+  - b10122:
+      calls:
+        - function: extract_tool_call_details
+          tool_call:
+            kind: mapping
+            fields:
+              call_id: call_1
+              id: fc_1
+              name: weather
+  - b10122:
+      calls:
+        - function: extract_tool_call_details
+          tool_call:
+            kind: mapping
+            fields:
+              call_id: ""
+              id: fc_1
+              name: weather
+  - b10122:
+      calls:
+        - function: extract_tool_call_details
+          tool_call:
+            kind: mapping
+            fields:
+              call_id: ""
+              id: ""
+  - b10122:
+      calls:
+        - function: extract_tool_call_details
+          tool_call:
+            kind: mapping
+            fields:
+              id: fc_1
+              name: weather
+  - b10122:
+      calls:
+        - function: extract_tool_call_details
+          tool_call:
+            kind: mapping
+            fields:
+              name: outer
+              input:
+                a: 1
+              function:
+                name: inner
+  - b10122:
+      calls:
+        - function: extract_tool_call_details
+          tool_call:
+            kind: mapping
+            fields:
+              name: weather
+              arguments: '{"a":1}'
+              input:
+                b: 2
+  - b10122:
+      calls:
+        - function: extract_tool_call_details
+          tool_call:
+            kind: mapping
+            fields:
+              name: weather
+              arguments: ""
+              input:
+                b: 2
+  - b10122:
+      calls:
+        - function: extract_tool_call_details
+          tool_call:
+            kind: mapping
+            fields:
+              name: weather
+              arguments: null
+              input:
+                b: 2
+  - b10122:
+      calls:
+        - function: extract_tool_call_details
+          tool_call:
+            kind: mapping
+            fields:
+              name: weather
+              input:
+                b: 2
+  - b10122:
+      calls:
+        - function: extract_tool_call_details
+          tool_call:
+            kind: mapping
+            fields:
+              name: weather
+              arguments:
+                b: 2
+  - b10122:
+      calls:
+        - function: extract_tool_call_details
+          tool_call:
+            kind: mapping
+            fields:
+              name: weather
+  - b10122:
+      calls:
+        - function: extract_tool_call_details
+          tool_call:
+            kind: mapping
+            fields:
+              function: x
+              name: outer
+              arguments: "{}"
+  - b10122:
+      calls:
+        - function: extract_tool_call_details
+          tool_call:
+            kind: output
+            item:
+              type: function_call
+              call_id: call_1
+              id: fc_1
+              name: weather
+              arguments: '{"a":1}'
+  - b10122:
+      calls:
+        - function: extract_tool_call_details
+          tool_call:
+            kind: output
+            item:
+              type: function_call
+              call_id: call_2
+              name: top
+              arguments: "{}"
+              function:
+                name: inner
+  - b10122:
+      calls:
+        - function: extract_tool_call_details
+          tool_call:
+            kind: output
+            item:
+              type: function_call
+              call_id: call_3
+              name: top
+              arguments: "{}"
+              function: null
+  - b10122:
+      calls:
+        - function: extract_tool_call_details
+          tool_call:
+            kind: output
+            item:
+              type: function_call
+              call_id: call_4
+              name: top
+              arguments: null
+              input:
+                i: 1
+  - b10122:
+      calls:
+        - function: extract_tool_call_details
+          tool_call:
+            kind: output
+            item:
+              type: function_call
+              call_id: ""
+              id: fc_5
+              name: top
+              arguments: "{}"
+  - b10122:
+      calls:
+        - function: extract_tool_call_details
+          tool_call:
+            kind: output
+            item:
+              type: function_call
+              call_id: ""
+              name: top
+              arguments: "{}"
+env: {}
+compare: {ignore: []}

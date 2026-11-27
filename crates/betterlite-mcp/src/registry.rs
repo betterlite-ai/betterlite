@@ -1,5 +1,6 @@
 pub mod lookup;
 pub mod permissions;
+pub mod public_list;
 pub mod public_servers;
 pub mod resolution;
 pub mod servers;

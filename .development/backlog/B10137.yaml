@@ -1,14 +1,14 @@
 id: B10137
 milestone: M8 platform
 title: Config setting redaction and the config audit log
-status: todo
+status: done
 depends_on: [B244, B2330]
 file: tasks/B10137-config-redaction-audit.yaml
 covers:
   - "litellm/proxy/proxy_server.py"
 parent: B124
 split_from: B8594
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3341

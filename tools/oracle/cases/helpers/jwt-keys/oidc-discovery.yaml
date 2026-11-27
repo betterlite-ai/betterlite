@@ -1,0 +1,14 @@
+kind: helper
+name: jwt-keys-oidc-discovery
+call:
+  jwt_keys:
+    scenarios:
+      - settings: {public_key_url: "https://idp.example.com/.well-known/openid-configuration", public_key_ttl: 600.0, public_key_stale_ttl: 3600.0}
+        steps:
+          - now: 1000.0
+            kid: a
+            http:
+              - {kind: answer, status: 200, body: '{"issuer":"https://idp.example.com","jwks_uri":"https://idp.example.com/tenant-a/jwks"}'}
+              - {kind: answer, status: 200, body: '{"keys":[{"kid":"a","kty":"RSA","n":"one"}]}'}
+env: {}
+compare: {ignore: []}
