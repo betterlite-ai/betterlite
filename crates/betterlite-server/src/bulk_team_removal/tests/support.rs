@@ -693,6 +693,15 @@ pub(crate) fn email_member(user_email: &str) -> Member {
     serde_json::from_value(serde_json::json!({"user_email": user_email, "role": "user"})).unwrap()
 }
 
+pub(crate) fn member_with_email(user_id: &str, user_email: &str) -> Member {
+    serde_json::from_value(serde_json::json!({
+        "user_id": user_id,
+        "user_email": user_email,
+        "role": "user",
+    }))
+    .unwrap()
+}
+
 pub(crate) fn team(team_id: &str, members: &[Member]) -> LiteLLMTeamTable {
     serde_json::from_value(serde_json::json!({"team_id": team_id, "members_with_roles": members}))
         .unwrap()

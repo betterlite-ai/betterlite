@@ -436,6 +436,64 @@ fn disabled_audit_schedules_nothing() {
 }
 
 #[tokio::test]
+async fn removed_member_without_user_row_loses_keys_and_membership() {
+    let fixture = support::fixture_with_team(support::team("team-1", &[support::member("u1")]));
+    fixture.session.add_membership("team-1", "u1");
+    fixture.session.add_key(support::key("k1", "team-1", "u1"));
+    let results = fixture
+        .remove(
+            "team-1",
+            &[support::identity_id("u1")],
+            &support::proxy_admin(),
+        )
+        .await
+        .unwrap();
+    assert!(results[0].success);
+    assert!(fixture.session.roster("team-1").is_empty());
+    assert!(fixture.session.memberships().is_empty());
+    assert!(fixture.session.key_tokens().is_empty());
+    assert_eq!(fixture.session.archived_tokens(), support::lines(&["k1"]));
+}
+
+#[tokio::test]
+async fn removed_roster_id_fetches_its_own_user_row() {
+    let fixture = support::fixture_with_team(support::team(
+        "team-1",
+        &[support::member_with_email("u2", "e@example.com")],
+    ));
+    fixture
+        .session
+        .add_user(support::user("u2", None, &["team-1"]));
+    let request = [support::identity(None, Some("e@example.com"))];
+    let results = fixture
+        .remove("team-1", &request, &support::proxy_admin())
+        .await
+        .unwrap();
+    assert!(results[0].success);
+    assert!(fixture.session.user_teams("u2").is_empty());
+    assert!(fixture.session.roster("team-1").is_empty());
+}
+
+#[tokio::test]
+async fn empty_email_request_is_not_backfilled_from_a_user_row() {
+    let fixture = support::fixture_with_team(support::team("team-1", &[support::member("u2")]));
+    fixture
+        .session
+        .add_user(support::user("u1", Some(""), &["team-1"]));
+    let request = [support::identity(None, Some(""))];
+    let results = fixture
+        .remove("team-1", &request, &support::proxy_admin())
+        .await
+        .unwrap();
+    assert!(!results[0].success);
+    assert_eq!(results[0].error.as_deref(), Some("User not found in team"));
+    assert_eq!(
+        fixture.session.user_teams("u1"),
+        support::lines(&["team-1"])
+    );
+}
+
+#[tokio::test]
 async fn postgres_concurrent_roster_delete() {
     postgres::concurrent_roster_delete().await;
 }
