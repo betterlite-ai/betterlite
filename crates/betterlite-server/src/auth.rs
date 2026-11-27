@@ -67,6 +67,7 @@ use crate::auth::auth_model_patterns::{
 use crate::auth::auth_request_models::{CoreDecoders, RequestModelStageInput, resolve};
 use crate::auth::auth_resource_grants::ResourceGrantStageInput;
 use crate::auth::route_match::PUBLIC_HEALTH_PATHS;
+use crate::auth::team_budget_admission::stage_input as team_budget_stage_input;
 use crate::auth::virtual_key_routes::stage_input as virtual_key_route_stage_input;
 use crate::error_body::AuthenticationFailure;
 use axum::body::{Body, Bytes};
@@ -74,7 +75,7 @@ use axum::extract::State;
 use axum::http::{Request, header};
 use axum::middleware::Next;
 use axum::response::Response;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 pub(crate) async fn authenticate(
     State(master_key_state): State<Option<SecretString>>,
     mut request: Request<Body>,
@@ -128,9 +129,7 @@ fn stage_input(
         AuthBackend::AuthKeyBudgets => Ok(StageInput::AuthKeyBudgets(Box::new(
             auth_key_budgets::stage_input(request, authenticated)?,
         ))),
-        AuthBackend::TeamBudgetAdmission => {
-            team_budget_admission::stage_input(request, authenticated)
-        }
+        AuthBackend::TeamBudgetAdmission => team_budget_stage_input(request, authenticated),
         AuthBackend::AuthTenantBudgets => auth_tenant_budgets::stage(request, authenticated, body),
         AuthBackend::OrganizationRoutePolicy => {
             organization_route_policy::stage_input(request, authenticated, body)
@@ -226,6 +225,23 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
         | StageInput::OrganizationRoutePolicy(_)
         | StageInput::AuthPolicySupport(_)) => Ok(other),
     }
+}
+
+fn master_key_stage(
+    input: &StageInput,
+    master_key: &SecretString,
+) -> Result<AuthContext, AuthenticationFailure> {
+    let StageInput::MasterKey(presented) = input else {
+        return Err(AuthenticationFailure::Missing);
+    };
+    if let Some(context) = auth_identity::master_key_context(presented.as_ref(), master_key) {
+        return Ok(context);
+    }
+    let failure = match presented.as_ref() {
+        Some(key) if !key.expose_secret().is_empty() => AuthenticationFailure::Invalid,
+        Some(_) | None => AuthenticationFailure::Missing,
+    };
+    Err(failure)
 }
 
 fn default_resolver() -> Arc<RequestModelResolver> {

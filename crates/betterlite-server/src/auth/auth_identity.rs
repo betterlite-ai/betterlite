@@ -21,6 +21,7 @@ use crate::auth::auth_tag_budgets::TagBudgetStageInput;
 use crate::auth::auth_tenant_budgets::TenantBudgetStageInput;
 use crate::auth::entity_model_access::EntityModelStageInput;
 use crate::auth::jwt_keys::{self, JwtKeyStageInput};
+use crate::auth::master_key_stage;
 use crate::auth::model_grant_intersection::{self, GrantStageInput};
 use crate::auth::organization_route_policy::{self, OrganizationPolicyStageInput};
 use crate::auth::request_body_safety::{self, RequestBodySafetyStageInput};
@@ -187,14 +188,17 @@ impl StageInput {
     }
 }
 
+fn stage_accepts(backend: AuthBackend, input: &StageInput) -> bool {
+    backend == input.backend()
+        || (backend == AuthBackend::MasterKey && matches!(input, StageInput::Authenticated(_)))
+}
+
 pub(crate) fn dispatch(
     backend: AuthBackend,
     input: &StageInput,
     master_key: &SecretString,
 ) -> Result<AuthContext, StageFailure> {
-    let key_pass_through =
-        backend == AuthBackend::MasterKey && matches!(input, StageInput::Authenticated(_));
-    if backend != input.backend() && !key_pass_through {
+    if !stage_accepts(backend, input) {
         return Err(StageFailure::from(AuthenticationFailure::Missing));
     }
     match input {
@@ -243,23 +247,6 @@ fn auth_request_models_stage(stage: &RequestModelStageInput) -> Result<AuthConte
             Err(StageFailure::from(AuthenticationFailure::Missing))
         }
     }
-}
-
-fn master_key_stage(
-    input: &StageInput,
-    master_key: &SecretString,
-) -> Result<AuthContext, AuthenticationFailure> {
-    let StageInput::MasterKey(presented) = input else {
-        return Err(AuthenticationFailure::Missing);
-    };
-    if let Some(context) = master_key_context(presented.as_ref(), master_key) {
-        return Ok(context);
-    }
-    let failure = match presented.as_ref() {
-        Some(key) if !key.expose_secret().is_empty() => AuthenticationFailure::Invalid,
-        Some(_) | None => AuthenticationFailure::Missing,
-    };
-    Err(failure)
 }
 
 // The master key authenticates the request before any virtual key is read, as LiteLLM's first check does.
