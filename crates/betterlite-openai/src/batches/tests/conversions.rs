@@ -154,6 +154,11 @@ fn timeout_duration_follows_the_pieces() {
         Timeout::Phases(read).duration().unwrap(),
         Duration::from_secs(5)
     );
+    let fractional = phases(None, Some(2.5_f64), None, None);
+    assert_eq!(
+        Timeout::Phases(fractional).duration().unwrap(),
+        Duration::try_from_secs_f64(2.5_f64).unwrap()
+    );
     let bare = phases(None, None, None, None);
     assert_eq!(
         Timeout::Phases(bare).duration().unwrap(),
