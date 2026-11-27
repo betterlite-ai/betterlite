@@ -1,0 +1,3 @@
+general_settings:
+  control_plane_url:
+    - https://cp.example.com
