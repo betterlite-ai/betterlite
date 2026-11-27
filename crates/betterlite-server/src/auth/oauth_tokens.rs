@@ -2,9 +2,8 @@ use std::fmt::Display;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use axum::body::Body;
 use axum::extract::ConnectInfo;
-use axum::http::Request;
+use axum::http::{Extensions, HeaderMap};
 use betterlite_auth::auth_errors::conversion::{AuthFailure, as_proxy_exception};
 use betterlite_auth::auth_identity::records::{
     CredentialRef, NetworkContext, Principal, SourceKey, TeamIdentity,
@@ -35,19 +34,22 @@ pub(crate) enum PreStage {
     Rejected(StageFailure),
 }
 
-// _user_api_key_auth_builder runs both OAuth branches before it reads the master key.
-pub(crate) async fn pre_stage(request: &Request<Body>) -> PreStage {
-    let Some(state) = request.extensions().get::<Arc<ServerState>>() else {
+// _user_api_key_auth_builder runs both OAuth branches before it reads the master key; the parts are borrowed because a Request<Body> is not Sync across the endpoint call
+pub(crate) async fn pre_stage(
+    headers: &HeaderMap,
+    path: &str,
+    extensions: &Extensions,
+) -> PreStage {
+    let Some(state) = extensions.get::<Arc<ServerState>>() else {
         return PreStage::Skipped;
     };
     let settings = state.oauth_tokens.settings.as_ref();
-    let route =
-        decoded_route_path(request.uri().path()).unwrap_or_else(|| request.uri().path().to_owned());
+    let route = decoded_route_path(path).unwrap_or_else(|| path.to_owned());
     let llm_or_info =
         is_llm_api_route(&RouteValue::Text(&route)) || INFO_ROUTES.contains(&route.as_str());
     if settings.enable_oauth2_auth && llm_or_info {
         // LiteLLM introspects an absent token as the literal text None; betterlite refuses it here
-        let Some(token) = extract_key(request.headers()) else {
+        let Some(token) = extract_key(headers) else {
             return PreStage::Rejected(StageFailure::from(AuthenticationFailure::Missing));
         };
         let transport = state.oauth_tokens.transport.as_ref();
@@ -57,8 +59,7 @@ pub(crate) async fn pre_stage(request: &Request<Body>) -> PreStage {
     if !settings.enable_oauth2_proxy_auth {
         return PreStage::Skipped;
     }
-    let peer = request
-        .extensions()
+    let peer = extensions
         .get::<ConnectInfo<SocketAddr>>()
         .map(|connect_info| connect_info.0.ip().to_string());
     // the trust check reads the direct peer; the forwarded-header fields stay for the B743 stage
@@ -71,7 +72,7 @@ pub(crate) async fn pre_stage(request: &Request<Body>) -> PreStage {
     };
     let trusted = state.trusted_network.settings.as_ref();
     let mappings = settings.config_mappings.as_ref();
-    let mapped = handle_oauth2_proxy_request(request.headers(), mappings, &network, trusted);
+    let mapped = handle_oauth2_proxy_request(headers, mappings, &network, trusted);
     stage_from_result(mapped, AuthMethod::Oidc, None)
 }
 

@@ -158,7 +158,8 @@ async fn route_kind_selects_the_introspection_branch() {
         .body(Body::empty())
         .expect("the request builds");
     info.extensions_mut().insert(Arc::clone(&state));
-    assert!(matches!(pre_stage(&info).await, PreStage::Rejected(_)));
+    let info_stage = pre_stage(info.headers(), info.uri().path(), info.extensions()).await;
+    assert!(matches!(info_stage, PreStage::Rejected(_)));
     let mut other = Request::builder()
         .method("GET")
         .uri("/team/delete")
@@ -166,7 +167,8 @@ async fn route_kind_selects_the_introspection_branch() {
         .body(Body::empty())
         .expect("the request builds");
     other.extensions_mut().insert(Arc::clone(&state));
-    assert!(matches!(pre_stage(&other).await, PreStage::Skipped));
+    let other_stage = pre_stage(other.headers(), other.uri().path(), other.extensions()).await;
+    assert!(matches!(other_stage, PreStage::Skipped));
 }
 
 #[tokio::test]

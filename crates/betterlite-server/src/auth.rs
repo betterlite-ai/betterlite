@@ -86,7 +86,13 @@ pub(crate) async fn authenticate(
         return next.run(request).await;
     }
     // both OAuth2 branches run before LiteLLM reads the master key, so they run here too
-    match oauth_tokens::pre_stage(&request).await {
+    let pre_stage = oauth_tokens::pre_stage(
+        request.headers(),
+        request.uri().path(),
+        request.extensions(),
+    )
+    .await;
+    match pre_stage {
         oauth_tokens::PreStage::Skipped => {}
         oauth_tokens::PreStage::Authenticated(context) => {
             request.extensions_mut().insert(context);
