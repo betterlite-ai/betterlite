@@ -85,7 +85,11 @@ pub(crate) struct CallbackDelete {
 pub(crate) fn callback_delete_request(body: &[u8]) -> Result<CallbackDelete, BodyError> {
     let mut fields = match parse_body(body)? {
         JsonValue::Object(fields) => fields,
-        other => return Err(BodyError::NotAnObject(other)),
+        other @ (JsonValue::Null
+        | JsonValue::Bool(_)
+        | JsonValue::Number(_)
+        | JsonValue::String(_)
+        | JsonValue::Array(_)) => return Err(BodyError::NotAnObject(other)),
     };
     match fields.remove("callback_name") {
         None => Err(BodyError::MissingField {
