@@ -1,0 +1,61 @@
+kind: helper
+name: model-grant-intersection-matched-group-stamping
+call:
+  # a first stamp writes the matched groups on the token and hands them back
+  model_grant_intersection:
+    function: stamped
+    database: true
+    token: {models: [gpt-4o], team_id: t1, user_id: u1}
+    models: [gpt-4o]
+    team: {team_id: t1, models: [tier-a]}
+    registry: [tier-a]
+    serving: {gpt-4o: [tier-a]}
+calls:
+  # a later stamp replaces the earlier groups instead of adding to them
+  - model_grant_intersection:
+      function: stamped
+      database: true
+      token: {models: [gpt-4o], team_id: t1, user_id: u1}
+      models: [gpt-4o]
+      stamp_before: [old-a, old-b]
+      team: {team_id: t1, models: [tier-b]}
+      registry: [tier-b]
+      serving: {gpt-4o: [tier-b]}
+  # no requested model means nothing to attribute and the earlier stamp survives
+  - model_grant_intersection:
+      function: stamped
+      database: true
+      token: {models: [gpt-4o], team_id: t1, user_id: u1}
+      stamp_before: [old]
+      team: {team_id: t1, models: [tier-a]}
+  # an empty registry means no work and the earlier stamp survives
+  - model_grant_intersection:
+      function: stamped
+      database: true
+      token: {models: [gpt-4o], team_id: t1, user_id: u1}
+      models: [gpt-4o]
+      stamp_before: [old]
+      team: {team_id: t1, models: [tier-a]}
+      registry: []
+      serving: {gpt-4o: [tier-a]}
+  # without a database there is no walk and the earlier stamp survives
+  - model_grant_intersection:
+      function: stamped
+      database: false
+      token: {models: [gpt-4o], team_id: t1, user_id: u1}
+      models: [gpt-4o]
+      stamp_before: [old]
+      team: {team_id: t1, models: [tier-a]}
+      registry: [tier-a]
+      serving: {gpt-4o: [tier-a]}
+  # the collection returns what the stamp writes
+  - model_grant_intersection:
+      function: collected
+      database: true
+      token: {models: [gpt-4o], team_id: t1, user_id: u1}
+      models: [gpt-4o]
+      team: {team_id: t1, models: [tier-a]}
+      registry: [tier-a]
+      serving: {gpt-4o: [tier-a]}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,37 @@
+kind: helper
+name: model-grant-intersection-member-narrowing
+call:
+  model_grant_intersection:
+    function: enforced
+    database: true
+    token: {models: [gpt-4o], team_id: t1, user_id: u1}
+    team: {team_id: t1, models: [tier-a, tier-b]}
+    membership: {user_id: u1, team_id: t1, allowed_models: [tier-a]}
+calls:
+  # a membership row without an allowed list leaves the team grant unnarrowed
+  - model_grant_intersection:
+      function: enforced
+      database: true
+      token: {models: [gpt-4o], team_id: t1, user_id: u1}
+      team: {team_id: t1, models: [tier-a, tier-b]}
+      membership: {user_id: u1, team_id: t1}
+  # attribution unions the team grant with the member scope, and a preloaded row skips the query
+  - model_grant_intersection:
+      function: collected
+      database: true
+      token: {models: [gpt-4o], team_id: t1, user_id: u1}
+      models: [gpt-4o]
+      membership_loaded: true
+      team: {team_id: t1, models: [tier-a, tier-b]}
+      membership: {user_id: u1, team_id: t1, allowed_models: [tier-a]}
+      registry: [tier-a, tier-b]
+      serving: {gpt-4o: [tier-a, tier-b]}
+  # no member scope without a user id, even when the row names one
+  - model_grant_intersection:
+      function: enforced
+      database: true
+      token: {models: [gpt-4o], team_id: t1}
+      team: {team_id: t1, models: [tier-a]}
+      membership: {user_id: u1, team_id: t1, allowed_models: [tier-b]}
+env: {}
+compare: {ignore: []}
