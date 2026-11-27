@@ -1,0 +1,19 @@
+kind: helper
+name: empty-choices-warning
+call:
+  b10123:
+    original_messages:
+      - role: user
+        content: search the docs
+    body:
+      id: chatcmpl-7
+      object: chat.completion
+      created: 7
+      model: gpt-4o
+      choices: []
+    tool_results:
+      - tool_call_id: call_9
+        result: found
+        name: search
+env: {}
+compare: {ignore: []}
