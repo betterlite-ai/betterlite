@@ -93,13 +93,16 @@ impl JobRecord {
 
 // the ARN names the job, and a job without one is the id the caller passed in
 fn job_arn(fields: &IndexMap<String, Json>, batch_id: &str) -> Result<String, BatchCallError> {
-    match fields.get("jobArn") {
-        None => Ok(batch_id.to_owned()),
-        Some(value) => text(value, "jobArn").cloned(),
-    }
+    fields.get("jobArn").map_or_else(
+        || Ok(batch_id.to_owned()),
+        |value| text(value, "jobArn").cloned(),
+    )
 }
 
-fn text<'json>(value: &'json Json, field: &'static str) -> Result<&'json String, BatchCallError> {
+const fn text<'json>(
+    value: &'json Json,
+    field: &'static str,
+) -> Result<&'json String, BatchCallError> {
     let Json::Text(text) = value else {
         return Err(BatchCallError::Field { field });
     };
@@ -109,16 +112,14 @@ fn text<'json>(value: &'json Json, field: &'static str) -> Result<&'json String,
 // str(response.get("status", "")) keeps a number's digits and leaves any unknown word in progress
 fn job_status(fields: &IndexMap<String, Json>) -> BatchStatus {
     let name = match fields.get("status") {
-        None => String::new(),
         Some(Json::Text(text)) => text.clone(),
         Some(Json::Null) => String::from("None"),
         Some(Json::Bool(flag)) => if *flag { "True" } else { "False" }.to_owned(),
         Some(Json::Number(number)) => number.to_string(),
-        Some(Json::List(_) | Json::Object(_)) => String::new(),
+        None | Some(Json::List(_) | Json::Object(_)) => String::new(),
     };
     match name.as_str() {
         "Submitted" | "Validating" | "Scheduled" => BatchStatus::Validating,
-        "InProgress" => BatchStatus::InProgress,
         "Stopping" => BatchStatus::Cancelling,
         "Stopped" => BatchStatus::Cancelled,
         "Completed" | "PartiallyCompleted" => BatchStatus::Completed,

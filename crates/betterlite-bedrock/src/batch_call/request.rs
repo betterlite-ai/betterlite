@@ -14,6 +14,7 @@ use crate::signing::sigv4::{Signable, sign_request};
 use super::transport::BEDROCK_SERVICE;
 
 // the control plane serves both operations from /model-invocation-job/{jobIdentifier}
+#[must_use]
 pub fn job_url(region: &str, batch_id: &str) -> String {
     let suffix = get_aws_partition(Some(region)).dns_suffix;
     let encoded = utf8_percent_encode(batch_id, &MODEL_ID_SAFE);

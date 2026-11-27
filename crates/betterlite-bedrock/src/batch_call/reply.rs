@@ -29,7 +29,7 @@ pub fn client_error(reply: &ControlPlaneReply) -> BatchCallError {
     } else {
         let body: Json =
             serde_json::from_slice(&reply.body).unwrap_or(Json::Object(IndexMap::new()));
-        error_code(reply, &body)
+        Some(error_code(reply, &body))
     };
     BatchCallError::Client {
         status: reply.status,
@@ -38,33 +38,31 @@ pub fn client_error(reply: &ControlPlaneReply) -> BatchCallError {
     }
 }
 
-fn error_code(reply: &ControlPlaneReply, body: &Json) -> Option<String> {
+fn error_code(reply: &ControlPlaneReply, body: &Json) -> String {
     if let Some(value) = header(&reply.headers, "x-amzn-errortype") {
-        return Some(trim_code(value));
+        return trim_code(value);
     }
     let Json::Object(fields) = body else {
-        return Some(reply.status.to_string());
+        return reply.status.to_string();
     };
     let coded = fields.get("code").or_else(|| fields.get("Code"));
     if let Some(code) = coded {
         return match code {
             Json::Null => base_code(fields, reply.status),
-            Json::Text(text) => Some(trim_code(text)),
-            Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-                Some(text_of(code))
-            }
+            Json::Text(text) => trim_code(text),
+            Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => text_of(code),
         };
     }
     base_code(fields, reply.status)
 }
 
-fn base_code(fields: &IndexMap<String, Json>, status: u16) -> Option<String> {
+fn base_code(fields: &IndexMap<String, Json>, status: u16) -> String {
     match fields.get("__type") {
-        Some(Json::Text(text)) => Some(trim_code(text)),
+        Some(Json::Text(text)) => trim_code(text),
         // an explicit null __type leaves botocore's initial empty Code in place
-        Some(Json::Null) => Some(String::new()),
-        None => Some(status.to_string()),
-        Some(value) => Some(text_of(value)),
+        Some(Json::Null) => String::new(),
+        None => status.to_string(),
+        Some(value) => text_of(value),
     }
 }
 

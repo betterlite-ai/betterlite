@@ -135,6 +135,7 @@ fn metadata_defaults() {
 fn falsey_message() {
     let cases = [
         (r#""message":"boom""#, "boom"),
+        (r#""message":"""#, ""),
         (r#""message":0"#, ""),
         (r#""message":0.0"#, ""),
         (r#""message":-0.0"#, ""),

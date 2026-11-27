@@ -60,7 +60,7 @@ impl Debug for ClientConfig<'_> {
     }
 }
 
-pub trait ControlPlaneFactory {
+pub trait ControlPlaneFactory: Sync {
     type Client: ControlPlaneTransport;
 
     fn client(&self, config: ClientConfig<'_>) -> Self::Client;

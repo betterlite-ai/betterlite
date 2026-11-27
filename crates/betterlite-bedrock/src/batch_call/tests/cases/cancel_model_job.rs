@@ -79,24 +79,21 @@ fn assert_configured_auth(source: &Source) {
     assert_eq!(settings.len(), 2);
     let auth: &AwsSettings = &settings[0];
     assert_eq!(auth.region_name.as_deref(), Some("ap-southeast-2"));
-    assert_eq!(
-        auth.access_key_id
-            .as_ref()
-            .map(|key| key.expose_secret().as_str()),
-        Some(CONFIGURED_ACCESS_KEY)
-    );
-    assert_eq!(
-        auth.secret_access_key
-            .as_ref()
-            .map(|key| key.expose_secret().as_str()),
-        Some(CONFIGURED_SECRET_KEY)
-    );
-    assert_eq!(
-        auth.session_token
-            .as_ref()
-            .map(|token| token.expose_secret().as_str()),
-        Some(CONFIGURED_SESSION_TOKEN)
-    );
+    let access_key = auth
+        .access_key_id
+        .as_ref()
+        .expect("the configured access key is kept");
+    assert_eq!(access_key.expose_secret(), CONFIGURED_ACCESS_KEY);
+    let secret_key = auth
+        .secret_access_key
+        .as_ref()
+        .expect("the configured secret key is kept");
+    assert_eq!(secret_key.expose_secret(), CONFIGURED_SECRET_KEY);
+    let session_token = auth
+        .session_token
+        .as_ref()
+        .expect("the configured session token is kept");
+    assert_eq!(session_token.expose_secret(), CONFIGURED_SESSION_TOKEN);
     assert_eq!(auth.session_name.as_deref(), Some("session"));
     assert_eq!(auth.profile_name.as_deref(), Some("profile"));
     assert_eq!(auth.role_name.as_deref(), Some("role"));

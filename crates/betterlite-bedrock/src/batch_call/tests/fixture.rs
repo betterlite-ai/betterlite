@@ -153,7 +153,7 @@ impl Source {
     }
 
     pub(super) fn failing() -> Self {
-        let mut source = Self::new(credentials());
+        let source = Self::new(credentials());
         source.state.lock().expect("the source lock").fail = true;
         source
     }
