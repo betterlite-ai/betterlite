@@ -1,0 +1,20 @@
+kind: helper
+name: budget-lookups-default-customer-budget-lookup
+call:
+  b3883:
+    function: default_customer_budget
+    default_budget_id: budget-1
+    lookup:
+      kind: record
+      budget_reset_at: null
+      max_budget: null
+      spend: null
+      organization_alias: null
+      user_email: null
+      user_alias: null
+      budget:
+        max_budget: 25.0
+        budget_reset_at: '2026-02-01T00:00:00Z'
+env: {}
+compare:
+  ignore: []

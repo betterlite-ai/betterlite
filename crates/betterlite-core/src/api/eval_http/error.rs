@@ -1,3 +1,5 @@
+use betterlite_error::error::ErrorClass;
+use betterlite_error::error::details::ResponseDetails;
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_openai::evals::error::EvalsError;
 use thiserror::Error;
@@ -14,4 +16,13 @@ pub enum EvalHttpError {
         #[source]
         source: serde_json::Error,
     },
+}
+
+// the provider name is the caller's input and the call can never succeed, so LiteLLM's ValueError becomes a 400
+pub(crate) fn unsupported_provider(message: String, provider: &str) -> ErrorClass {
+    ErrorClass::BadRequest(Box::new(ResponseDetails::for_provider(
+        message,
+        Some(String::new()),
+        provider,
+    )))
 }

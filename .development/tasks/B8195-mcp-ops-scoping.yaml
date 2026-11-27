@@ -75,7 +75,7 @@ out_of_scope:
   - Header preparation, BYOK checks and token exchange (B8196).
   - Listing and execution (B8197, B8198).
   - The server registry methods on mcp_server_manager.py are B4731 (lookups), B6591 (get_allowed_mcp_servers)
-    and B4726 (filter_server_ids_by_ip_with_info); this task calls them.
+    and B10145 (filter_server_ids_by_ip_with_info, module registry_ip_filter); this task calls them.
 
 pitfalls:
   - >-

@@ -26,7 +26,8 @@ classifiers = [
   "Programming Language :: Rust",
 ]
 dependencies = [
-  "httpx2==2.16.0",
+  "httpx2==2.14.0; python_version < '3.11'",
+  "httpx2==2.16.0; python_version >= '3.11'",
   "pydantic==2.14.1",
   "python-dotenv==1.2.4",
   "typing-extensions==4.16.0",

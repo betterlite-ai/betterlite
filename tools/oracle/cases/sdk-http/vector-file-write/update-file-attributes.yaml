@@ -1,0 +1,48 @@
+kind: sdk_http
+name: vector-file-write-update-file-attributes
+env: {OPENAI_API_KEY: sk-provider}
+call:
+  vector_file_write:
+    runs:
+      - operation: update
+        mode: sync
+        vector_store_id: vs_a
+        file_id: file_a
+        attributes: {tag: x, count: 2, enabled: false}
+        unknown: 1
+        extra_headers: {X-Trace: t}
+      - operation: update
+        mode: async
+        vector_store_id: vs_a
+        file_id: file_a
+        attributes: {tag: x, count: 2, enabled: false}
+        unknown: 1
+      - operation: update
+        mode: sync
+        vector_store_id: vs_a
+        file_id: file_a
+        attributes: {}
+      - operation: update
+        mode: sync
+        vector_store_id: vs_a
+        file_id: file_a
+        attributes: {tag: x, count: 2, enabled: false}
+        extra_body: {attributes: {replacement: "y"}}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: file_a, object: vector_store.file, attributes: {replacement: y}}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: file_a, object: vector_store.file, attributes: {replacement: y}}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: file_a, object: vector_store.file, attributes: {}}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: file_a, object: vector_store.file, attributes: {replacement: y}}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type, x-trace]
+  ignore: []

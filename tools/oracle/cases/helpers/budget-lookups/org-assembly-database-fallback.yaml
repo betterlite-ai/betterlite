@@ -1,0 +1,36 @@
+kind: helper
+name: budget-lookups-org-assembly-database-fallback
+call:
+  b3883:
+    function: org
+    org_id: org-1
+    org_alias: null
+    response_cost: 0.5
+    carried: null
+    database: true
+    lookup:
+      kind: record
+      budget_reset_at: null
+      max_budget: null
+      spend: 2.0
+      organization_alias: Org Db
+      user_email: null
+      user_alias: null
+      budget:
+        max_budget: 15.0
+        budget_reset_at: '2026-01-06T00:00:00Z'
+    now: '2026-01-01T00:00:00Z'
+    noop: false
+    labels_by_metric:
+      litellm_remaining_org_budget_metric:
+      - org_id
+      - org_alias
+      litellm_org_max_budget_metric:
+      - org_id
+      - org_alias
+      litellm_org_budget_remaining_hours_metric:
+      - org_id
+      - org_alias
+env: {}
+compare:
+  ignore: []

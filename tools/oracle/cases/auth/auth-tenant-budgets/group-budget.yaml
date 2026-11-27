@@ -1,0 +1,35 @@
+kind: helper
+name: auth-tenant-budgets-auth-group-budget
+call:
+  auth_tenant_budgets:
+    calls:
+      # equality with the matched group's ceiling denies, with the row spend as the authoritative fallback
+      - function: groups
+        database: true
+        matched_model_access_groups: ["g"]
+        group_rows:
+          - {access_group_name: g, spend: 3.0, max_budget: 10.0}
+        spends: [10.0]
+      # a cent under passes
+      - function: groups
+        database: true
+        matched_model_access_groups: ["g"]
+        group_rows:
+          - {access_group_name: g, spend: 3.0, max_budget: 10.0}
+        spends: [9.99]
+      # non-positive ceilings mean no budget, and unmatched groups are never priced
+      - function: groups
+        database: true
+        matched_model_access_groups: ["zero", "negative"]
+        group_rows:
+          - {access_group_name: zero, spend: 0.0, max_budget: 0.0}
+          - {access_group_name: negative, spend: 0.0, max_budget: -1.0}
+          - {access_group_name: expensive, spend: 100.0, max_budget: 1.0}
+        spends: []
+      - function: groups
+        database: true
+        matched_model_access_groups: []
+        spends: []
+env: {}
+compare:
+  ignore: []

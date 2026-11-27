@@ -1,0 +1,25 @@
+kind: sdk_http
+name: realtime-transcription-session-sdk
+call:
+  realtime_http_calls:
+    operation: transcription_session
+    model: openai/gpt-realtime-whisper
+    transcription_session:
+      input_audio_transcription: {model: gpt-4o-transcribe, language: en, prompt: a hint}
+      input_audio_format: pcm16
+      vendor_extension: {x: 1}
+env:
+  OPENAI_API_KEY: sk-env
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {client_secret: {value: ek_3}}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore:
+    - pointer: /realtime_http_calls/value/result/headers/date
+      why: each side answers from its own mock, so a server-stamped date differs while answering nothing
+    - pointer: /realtime_http_calls/value/logged/litellm_api_base
+      why: each side answers from its own mock, so the resolved api_base the logger records differs

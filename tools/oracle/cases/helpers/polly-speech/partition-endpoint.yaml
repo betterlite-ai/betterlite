@@ -1,0 +1,20 @@
+kind: helper
+name: polly-speech-partition-endpoint
+call:
+  polly_speech:
+    calls:
+    - {function: url, api_base: null, litellm_params: {}}
+    - {function: url, api_base: null, litellm_params: {aws_region_name: us-west-2}}
+    - {function: url, api_base: null, litellm_params: {aws_region_name: cn-north-1}}
+    - {function: url, api_base: null, litellm_params: {aws_region_name: us-gov-west-1}}
+    - {function: url, api_base: null, litellm_params: {aws_region_name: us-iso-east-1}}
+    - {function: url, api_base: null, litellm_params: {aws_region_name: us-isob-east-1}}
+    - {function: url, api_base: null, litellm_params: {aws_region_name: us-isof-south-1}}
+    - {function: url, api_base: null, litellm_params: {aws_region_name: eu-isoe-west-1}}
+    - {function: url, api_base: null, litellm_params: {aws_region_name: eu-west-1, api_base: https://ignored.test}}
+    - {function: url, api_base: https://proxy.test, litellm_params: {aws_region_name: eu-west-1}}
+    - {function: url, api_base: "https://proxy.test//", litellm_params: {aws_region_name: eu-west-1}}
+    - {function: url, api_base: "https://proxy.test/polly/", litellm_params: {}}
+    - {function: url, api_base: "", litellm_params: {aws_region_name: us-east-2}}
+compare: {ignore: []}
+env: {}

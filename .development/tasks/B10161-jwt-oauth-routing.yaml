@@ -1,0 +1,105 @@
+id: B10161
+title: JWT-to-OAuth routing override selection
+description: >-
+  LiteLLM can send a JWT-shaped bearer token to OAuth2 introspection instead of JWT validation when the token's unverified claims match one of litellm_jwtauth.routing_overrides. Three small functions in user_api_key_auth.py decide that match: _routing_selector_matches_claim, _matches_routing_override and _should_route_jwt_to_oauth2_override. B875's backend dispatch calls the last one before it picks OAuth, and B756's mode selection calls it to record the chosen validator. This task builds the three, so B875 waits on them instead of on all of B756's header work. The answer only picks a validator; it never grants an identity, a role or a model, and the chosen validator still authenticates the token.
+
+
+  Layout. Module jwt_oauth_routing in betterlite-auth, crates/betterlite-auth/src/jwt_oauth_routing.rs, with its tests in jwt_oauth_routing/tests.rs. The file is an empty stub lib.rs already declares. It reads no config, no header and no request: callers pass the token text and B869's typed overrides, `config.sections.jwt_settings.routing.routing_overrides.as_deref()`. betterlite-auth already depends on betterlite-config, so no Cargo.toml change.
+
+
+  Inputs. The overrides are B869's `betterlite_config::sections::jwt_settings::records::RoutingOverride`: iss is a `Selector`, client_id, scope and aud are `Option<Selector>`, and path is `OverridePath`, whose only variant is Oauth2. `Selector` is `One(String)` or `Many(Vec<String>)`; B869 already rejects extra keys and any other path, so nothing is validated again here. The claims come from B760's `jwt_claims::decode::unverified_claims(token) -> Option<TypedValue>`, LiteLLM's get_unverified_claims. TypedValue is betterlite_paths' Document; read a top-level member through its json field, and keep serde_json::Value out of every signature, since clippy.toml disallows the type.
+
+
+  The selector. `routing_selector_matches_claim(selector: Option<&Selector>, claims: &TypedValue, claim: &str, split_space_delimited: bool) -> bool`. A None selector matches, before the claim is read. Otherwise the selector's strings are one item or the list as written; an empty list matches nothing. An absent claim or a JSON null fails. A JSON array claim gives its elements, never split, even for scope. A string claim is one value, except when split_space_delimited is on and the string, after Python's strip(), still holds an ASCII space: then the stripped string splits on single ASCII spaces and empty pieces drop out. When it holds no such space, the original unstripped string is the one value. Tabs and other whitespace never split. LiteLLM compares str() of any other claim type, which is repr text that docs/compatibility.md leaves outside the contract; JWT declares these four claims as strings or string lists, so a number, bool or object claim and a non-string array element match nothing here, while the array's string elements still count. The selector matches when any selector string matches any claim value. A selector string holding * or ? is a case-sensitive fnmatch pattern: call B890's `jwt_role_claims::fnmatch::RolePattern::new(selector).matches(claim)`, and write no second fnmatch. Before that, when split_space_delimited is off, a claim value holding any Python whitespace never matches a pattern. Every other selector string compares by exact equality, so brackets alone are literal and an exact selector may match a value with spaces.
+
+
+  The override. `matches_routing_override(claims: &TypedValue, rule: &RoutingOverride) -> bool` is true only when iss, client_id, scope and aud all match, reading the top-level claims of those exact names, with split_space_delimited on for scope only.
+
+
+  The decision. `should_route_jwt_to_oauth2_override(token: &str, overrides: Option<&[RoutingOverride]>) -> bool`. None or an empty list answers false before the token is touched. unverified_claims returning None answers false. Otherwise the first override whose path is Oauth2 and that matches logs DEBUG "JWT routing override matched. Routing token to OAuth2 introspection." and answers true; no claim value and no part of the token goes into a log line. No match answers false. The enable_jwt_auth check, the JWT shape test before the call and the LLM and info route limit stay with B875, which calls this only for a JWT with JWT auth on.
+
+
+  Oracle. Helper cases on the b10161 operation in the auth group, with a tagged input of three variants. `selector` carries selector (null, a string or a list), claim (absent, null, a string or a list of strings) and split_space_delimited; Python calls `_routing_selector_matches_claim(selector_value, claim_value, split_space_delimited=...)`. `override` carries the override object and the claims object; Python builds JWTRoutingOverride from it and calls `_matches_routing_override(token_claims=..., override=...)`. `route` carries the token and routing_overrides (null or a list); Python builds a JWTHandler and calls update_environment with `LiteLLM_JWTAuth(routing_overrides=...)`, as jwt_claims.py's build_handler does, then `_should_route_jwt_to_oauth2_override(token=..., jwt_handler=...)`. Each answers {"matched": bool}. The Rust side decodes the override and selector values through B869's serde types, puts the claim into a one-member claims document, and calls the production functions. Route tokens are three base64url segments with an RS256 header that B760 accepts and any signature segment; nothing is verified. Add helper_case corpus seeds named jwt-oauth-routing-*. No route reaches this code yet: B875's dispatch stage carries the HTTP behavior.
+
+
+  Tests. jwt_oauth_routing/tests.rs, rstest tables over every rule above and every pitfall below: selector_null_absent_and_empty_lists, scope_splits_on_ascii_space_only, wildcard_case_whitespace_and_brackets, selector_and_claim_cross_product, non_string_claims_never_match, override_requires_every_selector, route_takes_first_oauth2_match and route_false_without_overrides_or_claims. match_log_holds_no_claim_or_token captures the DEBUG line through a tracing_subscriber registry layer, as rejection_provider/tests.rs does, and asserts it holds neither the token nor a claim value.
+scope:
+  paths:
+    - crates/betterlite-auth/src/jwt_oauth_routing.rs
+    - crates/betterlite-auth/src/jwt_oauth_routing/**
+    - tools/oracle/cases/helpers/jwt-oauth-routing/**
+    - tools/oracle/fuzz/corpus/helper_case/jwt-oauth-routing-*
+    - tools/oracle/helpers/b10161.py
+    - tools/oracle/helpers/b10161/**
+    - tools/oracle/src/helpers/auth/b10161.rs
+    - tools/oracle/src/helpers/auth/b10161/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L514-L552
+    why: Owned. _routing_selector_matches_claim, with the scope-only split and the whitespace guard on wildcards.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L555-L565
+    why: Owned. _matches_routing_override, the four selectors joined by and.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L568-L582
+    why: Owned. _should_route_jwt_to_oauth2_override, the first matching oauth2 override and its DEBUG line.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5211-L5232
+    why: JWTRoutingOverride, selectors as str or list[str] and path oauth2; B869 built it as RoutingOverride.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5470-L5473
+    why: litellm_jwtauth.routing_overrides defaults to None; B869's jwt_settings section loads it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L283-L302
+    why: get_unverified_claims; B760 built it as unverified_claims.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1603-L1633
+    why: Call site in B875's backend dispatch, only for a JWT with enable_jwt_auth on and only on LLM and info routes.
+dod:
+  - text: A null selector matches, an absent or null claim and an empty selector or claim list never match, and any selector string matching any claim value matches, equal to LiteLLM's answers.
+    proof: [behavior-tests, oracle, helper-python]
+  - text: Only scope splits, only on an ASCII space left after Python's strip(), and an unsplit scope keeps its original text.
+    proof: [behavior-tests, oracle]
+  - text: Selectors with * or ? match through B890's case-sensitive RolePattern, refuse a non-scope claim holding Python whitespace (U+001C to U+001F included), and every other selector, brackets included, compares exactly.
+    proof: [behavior-tests, oracle]
+  - text: An override needs iss, client_id, scope and aud all to match, and the decision answers true for the first matching oauth2 override, false for no or empty overrides and for a token without decodable claims.
+    proof: [behavior-tests, oracle]
+  - text: The match logs one DEBUG line with no token and no claim value.
+    proof: [behavior-tests]
+  - text: New jwt-oauth-routing seeds for b10161 replay through the shared helper case parser.
+    proof: [helper-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: A selector, override or decision rule differs from LiteLLM, or the match log leaks the token or a claim.
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^jwt_oauth_routing::/)'
+    - id: helper-python
+      why: The b10161 adapter is missing or fails the strict Python checks.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b10161.py tools/oracle/helpers/b10161)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No new b10161 seed reaches the shared helper case parser.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/jwt-oauth-routing-*")" &&
+        grep -lE '^[[:space:]]+b10161:' tools/oracle/fuzz/corpus/helper_case/jwt-oauth-routing-* &&
+        cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-auth --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/jwt-oauth-routing/selector-null-absent-empty.yaml
+  - tools/oracle/cases/helpers/jwt-oauth-routing/scope-space-splitting.yaml
+  - tools/oracle/cases/helpers/jwt-oauth-routing/wildcard-rules.yaml
+  - tools/oracle/cases/helpers/jwt-oauth-routing/selector-claim-cross-product.yaml
+  - tools/oracle/cases/helpers/jwt-oauth-routing/override-every-selector.yaml
+  - tools/oracle/cases/helpers/jwt-oauth-routing/route-first-oauth2-match.yaml
+deviations: []
+out_of_scope:
+  - "litellm/proxy/auth/user_api_key_auth.py: _user_api_key_auth_builder.backend_dispatch (L1603-L1856), with the enable_jwt_auth and enable_oauth2_auth flags, the LLM and info route limit and the OAuth call: B875, which calls should_route_jwt_to_oauth2_override. OAuth introspection itself: B768."
+  - "litellm/proxy/auth/user_api_key_auth.py: get_api_key, get_api_key_from_custom_header, check_api_key_for_custom_headers_or_pass_through_endpoints, the public-route checks and get_rbac_role: B756, whose mode selection also calls this module. Every other function: the owners B756's out_of_scope lists."
+  - "Decoding the unverified token: B760's unverified_claims. Loading and validating routing_overrides: B869's jwt_settings section. The fnmatch port: B890's jwt_role_claims::fnmatch."
+pitfalls:
+  - Python's strip() and isspace() count U+001C to U+001F as whitespace and Rust's trim() and char::is_whitespace() don't; add that range, as jwt_role_claims/scopes.rs does, or the iss "trusted.example.com\u{1c}evil.com" matches "trusted.*" where LiteLLM refuses it.
+  - A scope with no internal ASCII space after strip() is compared as the original text, so " openid " never equals the selector "openid"; strip only on the split branch.
+  - A selector with brackets but no * or ? is literal, so "[ab]c" matches only the claim "[ab]c"; build a RolePattern only when the selector holds * or ?.
+  - The whitespace guard covers wildcard selectors on iss, client_id and aud only; the exact selector "a b" matches the claim "a b", and the scope token "App:\tLiteLLM" still matches "App:*".
+  - An empty routing_overrides list is falsy in LiteLLM and answers false before the token is decoded, the same as None.
+  - The helper stub tools/oracle/src/helpers/auth/b10161.rs and its registry lines are on main; replace the stub Op with a typed impl Helper and leave the auth group's lib.rs and operations.txt alone.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

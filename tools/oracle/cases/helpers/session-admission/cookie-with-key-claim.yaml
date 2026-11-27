@@ -1,0 +1,11 @@
+kind: helper
+name: session-admission-cookie-with-key-claim
+call:
+  b4655:
+    cookie_header: "token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjQxMDI0NDQ4MDAsImxvZ2luX21ldGhvZCI6InNzbyIsInVzZXJfaWQiOiJ1c2VyLTEiLCJrZXkiOiJzay1saXZlLWtleSJ9.Mletv6cqYVc-EKaz5oi5pAd359F5A6V44oz6ptmbKdM"
+    master_key: sk-oracle-master
+    key_resolves: true
+    now: 1700000000
+env: {}
+compare:
+  ignore: []

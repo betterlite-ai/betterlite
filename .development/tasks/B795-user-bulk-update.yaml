@@ -41,7 +41,10 @@ description: >-
   Own _USER_BUDGET_CACHE_INVALIDATION_BATCH_SIZE=50 at L117: await gather in chunks of 50 in
   snapshot order, aborting on a cache exception. Metadata/duration/spend alone do not broadcast.
   Fast results contain snapshot ID/email,success=true,updated_user={user_id,...prepared_patch};
-  they are not reread rows. Build one asynchronous B797 audit for caller.user_id or empty string,
+  they are not reread rows. Build one asynchronous audit, LiteLLM's create_internal_user_audit_log, for caller.user_id
+  or empty string: hand B2330's AuditTaskSpawner (as key_events::audit::SinkScheduler does,
+  never a detached spawn) a future that awaits B065's AuditService::create_object_audit_log with
+  AuditTable::User,
   action=updated, changed-by header-or-caller, before='Updated {N} users', after=json.dumps(patch).
   Audit scheduling/serialization errors warn and leave success intact (e.g. a datetime reset_at).
   Cases invalidate_chunks_fifty, fast_invalidation_field_set, fast_result_is_patch,
@@ -188,7 +191,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
   - B2334 owns public body/response contracts; B786 owns password screening/settings; B792 owns
-    per-user mutation and callback encryption delegation; B797 owns the user-audit sink.
+    per-user mutation and callback encryption delegation; B065 owns the audit sink create_object_audit_log.
     B793/B794 are not called by this legacy route.
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B056 owns new_user (L482-L672).'
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B790 owns _user_table (L121-L125),
@@ -212,11 +215,11 @@ out_of_scope:
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B796 owns get_user_key_counts (L2067-L2101),
     _validate_sort_params (L2104-L2133), _authorize_user_list_request (L2136-L2199), get_users (L2224-L2388).'
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B797 owns delete_user (L2397-L2604).'
-  - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B798 owns resolve_user_daily_activity_entity_ids
-    (L2866-L2875), _resolve_user_email_metadata (L2878-L2889), get_user_daily_activity (L2899-L3004).'
+  - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B10158 owns resolve_user_daily_activity_entity_ids
+    (L2866-L2875); B798 owns _resolve_user_email_metadata (L2878-L2889), get_user_daily_activity (L2899-L3004).'
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B1203 owns _resolve_org_filter_for_user_search
-    (L2653-L2716), _resolve_team_org_filter (L2719-L2754), ui_view_users (L2766-L2860), _user_search_where
-    (L2205-L2215).'
+    (L2653-L2716), _resolve_team_org_filter (L2719-L2754), ui_view_users (L2766-L2860).'
+  - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B10149 owns _user_search_where (L2205-L2215).'
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B1226 owns check_if_default_team_set
     (L413-L434), add_new_user_to_default_team (L437-L467).'
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py::add_internal_user_to_organization:

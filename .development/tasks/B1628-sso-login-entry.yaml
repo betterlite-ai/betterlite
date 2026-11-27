@@ -15,9 +15,10 @@ description: >-
   keeps the open-source unavailable-hook error rather than building its enterprise handler.
   With all OAuth client IDs absent, configured SAML delegates to B1625 with return_to as
   RelayState. Otherwise presence-based Google/Microsoft/generic precedence selects B1629,
-  B1622 or B1610/B1629 settings/client behavior. Microsoft authorization permits an absent
-  tenant and uses common, unlike its callback's missing-tenant failure. An unconfigured
-  provider falls back to B799's password form with the shared return cookie.
+  B10148 or B1610/B1629 settings/client behavior. Microsoft authorization builds B10148's
+  microsoft_sso_client from config.sections.microsoft_sso and returns its missing-secret error;
+  it permits an absent tenant and uses common, unlike its callback's missing-tenant failure.
+  An unconfigured provider falls back to B799's password form with the shared return cookie.
   Generic authorization uses B1619 state/PKCE parameters. Store {code_verifier} under
   pkce_verifier:<state> for 600s in Redis usage cache when present, otherwise the user cache;
   only after storage succeeds append/replace code_challenge and code_challenge_method in

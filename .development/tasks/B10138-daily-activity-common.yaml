@@ -1,0 +1,138 @@
+id: B10138
+title: Daily activity route scope, database lookups and key search records
+description: >-
+  Build the module `daily_activity_common` in betterlite-server: the scope step and the database lookups that all
+  three daily activity route tasks run before their own work, plus the two records of the key search response. B3096
+  (key page, model leaders, cache leakage), B3097 (aggregated report and key search) and B3098 (export) each call
+  this module and none of them writes into it, so they no longer wait for each other. The file
+  crates/betterlite-server/src/daily_activity_common.rs is an empty stub that lib.rs already declares. Put each part in
+  its own file under daily_activity_common/ (for example scope.rs, dependencies.rs, search_records.rs and error.rs),
+  re-export the public names from daily_activity_common.rs, and keep every test in daily_activity_common/tests.rs,
+  declared there with `mod tests;`, so the test paths start with `daily_activity_common::tests::`.
+
+
+  Database lookups. LiteLLM has two FastAPI dependencies, `get_daily_activity_prisma_client` and
+  `get_daily_activity_repository` (daily_activity_routes.py L63-L68). Both call `get_prisma_client_or_throw` with
+  `CommonProxyErrors.db_not_connected_error`, and the second hands the client to the repository factory. Build them
+  as one function, `daily_activity_dependencies`. It takes the optional database handle plus the PostgresStore and
+  `Arc<SpendLogHistory>` that B3092's `daily_activity_repository` factory (daily_activity/recovery/repository.rs)
+  takes. With no handle it fails through B8400's `prisma_client_or_throw` (proxy_helpers/checks.rs) with the message
+  `CommonProxyErrors::DbNotConnectedError.as_str()` from betterlite-error, so the error is `ProxyCheckError::Database`
+  with status 500 and detail `{"error": <that text>}`, and no repository is built. With a handle it returns a
+  `DailyActivityDependencies` struct holding the handle and the repository the factory builds over it. The
+  route tasks put the database handle into B3095's `EntityScopeContext` and run the repository's reads.
+  Do not write a separate get_daily_activity_prisma_client: its body would be the single prisma_client_or_throw
+  call, and the no-one-line-functions hook refuses it.
+
+
+  Date check. `date_range_error(query: &EntityQuery, user_aggregated: bool) -> Option<InvalidDateRange>` is
+  `_date_range_error` (L71-L77). With user_aggregated true it runs only B3090's `parse_canonical_date_range` on the
+  query's start_date and end_date and returns its InvalidDateRange, or None when the dates parse. With false it runs
+  B815's `aggregated_date_range_error` (module team_activity) on the same two values and wraps a returned reason as
+  B3090's `InvalidDateRange { reason }`. The messages come from those two functions and are never retyped here:
+  "Please provide start_date and end_date", "start_date and end_date must be valid YYYY-MM-DD dates", "end_date must
+  be on or after start_date" and "Date range must be at most 400 days". `EntityQuery` is B3094's (module
+  daily_activity_scopes).
+
+
+  Scope step. `resolved_scope(entity: Entity, context: &EntityScopeContext<'_>, query: &EntityQuery, user_aggregated:
+  bool) -> Result<ResolvedScope, DailyActivityScopeError>` is `_resolved_scope` (L80-L94). First it runs
+  date_range_error; a returned InvalidDateRange becomes B3090's `raise_public(PublicFailure::InvalidDateRange(..))`, a
+  400 PublicError, and the resolver is not called. Then it calls B3095's `resolve_entity_scope(entity, context, query)`
+  and returns its ResolvedScope unchanged. On error, `EntityScopeError::Denied(ScopeDenied)` becomes
+  `raise_public(PublicFailure::ScopeDenied(..))`, a 403 or 404 PublicError with detail `{"error": <reason>}`. Every
+  other EntityScopeError variant (Scopes, the per-owner variants, NotBuilt) comes back unchanged inside the error,
+  because LiteLLM lets whatever resolve raises propagate: B815's team 403 and 404 and B058's org_admin 403 keep their
+  own status, and the route decides what to answer. The resolver callable of Python's EntityScopeResolver becomes
+  the Entity argument, as B3094 and B3095 already record. The caller passes the flag: B3097's aggregated route passes
+  true for the user entity, and every other route passes false.
+
+
+  Error. `DailyActivityScopeError` is this module's thiserror enum in error.rs with three variants:
+  `Database(#[from] ProxyCheckError)` for the missing database, `Public(PublicError)` for a date or denial already
+  shaped by raise_public (display its detail.error text), and `Resolver(#[source] EntityScopeError)` for every other
+  resolver failure. Write `From<EntityScopeError> for DailyActivityScopeError` to do the Denied split above, so
+  resolved_scope uses `?` and the split can be tested on its own. The routes match these three variants; this task
+  turns none of them into an axum response.
+
+
+  Key search records, from litellm/types/proxy/management_endpoints/common_daily_activity.py L127-L130 and
+  L151-L152, with LiteLLM's field names and order: `KeyActivityRow { api_key: String, metrics: SpendMetrics,
+  metadata: KeyMetadata }` and `DailyActivityKeySearchResponse { api_keys: Vec<KeyActivityRow> }`. SpendMetrics and
+  KeyMetadata are B3090's (betterlite-analytics daily_metrics); reuse them as they are. Both records derive
+  Serialize, and a None metadata field is written as null, never left out. Only B3097's key search builds them.
+  They sat in B3096 with the rest of the types file, and B3097 needs them without waiting for B3096's routes.
+
+
+  This task has unit tests only. No route reaches the module until B3096 to B3098 call it and B8482 mounts their
+  routes, and B8482's HTTP oracle cases prove the date errors, scope denials and missing database over HTTP. The
+  tests here use the user entity for resolved_scope, because B3094's resolve_user never touches the database: build
+  the caller with UserAPIKeyAuth and the context the way B3095's dispatch tests do.
+scope:
+  paths:
+    - crates/betterlite-server/src/daily_activity_common.rs
+    - crates/betterlite-server/src/daily_activity_common/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/daily_activity_routes.py#L63-L94
+    why: Owned. get_daily_activity_prisma_client, get_daily_activity_repository, _date_range_error and _resolved_scope, with the order date check, resolve, raise_public.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/common_daily_activity.py#L127-L152
+    why: Owned. KeyActivityRow (L127-L130) and DailyActivityKeySearchResponse (L151-L152); KeySpendMetrics, KeySpendActivityRow and the other response models in between stay with B3096.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8369-L8377
+    why: get_prisma_client_or_throw, the 500 with the message under detail.error for a missing database; B8400's prisma_client_or_throw is its port.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L6695-L6705
+    why: aggregated_date_range_error, the date check for user_aggregated false, built by B815.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L2866-L2875
+    why: The user resolver's 403 "Non-admin users can only view their own spend data.", the denial the scope tests use.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/daily_activity_routes.py#L252-L258
+    why: The aggregated route passes user_aggregated=resolver.entity == "user"; every other route (L329, L372, L424, L471 and L533) passes False.
+dod:
+  - text: With user_aggregated false, date_range_error rejects missing dates, non-canonical dates, a reversed range and a range of more than 400 days with B815's messages, and accepts exactly 400 days.
+    proof: [date-tests]
+  - text: With user_aggregated true, date_range_error rejects only missing or non-canonical dates, and accepts a reversed range and a range of more than 400 days.
+    proof: [date-tests]
+  - text: resolved_scope answers a bad date with a 400 PublicError before the resolver runs, so a bad date from a non-admin asking for another user is a 400 and not a 403.
+    proof: [scope-tests]
+  - text: resolved_scope turns the user resolver's denial into a 403 PublicError with detail.error "Non-admin users can only view their own spend data." and returns an allowed caller's ResolvedScope unchanged.
+    proof: [scope-tests]
+  - text: The From conversion maps EntityScopeError::Denied through raise_public and keeps every other variant unchanged in DailyActivityScopeError::Resolver.
+    proof: [scope-tests]
+  - text: daily_activity_dependencies with no database handle fails with ProxyCheckError::Database carrying the CommonProxyErrors::DbNotConnectedError text, status 500 and detail {"error"} and builds no repository, and with a handle returns it with the factory's repository.
+    proof: [lookup-tests]
+  - text: KeyActivityRow and DailyActivityKeySearchResponse serialize with LiteLLM's field names and order, the 17 SpendMetrics fields under metrics, and null for every None metadata field.
+    proof: [wire-tests]
+checks:
+  optional: []
+  commands:
+    - id: date-tests
+      why: date_range_error picks the wrong check for the flag, retypes a message or lets a bad range through
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_common::tests::date_/)'
+    - id: scope-tests
+      why: resolved_scope checks dates after the resolver, maps a denial wrongly or flattens a resolver error that is not a denial
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_common::tests::scope_/)'
+    - id: lookup-tests
+      why: the missing database is not the 500 with LiteLLM's text, or a repository is built without a handle
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_common::tests::lookup_/)'
+    - id: wire-tests
+      why: the key search records serialize with other names, order or null handling than LiteLLM
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_common::tests::wire_/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "B3096 owns _key_metadata, _key_activity_row and _key_activity_rows (L119-L162), the key page, model leaders and cache leakage routes (L313-L353, L405-L452, L516-L557), and KeySpendMetrics, KeySpendActivityRow, DailyActivityKeyPageResponse, ModelTopKeysResponse and CacheLeakageKeysResponse (types file L133-L172)."
+  - "B3097 owns _sum_metrics, _fold_key_metrics, _search_rows and the aggregated and search routes (L97-L116, L187-L200, L240-L310, L356-L402); it is the only builder of the two key search records."
+  - "B3098 owns the export route and _export_filename, _content_disposition, _csv_cell, _csv_row and _stream_export_rows (L165-L184, L203-L237, L455-L513)."
+  - "B8482 owns register_daily_activity_routes and its loop over the six resolvers (L560-L579), the mount and the HTTP oracle cases."
+  - "B3094 and B3095 own Entity, EntityQuery, ResolvedScope, EntityScopeContext, EntityScopeError and resolve_entity_scope; B815 owns aggregated_date_range_error; B3090 owns SpendMetrics, KeyMetadata, InvalidDateRange, ScopeDenied, PublicFailure, PublicError and raise_public; B3092 owns daily_activity_repository; B8400 owns prisma_client_or_throw. This task calls them and changes none."
+  - "LiteLLM_DailyUserSpend (types file L175-L195) has no caller at the pin outside the types file, and GroupedData (L198-L201) belongs to B3091 or B3093."
+pitfalls:
+  - With user_aggregated true only the canonical parser runs, so /user/daily/activity/aggregated accepts a reversed range as well as a range over 400 days; a test that expects "end_date must be on or after start_date" there is wrong.
+  - Only the Denied variant goes through raise_public; turning Scopes or an owner variant into a 400 or 500 here would hide B815's team 403 and 404 and B058's "User is not org_admin for Organization= <id>." 403.
+  - The date check comes before resolve_entity_scope, so a caller who would be denied still gets the 400 for a bad date and the resolver never runs.
+  - KeyActivityRow.metrics is B3090's 17-field SpendMetrics, while B3096's KeySpendActivityRow.metrics is the 9-field KeySpendMetrics; the two rows look alike and must not share a metrics type.
+  - SpendMetrics serializes gateway_caching_savings as gateway_injected_caching_savings_spend, so the wire test compares JSON keys, not Rust field names.
+  - KeyMetadata writes None as null; a skip_serializing_if on either record or a custom serializer that drops nulls breaks LiteLLM's body.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,13 @@
+id: B10132
+milestone: M4 keys, spend and management
+title: Model reconcile lock handle
+status: done
+depends_on: [B003]
+file: tasks/B10132-model-reconcile-lock.yaml
+covers: []
+parent: B060
+split_from: B836
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 3332

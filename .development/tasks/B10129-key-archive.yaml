@@ -1,0 +1,85 @@
+id: B10129
+title: Deleted-key archive records
+description: >-
+  Before LiteLLM deletes or rotates a virtual key it copies the row into "LiteLLM_DeletedVerificationToken": _persist_deleted_verification_tokens turns each LiteLLM_VerificationToken into a deleted-token record and inserts the batch, on the caller's transaction when the caller passes one. Seven tasks call it: B777's /key/delete, B896's key regeneration, B1202's bulk team member removal, B794's bulk user delete, B1207's team member delete, B811's team delete and B789's session revocation and logout. They need nothing else from each other, so the archive is its own task and every one of them calls it instead of waiting for B777.
+
+
+  Layout. Module key_archive in betterlite-server, crates/betterlite-server/src/key_archive.rs, with submodules as you need (records for the transform, store for the insert) and a tests.rs beside each. The file is an empty stub that lib.rs already declares. The rows are B720's types in betterlite_db::identity_rows::key: LiteLLMVerificationToken goes in and DeletedVerificationToken comes out. The caller is B2330's CallerIdentity from crate::audit_events::identity, the value B784's key events already carry, so no caller converts a UserAPIKeyAuth here.
+
+
+  The transform. `transform_verification_tokens_to_deleted_records(keys: &[LiteLLMVerificationToken], caller: &CallerIdentity, litellm_changed_by: Option<&str>, clock: &dyn ArchiveClock) -> Vec<DeletedVerificationToken>`. An empty slice returns an empty Vec without reading the clock. Otherwise read the clock once, before the loop, and give every record of the batch that same deleted_at, in key order. Each record copies the token row and sets deleted_by to caller.user_id, deleted_by_api_key to caller.api_key and litellm_changed_by to the argument as given; it does not fall back to the user id the way B2330's get_audit_log_changed_by does. organization_id takes the row's org_id and org_id itself is cleared, since LiteLLM pops org_id and keeps the value under the new name only when it is not None. litellm_budget_table, object_permission and budget_limits are cleared too, as LiteLLM pops them with id and litellm_organization_table. id is a fresh uuid v4 string per record: Prisma's @default(uuid()) runs on the client, and the column has no database default. ArchiveClock is `pub trait ArchiveClock: Send + Sync { fn now(&self) -> DateTime<Utc>; }` with a SystemArchiveClock over Utc::now; tests pass a fake that counts its calls.
+
+
+  The insert. `save_deleted_verification_token_records<C: GenericClient + Sync>(db: &C, records: &[DeletedVerificationToken]) -> Result<(), KeyArchiveError>`, with deadpool_postgres::GenericClient as access_group_read's Postgres tables use it. An empty slice sends no statement. Otherwise send one multi-row INSERT INTO "LiteLLM_DeletedVerificationToken" with `$n` parameters that names the id column and every column the record has, and nothing else; policies is not in the token row and keeps its column default. The client decides the transaction. B1202, B794 and B1207 pass their own deadpool Transaction, so the archive commits or rolls back with their deletes; this function never begins, commits or rolls back anything. B777, B896, B811 and B789 pass a pooled Client from B700's PostgresStore::session, which is LiteLLM's tx=None branch, a write of its own. The eight JSON columns aliases, config, permissions, metadata, model_spend, model_max_budget, budget_fallbacks and router_settings are jsonb: bind each through tokio_postgres::types::Json over the row's own typed value (never serde_json::Value), and a None router_settings is NULL. LiteLLM json.dumps them and Prisma parses the text back, so the stored jsonb holds the same object. models, allowed_cache_controls, allowed_routes and access_group_ids are text[]. Timestamp columns are TIMESTAMP(3) without zone, so bind the UTC instant as a NaiveDateTime.
+
+
+  `persist_deleted_verification_tokens<C: GenericClient + Sync>(db: &C, keys: &[LiteLLMVerificationToken], caller: &CallerIdentity, litellm_changed_by: Option<&str>, clock: &dyn ArchiveClock) -> Result<(), KeyArchiveError>` is the transform and then the insert. KeyArchiveError wraps the driver error with B700's postgres_store::errors::backend and never puts a token, an api key or a column value in its text.
+
+
+  No oracle helper. LiteLLM's transform reads datetime.now itself and returns Python dicts holding json.dumps strings and datetime objects, so an adapter would mostly compare its own normalization. B777 keeps its HTTP case archive-fields.yaml, which reaches this code through /key/delete and compares the archived row against LiteLLM.
+
+
+  Tests. The transform tests use the counting clock: a batch of three reads the clock once and all three share deleted_at; an empty slice reads it zero times; deleted_by, deleted_by_api_key and litellm_changed_by come from the caller and the argument, None included; org_id moves to organization_id and a None org_id leaves organization_id None; the three relations are cleared; order follows the keys; ids differ. The insert tests run on real Postgres through betterlite_postgres_fixture's PostgresFixture (POSTGRES_TEST_URL when set, otherwise testcontainers; unavailable Postgres fails the test) and create the table from the pinned schema.prisma model in the test schema. Rows written through a pooled Client read back column by column, with jsonb objects, text[] arrays, millisecond timestamps and policies at its default; an empty slice leaves the table untouched; rows written on a Transaction that then rolls back leave nothing, and committed ones stay. Every Postgres test has postgres in its name and no transform test does, so the two checks below select them apart.
+scope:
+  paths:
+    - crates/betterlite-server/src/key_archive.rs
+    - crates/betterlite-server/src/key_archive/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5096-L5188
+    why: Owned. _transform_verification_tokens_to_deleted_records, _save_deleted_verification_token_records and _persist_deleted_verification_tokens.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/verification_token.py#L16-L79
+    why: LiteLLM_VerificationToken and LiteLLM_DeletedVerificationToken, the fields the record copies and adds.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/schema.prisma#L588-L651
+    why: Columns, types and defaults of the archive table, including the client-side uuid id and the policies default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20251219110931_add_deleted_keys_and_deleted_teams_tables/migration.sql#L36-L80
+    why: The table's SQL; id is TEXT NOT NULL with no default and the timestamps are TIMESTAMP(3).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5027-L5032
+    why: Call site in B777's delete_verification_tokens, without a transaction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5638-L5643
+    why: Call site in B896's key regeneration, without a transaction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L269-L276
+    why: Call site in B1202's team member removal, on its transaction with changed_by None.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L400-L407
+    why: Call site in B794's user batch delete, on its transaction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L3704-L3715
+    why: Call site in B1207's team member delete, on its transaction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L4429-L4435
+    why: Call site in B811's team delete, without a transaction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/session_endpoints.py#L89-L94
+    why: Call site in B789's session revocation; logout calls it again at L157-L161.
+dod:
+  - text: A nonempty batch reads the clock once and every record shares that deleted_at; an empty slice reads no clock and returns nothing.
+    proof: [transform-tests]
+  - text: Each record carries the caller's user_id and api_key, the given litellm_changed_by, a fresh id and the key's org_id as organization_id, with org_id and the three relations cleared, in key order.
+    proof: [transform-tests]
+  - text: Rows written through a pooled client read back with every column, jsonb objects, text[] arrays, millisecond timestamps and policies at its default, and an empty slice writes nothing.
+    proof: [postgres-tests]
+  - text: Rows written on a caller's transaction vanish when it rolls back and stay when it commits, so the function never commits on its own.
+    proof: [postgres-tests]
+checks:
+  optional: []
+  commands:
+    - id: transform-tests
+      why: The archive transform samples the clock per record or on empty input, drops an actor field, keeps org_id or keeps a relation.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^key_archive::/) - test(/postgres/)'
+    - id: postgres-tests
+      why: The archive insert misses a column, binds a JSON or array column wrong, or writes outside the caller's transaction.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^key_archive::.*postgres/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "delete_key_fn, can_modify_verification_token, delete_verification_tokens and delete_key_aliases: B777, which calls persist_deleted_verification_tokens before it deletes the authorized rows."
+  - "_execute_virtual_key_regeneration and the deprecated-key overlap: B896. Bulk team member removal: B1202. Bulk user delete: B794. Team member delete: B1207. Team delete: B811. Session revocation and logout: B789. Each reads its own rows and deletes them after this call."
+  - "LiteLLMVerificationToken and DeletedVerificationToken: B720, on main. CallerIdentity: B2330, on main. PostgresStore and the driver error helpers: B700, on main."
+  - "Reading archived rows back for /key/info: B778's _find_deleted_key_info. The deleted-key list queries: B897."
+  - "Every other function in key_management_endpoints.py: the owners B777's out_of_scope list names."
+pitfalls:
+  - "The id column is TEXT NOT NULL with no database default, because Prisma fills @default(uuid()) on the client; an INSERT that leaves id out fails on every row."
+  - "litellm_changed_by is stored as the caller passed it, None included; reusing B2330's changed-by policy here would write the user id where LiteLLM writes NULL."
+  - "deleted_by_api_key is the caller's hashed api_key from CallerIdentity, a SecretString; expose it only as the bound parameter, never in a log line or an error."
+  - "Taking a pooled client from PostgresStore inside the function would move B1202's, B794's and B1207's archive out of their transaction, so a later failed delete would leave archive rows LiteLLM rolls back."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
