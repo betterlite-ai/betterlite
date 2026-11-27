@@ -141,6 +141,9 @@ impl VectorStoreReadConfigs for Configs {
     }
 }
 
+// an optional list argument: absent, an explicit null and a value all mean something different
+type Maybe<T> = Option<Option<T>>;
+
 // the SDK's named arguments and kwargs, with every optional one at its declared default
 #[derive(Default)]
 pub(crate) struct Arguments {
@@ -152,9 +155,8 @@ pub(crate) struct Arguments {
     pub(crate) timeout: Option<f64>,
     pub(crate) after: Option<String>,
     pub(crate) before: Option<String>,
-    // absent, present and null, or a value
-    pub(crate) limit: Option<Option<i64>>,
-    pub(crate) order: Option<Option<String>>,
+    pub(crate) limit: Maybe<i64>,
+    pub(crate) order: Maybe<String>,
     pub(crate) kwargs: IndexMap<String, Json>,
 }
 
@@ -427,9 +429,6 @@ impl ReadProvider for Spy {
     }
 }
 
-pub(crate) fn supplied<'client, Client>(
-    kind: ClientKind,
-    transport: &'client Client,
-) -> SuppliedClient<'client, Client> {
+pub(crate) fn supplied<Client>(kind: ClientKind, transport: &Client) -> SuppliedClient<'_, Client> {
     SuppliedClient { kind, transport }
 }

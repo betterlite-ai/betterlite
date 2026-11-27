@@ -39,6 +39,11 @@ async fn list_defaults_and_cursors() {
             (String::from("order"), Json::Text(String::from("desc"))),
         ])
     );
+}
+
+#[tokio::test]
+async fn list_sends_every_cursor() {
+    // an empty after and a zero limit still travel
     let mut fixture = Fixture::new();
     fixture.arguments.after = Some(String::new());
     fixture.arguments.before = Some(String::from("vs_z"));
@@ -65,7 +70,14 @@ async fn list_defaults_and_cursors() {
             (String::from("order"), Json::Text(String::from("asc"))),
         ])
     );
+}
+
+#[tokio::test]
+async fn list_leaves_explicit_nulls_out() {
     // an explicit null leaves the query and stays a null in the log
+    let mut fixture = Fixture::new();
+    fixture.arguments.after = Some(String::new());
+    fixture.arguments.before = Some(String::from("vs_z"));
     fixture.arguments.limit = Some(None);
     fixture.arguments.order = Some(None);
     let spy = Spy::replying(listing());
@@ -81,8 +93,12 @@ async fn list_defaults_and_cursors() {
     );
     assert_eq!(seen.optional.get("limit"), Some(&Json::Null));
     assert_eq!(seen.optional.get("order"), Some(&Json::Null));
+}
+
+#[tokio::test]
+async fn list_forwards_an_unsupported_order() {
     // an unsupported order is forwarded without local validation, and an absent limit takes the default
-    fixture.arguments.limit = None;
+    let mut fixture = Fixture::new();
     fixture.arguments.order = Some(Some(String::from("sideways")));
     let spy = Spy::replying(listing());
     let seen = recorded(Which::List, &spy, &fixture, REQUEST_TIMEOUT).await;

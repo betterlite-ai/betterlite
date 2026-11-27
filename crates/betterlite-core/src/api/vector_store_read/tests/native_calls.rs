@@ -170,70 +170,63 @@ impl Native {
 impl ReadProvider for Native {
     type Client = Wire;
 
-    fn read(
-        &self,
-        call: &ReadCall<'_, Wire>,
-    ) -> impl Future<Output = Result<Json, CreateReadError>> + Send {
+    async fn read(&self, call: &ReadCall<'_, Wire>) -> Result<Json, CreateReadError> {
         self.captured
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(call.timeout);
-        async move {
-            let deps = CreateReadDeps {
-                config: &call.config,
-                source: &self.source,
-                supplied: call.client.map(|supplied| SuppliedClient {
-                    kind: supplied.kind,
-                    transport: supplied.transport,
-                }),
-            };
-            let target = CreateReadTarget {
-                params: call.params,
-                extra_headers: call.extra_headers,
-                timeout: Some(call.timeout),
-            };
-            let http_call = match call.operation {
-                Operation::Retrieve => CreateReadCall::Retrieve(RetrieveCall {
-                    target,
-                    vector_store_id: call
-                        .vector_store_id
-                        .expect("a retrieve read carries its vector store id"),
-                    extra_body: call.extra_body,
-                }),
-                Operation::List => CreateReadCall::List(ListCall {
-                    target,
-                    query: HttpListQuery {
-                        after: call.query.after,
-                        before: call.query.before,
-                        limit: call.query.limit,
-                        order: call.query.order,
-                    },
-                    extra_body: call.extra_body,
-                }),
-            };
-            let env = self.pre_post();
-            let prepared = {
-                let mut state = call.logging.lock().unwrap_or_else(PoisonError::into_inner);
-                prepare(
-                    &deps,
-                    call.mode,
-                    &http_call,
-                    &mut LogContext {
-                        state: &mut state,
-                        env: &env,
-                    },
-                )
-            };
-            send(prepared?).await
-        }
+        let deps = CreateReadDeps {
+            config: &call.config,
+            source: &self.source,
+            supplied: call.client.map(|supplied| SuppliedClient {
+                kind: supplied.kind,
+                transport: supplied.transport,
+            }),
+        };
+        let http_call = http_call_of(call);
+        let env = self.pre_post();
+        let prepared = {
+            let mut state = call.logging.lock().unwrap_or_else(PoisonError::into_inner);
+            prepare(
+                &deps,
+                call.mode,
+                &http_call,
+                &mut LogContext {
+                    state: &mut state,
+                    env: &env,
+                },
+            )
+        };
+        send(prepared?).await
     }
 }
 
-fn authorization(request: &WriteRequest) -> Option<&str> {
-    request
-        .headers
-        .get(AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
+// B2485's HTTP call for a read: retrieve's id, or list's four cursor fields over the same target
+fn http_call_of<'call>(call: &ReadCall<'call, Wire>) -> CreateReadCall<'call> {
+    let target = CreateReadTarget {
+        params: call.params,
+        extra_headers: call.extra_headers,
+        timeout: Some(call.timeout),
+    };
+    match call.operation {
+        Operation::Retrieve => CreateReadCall::Retrieve(RetrieveCall {
+            target,
+            vector_store_id: call
+                .vector_store_id
+                .expect("a retrieve read carries its vector store id"),
+            extra_body: call.extra_body,
+        }),
+        Operation::List => CreateReadCall::List(ListCall {
+            target,
+            query: HttpListQuery {
+                after: call.query.after,
+                before: call.query.before,
+                limit: call.query.limit,
+                order: call.query.order,
+            },
+            extra_body: call.extra_body,
+        }),
+    }
 }
 
 // null takes REQUEST_TIMEOUT's loaded value, zero falls back to it, and 3 keeps 3
@@ -288,7 +281,11 @@ async fn native_retrieve_request() {
     assert_eq!(requests[0].url.path(), "/v1/vector_stores/vs_a");
     assert_eq!(requests[0].url.query(), None);
     assert!(matches!(requests[0].body, RequestBody::Empty));
-    assert_eq!(authorization(&requests[0]), Some("Bearer sk-caller"));
+    let sent = requests[0]
+        .headers
+        .get(AUTHORIZATION)
+        .expect("the request carries an authorization header");
+    assert_eq!(sent.to_str().ok(), Some("Bearer sk-caller"));
 }
 
 #[tokio::test]
@@ -305,7 +302,10 @@ async fn native_list_request() {
     assert_eq!(requests[0].url.path(), "/v1/vector_stores");
     assert_eq!(requests[0].url.query(), Some("limit=20&order=desc"));
     assert!(matches!(requests[0].body, RequestBody::Empty));
+}
 
+#[tokio::test]
+async fn native_list_sends_every_cursor() {
     // every cursor travels, an empty after and a zero limit included
     let native = Native::new(Wire::replying(&listing()));
     let mut fixture = Fixture::new();
@@ -321,7 +321,10 @@ async fn native_list_request() {
         requests[0].url.query(),
         Some("after=&before=vs_z&limit=0&order=asc")
     );
+}
 
+#[tokio::test]
+async fn native_list_leaves_explicit_nulls_out() {
     // an explicit null omits both
     let native = Native::new(Wire::replying(&listing()));
     let mut fixture = Fixture::new();
@@ -330,11 +333,12 @@ async fn native_list_request() {
     call_with(Which::List, &native, &fixture, None, REQUEST_TIMEOUT)
         .await
         .expect("the list answers");
-    assert_eq!(native.requests()[0].url.query(), None);
+    let requests = native.requests();
+    assert_eq!(requests[0].url.query(), None);
 }
 
 #[tokio::test]
-async fn native_selects_the_matching_client() {
+async fn native_sync_read_uses_a_matching_client() {
     // a sync client in sync mode is used, so the source builds nothing
     let wire = Wire::replying(&record());
     let native = Native::new(wire.clone());
@@ -350,7 +354,10 @@ async fn native_selects_the_matching_client() {
     .expect("the read answers");
     assert!(native.source_calls().is_empty());
     assert_eq!(native.requests().len(), 1);
+}
 
+#[tokio::test]
+async fn native_async_read_builds_the_client() {
     // an async call skips a sync supplied client and builds the source's
     let wire = Wire::replying(&record());
     let native = Native::new(wire.clone());
@@ -365,7 +372,10 @@ async fn native_selects_the_matching_client() {
     .await
     .expect("the read answers");
     assert_eq!(native.source_calls(), vec![None]);
+}
 
+#[tokio::test]
+async fn native_async_read_uses_a_matching_client() {
     // the async supplied client is used as given
     let wire = Wire::replying(&record());
     let native = Native::new(wire.clone());

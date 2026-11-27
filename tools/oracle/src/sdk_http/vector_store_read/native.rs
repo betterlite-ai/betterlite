@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::future::Future;
 use std::sync::{Mutex, PoisonError};
 
 use betterlite_config::api::vector_store_read::loads_read_timeout;
@@ -97,8 +96,10 @@ async fn run_once(
         Operation::List => dispatch_list(&reads, run, transport.request(run)).await,
     };
     let failure = answer.as_ref().err().map(project);
-    let state = logging.lock().unwrap_or_else(PoisonError::into_inner);
-    let context = context_of(&state);
+    let context = {
+        let state = logging.lock().unwrap_or_else(PoisonError::into_inner);
+        context_of(&state)
+    };
     Ok(RunOutcome {
         operation: run.operation,
         mode: run.mode,
@@ -207,35 +208,30 @@ struct Native<'fixtures> {
 impl ReadProvider for Native<'_> {
     type Client = ProxiedClient;
 
-    fn read(
-        &self,
-        call: &ReadCall<'_, ProxiedClient>,
-    ) -> impl Future<Output = Result<Json, CreateReadError>> + Send {
-        async move {
-            let deps = CreateReadDeps {
-                config: &call.config,
-                source: self.source,
-                supplied: call.client.map(|supplied| SuppliedClient {
-                    kind: supplied.kind,
-                    transport: supplied.transport,
-                }),
-            };
-            let http_call = http_call_of(call)?;
-            let env = self.assets.env();
-            let prepared = {
-                let mut state = call.logging.lock().unwrap_or_else(PoisonError::into_inner);
-                prepare(
-                    &deps,
-                    call.mode,
-                    &http_call,
-                    &mut LogContext {
-                        state: &mut state,
-                        env: &env,
-                    },
-                )
-            };
-            send(prepared?).await
-        }
+    async fn read(&self, call: &ReadCall<'_, ProxiedClient>) -> Result<Json, CreateReadError> {
+        let deps = CreateReadDeps {
+            config: &call.config,
+            source: self.source,
+            supplied: call.client.map(|supplied| SuppliedClient {
+                kind: supplied.kind,
+                transport: supplied.transport,
+            }),
+        };
+        let http_call = http_call_of(call)?;
+        let env = self.assets.env();
+        let prepared = {
+            let mut state = call.logging.lock().unwrap_or_else(PoisonError::into_inner);
+            prepare(
+                &deps,
+                call.mode,
+                &http_call,
+                &mut LogContext {
+                    state: &mut state,
+                    env: &env,
+                },
+            )
+        };
+        send(prepared?).await
     }
 }
 
