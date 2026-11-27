@@ -39,9 +39,9 @@ pub fn validate_return_to(
     let Some(control_plane_url) = control_plane_url else {
         return Ok(false);
     };
-    let destination = origin(return_to)?;
-    let control_plane = origin(control_plane_url)?;
-    if destination == control_plane {
+    let requested = origin(return_to)?;
+    let configured = origin(control_plane_url)?;
+    if requested == configured {
         return Ok(true);
     }
     Err(ReturnToError::MismatchedOrigin)

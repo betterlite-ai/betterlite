@@ -75,9 +75,9 @@ async fn absolute_code_redirect() {
     .unwrap()
     .unwrap();
     assert_eq!(redirect.status, StatusCode::SEE_OTHER);
-    let writes = user.writes();
-    assert_eq!(writes.len(), 1);
-    let write = writes.first().expect("one login code is written");
+    let recorded = user.writes();
+    assert_eq!(recorded.len(), 1);
+    let stored = recorded.first().expect("one login code is written");
     let code = code_from_location(&redirect.location);
     assert_eq!(code.len(), 43);
     assert!(
@@ -86,10 +86,10 @@ async fn absolute_code_redirect() {
                 || character == '-'
                 || character == '_')
     );
-    assert_eq!(write.key, format!("login_code:{code}"));
-    assert_eq!(write.token, SESSION_TOKEN);
-    assert_eq!(write.redirect_url, "https://cp.example/console");
-    assert_eq!(write.ttl_seconds.to_bits(), 60.0_f64.to_bits());
+    assert_eq!(stored.key, format!("login_code:{code}"));
+    assert_eq!(stored.token, SESSION_TOKEN);
+    assert_eq!(stored.redirect_url, "https://cp.example/console");
+    assert_eq!(stored.ttl_seconds.to_bits(), 60.0_f64.to_bits());
     assert_eq!(
         redirect.location,
         format!("https://cp.example/console?login=success&code={code}")
