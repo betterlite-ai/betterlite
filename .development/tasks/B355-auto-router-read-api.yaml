@@ -16,6 +16,12 @@ description: 'Implement benchmark and per-key session read endpoints over B387 a
   Dashboard page query. The cost optimization page sends GET /auto_router/benchmarks with benchmarksWindow''s dates and optional api_key and user_id, and reads groups and totals even when no router rollup exists. benchmarksWindow extends an interval ending today to UTC today only when UTC today is past the local date (useAutoRouterBenchmarks.ts L6-L37). Send that concrete query through the booted proxy in tools/oracle/cases/ui/cost/benchmarks-window-query.yaml; B9743 freezes the boundary in its component test.'
 scope:
   paths:
+  - "tools/oracle/src/gateway.rs"
+  - "crates/betterlite-server/src/shadow_eval_results.rs"
+  - "crates/betterlite-server/src/routes.rs"
+  - "crates/betterlite-server/src/router_settings.rs"
+  - "crates/betterlite-server/src/cache_activity_routes.rs"
+  - "crates/betterlite-server/src/auth/route_match.rs"
   - crates/betterlite-server/src/auto_router_read_api.rs
   - crates/betterlite-server/src/auto_router_read_api/**
   - crates/betterlite-server/src/routes/auto_router_read_api.rs

@@ -15,7 +15,7 @@ description: >-
 
   5. TargetAgents for B4780 (targets.rs, `StoreTargets`): has_database is `shared.db` being Some; agent(agent_id) forwards to the store's agent method. With no store it answers Ok(None) and is never asked, since B4780 checks has_database first.
 
-  6. HumanSources for B4780 (humans.rs, `ServerHumanSources`): reload_admitted_key forwards to B4679's reload_admitted_key, reload_admitted_user to B4673's, admitted_subject_sources to B4671's and effective_contexts to B4672's build_effective_auth_contexts. Keep Some(empty set) and None of allowed_team_ids apart when forwarding.
+  6. HumanSources for B4780 (humans.rs, `ServerHumanSources`): reload_admitted_key forwards to B4679's reload_admitted_key, reload_admitted_user to B10126's AdmittedUserReload::reload_admitted_user, admitted_subject_sources to B4671's and effective_contexts to B10127's build_effective_auth_contexts (with B10070's UserLookup as the teams port and the same AdmittedUserReload as the human). A B10126 AdmittedUserError becomes AgentAccessError::Rejected with its status() and its Display as the detail. Keep Some(empty set) and None of allowed_team_ids apart when forwarding.
 
   7. A2aAgentLookup for B8100 (a2a_lookup.rs, `RegistryA2aLookup` over the registry): agent_by_name(name) is registry.get_agent_by_name(name) mapped to RegisteredA2aAgent with the agent's agent_card_params and litellm_params (an absent map becomes an empty object). The inference wiring passes it to B8100's function; this task only builds it.
 

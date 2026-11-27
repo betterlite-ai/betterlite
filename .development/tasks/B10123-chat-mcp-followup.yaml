@@ -1,0 +1,107 @@
+id: B10123
+title: Chat MCP follow-up messages
+description: >-
+  When the gateway has run a chat completion's MCP tool calls, acompletion_with_mcp builds the messages of the follow-up model call with LiteLLM_Proxy_MCP_Handler._create_follow_up_messages_for_chat (litellm_proxy_mcp_handler.py L975-L1017), from the streaming path at chat_completions_handler.py L459-L463 and the non-streaming path at L632-L636. Those paths are B957's chat loop, which uses nothing else of B951's Responses follow-up work, so this one conversion is its own task and B957 waits on it instead of on B951.
+
+
+  Code goes in betterlite-core, module api::chat_mcp_followup (crates/betterlite-core/src/api/chat_mcp_followup.rs), with its tests in chat_mcp_followup/tests.rs. The file is an empty stub that api.rs already declares.
+
+
+  create_follow_up_messages_for_chat(original_messages: &[Json], response: &ChatResponse, tool_results: &[McpToolResult]) -> Result<Vec<Json>, ChatFollowupError>. Json is betterlite_models::decisions::Json, ChatResponse is B004's betterlite_openai::chat::response::ChatResponse, McpToolResult is B10121's record in api::responses_mcp_results, and ChatFollowupError is a thiserror enum in this module's files. The messages come back in this order:
+
+
+  1. The original messages, each passed through B5366's message_utilities::validators::convert_list_message_to_dict, which drops null fields from a message; the caller's slice is left as it was, as LiteLLM's deepcopy leaves the caller's list. A ValidationError from it (a message that is not an object) returns as ChatFollowupError, since LiteLLM calls it outside its try and the error reaches the caller there too.
+
+  2. The first choice's assistant message, dumped as LiteLLM's Message.model_dump(exclude_none=True) dumps it: a null content, function_call or annotations is left out, and each tool call keeps id, type and function with arguments and name. LiteLLM then writes function.arguments="{}" into a dumped tool call whose function has no arguments key, but its Function model always stores a string (None becomes "") and B004's FunctionCall.arguments is a String, so the key is always there and an empty "" stays "".
+
+  3. One tool message per tool result, in the order given: {"role": "tool", "tool_call_id": ..., "name": ..., "content": result}. All four keys are written, and a null tool_call_id or name stays null, because LiteLLM writes this dict literally and never drops its nulls.
+
+
+  A response with no choices is LiteLLM's IndexError inside the try: log "Failed to convert assistant message for MCP flow" at error level with tracing (verbose_logger.exception), leave out only the assistant message and still return the original and tool messages. No other failure is caught.
+
+
+  Tests in tests.rs, under api::chat_mcp_followup::tests, each calling create_follow_up_messages_for_chat: follow_up_message_order (two original messages, one with a null field, an assistant reply with two tool calls, and two tool results, one with a null id and name), assistant_dump_drops_nulls (rstest: a null content, no tool calls, an empty arguments string, an annotations list), empty_choices_warning (captures the error line and checks the returned messages) and non_object_message_error.
+
+
+  Oracle. The helper operation is b10123 in the core_ops group. Its input is the original messages, a chat completion body and the tool results. The Python adapter builds ModelResponse(**body), calls the pinned function and returns the messages and the verbose_logger records it captured; the Rust adapter decodes ChatResponse and McpToolResult, calls this module and returns the same two lists. No route reaches this function on its own, so B957 and the chat route keep the HTTP cases.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/chat_mcp_followup.rs
+    - crates/betterlite-core/src/api/chat_mcp_followup/**
+    - tools/oracle/cases/helpers/chat-mcp-followup/**
+    - tools/oracle/fuzz/corpus/helper_case/chat-mcp-followup-*
+    - tools/oracle/helpers/b10123.py
+    - tools/oracle/helpers/b10123/**
+    - tools/oracle/src/helpers/core_ops/b10123.rs
+    - tools/oracle/src/helpers/core_ops/b10123/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L974-L1017
+    why: Owned. The deep-copied conversion, the first-choice dump inside the try, the arguments repair and the tool message literal.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/chat_completions_handler.py#L455-L465
+    why: B957's streaming call site, after the inner stream is drained.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/chat_completions_handler.py#L630-L638
+    why: B957's non-streaming call site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1183-L1210
+    why: Function, whose constructor turns None arguments into "" and a dict into JSON text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1390-L1485
+    why: Message, its fields and the ones its constructor deletes when they are None.
+dod:
+  - text: The original messages come first with null fields dropped and the caller's slice unchanged, then the dumped assistant message, then one role="tool" message per result with tool_call_id, name and content in result order.
+    proof: [case-follow-up-message-order, oracle, helper-python]
+  - text: The assistant dump leaves out null fields as Message.model_dump(exclude_none=True) does and keeps an empty arguments string as "".
+    proof: [case-assistant-dump-drops-nulls, oracle, helper-python]
+  - text: A response with no choices logs "Failed to convert assistant message for MCP flow" at error level and returns the original and tool messages without an assistant message.
+    proof: [case-empty-choices-warning, oracle, helper-python]
+  - text: A non-object original message returns ChatFollowupError instead of a message list.
+    proof: [case-non-object-message-error]
+  - text: The b10123 adapters compare the pinned function with this module on new cases, and every new seed replays through the shared helper case parser.
+    proof: [new-oracle-cases, oracle, helper-python, helper-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: case-follow-up-message-order
+      why: a message group is missing, reordered or keeps null fields of the original messages
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::chat_mcp_followup::tests::follow_up_message_order($|::)/)'
+    - id: case-assistant-dump-drops-nulls
+      why: the assistant message keeps null fields or rewrites an empty arguments string
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::chat_mcp_followup::tests::assistant_dump_drops_nulls($|::)/)'
+    - id: case-empty-choices-warning
+      why: a response without choices fails the call or loses the tool messages instead of logging and dropping the assistant message
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::chat_mcp_followup::tests::empty_choices_warning($|::)/)'
+    - id: case-non-object-message-error
+      why: a malformed original message is passed on instead of failing
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::chat_mcp_followup::tests::non_object_message_error($|::)/)'
+    - id: helper-python
+      why: the b10123 adapter is missing or fails the strict Python checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b10123.py tools/oracle/helpers/b10123)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: no new b10123 seed reaches the shared helper case parser
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/chat-mcp-followup-*")" &&
+        grep -lE 'b10123"?:' tools/oracle/fuzz/corpus/helper_case/chat-mcp-followup-* &&
+        cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-core-ops --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: new-oracle-cases
+      why: no new chat follow-up case was added on this branch
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/chat-mcp-followup)"
+oracle_cases:
+  - tools/oracle/cases/helpers/chat-mcp-followup/follow-up-message-order.yaml
+  - tools/oracle/cases/helpers/chat-mcp-followup/assistant-dump-drops-nulls.yaml
+  - tools/oracle/cases/helpers/chat-mcp-followup/empty-choices-warning.yaml
+deviations: []
+out_of_scope:
+  - "Running the chat tool calls, extracting them from the chat response and making the follow-up acompletion call: B950 and B957."
+  - "The Responses follow-up input built from a Responses response: B10124. The follow-up call plan, request params, MCP call events and output items: B951."
+  - "McpToolResult itself: B10121. convert_list_message_to_dict: B5366, already on main."
+  - "The other functions in litellm_proxy_mcp_handler.py: B948, B949, B950, B10122 and B951."
+pitfalls:
+  - "B004's AssistantMessage serializes for the client: it always writes content (null included) and provider_specific_fields and skips refusal, so serializing it as the dump keeps keys model_dump(exclude_none=True) drops; build the dumped object from the fields and let the oracle case with a null content and a refusal settle the keys."
+  - "Only choices[0] is read: a second choice is never added, even when it is the one that carries the tool calls."
+  - "The tool message content is the result text itself; a call that failed still sends its error text as content, so nothing here inspects or rewrites it."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -51,8 +51,10 @@ description: >-
   Direct inputs come from B171 (Direct helper oracle and URL path encoding), B932 (Responses create call), B947
   (Responses file search loop), B951 (Responses mcp followup), B954 (Responses mcp stream loop), B1087 (Api boundaries),
   B949 (Responses mcp discovery), B948 (Responses mcp selection), B905 (Responses parameters), B950 (Responses mcp
-  execute), B952 (Responses mcp events). These are callable/type/config owners, not provider-family umbrellas; the
-  external B500-B859 ids retain ownership on the provider and keys/data branches.
+  execute), B952 (Responses mcp events), B10121 (McpToolResult records), B10122 (should_auto_execute_tools and
+  extract_tool_calls_from_response, called at main.py L297 and L324) and B10124 (is_persistence_disabled and
+  create_follow_up_input, called at main.py L357-L364). These are callable/type/config owners, not provider-family
+  umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
