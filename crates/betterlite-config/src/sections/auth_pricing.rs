@@ -3,9 +3,13 @@ use rust_decimal::prelude::FromPrimitive as _;
 use serde::Deserialize;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
+use crate::raw::RawNumber;
+use crate::resolve::parse_float;
 use crate::sections::Section;
 
 mod tests;
+
+const BUDGET_PATH: &str = "litellm_settings.max_budget";
 
 #[derive(Debug, Default, Deserialize)]
 pub struct Raw {
@@ -25,14 +29,8 @@ struct RawGeneral {
 
 #[derive(Debug, Default, Deserialize)]
 struct RawLitellm {
-    #[serde(default)]
-    max_budget: Option<BudgetNumber>,
+    max_budget: Option<RawNumber>,
 }
-
-// Python reads this one with float(), so YAML .inf and .nan reach the check as the floats they are
-#[derive(Debug, Clone, Copy, Deserialize)]
-#[serde(transparent)]
-struct BudgetNumber(f64);
 
 // litellm.max_budget's four Python float classifications, kept apart because the budget check branches on finiteness
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -89,15 +87,29 @@ impl Section for Raw {
         L: EnvironmentLookup,
     {
         let general = self.general_settings;
+        let max_budget = match self.litellm_settings.max_budget {
+            Some(number) => budget(number)?,
+            None => MaxBudget::Finite(Decimal::ZERO),
+        };
         Ok(Settings {
             enforce_user_param: general.enforce_user_param.unwrap_or_default(),
             reject_clientside_tags: general.reject_clientside_tags.unwrap_or_default(),
-            max_budget: self
-                .litellm_settings
-                .max_budget
-                .map_or(MaxBudget::Finite(Decimal::ZERO), |number| {
-                    MaxBudget::from_f64(number.0)
-                }),
+            max_budget,
         })
+    }
+}
+
+// proxy_server.py reads this one with float(value): an int stays exact Decimal money, a bool counts as 0 or 1,
+// and text is whatever Python's float() reads, inf and nan included
+fn budget(number: RawNumber) -> Result<MaxBudget, ConfigError> {
+    match number {
+        RawNumber::Integer(integer) => Ok(MaxBudget::Finite(Decimal::from(integer))),
+        RawNumber::Float(float) => Ok(MaxBudget::from_f64(float)),
+        RawNumber::Boolean(flag) => Ok(MaxBudget::Finite(if flag {
+            Decimal::ONE
+        } else {
+            Decimal::ZERO
+        })),
+        RawNumber::Text(text) => parse_float(text.trim(), BUDGET_PATH).map(MaxBudget::from_f64),
     }
 }

@@ -55,26 +55,54 @@ fn reject_tags_loaded(#[case] written: &str, #[case] expected: bool) {
 #[case::float("2.5", MaxBudget::Finite(Decimal::new(25, 1)))]
 #[case::zero("0", MaxBudget::Finite(Decimal::ZERO))]
 #[case::negative("-1", MaxBudget::Finite(Decimal::from(-1_i64)))]
-#[case::infinity(".inf", MaxBudget::PositiveInfinity)]
-#[case::signed_infinity("+.inf", MaxBudget::PositiveInfinity)]
-#[case::negative_infinity("-.inf", MaxBudget::NegativeInfinity)]
-#[case::nan(".nan", MaxBudget::Nan)]
+#[case::numeric_text("\"5\"", MaxBudget::Finite(Decimal::from(5_i64)))]
+#[case::source_true("true", MaxBudget::Finite(Decimal::ONE))]
+#[case::source_false("false", MaxBudget::Finite(Decimal::ZERO))]
+#[case::infinity("\"inf\"", MaxBudget::PositiveInfinity)]
+#[case::signed_infinity("\"+inf\"", MaxBudget::PositiveInfinity)]
+#[case::negative_infinity("\"-inf\"", MaxBudget::NegativeInfinity)]
+#[case::python_spelling("\"Infinity\"", MaxBudget::PositiveInfinity)]
+#[case::nan("\"nan\"", MaxBudget::Nan)]
 fn proxy_budget_loaded(#[case] written: &str, #[case] expected: MaxBudget) {
     let source = format!("litellm_settings:\n  max_budget: {written}\n");
     assert_eq!(load(&source).unwrap().max_budget, expected);
+}
+
+// a non-finite float never reaches the section, quoted or not: the YAML layer refuses it for every config key
+#[rstest]
+#[case::infinity(".inf")]
+#[case::signed_infinity("+.inf")]
+#[case::negative_infinity("-.inf")]
+#[case::nan(".nan")]
+#[case::overflow("1e999")]
+#[case::quoted_overflow("\"1e999\"")]
+fn nonfinite_yaml_budget_rejected(#[case] written: &str) {
+    let source = format!("litellm_settings:\n  max_budget: {written}\n");
+    assert!(matches!(
+        load(&source).unwrap_err(),
+        ConfigError::Yaml { .. }
+    ));
 }
 
 #[rstest]
 #[case::enforce_text("general_settings:\n  enforce_user_param: enabled\n")]
 #[case::enforce_number("general_settings:\n  enforce_user_param: 1\n")]
 #[case::tags_text("general_settings:\n  reject_clientside_metadata_tags: enabled\n")]
-#[case::budget_text("litellm_settings:\n  max_budget: \"5\"\n")]
-#[case::budget_bool("litellm_settings:\n  max_budget: true\n")]
-#[case::budget_overflow("litellm_settings:\n  max_budget: 1e999\n")]
+#[case::budget_list("litellm_settings:\n  max_budget: [1]\n")]
 fn invalid_scalar_rejected(#[case] source: &str) {
     assert!(matches!(
         load(source).unwrap_err(),
         ConfigError::Yaml { .. }
+    ));
+}
+
+// text Python's float() cannot read is an invalid value that names the setting
+#[test]
+fn budget_text_names_the_field() {
+    let error = load("litellm_settings:\n  max_budget: soon\n").unwrap_err();
+    assert!(matches!(
+        error,
+        ConfigError::InvalidFloat { ref path, .. } if path == "litellm_settings.max_budget"
     ));
 }
 
