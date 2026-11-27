@@ -1,0 +1,76 @@
+kind: helper
+name: polly-speech-dispatch-region
+call:
+  polly_speech:
+    calls:
+    - function: dispatch
+      optional_params: {aws_region_name: us-east-2}
+      litellm_params: {}
+      environment: {AWS_REGION: cn-north-1}
+      kwargs_region: eu-west-1
+    - function: dispatch
+      optional_params: {aws_region_name: us-east-2}
+      litellm_params: {}
+      environment: {AWS_REGION: cn-north-1}
+      kwargs_region: null
+    - function: dispatch
+      optional_params: {aws_region_name: us-east-2}
+      litellm_params: {}
+      environment: {}
+      kwargs_region: ""
+    - function: dispatch
+      optional_params: {}
+      litellm_params: {}
+      environment: {AWS_REGION: eu-central-1, AWS_REGION_NAME: ap-south-1}
+    - function: dispatch
+      optional_params: {}
+      litellm_params: {}
+      environment: {AWS_REGION_NAME: ap-south-1}
+    - function: dispatch
+      optional_params: {}
+      litellm_params: {}
+      environment: {}
+    - function: dispatch
+      optional_params: {aws_region_name: null}
+      litellm_params: {}
+      environment: {AWS_REGION: eu-central-1}
+    - function: dispatch
+      optional_params: {}
+      litellm_params: {}
+      environment: {AWS_REGION: US-EAST-1}
+    - function: dispatch
+      optional_params: {}
+      litellm_params: {}
+      environment: {}
+      kwargs_region: US-EAST-1
+    - function: dispatch
+      optional_params: {aws_region_name: US-EAST-1}
+      litellm_params: {}
+      environment: {}
+    - function: dispatch
+      optional_params: {}
+      litellm_params: {aws_region_name: old, api_base: old, api_key: old, aws_access_key_id: AKIDEXAMPLE}
+      environment: {}
+      api_base: https://proxy.test
+      api_key: proxy-key
+    - function: dispatch
+      optional_params: {}
+      litellm_params: {}
+      environment: {}
+    - function: dispatch
+      optional_params: {}
+      litellm_params: {}
+      environment: {}
+      voice: {name: Matthew}
+    - function: dispatch
+      optional_params: {}
+      litellm_params: {}
+      environment: {}
+      voice: Joanna
+    - function: dispatch
+      optional_params: {}
+      litellm_params: {}
+      environment: {}
+      voice: null
+compare: {ignore: []}
+env: {}

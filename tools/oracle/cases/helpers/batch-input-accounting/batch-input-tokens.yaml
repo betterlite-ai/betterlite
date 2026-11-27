@@ -1,0 +1,42 @@
+kind: helper
+name: batch-input-accounting-batch-input-tokens
+call:
+  batch_input_accounting:
+    file_id: file-chat
+    content:
+      contents: |-
+        {"body": {"model": "gpt-4o", "messages": [{"role": "user", "content": "hello"}]}}
+        {"body": {"model": "gpt-4o", "prompt": "a prompt"}}
+    tokens: [11, 7]
+calls:
+  - batch_input_accounting:
+      file_id: file-prompt-list
+      content:
+        contents: |-
+          {"body": {"model": "gpt-4o", "prompt": ["alpha", 12, "beta"]}}
+      tokens: [3, 5]
+  - batch_input_accounting:
+      file_id: file-input-nested
+      content:
+        contents: |-
+          {"body": {"model": "gpt-4o", "input": [["a", 1], "b"]}}
+      tokens: [2, 4]
+  - batch_input_accounting:
+      file_id: file-empty-prompt
+      content:
+        contents: |-
+          {"body": {"model": "gpt-4o", "prompt": ""}}
+  - batch_input_accounting:
+      file_id: file-no-model
+      content:
+        contents: |-
+          {"body": {"prompt": "unattributed"}}
+      tokens: [6]
+  - batch_input_accounting:
+      file_id: file-counter-fails
+      content:
+        contents: |-
+          {"body": {"model": "gpt-4o", "messages": [{"role": "user", "content": "hello"}]}}
+      tokens: [null]
+env: {}
+compare: {ignore: []}
