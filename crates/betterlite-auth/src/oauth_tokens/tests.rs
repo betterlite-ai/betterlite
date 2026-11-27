@@ -134,9 +134,11 @@ async fn token_info_bearer_get() {
 async fn empty_secret_public_client() {
     let configured = settings(Some(ENDPOINT), Some("client"), Some(""));
     let transport = Scripted::answering(200, r#"{"sub":"user-3"}"#);
-    check_oauth2_token(&configured, &transport, &token())
-        .await
-        .expect("the token validates");
+    drop(
+        check_oauth2_token(&configured, &transport, &token())
+            .await
+            .expect("the token validates"),
+    );
     let request = transport.take();
     assert_eq!(request.method, Method::POST);
     assert!(request.headers.get(AUTHORIZATION).is_none());
@@ -153,13 +155,58 @@ async fn empty_secret_public_client() {
 async fn empty_client_sends_token() {
     let configured = settings(Some(ENDPOINT), Some(""), Some("secret"));
     let transport = Scripted::answering(200, r#"{"sub":"user-3"}"#);
-    check_oauth2_token(&configured, &transport, &token())
-        .await
-        .expect("the token validates");
+    drop(
+        check_oauth2_token(&configured, &transport, &token())
+            .await
+            .expect("the token validates"),
+    );
     let request = transport.take();
     assert_eq!(request.method, Method::POST);
     assert!(request.headers.get(AUTHORIZATION).is_none());
     assert_eq!(request.form, vec![("token".to_owned(), TOKEN.to_owned())]);
+}
+
+#[tokio::test]
+async fn transport_posts_form_and_gets_without_body() {
+    let idp = support::serve_idp(200, INTROSPECTION_BODY).await;
+    let endpoint = format!("{}/introspect", idp.base);
+    let configured = settings(Some(endpoint.as_str()), Some("client"), Some(CLIENT_SECRET));
+    let transport = support::client();
+    let auth = check_oauth2_token(&configured, &transport, &token())
+        .await
+        .expect("the loopback provider validates the token");
+    assert_eq!(auth.view.token.user_id.as_deref(), Some("user-1"));
+    let posted = idp.take();
+    assert_eq!(posted.len(), 1, "the check sends one introspection request");
+    assert_eq!(posted[0].method, "POST");
+    assert_eq!(posted[0].target, "/introspect");
+    assert_eq!(
+        posted[0].content_type.as_deref(),
+        Some("application/x-www-form-urlencoded")
+    );
+    assert_eq!(posted[0].body, format!("token={TOKEN}"));
+    let credentials = STANDARD.encode(format!("client:{CLIENT_SECRET}"));
+    assert_eq!(
+        posted[0].authorization.as_deref(),
+        Some(format!("Basic {credentials}").as_str())
+    );
+    let userinfo = format!("{}/userinfo", idp.base);
+    let configured = settings(Some(userinfo.as_str()), None, None);
+    drop(
+        check_oauth2_token(&configured, &transport, &token())
+            .await
+            .expect("the loopback provider answers the token info request"),
+    );
+    let fetched = idp.take();
+    assert_eq!(fetched.len(), 1, "the check sends one token info request");
+    assert_eq!(fetched[0].method, "GET");
+    assert_eq!(fetched[0].target, "/userinfo");
+    assert_eq!(fetched[0].content_type, None);
+    assert_eq!(
+        fetched[0].authorization.as_deref(),
+        Some(format!("Bearer {TOKEN}").as_str())
+    );
+    assert!(fetched[0].body.is_empty());
 }
 
 #[tokio::test]
@@ -187,14 +234,18 @@ async fn inactive_token() {
         r#"{"active":true,"sub":"user-1"}"#,
         r#"{"active":1,"sub":"user-1"}"#,
         r#"{"active":-2,"sub":"user-1"}"#,
+        r#"{"active":18446744073709551615,"sub":"user-1"}"#,
+        r#"{"active":0.5,"sub":"user-1"}"#,
         r#"{"active":"yes","sub":"user-1"}"#,
         r#"{"active":[0],"sub":"user-1"}"#,
         r#"{"active":{"a":0},"sub":"user-1"}"#,
     ] {
         let transport = Scripted::answering(200, body);
-        check_oauth2_token(&configured, &transport, &token())
-            .await
-            .expect("an active token validates");
+        drop(
+            check_oauth2_token(&configured, &transport, &token())
+                .await
+                .expect("an active token validates"),
+        );
     }
 }
 
@@ -370,6 +421,9 @@ async fn oauth_body_limits() {
         decode_oauth_response(oversized.as_bytes()),
         Err(DecodeError::TooLarge { .. })
     ));
+    let exact = format!("\"{}\"", "a".repeat(MAX_OAUTH_RESPONSE_BYTES - 2));
+    assert_eq!(exact.len(), MAX_OAUTH_RESPONSE_BYTES);
+    drop(decode_oauth_response(exact.as_bytes()).expect("the exact limit is accepted"));
     let boundary = format!(
         "{}{}",
         "[".repeat(MAX_OAUTH_RESPONSE_DEPTH),
@@ -403,9 +457,11 @@ async fn oauth_secrets_redacted() {
     let guard = capture(&logs);
     let configured = settings(Some(ENDPOINT), Some("client"), Some(CLIENT_SECRET));
     let transport = Scripted::answering(200, r#"{"sub":"hidden-user"}"#);
-    check_oauth2_token(&configured, &transport, &token())
-        .await
-        .expect("the token validates");
+    drop(
+        check_oauth2_token(&configured, &transport, &token())
+            .await
+            .expect("the token validates"),
+    );
     drop(guard);
     let lines = events(&logs);
     assert!(

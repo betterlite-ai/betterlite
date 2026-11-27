@@ -1,11 +1,19 @@
 use std::collections::BTreeMap;
 use std::fmt::Debug;
+use std::io;
+use std::str::from_utf8;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
+use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::sections::oauth_tokens::Settings;
+use betterlite_config::types::ProxyTrust;
+use betterlite_http::proxy::ProxiedClient;
 use http::header::{HeaderMap, HeaderName, HeaderValue};
 use secrecy::SecretString;
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+use tokio::net::{TcpListener, TcpStream};
+use tokio::task::JoinSet;
 use tracing::field::{Field, Visit};
 use tracing::subscriber::{self, DefaultGuard};
 use tracing_subscriber::layer::{Context, SubscriberExt as _};
@@ -141,6 +149,128 @@ pub(super) fn trusted(range: &str) -> TrustedNetworkSettings {
         trusted_proxy_ranges: Some(CidrRanges::List(vec![range.to_owned()])),
         ..TrustedNetworkSettings::default()
     }
+}
+
+pub(super) fn client() -> ProxiedClient {
+    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new())
+        .expect("the proxy policy resolves");
+    ProxiedClient::outbound(&Arc::new(policy)).expect("the outbound client builds")
+}
+
+pub(super) struct Seen {
+    pub(super) method: String,
+    pub(super) target: String,
+    pub(super) content_type: Option<String>,
+    pub(super) authorization: Option<String>,
+    pub(super) body: String,
+}
+
+pub(super) struct Idp {
+    pub(super) base: String,
+    seen: Arc<Mutex<Vec<Seen>>>,
+    tasks: JoinSet<()>,
+}
+
+impl Idp {
+    pub(super) fn take(&self) -> Vec<Seen> {
+        std::mem::take(&mut *self.seen.lock().unwrap_or_else(PoisonError::into_inner))
+    }
+}
+
+impl Drop for Idp {
+    fn drop(&mut self) {
+        self.tasks.abort_all();
+    }
+}
+
+// a loopback identity provider the production ProxiedClient transport reaches over TCP
+pub(super) async fn serve_idp(status: u16, body: &str) -> Idp {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("the identity provider binds");
+    let address = listener
+        .local_addr()
+        .expect("the identity provider address is known");
+    let seen: Arc<Mutex<Vec<Seen>>> = Arc::new(Mutex::new(Vec::new()));
+    let recorded = Arc::clone(&seen);
+    let reply = body.to_owned();
+    let mut tasks = JoinSet::new();
+    tasks.spawn(accept(listener, status, reply, recorded));
+    Idp {
+        base: format!("http://{address}"),
+        seen,
+        tasks,
+    }
+}
+
+async fn accept(listener: TcpListener, status: u16, body: String, seen: Arc<Mutex<Vec<Seen>>>) {
+    loop {
+        let Ok((mut stream, _peer)) = listener.accept().await else {
+            return;
+        };
+        let Ok(request) = read_request(&mut stream).await else {
+            continue;
+        };
+        seen.lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(request);
+        let response = format!(
+            "HTTP/1.1 {status} OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        if stream.write_all(response.as_bytes()).await.is_ok() {
+            drop(stream.flush().await);
+        }
+    }
+}
+
+async fn read_request(stream: &mut TcpStream) -> io::Result<Seen> {
+    let mut buffer = Vec::new();
+    let head_end = loop {
+        if let Some(position) = buffer.windows(4).position(|window| window == b"\r\n\r\n") {
+            break position.saturating_add(4);
+        }
+        if stream.read(&mut buffer).await? == 0 {
+            return Err(io::Error::from(io::ErrorKind::UnexpectedEof));
+        }
+    };
+    let head = from_utf8(&buffer[..head_end])
+        .map_err(|_error| io::Error::from(io::ErrorKind::InvalidData))?;
+    let mut lines = head.split("\r\n");
+    let mut request_line = lines.next().unwrap_or_default().split(' ');
+    let method = request_line.next().unwrap_or_default().to_owned();
+    let target = request_line.next().unwrap_or_default().to_owned();
+    let mut length = 0_usize;
+    let mut content_type = None;
+    let mut authorization = None;
+    for line in lines {
+        let Some((name, value)) = line.split_once(':') else {
+            continue;
+        };
+        let value = value.trim();
+        match name.trim().to_ascii_lowercase().as_str() {
+            "content-length" => length = value.parse().unwrap_or_default(),
+            "content-type" => content_type = Some(value.to_owned()),
+            "authorization" => authorization = Some(value.to_owned()),
+            _ => {}
+        }
+    }
+    let end = head_end.saturating_add(length);
+    while buffer.len() < end {
+        if stream.read(&mut buffer).await? == 0 {
+            break;
+        }
+    }
+    let body = from_utf8(&buffer[head_end..end.min(buffer.len())])
+        .unwrap_or_default()
+        .to_owned();
+    Ok(Seen {
+        method,
+        target,
+        content_type,
+        authorization,
+        body,
+    })
 }
 
 #[derive(Clone, Default)]

@@ -37,6 +37,26 @@ general_settings:
     .expect("the test config loads")
 }
 
+fn introspection_config(endpoint: &str) -> Config {
+    let lookup = BTreeMap::from([
+        ("OAUTH_CLIENT_ID".to_owned(), "betterlite-client".to_owned()),
+        (
+            "OAUTH_CLIENT_SECRET".to_owned(),
+            "betterlite-secret".to_owned(),
+        ),
+        ("OAUTH_TOKEN_INFO_ENDPOINT".to_owned(), endpoint.to_owned()),
+    ]);
+    ConfigLoader { lookup }
+        .load(
+            "\
+general_settings:
+  master_key: secret-master-key
+  enable_oauth2_auth: true
+",
+        )
+        .expect("the introspection config loads")
+}
+
 // the real B732 router constructor, with this production stage inside its auth middleware
 fn application(config: &Config) -> Router {
     routes::router(
@@ -98,6 +118,32 @@ async fn stage_is_registered() {
         .expect("the response body is readable");
     assert_eq!(body.as_ref(), b"oauth-user");
     assert!(reached.load(Ordering::Acquire));
+}
+
+#[tokio::test]
+async fn introspection_failure_stops_downstream() {
+    let config = introspection_config("not-a-url");
+    let reached = Arc::new(AtomicBool::new(false));
+    let request = request_from(
+        peer([127, 0, 0, 1]),
+        &[("authorization", "Bearer opaque-token")],
+        &reached,
+    );
+    let response = application(&config)
+        .oneshot(request)
+        .await
+        .expect("the request reaches the router");
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("the response body is readable");
+    let text = String::from_utf8(body.to_vec()).expect("the response body is UTF-8");
+    assert!(text.contains("\"type\":\"auth_error\""), "{text}");
+    assert!(
+        text.contains("the OAuth token info endpoint is not a URL"),
+        "{text}"
+    );
+    assert!(!reached.load(Ordering::Acquire));
 }
 
 #[tokio::test]
