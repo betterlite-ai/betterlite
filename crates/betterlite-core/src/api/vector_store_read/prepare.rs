@@ -10,7 +10,9 @@ use serde_json::Number;
 use super::DEFAULT_PROVIDER;
 use super::error::{VectorStoreReadError, VectorStoreReadFailure, failure};
 use super::service::{LIST_FLAG, ListQuery, Operation, RETRIEVE_FLAG, ReadConfig};
-use super::{TransportRequest, VectorStoreReadDeps};
+use super::{
+    Content, TransportRequest, VectorStoreListRequest, VectorStoreReadDeps, VectorStoreReadRequest,
+};
 use crate::api::vector_store_search::provider::resolve_provider;
 
 pub(crate) struct Target<'deps> {
@@ -61,28 +63,43 @@ pub(crate) fn call_timeout(
         .map_err(|source| VectorStoreReadError::Timeout { seconds, source })
 }
 
-// retrieve's pre-call logging: the id alone goes into optional_params
-pub(crate) fn log_retrieve<Client>(
+// retrieve's pre-call logging: the id alone goes into optional_params, and the read needs nothing more
+pub(crate) fn retrieve_options<'request, Client>(
     deps: &VectorStoreReadDeps<'_, Client>,
-    kwargs: &IndexMap<String, Json>,
-    vector_store_id: &str,
+    request: &'request VectorStoreReadRequest<'request>,
     provider: &str,
-) -> Result<(), VectorStoreReadFailure> {
+) -> Result<Content<'request>, VectorStoreReadFailure> {
     let optional_params = IndexMap::from([(
         String::from("vector_store_id"),
-        Json::Text(vector_store_id.to_owned()),
+        Json::Text(request.vector_store_id.to_owned()),
     )]);
-    log_call(deps, kwargs, RETRIEVE_FLAG, optional_params, provider)
-        .map_err(|error| failure(error, provider, deps.redactor))
+    log_call(
+        deps,
+        request.transport.kwargs,
+        RETRIEVE_FLAG,
+        optional_params,
+        provider,
+    )
+    .map_err(|error| failure(error, provider, deps.redactor))?;
+    Ok(Content {
+        vector_store_id: Some(request.vector_store_id),
+        query: ListQuery::default(),
+    })
 }
 
 // list's pre-call logging: all four arguments, each present even when it is null
-pub(crate) fn log_list<Client>(
+pub(crate) fn list_options<'request, Client>(
     deps: &VectorStoreReadDeps<'_, Client>,
-    kwargs: &IndexMap<String, Json>,
-    query: ListQuery<'_>,
+    request: &'request VectorStoreListRequest<'request>,
     provider: &str,
-) -> Result<(), VectorStoreReadFailure> {
+) -> Result<Content<'request>, VectorStoreReadFailure> {
+    // the signature's defaults: an absent limit and order become 20 and desc, while an explicit null stays absent
+    let query = ListQuery {
+        after: request.after,
+        before: request.before,
+        limit: request.limit.unwrap_or(Some(20)),
+        order: request.order.unwrap_or(Some("desc")),
+    };
     let optional_params = IndexMap::from([
         (
             String::from("after"),
@@ -109,8 +126,18 @@ pub(crate) fn log_list<Client>(
                 .map_or(Json::Null, |order| Json::Text(order.to_owned())),
         ),
     ]);
-    log_call(deps, kwargs, LIST_FLAG, optional_params, provider)
-        .map_err(|error| failure(error, provider, deps.redactor))
+    log_call(
+        deps,
+        request.transport.kwargs,
+        LIST_FLAG,
+        optional_params,
+        provider,
+    )
+    .map_err(|error| failure(error, provider, deps.redactor))?;
+    Ok(Content {
+        vector_store_id: None,
+        query,
+    })
 }
 
 // the async flag is popped before LiteLLM logs, so it is read and then kept out of the forwarded kwargs

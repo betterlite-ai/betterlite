@@ -12,10 +12,13 @@ use betterlite_redact::secret::Redactor;
 use indexmap::IndexMap;
 
 use self::error::{VectorStoreReadError, VectorStoreReadFailure, failure};
-use self::prepare::{Target, call_timeout, log_list, log_retrieve};
-use self::service::{ListQuery, Operation, ReadCall, ReadProvider, VectorStoreReadConfigs, mode};
+use self::prepare::{call_timeout, list_options, retrieve_options};
+use self::service::{
+    LIST_FLAG, ListQuery, Operation, RETRIEVE_FLAG, ReadCall, ReadProvider, VectorStoreReadConfigs,
+    mode,
+};
 use crate::api::vector_store_http_write::config::WriteParams;
-use crate::api::vector_store_http_write::service::{ClientKind, SuppliedClient};
+use crate::api::vector_store_http_write::service::SuppliedClient;
 
 pub(crate) const DEFAULT_PROVIDER: &str = "openai";
 
@@ -45,12 +48,14 @@ pub struct TransportRequest<'request> {
 }
 
 // retrieve's one named argument and the shared transport
+#[derive(Clone, Copy)]
 pub struct VectorStoreReadRequest<'request> {
     pub transport: TransportRequest<'request>,
     pub vector_store_id: &'request str,
 }
 
 // list's four declared arguments: an absent one takes the signature's default and an explicit null is left out
+#[derive(Clone, Copy)]
 pub struct VectorStoreListRequest<'request> {
     pub transport: TransportRequest<'request>,
     pub after: Option<&'request str>,
@@ -65,9 +70,9 @@ pub struct VectorStoreReads<'service, Provider: ReadProvider> {
     pub deps: VectorStoreReadDeps<'service, Provider::Client>,
 }
 
-// what one read passes on: retrieve's id, or list's four arguments
-#[derive(Clone, Copy, Default)]
-struct Content<'call> {
+// what one read adds to the shared target: retrieve's id, or list's four arguments with their defaults applied
+#[derive(Clone, Copy)]
+pub(crate) struct Content<'call> {
     vector_store_id: Option<&'call str>,
     query: ListQuery<'call>,
 }
@@ -75,82 +80,50 @@ struct Content<'call> {
 impl<Provider: ReadProvider> VectorStoreReads<'_, Provider> {
     // retrieve: the sync handler unless the caller's kwargs carry a boolean aretrieve
     pub async fn retrieve(&self, request: &VectorStoreReadRequest<'_>) -> ReadResult {
-        let selected = mode(Operation::Retrieve, request.transport.kwargs);
-        self.retrieve_with(request, selected).await
+        let target = prepare::target(Operation::Retrieve, &request.transport, &self.deps)?;
+        let content = retrieve_options(&self.deps, request, &target.name)?;
+        self.send(target, request.transport, content).await
     }
 
     // aretrieve sets the flag itself, as LiteLLM does before calling retrieve, so the async handler always runs
     pub async fn aretrieve(&self, request: &VectorStoreReadRequest<'_>) -> ReadResult {
-        self.retrieve_with(request, ClientKind::Asynchronous).await
+        let mut kwargs = request.transport.kwargs.clone();
+        kwargs.insert(String::from(RETRIEVE_FLAG), Json::Bool(true));
+        let mut flagged: VectorStoreReadRequest<'_> = *request;
+        flagged.transport.kwargs = &kwargs;
+        self.retrieve(&flagged).await
     }
 
-    async fn retrieve_with(
-        &self,
-        request: &VectorStoreReadRequest<'_>,
-        selected: ClientKind,
-    ) -> ReadResult {
-        let target = prepare::target(Operation::Retrieve, &request.transport, &self.deps)?;
-        log_retrieve(
-            &self.deps,
-            request.transport.kwargs,
-            request.vector_store_id,
-            &target.name,
-        )?;
-        let content = Content {
-            vector_store_id: Some(request.vector_store_id),
-            query: ListQuery::default(),
-        };
-        self.send(target, &request.transport, selected, content)
-            .await
-    }
-
-    // list: the four defaults are the signature's own, so an absent argument becomes 20 and desc
+    // list: the sync handler unless the caller's kwargs carry a boolean alist
     pub async fn list(&self, request: &VectorStoreListRequest<'_>) -> ReadResult {
-        let selected = mode(Operation::List, request.transport.kwargs);
-        self.list_with(request, selected).await
+        let target = prepare::target(Operation::List, &request.transport, &self.deps)?;
+        let content = list_options(&self.deps, request, &target.name)?;
+        self.send(target, request.transport, content).await
     }
 
     // alist sets the flag itself, as LiteLLM does before calling list, so the async handler always runs
     pub async fn alist(&self, request: &VectorStoreListRequest<'_>) -> ReadResult {
-        self.list_with(request, ClientKind::Asynchronous).await
+        let mut kwargs = request.transport.kwargs.clone();
+        kwargs.insert(String::from(LIST_FLAG), Json::Bool(true));
+        let mut flagged: VectorStoreListRequest<'_> = *request;
+        flagged.transport.kwargs = &kwargs;
+        self.list(&flagged).await
     }
 
-    async fn list_with(
-        &self,
-        request: &VectorStoreListRequest<'_>,
-        selected: ClientKind,
-    ) -> ReadResult {
-        let target = prepare::target(Operation::List, &request.transport, &self.deps)?;
-        let query = effective_query(request);
-        log_list(&self.deps, request.transport.kwargs, query, &target.name)?;
-        let content = Content {
-            vector_store_id: None,
-            query,
-        };
-        self.send(target, &request.transport, selected, content)
-            .await
-    }
-
+    // the provider's read service sends it: the target names where, the kwargs' flag picks the handler
     async fn send(
         &self,
-        target: Target<'_>,
-        transport: &TransportRequest<'_>,
-        selected: ClientKind,
+        target: prepare::Target<'_>,
+        transport: TransportRequest<'_>,
         content: Content<'_>,
     ) -> ReadResult {
-        let Target {
-            operation,
-            name,
-            provider,
-            config,
-        } = target;
         let deadline = call_timeout(transport.timeout, self.deps.request_timeout_seconds)
-            .map_err(|error| failure(error, &name, self.deps.redactor))?;
+            .map_err(|error| failure(error, &target.name, self.deps.redactor))?;
         let call = ReadCall {
-            operation,
-            mode: selected,
-            provider,
-            config,
+            operation: target.operation,
+            mode: mode(target.operation, transport.kwargs),
+            provider: target.provider,
+            config: target.config,
             vector_store_id: content.vector_store_id,
             query: content.query,
             params: transport.params,
@@ -160,19 +133,12 @@ impl<Provider: ReadProvider> VectorStoreReads<'_, Provider> {
             client: self.deps.supplied.as_ref(),
             logging: self.deps.logging,
         };
-        self.provider
-            .read(&call)
-            .await
-            .map_err(|error| failure(VectorStoreReadError::Read(error), &name, self.deps.redactor))
-    }
-}
-
-// the signature's defaults: limit 20 and order desc when the caller left the argument out, while an explicit null stays absent
-fn effective_query<'request>(request: &VectorStoreListRequest<'request>) -> ListQuery<'request> {
-    ListQuery {
-        after: request.after,
-        before: request.before,
-        limit: request.limit.unwrap_or(Some(20)),
-        order: request.order.unwrap_or(Some("desc")),
+        self.provider.read(&call).await.map_err(|error| {
+            failure(
+                VectorStoreReadError::Read(error),
+                &target.name,
+                self.deps.redactor,
+            )
+        })
     }
 }
