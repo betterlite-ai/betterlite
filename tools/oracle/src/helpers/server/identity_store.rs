@@ -67,12 +67,6 @@ fn auth_from_fields(value: &Value) -> Result<UserAPIKeyAuth, Box<HelperError>> {
     UserAPIKeyAuth::construct(AuthInput::Dict(fields)).or_value_error()
 }
 
-// resolve forwards key.token as the subject fallback and the credential token, and the field is the exposed secret
-fn key_token(key: &UserAPIKeyAuth) -> Result<Option<String>, Box<HelperError>> {
-    let view = serde_json::to_value(key).or_value_error()?;
-    Ok(view.get("token").and_then(Value::as_str).map(str::to_owned))
-}
-
 fn key_fields(key: &UserAPIKeyAuth) -> Result<Value, Box<HelperError>> {
     let view = serde_json::to_value(key).or_value_error()?;
     Ok(json!({

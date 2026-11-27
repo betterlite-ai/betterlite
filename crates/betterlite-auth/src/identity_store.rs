@@ -9,7 +9,7 @@ use opentelemetry::trace::SpanContext;
 use secrecy::ExposeSecret as _;
 
 use self::error::IdentityStoreError;
-use self::ports::{Dependencies, Ports};
+use self::ports::Dependencies;
 use self::principal::{Projection, principal_from_key};
 use self::rows::auth_from_view;
 use crate::auth_cache::copy::copy_for_cache;
@@ -48,16 +48,6 @@ impl IdentityStore {
             parent_otel_span,
             check_cache_only,
         }
-    }
-
-    // The composition root's constructor: a port it forgot to install is a startup error, not a silent skip.
-    pub fn connect(
-        ports: Ports,
-        parent_otel_span: Option<SpanContext>,
-        check_cache_only: bool,
-    ) -> Result<Self, IdentityStoreError> {
-        let dependencies = ports.require()?;
-        Ok(Self::new(dependencies, parent_otel_span, check_cache_only))
     }
 
     pub async fn resolve(&self, hashed_token: &str) -> Result<Principal, IdentityStoreError> {
