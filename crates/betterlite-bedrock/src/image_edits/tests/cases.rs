@@ -21,9 +21,10 @@ use crate::image_call::plan::LogContext;
 use crate::image_call::transport::{ClientKind, ImageRequest, SuppliedClient};
 use crate::image_edits::error::ImageEditError;
 use crate::image_edits::execute::dispatch_request;
-use crate::image_edits::plan::{EditCall, EditEnvironment, EditImage, EditPlan};
+use crate::image_edits::plan::{EditCall, EditEnvironment, EditImage, EditPlan, PreparedRequest};
 use crate::image_edits::prepare::{prepare_request, resolve_target};
 use crate::image_edits::response::{EditReply, ObservedReply, transform_response};
+use crate::signing::request::AwsSignedRequest;
 use crate::stability_edits::error::{StabilityEditError, StabilityReplyError};
 
 const CANVAS_MODEL: &str = "amazon.nova-canvas-v1:0";
@@ -373,6 +374,23 @@ fn stability_edit_dispatch(redactor: &Redactor) {
         promptless.state.model_call_details.get("input"),
         Some(&Json::Null)
     );
+
+    // Stability permits no image at all, and an empty image list is a successful result
+    let no_images: &[EditImage] = &[];
+    let mut imageless = call(STABILITY_MODEL, Some("edit it"), auth_params());
+    imageless.images = no_images;
+    let empty = run(
+        imageless,
+        STABILITY_COST,
+        answered(Reply::ok(r#"{"images": []}"#)),
+        redactor,
+    );
+    assert_eq!(
+        empty.text(),
+        r#"{"output_format": "png", "prompt": "edit it"}"#
+    );
+    assert!(empty.images().is_empty());
+    assert_eq!(empty.cost().as_deref(), Some("0.07"));
 }
 
 fn edit_signed_request(redactor: &Redactor) {
@@ -493,6 +511,42 @@ fn edit_signed_request(redactor: &Redactor) {
     assert_eq!(
         proxied.posted().url,
         "https://api.example/model/stability.stable-image-inpaint-v1:0/invoke"
+    );
+
+    // the transport sends the stored endpoint and prepared body, not the signed URL record
+    let direct_call = call(STABILITY_MODEL, None, ImageParams::default());
+    let prepared = PreparedRequest {
+        endpoint_url: "https://stored.example/model/m/invoke".to_owned(),
+        signed: AwsSignedRequest {
+            method: "POST".to_owned(),
+            url: "https://signed.example/elsewhere".to_owned(),
+            headers: vec![("X-Prepared".to_owned(), "yes".to_owned())],
+            body: b"{\"stored\": true}".to_vec(),
+        },
+        data: ImageParams::default(),
+    };
+    let direct_client = FixtureClient::new(Reply::ok(r#"{"images": ["aQ=="]}"#));
+    let direct_factory = Factory::new(Reply::ok(r#"{"images": []}"#));
+    let runtime = Builder::new_current_thread().build().unwrap();
+    let reply = runtime
+        .block_on(dispatch_request(
+            &direct_call,
+            &prepared,
+            Some(SuppliedClient {
+                kind: ClientKind::Sync,
+                transport: &direct_client,
+            }),
+            &direct_factory,
+        ))
+        .unwrap();
+    assert_eq!(reply.status, 200);
+    let sent_requests = direct_client.requests();
+    let sent = &sent_requests[0];
+    assert_eq!(sent.url, "https://stored.example/model/m/invoke");
+    assert_eq!(sent.body, b"{\"stored\": true}".to_vec());
+    assert_eq!(
+        sent.headers,
+        vec![("X-Prepared".to_owned(), "yes".to_owned())]
     );
 }
 
@@ -764,6 +818,22 @@ fn edit_transport_selection(redactor: &Redactor) {
         vec![Some(Duration::from_millis(2500))]
     );
     assert_eq!(async_default.factory_requests.len(), 1);
+
+    // a caller with no timeout hands the async client a None timeout all the same
+    let mut async_none_call = call(STABILITY_MODEL, Some("edit it"), auth_params());
+    async_none_call.images = &supplied;
+    async_none_call.aimage_edit = true;
+    let async_none = run(
+        async_none_call,
+        "{}",
+        Answer {
+            reply: Reply::ok(r#"{"images": ["aQ=="]}"#),
+            supplied: None,
+        },
+        redactor,
+    );
+    assert_eq!(async_none.async_calls, vec![None]);
+    assert_eq!(async_none.factory_requests.len(), 1);
 
     let mut async_supplied_call = call(STABILITY_MODEL, Some("edit it"), auth_params());
     async_supplied_call.images = &supplied;
