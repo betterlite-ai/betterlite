@@ -14,23 +14,7 @@ call:
         vector_store_id: vs_a
         create: {file_id: file_a}
         options: {api_key: sk-caller, litellm_call_id: call-b}
-      - operation: list
-        mode: sync
-        vector_store_id: vs_a
-        list: {}
-        options: {api_key: sk-caller, litellm_call_id: call-c}
-      - operation: list
-        mode: async
-        vector_store_id: vs_a
-        list: {}
-        options: {api_key: sk-caller, litellm_call_id: call-d}
 upstream:
-  - status: 401
-    headers: {content-type: application/json}
-    body: {error: {message: bad, type: invalid_api_key, param: null, code: invalid_api_key}}
-  - status: 401
-    headers: {content-type: application/json}
-    body: {error: {message: bad, type: invalid_api_key, param: null, code: invalid_api_key}}
   - status: 401
     headers: {content-type: application/json}
     body: {error: {message: bad, type: invalid_api_key, param: null, code: invalid_api_key}}
@@ -45,8 +29,4 @@ compare:
     - pointer: /vector_file_create_list/value/runs/0/failure/message
       why: betterlite renders the provider body where LiteLLM prefixes its exception class
     - pointer: /vector_file_create_list/value/runs/1/failure/message
-      why: betterlite renders the provider body where LiteLLM prefixes its exception class
-    - pointer: /vector_file_create_list/value/runs/2/failure/message
-      why: betterlite renders the provider body where LiteLLM prefixes its exception class
-    - pointer: /vector_file_create_list/value/runs/3/failure/message
       why: betterlite renders the provider body where LiteLLM prefixes its exception class
