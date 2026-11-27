@@ -565,7 +565,7 @@ pub(super) struct Setup {
     pub(super) events: Events,
 }
 
-pub(super) fn build(setup: Setup) -> Arc<VectorManagementWriteState<FakeDatabase>> {
+pub(super) fn read_state(setup: Setup) -> Arc<VectorManagementReadState<FakeDatabase>> {
     let events = setup.events.clone();
     let world = Arc::new(setup.world);
     let registry = setup.registry.map(|stores| {
@@ -577,10 +577,8 @@ pub(super) fn build(setup: Setup) -> Arc<VectorManagementWriteState<FakeDatabase
     });
     let permissions = Arc::clone(&world);
     let teams = Arc::clone(&world);
-    let reads = Arc::new(VectorManagementReadState {
-        database: setup
-            .database
-            .map(|database| database.with_events(events.clone())),
+    Arc::new(VectorManagementReadState {
+        database: setup.database.map(|database| database.with_events(events)),
         registry,
         permissions,
         teams,
@@ -590,9 +588,15 @@ pub(super) fn build(setup: Setup) -> Arc<VectorManagementWriteState<FakeDatabase
         }),
         settings: setup.settings,
         limits: ApiLimits::default(),
-    });
+    })
+}
+
+pub(super) fn build(setup: Setup) -> Arc<VectorManagementWriteState<FakeDatabase>> {
+    let cache = setup.cache.clone();
+    let events = setup.events.clone();
+    let reads = read_state(setup);
     let cache: Option<Arc<dyn VectorStoreCache>> =
-        setup.cache.map(|store| Arc::new(store.with_events(events)));
+        cache.map(|store| Arc::new(store.with_events(events)));
     Arc::new(VectorManagementWriteState { reads, cache })
 }
 

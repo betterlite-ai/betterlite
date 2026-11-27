@@ -316,6 +316,23 @@ async fn create_cache_failure_keeps_the_database_row() {
     );
 }
 
+// an HTTPException the route raises is rethrown without the catch-all's error log
+#[tokio::test]
+async fn create_refusal_does_not_log_an_error() {
+    let mut setup = Setup::default();
+    setup.database = Some(FakeDatabase::new(vec![db_store("vs_a")]));
+    setup.registry = Some(Vec::new());
+    let state = build(setup);
+    let (logs, _guard) = capture_logs(tracing::Level::ERROR);
+    let (status, _headers, _body) = call_new(
+        &state,
+        r#"{"vector_store_id":"vs_a","custom_llm_provider":"openai"}"#,
+    )
+    .await;
+    assert_eq!(StatusCode::BAD_REQUEST, status);
+    assert!(!logs.contents().contains("Error creating vector store"));
+}
+
 #[tokio::test]
 async fn create_logs_the_created_id() {
     let mut setup = Setup::default();

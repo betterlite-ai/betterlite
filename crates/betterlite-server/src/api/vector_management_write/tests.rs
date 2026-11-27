@@ -1,8 +1,12 @@
 #![cfg(test)]
 
+mod cache;
 mod create;
 mod delete;
 mod gate;
+mod params;
+mod rows;
+mod state;
 mod support;
 mod update;
 

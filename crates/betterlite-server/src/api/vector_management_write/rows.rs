@@ -142,7 +142,7 @@ pub trait VectorStoreWrites: VectorStoreRows {
 }
 
 // an insert whose updated_at comes from the database clock, as Prisma's @updatedAt would set it
-fn insert_sql(document: &BTreeMap<String, JsonData>) -> String {
+pub(super) fn insert_sql(document: &BTreeMap<String, JsonData>) -> String {
     let values: Vec<String> = document
         .keys()
         .map(|name| format!("r.\"{name}\""))
@@ -159,7 +159,9 @@ fn insert_sql(document: &BTreeMap<String, JsonData>) -> String {
 }
 
 // the row a write changed, decoded the way the reads decode one; a missing row stays missing
-fn row_record(row: Option<JsonData>) -> Result<Option<LiteLlmManagedVectorStore>, TableError> {
+pub(super) fn row_record(
+    row: Option<JsonData>,
+) -> Result<Option<LiteLlmManagedVectorStore>, TableError> {
     let Some(row) = row else {
         return Ok(None);
     };

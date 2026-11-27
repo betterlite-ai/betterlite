@@ -29,11 +29,10 @@ impl<Database> From<Arc<VectorManagementReadState<Database>>>
     for VectorManagementWriteState<Database>
 {
     fn from(reads: Arc<VectorManagementReadState<Database>>) -> Self {
-        let registry = reads.registry.as_ref();
-        let cache = registry.map(|registry| {
-            let cache: Arc<dyn VectorStoreCache> = Arc::new(RegistryCache(Arc::clone(registry)));
-            cache
-        });
+        let cache: Option<Arc<dyn VectorStoreCache>> = reads
+            .registry
+            .as_ref()
+            .map(|registry| Arc::new(RegistryCache(Arc::clone(registry))));
         Self { reads, cache }
     }
 }
