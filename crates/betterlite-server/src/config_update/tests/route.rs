@@ -2,10 +2,13 @@
 
 use std::collections::BTreeSet;
 
-use axum::http::StatusCode;
+use axum::body::Body;
+use axum::http::{Request, StatusCode};
 use betterlite_config::sections::settings::{JsonValue, Section};
 use secrecy::ExposeSecret as _;
+use tower::ServiceExt as _;
 
+use super::super::routes;
 use super::support::{
     Harness, RecordingStore, admin, config_state, error_field, error_text, key_user, object,
     parsed, send, settings, user,
@@ -345,6 +348,21 @@ async fn a_failing_audit_row_does_not_fail_the_update() {
     assert_eq!(harness.store.upserts().len(), 1);
     harness.spawner.run_all().await;
     assert!(harness.repository.records().is_empty());
+}
+
+#[tokio::test]
+async fn the_router_serves_the_config_update_path() {
+    let harness = Harness::new(config_state());
+    let request = Request::builder()
+        .method("POST")
+        .uri("/config/update")
+        .body(Body::empty())
+        .expect("the request builds");
+    let response = routes(harness.state.clone())
+        .oneshot(request)
+        .await
+        .expect("the router answers");
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
 #[tokio::test]
