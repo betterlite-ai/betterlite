@@ -5,3 +5,4 @@ mod native_calls;
 mod provider_calls;
 mod retrieve_calls;
 mod support;
+mod wrapper;
