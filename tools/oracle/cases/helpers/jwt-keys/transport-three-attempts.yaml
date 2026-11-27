@@ -1,0 +1,16 @@
+kind: helper
+name: jwt-keys-transport-three-attempts
+call:
+  jwt_keys:
+    scenarios:
+      - settings: {public_key_url: "https://idp.example.com/jwks", public_key_ttl: 600.0, public_key_stale_ttl: 3600.0}
+        steps:
+          # three transport attempts with 0.25 and 0.5 second waits, then the 503 and its 30 second marker
+          - now: 1000.0
+            kid: a
+            http:
+              - {kind: transport}
+              - {kind: transport}
+              - {kind: transport}
+env: {}
+compare: {ignore: []}

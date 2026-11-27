@@ -2797,6 +2797,7 @@ dependencies = [
  "betterlite-core",
  "betterlite-db",
  "betterlite-error",
+ "betterlite-http",
  "betterlite-models",
  "betterlite-oracle-helper-api",
  "betterlite-oracle-runner",

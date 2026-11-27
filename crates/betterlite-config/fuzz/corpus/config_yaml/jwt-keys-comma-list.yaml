@@ -1,0 +1,8 @@
+model_list: []
+environment_variables:
+  JWT_PUBLIC_KEY_URL: "https://a.example.com/keys, https://b.example.com/keys"
+general_settings:
+  litellm_jwtauth:
+    public_key_ttl: 120
+    public_key_stale_ttl: 0
+    user_allowed_email_domain: example.com

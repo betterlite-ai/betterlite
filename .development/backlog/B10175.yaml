@@ -1,0 +1,13 @@
+id: B10175
+milestone: R2 bug fixes
+title: The server builds one production AWS credential chain, and Vertex workload identity resolves through it
+status: todo
+depends_on: [B10173, B10174, B594, B1301]
+file: tasks/B10175-aws-credential-chain.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
