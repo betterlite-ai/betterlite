@@ -1716,6 +1716,7 @@ dependencies = [
  "num-traits",
  "percent-encoding",
  "pyo3",
+ "rand 0.10.3",
  "regex",
  "rmcp",
  "rstest",
