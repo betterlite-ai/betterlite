@@ -1,5 +1,3 @@
-use axum::body::Body;
-use axum::http::Request;
 use betterlite_auth::auth_identity::errors::AuthError;
 use betterlite_auth::auth_identity::records::{
     CredentialRef, NetworkContext, Principal, SourceKey,
@@ -12,6 +10,7 @@ use subtle::ConstantTimeEq as _;
 use crate::auth::auth_end_users::EndUserStageInput;
 use crate::auth::auth_key_budgets::KeyBudgetStageInput;
 use crate::auth::auth_key_lookup::KeyLookupStageInput;
+use crate::auth::auth_model_grants::AgentModelGrantsStageInput;
 use crate::auth::auth_model_patterns::{ModelAccessRejection, ModelPatternStageInput, run_stage};
 use crate::auth::auth_org_lookup::OrgStageInput;
 use crate::auth::auth_policy_support::{self, AuthPolicySupportStageInput};
@@ -19,6 +18,7 @@ use crate::auth::auth_request_models::{RequestModelStageInput, resolve};
 use crate::auth::auth_request_policy::{self, AuthRequestPolicyStageInput};
 use crate::auth::auth_resource_grants::{self, ResourceGrantStageInput};
 use crate::auth::auth_tag_budgets::TagBudgetStageInput;
+use crate::auth::auth_tenant_budgets::TenantBudgetStageInput;
 use crate::auth::entity_model_access::EntityModelStageInput;
 use crate::auth::model_grant_intersection::{self, GrantStageInput};
 use crate::auth::organization_route_policy::{self, OrganizationPolicyStageInput};
@@ -36,11 +36,13 @@ pub enum AuthBackend {
     AuthVirtualKeyRoutes,
     AuthRequestModels,
     AuthModelPatterns,
+    AuthModelGrants,
     EntityModelAccess,
     AuthResourceGrants,
     AuthTagBudgets,
     AuthKeyBudgets,
     TeamBudgetAdmission,
+    AuthTenantBudgets,
     OrganizationRoutePolicy,
     AuthOrgLookup,
     AuthEndUsers,
@@ -57,12 +59,14 @@ pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
     AuthBackend::AuthVirtualKeyRoutes,
     AuthBackend::AuthRequestModels,
     AuthBackend::AuthModelPatterns,
+    AuthBackend::AuthModelGrants,
     AuthBackend::EntityModelAccess,
     AuthBackend::AuthResourceGrants,
     AuthBackend::AuthTagBudgets,
     AuthBackend::AuthKeyBudgets,
     AuthBackend::TeamBudgetAdmission,
     AuthBackend::OrganizationRoutePolicy,
+    AuthBackend::AuthTenantBudgets,
     AuthBackend::AuthOrgLookup,
     AuthBackend::AuthEndUsers,
     AuthBackend::AuthPolicySupport,
@@ -79,11 +83,13 @@ pub enum StageInput {
     AuthVirtualKeyRoutes(Box<VirtualKeyRouteStageInput>),
     AuthRequestModels(Box<RequestModelStageInput>),
     AuthModelPatterns(Box<ModelPatternStageInput>),
+    AuthModelGrants(Box<AgentModelGrantsStageInput>),
     EntityModelAccess(Box<EntityModelStageInput>),
     AuthResourceGrants(Box<ResourceGrantStageInput>),
     AuthTagBudgets(Box<TagBudgetStageInput>),
     AuthKeyBudgets(Box<KeyBudgetStageInput>),
     TeamBudgetAdmission(Box<TeamBudgetStageInput>),
+    AuthTenantBudgets(Box<TenantBudgetStageInput>),
     OrganizationRoutePolicy(Box<OrganizationPolicyStageInput>),
     AuthOrgLookup(Box<OrgStageInput>),
     AuthEndUsers(Box<EndUserStageInput>),
@@ -94,21 +100,6 @@ pub enum StageInput {
 #[derive(Clone, Debug)]
 pub struct AuthContext {
     pub principal: Principal,
-}
-
-// the resource grant stage reads the request's rule and database switch, so its input is built here
-pub(crate) fn resource_grant_stage_input(
-    request: &Request<Body>,
-    authenticated: Option<&AuthContext>,
-) -> Result<StageInput, AuthenticationFailure> {
-    let stage = ResourceGrantStageInput {
-        context: authenticated
-            .cloned()
-            .ok_or(AuthenticationFailure::Missing)?,
-        rule: auth_resource_grants::rule_for_request(request),
-        database: auth_resource_grants::database_for_request(request),
-    };
-    Ok(StageInput::AuthResourceGrants(Box::new(stage)))
 }
 
 #[derive(Clone, Debug)]
@@ -131,6 +122,7 @@ pub(crate) enum StageFailure {
     Authentication(Box<AuthenticationFailure>),
     KeyLookup(Box<ProxyException>),
     ModelAccess(Box<ModelAccessRejection>),
+    AuthModelGrants(Box<ProxyException>),
     EntityModelAccess(Box<ProxyException>),
     AuthRequestPolicy(Box<ProxyException>),
     ResourceGrants(Box<ProxyException>),
@@ -139,6 +131,7 @@ pub(crate) enum StageFailure {
     VirtualKeyRoutes(Box<ProxyException>),
     KeyBudgets(Box<ProxyException>),
     TeamBudgets(Box<ProxyException>),
+    TenantBudgets(Box<ProxyException>),
     OrganizationRoutePolicy(Box<ProxyException>),
     OrgLookup(Box<ProxyException>),
     EndUsers(Box<ProxyException>),
@@ -173,10 +166,12 @@ impl StageInput {
             Self::AuthRequestModels(_) => AuthBackend::AuthRequestModels,
             Self::AuthModelPatterns(_) => AuthBackend::AuthModelPatterns,
             Self::EntityModelAccess(_) => AuthBackend::EntityModelAccess,
+            Self::AuthModelGrants(_) => AuthBackend::AuthModelGrants,
             Self::AuthResourceGrants(_) => AuthBackend::AuthResourceGrants,
             Self::AuthTagBudgets(_) => AuthBackend::AuthTagBudgets,
             Self::AuthKeyBudgets(_) => AuthBackend::AuthKeyBudgets,
             Self::TeamBudgetAdmission(_) => AuthBackend::TeamBudgetAdmission,
+            Self::AuthTenantBudgets(_) => AuthBackend::AuthTenantBudgets,
             Self::OrganizationRoutePolicy(_) => AuthBackend::OrganizationRoutePolicy,
             Self::AuthOrgLookup(_) => AuthBackend::AuthOrgLookup,
             Self::AuthEndUsers(_) => AuthBackend::AuthEndUsers,
@@ -214,12 +209,14 @@ pub(crate) fn dispatch(
             run_stage(stage).map_err(|rejection| StageFailure::ModelAccess(Box::new(rejection)))
         }
         StageInput::EntityModelAccess(stage) => Ok(stage.context.clone()),
+        StageInput::AuthModelGrants(stage) => Ok(stage.context.clone()),
         StageInput::AuthResourceGrants(stage) => {
             auth_resource_grants::run_stage(stage).map_err(StageFailure::ResourceGrants)
         }
         StageInput::AuthTagBudgets(stage) => Ok(stage.context.clone()),
         StageInput::AuthKeyBudgets(stage) => Ok(stage.context.clone()),
         StageInput::TeamBudgetAdmission(stage) => Ok(stage.context.clone()),
+        StageInput::AuthTenantBudgets(stage) => Ok(stage.context.clone()),
         StageInput::OrganizationRoutePolicy(stage) => organization_route_policy::run_stage(stage)
             .map_err(StageFailure::OrganizationRoutePolicy),
         StageInput::AuthOrgLookup(stage) => Ok(stage.context.clone()),

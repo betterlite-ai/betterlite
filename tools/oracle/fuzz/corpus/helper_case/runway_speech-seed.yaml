@@ -1,0 +1,14 @@
+kind: helper
+name: runway-speech-fuzz-seed
+call:
+  runway_speech:
+    operation: mapping
+    params:
+      model: eleven_multilingual_v2
+      environment: {}
+      calls:
+        - voice: alloy
+          optional_params: {}
+          drop_params: false
+env: {}
+compare: {ignore: []}

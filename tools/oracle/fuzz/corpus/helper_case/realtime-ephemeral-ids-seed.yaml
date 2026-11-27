@@ -1,0 +1,25 @@
+kind: helper
+name: realtime-ephemeral-ids-seed
+call:
+  realtime_ephemeral_ids:
+    function: decode
+    decrypted: ep-test
+calls:
+  - realtime_ephemeral_ids:
+      function: encode
+      token:
+        ephemeral_key: ep
+        model_id: m
+        user_id: null
+        team_id: null
+        expires_at: null
+        session_type: realtime
+  - realtime_ephemeral_ids:
+      function: candidates
+      session:
+        audio:
+          input:
+            transcription:
+              model: a
+env: {}
+compare: {ignore: []}

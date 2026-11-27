@@ -1,0 +1,15 @@
+task: B1073
+deviations:
+  - what: "A non-2xx reply whose body parses as JSON raises the status error here (404 becomes NotFoundError), where LiteLLM returns the parsed error body as a successful file object or content reply because its OpenAI transform only decodes JSON and never checks the status."
+    why: "A caller cannot tell a missing file from a real one, and the error body does not have the file object's shape. Every other provider path in betterlite reports the status, and the SDK path must agree with it; the oracle case scripts an empty 404 body so both sides raise."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/vector_store_files/transformation.py#L165-L177"
+  - what: "A reply body that does not decode as JSON raises with betterlite's own message text, its serde decode error on a 2xx reply and the raw reply body on a non-2xx one that raises before decoding, where LiteLLM reports Python's json decode text."
+    why: "The exception class, status and type/param/code fields match, so only the message text differs, as the oracle case's ignores record."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/vector_store_files/transformation.py#L189-L201"
+  - what: "litellm_params.ssl_verify is read as a boolean; a string such as a CA bundle path or the word \"true\" fails with betterlite's field error for ssl_verify before any HTTP, where LiteLLM's get_ssl_verify declares bool | str | None and takes a string that names an existing file as the CA bundle."
+    why: "B2481's ReadParams types ssl_verify as a boolean and its client factory takes a boolean flag beside the TLS policy the config resolves, so a per-call CA path has no field to reach; naming the field keeps the error honest instead of accepting a value the client selection would not use."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L331-L367"
+kept_bugs:
+  - what: "The timeout the wrapper resolves, an explicit timeout or REQUEST_TIMEOUT, is passed to the read handler but the GET never uses it, so a slow provider read is not bounded by the caller's timeout."
+    why: "The vector store file retrieve and content handlers build their GET with url, headers and params only, and a working setup gets the same unbounded read from LiteLLM."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L11161"

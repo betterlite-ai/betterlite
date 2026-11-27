@@ -1,0 +1,71 @@
+kind: helper
+name: bedrock-other-image-edits-signed-request
+call:
+  bedrock_other_image_edits:
+    function: prepare
+    model_cost:
+      stability.stable-image-inpaint-v1:0: {litellm_provider: bedrock, output_cost_per_image: 0.07}
+    probes:
+      - model: stability.stable-image-inpaint-v1:0
+        prompt: edit it
+        images: [aW1n]
+        supplied: sync
+        credentials: {access_key_id: AKIAIOSFODNN7EXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY}
+        optional_params: {aws_access_key_id: AKIAIOSFODNN7EXAMPLE, aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY, aws_region_name: us-east-1}
+        reply: {body: '{"images": ["c2lnbmVk"]}'}
+      - model: stability.stable-image-inpaint-v1:0
+        prompt: edit it
+        images: [aW1n]
+        supplied: sync
+        credentials: {access_key_id: AKIAIOSFODNN7EXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY}
+        optional_params: {aws_access_key_id: AKIAIOSFODNN7EXAMPLE, aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY, aws_region_name: us-east-1}
+        extra_headers: {X-Custom: v, Content-Type: application/json; charset=utf-8}
+        reply: {body: '{"images": ["c2lnbmVk"]}'}
+      - model: stability.stable-image-inpaint-v1:0
+        prompt: edit it
+        images: [aW1n]
+        supplied: sync
+        credentials: {access_key_id: AKIAIOSFODNN7EXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY}
+        optional_params: {aws_access_key_id: AKIAIOSFODNN7EXAMPLE, aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY, aws_region_name: us-east-1, aws_bedrock_runtime_endpoint: 'https://runtime.example/'}
+        reply: {body: '{"images": ["c2lnbmVk"]}'}
+      - model: stability.stable-image-inpaint-v1:0
+        prompt: edit it
+        images: [aW1n]
+        supplied: sync
+        api_base: https://api.example
+        credentials: {access_key_id: AKIAIOSFODNN7EXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY}
+        optional_params: {aws_access_key_id: AKIAIOSFODNN7EXAMPLE, aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY, aws_region_name: us-east-1}
+        reply: {body: '{"images": ["c2lnbmVk"]}'}
+      - model: stability.stable-image-inpaint-v1:0
+        prompt: edit it
+        images: [aW1n]
+        supplied: sync
+        credentials: {access_key_id: AKIAIOSFODNN7EXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY}
+        environment: {runtime_endpoint: 'https://env.example/'}
+        optional_params: {aws_access_key_id: AKIAIOSFODNN7EXAMPLE, aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY, aws_region_name: us-east-1}
+        reply: {body: '{"images": ["c2lnbmVk"]}'}
+      - model: stability.stable-image-inpaint-v1:0
+        prompt: edit it
+        images: [aW1n]
+        supplied: sync
+        credentials: {access_key_id: AKIAIOSFODNN7EXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY}
+        environment: {region_name: eu-west-1}
+        optional_params: {aws_access_key_id: AKIAIOSFODNN7EXAMPLE, aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY}
+        reply: {body: '{"images": ["c2lnbmVk"]}'}
+      - model: stability.stable-image-inpaint-v1:0
+        prompt: edit it
+        images: [aW1n]
+        supplied: sync
+        credentials: {access_key_id: AKIAIOSFODNN7EXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY}
+        optional_params: {aws_access_key_id: AKIAIOSFODNN7EXAMPLE, aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY, aws_region_name: us-east-1, model_id: custom-model}
+        reply: {body: '{"images": ["c2lnbmVk"]}'}
+      - model: stability.stable-image-inpaint-v1:0
+        prompt: edit it
+        images: [aW1n]
+        supplied: sync
+        api_key: br-token
+        credentials: {access_key_id: AKIAIOSFODNN7EXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY}
+        optional_params: {aws_access_key_id: AKIAIOSFODNN7EXAMPLE, aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY, aws_region_name: us-east-1}
+        reply: {body: '{"images": ["c2lnbmVk"]}'}
+env: {}
+compare: {ignore: []}

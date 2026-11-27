@@ -41,6 +41,7 @@ pub mod search_handlers;
 pub mod semantic_filter;
 pub mod server_admin;
 pub mod server_writes;
+pub mod session_auth;
 pub mod session_registry;
 pub mod source_reads;
 pub mod sse_transport;

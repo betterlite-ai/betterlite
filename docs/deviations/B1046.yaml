@@ -1,0 +1,59 @@
+task: B1046
+deviations:
+  - what: >-
+      A row whose parsed object has a truthy body that is not an object (a string, a list, a number, true) is counted
+      with the size-based estimate and the no-cap output floor. LiteLLM reads (entry.get("body") or {}).get("model")
+      before its per-row try, so the same row raises AttributeError there and the whole batch read fails with the
+      generic error instead of accounting the other rows.
+    why: >-
+      One malformed row must not lose the whole file's accounting, and the row cannot run upstream anyway. The
+      per-row fallback every unreadable row already gets covers it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L960
+  - what: >-
+      A row whose body.model is JSON null is counted with the empty model name, and a row whose body.model is a
+      non-string value counts as a row with no model: it gets no per-model usage and no access check, and the
+      non-string model makes the token counter refuse the row, so the size estimate applies. LiteLLM passes the null
+      or the non-string value to token_counter and adds any truthy value to the model set it enforces.
+    why: >-
+      The model is declared as a string. B013's counter takes &str, and the enforcement helpers take &str, so a value
+      that is not text cannot name a model; treating it as absent keeps the row accounted without inventing a model.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/batch_utils.py#L623
+  - what: >-
+      A project_metadata model_otpm_limit the caller carries is used only for its JSON integer values. LiteLLM runs
+      int(v) over every value before its try block, so a float, numeric string, boolean or unparsable value is
+      coerced or fails the whole call with ValueError.
+    why: >-
+      The existing metadata limit reader (B052) keeps integers and skips every other stored entry, so a malformed
+      project limit cannot fail a batch read; the integer limits that are configured still tighten the floor.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L878-L888
+  - what: >-
+      An entry with several body.model values is enforced in the order the models first appear in the file. LiteLLM
+      collects them in a set and iterates that, so the first denial (and the model named in its 403) can differ
+      between runs and Python versions.
+    why: >-
+      Set order is not something a setup can rely on, and a deterministic order makes the same file produce the same
+      rejection. Status, error type, param and code stay the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L1078
+  - what: >-
+      The byte length of the file, each stripped line's length and the line count are checked against B1087's
+      ApiLimits before parsing, so an oversized file is rejected with the boundary error. LiteLLM reads any size and
+      streams the lines.
+    why: >-
+      Every external byte input in betterlite passes the shared API boundaries first, and this file is untrusted
+      upload content read inside a request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L947
+  - what: >-
+      The running totals (total_tokens, output_tokens, request_count and each per-model row) are i64 and saturate at
+      i64::MAX. LiteLLM's Python integers are unbounded.
+    why: >-
+      The result type is a JSON number, and an i64 cannot silently wrap on a file whose counters exceed it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L976-L982
+kept_bugs:
+  - what: >-
+      The countable field is chosen by Python truthiness: an empty messages list, an empty prompt or input string, a
+      zero, a false or a null is skipped and the next field is tried, so a row with messages [] and a prompt is
+      counted from the prompt.
+    why: >-
+      The pinned behavior of _count_entry_tokens, and a working batch can send messages [] with a prompt. Our rows
+      keep the same field order and the same falsy skips so the counted tokens match LiteLLM's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/batch_utils.py#L626-L636
