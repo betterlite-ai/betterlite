@@ -1,5 +1,3 @@
-use std::time::TryFromFloatSecsError;
-
 use betterlite_error::dispatch::{DispatchInput, RawException, dispatch};
 use betterlite_error::envelope::WireField;
 use betterlite_logging::logging_state::LoggingStateError;
@@ -31,8 +29,6 @@ pub enum VectorFileReadError {
     },
     #[error(transparent)]
     Logging(#[from] LoggingStateError),
-    #[error("the timeout is not a number of seconds")]
-    Timeout(#[source] TryFromFloatSecsError),
 }
 
 // The exception the SDK raises: its class, status and the type/param/code attributes it carries
@@ -83,8 +79,7 @@ fn raised(error: &VectorFileReadError) -> (&str, Option<u16>, String, String) {
         VectorFileReadError::Unsupported { provider, .. } => (provider.as_str(), None),
         VectorFileReadError::InvalidProvider { .. }
         | VectorFileReadError::Field { .. }
-        | VectorFileReadError::Logging(_)
-        | VectorFileReadError::Timeout(_) => ("", None),
+        | VectorFileReadError::Logging(_) => ("", None),
     };
     // an SDK status error keeps its status and lets exception_type read the class from the status
     let class = if status.is_some() {

@@ -122,7 +122,7 @@ pub(super) struct HandlerCall<'call> {
     pub(super) file_id: &'call str,
     pub(super) params: ReadParams,
     pub(super) extra_headers: Option<&'call BTreeMap<String, String>>,
-    pub(super) timeout: Duration,
+    pub(super) timeout: Option<Duration>,
     pub(super) mode: ClientKind,
     pub(super) operation: Operation,
 }
@@ -140,7 +140,7 @@ where
     let mut kwargs = ctx.call.kwargs.clone();
     kwargs.shift_remove(flag);
     let call_id = kwargs.get("litellm_call_id").cloned().unwrap_or(Json::Null);
-    let mut overlaid = OperationKwargs(kwargs.clone());
+    let mut overlaid = OperationKwargs(kwargs);
     prepare_registry_credentials(ctx.call.vector_store_id, &mut overlaid, ctx.deps.registry);
     let params = read_params(&overlaid.0)?;
     let provider = ensure_provider(ctx.call.custom_llm_provider).to_owned();
@@ -152,7 +152,7 @@ where
         mode,
         operation,
         ctx.deps.request_timeout_seconds,
-    )?;
+    );
     let inner =
         ctx.deps
             .configs
@@ -178,13 +178,14 @@ pub(super) fn handler_call<'call>(
     mode: ClientKind,
     operation: Operation,
     request_timeout_seconds: f64,
-) -> Result<HandlerCall<'call>, VectorFileReadError> {
+) -> HandlerCall<'call> {
     let seconds = call
         .timeout
         .filter(|value| *value != 0.0_f64)
         .unwrap_or(request_timeout_seconds);
-    let timeout = Duration::try_from_secs_f64(seconds).map_err(VectorFileReadError::Timeout)?;
-    Ok(HandlerCall {
+    // the GET never uses the wait, so a value Duration cannot hold, a negative or non-finite one, is passed as none
+    let timeout = Duration::try_from_secs_f64(seconds).ok();
+    HandlerCall {
         vector_store_id: call.vector_store_id,
         file_id: call.file_id,
         params,
@@ -192,7 +193,7 @@ pub(super) fn handler_call<'call>(
         timeout,
         mode,
         operation,
-    })
+    }
 }
 
 async fn read_send<S>(
@@ -210,7 +211,7 @@ where
         file_id: handler.file_id,
         params: &handler.params,
         extra_headers: handler.extra_headers,
-        timeout: Some(handler.timeout),
+        timeout: handler.timeout,
     };
     let supplied = deps.supplied.as_ref().map(|held| SuppliedClient {
         kind: held.kind,
