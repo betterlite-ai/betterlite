@@ -71,7 +71,7 @@ fn merged_metadata(event: &LoggerEvent) -> IndexMap<String, Json> {
 
 // the router keeps the deployment id under model_info.id, and a caller's model_info keeps its other fields
 fn merge_model_info(metadata: &mut IndexMap<String, Json>, model_id: Option<&str>) {
-    let Some(model_id) = model_id.filter(|id| !id.is_empty()) else {
+    let Some(deployment_id) = model_id.filter(|id| !id.is_empty()) else {
         return;
     };
     let entry = metadata
@@ -80,7 +80,7 @@ fn merge_model_info(metadata: &mut IndexMap<String, Json>, model_id: Option<&str
     if let Json::Object(fields) = entry {
         fields
             .entry("id".to_owned())
-            .or_insert_with(|| Json::Text(model_id.to_owned()));
+            .or_insert_with(|| Json::Text(deployment_id.to_owned()));
     }
 }
 

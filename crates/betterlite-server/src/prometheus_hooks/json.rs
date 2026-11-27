@@ -1,8 +1,10 @@
+use betterlite_core::agents::json::AgentJson;
 use betterlite_logging::fields::payload::StandardLoggingPayload;
 use betterlite_logging::prometheus_latency::input_sequence_length::{
     InputLengthInputs, UsageMapping,
 };
 use betterlite_models::decisions::Json;
+use betterlite_openai::openai_base_config::Object as JsonMap;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 
@@ -18,6 +20,19 @@ pub(crate) fn as_text(value: &Json) -> Option<&str> {
         Json::Text(text) => Some(text.as_str()),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
     }
+}
+
+pub(crate) fn request_json(request_data: &JsonMap) -> Json {
+    serde_json::from_value(AgentJson::Object(request_data.clone()))
+        .unwrap_or_else(|_error| Json::Object(IndexMap::new()))
+}
+
+pub(crate) fn metadata_text(
+    metadata: Option<&IndexMap<String, Json>>,
+    key: &str,
+) -> Option<String> {
+    // a metadata value that is not text reads as absent rather than as an error
+    metadata?.get(key).and_then(as_text).map(str::to_owned)
 }
 
 fn integer_value(value: Option<&Json>) -> Option<i64> {

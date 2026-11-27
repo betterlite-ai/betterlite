@@ -2,24 +2,20 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use betterlite_logging::prometheus::failure::RequestedModelCatalog;
-use betterlite_logging::prometheus::failure::provider::{
-    ProviderRequestData, api_provider_from_request_data,
-};
 use betterlite_models::catalog::{BundledCatalog, ModelCatalog};
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
-use betterlite_models::resolution::ResolutionContext;
 
 // the model cost catalog and registry get_llm_provider reads when only a model name names the provider
 pub(crate) struct ProviderResolution {
-    catalog: Arc<ModelCatalog>,
-    known_model_names: BTreeSet<String>,
-    custom_providers: BTreeSet<String>,
-    environment: BTreeMap<String, String>,
-    registry: JSONProviderRegistry,
-    policies: ProviderPolicies,
-    globals: GlobalCredentials,
+    pub(crate) catalog: Arc<ModelCatalog>,
+    pub(crate) known_model_names: BTreeSet<String>,
+    pub(crate) custom_providers: BTreeSet<String>,
+    pub(crate) environment: BTreeMap<String, String>,
+    pub(crate) registry: JSONProviderRegistry,
+    pub(crate) policies: ProviderPolicies,
+    pub(crate) globals: GlobalCredentials,
 }
 
 impl ProviderResolution {
@@ -32,22 +28,6 @@ impl ProviderResolution {
             registry: JSONProviderRegistry::load(),
             policies: ProviderPolicies::default(),
             globals: GlobalCredentials::default(),
-        }
-    }
-
-    pub(crate) fn api_provider(&self, request: &ProviderRequestData<'_>) -> Option<String> {
-        api_provider_from_request_data(request, &self.context())
-    }
-
-    fn context(&self) -> ResolutionContext<'_> {
-        ResolutionContext {
-            catalog: self.catalog.as_ref(),
-            known_model_names: &self.known_model_names,
-            custom_providers: &self.custom_providers,
-            environment: &self.environment,
-            registry: self.registry.clone(),
-            policies: self.policies.clone(),
-            globals: self.globals.clone(),
         }
     }
 }

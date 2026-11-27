@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use betterlite_error::normalize::class::Class;
 use betterlite_logging::fields::payload::StandardLoggingPayload;
 use betterlite_logging::fields::payload::records::StandardLoggingMetadata;
 use betterlite_logging::prometheus::failure::exception::LabelException;
@@ -15,72 +16,135 @@ use betterlite_models::zero_cost::{
     AUDIO_INPUT_RATE, AUDIO_OUTPUT_RATE, TEXT_INPUT_RATE, TEXT_OUTPUT_RATE, ZeroCostDiagnostic,
     ZeroCostReason,
 };
-use betterlite_prometheus::label_value_record::UserApiKeyLabelValues;
+use betterlite_prometheus::label_value_record::{LabelDumpValue, UserApiKeyLabelValues};
 
 use super::json::{as_object, as_text};
 
 // LiteLLM builds this payload's labels from its metadata dict, so a typed field that is absent reads as None
-pub(crate) fn success_values(
-    settings: &PrometheusLabelSettings,
-    payload: &StandardLoggingPayload,
-    model: &str,
-    end_user: Option<String>,
-) -> Result<UserApiKeyLabelValues, CombinedMetadataError> {
-    let metadata = &payload.metadata;
-    let stream = settings
-        .emit_stream_label
-        .then(|| payload_stream_text(payload));
-    Ok(UserApiKeyLabelValues {
-        end_user,
-        user: metadata.user_api_key_user_id.clone(),
-        user_email: metadata.user_api_key_user_email.clone(),
-        hashed_api_key: metadata.user_api_key_hash.clone(),
-        api_key_alias: metadata.user_api_key_alias.clone(),
-        team: metadata.user_api_key_team_id.clone(),
-        team_alias: metadata.user_api_key_team_alias.clone(),
-        model_group: payload.model_group.clone(),
-        requested_model: payload.model_group.clone(),
-        model: Some(model.to_owned()),
-        litellm_model_name: Some(model.to_owned()),
-        tags: text_tags(&payload.request_tags),
-        custom_metadata_labels: custom_labels(Some(metadata), settings)?,
-        model_id: payload.model_id.clone(),
-        api_base: Some(payload.api_base.clone()),
-        api_provider: payload.custom_llm_provider.clone(),
-        status_code: Some("200".to_owned()),
-        route: metadata.user_api_key_request_route.clone(),
-        client_ip: metadata.requester_ip_address.clone(),
-        user_agent: metadata.user_agent.clone(),
-        stream,
-        org_id: metadata.user_api_key_org_id.clone(),
-        org_alias: metadata.user_api_key_org_alias.clone(),
-        service_tier: service_tier(payload).map(str::to_owned),
-        ..UserApiKeyLabelValues::default()
-    })
+pub(crate) struct EventLabels<'labels> {
+    pub(crate) settings: &'labels PrometheusLabelSettings,
+    pub(crate) payload: Option<&'labels StandardLoggingPayload>,
+    pub(crate) model: &'labels str,
+    pub(crate) end_user: Option<String>,
+    pub(crate) success: bool,
 }
 
-// the failure event's smaller set: no status, no exception, no route, no service tier
-pub(crate) fn failure_values(
-    settings: &PrometheusLabelSettings,
-    payload: Option<&StandardLoggingPayload>,
-    model: &str,
-    end_user: Option<String>,
+pub(crate) fn event_values(
+    labels: &EventLabels<'_>,
 ) -> Result<UserApiKeyLabelValues, CombinedMetadataError> {
-    let metadata = payload.map(|record| &record.metadata);
-    Ok(UserApiKeyLabelValues {
-        end_user,
-        hashed_api_key: metadata.and_then(|fields| fields.user_api_key_hash.clone()),
-        api_key_alias: metadata.and_then(|fields| fields.user_api_key_alias.clone()),
-        model: Some(model.to_owned()),
-        team: metadata.and_then(|fields| fields.user_api_key_team_id.clone()),
-        team_alias: metadata.and_then(|fields| fields.user_api_key_team_alias.clone()),
-        user: metadata.and_then(|fields| fields.user_api_key_user_id.clone()),
-        model_id: payload.map(|record| record.model_id.clone().unwrap_or_default()),
-        requested_model: payload.and_then(|record| record.model_group.clone()),
-        api_provider: payload.and_then(|record| record.custom_llm_provider.clone()),
-        custom_metadata_labels: custom_labels(metadata, settings)?,
-        ..UserApiKeyLabelValues::default()
+    let mut entries = common_entries(labels);
+    if labels.success {
+        success_entries(&mut entries, labels);
+    } else if let Some(record) = labels.payload {
+        push_text(
+            &mut entries,
+            "model_id",
+            Some(record.model_id.as_deref().unwrap_or_default()),
+        );
+    }
+    let metadata = labels.payload.map(|record| &record.metadata);
+    let custom = custom_labels(metadata, labels.settings)?;
+    entries.push((
+        "custom_metadata_labels".to_owned(),
+        LabelDumpValue::Metadata(custom),
+    ));
+    Ok(UserApiKeyLabelValues::from_entries(&entries))
+}
+
+fn common_entries(labels: &EventLabels<'_>) -> Vec<(String, LabelDumpValue)> {
+    let metadata = labels.payload.map(|record| &record.metadata);
+    [
+        ("end_user", labels.end_user.as_deref()),
+        (
+            "user",
+            metadata.and_then(|fields| fields.user_api_key_user_id.as_deref()),
+        ),
+        (
+            "hashed_api_key",
+            metadata.and_then(|fields| fields.user_api_key_hash.as_deref()),
+        ),
+        (
+            "api_key_alias",
+            metadata.and_then(|fields| fields.user_api_key_alias.as_deref()),
+        ),
+        (
+            "team",
+            metadata.and_then(|fields| fields.user_api_key_team_id.as_deref()),
+        ),
+        (
+            "team_alias",
+            metadata.and_then(|fields| fields.user_api_key_team_alias.as_deref()),
+        ),
+        ("model", Some(labels.model)),
+        (
+            "requested_model",
+            labels
+                .payload
+                .and_then(|record| record.model_group.as_deref()),
+        ),
+        (
+            "api_provider",
+            labels
+                .payload
+                .and_then(|record| record.custom_llm_provider.as_deref()),
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(name, value)| {
+        value.map(|text| (name.to_owned(), LabelDumpValue::String(text.to_owned())))
     })
+    .collect()
+}
+
+fn success_entries(entries: &mut Vec<(String, LabelDumpValue)>, labels: &EventLabels<'_>) {
+    let Some(record) = labels.payload else {
+        return;
+    };
+    let metadata = &record.metadata;
+    push_text(entries, "model_id", record.model_id.as_deref());
+    push_text(entries, "model_group", record.model_group.as_deref());
+    push_text(entries, "litellm_model_name", Some(labels.model));
+    push_text(entries, "status_code", Some("200"));
+    push_text(
+        entries,
+        "route",
+        metadata.user_api_key_request_route.as_deref(),
+    );
+    push_text(
+        entries,
+        "client_ip",
+        metadata.requester_ip_address.as_deref(),
+    );
+    push_text(entries, "user_agent", metadata.user_agent.as_deref());
+    push_text(
+        entries,
+        "user_email",
+        metadata.user_api_key_user_email.as_deref(),
+    );
+    push_text(entries, "org_id", metadata.user_api_key_org_id.as_deref());
+    push_text(
+        entries,
+        "org_alias",
+        metadata.user_api_key_org_alias.as_deref(),
+    );
+    push_text(entries, "service_tier", service_tier(record));
+    push_text(entries, "api_base", Some(record.api_base.as_str()));
+    if labels.settings.emit_stream_label {
+        entries.push((
+            "stream".to_owned(),
+            LabelDumpValue::String(payload_stream_text(record)),
+        ));
+    }
+    entries.push((
+        "tags".to_owned(),
+        LabelDumpValue::Strings(text_tags(&record.request_tags)),
+    ));
+}
+
+fn push_text(entries: &mut Vec<(String, LabelDumpValue)>, name: &str, value: Option<&str>) {
+    if let Some(text) = value {
+        entries.push((name.to_owned(), LabelDumpValue::String(text.to_owned())));
+    }
 }
 
 fn custom_labels(
@@ -98,38 +162,15 @@ fn custom_labels(
 pub(crate) fn payload_exception(payload: &StandardLoggingPayload) -> Option<LabelException> {
     let info = payload.error_information.as_ref()?;
     Some(LabelException {
-        class_name: info
-            .error_class
-            .as_ref()
-            .and_then(Option::as_deref)
-            .unwrap_or_default()
-            .to_owned(),
-        message: info
-            .error_message
-            .as_ref()
-            .and_then(Option::as_deref)
-            .map(str::to_owned),
-        status_code: info
-            .error_code
-            .as_ref()
-            .and_then(Option::as_deref)
-            .map(str::to_owned),
-        llm_provider: info
-            .llm_provider
-            .as_ref()
-            .and_then(Option::as_deref)
-            .map(str::to_owned),
-        category: info
-            .error_rate_limit_category
-            .as_ref()
-            .and_then(Option::as_deref)
-            .map(str::to_owned),
-        rate_limit_type: info
-            .error_rate_limit_type
-            .as_ref()
-            .and_then(Option::as_deref)
-            .map(str::to_owned),
-        ..LabelException::default()
+        class_name: info.error_class.clone().flatten().unwrap_or_default(),
+        class: Class::default(),
+        message: info.error_message.clone().flatten(),
+        status_code: info.error_code.clone().flatten(),
+        code: None,
+        llm_provider: info.llm_provider.clone().flatten(),
+        category: info.error_rate_limit_category.clone().flatten(),
+        rate_limit_type: info.error_rate_limit_type.clone().flatten(),
+        legacy_class_name: None,
     })
 }
 

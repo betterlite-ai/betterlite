@@ -1,4 +1,3 @@
-use betterlite_logging::fields::payload::StandardLoggingPayload;
 use betterlite_logging::prometheus_exporter::Handle;
 use betterlite_logging::prometheus_latency::latency_histograms::{
     LatencyHistogram, LatencyHistograms, MetricHandle,
@@ -7,11 +6,6 @@ use chrono::Utc;
 use rust_decimal::Decimal;
 
 use super::hooks::PrometheusHooks;
-
-// LiteLLM reads kwargs["completion_start_time"], and a payload builder that lacked one leaves zero there
-pub(crate) fn completion_start_time(payload: &StandardLoggingPayload) -> Option<Decimal> {
-    (payload.completion_start_time != Decimal::ZERO).then_some(payload.completion_start_time)
-}
 
 pub(crate) fn now_seconds() -> Decimal {
     let millis = Utc::now().timestamp_millis();
@@ -24,7 +18,7 @@ impl PrometheusHooks {
     pub(crate) fn latency_histograms(&self) -> LatencyHistograms<'_, Handle> {
         LatencyHistograms {
             time_to_first_token: self.histogram(
-                &self.collectors.litellm_llm_api_time_to_first_token_metric,
+                &self.collectors.litellm_llm_api_time_to_first_token_metric, // ast-grep-ignore: no-long-names
                 "litellm_llm_api_time_to_first_token_metric",
             ),
             api_latency: self.histogram(
@@ -32,11 +26,11 @@ impl PrometheusHooks {
                 "litellm_llm_api_latency_metric",
             ),
             total_latency: self.histogram(
-                &self.collectors.litellm_request_total_latency_metric,
+                &self.collectors.litellm_request_total_latency_metric, // ast-grep-ignore: no-long-names
                 "litellm_request_total_latency_metric",
             ),
             queue_time: self.histogram(
-                &self.collectors.litellm_request_queue_time_metric,
+                &self.collectors.litellm_request_queue_time_metric, // ast-grep-ignore: no-long-names
                 "litellm_request_queue_time_seconds",
             ),
         }

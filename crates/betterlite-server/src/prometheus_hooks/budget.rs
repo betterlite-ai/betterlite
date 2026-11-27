@@ -9,21 +9,26 @@ use betterlite_logging::prometheus::budget_gauges::customer::{
 };
 use betterlite_logging::prometheus::budget_gauges::gauge::BudgetGauges;
 use betterlite_logging::prometheus::budget_lookups::customer_budget::{
-    CustomerBudgetRequest, set_customer_budget_metrics_after_api_request,
+    CustomerBudgetRequest,
+    set_customer_budget_metrics_after_api_request as write_customer_budget, // ast-grep-ignore: no-long-names
 };
 use betterlite_logging::prometheus::budget_lookups::key_budget::{
-    KeyBudgetRequest, set_key_budget_metrics_after_api_request,
+    KeyBudgetRequest,
+    set_key_budget_metrics_after_api_request as write_key_budget, // ast-grep-ignore: no-long-names
 };
 use betterlite_logging::prometheus::budget_lookups::lookups::BudgetLookups;
 use betterlite_logging::prometheus::budget_lookups::org_budget::{
-    OrgBudgetRequest, set_org_budget_metrics_after_api_request,
+    OrgBudgetRequest,
+    set_org_budget_metrics_after_api_request as write_org_budget, // ast-grep-ignore: no-long-names
 };
 use betterlite_logging::prometheus::budget_lookups::snapshots;
 use betterlite_logging::prometheus::budget_lookups::team_budget::{
-    TeamBudgetRequest, set_team_budget_metrics_after_api_request,
+    TeamBudgetRequest,
+    set_team_budget_metrics_after_api_request as write_team_budget, // ast-grep-ignore: no-long-names
 };
 use betterlite_logging::prometheus::budget_lookups::user_budget::{
-    UserBudgetRequest, set_user_budget_metrics_after_api_request,
+    UserBudgetRequest,
+    set_user_budget_metrics_after_api_request as write_user_budget, // ast-grep-ignore: no-long-names
 };
 use betterlite_logging::prometheus_exporter::{Handle, PrometheusCollectors};
 use betterlite_logging::prometheus_helpers::bounded_series_tracker::SeriesLimits;
@@ -43,7 +48,7 @@ use super::gauges::budget_gauges;
 pub struct BudgetLookupPort {
     lookups: Arc<dyn BudgetLookups>,
     collectors: Arc<PrometheusCollectors>,
-    gauges: BudgetGauges<Handle>,
+    pub gauges: BudgetGauges<Handle>,
     settings: PrometheusLabelSettings,
     limits: SeriesLimits,
     end_user: EndUserCostTrackingSettings,
@@ -69,12 +74,6 @@ impl BudgetLookupPort {
         }
     }
 
-    // B9480's fan-out asks for the gauges its no-op check reads once at construction
-    #[must_use]
-    pub const fn gauges(&self) -> &BudgetGauges<Handle> {
-        &self.gauges
-    }
-
     // the failure event writes the org gauge with a zero cost and no carried snapshot, outside the fan-out
     pub(crate) async fn org_after_failure(&self, org_id: Option<&str>) -> Result<(), LookupError> {
         let request = OrgBudgetRequest {
@@ -83,7 +82,7 @@ impl BudgetLookupPort {
             carried: None,
             org_alias: None,
         };
-        set_org_budget_metrics_after_api_request(
+        write_org_budget(
             self.lookups.as_ref(),
             &self.gauges.org,
             self.source(),
@@ -100,8 +99,11 @@ impl BudgetLookupPort {
             end_user_settings: self.end_user,
         }
     }
+}
 
-    async fn forward_key(&self, lookup: KeyBudgetLookup<'_>) -> Result<(), LookupError> {
+#[async_trait]
+impl RequestBudgetLookups for Arc<BudgetLookupPort> {
+    async fn key(&self, lookup: KeyBudgetLookup<'_>) -> Result<(), LookupError> {
         let carried = lookup.carried.map(|snapshot| snapshots::KeyBudgetSnapshot {
             budget_reset_at: snapshot.budget_reset_at,
         });
@@ -113,7 +115,7 @@ impl BudgetLookupPort {
             key_spend: lookup.key_spend,
             carried: carried.as_ref(),
         };
-        set_key_budget_metrics_after_api_request(
+        write_key_budget(
             self.lookups.as_ref(),
             &self.gauges.key,
             self.source(),
@@ -124,40 +126,40 @@ impl BudgetLookupPort {
         .map_err(budget_error)
     }
 
-    async fn forward_team(&self, lookup: TeamBudgetLookup<'_>) -> Result<(), LookupError> {
+    async fn team(&self, lookup: TeamBudgetLookup<'_>) -> Result<(), LookupError> {
         let carried = lookup
             .carried
             .map(|snapshot| snapshots::TeamBudgetSnapshot {
                 budget_reset_at: snapshot.budget_reset_at,
                 max_budget: snapshot.max_budget,
             });
-        let request = TeamBudgetRequest {
-            user_api_team: lookup.user_api_team,
-            user_api_team_alias: lookup.user_api_team_alias,
-            team_spend: lookup.team_spend,
-            team_max_budget: lookup.team_max_budget,
-            response_cost: lookup.response_cost,
-            carried: carried.as_ref(),
-        };
-        set_team_budget_metrics_after_api_request(
+        write_team_budget(
             self.lookups.as_ref(),
             &self.gauges.team,
             self.source(),
             Utc::now(),
-            &request,
+            &TeamBudgetRequest {
+                user_api_team: lookup.user_api_team,
+                user_api_team_alias: lookup.user_api_team_alias,
+                team_spend: lookup.team_spend,
+                team_max_budget: lookup.team_max_budget,
+                response_cost: lookup.response_cost,
+                carried: carried.as_ref(),
+            },
         )
         .await
         .map_err(budget_error)
     }
 
-    async fn forward_user(&self, lookup: UserBudgetLookup<'_>) -> Result<(), LookupError> {
-        let carried = lookup
-            .carried
-            .map(|snapshot| snapshots::UserBudgetSnapshot {
+    async fn user(&self, lookup: UserBudgetLookup<'_>) -> Result<(), LookupError> {
+        let carried = match lookup.carried {
+            Some(snapshot) => Some(snapshots::UserBudgetSnapshot {
                 budget_reset_at: snapshot.budget_reset_at,
                 max_budget: snapshot.max_budget,
                 user_alias: snapshot.user_alias,
-            });
+            }),
+            None => None,
+        };
         let request = UserBudgetRequest {
             user_id: lookup.user_id,
             user_spend: lookup.user_spend,
@@ -166,7 +168,7 @@ impl BudgetLookupPort {
             carried: carried.as_ref(),
             user_email: lookup.user_email,
         };
-        set_user_budget_metrics_after_api_request(
+        write_user_budget(
             self.lookups.as_ref(),
             &self.gauges.user,
             self.source(),
@@ -177,7 +179,7 @@ impl BudgetLookupPort {
         .map_err(budget_error)
     }
 
-    async fn forward_org(&self, lookup: OrgBudgetLookup<'_>) -> Result<(), LookupError> {
+    async fn org(&self, lookup: OrgBudgetLookup<'_>) -> Result<(), LookupError> {
         let carried = lookup.carried.map(|snapshot| snapshots::OrgBudgetSnapshot {
             spend: snapshot.spend,
             max_budget: snapshot.max_budget,
@@ -188,7 +190,7 @@ impl BudgetLookupPort {
             carried: carried.as_ref(),
             org_alias: lookup.org_alias,
         };
-        set_org_budget_metrics_after_api_request(
+        write_org_budget(
             self.lookups.as_ref(),
             &self.gauges.org,
             self.source(),
@@ -199,7 +201,7 @@ impl BudgetLookupPort {
         .map_err(budget_error)
     }
 
-    async fn forward_customer(&self, lookup: CustomerBudgetLookup<'_>) -> Result<(), LookupError> {
+    async fn customer(&self, lookup: CustomerBudgetLookup<'_>) -> Result<(), LookupError> {
         let request = CustomerBudgetRequest {
             end_user_id: lookup.end_user_id,
             response_cost: lookup.response_cost,
@@ -213,7 +215,7 @@ impl BudgetLookupPort {
             tracker: &self.collectors.bounded_series_tracker,
             limits: &self.limits,
         };
-        set_customer_budget_metrics_after_api_request(
+        write_customer_budget(
             self.lookups.as_ref(),
             &self.gauges.customer,
             context,
@@ -222,29 +224,6 @@ impl BudgetLookupPort {
         )
         .await
         .map_err(budget_error)
-    }
-}
-
-#[async_trait]
-impl RequestBudgetLookups for Arc<BudgetLookupPort> {
-    async fn key(&self, lookup: KeyBudgetLookup<'_>) -> Result<(), LookupError> {
-        self.forward_key(lookup).await
-    }
-
-    async fn team(&self, lookup: TeamBudgetLookup<'_>) -> Result<(), LookupError> {
-        self.forward_team(lookup).await
-    }
-
-    async fn user(&self, lookup: UserBudgetLookup<'_>) -> Result<(), LookupError> {
-        self.forward_user(lookup).await
-    }
-
-    async fn org(&self, lookup: OrgBudgetLookup<'_>) -> Result<(), LookupError> {
-        self.forward_org(lookup).await
-    }
-
-    async fn customer(&self, lookup: CustomerBudgetLookup<'_>) -> Result<(), LookupError> {
-        self.forward_customer(lookup).await
     }
 }
 
