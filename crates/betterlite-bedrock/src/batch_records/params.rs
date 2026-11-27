@@ -125,11 +125,11 @@ fn projected_messages(value: Option<&Json>) -> Result<Vec<Json>, BatchRecordsErr
         objects.push(fields);
     }
     let projected = developer_to_system(records)?;
-    Ok(projected
-        .into_iter()
-        .zip(objects)
-        .map(projected_message)
-        .collect())
+    let mut bodies = Vec::with_capacity(projected.len());
+    for (message, fields) in projected.into_iter().zip(objects) {
+        bodies.push(projected_message(message, fields));
+    }
+    Ok(bodies)
 }
 
 // developer_to_system reads the role and drops it into a new dict, so every field travels as it was parsed.
