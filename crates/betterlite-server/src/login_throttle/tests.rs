@@ -7,7 +7,8 @@ use std::sync::Arc;
 
 use betterlite_auth::trusted_network::request::NetworkRequest;
 use betterlite_config::sections::login_throttle::{
-    OverrideLimit, ProxyTopology, Settings, SourceOverride, SourceOverrides,
+    DEFAULT_BLOCK_SECONDS, DEFAULT_SOURCE_LIMIT, DEFAULT_WINDOW_SECONDS, OverrideLimit,
+    ProxyTopology, Settings, SourceOverride, SourceOverrides,
 };
 use betterlite_context::local_ttl_cache::CacheValue;
 use tracing::subscriber::DefaultGuard;
@@ -35,10 +36,7 @@ struct Fixture {
 }
 
 fn fixture(settings: &Settings, peer: Option<&str>, now: f64) -> Fixture {
-    let request = NetworkRequest {
-        peer,
-        ..NetworkRequest::default()
-    };
+    let request = request_with_peer(peer);
     fixture_request(settings, &request, now, None)
 }
 
@@ -76,6 +74,29 @@ fn fixture_request(
         redis,
         warnings,
         _guard: guard,
+    }
+}
+
+// every Settings field, named here once so a test sets only the ones it reads
+const fn default_settings() -> Settings {
+    Settings {
+        source_limit: DEFAULT_SOURCE_LIMIT,
+        source_limit_overrides: SourceOverrides::Absent,
+        window_seconds: DEFAULT_WINDOW_SECONDS,
+        block_seconds: DEFAULT_BLOCK_SECONDS,
+        proxy_topology: ProxyTopology::Unknown,
+        disabled: false,
+    }
+}
+
+// the struct update is denied, so every field is named here once
+fn request_with_peer(peer: Option<&str>) -> NetworkRequest<'_> {
+    NetworkRequest {
+        peer,
+        x_forwarded_for: None,
+        x_forwarded_proto: None,
+        host: None,
+        scheme: "",
     }
 }
 
@@ -119,10 +140,8 @@ fn host_bits_normalized() {
 fn override_bad_mapping() {
     let warnings = WarningLog::default();
     let _guard = warnings.subscribe();
-    let settings = Settings {
-        source_limit_overrides: SourceOverrides::Invalid,
-        ..Settings::default()
-    };
+    let mut settings = default_settings();
+    settings.source_limit_overrides = SourceOverrides::Invalid;
     assert_eq!(source_limit(&settings, "10.1.1.1"), 10);
     // the shape warning belongs to the config section, which reads the raw value once
     assert!(warnings.drain_classified().is_empty());
@@ -132,13 +151,11 @@ fn override_bad_mapping() {
 fn override_unmatched_value_ignored() {
     let warnings = WarningLog::default();
     let _guard = warnings.subscribe();
-    let settings = Settings {
-        source_limit_overrides: SourceOverrides::Mapping(vec![SourceOverride {
-            range: "192.168.0.0/16".to_owned(),
-            limit: OverrideLimit::Invalid,
-        }]),
-        ..Settings::default()
-    };
+    let mut settings = default_settings();
+    settings.source_limit_overrides = SourceOverrides::Mapping(vec![SourceOverride {
+        range: "192.168.0.0/16".to_owned(),
+        limit: OverrideLimit::Invalid,
+    }]);
     assert_eq!(source_limit(&settings, "10.1.1.1"), 10);
     assert!(warnings.drain_classified().is_empty());
     assert_eq!(source_limit(&settings, "192.168.5.5"), 10);
@@ -150,68 +167,56 @@ fn override_unmatched_value_ignored() {
 
 #[test]
 fn equivalent_range_ties() {
-    let settings = Settings {
-        source_limit_overrides: SourceOverrides::Mapping(vec![
-            SourceOverride {
-                range: "10.0.0.5".to_owned(),
-                limit: OverrideLimit::Limit(5),
-            },
-            SourceOverride {
-                range: "10.0.0.5/32".to_owned(),
-                limit: OverrideLimit::Limit(7),
-            },
-        ]),
-        ..Settings::default()
-    };
+    let mut settings = default_settings();
+    settings.source_limit_overrides = SourceOverrides::Mapping(vec![
+        SourceOverride {
+            range: "10.0.0.5".to_owned(),
+            limit: OverrideLimit::Limit(5),
+        },
+        SourceOverride {
+            range: "10.0.0.5/32".to_owned(),
+            limit: OverrideLimit::Limit(7),
+        },
+    ]);
     assert_eq!(source_limit(&settings, "10.0.0.5"), 7);
-    let exempt = Settings {
-        source_limit_overrides: SourceOverrides::Mapping(vec![
-            SourceOverride {
-                range: "10.0.0.5".to_owned(),
-                limit: OverrideLimit::Limit(7),
-            },
-            SourceOverride {
-                range: "10.0.0.5/32".to_owned(),
-                limit: OverrideLimit::Exempt,
-            },
-        ]),
-        ..Settings::default()
-    };
+    let mut exempt = default_settings();
+    exempt.source_limit_overrides = SourceOverrides::Mapping(vec![
+        SourceOverride {
+            range: "10.0.0.5".to_owned(),
+            limit: OverrideLimit::Limit(7),
+        },
+        SourceOverride {
+            range: "10.0.0.5/32".to_owned(),
+            limit: OverrideLimit::Exempt,
+        },
+    ]);
     assert_eq!(source_limit(&exempt, "10.0.0.5"), EXEMPT);
 }
 
 #[test]
 fn odd_limit_floor() {
-    let one = Settings {
-        source_limit: 1,
-        ..Settings::default()
-    };
+    let mut one = default_settings();
+    one.source_limit = 1;
     assert_eq!(
         fixture(&one, Some("10.1.1.1"), 1000.0).throttle.user_limit,
         1
     );
-    let five = Settings {
-        source_limit: 5,
-        ..Settings::default()
-    };
+    let mut five = default_settings();
+    five.source_limit = 5;
     assert_eq!(
         fixture(&five, Some("10.1.1.1"), 1000.0).throttle.user_limit,
         2
     );
-    let seven = Settings {
-        source_limit: 7,
-        ..Settings::default()
-    };
+    let mut seven = default_settings();
+    seven.source_limit = 7;
     assert_eq!(
         fixture(&seven, Some("10.1.1.1"), 1000.0)
             .throttle
             .user_limit,
         3
     );
-    let ten = Settings {
-        source_limit: 10,
-        ..Settings::default()
-    };
+    let mut ten = default_settings();
+    ten.source_limit = 10;
     assert_eq!(
         fixture(&ten, Some("10.1.1.1"), 1000.0).throttle.user_limit,
         5
@@ -253,10 +258,8 @@ fn cluster_slot_keys() {
 
 #[tokio::test]
 async fn disabled_attempt_no_effects() {
-    let settings = Settings {
-        disabled: true,
-        ..Settings::default()
-    };
+    let mut settings = default_settings();
+    settings.disabled = true;
     let built = fixture(&settings, Some("10.1.1.1"), 1000.0);
     assert!(!built.throttle.enabled);
     let attempt = match built.throttle.attempt("bob").await.expect("attempt") {
@@ -274,11 +277,9 @@ async fn disabled_attempt_no_effects() {
 
 #[tokio::test]
 async fn disabled_setting_cached() {
-    let settings = Settings {
-        disabled: true,
-        proxy_topology: direct_topology(),
-        ..Settings::default()
-    };
+    let mut settings = default_settings();
+    settings.disabled = true;
+    settings.proxy_topology = direct_topology();
     let built = fixture(&settings, Some("10.1.1.1"), 1000.0);
     assert!(!built.throttle.enabled);
     // record_failure is not gated on enabled: only LoginAttempt checks the setting
@@ -293,17 +294,12 @@ async fn disabled_setting_cached() {
 
 #[tokio::test]
 async fn local_shared_maximum() {
-    let settings = Settings {
-        source_limit: 2,
-        proxy_topology: direct_topology(),
-        ..Settings::default()
-    };
+    let mut settings = default_settings();
+    settings.source_limit = 2;
+    settings.proxy_topology = direct_topology();
     let built = fixture_request(
         &settings,
-        &NetworkRequest {
-            peer: Some("10.1.1.1"),
-            ..NetworkRequest::default()
-        },
+        &request_with_peer(Some("10.1.1.1")),
         1000.0,
         Some(NO_FAULTS),
     );
@@ -345,16 +341,11 @@ async fn local_shared_maximum() {
 
 #[tokio::test]
 async fn source_precedes_longer_pair() {
-    let settings = Settings {
-        proxy_topology: direct_topology(),
-        ..Settings::default()
-    };
+    let mut settings = default_settings();
+    settings.proxy_topology = direct_topology();
     let built = fixture_request(
         &settings,
-        &NetworkRequest {
-            peer: Some("10.1.1.1"),
-            ..NetworkRequest::default()
-        },
+        &request_with_peer(Some("10.1.1.1")),
         1000.0,
         Some(NO_FAULTS),
     );
@@ -421,10 +412,8 @@ async fn blocked_attempt_error_shape() {
 
 #[tokio::test]
 async fn limit_plus_one_blocks() {
-    let settings = Settings {
-        source_limit: 6,
-        ..Settings::default()
-    };
+    let mut settings = default_settings();
+    settings.source_limit = 6;
     let built = fixture(&settings, Some("10.1.1.1"), 1000.0);
     assert_eq!(built.throttle.user_limit, 3);
     assert_eq!(fail(&built, "bob").await.user, 0);
@@ -436,11 +425,9 @@ async fn limit_plus_one_blocks() {
 
 #[tokio::test]
 async fn triggering_pair_failure_not_charged_to_source() {
-    let settings = Settings {
-        source_limit: 4,
-        proxy_topology: direct_topology(),
-        ..Settings::default()
-    };
+    let mut settings = default_settings();
+    settings.source_limit = 4;
+    settings.proxy_topology = direct_topology();
     let built = fixture(&settings, Some("10.1.1.1"), 1000.0);
     let keys = keys_of(&built, "bob");
     assert_eq!(fail(&built, "bob").await, BlockTtls { user: 0, source: 0 });
@@ -464,16 +451,11 @@ async fn triggering_pair_failure_not_charged_to_source() {
 
 #[tokio::test]
 async fn redis_fixed_vs_local_sliding_window() {
-    let settings = Settings {
-        source_limit: 8,
-        ..Settings::default()
-    };
+    let mut settings = default_settings();
+    settings.source_limit = 8;
     let built = fixture_request(
         &settings,
-        &NetworkRequest {
-            peer: Some("10.1.1.1"),
-            ..NetworkRequest::default()
-        },
+        &request_with_peer(Some("10.1.1.1")),
         1000.0,
         Some(NO_FAULTS),
     );
@@ -493,10 +475,8 @@ async fn redis_fixed_vs_local_sliding_window() {
 
 #[tokio::test]
 async fn blocked_failure_does_not_extend() {
-    let settings = Settings {
-        source_limit: 2,
-        ..Settings::default()
-    };
+    let mut settings = default_settings();
+    settings.source_limit = 2;
     let built = fixture(&settings, Some("10.1.1.1"), 1000.0);
     assert_eq!(fail(&built, "bob").await.user, 0);
     assert_eq!(fail(&built, "bob").await.user, 300);
@@ -506,11 +486,9 @@ async fn blocked_failure_does_not_extend() {
 
 #[tokio::test]
 async fn success_preserves_blocks_and_source() {
-    let settings = Settings {
-        source_limit: 4,
-        proxy_topology: direct_topology(),
-        ..Settings::default()
-    };
+    let mut settings = default_settings();
+    settings.source_limit = 4;
+    settings.proxy_topology = direct_topology();
     let built = fixture(&settings, Some("10.1.1.1"), 1000.0);
     let keys = keys_of(&built, "bob");
     fail(&built, "bob").await;
@@ -525,16 +503,11 @@ async fn success_preserves_blocks_and_source() {
 
 #[tokio::test]
 async fn redis_failure_classes_fall_back() {
-    let settings = Settings {
-        source_limit: 4,
-        ..Settings::default()
-    };
+    let mut settings = default_settings();
+    settings.source_limit = 4;
     let built = fixture_request(
         &settings,
-        &NetworkRequest {
-            peer: Some("10.1.1.1"),
-            ..NetworkRequest::default()
-        },
+        &request_with_peer(Some("10.1.1.1")),
         1000.0,
         Some(&[("record_failure", "unavailable")]),
     );
@@ -557,16 +530,11 @@ async fn redis_failure_classes_fall_back() {
 
 #[tokio::test]
 async fn redis_success_does_not_mirror_local() {
-    let settings = Settings {
-        source_limit: 4,
-        ..Settings::default()
-    };
+    let mut settings = default_settings();
+    settings.source_limit = 4;
     let built = fixture_request(
         &settings,
-        &NetworkRequest {
-            peer: Some("10.1.1.1"),
-            ..NetworkRequest::default()
-        },
+        &request_with_peer(Some("10.1.1.1")),
         1000.0,
         Some(NO_FAULTS),
     );
@@ -587,10 +555,7 @@ async fn redis_clear_failure_still_clears_local() {
     let settings = Settings::default();
     let built = fixture_request(
         &settings,
-        &NetworkRequest {
-            peer: Some("10.1.1.1"),
-            ..NetworkRequest::default()
-        },
+        &request_with_peer(Some("10.1.1.1")),
         1000.0,
         Some(&[("delete", "unavailable")]),
     );
@@ -612,10 +577,7 @@ async fn malformed_store_reply_propagates() {
     let settings = Settings::default();
     let built = fixture_request(
         &settings,
-        &NetworkRequest {
-            peer: Some("10.1.1.1"),
-            ..NetworkRequest::default()
-        },
+        &request_with_peer(Some("10.1.1.1")),
         1000.0,
         Some(&[("block_ttls", "malformed")]),
     );
@@ -626,10 +588,7 @@ async fn malformed_store_reply_propagates() {
     assert!(matches!(error, LoginThrottleError::Shared(_)));
     let built_record = fixture_request(
         &settings,
-        &NetworkRequest {
-            peer: Some("10.1.1.1"),
-            ..NetworkRequest::default()
-        },
+        &request_with_peer(Some("10.1.1.1")),
         1000.0,
         Some(&[("record_failure", "malformed")]),
     );
@@ -665,15 +624,15 @@ fn warning_cache_keys() {
 
 #[tokio::test]
 async fn trusted_forwarded_source() {
-    let settings = Settings {
-        proxy_topology: ProxyTopology::Entries(vec!["10.0.0.0/8".to_owned()]),
-        ..Settings::default()
-    };
+    let mut settings = default_settings();
+    settings.proxy_topology = ProxyTopology::Entries(vec!["10.0.0.0/8".to_owned()]);
     let forwarded = "203.0.113.9".to_owned();
     let request = NetworkRequest {
         peer: Some("10.1.1.1"),
         x_forwarded_for: Some(&forwarded),
-        ..NetworkRequest::default()
+        x_forwarded_proto: None,
+        host: None,
+        scheme: "",
     };
     let built = fixture_request(&settings, &request, 1000.0, None);
     assert_eq!(built.throttle.client_ip, "203.0.113.9");
@@ -760,14 +719,12 @@ fn local_store_set_keeps_a_live_ttl() {
 
 #[tokio::test]
 async fn exempt_override_disables_the_throttle() {
-    let settings = Settings {
-        source_limit_overrides: SourceOverrides::Mapping(vec![SourceOverride {
-            range: "10.1.1.1".to_owned(),
-            limit: OverrideLimit::Exempt,
-        }]),
-        proxy_topology: direct_topology(),
-        ..Settings::default()
-    };
+    let mut settings = default_settings();
+    settings.source_limit_overrides = SourceOverrides::Mapping(vec![SourceOverride {
+        range: "10.1.1.1".to_owned(),
+        limit: OverrideLimit::Exempt,
+    }]);
+    settings.proxy_topology = direct_topology();
     let built = fixture(&settings, Some("10.1.1.1"), 1000.0);
     assert!(!built.throttle.enabled);
     assert_eq!(built.throttle.source_limit, None);
@@ -786,10 +743,8 @@ async fn exempt_override_disables_the_throttle() {
 
 #[tokio::test]
 async fn undeclared_topology_ignores_a_source_block() {
-    let settings = Settings {
-        source_limit: 4,
-        ..Settings::default()
-    };
+    let mut settings = default_settings();
+    settings.source_limit = 4;
     let built = fixture(&settings, Some("10.1.1.1"), 1000.0);
     assert_eq!(built.throttle.source_limit, None);
     assert_eq!(built.throttle.user_limit, 2);
@@ -809,17 +764,12 @@ async fn undeclared_topology_ignores_a_source_block() {
 
 #[tokio::test]
 async fn shared_source_counts_when_declared() {
-    let settings = Settings {
-        source_limit: 6,
-        proxy_topology: direct_topology(),
-        ..Settings::default()
-    };
+    let mut settings = default_settings();
+    settings.source_limit = 6;
+    settings.proxy_topology = direct_topology();
     let built = fixture_request(
         &settings,
-        &NetworkRequest {
-            peer: Some("10.1.1.1"),
-            ..NetworkRequest::default()
-        },
+        &request_with_peer(Some("10.1.1.1")),
         1000.0,
         Some(NO_FAULTS),
     );
@@ -891,16 +841,11 @@ async fn shared_source_counts_when_declared() {
 // Redis TTL truncates a sub-second remainder to 0, and the Lua guard only stops a count above zero
 #[tokio::test]
 async fn shared_bump_counts_with_a_subsecond_block_left() {
-    let settings = Settings {
-        source_limit: 4,
-        ..Settings::default()
-    };
+    let mut settings = default_settings();
+    settings.source_limit = 4;
     let built = fixture_request(
         &settings,
-        &NetworkRequest {
-            peer: Some("10.1.1.1"),
-            ..NetworkRequest::default()
-        },
+        &request_with_peer(Some("10.1.1.1")),
         1000.5,
         Some(NO_FAULTS),
     );
@@ -926,11 +871,9 @@ async fn shared_bump_counts_with_a_subsecond_block_left() {
 
 #[tokio::test]
 async fn failed_attempt_records_and_warns() {
-    let settings = Settings {
-        source_limit: 4,
-        proxy_topology: direct_topology(),
-        ..Settings::default()
-    };
+    let mut settings = default_settings();
+    settings.source_limit = 4;
+    settings.proxy_topology = direct_topology();
     let built = fixture(&settings, Some("10.1.1.1"), 1000.0);
     assert_eq!(built.throttle.user_limit, 2);
     fail_attempt(&built, "bob").await;
