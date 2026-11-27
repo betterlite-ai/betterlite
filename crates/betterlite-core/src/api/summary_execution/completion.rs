@@ -63,10 +63,9 @@ impl SummaryCompletion for ExecutorCompletion<'_> {
         call: SummaryCall<'_>,
     ) -> Result<CompletionAnswer, SummaryCallFailure> {
         // litellm.completion validates the messages and drops their None fields before any provider call
-        let messages = fix_openai_messages(&decision_messages(call.messages)).map_err(|error| {
-            SummaryCallFailure {
-                message: error.to_string(),
-            }
+        let converted: Vec<DecisionJson> = call.messages.iter().map(decision_json).collect();
+        let messages = fix_openai_messages(&converted).map_err(|error| SummaryCallFailure {
+            message: error.to_string(),
         })?;
         let wire = SummaryWire {
             model: call.model,
@@ -103,10 +102,6 @@ impl SummaryCompletion for ExecutorCompletion<'_> {
 }
 
 // the validator and the wire read betterlite_models' Json; the summary keeps betterlite_prompts' one
-fn decision_messages(messages: &[Json]) -> Vec<DecisionJson> {
-    messages.iter().map(decision_json).collect()
-}
-
 fn decision_json(value: &Json) -> DecisionJson {
     match value {
         Json::Null => DecisionJson::Null,
