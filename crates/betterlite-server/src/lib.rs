@@ -337,6 +337,7 @@ pub mod scim_placeholder_repair;
 pub mod scim_projections;
 pub mod scim_records;
 pub mod scim_role_settings;
+pub mod scim_user_delete;
 pub mod scim_user_lifecycle;
 pub mod scim_user_patch;
 pub mod search_call_routes;
