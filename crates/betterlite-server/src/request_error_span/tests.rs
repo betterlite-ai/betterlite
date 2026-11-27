@@ -559,7 +559,15 @@ fn facts_keep_the_class_message_code_and_headers() {
     assert!(facts.status_code.is_none());
     assert!(facts.response_status_code.is_none());
     assert!(facts.llm_provider.is_none());
+    assert!(facts.category.is_none());
+    assert!(facts.rate_limit_type.is_none());
+    assert!(facts.budget_entity_type.is_none());
+    assert!(facts.budget_entity_id.is_none());
+    assert!(facts.budget_limit.is_none());
+    assert!(facts.budget_spend.is_none());
     assert!(facts.proxy_type.is_none());
+    assert!(facts.response_headers.is_none());
+    assert!(facts.litellm_response_headers.is_none());
     assert!(facts.traceback_lines.is_empty());
 }
 
