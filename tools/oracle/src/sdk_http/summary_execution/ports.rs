@@ -93,7 +93,7 @@ pub(super) struct Port<'port> {
 }
 
 impl<'port> Port<'port> {
-    pub(super) fn new(
+    pub(super) const fn new(
         route: Route,
         executor: &'port ChatExecutor,
         deployment: &'port ChatDeployment,
