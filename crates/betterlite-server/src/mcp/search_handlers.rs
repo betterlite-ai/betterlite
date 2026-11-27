@@ -18,7 +18,7 @@ use betterlite_mcp::wire_compat::tool_outcome::WireCompat;
 use betterlite_prompts::arguments::json::Object;
 use http::StatusCode;
 
-use self::dispatch::{agent_search_text, proxy_search, ranked_hits, search_text, tool_search_text};
+use self::dispatch::{agent_search_text, mcp_tool_search_text, proxy_search, search_text};
 use self::error::SearchHandlerError;
 use self::ports::ToolExecution;
 use self::types::{
@@ -55,7 +55,8 @@ pub async fn handle_skill_search(
     context: &HandlerContext<'_>,
 ) -> Result<CallToolResult, SearchHandlerError> {
     let max_top_k = i64::try_from(MAX_SKILL_SEARCH_TOP_K).unwrap_or(i64::MAX);
-    let top_k = request.top_k.clamp(1, max_top_k);
+    let lower_bounded = request.top_k.max(1);
+    let top_k = lower_bounded.min(max_top_k);
     let skills = context.ports.accessible_skills(context.caller).await?;
     let outcome = context
         .ports
@@ -89,12 +90,7 @@ pub async fn handle_mcp_tool_search(
     if settings.embedding_model.is_some() && context.settings.llm_router().is_none() {
         return Ok(text_tool_result(EMBEDDING_WITHOUT_ROUTER.to_owned(), true));
     }
-    let tools = context
-        .operations
-        .list_mcp_tools(context.caller, context.scope, false)
-        .await?;
-    let ranking = ranked_hits(request.query, request.top_k, &tools, &settings, context).await;
-    tool_search_text(ranking)
+    mcp_tool_search_text(request.query, request.top_k, &settings, context).await
 }
 
 pub async fn handle_mcp_proxy_tool(

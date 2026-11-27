@@ -66,6 +66,20 @@ pub(super) async fn agent_search_text(
     search_text(outcome)
 }
 
+// LiteLLM's tool search handler lists the caller's accessible tools before it ranks them
+pub(super) async fn mcp_tool_search_text(
+    query: &str,
+    top_k: i64,
+    settings: &MCPToolSearchSettings,
+    context: &HandlerContext<'_>,
+) -> Result<CallToolResult, SearchHandlerError> {
+    let tools = context
+        .operations
+        .list_mcp_tools(context.caller, context.scope, false)
+        .await?;
+    tool_search_text(ranked_hits(query, top_k, &tools, settings, context).await)
+}
+
 pub(super) fn tool_search_text(
     ranking: Result<Vec<MCPToolSearchHit>, SearchError>,
 ) -> Result<CallToolResult, SearchHandlerError> {
