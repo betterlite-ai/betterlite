@@ -1,7 +1,7 @@
 id: B3427
 milestone: M5 api families
 title: Eval update delete and cancellation routes
-status: blocked
+status: todo
 depends_on: [B3420, B3422, B3423, B8801, B9372]
 file: tasks/B3427-eval-mutation-routes.yaml
 covers:
@@ -10,5 +10,5 @@ parent: B096
 split_from: B096
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, Evals API is new and can wait"
+blocked_reason: null
 pr: null

@@ -1,7 +1,7 @@
 id: B9767
 milestone: M10 admin ui
 title: Mount the existing agent-card discovery route for the dashboard form
-status: blocked
+status: todo
 depends_on: [B8202, B5082, B172, B173, B8610, B052, B860, B9942]
 file: tasks/B9767-agent-discovery-mount.yaml
 covers:
@@ -10,5 +10,5 @@ parent: B149
 split_from: B149
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, admin UI pages for MCP agents and vector stores wait on those features"
+blocked_reason: null
 pr: null

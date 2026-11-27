@@ -1,7 +1,7 @@
 id: B1642
 milestone: M4 keys, spend and management
 title: Publish SCIM resource discovery, schemas and provider capabilities
-status: blocked
+status: todo
 depends_on: [B003, B052, B1632, B1633, B1644, B9941]
 file: tasks/B1642-scim-discovery.yaml
 covers:
@@ -10,5 +10,5 @@ parent: B064
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, SCIM provisioning can wait for a first release"
+blocked_reason: null
 pr: null

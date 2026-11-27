@@ -1,7 +1,7 @@
 id: B093
 milestone: M5 api families
 title: Videos API
-status: blocked
+status: todo
 depends_on: [B3343, B3344, B3345, B6360, B6460, B844, B8610, B8611, B8631, B8694, B8804]
 file: tasks/B093-video-runtime-parity.yaml
 covers:
@@ -10,5 +10,5 @@ parent: null
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, Videos API is new and can wait"
+blocked_reason: null
 pr: null

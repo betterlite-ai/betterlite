@@ -1,7 +1,7 @@
 id: B149
 milestone: M10 admin ui
 title: Admin UI pages for MCP servers, agents, skills, search tools, vector stores, memory, workflows and prompts working against betterlite
-status: blocked
+status: todo
 depends_on: [B860, B9942, B4061, B4062, B8672, B9010, B060, B9735, B9760, B9761, B9762, B9763, B9764, B9765, B9766, B9767]
 file: tasks/B149-dashboard-prompt-requests.yaml
 covers:
@@ -10,5 +10,5 @@ parent: null
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, admin UI pages for MCP agents and vector stores wait on those features"
+blocked_reason: null
 pr: null
