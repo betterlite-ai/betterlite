@@ -47,16 +47,15 @@ pub async fn handle_agent_search(
         .ports
         .check_feature_access_for_user(context.caller, FeatureName::Agents)
         .await?;
-    agent_search_text(request.query, request.top_k.max(1), context).await
+    agent_search_text(request, context).await
 }
 
 pub async fn handle_skill_search(
     request: SkillSearchRequest<'_>,
     context: &HandlerContext<'_>,
 ) -> Result<CallToolResult, SearchHandlerError> {
-    let top_k = request
-        .top_k
-        .clamp(1, i64::try_from(MAX_SKILL_SEARCH_TOP_K).unwrap_or(i64::MAX));
+    let max_top_k = i64::try_from(MAX_SKILL_SEARCH_TOP_K).unwrap_or(i64::MAX);
+    let top_k = request.top_k.clamp(1, max_top_k);
     let skills = context.ports.accessible_skills(context.caller).await?;
     let outcome = context
         .ports

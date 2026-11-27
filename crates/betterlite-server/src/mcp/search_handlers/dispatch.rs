@@ -47,15 +47,17 @@ pub(super) async fn ranked_hits(
 
 // LiteLLM's agent search handler resolves the caller's accessible agents and searches them
 pub(super) async fn agent_search_text(
-    query: &str,
-    top_k: i64,
+    request: AgentSearchRequest<'_>,
     context: &HandlerContext<'_>,
 ) -> Result<CallToolResult, SearchHandlerError> {
     let agents = context.ports.accessible_agents(context.caller).await?;
     let outcome = context
         .ports
         .search_agents(
-            AgentSearchRequest { query, top_k },
+            AgentSearchRequest {
+                query: request.query,
+                top_k: request.top_k.max(1),
+            },
             &agents,
             context.settings.agent_embedding_model(),
             context.caller,
