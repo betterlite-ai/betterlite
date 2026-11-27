@@ -14,7 +14,7 @@ description: >-
 
   Where. Module `app::inference::evals` (crates/betterlite-server/src/app/inference/evals.rs and evals/tests.rs). In
   crates/betterlite-server/src/app/inference.rs add one line to `mount` that calls `evals::mount(router, state)`,
-  after the lines B8634, B8635 and B8774 wrote, and the `mod evals;` line. evals::mount builds
+  after any existing route merges, using the skeleton's existing `mod evals;` declaration. evals::mount builds
   `app::inference::pre_call_step(state)` (B8802) once and merges, each once and in this order,
   `api::eval_read_create_routes::routes(..)`, `api::eval_mutation_routes::routes(..)` and
   `api::eval_run_create_list_routes::routes(..)`, handing each the same pre-call Arc and whatever else its task's
