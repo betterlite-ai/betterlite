@@ -79,58 +79,40 @@ pub fn set_transcription_model(
         return;
     }
     if create_if_missing {
-        create_nested_transcription(session, model);
+        // keep whatever existing dictionary holds the audio and input, and replace anything else
+        let mut audio = object_or_empty(session.get("audio"));
+        let mut input = object_or_empty(audio.get("input"));
+        let transcription = IndexMap::from([("model".to_owned(), Json::Text(model.to_owned()))]);
+        input.insert("transcription".to_owned(), Json::Object(transcription));
+        audio.insert("input".to_owned(), Json::Object(input));
+        session.insert("audio".to_owned(), Json::Object(audio));
     }
 }
 
-// the flat shape takes the model and keeps its other keys
+// the flat shape takes the model in place and keeps its other keys
 #[must_use]
 fn rewrite_flat_transcription(session: &mut IndexMap<String, Json>, model: &str) -> bool {
-    let Some(Json::Object(transcription)) = session.get("input_audio_transcription") else {
+    let Some(Json::Object(transcription)) = session.get_mut("input_audio_transcription") else {
         return false;
     };
-    let mut replaced = transcription.clone();
-    replaced.insert("model".to_owned(), Json::Text(model.to_owned()));
-    session.insert(
-        "input_audio_transcription".to_owned(),
-        Json::Object(replaced),
-    );
+    transcription.insert("model".to_owned(), Json::Text(model.to_owned()));
     true
 }
 
-// the GA nesting takes the model, keeping audio, input and the transcription's other keys
+// the GA nesting takes the model in place, keeping audio, input and the transcription's other keys
 #[must_use]
 fn rewrite_nested_transcription(session: &mut IndexMap<String, Json>, model: &str) -> bool {
-    let Some(Json::Object(audio)) = session.get("audio") else {
+    let Some(Json::Object(audio)) = session.get_mut("audio") else {
         return false;
     };
-    let Some(Json::Object(input)) = audio.get("input") else {
+    let Some(Json::Object(input)) = audio.get_mut("input") else {
         return false;
     };
-    let Some(Json::Object(transcription)) = input.get("transcription") else {
+    let Some(Json::Object(transcription)) = input.get_mut("transcription") else {
         return false;
     };
-    let mut replaced_transcription = transcription.clone();
-    replaced_transcription.insert("model".to_owned(), Json::Text(model.to_owned()));
-    let mut replaced_input = input.clone();
-    replaced_input.insert(
-        "transcription".to_owned(),
-        Json::Object(replaced_transcription),
-    );
-    let mut replaced_audio = audio.clone();
-    replaced_audio.insert("input".to_owned(), Json::Object(replaced_input));
-    session.insert("audio".to_owned(), Json::Object(replaced_audio));
+    transcription.insert("model".to_owned(), Json::Text(model.to_owned()));
     true
-}
-
-// the create_if_missing branch keeps whatever existing dictionary holds the audio and input, and replaces anything else
-fn create_nested_transcription(session: &mut IndexMap<String, Json>, model: &str) {
-    let mut audio = object_or_empty(session.get("audio"));
-    let mut input = object_or_empty(audio.get("input"));
-    let transcription = IndexMap::from([("model".to_owned(), Json::Text(model.to_owned()))]);
-    input.insert("transcription".to_owned(), Json::Object(transcription));
-    audio.insert("input".to_owned(), Json::Object(input));
-    session.insert("audio".to_owned(), Json::Object(audio));
 }
 
 #[must_use]
