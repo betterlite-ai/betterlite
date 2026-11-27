@@ -1,0 +1,28 @@
+task: B4504
+deviations:
+  - what: >-
+      Money in the Lens records (spent, job cost, monthly budget, the estimate and the cost returned in ModelResult)
+      is a Decimal. quote runs the f64 price formula the source runs and converts its result once to Decimal, and the
+      reserve and settle arithmetic then adds and subtracts Decimals rather than f64 values.
+    why: >-
+      B4500 keeps all Lens money as Decimal, so an estimate that the f64 formula produces is converted once at the
+      boundary. The oracle cases use rates and prompts whose result is exact in both representations, so betterlite
+      and LiteLLM compare equal.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/inference.py#L72-L87
+  - what: >-
+      A catalog price that is null for the above-200k or above-128k tier counts as 0, and a missing base input or
+      output rate, a negative rate or a non-numeric rate is a status 500 with an error that names the model.
+    why: >-
+      At the pin, Prices declares the tier rates as float fields defaulting to 0, so a catalog entry whose tier keys
+      are null fails Prices validation with a 500; treating null as 0 is the evident intent. The base rates are
+      required and must be >= 0 in LiteLLM too, so a bad base rate stays an error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/inference.py#L53-L60
+  - what: >-
+      The in-process request is a plain struct that carries the method, path, empty query, content-type header,
+      scheme, server host and port, client address and serialized body to the chat pipeline, not an ASGI Request
+      with a replayed receive channel.
+    why: >-
+      betterlite has no ASGI layer and its chat pipeline takes request facts directly. The observable parts of the
+      request that the pipeline reads are kept.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/billing.py#L50-L63
+kept_bugs: []
