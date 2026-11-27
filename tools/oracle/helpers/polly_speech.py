@@ -55,9 +55,11 @@ class Config(Protocol):
         /, *, drop_params: bool, kwargs: Object
     ) -> tuple[str | None, Object]: ...
 
-    def get_complete_url(self, model: str, api_base: str | None, litellm_params: Object, /) -> str: ...
+    def get_complete_url(
+        self, model: str, api_base: str | None, litellm_params: Object, /) -> str: ...
 
-    def transform_text_to_speech_request(  # ast-grep-ignore: no-long-names
+    # ast-grep-ignore: no-long-names
+    def transform_text_to_speech_request(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/aws_polly/text_to_speech/transformation.py#L310-L318
         self, model: str, text: str, voice: str | None, optional_params: Object,
         litellm_params: Object, headers: dict[str, str], /
     ) -> SpeechRequestData: ...
@@ -247,8 +249,8 @@ def request_answer(call: Call) -> Answer:
     try:
         data = REQUEST_DATA.validate_python(
             CONFIG.transform_text_to_speech_request(
-                MODEL, call["text"], call.get("voice"), call["optional_params"],
-                call["litellm_params"], {},
+                MODEL, call["text"], OPTIONAL_TEXT.validate_python(call.get("voice")),
+                call["optional_params"], call["litellm_params"], {},
             )
         )
         api_base = OPTIONAL_TEXT.validate_python(call["litellm_params"].get("api_base"))
