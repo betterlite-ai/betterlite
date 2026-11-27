@@ -303,7 +303,7 @@ pub(super) fn default_record_id() {
         .iter()
         .zip(bodies)
         .map(|(url, body)| {
-            let line = format!(r#"{{"url":"{url}",{body}"#);
+            let line = format!(r#"{{"url":"{url}",{body}}}"#);
             record(&line)
         })
         .collect();
