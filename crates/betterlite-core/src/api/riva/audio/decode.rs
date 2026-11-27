@@ -5,7 +5,7 @@ use pyo3::exceptions::PyImportError;
 use pyo3::types::{PyAnyMethods as _, PyBytes, PyDict, PyDictMethods as _, PyList, PyModule};
 use pyo3::{Bound, Py, PyAny, PyErr, PyResult, Python};
 
-use super::error::{MAX_AUDIO_BYTES, RivaAudioError, python_error};
+use super::error::{MAX_AUDIO_BYTES, RivaAudioError, call_failure};
 use super::python::{as_int, decode_failure, exception_text, import_numpy, install_hint};
 
 const NO_SAMPLES: &str = "Audio decode produced no samples.";
@@ -135,7 +135,7 @@ fn decode_with_audioread(
         Err(error) if error.is_instance_of::<PyImportError>(py) => {
             return Err(install_hint(sf_error));
         }
-        Err(error) => return Err(python_error(py, "import audioread", &error)),
+        Err(error) => return Err(call_failure(py, "import audioread", &error)),
     };
     let (_folder, path) = staged_file(file_bytes)?;
     let opened = audioread

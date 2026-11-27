@@ -3,7 +3,7 @@ use pyo3::types::{PyAnyMethods as _, PyDict, PyDictMethods as _, PyInt, PyModule
 use pyo3::{Bound, PyAny, PyErr, PyResult, Python};
 
 use super::TARGET_SAMPLE_RATE_HZ;
-use super::error::{RivaAudioError, python_error};
+use super::error::{RivaAudioError, call_failure};
 use super::python::{as_int, import_numpy};
 
 pub(super) fn resample<'py>(
@@ -16,7 +16,7 @@ pub(super) fn resample<'py>(
     let size = samples
         .getattr("size")
         .and_then(|size| as_int(py, &size))
-        .map_err(|error| python_error(py, "samples.size", &error))?;
+        .map_err(|error| call_failure(py, "samples.size", &error))?;
     if source_rate == target_rate || size == 0 {
         return Ok(samples.clone());
     }
@@ -49,7 +49,7 @@ fn soxr_attempt<'py>(
     match call_soxr(py, numpy, samples, source_rate, target_rate) {
         Ok(resampled) => Attempt::Done(resampled),
         Err(error) if error.is_instance_of::<PyImportError>(py) => Attempt::Missing,
-        Err(error) => Attempt::Failed(python_error(py, "soxr.resample", &error)),
+        Err(error) => Attempt::Failed(call_failure(py, "soxr.resample", &error)),
     }
 }
 
@@ -77,7 +77,7 @@ fn scipy_attempt<'py>(
     match call_scipy(py, numpy, samples, source_rate, target_rate) {
         Ok(resampled) => Attempt::Done(resampled),
         Err(error) if error.is_instance_of::<PyImportError>(py) => Attempt::Missing,
-        Err(error) => Attempt::Failed(python_error(py, "scipy.signal.resample_poly", &error)),
+        Err(error) => Attempt::Failed(call_failure(py, "scipy.signal.resample_poly", &error)),
     }
 }
 
@@ -120,7 +120,7 @@ fn linear<'py>(
     source_rate: i64,
     target_rate: i64,
 ) -> Result<Bound<'py, PyAny>, RivaAudioError> {
-    let fail = |error: PyErr| python_error(py, "linear resample", &error);
+    let fail = |error: PyErr| call_failure(py, "linear resample", &error);
     let size = samples.getattr("size").map_err(fail)?;
     let target_length = linear_target_length(py, &size, source_rate, target_rate).map_err(fail)?;
     let float32 = numpy.getattr("float32").map_err(fail)?;

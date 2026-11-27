@@ -2,6 +2,7 @@
 
 use std::ffi::CString;
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -13,7 +14,7 @@ use rust_decimal::Decimal;
 use tokio::sync::Mutex;
 
 use super::error::{MAX_AUDIO_BYTES, RivaAudioError};
-use super::{ResampledAudio, TARGET_SAMPLE_RATE_HZ, decode_riva_audio, decode_riva_audio_blocking};
+use super::{ResampledAudio, TARGET_SAMPLE_RATE_HZ, decode_riva_audio, decode_riva_audio_attached};
 
 // the interpreter and sys.modules are shared, so the tests run one at a time
 static PYTHON: Mutex<()> = Mutex::const_new(());
@@ -287,6 +288,10 @@ fn sample_count(audio: &ResampledAudio) -> u64 {
     u64::try_from(audio.pcm_bytes.len().checked_div(2).unwrap()).unwrap()
 }
 
+fn decode(host: &PythonHost, file_bytes: &[u8]) -> Result<ResampledAudio, RivaAudioError> {
+    host.attach(|py| decode_riva_audio_attached(py, file_bytes))
+}
+
 #[tokio::test]
 async fn decodes_a_stereo_file_to_16k_mono_pcm() {
     let _guard = PYTHON.lock().await;
@@ -316,8 +321,7 @@ fn passes_audio_at_the_target_rate_through_unchanged() {
         return;
     };
     reset_fakes(&host);
-    let audio =
-        decode_riva_audio_blocking(&host, &wav_bytes(&[16384, -16384, 8192], 1, 16_000)).unwrap();
+    let audio = decode(&host, &wav_bytes(&[16384, -16384, 8192], 1, 16_000)).unwrap();
     assert_eq!(pcm_values(&audio), vec![16383, -16383, 8191]);
     assert_eq!(audio.duration_seconds, duration(3, TARGET_SAMPLE_RATE_HZ));
     assert_eq!(audio.sample_rate_hz, TARGET_SAMPLE_RATE_HZ);
@@ -331,7 +335,7 @@ fn rounds_a_short_high_rate_file_down_to_one_sample() {
         return;
     };
     reset_fakes(&host);
-    let audio = decode_riva_audio_blocking(&host, &wav_bytes(&[16384], 1, 44_100)).unwrap();
+    let audio = decode(&host, &wav_bytes(&[16384], 1, 44_100)).unwrap();
     assert_eq!(pcm_values(&audio), vec![16383]);
     assert_eq!(audio.duration_seconds, duration(1, TARGET_SAMPLE_RATE_HZ));
 }
@@ -356,7 +360,7 @@ fn falls_back_to_audioread_when_soundfile_fails() {
             &audioread_source("[bytes.fromhex('00c0')]", 16_000, 1, AudioreadFailure::None),
         );
     });
-    let audio = decode_riva_audio_blocking(&host, b"staged bytes").unwrap();
+    let audio = decode(&host, b"staged bytes").unwrap();
     assert_eq!(pcm_values(&audio), vec![-16383]);
     assert_eq!(audio.duration_seconds, duration(1, TARGET_SAMPLE_RATE_HZ));
     let staging = probe_staging(&host);
@@ -394,7 +398,7 @@ fn downmixes_stereo_audioread_chunks() {
             ),
         );
     });
-    let audio = decode_riva_audio_blocking(&host, b"staged bytes").unwrap();
+    let audio = decode(&host, b"staged bytes").unwrap();
     assert_eq!(pcm_values(&audio), vec![0, 0]);
     assert_eq!(audio.duration_seconds, duration(2, TARGET_SAMPLE_RATE_HZ));
 }
@@ -419,10 +423,10 @@ fn rejects_an_empty_audioread_decode() {
             &audioread_source("[]", 16_000, 1, AudioreadFailure::None),
         );
     });
-    let error = decode_riva_audio_blocking(&host, b"staged bytes").unwrap_err();
+    let error = decode(&host, b"staged bytes").unwrap_err();
     assert!(matches!(error, RivaAudioError::Decode { .. }));
     assert_eq!(error.to_string(), "Audio decode produced no samples.");
-    assert_eq!(error.status_code(), 400);
+    assert_eq!(error.response().status_code, 400);
     assert_eq!(
         probe_events(&host),
         vec!["audioread.open", "audioread.exit"]
@@ -449,12 +453,12 @@ fn wraps_audioread_open_failures() {
             &audioread_source("[]", 16_000, 1, AudioreadFailure::Open),
         );
     });
-    let error = decode_riva_audio_blocking(&host, b"staged bytes").unwrap_err();
+    let error = decode(&host, b"staged bytes").unwrap_err();
     assert_eq!(
         error.to_string(),
         "Could not decode audio for Riva STT. Convert your audio to wav/flac/ogg before calling the API. Underlying error: cannot open audio"
     );
-    assert_eq!(error.status_code(), 400);
+    assert_eq!(error.response().status_code, 400);
     assert_eq!(probe_events(&host), vec!["audioread.open"]);
     let staging = probe_staging(&host);
     assert_eq!(staging.len(), 1);
@@ -481,7 +485,7 @@ fn wraps_audioread_read_failures() {
             &audioread_source("[]", 16_000, 1, AudioreadFailure::Iteration),
         );
     });
-    let error = decode_riva_audio_blocking(&host, b"staged bytes").unwrap_err();
+    let error = decode(&host, b"staged bytes").unwrap_err();
     assert_eq!(
         error.to_string(),
         "Could not decode audio for Riva STT. Convert your audio to wav/flac/ogg before calling the API. Underlying error: cannot read audio"
@@ -511,13 +515,13 @@ fn reports_the_soundfile_error_when_audioread_is_missing() {
         );
     });
     let _audioread = Hidden::new(&host, "audioread");
-    let error = decode_riva_audio_blocking(&host, b"staged bytes").unwrap_err();
+    let error = decode(&host, b"staged bytes").unwrap_err();
     assert_eq!(
         error.to_string(),
         "Could not decode audio for Riva STT. Install audio extras (`pip install 'litellm[stt-nvidia-riva]'`) or convert your audio to wav/flac/ogg before calling the API. Underlying error: cannot open sound file"
     );
-    assert_eq!(error.status_code(), 400);
-    assert_eq!(error.error_type(), "invalid_request_error");
+    assert_eq!(error.response().status_code, 400);
+    assert_eq!(error.response().error_type, "invalid_request_error");
     assert!(probe_events(&host).is_empty());
 }
 
@@ -526,14 +530,14 @@ fn reports_missing_numpy_with_the_install_hint() {
     let _guard = PYTHON.blocking_lock();
     let host = PythonHost::start(&HostConfig::default()).unwrap();
     let _numpy = Hidden::new(&host, "numpy");
-    let error = decode_riva_audio_blocking(&host, b"anything").unwrap_err();
+    let error = decode(&host, b"anything").unwrap_err();
     assert!(matches!(error, RivaAudioError::NumpyMissing));
     assert_eq!(
         error.to_string(),
         "numpy is required for Riva audio resampling. Install Riva STT extras to enable automatic audio resampling: `pip install 'litellm[stt-nvidia-riva]'`"
     );
-    assert_eq!(error.status_code(), 500);
-    assert_eq!(error.error_type(), "internal_server_error");
+    assert_eq!(error.response().status_code, 500);
+    assert_eq!(error.response().error_type, "internal_server_error");
 }
 
 #[test]
@@ -551,7 +555,7 @@ fn selects_the_first_column_of_a_single_channel_matrix() {
             &soundfile_source("[[0.5], [-0.25]]", 2, 1, 16_000),
         );
     });
-    let audio = decode_riva_audio_blocking(&host, b"fake audio").unwrap();
+    let audio = decode(&host, b"fake audio").unwrap();
     assert_eq!(pcm_values(&audio), vec![16383, -8191]);
 }
 
@@ -572,7 +576,7 @@ fn prefers_soxr_over_scipy() {
         install(py, "soxr", &soxr_source(false));
         install_scipy(py);
     });
-    let audio = decode_riva_audio_blocking(&host, b"fake audio").unwrap();
+    let audio = decode(&host, b"fake audio").unwrap();
     assert_eq!(pcm_values(&audio), vec![0, 0, 8191, 0]);
     assert_eq!(probe_events(&host), vec!["soxr.resample:8000:16000"]);
 }
@@ -594,7 +598,7 @@ fn does_not_fall_back_when_soxr_fails() {
         install(py, "soxr", &soxr_source(true));
         install_scipy(py);
     });
-    let error = decode_riva_audio_blocking(&host, b"fake audio").unwrap_err();
+    let error = decode(&host, b"fake audio").unwrap_err();
     assert!(matches!(
         error,
         RivaAudioError::Python {
@@ -602,8 +606,8 @@ fn does_not_fall_back_when_soxr_fails() {
             ..
         }
     ));
-    assert_eq!(error.status_code(), 500);
-    assert_eq!(error.error_type(), "internal_server_error");
+    assert_eq!(error.response().status_code, 500);
+    assert_eq!(error.response().error_type, "internal_server_error");
     assert_eq!(
         error.to_string(),
         "soxr.resample failed: RuntimeError: soxr failed"
@@ -628,7 +632,7 @@ fn uses_scipy_when_soxr_is_missing() {
         install_scipy(py);
     });
     let _soxr = Hidden::new(&host, "soxr");
-    let audio = decode_riva_audio_blocking(&host, b"fake audio").unwrap();
+    let audio = decode(&host, b"fake audio").unwrap();
     assert_eq!(pcm_values(&audio), vec![0, 0, 8191, 0]);
     assert_eq!(probe_events(&host), vec!["scipy.resample_poly:2:1"]);
 }
@@ -650,7 +654,7 @@ fn computes_scipy_factors_from_the_greatest_common_divisor() {
         install_scipy(py);
     });
     let _soxr = Hidden::new(&host, "soxr");
-    let audio = decode_riva_audio_blocking(&host, b"fake audio").unwrap();
+    let audio = decode(&host, b"fake audio").unwrap();
     assert_eq!(pcm_values(&audio), vec![3276, 29490]);
     assert_eq!(probe_events(&host), vec!["scipy.resample_poly:160:441"]);
 }
@@ -672,7 +676,7 @@ fn uses_the_linear_fallback_when_no_resampler_is_installed() {
     });
     let _soxr = Hidden::new(&host, "soxr");
     let _scipy = Hidden::new(&host, "scipy");
-    let audio = decode_riva_audio_blocking(&host, b"fake audio").unwrap();
+    let audio = decode(&host, b"fake audio").unwrap();
     assert_eq!(pcm_values(&audio), vec![-16383, -10922, -5461, 0]);
     assert_eq!(audio.duration_seconds, duration(4, TARGET_SAMPLE_RATE_HZ));
     assert!(probe_events(&host).is_empty());
@@ -695,7 +699,7 @@ fn rounds_the_linear_target_length_half_even() {
     });
     let _soxr = Hidden::new(&host, "soxr");
     let _scipy = Hidden::new(&host, "scipy");
-    let audio = decode_riva_audio_blocking(&host, b"fake audio").unwrap();
+    let audio = decode(&host, b"fake audio").unwrap();
     assert_eq!(pcm_values(&audio), vec![0, 32767]);
 }
 
@@ -716,7 +720,7 @@ fn keeps_negative_full_scale_at_minus_32767() {
     });
     let _soxr = Hidden::new(&host, "soxr");
     let _scipy = Hidden::new(&host, "scipy");
-    let audio = decode_riva_audio_blocking(&host, b"fake audio").unwrap();
+    let audio = decode(&host, b"fake audio").unwrap();
     assert_eq!(pcm_values(&audio), vec![-32767, -10922, 10922, 32767]);
 }
 
@@ -732,7 +736,7 @@ fn skips_resampling_for_an_empty_decode() {
         install(py, "soundfile", &soundfile_source("[]", 0, 1, 8_000));
         install(py, "soxr", &soxr_source(true));
     });
-    let audio = decode_riva_audio_blocking(&host, b"fake audio").unwrap();
+    let audio = decode(&host, b"fake audio").unwrap();
     assert!(audio.pcm_bytes.is_empty());
     assert_eq!(audio.duration_seconds, Decimal::ZERO);
     assert!(probe_events(&host).is_empty());
@@ -750,7 +754,7 @@ fn skips_resampling_at_the_target_rate() {
         install(py, "soundfile", &soundfile_source("[0.5]", 1, 1, 16_000));
         install(py, "soxr", &soxr_source(true));
     });
-    let audio = decode_riva_audio_blocking(&host, b"fake audio").unwrap();
+    let audio = decode(&host, b"fake audio").unwrap();
     assert_eq!(pcm_values(&audio), vec![16383]);
     assert!(probe_events(&host).is_empty());
 }
@@ -766,16 +770,17 @@ fn rejects_supplied_audio_over_the_limit() {
             .checked_add(1)
             .unwrap()
     ];
-    let error = decode_riva_audio_blocking(&host, &bytes).unwrap_err();
+    let error = decode(&host, &bytes).unwrap_err();
     assert!(matches!(error, RivaAudioError::TooLarge));
     assert_eq!(
         error.to_string(),
         "the audio input exceeds the 64 MiB limit for Riva STT"
     );
-    assert_eq!(error.status_code(), 413);
-    assert_eq!(error.error_type(), "invalid_request_error");
-    assert_eq!(error.param(), Some("file"));
-    assert_eq!(error.code(), Some("audio_too_large"));
+    let response = error.response();
+    assert_eq!(response.status_code, 413);
+    assert_eq!(response.error_type, "invalid_request_error");
+    assert_eq!(response.param, Some("file"));
+    assert_eq!(response.code, Some("audio_too_large"));
 }
 
 #[test]
@@ -799,7 +804,7 @@ fn accepts_supplied_audio_of_exactly_the_limit() {
         );
     });
     let bytes = vec![0_u8; usize::try_from(MAX_AUDIO_BYTES).unwrap()];
-    let audio = decode_riva_audio_blocking(&host, &bytes).unwrap();
+    let audio = decode(&host, &bytes).unwrap();
     assert_eq!(pcm_values(&audio), vec![-16383]);
 }
 
@@ -814,9 +819,9 @@ fn rejects_decoded_soundfile_audio_over_the_limit() {
         install(py, "riva_audio_probe", PROBE);
         install(py, "soundfile", &oversized_soundfile(16_777_217));
     });
-    let error = decode_riva_audio_blocking(&host, b"fake audio").unwrap_err();
+    let error = decode(&host, b"fake audio").unwrap_err();
     assert!(matches!(error, RivaAudioError::TooLarge));
-    assert_eq!(error.status_code(), 413);
+    assert_eq!(error.response().status_code, 413);
 }
 
 #[test]
@@ -835,7 +840,7 @@ fn accepts_decoded_soundfile_audio_of_exactly_the_limit() {
             &audioread_source("[bytes.fromhex('00c0')]", 16_000, 1, AudioreadFailure::None),
         );
     });
-    let audio = decode_riva_audio_blocking(&host, b"fake audio").unwrap();
+    let audio = decode(&host, b"fake audio").unwrap();
     assert_eq!(pcm_values(&audio), vec![-16383]);
     assert_eq!(
         probe_events(&host),
@@ -863,9 +868,9 @@ fn rejects_audioread_output_over_the_limit() {
             &audioread_source("[bytes(33554436)]", 16_000, 1, AudioreadFailure::None),
         );
     });
-    let error = decode_riva_audio_blocking(&host, b"staged bytes").unwrap_err();
+    let error = decode(&host, b"staged bytes").unwrap_err();
     assert!(matches!(error, RivaAudioError::TooLarge));
-    assert_eq!(error.status_code(), 413);
+    assert_eq!(error.response().status_code, 413);
     assert_eq!(
         probe_events(&host),
         vec!["audioread.open", "audioread.exit"]
@@ -897,9 +902,9 @@ fn accepts_audioread_output_of_exactly_the_limit() {
             ),
         );
     });
-    let error = decode_riva_audio_blocking(&host, b"staged bytes").unwrap_err();
+    let error = decode(&host, b"staged bytes").unwrap_err();
     assert!(matches!(error, RivaAudioError::Decode { .. }));
-    assert_eq!(error.status_code(), 400);
+    assert_eq!(error.response().status_code, 400);
     assert!(
         error
             .to_string()
@@ -918,30 +923,39 @@ fn replays_the_riva_audio_corpus() {
         return;
     }
     let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/riva_audio");
-    let mut valid = 0_usize;
-    let mut broken = 0_usize;
-    for entry in fs::read_dir(&folder).unwrap().flatten() {
-        let path = entry.path();
-        let name = path.file_name().unwrap().to_str().unwrap().to_owned();
-        let bytes = fs::read(&path).unwrap();
-        let outcome = decode_riva_audio_blocking(&host, &bytes);
-        if name.starts_with("valid-") {
-            let audio = outcome.unwrap();
-            assert_eq!(audio.sample_rate_hz, TARGET_SAMPLE_RATE_HZ, "{name}");
-            assert_eq!(audio.num_channels, 1, "{name}");
-            assert!(audio.pcm_bytes.len().is_multiple_of(2), "{name}");
-            assert_eq!(
-                audio.duration_seconds,
-                duration(sample_count(&audio), TARGET_SAMPLE_RATE_HZ),
-                "{name}"
-            );
-            valid = valid.checked_add(1).unwrap();
-        } else {
-            let error = outcome.unwrap_err();
-            assert_eq!(error.status_code(), 400, "{name}: {error}");
-            broken = broken.checked_add(1).unwrap();
-        }
-    }
+    let (valid, broken) = fs::read_dir(&folder)
+        .unwrap()
+        .try_fold((0_usize, 0_usize), |(valid, broken), entry| {
+            let is_valid = replay_corpus_file(&host, &entry?.path())?;
+            let counts = if is_valid {
+                (valid.checked_add(1).unwrap(), broken)
+            } else {
+                (valid, broken.checked_add(1).unwrap())
+            };
+            Ok::<(usize, usize), io::Error>(counts)
+        })
+        .unwrap();
     assert!(valid > 0, "no valid corpus files ran");
     assert!(broken > 0, "no broken corpus files ran");
+}
+
+fn replay_corpus_file(host: &PythonHost, path: &Path) -> io::Result<bool> {
+    let name = path.file_name().unwrap().to_str().unwrap().to_owned();
+    let bytes = fs::read(path)?;
+    let outcome = decode(host, &bytes);
+    if name.starts_with("valid-") {
+        let audio = outcome.unwrap();
+        assert_eq!(audio.sample_rate_hz, TARGET_SAMPLE_RATE_HZ, "{name}");
+        assert_eq!(audio.num_channels, 1, "{name}");
+        assert!(audio.pcm_bytes.len().is_multiple_of(2), "{name}");
+        assert_eq!(
+            audio.duration_seconds,
+            duration(sample_count(&audio), TARGET_SAMPLE_RATE_HZ),
+            "{name}"
+        );
+        return Ok(true);
+    }
+    let error = outcome.unwrap_err();
+    assert_eq!(error.response().status_code, 400, "{name}: {error}");
+    Ok(false)
 }

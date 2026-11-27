@@ -4,7 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use betterlite_core::api::riva::audio::decode_riva_audio_blocking;
+use betterlite_core::api::riva::audio::decode_riva_audio_attached;
 use betterlite_pyhost::host::{HostConfig, PythonHost};
 use libfuzzer_sys::fuzz_target;
 
@@ -16,7 +16,7 @@ fuzz_target!(|data: &[u8]| {
     let Ok(host) = PythonHost::start(&config) else {
         return;
     };
-    drop(decode_riva_audio_blocking(&host, data));
+    drop(host.attach(|py| decode_riva_audio_attached(py, data)));
 });
 
 // the oracle environment carries soundfile, audioread and numpy when uv has synced it

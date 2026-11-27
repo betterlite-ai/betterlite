@@ -1,7 +1,6 @@
 use betterlite_pyhost::call_error::PythonError;
 use pyo3::{PyErr, Python};
 
-/// The cap on a supplied file and on the PCM a decoder hands back, as 64 MiB.
 pub const MAX_AUDIO_BYTES: u64 = 67_108_864;
 
 const INVALID_REQUEST_ERROR: &str = "invalid_request_error";
@@ -32,57 +31,45 @@ pub enum RivaAudioError {
     Work { message: String },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RivaAudioErrorResponse {
+    pub status_code: u16,
+    pub error_type: &'static str,
+    pub param: Option<&'static str>,
+    pub code: Option<&'static str>,
+}
+
 impl RivaAudioError {
     #[must_use]
-    pub const fn status_code(&self) -> u16 {
+    pub const fn response(&self) -> RivaAudioErrorResponse {
         match self {
-            Self::Decode { .. } => 400,
-            Self::TooLarge => 413,
+            Self::Decode { .. } => RivaAudioErrorResponse {
+                status_code: 400,
+                error_type: INVALID_REQUEST_ERROR,
+                param: None,
+                code: None,
+            },
+            Self::TooLarge => RivaAudioErrorResponse {
+                status_code: 413,
+                error_type: INVALID_REQUEST_ERROR,
+                param: Some("file"),
+                code: Some(AUDIO_TOO_LARGE),
+            },
             Self::NumpyMissing
             | Self::Python { .. }
             | Self::Staging { .. }
             | Self::Duration
-            | Self::Work { .. } => 500,
-        }
-    }
-
-    #[must_use]
-    pub const fn error_type(&self) -> &'static str {
-        if self.status_code() < 500 {
-            INVALID_REQUEST_ERROR
-        } else {
-            INTERNAL_SERVER_ERROR
-        }
-    }
-
-    #[must_use]
-    pub const fn param(&self) -> Option<&'static str> {
-        match self {
-            Self::TooLarge => Some("file"),
-            Self::NumpyMissing
-            | Self::Decode { .. }
-            | Self::Python { .. }
-            | Self::Staging { .. }
-            | Self::Duration
-            | Self::Work { .. } => None,
-        }
-    }
-
-    #[must_use]
-    pub const fn code(&self) -> Option<&'static str> {
-        match self {
-            Self::TooLarge => Some(AUDIO_TOO_LARGE),
-            Self::NumpyMissing
-            | Self::Decode { .. }
-            | Self::Python { .. }
-            | Self::Staging { .. }
-            | Self::Duration
-            | Self::Work { .. } => None,
+            | Self::Work { .. } => RivaAudioErrorResponse {
+                status_code: 500,
+                error_type: INTERNAL_SERVER_ERROR,
+                param: None,
+                code: None,
+            },
         }
     }
 }
 
-pub(super) fn python_error(
+pub(super) fn call_failure(
     py: Python<'_>,
     operation: &'static str,
     error: &PyErr,
