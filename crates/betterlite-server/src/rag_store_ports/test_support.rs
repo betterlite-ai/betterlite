@@ -111,12 +111,7 @@ async fn answer(
         let header_value = HeaderValue::from_str(value).expect("the fixture value is valid");
         response_headers.insert(header_name, header_value);
     }
-    (
-        state.reply.status,
-        response_headers,
-        state.reply.body.clone(),
-    )
-        .into_response()
+    (state.reply.status, response_headers, state.reply.body).into_response()
 }
 
 fn record(state: &Exchange, method: &Method, headers: &HttpHeaders, uri: &Uri, body: &Bytes) {

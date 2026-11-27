@@ -82,7 +82,7 @@ async fn get_sends_the_bearer_without_a_body() {
         request.headers.get("authorization").map(String::as_str),
         Some("Bearer secret-token")
     );
-    assert!(request.headers.get("content-type").is_none());
+    assert!(!request.headers.contains_key("content-type"));
     assert!(request.body.is_empty());
 }
 
