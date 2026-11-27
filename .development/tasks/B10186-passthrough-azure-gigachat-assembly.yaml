@@ -147,6 +147,7 @@ out_of_scope:
   - "Bedrock and Bedrock Mantle: B10184 builds their ports over assemble_collected."
   - "Per-model encodings for the bundled counter (deviation above)."
 pitfalls:
+  - "GigachatPassthroughConfig derives Debug (gigachat_passthrough.rs L58); derive Debug on the moved CollectedCounter too, since Engine is Debug (crates/betterlite-tokenizer/src/engine.rs L14)."
   - "Convert serde values with serde_json::to_value and from_value, never through from_str: arbitrary_precision is on in these crates."
   - "assemble_collected never blocks: now_or_never answers Pending as an error, and no block_in_place or new runtime takes its place."
   - "betterlite-streaming cannot depend on betterlite-anthropic (anthropic depends on streaming), so the ReasoningTokenCounter impl lives in betterlite-anthropic."

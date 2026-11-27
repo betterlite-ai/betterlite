@@ -107,6 +107,7 @@ out_of_scope:
   - "The logger registration itself: B8399's register_callback_loggers. Per request selection: B248. The hook arms of hooks.rs: B8747 (anthropic_cache_control_hook) and B8749 (the dynamic rate limiters)."
   - "compression_interception, websearch_interception and code_interpreter_interception as SDK callbacks: B9821 builds the list, takes compression_interception out of hooks.rs and installs the list in start after the init_callbacks line; B9822, B9823 and B9824 register each one."
 pitfalls:
+  - "The resolver also reaches LoggingWiring's register_service_callbacks (crates/betterlite-logging/src/logging_service_events/wiring.rs L58-L82): service_callback names stop logging 'not installed' and resolve through this slot. Check what the slot answers for each service_callback name and keep the warning for a name it does not build."
   - Ask the server arms before the catalog for every name, because a callback_settings entry named after a catalog name with callback_type generic_api is a generic_api logger.
   - A ResolvedLogger variant is an Arc of a concrete type; coerce it with `as Arc<dyn CallbackLogger>` and keep the same Arc so the server's own caches stay shared.
 review_level: standard
