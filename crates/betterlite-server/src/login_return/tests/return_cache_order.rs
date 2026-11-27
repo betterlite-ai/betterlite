@@ -174,11 +174,9 @@ async fn redis_before_response() {
 #[tokio::test]
 async fn local_cache_ttl() {
     let now = Arc::new(Mutex::new(0.0_f64));
-    let clock: Arc<dyn Fn() -> f64 + Send + Sync> = {
-        let now = Arc::clone(&now);
-        Arc::new(move || *now.lock().unwrap_or_else(PoisonError::into_inner))
-    };
-    let cache = local_cache(clock);
+    let clock_now = Arc::clone(&now);
+    let read_now = move || *clock_now.lock().unwrap_or_else(PoisonError::into_inner);
+    let cache = local_cache(Arc::new(read_now));
     let token = session_token();
     let redirect = resume_login(
         ResumeRequest {
@@ -300,7 +298,7 @@ async fn location_quoting() {
     let user = RecordingCache::default();
     let redirect = resume(
         ResumeRequest {
-            destination: Some("/é/%2F?q=<tag>".as_bytes()),
+            destination: Some("/\u{e9}/%2F?q=<tag>".as_bytes()),
             session_token: &token,
             network: NetworkRequest::default(),
         },

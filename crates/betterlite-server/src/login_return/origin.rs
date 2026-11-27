@@ -35,11 +35,11 @@ pub fn validate_return_to(
     return_to: &str,
     control_plane_url: Option<&str>,
 ) -> Result<bool, ReturnToError> {
-    let Some(control_plane_url) = control_plane_url else {
+    let Some(configured_url) = control_plane_url else {
         return Ok(false);
     };
     let requested = origin(return_to)?;
-    let configured = origin(control_plane_url)?;
+    let configured = origin(configured_url)?;
     if requested == configured {
         return Ok(true);
     }

@@ -17,7 +17,7 @@ enum Expected {
 #[case::relative_backslash("/\\evil.example/v1", false)]
 #[case::relative_controls("/a\tb", false)]
 #[case::relative_percent_literal("/%2F..%2Fadmin", true)]
-#[case::relative_unicode("/café/keys", true)]
+#[case::relative_unicode("/\u{e9}/keys", true)]
 fn same_origin_return_paths(#[case] return_to: &str, #[case] expected: bool) {
     assert_eq!(
         is_same_origin_return_path(return_to),

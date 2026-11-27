@@ -39,7 +39,7 @@ fn replays_the_login_return_corpus(#[files("fuzz/corpus/login_return/*")] path: 
     let bytes = fs::read(&path).expect("a corpus seed is readable");
     let destination =
         decode_return_destination(&bytes).expect("the seed is UTF-8 within the byte bound");
-    drop(is_same_origin_return_path(&destination));
-    drop(validate_return_to(&destination, Some("https://cp.example")));
-    drop(validate_return_to(&destination, None));
+    let _relative = is_same_origin_return_path(&destination);
+    let _configured = validate_return_to(&destination, Some("https://cp.example"));
+    let _unconfigured = validate_return_to(&destination, None);
 }

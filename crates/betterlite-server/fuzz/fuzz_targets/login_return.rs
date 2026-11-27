@@ -9,6 +9,6 @@ fuzz_target!(|bytes: &[u8]| {
     let Ok(destination) = decode_return_destination(bytes) else {
         return;
     };
-    drop(is_same_origin_return_path(&destination));
-    drop(validate_return_to(&destination, Some("https://cp.example")));
+    let _relative = is_same_origin_return_path(&destination);
+    let _configured = validate_return_to(&destination, Some("https://cp.example"));
 });
