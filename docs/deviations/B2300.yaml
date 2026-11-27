@@ -1,0 +1,6 @@
+task: B2300
+deviations:
+  - what: A return destination over 1048576 bytes is rejected with a typed error before URL parsing.
+    why: Bound the outside-byte decoder while retaining the smaller inherited request limits.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2896-L2924
+kept_bugs: []
