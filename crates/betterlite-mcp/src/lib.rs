@@ -36,6 +36,7 @@ pub mod openapi_tools;
 pub mod outbound_credentials;
 pub mod redirect_trust;
 pub mod registry;
+pub mod registry_ip_filter;
 pub mod registry_reload;
 pub mod request_context;
 pub mod request_headers;
