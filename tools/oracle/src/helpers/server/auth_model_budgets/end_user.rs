@@ -88,7 +88,7 @@ fn params_of(call: &Call) -> Result<EndUserParams, Failure> {
     })
 }
 
-// the case sends the field as JSON her type declares it, so one round-trip covers string, count, amount, map and region
+// the case sends each field as JSON in its target type, so one round-trip covers string, count, amount, map and region
 fn json_as<T>(params: &BTreeMap<String, JsonData>, name: &str) -> Option<T>
 where
     T: DeserializeOwned,
