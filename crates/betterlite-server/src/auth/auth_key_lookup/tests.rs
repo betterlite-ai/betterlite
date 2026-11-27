@@ -11,7 +11,7 @@ use axum::extract::Extension;
 use axum::http::{Request, StatusCode, header};
 use axum::routing::post;
 use betterlite_auth::auth_identity::records::UserIdentity;
-use betterlite_auth::auth_identity::roles::{PrincipalType, Role};
+use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType, Role};
 use betterlite_auth::auth_key_lookup::error::KeyLookupError;
 use betterlite_auth::auth_key_lookup::{KeyAuthenticator, KeyLookupOutcome};
 use betterlite_config::loader::ConfigLoader;
@@ -305,6 +305,9 @@ fn key_context_fills_the_key_user() {
     );
     assert_eq!(principal.subject, "u1");
     assert_eq!(principal.principal_type, PrincipalType::Human);
+    assert_eq!(principal.auth_method, AuthMethod::ApiKey);
+    assert!(principal.issuer.is_none());
+    assert!(principal.scopes.is_empty());
     assert_eq!(principal.credential_ref.key_id, None);
     assert_eq!(
         principal.credential_ref.token_id.as_deref(),
