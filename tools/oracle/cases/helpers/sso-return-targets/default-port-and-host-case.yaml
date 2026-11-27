@@ -1,0 +1,16 @@
+kind: helper
+name: sso-return-target-default-port-and-host-case
+call:
+  sso_return_target:
+    same_origin: []
+    validate:
+      - return_to: "HTTPS://CP.Example.COM:443/done"
+        control_plane_url: "https://cp.example.com"
+      - return_to: "http://cp.example.com:80/done"
+        control_plane_url: "http://cp.example.com/"
+      - return_to: "https://cp.example.com/done"
+        control_plane_url: "https://CP.EXAMPLE.COM:443"
+      - return_to: "https://cp.example.com:8443/done"
+        control_plane_url: "https://cp.example.com:8443"
+env: {}
+compare: {ignore: []}

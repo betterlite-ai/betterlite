@@ -1,0 +1,12 @@
+kind: helper
+name: sso-return-target-unconfigured-and-wrong-origin
+call:
+  sso_return_target:
+    same_origin: []
+    validate:
+      - return_to: "https://cp.example.com/done"
+        control_plane_url: null
+      - return_to: "https://evil.example.com/done"
+        control_plane_url: "https://cp.example.com"
+env: {}
+compare: {ignore: []}

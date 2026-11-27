@@ -1,0 +1,10 @@
+kind: helper
+name: sso-return-target-invalid-port
+call:
+  sso_return_target:
+    same_origin: []
+    validate:
+      - return_to: "https://cp.example.com:notaport/done"
+        control_plane_url: "https://cp.example.com"
+env: {}
+compare: {ignore: []}

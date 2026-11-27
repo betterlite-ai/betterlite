@@ -1,0 +1,14 @@
+kind: helper
+name: sso-return-target-protocol-relative-and-backslash
+call:
+  sso_return_target:
+    same_origin:
+      - "//evil.example/done"
+      - "///evil.example/done"
+      - "/\\evil.example/done"
+      - "/dashboard"
+      - "dashboard"
+      - ""
+    validate: []
+env: {}
+compare: {ignore: []}
