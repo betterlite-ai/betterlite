@@ -85,7 +85,7 @@ impl Default for Reply {
         Self {
             status: 200,
             headers: BTreeMap::new(),
-            body: "{\"images\": []}".to_owned(),
+            body: "{\"images\": [\"eA==\"]}".to_owned(),
             failure: None,
         }
     }
