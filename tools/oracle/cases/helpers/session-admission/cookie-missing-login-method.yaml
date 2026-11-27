@@ -1,0 +1,11 @@
+kind: helper
+name: session-admission-cookie-missing-login-method
+call:
+  b4655:
+    cookie_header: "token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjQxMDI0NDQ4MDAsInVzZXJfaWQiOiJ1c2VyLTEifQ.QvfcoTUxF302Y1WcNp9fcY52vFfLaNHdxHe9UmcazaA"
+    master_key: sk-oracle-master
+    key_resolves: true
+    now: 1700000000
+env: {}
+compare:
+  ignore: []

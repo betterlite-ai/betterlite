@@ -15,7 +15,6 @@ pub mod google_sso;
 pub mod loader;
 pub mod microsoft_group_sync;
 pub mod microsoft_login;
-pub mod oauth_callback;
 pub mod provider_budget_view;
 mod providers;
 pub mod proxy;

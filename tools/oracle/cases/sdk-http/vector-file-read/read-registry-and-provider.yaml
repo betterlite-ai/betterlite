@@ -1,0 +1,60 @@
+kind: sdk_http
+name: vector-file-read-read-registry-and-provider
+call:
+  vector_file_read:
+    registry:
+      vector_store_id: vs_reg
+      credential_name: cred-a
+      credential_values: {api_key: sk-registry}
+    runs:
+      - operation: retrieve
+        mode: sync
+        vector_store_id: vs_reg
+        file_id: file_a
+        options: {api_key: sk-caller, litellm_call_id: call-1}
+      - operation: content
+        mode: async
+        vector_store_id: vs_reg
+        file_id: file_a
+        options: {api_key: sk-caller, litellm_call_id: call-2}
+        custom_llm_provider: ""
+      - operation: retrieve
+        mode: sync
+        vector_store_id: vs_other
+        file_id: file_b
+        options: {api_key: sk-caller, litellm_call_id: call-3}
+      - operation: retrieve
+        mode: sync
+        vector_store_id: vs_reg
+        file_id: file_a
+        options: {api_key: sk-caller, litellm_call_id: call-4}
+        custom_llm_provider: azure
+      - operation: content
+        mode: async
+        vector_store_id: vs_reg
+        file_id: file_a
+        options: {api_key: sk-caller, litellm_call_id: call-5}
+        custom_llm_provider: bogus
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: file_a, object: vector_store.file, status: completed}
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      file_id: file_a
+      filename: a
+      attributes: {tag: x}
+      content: [{type: text, text: hello}]
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: file_b, object: vector_store.file, status: completed}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore:
+    - pointer: /vector_file_read/value/runs/3/failure/message
+      why: mapped ValueErrors carry LiteLLM's wrapper text on one side and the provider's own message on the other
+    - pointer: /vector_file_read/value/runs/4/failure/message
+      why: mapped ValueErrors carry LiteLLM's wrapper text on one side and the provider's own message on the other
