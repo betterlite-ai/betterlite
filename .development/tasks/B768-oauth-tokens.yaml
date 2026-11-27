@@ -8,15 +8,6 @@ description: >-
   never reach logs.
 
 
-  Implement B875's two OAuth ports from betterlite-auth's auth_backend_dispatch module over OAuthTokenValidator
-  (OAuth2TokenCheck::check_oauth2_token) and TrustedOAuthProxy (OAuth2ProxyRequest::handle_oauth2_proxy_request)
-  and register both in B875's dispatcher: build them in this task's state/oauth_tokens.rs slot, then edit only
-  Slot::new in crates/betterlite-server/src/state/auth_backend_dispatch.rs so it fills B875's two empty fields from
-  that slot, and change nothing else there. B875 picks the arm (global OAuth, a routing override, the proxy flag) and
-  keeps its configured-but-unregistered startup error until this registration fills the slot. Add no second
-  selection policy, no auth stage of its own and no success fallback.
-
-
   Build the production oauth_tokens module in betterlite-auth; reuse the typed dependencies listed in
   the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
   tests.rs files.
@@ -73,8 +64,8 @@ description: >-
 
 
   The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
-  with an invalid model after auth, or the named management route). Reach the arms through B875's dispatch stage
-  in B732's server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
+  with an invalid model after auth, or the named management route). Install this production stage through
+  B732 server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
   and the complete error type/param/code. A successful auth branch must reach the downstream route response
   rather than manufacture a helper success. Pin the source exception translation from auth_exception_handler
   before choosing fixtures.
@@ -129,11 +120,10 @@ description: >-
 
 
   Server wiring tests live under betterlite-server::auth::oauth_tokens::tests: stage_is_registered and
-  failure_stops_downstream. The registration test builds the state through the actual B732 constructor with
-  OAuth configured and asserts B875's dispatch slot holds both implementations, so startup no longer fails as
-  unavailable; the failure test asserts its public error translation and that the downstream handler was not
+  failure_stops_downstream. The registration test invokes the actual B732 constructor with this production
+  stage; the failure test asserts its public error translation and that the downstream handler was not
   called. These tests are part of the behavior-test allowance already budgeted above.
-  B1100 registers state/oauth_tokens.rs as a stub slot, so fill crates/betterlite-server/src/state/oauth_tokens.rs, make only the Slot::new edit above in state/auth_backend_dispatch.rs, and leave state.rs as it is.
+  B1100 registers state/oauth_tokens.rs as a stub slot, so fill only crates/betterlite-server/src/state/oauth_tokens.rs and leave state.rs as it is.
 scope:
   paths:
     - crates/betterlite-auth/src/oauth_tokens.rs
@@ -153,7 +143,6 @@ scope:
     - crates/betterlite-server/src/auth/auth_request_models/tests.rs
     - crates/betterlite-server/src/state/oauth_tokens.rs
     - crates/betterlite-server/src/state/oauth_tokens/**
-    - crates/betterlite-server/src/state/auth_backend_dispatch.rs
     - tools/oracle/cases/auth/oauth-tokens/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/oauth-tokens-*
