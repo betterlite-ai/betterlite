@@ -37,14 +37,14 @@ description: >-
 
 
   For every tool result, find the first tool call whose call id, read with B10122's extract_tool_call_details
-  (api::responses_mcp_tool_selection), equals its tool_call_id. Missing tool_call_id or result uses
-  "unknown" and "" respectively; an explicit null keeps null. A matching falsy name or arguments becomes
+  (api::responses_mcp_tool_selection), equals its tool_call_id. Missing tool_call_id uses "unknown" and an
+  explicit null tool_call_id keeps null. result is always a string: B10121's McpToolResult.result is String, since every LiteLLM producer of a tool result writes one. A matching falsy name or arguments becomes
   tool_name="unknown" or tool_arguments="{}". Create MCP call events with base_item_id="mcp_" plus eight
   hexadecimal ID characters, output_index=0, and sequence_start=len(events)+1. The event builder supplies
   response.mcp_call.in_progress, response.mcp_call_arguments.delta, response.mcp_call_arguments.done and then
-  response.mcp_call.completed plus response.output_item.done when result is not None; result=None instead ends with
-  response.mcp_call.failed. Preserve result
-  order and the resulting sequence gaps (five events for a non-null result, four for null).
+  response.mcp_call.completed plus response.output_item.done, five events per result. The failed ending the builder has
+  for result=None cannot happen here, since result is never null. Preserve result
+  order and the resulting sequence gaps.
 
 
   Append two output items to the existing ResponsesAPIResponse.output without reordering existing items. The first
@@ -126,7 +126,7 @@ dod:
   - oracle
 - text: >-
     tool_execution_event_order asserts unknown/empty defaults, first matching tool call, output_index=0, mcp_ IDs,
-    five events for a non-null result, four for null, and sequence starts after the prior event count.
+    five events per result, and sequence starts after the prior event count.
   proof:
   - case-tool-execution-event-order
   - oracle
@@ -208,7 +208,6 @@ deviations:
   why: The native API boundary owns one provider dispatch and prevents a follow-up from re-entering route authentication; the consuming B932/provider seam still sends the same input, model, tools, previous_response_id and call parameters to the mock provider.
 pitfalls:
 - 'The oracle helper for this task is pre-registered as responses_mcp_followup in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/responses_mcp_followup.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/responses_mcp_followup.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
-- '_create_tool_execution_events treats a missing result as the empty string and therefore completed, but an explicit null result as failed; both cases have different event counts and sequence starts for the next result.'
 - '_build_request_params lets kwargs overwrite call_params and lets call_params overwrite the core input/model/tools keys; merging in the reverse order changes a caller-supplied input or model.'
 - '_prepare_follow_up_call_params removes tool_choice after restoring stream, including the value "required"; retaining it asks the provider for another tool choice during result submission.'
 - '_add_mcp_output_elements_to_response mutates the supplied response and appends fetched-tools before tool-results; returning a copied response or reversing these two items changes the final output order.'
