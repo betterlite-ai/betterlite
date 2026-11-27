@@ -69,14 +69,12 @@ pub fn is_passthrough_cold_start(
     names: &[String],
     client_ip: Option<&str>,
 ) -> bool {
-    if names.is_empty() {
-        return false;
-    }
-    names.iter().all(|name| {
-        registry
-            .server_by_name(name, client_ip)
-            .is_some_and(MCPServer::is_oauth_passthrough)
-    })
+    !names.is_empty()
+        && names.iter().all(|name| {
+            registry
+                .server_by_name(name, client_ip)
+                .is_some_and(MCPServer::is_oauth_passthrough)
+        })
 }
 
 #[must_use]
@@ -88,12 +86,18 @@ pub fn is_legacy_delegate_cold_start(
     if names.is_empty() {
         return false;
     }
-    names.iter().all(|name| {
+    for name in names {
         let Some(server) = registry.server_by_name(name, client_ip) else {
             return false;
         };
-        let delegates = server.fields.auth_type == Some(MCPAuth::Oauth2)
+        let is_oauth2_delegate = server.fields.auth_type == Some(MCPAuth::Oauth2)
             && server.fields.delegate_auth_to_upstream;
-        delegates && effective_oauth2_flow(server) != Some(OAuth2Flow::ClientCredentials)
-    })
+        if !is_oauth2_delegate {
+            return false;
+        }
+        if effective_oauth2_flow(server) == Some(OAuth2Flow::ClientCredentials) {
+            return false;
+        }
+    }
+    true
 }
