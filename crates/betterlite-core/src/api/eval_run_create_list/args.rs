@@ -38,95 +38,61 @@ pub struct ListRunsArgs<'call> {
 
 // LiteLLM's local_vars = locals() at create_run's entry, so every argument and **kwargs is in it
 pub(crate) fn local_vars_create(request: &CreateRunArgs<'_>) -> IndexMap<String, Json> {
-    let mut vars = IndexMap::new();
-    vars.insert("eval_id".to_owned(), Json::Text(request.eval_id.to_owned()));
-    vars.insert("data_source".to_owned(), json_of(request.data_source));
-    vars.insert(
-        "name".to_owned(),
-        request
-            .name
-            .map_or(Json::Null, |text| Json::Text(text.to_owned())),
-    );
-    vars.insert(
-        "metadata".to_owned(),
-        request.metadata.map_or(Json::Null, json_of),
-    );
-    vars.insert(
-        "extra_headers".to_owned(),
-        request.extra_headers.map_or(Json::Null, json_of),
-    );
-    vars.insert(
-        "extra_query".to_owned(),
-        request.extra_query.map_or(Json::Null, json_of),
-    );
-    vars.insert(
-        "extra_body".to_owned(),
-        request.extra_body.map_or(Json::Null, json_of),
-    );
-    vars.insert("timeout".to_owned(), seconds_of(request.timeout));
-    vars.insert(
-        "custom_llm_provider".to_owned(),
-        request
-            .custom_llm_provider
-            .map_or(Json::Null, |provider| Json::Text(provider.to_owned())),
-    );
-    vars.insert("kwargs".to_owned(), Json::Object(request.kwargs.clone()));
-    vars
+    let pairs = [
+        ("eval_id", Some(Json::Text(request.eval_id.to_owned()))),
+        ("data_source", Some(json_of(request.data_source))),
+        ("name", request.name.map(|text| Json::Text(text.to_owned()))),
+        ("metadata", request.metadata.map(json_of)),
+        ("extra_headers", request.extra_headers.map(json_of)),
+        ("extra_query", request.extra_query.map(json_of)),
+        ("extra_body", request.extra_body.map(json_of)),
+        ("timeout", request.timeout.map(seconds_of)),
+        (
+            "custom_llm_provider",
+            request
+                .custom_llm_provider
+                .map(|provider| Json::Text(provider.to_owned())),
+        ),
+        ("kwargs", Some(Json::Object(request.kwargs.clone()))),
+    ];
+    pairs
+        .into_iter()
+        .map(|(name, value)| (name.to_owned(), value.unwrap_or(Json::Null)))
+        .collect()
 }
 
 // LiteLLM's local_vars = locals() at list_runs' entry, so every argument and **kwargs is in it
 pub(crate) fn local_vars_list(request: &ListRunsArgs<'_>) -> IndexMap<String, Json> {
-    let mut vars = IndexMap::new();
-    vars.insert("eval_id".to_owned(), Json::Text(request.eval_id.to_owned()));
-    vars.insert(
-        "limit".to_owned(),
-        request
-            .limit
-            .map_or(Json::Null, |limit| Json::Number(Number::from(limit))),
-    );
-    vars.insert(
-        "after".to_owned(),
-        request
-            .after
-            .map_or(Json::Null, |text| Json::Text(text.to_owned())),
-    );
-    vars.insert(
-        "before".to_owned(),
-        request
-            .before
-            .map_or(Json::Null, |text| Json::Text(text.to_owned())),
-    );
-    vars.insert(
-        "order".to_owned(),
-        request
-            .order
-            .map_or(Json::Null, |text| Json::Text(text.to_owned())),
-    );
-    vars.insert(
-        "extra_headers".to_owned(),
-        request.extra_headers.map_or(Json::Null, json_of),
-    );
-    vars.insert(
-        "extra_query".to_owned(),
-        request.extra_query.map_or(Json::Null, json_of),
-    );
-    vars.insert("timeout".to_owned(), seconds_of(request.timeout));
-    vars.insert(
-        "custom_llm_provider".to_owned(),
-        request
-            .custom_llm_provider
-            .map_or(Json::Null, |provider| Json::Text(provider.to_owned())),
-    );
-    vars.insert("kwargs".to_owned(), Json::Object(request.kwargs.clone()));
-    vars
+    let limit = request.limit.map(|given| Json::Number(Number::from(given)));
+    let after = request.after.map(|text| Json::Text(text.to_owned()));
+    let before = request.before.map(|text| Json::Text(text.to_owned()));
+    let order = request.order.map(|text| Json::Text(text.to_owned()));
+    let pairs = [
+        ("eval_id", Some(Json::Text(request.eval_id.to_owned()))),
+        ("limit", limit),
+        ("after", after),
+        ("before", before),
+        ("order", order),
+        ("extra_headers", request.extra_headers.map(json_of)),
+        ("extra_query", request.extra_query.map(json_of)),
+        ("timeout", request.timeout.map(seconds_of)),
+        (
+            "custom_llm_provider",
+            request
+                .custom_llm_provider
+                .map(|provider| Json::Text(provider.to_owned())),
+        ),
+        ("kwargs", Some(Json::Object(request.kwargs.clone()))),
+    ];
+    pairs
+        .into_iter()
+        .map(|(name, value)| (name.to_owned(), value.unwrap_or(Json::Null)))
+        .collect()
 }
 
-// Python's local holds the timeout it was given, as a number of seconds; an absent one is null
-fn seconds_of(timeout: Option<Duration>) -> Json {
-    let Some(given) = timeout else {
-        return Json::Null;
-    };
-    match Number::from_f64(given.as_secs_f64()) {
+// Python's local holds the timeout in seconds, and the pair fallback writes null for an absent one
+fn seconds_of(timeout: Duration) -> Json {
+    match Number::from_f64(timeout.as_secs_f64()) {
         Some(seconds) => Json::Number(seconds),
         None => Json::Null,
     }
