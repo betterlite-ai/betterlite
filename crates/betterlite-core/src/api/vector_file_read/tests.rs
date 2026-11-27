@@ -578,6 +578,7 @@ async fn reads_reuse_only_a_client_of_their_kind(
     let supplied = FakeClient {
         answer: (200, HeaderMap::new(), CONTENT_BODY.as_bytes().to_vec()),
         seen: Shared::default(),
+        error: None,
     };
     let deps = SdkDeps {
         configs: &fakes.configs,
