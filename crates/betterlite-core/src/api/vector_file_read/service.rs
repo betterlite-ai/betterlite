@@ -34,13 +34,6 @@ pub struct ReadCall<'call> {
     pub kwargs: &'call JsonObject,
 }
 
-// The operation and handler family the wrapper's flag selected, over the kwargs the pop left
-pub struct ReadEntry<'call> {
-    pub operation: Operation,
-    pub mode: ClientKind,
-    pub kwargs: &'call JsonObject,
-}
-
 // The provider configs B010 selected, which the caller builds for the tags it serves
 pub trait VectorStoreFilesConfigs: Send + Sync {
     fn read_config(&self, tag: VectorStoreFilesConfigTag) -> Option<Box<dyn ReadConfig + '_>>;
@@ -107,6 +100,13 @@ pub struct SdkDeps<'deps, S: ClientSource> {
     pub request_timeout_seconds: f64,
 }
 
+// The request being read, the dependencies it needs and the log it writes through, lent together
+pub struct ReadSession<'deps, 'call, 'borrow, 'env, S: ClientSource> {
+    pub deps: &'deps SdkDeps<'deps, S>,
+    pub call: &'call ReadCall<'call>,
+    pub log: &'borrow mut LogContext<'borrow, 'env>,
+}
+
 // kwargs.pop("aretrieve") is read as `is True`: a 1, a truthy string or a false selects the sync handler
 #[must_use]
 pub fn entry_from_flag(kwargs: &JsonObject, flag: &str) -> ClientKind {
@@ -127,43 +127,53 @@ pub(super) struct HandlerCall<'call> {
     pub(super) operation: Operation,
 }
 
-// After the pop: the credential overlay, GenericLiteLLMParams, the provider's config, the log and B2481's read
-pub(super) async fn read_attachment<S>(
-    deps: &SdkDeps<'_, S>,
-    call: &ReadCall<'_>,
-    log: &mut LogContext<'_, '_>,
-    entry: &ReadEntry<'_>,
-) -> Result<Json, VectorFileReadError>
-where
-    S: ClientSource,
-{
-    let call_id = entry
-        .kwargs
-        .get("litellm_call_id")
-        .cloned()
-        .unwrap_or(Json::Null);
-    let mut overlaid = OperationKwargs(entry.kwargs.clone());
-    prepare_registry_credentials(call.vector_store_id, &mut overlaid, deps.registry);
+// After the wrapper flag: the credential overlay, GenericLiteLLMParams, the provider's config, the log and B2481's read
+pub(super) async fn read_attachment<S: ClientSource>(
+    ctx: &mut ReadSession<'_, '_, '_, '_, S>,
+    operation: Operation,
+    mode: ClientKind,
+    flag: &str,
+) -> Result<Json, VectorFileReadError> {
+    let mut kwargs = ctx.call.kwargs.clone();
+    kwargs.remove(flag);
+    let call_id = kwargs.get("litellm_call_id").cloned().unwrap_or(Json::Null);
+    let mut overlaid = OperationKwargs(kwargs.clone());
+    prepare_registry_credentials(ctx.call.vector_store_id, &mut overlaid, ctx.deps.registry);
     let params = read_params(&overlaid.0)?;
-    let provider = ensure_provider(call.custom_llm_provider).to_owned();
-    let tag = files_config_tag(&provider, entry.operation)?;
-    log::log_read(log.state, call, &overlaid.0, &call_id, &provider)?;
-    let handler = handler_call(call, params, entry, deps.request_timeout_seconds)?;
-    let inner = deps
-        .configs
-        .read_config(tag)
-        .ok_or_else(|| VectorFileReadError::Unsupported {
-            operation: operation_label(entry.operation),
-            provider: provider.clone(),
-        })?;
-    read_send(deps, log, provider, OwnedReadConfig { inner }, &handler).await
+    let provider = ensure_provider(ctx.call.custom_llm_provider).to_owned();
+    let tag = files_config_tag(&provider, operation)?;
+    log::log_read(ctx.log.state, ctx.call, &overlaid.0, &call_id, &provider)?;
+    let handler = handler_call(
+        ctx.call,
+        params,
+        mode,
+        operation,
+        ctx.deps.request_timeout_seconds,
+    )?;
+    let inner =
+        ctx.deps
+            .configs
+            .read_config(tag)
+            .ok_or_else(|| VectorFileReadError::Unsupported {
+                operation: operation_label(operation),
+                provider: provider.clone(),
+            })?;
+    read_send(
+        ctx.deps,
+        ctx.log,
+        provider,
+        OwnedReadConfig { inner },
+        &handler,
+    )
+    .await
 }
 
 // timeout or request_timeout: a null or zero argument uses the setting, and any other value is the wait in seconds
 pub(super) fn handler_call<'call>(
     call: &'call ReadCall<'_>,
     params: ReadParams,
-    entry: &ReadEntry<'_>,
+    mode: ClientKind,
+    operation: Operation,
     request_timeout_seconds: f64,
 ) -> Result<HandlerCall<'call>, VectorFileReadError> {
     let seconds = call
@@ -177,8 +187,8 @@ pub(super) fn handler_call<'call>(
         params,
         extra_headers: call.extra_headers,
         timeout,
-        mode: entry.mode,
-        operation: entry.operation,
+        mode,
+        operation,
     })
 }
 
@@ -222,10 +232,22 @@ where
 
 // GenericLiteLLMParams' three fields the read handlers read
 fn read_params(kwargs: &JsonObject) -> Result<ReadParams, VectorFileReadError> {
+    let api_base = text(kwargs, "api_base")?;
+    let api_key = text(kwargs, "api_key")?.map(SecretString::from);
+    let ssl_verify = match kwargs.get("ssl_verify") {
+        None | Some(Json::Null) => None,
+        Some(Json::Bool(value)) => Some(*value),
+        Some(Json::Text(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+            return Err(VectorFileReadError::Field {
+                field: "ssl_verify",
+                expected: "a boolean",
+            });
+        }
+    };
     Ok(ReadParams {
-        api_base: text(kwargs, "api_base")?,
-        api_key: text(kwargs, "api_key")?.map(SecretString::from),
-        ssl_verify: flag(kwargs, "ssl_verify")?,
+        api_base,
+        api_key,
+        ssl_verify,
     })
 }
 
@@ -260,19 +282,6 @@ fn text(kwargs: &JsonObject, field: &'static str) -> Result<Option<String>, Vect
             Err(VectorFileReadError::Field {
                 field,
                 expected: "a string",
-            })
-        }
-    }
-}
-
-fn flag(kwargs: &JsonObject, field: &'static str) -> Result<Option<bool>, VectorFileReadError> {
-    match kwargs.get(field) {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Bool(value)) => Ok(Some(*value)),
-        Some(Json::Text(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(VectorFileReadError::Field {
-                field,
-                expected: "a boolean",
             })
         }
     }

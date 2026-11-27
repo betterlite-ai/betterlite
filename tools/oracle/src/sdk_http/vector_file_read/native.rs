@@ -7,7 +7,7 @@ use betterlite_core::api::vector_file_provider::CredentialLookup;
 use betterlite_core::api::vector_file_read::error::{
     VectorFileReadError, failure as project_failure,
 };
-use betterlite_core::api::vector_file_read::service::{ReadCall, SdkDeps};
+use betterlite_core::api::vector_file_read::service::{ReadCall, ReadSession, SdkDeps};
 use betterlite_core::api::vector_file_read::{
     aretrieve, aretrieve_content, retrieve, retrieve_content,
 };
@@ -83,11 +83,16 @@ async fn run_once(
         custom_llm_provider: run.custom_llm_provider.as_deref(),
         kwargs: &kwargs,
     };
+    let mut session = ReadSession {
+        deps: &deps,
+        call: &call,
+        log: &mut log,
+    };
     let answer = match (run.operation, run.mode) {
-        (Operation::Retrieve, Mode::Sync) => retrieve(&deps, &call, &mut log).await,
-        (Operation::Retrieve, Mode::Asynchronous) => aretrieve(&deps, &call, &mut log).await,
-        (Operation::Content, Mode::Sync) => retrieve_content(&deps, &call, &mut log).await,
-        (Operation::Content, Mode::Asynchronous) => aretrieve_content(&deps, &call, &mut log).await,
+        (Operation::Retrieve, Mode::Sync) => retrieve(&mut session).await,
+        (Operation::Retrieve, Mode::Asynchronous) => aretrieve(&mut session).await,
+        (Operation::Content, Mode::Sync) => retrieve_content(&mut session).await,
+        (Operation::Content, Mode::Asynchronous) => aretrieve_content(&mut session).await,
     };
     let failure = match &answer {
         Ok(_) => None,

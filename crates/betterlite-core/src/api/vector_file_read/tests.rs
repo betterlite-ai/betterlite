@@ -25,11 +25,12 @@ use betterlite_openai::credentials::LiteLlmGlobals;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
 use http::{HeaderMap, Method};
+use rstest::rstest;
 use secrecy::SecretString;
 
 use super::error::{SdkFailure, VectorFileReadError, failure};
 use super::service::{
-    ReadCall, ReadEntry, SdkDeps, VectorStoreFilesConfigs, entry_from_flag, handler_call,
+    ReadCall, ReadSession, SdkDeps, VectorStoreFilesConfigs, entry_from_flag, handler_call,
 };
 use super::{aretrieve, aretrieve_content, retrieve, retrieve_content};
 use crate::api::vector_file_http_read::config::{OpenAiReadConfig, ReadConfig, ReadParams};
@@ -64,7 +65,10 @@ struct Seen {
 struct Shared(Arc<Mutex<Seen>>);
 
 impl Shared {
-    fn with<R>(&self, read: impl FnOnce(&mut Seen) -> R) -> R {
+    fn with<R, F>(&self, read: F) -> R
+    where
+        F: FnOnce(&mut Seen) -> R,
+    {
         read(&mut self.0.lock().unwrap_or_else(PoisonError::into_inner))
     }
 }
@@ -283,11 +287,16 @@ async fn run(
         state: &mut logs.state,
         env: &env,
     };
+    let mut session = ReadSession {
+        deps,
+        call,
+        log: &mut log,
+    };
     match which {
-        Which::Retrieve => retrieve(deps, call, &mut log).await,
-        Which::ARetrieve => aretrieve(deps, call, &mut log).await,
-        Which::Content => retrieve_content(deps, call, &mut log).await,
-        Which::AContent => aretrieve_content(deps, call, &mut log).await,
+        Which::Retrieve => retrieve(&mut session).await,
+        Which::ARetrieve => aretrieve(&mut session).await,
+        Which::Content => retrieve_content(&mut session).await,
+        Which::AContent => aretrieve_content(&mut session).await,
     }
 }
 
@@ -497,36 +506,37 @@ async fn async_calls_keep_the_callers_context() {
     assert!(fakes.requests().len() == 1);
 }
 
+#[rstest]
+#[case::absent(None)]
+#[case::empty(Some(""))]
 #[tokio::test]
-async fn read_registry_and_provider() {
-    for provider in [None, Some("")] {
-        let kwargs = params(r#"{"api_base":"http://mock.invalid/v1","api_key":"sk-caller"}"#);
-        let mut fakes = Fakes::new(RETRIEVE_BODY);
-        fakes.registry = Credentials {
-            values: Ok(JsonObject::from([(
-                String::from("api_key"),
-                Json::Text(String::from("sk-registry")),
-            )])),
-        };
-        let mut logs = Logs::new();
-        let call = read_call(&kwargs, None, None, provider);
-        let deps = fakes.deps();
-        run(&mut logs, &deps, &call, Which::Retrieve)
-            .await
-            .expect("the mock answers");
-        assert_eq!(
-            fakes.requests()[0].url.path(),
-            "/v1/vector_stores/vs_a/files/file_a"
-        );
-        assert_eq!(
-            header(&fakes.requests()[0], "authorization"),
-            Some(String::from("Bearer sk-registry"))
-        );
-        assert_eq!(
-            logs.detail("custom_llm_provider"),
-            Json::Text(String::from("openai"))
-        );
-    }
+async fn read_registry_and_provider(#[case] provider: Option<&'static str>) {
+    let kwargs = params(r#"{"api_base":"http://mock.invalid/v1","api_key":"sk-caller"}"#);
+    let mut fakes = Fakes::new(RETRIEVE_BODY);
+    fakes.registry = Credentials {
+        values: Ok(JsonObject::from([(
+            String::from("api_key"),
+            Json::Text(String::from("sk-registry")),
+        )])),
+    };
+    let mut logs = Logs::new();
+    let call = read_call(&kwargs, None, None, provider);
+    let deps = fakes.deps();
+    run(&mut logs, &deps, &call, Which::Retrieve)
+        .await
+        .expect("the mock answers");
+    assert_eq!(
+        fakes.requests()[0].url.path(),
+        "/v1/vector_stores/vs_a/files/file_a"
+    );
+    assert_eq!(
+        header(&fakes.requests()[0], "authorization"),
+        Some(String::from("Bearer sk-registry"))
+    );
+    assert_eq!(
+        logs.detail("custom_llm_provider"),
+        Json::Text(String::from("openai"))
+    );
 }
 
 #[tokio::test]
@@ -657,60 +667,89 @@ async fn an_empty_missing_body_maps_by_status() {
 #[test]
 fn read_timeout_argument() {
     let kwargs = JsonObject::new();
-    let entry = ReadEntry {
-        operation: Operation::Retrieve,
-        mode: ClientKind::Sync,
-        kwargs: &kwargs,
-    };
     let mut call = read_call(&kwargs, None, None, None);
-    let default =
-        handler_call(&call, ReadParams::default(), &entry, 6000.0_f64).expect("the default");
+    let default = handler_call(
+        &call,
+        ReadParams::default(),
+        ClientKind::Sync,
+        Operation::Retrieve,
+        6000.0_f64,
+    )
+    .expect("the default");
     assert_eq!(default.timeout, Duration::from_mins(100));
     call.timeout = Some(0.0_f64);
-    let zero = handler_call(&call, ReadParams::default(), &entry, 6000.0_f64)
-        .expect("zero takes the default");
+    let zero = handler_call(
+        &call,
+        ReadParams::default(),
+        ClientKind::Sync,
+        Operation::Retrieve,
+        6000.0_f64,
+    )
+    .expect("zero takes the default");
     assert_eq!(zero.timeout, Duration::from_mins(100));
     call.timeout = Some(7.0_f64);
-    let given =
-        handler_call(&call, ReadParams::default(), &entry, 6000.0_f64).expect("the given wait");
+    let given = handler_call(
+        &call,
+        ReadParams::default(),
+        ClientKind::Sync,
+        Operation::Retrieve,
+        6000.0_f64,
+    )
+    .expect("the given wait");
     assert_eq!(given.timeout, Duration::from_secs(7));
 
     let environment = BTreeMap::from([(String::from("REQUEST_TIMEOUT"), String::from("12"))]);
     let configured = loads_read_timeout(&environment).expect("the environment value loads");
     call.timeout = None;
-    let from_environment = handler_call(&call, ReadParams::default(), &entry, configured)
-        .expect("the configured default");
+    let from_environment = handler_call(
+        &call,
+        ReadParams::default(),
+        ClientKind::Sync,
+        Operation::Retrieve,
+        configured,
+    )
+    .expect("the configured default");
     assert_eq!(from_environment.timeout, Duration::from_secs(12));
     call.timeout = Some(0.0_f64);
-    let zero = handler_call(&call, ReadParams::default(), &entry, configured)
-        .expect("zero takes the configured default");
+    let zero = handler_call(
+        &call,
+        ReadParams::default(),
+        ClientKind::Sync,
+        Operation::Retrieve,
+        configured,
+    )
+    .expect("zero takes the configured default");
     assert_eq!(zero.timeout, Duration::from_secs(12));
     call.timeout = Some(7.0_f64);
-    let given =
-        handler_call(&call, ReadParams::default(), &entry, configured).expect("the given wait");
+    let given = handler_call(
+        &call,
+        ReadParams::default(),
+        ClientKind::Sync,
+        Operation::Retrieve,
+        configured,
+    )
+    .expect("the given wait");
     assert_eq!(given.timeout, Duration::from_secs(7));
 }
 
+#[rstest]
+#[case::base(r#"{"api_base":5}"#)]
+#[case::key(r#"{"api_base":"http://mock.invalid/v1","api_key":5}"#)]
+#[case::ssl(r#"{"api_base":"http://mock.invalid/v1","ssl_verify":"yes"}"#)]
 #[tokio::test]
-async fn wrong_field_types_name_the_field() {
+async fn wrong_field_types_name_the_field(#[case] text: &'static str) {
     let fakes = Fakes::new(RETRIEVE_BODY);
     let deps = fakes.deps();
-    for text in [
-        r#"{"api_base":5}"#,
-        r#"{"api_base":"http://mock.invalid/v1","api_key":5}"#,
-        r#"{"api_base":"http://mock.invalid/v1","ssl_verify":"yes"}"#,
-    ] {
-        let kwargs = params(text);
-        let mut logs = Logs::new();
-        let call = read_call(&kwargs, None, None, None);
-        let error = run(&mut logs, &deps, &call, Which::Retrieve)
-            .await
-            .expect_err("the field type is refused");
-        assert!(error.to_string().contains("field must be"));
-        let mapped = mapped(&error);
-        assert_eq!(mapped.class, "APIConnectionError");
-        assert_eq!(mapped.status, 500);
-        assert_null_fields(&mapped);
-    }
+    let kwargs = params(text);
+    let mut logs = Logs::new();
+    let call = read_call(&kwargs, None, None, None);
+    let error = run(&mut logs, &deps, &call, Which::Retrieve)
+        .await
+        .expect_err("the field type is refused");
+    assert!(error.to_string().contains("field must be"));
+    let mapped = mapped(&error);
+    assert_eq!(mapped.class, "APIConnectionError");
+    assert_eq!(mapped.status, 500);
+    assert_null_fields(&mapped);
     assert!(fakes.requests().is_empty());
 }

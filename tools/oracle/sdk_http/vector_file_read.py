@@ -101,7 +101,7 @@ class ReadOptions(TypedDict, total=False):
     timeout: int | None
 
 
-# the four entries are keyword-only **kwargs functions, so the calls go through the options they read
+# the four entries take keyword-only **kwargs, so the calls go through the options they read
 class VectorStoreFiles(Protocol):
     def retrieve(self, **kwargs: Unpack[ReadOptions]) -> Answer: ...
 

@@ -6,84 +6,41 @@ mod tests;
 use betterlite_models::decisions::Json;
 
 use self::error::VectorFileReadError;
-use self::service::{ReadCall, ReadEntry, SdkDeps, entry_from_flag, read_attachment};
-use crate::api::vector_file_http_read::service::{ClientSource, LogContext, Operation};
+use self::service::{ReadSession, entry_from_flag, read_attachment};
+use crate::api::vector_file_http_read::service::{ClientSource, Operation};
 use crate::api::vector_store_http_write::service::ClientKind;
 
+// either the file object or content reply, or the failure B011 maps to the SDK exception it raises
+pub type ReadResult = Result<Json, VectorFileReadError>;
+
 // retrieve: the wrapper's own flag is popped, and only a literal true selects the asynchronous handler
-pub async fn retrieve<S>(
-    deps: &SdkDeps<'_, S>,
-    call: &ReadCall<'_>,
-    log: &mut LogContext<'_, '_>,
-) -> Result<Json, VectorFileReadError>
-where
-    S: ClientSource,
-{
-    let mut kwargs = call.kwargs.clone();
-    let mode = entry_from_flag(&kwargs, "aretrieve");
-    kwargs.remove("aretrieve");
-    let entry = ReadEntry {
-        operation: Operation::Retrieve,
-        mode,
-        kwargs: &kwargs,
-    };
-    read_attachment(deps, call, log, &entry).await
+pub async fn retrieve<S: ClientSource>(ctx: &mut ReadSession<'_, '_, '_, '_, S>) -> ReadResult {
+    let flag = "aretrieve";
+    let mode = entry_from_flag(ctx.call.kwargs, flag);
+    read_attachment(ctx, Operation::Retrieve, mode, flag).await
 }
 
-// aretrieve: kwargs["aretrieve"] = True, so the retrieve path always takes the asynchronous handler
-pub async fn aretrieve<S>(
-    deps: &SdkDeps<'_, S>,
-    call: &ReadCall<'_>,
-    log: &mut LogContext<'_, '_>,
-) -> Result<Json, VectorFileReadError>
-where
-    S: ClientSource,
-{
-    let mut kwargs = call.kwargs.clone();
-    kwargs.remove("aretrieve");
-    let entry = ReadEntry {
-        operation: Operation::Retrieve,
-        mode: ClientKind::Asynchronous,
-        kwargs: &kwargs,
-    };
-    read_attachment(deps, call, log, &entry).await
+// aretrieve: LiteLLM sets the flag itself, so the retrieve path always takes the asynchronous handler
+pub async fn aretrieve<S: ClientSource>(ctx: &mut ReadSession<'_, '_, '_, '_, S>) -> ReadResult {
+    let flag = "aretrieve";
+    let mode = ClientKind::Asynchronous;
+    read_attachment(ctx, Operation::Retrieve, mode, flag).await
 }
 
 // retrieve_content: the content wrapper's own flag is the one it pops
-pub async fn retrieve_content<S>(
-    deps: &SdkDeps<'_, S>,
-    call: &ReadCall<'_>,
-    log: &mut LogContext<'_, '_>,
-) -> Result<Json, VectorFileReadError>
-where
-    S: ClientSource,
-{
-    let mut kwargs = call.kwargs.clone();
-    let mode = entry_from_flag(&kwargs, "aretrieve_content");
-    kwargs.remove("aretrieve_content");
-    let entry = ReadEntry {
-        operation: Operation::Content,
-        mode,
-        kwargs: &kwargs,
-    };
-    read_attachment(deps, call, log, &entry).await
+pub async fn retrieve_content<S: ClientSource>(
+    ctx: &mut ReadSession<'_, '_, '_, '_, S>,
+) -> ReadResult {
+    let flag = "aretrieve_content";
+    let mode = entry_from_flag(ctx.call.kwargs, flag);
+    read_attachment(ctx, Operation::Content, mode, flag).await
 }
 
-// aretrieve_content: kwargs["aretrieve_content"] = True, so the content path always takes the asynchronous handler
-pub async fn aretrieve_content<S>(
-    deps: &SdkDeps<'_, S>,
-    call: &ReadCall<'_>,
-    log: &mut LogContext<'_, '_>,
-) -> Result<Json, VectorFileReadError>
-where
-    S: ClientSource,
-{
-    let mut kwargs = call.kwargs.clone();
-    kwargs.remove("aretrieve_content");
-    let entry = ReadEntry {
-        operation: Operation::Content,
-        mode: ClientKind::Asynchronous,
-        kwargs: &kwargs,
-    };
-    read_attachment(deps, call, log, &entry).await
+// aretrieve_content: LiteLLM sets the flag itself, so the content path always takes the asynchronous handler
+pub async fn aretrieve_content<S: ClientSource>(
+    ctx: &mut ReadSession<'_, '_, '_, '_, S>,
+) -> ReadResult {
+    let flag = "aretrieve_content";
+    let mode = ClientKind::Asynchronous;
+    read_attachment(ctx, Operation::Content, mode, flag).await
 }
