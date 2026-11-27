@@ -576,6 +576,7 @@ async fn retrieve_backing_store_hit() {
     assert_eq!(rig.memory.set_keys(), vec![String::from(CACHE_KEY)]);
     assert_eq!(rig.memory.set_ttls(), vec![60.0_f64]);
     assert!(rig.memory.pipeline_keys().is_empty());
+    assert!(rig.remote.batch_keys().is_empty());
     let scanned = vec![
         format!("cache_key_name: {CACHE_NAME}"),
         String::from("redis keys: []"),
