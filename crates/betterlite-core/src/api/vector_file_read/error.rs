@@ -46,14 +46,21 @@ pub struct SdkFailure {
 #[must_use]
 pub fn failure(error: &VectorFileReadError, redactor: &Redactor) -> SdkFailure {
     let (provider, status, class, message) = raised(error);
+    // an answered status names the class on its own, the way get_error_class does; only a failure with
+    // no response behind it lets exception_type read its text for a family
+    let (error_str, dispatch_message) = if status.is_some() && !synthesized(error) {
+        (String::new(), None)
+    } else {
+        (message.clone(), Some(message.clone()))
+    };
     let projected = dispatch(
         &DispatchInput::Raw(Box::new(RawException {
             model: String::new(),
             custom_llm_provider: provider.to_owned(),
-            error_str: message.clone(),
+            error_str,
             status_code: status,
-            status_code_is_synthesized: false,
-            message: Some(message.clone()),
+            status_code_is_synthesized: synthesized(error),
+            message: dispatch_message,
             body: None,
             exception_type: class,
         })),
@@ -72,7 +79,7 @@ pub fn failure(error: &VectorFileReadError, redactor: &Redactor) -> SdkFailure {
     }
 }
 
-// The provider, its status, the exception class exception_type saw and the text it mapped
+// The provider, its status, the class exception_type saw and the text it mapped
 fn raised(error: &VectorFileReadError) -> (&str, Option<u16>, String, String) {
     let (provider, status) = match error {
         VectorFileReadError::Read { provider, source } => (provider.as_str(), read_status(source)),
@@ -95,4 +102,19 @@ const fn read_status(source: &ReadError) -> Option<u16> {
         return Some(exception.status_code);
     }
     None
+}
+
+// Whether the provider failure's status was made up because no response carried one
+const fn synthesized(error: &VectorFileReadError) -> bool {
+    match error {
+        VectorFileReadError::Read {
+            source: ReadError::Provider(exception),
+            ..
+        } => exception.status_code_is_synthesized,
+        VectorFileReadError::Read { .. }
+        | VectorFileReadError::Unsupported { .. }
+        | VectorFileReadError::InvalidProvider { .. }
+        | VectorFileReadError::Field { .. }
+        | VectorFileReadError::Logging(_) => false,
+    }
 }

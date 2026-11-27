@@ -24,6 +24,7 @@ use betterlite_models::model_registration::JsonObject;
 use betterlite_openai::credentials::LiteLlmGlobals;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
+use http::header::HeaderValue;
 use http::{HeaderMap, Method};
 use rstest::rstest;
 use secrecy::SecretString;
@@ -75,6 +76,7 @@ impl Shared {
 struct Source {
     seen: Shared,
     answer: Answer,
+    error: Option<fn() -> TransportError>,
 }
 
 impl ClientSource for Source {
@@ -85,6 +87,7 @@ impl ClientSource for Source {
         Ok(FakeClient {
             answer: self.answer.clone(),
             seen: self.seen.clone(),
+            error: self.error,
         })
     }
 }
@@ -92,6 +95,7 @@ impl ClientSource for Source {
 struct FakeClient {
     answer: Answer,
     seen: Shared,
+    error: Option<fn() -> TransportError>,
 }
 
 impl ReadTransport for FakeClient {
@@ -100,6 +104,9 @@ impl ReadTransport for FakeClient {
         request: ReadRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
         self.seen.with(|seen| seen.requests.push(request));
+        if let Some(error) = self.error {
+            return ready(Err(error()));
+        }
         let (status, headers, body) = self.answer.clone();
         ready(Ok(UpstreamResponse {
             status,
@@ -245,6 +252,7 @@ impl Fakes {
             source: Source {
                 seen: Shared::default(),
                 answer: (200, HeaderMap::new(), answer.as_bytes().to_vec()),
+                error: None,
             },
         }
     }
@@ -375,6 +383,16 @@ fn assert_null_fields(projected: &SdkFailure) {
     assert_eq!(projected.kind, WireField::Null);
     assert_eq!(projected.param, WireField::Null);
     assert_eq!(projected.code, WireField::Null);
+}
+
+// a transport failure whose text carries the phrase a response body would, so the text still picks a family
+fn phrase_transport() -> TransportError {
+    let source =
+        HeaderValue::from_bytes(b"bad\nvalue").expect_err("the value is not a header value");
+    TransportError::InvalidHeader {
+        name: String::from("invalid_request_error"),
+        source,
+    }
 }
 
 #[tokio::test]
@@ -783,6 +801,27 @@ async fn an_empty_missing_body_maps_by_status() {
     assert_eq!(missing_failure.class, "NotFoundError");
     assert_eq!(missing_failure.status, 404);
     assert_null_fields(&missing_failure);
+}
+
+// no response carried this failure's status, so its own text still picks the family and the family's default status
+#[tokio::test]
+async fn a_transport_failure_keeps_its_text() {
+    let kwargs =
+        params(r#"{"api_base":"http://mock.invalid/v1","api_key":"sk-caller","max_retries":0}"#);
+    let mut fakes = Fakes::new(RETRIEVE_BODY);
+    fakes.source.error = Some(phrase_transport);
+    let mut logs = Logs::new();
+    let call = read_call(&kwargs, None, None, None);
+    let deps = fakes.deps();
+    let error = run(&mut logs, &deps, &call, Which::Retrieve)
+        .await
+        .expect_err("the transport fails");
+    let projected = mapped(&error);
+    assert_eq!(projected.class, "BadRequestError");
+    assert_eq!(projected.status, 400);
+    assert_null_fields(&projected);
+    assert_eq!(projected.message, phrase_transport().to_string());
+    assert_eq!(fakes.requests().len(), 1);
 }
 
 #[test]
