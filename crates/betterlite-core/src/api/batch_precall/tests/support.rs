@@ -475,7 +475,7 @@ pub(crate) struct ScriptedMemory {
     pub(crate) get_failure: Option<String>,
     pub(crate) set_failure: Option<String>,
     pub(crate) set_many_failure: Option<String>,
-    sets: Mutex<Vec<(String, Json)>>,
+    sets: Mutex<Vec<(String, Json, f64)>>,
     pipelines: Mutex<Vec<(Vec<String>, f64)>>,
 }
 
@@ -489,7 +489,16 @@ impl ScriptedMemory {
             .lock()
             .unwrap()
             .iter()
-            .map(|(key, _value)| key.clone())
+            .map(|(key, _value, _ttl)| key.clone())
+            .collect()
+    }
+
+    pub(crate) fn set_ttls(&self) -> Vec<f64> {
+        self.sets
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(_key, _value, ttl)| *ttl)
             .collect()
     }
 
@@ -526,7 +535,7 @@ impl BatchPrecallMemory for ScriptedMemory {
         Ok(self.values.lock().unwrap().get(key).cloned())
     }
 
-    async fn set(&self, key: &str, value: Json, _ttl_seconds: f64) -> Result<(), BatchCacheError> {
+    async fn set(&self, key: &str, value: Json, ttl_seconds: f64) -> Result<(), BatchCacheError> {
         if let Some(message) = &self.set_failure {
             return Err(BatchCacheError::Failed {
                 message: message.clone(),
@@ -536,7 +545,10 @@ impl BatchPrecallMemory for ScriptedMemory {
             .lock()
             .unwrap()
             .insert(key.to_owned(), value.clone());
-        self.sets.lock().unwrap().push((key.to_owned(), value));
+        self.sets
+            .lock()
+            .unwrap()
+            .push((key.to_owned(), value, ttl_seconds));
         Ok(())
     }
 
@@ -575,7 +587,7 @@ pub(crate) struct ScriptedRemote {
     pub(crate) scan: RemoteAnswer<Vec<String>>,
     pub(crate) batch_get: RemoteAnswer<Vec<(String, Json)>>,
     pub(crate) get: RemoteAnswer<Option<Json>>,
-    scans: Mutex<Vec<String>>,
+    scans: Mutex<Vec<(String, usize)>>,
     batches: Mutex<Vec<Vec<String>>>,
     gets: Mutex<Vec<String>>,
 }
@@ -597,7 +609,21 @@ impl Default for ScriptedRemote {
 
 impl ScriptedRemote {
     pub(crate) fn scan_patterns(&self) -> Vec<String> {
-        self.scans.lock().unwrap().clone()
+        self.scans
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(pattern, _count)| pattern.clone())
+            .collect()
+    }
+
+    pub(crate) fn scan_counts(&self) -> Vec<usize> {
+        self.scans
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(_pattern, count)| *count)
+            .collect()
     }
 
     pub(crate) fn batch_keys(&self) -> Vec<Vec<String>> {
@@ -631,8 +657,8 @@ impl BatchPrecallRemote for ScriptedRemote {
         self.key.clone()
     }
 
-    async fn scan(&self, pattern: &str, _count: usize) -> Result<Vec<String>, BatchCacheError> {
-        self.scans.lock().unwrap().push(pattern.to_owned());
+    async fn scan(&self, pattern: &str, count: usize) -> Result<Vec<String>, BatchCacheError> {
+        self.scans.lock().unwrap().push((pattern.to_owned(), count));
         resolved(&self.scan)
     }
 
@@ -698,6 +724,7 @@ pub(crate) struct Rig {
     pub(crate) memory: ScriptedMemory,
     pub(crate) remote: ScriptedRemote,
     pub(crate) clock: EpochClock,
+    pub(crate) limits: ApiLimits,
     pub(crate) verbose_stdout: bool,
 }
 
@@ -713,6 +740,7 @@ impl Rig {
             memory: ScriptedMemory::default(),
             remote: ScriptedRemote::default(),
             clock: Arc::new(|| 100.0_f64),
+            limits: ApiLimits::default(),
             verbose_stdout: false,
         }
     }
@@ -753,7 +781,7 @@ impl Rig {
             remote,
             verbose_stdout: self.verbose_stdout,
             clock: Arc::clone(&self.clock),
-            limits: ApiLimits::default(),
+            limits: self.limits,
         };
         service.run(input).await
     }

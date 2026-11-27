@@ -382,6 +382,7 @@ enum CacheScenario {
     MemoryHit,
     WarmFromRedis,
     WithinMaxAge,
+    AtMaxAge,
     PastMaxAge,
 }
 
@@ -399,7 +400,7 @@ fn cached_rig(scenario: CacheScenario) -> Rig {
                 envelope(None, batch_response()),
             )]);
         }
-        CacheScenario::WithinMaxAge | CacheScenario::PastMaxAge => {
+        CacheScenario::WithinMaxAge | CacheScenario::AtMaxAge | CacheScenario::PastMaxAge => {
             rig.memory
                 .store(CACHE_KEY, envelope(Some(10.0_f64), batch_response()));
         }
@@ -412,16 +413,17 @@ fn expected_cached(scenario: CacheScenario) -> Option<Json> {
         CacheScenario::MemoryHit | CacheScenario::WarmFromRedis => {
             Some(envelope(None, batch_response()))
         }
-        CacheScenario::WithinMaxAge => Some(batch_response()),
+        CacheScenario::WithinMaxAge | CacheScenario::AtMaxAge => Some(batch_response()),
         CacheScenario::PastMaxAge => None,
     }
 }
 
 fn expected_cache_diagnostics(scenario: CacheScenario) -> Vec<BatchDiagnostic> {
     match scenario {
-        CacheScenario::MemoryHit | CacheScenario::WithinMaxAge | CacheScenario::PastMaxAge => {
-            Vec::new()
-        }
+        CacheScenario::MemoryHit
+        | CacheScenario::WithinMaxAge
+        | CacheScenario::AtMaxAge
+        | CacheScenario::PastMaxAge => Vec::new(),
         CacheScenario::WarmFromRedis => vec![
             debug_line(&format!("cache_key_name: {CACHE_NAME}")),
             debug_line(&format!("redis keys: ['{CACHE_KEY}']")),
@@ -440,12 +442,14 @@ fn namespaced_data() -> RequestData {
 #[case::memory_hit(CacheScenario::MemoryHit)]
 #[case::warm_from_redis(CacheScenario::WarmFromRedis)]
 #[case::within_max_age(CacheScenario::WithinMaxAge)]
+#[case::at_max_age(CacheScenario::AtMaxAge)]
 #[case::past_max_age(CacheScenario::PastMaxAge)]
 #[tokio::test]
 async fn retrieve_cache_hit(#[case] scenario: CacheScenario) {
     let rig = cached_rig(scenario);
     let max_age = match scenario {
         CacheScenario::WithinMaxAge => Some(100),
+        CacheScenario::AtMaxAge => Some(90),
         CacheScenario::PastMaxAge => Some(30),
         CacheScenario::MemoryHit | CacheScenario::WarmFromRedis => None,
     };
@@ -461,6 +465,7 @@ async fn retrieve_cache_hit(#[case] scenario: CacheScenario) {
     match scenario {
         CacheScenario::WarmFromRedis => {
             assert_eq!(rig.remote.scan_patterns(), vec![String::from(CACHE_NAME)]);
+            assert_eq!(rig.remote.scan_counts(), vec![100]);
             assert_eq!(rig.remote.batch_keys(), vec![vec![String::from(CACHE_KEY)]]);
             assert_eq!(
                 rig.memory.pipeline_keys(),
@@ -473,8 +478,24 @@ async fn retrieve_cache_hit(#[case] scenario: CacheScenario) {
             assert!(rig.remote.scan_patterns().is_empty());
             assert!(rig.remote.hits().is_empty());
         }
-        CacheScenario::WithinMaxAge | CacheScenario::PastMaxAge => {}
+        CacheScenario::WithinMaxAge | CacheScenario::AtMaxAge | CacheScenario::PastMaxAge => {}
     }
+}
+
+// a cached value over the configured JSON limit is a miss, like every payload betterlite bounds
+#[tokio::test]
+async fn retrieve_cache_value_over_limit() {
+    let mut rig = Rig::new();
+    rig.limits.max_json_bytes = 1;
+    rig.memory
+        .store(CACHE_KEY, envelope(None, batch_response()));
+    let input = retrieve_input(Some(CACHE_KEY), None);
+    let BatchPrecallResult::Retrieve(retrieved) = rig.run(&input).await.unwrap() else {
+        panic!("a retrieve answers with the retrieve result");
+    };
+    assert_eq!(retrieved.cached, None);
+    assert!(retrieved.diagnostics.is_empty());
+    assert_eq!(retrieved.data, namespaced_data());
 }
 
 // a memory miss reads the backing store through the request's cache key and warms memory for a minute
@@ -491,6 +512,8 @@ async fn retrieve_backing_store_hit() {
     assert_eq!(retrieved.cached, Some(envelope(None, batch_response())));
     assert_eq!(rig.remote.hits(), vec![String::from(CACHE_KEY)]);
     assert_eq!(rig.memory.set_keys(), vec![String::from(CACHE_KEY)]);
+    assert_eq!(rig.memory.set_ttls(), vec![60.0_f64]);
+    assert!(rig.memory.pipeline_keys().is_empty());
     let scanned = vec![
         format!("cache_key_name: {CACHE_NAME}"),
         String::from("redis keys: []"),
@@ -595,6 +618,8 @@ fn failing_rig(failure: CacheFailure) -> (Rig, BatchPrecallInput) {
                 status: 400,
                 detail: Json::Text(String::from("the scan was rejected")),
             };
+            // a readable value, so the cached answer stays empty only because the raise skips the read
+            rig.remote.get = RemoteAnswer::Value(Some(envelope(None, batch_response())));
             retrieve_input(Some(CACHE_KEY), None)
         }
         CacheFailure::MemoryRead => {
