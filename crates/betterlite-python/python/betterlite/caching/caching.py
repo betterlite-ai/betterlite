@@ -146,6 +146,7 @@ class Cache(CacheOperations):
             gcp_ssl_ca_certs,
         )
         selected = _selected_type(type)
+        selected_text = selected.value
         backend: BaseCache
         if _backend is not None:
             backend = _backend
@@ -172,7 +173,7 @@ class Cache(CacheOperations):
         elif selected == LiteLLMCacheType.DISK:
             backend = DiskCache(disk_cache_dir=disk_cache_dir)
         else:
-            raise NotImplementedError(f"{selected.value} cache type is not built yet")
+            raise NotImplementedError(f"{selected_text} cache type is not built yet")
         self.cache = backend
         _add_cache_callbacks()
         self.supported_call_types = supported_call_types
