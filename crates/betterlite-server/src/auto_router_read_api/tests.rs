@@ -350,7 +350,10 @@ async fn unrecorded_baseline_outside_cohort() {
         .await
         .unwrap();
     assert_eq!(answer.groups[0].savings_estimated_turns, 0);
-    assert_eq!(answer.groups[0].savings_classifier_cost, Some(Decimal::ZERO));
+    assert_eq!(
+        answer.groups[0].savings_classifier_cost,
+        Some(Decimal::ZERO)
+    );
     assert_eq!(answer.groups[0].saved_spend, None);
     assert_eq!(answer.totals.saved_pct, None);
 }
@@ -415,9 +418,13 @@ async fn session_row() {
         sessions: vec![session(HASH_A, "s1", "2024-01-02T00:00:00")],
         ..FakeStore::default()
     };
-    let answer = session_for(&store, Some(HASH_A), &SessionQuery {
-        session_id: "s1".to_owned(),
-    })
+    let answer = session_for(
+        &store,
+        Some(HASH_A),
+        &SessionQuery {
+            session_id: "s1".to_owned(),
+        },
+    )
     .await
     .unwrap();
     assert_eq!(answer.session_id, "s1");
@@ -432,10 +439,10 @@ async fn session_row() {
     assert_eq!(answer.baseline_spend, Some(money("2.0")));
     assert_eq!(answer.savings_estimated_baseline_spend, Some(money("1.5")));
     assert_eq!(answer.baseline_model.as_deref(), Some("m1"));
-    assert_eq!(answer.baseline_models, BTreeMap::from([
-        ("m1".to_owned(), 3),
-        ("m2".to_owned(), 1),
-    ]));
+    assert_eq!(
+        answer.baseline_models,
+        BTreeMap::from([("m1".to_owned(), 3), ("m2".to_owned(), 1),])
+    );
     assert_eq!(
         store.calls(),
         [RecordedCall::LatestSession {
@@ -459,9 +466,13 @@ async fn session_without_estimate() {
         sessions: vec![unrecorded],
         ..FakeStore::default()
     };
-    let answer = session_for(&store, Some(HASH_A), &SessionQuery {
-        session_id: "s2".to_owned(),
-    })
+    let answer = session_for(
+        &store,
+        Some(HASH_A),
+        &SessionQuery {
+            session_id: "s2".to_owned(),
+        },
+    )
     .await
     .unwrap();
     assert_eq!(answer.saved_spend, None);
@@ -552,7 +563,10 @@ async fn invalid_day(value: &str) {
         ReadApiError::Window(WindowError::InvalidDate { value: reported })
             if reported.as_str() == value
     );
-    assert!(invalid_date, "expected the invalid-date error, got {error:?}");
+    assert!(
+        invalid_date,
+        "expected the invalid-date error, got {error:?}"
+    );
     assert!(store.calls().is_empty());
 }
 
@@ -597,15 +611,17 @@ fn missing_session_id() {
             msg: "Field required",
         }
     );
-    assert_eq!(error.to_string(), "the query parameter session_id is invalid");
+    assert_eq!(
+        error.to_string(),
+        "the query parameter session_id is invalid"
+    );
     assert_eq!(ReadApiError::from(error).status_code(), 422);
 }
 
 fn repeated_and_unknown_parameters() {
-    let decoded = decode_benchmarks_query(
-        b"start_date=2024-01-01&extra=1&start_date=2024-02-02&api_key=",
-    )
-    .unwrap();
+    let decoded =
+        decode_benchmarks_query(b"start_date=2024-01-01&extra=1&start_date=2024-02-02&api_key=")
+            .unwrap();
     assert_eq!(decoded.start_date.as_deref(), Some("2024-02-02"));
     assert_eq!(decoded.end_date, None);
     assert_eq!(decoded.api_key.as_deref(), Some(""));
@@ -664,7 +680,12 @@ async fn filters() {
     let store = FakeStore::default();
     benchmarks_for(
         &store,
-        &query(Some("2024-01-01"), Some("2024-01-01"), Some(HASH_A), Some("u1")),
+        &query(
+            Some("2024-01-01"),
+            Some("2024-01-01"),
+            Some(HASH_A),
+            Some("u1"),
+        ),
         &[],
         day(1, 5),
     )
@@ -689,8 +710,22 @@ fn identity(role: Option<&str>) -> Identity {
 }
 
 fn member_forbidden() {
-    assert!(require_admin(&identity(Some("proxy_admin_viewer")), VIEW_ACTION, AdminRole::Viewer).is_ok());
-    assert!(require_admin(&identity(Some("proxy_admin")), VIEW_ACTION, AdminRole::Viewer).is_ok());
+    assert!(
+        require_admin(
+            &identity(Some("proxy_admin_viewer")),
+            VIEW_ACTION,
+            AdminRole::Viewer
+        )
+        .is_ok()
+    );
+    assert!(
+        require_admin(
+            &identity(Some("proxy_admin")),
+            VIEW_ACTION,
+            AdminRole::Viewer
+        )
+        .is_ok()
+    );
     for role in [None, Some("internal_user"), Some("org_admin")] {
         let error = require_admin(&identity(role), VIEW_ACTION, AdminRole::Viewer).unwrap_err();
         let failure = ReadApiError::from(error);
@@ -733,9 +768,13 @@ async fn bounded_session() {
         sessions: vec![stored_exact],
         ..FakeStore::default()
     };
-    let exact_answer = session_for(&exact_store, Some(HASH_A), &SessionQuery {
-        session_id: exact.clone(),
-    })
+    let exact_answer = session_for(
+        &exact_store,
+        Some(HASH_A),
+        &SessionQuery {
+            session_id: exact.clone(),
+        },
+    )
     .await
     .unwrap();
     assert_eq!(exact_answer.session_id, exact);
@@ -754,9 +793,13 @@ async fn bounded_session() {
         sessions: vec![stored_bounded],
         ..FakeStore::default()
     };
-    let answer = session_for(&bounded_store, Some(HASH_A), &SessionQuery {
-        session_id: oversized.clone(),
-    })
+    let answer = session_for(
+        &bounded_store,
+        Some(HASH_A),
+        &SessionQuery {
+            session_id: oversized.clone(),
+        },
+    )
     .await
     .unwrap();
     assert_eq!(answer.session_id, oversized);
@@ -774,9 +817,13 @@ async fn no_caller_key() {
         sessions: vec![session("", "s1", "2024-01-02T00:00:00")],
         ..FakeStore::default()
     };
-    let error = session_for(&store, None, &SessionQuery {
-        session_id: "s1".to_owned(),
-    })
+    let error = session_for(
+        &store,
+        None,
+        &SessionQuery {
+            session_id: "s1".to_owned(),
+        },
+    )
     .await
     .unwrap_err();
     assert_eq!(error.status_code(), 404);
@@ -809,9 +856,13 @@ async fn baseline_model_tie() {
         sessions: vec![tied],
         ..FakeStore::default()
     };
-    let answer = session_for(&store, Some(HASH_A), &SessionQuery {
-        session_id: "s1".to_owned(),
-    })
+    let answer = session_for(
+        &store,
+        Some(HASH_A),
+        &SessionQuery {
+            session_id: "s1".to_owned(),
+        },
+    )
     .await
     .unwrap();
     assert_eq!(answer.baseline_model.as_deref(), Some("m2"));
@@ -826,9 +877,13 @@ async fn baseline_model_coverage() {
         sessions: vec![below],
         ..FakeStore::default()
     };
-    let unnamed = session_for(&store, Some(HASH_A), &SessionQuery {
-        session_id: "s1".to_owned(),
-    })
+    let unnamed = session_for(
+        &store,
+        Some(HASH_A),
+        &SessionQuery {
+            session_id: "s1".to_owned(),
+        },
+    )
     .await
     .unwrap();
     assert_eq!(unnamed.baseline_model, None);
@@ -840,9 +895,13 @@ async fn baseline_model_coverage() {
         sessions: vec![covered],
         ..FakeStore::default()
     };
-    let named = session_for(&store, Some(HASH_A), &SessionQuery {
-        session_id: "s1".to_owned(),
-    })
+    let named = session_for(
+        &store,
+        Some(HASH_A),
+        &SessionQuery {
+            session_id: "s1".to_owned(),
+        },
+    )
     .await
     .unwrap();
     assert_eq!(named.baseline_model.as_deref(), Some("m2"));
@@ -872,7 +931,10 @@ fn principal(subject: &str, key: Option<&str>) -> Principal {
 #[test]
 fn the_master_key_uses_the_stable_alias() {
     let master = principal("master_key", None);
-    assert_eq!(caller_api_key(&master).unwrap().as_deref(), Some("litellm_proxy_master_key"));
+    assert_eq!(
+        caller_api_key(&master).unwrap().as_deref(),
+        Some("litellm_proxy_master_key")
+    );
 }
 
 #[test]

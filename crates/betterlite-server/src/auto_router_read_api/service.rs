@@ -3,9 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_db::autorouter_facts::session::bounded_session_id;
 use betterlite_db::managed_resource_rows::autorouter::AutoRouterSession;
 use betterlite_logging::analytics::python;
-use betterlite_models::capture_rate::format::{
-    serialize_money, serialize_optional_money,
-};
+use betterlite_models::capture_rate::format::{serialize_money, serialize_optional_money};
 use chrono::NaiveDate;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -64,8 +62,10 @@ pub async fn benchmarks_for(
     let rows = store
         .agg_rows(&window, query.api_key.as_deref(), query.user_id.as_deref())
         .await?;
-    let configured: Vec<StrategyDeployment<'_>> =
-        deployments.iter().map(ConfiguredRouter::deployment).collect();
+    let configured: Vec<StrategyDeployment<'_>> = deployments
+        .iter()
+        .map(ConfiguredRouter::deployment)
+        .collect();
     // an empty registry and LiteLLM's absent router both leave the idle list empty
     Ok(benchmarks(&window, &rows, Some(&configured)))
 }
@@ -96,12 +96,8 @@ fn session_not_found(session_id: &str) -> Result<ReadApiError, ReadApiError> {
 }
 
 fn session_response(session_id: &str, row: &AutoRouterSession) -> SessionResponse {
-    let (saved_spend, baseline_spend) = savings_cohort(
-        row.turns,
-        row.estimated_turns,
-        row.spend,
-        row.saved_spend,
-    );
+    let (saved_spend, baseline_spend) =
+        savings_cohort(row.turns, row.estimated_turns, row.spend, row.saved_spend);
     let (_estimated_saved, estimated_baseline_spend) = savings_cohort(
         row.turns,
         row.estimated_turns,

@@ -114,12 +114,8 @@ impl AutoRouterReadStore for PgAutoRouterReads {
         user_id: Option<&str>,
     ) -> Result<Vec<SessionAggRow>, ReadApiError> {
         let client = self.store.session().await?;
-        let params: [&(dyn ToSql + Sync); 4] = [
-            &window.query_start,
-            &window.query_end,
-            &api_key,
-            &user_id,
-        ];
+        let params: [&(dyn ToSql + Sync); 4] =
+            [&window.query_start, &window.query_end, &api_key, &user_id];
         let row = client
             .query_one(BENCHMARKS_SQL, &params)
             .await

@@ -1,0 +1,9 @@
+task: B355
+deviations:
+  - what: The member 403 for the benchmarks read answers the detail "only proxy admin roles can view auto-router benchmarks across the deployment", where LiteLLM's _require_admin_viewer writes "Only proxy admin roles can {action}".
+    why: The role gate is B345's shared _require_admin_viewer port (crates/betterlite-server/src/shadow_eval_validation/error.rs AccessError::ViewerForbidden), whose wording its own routes and tests already answer with. B355 reuses that helper instead of writing a second copy for a capital letter.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/auto_router_endpoints.py#L970-L975
+  - what: A benchmarks query string past 1048576 bytes is refused with 422 and a TooLarge reason before the parameters are decoded, where LiteLLM hands the raw query string to FastAPI's parameter binder with no byte bound.
+    why: The source has no equivalent limit at the query-parsing boundary, and bounded-inputs requires a finite limit; the min_length=1 bound on user_id and the parameter types still apply unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/auto_router_endpoints.py#L846-L856
+kept_bugs: []

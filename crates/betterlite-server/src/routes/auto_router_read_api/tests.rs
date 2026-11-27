@@ -189,7 +189,12 @@ async fn benches(
     caller: Option<Extension<AuthContext>>,
     raw: Option<&str>,
 ) -> Response {
-    benchmarks_read(State(read_state(store)), caller, RawQuery(raw.map(str::to_owned))).await
+    benchmarks_read(
+        State(read_state(store)),
+        caller,
+        RawQuery(raw.map(str::to_owned)),
+    )
+    .await
 }
 
 async fn session(
@@ -197,7 +202,12 @@ async fn session(
     caller: Option<Extension<AuthContext>>,
     raw: Option<&str>,
 ) -> Response {
-    session_read(State(read_state(store)), caller, RawQuery(raw.map(str::to_owned))).await
+    session_read(
+        State(read_state(store)),
+        caller,
+        RawQuery(raw.map(str::to_owned)),
+    )
+    .await
 }
 
 async fn decode<T: for<'de> Deserialize<'de>>(response: Response) -> T {
@@ -268,7 +278,12 @@ async fn a_proxy_without_a_database_answers_500() {
     assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
     let body: Detail = decode(response).await;
     assert_eq!(body.detail, DB_NOT_CONNECTED);
-    let response = session(None, authenticated(master_principal()), Some("session_id=s1")).await;
+    let response = session(
+        None,
+        authenticated(master_principal()),
+        Some("session_id=s1"),
+    )
+    .await;
     assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
     let body: Detail = decode(response).await;
     assert_eq!(body.detail, DB_NOT_CONNECTED);
@@ -305,7 +320,10 @@ async fn an_empty_user_filter_is_the_validation_envelope() {
     assert_eq!(body.detail.len(), 1);
     assert_eq!(body.detail[0].kind, "string_too_short");
     assert_eq!(body.detail[0].loc, ["query", "user_id"]);
-    assert_eq!(body.detail[0].msg, "String should have at least 1 character");
+    assert_eq!(
+        body.detail[0].msg,
+        "String should have at least 1 character"
+    );
 }
 
 #[tokio::test]
@@ -379,12 +397,7 @@ async fn an_oversized_session_id_reaches_the_store_bounded() {
     let store = Arc::new(RecordingStore::with_session(session_row(&bounded)));
     let handle: Arc<dyn AutoRouterReadStore> = store.clone();
     let raw = format!("session_id={oversized}");
-    let response = session(
-        Some(handle),
-        authenticated(master_principal()),
-        Some(&raw),
-    )
-    .await;
+    let response = session(Some(handle), authenticated(master_principal()), Some(&raw)).await;
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(
         store.calls(),

@@ -1,0 +1,30 @@
+name: ui-cost-benchmarks-window-query
+config: |-
+  model_list:
+    - model_name: ui-model
+      litellm_params:
+        model: openai/ui-model
+        api_base: "{{upstream}}/v1"
+        api_key: dummy-ui-key
+  general_settings:
+    master_key: oracle-master
+env: {}
+upstream: []
+database:
+  seed:
+    dashboard: {logs: []}
+steps:
+  # No rollup row has been written for this window, so both proxies answer from the configured
+  # routers and the empty aggregate: the cost optimization page's first load.
+  - request:
+      method: GET
+      path: /auto_router/benchmarks?start_date=2024-01-01&end_date=2024-01-02
+      headers: {authorization: Bearer oracle-master}
+      body: null
+    compare: {headers: [content-type], headers_present: [], upstream_headers: [], ignore: []}
+  - request:
+      method: GET
+      path: /auto_router/session?session_id=ui-session
+      headers: {authorization: Bearer oracle-master}
+      body: null
+    compare: {headers: [content-type], headers_present: [], upstream_headers: [], ignore: []}
