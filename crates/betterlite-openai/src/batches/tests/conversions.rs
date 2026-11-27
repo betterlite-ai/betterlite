@@ -60,6 +60,10 @@ fn create_from_request_names_the_missing_field() {
             field: "completion_window"
         }
     );
+    assert_eq!(
+        error.to_string(),
+        "the batch request is missing its completion_window"
+    );
     let no_endpoint = CreateBatchRequest {
         completion_window: Some(CompletionWindow::Day),
         endpoint: None,
@@ -112,9 +116,11 @@ fn query_from_request_carries_the_batch_id() {
         Some("v")
     );
     assert_eq!(request.timeout, Some(3.0_f64));
+    let missing = BatchQuery::from_request(&BatchIdRequest::default()).unwrap_err();
+    assert_eq!(missing, MissingBatchField::Missing { field: "batch_id" });
     assert_eq!(
-        BatchQuery::from_request(&BatchIdRequest::default()).unwrap_err(),
-        MissingBatchField::Missing { field: "batch_id" }
+        missing.to_string(),
+        "the batch request is missing its batch_id"
     );
 }
 
@@ -147,6 +153,10 @@ fn timeout_duration_follows_the_pieces() {
     assert_eq!(
         Timeout::Seconds(-1.0).duration().unwrap_err(),
         TimeoutError::Invalid { seconds: -1.0_f64 }
+    );
+    assert_eq!(
+        Timeout::Seconds(-1.0).duration().unwrap_err().to_string(),
+        "the timeout must be a finite, non-negative number of seconds, not -1"
     );
     let negative_read = TimeoutPhases {
         connect: Some(-2.0_f64),
