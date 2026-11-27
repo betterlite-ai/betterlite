@@ -1,0 +1,90 @@
+id: B10119
+title: OAuth callback query input and SSO group projection
+description: >-
+  Two SSO callbacks read the same inputs. B1615's GET /sso/callback (LiteLLM's auth_callback) reads state, error and error_description from the query string, and both it and B1627's GET /sso/debug/callback (debug_sso_callback) build an SSO-specific JWT handler from general_settings.ui_access_mode before they call a provider. This task builds those two pieces once, so B1627 waits only on them and B1615 calls them instead of owning them. It registers no route and makes no provider call.
+
+
+  Layout. Module sso_callback_input in betterlite-server: crates/betterlite-server/src/sso_callback_input.rs with query.rs, groups.rs and tests.rs under crates/betterlite-server/src/sso_callback_input/. Section sso_callback_input in betterlite-config: crates/betterlite-config/src/sections/sso_callback_input.rs with its tests in sections/sso_callback_input/tests.rs. Both stub files, the server's `pub mod` line and the section's `pub mod` line and sections! entry are on main already. Keep every server test in sso_callback_input/tests.rs, since the checks select them by that path.
+
+
+  Query decoder. `decode_oauth_callback_query(query: &[u8]) -> OAuthCallbackQuery`, where `OAuthCallbackQuery { state: Option<String>, error: Option<String>, error_description: Option<String> }`. It reads the raw query bytes the way Starlette's request.query_params does: split on `&`, plus as space, percent escapes decoded as UTF-8 with an invalid sequence such as %FF becoming U+FFFD, a malformed escape such as %zz kept as text, a name without `=` read as a blank value, and a repeated name keeping its last value. A blank value stays `Some("")`; only a missing name is None. Names other than these three (code, scope, session_state and the rest) are ignored here, since the provider exchanges read them from the full callback URL. Use the form_urlencoded crate betterlite-server already depends on, as model_query.rs does. The decoder never fails. What counts as an OAuth error (LiteLLM's `if oauth_error:`), the 401 detail text and the CLI state prefix are B1615's: it calls this decoder first and decides on the fields. Add the cargo-fuzz target oauth_callback_query in crates/betterlite-server/fuzz (B770 owns that crate; register the bin in its Cargo.toml the way sso_refresh_response is) that calls this same function, seed crates/betterlite-server/fuzz/corpus/oauth_callback_query with a repeated state, a blank error, plus and percent escapes, a malformed escape, invalid UTF-8 and an oversized query, and add sso_callback_input::tests::replays_the_oauth_callback_query_corpus over that folder with rstest's files attribute.
+
+
+  Group claim setting. The section reads general_settings.ui_access_mode from config.yaml, whose declared type is a string or a mapping. Its Settings holds `group_projection: Option<GroupProjection>` with `GroupProjection { sso_group_jwt_field: Option<String> }`. It is None when the key is absent, null or a string (admin_only, all or any other text), and Some when the key is a mapping. Inside the mapping read only sso_group_jwt_field: absent or null gives None, text is kept as written. The mapping's type and restricted_sso_group members belong to B1624's restricted-group check, so leave them and any other member unread and unchecked. A value of another type, for the mode or for the field, is a load error that names its path, as docs/compatibility.md says. Test it in sections::sso_callback_input::tests through B002's Loader::load: loads_callback_group_claim covers absent, null, admin_only text, a mapping with the field, a mapping without it and a mapping with a null field and extra members; rejects_a_mode_of_another_type covers a list mode, a number mode and a number field. Add config_yaml corpus seeds named sso-callback-input-* for B002's existing decoder, with one valid mapping, a string mode and a malformed mapping.
+
+
+  Group projection. In groups.rs, `sso_jwt_handler(settings: &sso_callback_input::Settings) -> Option<JwtHandler>`, using B760's betterlite_auth::jwt_claims::handler::JwtHandler and JwtAuthSettings. With no projection it returns None. Otherwise it starts from JwtHandler::default() and calls update_environment with `JwtAuthSettings { team_ids_jwt_field: <the field>, ..JwtAuthSettings::default() }`, no trusted issuers and leeway 0, which is LiteLLM's LiteLLM_JWTAuth(team_ids_jwt_field=...) with every other field at its default. LiteLLM also hands the handler prisma_client and user_api_key_cache; betterlite's JwtHandler holds neither, so nothing is carried for them, and no agent lookup is bound. A mapping without the field still yields a handler, with team_ids_jwt_field None. B1615 and B1627 pass the result as GenericSsoConfig's sso_jwt_handler, the field B1623 already built.
+
+
+  Tests in crates/betterlite-server/src/sso_callback_input/tests.rs. Every decoder test name starts with query_ and every projection test name starts with group_projection_, so the checks below select each group. Decoder: the last repeated state wins, `error=` gives Some("") and no description, plus and percent escapes decode, %zz stays as text and %FF becomes U+FFFD as Starlette gives them, and other names leave the three fields None. Projection: no handler for an unset setting and for a string mode, a handler with the configured field and leeway 0, a handler with no field for a mapping without one, and a claims payload with a groups list read through B760's TeamClaims::team_ids on the projected handler's settings, so the configured claim really reaches the team ids.
+
+
+  There are no oracle cases. The decoder follows Starlette's QueryParams rather than LiteLLM code, and the projection only configures B760's handler; B8770's booted-proxy cases oauth-error-before-db and restricted-group-denial compare both through GET /sso/callback once B1615 and B063 are in. The owned LiteLLM lines are about 30, so the work is the decoder, the section, the projection and their tests.
+scope:
+  paths:
+    - crates/betterlite-server/src/sso_callback_input.rs
+    - crates/betterlite-server/src/sso_callback_input/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/oauth_callback_query.rs
+    - crates/betterlite-server/fuzz/corpus/oauth_callback_query/**
+    - crates/betterlite-config/src/sections/sso_callback_input.rs
+    - crates/betterlite-config/src/sections/sso_callback_input/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/sso-callback-input-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2020-L2035
+    why: The callback's state parameter and its error and error_description reads; the 401 built from them stays with B1615.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2052-L2063
+    why: Owned. The SSO-specific handler in auth_callback, built only for a mapping ui_access_mode, with zero leeway.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L4755-L4766
+    why: Owned. The same handler built again in debug_sso_callback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L263-L273
+    why: update_environment, what the handler carries after the projection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5331-L5367
+    why: LiteLLM_JWTAuth, whose fields other than team_ids_jwt_field keep their defaults here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L8449-L8452
+    why: The database sso_config row drops ui_access_mode before export, so only config.yaml's general_settings feeds the projection.
+  - url: https://github.com/Kludex/starlette/blob/1.9.0/starlette/datastructures.py#L398-L414
+    why: QueryParams at the Starlette version LiteLLM pins, parse_qsl with blank values kept and a dict that keeps the last repeated value.
+dod:
+  - text: decode_oauth_callback_query reads state, error and error_description with Starlette's rules, the last repeated value winning, a blank value kept as Some(""), escapes decoded, a malformed escape kept and other names ignored.
+    proof: [query-tests]
+  - text: sso_jwt_handler builds no handler for an unset or string ui_access_mode, and for a mapping a zero-leeway handler whose team_ids_jwt_field is the mapping's sso_group_jwt_field, None included, and whose team ids come from that claim.
+    proof: [group-projection-tests]
+  - text: The real config loader reads general_settings.ui_access_mode into the section, keeps a mapping without sso_group_jwt_field apart from no mapping, and rejects a mode or a field of another type with its path.
+    proof: [group-claim-config]
+  - text: The query decoder has its own cargo-fuzz target with added seeds, the section has added config_yaml seeds, and both corpora replay.
+    proof: [input-corpora]
+checks:
+  optional: [mutants]
+  commands:
+    - id: query-tests
+      why: The callback query is not read with Starlette's last-value and blank-value rules.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^sso_callback_input::tests::query_/)'
+    - id: group-projection-tests
+      why: The SSO-specific handler is built for the wrong ui_access_mode values or does not carry the group claim into team ids.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^sso_callback_input::tests::group_projection_/)'
+    - id: group-claim-config
+      why: general_settings.ui_access_mode and its sso_group_jwt_field are not loaded by the real config loader.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::sso_callback_input::/)'
+    - id: input-corpora
+      why: The query decoder has no fuzz target or added seeds, or the group claim setting never reaches the YAML decoder's corpus.
+      run: test -f crates/betterlite-server/fuzz/fuzz_targets/oauth_callback_query.rs && grep -q "oauth_callback_query" crates/betterlite-server/fuzz/Cargo.toml && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/oauth_callback_query)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/sso-callback-input-*')" && cargo nextest run --locked -p betterlite-server -p betterlite-config --no-tests=fail -E 'test(replays_the_oauth_callback_query_corpus) | test(replays_the_config_yaml_corpus)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "auth_callback itself: the OAuth error 401 and its detail text, the database and master-key order, provider selection, the CLI state refusal and the GET /sso/callback route are B1615's, which calls decode_oauth_callback_query and sso_jwt_handler."
+  - "debug_sso_callback, its HTML, claim scrubbing and ENABLE_SSO_DEBUG gate: B1627, which calls the same two."
+  - "verify_user_in_restricted_sso_group, which reads the mapping's type and restricted_sso_group: B1624."
+  - "Team id extraction from claims (get_team_ids_from_jwt, get_all_jwt_team_ids): B760, reached through B1623's generic callback."
+  - "HTTP oracle cases for the callback: B8770's oauth-callback folder."
+  - "ui_sso.py definitions not named here remain with the owners in B063's inventory."
+pitfalls:
+  - "`?error=` decodes to Some(\"\"), not None; B1615's truthiness check lets a blank error through, so folding blank into None would hide that difference from its tests."
+  - "Starlette keeps the last of repeated names, so `state=a&state=b` is b; collecting the pairs into a map that keeps the first insert gets it wrong."
+  - "A ui_access_mode mapping without sso_group_jwt_field still yields a handler with team_ids_jwt_field None, and B1623 then reads team ids through it; only an absent, null or string mode yields no handler."
+  - "The database sso_config row's ui_access_mode is popped before export (proxy_server.py L8452), so the section reads config.yaml's general_settings and nothing else."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
