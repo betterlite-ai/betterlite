@@ -74,6 +74,16 @@ impl VerifierEntropy for FailingEntropy {
 #[derive(Default)]
 struct RecordingCache {
     writes: Mutex<Vec<Write>>,
+    fails: bool,
+}
+
+impl RecordingCache {
+    fn failing() -> Self {
+        Self {
+            writes: Mutex::new(Vec::new()),
+            fails: true,
+        }
+    }
 }
 
 struct Write {
@@ -91,6 +101,11 @@ impl LoginCodeCache for RecordingCache {
         code: &LoginCode<'_>,
         ttl_seconds: f64,
     ) -> Result<(), CacheWriteError> {
+        if self.fails {
+            return Err(CacheWriteError::RedisUsage(
+                RedisCacheValuesError::TtlOutOfRange { seconds: 0.0_f64 },
+            ));
+        }
         self.writes.lock().unwrap().push(Write {
             key: cache_key.to_owned(),
             token: code.token.to_owned(),
@@ -98,22 +113,6 @@ impl LoginCodeCache for RecordingCache {
             ttl_seconds,
         });
         Ok(())
-    }
-}
-
-struct FailingCache;
-
-#[async_trait]
-impl LoginCodeCache for FailingCache {
-    async fn store_login_code(
-        &self,
-        _cache_key: &str,
-        _code: &LoginCode<'_>,
-        _ttl_seconds: f64,
-    ) -> Result<(), CacheWriteError> {
-        Err(CacheWriteError::RedisUsage(
-            RedisCacheValuesError::TtlOutOfRange { seconds: 0.0_f64 },
-        ))
     }
 }
 
@@ -235,9 +234,8 @@ async fn open_breaker_redis_cache() -> RedisCache {
         hooks: Arc::new(SilentHooks),
         gate: Arc::new(OpenGate),
     };
-    connect(options, &BTreeMap::<String, String>::new())
-        .await
-        .unwrap()
+    let env = BTreeMap::from([("REDIS_URL".to_owned(), "redis://127.0.0.1:1/0".to_owned())]);
+    connect(options, &env).await.unwrap()
 }
 
 #[rstest]
@@ -649,7 +647,7 @@ async fn returns_none_for_missing_or_untrusted_targets() {
 async fn reports_a_cache_write_failure() {
     let request = https_request();
     let settings = https_settings();
-    let cache = FailingCache;
+    let cache = RecordingCache::failing();
     let error = sso_return_to_redirect(&redirect_to(
         Some("https://cp.example.com/done"),
         Some(CONTROL_PLANE),

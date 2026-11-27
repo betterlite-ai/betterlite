@@ -1,9 +1,10 @@
+mod redis_cache;
+mod user_cache;
+
 use async_trait::async_trait;
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use betterlite_auth::auth_cache::backend::AuthCacheTier;
-use betterlite_auth::auth_cache::{AuthCache, AuthCacheError, WriteOptions, WriteTtl};
-use betterlite_redis::redis_cache::RedisCache;
+use betterlite_auth::auth_cache::AuthCacheError;
 use betterlite_redis::redis_cache_values::error::RedisCacheValuesError;
 use serde::Serialize;
 use thiserror::Error;
@@ -49,43 +50,6 @@ pub trait LoginCodeCache: Send + Sync {
         code: &LoginCode<'_>,
         ttl_seconds: f64,
     ) -> Result<(), CacheWriteError>;
-}
-
-#[async_trait]
-impl<Tier: AuthCacheTier> LoginCodeCache for AuthCache<Tier> {
-    async fn store_login_code(
-        &self,
-        cache_key: &str,
-        code: &LoginCode<'_>,
-        ttl_seconds: f64,
-    ) -> Result<(), CacheWriteError> {
-        let options = WriteOptions {
-            ttl: Some(WriteTtl {
-                seconds: ttl_seconds,
-            }),
-            local_only: false,
-            refresh_ttl: false,
-        };
-        self.async_set(Some(cache_key), code, options)
-            .await
-            .map_err(CacheWriteError::UserCache)
-    }
-}
-
-#[async_trait]
-impl LoginCodeCache for RedisCache {
-    async fn store_login_code(
-        &self,
-        cache_key: &str,
-        code: &LoginCode<'_>,
-        ttl_seconds: f64,
-    ) -> Result<(), CacheWriteError> {
-        self.values
-            .async_set_cache(Some(cache_key), code, Some(ttl_seconds), false)
-            .await
-            .map_err(CacheWriteError::RedisUsage)?;
-        Ok(())
-    }
 }
 
 pub struct LoginCodeCaches<'caches, Redis, User> {

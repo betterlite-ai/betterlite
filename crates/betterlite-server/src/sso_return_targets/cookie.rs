@@ -48,8 +48,10 @@ pub fn set_session_token_cookie(
     settings: &TrustedNetworkSettings,
     jwt_token: &str,
 ) -> Result<(), SsoReturnTargetError> {
-    let cookie = session_token_cookie(jwt_token, is_secure_request(request, settings))?;
-    append_cookie(response, &cookie)
+    append_cookie(
+        response,
+        &session_token_cookie(jwt_token, is_secure_request(request, settings))?,
+    )
 }
 
 #[must_use]
@@ -179,6 +181,8 @@ const fn is_unescaped_value_letter(letter: char) -> bool {
 
 // http.cookies._getdate: the GMT timestamp of that moment, with the abbreviation tables of the stdlib
 fn http_date(now_unix: i64) -> String {
-    let moment = DateTime::from_timestamp(now_unix, 0).unwrap_or(DateTime::<Utc>::UNIX_EPOCH);
-    moment.format("%a, %d %b %Y %H:%M:%S GMT").to_string()
+    DateTime::from_timestamp(now_unix, 0)
+        .unwrap_or(DateTime::<Utc>::UNIX_EPOCH)
+        .format("%a, %d %b %Y %H:%M:%S GMT")
+        .to_string()
 }
