@@ -1,0 +1,45 @@
+kind: helper
+name: model-grant-intersection-enforced-versus-attribution
+call:
+  # no database returns exactly the key and team models
+  model_grant_intersection:
+    function: enforced
+    database: false
+    token: {models: [all-team-models], team_models: [tier-a], team_id: t1}
+calls:
+  # the sentinel without a team id empties the key list while the team list stays as given
+  - model_grant_intersection:
+      function: enforced
+      database: false
+      token: {models: [all-team-models], team_models: [tier-a]}
+  # enforcement keeps the user list empty once a team answered and never reads the organization
+  - model_grant_intersection:
+      function: enforced
+      database: true
+      token: {models: [gpt-4o], team_id: t1, user_id: u1, org_id: token-org}
+      team: {team_id: t1, models: [tier-a], organization_id: team-org}
+      user: {user_id: u1, models: [user-model]}
+      org: {organization_id: token-org, models: [tier-x]}
+  # attribution drops the user scope and reads the key's org before the team's
+  - model_grant_intersection:
+      function: collected
+      database: true
+      token: {models: [gpt-4o], team_id: t1, user_id: u1, org_id: token-org}
+      models: [gpt-4o]
+      team: {team_id: t1, models: [tier-a], organization_id: team-org}
+      membership: {user_id: u1, team_id: t1, allowed_models: [tier-a]}
+      org: {organization_id: token-org, models: [tier-x]}
+      registry: [tier-a, tier-x]
+      serving: {gpt-4o: [tier-a, tier-x]}
+  # the team's organization answers when the key names none
+  - model_grant_intersection:
+      function: collected
+      database: true
+      token: {models: [gpt-4o], team_id: t1, user_id: u1}
+      models: [gpt-4o]
+      team: {team_id: t1, models: [tier-a], organization_id: team-org}
+      org: {organization_id: team-org, models: [tier-y]}
+      registry: [tier-a, tier-y]
+      serving: {gpt-4o: [tier-a, tier-y]}
+env: {}
+compare: {ignore: []}

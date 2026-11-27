@@ -3,7 +3,7 @@ title: Mount the spend report and spend log routes and start the spend callback
 description: >-
   B069 composes LiteLLM's spend_management_router: the report routes of B1721 to B1727, the spend log routes of B1729 to B1732 and GET /spend/capture_rate, in one function, `spend::spend_routes::routes(...)`. It also builds the spend tracking callback in `spend::startup::start(...)`. Neither one reads the server state, so nothing reaches them yet. This task merges the routes in crates/betterlite-server/src/app/spend.rs, starts the callback with the shared instances, and proves the report family over HTTP. B8663 proves the spend log family and capture rate.
 
-  Routes. In `mount(router, state)` (inside the auth layers), merge `spend::spend_routes::routes(...)` once, right after B8482's daily activity routes and before B8661's analytics routes: proxy_server.py includes spend_management_router at L19979, after daily_activity_router (L19971) and before user_agent_analytics_router (L20004). Pass the handles its signature asks for from `state.shared` (the database store is `state.shared.db`). The leaf task files list each path and alias. Do not merge B1709's callback replay route: B1100 already merges routes/callback_replay, and a second merge panics. The FinOps routes (B073) are deferred: B073 later adds its one `app::spend::finops::mount` call inside this mount and depends on this task.
+  Routes. In `mount(router, state)` (inside the auth layers), merge `spend::spend_routes::routes(...)` once, after any daily activity routes already present and before any analytics routes already present; these neighboring merges need not exist yet: proxy_server.py includes spend_management_router at L19979, after daily_activity_router (L19971) and before user_agent_analytics_router (L20004). Pass the handles its signature asks for from `state.shared` (the database store is `state.shared.db`). The leaf task files list each path and alias. Do not merge B1709's callback replay route: B1100 already merges routes/callback_replay, and a second merge panics. The FinOps routes (B073) are deferred: B073 later adds its one `app::spend::finops::mount` call inside this mount and depends on this task.
 
   Startup. In `async fn start(state)`, await `spend::startup::start(...)` once with `state.shared.db`, the settlement accessor of `state.shared.budget` (B8481, the port B1719's coordinator calls) and B8660's `app::spend::budget::shadow_spend(&state.shared)` pair for B4083's shadow job loader, and set `state.shared.spend_producer` (B8610's empty OnceLock slot) from what it returns, so B8613's stop can drain the producer at shutdown; when start returns no producer, leave the slot empty. B069 registers the callback only when a database exists; pass the Option through and let it decide. LiteLLM registers these at startup before the first request, which is why this sits in start and not in a handler.
 
@@ -88,7 +88,7 @@ out_of_scope:
   - "Draining B1708's producer at shutdown: B069 owns the drain, and the area hooks have no stop step."
 pitfalls:
   - "routes/callback_replay is already in router(); merging B1709's router again here panics on the duplicate path."
-  - "Merge the spend routes before B8661's analytics lines, not after, so /openapi.json lists them in LiteLLM's include order."
+  - "Merge the spend routes before any analytics lines already present; this task does not require those lines to exist. Preserve this order so /openapi.json lists them in LiteLLM's include order."
 review_level: security
 budget:
   max_changed_lines: 1500

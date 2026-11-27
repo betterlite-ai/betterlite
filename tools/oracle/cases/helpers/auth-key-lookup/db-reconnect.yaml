@@ -1,0 +1,29 @@
+kind: helper
+name: auth-key-lookup-db-reconnect
+call:
+  auth_key_lookup:
+    aspect: key_object
+    hashed_token: hashed-token
+    rows:
+      - kind: transport
+      - kind: row
+        fields: {token: hashed-token, key_name: k1, user_id: u1, team_id: t1, team_alias: alpha, models: [gpt-4]}
+    reconnect: {answer: true, timeout: 1.5, lock: 0.25}
+calls:
+  # a refused reconnect rethrows the transport failure under the default timeouts
+  - auth_key_lookup:
+      aspect: key_object
+      hashed_token: hashed-token
+      rows:
+        - kind: transport
+      reconnect: {answer: false}
+  # the single retry failing again ends the lookup as a database failure
+  - auth_key_lookup:
+      aspect: key_object
+      hashed_token: hashed-token
+      rows:
+        - kind: transport
+        - kind: transport
+      reconnect: {answer: true}
+env: {}
+compare: {ignore: []}

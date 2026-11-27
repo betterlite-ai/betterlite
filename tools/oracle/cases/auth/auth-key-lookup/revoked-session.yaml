@@ -1,0 +1,22 @@
+kind: helper
+name: auth-key-lookup-auth-revoked-session
+call:
+  auth_key_lookup:
+    aspect: session
+    auth: {token: sess-b, key_name: ui-login, user_id: u2, team_id: t2, is_session_token: true}
+    user_outcome: gone
+calls:
+  # removing the user from the team refuses the session
+  - auth_key_lookup:
+      aspect: session
+      auth: {token: sess-b, key_name: ui-login, user_id: u2, team_id: t2, is_session_token: true}
+      user: {user_id: u2, teams: []}
+      team: {team_id: t2, team_alias: beta-live}
+  # deleting the team refuses the session even when the user row still lists it
+  - auth_key_lookup:
+      aspect: session
+      auth: {token: sess-b, key_name: ui-login, user_id: u2, team_id: t2, is_session_token: true}
+      user: {user_id: u2, teams: [t2]}
+      membership: {user_id: u2, team_id: t2}
+env: {}
+compare: {ignore: []}

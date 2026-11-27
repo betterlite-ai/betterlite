@@ -1,0 +1,43 @@
+kind: helper
+name: auth-model-grant-intersection-matched-group-stamping
+call:
+  # a successful stamp writes the groups the request was gated by
+  model_grant_intersection:
+    function: stamped
+    database: true
+    token: {models: [gpt-4o], team_id: t1, user_id: u1}
+    models: [gpt-4o]
+    team: {team_id: t1, models: [tier-a]}
+    registry: [tier-a]
+    serving: {gpt-4o: [tier-a]}
+calls:
+  # a router failure at stamp time leaves the earlier stamp untouched
+  - model_grant_intersection:
+      function: stamped
+      database: true
+      token: {models: [gpt-4o], team_id: t1, user_id: u1}
+      models: [gpt-4o]
+      stamp_before: [old]
+      team: {team_id: t1, models: [tier-a]}
+      registry: [tier-a]
+      outages: [serving]
+  # an empty registry stamps nothing and keeps the earlier groups
+  - model_grant_intersection:
+      function: stamped
+      database: true
+      token: {models: [gpt-4o], team_id: t1, user_id: u1}
+      models: [gpt-4o]
+      stamp_before: [old]
+      team: {team_id: t1, models: [tier-a]}
+      registry: []
+      serving: {gpt-4o: [tier-a]}
+  # an unreadable registry leaves every covering group budgeted, and the stamp records them
+  - model_grant_intersection:
+      function: stamped
+      database: true
+      token: {models: [gpt-4o], team_id: t1, user_id: u1}
+      models: [gpt-4o]
+      team: {team_id: t1, models: [tier-a, tier-b]}
+      serving: {gpt-4o: [tier-a, tier-b, tier-c]}
+env: {}
+compare: {ignore: []}

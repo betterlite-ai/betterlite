@@ -3,7 +3,7 @@ title: Python routing plugin resolution and the startup hooks port
 description: >-
   Two startup pieces need betterlite's embedded Python host (B165), so they wait for it in this task and the plain checks
   of B8378 and the lifespan of B8374 do not. This task also implements the StartupHooks port that B8374's lifespan declares
-  and calls, so it depends on B8374.
+  and calls, so it depends on B8374. B8374 owns StartupHooks and StartupHookError; B8613's later start/stop handoff supplies no contract used by this resolver or adapter.
 
   Routing plugins. A complexity router config and router_settings can name routing and classifier plugins as Python
   dotted paths ("module.attr"). LiteLLM resolves them at config load with get_instance_fn, so a bad module refuses startup
