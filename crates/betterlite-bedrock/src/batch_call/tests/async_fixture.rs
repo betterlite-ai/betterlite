@@ -43,7 +43,7 @@ impl AsyncFactory {
     }
 }
 
-struct AsyncClient {
+pub(super) struct AsyncClient {
     requests: Arc<Mutex<Vec<StatusWireRequest>>>,
     status: u16,
     body: Vec<u8>,

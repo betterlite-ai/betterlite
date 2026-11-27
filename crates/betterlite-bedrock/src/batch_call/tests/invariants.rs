@@ -100,10 +100,10 @@ fn debug_hides_header_values() {
         credentials: &credentials,
         signature_version: "v4",
     };
-    let shown = format!("{config:?}");
-    assert!(!shown.contains(ACCESS_KEY));
-    assert!(!shown.contains(SECRET_KEY));
-    assert!(!shown.contains(SESSION_TOKEN));
+    let shown_config = format!("{config:?}");
+    assert!(!shown_config.contains(ACCESS_KEY));
+    assert!(!shown_config.contains(SECRET_KEY));
+    assert!(!shown_config.contains(SESSION_TOKEN));
 }
 
 fn errors_hide_credentials() {

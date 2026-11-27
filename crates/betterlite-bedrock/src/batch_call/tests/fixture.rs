@@ -76,8 +76,8 @@ pub(super) fn credentials_with(
     }
 }
 
-pub(super) fn parameter(name: &str, value: Json) -> (String, Box<RawValue>) {
-    let encoded = serde_json::to_string(&value).expect("the parameter encodes");
+pub(super) fn parameter(name: &str, value: &Json) -> (String, Box<RawValue>) {
+    let encoded = serde_json::to_string(value).expect("the parameter encodes");
     let raw = RawValue::from_string(encoded).expect("the parameter is JSON");
     (name.to_owned(), raw)
 }
@@ -85,7 +85,7 @@ pub(super) fn parameter(name: &str, value: Json) -> (String, Box<RawValue>) {
 pub(super) fn parameters(entries: &[(&str, Json)]) -> BTreeMap<String, Box<RawValue>> {
     entries
         .iter()
-        .map(|(name, value)| parameter(name, value.clone()))
+        .map(|(name, value)| parameter(name, value))
         .collect()
 }
 
@@ -192,8 +192,6 @@ pub(super) struct ClientConfigRecord {
     pub(super) region: String,
     pub(super) signature_version: String,
     pub(super) access_key_id: String,
-    pub(super) secret_key_present: bool,
-    pub(super) session_token_present: bool,
 }
 
 pub(super) enum Reply {
@@ -210,13 +208,13 @@ pub(super) fn answer(status: u16, body: &str) -> Reply {
 }
 
 pub(super) fn answer_with(status: u16, headers: &[(&str, &str)], body: &str) -> Reply {
-    let headers = headers
+    let pairs = headers
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
         .collect();
     Reply::Answer(ControlPlaneReply {
         status,
-        headers,
+        headers: pairs,
         body: body.as_bytes().to_vec(),
     })
 }
@@ -267,12 +265,6 @@ impl ControlPlaneFactory for Factory {
             region: config.region.to_owned(),
             signature_version: config.signature_version.to_owned(),
             access_key_id: config.credentials.access_key_id.expose_secret().to_owned(),
-            secret_key_present: !config
-                .credentials
-                .secret_access_key
-                .expose_secret()
-                .is_empty(),
-            session_token_present: config.credentials.session_token.is_some(),
         };
         self.state
             .lock()
@@ -285,7 +277,7 @@ impl ControlPlaneFactory for Factory {
     }
 }
 
-struct Client {
+pub(super) struct Client {
     state: Arc<Mutex<FactoryState>>,
 }
 
@@ -389,7 +381,7 @@ pub(super) fn field<'json>(value: &'json Json, name: &str) -> &'json Json {
 
 pub(super) fn text(value: &Json) -> &str {
     match value {
-        Json::Text(value) => value,
+        Json::Text(found) => found,
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
             panic!("the fixture value is text")
         }

@@ -66,9 +66,9 @@ fn run(status: u16, body: &str) -> (Result<BatchObject, BatchCallError>, AsyncFa
 
 fn async_parameters() -> BTreeMap<String, Box<RawValue>> {
     BTreeMap::from([
-        parameter("aws_access_key_id", Json::Text(ACCESS_KEY.to_owned())),
-        parameter("aws_secret_access_key", Json::Text(SECRET_KEY.to_owned())),
-        parameter("aws_session_token", Json::Text(SESSION_TOKEN.to_owned())),
+        parameter("aws_access_key_id", &Json::Text(ACCESS_KEY.to_owned())),
+        parameter("aws_secret_access_key", &Json::Text(SECRET_KEY.to_owned())),
+        parameter("aws_session_token", &Json::Text(SESSION_TOKEN.to_owned())),
     ])
 }
 
@@ -146,7 +146,7 @@ fn in_progress_with_end_time() {
 fn invalid_status() {
     let (result, _factory) = run(200, UPPERCASE);
     let error = result.expect_err("the raw status must name an OpenAI batch status");
-    assert!(matches!(error, BatchCallError::InvalidStatus { ref status } if status == "COMPLETED"));
+    assert!(matches!(error, BatchCallError::InvalidStatus { status } if status == "COMPLETED"));
 }
 
 fn missing_fields() {
@@ -164,7 +164,7 @@ fn missing_fields() {
         let error = result.expect_err("a required member is missing");
         assert!(matches!(
             error,
-            BatchCallError::MissingField { field: missing } if missing == field
+            BatchCallError::MissingField { field: actual } if actual == field
         ));
     }
 }

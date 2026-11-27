@@ -29,7 +29,7 @@ pub(super) struct Source {
 }
 
 impl Source {
-    pub(super) fn new(credentials: Credentials) -> Self {
+    pub(super) const fn new(credentials: Credentials) -> Self {
         Self {
             credentials,
             regions: Mutex::new(Vec::new()),
@@ -112,6 +112,7 @@ impl PlaneFactory {
                 })
             })
             .collect();
+        drop(state);
         json!(calls)
     }
 }
@@ -131,17 +132,16 @@ impl ControlPlaneFactory for PlaneFactory {
                 .map(|token| token.expose_secret().to_owned()),
             signature_version: config.signature_version.to_owned(),
         };
-        {
-            let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-            state.configs.push(record);
-        }
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        state.configs.push(record);
+        drop(state);
         PlaneClient {
             state: Arc::clone(&self.state),
         }
     }
 }
 
-struct PlaneClient {
+pub(super) struct PlaneClient {
     state: Arc<Mutex<PlaneState>>,
 }
 
@@ -219,7 +219,7 @@ impl ClientFactory for AsyncFixture {
     }
 }
 
-struct AsyncClient {
+pub(super) struct AsyncClient {
     state: Arc<Mutex<AsyncState>>,
 }
 

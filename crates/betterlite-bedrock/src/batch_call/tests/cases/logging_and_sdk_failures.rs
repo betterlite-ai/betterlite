@@ -47,6 +47,7 @@ fn logs_the_call() {
 }
 
 fn assert_events(snapshots: &[Json]) {
+    assert!(snapshots.len() > 1);
     let pre = &snapshots[0];
     assert_eq!(text(field(pre, "log_event_type")), "pre_api_call");
     assert_eq!(text(field(pre, "input")), JOB_ARN);
