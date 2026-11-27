@@ -13,20 +13,26 @@ const MASTER_KEY_DIGEST: &str = "08c01c2db90383f66f247ee03e19ac5053e408174e94be6
 const EMPTY_DIGEST: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 const OTHER_KEY_DIGEST: &str = "8ffae00efda00df519b1211233139edb52252c708f82f14150312cbdceb8df49";
 
-fn exposed(secret: Option<&SecretString>) -> Option<String> {
-    secret.map(|held| held.expose_secret().to_owned())
-}
-
 #[test]
 fn admits_the_digest_of_the_master_key_as_the_proxy_admin() {
     let master = SecretString::from(MASTER_KEY_TEXT);
     let admin = master_key_admin_auth(MASTER_KEY_DIGEST, Some(&master), ADMIN_NAME)
         .unwrap()
         .unwrap();
-    let api_key = exposed(admin.extra.api_key.0.as_ref());
-    let token = exposed(admin.view.token.token.as_ref());
-    assert_eq!(api_key.as_deref(), Some("litellm_proxy_master_key"));
-    assert_eq!(token.as_deref(), Some("litellm_proxy_master_key"));
+    let api_key = admin
+        .extra
+        .api_key
+        .0
+        .as_ref()
+        .map(|held| held.expose_secret().to_owned());
+    let token = admin
+        .view
+        .token
+        .token
+        .as_ref()
+        .map(|held| held.expose_secret().to_owned());
+    assert_eq!(api_key, Some("litellm_proxy_master_key".to_owned()));
+    assert_eq!(token, Some("litellm_proxy_master_key".to_owned()));
     assert_eq!(admin.extra.user_role, Some(UserRole::ProxyAdmin));
     assert_eq!(admin.view.token.user_id.as_deref(), Some(ADMIN_NAME));
     assert!(admin.extra.provenance.via_virtual_key);
