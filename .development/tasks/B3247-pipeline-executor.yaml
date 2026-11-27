@@ -22,7 +22,9 @@ description: >-
   Result<PipelineExecutionResult, PipelineExecError>` where `T` is B3661's `BaseTranslation` type. `ExecuteSteps<'a, T>` holds `steps:
   &'a [PipelineStep]`, `mode: PipelineMode`, `data: &'a mut BTreeMap<String, GuardrailValue>`, `user_api_key_dict: &'a` B732's principal,
   `call_type: &'a str`, `policy_name: &'a str`, `raw_request_snapshot: Option<&'a BTreeMap<String, GuardrailValue>>`, `streaming_chunks:
-  Option<&'a mut Vec<serde_json::Value>>` and `endpoint_translation: Option<&'a T>`. These are LiteLLM's nine arguments in the same order.
+  Option<&'a mut Vec<StreamItem>>` and `endpoint_translation: Option<&'a T>`. These are LiteLLM's nine arguments in the same order.
+  StreamItem is the stream item B10169 moves into betterlite-core (guardrails::streaming_rewrite::shapes), a parsed object as Json and a
+  raw frame as Bytes, the same list B3246's `StreamingStep.streaming_chunks` takes, so the buffered stream reaches the step as it came.
   B6370's `PipelineRunner::execute_steps(...)` is a thin forward to this call, so keep this one struct and do not add a second entry point.
 
   `execute_steps` (pipeline_executor.py L311-L426). Make `working_data` a copy of `data`, with its own copy of `metadata` when the key
