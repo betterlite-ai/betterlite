@@ -204,7 +204,8 @@ async fn transport_posts_form_and_gets_without_body() {
     assert_eq!(fetched.len(), 1, "the check sends one token info request");
     assert_eq!(fetched[0].method, "GET");
     assert_eq!(fetched[0].target, "/userinfo");
-    assert_eq!(fetched[0].content_type, None);
+    // httpx sends the JSON content type on the bodyless GET too, so the header stays
+    assert_eq!(fetched[0].content_type.as_deref(), Some("application/json"));
     assert_eq!(
         fetched[0].authorization.as_deref(),
         Some(format!("Bearer {TOKEN}").as_str())
