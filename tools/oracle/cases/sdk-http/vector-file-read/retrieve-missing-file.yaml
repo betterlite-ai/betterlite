@@ -1,0 +1,27 @@
+kind: sdk_http
+name: vector-file-read-retrieve-missing-file
+call:
+  vector_file_read:
+    runs:
+      - operation: retrieve
+        mode: sync
+        vector_store_id: vs_a
+        file_id: file_missing
+        options: {api_key: sk-caller, litellm_call_id: call-1, max_retries: 0}
+      - operation: content
+        mode: async
+        vector_store_id: vs_a
+        file_id: file_missing
+        options: {api_key: sk-caller, litellm_call_id: call-2, max_retries: 0}
+upstream:
+  - {status: 404, headers: {}, body: ""}
+  - {status: 404, headers: {}, body: ""}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore:
+    - pointer: /vector_file_read/value/runs/0/failure/message
+      why: each side raises from its own decode failure, so the message text differs while class, status and fields match
+    - pointer: /vector_file_read/value/runs/1/failure/message
+      why: each side raises from its own decode failure, so the message text differs while class, status and fields match
