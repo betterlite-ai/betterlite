@@ -207,11 +207,9 @@ fn a_positive_timeout_loads() {
 #[case::zero(0)]
 #[case::negative(-1)]
 fn a_non_positive_timeout_names_its_path(#[case] seconds: i64) {
-    let error = only(&object(&format!("timeout_seconds: {seconds}"))).unwrap_err();
-    assert!(
-        error
-            .contains("model_list.0.litellm_params.complexity_router_config.context_compaction.timeout_seconds"),
-        "{error}"
+    assert_eq!(
+        only(&object(&format!("timeout_seconds: {seconds}"))),
+        Err("invalid scalar at model_list.0.litellm_params.complexity_router_config.context_compaction.timeout_seconds".to_owned())
     );
 }
 
