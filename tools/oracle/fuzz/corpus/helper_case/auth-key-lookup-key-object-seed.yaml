@@ -1,0 +1,27 @@
+kind: helper
+name: auth-key-lookup-key-object-seed
+call:
+  auth_key_lookup:
+    aspect: key_object
+    hashed_token: hashed-token
+    cached:
+      token: hashed-token
+      key_name: k1
+      user_id: u1
+      team_id: t1
+      team_alias: alpha
+      models: [gpt-4]
+      team_models: [claude-3]
+    reconnect: {answer: true, timeout: 1.5, lock: 0.25}
+calls:
+  - auth_key_lookup:
+      aspect: key_object
+      hashed_token: hashed-token
+      rows:
+        - kind: transport
+        - kind: row
+          fields: {token: hashed-token, key_name: k1, user_id: u1, object_permission_id: op-1}
+      reconnect: {answer: true}
+      permissions: {id: op-1}
+env: {}
+compare: {ignore: []}
