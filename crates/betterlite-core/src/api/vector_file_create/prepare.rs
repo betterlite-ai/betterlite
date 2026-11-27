@@ -146,8 +146,7 @@ fn optional_params_of(
     Ok(optional_params)
 }
 
-// vector_store_search::service::logging::generic_params_dump builds the same dump, but it is pub(super) inside a module this task's scope excludes and takes a BTreeMap Params rather than the IndexMap kwargs here, so a shared home both callers reach would need a scope exception, which B1072's scope does not grant
-// GenericLiteLLMParams.model_dump(exclude_none=True): the five fields defaulting to False, then every non-null kwarg
+// GenericLiteLLMParams.model_dump(exclude_none=True): the five fields defaulting to False, then every non-null kwarg; vector_store_search::service::logging::generic_params_dump is the same dump but pub(super) in a scope-excluded module and takes a BTreeMap Params rather than these IndexMap kwargs, so sharing it needs a scope exception B1072 does not grant
 fn generic_params_dump(kwargs: &IndexMap<String, Json>) -> IndexMap<String, Json> {
     let mut dump: IndexMap<String, Json> = [
         "allow_client_keepalive_override",
