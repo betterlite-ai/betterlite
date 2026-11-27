@@ -1,0 +1,352 @@
+import json
+from collections.abc import Awaitable
+from typing import Final, TypeAlias, TypeVar
+
+from pydantic import BaseModel, JsonValue, TypeAdapter
+
+from betterlite._completion.arguments import TimeoutValues
+from betterlite._endpoints.payload import CallPayload, CallValue, to_call_payload
+from betterlite._endpoints.runner import AsyncNativeCall, NativeCall, acall_native, call_native
+from betterlite._endpoints.settings import read_settings
+from betterlite._native import NativeEvalError, NativeEvalSession
+from betterlite.types.llms.openai_evals import (
+    CancelEvalResponse,
+    DataSourceConfig,
+    DeleteEvalResponse,
+    Eval,
+    GraderConfig,
+    ListEvalsResponse,
+)
+
+SETTINGS: Final[tuple[str, ...]] = ("api_key", "openai_key")
+LOGGING_OBJECT: Final = "litellm_logging_obj"
+
+Headers: TypeAlias = dict[str, str] | None
+Query: TypeAlias = dict[str, JsonValue] | None
+Body: TypeAlias = dict[str, JsonValue] | None
+Model = TypeVar("Model", bound=BaseModel)
+JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
+
+
+def _session() -> NativeEvalSession:
+    settings: dict[str, JsonValue] = {"settings": read_settings(SETTINGS)}
+    return NativeEvalSession(json.dumps(settings))
+
+
+# LiteLLM's logging object belongs to its own runtime, so it never crosses into the payload
+def _payload(**values: CallValue) -> CallPayload:
+    named = {name: value for name, value in values.items() if name != LOGGING_OBJECT}
+    return to_call_payload(named)
+
+
+def _answer(model: type[Model], payload: CallPayload, method: NativeCall) -> Model:
+    answer = call_native(method, payload, NativeEvalError)
+    return model.model_validate(answer)
+
+
+async def _aanswer(model: type[Model], payload: CallPayload, method: AsyncNativeCall) -> Model:
+    answer = await acall_native(method, payload, NativeEvalError)
+    return model.model_validate(answer)
+
+
+def create_eval(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L114
+    data_source_config: DataSourceConfig,
+    testing_criteria: list[GraderConfig],
+    name: str | None = None,
+    metadata: dict[str, JsonValue] | None = None,
+    extra_headers: Headers = None,
+    extra_query: Query = None,
+    extra_body: Body = None,
+    timeout: float | TimeoutValues | None = None,
+    custom_llm_provider: str | None = None,
+    **kwargs: CallValue,
+) -> Eval | Awaitable[Eval]:
+    asynchronous = kwargs.pop("acreate_eval", None) is True
+    payload = _payload(
+        data_source_config=JSON.validate_python(data_source_config),
+        testing_criteria=JSON.validate_python(testing_criteria),
+        name=name,
+        metadata=metadata,
+        extra_headers=extra_headers,
+        extra_query=extra_query,
+        extra_body=extra_body,
+        timeout=timeout,
+        custom_llm_provider=custom_llm_provider,
+        **kwargs,
+    )
+    if asynchronous:
+        return _aanswer(Eval, payload, _session().acreate_eval)
+    return _answer(Eval, payload, _session().create_eval)
+
+
+async def acreate_eval(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L45
+    data_source_config: DataSourceConfig,
+    testing_criteria: list[GraderConfig],
+    name: str | None = None,
+    metadata: dict[str, JsonValue] | None = None,
+    extra_headers: Headers = None,
+    extra_query: Query = None,
+    extra_body: Body = None,
+    timeout: float | TimeoutValues | None = None,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L53
+    custom_llm_provider: str | None = None,
+    **kwargs: CallValue,
+) -> Eval:
+    kwargs["acreate_eval"] = True
+    pending = create_eval(
+        data_source_config,
+        testing_criteria,
+        name,
+        metadata,
+        extra_headers,
+        extra_query,
+        extra_body,
+        timeout,
+        custom_llm_provider,
+        **kwargs,
+    )
+    match pending:
+        case Eval():
+            return pending
+        case Awaitable():
+            return await pending
+
+
+def list_evals(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L299
+    limit: int | None = None,
+    after: str | None = None,
+    before: str | None = None,
+    order: str | None = None,
+    order_by: str | None = None,
+    extra_headers: Headers = None,
+    extra_query: Query = None,
+    timeout: float | TimeoutValues | None = None,
+    custom_llm_provider: str | None = None,
+    **kwargs: CallValue,
+) -> ListEvalsResponse | Awaitable[ListEvalsResponse]:
+    asynchronous = kwargs.pop("alist_evals", None) is True
+    payload = _payload(
+        limit=limit,
+        after=after,
+        before=before,
+        order=order,
+        order_by=order_by,
+        extra_headers=extra_headers,
+        extra_query=extra_query,
+        timeout=timeout,
+        custom_llm_provider=custom_llm_provider,
+        **kwargs,
+    )
+    if asynchronous:
+        return _aanswer(ListEvalsResponse, payload, _session().alist_evals)
+    return _answer(ListEvalsResponse, payload, _session().list_evals)
+
+
+async def alist_evals(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L230
+    limit: int | None = None,
+    after: str | None = None,
+    before: str | None = None,
+    order: str | None = None,
+    order_by: str | None = None,
+    extra_headers: Headers = None,
+    extra_query: Query = None,
+    timeout: float | TimeoutValues | None = None,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L238
+    custom_llm_provider: str | None = None,
+    **kwargs: CallValue,
+) -> ListEvalsResponse:
+    kwargs["alist_evals"] = True
+    pending = list_evals(
+        limit,
+        after,
+        before,
+        order,
+        order_by,
+        extra_headers,
+        extra_query,
+        timeout,
+        custom_llm_provider,
+        **kwargs,
+    )
+    match pending:
+        case ListEvalsResponse():
+            return pending
+        case Awaitable():
+            return await pending
+
+
+def get_eval(
+    eval_id: str,
+    extra_headers: Headers = None,
+    extra_query: Query = None,
+    timeout: float | TimeoutValues | None = None,
+    custom_llm_provider: str | None = None,
+    **kwargs: CallValue,
+) -> Eval | Awaitable[Eval]:
+    asynchronous = kwargs.pop("aget_eval", None) is True
+    payload = _payload(
+        eval_id=eval_id,
+        extra_headers=extra_headers,
+        extra_query=extra_query,
+        timeout=timeout,
+        custom_llm_provider=custom_llm_provider,
+        **kwargs,
+    )
+    if asynchronous:
+        return _aanswer(Eval, payload, _session().aget_eval)
+    return _answer(Eval, payload, _session().get_eval)
+
+
+async def aget_eval(
+    eval_id: str,
+    extra_headers: Headers = None,
+    extra_query: Query = None,
+    timeout: float | TimeoutValues | None = None,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L420
+    custom_llm_provider: str | None = None,
+    **kwargs: CallValue,
+) -> Eval:
+    kwargs["aget_eval"] = True
+    pending = get_eval(eval_id, extra_headers, extra_query, timeout, custom_llm_provider, **kwargs)
+    match pending:
+        case Eval():
+            return pending
+        case Awaitable():
+            return await pending
+
+
+def update_eval(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L632
+    eval_id: str,
+    name: str | None = None,
+    metadata: dict[str, JsonValue] | None = None,
+    extra_headers: Headers = None,
+    extra_query: Query = None,
+    extra_body: Body = None,
+    timeout: float | TimeoutValues | None = None,
+    custom_llm_provider: str | None = None,
+    **kwargs: CallValue,
+) -> Eval | Awaitable[Eval]:
+    asynchronous = kwargs.pop("aupdate_eval", None) is True
+    payload = _payload(
+        eval_id=eval_id,
+        name=name,
+        metadata=metadata,
+        extra_headers=extra_headers,
+        extra_query=extra_query,
+        extra_body=extra_body,
+        timeout=timeout,
+        custom_llm_provider=custom_llm_provider,
+        **kwargs,
+    )
+    if asynchronous:
+        return _aanswer(Eval, payload, _session().aupdate_eval)
+    return _answer(Eval, payload, _session().update_eval)
+
+
+async def aupdate_eval(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L566
+    eval_id: str,
+    name: str | None = None,
+    metadata: dict[str, JsonValue] | None = None,
+    extra_headers: Headers = None,
+    extra_query: Query = None,
+    extra_body: Body = None,
+    timeout: float | TimeoutValues | None = None,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L573
+    custom_llm_provider: str | None = None,
+    **kwargs: CallValue,
+) -> Eval:
+    kwargs["aupdate_eval"] = True
+    pending = update_eval(
+        eval_id,
+        name,
+        metadata,
+        extra_headers,
+        extra_query,
+        extra_body,
+        timeout,
+        custom_llm_provider,
+        **kwargs,
+    )
+    match pending:
+        case Eval():
+            return pending
+        case Awaitable():
+            return await pending
+
+
+def delete_eval(
+    eval_id: str,
+    extra_headers: Headers = None,
+    extra_query: Query = None,
+    timeout: float | TimeoutValues | None = None,
+    custom_llm_provider: str | None = None,
+    **kwargs: CallValue,
+) -> DeleteEvalResponse | Awaitable[DeleteEvalResponse]:
+    asynchronous = kwargs.pop("adelete_eval", None) is True
+    payload = _payload(
+        eval_id=eval_id,
+        extra_headers=extra_headers,
+        extra_query=extra_query,
+        timeout=timeout,
+        custom_llm_provider=custom_llm_provider,
+        **kwargs,
+    )
+    if asynchronous:
+        return _aanswer(DeleteEvalResponse, payload, _session().adelete_eval)
+    return _answer(DeleteEvalResponse, payload, _session().delete_eval)
+
+
+async def adelete_eval(
+    eval_id: str,
+    extra_headers: Headers = None,
+    extra_query: Query = None,
+    timeout: float | TimeoutValues | None = None,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L790
+    custom_llm_provider: str | None = None,
+    **kwargs: CallValue,
+) -> DeleteEvalResponse:
+    kwargs["adelete_eval"] = True
+    pending = delete_eval(
+        eval_id, extra_headers, extra_query, timeout, custom_llm_provider, **kwargs
+    )
+    match pending:
+        case DeleteEvalResponse():
+            return pending
+        case Awaitable():
+            return await pending
+
+
+def cancel_eval(
+    eval_id: str,
+    extra_headers: Headers = None,
+    extra_query: Query = None,
+    timeout: float | TimeoutValues | None = None,
+    custom_llm_provider: str | None = None,
+    **kwargs: CallValue,
+) -> CancelEvalResponse | Awaitable[CancelEvalResponse]:
+    asynchronous = kwargs.pop("acancel_eval", None) is True
+    payload = _payload(
+        eval_id=eval_id,
+        extra_headers=extra_headers,
+        extra_query=extra_query,
+        timeout=timeout,
+        custom_llm_provider=custom_llm_provider,
+        **kwargs,
+    )
+    if asynchronous:
+        return _aanswer(CancelEvalResponse, payload, _session().acancel_eval)
+    return _answer(CancelEvalResponse, payload, _session().cancel_eval)
+
+
+async def acancel_eval(
+    eval_id: str,
+    extra_headers: Headers = None,
+    extra_query: Query = None,
+    timeout: float | TimeoutValues | None = None,  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L940
+    custom_llm_provider: str | None = None,
+    **kwargs: CallValue,
+) -> CancelEvalResponse:
+    kwargs["acancel_eval"] = True
+    pending = cancel_eval(
+        eval_id, extra_headers, extra_query, timeout, custom_llm_provider, **kwargs
+    )
+    match pending:
+        case CancelEvalResponse():
+            return pending
+        case Awaitable():
+            return await pending
