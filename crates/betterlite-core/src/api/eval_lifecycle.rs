@@ -74,7 +74,7 @@ impl EvalLifecycleCall<'_> {
 pub type EvalDeleteResult = Result<DeleteEvalResponse, EvalLifecycleFailure>;
 pub type EvalCancelResult = Result<CancelEvalResponse, EvalLifecycleFailure>;
 
-// delete/cancel and their async façades: the provider factory and the logging state are passed once
+// delete/cancel and their async wrappers: the provider factory and the logging state are passed once
 pub struct EvalLifecycles<'deps, 'state, 'env, Configs: ?Sized> {
     pub deps: &'deps EvalLifecycleDeps<'deps, Configs>,
     pub log: &'deps mut EvalLogging<'state, 'env>,
