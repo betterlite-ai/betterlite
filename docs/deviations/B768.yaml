@@ -1,0 +1,58 @@
+task: B768
+deviations:
+  - what: >-
+      Configured OAuth introspection/token-info validation runs without premium_user; valid credentials
+      reach the requested route instead of MIT's 401 auth_error license refusal.
+    why: >-
+      README Decisions specifies no paid tier and no user/team cap.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/oauth2_check.py#L1-L213
+  - what: >-
+      Debug logs omit the bearer token and the full OAuth response.
+    why: >-
+      The secret-type rule forbids copying the raw credentials logged by check_oauth2_token.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/oauth2_check.py#L187-L191
+  - what: >-
+      New otherwise unbounded byte decoders reject over 1048576 bytes or JSON depth 64, respecting
+      smaller inherited limits.
+    why: >-
+      Bound the specific outside-byte decoder named in this task; typed helpers inherit no artificial
+      parser behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/oauth2_check.py#L21-L41
+  - what: >-
+      When none of the configured oauth2_config_mappings headers is present, betterlite rejects the
+      request with the public 401 auth_error translation; LiteLLM validates the empty dictionary into
+      a UserAPIKeyAuth with no identity and lets the request through.
+    why: >-
+      An identity assertion that asserts nothing must not authenticate the caller: LiteLLM's empty
+      model_validate is an authentication bypass for any request that omits every mapped header. No
+      working trusted-proxy setup relies on being anonymous, so the fail-closed rejection replaces it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/oauth2_proxy_hook.py#L85-L94
+  - what: >-
+      A request with no bearer token is rejected before any network call when the global OAuth2 branch
+      is enabled; LiteLLM reads the absent token as the literal text None and sends it to the identity
+      provider as the introspection token or as "Bearer None".
+    why: >-
+      The absent token is not an identity assertion. Sending the four characters None to an identity
+      provider leaks a request it can never validate and, on an IdP that treats that string as a
+      subject, would authenticate the caller as a user named None.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/oauth2_check.py#L134-L135
+  - what: >-
+      The status and transport failure messages embed betterlite's own wording of the upstream HTTP
+      status and the transport error; LiteLLM embeds httpx's "Client error '401 Unauthorized' for url
+      ..." and connection text.
+    why: >-
+      The public auth_error message, its 401 code and its type are identical; only the text after the
+      pinned "Oauth 2.0 Token validation failed: " / "An error occurred during token validation: "
+      prefix differs, because betterlite's pooled client reports a status number and a transport
+      message instead of an httpx exception's repr.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/oauth2_check.py#L208-L213
+kept_bugs:
+  - what: >-
+      A generic token info endpoint selected with GET ignores the response's active field, so an
+      endpoint that answers {"active": false} still authenticates the caller; only the POST
+      introspection branch rejects an inactive token.
+    why: >-
+      A working setup that points OAUTH_TOKEN_INFO_ENDPOINT at a userinfo endpoint whose document
+      happens to carry an active key relies on the GET branch never reading it, so betterlite copies
+      the branch asymmetry rather than failing closed where LiteLLM succeeds.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/oauth2_check.py#L189-L192
