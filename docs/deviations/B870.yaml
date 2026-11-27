@@ -6,6 +6,9 @@ deviations:
   - what: A store composed without its cache, permission loader or cache writer fails startup with "the identity store is missing required ports: ..."; LiteLLM takes those collaborators as required constructor arguments whose absence surfaces later as an AttributeError on the first request.
     why: The task requires an absent required implementation to be a named startup error while a configured absence of the database stays the runtime NoDatabaseConnectionError.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/resolvers/store.py#L59-L72
+  - what: The store takes no logging sink; the permission-read failure is logged through the process tracing subscriber instead of a proxy_logging_obj argument.
+    why: LiteLLM threads a ProxyLogging object through the store, the DB read and the cache write for instrumentation; betterlite's reader, permission and writer ports log through tracing, and the DEBUG line keeps LiteLLM's exact text, so no client-visible behavior changes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/resolvers/store.py#L133-L138
 kept_bugs:
   - what: An empty-string user_id produces a service_account Principal that still carries a UserIdentity with the empty id, because the principal type test is truthy while the record test is nonnull.
     why: LiteLLM projects the type with "PrincipalType.HUMAN if key.user_id else ..." but the record with "if key.user_id is not None", a working setup can rely on an empty user id never conferring the human type, and the task names this asymmetry as the behavior to keep.
