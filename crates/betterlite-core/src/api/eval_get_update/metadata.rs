@@ -45,11 +45,11 @@ pub fn filtered_metadata<T>(
 where
     T: DeserializeOwned,
 {
-    let Some(metadata) = metadata else {
+    let Some(given) = metadata else {
         return Ok(None);
     };
     let mut kept = IndexMap::new();
-    for (name, value) in metadata {
+    for (name, value) in given {
         if INTERNAL_METADATA_KEYS.contains(&name.as_str()) {
             continue;
         }

@@ -8,7 +8,7 @@ use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_openai::evals::transformation::EvalsRequestContext;
-use betterlite_openai::evals::types::Eval;
+use betterlite_openai::evals::types::{Eval, UpdateEvalRequest};
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_redact::secret::Redactor;
 use indexmap::IndexMap;
@@ -20,7 +20,7 @@ use crate::api::eval_create_list::{DEFAULT_EVALS_PROVIDER, DEFAULT_OPENAI_API_BA
 use crate::api::eval_http::exchange::{EvalConfig, EvalConnection, EvalLogging};
 use crate::api::passthrough_call::logging::json_object;
 
-use super::call::{EvalRetrieval, EvalUpdate, GetEvalCall, UpdateEvalCall};
+use super::call::{EvalRetrieval, EvalUpdate, GetEvalCall, Operation, UpdateEvalCall};
 use super::error::{EvalsGetUpdateError, EvalsGetUpdateFailureError, failure};
 use super::handler::{EvalsGetUpdateHandler, GetEvalHttpCall, UpdateEvalHttpCall};
 use super::request::{merge_extra_body, update_request};
@@ -43,18 +43,13 @@ struct ProviderCall<'deps> {
     timeout: Duration,
 }
 
-// which operation asks, for the ValueError LiteLLM raises when the manager answers None
-#[derive(Clone, Copy)]
-enum Operation {
-    Get,
-    Update,
-}
-
-// the operation's own input, so one body serves both
-#[derive(Clone, Copy)]
-enum EvalsCall<'call> {
+// the operation's own input, the update request built before the provider work so a wrong-typed value fails first
+enum WireCall<'call> {
     Get(&'call GetEvalCall<'call>),
-    Update(&'call UpdateEvalCall<'call>),
+    Update {
+        call: &'call UpdateEvalCall<'call>,
+        request: UpdateEvalRequest,
+    },
 }
 
 // which handler call the shared dispatch makes, with the body only the update carries
@@ -73,28 +68,28 @@ struct Wire<'wire, 'env> {
     call: HandlerCall,
 }
 
-impl Operation {
-    fn unsupported(self, provider: &str) -> EvalsGetUpdateError {
-        match self {
-            Self::Get => EvalsGetUpdateError::GetUnsupported {
-                provider: provider.to_owned(),
-            },
-            Self::Update => EvalsGetUpdateError::UpdateUnsupported {
-                provider: provider.to_owned(),
-            },
-        }
-    }
-}
-
 // LiteLLM spells the blocking and async form of each operation out twice; one async body serves both names
 macro_rules! entries {
-    ($retrieval:ident, $variant:ident, $($name:ident),+ $(,)?) => { $(
+    (retrieve, $($name:ident),+ $(,)?) => { $(
         pub async fn $name(
             &self,
-            operation: $retrieval<'_, '_>,
+            retrieval: EvalRetrieval<'_, '_>,
         ) -> Result<Eval, EvalsGetUpdateFailureError> {
-            let $retrieval { call, logging, env } = operation;
-            self.run(EvalsCall::$variant(call), logging, env)
+            let EvalRetrieval { call, logging, env } = retrieval;
+            self.run(WireCall::Get(call), logging, env)
+                .await
+                .map_err(|error| failure(error, &call.params, self.redactor))
+        }
+    )+ };
+    (update, $($name:ident),+ $(,)?) => { $(
+        pub async fn $name(
+            &self,
+            update: EvalUpdate<'_, '_>,
+        ) -> Result<Eval, EvalsGetUpdateFailureError> {
+            let EvalUpdate { call, logging, env } = update;
+            let request =
+                update_request(call).map_err(|error| failure(error, &call.params, self.redactor))?;
+            self.run(WireCall::Update { call, request }, logging, env)
                 .await
                 .map_err(|error| failure(error, &call.params, self.redactor))
         }
@@ -106,19 +101,19 @@ where
     Handler: EvalsGetUpdateHandler,
     Configs: EvalsConfigLookup,
 {
-    entries!(EvalRetrieval, Get, get_eval, aget_eval);
-    entries!(EvalUpdate, Update, update_eval, aupdate_eval);
+    entries!(retrieve, get_eval, aget_eval);
+    entries!(update, update_eval, aupdate_eval);
 
     // one body serves both operations: they differ in the transform, the logged params and the handler call
     async fn run(
         &self,
-        call: EvalsCall<'_>,
+        call: WireCall<'_>,
         logging: &mut LoggingState,
         env: &PrePostEnv<'_>,
     ) -> Result<Eval, EvalsGetUpdateError> {
         let (params, operation) = match call {
-            EvalsCall::Get(get) => (&get.params, Operation::Get),
-            EvalsCall::Update(update) => (&update.params, Operation::Update),
+            WireCall::Get(get) => (&get.params, Operation::Get),
+            WireCall::Update { call: update, .. } => (&update.params, Operation::Update),
         };
         let prepared = self.prepare(params, operation)?;
         let context = EvalsRequestContext {
@@ -243,12 +238,12 @@ where
 // the transform and pre-call params of whichever operation asked, with the handler call it makes
 fn transformed(
     prepared: &ProviderCall<'_>,
-    call: EvalsCall<'_>,
+    call: WireCall<'_>,
     base: &str,
     context: &EvalsRequestContext<'_>,
 ) -> Result<(String, Headers, IndexMap<String, Json>, HandlerCall), EvalsGetUpdateError> {
     match call {
-        EvalsCall::Get(get) => {
+        WireCall::Get(get) => {
             let (url, headers) =
                 prepared
                     .config
@@ -257,8 +252,10 @@ fn transformed(
                 IndexMap::from([(String::from("eval_id"), Json::Text(get.eval_id.to_owned()))]);
             Ok((url, headers, optional_params, HandlerCall::Get))
         }
-        EvalsCall::Update(update) => {
-            let request = update_request(update)?;
+        WireCall::Update {
+            call: update,
+            request,
+        } => {
             let (url, headers, mut body) = prepared.config.transform_update_eval_request(
                 update.eval_id,
                 &request,
