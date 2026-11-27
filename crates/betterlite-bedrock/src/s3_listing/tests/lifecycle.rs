@@ -98,14 +98,14 @@ fn object_requests_require_a_file_id() {
 fn content_request_is_signed() {
     assert_object_request_signed(
         S3FileMethod::Content,
-        "9911713a01b83beb7cfdc8b16ff8c86ed12eade33399b8d8107dfed6c27e128c",
+        "e3065267e021984e7d82ad0ed01d8a1242ef209f109a113ae95ae32694018a98",
     );
 }
 
 fn delete_request_is_signed() {
     assert_object_request_signed(
         S3FileMethod::Delete,
-        "67f7305849bc15f5b462815692fa5eaedc6ae429f2a91ded713113f3e39ab960",
+        "38523b4ced71761bc01d717aaf0da6776e772757b18fca8af1a9b171831e9719",
     );
 }
 
@@ -121,7 +121,7 @@ fn assert_object_request_signed(method: S3FileMethod, signature: &str) {
     .unwrap();
     assert_eq!(
         signed.url,
-        "https://s3.us-east-1.amazonaws.com/in-bucket/litellm-batch-outputs%2Fx.jsonl"
+        "https://s3.us-east-1.amazonaws.com/in-bucket/litellm-batch-outputs/x.jsonl"
     );
     assert!(signed.query.is_empty());
     assert_eq!(

@@ -194,13 +194,12 @@ fn bedrock_services_s3_listing_secret_safe_failure() {
     secret_params_hide_their_values();
 }
 
-fn listing_failure(entries: &[(&str, &str)]) -> S3ListingError {
-    let optional = region_params();
+fn listing_failure(optional: &Params, entries: &[(&str, &str)]) -> S3ListingError {
     let environment = empty_environment();
     let access = bucket_access("in-bucket");
     let mut litellm = text_params(entries);
     block_on(list_files_request(
-        listing_request(&optional, &mut litellm, &access, &environment),
+        listing_request(optional, &mut litellm, &access, &environment),
         None,
         unavailable_credentials,
     ))
@@ -208,14 +207,18 @@ fn listing_failure(entries: &[(&str, &str)]) -> S3ListingError {
 }
 
 fn bad_regions_hide_secrets() {
-    let error = listing_failure(&[
-        ("aws_region_name", "NOT A REGION"),
-        ("s3_access_key_id", "S3SECRETACCESS"),
-        ("s3_secret_access_key", "S3SECRETVALUE"),
-        ("aws_access_key_id", "AWSSECRETACCESS"),
-        ("aws_secret_access_key", "AWSSECRETVALUE"),
-        ("aws_session_token", "AWSSECRETTOKEN"),
-    ]);
+    // the request side wins the merge, so the bad region must sit in optional_params
+    let optional = text_params(&[("aws_region_name", "NOT A REGION")]);
+    let error = listing_failure(
+        &optional,
+        &[
+            ("s3_access_key_id", "S3SECRETACCESS"),
+            ("s3_secret_access_key", "S3SECRETVALUE"),
+            ("aws_access_key_id", "AWSSECRETACCESS"),
+            ("aws_secret_access_key", "AWSSECRETVALUE"),
+            ("aws_session_token", "AWSSECRETTOKEN"),
+        ],
+    );
     assert_secret_absent(
         &error,
         &[
@@ -229,14 +232,17 @@ fn bad_regions_hide_secrets() {
 }
 
 fn unavailable_credentials_hide_secrets() {
-    let error = listing_failure(&[
-        ("aws_region_name", "us-east-1"),
-        ("aws_access_key_id", "AWSSECRETACCESS"),
-        ("aws_secret_access_key", "AWSSECRETVALUE"),
-        ("aws_session_token", "AWSSECRETTOKEN"),
-        ("s3_access_key_id", ""),
-        ("s3_secret_access_key", ""),
-    ]);
+    let error = listing_failure(
+        &region_params(),
+        &[
+            ("aws_region_name", "us-east-1"),
+            ("aws_access_key_id", "AWSSECRETACCESS"),
+            ("aws_secret_access_key", "AWSSECRETVALUE"),
+            ("aws_session_token", "AWSSECRETTOKEN"),
+            ("s3_access_key_id", ""),
+            ("s3_secret_access_key", ""),
+        ],
+    );
     assert_secret_absent(
         &error,
         &["AWSSECRETACCESS", "AWSSECRETVALUE", "AWSSECRETTOKEN"],

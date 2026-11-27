@@ -351,7 +351,7 @@ fn next_request_uses_the_walked_location() {
     assert_eq!(next.url, "https://s3.us-east-1.amazonaws.com/bucket/");
     assert_eq!(
         next.query.get(1),
-        Some(&("prefix".to_owned(), "litellm-batch-outputs/".to_owned()))
+        Some(&("prefix".to_owned(), "out/litellm-batch-outputs/".to_owned()))
     );
     assert_eq!(
         stored_text(&litellm, LIST_FILES_LOCATION_PARAM).as_deref(),
