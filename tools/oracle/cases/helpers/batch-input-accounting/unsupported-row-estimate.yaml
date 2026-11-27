@@ -13,7 +13,7 @@ call:
         42
         null
         {"body": {"model": "gpt-4o", "prompt": "hi", "max_tokens": 8}}
-      tokens: [2, 3]
+    tokens: [2, 3]
 calls:
   - batch_input_accounting:
       file_id: file-blank-lines
