@@ -5,7 +5,9 @@ use super::args::{CreateRunArgs, ListRunsArgs};
 use super::error::EvalRunCallError;
 
 // CreateRunRequest as LiteLLM builds it: data_source, name when given, then extra_body's own three keys
-fn create_request(request: CreateRunArgs<'_>) -> Result<CreateRunRequest, EvalRunCallError> {
+pub(super) fn create_request(
+    request: CreateRunArgs<'_>,
+) -> Result<CreateRunRequest, EvalRunCallError> {
     let Some(extra) = request.extra_body else {
         return Ok(CreateRunRequest {
             data_source: request.data_source.clone(),
@@ -84,43 +86,6 @@ fn replaced_text(
     }
 }
 
-// extra_query's limit is an integer, and a null clears it
-fn replaced_limit(extra: &Object, current: Option<i64>) -> Result<Option<i64>, EvalRunCallError> {
-    let Some(value) = extra.get("limit") else {
-        return Ok(current);
-    };
-    if value.is_null() {
-        return Ok(None);
-    }
-    match value.as_i64() {
-        Some(limit) => Ok(Some(limit)),
-        None => Err(EvalRunCallError::FieldType {
-            field: "limit",
-            expected: "an integer or null",
-        }),
-    }
-}
-
-// extra_query's order is ListRunsParams's literal, and a null clears it
-fn replaced_order(
-    extra: &Object,
-    current: Option<EvalOrder>,
-) -> Result<Option<EvalOrder>, EvalRunCallError> {
-    let Some(value) = extra.get("order") else {
-        return Ok(current);
-    };
-    if value.is_null() {
-        return Ok(None);
-    }
-    match value.as_str() {
-        Some(text) => Ok(Some(order_of(text)?)),
-        None => Err(EvalRunCallError::FieldType {
-            field: "order",
-            expected: "asc, desc or null",
-        }),
-    }
-}
-
 // ListRunsParams.order is Literal["asc", "desc"], while LiteLLM's signature only declares str
 fn order_of(order: &str) -> Result<EvalOrder, EvalRunCallError> {
     match order {
@@ -134,7 +99,7 @@ fn order_of(order: &str) -> Result<EvalOrder, EvalRunCallError> {
 }
 
 // only the explicit parameters are built first; extra_query's keys follow in LiteLLM and win
-fn list_params(request: ListRunsArgs<'_>) -> Result<ListRunsParams, EvalRunCallError> {
+pub(super) fn list_params(request: ListRunsArgs<'_>) -> Result<ListRunsParams, EvalRunCallError> {
     let params = ListRunsParams {
         limit: request.limit,
         after: request.after.map(str::to_owned),
@@ -152,9 +117,28 @@ fn with_extra_query(
     mut params: ListRunsParams,
     extra: &Object,
 ) -> Result<ListRunsParams, EvalRunCallError> {
-    params.limit = replaced_limit(extra, params.limit)?;
+    if let Some(value) = extra.get("limit") {
+        params.limit = if value.is_null() {
+            None
+        } else {
+            Some(value.as_i64().ok_or_else(|| EvalRunCallError::FieldType {
+                field: "limit",
+                expected: "an integer or null",
+            })?)
+        };
+    }
     params.after = replaced_text("after", extra, params.after)?;
     params.before = replaced_text("before", extra, params.before)?;
-    params.order = replaced_order(extra, params.order)?;
+    if let Some(value) = extra.get("order") {
+        let order = if value.is_null() {
+            None
+        } else {
+            Some(value.as_str().ok_or_else(|| EvalRunCallError::FieldType {
+                field: "order",
+                expected: "asc, desc or null",
+            })?)
+        };
+        params.order = order.map(order_of).transpose()?;
+    }
     Ok(params)
 }

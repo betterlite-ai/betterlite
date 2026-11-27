@@ -10,7 +10,6 @@ use betterlite_redact::secret::Redactor;
 use indexmap::IndexMap;
 use thiserror::Error;
 
-use super::args::{CreateRunArgs, ListRunsArgs, local_vars_create, local_vars_list};
 use crate::api::eval_http::error::EvalHttpError;
 
 // exception_type() sees model=None for every eval run call
@@ -65,35 +64,21 @@ pub struct EvalRunFailure {
     pub local_vars: IndexMap<String, Json>,
 }
 
-// LiteLLM's except branch around create_run: exception_type(model=None, custom_llm_provider=..., completion_kwargs=local_vars)
-#[must_use]
-pub fn create_failure(
-    error: EvalRunCallError,
-    provider: &str,
-    request: &CreateRunArgs<'_>,
-    redactor: &Redactor,
-) -> EvalRunFailure {
-    let class = class_of(&error, provider, redactor);
-    EvalRunFailure {
-        error,
-        class,
-        local_vars: local_vars_create(request),
-    }
-}
-
-// LiteLLM's except branch around list_runs, with its own local_vars
-#[must_use]
-pub fn list_failure(
-    error: EvalRunCallError,
-    provider: &str,
-    request: &ListRunsArgs<'_>,
-    redactor: &Redactor,
-) -> EvalRunFailure {
-    let class = class_of(&error, provider, redactor);
-    EvalRunFailure {
-        error,
-        class,
-        local_vars: local_vars_list(request),
+impl EvalRunFailure {
+    // LiteLLM's except branch around create_run or list_runs: exception_type(model=None, custom_llm_provider=..., completion_kwargs=local_vars)
+    #[must_use]
+    pub fn of(
+        error: EvalRunCallError,
+        provider: &str,
+        redactor: &Redactor,
+        local_vars: IndexMap<String, Json>,
+    ) -> Self {
+        let class = class_of(&error, provider, redactor);
+        Self {
+            error,
+            class,
+            local_vars,
+        }
     }
 }
 
@@ -106,65 +91,51 @@ fn class_of(error: &EvalRunCallError, provider: &str, redactor: &Redactor) -> Er
         | EvalRunCallError::UnsupportedList { .. } => provider_class(message, provider),
         EvalRunCallError::FieldType { field, .. } => field_class(field, message, provider),
         EvalRunCallError::UnknownBodyKey { key } => field_class(key, message, provider),
-        EvalRunCallError::Config(source) => evals_class(source, provider, redactor),
-        EvalRunCallError::Transport(source) => http_class(source, provider, redactor),
-        EvalRunCallError::Params { .. }
+        EvalRunCallError::Config(EvalsError::Provider { provider: found })
+        | EvalRunCallError::Transport(EvalHttpError::Api(EvalsError::Provider {
+            provider: found,
+        })) => provider_exception(found, provider, redactor),
+        EvalRunCallError::Config(_)
+        | EvalRunCallError::Transport(_)
+        | EvalRunCallError::Params { .. }
         | EvalRunCallError::Logging(_)
         | EvalRunCallError::Suspended => local_class(message, provider, redactor),
     }
 }
 
-// the provider config's own error: a provider answer maps through B185, the rest is the config's own ValueError
-fn evals_class(error: &EvalsError, provider: &str, redactor: &Redactor) -> ErrorClass {
-    match error {
-        EvalsError::Provider { provider: found } => provider_exception(found, provider, redactor),
-        EvalsError::ApiKeyRequired
-        | EvalsError::PathSegment { .. }
-        | EvalsError::ReplyTooLarge { .. }
-        | EvalsError::ReplyJson { .. }
-        | EvalsError::ReplyModel { .. }
-        | EvalsError::RequestEncode { .. }
-        | EvalsError::RequestNotObject => local_class(error.to_string(), provider, redactor),
-    }
-}
-
-// the B9371 handler's failure: its provider answer here, its logging and recording failures below
-fn http_class(error: &EvalHttpError, provider: &str, redactor: &Redactor) -> ErrorClass {
-    match error {
-        EvalHttpError::Api(source) => evals_class(source, provider, redactor),
-        EvalHttpError::Logging(_) | EvalHttpError::Record { .. } => {
-            local_class(error.to_string(), provider, redactor)
-        }
+// the raw exception B185's dispatch maps: the message, the status a reply gave and the provider that answered
+fn raw_exception(
+    message: String,
+    status_code: Option<u16>,
+    status_code_is_synthesized: bool,
+    provider: &str,
+) -> RawException {
+    RawException {
+        model: MODEL.to_owned(),
+        custom_llm_provider: provider.to_owned(),
+        error_str: message.clone(),
+        status_code,
+        status_code_is_synthesized,
+        message: Some(message),
+        body: None,
+        exception_type: String::new(),
     }
 }
 
 // the provider exception exception_type maps, carrying the status its reply gave
 fn provider_exception(found: &ProviderError, provider: &str, redactor: &Redactor) -> ErrorClass {
-    let raw = RawException {
-        model: MODEL.to_owned(),
-        custom_llm_provider: provider.to_owned(),
-        error_str: found.message.clone(),
-        status_code: Some(found.status_code),
-        status_code_is_synthesized: found.status_code_is_synthesized,
-        message: Some(found.message.clone()),
-        body: None,
-        exception_type: String::new(),
-    };
+    let raw = raw_exception(
+        found.message.clone(),
+        Some(found.status_code),
+        found.status_code_is_synthesized,
+        provider,
+    );
     dispatch(&DispatchInput::Raw(Box::new(raw)), redactor)
 }
 
 // an exception outside the provider's family: no branch matches, and with no status it reports api_connection
 fn local_class(message: String, provider: &str, redactor: &Redactor) -> ErrorClass {
-    let raw = RawException {
-        model: MODEL.to_owned(),
-        custom_llm_provider: provider.to_owned(),
-        error_str: message.clone(),
-        status_code: None,
-        status_code_is_synthesized: false,
-        message: Some(message),
-        body: None,
-        exception_type: String::new(),
-    };
+    let raw = raw_exception(message, None, false, provider);
     dispatch(&DispatchInput::Raw(Box::new(raw)), redactor)
 }
 

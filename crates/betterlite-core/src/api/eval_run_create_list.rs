@@ -15,8 +15,10 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::evals::types::{ListRunsResponse, Run};
 use betterlite_redact::secret::Redactor;
 
-use self::args::{CreateRunArgs, ListRunsArgs};
-use self::error::{EvalRunCallError, EvalRunFailure, create_failure, list_failure};
+use self::args::{CreateRunArgs, ListRunsArgs, local_vars_create, local_vars_list};
+use self::error::{EvalRunCallError, EvalRunFailure};
+use self::prepare::create::prepare_create;
+use self::prepare::list::prepare_list;
 use self::providers::{
     CREATE_FLAG, EvalRunProviders, LIST_FLAG, PendingCreateRun, PendingListRuns, RunMode,
     RunTransport,
@@ -52,114 +54,118 @@ enum Polled<Output> {
     StillWaiting,
 }
 
+// the four entries differ only in the request, the work type, the prepare step, the transport method and the local_vars
+macro_rules! eval_run_operations {
+    (sync $name:ident, $request:ident, $work:ident, $prepare:path, $transport:ident, $local_vars:path) => {
+        pub fn $name<'call>(
+            &'call self,
+            request: $request<'_>,
+            log: EvalLogging<'call, '_>,
+        ) -> Result<$work<'call>, EvalRunFailure> {
+            let provider = request.custom_llm_provider.unwrap_or(DEFAULT_PROVIDER);
+            let call = match $prepare(self, request, provider, log.state) {
+                Ok(call) => call,
+                Err(error) => {
+                    return Err(EvalRunFailure::of(
+                        error,
+                        provider,
+                        &self.redactor,
+                        $local_vars(&request),
+                    ));
+                }
+            };
+            let mode = call.mode;
+            let pending = self.transport.$transport(log, call);
+            if mode == RunMode::Async {
+                return Ok($work::Pending(pending));
+            }
+            match poll_once(pending) {
+                Polled::Ready(Ok(answer)) => Ok($work::Ready(Box::new(answer))),
+                Polled::Ready(Err(error)) => Err(EvalRunFailure::of(
+                    error,
+                    provider,
+                    &self.redactor,
+                    $local_vars(&request),
+                )),
+                Polled::StillWaiting => Err(EvalRunFailure::of(
+                    EvalRunCallError::Suspended,
+                    provider,
+                    &self.redactor,
+                    $local_vars(&request),
+                )),
+            }
+        }
+    };
+    (async $name:ident, $inner:ident, $request:ident, $work:ident, $flag:ident, $reply:ty, $local_vars:path) => {
+        pub async fn $name<'call>(
+            &'call self,
+            request: $request<'_>,
+            log: EvalLogging<'call, '_>,
+        ) -> Result<$reply, EvalRunFailure> {
+            let provider = request.custom_llm_provider.unwrap_or(DEFAULT_PROVIDER);
+            let mut kwargs = request.kwargs.clone();
+            kwargs.insert($flag.to_owned(), Json::Bool(true));
+            let flagged = $request {
+                kwargs: &kwargs,
+                ..request
+            };
+            match self.$inner(flagged, log) {
+                Ok($work::Ready(answer)) => Ok(*answer),
+                Ok($work::Pending(pending)) => pending.await.map_err(|error| {
+                    EvalRunFailure::of(error, provider, &self.redactor, $local_vars(&flagged))
+                }),
+                Err(failure) => Err(failure),
+            }
+        }
+    };
+}
+
 impl<Providers, Transport> EvalRunCreateList<Providers, Transport>
 where
     Providers: EvalRunProviders,
     Transport: RunTransport,
 {
     // LiteLLM's create_run: the provider, the logging update, the transform, then the handler the flag picks
-    pub fn create_run<'call>(
-        &'call self,
-        request: CreateRunArgs<'_>,
-        log: EvalLogging<'call, '_>,
-    ) -> Result<CreateRunWork<'call>, EvalRunFailure> {
-        let provider = request.custom_llm_provider.unwrap_or(DEFAULT_PROVIDER);
-        let call = match self.prepare_create(request, provider, log.state) {
-            Ok(call) => call,
-            Err(error) => return Err(create_failure(error, provider, &request, &self.redactor)),
-        };
-        let mode = call.mode;
-        let pending = self.transport.create_run(log, call);
-        if mode == RunMode::Async {
-            return Ok(CreateRunWork::Pending(pending));
-        }
-        match poll_once(pending) {
-            Polled::Ready(Ok(run)) => Ok(CreateRunWork::Ready(Box::new(run))),
-            Polled::Ready(Err(error)) => {
-                Err(create_failure(error, provider, &request, &self.redactor))
-            }
-            Polled::StillWaiting => Err(create_failure(
-                EvalRunCallError::Suspended,
-                provider,
-                &request,
-                &self.redactor,
-            )),
-        }
-    }
+    eval_run_operations!(
+        sync create_run,
+        CreateRunArgs,
+        CreateRunWork,
+        prepare_create,
+        create_run,
+        local_vars_create
+    );
 
     // LiteLLM's acreate_run: the flag in kwargs, then the sync call's own work with its coroutine awaited
-    pub async fn acreate_run<'call>(
-        &'call self,
-        request: CreateRunArgs<'_>,
-        log: EvalLogging<'call, '_>,
-    ) -> Result<Run, EvalRunFailure> {
-        let provider = request.custom_llm_provider.unwrap_or(DEFAULT_PROVIDER);
-        let mut kwargs = request.kwargs.clone();
-        kwargs.insert(CREATE_FLAG.to_owned(), Json::Bool(true));
-        let flagged = CreateRunArgs {
-            kwargs: &kwargs,
-            ..request
-        };
-        match self.create_run(flagged, log) {
-            Ok(CreateRunWork::Ready(run)) => Ok(*run),
-            Ok(CreateRunWork::Pending(pending)) => pending
-                .await
-                .map_err(|error| create_failure(error, provider, &flagged, &self.redactor)),
-            Err(failure) => Err(failure),
-        }
-    }
+    eval_run_operations!(
+        async acreate_run,
+        create_run,
+        CreateRunArgs,
+        CreateRunWork,
+        CREATE_FLAG,
+        Run,
+        local_vars_create
+    );
 
     // LiteLLM's list_runs: the four pagination values, extra_query's overrides, then the GET handler
-    pub fn list_runs<'call>(
-        &'call self,
-        request: ListRunsArgs<'_>,
-        log: EvalLogging<'call, '_>,
-    ) -> Result<ListRunsWork<'call>, EvalRunFailure> {
-        let provider = request.custom_llm_provider.unwrap_or(DEFAULT_PROVIDER);
-        let call = match self.prepare_list(request, provider, log.state) {
-            Ok(call) => call,
-            Err(error) => return Err(list_failure(error, provider, &request, &self.redactor)),
-        };
-        let mode = call.mode;
-        let pending = self.transport.list_runs(log, call);
-        if mode == RunMode::Async {
-            return Ok(ListRunsWork::Pending(pending));
-        }
-        match poll_once(pending) {
-            Polled::Ready(Ok(runs)) => Ok(ListRunsWork::Ready(Box::new(runs))),
-            Polled::Ready(Err(error)) => {
-                Err(list_failure(error, provider, &request, &self.redactor))
-            }
-            Polled::StillWaiting => Err(list_failure(
-                EvalRunCallError::Suspended,
-                provider,
-                &request,
-                &self.redactor,
-            )),
-        }
-    }
+    eval_run_operations!(
+        sync list_runs,
+        ListRunsArgs,
+        ListRunsWork,
+        prepare_list,
+        list_runs,
+        local_vars_list
+    );
 
     // LiteLLM's alist_runs: the flag in kwargs, then list_runs with its coroutine awaited
-    pub async fn alist_runs<'call>(
-        &'call self,
-        request: ListRunsArgs<'_>,
-        log: EvalLogging<'call, '_>,
-    ) -> Result<ListRunsResponse, EvalRunFailure> {
-        let provider = request.custom_llm_provider.unwrap_or(DEFAULT_PROVIDER);
-        let mut kwargs = request.kwargs.clone();
-        kwargs.insert(LIST_FLAG.to_owned(), Json::Bool(true));
-        let flagged = ListRunsArgs {
-            kwargs: &kwargs,
-            ..request
-        };
-        match self.list_runs(flagged, log) {
-            Ok(ListRunsWork::Ready(runs)) => Ok(*runs),
-            Ok(ListRunsWork::Pending(pending)) => pending
-                .await
-                .map_err(|error| list_failure(error, provider, &flagged, &self.redactor)),
-            Err(failure) => Err(failure),
-        }
-    }
+    eval_run_operations!(
+        async alist_runs,
+        list_runs,
+        ListRunsArgs,
+        ListRunsWork,
+        LIST_FLAG,
+        ListRunsResponse,
+        local_vars_list
+    );
 }
 
 // the blocking path's single poll: a sync handler answers at once, so only a broken one leaves this waiting
