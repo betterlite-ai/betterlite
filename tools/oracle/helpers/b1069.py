@@ -189,7 +189,7 @@ def registry_of(
     return VectorStoreRegistry(vector_stores=cast("list[LiteLLM_ManagedVectorStore]", rows))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/vector_stores.py#L25-L49
 
 
-# both helpers format JSON text differently, so a column holding JSON text compares as that JSON and a null column as absent
+# JSON text columns compare as the JSON they hold; a column a row leaves out compares as absent
 def canonical(value: JsonValue) -> JsonValue:
     match value:
         case dict():
@@ -230,7 +230,7 @@ def ask(caller: UserAPIKeyAuth, path: str, payload: dict[str, JsonValue]) -> Ans
 
 
 def cache_answer(registry: VectorStoreRegistry) -> JsonValue:
-    stores = cast("list[dict[str, JsonValue]]", registry.vector_stores)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/vector_store_registry.py#L215
+    stores = cast("list[dict[str, JsonValue]]", registry.vector_stores)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/vector_store_registry.py#L215
     return canonical(BODY.validate_json(json.dumps(stores)))
 
 
