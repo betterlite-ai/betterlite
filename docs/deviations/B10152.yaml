@@ -10,4 +10,15 @@ deviations:
       only admin and user roles.
     link: >-
       https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/team_repository.py#L95-L102
+  - what: >-
+      A page of 0 with a page size of 0 returns (empty, 0) after the error log, where LiteLLM's
+      (page - 1) * page_size is 0 for that pair, so Prisma satisfies a take of 0 and the call returns
+      the full count. Every other page of 0 has a negative skip that Prisma refuses, which is the
+      failure the task asks betterlite to report.
+    why: >-
+      The task fixes page 0 as an invalid window rather than a saturating skip, and the only caller at
+      the pin, PrometheusLogger._initialize_team_budget_metrics, walks pages from 1 with a page size
+      of 50, so no working setup passes the one pair the two differ on.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L5951-L5961
 kept_bugs: []
