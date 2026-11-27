@@ -1,0 +1,13 @@
+id: B10182
+milestone: R2 bug fixes
+title: The pipeline streaming step runs on BaseTranslation
+status: todo
+depends_on: [B10179, B10169, B3246, B3661, B5471, B732, B3680, B6161]
+file: tasks/B10182-stream-step-on-base-translation.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

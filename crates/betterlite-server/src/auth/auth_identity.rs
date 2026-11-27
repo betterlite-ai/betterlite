@@ -21,6 +21,8 @@ use crate::auth::auth_resource_grants::{self, ResourceGrantStageInput};
 use crate::auth::auth_tag_budgets::TagBudgetStageInput;
 use crate::auth::auth_tenant_budgets::TenantBudgetStageInput;
 use crate::auth::entity_model_access::EntityModelStageInput;
+use crate::auth::jwt_keys::{self, JwtKeyStageInput};
+use crate::auth::master_key_stage;
 use crate::auth::model_grant_intersection::{self, GrantStageInput};
 use crate::auth::organization_route_policy::{self, OrganizationPolicyStageInput};
 use crate::auth::request_body_safety::{self, RequestBodySafetyStageInput};
@@ -32,6 +34,7 @@ use crate::error_body::AuthenticationFailure;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AuthBackend {
     AuthKeyLookup,
+    JwtKeys,
     MasterKey,
     TrustedNetwork,
     AuthRequestPolicy,
@@ -53,8 +56,9 @@ pub enum AuthBackend {
     ModelGrantIntersection,
 }
 
-// B052 owns the final stage order; the master-key stage authenticates before the model stages run.
+// B052 owns the stage order; the JWT fetch runs before the master-key comparison, as in LiteLLM.
 pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
+    AuthBackend::JwtKeys,
     AuthBackend::AuthKeyLookup,
     MasterKey,
     AuthBackend::TrustedNetwork,
@@ -81,6 +85,7 @@ pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
 pub enum StageInput {
     AuthKeyLookup(Box<KeyLookupStageInput>),
     Authenticated(Box<AuthContext>),
+    JwtKeys(Box<JwtKeyStageInput>),
     MasterKey(Option<SecretString>),
     TrustedNetwork(Box<TrustedNetworkStageInput>),
     AuthRequestPolicy(Box<AuthRequestPolicyStageInput>),
@@ -124,6 +129,7 @@ pub trait BudgetAdmission {
 }
 
 pub(crate) enum StageFailure {
+    JwtKeys(Box<ProxyException>),
     Authentication(Box<AuthenticationFailure>),
     KeyLookup(Box<ProxyException>),
     ModelAccess(Box<ModelAccessRejection>),
@@ -165,6 +171,7 @@ impl StageInput {
     const fn backend(&self) -> AuthBackend {
         match self {
             Self::AuthKeyLookup(_) | Self::Authenticated(_) => AuthBackend::AuthKeyLookup,
+            Self::JwtKeys(_) => AuthBackend::JwtKeys,
             Self::MasterKey(_) => MasterKey,
             Self::TrustedNetwork(_) => AuthBackend::TrustedNetwork,
             Self::AuthRequestPolicy(_) => AuthBackend::AuthRequestPolicy,
@@ -199,6 +206,7 @@ pub(crate) fn dispatch(
     match input {
         StageInput::AuthKeyLookup(_) => Err(StageFailure::from(AuthenticationFailure::Missing)),
         Authenticated(context) => Ok((**context).clone()),
+        StageInput::JwtKeys(_) => jwt_keys::run_stage(input),
         StageInput::MasterKey(_) => master_key_stage(input, master_key).map_err(StageFailure::from),
         StageInput::TrustedNetwork(stage) => trusted_network::run_stage(stage),
         StageInput::AuthRequestPolicy(stage) => {
@@ -242,23 +250,6 @@ fn auth_request_models_stage(stage: &RequestModelStageInput) -> Result<AuthConte
             Err(StageFailure::from(AuthenticationFailure::Missing))
         }
     }
-}
-
-fn master_key_stage(
-    input: &StageInput,
-    master_key: &SecretString,
-) -> Result<AuthContext, AuthenticationFailure> {
-    let StageInput::MasterKey(presented) = input else {
-        return Err(AuthenticationFailure::Missing);
-    };
-    if let Some(context) = master_key_context(presented.as_ref(), master_key) {
-        return Ok(context);
-    }
-    let failure = match presented.as_ref() {
-        Some(key) if !key.expose_secret().is_empty() => AuthenticationFailure::Invalid,
-        Some(_) | None => AuthenticationFailure::Missing,
-    };
-    Err(failure)
 }
 
 // The master key authenticates the request before any virtual key is read, as LiteLLM's first check does.
