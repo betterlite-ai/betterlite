@@ -43,7 +43,6 @@ use crate::api::vector_store_http_write::service::ClientKind;
 const RETRIEVE_BODY: &str = r#"{"id":"file_a","object":"vector_store.file","status":"completed"}"#;
 const CONTENT_BODY: &str = r#"{"file_id":"file_a","filename":"a","attributes":{"tag":"x"},"content":[{"type":"text","text":"hello"},{"type":"text","text":"world"}]}"#;
 const MISSING_BODY: &str = r#"{"error":{"message":"missing","type":"invalid_request_error","param":null,"code":"missing"}}"#;
-const BASE: &str = "http://mock.invalid/v1";
 
 fn json(text: &str) -> Json {
     serde_json::from_str(text).expect("the fixture is valid JSON")
