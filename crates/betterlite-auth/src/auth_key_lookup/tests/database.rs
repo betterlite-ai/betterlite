@@ -113,7 +113,8 @@ async fn mapping_database_failure() {
     let JwtError::Lookup(DbLookupError::Database(fault)) = error else {
         panic!("database failure expected");
     };
-    assert_eq!(fault.error_type, ErrorType::Prisma);
+    // B872's shared classification calls a database that is not connected a transport fault
+    assert_eq!(fault.error_type, ErrorType::Connect);
     assert!(!fault.message.is_empty());
     get_jwt_key_mapping_object("group", "dev", None, &source)
         .await
