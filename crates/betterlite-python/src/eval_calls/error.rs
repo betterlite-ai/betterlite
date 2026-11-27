@@ -15,6 +15,7 @@ use betterlite_core::api::eval_lifecycle::error::{
 use betterlite_error::envelope::WireField;
 use betterlite_error::error::details::ResponseDetails;
 use betterlite_error::error::{ErrorClass, ErrorContext, class_message};
+use betterlite_logging::logging_state::LoggingStateError;
 use betterlite_models::decisions::Json;
 use betterlite_redact::error::RedactionError;
 use betterlite_redact::secret::Redactor;
@@ -98,76 +99,93 @@ fn field_class(message: String, name: &str, provider: &str) -> ErrorClass {
     ErrorClass::BadRequest(Box::new(ResponseDetails::with_status(context, None)))
 }
 
+// Which core service a call's logging state belongs to: the failure mapping each one applies to it.
+#[derive(Clone, Copy)]
+pub(crate) enum FailureGroup {
+    CreateList,
+    GetUpdate,
+    Lifecycle,
+}
+
+impl FailureGroup {
+    pub(crate) fn class(
+        self,
+        error: LoggingStateError,
+        params: &EvalsCallParams<'_>,
+        redactor: &Redactor,
+    ) -> ErrorClass {
+        match self {
+            Self::CreateList => {
+                create_list_failure(EvalsCreateListError::Logging(error), params, redactor).class
+            }
+            Self::GetUpdate => {
+                get_update_failure(EvalsGetUpdateError::Logging(error), params, redactor).class
+            }
+            Self::Lifecycle => {
+                lifecycle_failure(
+                    EvalLifecycleError::Logging(error),
+                    &provider_of(params),
+                    redactor,
+                )
+                .class
+            }
+        }
+    }
+}
+
+// The failure class a core service hands back for one reply.
+pub(crate) trait Classified {
+    fn into_class(self) -> ErrorClass;
+}
+
+impl Classified for EvalsCreateListFailureError {
+    fn into_class(self) -> ErrorClass {
+        self.class
+    }
+}
+
+impl Classified for EvalsGetUpdateFailureError {
+    fn into_class(self) -> ErrorClass {
+        self.class
+    }
+}
+
+impl Classified for EvalLifecycleFailure {
+    fn into_class(self) -> ErrorClass {
+        self.class
+    }
+}
+
 impl EvalOperationFailure {
-    fn mapped(class: ErrorClass, params: &EvalsCallParams<'_>) -> Self {
+    pub(crate) fn mapped(class: ErrorClass, params: &EvalsCallParams<'_>) -> Self {
         Self::Mapped {
             class,
             provider: provider_of(params),
         }
     }
 
-    // A failure before the service ran: the logging state could not be built, which LiteLLM's exception_type maps the same way.
-    pub(crate) fn create_list(
-        error: EvalsCreateListError,
+    pub(crate) fn reply<T: Serialize, E: Classified>(
+        reply: Result<T, E>,
         params: &EvalsCallParams<'_>,
-        redactor: &Redactor,
-    ) -> Self {
-        Self::mapped(create_list_failure(error, params, redactor).class, params)
-    }
-
-    pub(crate) fn get_update(
-        error: EvalsGetUpdateError,
-        params: &EvalsCallParams<'_>,
-        redactor: &Redactor,
-    ) -> Self {
-        Self::mapped(get_update_failure(error, params, redactor).class, params)
-    }
-
-    pub(crate) fn lifecycle(
-        error: EvalLifecycleError,
-        params: &EvalsCallParams<'_>,
-        redactor: &Redactor,
-    ) -> Self {
-        let provider = provider_of(params);
-        Self::Mapped {
-            class: lifecycle_failure(error, &provider, redactor).class,
-            provider,
+    ) -> Result<String, Self> {
+        match reply {
+            Ok(value) => serde_json::to_string(&value).map_err(|source| Self::Encode { source }),
+            Err(failure) => Err(Self::mapped(failure.into_class(), params)),
         }
     }
 
-    pub(crate) fn create_list_reply<T: Serialize>(
-        reply: Result<T, EvalsCreateListFailureError>,
-        params: &EvalsCallParams<'_>,
-    ) -> Result<String, Self> {
-        reply
-            .map_err(|failure| Self::mapped(failure.class, params))
-            .and_then(encode)
-    }
-
-    pub(crate) fn get_update_reply<T: Serialize>(
-        reply: Result<T, EvalsGetUpdateFailureError>,
-        params: &EvalsCallParams<'_>,
-    ) -> Result<String, Self> {
-        reply
-            .map_err(|failure| Self::mapped(failure.class, params))
-            .and_then(encode)
-    }
-
-    pub(crate) fn lifecycle_reply<T: Serialize>(
-        reply: Result<T, EvalLifecycleFailure>,
-        params: &EvalsCallParams<'_>,
-    ) -> Result<String, Self> {
-        reply
-            .map_err(|failure| Self::mapped(failure.class, params))
-            .and_then(encode)
-    }
-
-    pub(crate) fn into_py(self) -> PyErr {
+    fn into_exception(self) -> PyErr {
         match self {
             Self::Mapped { class, provider } => native_error(&class, &provider),
-            Self::Session(error) => error.into(),
+            Self::Session(error) => PyErr::from(error),
             Self::Encode { source } => PyRuntimeError::new_err(source.to_string()),
         }
+    }
+}
+
+impl From<EvalOperationFailure> for PyErr {
+    fn from(failure: EvalOperationFailure) -> Self {
+        failure.into_exception()
     }
 }
 
@@ -176,10 +194,6 @@ fn provider_of(params: &EvalsCallParams<'_>) -> String {
         .custom_llm_provider
         .unwrap_or(DEFAULT_EVALS_PROVIDER)
         .to_owned()
-}
-
-fn encode<T: Serialize>(value: T) -> Result<String, EvalOperationFailure> {
-    serde_json::to_string(&value).map_err(|source| EvalOperationFailure::Encode { source })
 }
 
 // What _completion/errors.py rebuilds into a LiteLLM exception: its class, message, status and error body.

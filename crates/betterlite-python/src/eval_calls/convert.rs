@@ -3,8 +3,6 @@ use std::time::Duration;
 
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
-use pyo3::PyErr;
-use pyo3::exceptions::PyValueError;
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
@@ -43,12 +41,6 @@ pub(crate) enum ConvertError {
     },
 }
 
-impl From<ConvertError> for PyErr {
-    fn from(error: ConvertError) -> Self {
-        PyValueError::new_err(error.to_string())
-    }
-}
-
 // One call's arguments before they are split into the parameters every operation shares.
 pub(crate) type Fields = IndexMap<String, Json>;
 
@@ -56,11 +48,10 @@ pub(crate) fn parse<'text, T>(text: &'text str) -> Result<T, ConvertError>
 where
     T: Deserialize<'text>,
 {
-    serde_json::from_str(text).map_err(|source| ConvertError::Json { source })
-}
-
-pub(crate) fn parse_fields(text: &str) -> Result<Fields, ConvertError> {
-    parse(text)
+    match serde_json::from_str(text) {
+        Ok(value) => Ok(value),
+        Err(source) => Err(ConvertError::Json { source }),
+    }
 }
 
 // an absent or null optional field takes its default; any other value must read as the declared type
@@ -74,31 +65,17 @@ where
 {
     match fields.shift_remove(name) {
         None | Some(Json::Null) => Ok(None),
-        Some(value) => decode(name, provider, value).map(Some),
+        Some(value) => {
+            let raw =
+                serde_json::to_value(value).map_err(|source| ConvertError::Json { source })?;
+            serde_json::from_value(raw)
+                .map(Some)
+                .map_err(|_source| field(provider, name))
+        }
     }
 }
 
-// a required field is never absent, so a null in one is the same type error
-pub(crate) fn required<T>(
-    fields: &mut Fields,
-    name: &'static str,
-    provider: &str,
-) -> Result<T, ConvertError>
-where
-    T: DeserializeOwned,
-{
-    take(fields, name, provider)?.ok_or_else(|| field(provider, name))
-}
-
-fn decode<T>(name: &'static str, provider: &str, value: Json) -> Result<T, ConvertError>
-where
-    T: DeserializeOwned,
-{
-    let raw = serde_json::to_value(value).map_err(|source| ConvertError::Json { source })?;
-    serde_json::from_value(raw).map_err(|_source| field(provider, name))
-}
-
-fn field(provider: &str, name: &'static str) -> ConvertError {
+pub(crate) fn field(provider: &str, name: &'static str) -> ConvertError {
     ConvertError::FieldType {
         provider: provider.to_owned(),
         name,

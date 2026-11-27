@@ -6,26 +6,25 @@ use betterlite_core::api::eval_create_list::config::{EvalsConfigLookup, EvalsCon
 use betterlite_core::api::eval_http::exchange::EvalConfig;
 use betterlite_core::api::eval_lifecycle::EvalLifecycleConfigLookup;
 use betterlite_openai::evals::openai::OpenAiEvalsConfig;
-use secrecy::{ExposeSecret, SecretString};
+use secrecy::SecretString;
 
 use super::convert::ModuleSettings;
 
-// The one evals provider betterlite serves, held for both core lookups: the borrowed one create and list use
-// and the owned one the lifecycle service takes.
+// The one evals provider betterlite serves, held for both core lookups: borrowed for create and list, owned for lifecycle.
 pub(super) struct EvalConfigs {
     shared: EvalsConfigs,
 }
 
 impl EvalConfigs {
-    pub(super) fn new(settings: &ModuleSettings, environment: &BTreeMap<String, String>) -> Self {
+    pub(super) fn new(settings: ModuleSettings, environment: &BTreeMap<String, String>) -> Self {
+        let env_api_key = environment.get("OPENAI_API_KEY").map(SecretString::from);
+        let openai = OpenAiEvalsConfig {
+            api_key: settings.api_key,
+            openai_key: settings.openai_key,
+            env_api_key,
+        };
         Self {
-            shared: EvalsConfigs {
-                openai: OpenAiEvalsConfig {
-                    api_key: copy_secret(settings.api_key.as_ref()),
-                    openai_key: copy_secret(settings.openai_key.as_ref()),
-                    env_api_key: environment.get("OPENAI_API_KEY").map(SecretString::from),
-                },
-            },
+            shared: EvalsConfigs { openai },
         }
     }
 }
@@ -41,19 +40,10 @@ impl EvalLifecycleConfigLookup for EvalConfigs {
 
     fn eval_config(&self, provider: &str) -> Option<Self::Config> {
         // get_provider_evals_api_config builds a fresh OpenAIEvalsConfig for openai and None for every other name
-        (provider == DEFAULT_EVALS_PROVIDER).then(|| copy(&self.shared.openai))
+        (provider == DEFAULT_EVALS_PROVIDER).then(|| OpenAiEvalsConfig {
+            api_key: self.shared.openai.api_key.clone(),
+            openai_key: self.shared.openai.openai_key.clone(),
+            env_api_key: self.shared.openai.env_api_key.clone(),
+        })
     }
-}
-
-fn copy(config: &OpenAiEvalsConfig) -> OpenAiEvalsConfig {
-    OpenAiEvalsConfig {
-        api_key: copy_secret(config.api_key.as_ref()),
-        openai_key: copy_secret(config.openai_key.as_ref()),
-        env_api_key: copy_secret(config.env_api_key.as_ref()),
-    }
-}
-
-// SecretBox is not Clone, so the exposed text goes back through SecretString's own wrapper
-fn copy_secret(secret: Option<&SecretString>) -> Option<SecretString> {
-    secret.map(|value| SecretString::from(value.expose_secret().to_owned()))
 }

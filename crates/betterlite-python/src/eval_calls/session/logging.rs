@@ -67,6 +67,9 @@ impl LogSink for SilentSink {
     fn emit(&self, _record: LogRecord) {}
 }
 
+// one sink serves every call: the environment borrows it for as long as the logging state lives
+pub(super) static SILENT_SINK: SilentSink = SilentSink;
+
 // The environment a pre-call reads: no debug output and no callbacks, with the content decision LiteLLM's level leaves on.
 pub(super) fn pre_post_env<'env>(core: &'env EvalCore, sink: &'env SilentSink) -> PrePostEnv<'env> {
     PrePostEnv {
