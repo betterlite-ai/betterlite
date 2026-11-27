@@ -204,6 +204,7 @@ b10122
 b10123
 b10124
 b10137
+b10159
 b1010
 b10134
 b1014
@@ -2092,7 +2093,6 @@ vertex_lyria_speech
 vertex_messages
 vertex_model_policy
 vertex_model_urls
-vertex_partner_factory
 vertex_partner_openai
 vertex_rag_chunking
 vertex_rag_store
