@@ -1,0 +1,37 @@
+kind: helper
+name: mcp-tool-selection-tool-calls
+call:
+  b10122:
+    calls:
+      - function: should_auto_execute_tools
+        references:
+          - require_approval: never
+      - function: extract_tool_calls_from_response
+        response:
+          id: resp_corpus
+          created_at: 1735000004
+          output:
+            - type: function_call
+              call_id: call_1
+              name: weather
+              arguments: '{"city":"Paris"}'
+      - function: extract_tool_call_details
+        tool_call:
+          kind: output
+          item:
+            type: function_call
+            call_id: call_1
+            name: weather
+            arguments: '{"city":"Paris"}'
+      - function: extract_tool_call_details
+        tool_call:
+          kind: mapping
+          fields:
+            call_id: call_2
+            function:
+              name: inner
+              arguments: "{}"
+            input:
+              a: 1
+env: {}
+compare: {ignore: []}

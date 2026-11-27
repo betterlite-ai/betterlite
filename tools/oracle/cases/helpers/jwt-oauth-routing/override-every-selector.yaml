@@ -1,0 +1,28 @@
+kind: helper
+name: jwt-oauth-routing-override-every-selector
+env: {}
+compare: {ignore: []}
+call:
+  b10161:
+    operation: override
+    override: {iss: "https://idp.example", client_id: client-abc, scope: openid, aud: api}
+    claims: {iss: "https://idp.example", client_id: client-abc, scope: "openid profile", aud: api}
+calls:
+  - b10161: {operation: override, override: {iss: "https://idp.example", client_id: client-abc, scope: openid, aud: api}, claims: {iss: "https://other.example", client_id: client-abc, scope: openid, aud: api}}
+  - b10161: {operation: override, override: {iss: "https://idp.example", client_id: client-abc, scope: openid, aud: api}, claims: {iss: "https://idp.example", client_id: other-client, scope: openid, aud: api}}
+  - b10161: {operation: override, override: {iss: "https://idp.example", client_id: client-abc, scope: openid, aud: api}, claims: {iss: "https://idp.example", client_id: client-abc, scope: email, aud: api}}
+  - b10161: {operation: override, override: {iss: "https://idp.example", client_id: client-abc, scope: openid, aud: api}, claims: {iss: "https://idp.example", client_id: client-abc, scope: openid, aud: other}}
+  - b10161: {operation: override, override: {iss: "https://idp.example", client_id: client-abc, scope: openid, aud: api}, claims: {iss: "https://idp.example", client_id: client-abc, scope: openid}}
+  - b10161: {operation: override, override: {iss: "https://idp.example"}, claims: {iss: "https://idp.example", client_id: client-abc}}
+  - b10161: {operation: override, override: {iss: "https://idp.example"}, claims: {client_id: client-abc}}
+  - b10161: {operation: override, override: {iss: "https://idp.example"}, claims: {}}
+  - b10161: {operation: override, override: {iss: ["https://other.example", "https://idp.example"]}, claims: {iss: "https://idp.example"}}
+  - b10161: {operation: override, override: {iss: "https://idp.example", aud: [api, other]}, claims: {iss: "https://idp.example", aud: [other]}}
+  - b10161: {operation: override, override: {iss: "https://idp.example", aud: "api*"}, claims: {iss: "https://idp.example", aud: "api v2"}}
+  - b10161: {operation: override, override: {iss: "https://idp.example", scope: "App:*"}, claims: {iss: "https://idp.example", scope: "App:LiteLLM App:API"}}
+  - b10161: {operation: override, override: {iss: "https://idp.example", scope: profile}, claims: {iss: "https://idp.example", scope: "openid profile"}}
+  - b10161: {operation: override, override: {iss: "https://idp.example", scope: "openid profile"}, claims: {iss: "https://idp.example", scope: "openid profile"}}
+  - b10161: {operation: override, override: {iss: "https://idp.example", client_id: null}, claims: {iss: "https://idp.example"}}
+  - b10161: {operation: override, override: {iss: "https://idp.example", path: oauth2}, claims: {iss: "https://idp.example"}}
+  - b10161: {operation: override, override: {iss: "https://idp.example"}, claims: {iss: "https://idp.example", scope: [openid, profile]}}
+  - b10161: {operation: override, override: {iss: "https://idp.example", scope: profile}, claims: {iss: "https://idp.example", scope: [openid, profile]}}

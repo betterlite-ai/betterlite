@@ -1,0 +1,143 @@
+id: B10190
+title: The S3 signer and the ElastiCache and RDS presigners sign through betterlite-sigv4
+description: >-
+  Three SigV4 signers are left once B10191 lands, and each builds the aws-sigv4 identity, signing parameters and signable request itself instead of calling betterlite-sigv4 (lines at main 6a51ccf2b26). A fourth already calls it after B10173 but in the wrong mode: betterlite-rag signs its S3 requests the way it signs Bedrock Agent.
+
+
+  The S3 signer. betterlite-logging's `sign_request` (crates/betterlite-logging/src/s3_transport/signing.rs L67-L122) ports botocore's S3SigV4Auth, which LiteLLM's S3 logger and Bedrock file uploads both call (references): the default settings with the path signed as sent and single percent encoding (L91-L97), the payload hash taken from the caller. Its `Credentials` (L21-L26) has the same three fields as betterlite_sigv4's. Five places call it: `put_attempt` in s3_transport/upload.rs L104, `object_request` in download.rs L33, `signed_upload_headers` in finops/focus/destinations/focus_s3_destination.rs L154, betterlite-bedrock's `sign_s3_request` (crates/betterlite-bedrock/src/s3_signing/signer.rs L123-L138) and betterlite-server's `S3Reader::signed_headers` (crates/betterlite-server/src/bucket_config/s3_reader.rs L172-L180). The last two also copy betterlite-bedrock's Credentials into logging's field by field (signer.rs L132-L136, s3_reader.rs L143-L147). B10173 gives `Signable` the mode `SigningMode::S3SigV4Auth` with exactly those settings, so the signer goes. In s3_transport/signing.rs, `RequestToSign` and `sign_request` go, the private `SERVICE` becomes `pub const S3_SERVICE: &str = "s3";`, and the struct becomes `pub use betterlite_sigv4::credentials::Credentials;`, so its importers (server, legacy_s3, s3_batch, focus and the b3993 oracle helper) stay as they are. CredentialError, CredentialSource, StaticCredentials, Clock and SystemClock stay. Each of the five callers builds a betterlite_sigv4 Signable with its method, URL and headers, its body (the PUT body in upload.rs, focus and Bedrock, an empty slice for the two GETs), S3_SERVICE, the region, the credentials, `now` and `S3SigV4Auth`, and calls sign_request. Every caller already sends x-amz-content-sha256 in those headers, so B10173's `payload` signs that hash just as `RequestToSign.content_sha256` did. S3TransportError's `Parameters` and `Signing` (s3_transport/error.rs L34-L37) become one `Signing(#[from] SigV4Error)` with the text "the S3 request could not be signed". betterlite-bedrock's `S3SigningError::Sign` (s3_signing.rs L59-L60) keeps its text and its box and wraps SigV4Error, and `From<S3TransportError>` (L70-L74) becomes `From<SigV4Error>`, so the test at s3_signing/tests/signer.rs L310 still matches `Sign`. The Bedrock signer passes `credentials` straight in, and its SIGNED_HEADERS lookup (signer.rs L25-L30, L139-L143) compares names with eq_ignore_ascii_case, since the returned names are now botocore's spelling. betterlite-server's `S3Reader.credentials` takes the shared type, so L143-L147 becomes `Some(credentials)`. betterlite-logging drops aws-sigv4 and aws-smithy-runtime-api, which nothing uses after B10191 and this task; betterlite-server adds betterlite-sigv4.
+
+
+  betterlite-rag's S3 calls. The RAG client's `signed_request_with` (crates/betterlite-rag/src/bedrock_ingestion/client.rs L123-L163) signs every service the Bedrock ingestion reaches through one Signable, and B10173 gives it mode `SigV4Auth`. Two of those requests go to S3: `create_bucket` (bedrock_ingestion/resources.rs L205-L233) and the provisioning `put_object` (bedrock_provisioning/calls/s3.rs L19-L44, sent by provision.rs L217-L230). LiteLLM makes both through boto3's S3 client (`_get_boto3_client("s3")`, then `create_bucket` and `put_object`, references), and botocore signs every S3 client request with S3SigV4Auth whatever the call. `object_key` (calls/s3.rs L11-L17) already percent-encodes each key segment, so the default mode encodes its `%` a second time in the canonical path, and S3 answers SignatureDoesNotMatch for a key with a space or any other encoded byte. The Signable at client.rs L139 sets `mode` to `SigningMode::S3SigV4Auth` when `request.service == S3_SERVICE` (client.rs L28) and to `SigningMode::SigV4Auth` otherwise. That is botocore's own rule, a signer per service, and S3 Vectors, Bedrock Agent, STS, IAM and OpenSearch Serverless keep SigV4Auth because their botocore models say v4.
+
+
+  The presigners. ElastiCache's `presign_connect_url` (crates/betterlite-config/src/sections/redis_credentials/aws.rs L89-L133) and RDS's `db_auth_token` (crates/betterlite-db/src/rds_credentials/signer.rs L40-L75) are the same steps twice: an identity, default settings with `SignatureLocation::QueryParams` and an expiry, a GET with an empty body, `sign`, then the query parameters appended to the operation's own query. Both port botocore's SigV4QueryAuth: ElastiCache calls it directly and RDS through boto3's generate_db_auth_token (references). sign.rs gains `pub fn presign_request(request: &Signable<'_>, expires_in: Duration) -> Result<Vec<(String, String)>, SigV4Error>`. It signs with the mode's settings, the signature location QueryParams and `expires_in`, and answers the parameters unencoded in botocore's order: X-Amz-Algorithm, X-Amz-Credential, X-Amz-Date, X-Amz-Expires, X-Amz-SignedHeaders, X-Amz-Security-Token when the credentials carry one, and X-Amz-Signature last. aws-sigv4 puts the token after the signature; botocore appends the signature at the very end, as the pinned RDS answers show (crates/betterlite-db/src/rds_credentials/fixtures/botocore-1.43.118.json L81). sign_request and presign_request share one private function in sign.rs that builds the identity, the parameters and the signable request and signs, so the steps exist once.
+
+
+  ElastiCache calls presign_request with GET, `https://{cache_name}/?{connect_query}`, no headers, an empty body, service elasticache, the region, `Credentials::from(&credentials)` (B10191's From impl), `now`, `SigV4Auth` and `Duration::from_secs(token_ttl_seconds)`, and appends the pairs with form_urlencoded as it does now. ElastiCacheSigningError's `SigningParams`, `SignableRequest` and `Sign` (aws.rs L56-L70) become one `Sign { #[source] source: SigV4Error }` with "failed to sign the ElastiCache connect request: {source}"; `AwsCredentialsResolver` and the `Credentials` variant keep the aws type. betterlite-config drops aws-sigv4 and aws-smithy-runtime-api (only aws.rs uses them), keeps aws-credential-types and adds betterlite-sigv4. RDS calls presign_request with GET, its URI, the one host header `signed_host` gives (that function stays: botocore signs the lowercase host without the default port, L49-L50 and L78-L84), an empty body, service rds-db, the region, `Credentials::from(&self.session.credentials)`, the clock's now, `SigV4Auth` and `Duration::from_secs(RDS_TOKEN_LIFETIME_SECONDS)`. `token_query` (L86-L101) loses its signature argument and the special case and appends every pair encoded with RDS_ESCAPE. RdsCredentialsError's `SigningParams`, `SignableRequest` and `Sign` (error.rs L69-L83) become one `Sign { #[source] source: SigV4Error }` with "signing the RDS authentication token failed". betterlite-db drops aws-sigv4 (the `aws_sigv4` in its MCP tests is a string), keeps aws-smithy-runtime-api and aws-credential-types and adds betterlite-sigv4.
+
+
+  Tests. betterlite-sigv4's sign/tests.rs takes the S3 answers that leave with s3_transport/signing.rs, with the same inputs (crates/betterlite-logging/src/s3_transport/signing/tests.rs L12-L58): `s3_sigv4_auth_signs_a_put_like_botocore` (PUT_AUTHORIZATION, X-Amz-Date, the token), `s3_sigv4_auth_signs_a_get_like_botocore` (GET_AUTHORIZATION), `s3_sigv4_auth_sends_no_token_without_one`, `s3_sigv4_auth_signs_the_payload_hash_header` (a different x-amz-content-sha256 value changes the signature) and `s3_sigv4_auth_signs_the_path_as_sent`. That file keeps only `the_system_clock_reads_the_current_time`. The presign tests are `presign_matches_the_botocore_elasticache_answer` (GET https://cache.example/?Action=connect&User=app, elasticache, eu-west-1, the Unix epoch, 900 seconds, key AKIAIOSFODNN7EXAMPLE, signature e1e4ce13c45cfa056cbbb7bf8235fe64d59d0f2b10176bea67739664779bcfd4 from crates/betterlite-config/src/sections/redis_credentials/tests.rs L557-L566), `presign_puts_the_security_token_before_the_signature` and `presign_signs_the_expiry` (X-Amz-Expires is the given seconds). redis_credentials/tests.rs gains `elasticache_provider_puts_the_session_token_before_the_signature`. upload/tests.rs L522-L541 and download/tests.rs L252-L270 compute their expected Authorization with the shared signer and find it ignoring case, and s3_reader/tests.rs L245-L294 and module_download/tests.rs L108 and L144 compare names ignoring case. The RDS botocore answers, the ElastiCache answer in config, the S3 log transport and Bedrock S3 helper cases must pass unchanged. betterlite-rag's bedrock_ingestion/client/tests.rs gains `client_signs_s3_with_the_path_as_sent`, a signed_request_with PUT to https://example-bucket.s3.us-west-2.amazonaws.com/docs/my%20file.pdf with its x-amz-content-sha256 header that sends the Authorization betterlite_sigv4's sign_request gives the same request in mode S3SigV4Auth, which differs from the SigV4Auth one, and `client_signs_other_services_in_the_default_mode`, the same check for service bedrock on the path /knowledgebases/KB%201/datasources/ in mode SigV4Auth.
+
+
+  What users see: S3 requests carry Authorization, X-Amz-Date and X-Amz-Security-Token in botocore's spelling instead of lowercase, as LiteLLM sends them; header names are case-insensitive on the wire. An ElastiCache token built from credentials with a session token now lists X-Amz-Security-Token before X-Amz-Signature, as LiteLLM's does. betterlite-rag uploads a file whose S3 key needs percent-encoding, and S3 no longer refuses it. Nothing else changes.
+scope:
+  paths:
+    - crates/betterlite-sigv4/Cargo.toml
+    - crates/betterlite-sigv4/src/sign.rs
+    - crates/betterlite-sigv4/src/sign/tests.rs
+    - Cargo.lock
+    - crates/betterlite-logging/Cargo.toml
+    - crates/betterlite-logging/src/s3_transport/signing.rs
+    - crates/betterlite-logging/src/s3_transport/signing/tests.rs
+    - crates/betterlite-logging/src/s3_transport/error.rs
+    - crates/betterlite-logging/src/s3_transport/upload.rs
+    - crates/betterlite-logging/src/s3_transport/upload/tests.rs
+    - crates/betterlite-logging/src/s3_transport/download.rs
+    - crates/betterlite-logging/src/s3_transport/download/tests.rs
+    - crates/betterlite-logging/src/finops/focus/destinations/focus_s3_destination.rs
+    - crates/betterlite-bedrock/src/s3_signing.rs
+    - crates/betterlite-bedrock/src/s3_signing/signer.rs
+    - crates/betterlite-bedrock/src/s3_signing/tests/**
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/bucket_config/s3_reader.rs
+    - crates/betterlite-server/src/bucket_config/s3_reader/tests.rs
+    - crates/betterlite-server/src/bucket_config/module_download/tests.rs
+    - crates/betterlite-config/Cargo.toml
+    - crates/betterlite-config/src/sections/redis_credentials/aws.rs
+    - crates/betterlite-config/src/sections/redis_credentials/tests.rs
+    - crates/betterlite-db/Cargo.toml
+    - crates/betterlite-db/src/rds_credentials/signer.rs
+    - crates/betterlite-db/src/rds_credentials/error.rs
+    - crates/betterlite-rag/src/bedrock_ingestion/client.rs
+    - crates/betterlite-rag/src/bedrock_ingestion/client/tests.rs
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L413-L431
+    why: _sign_put, S3SigV4Auth over the PUT the S3 log transport ports.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L936-L971
+    why: the S3 GET signed with S3SigV4Auth and the empty-body x-amz-content-sha256 header.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L1125-L1172
+    why: the Bedrock file upload signed with S3SigV4Auth, which betterlite-bedrock's sign_s3_request ports.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis_credential_provider.py#L161-L194
+    why: ElastiCacheIAMCredentialProvider._get_credentials, SigV4QueryAuth over the connect URL.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/rds_iam_token.py#L154-L172
+    why: generate_iam_auth_token, boto3's generate_db_auth_token, which presigns with SigV4QueryAuth.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/bedrock_ingestion.py#L229-L244
+    why: _create_s3_bucket, the CreateBucket call through boto3's S3 client that create_bucket ports.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/bedrock_ingestion.py#L587-L616
+    why: _get_boto3_client, a plain session.client per service, so each service signs with its botocore default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/bedrock_ingestion.py#L666-L677
+    why: the PutObject upload through the S3 client that the provisioning put_object ports.
+  - url: https://github.com/boto/botocore/blob/1.43.118/botocore/client.py#L876-L887
+    why: botocore resolves s3v4 for every S3 client, which auth.py L1218 maps to S3SigV4Auth.
+dod:
+  - text: betterlite-logging has no S3 signer or Credentials struct of its own, no caller converts Credentials field by field, and logging, config and db build no aws-sigv4 signing parameters and drop aws-sigv4.
+    proof: [no-signing-copies]
+  - text: The S3SigV4Auth mode matches botocore's S3 answers, and presign_request matches botocore's ElastiCache answer, orders the token before the signature and signs the expiry.
+    proof: [sigv4-tests]
+  - text: S3 log uploads and downloads, FOCUS S3 deliveries, Bedrock S3 uploads and bucket config reads still sign as LiteLLM does.
+    proof: [no-signing-copies, s3-transport-tests, s3-transport-cases, bedrock-s3-tests, bedrock-s3-cases, server-s3-tests]
+  - text: ElastiCache and RDS tokens still match botocore, and an ElastiCache token with a session token lists it before the signature.
+    proof: [no-signing-copies, elasticache-token-order, redis-credentials-tests, redis-credentials-cases, rds-tests]
+  - text: betterlite-rag signs CreateBucket and PutObject with S3SigV4Auth, the path as sent, and every other service it calls with SigV4Auth, as boto3's clients do.
+    proof: [rag-s3-signing, rag-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: no-signing-copies
+      why: a crate still builds its own aws-sigv4 signing parameters, logging keeps its S3 signer or Credentials struct, a caller still copies credentials field by field, or a crate that no longer signs keeps aws-sigv4
+      run: test -z "$(grep -rlE 'v4::SigningParams|SigningSettings|SignableRequest|aws_sigv4' crates/betterlite-logging/src crates/betterlite-config/src crates/betterlite-db/src/rds_credentials)" && test -z "$(grep -rnE 'RequestToSign|SigningCredentials' crates/betterlite-logging/src crates/betterlite-bedrock/src/s3_signing crates/betterlite-server/src/bucket_config)" && test -z "$(grep -n 'pub struct Credentials' crates/betterlite-logging/src/s3_transport/signing.rs)" && test -z "$(grep -nE '^aws-sigv4 ' crates/betterlite-logging/Cargo.toml crates/betterlite-config/Cargo.toml crates/betterlite-db/Cargo.toml)"
+    - id: sigv4-tests
+      why: the S3 mode or presign_request is missing, signs differently from botocore, or orders the token after the signature
+      run: grep -q "fn presign_request" crates/betterlite-sigv4/src/sign.rs && cargo nextest run --locked -p betterlite-sigv4 --no-tests=fail -E 'test(/^sign::tests::/)'
+    - id: s3-transport-tests
+      why: an S3 log upload, download or FOCUS delivery lost a signed header or its error mapping
+      run: grep -q S3SigV4Auth crates/betterlite-logging/src/s3_transport/upload.rs && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E '(test(/^s3_transport::/) | test(/^finops::focus::(.*::)?focus_s3_destination::/) | test(/^(s3_batch|legacy_s3|s3_audit)::/)) - test(/replays_the_/)'
+    - id: s3-transport-cases
+      why: the S3 log transport helper cases no longer match LiteLLM's signed requests
+      run: grep -q S3SigV4Auth crates/betterlite-logging/src/s3_transport/upload.rs && cargo run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-logging -- tools/oracle/cases/s3_log_transport
+    - id: bedrock-s3-tests
+      why: the Bedrock S3 upload lost a signed header, its botocore order or its error variant
+      run: grep -q betterlite_sigv4 crates/betterlite-bedrock/src/s3_signing/signer.rs && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/^s3_signing::/) - test(/replays_the_/)'
+    - id: bedrock-s3-cases
+      why: the Bedrock S3 signing helper cases no longer match LiteLLM's signed upload
+      run: grep -q betterlite_sigv4 crates/betterlite-bedrock/src/s3_signing/signer.rs && cargo run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-bedrock -- tools/oracle/cases/helpers/providers/bedrock-services-s3-signing
+    - id: server-s3-tests
+      why: a bucket config read or module download is no longer signed
+      run: grep -q S3SigV4Auth crates/betterlite-server/src/bucket_config/s3_reader.rs && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^bucket_config::(s3_reader|module_download)::/)'
+    - id: elasticache-token-order
+      why: an ElastiCache token with a session token still lists it after the signature
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::redis_credentials::tests::elasticache_provider_puts_the_session_token_before_the_signature$/)'
+    - id: redis-credentials-tests
+      why: the ElastiCache token or the server's Redis IAM auth changed
+      run: grep -q presign_request crates/betterlite-config/src/sections/redis_credentials/aws.rs && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::redis_credentials::/)' && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^redis_cloud_auth::/)'
+    - id: redis-credentials-cases
+      why: the Redis credential helper cases no longer match LiteLLM
+      run: grep -q presign_request crates/betterlite-config/src/sections/redis_credentials/aws.rs && cargo run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-config -- tools/oracle/cases/helpers/redis-credentials
+    - id: rds-tests
+      why: an RDS token no longer matches botocore's answers or maps its signing error
+      run: grep -q presign_request crates/betterlite-db/src/rds_credentials/signer.rs && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^rds_credentials::/)'
+    - id: rag-s3-signing
+      why: betterlite-rag still signs S3 in the default mode, or moved another service off it
+      run: cargo nextest run --locked -p betterlite-rag --no-tests=fail -E 'test(/^bedrock_ingestion::client::tests::client_signs_s3_with_the_path_as_sent$/)' && cargo nextest run --locked -p betterlite-rag --no-tests=fail -E 'test(/^bedrock_ingestion::client::tests::client_signs_other_services_in_the_default_mode$/)'
+    - id: rag-tests
+      why: the mode choice broke a RAG ingestion, provisioning or S3 Vectors request
+      run: grep -q S3SigV4Auth crates/betterlite-rag/src/bedrock_ingestion/client.rs && cargo nextest run --locked -p betterlite-rag --no-tests=fail -E 'test(/^(bedrock_ingestion|bedrock_provisioning|s3_vectors_ingestion|s3_vectors_search|s3_vectors_workflow)::/) - test(/replays_the_/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The five header signers in betterlite-secret-managers, betterlite-logging's SQS and DynamoDB, betterlite-http and betterlite-openai: B10191."
+  - "The credential side: ElastiCache's AwsCredentialsResolver, RDS's credential selection and STS flows, the S3 CredentialSource and the server's resolve_credentials keep their types and logic, since the credential chain is B10174 and B10175 work."
+  - "S3 presigning (botocore's S3SigV4QueryAuth with UNSIGNED-PAYLOAD): nothing presigns S3."
+pitfalls:
+  - "Compare the service with S3_SERVICE exactly: S3 Vectors' `s3vectors` starts with s3 but botocore signs it with SigV4Auth, and Bedrock Agent paths such as /knowledgebases/KB%201%2F2/ keep their double encoding."
+  - "aws-sigv4 returns X-Amz-Signature before X-Amz-Security-Token; presign_request moves the signature to the end, and RDS's token_query must not add it a second time."
+  - "s3_transport/signing.rs's `pub use` must keep the name Credentials: server, legacy_s3, s3_batch, focus and tools/oracle/src/helpers/logging/b3993.rs import it from there, and helper files stay as they are."
+  - "The S3 callers' header lists already hold x-amz-content-sha256 in LiteLLM's position; keep it there and let payload read it, rather than switching to aws-sigv4's XAmzSha256 checksum kind, which appends a second copy."
+  - "server s3_reader/tests.rs L245-L247 still expects x-amz-content-sha256 first: only the signed headers' spelling changes, not the order of the prepared ones."
+  - "ElastiCache's known answer at redis_credentials/tests.rs L557-L566 has no session token, so it keeps passing; the new order shows only in the new test."
+  - "RDS_ESCAPE stays in betterlite-db: presign_request answers unencoded values and each presigner keeps the encoding botocore gives its query."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

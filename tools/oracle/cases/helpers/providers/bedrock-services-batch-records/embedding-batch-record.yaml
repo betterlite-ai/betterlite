@@ -1,0 +1,29 @@
+kind: helper
+name: bedrock-services-batch-records-embedding
+call:
+  bedrock_services_batch_records:
+    function: transform_records
+    target_model: ""
+    model_alias_map: {}
+    model_cost:
+      "amazon.titan-embed-text-v2:0":
+        {litellm_provider: bedrock, mode: embedding, provider_specific_entry: {bedrock_invocation_schema: titan_v2}}
+    records:
+      - custom_id: embed-string
+        url: /v1/embeddings
+        body:
+          model: "amazon.titan-embed-text-v2:0"
+          input: hello
+          dimensions: 512
+      - custom_id: embed-list
+        url: /v1/embeddings
+        body:
+          model: "amazon.titan-embed-text-v2:0"
+          input: [hello]
+          encoding_format: base64
+      - custom_id: embed-body-kind
+        body:
+          model: "amazon.titan-embed-text-v2:0"
+          input: by-shape
+env: {}
+compare: {ignore: []}
