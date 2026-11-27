@@ -56,7 +56,7 @@ pub fn map_openai_params(
             Some(name) => FORMAT_MAPPINGS
                 .iter()
                 .find(|(openai, _)| *openai == name)
-                .map_or_else(|| value.clone(), |(_, mapped)| json!(*mapped)),
+                .map_or_else(|| value.clone(), |(_, polly_name)| json!(*polly_name)),
             None => value.clone(),
         };
     }

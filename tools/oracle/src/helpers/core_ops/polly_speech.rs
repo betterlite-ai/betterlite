@@ -136,10 +136,7 @@ fn request_answer(call: &Call) -> Value {
         Ok(signed) => signed,
         Err(_) => return json!({ "ok": false }),
     };
-    let Some(body) = signed.data.ssml_body.as_deref() else {
-        return json!({ "ok": false });
-    };
-    let Some(headers) = &signed.data.headers else {
+    let (Some(body), Some(headers)) = (&signed.data.ssml_body, &signed.data.headers) else {
         return json!({ "ok": false });
     };
     let Some(fields) = signed_fields(headers) else {
