@@ -129,90 +129,79 @@ fn session_bad_json_is_a_value_error() {
     });
 }
 
-fn sync_create(session: &NativeEvalSession, py: Python<'_>) {
-    let serving = serve_answer(CREATED);
-    let reply = session
-        .create_eval(py, &create_call(&base(&serving)), Vec::new())
-        .expect("create answers");
-    assert_reply_and_request(serving, &reply, "eval_created", "POST /v1/evals HTTP/1.1");
-}
-
-fn sync_list(session: &NativeEvalSession, py: Python<'_>) {
-    let serving = serve_answer(LISTED);
-    let reply = session
-        .list_evals(py, &list_call(&base(&serving)), Vec::new())
-        .expect("list answers");
-    assert_reply_and_request(
-        serving,
-        &reply,
-        r#""object":"list""#,
-        "GET /v1/evals?limit=5 HTTP/1.1",
-    );
-}
-
-fn sync_get(session: &NativeEvalSession, py: Python<'_>) {
-    let serving = serve_answer(FETCHED);
-    let reply = session
-        .get_eval(py, &eval_call(&base(&serving)), Vec::new())
-        .expect("get answers");
-    assert_reply_and_request(
-        serving,
-        &reply,
-        "eval_fetched",
-        "GET /v1/evals/eval_1 HTTP/1.1",
-    );
-}
-
-fn sync_update(session: &NativeEvalSession, py: Python<'_>) {
-    let serving = serve_answer(UPDATED);
-    let reply = session
-        .update_eval(py, &update_call(&base(&serving)), Vec::new())
-        .expect("update answers");
-    assert_reply_and_request(
-        serving,
-        &reply,
-        "eval_updated",
-        "POST /v1/evals/eval_1 HTTP/1.1",
-    );
-}
-
-fn sync_delete(session: &NativeEvalSession, py: Python<'_>) {
-    let serving = serve_answer(DELETED);
-    let reply = session
-        .delete_eval(py, &eval_call(&base(&serving)), Vec::new())
-        .expect("delete answers");
-    assert_reply_and_request(
-        serving,
-        &reply,
-        r#""deleted":true"#,
-        "DELETE /v1/evals/eval_1 HTTP/1.1",
-    );
-}
-
-fn sync_cancel(session: &NativeEvalSession, py: Python<'_>) {
-    let serving = serve_answer(CANCELLED);
-    let reply = session
-        .cancel_eval(py, &eval_call(&base(&serving)), Vec::new())
-        .expect("cancel answers");
-    assert_reply_and_request(
-        serving,
-        &reply,
-        r#""status":"cancelled""#,
-        "POST /v1/evals/eval_1/cancel HTTP/1.1",
-    );
-}
-
 #[test]
-fn session_sync_calls_reach_their_own_operation() {
+fn session_sync_calls_reach_create_list_and_get() {
     Python::initialize();
     Python::attach(|py| {
         let session = NativeEvalSession::new(ENVIRONMENT).expect("the session builds");
-        sync_create(&session, py);
-        sync_list(&session, py);
-        sync_get(&session, py);
-        sync_update(&session, py);
-        sync_delete(&session, py);
-        sync_cancel(&session, py);
+        let created = serve_answer(CREATED);
+        let created_reply = session
+            .create_eval(py, &create_call(&base(&created)), Vec::new())
+            .expect("create answers");
+        assert_reply_and_request(
+            created,
+            &created_reply,
+            "eval_created",
+            "POST /v1/evals HTTP/1.1",
+        );
+        let listed = serve_answer(LISTED);
+        let listed_reply = session
+            .list_evals(py, &list_call(&base(&listed)), Vec::new())
+            .expect("list answers");
+        assert_reply_and_request(
+            listed,
+            &listed_reply,
+            r#""object":"list""#,
+            "GET /v1/evals?limit=5 HTTP/1.1",
+        );
+        let fetched = serve_answer(FETCHED);
+        let fetched_reply = session
+            .get_eval(py, &eval_call(&base(&fetched)), Vec::new())
+            .expect("get answers");
+        assert_reply_and_request(
+            fetched,
+            &fetched_reply,
+            "eval_fetched",
+            "GET /v1/evals/eval_1 HTTP/1.1",
+        );
+    });
+}
+
+#[test]
+fn session_sync_calls_reach_update_delete_and_cancel() {
+    Python::initialize();
+    Python::attach(|py| {
+        let session = NativeEvalSession::new(ENVIRONMENT).expect("the session builds");
+        let updated = serve_answer(UPDATED);
+        let updated_reply = session
+            .update_eval(py, &update_call(&base(&updated)), Vec::new())
+            .expect("update answers");
+        assert_reply_and_request(
+            updated,
+            &updated_reply,
+            "eval_updated",
+            "POST /v1/evals/eval_1 HTTP/1.1",
+        );
+        let deleted = serve_answer(DELETED);
+        let deleted_reply = session
+            .delete_eval(py, &eval_call(&base(&deleted)), Vec::new())
+            .expect("delete answers");
+        assert_reply_and_request(
+            deleted,
+            &deleted_reply,
+            r#""deleted":true"#,
+            "DELETE /v1/evals/eval_1 HTTP/1.1",
+        );
+        let cancelled = serve_answer(CANCELLED);
+        let cancelled_reply = session
+            .cancel_eval(py, &eval_call(&base(&cancelled)), Vec::new())
+            .expect("cancel answers");
+        assert_reply_and_request(
+            cancelled,
+            &cancelled_reply,
+            r#""status":"cancelled""#,
+            "POST /v1/evals/eval_1/cancel HTTP/1.1",
+        );
     });
 }
 
