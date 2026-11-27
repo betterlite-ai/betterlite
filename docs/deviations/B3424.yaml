@@ -45,6 +45,15 @@ deviations:
       betterlite's transport owns its pooled client and its interface has no caller-supplied HTTP client;
       a supplied client would bypass the deadlines, redaction and recording the shared client applies.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1263-L1264
+  - what: >-
+      An extra_body key that CreateRunRequest does not declare is refused with a 400 that names the key.
+      LiteLLM's create_request.update(extra_body) writes any key into the request dict, and the OpenAI
+      transform sends every entry whose value is not null, so the key reaches the request body.
+    why: >-
+      CreateRunRequest declares data_source, name and metadata, and betterlite sends only the fields its
+      request type declares; a key outside them has no typed field to carry, and dropping it silently would
+      change the caller's request without saying so.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/evals/transformation.py#L275
 kept_bugs:
   - what: >-
       The timeout list_runs resolves is carried on the call and logged, but the list handler sends no
