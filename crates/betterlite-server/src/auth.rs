@@ -137,12 +137,8 @@ fn stage_input(
         AuthBackend::AuthOrgLookup => Ok(StageInput::AuthOrgLookup(Box::new(
             auth_org_lookup::stage_input(request, authenticated)?,
         ))),
-        AuthBackend::AuthEndUserIdentity => Ok(StageInput::AuthEndUserIdentity(Box::new(
-            end_user_identity::stage_input(request, authenticated, body)?,
-        ))),
-        AuthBackend::AuthEndUsers => Ok(StageInput::AuthEndUsers(Box::new(
-            auth_end_users::stage_input(request, authenticated)?,
-        ))),
+        AuthBackend::AuthEndUserIdentity => end_user_identity::stage(request, authenticated, body),
+        AuthBackend::AuthEndUsers => end_user_identity::budget_stage(request, authenticated),
         AuthBackend::AuthPolicySupport => auth_policy_support::stage(request, authenticated, body),
         AuthBackend::ModelGrantIntersection => Ok(StageInput::ModelGrantIntersection(Box::new(
             model_grant_intersection::stage_input(request, authenticated)?,

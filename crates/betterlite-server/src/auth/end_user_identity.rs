@@ -72,6 +72,16 @@ fn extracted_id(request: &Request<Body>, body: Option<&Bytes>) -> Option<String>
     request_end_user_id(&object, Some(request.headers()), &settings)
 }
 
+// the dispatcher builds this stage's variant here, as auth_key_lookup does for its two stages
+pub(crate) fn stage(
+    request: &Request<Body>,
+    authenticated: Option<&AuthContext>,
+    body: Option<&Bytes>,
+) -> Result<StageInput, StageFailure> {
+    let input = stage_input(request, authenticated, body)?;
+    Ok(StageInput::AuthEndUserIdentity(Box::new(input)))
+}
+
 pub(crate) fn stage_input(
     request: &Request<Body>,
     authenticated: Option<&AuthContext>,
@@ -149,6 +159,15 @@ pub(crate) async fn prefetched(
         .await
         .map_err(StageFailure::EndUserIdentity)?;
     Ok(StageInput::AuthEndUserIdentity(stage))
+}
+
+// the budget stage that follows the validation takes this module's wrapper too, since it reads the id this stage kept
+pub(crate) fn budget_stage(
+    request: &Request<Body>,
+    authenticated: Option<&AuthContext>,
+) -> Result<StageInput, StageFailure> {
+    let input = auth_end_users::stage_input(request, authenticated)?;
+    Ok(StageInput::AuthEndUsers(Box::new(input)))
 }
 
 // LiteLLM reads the id this stage validated, and none other, when the end-user budget lookup follows
