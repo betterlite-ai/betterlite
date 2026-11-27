@@ -25,6 +25,8 @@ use tokio::runtime::{Builder, Runtime};
 use uuid::Uuid;
 
 use crate::aws_settings::sources::Credentials;
+use crate::batch_embeddings::classify::BatchRecordKind;
+use crate::batch_records::chat_body::to_chat_body;
 use crate::batch_records::error::BatchRecordsError;
 use crate::batch_records::families::{BatchFamilies, Failure, Params};
 use crate::batch_records::jsonl::{BatchRecordContext, transform_openai_jsonl};
@@ -316,6 +318,10 @@ pub(super) fn transform_with(
     runtime()
         .block_on(transform_openai_jsonl(records, target_model, &context))
         .map(|records| records.iter().map(BedrockBatchRecord::to_json).collect())
+}
+
+pub(super) fn chat_body_of(body: &Json, kind: BatchRecordKind) -> Result<Json, BatchRecordsError> {
+    runtime().block_on(to_chat_body(body, kind, &Families::default()))
 }
 
 pub(super) fn error_of(result: Result<Vec<Json>, BatchRecordsError>) -> BatchRecordsError {

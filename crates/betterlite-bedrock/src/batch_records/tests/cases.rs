@@ -1,13 +1,14 @@
 use std::collections::BTreeMap;
 
+use crate::batch_embeddings::classify::BatchRecordKind;
 use betterlite_models::decisions::Json;
 use betterlite_openai::files::records::CreatePurpose;
 use betterlite_prompts::media_metadata::{FileBody, FileData};
 
 use super::support::{
     ACCESS_KEY, FIXED_UUID, Families, GATEWAY_MODEL, SECRET_KEY, batch_file, booking_params,
-    error_of, json, params, record, run_upload, run_upload_missing_file, transform, transform_with,
-    value,
+    chat_body_of, error_of, json, params, record, run_upload, run_upload_missing_file, transform,
+    transform_with, value,
 };
 use crate::batch_records::chat_body::text_completion_to_chat;
 use crate::batch_records::error::BatchRecordsError;
@@ -188,6 +189,13 @@ pub(super) fn embedding_batch_record() {
     );
     // the chat families never see an embedding record
     assert!(families.nova_calls().is_empty());
+    // an embedding body handed to the chat normalizer names the missing chat equivalent
+    let refused = chat_body_of(&json(r#"{"model":"m"}"#), BatchRecordKind::Embedding)
+        .expect_err("an embedding body has no chat counterpart");
+    assert_eq!(
+        refused.to_string(),
+        "Embedding batch records do not have a chat-completion equivalent"
+    );
 }
 
 pub(super) fn alias_and_target_model() {
@@ -233,6 +241,23 @@ pub(super) fn alias_and_target_model() {
     )
     .expect("the named record transforms");
     assert!(named_families.nova_calls().is_empty());
+
+    // a record with no model names nothing, so only a target model can route it
+    let model_less = record(
+        r#"{"custom_id":"d","url":"/v1/chat/completions","body":{"messages":[{"content":"hi","role":"user"}]}}"#,
+    );
+    let model_less_families = nova_families();
+    transform_with(
+        &model_less_families,
+        &[model_less],
+        "amazon.nova-pro-v1:0",
+        &BTreeMap::new(),
+    )
+    .expect("the model-less record transforms");
+    assert_eq!(
+        model_less_families.nova_calls()[0].model,
+        "amazon.nova-pro-v1:0"
+    );
 }
 
 pub(super) fn default_record_id() {
@@ -460,6 +485,8 @@ pub(super) fn upload_signing_handoff() {
         .1
         .clone();
     assert!(authorization.contains(ACCESS_KEY));
+    // the signature names the s3_region_name region, never the default AWS region
+    assert!(authorization.contains("/us-east-1/s3/aws4_request"));
     assert!(!authorization.contains(SECRET_KEY));
     assert!(headers.iter().any(|(name, _value)| name == "X-Amz-Date"));
     assert!(
@@ -494,4 +521,49 @@ pub(super) fn upload_signing_handoff() {
             .data
             .contains("\"messages\"")
     );
+    // an empty s3_region_name counts as unset, so the signature falls back to the AWS default region
+    let mut empty_region = booking_params();
+    empty_region.insert(
+        String::from("s3_region_name"),
+        RequestValue::Text(String::new()),
+    );
+    let (default_region_result, _after) = run_upload(
+        &Families::batch(),
+        &file,
+        Some(CreatePurpose::Batch),
+        "",
+        &mut empty_region,
+    );
+    let default_region = default_region_result.expect("the default region upload signs");
+    let default_region_authorization = default_region
+        .headers
+        .iter()
+        .find(|(name, _value)| name == "Authorization")
+        .expect("the default region upload is signed")
+        .1
+        .clone();
+    assert!(default_region_authorization.contains("/us-west-2/s3/aws4_request"));
+    // a record model no provider knows takes the litellm model when that one names a Converse provider
+    let unknown = FileData::Tuple3 {
+        filename: None,
+        content: FileBody::Bytes(
+            b"{\"custom_id\":\"a\",\"body\":{\"model\":\"my-custom\",\"messages\":[{\"content\":\"hi\",\"role\":\"user\"}]}}"
+                .to_vec(),
+        ),
+        content_type: Some(String::from("application/jsonl")),
+    };
+    let mut converse = booking_params();
+    converse.insert(
+        String::from("model"),
+        RequestValue::Text(String::from("amazon.nova-pro-v1:0")),
+    );
+    let (targeted_result, _after) = run_upload(
+        &Families::batch(),
+        &unknown,
+        Some(CreatePurpose::Batch),
+        "",
+        &mut converse,
+    );
+    let targeted = targeted_result.expect("the target model upload signs");
+    assert!(targeted.data.contains("inferenceConfig"));
 }
