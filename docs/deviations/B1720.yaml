@@ -1,0 +1,30 @@
+task: B1720
+deviations:
+  - what: >-
+      A litellm_params, metadata or litellm_metadata bucket whose value is not an object is
+      treated as an empty object, where LiteLLM calls .get or .update on the value and raises
+      AttributeError, losing the failure spend row.
+    why: >-
+      The merge's buckets are declared as mappings; a request that sends a string or a list
+      cannot reach a working LiteLLM setup, and dropping the whole failure row over a
+      malformed passthrough bucket loses the spend evidence the hook exists to keep.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/proxy_track_cost_callback.py#L226-L236
+  - what: >-
+      A user_api_key or user_api_key_team_id that is a non-empty value of a type other than
+      text is treated as unset, so no key or team lookup runs, where LiteLLM passes the
+      value into get_key_object or get_team_object as the hashed token or team id.
+    why: >-
+      Both fields are declared as strings and the compatibility rules do not port Python
+      truthiness; a boolean or a number in the slot is a caller error the lookup would only
+      turn into a debug line anyway.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/proxy_track_cost_callback.py#L529-L531
+kept_bugs:
+  - what: >-
+      A failed release followed by a successful invalidation marks the reservation
+      finalized, so the reservation is never reconciled again even though its counters were
+      invalidated rather than settled.
+    why: >-
+      The task pins this recovery sequence and a setup that hits it relies on release no
+      longer being retried; marking finalized only after invalidation succeeds is the
+      documented outcome a working proxy depends on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/proxy_track_cost_callback.py#L157-L168
