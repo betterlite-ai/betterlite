@@ -105,7 +105,7 @@ out_of_scope:
   - "can_access_mcp_server and the ContextServers port: B4672. The production ServerAccessCheck over them: the MCP identity wiring (B8621)."
   - "Registry mutation and reload (load_servers_from_config, reload_servers_from_database, add_server, update_server, remove_server, build_mcp_server_from_table), OAuth discovery, health_check_server, _run_health_checks and get_all_mcp_servers_with_health_and_teams: B6592 owns them."
   - "Filling ToolOwners (initialize_tool_name_to_mcp_server_name_mapping) and the catalog guards: B4682 and the tool listing task."
-  - "admitted_user_context, build_effective_auth_contexts and _user_has_admin_view: B4672 and B2314, not this task."
+  - "admitted_user_context, build_effective_auth_contexts and _user_has_admin_view: B10127 and B2314, not this task."
 
 pitfalls:
   - "get_mcp_server_by_name stops at the first matching pass; a blocked alias match returns None and does not try server_name or name."

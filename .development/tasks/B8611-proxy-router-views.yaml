@@ -49,15 +49,6 @@ description: >-
   did. Nothing replaces a held router; later changes go through the router's own catalog.
 
 
-  `DeploymentSyncPort` (proxy_router/sync_port.rs, re-exported from proxy_router) is the port the config write routes
-  (B8594, B8596) call to rerun B8381's add_deployment after a save. B8381's DeploymentSync lives in crates/betterlite,
-  which betterlite-server may not depend on, so the server holds it as `Arc<dyn DeploymentSyncPort>` and B8613
-  implements the port. The trait is `Send + Sync` with one method, `fn add_deployment(&self) -> Pin<Box<dyn Future<Output
-  = ()> + Send + '_>>`; the boxed future keeps it dyn-compatible, and it returns nothing because add_deployment logs and
-  swallows its own errors.
-
-
-
   Module router_views (crates/betterlite-server/src/router_views.rs and router_views/, declared by the skeleton).
   `RouterViews` holds an Arc<RouterHandle> and has `current(&self) -> Option<RouterView>`, None when the handle holds no
   router. Every port below is passed to its users as an optional trait object where None means "no router", so a caller
@@ -84,9 +75,8 @@ description: >-
   Tests in proxy_router/tests.rs (names start with `build_`, `handle_`, `flags_`) build a Config through the production
   loader with an injected environment: two deployments under one name, a wildcard entry, an alias, a team deployment with
   team_public_model_name and one invalid deployment. They assert the invalid one is skipped and the rest are listed,
-  that install stores once and refuses a second router, that attach_redis keeps the first client, that
-  enable_cache_responses flips the flag, and that a fake DeploymentSyncPort called through an `Arc<dyn DeploymentSyncPort>`
-  runs its add_deployment once. Tests in router_views/tests.rs (names start with `view_`) call every method of
+  that install stores once and refuses a second router, that attach_redis keeps the first client, and that
+  enable_cache_responses flips the flag. Tests in router_views/tests.rs (names start with `view_`) call every method of
   the five ports on a view of that router and on `current()` of an empty handle. No HTTP oracle case: no route reads the
   router through this task; the inference, spend, callbacks, admin and pass-through wiring parts add the cases for the
   routes that do.
@@ -112,8 +102,6 @@ dod:
     proof: [router-tests]
   - text: RouterHandle starts empty or filled, install stores a router only once, attach_redis keeps the first client and cache_responses starts from the cache flag and can be switched on.
     proof: [router-tests]
-  - text: DeploymentSyncPort is a dyn-compatible Send and Sync trait with one add_deployment method returning a boxed future.
-    proof: [router-tests]
   - text: RouterView answers every method of RouterModelInfo, RequestedModelCatalog, PolicyRouterView, KeepaliveRouter and DeploymentLookup from the router services, and RouterViews::current is None without a router.
     proof: [views-tests]
 checks:
@@ -136,6 +124,7 @@ out_of_scope:
   - "assistant_settings, search_tools and the other non-router keys load_config reads between L6930 and L6965: their own tasks (search tools are B8384's parse_search_tools)."
   - "Router.__init__ for the Python Router class: B8356 and B6022."
   - "B3618's RouterPassthrough and B3622's VertexDeploymentLookup: the pass-through wiring part."
+  - "The DeploymentSyncPort trait the config write routes call for add_deployment: B10136."
   - "Putting RouterHandle, RouterViews and the DeploymentSyncPort value into Shared: B8610. Implementing DeploymentSyncPort over B8381's DeploymentSync: B8613. The router embedder (router_embedder): see the report notes; it needs the router call objects the inference part builds."
 pitfalls:
   - router_params sets cache_responses from whether litellm.cache exists, not from a cache_responses key in router_settings, so a config with litellm_settings.cache true starts with cache_responses true.

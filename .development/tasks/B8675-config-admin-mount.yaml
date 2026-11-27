@@ -30,7 +30,7 @@ description: >-
   `shared.proxy_logging` (B8389's span close and denial log), `shared.secrets` where B8596's alert resolution takes
   it, and `shared.router_views.current()` per request wherever a module reads router settings. B8594 and B8596 end
   with B8381's add_deployment, and B8381's DeploymentSync lives in crates/betterlite, so pass the handle B8613 hands
-  over as `shared.deployment_sync` (B8611's DeploymentSyncPort) to the routes functions that take it. The audit sink of B8594 is B2330's, over
+  over as `shared.deployment_sync` (B10136's DeploymentSyncPort) to the routes functions that take it. The audit sink B10137's config_audit_log writes through is B2330's, over
   `shared.db`. config_fields::routes also takes `shared.config_overlay` (B8379's ConfigOverlayPort), the same Arc
   B8612's ProxySettingsStore holds, for the pass-through re-serve.
 
@@ -144,7 +144,7 @@ oracle_cases:
 
 deviations: []
 out_of_scope:
-  - "The handlers, their state types and the redaction helpers: B8594, B8595, B8596, B8389 and B8230."
+  - "The handlers and their state types: B8594, B8595, B8596, B8389 and B8230. The redaction helpers and config_audit_log: B10137."
   - "The DeploymentSync behind add_deployment and its hand-over: B8381 and B8613."
   - "The settings route bundles and their composition: B066 and the bundle owners it names. The ConfigOverlayPort and its production value: B8379, B8613 and B8610."
   - "Building B4785's route state with the ProxyUrls value: the agents mount part."

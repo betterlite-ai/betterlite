@@ -19,6 +19,7 @@ pub(crate) fn stage_failure_response(failure: &StageFailure) -> Response {
         | StageFailure::JwtKeys(exception)
         | StageFailure::EntityModelAccess(exception)
         | StageFailure::AuthRequestPolicy(exception)
+        | StageFailure::TrustedNetwork(exception)
         | StageFailure::ResourceGrants(exception)
         | StageFailure::TagBudgets(exception)
         | StageFailure::RequestBodySafety(exception)
