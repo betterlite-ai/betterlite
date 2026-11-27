@@ -10,6 +10,9 @@ description: >-
   Copies to delete; each caller calls `betterlite_models::utf8_text::decode_replacing_invalid` instead. betterlite-anthropic: `decoded_text` in batches/decode.rs L164-L173 (callers decode.rs L177 and batches/handler.rs L26, L141) and `replaced_text` in response.rs L47-L57 (caller L102). betterlite-auth: `repaired_text` in auth_pubsub/decode.rs L47-L60, which returns a Cow; L43 becomes `parser::parse_object(&decode_replacing_invalid(bytes))`. betterlite-bedrock: `replaced_text` in invoke_response/error.rs L120-L130 (callers L65, L78). betterlite-core: `replaced_text` in api/assistant_records/error.rs L262-L272 (caller L165), api/fal/vision_chat/reply.rs L113-L123 (callers L54, L63) and api/soniox/prepare/decode.rs L101-L110 (caller L46); `lossy_text` in api/file_http_content/service/facts.rs L51-L61 (caller L46); `body_text` in api/video_character_transport/service/wire.rs L18-L28 (caller L68, and the four body_text asserts in tests/helpers.rs L7 and L12-L15 go, since the home's table covers them); `response_text` in rag/vertex_ingestion/json.rs L21-L31 (callers corpus.rs L13, L66, L71, L177 and upload.rs L12, L55). betterlite-db: `decode_percent_bytes` in database_url_policy/url_codec.rs L289-L299 needs no home: unquote_plus (L283-L287) becomes `percent_decode(space_separated.as_bytes()).decode_utf8_lossy().into_owned()`, the percent-encoding crate's own lossy decode that azure_urls.rs and the logging crate already use for urllib's unquote. betterlite-foundry: `decode_replacing_invalid` in mai_images/reply.rs L93-L103 (caller L41). betterlite-guardrails: headroom/text.rs is the `lossy_text` copy and nothing else, so the file goes with its `pub(crate) mod text;` line in headroom.rs L3, and its importers call the home (headroom_compression/compress.rs L10, L90, headroom_retrieval/retrieve.rs L4, L65, L67, hiddenlayer_authentication/detection.rs L4, L35 and token.rs L10, L81); the loop inside data_payload in panw_prisma_airs/hooks/streaming/raw.rs L52-L58 becomes one `let line = decode_replacing_invalid(raw_line);`. betterlite-harness: `decode_lossy` in cli_handler/io.rs L58-L68 (callers io.rs L78 and cli_handler.rs L143; its test assert in cli_handler/tests.rs L17 and L508 goes), `decode_utf8` in sandbox/docker/process.rs L219-L228 (callers process.rs L213-L214, docker.rs L155, L158, docker/commands.rs L3, L22, L37, L43, docker/files.rs L3, L29, L49, docker/snapshot.rs L5, L42, L50) and `decode_utf8` in sandbox/local/process.rs L194-L203 (callers L177-L178). betterlite-http: `body_text` in interactions/lifecycle.rs L187-L197 (caller L183). betterlite-logging: `lossy_text` in passthrough_stream_logging/lines.rs L16-L26 (caller L3). betterlite-openai: the loops in codestral_records.rs record_text L29-L33 (`Ok(decode_replacing_invalid(body))` after the size check) and perplexity_embedding/reply.rs L97-L104; `lossy_text` in image_edits/response.rs L23-L31 (caller L17); and the public encoding_rs copy `decode_text` in aleph_alpha/lines.rs L34-L44, called by aleph_alpha/adapter.rs L10, L75, L114, betterlite-provider's adapters/vertex_agent_stream.rs L15 and langgraph_stream/wrapper.rs L9, betterlite-vertex's gemini_call/sync_call.rs L6, gemini_http/call.rs L7 and gemini_http/stream.rs L5, provider's fuzz target langgraph_stream.rs L3, L10 and provider's langgraph_stream/tests.rs L12, L514. `decode_chunk` and `LineDecoder` stay in lines.rs: they are httpx's incremental decoder, a different function. betterlite-prompts: the public `decode_text` in gitlab_client/payload.rs L29-L39, called by gitlab_client.rs L65, gitlab_templates/tests.rs L15, L53, betterlite-bedrock's embedding_jobs/status.rs, betterlite-openai's ovhcloud_audio/reply.rs, ovhcloud_embedding/reply.rs and scaleway_audio/reply.rs, and betterlite-provider's data_cloud_dispatch/embed.rs, embed/snowflake.rs, oauth.rs and oci_stream.rs (whose split_text keeps its incremental carry and only swaps the call). betterlite-provider: `lossy_text` in azure_media_dispatch/parts.rs L37-L45 (callers edit.rs L24, L63 and transcription.rs L31, L99) and `replaced_text` in bedrock_interactive_dispatch/responses.rs L210-L220 (caller L234). betterlite-proxy: `decode_line` in agent_endpoints/a2a_stream/lines.rs L42-L52 (callers L20, L25, L37). betterlite-server: `push_replaced_utf8` in api/request_form.rs L149-L157 appends into the caller's String, so its two calls at L124 and L145 become `decoded.push_str(&decode_replacing_invalid(&escaped))`; the public `lossy_utf8` in mcp/transport_checks/peek.rs L43-L53 (callers peek.rs L193, the corpus replay in peek/tests.rs L294 and the fuzz target fuzz_targets/mcp_routing_peek.rs L4, L12; the rstest `lossy_text_matches_pythons_decoding` in peek/tests.rs L189-L198 tests the copy and goes with its name in the L19 import); the loop in pass_through_logging/tinyfish/sse.rs L13-L19; and `UTF_8.decode_without_bom_handling(raw).0` in mcp/debug/preview.rs L85 with its now unused `use encoding_rs::UTF_8;` at L11. betterlite-tokenizer: `replacement_string` in engine/tiktoken.rs L128-L138 (caller L115). betterlite-vertex: `body_text` in gemini_embedding_call/execute.rs L29-L39 (callers L117, L177) and `decode_lossy` in google_genai_guardrail/sse.rs L5-L15 (caller L19, `.map(decode_replacing_invalid)`).
 
 
+  After B10169. B10169 (todo, its flow running now) makes guardrails' private `decode_replacing_invalid` in guardrail_message_scope/stream_chunk_events.rs (L17-L27 on main, called at L12) public, adds `stream_item_value` beside it and deletes the server's two copies, `utf8_replacing_invalid` in guardrails/anthropic_translation/sse_events.rs L36-L46 (called at L62) and `decoded_text` in process_stream/unended.rs L17-L27 (called at L32), pointing their callers at the guardrails function. That function is then one more copy of the home: it goes, the calls in stream_chunk_events.rs (the events reader at L12 and stream_item_value) call the home, and every server caller B10169 left imports the home instead. Read the three files as B10169 merged them, not at the main lines above.
+
+
   Fuzz targets. The `lossy_text` copies in crates/betterlite-logging/fuzz/fuzz_targets/passthrough_upstream_usage.rs (L14, L19-L28), crates/betterlite-mcp/fuzz/fuzz_targets/mcp_sealed_code.rs (L23, L29-L38) and sso_assertion_decode.rs (L8, L20-L29) go and the targets call the home.
 
 
@@ -47,6 +50,7 @@ scope:
     - crates/betterlite-guardrails/src/hiddenlayer/hiddenlayer_authentication/detection.rs
     - crates/betterlite-guardrails/src/hiddenlayer/hiddenlayer_authentication/token.rs
     - crates/betterlite-guardrails/src/panw_prisma_airs/hooks/streaming/raw.rs
+    - crates/betterlite-guardrails/src/guardrail_message_scope/stream_chunk_events.rs
     - crates/betterlite-harness/src/cli_handler.rs
     - crates/betterlite-harness/src/cli_handler/io.rs
     - crates/betterlite-harness/src/cli_handler/tests.rs
@@ -99,6 +103,8 @@ scope:
     - crates/betterlite-server/fuzz/fuzz_targets/mcp_routing_peek.rs
     - crates/betterlite-server/src/pass_through_logging/tinyfish/sse.rs
     - crates/betterlite-server/src/mcp/debug/preview.rs
+    - crates/betterlite-server/src/guardrails/anthropic_translation/sse_events.rs
+    - crates/betterlite-server/src/guardrails/anthropic_translation/process_stream/unended.rs
     - crates/betterlite-tokenizer/src/engine/tiktoken.rs
     - crates/betterlite-vertex/src/gemini_embedding_call/execute.rs
     - crates/betterlite-vertex/src/google_genai_guardrail/sse.rs
@@ -157,12 +163,15 @@ checks:
         crates/betterlite-server/src/api/request_form.rs crates/betterlite-server/src/mcp/transport_checks/peek.rs
         crates/betterlite-server/src/pass_through_logging/tinyfish/sse.rs crates/betterlite-server/src/mcp/debug/preview.rs
         crates/betterlite-tokenizer/src/engine/tiktoken.rs crates/betterlite-vertex/src/gemini_embedding_call/execute.rs
-        crates/betterlite-vertex/src/google_genai_guardrail/sse.rs)"
+        crates/betterlite-vertex/src/google_genai_guardrail/sse.rs
+        crates/betterlite-guardrails/src/guardrail_message_scope/stream_chunk_events.rs
+        crates/betterlite-server/src/guardrails/anthropic_translation/sse_events.rs
+        crates/betterlite-server/src/guardrails/anthropic_translation/process_stream/unended.rs)"
         && test ! -e crates/betterlite-guardrails/src/headroom/text.rs
         && test -z "$(grep -n 'fn decode_text' crates/betterlite-openai/src/aleph_alpha/lines.rs)"
     - id: no-imports
       why: A caller still imports one of the deleted public copies.
-      run: test -z "$(grep -rnE 'payload::decode_text|aleph_alpha::lines::[{]?[^;]*decode_text|lossy_utf8|headroom::text' crates --include=*.rs)"
+      run: test -z "$(grep -rnE 'payload::decode_text|aleph_alpha::lines::[{]?[^;]*decode_text|lossy_utf8|headroom::text|stream_chunk_events::[{]?[^;]*decode_replacing_invalid' crates --include=*.rs)"
     - id: manifests
       why: A crate that now calls the home does not list betterlite-models.
       run: grep -q '^betterlite-models' crates/betterlite-proxy/Cargo.toml && grep -q '^betterlite-models' crates/betterlite-mcp/fuzz/Cargo.toml && grep -q '^betterlite-models' crates/betterlite-provider/fuzz/Cargo.toml
@@ -188,8 +197,8 @@ checks:
       why: A MAI image error message changed.
       run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/^mai_images::/)'
     - id: guardrails-tests
-      why: A Headroom, HiddenLayer or Prisma AIRS body or stream line reads differently.
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^(headroom|hiddenlayer|panw_prisma_airs)/)'
+      why: A Headroom, HiddenLayer, Prisma AIRS or stream chunk body or line reads differently.
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^(headroom|hiddenlayer|panw_prisma_airs|guardrail_message_scope::stream_chunk_events)/)'
     - id: harness-tests
       why: A CLI harness tail line or a sandbox stdout or stderr text changed.
       run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^(cli_handler|sandbox::(docker|local))::/)'
@@ -212,8 +221,8 @@ checks:
       why: An A2A stream line decodes differently, or its corpus replay broke.
       run: cargo nextest run --locked -p betterlite-proxy --no-tests=fail -E 'test(/^agent_endpoints::a2a_stream::/)'
     - id: server-tests
-      why: A form field, an MCP routing peek, a TinyFish run id or an MCP debug preview reads differently.
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^(api::request_form|mcp::transport_checks|pass_through_logging::tinyfish|mcp::debug)::/)'
+      why: A form field, an MCP routing peek, a TinyFish run id, an MCP debug preview or an Anthropic guardrail stream frame reads differently.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^(api::request_form|mcp::transport_checks|pass_through_logging::tinyfish|mcp::debug|guardrails::anthropic_translation)::/)'
     - id: tokenizer-tests
       why: A tiktoken decode changed.
       run: cargo nextest run --locked -p betterlite-tokenizer --no-tests=fail -E 'test(/^engine::/)'
@@ -223,13 +232,14 @@ checks:
 oracle_cases: []
 deviations: []
 out_of_scope:
-  - "B10169 (open plan PR https://github.com/betterlite-ai/betterlite/pull/3351) owns the three copies in its files: guardrails guardrail_message_scope/stream_chunk_events.rs L17-L27 decode_replacing_invalid, server guardrails/anthropic_translation/sse_events.rs L36-L46 utf8_replacing_invalid and process_stream/unended.rs L17-L27 decoded_text."
+  - "B10169's StreamItem move, stream_item_value and the server's raw-frame adapters stay as B10169 builds them; this task only swaps the decoder they call."
   - "B10181 fixes the ten copies that decode differently from Python: the seven that cut at the first invalid byte, the Latin-1 fallback in http's agents_create_read.rs, the dropped bytes in cli's commands/debug/fetch.rs and the BOM sniffing in openai's image_variations/request.rs."
   - "Decoders with another error handler stay: errors=\"ignore\" in core's messages_stream_restamp/python_text.rs L49-L77 and rag's valkey_vector_store/wire.rs L113-L121, the strict reads in guardrails' presidio_analysis/body.rs, presidio_actions/anonymize.rs and anthropic_sse/sse_stream.rs, and bedrock's charset-aware file_content.rs L128-L162."
   - "Incremental decoders stay: aleph_alpha's LineDecoder and decode_chunk, server's sse_data_generator, provider's oci_stream split_text carry and bytez_stream_call decode."
   - "The 'N bytes that are not UTF-8' readers across the workspace refuse instead of decoding, as their deviation rows say, and are not copies of this decoder."
   - "The plain String::from_utf8_lossy calls in tools/oracle helpers run under the oracle group's crate-wide expect and stay, and test-only copies (mcp sso_assertions/assertion/tests.rs L94, logging passthrough_logging_state/tests/support.rs L379) are not touched."
 pitfalls:
+  - "B10169 lands first and rewrites sse_events.rs and unended.rs, so the server call sites are wherever its merged code calls betterlite_guardrails' decode_replacing_invalid, and its no-copies grep for utf8_replacing_invalid and decoded_text must stay empty."
   - "auth_pubsub's repaired_text borrows valid input through a Cow; the home always allocates, which is fine because the message is already bounded by MAX_MESSAGE_BYTES, so don't add a Cow variant to the home."
   - "aleph_alpha/lines.rs keeps decode_chunk and the encoding_rs import for LineDecoder; only the one-shot decode_text goes."
   - "request_form.rs pushes the decoded escape run into a String that already holds Latin-1 characters, so the call stays a push_str at both places and the Latin-1 bytes in between are not decoded."
