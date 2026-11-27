@@ -27,7 +27,7 @@ use super::super::error::SdkHttpError;
 use super::super::result::kinds::SdkResult;
 use super::super::result::{Failure, Nullable};
 use super::support::{Assets, CaseRegistry, Source, logging_state, registry_of, source};
-use super::{Call, CreateArgs, ListArgs, Mode, Operation, Outcome, Run, RunOutcome};
+use super::{Call, Mode, Operation, Outcome, Run, RunOutcome};
 
 pub(super) async fn execute(
     call: &Call,
@@ -77,7 +77,7 @@ fn file_service<'config, 'assets>(
         None,
     );
     Service {
-        config: StatusCheckedFilesConfig::new(provider),
+        config: StatusCheckedFilesConfig { inner: provider },
         source: origin,
         assets,
     }
@@ -102,11 +102,33 @@ async fn run_once(
     let answer = match run.operation {
         Operation::Create => {
             let args = run.create.as_ref().ok_or_else(|| missing("create"))?;
-            create_run(run, args, service, deps, &kwargs).await
+            let request = CreateFileRequest {
+                transport: transport(run, &kwargs),
+                file_id: &args.file_id,
+                attributes: args.attributes.as_ref(),
+                chunking_strategy: args.chunking_strategy.as_ref(),
+            };
+            let files = VectorFileCreates { service, deps };
+            match run.mode {
+                Mode::Sync => files.create(&request).await,
+                Mode::Asynchronous => files.acreate(&request).await,
+            }
         }
         Operation::List => {
             let args = run.list.as_ref().ok_or_else(|| missing("list"))?;
-            list_run(run, args, service, deps, &kwargs).await
+            let request = ListFileRequest {
+                transport: transport(run, &kwargs),
+                after: args.after.as_deref(),
+                before: args.before.as_deref(),
+                filter: args.filter.as_deref(),
+                limit: args.limit,
+                order: args.order.as_deref(),
+            };
+            let files = VectorFileCreates { service, deps };
+            match run.mode {
+                Mode::Sync => files.list(&request).await,
+                Mode::Asynchronous => files.alist(&request).await,
+            }
         }
     };
     let failure = answer.as_ref().err().map(project);
@@ -124,47 +146,6 @@ const fn call_type(operation: Operation) -> &'static str {
     }
 }
 
-async fn create_run(
-    run: &Run,
-    args: &CreateArgs,
-    service: &Service<'_, '_>,
-    deps: VectorFileCreateDeps<'_>,
-    kwargs: &IndexMap<String, Json>,
-) -> Result<Json, SdkFailure> {
-    let request = CreateFileRequest {
-        transport: transport(run, kwargs),
-        file_id: &args.file_id,
-        attributes: args.attributes.as_ref(),
-        chunking_strategy: args.chunking_strategy.as_ref(),
-    };
-    let files = VectorFileCreates { service, deps };
-    match run.mode {
-        Mode::Sync => files.create(&request).await,
-        Mode::Asynchronous => files.acreate(&request).await,
-    }
-}
-
-async fn list_run(
-    run: &Run,
-    args: &ListArgs,
-    service: &Service<'_, '_>,
-    deps: VectorFileCreateDeps<'_>,
-    kwargs: &IndexMap<String, Json>,
-) -> Result<Json, SdkFailure> {
-    let request = ListFileRequest {
-        transport: transport(run, kwargs),
-        after: args.after.as_deref(),
-        before: args.before.as_deref(),
-        filter: args.filter.as_deref(),
-        limit: args.limit,
-        order: args.order.as_deref(),
-    };
-    let files = VectorFileCreates { service, deps };
-    match run.mode {
-        Mode::Sync => files.list(&request).await,
-        Mode::Asynchronous => files.alist(&request).await,
-    }
-}
 fn transport<'run>(run: &'run Run, kwargs: &'run IndexMap<String, Json>) -> TransportRequest<'run> {
     TransportRequest {
         vector_store_id: &run.vector_store_id,

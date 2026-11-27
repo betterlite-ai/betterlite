@@ -112,51 +112,44 @@ def optionals(
     }
 
 
-def create_options(
+def arguments(
     run: Run, api_base: str, logging_obj: Logging
 ) -> dict[str, JsonValue | Logging]:
-    args = run.create
-    if args is None:
-        raise ValueError("a create run carries no create arguments")
     options = optionals(run, api_base, logging_obj)
     options["vector_store_id"] = run.vector_store_id
-    options["file_id"] = args.file_id
-    options["attributes"] = (
-        None
-        if args.attributes is None
-        else dict[str, JsonValue](args.attributes)
-    )
-    options["chunking_strategy"] = args.chunking_strategy
-    options["extra_body"] = run.extra_body
-    return options
-
-
-def list_options(
-    run: Run, api_base: str, logging_obj: Logging
-) -> dict[str, JsonValue | Logging]:
-    args = run.list
-    if args is None:
+    if run.operation == "create":
+        create = run.create
+        if create is None:
+            raise ValueError("a create run carries no create arguments")
+        options["file_id"] = create.file_id
+        options["attributes"] = (
+            None
+            if create.attributes is None
+            else dict[str, JsonValue](create.attributes)
+        )
+        options["chunking_strategy"] = create.chunking_strategy
+        options["extra_body"] = run.extra_body
+        return options
+    listing = run.list
+    if listing is None:
         raise ValueError("a list run carries no list arguments")
-    options = optionals(run, api_base, logging_obj)
-    options["vector_store_id"] = run.vector_store_id
-    options["after"] = args.after
-    options["before"] = args.before
-    options["filter"] = args.filter_status
-    options["limit"] = args.limit
-    options["order"] = args.order
+    options["after"] = listing.after
+    options["before"] = listing.before
+    options["filter"] = listing.filter_status
+    options["limit"] = listing.limit
+    options["order"] = listing.order
     return options
 
 
 def answer(run: Run, api_base: str, logging_obj: Logging) -> JsonValue:
+    options = arguments(run, api_base, logging_obj)
     if run.operation == "create":
-        options = create_options(run, api_base, logging_obj)
         if run.mode == "async":
             return JSON.validate_python(asyncio.run(FILES.acreate(**options)))
         return JSON.validate_python(FILES.create(**options))
-    listing = list_options(run, api_base, logging_obj)
     if run.mode == "async":
-        return JSON.validate_python(asyncio.run(FILES.alist(**listing)))
-    return JSON.validate_python(FILES.list(**listing))
+        return JSON.validate_python(asyncio.run(FILES.alist(**options)))
+    return JSON.validate_python(FILES.list(**options))
 
 
 def logging_fixture(run: Run) -> Logging:
