@@ -22,6 +22,7 @@ use crate::auth::auth_tag_budgets::TagBudgetStageInput;
 use crate::auth::auth_tenant_budgets::TenantBudgetStageInput;
 use crate::auth::entity_model_access::EntityModelStageInput;
 use crate::auth::jwt_keys::{self, JwtKeyStageInput};
+use crate::auth::jwt_verification::{self, JwtVerificationStageInput};
 use crate::auth::master_key_stage;
 use crate::auth::model_grant_intersection::{self, GrantStageInput};
 use crate::auth::organization_route_policy::{self, OrganizationPolicyStageInput};
@@ -35,6 +36,7 @@ use crate::error_body::AuthenticationFailure;
 pub enum AuthBackend {
     AuthKeyLookup,
     JwtKeys,
+    JwtVerification,
     MasterKey,
     TrustedNetwork,
     AuthRequestPolicy,
@@ -59,6 +61,7 @@ pub enum AuthBackend {
 // B052 owns the stage order; the JWT fetch runs before the master-key comparison, as in LiteLLM.
 pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
     AuthBackend::JwtKeys,
+    AuthBackend::JwtVerification,
     AuthBackend::AuthKeyLookup,
     MasterKey,
     AuthBackend::TrustedNetwork,
@@ -86,6 +89,7 @@ pub enum StageInput {
     AuthKeyLookup(Box<KeyLookupStageInput>),
     Authenticated(Box<AuthContext>),
     JwtKeys(Box<JwtKeyStageInput>),
+    JwtVerification(Box<JwtVerificationStageInput>),
     MasterKey(Option<SecretString>),
     TrustedNetwork(Box<TrustedNetworkStageInput>),
     AuthRequestPolicy(Box<AuthRequestPolicyStageInput>),
@@ -130,6 +134,7 @@ pub trait BudgetAdmission {
 
 pub(crate) enum StageFailure {
     JwtKeys(Box<ProxyException>),
+    JwtVerification(Box<ProxyException>),
     Authentication(Box<AuthenticationFailure>),
     KeyLookup(Box<ProxyException>),
     ModelAccess(Box<ModelAccessRejection>),
@@ -172,6 +177,7 @@ impl StageInput {
         match self {
             Self::AuthKeyLookup(_) | Self::Authenticated(_) => AuthBackend::AuthKeyLookup,
             Self::JwtKeys(_) => AuthBackend::JwtKeys,
+            Self::JwtVerification(_) => AuthBackend::JwtVerification,
             Self::MasterKey(_) => MasterKey,
             Self::TrustedNetwork(_) => AuthBackend::TrustedNetwork,
             Self::AuthRequestPolicy(_) => AuthBackend::AuthRequestPolicy,
@@ -207,6 +213,7 @@ pub(crate) fn dispatch(
         StageInput::AuthKeyLookup(_) => Err(StageFailure::from(AuthenticationFailure::Missing)),
         Authenticated(context) => Ok((**context).clone()),
         StageInput::JwtKeys(_) => jwt_keys::run_stage(input),
+        StageInput::JwtVerification(_) => jwt_verification::run_stage(input),
         StageInput::MasterKey(_) => master_key_stage(input, master_key).map_err(StageFailure::from),
         StageInput::TrustedNetwork(stage) => trusted_network::run_stage(stage),
         StageInput::AuthRequestPolicy(stage) => {

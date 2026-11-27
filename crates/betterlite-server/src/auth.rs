@@ -110,6 +110,7 @@ fn stage_input(
         AuthBackend::AuthKeyLookup => Ok(auth_key_lookup::lookup_stage_input(request)),
         AuthBackend::MasterKey => Ok(auth_key_lookup::master_stage_input(request, authenticated)),
         AuthBackend::JwtKeys => Ok(jwt_keys::stage_input(request)),
+        AuthBackend::JwtVerification => Ok(jwt_verification::stage_input(request)),
         AuthBackend::TrustedNetwork => trusted_network::stage_input(request, authenticated),
         AuthBackend::AuthRequestPolicy => Ok(StageInput::AuthRequestPolicy(Box::new(
             auth_request_policy::stage_input(request, authenticated, body)?,
@@ -206,6 +207,7 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
     match input {
         StageInput::AuthKeyLookup(stage) => auth_key_lookup::prefetch(*stage).await,
         StageInput::JwtKeys(stage) => jwt_keys::prefetched(*stage).await,
+        StageInput::JwtVerification(stage) => jwt_verification::prefetched(*stage).await,
         StageInput::AuthTagBudgets(stage) => auth_tag_budgets::prefetched(stage).await,
         StageInput::AuthKeyBudgets(stage) => auth_key_budgets::prefetched(stage).await,
         StageInput::TeamBudgetAdmission(stage) => team_budget_admission::prefetched(stage).await,
@@ -228,7 +230,6 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
         | StageInput::AuthPolicySupport(_)) => Ok(other),
     }
 }
-
 fn master_key_stage(
     input: &StageInput,
     master_key: &SecretString,
