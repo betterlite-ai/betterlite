@@ -5,31 +5,25 @@ mod tests;
 use betterlite_db::stored_cipher::DbCipher;
 
 use self::complete::completed;
-use self::describe::described_reply;
+use self::describe::describe_opened_flow;
+use crate::gateway_authorize::no_cache_headers;
 use crate::gateway_authorize::oauth_error;
-use crate::gateway_authorize::reply::{
-    ConnectFlowDescription, ConnectFlowState, FlowTokenSource, GatewayReply, RequestView,
-};
-use crate::gateway_authorize::scope::{FlowTarget, flow_target};
-use crate::gateway_authorize::url_parts::{flow_cookie_name, origin_only};
+use crate::gateway_authorize::reply::{FlowTokenSource, GatewayReply, RequestView};
+use crate::gateway_authorize::url_parts::flow_cookie_name;
 use crate::gateway_dcr::contracts::{
     CONNECT_FLOW_DEBUG_KEY,
-    DB_UNAVAILABLE_DESCRIPTION,
     // ast-grep-ignore: no-long-names
     MANUAL_DELIVERY_AUTH_CODE_TTL_SECONDS,
 };
 use crate::gateway_dcr::models::ConnectFlow;
 use crate::gateway_dcr::oauth_error::OauthError;
 use crate::gateway_dcr::oauth_error::OauthErrorCode::{
-    AccessDenied, InvalidRequest, LoginRequired, TemporarilyUnavailable,
+    AccessDenied, InvalidRequest, LoginRequired,
 };
-use crate::gateway_dcr::ports::{
-    LookupServerReachability, LookupVendorCredential, VendorCredentialState,
-};
+use crate::gateway_dcr::ports::{LookupServerReachability, LookupVendorCredential};
 use crate::gateway_dcr::sealed::open_sealed;
 use crate::gateway_dcr::single_use::{ClaimBackend, SingleUseGuard};
 use crate::registry::servers::ServerRegistry;
-use crate::server_record::MCPServer;
 
 const UNKNOWN_FLOW_DESCRIPTION: &str = "unknown or expired connect flow";
 
@@ -90,61 +84,6 @@ pub fn open_flow_for(
     Ok(flow)
 }
 
-pub async fn describe_opened_flow<V, R>(
-    flow: &ConnectFlow,
-    ports: &ConnectPorts<'_, V, R>,
-) -> Result<ConnectFlowDescription, OauthError>
-where
-    V: LookupVendorCredential + ?Sized,
-    R: LookupServerReachability + ?Sized,
-{
-    let target = flow_target(ports.registry, flow, ports.reachability).await;
-    let origin = origin_only(&flow.redirect_uri)?;
-    match target {
-        FlowTarget::Interactive(server) => {
-            let connected = match ports
-                .vendor
-                .lookup(&flow.user_id, &server.fields.server_id)
-                .await
-            {
-                VendorCredentialState::Unavailable => {
-                    return Err(oauth_error(
-                        503,
-                        TemporarilyUnavailable,
-                        DB_UNAVAILABLE_DESCRIPTION,
-                    ));
-                }
-                VendorCredentialState::Present => true,
-                VendorCredentialState::Absent => false,
-            };
-            Ok(flow_description(
-                ConnectFlowState::Interactive,
-                origin,
-                Some(server),
-                Some(connected),
-            ))
-        }
-        FlowTarget::M2m(server) => Ok(flow_description(
-            ConnectFlowState::M2m,
-            origin,
-            Some(server),
-            Some(true),
-        )),
-        FlowTarget::Unscoped => Ok(flow_description(
-            ConnectFlowState::Unscoped,
-            origin,
-            None,
-            None,
-        )),
-        FlowTarget::Stale => Ok(flow_description(
-            ConnectFlowState::Stale,
-            origin,
-            None,
-            None,
-        )),
-    }
-}
-
 pub async fn describe_connect_flow<V, R>(
     call: &ConnectFlowCall<'_>,
     ports: &ConnectPorts<'_, V, R>,
@@ -154,8 +93,21 @@ where
     V: LookupVendorCredential + ?Sized,
     R: LookupServerReachability + ?Sized,
 {
-    match described_reply(call, ports, cipher).await {
-        Ok(reply) => reply,
+    let flow = match open_flow_for(
+        call.view,
+        call.handle,
+        call.session_user_id,
+        call.now,
+        cipher,
+    ) {
+        Ok(flow) => flow,
+        Err(error) => return GatewayReply::Error(error),
+    };
+    match describe_opened_flow(&flow, ports).await {
+        Ok(description) => GatewayReply::Json {
+            body: Box::new(description),
+            headers: no_cache_headers(),
+        },
         Err(error) => GatewayReply::Error(error),
     }
 }
@@ -173,37 +125,9 @@ where
     R: LookupServerReachability + ?Sized,
 {
     match completed(call, ports, cipher, guard, tokens).await {
-        Ok(reply) => reply,
         Err(error) => GatewayReply::Error(error),
+        Ok(reply) => reply,
     }
-}
-
-fn flow_description(
-    state: ConnectFlowState,
-    client_origin: String,
-    server: Option<&MCPServer>,
-    connected: Option<bool>,
-) -> ConnectFlowDescription {
-    ConnectFlowDescription {
-        state,
-        client_origin,
-        server_id: server.map(|server| server.fields.server_id.clone()),
-        server_name: server.and_then(server_display_name),
-        connected,
-    }
-}
-
-fn server_display_name(server: &MCPServer) -> Option<String> {
-    let fields = &server.fields;
-    [
-        fields.server_name.as_deref(),
-        fields.alias.as_deref(),
-        Some(fields.name.as_str()),
-    ]
-    .into_iter()
-    .flatten()
-    .find(|value| !value.is_empty())
-    .map(str::to_owned)
 }
 
 #[must_use]

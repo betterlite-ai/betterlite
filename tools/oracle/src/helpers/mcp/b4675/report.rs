@@ -1,7 +1,5 @@
 use betterlite_mcp::gateway_authorize::contract::NativeClientAuthContract;
-use betterlite_mcp::gateway_authorize::reply::{
-    ConnectFlowDescription, FlowCookie, FlowCookieDeletion, GatewayReply,
-};
+use betterlite_mcp::gateway_authorize::reply::{FlowCookie, FlowCookieDeletion, GatewayReply};
 use betterlite_mcp::gateway_dcr::oauth_error::OauthError;
 use betterlite_mcp::gateway_dcr::oauth_error::OauthErrorResponse as _;
 use serde_json::{Value, json};
@@ -44,78 +42,48 @@ fn parts(reply: GatewayReply) -> (u16, Value, Vec<(String, String)>, Value, Valu
             location,
             set_cookie,
             delete_cookie,
-        } => redirect_parts(&location, set_cookie.as_deref(), delete_cookie.as_deref()),
+        } => (
+            303,
+            Value::String(redact(&location)),
+            Vec::new(),
+            Value::Null,
+            cookie_text(set_cookie.as_deref(), delete_cookie.as_deref()),
+        ),
         GatewayReply::Html {
             body,
             headers,
             set_cookie,
             delete_cookie,
-        } => html_parts(
-            &body,
+        } => (
+            200,
+            Value::Null,
             headers,
-            set_cookie.as_deref(),
-            delete_cookie.as_deref(),
+            Value::String(redact(&body)),
+            cookie_text(set_cookie.as_deref(), delete_cookie.as_deref()),
         ),
-        GatewayReply::Json { body, headers } => json_parts(&body, headers),
-        GatewayReply::Error(error) => error_parts(&error),
+        GatewayReply::Json { body, headers } => (
+            200,
+            Value::Null,
+            headers,
+            Value::String(serde_json::to_string(&body).unwrap_or_default()),
+            Value::Null,
+        ),
+        GatewayReply::Error(error) => (
+            error.status,
+            Value::Null,
+            error_headers(&error),
+            Value::String(serde_json::to_string(&error.body()).unwrap_or_default()),
+            Value::Null,
+        ),
     }
 }
 
-fn redirect_parts(
-    location: &str,
-    set_cookie: Option<&FlowCookie>,
-    delete_cookie: Option<&FlowCookieDeletion>,
-) -> (u16, Value, Vec<(String, String)>, Value, Value) {
-    (
-        303,
-        Value::String(redact(location)),
-        Vec::new(),
-        Value::Null,
-        cookie_text(set_cookie, delete_cookie),
-    )
-}
-
-fn html_parts(
-    body: &str,
-    headers: Vec<(String, String)>,
-    set_cookie: Option<&FlowCookie>,
-    delete_cookie: Option<&FlowCookieDeletion>,
-) -> (u16, Value, Vec<(String, String)>, Value, Value) {
-    (
-        200,
-        Value::Null,
-        headers,
-        Value::String(redact(body)),
-        cookie_text(set_cookie, delete_cookie),
-    )
-}
-
-fn json_parts(
-    body: &ConnectFlowDescription,
-    headers: Vec<(String, String)>,
-) -> (u16, Value, Vec<(String, String)>, Value, Value) {
-    (
-        200,
-        Value::Null,
-        headers,
-        Value::String(serde_json::to_string(body).unwrap_or_default()),
-        Value::Null,
-    )
-}
-
-fn error_parts(error: &OauthError) -> (u16, Value, Vec<(String, String)>, Value, Value) {
-    let headers = error
+fn error_headers(error: &OauthError) -> Vec<(String, String)> {
+    error
         .headers()
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
-        .collect();
-    (
-        error.status,
-        Value::Null,
-        headers,
-        Value::String(serde_json::to_string(&error.body()).unwrap_or_default()),
-        Value::Null,
-    )
+        .collect()
 }
 
 pub(super) fn contract_report(name: &str, contract: &NativeClientAuthContract) -> Value {
@@ -134,7 +102,7 @@ fn header_pairs(headers: &[(String, String)]) -> Value {
     for &(name, _value) in &PAGE_HEADERS {
         if let Some((_found, value)) = headers
             .iter()
-            .find(|(header, _value)| header.eq_ignore_ascii_case(name))
+            .find(|(header, _cell)| header.eq_ignore_ascii_case(name))
         {
             pairs.push(json!([name, value]));
         }
@@ -162,7 +130,7 @@ fn redact(text: &str) -> String {
     let Some((head, rest)) = text.split_once("code=") else {
         return text.to_owned();
     };
-    let tail = rest.split_once('&').map_or("", |(_code, rest)| rest);
+    let tail = rest.split_once('&').map_or("", |(_code, after)| after);
     let mut redacted = format!("{head}code=<code>");
     if !tail.is_empty() {
         redacted.push('&');

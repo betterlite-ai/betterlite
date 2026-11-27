@@ -37,6 +37,13 @@ struct Prepared {
     client_id: String,
 }
 
+enum Call<'call> {
+    Aggregate(AggregateAuthorize<'call>),
+    Native(NativeClientAuthorize<'call>),
+    Describe(ConnectFlowCall<'call>),
+    Complete(CompleteFlowRequest<'call>),
+}
+
 impl Scenario {
     pub(super) fn new(input: &Input) -> Result<Self, Box<HelperError>> {
         let cipher = cipher();
@@ -69,7 +76,7 @@ impl Scenario {
             tokens: ScriptedTokens::new(&step.tokens),
             client_id: self.client_id(step),
         };
-        step_report(&step.name, self.reply(kind, step, &prepared))
+        step_report(&step.name, self.run(kind, step, &prepared))
     }
 
     fn client_id(&self, step: &Step) -> String {
@@ -80,81 +87,32 @@ impl Scenario {
         self.clients.get(index).cloned().unwrap_or_default()
     }
 
-    fn reply(&self, kind: ReplyKind, step: &Step, prepared: &Prepared) -> GatewayReply {
-        match kind {
-            ReplyKind::Aggregate => self.aggregate(step, prepared),
-            ReplyKind::Native => self.native(step, prepared),
-            ReplyKind::Describe => self.describe(step, prepared),
-            ReplyKind::Complete => self.complete(step, prepared),
+    fn run(&self, kind: ReplyKind, step: &Step, prepared: &Prepared) -> GatewayReply {
+        let request = authorize_request(&prepared.client_id, step);
+        match call_for(kind, step, prepared, &request) {
+            Call::Aggregate(call) => {
+                aggregate_authorize(&call, &self.registry, &self.cipher, &prepared.tokens)
+            }
+            Call::Native(call) => self.runtime.block_on(native_client_authorize(
+                &call,
+                &prepared.answers,
+                &prepared.answers,
+                &self.cipher,
+                &prepared.tokens,
+            )),
+            Call::Describe(call) => self.runtime.block_on(describe_connect_flow(
+                &call,
+                &self.ports(prepared),
+                &self.cipher,
+            )),
+            Call::Complete(flow_request) => self.runtime.block_on(complete_connect_flow(
+                &flow_request,
+                &self.ports(prepared),
+                &self.cipher,
+                &self.guard,
+                &prepared.tokens,
+            )),
         }
-    }
-
-    fn aggregate(&self, step: &Step, prepared: &Prepared) -> GatewayReply {
-        let request = authorize_request(&prepared.client_id, step);
-        aggregate_authorize(
-            &AggregateAuthorize {
-                view: &prepared.view,
-                request: &request,
-                session_user_id: step.user.as_deref(),
-                resource: step.resource.as_deref(),
-                now: step.now,
-            },
-            &self.registry,
-            &self.cipher,
-            &prepared.tokens,
-        )
-    }
-
-    fn native(&self, step: &Step, prepared: &Prepared) -> GatewayReply {
-        let request = authorize_request(&prepared.client_id, step);
-        let call = NativeClientAuthorize {
-            view: &prepared.view,
-            request: &request,
-            session_user_id: step.user.as_deref(),
-            now: step.now,
-        };
-        self.runtime.block_on(native_client_authorize(
-            &call,
-            &prepared.answers,
-            &prepared.answers,
-            &self.cipher,
-            &prepared.tokens,
-        ))
-    }
-
-    fn describe(&self, step: &Step, prepared: &Prepared) -> GatewayReply {
-        let ports = self.ports(prepared);
-        let call = ConnectFlowCall {
-            view: &prepared.view,
-            handle: &step.handle,
-            session_user_id: step.user.as_deref(),
-            now: step.now,
-        };
-        self.runtime
-            .block_on(describe_connect_flow(&call, &ports, &self.cipher))
-    }
-
-    fn complete(&self, step: &Step, prepared: &Prepared) -> GatewayReply {
-        let ports = self.ports(prepared);
-        let call = ConnectFlowCall {
-            view: &prepared.view,
-            handle: &step.handle,
-            session_user_id: step.user.as_deref(),
-            now: step.now,
-        };
-        let form = FlowForm {
-            delivery: step.delivery.as_deref(),
-            team_id: step.team_id.as_deref(),
-            decision: step.decision.as_deref(),
-        };
-        let request = CompleteFlowRequest { call, form };
-        self.runtime.block_on(complete_connect_flow(
-            &request,
-            &ports,
-            &self.cipher,
-            &self.guard,
-            &prepared.tokens,
-        ))
     }
 
     fn ports<'scenario>(
@@ -166,6 +124,51 @@ impl Scenario {
             vendor: &prepared.answers,
             reachability: &prepared.answers,
         }
+    }
+}
+
+fn call_for<'call>(
+    kind: ReplyKind,
+    step: &'call Step,
+    prepared: &'call Prepared,
+    request: &'call AuthorizeRequest<'call>,
+) -> Call<'call> {
+    match kind {
+        ReplyKind::Aggregate => Call::Aggregate(AggregateAuthorize {
+            view: &prepared.view,
+            request,
+            session_user_id: step.user.as_deref(),
+            resource: step.resource.as_deref(),
+            now: step.now,
+        }),
+        ReplyKind::Native => Call::Native(NativeClientAuthorize {
+            view: &prepared.view,
+            request,
+            session_user_id: step.user.as_deref(),
+            now: step.now,
+        }),
+        ReplyKind::Describe => Call::Describe(flow_call(step, prepared)),
+        ReplyKind::Complete => Call::Complete(CompleteFlowRequest {
+            call: flow_call(step, prepared),
+            form: flow_form(step),
+        }),
+    }
+}
+
+fn flow_call<'call>(step: &'call Step, prepared: &'call Prepared) -> ConnectFlowCall<'call> {
+    ConnectFlowCall {
+        view: &prepared.view,
+        handle: &step.handle,
+        session_user_id: step.user.as_deref(),
+        now: step.now,
+    }
+}
+
+fn flow_form(step: &Step) -> FlowForm<'_> {
+    FlowForm {
+        delivery: step.delivery.as_deref(),
+        team_id: step.team_id.as_deref(),
+        decision: step.decision.as_deref(),
     }
 }
 

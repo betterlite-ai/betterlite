@@ -1,13 +1,15 @@
 use betterlite_db::stored_cipher::DbCipher;
 
 use super::{
-    CompleteFlowRequest, ConnectFlowCall, ConnectFlowState, ConnectPorts, FlowForm,
-    manual_delivery_page, open_flow_for,
+    CompleteFlowRequest, ConnectFlowCall, ConnectPorts, FlowForm, manual_delivery_page,
+    open_flow_for,
 };
 use crate::gateway_authorize::is_loopback_uri;
 use crate::gateway_authorize::no_cache_headers;
 use crate::gateway_authorize::oauth_error;
-use crate::gateway_authorize::reply::{FlowCookieDeletion, FlowTokenSource, GatewayReply};
+use crate::gateway_authorize::reply::{
+    ConnectFlowState, FlowCookieDeletion, FlowTokenSource, GatewayReply,
+};
 use crate::gateway_authorize::url_parts::{
     append_query_params, cookie_path_and_secure, flow_cookie_name,
 };
@@ -100,7 +102,7 @@ where
     V: LookupVendorCredential + ?Sized,
     R: LookupServerReachability + ?Sized,
 {
-    let opened = super::describe_opened_flow(flow, ports).await?;
+    let opened = super::describe::describe_opened_flow(flow, ports).await?;
     if opened.state == ConnectFlowState::Stale {
         return Err(oauth_error(
             400,

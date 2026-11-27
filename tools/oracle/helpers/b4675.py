@@ -5,7 +5,7 @@ import os
 import secrets
 from collections.abc import Sequence
 from datetime import UTC, datetime, tzinfo
-from typing import ClassVar, Final, Generic, Literal, Self, TypeVar, TypedDict
+from typing import ClassVar, Final, Generic, Literal, Self, TypedDict, TypeVar
 
 from litellm.caching.dual_cache import DualCache
 from litellm.proxy._experimental.mcp_server import gateway_dcr_flow
@@ -243,7 +243,7 @@ def run_step(
                 request,
                 step["handle"],
                 step["user"],
-                Answer(step["vendor"]),
+                Answer[VendorState](step["vendor"]),
                 Answer(step["reachable"]),
             )
         )
@@ -257,7 +257,7 @@ def run_step(
                 step["delivery"],
                 step["team_id"],
                 step["decision"],
-                Answer(step["vendor"]),
+                Answer[VendorState](step["vendor"]),
                 Answer(step["reachable"]),
             )
         )
