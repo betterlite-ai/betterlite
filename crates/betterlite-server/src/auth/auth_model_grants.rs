@@ -143,7 +143,24 @@ fn stage_failure(error: AgentModelGrantsError) -> StageFailure {
         AgentModelGrantsError::RecurseDepth { model } => {
             StageFailure::ModelAccess(Box::new(ModelAccessRejection::RecurseDepth { model }))
         }
-        AgentModelGrantsError::Entity(entity) => entity_stage_failure(*entity),
+        AgentModelGrantsError::Entity(entity) => match *entity {
+            EntityModelAccessError::Denied(denial) => {
+                StageFailure::ModelAccess(Box::new(ModelAccessRejection::Denied(denial)))
+            }
+            EntityModelAccessError::RecurseDepth { model } => {
+                StageFailure::ModelAccess(Box::new(ModelAccessRejection::RecurseDepth { model }))
+            }
+            EntityModelAccessError::Member(budget) => {
+                StageFailure::AuthModelGrants(Box::new(team_budget_exception(&budget)))
+            }
+            EntityModelAccessError::Project(lookup) => {
+                StageFailure::AuthModelGrants(Box::new(org_lookup_exception(&lookup)))
+            }
+            EntityModelAccessError::TeamRow(row) => {
+                tracing::debug!(error = %row, "the caller team snapshot did not build");
+                StageFailure::AuthModelGrants(Box::new(lookup_exception(&row.to_string())))
+            }
+        },
         AgentModelGrantsError::Ceiling(groups) => {
             StageFailure::AuthModelGrants(Box::new(group_lookup_exception(&groups)))
         }
@@ -151,28 +168,6 @@ fn stage_failure(error: AgentModelGrantsError) -> StageFailure {
         AgentModelGrantsError::Unavailable => StageFailure::AuthModelGrants(Box::new(
             lookup_exception(&AgentModelGrantsError::Unavailable.to_string()),
         )),
-    }
-}
-
-// entity denials keep B747's response fields; the member, organization and team reads are authentication errors
-fn entity_stage_failure(error: EntityModelAccessError) -> StageFailure {
-    match error {
-        EntityModelAccessError::Denied(denial) => {
-            StageFailure::ModelAccess(Box::new(ModelAccessRejection::Denied(denial)))
-        }
-        EntityModelAccessError::RecurseDepth { model } => {
-            StageFailure::ModelAccess(Box::new(ModelAccessRejection::RecurseDepth { model }))
-        }
-        EntityModelAccessError::Member(budget) => {
-            StageFailure::AuthModelGrants(Box::new(team_budget_exception(&budget)))
-        }
-        EntityModelAccessError::Project(lookup) => {
-            StageFailure::AuthModelGrants(Box::new(org_lookup_exception(&lookup)))
-        }
-        EntityModelAccessError::TeamRow(row) => {
-            tracing::debug!(error = %row, "the caller team snapshot did not build");
-            StageFailure::AuthModelGrants(Box::new(lookup_exception(&row.to_string())))
-        }
     }
 }
 
