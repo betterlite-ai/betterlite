@@ -1,12 +1,19 @@
 #![cfg(test)]
 
+use std::sync::{Arc, Mutex, PoisonError};
+
+use betterlite_db::queues::pod_lock::owner::PodId;
+use betterlite_db::queues::pod_lock::{
+    LockCache, LockCacheError, LockScript, NoPodLockEventSink, PodLockManager,
+};
 use betterlite_logging::prometheus_helpers::bounded_series_tracker::{
     BoundedPrometheusSeriesTracker, SeriesLimits,
 };
 use betterlite_logging::prometheus_label_schema::PrometheusLabelSettings;
 use betterlite_prometheus::collector_factory::collector::MetricLike;
+use uuid::Uuid;
 
-use super::{BudgetRefresh, BudgetRefreshLock, initialize_remaining_budget_metrics};
+use super::{BudgetRefresh, BudgetRefreshLock, LOCK_JOB_NAME, initialize_remaining_budget_metrics};
 use crate::prometheus_budget_refresh::counts::CountGauges;
 use crate::prometheus_budget_refresh::source::BudgetPageError;
 use crate::prometheus_budget_refresh::tests::support::{
@@ -198,5 +205,120 @@ async fn a_lock_is_released_after_a_failing_entity() {
             .contains("Error initializing teams budget metrics:"),
         "{}",
         logs.text()
+    );
+}
+
+// A lease store the tests control: free means the next acquire wins, otherwise the stored owner keeps it.
+struct FakeCache {
+    free: bool,
+    owner: Mutex<Option<String>>,
+    deletes: Mutex<Vec<String>>,
+}
+
+impl FakeCache {
+    fn free() -> Self {
+        Self {
+            free: true,
+            owner: Mutex::new(None),
+            deletes: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn held_by(owner: &str) -> Self {
+        Self {
+            free: false,
+            owner: Mutex::new(Some(owner.to_owned())),
+            deletes: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn deletes(&self) -> Vec<String> {
+        self.deletes
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+}
+
+impl LockCache for FakeCache {
+    async fn get_owner(&self, _key: &str) -> Result<Option<Vec<u8>>, LockCacheError> {
+        Ok(self
+            .owner
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+            .map(String::into_bytes))
+    }
+
+    async fn set_owner_if_absent(
+        &self,
+        _key: &str,
+        owner: &str,
+        _ttl_seconds: i64,
+    ) -> Result<bool, LockCacheError> {
+        if self.free {
+            *self.owner.lock().unwrap_or_else(PoisonError::into_inner) = Some(owner.to_owned());
+        }
+        Ok(self.free)
+    }
+
+    async fn delete(&self, key: &str) -> Result<i64, LockCacheError> {
+        self.deletes
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(key.to_owned());
+        Ok(1)
+    }
+
+    fn compare_and_delete_script(&self) -> Option<Arc<dyn LockScript>> {
+        None
+    }
+}
+
+fn pod_id() -> PodId {
+    PodId::try_from(Uuid::new_v4()).unwrap()
+}
+
+fn manager(cache: Arc<FakeCache>) -> PodLockManager<FakeCache> {
+    PodLockManager::new(Some(cache), 60, Arc::new(NoPodLockEventSink), pod_id())
+}
+
+#[tokio::test]
+async fn the_pod_lock_wraps_a_cache_that_grants_the_lease() {
+    let cache = Arc::new(FakeCache::free());
+    let manager = manager(cache.clone());
+
+    assert!(BudgetRefreshLock::has_cache(&manager));
+    assert_eq!(
+        BudgetRefreshLock::acquire_lock(&manager, LOCK_JOB_NAME).await,
+        Some(true)
+    );
+    BudgetRefreshLock::release_lock(&manager, LOCK_JOB_NAME).await;
+    assert_eq!(
+        cache.deletes(),
+        vec![format!("cronjob_lock:{LOCK_JOB_NAME}")]
+    );
+}
+
+#[tokio::test]
+async fn a_pod_lock_without_a_cache_does_nothing() {
+    let manager: PodLockManager<FakeCache> =
+        PodLockManager::new(None, 60, Arc::new(NoPodLockEventSink), pod_id());
+
+    assert!(!BudgetRefreshLock::has_cache(&manager));
+    assert_eq!(
+        BudgetRefreshLock::acquire_lock(&manager, LOCK_JOB_NAME).await,
+        None
+    );
+    BudgetRefreshLock::release_lock(&manager, LOCK_JOB_NAME).await;
+}
+
+#[tokio::test]
+async fn a_pod_lock_held_by_another_pod_is_not_granted() {
+    let manager = manager(Arc::new(FakeCache::held_by("another-pod")));
+
+    assert_eq!(
+        BudgetRefreshLock::acquire_lock(&manager, LOCK_JOB_NAME).await,
+        Some(false)
     );
 }

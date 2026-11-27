@@ -127,6 +127,7 @@ fn a_number_is_not_a_boolean() {
 }
 
 #[rstest]
+#[case::one(Some("1"), 1)]
 #[case::ten(Some("10"), 10)]
 #[case::empty(Some(""), DEFAULT_INTERVAL_MINUTES)]
 #[case::unset(None, DEFAULT_INTERVAL_MINUTES)]

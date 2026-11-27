@@ -1,9 +1,10 @@
 use async_trait::async_trait;
 use betterlite_logging::end_user::EndUserCostTrackingSettings;
 use betterlite_logging::prometheus::budget_gauges::customer::CustomerGaugeContext;
-// ast-grep-ignore: no-long-names
 use betterlite_logging::prometheus::budget_gauges::customer_gate::{
-    budget_gauges_are_noop, customer_budget_metrics_enabled,
+    budget_gauges_are_noop,
+    // ast-grep-ignore: no-long-names
+    customer_budget_metrics_enabled as customer_metrics_enabled,
 };
 use betterlite_logging::prometheus::budget_gauges::gauge::EntityBudgetGauges;
 use betterlite_logging::prometheus::budget_gauges::lists::BudgetTableSnapshot;
@@ -82,7 +83,7 @@ where
     if budget_gauges_are_noop(refresh.gauges) {
         return;
     }
-    if !customer_budget_metrics_enabled(&refresh.end_user_settings) {
+    if !customer_metrics_enabled(&refresh.end_user_settings) {
         tracing::debug!(
             "Prometheus: skipping customer metrics initialization, end_user tracking disabled"
         );

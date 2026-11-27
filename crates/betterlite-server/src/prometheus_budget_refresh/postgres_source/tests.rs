@@ -6,6 +6,7 @@ use betterlite_db::auxiliary_repository::repository::PrismaClient;
 use betterlite_db::database_replica::availability::Availability;
 use betterlite_db::migration_ledger::baseline::{PACKAGED_CATALOGS, catalog_statements};
 use betterlite_db::postgres_store::session::PostgresStore;
+use betterlite_logging::prometheus::budget_gauges::lists::BudgetTableSnapshot;
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use chrono::{TimeZone as _, Utc};
 use clap::Parser;
@@ -191,8 +192,9 @@ async fn users_page_orders_by_created_at_descending_with_a_count_each_page() {
 async fn orgs_page_joins_the_budget_table() {
     let seed = [
         budget_row("b-org", 50, "2030-01-02 00:00:00"),
+        r#"INSERT INTO "LiteLLM_BudgetTable" (budget_id, created_by, updated_by) VALUES ('b-bare', 'seed', 'seed');"#.to_owned(),
         org_row("o-budgeted", "b-org", 10, "2026-01-01 00:00:00"),
-        org_row("o-bare", "b-missing", 4, "2026-01-02 00:00:00"),
+        org_row("o-bare", "b-bare", 4, "2026-01-02 00:00:00"),
     ]
     .concat();
     let fixture = Fixture::database(&seed).await;
@@ -203,7 +205,13 @@ async fn orgs_page_joins_the_budget_table() {
     assert_eq!(page.rows.len(), 2);
     assert_eq!(page.rows[0].organization_id.as_deref(), Some("o-bare"));
     assert_eq!(page.rows[0].spend, Some(Decimal::from(4)));
-    assert_eq!(page.rows[0].budget, None);
+    assert_eq!(
+        page.rows[0].budget,
+        Some(BudgetTableSnapshot {
+            max_budget: None,
+            budget_reset_at: None,
+        })
+    );
     assert_eq!(page.rows[1].organization_id.as_deref(), Some("o-budgeted"));
     assert_eq!(
         page.rows[1].organization_alias.as_deref(),
@@ -212,6 +220,21 @@ async fn orgs_page_joins_the_budget_table() {
     let budget = page.rows[1].budget.as_ref().unwrap();
     assert_eq!(budget.max_budget, Some(Decimal::from(50)));
     assert_eq!(budget.budget_reset_at, Some(next_day()));
+    fixture.close().await;
+}
+
+#[tokio::test]
+async fn a_row_without_a_joined_budget_has_no_limits() {
+    let fixture = Fixture::database("").await;
+    let session = fixture.store.session().await.unwrap();
+    let row = session
+        .query_one("SELECT 'x'::text, NULL::text", &[])
+        .await
+        .unwrap();
+
+    let budget = super::budget_of(&row).unwrap();
+
+    assert_eq!(budget, None);
     fixture.close().await;
 }
 
