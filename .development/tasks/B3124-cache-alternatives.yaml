@@ -53,7 +53,8 @@ description: >-
 
   `choose_cached_model` is the entry point and the body of `CachedModelChooser::choose`. Outer check: `cache_aware_routing` on, a response with a routing decision,
   and `eligible_models` not empty. Then each of these returns None: the proxy's router is not the one passed in; the host reports routing plugins configured (see below); the host reports request transforms (B3123 `has_request_transforms`); context compaction
-  is pending for the request (B336 `compaction_pending`); the decision's router_model_name is not a supported router
+  is pending for the request (B10153's `compaction_pending` over the call's `SharedCompactionState` and request_kwargs: the production
+  host holds the state handle B021 passes when it builds the host for the request, and a missing handle means not pending); the decision's router_model_name is not a supported router
   marker. The caller is the `user_api_key_auth` entry under the metadata key picked by B206's metadata-name helper
   (`metadata` or `litellm_metadata`); a missing caller returns None, and so does a caller with a non-empty per-key `config`.
   Routing plugins. LiteLLM fills `Router.routing_plugins` only from the `plugins` list in `router_settings` (proxy_server.py `resolve_routing_plugins`, called at L6978 for `router_settings.plugins`; the L5015 caller resolves `complexity_router_config.plugins`, which belongs to the complexity router and never reaches `Router.routing_plugins`). So the production `CacheRoutingHost` answers "are routing plugins configured" with true when the loaded config has a non-empty `router_settings.plugins` list. No betterlite config section holds that key yet (`sections/routing_plugins.rs` is an empty stub owned by B363), so the host reads the raw `router_settings` entry from the loaded config and does not depend on B363. A missing key, null or empty list is false.
@@ -175,7 +176,7 @@ out_of_scope:
   - "AnthropicCacheRouting and its helpers (from_body, request_body, supports, is_warm, predict, cost, fits, count_tokens), pricing and has_request_transforms: B3123."
   - "Cache observations and the observation store: B3122. Prompt parsing and target resolution: B3120 and B3121."
   - "ComplexityRouter._apply_prompt_cache_routing, the decision stamp and the cache_aware_routing config section: B337."
-  - "can_key_call_resolved_model: B886. request_capacity: B3055. compaction_pending: B336. ComplexityRouterConfig: B374."
+  - "can_key_call_resolved_model: B886. request_capacity: B3055. CompactionState and compaction_pending: B10153. ComplexityRouterConfig: B374."
   - "Router.deployments_for_request, get_model_list and async_get_healthy_deployments: B302 and B844."
   - "The /cost/predict-cache and prompt-caching-requests routes: B3125."
 

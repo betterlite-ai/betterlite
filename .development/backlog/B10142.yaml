@@ -2,7 +2,7 @@ id: B10142
 milestone: M12 python
 title: Router batch retrieval across deployments
 status: todo
-depends_on: [B016, B844, B6020, B6021, B8631]
+depends_on: [B016, B844, B6020, B6021, B8631, B10154]
 file: tasks/B10142-router-batch-retrieve.yaml
 covers:
   - "litellm/router.py"

@@ -26,7 +26,7 @@ description: >-
   entity code are tested with a fake source. PostgresBudgetPageSource is the real implementation.
 
   Per-entity fetches. Teams: when no database is configured log at debug "Prometheus: skipping team metrics
-  initialization, DB not initialized" and return. Call B813's get_paginated_teams (page_size, page) which
+  initialization, DB not initialized" and return. Call B10152's get_paginated_teams (team_pagination.rs) with the client, page_size and page; it
   counts first, reads the page sorted by team_alias ascending, and on any error logs and returns (empty, 0),
   so a team failure never reaches the walk's error log. Keys: skip with the debug text "Prometheus: skipping key
   metrics initialization, DB not initialized" without a database. Call B897's key list query (the _list_key_helper
@@ -101,7 +101,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1766-L1766
     why: PROMETHEUS_EMIT_BUDGET_METRICS_JOB_NAME, the lock job name.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L5934-L5965
-    why: get_paginated_teams, the team page reader B813 builds; it swallows its own errors.
+    why: get_paginated_teams, the team page reader B10152 builds; it swallows its own errors.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L189-L189
     why: prometheus_initialize_budget_metrics default.
 
@@ -168,7 +168,7 @@ out_of_scope:
   - "The gauge setters, the list setters, _customer_budget_metrics_enabled and _customer_budget_gauges_are_noop: B3882."
   - "_get_default_customer_budget: B3883 (this task calls it)."
   - "Collector creation and registration, including the litellm_total_users, litellm_active_users and litellm_teams_count gauges: B3875."
-  - "get_paginated_teams (team_endpoints.py:5934-5965): B813. _list_key_helper: B897. UserRepository, OrganizationRepository and count_billable_users: B723. The teamtable and endusertable bindings: B726. PodLockManager: B1690."
+  - "get_paginated_teams (team_endpoints.py:5934-5965): B10152. _list_key_helper: B897. UserRepository, OrganizationRepository and count_billable_users: B723. The teamtable and endusertable bindings: B726. PodLockManager: B1690."
   - "Scheduler startup, the scheduler itself and the call site at proxy_server.py:11062-11067 beyond the condition: B124. The type-specific loggers' lookup in the callback list (get_custom_loggers_for_type): B189."
   - "_increment_remaining_budget_metrics and the per-request budget updates: B9480 (the fan-out) over B3883's lookups."
   - "_mount_metrics_endpoint (prometheus.py:4565-4592): B3886."

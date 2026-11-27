@@ -2,7 +2,7 @@ id: B8462
 milestone: M9 agents and mcp
 title: "MCP upstream tool listing and catalog alerts"
 status: todo
-depends_on: [B8460, B8461, B6590, B4731, B6591, B6592, B4680, B4682, B6594, B7970, B8190, B3816, B4740, B4745]
+depends_on: [B8460, B8461, B6590, B4731, B6591, B6592, B4680, B4682, B6594, B7970, B8190, B3816, B4740, B4745, B10155]
 file: tasks/B8462-mcp-tool-listing.yaml
 covers:
   - "litellm/proxy/_experimental/mcp_server/mcp_server_manager.py"

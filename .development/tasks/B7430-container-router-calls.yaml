@@ -141,7 +141,7 @@ checks:
 oracle_cases: []
 deviations:
   - what: Uploads cross the generic call as base64 inside the JSON argument map.
-    why: B6021's GenericRequest is a JSON map and cannot hold raw buffers. The provider sees the same filename and bytes, so no client can tell.
+    why: B10154's GenericRequest is a JSON map and cannot hold raw buffers. The provider sees the same filename and bytes, so no client can tell.
   - what: The nine synchronous Router container methods (create_container, list_containers and the rest without the a prefix) are not built.
     why: Nothing calls them at the pin and the gateway has no blocking SDK surface; see out_of_scope.
 out_of_scope:

@@ -1,0 +1,126 @@
+id: B10155
+title: MCP client per-server auth header lookup and pass-through predicates
+description: >-
+  A client can send a token meant for one upstream MCP server as an x-mcp-{alias}-{header} header. LiteLLM picks that token for a server with lookup_mcp_server_auth_in_headers (utils.py L151-L216) and asks whether the request already carries an upstream token with _client_has_per_server_auth_header and _client_has_passthrough_authorization (operations.py L681-L731). These were B8196's and B4726's, but the callers need nothing else from those tasks: B8725's preemptive_challenge decides whether to answer 401 with them, B8196's _prepare_mcp_server_headers and B4726's server_auth_header pick the per-server header with the lookup, and B8460's OpenAPI auth and B8462's tool listing do the same. So the five functions live here, below all of them, and every caller uses them instead of writing the rules again.
+
+
+  Code goes in betterlite-mcp, module client_auth_headers (crates/betterlite-mcp/src/client_auth_headers.rs, an empty stub lib.rs already declares). Put the lookup in the submodule lookup (client_auth_headers/lookup.rs, declared in client_auth_headers.rs) with its tests in client_auth_headers/lookup/tests.rs, and the two predicates in client_auth_headers.rs with their tests in client_auth_headers/tests.rs. Everything here is a pure function: no I/O, no setting, no clock. The header map is the type B4654's request_headers::client_headers::server_auth_headers returns, BTreeMap<String, BTreeMap<String, SecretString>> (alias, then header name, then value), and the top-level map is the BTreeMap<String, SecretString> its oauth2_headers returns. The server is B6590's server_record::MCPServer, read through its fields alias, server_name and access_groups.
+
+
+  The value type. LiteLLM declares the lookup's map values as str | dict[str, str], but every producer at the pin builds the nested form (_get_mcp_server_auth_headers_from_headers, responses/utils.py L1118-L1126, mcp_streaming_iterator.py L396-L404), and only sink signatures name the plain string. The Rust map holds only the nested form, so the string arm of _client_has_per_server_auth_header has no input here and is not built.
+
+
+  lookup.
+
+  1. sanitize_alias_for_header(alias: &str) -> String is sanitize_mcp_alias_for_header: lowercase with str::to_lowercase, trim whitespace, replace every char outside a-z, 0-9 and underscore with one underscore (per char, not per run), collapse runs of underscores to one, then trim underscores from both ends. It must give the same bytes as the dashboard's TypeScript helper, which LiteLLM keeps in step with it.
+
+  2. header_keys(identifier) is _header_keys_for_identifier: the lowercase form, then the sanitized form when that is non-empty and differs from the lowercase one. The lowercase form is not trimmed.
+
+  3. lookup_server_auth(headers: &BTreeMap<String, BTreeMap<String, SecretString>>, alias: Option<&str>, server_name: Option<&str>, access_groups: &[String]) -> Option<&BTreeMap<String, SecretString>> is lookup_mcp_server_auth_in_headers. An empty map gives None. Index the map by lowercase key (B4654's reader already lowercases every alias, so two keys never fold into one in production). Walk alias, then server_name, skipping a missing or empty one; for each, try its header_keys in order, and the first key present decides: return its value. When no server key matches, walk access_groups in order without skipping empty names, take the first present key of each group, and collect those values. None collected gives None. When the collected maps are not all equal (same keys, same exposed values), log at debug "Ambiguous MCP group auth headers for server alias=<alias> (groups=<groups>); not forwarding any group credential" and return None, so a token never reaches a server it may not have been meant for. Otherwise return the first one. secrecy's SecretString has no PartialEq, so compare through expose_secret inside the function and never format a value.
+
+
+  client_auth_headers.
+
+  4. client_has_per_server_auth_header(server: &MCPServer, server_auth_headers: Option<&BTreeMap<String, BTreeMap<String, SecretString>>>) -> bool: None or an empty map gives false. Otherwise lookup_server_auth with the server's alias, server_name and access_groups (None reads as an empty list); a resolved map is true when one of its keys equals "authorization" ignoring ASCII case, and no match is false.
+
+  5. client_has_passthrough_authorization(server, oauth2_headers: Option<&BTreeMap<String, SecretString>>, server_auth_headers) -> bool: true when oauth2_headers has a key equal to "authorization" ignoring ASCII case; otherwise client_has_per_server_auth_header(server, server_auth_headers).
+
+
+  Tests, each calling the production functions with synthetic aliases and token values that start with test-: lookup::tests::sanitize_alias (rstest: mixed case, inner and outer spaces, dashes, dots, an underscore run, leading and trailing symbols, an empty result, the Kelvin sign and a dotted capital I), lookup::tests::server_key_order (rstest: an empty map, a match by the lowercase alias, a match only through the sanitized alias, alias winning over server_name, an empty alias skipped for server_name, the lowercase key tried before the sanitized one, uppercase map keys, no match), lookup::tests::group_default (rstest: one group with a header, two groups with equal maps, two groups with different maps giving None, one group without a header beside one with a header, an empty group name matching an empty alias key, a server key winning over a group key; and the ambiguous case asserting the debug line with the alias and groups and no token in any captured log), tests::per_server_authorization (rstest: None, an empty map, Authorization in any case, an Authorization with an empty value, a resolved map without one, a group credential, an ambiguous group) and tests::passthrough_authorization (rstest: a top-level Authorization in any case with any value, an empty oauth2 map falling through to the per-server header, both missing).
+
+
+  Oracle. The helper operation is b10155 in the mcp group. Its input is a list of calls, each naming one function with its typed input: sanitize_alias with an alias; lookup with the header map, alias, server_name and access_groups; per_server_authorization and passthrough_authorization with a server object (alias, server_name, access_groups), the per-server map and, for the second, the top-level map. The Python adapter imports the pinned functions (the predicates through operations) and builds MCPServer from the server object plus server_id "test-server", name "test-server" and transport "http"; the Rust adapter builds B6590's MCPServer from the same fields. Both return the sanitized text, the resolved map or None, and the two booleans. No route reaches these functions on their own, so B8725 and the routes that mount it carry the HTTP cases.
+scope:
+  paths:
+    - crates/betterlite-mcp/src/client_auth_headers.rs
+    - crates/betterlite-mcp/src/client_auth_headers/**
+    - tools/oracle/cases/helpers/mcp-client-auth-headers/**
+    - tools/oracle/fuzz/corpus/helper_case/mcp-client-auth-headers-*
+    - tools/oracle/helpers/b10155.py
+    - tools/oracle/helpers/b10155/**
+    - tools/oracle/src/helpers/mcp/b10155.rs
+    - tools/oracle/src/helpers/mcp/b10155/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/utils.py#L151-L216
+    why: Owned. The alias sanitizer, the candidate key rule and the lookup with its access group default and ambiguity rule.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/operations.py#L681-L731
+    why: Owned. The per-server Authorization predicate and the pass-through predicate that checks the top-level header first.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L1766-L1810
+    why: B8725's call sites, where a false answer turns into the pre-emptive 401.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/operations.py#L799-L810
+    why: B8196's call site in _prepare_mcp_server_headers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L1393-L1455
+    why: The producers of both maps, B4654's readers on main.
+dod:
+  - text: sanitize_alias_for_header lowercases, trims, turns each char outside a-z, 0-9 and underscore into one underscore, collapses underscore runs and trims underscores, and matches LiteLLM on mixed case, spaces, dashes and non-ASCII input.
+    proof: [case-sanitize-alias, oracle, helper-python]
+  - text: lookup_server_auth returns None for an empty map, tries the lowercase then the sanitized form of the alias and then of server_name, skips a missing or empty identifier, and matches uppercase map keys.
+    proof: [case-server-key-order, oracle, helper-python]
+  - text: Without a server key, lookup_server_auth returns a group map only when every matching group carries an equal map, returns None for different maps, does not skip an empty group name, and logs the ambiguity at debug without any header value.
+    proof: [case-group-default, oracle, helper-python]
+  - text: client_has_per_server_auth_header is true only when the resolved map has an Authorization key in any case, empty value included, and false for no map, an empty map, no match or an ambiguous group.
+    proof: [case-per-server-authorization, oracle, helper-python]
+  - text: client_has_passthrough_authorization is true for a top-level Authorization key in any case and otherwise gives the per-server answer.
+    proof: [case-passthrough-authorization, oracle, helper-python]
+  - text: The b10155 adapters compare the pinned functions with this module on new cases, and every new seed replays through the shared helper case parser.
+    proof: [new-oracle-cases, oracle, helper-python, helper-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: case-sanitize-alias
+      why: an alias sanitizes to different bytes than LiteLLM and the dashboard
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^client_auth_headers::lookup::tests::sanitize_alias($|::)/)'
+    - id: case-server-key-order
+      why: the alias, server name or candidate key order differs from LiteLLM's lookup
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^client_auth_headers::lookup::tests::server_key_order($|::)/)'
+    - id: case-group-default
+      why: a group credential is forwarded when groups disagree, or the ambiguity log leaks a value
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^client_auth_headers::lookup::tests::group_default($|::)/)'
+    - id: case-per-server-authorization
+      why: the per-server Authorization check disagrees with LiteLLM, so a client is challenged wrongly
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^client_auth_headers::tests::per_server_authorization($|::)/)'
+    - id: case-passthrough-authorization
+      why: the pass-through check misses a top-level Authorization or skips the per-server fallback
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^client_auth_headers::tests::passthrough_authorization($|::)/)'
+    - id: helper-python
+      why: the b10155 adapter is missing or fails the strict Python checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b10155.py tools/oracle/helpers/b10155)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: no new b10155 seed reaches the shared helper case parser
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/mcp-client-auth-headers-*")" &&
+        grep -lE 'b10155"?:' tools/oracle/fuzz/corpus/helper_case/mcp-client-auth-headers-* &&
+        cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-mcp --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: new-oracle-cases
+      why: no new client auth header case was added on this branch
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/mcp-client-auth-headers)"
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-client-auth-headers/sanitize-alias.yaml
+  - tools/oracle/cases/helpers/mcp-client-auth-headers/sanitize-alias-non-ascii.yaml
+  - tools/oracle/cases/helpers/mcp-client-auth-headers/lookup-by-alias.yaml
+  - tools/oracle/cases/helpers/mcp-client-auth-headers/lookup-sanitized-alias.yaml
+  - tools/oracle/cases/helpers/mcp-client-auth-headers/lookup-server-name-fallback.yaml
+  - tools/oracle/cases/helpers/mcp-client-auth-headers/lookup-group-default.yaml
+  - tools/oracle/cases/helpers/mcp-client-auth-headers/lookup-group-ambiguous.yaml
+  - tools/oracle/cases/helpers/mcp-client-auth-headers/lookup-no-match.yaml
+  - tools/oracle/cases/helpers/mcp-client-auth-headers/per-server-authorization.yaml
+  - tools/oracle/cases/helpers/mcp-client-auth-headers/passthrough-authorization.yaml
+deviations: []
+out_of_scope:
+  - "Everything else in operations.py: B8195 (scoping and display names), B8196 (OAuth prefetch, header preparation, BYOK, token exchange and initialize handling, from L734), B8197 (listing), B8198 (execution and logging) and B8199 (gateway dispatch and prepare_context)."
+  - "Everything else in utils.py: B4716 (normalize_server_name and the payload and name validators), B4682 (header sanitizing and the server-local prefix helpers), B6594 (tool-name, allowlist, env var, header merge and synthetic request helpers) and B3818 (result content rewriting)."
+  - "The header readers server_auth_headers and oauth2_headers: B4654, on main. The 401 they gate: B8725. _get_server_auth_header and its shared-header fallback: B4726."
+pitfalls:
+  - "Lowercase with str::to_lowercase, not to_ascii_lowercase: Python's lower() turns the Kelvin sign (U+212A) into an ASCII k that survives sanitizing, and a dotted capital I (U+0130) into i plus a combining dot, so \"İ\" sanitizes to \"i\"."
+  - "Empty or missing alias and server_name are skipped, but access group names are not, so a group named \"\" matches the key a header like x-mcp--authorization produces."
+  - "A resolved per-server map counts as an upstream token when it has an authorization key, whatever its value; an empty x-mcp-{alias}-authorization still skips the 401."
+  - "The top-level check looks only for the Authorization key B4654's oauth2_headers writes; it never reads the value, so it can't tell a gateway key from an upstream token, and the caller decides what that map holds."
+  - "The ambiguity check compares whole header maps, not only the Authorization entry: two groups that send the same token with different extra headers still return None."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
