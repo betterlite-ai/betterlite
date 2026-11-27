@@ -12,6 +12,7 @@ use crate::mcp::tool_search::identity::{MCPProxyToolIdentityError, proxy_search_
 use crate::mcp::tool_search::settings::MCPToolSearchSettings;
 use crate::mcp::tool_search::{
     MCPToolSearchHit, SearchError, SemanticToolRanker, ToolSearchResult, rank_mcp_tools,
+    tool_result,
 };
 
 pub(super) async fn ranked_hits(
@@ -44,15 +45,6 @@ pub(super) async fn ranked_hits(
     .await
 }
 
-pub(super) fn tool_search_result(hit: MCPToolSearchHit) -> ToolSearchResult {
-    ToolSearchResult {
-        name: hit.tool.name,
-        description: hit.tool.description.unwrap_or_default(),
-        input_schema: hit.tool.input_schema,
-        score: hit.score,
-    }
-}
-
 // LiteLLM's agent search handler resolves the caller's accessible agents and searches them
 pub(super) async fn agent_search_text(
     query: &str,
@@ -77,14 +69,19 @@ pub(super) fn tool_search_text(
 ) -> Result<CallToolResult, SearchHandlerError> {
     match ranking {
         Ok(hits) => {
-            let results: Vec<ToolSearchResult> = hits.into_iter().map(tool_search_result).collect();
+            let results: Vec<ToolSearchResult> = hits
+                .iter()
+                .map(|hit| tool_result(&hit.tool, hit.score))
+                .collect();
             Ok(text_tool_result(serde_json::to_string(&results)?, false))
         }
         Err(error) => Ok(text_tool_result(error.to_string(), true)),
     }
 }
 
-fn search_text<T>(outcome: SearchOutcome<T>) -> Result<CallToolResult, SearchHandlerError>
+pub(super) fn search_text<T>(
+    outcome: SearchOutcome<T>,
+) -> Result<CallToolResult, SearchHandlerError>
 where
     T: Serialize,
 {
