@@ -7,9 +7,9 @@ use secrecy::ExposeSecret as _;
 use super::super::decode::{DecodeLimits, decode_s3_listing};
 use super::super::requests::{
     S3FileMethod, list_files_next_request, list_files_request, object_file_request, retrieve_file,
+    s3_credentials, sign_without_body,
 };
 use super::super::responses::delete_file_response;
-use super::super::sign::{s3_credentials, sign_without_body};
 use super::super::target::s3_request_target;
 use super::super::{LIST_FILES_PURPOSE_PARAM, S3ListingError};
 use super::support::{

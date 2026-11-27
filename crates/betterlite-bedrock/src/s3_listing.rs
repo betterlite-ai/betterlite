@@ -10,21 +10,15 @@ use crate::s3_access::S3AccessError;
 use crate::s3_access::managed::ManagedObjectError;
 
 pub mod decode;
-pub mod objects;
 pub mod prefix;
 pub mod requests;
 pub mod responses;
-pub mod sign;
 pub mod target;
 mod tests;
-
-pub use decode::{DecodeLimits, S3ListedEntry, S3Listing, decode_s3_listing};
 
 // the internal keys the listing walk hands from one request transform to the next
 pub const LIST_FILES_PURPOSE_PARAM: &str = "_s3_list_files_purpose";
 pub const LIST_FILES_LOCATION_PARAM: &str = "_s3_list_files_location";
-// Python's mapping for a file id names the raw bucket; the scheme is rebuilt here
-pub const S3_SCHEME: &str = "s3://";
 
 #[derive(Debug, Error)]
 pub enum S3ListingError {
@@ -85,31 +79,12 @@ pub enum S3ListingError {
 impl S3ListingError {
     #[must_use]
     pub fn status_code(&self) -> Option<u16> {
-        match self {
-            Self::Bedrock(error) => Some(error.error.status_code),
-            Self::Managed(error) => error.status_code(),
-            Self::Access(_)
-            | Self::Storage(_)
-            | Self::Region(_)
-            | Self::Credential(_)
-            | Self::Signing(_)
-            | Self::Header(_)
-            | Self::Field { .. }
-            | Self::Size { .. }
-            | Self::Timestamp { .. }
-            | Self::FileIdRequired
-            | Self::RetrievalUnsupported
-            | Self::DeleteContext
-            | Self::BodyTooLarge { .. }
-            | Self::DepthExceeded { .. }
-            | Self::Dtd
-            | Self::UnboundPrefix { .. }
-            | Self::Entity { .. }
-            | Self::NoRoot
-            | Self::Unclosed
-            | Self::Trailing
-            | Self::Xml(_)
-            | Self::Text(_) => None,
+        if let Self::Bedrock(error) = self {
+            return Some(error.error.status_code);
         }
+        if let Self::Managed(error) = self {
+            return Some(error.status_code());
+        }
+        None
     }
 }

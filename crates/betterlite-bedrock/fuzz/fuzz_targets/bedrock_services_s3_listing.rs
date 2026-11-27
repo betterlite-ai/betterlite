@@ -1,6 +1,6 @@
 #![no_main]
 
-use betterlite_bedrock::s3_listing::{DecodeLimits, decode_s3_listing};
+use betterlite_bedrock::s3_listing::decode::{DecodeLimits, decode_s3_listing};
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {

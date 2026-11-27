@@ -1,11 +1,9 @@
 use betterlite_openai::files::records::{FileKind, FileStatus, FilesPurpose};
 
-use super::super::decode::{DecodeLimits, decode_s3_listing};
-use super::super::objects::{parse_created_at, parse_size};
+use super::super::decode::{DecodeLimits, decode_s3_listing, parse_created_at, parse_size};
 use super::super::prefix::{
     BATCH_LISTING_PREFIX, BATCH_OUTPUT_LISTING_PREFIX, listing_bucket_name, listing_query,
-    managed_listing_prefix, output_location_still_unlisted, requested_listing_purpose,
-    walked_listing_purpose,
+    managed_listing_prefix, output_location_still_unlisted, setting_text, walked_listing_purpose,
 };
 use super::super::requests::{list_files_next_request, list_files_request};
 use super::super::responses::list_files_response;
@@ -60,20 +58,23 @@ pub(super) fn list_purpose_prefix() {
         RequestValue::Text("batch".to_owned()),
     )]);
     assert_eq!(
-        requested_listing_purpose(&requested).as_deref(),
+        setting_text(&requested, LIST_FILES_PURPOSE_PARAM).as_deref(),
         Some("batch")
     );
     let missing = params(vec![(
         LIST_FILES_PURPOSE_PARAM,
         RequestValue::Raw("null".to_owned()),
     )]);
-    assert_eq!(requested_listing_purpose(&missing), None);
-    assert_eq!(requested_listing_purpose(&Params::new()), None);
+    assert_eq!(setting_text(&missing, LIST_FILES_PURPOSE_PARAM), None);
+    assert_eq!(setting_text(&Params::new(), LIST_FILES_PURPOSE_PARAM), None);
     let empty = params(vec![(
         LIST_FILES_PURPOSE_PARAM,
         RequestValue::Text(String::new()),
     )]);
-    assert_eq!(requested_listing_purpose(&empty).as_deref(), Some(""));
+    assert_eq!(
+        setting_text(&empty, LIST_FILES_PURPOSE_PARAM).as_deref(),
+        Some("")
+    );
 
     let walked = params(vec![
         (
@@ -726,21 +727,22 @@ pub(super) fn last_modified_and_size() {
         parse_created_at(Some("2024-01-02T03:04:05")).unwrap(),
         1_704_164_645
     );
-    assert_eq!(
-        parse_created_at(Some("20240102T030405Z")).unwrap(),
-        1_704_164_645
-    );
-    assert_eq!(parse_created_at(Some("2024-01-02")).unwrap(), 1_704_153_600);
+    for unsupported in [
+        "20240102T030405Z",
+        "2024-01-02",
+        "2024-01-02T03:04:05+0200",
+        "2024-01-02T03:04:05+02",
+    ] {
+        assert!(
+            matches!(
+                parse_created_at(Some(unsupported)),
+                Err(S3ListingError::Timestamp { .. })
+            ),
+            "{unsupported}"
+        );
+    }
     assert_eq!(
         parse_created_at(Some("2024-01-02T03:04:05+02:00")).unwrap(),
-        1_704_157_445
-    );
-    assert_eq!(
-        parse_created_at(Some("2024-01-02T03:04:05+0200")).unwrap(),
-        1_704_157_445
-    );
-    assert_eq!(
-        parse_created_at(Some("2024-01-02T03:04:05+02")).unwrap(),
         1_704_157_445
     );
     assert_eq!(

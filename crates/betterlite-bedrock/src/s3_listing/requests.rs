@@ -5,22 +5,26 @@ use std::time::SystemTime;
 
 use betterlite_config::sections::bedrock_settings::AwsSettings;
 use betterlite_context::cloud_storage::{Encoding, encode_object_name, split_bucket_name};
+use betterlite_logging::s3_transport::signing::{
+    Credentials as SigningCredentials, RequestToSign, sign_request,
+};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, percent_encode};
+use sha2::{Digest as _, Sha256};
 
 use super::decode::{DecodeLimits, decode_s3_listing};
 use super::prefix::{
     listing_bucket_name, listing_query, output_location_still_unlisted, walked_listing_purpose,
 };
-use super::sign::{s3_credentials, sign_without_body};
-use super::target::s3_request_target;
+use super::target::{S3RequestTarget, s3_request_target};
 use super::{LIST_FILES_LOCATION_PARAM, LIST_FILES_PURPOSE_PARAM, S3ListingError};
+use crate::aws_settings::s3_static_key_pair;
 use crate::aws_settings::sources::Credentials;
 use crate::credentials::error::CredentialError;
 use crate::request_policy::{Params, RequestValue};
 use crate::s3_access::S3AccessParams;
 use crate::s3_access::managed::resolve_managed_s3_object;
 use crate::s3_signing::SIGNED_HEADERS_PARAM;
-use crate::signing::target::RegionInputs;
+use crate::signing::target::{RegionInputs, auth_settings};
 
 // Python's urlencode(..., quote_via=quote, safe="") keeps only letters, digits and -._~
 const QUERY_ENCODE_SET: &AsciiSet = &NON_ALPHANUMERIC
@@ -28,6 +32,15 @@ const QUERY_ENCODE_SET: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'.')
     .remove(b'_')
     .remove(b'~');
+
+const CONTENT_SHA256: &str = "x-amz-content-sha256";
+// botocore's header spelling and the order S3SigV4Auth adds them after the prepared headers
+const SIGNED_HEADERS: [(&str, &str); 4] = [
+    ("x-amz-date", "X-Amz-Date"),
+    ("x-amz-security-token", "X-Amz-Security-Token"),
+    (CONTENT_SHA256, "X-Amz-Content-SHA256"),
+    ("authorization", "Authorization"),
+];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct S3SignedRequest {
@@ -93,6 +106,62 @@ fn store_signed_headers(params: &mut Params, headers: Vec<(String, String)>) {
     );
 }
 
+// the s3_* static pair signs as-is; otherwise the aws_* parameters go through the credential chain
+pub(crate) async fn s3_credentials<F, Fut>(
+    target: &S3RequestTarget,
+    resolve_credentials: F,
+) -> Result<Credentials, S3ListingError>
+where
+    F: FnOnce(&AwsSettings, &str) -> Fut,
+    Fut: Future<Output = Result<Credentials, CredentialError>>,
+{
+    if let Some((access_key_id, secret_access_key)) = s3_static_key_pair(&target.s3) {
+        return Ok(Credentials {
+            access_key_id,
+            secret_access_key,
+            session_token: None,
+        });
+    }
+    let settings = auth_settings(target.auth.clone(), &target.aws_region_name);
+    resolve_credentials(&settings, &target.aws_region_name)
+        .await
+        .map_err(S3ListingError::Credential)
+}
+
+pub(crate) fn sign_without_body(
+    method: &str,
+    api_base: &str,
+    target: &S3RequestTarget,
+    credentials: &Credentials,
+    now: SystemTime,
+) -> Result<Vec<(String, String)>, S3ListingError> {
+    let empty_body_hash = hex::encode(Sha256::digest(b""));
+    let initial = [(CONTENT_SHA256.to_owned(), empty_body_hash.clone())];
+    let mut computed = sign_request(
+        &RequestToSign {
+            method,
+            url: api_base,
+            headers: &initial,
+            content_sha256: &empty_body_hash,
+            region: &target.aws_region_name,
+            now,
+        },
+        &SigningCredentials {
+            access_key_id: credentials.access_key_id.clone(),
+            secret_access_key: credentials.secret_access_key.clone(),
+            session_token: credentials.session_token.clone(),
+        },
+    )?;
+    computed.push((CONTENT_SHA256.to_owned(), empty_body_hash));
+    let mut headers = Vec::with_capacity(SIGNED_HEADERS.len());
+    for (name, botocore_name) in SIGNED_HEADERS {
+        if let Some((_, value)) = computed.iter().find(|(header, _)| header == name) {
+            headers.push((botocore_name.to_owned(), value.clone()));
+        }
+    }
+    Ok(headers)
+}
+
 async fn signed_listing_request<F, Fut>(
     request: S3FilesRequest<'_>,
     purpose: Option<&str>,
@@ -149,23 +218,19 @@ where
     if status >= 400 {
         return Ok(None);
     }
-    let listing = decode_s3_listing(body, &DecodeLimits::DEFAULT)?;
-    if let Some(token) = listing.next_continuation_token {
+    let continuation = decode_s3_listing(body, &DecodeLimits::DEFAULT)?.next_continuation_token;
+    if let Some(token) = continuation.as_deref() {
         let purpose = walked_listing_purpose(request.litellm_params);
         let signed = signed_listing_request(
             request,
             purpose.as_deref(),
-            Some(&token),
+            Some(token),
             resolve_credentials,
         );
         return signed.await.map(Some);
     }
-    let still_unlisted = output_location_still_unlisted(
-        request.access,
-        request.environment,
-        request.litellm_params,
-    )?;
-    if !still_unlisted {
+    if !output_location_still_unlisted(request.access, request.environment, request.litellm_params)?
+    {
         return Ok(None);
     }
     set_listing_value(
@@ -188,7 +253,7 @@ where
     F: FnOnce(&AwsSettings, &str) -> Fut,
     Fut: Future<Output = Result<Credentials, CredentialError>>,
 {
-    let file_id = match method {
+    let required_id = match method {
         S3FileMethod::Content => match file_id {
             Some(value) if !value.is_empty() => value,
             Some(_) | None => return Err(S3ListingError::FileIdRequired),
@@ -196,7 +261,7 @@ where
         S3FileMethod::Delete => file_id.unwrap_or_default(),
     };
     let (bucket_name, object_key) =
-        resolve_managed_s3_object(file_id, request.access, request.environment)?;
+        resolve_managed_s3_object(required_id, request.access, request.environment)?;
     let target = s3_request_target(
         request.optional_params,
         request.litellm_params,

@@ -12,8 +12,6 @@ pub const ANY_MANAGED_LISTING_PREFIX: &str = "litellm-b";
 pub const BATCH_LISTING_PREFIX: &str = "litellm-bedrock-files";
 pub const BATCH_OUTPUT_LISTING_PREFIX: &str = "litellm-batch-outputs/";
 
-const EMPTY_LISTING_QUERY: [(&str, &str); 2] = [("list-type", "2"), ("max-keys", "0")];
-
 #[must_use]
 pub fn managed_listing_prefix(configured_prefix: &str, purpose: Option<&str>) -> Option<String> {
     let managed = match purpose {
@@ -23,24 +21,23 @@ pub fn managed_listing_prefix(configured_prefix: &str, purpose: Option<&str>) ->
         Some(_) => return None,
     };
     if configured_prefix.is_empty() {
-        Some(managed.to_owned())
-    } else {
-        Some(format!("{configured_prefix}/{managed}"))
+        return Some(managed.to_owned());
     }
+    Some(format!("{configured_prefix}/{managed}"))
 }
 
 #[must_use]
 pub fn listing_query(configured_prefix: &str, purpose: Option<&str>) -> Vec<(String, String)> {
-    match managed_listing_prefix(configured_prefix, purpose) {
-        None => EMPTY_LISTING_QUERY
-            .iter()
-            .map(|&(name, value)| (name.to_owned(), value.to_owned()))
-            .collect(),
-        Some(prefix) => vec![
+    let Some(prefix) = managed_listing_prefix(configured_prefix, purpose) else {
+        return vec![
             ("list-type".to_owned(), "2".to_owned()),
-            ("prefix".to_owned(), prefix),
-        ],
-    }
+            ("max-keys".to_owned(), "0".to_owned()),
+        ];
+    };
+    vec![
+        ("list-type".to_owned(), "2".to_owned()),
+        ("prefix".to_owned(), prefix),
+    ]
 }
 
 // the listing walk records what it asked for; only a string counts, as LiteLLM's isinstance does
@@ -54,13 +51,9 @@ pub fn setting_text(params: &Params, name: &str) -> Option<String> {
 }
 
 #[must_use]
-pub fn requested_listing_purpose(params: &Params) -> Option<String> {
-    setting_text(params, LIST_FILES_PURPOSE_PARAM)
-}
-
-#[must_use]
 pub fn walked_listing_purpose(params: &Params) -> Option<String> {
-    setting_text(params, LIST_FILES_LOCATION_PARAM).or_else(|| requested_listing_purpose(params))
+    setting_text(params, LIST_FILES_LOCATION_PARAM)
+        .or_else(|| setting_text(params, LIST_FILES_PURPOSE_PARAM))
 }
 
 pub fn listing_bucket_name(

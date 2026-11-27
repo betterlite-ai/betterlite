@@ -6,13 +6,11 @@ use betterlite_openai::files::records::{
     FileDeleted, FileKind, FileObject, FileStatus, FilesPurpose,
 };
 
-use super::S3ListingError;
-use super::decode::{DecodeLimits, S3ListedEntry, decode_s3_listing};
-use super::objects::{parse_created_at, parse_size, posix_basename};
+use super::decode::{DecodeLimits, S3ListedEntry, decode_s3_listing, parse_created_at, parse_size};
 use super::prefix::{
-    BATCH_OUTPUT_LISTING_PREFIX, listing_bucket_name, requested_listing_purpose, setting_text,
-    walked_listing_purpose,
+    BATCH_OUTPUT_LISTING_PREFIX, listing_bucket_name, setting_text, walked_listing_purpose,
 };
+use super::{LIST_FILES_PURPOSE_PARAM, S3ListingError};
 use crate::bedrock_settings::{BedrockError, ErrorHeaders, ErrorInput, ErrorReply, ResponseBody};
 use crate::file_content::{
     FileContentError, FileContentRequest, RawResponse, transform_file_response,
@@ -61,9 +59,8 @@ fn response_text(raw: &S3RawResponse<'_>) -> Result<String, S3ListingError> {
     }
 }
 
-fn list_error(raw: &S3RawResponse<'_>, message: String) -> Result<BedrockError, S3ListingError> {
-    let headers = raw.headers.to_vec();
-    let reply = ErrorReply {
+fn list_reply(raw: &S3RawResponse<'_>, message: &str) -> ErrorReply {
+    ErrorReply {
         response: ErrorResponse {
             status_code: raw.status,
             request: ErrorRequest {
@@ -71,23 +68,17 @@ fn list_error(raw: &S3RawResponse<'_>, message: String) -> Result<BedrockError, 
                 url: raw.request.url.to_owned(),
             },
         },
-        headers: headers.clone(),
-        body: ResponseBody::Read(message.clone()),
-    };
-    BedrockError::try_from(ErrorInput {
-        status_code: raw.status,
-        message,
-        request: None,
-        body: None,
-        status_code_is_synthesized: false,
-        headers: Some(ErrorHeaders::Http(headers)),
-        response: Some(reply),
-    })
-    .map_err(S3ListingError::Header)
+        headers: raw.headers.to_vec(),
+        body: ResponseBody::Read(message.to_owned()),
+    }
 }
 
-fn delete_error(raw: &S3RawResponse<'_>, message: String) -> Result<BedrockError, S3ListingError> {
-    let status = if raw.status >= 400 { raw.status } else { 502 };
+fn bedrock_error(
+    raw: &S3RawResponse<'_>,
+    message: String,
+    status: u16,
+    reply: Option<ErrorReply>,
+) -> Result<BedrockError, S3ListingError> {
     BedrockError::try_from(ErrorInput {
         status_code: status,
         message,
@@ -95,7 +86,7 @@ fn delete_error(raw: &S3RawResponse<'_>, message: String) -> Result<BedrockError
         body: None,
         status_code_is_synthesized: false,
         headers: Some(ErrorHeaders::Http(raw.headers.to_vec())),
-        response: None,
+        response: reply,
     })
     .map_err(S3ListingError::Header)
 }
@@ -139,7 +130,9 @@ fn listed_managed_file(
         id: file_id,
         bytes: parse_size(entry.size.as_deref())?,
         created_at: parse_created_at(entry.last_modified.as_deref())?,
-        filename: posix_basename(object_key),
+        filename: object_key
+            .rsplit_once('/')
+            .map_or_else(|| object_key.to_owned(), |(_head, tail)| tail.to_owned()),
         object: FileKind::File,
         purpose,
         status: Some(FileStatus::Uploaded),
@@ -154,9 +147,11 @@ pub fn list_files_response(
 ) -> Result<Vec<FileObject>, S3ListingError> {
     if raw.status >= 400 {
         let message = response_text(raw)?;
-        return Err(S3ListingError::Bedrock(Box::new(list_error(raw, message)?)));
+        let reply = list_reply(raw, &message);
+        let error = bedrock_error(raw, message, raw.status, Some(reply))?;
+        return Err(S3ListingError::Bedrock(Box::new(error)));
     }
-    let requested = requested_listing_purpose(context.litellm_params);
+    let requested = setting_text(context.litellm_params, LIST_FILES_PURPOSE_PARAM);
     let walked = walked_listing_purpose(context.litellm_params);
     let configured_bucket_name =
         listing_bucket_name(context.access, context.environment, walked.as_deref())?;
@@ -191,9 +186,9 @@ pub fn delete_file_response(
         } else {
             decoded
         };
-        return Err(S3ListingError::Bedrock(Box::new(delete_error(
-            raw, message,
-        )?)));
+        let status = if raw.status >= 400 { raw.status } else { 502 };
+        let error = bedrock_error(raw, message, status, None)?;
+        return Err(S3ListingError::Bedrock(Box::new(error)));
     }
     let file_id = additional_args.and_then(|args| setting_text(args, "file_id"));
     let Some(file_id) = file_id.filter(|value| !value.is_empty()) else {
