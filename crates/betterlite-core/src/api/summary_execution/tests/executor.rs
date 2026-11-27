@@ -155,6 +155,37 @@ async fn a_mock_provider_failure_is_a_summary_call_failure() {
     assert!(logs.contains("summary call failed: the provider answered with status 429"));
 }
 
+#[tokio::test]
+async fn a_max_tokens_past_u32_fails_the_summary_call() {
+    let executor = executor(
+        mock_answers("<summary> NEW </summary>"),
+        UsageDefaults::default(),
+    );
+    let deployment = deployment(MOCK_ID, "http://127.0.0.1:9/v1");
+    let completion = ExecutorCompletion {
+        executor: &executor,
+        deployment: &deployment,
+    };
+    let mut fixture = Fixture::default();
+    let settings = fixture.settings.as_mut().expect("one summary settings");
+    settings.context_management_summary_max_tokens = u64::from(u32::MAX).saturating_add(1);
+    let (logs, _guard) = capture_logs();
+    let result = run(
+        &fixture,
+        Sample::default().request(MODEL),
+        Port::Direct(&completion),
+    )
+    .await
+    .expect("the editor runs");
+    let edit = result.applied_edits.first().expect("one applied edit");
+    assert_eq!(edit.error.as_deref(), Some("summary_call_failed"));
+    assert!(
+        logs.contains(
+            "summary call failed: the request body is not a valid chat completion request"
+        )
+    );
+}
+
 async fn hold_open(listener: TcpListener) {
     let (mut stream, _) = listener.accept().await.expect("the connection");
     let mut chunk = [0_u8; 4096];

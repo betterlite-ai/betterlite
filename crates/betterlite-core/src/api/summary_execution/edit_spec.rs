@@ -1,5 +1,5 @@
 use betterlite_prompts::arguments::json::Json;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::api::messages_context_clear::constants::COMPACT_EDIT_TYPE;
 use crate::api::messages_context_clear::error::ContextManagementError;
@@ -7,7 +7,7 @@ use crate::api::messages_context_clear::result::AppliedEdit;
 use crate::api::summary_history::trigger::resolve_trigger_tokens;
 
 // every key compact_20260112 reads from the client's edit spec, kept as the client sent it
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct CompactEditSpec {
     #[serde(rename = "type", default)]
     pub edit_type: Option<Json>,

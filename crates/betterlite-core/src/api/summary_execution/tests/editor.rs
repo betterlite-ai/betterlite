@@ -1,4 +1,8 @@
+use std::collections::BTreeMap;
+
+use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_config::sections::summary_model_access::Settings;
+use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_models::decisions::Json as DecisionJson;
 use betterlite_prompts::arguments::json::Json;
 use serde::Serialize;
@@ -523,6 +527,13 @@ async fn the_principal_region_travels_to_the_route() {
         .clone();
     assert_eq!(call.region.as_deref(), Some("us"));
     assert_eq!(call.user, None);
+}
+
+#[test]
+fn an_unknown_model_region_never_reaches_the_editor() {
+    let fields: BTreeMap<String, JsonData> =
+        serde_json::from_str(r#"{"allowed_model_region":"apac"}"#).expect("principal fields");
+    UserAPIKeyAuth::construct(AuthInput::Dict(fields)).expect_err("the region is typed");
 }
 
 #[tokio::test]
