@@ -8,8 +8,10 @@ use betterlite_config::tls::TlsPolicy;
 use betterlite_config::types::{Config, ProxyTrust};
 use betterlite_context::resource_config_selection::vector_stores::VectorStoresConfigTag;
 use betterlite_core::api::vector_store_http_create_read::config::OpenAiCreateReadConfig;
+use betterlite_core::api::vector_store_http_write::config::WriteParams;
 use betterlite_core::api::vector_store_http_write::error::ClientError;
 use betterlite_core::api::vector_store_http_write::service::ClientSource;
+use betterlite_core::api::vector_store_read::TransportRequest;
 use betterlite_core::api::vector_store_read::service::{ReadConfig, VectorStoreReadConfigs};
 use betterlite_core::api::vector_store_search::provider::ResolvedProvider;
 use betterlite_http::proxy::ProxiedClient;
@@ -32,6 +34,7 @@ use indexmap::IndexMap;
 use secrecy::SecretString;
 
 use super::super::error::SdkHttpError;
+use super::Run;
 
 // The pooled client the selected deployment would get; the case env only carries the key and the proxy settings
 pub(super) struct Source {
@@ -159,4 +162,46 @@ pub(super) fn into_index(params: &Params) -> IndexMap<String, Json> {
         .iter()
         .map(|(name, value)| (name.clone(), value.clone()))
         .collect()
+}
+
+// The base, key and kwargs one run carries, owned so the borrow the core takes lives as long as the run
+pub(super) struct Transport {
+    params: WriteParams,
+    kwargs: IndexMap<String, Json>,
+    extra_query: Option<IndexMap<String, Json>>,
+    extra_body: Option<IndexMap<String, Json>>,
+}
+
+impl Transport {
+    pub(super) fn new(run: &Run, api_base: &str) -> Self {
+        Self {
+            params: WriteParams {
+                api_base: Some(api_base.to_owned()),
+                api_key: run
+                    .options
+                    .api_key
+                    .as_ref()
+                    .map(|key| SecretString::from(key.clone())),
+                ssl_verify: None,
+            },
+            kwargs: IndexMap::from([(
+                String::from("litellm_call_id"),
+                Json::Text(run.options.litellm_call_id.clone()),
+            )]),
+            extra_query: run.extra_query.as_ref().map(into_index),
+            extra_body: run.extra_body.as_ref().map(into_index),
+        }
+    }
+
+    pub(super) fn request<'run>(&'run self, run: &'run Run) -> TransportRequest<'run> {
+        TransportRequest {
+            extra_headers: run.extra_headers.as_ref(),
+            extra_query: self.extra_query.as_ref(),
+            extra_body: self.extra_body.as_ref(),
+            timeout: run.timeout,
+            custom_llm_provider: run.custom_llm_provider.as_deref(),
+            params: &self.params,
+            kwargs: &self.kwargs,
+        }
+    }
 }

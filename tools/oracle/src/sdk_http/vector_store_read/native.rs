@@ -9,7 +9,6 @@ use betterlite_core::api::vector_store_http_create_read::service::{
     CreateReadCall, CreateReadDeps, CreateReadTarget, ListCall as HttpListCall,
     ListQuery as HttpListQuery, RetrieveCall, prepare, send,
 };
-use betterlite_core::api::vector_store_http_write::config::WriteParams;
 use betterlite_core::api::vector_store_http_write::error::{
     BaseLlmException, HeaderMap, WriteError,
 };
@@ -26,13 +25,11 @@ use betterlite_error::envelope::WireField;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
-use indexmap::IndexMap;
-use secrecy::SecretString;
 
 use super::super::error::SdkHttpError;
 use super::super::result::kinds::SdkResult;
 use super::super::result::{Failure, Nullable};
-use super::support::{Assets, Configs, Source, into_index, source};
+use super::support::{Assets, Configs, Source, Transport, source};
 use super::{Call, Context, Mode, Operation, Outcome, Run, RunOutcome};
 
 // The production service over the mock's base: the env's config, the pooled client and the read core a request would run
@@ -68,48 +65,6 @@ struct Fixtures {
     source: Source,
     assets: Assets,
     request_timeout: f64,
-}
-
-// The base, key and kwargs one run carries, owned so the borrow the core takes lives as long as the run
-struct Transport {
-    params: WriteParams,
-    kwargs: IndexMap<String, Json>,
-    extra_query: Option<IndexMap<String, Json>>,
-    extra_body: Option<IndexMap<String, Json>>,
-}
-
-impl Transport {
-    fn new(run: &Run, api_base: &str) -> Self {
-        Self {
-            params: WriteParams {
-                api_base: Some(api_base.to_owned()),
-                api_key: run
-                    .options
-                    .api_key
-                    .as_ref()
-                    .map(|key| SecretString::from(key.clone())),
-                ssl_verify: None,
-            },
-            kwargs: IndexMap::from([(
-                String::from("litellm_call_id"),
-                Json::Text(run.options.litellm_call_id.clone()),
-            )]),
-            extra_query: run.extra_query.as_ref().map(into_index),
-            extra_body: run.extra_body.as_ref().map(into_index),
-        }
-    }
-
-    fn request<'run>(&'run self, run: &'run Run) -> TransportRequest<'run> {
-        TransportRequest {
-            extra_headers: run.extra_headers.as_ref(),
-            extra_query: self.extra_query.as_ref(),
-            extra_body: self.extra_body.as_ref(),
-            timeout: run.timeout,
-            custom_llm_provider: run.custom_llm_provider.as_deref(),
-            params: &self.params,
-            kwargs: &self.kwargs,
-        }
-    }
 }
 
 async fn run_once(
@@ -183,31 +138,23 @@ async fn dispatch_list(
     run: &Run,
     transport: TransportRequest<'_>,
 ) -> ReadResult {
-    let request = list_request(run, transport);
-    match run.mode {
-        Mode::Sync => reads.list(&request).await,
-        Mode::Asynchronous => reads.alist(&request).await,
+    let request = VectorStoreListRequest {
+        transport,
+        after: run.after.as_deref(),
+        before: run.before.as_deref(),
+        limit: run.limit,
+        order: run.order.as_ref().map(|order| order.as_deref()),
+    };
+    if matches!(run.mode, Mode::Asynchronous) {
+        return reads.alist(&request).await;
     }
+    reads.list(&request).await
 }
 
 fn retrieve_id(run: &Run) -> Result<&str, SdkHttpError> {
     run.vector_store_id
         .as_deref()
         .ok_or_else(|| SdkHttpError::Invalid("a retrieve run carries a vector_store_id".to_owned()))
-}
-
-// The four cursor arguments exactly as the case spelled them: an absent field takes the default, an explicit null is left out
-fn list_request<'run>(
-    run: &'run Run,
-    transport: TransportRequest<'run>,
-) -> VectorStoreListRequest<'run> {
-    VectorStoreListRequest {
-        transport,
-        after: run.after.as_deref(),
-        before: run.before.as_deref(),
-        limit: run.limit,
-        order: run.order.as_ref().map(|order| order.as_deref()),
-    }
 }
 
 // update_from_kwargs is what names the provider; a call that failed before it has no context to record
