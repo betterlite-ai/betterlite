@@ -1,6 +1,6 @@
 import os
 from dataclasses import dataclass, field
-from typing import Final, Literal, Protocol, TypedDict, runtime_checkable
+from typing import Final, Literal, Protocol, TypedDict, Unpack, runtime_checkable
 
 import httpx
 import litellm
@@ -76,43 +76,43 @@ class Recorder:
         self.post = values
 
 
+class GenerationArguments(TypedDict):
+    model: str
+    prompt: str
+    model_response: ImageResponse
+    optional_params: dict[str, JsonValue]
+    logging_obj: Logger
+    timeout: float | None
+    aimg_generation: bool
+    api_base: str | None
+    extra_headers: dict[str, str] | None
+    client: HTTPHandler | None
+    api_key: str | None
+
+
+class EditArguments(TypedDict):
+    model: str
+    image: list[str]
+    prompt: str | None
+    model_response: ImageResponse
+    optional_params: dict[str, JsonValue]
+    logging_obj: Logger
+    timeout: float | None
+    aimage_edit: bool
+    api_base: str | None
+    extra_headers: dict[str, str] | None
+    client: HTTPHandler | None
+    api_key: str | None
+
+
 @runtime_checkable
 class GenerationHandler(Protocol):
-    def image_generation(
-        self,
-        model: str,
-        prompt: str,
-        model_response: ImageResponse,
-        optional_params: dict[str, JsonValue],
-        logging_obj: Logger,
-        timeout: float | None,
-        *,
-        aimg_generation: bool = False,
-        api_base: str | None = None,
-        extra_headers: dict[str, str] | None = None,
-        client: HTTPHandler | None = None,
-        api_key: str | None = None,
-    ) -> ImageResponse: ...
+    def image_generation(self, **kwargs: Unpack[GenerationArguments]) -> ImageResponse: ...
 
 
 @runtime_checkable
 class EditHandler(Protocol):
-    def image_edit(
-        self,
-        model: str,
-        image: list[str],
-        prompt: str | None,
-        model_response: ImageResponse,
-        optional_params: dict[str, JsonValue],
-        logging_obj: Logger,
-        timeout: float | None,
-        *,
-        aimage_edit: bool = False,
-        api_base: str | None = None,
-        extra_headers: dict[str, str] | None = None,
-        client: HTTPHandler | None = None,
-        api_key: str | None = None,
-    ) -> ImageResponse: ...
+    def image_edit(self, **kwargs: Unpack[EditArguments]) -> ImageResponse: ...
 
 
 class GenerationBinding(BaseModel):
@@ -250,12 +250,12 @@ def generation_row(probe: Probe) -> JsonValue:
     logger = Recorder()
     try:
         response = generation_handler().image_generation(
-            probe.model,
-            generation_prompt(probe),
-            ImageResponse(created=NOW),
-            dict(probe.optional_params),
-            logger,
-            None,
+            model=probe.model,
+            prompt=generation_prompt(probe),
+            model_response=ImageResponse(created=NOW),
+            optional_params=dict(probe.optional_params),
+            logging_obj=logger,
+            timeout=None,
             aimg_generation=False,
             api_base=None,
             extra_headers=None,
@@ -272,13 +272,13 @@ def edit_row(probe: Probe) -> JsonValue:
     logger = Recorder()
     try:
         response = edit_handler().image_edit(
-            probe.model,
-            probe.images,
-            probe.prompt,
-            ImageResponse(),
-            dict(probe.optional_params),
-            logger,
-            None,
+            model=probe.model,
+            image=probe.images,
+            prompt=probe.prompt,
+            model_response=ImageResponse(),
+            optional_params=dict(probe.optional_params),
+            logging_obj=logger,
+            timeout=None,
             aimage_edit=False,
             api_base=None,
             extra_headers=probe.extra_headers,
