@@ -482,6 +482,24 @@ def test_character_create_calls() -> None:
                                  MEDIA_FILENAME))
 
 
+TUPLE_VIDEOS: Final[tuple[tuple[str, bytes] | tuple[str, bytes, str], ...]] = (
+    (CLIP_NAME, MEDIA_BYTES),
+    (CLIP_NAME, MEDIA_BYTES, MEDIA_TYPE),
+)
+
+
+@pytest.mark.parametrize("video", TUPLE_VIDEOS)
+def test_character_tuple_calls(video: tuple[str, bytes] | tuple[str, bytes, str]) -> None:
+    with closing(EditServer()) as server:
+        OURS.video_create_character(
+            **endpoint_values(server, name=CHARACTER_NAME, video=video))
+        call = server.last()
+    uploaded = sent_parts(call)[VIDEO_FIELD]
+    assert uploaded["filename"] == CLIP_NAME
+    assert uploaded["content_type"] == MEDIA_TYPE
+    assert uploaded["body"] == MEDIA_BYTES
+
+
 def test_edit_file_calls(tmp_path: Path) -> None:
     source = tmp_path / CLIP_NAME
     source.write_bytes(MEDIA_BYTES)

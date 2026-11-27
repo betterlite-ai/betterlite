@@ -15,6 +15,9 @@ deviations:
   - what: A video may be given as a path, which LiteLLM's FileContent type does not take, and a path or an open file is uploaded with its basename as the multipart filename.
     why: The task asks for bytes, a path or an open file; the payload layer reads the path's bytes and names the upload by basename, where LiteLLM hands a Path to httpx and fails reading it, and names an open file by its raw name attribute, the full path.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/transformation.py#L588-L610
+  - what: A character video given as a two- or three-item tuple is uploaded from the tuple's content under the tuple's name.
+    why: LiteLLM's video_create_character types the video as FileTypes, whose two- and three-item tuple forms it declares, but _video_file_tuple nests the whole tuple as the multipart file object, so httpx calls read on a tuple and raises AttributeError; betterlite takes the tuple's name and content and sends the upload LiteLLM cannot send.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/transformation.py#L588-L610
   - what: The sync entry points block on the same native async handler the async ones await.
     why: One Rust operation per call serves both Python twins, and the sync wrapper blocks on it, where LiteLLM's sync path builds its own blocking request. The request and the mapped errors on the wire are the same.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L7736-L7765
