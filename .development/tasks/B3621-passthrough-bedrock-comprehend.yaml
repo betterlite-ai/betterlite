@@ -3,7 +3,7 @@ title: Pass-through Bedrock and Comprehend Medical routes
 description: >-
   Register LiteLLM's AWS pass-through routes as the module bedrock_comprehend_routes in crates/betterlite-server.
   Three routes live here: the /bedrock catch-all (which hands every non-agent-runtime endpoint to B3620 and itself serves the Bedrock agent runtime), POST /comprehendmedical/{operation}, and POST /comprehendmedical (the AWS SDK shape).
-  The module reads its values from injected parts: the general_settings map (B002), an environment reader (B198 forbids global env reads), B594's credential resolver, B595's SigV4 signer and B3615's create_pass_through_route.
+  The module reads its values from injected parts: the general_settings map (B002), an environment reader (B198 forbids global env reads), B594's credential resolution, B595's SigV4 signer and B3615's create_pass_through_route. The production credential part is B10175's `AwsCredentialChain` (its get_credentials), which B8607 passes from `state.shared.aws_credentials`; this module takes it, or a port it implements, as an argument and never builds a resolver, cache or NativeSources.
   Every name below is at most 30 characters.
 
   Routes. All three require the authenticated key (LiteLLM's user_api_key_auth, run by the server's authentication middleware), passed in as B2314's UserAPIKeyAuth.

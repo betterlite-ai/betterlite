@@ -10,7 +10,7 @@ description: >-
   error_handlers. `proxy_exception_response(request, error)` ports openai_exception_handler: log the denial through
   B8389's log_model_access_denial, build the body as {"error": error.to_dict()} with B011's call id stamped in when
   general_settings asks for it (header LITELLM_CALL_ID_HEADER), status int(code) or 500 when code is empty, the
-  exception's own headers on the response, close the span through B8389's close_error_span, and return B3867's
+  exception's own headers on the response, close the span through B10156's close_error_span with its exception_facts of the error, and return B3867's
   otlp_error_response instead when the request is an OTLP ingest request. `http_exception_response` ports
   otlp_http_exception_handler: the OTLP response when there is one (span closed first), else Starlette's default
   {"detail": ...} answer with the exception's status and headers. `management_problem_response` closes the span with
@@ -94,7 +94,7 @@ deviations:
 out_of_scope:
   - "Installing the handlers, the CORS layer and the static UI mounts on the app, and the HTTP oracle cases for them: B8680 (app/edge layers and UI mounts)."
   - "The other middlewares (security headers, gzip, in-flight, Redis batch, budget release, billing, Prometheus auth): B122 and their own tasks."
-  - "close_error_span and log_model_access_denial: B8389. otlp_error_response: B3867. ProxyException: B8410. Bug reports: B10058."
+  - "close_error_span and exception_facts: B10156. log_model_access_denial: B8389. otlp_error_response: B3867. ProxyException: B8410. Bug reports: B10058."
 pitfalls:
   - With LITELLM_CORS_ORIGINS="*" and no credentials env var, credentials are off; any explicit list turns them on unless the env says otherwise.
   - The validation handler strips internal fields with public_validation_errors before the span sees the error.

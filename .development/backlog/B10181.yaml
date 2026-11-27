@@ -1,0 +1,13 @@
+id: B10181
+milestone: R2 bug fixes
+title: Response text decodes like httpx where ten copies cut, drop or re-read bytes
+status: todo
+depends_on: [B10180, B513, B1372, B1373, B1538, B3063, B3502, B3503, B4003, B4582, B7325]
+file: tasks/B10181-utf8-replace-decoder-fixes.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

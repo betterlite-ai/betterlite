@@ -1,0 +1,13 @@
+id: B10207
+milestone: R2 bug fixes
+title: LiteLLM's proxy admin name and master key alias are defined once, in betterlite-error's proxy_enums
+status: todo
+depends_on: [B10171, B10165, B8410, B1700, B8502, B8599, B826, B10137, B10115, B1105, B1715, B3796]
+file: tasks/B10207-proxy-admin-name-home.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

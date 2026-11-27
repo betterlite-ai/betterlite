@@ -13,7 +13,7 @@ description: >-
   1. Read the body with get_request_body. Take `model` only when it is a JSON string; any other type means no model.
   2. When the model is a non-empty string, ask uses_router_model. When there is no model (missing, not a string, or the empty string) and the endpoint text contains the substring `completions` or `embeddings`, answer HTTP 400 with detail `{"error": "Model is required in request body"}`. Other endpoints with no model go on to the direct path.
   3. When the model is a router model and a router exists, call `gigachat_router_model` (below).
-  4. Direct path. Log debug "Gigachat passthrough: Using direct Gigachat model '%s' for endpoint '%s'". The base is config key gigachat_route.api_base (new section below, env GIGACHAT_API_BASE, default https://gigachat.devices.sberbank.ru/api/v1; an empty value counts as unset). Build the target with B3618's provider_target_url. Get the token from the trait `GigachatTokens` (below). Take the streaming flag from B3618's request_is_streaming. Call create_pass_through_route with the endpoint, the target, custom header `Authorization: Bearer {token}`, that flag, and no custom_llm_provider, so the call is typed as a generic endpoint. The token is fetched on every request, before the streaming flag is read.
+  4. Direct path. Log debug "Gigachat passthrough: Using direct Gigachat model '%s' for endpoint '%s'". The base is B8177's betterlite_openai::gigachat_utils::get_api_base(None, api_base), where api_base is config.sections.gigachat_route.api_base: B10157's section holds GIGACHAT_API_BASE (None when unset, empty, or true/false text), and get_api_base falls back to https://gigachat.devices.sberbank.ru/api/v1. Don't write the URL into this module. Build the target with B3618's provider_target_url. Get the token from the trait `GigachatTokens` (below). Take the streaming flag from B3618's request_is_streaming. Call create_pass_through_route with the endpoint, the target, custom header `Authorization: Bearer {token}`, that flag, and no custom_llm_provider, so the call is typed as a generic endpoint. The token is fetched on every request, before the streaming flag is read.
 
   `GigachatTokens` is a trait that B7325 declares in crates/betterlite-http (module gigachat_tokens); import it from there and do not declare another. Its one async method `access_token(&self, request)` takes B7325's `GigachatTokenRequest` and returns a SecretString or B7325's `GigachatAuthError`. This route always passes a request with all four fields None, which is LiteLLM's get_access_token called with no argument (env GIGACHAT_ACCESS_TOKEN wins, else OAuth from GIGACHAT_CREDENTIALS or GIGACHAT_API_KEY with a cached token). Build the header from the secret's exposed value. Tests here use a fake implementation. A GigachatAuthError becomes HTTP 500 with detail `{"error": "<message>"}`, where the message is its Display text.
 
@@ -33,15 +33,13 @@ description: >-
   5. Call create_pass_through_route with the endpoint, the target from step 1, the headers from step 2, the flag, custom_llm_provider "watsonx" and query_params from step 4. Return its result.
   A provider error raised in steps 1 and 2 becomes HTTP 500 with detail `{"error": "<message>"}` (see deviations).
 
-  Config section. Add crates/betterlite-config/src/sections/gigachat_route.rs with one setting, api_base, read from env GIGACHAT_API_BASE and defaulting to https://gigachat.devices.sberbank.ru/api/v1. An unset var and an empty string both give the default. No code outside betterlite-config reads the environment.
+  Config. B10157 builds the gigachat_route section in betterlite-config. This task takes config.sections.gigachat_route through its deps and reads no environment itself.
 
   Tests. Rust tests live in tests.rs under passthrough_vgw_routes::tests and use recording fakes: for B3615's create_pass_through_route factory (endpoint, target, custom headers, custom_llm_provider, streaming flag and query params as called), for B3602's credentials, for RouterPassthrough, for PassthroughProcessor and for GigachatTokens. Test groups are vllm_route, gigachat_direct, gigachat_router and watsonx_route.
 scope:
   paths:
     - crates/betterlite-server/src/passthrough_vgw_routes.rs
     - crates/betterlite-server/src/passthrough_vgw_routes/**
-    - crates/betterlite-config/src/sections/gigachat_route.rs
-    - crates/betterlite-config/src/sections/gigachat_route/**
     - tools/oracle/helpers/b3627.py
     - tools/oracle/helpers/b3627/**
     - tools/oracle/src/helpers/server/b3627.rs
@@ -62,8 +60,8 @@ references:
     why: validate_environment and the base URL env order, which B5970 builds and this route calls.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/authenticator.py#L64-L110
     why: get_access_token, the call behind the GigachatTokens trait that B7325 builds and this route calls.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/utils.py#L7
-    why: GIGACHAT_BASE_URL, the default for gigachat_route.api_base.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/utils.py#L24-L25
+    why: get_api_base, the GIGACHAT_API_BASE fallback B8177 ported; the direct path calls it with no api_base.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L515-L527
     why: get_request_body, used by the vllm and gigachat routes.
   - url: https://docs.litellm.ai/docs/pass_through/vllm
@@ -79,14 +77,12 @@ dod:
     proof: [vllm-route-tests]
   - text: The gigachat route answers 400 "Model is required in request body" when there is no string model and the endpoint contains completions or embeddings, and forwards other model-less requests.
     proof: [gigachat-direct-tests]
-  - text: The gigachat direct path builds its target from gigachat_route.api_base, sends `Authorization Bearer` with the token from GigachatTokens, uses the request's own streaming flag, passes no custom_llm_provider, and turns a token failure into HTTP 500.
-    proof: [gigachat-direct-tests, config-tests]
+  - text: The gigachat direct path builds its target from gigachat_route.api_base, or the default host when that is None, sends `Authorization Bearer` with the token from GigachatTokens, uses the request's own streaming flag, passes no custom_llm_provider, and turns a token failure into HTTP 500.
+    proof: [gigachat-direct-tests]
   - text: The gigachat router path builds the record in LiteLLM's key order, merges the four auth metadata keys over the caller's metadata, removes gigachat_auth_url, gigachat_access_token, gigachat_scope, api_base and api_key, and sets the SSE Content-Type on a streaming result that has none.
     proof: [gigachat-router-tests]
   - text: The watsonx route builds the target and headers through B5842 and B5970, reads the stream flag only on POST, keeps a caller `version` and otherwise sends version 2024-03-13, and passes custom_llm_provider watsonx.
     proof: [watsonx-route-tests]
-  - text: The gigachat_route config section loads GIGACHAT_API_BASE from an injected environment and gives the default for an unset or empty value.
-    proof: [config-tests, mutants]
 checks:
   optional: [mutants]
   commands:
@@ -102,9 +98,6 @@ checks:
     - id: watsonx-route-tests
       why: the watsonx route builds the wrong target, headers, stream flag or version parameter
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_vgw_routes::tests::watsonx_route(::|$)/)'
-    - id: config-tests
-      why: the gigachat_route section does not load or mis-parses the env var
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::gigachat_route::/)'
 oracle_cases: []
 deviations:
   - what: A provider error raised before the relay starts (a GigaChat token failure, Watsonx's missing-URL 401, or an IAM failure) answers HTTP 500 with a JSON detail whose only key is "error" and whose value is the message.
@@ -114,7 +107,8 @@ deviations:
   - what: An invalid JSON body on the watsonx route gets B1100's 400, and a JSON body that is not an object counts as not streaming.
     why: LiteLLM calls request.json() and then .get with no handler, so a bad body or a JSON list ends as a plain 500. betterlite has one body decoder.
 out_of_scope:
-  - "create_pass_through_route, the relay, logging and cost for these providers: B3615, B3607 and the logging tasks own them; this task only builds the three route handlers and the gigachat_route flag."
+  - "create_pass_through_route, the relay, logging and cost for these providers: B3615, B3607 and the logging tasks own them; this task only builds the three route handlers."
+  - "The gigachat_route config section that holds GIGACHAT_API_BASE: B10157. get_api_base and GIGACHAT_BASE_URL: B8177."
   - "uses_router_model, is_streaming_body, request_is_streaming, router_request_metadata, provider_target_url, provider_factory_route, relay_upstream_response and RouterPassthrough: B3618. Its relay_router_model is not used here."
   - "PassthroughProcessor and its call type: B7324 declares them in passthrough_processor and builds base_passthrough_process_llm_request and the exception mapping behind them; this task imports them."
   - "VLLMPassthroughConfig and VLLMModelInfo (VLLM_API_BASE, the x-api-key header): B2220 and B3618's provider_factory_route use them."

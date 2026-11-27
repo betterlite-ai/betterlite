@@ -14,7 +14,7 @@ use betterlite_http::proxy::ProxiedClient;
 use betterlite_openai::api::batch_records::WireDecodeLimits;
 use betterlite_openai::batches::error::{BatchesError, SdkError};
 use betterlite_openai::batches::http::{HttpBatchesClient, HttpConstructor};
-use betterlite_openai::batches::records::BatchObject;
+use betterlite_openai::batches::records::{BatchCreate, BatchObject, BatchQuery};
 use betterlite_openai::batches::sdk::{ClientSettings, Connection, Timeout};
 use betterlite_openai::batches::{BatchOperation, BatchesApi};
 use betterlite_openai::xai_batches::error::XaiBatchesError;
@@ -23,7 +23,6 @@ use pyo3_async_runtimes::tokio::get_runtime;
 
 mod errors;
 
-use super::convert::request::{batch_create, batch_query, duration_of};
 use super::error::DispatchFailure;
 
 // the BatchesApi both OpenAI entry points build over the shared pooled client
@@ -66,8 +65,9 @@ impl BatchTransport {
         &self,
         call: &ProviderBatchCall,
     ) -> Result<BatchObject, BatchProviderCreateError> {
-        let timeout =
-            duration_of(&Timeout::Seconds(call.timeout)).map_err(|_source| INVALID_CALL)?;
+        let timeout = Timeout::Seconds(call.timeout)
+            .duration()
+            .map_err(|_source| INVALID_CALL)?;
         let batches = XaiBatches {
             transport: self.client.clone(),
             settings: self.xai.clone(),
@@ -90,7 +90,8 @@ impl BatchCreateTransport for BatchTransport {
         match call {
             // OpenAIBatchesAPI.create_batch is the short path, so it stays beside the dispatch
             BatchProviderCreateCall::OpenAiCompatible(inner) => {
-                let request = batch_create(&inner.body).map_err(|_source| INVALID_CALL)?;
+                let request =
+                    BatchCreate::from_request(&inner.body).map_err(|_source| INVALID_CALL)?;
                 let operation = BatchOperation::Create(&request);
                 blocking_create(
                     openai_batches(&self.client).batch(openai_connection(inner), operation),
@@ -219,7 +220,7 @@ async fn openai_retrieve(
     client: &ProxiedClient,
     call: &OpenAiBatchReadCall,
 ) -> Result<BatchObject, DispatchFailure> {
-    let query = batch_query(&call.request)?;
+    let query = BatchQuery::from_request(&call.request)?;
     let connection = Connection {
         is_async: call.is_async,
         settings: ClientSettings {
@@ -244,7 +245,7 @@ async fn xai_retrieve(
     limits: WireDecodeLimits,
     call: &XaiBatchReadCall,
 ) -> Result<BatchObject, DispatchFailure> {
-    let timeout = duration_of(&call.timeout)?;
+    let timeout = call.timeout.duration()?;
     let batches = XaiBatches {
         transport: client.clone(),
         settings: settings.clone(),

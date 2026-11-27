@@ -1,0 +1,13 @@
+id: B10171
+milestone: R2 bug fixes
+title: The master key's rights come from LiteLLM's master key record, not from the subject
+status: todo
+depends_on: [B355, B738, B826, B861, B863, B870, B992, B993, B1100, B1105, B1601, B1723, B1724, B1726, B1727, B3102, B3158, B3159, B3160, B3161, B3275, B3508, B3617, B3684, B3685, B3686, B3867, B4061, B4062, B4307, B4308, B4446, B4447, B4781, B4786, B6670, B8230, B8271, B8502, B8586, B8597, B8599, B10074, B10100, B10115, B10165]
+file: tasks/B10171-master-key-record.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

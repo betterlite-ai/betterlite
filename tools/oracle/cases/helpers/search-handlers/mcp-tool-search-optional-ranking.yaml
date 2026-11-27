@@ -1,0 +1,15 @@
+kind: helper
+name: mcp-tool-search-optional-ranking
+call:
+  b4686:
+    handler: mcp_tool_search
+    query: alpha
+    settings: {embedding_model: embed-small, top_k: 10, similarity_threshold: 0.5}
+    has_router: true
+    tools:
+      - {name: alpha-tool, server_id: srv, description: finds alpha}
+      - {name: beta-tool, server_id: srv, description: finds beta}
+      - {name: gamma-tool, server_id: srv, description: also alpha}
+    caller: {user_id: u1}
+env: {}
+compare: {ignore: []}

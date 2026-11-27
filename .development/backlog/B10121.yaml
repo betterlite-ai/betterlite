@@ -1,14 +1,14 @@
 id: B10121
 milestone: M5 api families
 title: MCP tool result record
-status: todo
+status: done
 depends_on: []
 file: tasks/B10121-mcp-tool-results.yaml
 covers:
   - "litellm/responses/mcp/litellm_proxy_mcp_handler.py"
 parent: B080
 split_from: B950
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 3328
