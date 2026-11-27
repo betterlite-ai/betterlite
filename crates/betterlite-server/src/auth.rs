@@ -140,12 +140,9 @@ fn stage_input(
         }
         AuthBackend::EntityModelAccess => entity_model_access::stage_input(request, authenticated),
         AuthBackend::AuthResourceGrants => Ok(resource_grant_stage_input(request, authenticated)?),
-        AuthBackend::AuthTagBudgets => Ok(StageInput::AuthTagBudgets(Box::new(
-            auth_tag_budgets::stage_input(request, authenticated)?,
-        ))),
-        AuthBackend::AuthKeyBudgets => Ok(StageInput::AuthKeyBudgets(Box::new(
-            auth_key_budgets::stage_input(request, authenticated)?,
-        ))),
+        AuthBackend::AuthTagBudgets | AuthBackend::AuthKeyBudgets => {
+            budget_stage_input(backend, request, authenticated)
+        }
         AuthBackend::TeamBudgetAdmission => {
             team_budget_admission::stage_input(request, authenticated)
         }
@@ -164,6 +161,22 @@ fn stage_input(
             model_grant_intersection::stage_input(request, authenticated)?,
         ))),
     }
+}
+
+// the two budget stages read their rule from the request and carry it in their own stage input
+fn budget_stage_input(
+    backend: AuthBackend,
+    request: &Request<Body>,
+    authenticated: Option<&AuthContext>,
+) -> Result<StageInput, StageFailure> {
+    if backend == AuthBackend::AuthTagBudgets {
+        return Ok(StageInput::AuthTagBudgets(Box::new(
+            auth_tag_budgets::stage_input(request, authenticated)?,
+        )));
+    }
+    Ok(StageInput::AuthKeyBudgets(Box::new(
+        auth_key_budgets::stage_input(request, authenticated)?,
+    )))
 }
 
 // The stages that read the request model against the resolver: the two model stages and the context sources stage.
