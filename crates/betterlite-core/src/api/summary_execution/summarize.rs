@@ -2,7 +2,7 @@ use crate::api::messages_context_clear::constants::SUMMARY_TIMEOUT_SECONDS;
 use crate::api::messages_context_clear::result::{
     AppliedEdit, CompactionBlock, CompactionKind, UsageIteration, UsageKind,
 };
-use crate::api::summary_execution::attribution::{end_user, region_of};
+use crate::api::summary_execution::attribution::{PrincipalRegion, end_user};
 use crate::api::summary_execution::completion::SummaryCall;
 use crate::api::summary_execution::draft::{Draft, PhaseA, tail};
 use crate::api::summary_execution::editor::{EditorRequest, EditorServices};
@@ -48,7 +48,13 @@ where
     .await;
     let metadata = propagate_metadata(task.request.litellm_metadata);
     let region = match task.request.principal {
-        Some(principal) => region_of(principal).map_err(SummaryExecutionError::Principal)?,
+        Some(principal) => {
+            let encoded =
+                serde_json::to_value(principal).map_err(SummaryExecutionError::Principal)?;
+            let fields: PrincipalRegion =
+                serde_json::from_value(encoded).map_err(SummaryExecutionError::Principal)?;
+            fields.allowed_model_region
+        }
         None => None,
     };
     let call = SummaryCall {

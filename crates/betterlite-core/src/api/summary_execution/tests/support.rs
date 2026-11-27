@@ -126,7 +126,11 @@ impl SummaryModelChecks for ScriptedChecks {
         _model: &str,
         _project: &ProjectTable,
     ) -> Result<(), PolicyFailure<io::Error>> {
-        self.verdict()
+        self.recorder.record("access");
+        if self.deny {
+            return Err(PolicyFailure::Denied);
+        }
+        Ok(())
     }
 }
 
@@ -269,22 +273,12 @@ pub(crate) enum Counted {
     Text(String),
 }
 
+#[derive(Default)]
 pub(crate) struct ScriptedCounter {
     pub(crate) conversation: usize,
     pub(crate) text: usize,
     pub(crate) fail: bool,
     pub(crate) calls: Mutex<Vec<Counted>>,
-}
-
-impl Default for ScriptedCounter {
-    fn default() -> Self {
-        Self {
-            conversation: 150_001,
-            text: 0,
-            fail: false,
-            calls: Mutex::new(Vec::new()),
-        }
-    }
 }
 
 impl ScriptedCounter {
@@ -443,7 +437,12 @@ impl Default for Fixture {
                     over: false,
                 },
             },
-            counter: ScriptedCounter::default(),
+            counter: ScriptedCounter {
+                conversation: 150_001,
+                text: 0,
+                fail: false,
+                calls: Mutex::new(Vec::new()),
+            },
             router: ScriptedCompletion::text(answer),
             direct: ScriptedCompletion::text(answer),
             recorder,

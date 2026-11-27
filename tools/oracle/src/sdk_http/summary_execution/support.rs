@@ -92,7 +92,11 @@ impl SummaryModelChecks for ScriptedChecks {
         _model: &str,
         _project: &ProjectTable,
     ) -> Result<(), PolicyFailure<io::Error>> {
-        self.answer()
+        self.recorder.record("access");
+        if self.verdict == Verdict::Deny {
+            return Err(PolicyFailure::Denied);
+        }
+        Ok(())
     }
 }
 

@@ -28,14 +28,6 @@ use super::{CallRecord, Route};
 
 const MODEL_ID: &str = "summary";
 
-fn fixed_clock() -> u64 {
-    1_700_000_000
-}
-
-fn fixed_id() -> Uuid {
-    Uuid::from_u128(7)
-}
-
 // the workspace's own chat executor, pointed at the case's loopback provider through one deployment
 pub(super) fn executor() -> Result<ChatExecutor, SdkHttpError> {
     let policy = Arc::new(
@@ -53,8 +45,8 @@ pub(super) fn executor() -> Result<ChatExecutor, SdkHttpError> {
             text_models: BTreeSet::new(),
         },
         random: Mutex::new(StdRng::seed_from_u64(7)),
-        clock: fixed_clock,
-        next_id: fixed_id,
+        clock: || 1_700_000_000,
+        next_id: || Uuid::from_u128(7),
         mock: MockSettings::default(),
         mock_chat: betterlite_core::mock::chat::response,
         mock_embedding: betterlite_core::mock::embedding::response,

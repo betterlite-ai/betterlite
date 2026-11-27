@@ -37,8 +37,13 @@ pub fn validate(edit_spec: &CompactEditSpec) -> Result<(u64, AppliedEdit), Conte
     }
     let applied = AppliedEdit {
         edit_type: Some(COMPACT_EDIT_TYPE.to_owned()),
+        cleared_input_tokens: None,
+        cleared_tool_uses: None,
+        cleared_thinking_turns: None,
+        summary_input_tokens: None,
+        summary_output_tokens: None,
+        error: None,
         warnings: (!warnings.is_empty()).then_some(warnings),
-        ..AppliedEdit::default()
     };
     Ok((resolved.tokens, applied))
 }

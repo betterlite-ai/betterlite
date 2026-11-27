@@ -1,13 +1,13 @@
 use betterlite_prompts::arguments::json::Json;
 use num_traits::cast::cast;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 use serde_json::Number;
 
 // the typed record a completion port returns: _extract_response_text and _extract_usage read only these fields
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 pub struct CompletionAnswer {
-    #[serde(default, deserialize_with = "nullable_choices")]
-    pub choices: Vec<CompletionChoice>,
+    #[serde(default)]
+    pub choices: Option<Vec<CompletionChoice>>,
     #[serde(default)]
     pub usage: Option<CompletionUsage>,
 }
@@ -33,14 +33,6 @@ pub struct CompletionUsage {
     pub completion_tokens: Option<Json>,
 }
 
-// getattr(response, "choices", None) reads a null the same way as a missing field
-fn nullable_choices<'de, D>(deserializer: D) -> Result<Vec<CompletionChoice>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    Option::<Vec<CompletionChoice>>::deserialize(deserializer).map(Option::unwrap_or_default)
-}
-
 // the errors _extract_response_text's TypeError and _extract_usage's ValueError stand for
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum ExtractionError {
@@ -57,18 +49,15 @@ pub struct SummaryUsage {
 }
 
 pub fn extract_response_text(answer: &CompletionAnswer) -> Result<Option<String>, ExtractionError> {
-    let Some(content) = content_of(answer) else {
-        return Ok(None);
-    };
-    match content {
-        Json::Text(text) => Ok(Some(text.clone())),
-        Json::List(parts) => text_parts(parts),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Object(_) => Ok(None),
+    match content_of(answer) {
+        Some(Json::Text(text)) => Ok(Some(text.clone())),
+        Some(Json::List(parts)) => text_parts(parts),
+        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Object(_)) | None => Ok(None),
     }
 }
 
 fn content_of(answer: &CompletionAnswer) -> Option<&Json> {
-    let choice = answer.choices.first()?;
+    let choice = answer.choices.as_ref()?.first()?;
     let message = choice.message.as_ref()?;
     message.content.as_ref()
 }

@@ -70,11 +70,13 @@ pub fn slice_only(phase: &PhaseA, applied: AppliedEdit) -> Draft {
 
 // a skipped or failed summary forwards the stripped tail as it is, empty included, with no continuation prompt
 pub fn tail(phase: &PhaseA, applied: AppliedEdit) -> Draft {
+    let system = phase.system.clone();
+    let messages = phase.downstream.clone();
     Draft {
-        messages: phase.downstream.clone(),
-        system: phase.system.clone(),
         applied,
-        compaction_block: None,
+        messages,
+        system,
         iterations_usage: None,
+        compaction_block: None,
     }
 }

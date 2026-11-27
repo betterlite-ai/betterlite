@@ -1,8 +1,8 @@
 from typing import Final, TypedDict
 
-from litellm.llms.anthropic.pass_through.context_management.editors.compact import (  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L1084
-    _extract_response_text,
-    _extract_usage,
+from litellm.llms.anthropic.pass_through.context_management.editors.compact import (
+    _extract_response_text,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L1084
+    _extract_usage,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L1105
 )
 from pydantic import BaseModel, JsonValue, TypeAdapter
 

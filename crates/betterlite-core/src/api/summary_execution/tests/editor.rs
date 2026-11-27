@@ -5,6 +5,7 @@ use betterlite_config::sections::summary_model_access::Settings;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_models::decisions::Json as DecisionJson;
 use betterlite_prompts::arguments::json::Json;
+use rstest::rstest;
 use serde::Serialize;
 
 use crate::api::messages_context_clear::constants::{
@@ -482,32 +483,32 @@ async fn configured_max_tokens_travel_to_the_call() {
     );
 }
 
+#[rstest]
+#[case::end_user(r#"{"user_api_key_end_user_id":"end-1"}"#, Some("end-1"))]
+#[case::no_end_user(r#"{"user_api_key":"k"}"#, None)]
+#[case::empty_end_user(r#"{"user_api_key_end_user_id":""}"#, None)]
+#[case::number_end_user(r#"{"user_api_key_end_user_id":7}"#, None)]
 #[tokio::test]
-async fn only_a_nonempty_string_end_user_travels() {
-    let cases = [
-        (r#"{"user_api_key_end_user_id":"end-1"}"#, Some("end-1")),
-        (r#"{"user_api_key":"k"}"#, None),
-        (r#"{"user_api_key_end_user_id":""}"#, None),
-        (r#"{"user_api_key_end_user_id":7}"#, None),
-    ];
-    for (metadata, expected) in cases {
-        let fixture = Fixture::default();
-        let mut sample = Sample::default();
-        sample.metadata = Some(object(metadata));
-        run(&fixture, sample.request(MODEL), Port::Routed)
-            .await
-            .expect("the editor runs");
-        assert_eq!(
-            fixture
-                .router
-                .calls()
-                .first()
-                .expect("one summary call")
-                .user
-                .as_deref(),
-            expected
-        );
-    }
+async fn only_a_nonempty_string_end_user_travels(
+    #[case] metadata: &str,
+    #[case] expected: Option<&str>,
+) {
+    let fixture = Fixture::default();
+    let mut sample = Sample::default();
+    sample.metadata = Some(object(metadata));
+    run(&fixture, sample.request(MODEL), Port::Routed)
+        .await
+        .expect("the editor runs");
+    assert_eq!(
+        fixture
+            .router
+            .calls()
+            .first()
+            .expect("one summary call")
+            .user
+            .as_deref(),
+        expected
+    );
 }
 
 #[tokio::test]

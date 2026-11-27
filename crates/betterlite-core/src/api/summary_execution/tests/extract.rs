@@ -1,3 +1,5 @@
+use rstest::rstest;
+
 use crate::api::summary_execution::extract::{
     CompletionAnswer, ExtractionError, SummaryUsage, extract_response_text, extract_usage,
 };
@@ -14,20 +16,16 @@ fn usage(raw: &str) -> Result<SummaryUsage, ExtractionError> {
     extract_usage(&parsed(raw))
 }
 
-#[test]
-fn response_text_needs_a_choice_and_a_message() {
-    let missing = [
-        r#"{}"#,
-        r#"{"choices":null}"#,
-        r#"{"choices":[]}"#,
-        r#"{"choices":[{}]}"#,
-        r#"{"choices":[{"message":null}]}"#,
-        r#"{"choices":[{"message":{}}]}"#,
-        r#"{"usage":{"prompt_tokens":4}}"#,
-    ];
-    for raw in missing {
-        assert_eq!(text(raw), None, "{raw}");
-    }
+#[rstest]
+#[case::no_fields(r#"{}"#)]
+#[case::null_choices(r#"{"choices":null}"#)]
+#[case::empty_choices(r#"{"choices":[]}"#)]
+#[case::no_message(r#"{"choices":[{}]}"#)]
+#[case::null_message(r#"{"choices":[{"message":null}]}"#)]
+#[case::no_content(r#"{"choices":[{"message":{}}]}"#)]
+#[case::usage_only(r#"{"usage":{"prompt_tokens":4}}"#)]
+fn response_text_needs_a_choice_and_a_message(#[case] raw: &str) {
+    assert_eq!(text(raw), None, "{raw}");
 }
 
 #[test]
@@ -42,18 +40,14 @@ fn response_text_keeps_a_string_as_sent() {
     );
 }
 
-#[test]
-fn response_text_ignores_nontext_content() {
-    let nontext = [
-        r#"{"choices":[{"message":{"content":7}}]}"#,
-        r#"{"choices":[{"message":{"content":true}}]}"#,
-        r#"{"choices":[{"message":{"content":{"type":"text"}}}]}"#,
-        r#"{"choices":[{"message":{"content":null}}]}"#,
-        r#"{"choices":[{"message":{"content":[]}}]}"#,
-    ];
-    for raw in nontext {
-        assert_eq!(text(raw), None, "{raw}");
-    }
+#[rstest]
+#[case::number(r#"{"choices":[{"message":{"content":7}}]}"#)]
+#[case::boolean(r#"{"choices":[{"message":{"content":true}}]}"#)]
+#[case::object(r#"{"choices":[{"message":{"content":{"type":"text"}}}]}"#)]
+#[case::null(r#"{"choices":[{"message":{"content":null}}]}"#)]
+#[case::empty_list(r#"{"choices":[{"message":{"content":[]}}]}"#)]
+fn response_text_ignores_nontext_content(#[case] raw: &str) {
+    assert_eq!(text(raw), None, "{raw}");
 }
 
 #[test]
@@ -77,24 +71,20 @@ fn response_text_rejects_a_nonstring_text_part() {
     assert_eq!(error, ExtractionError::NonTextPart);
 }
 
-#[test]
-fn usage_defaults_to_zero() {
-    let zero = [
-        r#"{}"#,
-        r#"{"usage":null}"#,
-        r#"{"usage":{}}"#,
-        r#"{"usage":{"prompt_tokens":null,"completion_tokens":null}}"#,
-        r#"{"usage":{"prompt_tokens":"","completion_tokens":""}}"#,
-        r#"{"usage":{"prompt_tokens":0,"completion_tokens":0}}"#,
-    ];
-    for raw in zero {
-        let counted = usage(raw).expect("zero counts");
-        assert_eq!(
-            (counted.input_tokens, counted.output_tokens),
-            (0, 0),
-            "{raw}"
-        );
-    }
+#[rstest]
+#[case::no_usage(r#"{}"#)]
+#[case::null_usage(r#"{"usage":null}"#)]
+#[case::empty_usage(r#"{"usage":{}}"#)]
+#[case::null_counts(r#"{"usage":{"prompt_tokens":null,"completion_tokens":null}}"#)]
+#[case::empty_strings(r#"{"usage":{"prompt_tokens":"","completion_tokens":""}}"#)]
+#[case::zeros(r#"{"usage":{"prompt_tokens":0,"completion_tokens":0}}"#)]
+fn usage_defaults_to_zero(#[case] raw: &str) {
+    let counted = usage(raw).expect("zero counts");
+    assert_eq!(
+        (counted.input_tokens, counted.output_tokens),
+        (0, 0),
+        "{raw}"
+    );
 }
 
 #[test]
@@ -110,20 +100,16 @@ fn usage_reads_numbers_and_numeric_strings() {
     assert_eq!((counted.input_tokens, counted.output_tokens), (1, 0));
 }
 
-#[test]
-fn usage_rejects_values_that_are_not_integers() {
-    let invalid = [
-        r#"{"usage":{"prompt_tokens":"bad"}}"#,
-        r#"{"usage":{"prompt_tokens":" "}}"#,
-        r#"{"usage":{"prompt_tokens":[1]}}"#,
-        r#"{"usage":{"prompt_tokens":{"x":1}}}"#,
-        r#"{"usage":{"prompt_tokens":-1}}"#,
-    ];
-    for raw in invalid {
-        assert_eq!(
-            usage(raw).expect_err("not an integer"),
-            ExtractionError::TokenNotAnInteger,
-            "{raw}"
-        );
-    }
+#[rstest]
+#[case::word(r#"{"usage":{"prompt_tokens":"bad"}}"#)]
+#[case::blank(r#"{"usage":{"prompt_tokens":" "}}"#)]
+#[case::list(r#"{"usage":{"prompt_tokens":[1]}}"#)]
+#[case::object(r#"{"usage":{"prompt_tokens":{"x":1}}}"#)]
+#[case::negative(r#"{"usage":{"prompt_tokens":-1}}"#)]
+fn usage_rejects_values_that_are_not_integers(#[case] raw: &str) {
+    assert_eq!(
+        usage(raw).expect_err("not an integer"),
+        ExtractionError::TokenNotAnInteger,
+        "{raw}"
+    );
 }

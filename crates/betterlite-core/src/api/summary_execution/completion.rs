@@ -100,9 +100,9 @@ fn answer_from_response(response: ChatResponse) -> CompletionAnswer {
         .and_then(|choice| choice.message.content.clone())
         .map(Json::Text);
     CompletionAnswer {
-        choices: vec![CompletionChoice {
+        choices: Some(vec![CompletionChoice {
             message: Some(CompletionMessage { content }),
-        }],
+        }]),
         usage: Some(CompletionUsage {
             prompt_tokens: Some(Json::Number(Number::from(response.usage.prompt_tokens))),
             completion_tokens: Some(Json::Number(Number::from(response.usage.completion_tokens))),

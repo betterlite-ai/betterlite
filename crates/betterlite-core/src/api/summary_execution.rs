@@ -7,7 +7,6 @@ pub mod encoding;
 pub mod error;
 pub mod extract;
 pub mod policy;
-pub mod roundtrip;
 pub mod summarize;
 
 mod tests;
