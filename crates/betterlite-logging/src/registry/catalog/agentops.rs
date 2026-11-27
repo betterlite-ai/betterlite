@@ -1,11 +1,12 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use betterlite_config::sections::callback_settings::names::CallbackName;
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 
 use super::otel::shared::SharedOtel;
 use super::otel::{legacy, maybe};
-use super::{CatalogError, CatalogInputs};
+use super::{CatalogError, CatalogInputs, LoggerCatalog};
 use crate::callback_logger::CallbackLogger;
 use crate::otel::callbacks::agentops::transport::AuthTransport;
 use crate::otel::callbacks::agentops::{AgentOpsCallback, AgentOpsConfig};
@@ -69,6 +70,28 @@ pub fn build(
     };
     let otel = legacy_otel(inputs, shared, startup)?;
     legacy::complete(inputs, shared, otel)
+}
+
+// with_agentops hands the connected callback to the arm through the catalog's own build closure
+#[must_use]
+pub(crate) fn install(mut catalog: LoggerCatalog, callback: AgentOpsCallback) -> LoggerCatalog {
+    let dispatch = Arc::clone(&catalog.build);
+    catalog.build = Arc::new(
+        move |name: CallbackName,
+              inputs: &CatalogInputs,
+              runtime: Option<&LoggerRuntime>,
+              shared: &SharedOtel,
+              in_memory: &mut Vec<Arc<dyn CallbackLogger>>|
+              -> Result<Arc<dyn CallbackLogger>, CatalogError> {
+            if name == CallbackName::Agentops {
+                let logger = build(inputs, runtime, shared, in_memory, Some(&callback))?;
+                maybe::push_once(in_memory, &logger);
+                return Ok(logger);
+            }
+            dispatch(name, inputs, runtime, shared, in_memory)
+        },
+    );
+    catalog
 }
 
 // B8746's legacy path with the AgentOps exporter config and its resource attributes in the environment

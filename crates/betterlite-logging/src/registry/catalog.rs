@@ -62,27 +62,20 @@ pub mod zerobus;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use betterlite_config::loader::EnvironmentLookup;
-use betterlite_config::sections::callback_settings::CallbackEntry;
-use betterlite_config::sections::callback_settings::names::CallbackName;
-use betterlite_config::types::Config;
+use betterlite_config::sections::callback_settings::{CallbackEntry, names::CallbackName};
+use betterlite_config::{loader::EnvironmentLookup, types::Config};
 use betterlite_http::proxy::ProxiedClient;
 use thiserror::Error;
-use tokio_util::sync::CancellationToken;
-use tokio_util::task::TaskTracker;
+use tokio_util::{sync::CancellationToken, task::TaskTracker};
 
-use self::otel::maybe::push_once;
-use self::otel::phoenix_auto;
-use self::otel::shared::SharedOtel;
+use self::otel::{maybe::push_once, phoenix_auto, shared::SharedOtel};
 use super::error::RegistryError;
 use crate::callback_config::error::ValidationError;
 use crate::callback_config::family::{conflicting_span_scope_error, cross_entry_family_error};
 use crate::callback_config::options::callback_config_error;
 use crate::callback_config::{CallbackVars, FeatureFlags};
-use crate::callback_logger::CallbackLogger;
-use crate::callback_logger::resolver::LoggerResolver;
-use crate::otel::callbacks::agentops::AgentOpsCallback;
-use crate::otel::logger_runtime::LoggerRuntime;
+use crate::callback_logger::{CallbackLogger, resolver::LoggerResolver};
+use crate::otel::{callbacks::agentops::AgentOpsCallback, logger_runtime::LoggerRuntime};
 
 pub fn validate_callback_vars(
     callback_name: Option<&str>,
@@ -164,27 +157,9 @@ impl LoggerCatalog {
         self
     }
 
-    // the startup step awaited the JWT fetch, which the resolver cannot; the arm builds from its result
     #[must_use]
-    pub fn with_agentops(mut self, callback: AgentOpsCallback) -> Self {
-        let dispatch = Arc::clone(&self.build);
-        self.build = Arc::new(
-            move |name: CallbackName,
-                  inputs: &CatalogInputs,
-                  runtime: Option<&LoggerRuntime>,
-                  shared: &SharedOtel,
-                  in_memory: &mut Vec<Arc<dyn CallbackLogger>>|
-                  -> Result<Arc<dyn CallbackLogger>, CatalogError> {
-                if name == CallbackName::Agentops {
-                    let logger =
-                        agentops::build(inputs, runtime, shared, in_memory, Some(&callback))?;
-                    push_once(in_memory, &logger);
-                    return Ok(logger);
-                }
-                dispatch(name, inputs, runtime, shared, in_memory)
-            },
-        );
-        self
+    pub fn with_agentops(self, callback: AgentOpsCallback) -> Self {
+        agentops::install(self, callback)
     }
 
     // clippy's same_name_method refuses this name while the type also implements the resolver trait
@@ -348,9 +323,7 @@ dispatch_logger! {
         Traceloop => traceloop,
         WeaveOtel => weave_otel,
     }
-    connected {
-        Agentops => agentops,
-    }
+    connected { Agentops => agentops, }
     builders {
         Argilla => argilla,
         Athina => athina, AwsSqs => aws_sqs,
