@@ -3,7 +3,6 @@ use betterlite_auth::auth_identity::records::{
     CredentialRef, NetworkContext, Principal, SourceKey,
 };
 use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType};
-use betterlite_error::proxy_exception::ProxyException;
 use secrecy::{ExposeSecret as _, SecretString};
 use subtle::ConstantTimeEq as _;
 
@@ -12,7 +11,7 @@ use crate::auth::auth_end_users::EndUserStageInput;
 use crate::auth::auth_key_budgets::KeyBudgetStageInput;
 use crate::auth::auth_key_lookup::KeyLookupStageInput;
 use crate::auth::auth_model_grants::AgentModelGrantsStageInput;
-use crate::auth::auth_model_patterns::{ModelAccessRejection, ModelPatternStageInput, run_stage};
+use crate::auth::auth_model_patterns::{ModelPatternStageInput, run_stage};
 use crate::auth::auth_org_lookup::OrgStageInput;
 use crate::auth::auth_policy_support::{self, AuthPolicySupportStageInput};
 use crate::auth::auth_request_models::{RequestModelStageInput, resolve};
@@ -29,6 +28,8 @@ use crate::auth::team_budget_admission::TeamBudgetStageInput;
 use crate::auth::trusted_network::{self, TrustedNetworkStageInput};
 use crate::auth::virtual_key_routes::{self, VirtualKeyRouteStageInput};
 use crate::error_body::AuthenticationFailure;
+
+pub(crate) use crate::auth::failures::StageFailure;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AuthBackend {
@@ -125,35 +126,6 @@ pub trait BudgetAdmission {
         context: &AuthContext,
         scope: &RequestScope,
     ) -> Result<AdmissionLease, AuthError>;
-}
-
-pub(crate) enum StageFailure {
-    Authentication(Box<AuthenticationFailure>),
-    KeyLookup(Box<ProxyException>),
-    ModelAccess(Box<ModelAccessRejection>),
-    AuthModelGrants(Box<ProxyException>),
-    EntityModelAccess(Box<ProxyException>),
-    TrustedNetwork(Box<ProxyException>),
-    AuthRequestPolicy(Box<ProxyException>),
-    ResourceGrants(Box<ProxyException>),
-    TagBudgets(Box<ProxyException>),
-    RequestBodySafety(Box<ProxyException>),
-    VirtualKeyRoutes(Box<ProxyException>),
-    KeyBudgets(Box<ProxyException>),
-    TeamBudgets(Box<ProxyException>),
-    TenantBudgets(Box<ProxyException>),
-    OrganizationRoutePolicy(Box<ProxyException>),
-    OrgLookup(Box<ProxyException>),
-    EndUserIdentity(Box<ProxyException>),
-    EndUsers(Box<ProxyException>),
-    AuthPolicySupport(Box<ProxyException>),
-    ModelGrants(Box<ProxyException>),
-}
-
-impl From<AuthenticationFailure> for StageFailure {
-    fn from(failure: AuthenticationFailure) -> Self {
-        Self::Authentication(Box::new(failure))
-    }
 }
 
 impl StageInput {
