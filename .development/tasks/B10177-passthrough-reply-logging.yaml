@@ -25,6 +25,9 @@ description: >-
   Callers. The Python session's `logging_state` (session.rs L113-L140) builds a CorrelationContext at L121 and drops it; it returns a PassthroughLog with that context and `success: None`, and `call` passes it Arc'd. B8691's executor and B8631's assembly are edited to build the shared log and pass a success handler through `passthrough_executors`.
 
 
+  Deviations. The row of docs/deviations/B8690.yaml at L15-L21, the one that says the call only updates the state it is given, gets a new what: the logging object is a parameter the caller makes and passes in, shared behind a lock with the stream relay, instead of the object the @client decorator builds. Its why keeps the B8694 and B8691 sentence and ends with: no wrapper surrounds the call, so it runs the full reply's success log itself (B10177). docs/deviations/B10177.yaml gets the rows in this task's deviations.
+
+
   Tests. crates/betterlite-core/src/api/passthrough_call/tests/success.rs, declared with `mod success;` in passthrough_call/tests.rs, with recording fakes for StandardPayloadBuilder, StreamAssembler and SuccessClock in its own support, the way caching/hit_callbacks/tests/support.rs L221-L330 builds an OwnedSuccessHandler. Cases: an Azure `/embeddings` full reply logs Embeddings and leaves call type aembedding on the state; an NVIDIA full reply logs Other `{"response": body}`; a GigaChat `/chat/completions` full reply logs Chat; a VLLM full reply logs Other(Null); a 400 logs nothing; success None logs nothing and the reply is the same; an Azure `/responses` stream logs its terminal event once, after the relay ends; the relay's spend_target is the resolved model, the provider slug and the endpoint; a Bedrock stream logs nothing. The existing call tests lock the shared log to read the state. A test in passthrough/transformation/tests.rs covers into_standard_response for a JSON object and a text body.
 scope:
   paths:
@@ -140,6 +143,7 @@ pitfalls:
   - "allm_passthrough_route keeps five parameters, the rules' limit: the success handler travels inside PassthroughLog, never as a sixth argument."
   - "tokio's Mutex is not reentrant. Drop the guard run takes before the send, because the full reply log and the relay flush lock the log again."
   - "B252's async_flush_passthrough needs a Sync collector (flush.rs L43) and B3572's BoxedCollector is only Send (crates/betterlite-core/src/passthrough_stream/spend_collection.rs L17), so the StreamCollector adapter keeps the boxed collector behind a std::sync::Mutex."
+  - "tokio's blocking_lock panics inside an async runtime. flush_collected_chunks runs only on B3572's sync executor thread, and PassthroughRelay never calls it, so test it from a plain #[test] or a spawned std thread, never from #[tokio::test]."
   - "The flush runs on a spawned task (flush_scheduling.rs L32-L41), so RelayLogging owns all it reads: the Arc'd log and the target strings."
   - "send.rs has 282 of its 300 lines and passthrough_call.rs 245 before B10164 and B10166. The new code goes in success.rs and logged.rs, and send.rs and reply.rs only call it."
   - "Write SuccessHandler as a struct literal over OwnedSuccessHandler's fields, as job.rs L88-L98 and crates/betterlite-core/src/caching/lookup/hit.rs L201-L211 do: the rules forbid a constructor that only builds a struct."
