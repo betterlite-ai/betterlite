@@ -59,12 +59,13 @@ pub async fn check_agent_caller(
         return Ok(());
     };
     let aliases = key_model_aliases(&key.view.token.aliases.0);
-    AgentModelGrantsError::gate(can_user_call_model(
+    EntityModelAccessError::gate(can_user_call_model(
         model,
         Some(&caller_user),
         &aliases,
         checks.context,
-    ))
+    ))?;
+    Ok(())
 }
 
 // can_team_access_model then the member scope: the agent key's aliases reach both, the team has none
