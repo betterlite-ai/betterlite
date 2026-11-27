@@ -8,7 +8,7 @@ deviations:
       B4500 keeps all Lens money as Decimal, so an estimate that the f64 formula produces is converted once at the
       boundary. The oracle cases use rates and prompts whose result is exact in both representations, so betterlite
       and LiteLLM compare equal.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/inference.py#L72-L87
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/inference.py#L72-L86
   - what: >-
       A catalog price that is null for the above-200k or above-128k tier counts as 0, and a missing base input or
       output rate, a negative rate or a non-numeric rate is a status 500 with an error that names the model.
@@ -24,5 +24,5 @@ deviations:
     why: >-
       betterlite has no ASGI layer and its chat pipeline takes request facts directly. The observable parts of the
       request that the pipeline reads are kept.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/billing.py#L50-L63
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/billing.py#L54-L67
 kept_bugs: []
