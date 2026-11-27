@@ -1,0 +1,11 @@
+kind: websocket
+name: realtime-probe-handshake
+path: /v1/realtime
+headers: {}
+requested_subprotocols: []
+expected_http_status: 101
+negotiated_subprotocol: null
+frames:
+  - direction: provider_to_client
+    action: send
+    text: '{"type": "session.created", "session": {"id": "sess-probe"}}'

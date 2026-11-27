@@ -1,0 +1,35 @@
+kind: helper
+name: bedrock-other-canvas-results-canvas-empty-images
+call:
+  bedrock_other_canvas_results:
+    model_cost: {}
+    calls:
+      - model: amazon.nova-canvas-v1:0
+        status: 200
+        body: '{}'
+      - model: amazon.nova-canvas-v1:0
+        status: 200
+        body: '{"images":[]}'
+      - model: amazon.nova-canvas-v1:0
+        status: 200
+        body: '{"images":["",null,false,0]}'
+      - model: amazon.nova-canvas-v1:0
+        status: 200
+        body: '{"images":[{}]}'
+      - model: amazon.nova-canvas-v1:0
+        status: 200
+        body: '{"message":null,"error":null}'
+      - model: amazon.nova-canvas-v1:0
+        status: 400
+        body: '{"images":[]}'
+      - model: amazon.nova-canvas-v1:0
+        status: 201
+        body: '{}'
+      - model: amazon.nova-canvas-v1:0
+        status: 200
+        body: '{"images":[],"errors":"e"}'
+      - model: amazon.nova-canvas-v1:0
+        status: 200
+        body: '{"images":[],"message":"m"}'
+env: {}
+compare: {ignore: []}

@@ -16,6 +16,10 @@ description: >-
   Tests in api::eval_run_http::tests run every handler against a local axum upstream on 127.0.0.1 that records method, path, query, headers and body: create posting its body with the timeout, list sending its query and no timeout, get sending neither, cancel posting `{}` to the `/cancel` URL it was given, delete sending no body, the logged input and additional_args per handler with a recording logger (the `params` key on list_runs included), a cancel answered 409 and a delete answered 404 both converted through `_handle_error` with the upstream status and text, and a get answered 404 handed to transform_get_run_response. No oracle case: B8776 and B096 prove these handlers over HTTP once B3424 and B3425 call them.
 scope:
   paths:
+    - "crates/betterlite-core/src/api/eval_http/tests.rs"
+    - "crates/betterlite-core/src/api/eval_http/logging.rs"
+    - "crates/betterlite-core/src/api/eval_http/handlers.rs"
+    - "crates/betterlite-core/src/api/eval_http/exchange.rs"
     - crates/betterlite-core/src/api/eval_run_http.rs
     - crates/betterlite-core/src/api/eval_run_http/**
   lint_tables: false

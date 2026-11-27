@@ -1,0 +1,59 @@
+kind: helper
+name: bedrock-other-canvas-results-canvas-error-object
+call:
+  bedrock_other_canvas_results:
+    model_cost: {}
+    calls:
+      - model: amazon.nova-canvas-v1:0
+        status: 400
+        body: '{"errors":"bad","images":["eA=="]}'
+      - model: amazon.nova-canvas-v1:0
+        status: 200
+        body: '{"errors":"bad"}'
+      - model: amazon.nova-canvas-v1:0
+        status: 200
+        body: '{"errors":null}'
+      - model: amazon.nova-canvas-v1:0
+        status: 200
+        body: '{"errors":false}'
+      - model: amazon.nova-canvas-v1:0
+        status: 200
+        body: '{"errors":[]}'
+      - model: amazon.nova-canvas-v1:0
+        status: 200
+        body: '{"errors":0}'
+      - model: amazon.nova-canvas-v1:0
+        status: 200
+        body: '{"message":"m"}'
+      - model: amazon.nova-canvas-v1:0
+        status: 200
+        body: '{"message":"m","error":"e"}'
+      - model: amazon.nova-canvas-v1:0
+        status: 200
+        body: '{"message":5}'
+      - model: amazon.nova-canvas-v1:0
+        status: 200
+        body: '{"message":"","error":"e"}'
+      - model: amazon.nova-canvas-v1:0
+        status: 200
+        body: '{"message":0,"error":"e"}'
+      - model: amazon.nova-canvas-v1:0
+        status: 200
+        body: '{"error":"e"}'
+      - model: amazon.nova-canvas-v1:0
+        status: 200
+        body: '{"images":[""],"errors":"bad"}'
+      - model: amazon.nova-canvas-v1:0
+        status: 200
+        body: '{"images":[""],"message":"m"}'
+      - model: amazon.nova-canvas-v1:0
+        status: 200
+        body: '{"images":["eA=="],"errors":"bad","message":"m"}'
+      - model: amazon.nova-canvas-v1:0
+        status: 200
+        body: '{"images":["eA=="],"finish_reasons":["E"]}'
+      - model: amazon.nova-canvas-v1:0
+        status: 500
+        body: '"boom"'
+env: {}
+compare: {ignore: []}

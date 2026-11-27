@@ -2,7 +2,7 @@ id: B355
 milestone: M2 routing
 title: Benchmark and per-key session read APIs
 status: todo
-depends_on: [B387, B344, B2314, B051, B301, B345, B860, B9942, B9260]
+depends_on: [B387, B726, B858, B1742, B2314, B051, B301, B345, B860, B9942, B9260]
 file: tasks/B355-auto-router-read-api.yaml
 covers:
   - "litellm/proxy/management_endpoints/auto_router_endpoints.py"

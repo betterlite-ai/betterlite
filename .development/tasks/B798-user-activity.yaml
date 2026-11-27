@@ -26,7 +26,8 @@ description: >-
   The route rethrows HTTPException and logs other failures before HTTP 500 Failed to fetch analytics.
   There is no handle_exception_on_proxy call. HTTP fixtures compare B003's actual error envelope,
   type/param/code, status and content-type; ignore only message wording. No response cookie or redirect
-  is produced. B790 supplies the typed _user_table accessor; no writes or budget-counter resets occur.
+  is produced. Read the page's user IDs directly through B723's typed UserRepository and B720's
+  user rows; B790 builds no separate _user_table wrapper. No writes or budget-counter resets occur.
 
 
   Exercise independent B860 Postgres databases through POSTGRES_TEST_URL (CI supplies it), using

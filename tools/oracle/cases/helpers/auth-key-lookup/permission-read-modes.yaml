@@ -1,0 +1,43 @@
+kind: helper
+name: auth-key-lookup-permission-read-modes
+call:
+  auth_key_lookup:
+    aspect: key_object
+    hashed_token: hashed-token
+    rows:
+      - kind: row
+        fields: {token: hashed-token, key_name: k1, user_id: u1, object_permission_id: op-1}
+    reconnect: {answer: false}
+    permissions: {id: op-1}
+calls:
+  # a reader's permission failure is logged and the row is still served
+  - auth_key_lookup:
+      aspect: key_object
+      hashed_token: hashed-token
+      rows:
+        - kind: row
+          fields: {token: hashed-token, key_name: k1, user_id: u1, object_permission_id: op-1}
+      reconnect: {answer: false}
+      permissions: {id: op-1, fail: true}
+  # a writer read loads the relation and returns before the cache write
+  - auth_key_lookup:
+      aspect: key_object
+      hashed_token: hashed-token
+      rows:
+        - kind: row
+          fields: {token: hashed-token, key_name: k1, user_id: u1, object_permission_id: op-1}
+      reconnect: {answer: false}
+      permissions: {id: op-1}
+      check_db_only: true
+  # a writer read fails loudly when the relation cannot be loaded
+  - auth_key_lookup:
+      aspect: key_object
+      hashed_token: hashed-token
+      rows:
+        - kind: row
+          fields: {token: hashed-token, key_name: k1, user_id: u1, object_permission_id: op-1}
+      reconnect: {answer: false}
+      permissions: {id: op-1, fail: true}
+      check_db_only: true
+env: {}
+compare: {ignore: []}
