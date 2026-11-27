@@ -245,6 +245,7 @@ fn model_stage_input(
         resolver: Arc::clone(resolver),
     }
 }
+
 pub fn parse_key_header(name: &str, header_bytes: &[u8]) -> Option<SecretString> {
     if header_bytes.is_empty() {
         return None;
