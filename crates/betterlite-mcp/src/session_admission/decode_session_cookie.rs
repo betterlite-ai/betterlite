@@ -135,7 +135,8 @@ impl SessionCookie {
     }
 }
 
-// PyJWT's segment rules: at most two trailing '=', a padded segment of whole quads, and a canonical re-encoding.
+// PyJWT's segment rules: at most two trailing '=', a padded segment of whole quads, and a canonical
+// re-encoding. The engine rejects a stripped length that is one past a quad, which PyJWT checks itself.
 fn segment(segment: &[u8]) -> Option<Vec<u8>> {
     let padding = segment
         .iter()
@@ -146,9 +147,6 @@ fn segment(segment: &[u8]) -> Option<Vec<u8>> {
         return None;
     }
     let symbols = segment.get(..segment.len().saturating_sub(padding))?;
-    if symbols.len() & 3 == 1 {
-        return None;
-    }
     let decoded = URL_SAFE_NO_PAD.decode(symbols).ok()?;
     (URL_SAFE_NO_PAD.encode(&decoded).as_bytes() == symbols).then_some(decoded)
 }

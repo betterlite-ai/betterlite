@@ -229,6 +229,18 @@ fn segment_padding_follows_the_compact_encoding_rules() {
         Err(DecodeError::Signature)
     );
     let header = segment(HEADER);
+    let payload = segment(VALID_PAYLOAD);
+    assert_eq!(
+        decode_session_cookie(format!("{header}.{payload}.aQ==").as_bytes())
+            .unwrap()
+            .claims
+            .exp,
+        FUTURE_EXPIRY
+    );
+    assert_eq!(
+        decode_session_cookie(format!("{header}====.{payload}.AAAA").as_bytes()),
+        Err(DecodeError::Header)
+    );
     assert_eq!(
         decode_session_cookie(format!("{header}.{}.AAAA", segment(r#"{"exp":1}"#)).as_bytes()),
         Err(DecodeError::Payload)
