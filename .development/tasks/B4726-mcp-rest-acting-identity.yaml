@@ -1,10 +1,10 @@
 id: B4726
 title: MCP REST acting identity, headers and server access
 description: >-
-  Build the helpers that the MCP REST tool routes (B4727 lists tools, B4728 calls them) share before they touch an upstream server. In LiteLLM they are the private functions at the top of litellm/proxy/_experimental/mcp_server/rest_endpoints.py plus lookup_mcp_server_auth_in_headers and sanitize_mcp_alias_for_header from mcp_server/utils.py. They answer four questions: which credential the request acts as, which header carries the caller's token to a given server, which Authorization header the caller's own stored OAuth2 token produces, and whether the caller may reach the server the request names. No route is registered here.
+  Build the helpers that the MCP REST tool routes (B4727 lists tools, B4728 calls them) share before they touch an upstream server. In LiteLLM they are the private functions at the top of litellm/proxy/_experimental/mcp_server/rest_endpoints.py. They answer four questions: which credential the request acts as, which header carries the caller's token to a given server, which Authorization header the caller's own stored OAuth2 token produces, and whether the caller may reach the server the request names. No route is registered here.
 
 
-  The code goes in betterlite-mcp, module rest_access: crates/betterlite-mcp/src/rest_access.rs with four submodules, headers, user_tokens, allowed and acting, each in rest_access/ with a tests.rs beside it. rest_access.rs already declares `pub mod error;`, the module of B10144; keep that line and leave rest_access/error.rs and its folder to B10144. The production side of the ports goes in betterlite-server, module mcp::rest_reads (crates/betterlite-server/src/mcp/rest_reads.rs with a tests.rs). No Cargo.toml changes: betterlite-mcp already depends on betterlite-auth, betterlite-db (B6590 added it) and betterlite-config, and betterlite-server depends on betterlite-mcp. Use MCPServer from B6590 (module server_record), ServerRegistry from B4731 (module registry), ServerUnion from B6591 (module allowed_union), the request header readers from B4654 (module request_headers), RestAccessError and RestDetail from B10144 (module rest_access::error) and filter_server_ids_by_ip from B10145 (module registry_ip_filter). Do not copy their types.
+  The code goes in betterlite-mcp, module rest_access: crates/betterlite-mcp/src/rest_access.rs with four submodules, headers, user_tokens, allowed and acting, each in rest_access/ with a tests.rs beside it. rest_access.rs already declares `pub mod error;`, the module of B10144; keep that line and leave rest_access/error.rs and its folder to B10144. The production side of the ports goes in betterlite-server, module mcp::rest_reads (crates/betterlite-server/src/mcp/rest_reads.rs with a tests.rs). No Cargo.toml changes: betterlite-mcp already depends on betterlite-auth, betterlite-db (B6590 added it) and betterlite-config, and betterlite-server depends on betterlite-mcp. Use MCPServer from B6590 (module server_record), ServerRegistry from B4731 (module registry), ServerUnion from B6591 (module allowed_union), the request header readers from B4654 (module request_headers), RestAccessError and RestDetail from B10144 (module rest_access::error), filter_server_ids_by_ip from B10145 (module registry_ip_filter) and lookup_server_auth from B10155 (module client_auth_headers::lookup). Do not copy their types.
 
 
   RestAccessError, built by B10144, is the error of the whole module; don't add a second error enum. Its Http variant carries a status (u16) and a RestDetail: plain text (Text), an object with only error (Error) or an object with error and message (ErrorMessage). B4727 and B4728 turn it into the response LiteLLM's HTTPException gives. Its Port variant wraps a String from a port and is never shown to a client as is. A port is a trait with async methods and a struct-literal composition, like the ports of B6591.
@@ -12,9 +12,7 @@ description: >-
 
   Submodule headers.
 
-  1. sanitize_alias_for_header (sanitize_mcp_alias_for_header): lowercase the alias, trim whitespace, replace every character outside a-z, 0-9 and underscore with one underscore (per character, not per run of characters), collapse runs of underscores to one, then trim underscores from both ends. This must match the dashboard's TypeScript helper byte for byte, so non-ASCII characters each become one underscore.
-
-  2. lookup_server_auth (lookup_mcp_server_auth_in_headers) takes the map from B4654's server_auth_headers (alias to header name to value), the server's alias, server_name and access_groups, and returns Option<&BTreeMap<String, String>>. An empty map gives None. Lowercase every key of the map first (when two keys collapse to one, the later one wins). For one identifier the candidate keys are its lowercase form, and also its sanitized form when that is non-empty and differs. Walk alias, then server_name, skipping a missing or empty one; the first identifier with a candidate key present decides, and its value is returned (the lowercase candidate is tried before the sanitized one). If no server key matches, look at the access groups the same way and collect the value of each group that has a key. No match gives None. If the collected values are not all equal, log at debug that group headers are ambiguous for the server alias and return None, so a token is never sent to a server it may not have been meant for. Otherwise return the common value.
+  1. and 2. B10155 builds sanitize_alias_for_header (sanitize_mcp_alias_for_header) and lookup_server_auth (lookup_mcp_server_auth_in_headers) in betterlite-mcp's client_auth_headers::lookup. lookup_server_auth takes B4654's server_auth_headers map, the server's alias, server_name and access_groups, and returns Option<&BTreeMap<String, SecretString>>. This task builds neither; step 3 calls the lookup.
 
   3. server_auth_header (_get_server_auth_header) takes the server, the per-server map (optional) and the shared mcp_auth_header (optional text). It returns ServerAuthHeader, an enum with PerServer(BTreeMap<String, String>) and Shared(String), or None. A non-empty per-server map that lookup_server_auth resolves gives PerServer. Anything else falls back to the shared header.
 
@@ -49,7 +47,7 @@ description: >-
   Production reads. LiveRestReads in betterlite-server holds B4713's two reads and B4715's resolver as fields (as B6591's LiveUnionReads does) and implements UserTokenReads. It maps a missing database to the message in step 6 and every store error to RestAccessError::Port. Keep the mapping in plain functions so tests need no Postgres.
 
 
-  Tests use fakes that record calls, synthetic servers, users and keys, and names with the prefix test-. Oracle helper cases cover the two pure functions of the headers submodule, steps 1 and 2. The rest has no route at this commit, so B4727 and B4728 add the HTTP cases when they register the routes.
+  Tests use fakes that record calls, synthetic servers, users and keys, and names with the prefix test-. This task has no oracle cases: B10155's helper cases cover steps 1 and 2, and the rest has no route at this commit, so B4727 and B4728 add the HTTP cases when they register the routes.
 
 scope:
   paths:
@@ -57,17 +55,11 @@ scope:
     - crates/betterlite-mcp/src/rest_access/**
     - crates/betterlite-server/src/mcp/rest_reads.rs
     - crates/betterlite-server/src/mcp/rest_reads/**
-    - tools/oracle/cases/helpers/mcp-server-auth-lookup/**
-    - tools/oracle/fuzz/corpus/helper_case/mcp-server-auth-lookup-*
-    - tools/oracle/helpers/b4726.py
-    - tools/oracle/helpers/b4726/**
-    - tools/oracle/src/helpers/mcp/b4726.rs
-    - tools/oracle/src/helpers/mcp/b4726/**
   lint_tables: false
 
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/utils.py#L151-L216
-    why: sanitize_mcp_alias_for_header, the candidate key rule and lookup_mcp_server_auth_in_headers with the access group default and its ambiguity rule.
+    why: lookup_mcp_server_auth_in_headers and the alias sanitizer, B10155's, which server_auth_header calls.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L426-L473
     why: _get_server_auth_header, _is_v1_resolved_oauth2_server and _v1_resolved_oauth2_server_ids.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L476-L555
@@ -80,10 +72,6 @@ references:
     why: "get_prisma_client_or_throw, a 500 whose detail is an object with the key error."
 
 dod:
-  - text: sanitize_alias_for_header lowercases, trims, turns each character outside a-z, 0-9 and underscore into one underscore, collapses underscore runs and trims underscores, and matches LiteLLM on mixed case, spaces, dashes and non-ASCII input.
-    proof: [header-tests, oracle]
-  - text: lookup_server_auth tries the lowercase and sanitized form of the alias, then of the server name, before the access groups, uses a group default only when every matching group carries the same value, and returns None for an ambiguous or empty case.
-    proof: [header-tests, oracle]
   - text: server_auth_header returns the per-server value when one resolves and the shared header otherwise, and extract_mcp_headers returns the shared header, the per-server map and the full header map from B4654's readers without a global.
     proof: [header-tests]
   - text: is_v1_oauth2_server is true only for an oauth2 server that to_server_spec leaves to v1, and v1_oauth2_server_ids skips ids the registry does not know.
@@ -100,14 +88,12 @@ dod:
     proof: [acting-tests]
   - text: LiveRestReads maps store results and errors to the port values, and a missing database to the documented message.
     proof: [reads-tests]
-  - text: The oracle helper cases for the alias sanitizer and the server auth lookup agree with LiteLLM, and the helper adapter is typed and lint clean.
-    proof: [oracle, helper-python, helper-case-corpus]
 
 checks:
   optional: []
   commands:
     - id: header-tests
-      why: the alias sanitizer, the server auth lookup or the header extraction is missing or wrong
+      why: the per-server or shared header choice or the header extraction is missing or wrong
       run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^rest_access::headers::tests::/)'
     - id: user-token-tests
       why: the stored OAuth2 token header, the prefetch or the v1 resolved test is missing or wrong
@@ -121,22 +107,8 @@ checks:
     - id: reads-tests
       why: the production token reads or their error mapping are missing or wrong
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::rest_reads::tests::/)'
-    - id: helper-python
-      why: the helper adapter is missing or fails strict Python checks
-      run: test -f tools/oracle/helpers/b4726.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-    - id: helper-case-corpus
-      why: no new b4726 operation reaches the shared helper case parser
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/mcp-server-auth-lookup-*')" && grep -rlq b4726 tools/oracle/fuzz/corpus/helper_case/mcp-server-auth-lookup-* && cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-mcp --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 
-oracle_cases:
-  - tools/oracle/cases/helpers/mcp-server-auth-lookup/sanitize-alias.yaml
-  - tools/oracle/cases/helpers/mcp-server-auth-lookup/sanitize-alias-non-ascii.yaml
-  - tools/oracle/cases/helpers/mcp-server-auth-lookup/lookup-by-alias.yaml
-  - tools/oracle/cases/helpers/mcp-server-auth-lookup/lookup-sanitized-alias.yaml
-  - tools/oracle/cases/helpers/mcp-server-auth-lookup/lookup-server-name-fallback.yaml
-  - tools/oracle/cases/helpers/mcp-server-auth-lookup/lookup-group-default.yaml
-  - tools/oracle/cases/helpers/mcp-server-auth-lookup/lookup-group-ambiguous.yaml
-  - tools/oracle/cases/helpers/mcp-server-auth-lookup/lookup-no-match.yaml
+oracle_cases: []
 
 deviations:
   - what: The helpers take the client ip, the user id and the toolset name as plain arguments, where LiteLLM reads them from the FastAPI request, the auth object and Query defaults.
@@ -156,10 +128,9 @@ out_of_scope:
   - "acting_user_auth: B4672. build_effective_auth_contexts: B10127. get_allowed_mcp_servers: B6591. server_by_id, server_by_name and is_accessible_from_ip: B4731. get_toolset_by_name_cached: B10147, used by B8626's production ActingPorts adapter; this task calls its own lookup port. to_server_spec: B4667."
   - "get_user_oauth_credential and list_user_oauth_credentials: B4713. resolve_valid_user_oauth_token: B4715."
   - "RestAccessError and RestDetail: B10144. filter_server_ids_by_ip and filter_server_ids_by_ip_with_info: B10145; step 11 calls the first."
+  - "sanitize_mcp_alias_for_header, _header_keys_for_identifier, _matching_header_key and lookup_mcp_server_auth_in_headers (utils.py L151-L216), with their oracle cases: B10155; step 3 calls lookup_server_auth."
 
 pitfalls:
-  - "lookup_mcp_server_auth_in_headers lowercases the map keys but not the alias it looks up by, then tries the lowercase form first and the sanitized form second; an alias like 'My Server' matches the header key my_server only through the sanitized form."
-  - "A group header is a default only when all matching groups carry equal values; one group with no header and one with a header still returns that header, and two groups with different values return nothing."
   - "_get_server_auth_header checks the per-server map for truthiness, so an empty map falls through to the shared x-mcp-auth header."
   - "is_v1_oauth2_server asks to_server_spec, not auth_type alone: an oauth2 server with a client_credentials flow belongs to the new resolver and gets no stored-token header here."
   - "With prefetched credentials, resolve_valid_user_oauth_token still runs for the entry (it may refresh), and a server id missing from the map passes None to it, not an error."

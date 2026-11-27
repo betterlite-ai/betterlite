@@ -34,7 +34,7 @@ description: >-
   key), skips authorization when should_strip_caller_auth is true, and returns None for an empty
   result. resolve_openapi_tool_auth returns three values: the Authorization value to inject, the
   headers to forward and the credential for B8465's resolve_openapi_upstream_auth. A per-server
-  x-mcp-{alias}-* map (B6594's lookup_mcp_server_auth_in_headers) wins: its Authorization is used
+  x-mcp-{alias}-* map (B10155's lookup_server_auth) wins: its Authorization is used
   verbatim, its other headers merge over the forwarded ones through B6594's merge_mcp_headers, and
   without an Authorization in it the BYOK header is formatted. A per-server string is used verbatim.
   Otherwise the BYOK header is formatted, else nothing.
@@ -139,7 +139,7 @@ out_of_scope:
   - _resolve_byok_mcp_auth_header calls the BYOK checks in operations.py, so it lives with call_tool in B8465.
   - _redacted_registry_dump is B6764's; _warn_on_* config warnings are B6763's.
   - "_prepare_mcp_server_headers in operations.py, the caller of these rules on the listing path: B8196."
-  - "lookup_mcp_server_auth_in_headers and merge_mcp_headers: B6594. strip_auth_scheme: B4741, which exposes it from betterlite-mcp credentials.rs."
+  - "lookup_mcp_server_auth_in_headers: B10155, as client_auth_headers::lookup::lookup_server_auth. merge_mcp_headers: B6594. strip_auth_scheme: B4741, which exposes it from betterlite-mcp credentials.rs."
   - "has_header and without_header (litellm/types/mcp.py L319-L335): B4741 filters headers privately inside credentials.rs and exposes neither. Build them here as case-insensitive pub(crate) functions in mcp::upstream_auth, so the strip rules and client_forwarded_auth_headers share one drop operation."
 
 pitfalls:
