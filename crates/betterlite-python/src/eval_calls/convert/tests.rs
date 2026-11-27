@@ -9,6 +9,7 @@ use betterlite_openai::evals::types::{EvalOrder, EvalOrderBy};
 use indexmap::IndexMap;
 use pyo3::PyErr;
 use pyo3::Python;
+use pyo3::exceptions::PyValueError;
 use rstest::rstest;
 use serde::Deserialize;
 
@@ -299,10 +300,13 @@ fn request_a_timeout_that_is_not_a_duration_is_a_bad_request(#[case] given: &str
 #[case::nan("NaN")]
 #[case::infinity("Infinity")]
 fn request_a_non_finite_timeout_is_a_json_error(#[case] given: &str) {
+    Python::initialize();
     let error = ListPayload::parse(&format!(r#"{{"timeout": {given}}}"#))
         .err()
         .unwrap();
     assert!(matches!(error, ConvertError::Json { .. }));
+    let raised = PyErr::from(EvalOperationFailure::from(error));
+    Python::attach(|py| assert!(raised.is_instance_of::<PyValueError>(py)));
 }
 
 #[test]
@@ -414,8 +418,11 @@ fn error_payload_leaves_out_a_missing_code() {
     let error = wire(&bad_request(None, None), "openai");
     assert_eq!(error.status_code, Some(400));
     let body = error.body.unwrap();
-    assert_eq!(body.get("type"), Some(&Json::Null));
-    assert_eq!(body.get("param"), Some(&Json::Null));
+    assert_eq!(
+        body.get("type"),
+        Some(&Json::Text("invalid_request_error".to_owned()))
+    );
+    assert_eq!(body.get("param"), Some(&Json::Text("after".to_owned())));
     assert!(!body.contains_key("code"));
 }
 

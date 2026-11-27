@@ -12,6 +12,12 @@ deviations:
 - what: "A `litellm_logging_obj` in kwargs is dropped, so the caller's logging object, its `update_from_kwargs` call and its success and failure handlers never see an eval call; the native session logs the call with its own logging state and a silent sink."
   why: The object is Python state a Rust call cannot reach, and keeping it would promise records that never arrive; every eval function builds the logging state the core service asks for instead.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L152-L153
+- what: "`create_eval` and `list_evals` with a provider that has no evals API config answer a `BadRequestError` (400), where LiteLLM's `ValueError` goes through `exception_type` and comes out as an `APIConnectionError` (500)."
+  why: "The provider name is the caller's input and the call can never succeed; B3421 made that call for the native create and list service, and these functions surface the class it chose."
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L163
+- what: "`get_eval` and `update_eval` with a provider that has no evals API config answer a `BadRequestError` (400), where LiteLLM's `ValueError` goes through `exception_type` and comes out as an `APIConnectionError` (500)."
+  why: "The provider name is the caller's input and the call can never succeed; B3422 made that call for the native get and update service, and these functions surface the class it chose."
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L514
 - what: "`delete_eval` and `cancel_eval` with a provider that has no evals API config answer a `BadRequestError` (400), where LiteLLM's `ValueError` goes through `exception_type` and comes out as an `APIConnectionError` (500)."
   why: "The provider name is the caller's input and the call can never succeed; B3423 made that call for the native lifecycle service, and these functions surface the class it chose."
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L879-L884
@@ -34,3 +40,6 @@ kept_bugs:
 - what: "list_evals sends limit, after, before, order and order_by only when they are truthy, so an explicit limit of 0 or an empty cursor string is dropped, where docs/compatibility.md would use an explicit 0 or \"\" as given."
   why: "LiteLLM's list transform skips every falsy value, and a setup switching from LiteLLM keeps the query it sent before; sending limit=0 would change the request that setup relies on."
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/evals/transformation.py#L120-L131
+- what: "get_eval and list_evals never raise for a non-2xx status: a 404 body fails the reply parse and comes out as an APIConnectionError (500), while delete_eval and cancel_eval raise NotFoundError (404) for the same reply."
+  why: "LiteLLM's get and list handlers never call raise_for_status, so a setup switching from LiteLLM sees the same parse failure; changing the class to NotFoundError would change what that setup catches."
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L12769-L12780

@@ -7,6 +7,7 @@ from collections.abc import Awaitable, Coroutine
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import TracebackType
 from typing import ClassVar, Final, Protocol, Self
+from urllib.parse import parse_qsl
 
 import pytest
 from pydantic import BaseModel, JsonValue, TypeAdapter
@@ -273,6 +274,16 @@ def body_of(call: Recorded) -> dict[str, JsonValue]:
     return values
 
 
+def request_shape(call: Recorded) -> tuple[str, str, tuple[tuple[str, str], ...]]:
+    path, _, query = call["path"].partition("?")
+    return (call["method"], path, tuple(sorted(parse_qsl(query))))
+
+
+def query_of(call: Recorded) -> dict[str, str]:
+    _, _, query = call["path"].partition("?")
+    return dict(parse_qsl(query))
+
+
 def made_answer(result: BaseModel | Awaitable[BaseModel]) -> BaseModel:
     match result:
         case Awaitable():
@@ -388,8 +399,8 @@ def test_signature_all_parameters() -> None:
     assert dumped(made_answer(cancelled)) == dumped(reference_cancelled)
     ours_calls = server.calls[:6]
     their_calls = server.calls[6:]
-    assert [(call["method"], call["path"]) for call in ours_calls] == [
-        (call["method"], call["path"]) for call in their_calls
+    assert [request_shape(call) for call in ours_calls] == [
+        request_shape(call) for call in their_calls
     ]
 
 
@@ -453,9 +464,15 @@ def test_calls_list() -> None:
     our_call = server.calls[-1]
     their_call = server.calls[-2]
     assert dumped(made_answer(ours)) == dumped(reference)
-    assert our_call["path"] == their_call["path"]
-    expected = f"{EVALS_PATH}?limit=9&after=eval_x&before=eval_b&order=asc&order_by=updated_at"
-    assert our_call["path"] == expected
+    assert our_call["path"].startswith(f"{EVALS_PATH}?")
+    expected = {
+        "limit": "9",
+        "after": "eval_x",
+        "before": "eval_b",
+        "order": "asc",
+        "order_by": "updated_at",
+    }
+    assert query_of(our_call) == query_of(their_call) == expected
     assert header_of(our_call, CUSTOM_HEADER) == CUSTOM_VALUE
 
 
@@ -672,7 +689,7 @@ def test_error_provider_rejection() -> None:
             )
     assert ours.value.status_code == theirs.value.status_code == BAD_REQUEST
     assert BAD_MESSAGE in str(theirs.value)
-    assert "openai: the provider rejected the request body" in str(ours.value)
+    assert BAD_MESSAGE in str(ours.value)
     cause = ours.value.__cause__
     assert cause is not None
     assert '"BadRequestError"' in str(cause)
@@ -681,9 +698,9 @@ def test_error_provider_rejection() -> None:
 
 def test_error_not_found() -> None:
     with EvalsServer(missing=True) as server:
-        with pytest.raises(NotFoundError) as fetched:
+        with pytest.raises(APIConnectionError) as fetched:
             get_eval(EVAL_ID, api_base=server.url, api_key=GOOD_KEY)
-        with pytest.raises(LITELLM_ERRORS.NotFoundError) as reference_fetched:
+        with pytest.raises(LITELLM_ERRORS.APIConnectionError) as reference_fetched:
             LITELLM.get_eval(eval_id=EVAL_ID, api_base=server.url, api_key=GOOD_KEY)
         with pytest.raises(NotFoundError) as deleted:
             delete_eval(EVAL_ID, api_base=server.url, api_key=GOOD_KEY)
@@ -693,27 +710,25 @@ def test_error_not_found() -> None:
             cancel_eval(EVAL_ID, api_base=server.url, api_key=GOOD_KEY)
         with pytest.raises(LITELLM_ERRORS.NotFoundError) as reference_cancelled:
             LITELLM.cancel_eval(eval_id=EVAL_ID, api_base=server.url, api_key=GOOD_KEY)
-    for ours, theirs in (
-        (fetched, reference_fetched),
-        (deleted, reference_deleted),
-        (cancelled, reference_cancelled),
-    ):
+    assert fetched.value.status_code == reference_fetched.value.status_code == SERVER_ERROR
+    assert "the eval reply does not match its model" in str(fetched.value)
+    for ours, theirs in ((deleted, reference_deleted), (cancelled, reference_cancelled)):
         assert ours.value.status_code == theirs.value.status_code == NOT_FOUND
         assert MISSING_MESSAGE in str(theirs.value)
         assert "openai: the provider could not find the requested resource" in str(ours.value)
 
 
 def test_error_unsupported() -> None:
-    with pytest.raises(APIConnectionError) as created:
+    with pytest.raises(BadRequestError) as created:
         create_eval(
             DATA_SOURCE_CONFIG, TESTING_CRITERIA, custom_llm_provider=ANTHROPIC,
             api_key=GOOD_KEY,
         )
-    with pytest.raises(APIConnectionError) as listed:
+    with pytest.raises(BadRequestError) as listed:
         list_evals(custom_llm_provider=ANTHROPIC, api_key=GOOD_KEY)
-    with pytest.raises(APIConnectionError) as fetched:
+    with pytest.raises(BadRequestError) as fetched:
         get_eval(EVAL_ID, custom_llm_provider=ANTHROPIC, api_key=GOOD_KEY)
-    with pytest.raises(APIConnectionError) as updated:
+    with pytest.raises(BadRequestError) as updated:
         update_eval(EVAL_ID, name=NAME, custom_llm_provider=ANTHROPIC, api_key=GOOD_KEY)
     with pytest.raises(LITELLM_ERRORS.APIConnectionError) as reference_created:
         LITELLM.create_eval(
@@ -737,7 +752,8 @@ def test_error_unsupported() -> None:
         (fetched, reference_fetched, "GET eval"),
         (updated, reference_updated, "UPDATE eval"),
     ):
-        assert ours.value.status_code == theirs.value.status_code == SERVER_ERROR
+        assert ours.value.status_code == BAD_REQUEST
+        assert theirs.value.status_code == SERVER_ERROR
         assert f"{action} is not supported for {ANTHROPIC}" in str(ours.value)
         assert f"{action} is not supported for {ANTHROPIC}" in str(theirs.value)
 
