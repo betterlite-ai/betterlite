@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 
 use super::auth::{LOGIN_REQUIRED, SessionAuthError, byok_session_auth};
 use super::cookie::session_token_cookie;
+use super::identity::session_identity_from_cookie;
 
 const MASTER_KEY: &str = "sk-oracle-master";
 const NOW: i64 = 1_700_000_000;
@@ -244,8 +245,16 @@ async fn cookie_empty_key_claim() {
         key: Some(""),
         ..ui_claims()
     };
+    let header = token(claims, MASTER_KEY);
+    let identity = session_identity_from_cookie(
+        Some(&header),
+        MASTER_KEY,
+        DateTime::from_timestamp(NOW, 0).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(identity.session_key, None);
     assert_eq!(
-        admits(Some(&token(claims, MASTER_KEY)), MASTER_KEY, false).await,
+        admits(Some(&header), MASTER_KEY, false).await,
         Some("user-1".to_owned())
     );
 }
@@ -291,6 +300,7 @@ fn cookie_parser_reads_the_token_chunk_only() {
         session_token_cookie(Some(" token = value ")),
         Some("value".to_owned())
     );
+    assert_eq!(session_token_cookie(Some("token=")), Some(String::new()));
 }
 
 #[test]

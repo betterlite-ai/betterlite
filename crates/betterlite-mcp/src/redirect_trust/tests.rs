@@ -192,6 +192,13 @@ fn trusted_allowlists_come_from_argument() {
         validate_trusted_redirect_uri(&origin, "", "https://app.example.com/callback", &allowlists),
         Ok(())
     );
+    let insecure =
+        validate_trusted_redirect_uri(&origin, "", "http://app.example.com/callback", &allowlists)
+            .unwrap_err();
+    assert_eq!(
+        insecure.redirect_uri.as_deref(),
+        Some("http://app.example.com/callback")
+    );
     let refused = validate_trusted_redirect_uri(
         &origin,
         "",
@@ -250,6 +257,10 @@ fn origins_empty_text() {
     assert_eq!(parse_trusted_redirect_origins(""), Vec::<String>::new());
     assert_eq!(parse_trusted_redirect_origins("   "), Vec::<String>::new());
     assert_eq!(parse_trusted_redirect_origins(","), Vec::<String>::new());
+    assert_eq!(
+        parse_trusted_redirect_origins("https://:443"),
+        Vec::<String>::new()
+    );
 }
 
 #[rstest]
@@ -276,6 +287,8 @@ fn redirect_origins(#[case] text: &str, #[case] expected: &[&str]) {
 #[case::wildcard_empty_suffix("app.example.com", "*.", false)]
 #[case::wildcard_dotted_suffix("app.example.com", "*..example.com", false)]
 #[case::wildcard_ignores_port("app.example.com:8443", "*.example.com", true)]
+#[case::wildcard_empty_suffix_trailing_dot("example.com.", "*.", false)]
+#[case::wildcard_dotted_suffix_host("app..example.com", "*..example.com", false)]
 fn trusted_origin_entries_match_hosts_and_wildcards(
     #[case] netloc: &str,
     #[case] entry: &str,
