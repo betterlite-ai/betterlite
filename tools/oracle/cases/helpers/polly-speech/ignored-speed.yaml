@@ -1,0 +1,20 @@
+kind: helper
+name: polly-speech-ignored-speed
+call:
+  polly_speech:
+    calls:
+    - {function: map_params, model: aws_polly/neural, optional_params: {speed: 1.5}, kwargs: {}, voice: alloy}
+    - {function: map_params, model: aws_polly/neural, optional_params: {}, kwargs: {speed: 1.5}, voice: alloy}
+    - {function: map_params, model: aws_polly/neural, optional_params: {speed: 1.5}, kwargs: {speed: 0.5}, voice: echo}
+    - function: dispatch
+      optional_params: {speed: 1.5, response_format: opus}
+      litellm_params: {}
+      environment: {}
+      voice: alloy
+    - function: request
+      text: hello
+      optional_params: {output_format: mp3, engine: neural, speed: 1.5}
+      voice: Matthew
+      litellm_params: {aws_access_key_id: AKIDEXAMPLE, aws_secret_access_key: "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY", aws_region_name: us-east-1}
+compare: {ignore: []}
+env: {}

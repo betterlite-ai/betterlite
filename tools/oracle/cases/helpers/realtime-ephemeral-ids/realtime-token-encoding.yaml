@@ -1,0 +1,51 @@
+kind: helper
+name: realtime-token-encoding
+call:
+  realtime_ephemeral_ids:
+    function: encode
+    token:
+      ephemeral_key: ep
+      model_id: m
+      user_id: null
+      team_id: ""
+      expires_at: null
+      session_type: realtime
+calls:
+  - realtime_ephemeral_ids:
+      function: encode
+      token:
+        ephemeral_key: ep
+        model_id: m
+        user_id: u
+        team_id: t
+        expires_at: 7
+        session_type: transcription
+  - realtime_ephemeral_ids:
+      function: encode
+      token:
+        ephemeral_key: "epé"
+        model_id: "m日"
+        user_id: "u\U0001f600"
+        team_id: "\u007f"
+        expires_at: 0
+        session_type: "réaltime"
+  - realtime_ephemeral_ids:
+      function: encode
+      token:
+        ephemeral_key: ""
+        model_id: ""
+        user_id: null
+        team_id: null
+        expires_at: null
+        session_type: ""
+  - realtime_ephemeral_ids:
+      function: encode
+      token:
+        ephemeral_key: "a\"b\\c\nd\te"
+        model_id: "m/ü"
+        user_id: ""
+        team_id: ""
+        expires_at: -1
+        session_type: realtime
+env: {}
+compare: {ignore: []}
