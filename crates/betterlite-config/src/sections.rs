@@ -432,6 +432,7 @@ pub mod trusted_network;
 pub mod two_solver_classifier;
 pub mod ui_discovery;
 pub mod ui_session_cleanup;
+pub mod ui_session_token;
 pub mod usage_routing;
 pub mod usage_routing_v2;
 pub mod usage_v2_accounting;
@@ -644,7 +645,7 @@ sections! {
     sso_presence, static_eligibility, stream_usage_cost, streaming_logging, studio_identity, summary_model_access, tag_matchers, tag_routing,
     team_admin_fields, team_create, team_fields, team_limits, team_state, tier_artifact_predictor,
     tier_definitions, tinyfish_route, token_counting, tokenizer_engines, transcription_call, trusted_network,
-    two_solver_classifier, ui_discovery, ui_session_cleanup, usage_routing, usage_routing_v2,
+    two_solver_classifier, ui_discovery, ui_session_cleanup, ui_session_token, usage_routing, usage_routing_v2,
     usage_v2_accounting, user_delete, user_fields, user_info, user_update, user_url_policy,
     vector_context_shaping, vector_store_registry, verbose_hooks, vertex_credential_sources, vertex_embedding_dispatch,
     vertex_gcs_settings, vertex_image_credentials, vertex_schema_shaping, vigil_runtime, virtual_key_auth, voyage_credentials,
