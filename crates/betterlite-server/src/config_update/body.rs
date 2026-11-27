@@ -74,7 +74,7 @@ pub struct RouterSettingsBody {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "aliases"
+        deserialize_with = "decode_validated"
     )]
     pub model_group_alias: Option<Aliases>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -82,7 +82,7 @@ pub struct RouterSettingsBody {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "weights"
+        deserialize_with = "decode_validated"
     )]
     pub weights: Option<Weights>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -176,54 +176,55 @@ pub fn decode_config_update(bytes: &[u8]) -> Result<DecodedConfigUpdate, BodyErr
     })
 }
 
-// RouterWeights: every identifier holds a non-whitespace character, every weight is finite and non-negative, and each nonempty group can route
-pub(crate) fn weights<'de, D>(deserializer: D) -> Result<Option<Weights>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let weights = Option::<Weights>::deserialize(deserializer)?;
-    if let Some(problem) = weights.as_ref().and_then(weights_problem) {
-        return Err(D::Error::custom(problem));
-    }
-    Ok(weights)
+// both map fields hold their pydantic validator: one decode, and each map type answers what is wrong with it
+pub(crate) trait ValidatedMap {
+    fn problem(&self) -> Option<&'static str>;
 }
 
-fn weights_problem(weights: &Weights) -> Option<&'static str> {
-    for (group, entries) in weights {
-        if group.trim().is_empty() {
-            return Some("weights group names must contain a non-whitespace character");
+// RouterWeights: every identifier holds a non-whitespace character, every weight is finite and non-negative, and each nonempty group can route
+impl ValidatedMap for Weights {
+    fn problem(&self) -> Option<&'static str> {
+        for (group, entries) in self {
+            if group.trim().is_empty() {
+                return Some("weights group names must contain a non-whitespace character");
+            }
+            if entries.keys().any(|model| model.trim().is_empty()) {
+                return Some("weights model names must contain a non-whitespace character");
+            }
+            if entries
+                .values()
+                .any(|weight| !weight.is_finite() || *weight < 0.0_f64)
+            {
+                return Some("weights must be non-negative finite numbers");
+            }
+            if !entries.is_empty() && !entries.values().any(|weight| *weight > 0.0_f64) {
+                return Some(
+                    "Each nonempty weights group must contain at least one positive weight",
+                );
+            }
         }
-        if entries.keys().any(|model| model.trim().is_empty()) {
-            return Some("weights model names must contain a non-whitespace character");
-        }
-        if entries
-            .values()
-            .any(|weight| !weight.is_finite() || *weight < 0.0_f64)
-        {
-            return Some("weights must be non-negative finite numbers");
-        }
-        if !entries.is_empty() && !entries.values().any(|weight| *weight > 0.0_f64) {
-            return Some("Each nonempty weights group must contain at least one positive weight");
-        }
+        None
     }
-    None
 }
 
 // model_group_alias: Dict[str, Union[str, dict]]
-pub(crate) fn aliases<'de, D>(deserializer: D) -> Result<Option<Aliases>, D::Error>
+impl ValidatedMap for Aliases {
+    fn problem(&self) -> Option<&'static str> {
+        let invalid = self
+            .values()
+            .any(|value| !matches!(value, JsonValue::String(_) | JsonValue::Object(_)));
+        invalid.then_some("model_group_alias values must be a string or an object")
+    }
+}
+
+pub(crate) fn decode_validated<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
 where
     D: Deserializer<'de>,
+    T: Deserialize<'de> + ValidatedMap,
 {
-    let sent = Option::<Aliases>::deserialize(deserializer)?;
-    if let Some(problem) = sent.as_ref().and_then(aliases_problem) {
+    let sent = Option::<T>::deserialize(deserializer)?;
+    if let Some(problem) = sent.as_ref().and_then(ValidatedMap::problem) {
         return Err(D::Error::custom(problem));
     }
     Ok(sent)
-}
-
-fn aliases_problem(aliases: &Aliases) -> Option<&'static str> {
-    let invalid = aliases
-        .values()
-        .any(|value| !matches!(value, JsonValue::String(_) | JsonValue::Object(_)));
-    invalid.then_some("model_group_alias values must be a string or an object")
 }
