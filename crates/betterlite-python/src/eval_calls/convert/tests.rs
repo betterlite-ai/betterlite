@@ -270,43 +270,42 @@ fn request_timeout_reads_seconds() {
     ));
 }
 
+fn refused_timeout(given: &str) -> PyErr {
+    let error = ListPayload::parse(&format!(r#"{{"timeout": {given}}}"#))
+        .err()
+        .unwrap();
+    PyErr::from(EvalOperationFailure::from(error))
+}
+
 // docs/deviations/B7885.yaml: a timeout no Duration can hold is refused with a 400 that names timeout
 #[rstest]
 #[case::negative("-1.0")]
 #[case::too_large("1e300")]
 fn request_a_timeout_that_is_not_a_duration_is_a_bad_request(#[case] given: &str) {
     Python::initialize();
-    let error = ListPayload::parse(&format!(r#"{{"timeout": {given}}}"#))
-        .err()
-        .unwrap();
-    assert!(matches!(
-        error,
-        ConvertError::FieldType {
-            name: "timeout",
-            ..
-        }
-    ));
-    let raised = PyErr::from(EvalOperationFailure::from(error));
+    let raised = refused_timeout(given);
     Python::attach(|py| {
         let message = raised.value(py).to_string();
         assert!(message.contains(r#""type":"BadRequestError""#), "{message}");
         assert!(message.contains(r#""status_code":400"#), "{message}");
         assert!(message.contains(r#""param":"timeout""#), "{message}");
+        assert!(
+            message.contains("the timeout field does not have the declared type"),
+            "{message}"
+        );
     });
 }
 
 // docs/deviations/B7885.yaml: JSON has no non-finite numbers, so the parse refuses a NaN or infinite timeout
-#[rstest]
-#[case::nan("NaN")]
-#[case::infinity("Infinity")]
-fn request_a_non_finite_timeout_is_a_json_error(#[case] given: &str) {
+#[test]
+fn request_a_non_finite_timeout_is_a_json_error() {
     Python::initialize();
-    let error = ListPayload::parse(&format!(r#"{{"timeout": {given}}}"#))
-        .err()
-        .unwrap();
-    assert!(matches!(error, ConvertError::Json { .. }));
-    let raised = PyErr::from(EvalOperationFailure::from(error));
-    Python::attach(|py| assert!(raised.is_instance_of::<PyValueError>(py)));
+    let nan = refused_timeout("NaN");
+    let infinity = refused_timeout("Infinity");
+    Python::attach(|py| {
+        assert!(nan.is_instance_of::<PyValueError>(py));
+        assert!(infinity.is_instance_of::<PyValueError>(py));
+    });
 }
 
 #[test]
