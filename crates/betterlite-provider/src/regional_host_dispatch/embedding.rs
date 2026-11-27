@@ -66,9 +66,10 @@ fn family(
     brand: DashscopeFamily,
     context: &EmbeddingContext<'_>,
 ) -> Result<EmbeddingCall, DispatchError> {
+    let passed = first_secret([context.api_key, context.settings.api_key]);
     let key = dashscope_family::resolve_family_api_key(
         brand,
-        context.api_key.map(|key| key.expose_secret().as_str()),
+        passed.as_ref().map(|key| key.expose_secret().as_str()),
         brand_key(brand, context),
         context.settings.env_dashscope_api_key,
     )
