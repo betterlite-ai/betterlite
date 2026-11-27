@@ -216,11 +216,10 @@ fn resolver_for(request: &Request<Body>) -> Arc<RequestModelResolver> {
 // stage_input cannot await while holding the request borrow (Request<Body> is Send but not Sync), so the caller awaits the stage prefetch on the owned input
 pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, StageFailure> {
     match input {
-        StageInput::AuthTagBudgets(stage) => Ok(StageInput::AuthTagBudgets(
-            auth_tag_budgets::prefetch(&stage)
-                .await
-                .map_err(StageFailure::TagBudgets)?,
-        )),
+        StageInput::AuthTagBudgets(stage) => auth_tag_budgets::prefetch(&stage)
+            .await
+            .map_err(StageFailure::TagBudgets)
+            .map(|()| StageInput::AuthTagBudgets(stage)),
         StageInput::AuthKeyBudgets(stage) => {
             auth_key_budgets::prefetch(&stage)
                 .await
