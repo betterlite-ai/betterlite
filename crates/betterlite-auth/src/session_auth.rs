@@ -47,9 +47,7 @@ where
     if !is_ui_session_credential(auth) {
         return None;
     }
-    let Some(user_id) = auth.view.token.user_id.as_deref() else {
-        return None;
-    };
+    let user_id = auth.view.token.user_id.as_deref()?;
     match human
         .reload_admitted_user(user_id, auth.extra.requires_fresh_policy)
         .await
