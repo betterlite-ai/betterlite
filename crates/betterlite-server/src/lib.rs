@@ -49,6 +49,7 @@ pub mod callback_replay;
 pub mod cli_login_flow;
 pub mod cli_login_pages;
 pub mod cli_poll_grants;
+pub mod cli_team_grants;
 pub mod cloud_ml_parity;
 pub mod collector;
 pub mod compaction_loopback;
