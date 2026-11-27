@@ -1,7 +1,7 @@
 id: B1643
 milestone: M4 keys, spend and management
 title: Inspect and merge SCIM placeholder accounts without losing team access
-status: blocked
+status: todo
 depends_on: [B003, B052, B2400, B722, B723, B860, B1632, B1633, B1634, B1635, B1637, B1638, B1644, B9941, B9942, B8610]
 file: tasks/B1643-scim-placeholder-repair.yaml
 covers:
@@ -10,5 +10,5 @@ parent: B064
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, SCIM provisioning can wait for a first release"
+blocked_reason: null
 pr: null

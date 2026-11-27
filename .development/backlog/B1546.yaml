@@ -1,7 +1,7 @@
 id: B1546
 milestone: M3 providers
 title: Decode and resample supplied audio for Riva PCM streaming
-status: blocked
+status: todo
 depends_on: [B1545, B165, B171]
 file: tasks/B1546-riva-audio-decoding.yaml
 covers:
@@ -10,5 +10,5 @@ parent: B047
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): niche, NVIDIA Riva transcription"
+blocked_reason: null
 pr: null

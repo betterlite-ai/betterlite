@@ -1,7 +1,7 @@
 id: B091
 milestone: M5 api families
 title: Search API
-status: blocked
+status: todo
 depends_on: [B048, B9942, B8634, B8673]
 file: tasks/B091-search-http-parity.yaml
 covers:
@@ -11,5 +11,5 @@ parent: null
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, Search API is new and can wait"
+blocked_reason: null
 pr: null

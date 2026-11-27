@@ -1,7 +1,7 @@
 id: B075
 milestone: M4 keys, spend and management
 title: Model insights and prompt caching insights
-status: blocked
+status: todo
 depends_on: [B066, B860, B8676, B9942, B9280]
 file: tasks/B075-model-insights-http.yaml
 covers:
@@ -13,5 +13,5 @@ parent: null
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, model and prompt caching insights can wait"
+blocked_reason: null
 pr: null

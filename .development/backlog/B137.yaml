@@ -1,7 +1,7 @@
 id: B137
 milestone: M9 agents and mcp
 title: MCP auth, OAuth flows, BYOK and outbound credentials
-status: blocked
+status: todo
 depends_on: [B001, B1139, B9942, B8610, B8624, B8626, B8702, B8728, B055, B056, B804, B826]
 file: tasks/B137-mcp-auth-parity.yaml
 covers:
@@ -11,5 +11,5 @@ parent: null
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, MCP auth and OAuth wait on the MCP gateway"
+blocked_reason: null
 pr: null

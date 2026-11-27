@@ -72,6 +72,17 @@ roles:
   worker:
     instructions: roles/worker.md
     ladder:
+      - runner: codex-worker
+        model: gpt-6-astra
+        effort: high
+        attempts: 2
+        timeout_minutes: 120
+        tasks: [B052, B056, B063, B077, B109, B137, B139, B140, B149, B160, B750, B754, B755, B756, B762, B768, B777, B788, B789, B790,
+          B792, B797, B802, B804, B805, B807, B808, B809, B812, B828, B829, B855, B862, B870, B875, B876, B889, B950, B951, B953,
+          B954, B955, B956, B957, B1202, B1206, B1207, B1221, B1225, B1226, B1227, B1613, B1614, B1615, B1616, B1621, B1622, B1624, B1627, B1628,
+          B2326, B2333, B4658, B4659, B4666, B4671, B4672, B4679, B4717, B4718, B4719, B4726, B4728, B4729, B4730, B5849, B6591, B6592, B7531, B7532,
+          B7841, B7842, B7970, B8195, B8196, B8197, B8198, B8199, B8460, B8461, B8462, B8463, B8465, B8592, B8625, B8626, B8720, B8723, B8725, B8727,
+          B8728, B8992, B9654, B9760, B9761, B9762, B9763, B9776, B9950]
       - runner: vercel-deepinfra-worker
         model: "deepseek/deepseek-v4.1-flash-1017[1m]"
         effort: max

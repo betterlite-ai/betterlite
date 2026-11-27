@@ -1,7 +1,7 @@
 id: B341
 milestone: M2 routing
 title: Adaptive learning persistence in the existing Postgres schema
-status: blocked
+status: todo
 depends_on: [B340, B339, B051, B301, B361]
 file: tasks/B341-adaptive-persistence.yaml
 covers:
@@ -11,5 +11,5 @@ parent: B021
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: "deferred until the core is done (Max, 11-19): later, automatic complexity router is new and not fallbacks or load balancing; a first release routes without it"
+blocked_reason: null
 pr: null
