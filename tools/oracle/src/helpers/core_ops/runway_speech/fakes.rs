@@ -69,10 +69,10 @@ impl TaskTransport for Script {
                 headers: BTreeMap::new(),
                 body: String::new(),
             });
-        let headers = reply_map(&reply.headers);
+        let reply_headers = reply_map(&reply.headers);
         ready(Ok(UpstreamResponse {
             status: reply.status,
-            headers,
+            headers: reply_headers,
             body: reply.body.into_bytes(),
         }))
     }
@@ -105,7 +105,7 @@ pub(super) struct Clock {
 }
 
 impl Clock {
-    pub(super) fn new(step: u64) -> Self {
+    pub(super) const fn new(step: u64) -> Self {
         Self {
             millis: AtomicU64::new(0),
             step,

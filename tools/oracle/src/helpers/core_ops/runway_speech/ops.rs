@@ -11,7 +11,9 @@ use betterlite_core::api::runway::speech::dispatch::{
 use betterlite_core::api::runway::speech::error::RunwaySpeechError;
 use betterlite_core::api::runway::speech::request::speech_request;
 use betterlite_core::api::runway::speech::response::RunwaySpeechTransform;
-use betterlite_core::api::speech_call::operations::{SpeechConfigOperation, SpeechMappingOptions};
+use betterlite_core::api::speech_call::operations::{
+    SpeechConfigOperation as _, SpeechMappingOptions,
+};
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_openai::credentials::LiteLlmGlobals;
 use betterlite_openai::openai_base_config::Object;
@@ -81,7 +83,7 @@ fn header_map(values: &BTreeMap<String, String>) -> Result<HeaderMap, Box<Helper
 pub(super) fn run(input: &Input) -> HelperResult {
     match input {
         Input::Mapping(params) => mapping(params),
-        Input::Request(params) => request(params),
+        Input::Request(params) => Ok(request(params)),
         Input::Dispatch(params) => dispatch(params),
         Input::Response(params) => response(params),
     }
@@ -106,14 +108,14 @@ fn mapping(input: &Mapping) -> HelperResult {
     Ok(json!({"supported": SUPPORTED_OPENAI_PARAMS, "results": results}))
 }
 
-fn request(input: &RequestInput) -> HelperResult {
+fn request(input: &RequestInput) -> Value {
     let data = speech_request(
         &input.model,
         &input.input,
         &input.optional_params,
         &input.headers,
     );
-    Ok(json!({"dict_body": data.dict_body, "headers": data.headers}))
+    json!({"dict_body": data.dict_body, "headers": data.headers})
 }
 
 fn dispatch(input: &DispatchInput) -> HelperResult {

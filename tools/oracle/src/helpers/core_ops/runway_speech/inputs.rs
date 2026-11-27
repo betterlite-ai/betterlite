@@ -18,7 +18,7 @@ pub(super) struct MappingCall {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct Mapping {
+pub(crate) struct Mapping {
     pub(super) model: String,
     #[serde(default)]
     pub(super) environment: BTreeMap<String, String>,
@@ -27,7 +27,7 @@ pub(super) struct Mapping {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct RequestInput {
+pub(crate) struct RequestInput {
     pub(super) model: String,
     pub(super) input: String,
     #[serde(default)]
@@ -47,7 +47,7 @@ pub(super) struct Globals {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct DispatchInput {
+pub(crate) struct DispatchInput {
     pub(super) model: String,
     pub(super) input: String,
     #[serde(default)]
@@ -92,7 +92,7 @@ pub(super) struct SubmissionInput {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct ResponseInput {
+pub(crate) struct ResponseInput {
     pub(super) model: String,
     #[serde(default)]
     pub(super) environment: BTreeMap<String, String>,
@@ -106,9 +106,9 @@ pub(super) struct ResponseInput {
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "operation", content = "params", rename_all = "snake_case")]
-pub(super) enum Input {
+pub(crate) enum Input {
     Mapping(Mapping),
     Request(RequestInput),
-    Dispatch(DispatchInput),
+    Dispatch(Box<DispatchInput>),
     Response(ResponseInput),
 }

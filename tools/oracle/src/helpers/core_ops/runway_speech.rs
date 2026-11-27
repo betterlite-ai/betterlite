@@ -1,5 +1,5 @@
 mod fakes;
-mod inputs;
+pub(crate) mod inputs;
 mod ops;
 
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
