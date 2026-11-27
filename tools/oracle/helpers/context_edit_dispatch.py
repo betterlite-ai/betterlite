@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable
 from dataclasses import asdict
 from typing import Final, Literal, Protocol, TypeAlias, TypedDict, cast
 
@@ -23,7 +23,10 @@ ANTHROPIC_ERROR: Final = "AnthropicContextManagementError"
 JSON_OBJECT: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
 
 EditorResult: TypeAlias = PolyfillResult | tuple[list[dict[str, JsonValue]], AppliedEdit | None]
-EditorFn: TypeAlias = Callable[..., EditorResult | Awaitable[EditorResult]]
+
+
+class EditorFn(Protocol):
+    def __call__(self, **arguments: JsonValue) -> EditorResult | Awaitable[EditorResult]: ...
 
 
 class Input(TypedDict):
