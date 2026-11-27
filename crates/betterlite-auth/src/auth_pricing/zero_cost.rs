@@ -108,12 +108,23 @@ fn explicit_zero_cost(model: &str, catalog: &dyn PricingCatalog) -> Result<bool,
         );
         return Ok(false);
     }
-    if has_ptu_flat_cost(model, catalog)? {
-        debug!(
-            "Model {} prices reserved PTU capacity as a flat cost, so its zero per-token rate is not a free model (enforce budget)",
-            safe_name(model)
-        );
-        return Ok(false);
+    // _has_ptu_flat_cost: both fields must be present and non-null, zero values included
+    for deployment in catalog.model_list(model)? {
+        let ptu_count = deployment
+            .model_info
+            .get("ptu_count")
+            .is_some_and(|value| !matches!(value, Json::Null));
+        let hourly = deployment
+            .model_info
+            .get("cost_per_ptu_per_hour")
+            .is_some_and(|value| !matches!(value, Json::Null));
+        if ptu_count && hourly {
+            debug!(
+                "Model {} prices reserved PTU capacity as a flat cost, so its zero per-token rate is not a free model (enforce budget)",
+                safe_name(model)
+            );
+            return Ok(false);
+        }
     }
     Ok(true)
 }
@@ -139,24 +150,6 @@ pub(super) fn is_cost_explicitly_configured(
         };
         if entry.contains_key("input_cost_per_token") || entry.contains_key("output_cost_per_token")
         {
-            return Ok(true);
-        }
-    }
-    Ok(false)
-}
-
-// _has_ptu_flat_cost: both fields must be present and non-null, zero values included
-fn has_ptu_flat_cost(model: &str, catalog: &dyn PricingCatalog) -> Result<bool, PricingError> {
-    for deployment in catalog.model_list(model)? {
-        let ptu_count = deployment
-            .model_info
-            .get("ptu_count")
-            .is_some_and(|value| !matches!(value, Json::Null));
-        let hourly = deployment
-            .model_info
-            .get("cost_per_ptu_per_hour")
-            .is_some_and(|value| !matches!(value, Json::Null));
-        if ptu_count && hourly {
             return Ok(true);
         }
     }

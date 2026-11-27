@@ -5,7 +5,7 @@ use crate::auth_key_budgets::key_budget::BUDGET_EXCEEDED_STATUS;
 use crate::auth_key_budgets::money::Money;
 use crate::auth_pricing::request::global_proxy_budget_check;
 use crate::auth_pricing::routes::{
-    BUDGET_ENFORCED_SIDE_EFFECT_ROUTES, MODEL_DISCOVERY_ROUTES, request_skips_budget_checks,
+    BUDGET_SIDE_EFFECT_ROUTES, MODEL_DISCOVERY_ROUTES, request_skips_budget_checks,
     route_skips_budget_checks,
 };
 use crate::auth_request_models::RequestedModels;
@@ -110,7 +110,7 @@ fn each_discovery_route(#[case] route: &str) {
 #[case::health_test_connection("/health/test_connection")]
 #[case::auto_router_test_routing("/auto_router/test_routing")]
 fn each_side_effect_route(#[case] route: &str) {
-    assert!(BUDGET_ENFORCED_SIDE_EFFECT_ROUTES.contains(&route));
+    assert!(BUDGET_SIDE_EFFECT_ROUTES.contains(&route));
     assert!(!route_skips_budget_checks(route));
     assert!(!request_skips_budget_checks(
         route,

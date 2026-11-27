@@ -111,7 +111,7 @@ class ScriptedRouter(Router):
             raise RuntimeError("the model catalog could not answer")
 
 
-# both project checks queue their alert through budget_alerts; the case compares the amounts it carries
+# both project checks queue their alert through budget_alerts; the case compares amounts
 class ProjectAlerts(ProxyLogging):
     def __init__(self) -> None:
         self.alerts: list[JsonValue] = []
@@ -151,7 +151,7 @@ def envelope_of(error: Exception) -> JsonValue:
 
 def observed(router: ScriptedRouter) -> dict[str, JsonValue]:
     return RECORD.validate_python(
-        {"cache": dict(router.cache_entries), "lookups": list(router.lookups)}
+        {"cache": dict(router.cache_entries), "lookups": list(router.lookups)}  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L438-L451
     )
 
 
@@ -180,13 +180,13 @@ async def request_answer(call: Call, router: ScriptedRouter) -> JsonValue:
     user: JsonValue = None
     budget: JsonValue = None
     try:
-        auth_checks._reject_clientside_metadata_tags_check(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L750-L765
+        auth_checks._reject_clientside_metadata_tags_check(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L750-L765
             settings, body, route
         )
     except Exception as error:  # noqa: BLE001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L760
         tags = envelope_of(error)
     try:
-        auth_checks._enforce_user_param_check(settings, http_request(method, route), body, route)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L735-L747
+        auth_checks._enforce_user_param_check(settings, http_request(method, route), body, route)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L735-L747
     except Exception as error:  # noqa: BLE001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L747
         user = envelope_of(error)
     try:
@@ -263,7 +263,7 @@ async def answer(call: Call) -> JsonValue:
             model=model, llm_router=router
         )
         message = auth_checks._unpriced_models_block_message(unpriced)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L679-L686
-        models = JSON.validate_python(list(unpriced))
+        models = JSON.validate_python(list(unpriced))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L672-L676
         return {"unpriced": models, "message": message, **observed(router)}
     if function == "request_skip":
         route = route_of(call)

@@ -17,7 +17,7 @@ pub const MODEL_DISCOVERY_ROUTES: [&str; 7] = [
 ];
 
 // side-effectful routes an exhausted budget may not reach
-pub const BUDGET_ENFORCED_SIDE_EFFECT_ROUTES: [&str; 4] = [
+pub const BUDGET_SIDE_EFFECT_ROUTES: [&str; 4] = [
     "/health",
     "/health/services",
     "/health/test_connection",
@@ -27,7 +27,7 @@ pub const BUDGET_ENFORCED_SIDE_EFFECT_ROUTES: [&str; 4] = [
 // route_skips_budget_checks: discovery and every non-LLM route, except the side-effectful ones
 #[must_use]
 pub fn route_skips_budget_checks(route: &str) -> bool {
-    !BUDGET_ENFORCED_SIDE_EFFECT_ROUTES.contains(&route)
+    !BUDGET_SIDE_EFFECT_ROUTES.contains(&route)
         && (MODEL_DISCOVERY_ROUTES.contains(&route) || !is_llm_api_route(&RouteValue::Text(route)))
 }
 
@@ -38,5 +38,8 @@ pub fn request_skips_budget_checks(
     model: &RequestedModels,
     catalog: Option<&dyn PricingCatalog>,
 ) -> bool {
-    route_skips_budget_checks(route) || is_model_cost_zero(model, catalog)
+    if route_skips_budget_checks(route) {
+        return true;
+    }
+    is_model_cost_zero(model, catalog)
 }
