@@ -58,9 +58,7 @@ use std::{collections::BTreeSet, sync::Arc};
 use betterlite_auth::auth_request_models::catalog::{EmptyCatalog, RequestModelResolver};
 use betterlite_models::{decisions::Json, model_registration::JsonObject};
 
-use crate::auth::auth_identity::{
-    AuthBackend, AuthContext, StageFailure, StageInput, request_model_failure,
-};
+use crate::auth::auth_identity::{AuthBackend, AuthContext, StageFailure, StageInput};
 use crate::auth::auth_key_lookup::ConfiguredMasterKey;
 use crate::auth::auth_key_lookup::key_headers::{extract_key, headers_json};
 use crate::auth::auth_model_patterns::{
@@ -68,6 +66,7 @@ use crate::auth::auth_model_patterns::{
 };
 use crate::auth::auth_request_models::{CoreDecoders, RequestModelStageInput, resolve};
 use crate::auth::auth_resource_grants::ResourceGrantStageInput;
+use crate::auth::failures::request_model_failure;
 use crate::auth::route_match::PUBLIC_HEALTH_PATHS;
 use crate::auth::virtual_key_routes::stage_input as virtual_key_route_stage_input;
 use crate::error_body::AuthenticationFailure;

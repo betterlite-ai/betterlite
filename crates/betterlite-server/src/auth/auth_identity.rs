@@ -3,7 +3,7 @@ use betterlite_auth::auth_identity::records::{
     CredentialRef, NetworkContext, Principal, SourceKey,
 };
 use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType};
-use betterlite_auth::auth_request_models::catalog::CatalogError;
+use betterlite_error::proxy_exception::ProxyException;
 use secrecy::{ExposeSecret as _, SecretString};
 use subtle::ConstantTimeEq as _;
 
@@ -11,7 +11,7 @@ use crate::auth::auth_end_users::EndUserStageInput;
 use crate::auth::auth_key_budgets::KeyBudgetStageInput;
 use crate::auth::auth_key_lookup::KeyLookupStageInput;
 use crate::auth::auth_model_grants::AgentModelGrantsStageInput;
-use crate::auth::auth_model_patterns::{ModelPatternStageInput, run_stage};
+use crate::auth::auth_model_patterns::{ModelAccessRejection, ModelPatternStageInput, run_stage};
 use crate::auth::auth_org_lookup::OrgStageInput;
 use crate::auth::auth_policy_support::{self, AuthPolicySupportStageInput};
 use crate::auth::auth_pricing::PricingStageInput;
@@ -21,14 +21,13 @@ use crate::auth::auth_resource_grants::{self, ResourceGrantStageInput};
 use crate::auth::auth_tag_budgets::TagBudgetStageInput;
 use crate::auth::auth_tenant_budgets::TenantBudgetStageInput;
 use crate::auth::entity_model_access::EntityModelStageInput;
+use crate::auth::failures::request_model_failure;
 use crate::auth::model_grant_intersection::{self, GrantStageInput};
 use crate::auth::organization_route_policy::{self, OrganizationPolicyStageInput};
 use crate::auth::request_body_safety::{self, RequestBodySafetyStageInput};
 use crate::auth::team_budget_admission::TeamBudgetStageInput;
 use crate::auth::virtual_key_routes::{self, VirtualKeyRouteStageInput};
 use crate::error_body::AuthenticationFailure;
-
-pub(crate) use crate::auth::failures::StageFailure;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AuthBackend {
@@ -124,6 +123,34 @@ pub trait BudgetAdmission {
     ) -> Result<AdmissionLease, AuthError>;
 }
 
+pub(crate) enum StageFailure {
+    Authentication(Box<AuthenticationFailure>),
+    KeyLookup(Box<ProxyException>),
+    ModelAccess(Box<ModelAccessRejection>),
+    AuthModelGrants(Box<ProxyException>),
+    EntityModelAccess(Box<ProxyException>),
+    AuthRequestPolicy(Box<ProxyException>),
+    ResourceGrants(Box<ProxyException>),
+    Pricing(Box<ProxyException>),
+    TagBudgets(Box<ProxyException>),
+    RequestBodySafety(Box<ProxyException>),
+    VirtualKeyRoutes(Box<ProxyException>),
+    KeyBudgets(Box<ProxyException>),
+    TeamBudgets(Box<ProxyException>),
+    TenantBudgets(Box<ProxyException>),
+    OrganizationRoutePolicy(Box<ProxyException>),
+    OrgLookup(Box<ProxyException>),
+    EndUsers(Box<ProxyException>),
+    AuthPolicySupport(Box<ProxyException>),
+    ModelGrants(Box<ProxyException>),
+}
+
+impl From<AuthenticationFailure> for StageFailure {
+    fn from(failure: AuthenticationFailure) -> Self {
+        Self::Authentication(Box::new(failure))
+    }
+}
+
 impl StageInput {
     // the prefetch reads the cache, database and router, so the caller awaits it on the owned input
     pub(crate) async fn prefetch_model_grants(
@@ -184,7 +211,9 @@ pub(crate) fn dispatch(
         StageInput::AuthVirtualKeyRoutes(stage) => {
             virtual_key_routes::run_stage(stage).map_err(StageFailure::VirtualKeyRoutes)
         }
-        StageInput::AuthRequestModels(stage) => auth_request_models_stage(stage),
+        StageInput::AuthRequestModels(stage) => resolve(stage)
+            .map(|_| stage.context.clone())
+            .map_err(request_model_failure),
         StageInput::AuthModelPatterns(stage) => {
             run_stage(stage).map_err(|rejection| StageFailure::ModelAccess(Box::new(rejection)))
         }
@@ -207,18 +236,6 @@ pub(crate) fn dispatch(
         }
         StageInput::ModelGrantIntersection(stage) => Ok(stage.context.clone()),
     }
-}
-
-// the request model stages share one failure: the caller is known but the request names no model
-pub(crate) fn request_model_failure(error: CatalogError) -> StageFailure {
-    tracing::debug!(error = %error, "the request model stage failed");
-    StageFailure::from(AuthenticationFailure::Missing)
-}
-
-fn auth_request_models_stage(stage: &RequestModelStageInput) -> Result<AuthContext, StageFailure> {
-    resolve(stage)
-        .map(|_requested| stage.context.clone())
-        .map_err(request_model_failure)
 }
 
 fn master_key_stage(

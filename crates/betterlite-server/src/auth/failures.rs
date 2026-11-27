@@ -2,42 +2,14 @@ use axum::Json;
 use axum::body::Body;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse as _, Response};
+use betterlite_auth::auth_request_models::catalog::CatalogError;
 use betterlite_core::api::api_boundaries::ApiLimitError;
 use betterlite_error::envelope::{ErrorObject, ErrorResponse, WireField};
-use betterlite_error::proxy_exception::ProxyException;
 
-use crate::auth::auth_model_patterns::{ModelAccessRejection, rejection_response};
+use crate::auth::auth_identity::StageFailure;
+use crate::auth::auth_model_patterns::rejection_response;
 use crate::auth::auth_resource_grants::denial_response;
 use crate::error_body::{AuthenticationFailure, authentication_error};
-
-// the auth stages' failure type, defined next to the response each variant becomes
-pub(crate) enum StageFailure {
-    Authentication(Box<AuthenticationFailure>),
-    KeyLookup(Box<ProxyException>),
-    ModelAccess(Box<ModelAccessRejection>),
-    AuthModelGrants(Box<ProxyException>),
-    EntityModelAccess(Box<ProxyException>),
-    AuthRequestPolicy(Box<ProxyException>),
-    ResourceGrants(Box<ProxyException>),
-    Pricing(Box<ProxyException>),
-    TagBudgets(Box<ProxyException>),
-    RequestBodySafety(Box<ProxyException>),
-    VirtualKeyRoutes(Box<ProxyException>),
-    KeyBudgets(Box<ProxyException>),
-    TeamBudgets(Box<ProxyException>),
-    TenantBudgets(Box<ProxyException>),
-    OrganizationRoutePolicy(Box<ProxyException>),
-    OrgLookup(Box<ProxyException>),
-    EndUsers(Box<ProxyException>),
-    AuthPolicySupport(Box<ProxyException>),
-    ModelGrants(Box<ProxyException>),
-}
-
-impl From<AuthenticationFailure> for StageFailure {
-    fn from(failure: AuthenticationFailure) -> Self {
-        Self::Authentication(Box::new(failure))
-    }
-}
 
 pub(crate) fn stage_failure_response(failure: &StageFailure) -> Response {
     match failure {
@@ -61,6 +33,12 @@ pub(crate) fn stage_failure_response(failure: &StageFailure) -> Response {
         | StageFailure::AuthPolicySupport(exception)
         | StageFailure::ModelGrants(exception) => denial_response(exception),
     }
+}
+
+// the request model stages share one failure: the caller is known but the request names no model
+pub(crate) fn request_model_failure(error: CatalogError) -> StageFailure {
+    tracing::debug!(error = %error, "the request model stage failed");
+    StageFailure::from(AuthenticationFailure::Missing)
 }
 
 // the body stream itself failed, so there is nothing left to forward; the buffer rejection is a bare 400
