@@ -123,11 +123,6 @@ fn texts_of(items: &[GuardrailValue]) -> Vec<String> {
     texts
 }
 
-fn texts_of_items(items: &[StreamItem]) -> Vec<String> {
-    let values: Vec<GuardrailValue> = items.iter().map(stream_item_value).collect();
-    texts_of(&values)
-}
-
 fn scanned_inputs(response: &GuardrailValue) -> Option<StreamInputs> {
     let GuardrailValue::Object(fields) = response else {
         return None;
@@ -186,7 +181,8 @@ impl<const DELIVERS: bool> StreamTranslation<()> for Translation<'_, DELIVERS> {
         Guardrail: StreamGuardrail<(), Failure = StepError>,
     {
         let request_data = call.request_data.ok_or(StepError::NoRequestData)?;
-        let texts = texts_of_items(responses_so_far);
+        let values: Vec<GuardrailValue> = responses_so_far.iter().map(stream_item_value).collect();
+        let texts = texts_of(&values);
         let text_count = texts.len();
         let tool_calls = self.script.tool_calls.clone();
         let stored_tools = tool_calls.clone().unwrap_or_default();
