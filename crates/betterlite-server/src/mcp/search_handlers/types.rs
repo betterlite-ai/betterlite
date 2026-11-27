@@ -48,7 +48,7 @@ pub struct AccessibleSkill {
     pub description: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SearchOutcome<T> {
     Hits(Vec<T>),
     NotConfigured { reason: String },

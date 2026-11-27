@@ -30,12 +30,18 @@ pub(super) async fn ranked_hits(
     };
     let embedder = router.embedder(embedding_model);
     let mut guard = context.settings.mcp_search_index().lock().await;
-    let mut ranker = SemanticToolRanker {
-        embed: embedder.as_ref(),
-        embedding_model,
-        index: &mut *guard,
-    };
-    rank_mcp_tools(query, tools, top_k, settings, Some(&mut ranker)).await
+    rank_mcp_tools(
+        query,
+        tools,
+        top_k,
+        settings,
+        Some(&mut SemanticToolRanker {
+            embed: embedder.as_ref(),
+            embedding_model,
+            index: &mut guard,
+        }),
+    )
+    .await
 }
 
 pub(super) fn tool_search_result(hit: MCPToolSearchHit) -> ToolSearchResult {

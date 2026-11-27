@@ -162,9 +162,9 @@ impl Fake {
             .push(search_call(query, top_k, embedding_model));
     }
 
-    fn allowed_servers_response(&self) -> Result<Vec<String>, SearchPortError> {
+    fn allowed_servers_response(&self) -> Vec<String> {
         self.seen.lock().unwrap().allowed_calls.push(());
-        Ok(self.allowed_servers.clone())
+        self.allowed_servers.clone()
     }
 }
 
@@ -204,6 +204,7 @@ impl SearchPorts for Fake {
         seen.agents = names;
         seen.agent_searches
             .push(search_call(request.query, request.top_k, embedding_model));
+        drop(seen);
         Ok(self.agent_outcome.clone())
     }
 
@@ -233,7 +234,7 @@ impl SearchPorts for Fake {
 
 #[async_trait]
 impl McpOperations for Fake {
-    async fn _list_mcp_tools(
+    async fn list_mcp_tools(
         &self,
         _caller: &CallerScope,
         _scope: &McpRequestScope,
@@ -243,12 +244,12 @@ impl McpOperations for Fake {
         Ok(self.tools.clone())
     }
 
-    async fn _get_allowed_mcp_servers(
+    async fn get_allowed_mcp_servers(
         &self,
         _caller: &CallerScope,
         _scope: &McpRequestScope,
     ) -> Result<Vec<String>, SearchPortError> {
-        self.allowed_servers_response()
+        Ok(self.allowed_servers_response())
     }
 
     async fn raise_denied_scoped_mcp_access(
@@ -417,9 +418,11 @@ async fn agent_search_checks_agent_feature_access() {
         error,
         SearchHandlerError::Feature(FeatureAccessError::Disabled(FeatureName::Agents))
     ));
-    let seen = fake.seen.lock().unwrap();
-    assert_eq!(seen.feature_checks, vec![FeatureName::Agents]);
-    assert!(seen.agent_searches.is_empty());
+    assert_eq!(
+        fake.seen.lock().unwrap().feature_checks,
+        vec![FeatureName::Agents]
+    );
+    assert!(fake.seen.lock().unwrap().agent_searches.is_empty());
 }
 
 #[rstest]
@@ -811,8 +814,14 @@ async fn proxy_tool_call_delegates_to_the_tool_call_handler() {
         .await
         .expect("a valid call executes");
     assert_eq!(text_of(&result), "done");
-    let seen = fake.seen.lock().unwrap();
-    let execution = seen.executions.first().expect("one execution");
+    let execution = fake
+        .seen
+        .lock()
+        .unwrap()
+        .executions
+        .first()
+        .cloned()
+        .expect("one execution");
     assert_eq!(execution.tool_name, "alpha");
     assert_eq!(execution.requested_server_id.as_deref(), Some("srv"));
     assert_eq!(execution.allowed_servers, vec!["srv".to_owned()]);
@@ -949,9 +958,15 @@ async fn mcp_tool_call_preserves_guardrail_context() {
         .await
         .expect("an allowed call executes");
     assert_eq!(text_of(&result), "done");
-    let seen = fake.seen.lock().unwrap();
-    assert_eq!(seen.allowed_calls.len(), 1);
-    let execution = seen.executions.first().expect("one execution");
+    assert_eq!(fake.seen.lock().unwrap().allowed_calls.len(), 1);
+    let execution = fake
+        .seen
+        .lock()
+        .unwrap()
+        .executions
+        .first()
+        .cloned()
+        .expect("one execution");
     assert_eq!(execution.tool_name, "alpha");
     assert_eq!(execution.requested_server_id.as_deref(), Some("srv"));
     assert_eq!(

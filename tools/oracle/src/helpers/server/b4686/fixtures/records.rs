@@ -76,13 +76,13 @@ pub(super) fn allowed_call_json(caller: &CallerScope, scope: &McpRequestScope) -
 pub(super) fn guardrail_json(
     context: Option<&GuardrailContext>,
 ) -> Result<JsonValue, SearchPortError> {
-    let Some(context) = context else {
+    let Some(payload) = context else {
         return Ok(JsonValue::Null);
     };
-    let metadata = serde_json::to_value(&context.metadata).map_err(|error| SearchPortError {
+    let metadata = serde_json::to_value(&payload.metadata).map_err(|error| SearchPortError {
         detail: error.to_string(),
     })?;
-    Ok(json!({"model": context.model, "metadata": metadata}))
+    Ok(json!({"model": payload.model, "metadata": metadata}))
 }
 
 fn secret_value(value: Option<&SecretString>) -> Option<&str> {
@@ -93,11 +93,11 @@ fn secret_headers_json(headers: &BTreeMap<String, BTreeMap<String, SecretString>
     let exposed: BTreeMap<&str, BTreeMap<&str, &str>> = headers
         .iter()
         .map(|(server, fields)| {
-            let fields: BTreeMap<&str, &str> = fields
+            let exposed_fields: BTreeMap<&str, &str> = fields
                 .iter()
                 .map(|(name, value)| (name.as_str(), value.expose_secret()))
                 .collect();
-            (server.as_str(), fields)
+            (server.as_str(), exposed_fields)
         })
         .collect();
     json!(exposed)

@@ -79,14 +79,14 @@ pub trait SearchPorts: Send + Sync {
 // LiteLLM's operations module: listing, the allowed-server scope, denial and execution
 #[async_trait]
 pub trait McpOperations: Send + Sync {
-    async fn _list_mcp_tools(
+    async fn list_mcp_tools(
         &self,
         caller: &CallerScope,
         scope: &McpRequestScope,
         proxy_mode: bool,
     ) -> Result<Vec<MCPTool>, SearchPortError>;
 
-    async fn _get_allowed_mcp_servers(
+    async fn get_allowed_mcp_servers(
         &self,
         caller: &CallerScope,
         scope: &McpRequestScope,

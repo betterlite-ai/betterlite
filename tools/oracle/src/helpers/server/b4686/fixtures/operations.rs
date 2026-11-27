@@ -14,7 +14,7 @@ use super::records::{caller_json, execution_scope_json, guardrail_json, scope_js
 
 #[async_trait]
 impl McpOperations for Fakes<'_> {
-    async fn _list_mcp_tools(
+    async fn list_mcp_tools(
         &self,
         caller: &CallerScope,
         scope: &McpRequestScope,
@@ -33,7 +33,7 @@ impl McpOperations for Fakes<'_> {
         Ok(self.input.listed_tools())
     }
 
-    async fn _get_allowed_mcp_servers(
+    async fn get_allowed_mcp_servers(
         &self,
         caller: &CallerScope,
         scope: &McpRequestScope,

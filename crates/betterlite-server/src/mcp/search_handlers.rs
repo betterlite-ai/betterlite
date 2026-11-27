@@ -77,6 +77,7 @@ pub async fn handle_skill_search(
     }
 }
 
+// Upstream spellings are fn _list_mcp_tools and fn _get_allowed_mcp_servers; local names avoid Rust's underscore-item lint
 pub async fn handle_mcp_tool_search(
     request: McpToolSearchRequest<'_>,
     context: &HandlerContext<'_>,
@@ -95,7 +96,7 @@ pub async fn handle_mcp_tool_search(
     }
     let tools = context
         .operations
-        ._list_mcp_tools(context.caller, context.scope, false)
+        .list_mcp_tools(context.caller, context.scope, false)
         .await?;
     let ranking = ranked_hits(request.query, request.top_k, &tools, &settings, context).await;
     tool_search_text(ranking)
@@ -107,18 +108,18 @@ pub async fn handle_mcp_proxy_tool(
 ) -> Result<CallToolResult, SearchHandlerError> {
     let tools = context
         .operations
-        ._list_mcp_tools(context.caller, context.scope, true)
+        .list_mcp_tools(context.caller, context.scope, true)
         .await?;
     if request.name == MCP_PROXY_SEARCH_TOOL_NAME {
         return proxy_search(request.arguments, &tools, context).await;
     }
     let tools_by_id = proxy_tools_by_id(&tools)?;
-    let tool = request
+    let Some(tool) = request
         .arguments
         .get("tool_id")
         .and_then(json_string)
-        .and_then(|tool_id| tools_by_id.get(tool_id).copied());
-    let Some(tool) = tool else {
+        .and_then(|tool_id| tools_by_id.get(tool_id).copied())
+    else {
         return Ok(text_tool_result(UNKNOWN_TOOL_ID.to_owned(), true));
     };
     let name = request.name;
@@ -189,7 +190,7 @@ pub async fn handle_mcp_tool_call(
     } = request;
     let allowed_servers = context
         .operations
-        ._get_allowed_mcp_servers(context.caller, context.scope)
+        .get_allowed_mcp_servers(context.caller, context.scope)
         .await?;
     if let Some(servers) = context.scope.mcp_servers.as_deref()
         && !servers.is_empty()
