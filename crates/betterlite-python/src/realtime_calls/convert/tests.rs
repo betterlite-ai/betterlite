@@ -8,6 +8,7 @@ use betterlite_provider::api::realtime_http_transport::error::{
     ProviderError, RealtimeHttpError, StatusFailure, TimeoutFailure,
 };
 use indexmap::IndexMap;
+use serde_json::Number;
 
 use super::{ConvertError, Payload, calls, client_secret, http_failure};
 
@@ -39,7 +40,7 @@ fn request_client_secret_keeps_its_arguments() {
                 String::from("anchor"),
                 Json::Text(String::from("created_at"))
             ),
-            (String::from("seconds"), Json::Number(60_i64.into())),
+            (String::from("seconds"), Json::Number(Number::from(60_i64))),
         ])))
     );
     assert!(request.common.kwargs.contains_key("litellm_logging_obj"));
