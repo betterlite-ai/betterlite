@@ -67,8 +67,8 @@ fn loads_callback_group_claim(
         assert_eq!(projection, None);
         return;
     }
-    let projection = projection.expect("a mapping yields a group projection");
-    assert_eq!(projection.sso_group_jwt_field.as_deref(), claim_field);
+    let found = projection.expect("a mapping yields a group projection");
+    assert_eq!(found.sso_group_jwt_field.as_deref(), claim_field);
 }
 
 #[rstest]

@@ -24,11 +24,22 @@ struct RawGeneralSettings {
     ui_access_mode: Option<RawUiAccessMode>,
 }
 
+// a string mode builds no SSO handler, so matching keeps only the shape and discards the text
+#[derive(Debug, Deserialize)]
+#[serde(from = "String")]
+struct ModeText;
+
+impl From<String> for ModeText {
+    fn from(_text: String) -> Self {
+        Self
+    }
+}
+
 // LiteLLM builds the SSO handler only for a dict, so a string mode builds none while a list or a number has no declared type
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 enum RawUiAccessMode {
-    Text(String),
+    Text(ModeText),
     Mapping(RawGroupProjection),
     Other(IgnoredAny),
 }
