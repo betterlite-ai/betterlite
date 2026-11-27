@@ -1,0 +1,204 @@
+use std::collections::BTreeMap;
+
+use betterlite_core::api::realtime_contracts::error::HeaderMap;
+use betterlite_core::api::realtime_http_calls::error::{RealtimeHttpCallsError, RecordError};
+use betterlite_models::decisions::Json;
+use betterlite_models::resolution::ResolutionError;
+use betterlite_provider::api::realtime_http_transport::error::RealtimeHttpError;
+use indexmap::IndexMap;
+use serde::Deserialize;
+use thiserror::Error;
+
+#[cfg(test)]
+mod tests;
+
+#[derive(Debug, Error)]
+pub(crate) enum ConvertError {
+    #[error("the realtime call payload is not JSON: {0}")]
+    Json(#[from] serde_json::Error),
+    #[error("the realtime call is missing its {0} argument")]
+    Missing(&'static str),
+}
+
+impl ConvertError {
+    pub(crate) fn failure(&self) -> super::error::CallFailure {
+        super::error::CallFailure::class("ValueError", self.to_string())
+    }
+}
+
+// main.py's payload: one "arguments" object, and unknown keys stay in extra the way LiteLLM's kwargs allow them
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct Payload {
+    arguments: Arguments,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub(crate) struct Arguments {
+    pub(crate) model: Option<String>,
+    pub(crate) session: Option<Json>,
+    pub(crate) expires_after: Option<Json>,
+    pub(crate) transcription_session: Option<Json>,
+    pub(crate) openai_ephemeral_key: Option<String>,
+    pub(crate) timeout: Option<f64>,
+    pub(crate) api_base: Option<String>,
+    pub(crate) api_key: Option<String>,
+    pub(crate) api_version: Option<String>,
+    pub(crate) extra_headers: Option<BTreeMap<String, String>>,
+    #[serde(flatten)]
+    extra: IndexMap<String, Json>,
+}
+
+pub(crate) struct ClientSecretArguments {
+    pub(crate) common: Common,
+    pub(crate) session: Option<Json>,
+    pub(crate) expires_after: Option<Json>,
+}
+
+pub(crate) struct TranscriptionArguments {
+    pub(crate) common: Common,
+    pub(crate) transcription_session: Option<Json>,
+}
+
+pub(crate) struct CallsArguments {
+    pub(crate) common: Common,
+    pub(crate) ephemeral_key: String,
+    pub(crate) sdp: Vec<u8>,
+    pub(crate) session: Option<Json>,
+}
+
+// The three HTTP calls' shared arguments; everything else in kwargs reaches only the pre-call log
+pub(crate) struct Common {
+    pub(crate) model: Option<String>,
+    pub(crate) timeout: Option<f64>,
+    pub(crate) api_base: Option<String>,
+    pub(crate) api_key: Option<String>,
+    pub(crate) api_version: Option<String>,
+    pub(crate) extra_headers: Option<BTreeMap<String, String>>,
+    pub(crate) kwargs: IndexMap<String, Json>,
+}
+
+pub(crate) fn parse(payload: &str) -> Result<Arguments, ConvertError> {
+    let payload: Payload = serde_json::from_str(payload)?;
+    Ok(payload.arguments)
+}
+
+fn common(arguments: Arguments) -> Common {
+    Common {
+        model: arguments.model,
+        timeout: arguments.timeout,
+        api_base: arguments.api_base,
+        api_key: arguments.api_key,
+        api_version: arguments.api_version,
+        extra_headers: arguments.extra_headers,
+        kwargs: arguments.extra,
+    }
+}
+
+pub(crate) fn client_secret(arguments: Arguments) -> ClientSecretArguments {
+    ClientSecretArguments {
+        session: arguments.session.clone(),
+        expires_after: arguments.expires_after.clone(),
+        common: common(arguments),
+    }
+}
+
+pub(crate) fn transcription(arguments: Arguments) -> TranscriptionArguments {
+    TranscriptionArguments {
+        transcription_session: arguments.transcription_session.clone(),
+        common: common(arguments),
+    }
+}
+
+pub(crate) fn calls(
+    arguments: Arguments,
+    blobs: &[Vec<u8>],
+) -> Result<CallsArguments, ConvertError> {
+    let Some(ephemeral_key) = arguments.openai_ephemeral_key.clone() else {
+        return Err(ConvertError::Missing("openai_ephemeral_key"));
+    };
+    let Some(sdp) = blobs.last() else {
+        return Err(ConvertError::Missing("sdp_body"));
+    };
+    Ok(CallsArguments {
+        session: arguments.session.clone(),
+        common: common(arguments),
+        ephemeral_key,
+        sdp: sdp.clone(),
+    })
+}
+
+// The provider's own exception keeps its class and fields; only the handler without a config lets the masked status escape
+pub(crate) fn http_failure(
+    error: &RealtimeHttpCallsError<RealtimeHttpError>,
+) -> super::error::CallFailure {
+    match error {
+        RealtimeHttpCallsError::Dispatch(inner) => dispatch_failure(inner),
+        RealtimeHttpCallsError::Resolution(source) => resolution_failure(source),
+        RealtimeHttpCallsError::Record(source) => {
+            super::error::CallFailure::class("ValueError", record_message(source))
+        }
+        RealtimeHttpCallsError::Logging(source) => {
+            super::error::CallFailure::class("ValueError", source.to_string())
+        }
+        RealtimeHttpCallsError::Timeout { .. } => {
+            super::error::CallFailure::class("ValueError", error.to_string())
+        }
+    }
+}
+
+fn record_message(error: &RecordError) -> String {
+    error.to_string()
+}
+
+fn resolution_failure(error: &ResolutionError) -> super::error::CallFailure {
+    super::error::CallFailure::class("BadRequestError", error.to_string())
+}
+
+fn dispatch_failure(error: &RealtimeHttpError) -> super::error::CallFailure {
+    use super::error::CallFailure;
+    match error {
+        RealtimeHttpError::Provider(source) => CallFailure {
+            kind: String::from("BaseLLMException"),
+            message: source.message.clone(),
+            status_code: Some(source.status_code),
+            headers: Some(text_headers(&source.headers)),
+        },
+        RealtimeHttpError::Status(source) => CallFailure {
+            kind: String::from("MaskedHTTPStatusError"),
+            message: source.message.clone(),
+            status_code: Some(source.status_code),
+            headers: Some(text_headers(&source.headers)),
+        },
+        RealtimeHttpError::Timeout(source) => CallFailure::class("Timeout", source.message.clone()),
+        RealtimeHttpError::Transport(source) => {
+            CallFailure::class("APIConnectionError", source.to_string())
+        }
+        RealtimeHttpError::Client(source) => {
+            CallFailure::class("APIConnectionError", source.to_string())
+        }
+        RealtimeHttpError::Logging(source) => CallFailure::class("ValueError", source.to_string()),
+        RealtimeHttpError::Sdp(source) => CallFailure::class("ValueError", source.to_string()),
+        RealtimeHttpError::Config(source) => CallFailure::class("ValueError", source.to_string()),
+        RealtimeHttpError::RequestUrl { .. } => CallFailure::class("ValueError", error.to_string()),
+        RealtimeHttpError::HeaderName { .. } => CallFailure::class("ValueError", error.to_string()),
+        RealtimeHttpError::HeaderValue { .. } => {
+            CallFailure::class("ValueError", error.to_string())
+        }
+        RealtimeHttpError::HeaderNotText { .. } => {
+            CallFailure::class("ValueError", error.to_string())
+        }
+        RealtimeHttpError::Encode(_source) => CallFailure::class("ValueError", error.to_string()),
+    }
+}
+
+fn text_headers(headers: &HeaderMap) -> BTreeMap<String, String> {
+    headers
+        .iter()
+        .filter_map(|(name, value)| match value {
+            Json::Text(text) => Some((name.clone(), text.clone())),
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
+        })
+        .collect()
+}
