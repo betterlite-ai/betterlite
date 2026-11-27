@@ -20,7 +20,7 @@ use betterlite_oracle_helper_api::helper::HelperResult;
 use http::HeaderMap;
 use http::header::{HeaderName, HeaderValue};
 use secrecy::SecretString;
-use serde_json::json;
+use serde_json::{Value, json};
 use tokio::runtime::{Builder, Runtime};
 
 use super::fakes::{Clock, Recorder, Script};
@@ -59,14 +59,10 @@ fn runtime() -> Result<Runtime, Box<HelperError>> {
         .map_err(failure)
 }
 
-fn secret(value: Option<&str>) -> Option<SecretString> {
-    value.map(SecretString::from)
-}
-
 fn module_globals(globals: &Globals) -> LiteLlmGlobals {
     LiteLlmGlobals {
         api_base: globals.api_base.clone(),
-        api_key: secret(globals.api_key.as_deref()),
+        api_key: globals.api_key.as_deref().map(SecretString::from),
         openai_key: None,
         organization: None,
     }
@@ -136,7 +132,7 @@ fn dispatch(input: &DispatchInput) -> HelperResult {
         optional_params: &input.optional_params,
         litellm_params: input.litellm_params.clone(),
         api_base: input.api_base.clone(),
-        api_key: secret(input.api_key.as_deref()),
+        api_key: input.api_key.as_deref().map(SecretString::from),
         timeout_seconds: input.timeout_seconds,
         extra_headers: input.extra_headers.as_ref(),
         aspeech: input.aspeech,
@@ -145,7 +141,7 @@ fn dispatch(input: &DispatchInput) -> HelperResult {
     runtime()?
         .block_on(dispatch_text_to_speech(call, &mut recorder))
         .map_err(|error| speech_error(&error))?;
-    Ok(recorder.take())
+    Ok(recorder.calls.pop().unwrap_or(Value::Null))
 }
 
 fn response(input: &ResponseInput) -> HelperResult {

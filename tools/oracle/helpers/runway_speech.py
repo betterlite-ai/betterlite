@@ -54,14 +54,10 @@ class SpeechConfig(Protocol):
     def map_openai_params(self) -> Mapper: ...
 
     @property
-    def transform_text_to_speech_request(  # ast-grep-ignore: no-long-names
-        self,
-    ) -> Requester: ...
+    def transform_text_to_speech_request(self) -> Requester: ...
 
     @property
-    def transform_text_to_speech_response(  # ast-grep-ignore: no-long-names
-        self,
-    ) -> Responder: ...
+    def transform_text_to_speech_response(self) -> Responder: ...
 
     @property
     def dispatch_text_to_speech(self) -> Dispatcher: ...
@@ -204,10 +200,9 @@ def logging_object(model: str) -> Logging:
 
 
 def header_text(headers: httpx.Headers, name: str) -> str:
-    value = headers.get(name)
-    if value is None:
-        return ""
-    return value
+    if name in headers:
+        return headers[name]
+    return ""
 
 
 def request_value(request: httpx.Request) -> JsonValue:
@@ -221,8 +216,11 @@ def request_value(request: httpx.Request) -> JsonValue:
 
 def response_value(finished: HttpxBinaryResponseContent) -> JsonValue:
     reply = finished.response
+    content_type: str | None = None
+    if "content-type" in reply.headers:
+        content_type = reply.headers["content-type"]
     answer: Object = {
-        "status": reply.status_code, "content_type": reply.headers.get("content-type"),
+        "status": reply.status_code, "content_type": content_type,
         "body_b64": base64.b64encode(reply.content).decode("ascii"),
     }
     return JSON.validate_python(answer)

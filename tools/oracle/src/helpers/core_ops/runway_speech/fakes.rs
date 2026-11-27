@@ -137,13 +137,7 @@ impl PollClock for Clock {
 
 #[derive(Default)]
 pub(super) struct Recorder {
-    calls: Vec<Value>,
-}
-
-impl Recorder {
-    pub(super) fn take(&mut self) -> Value {
-        self.calls.pop().unwrap_or(Value::Null)
-    }
+    pub(super) calls: Vec<Value>,
 }
 
 impl TextToSpeechHandler for Recorder {

@@ -112,19 +112,18 @@ fn resolved_params(
 // the explicit base, the call's litellm_params, litellm.api_base, then RUNWAYML_API_BASE or LiteLLM's host
 fn resolve_base(call: &DispatchCall<'_>) -> Result<String, RunwaySpeechError> {
     let from_params = params_text(&call.litellm_params, "api_base")?;
-    Ok([
-        call.api_base.as_deref().filter(|base| !base.is_empty()),
-        from_params.filter(|base| !base.is_empty()),
-        call.environment
-            .globals
-            .api_base
-            .as_deref()
-            .filter(|base| !base.is_empty()),
-    ]
-    .into_iter()
-    .flatten()
-    .next()
-    .map_or_else(|| call.environment.settings.api_base.clone(), str::to_owned))
+    let explicit = call.api_base.as_deref().filter(|base| !base.is_empty());
+    let record = from_params.filter(|base| !base.is_empty());
+    let global = call
+        .environment
+        .globals
+        .api_base
+        .as_deref()
+        .filter(|base| !base.is_empty());
+    Ok(explicit
+        .or(record)
+        .or(global)
+        .map_or_else(|| call.environment.settings.api_base.clone(), str::to_owned))
 }
 
 // the explicit key, the call's litellm_params, litellm.api_key, RUNWAYML_API_SECRET, then RUNWAYML_API_KEY
