@@ -59,16 +59,16 @@ fn populated_fields() -> McpAuthFields {
 }
 
 fn next_caller_fields() -> McpAuthFields {
-    McpAuthFields {
-        user_api_key_auth: Some(principal(NEXT_CALLER)),
-        mcp_auth_header: Some(secret(NEXT_SHARED_HEADER)),
-        mcp_servers: Some(vec![NEXT_SERVER.to_owned()]),
-        mcp_server_auth_headers: Some(server_headers(NEXT_SERVER, NEXT_SERVER_HEADER)),
-        oauth2_headers: Some(authorization(NEXT_OAUTH2_HEADER)),
-        mcp_protocol_version: Some(NEXT_PROTOCOL_VERSION.to_owned()),
-        raw_headers: Some(authorization(NEXT_RAW_HEADER)),
-        client_ip: Some(NEXT_CLIENT_IP.to_owned()),
-    }
+    let mut fields = populated_fields();
+    fields.user_api_key_auth = Some(principal(NEXT_CALLER));
+    fields.mcp_auth_header = Some(secret(NEXT_SHARED_HEADER));
+    fields.mcp_servers = Some(vec![NEXT_SERVER.to_owned()]);
+    fields.mcp_server_auth_headers = Some(server_headers(NEXT_SERVER, NEXT_SERVER_HEADER));
+    fields.oauth2_headers = Some(authorization(NEXT_OAUTH2_HEADER));
+    fields.mcp_protocol_version = Some(NEXT_PROTOCOL_VERSION.to_owned());
+    fields.raw_headers = Some(authorization(NEXT_RAW_HEADER));
+    fields.client_ip = Some(NEXT_CLIENT_IP.to_owned());
+    fields
 }
 
 #[test]
