@@ -197,23 +197,24 @@ def canonical(value: JsonValue) -> JsonValue:
             return canonical_fields(fields)
         case list():
             return [canonical(item) for item in value]
-    return value
+        case None | bool() | int() | float() | str():
+            return value
 
 
 def canonical_fields(fields: dict[str, JsonValue]) -> JsonValue:
     out: dict[str, JsonValue] = {}
     for key, item in fields.items():
         if item is not None:
-            out[key] = canonical_field(key, item)
+            out[key] = canonical_member(key, item)
     return out
 
 
-def canonical_field(key: str, value: JsonValue) -> JsonValue:
-    if key in JSON_TEXT_FIELDS:
-        match value:
-            case str():
-                return BODY.validate_json(value)
-    return canonical(value)
+def canonical_member(key: str, item: JsonValue) -> JsonValue:
+    match item:
+        case str() if key in JSON_TEXT_FIELDS:
+            return BODY.validate_json(item)
+        case dict() | list() | None | bool() | int() | float() | str():
+            return canonical(item)
 
 
 def ask(caller: UserAPIKeyAuth, path: str, payload: dict[str, JsonValue]) -> Answer:
