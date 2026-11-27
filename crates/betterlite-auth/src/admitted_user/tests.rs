@@ -66,11 +66,14 @@ impl FakeUsers {
         self.calls.lock().unwrap().clone()
     }
 
-    fn record<T: Clone>(
+    fn record<T>(
         &self,
         call: ReadCall,
         answer: &Result<Option<T>, ReadFault>,
-    ) -> Ready<Result<Option<T>, ReadFault>> {
+    ) -> Ready<Result<Option<T>, ReadFault>>
+    where
+        T: Clone,
+    {
         self.calls.lock().unwrap().push(call);
         ready(answer.clone())
     }
