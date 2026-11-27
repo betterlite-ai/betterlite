@@ -5,6 +5,8 @@ use std::sync::Arc;
 use axum::http::{HeaderMap, StatusCode};
 use betterlite_config::sections::management_rbac::Settings as FeatureSettings;
 use betterlite_models::decisions::Json;
+use betterlite_openai::api::vector_store_records::records::vector::LiteLlmManagedVectorStore;
+use rstest::rstest;
 
 use super::support::{
     CacheFailure, Events, Failure, FakeCache, FakeDatabase, Setup, World, build, capture_logs,
@@ -64,100 +66,64 @@ async fn delete_database_before_cache() {
     assert!(cache.stores().is_empty());
 }
 
+// a store only one place holds: the registry copy, the row, or nothing but the database
+#[rstest]
+#[case::cache_only(StoreCase {
+    database: Vec::new(),
+    cache: Some(vec![memory_store("vs_m")]),
+    registry: Some(Vec::new()),
+    payload: r#"{"vector_store_id":"vs_m"}"#,
+    events: &["db:find", "cache:find", "cache:remove"],
+})]
+#[case::database_only(StoreCase {
+    database: vec![db_store("vs_b")],
+    cache: Some(Vec::new()),
+    registry: Some(Vec::new()),
+    payload: r#"{"vector_store_id":"vs_b"}"#,
+    events: &["db:find", "cache:find", "db:delete"],
+})]
+#[case::bare(StoreCase {
+    database: vec![db_store("vs_c")],
+    cache: None,
+    registry: None,
+    payload: r#"{"vector_store_id":"vs_c"}"#,
+    events: &["db:find", "db:delete"],
+})]
 #[tokio::test]
-async fn delete_removes_whichever_store_exists() {
-    assert_cache_only_delete().await;
-    assert_database_only_delete().await;
-    assert_bare_delete().await;
-}
-
-async fn assert_cache_only_delete() {
+async fn delete_removes_whichever_store_exists(#[case] case: StoreCase) {
     let events = Events::default();
-    let cache = FakeCache::new(vec![memory_store("vs_m")]);
-    let setup = Setup {
-        database: Some(FakeDatabase::new(Vec::new())),
-        cache: Some(cache.clone()),
-        registry: Some(Vec::new()),
-        world: World::default(),
-        privileges: false,
-        settings: FeatureSettings::default(),
-        events: events.clone(),
-    };
-    let state = build(setup);
-    let (status, _, _) = call_delete(
-        &state,
-        &internal("u1", None),
-        r#"{"vector_store_id":"vs_m"}"#,
-    )
-    .await;
-    assert_eq!(StatusCode::OK, status);
-    assert_eq!(
-        vec![
-            "db:find".to_owned(),
-            "cache:find".to_owned(),
-            "cache:remove".to_owned(),
-        ],
-        events.entries()
-    );
-    assert!(cache.stores().is_empty());
-}
-
-async fn assert_database_only_delete() {
-    let events = Events::default();
-    let database = FakeDatabase::new(vec![db_store("vs_b")]);
+    let database = FakeDatabase::new(case.database);
+    let cache = case.cache.map(FakeCache::new);
     let setup = Setup {
         database: Some(database.clone()),
-        cache: Some(FakeCache::new(Vec::new())),
-        registry: Some(Vec::new()),
+        cache: cache.clone(),
+        registry: case.registry,
         world: World::default(),
         privileges: false,
         settings: FeatureSettings::default(),
         events: events.clone(),
     };
-    let state = build(setup);
-    let (status, _, _) = call_delete(
-        &state,
-        &internal("u1", None),
-        r#"{"vector_store_id":"vs_b"}"#,
-    )
-    .await;
+    let (status, _, _) = call_delete(&build(setup), &internal("u1", None), case.payload).await;
     assert_eq!(StatusCode::OK, status);
-    assert_eq!(
-        vec![
-            "db:find".to_owned(),
-            "cache:find".to_owned(),
-            "db:delete".to_owned(),
-        ],
-        events.entries()
-    );
+    let expected: Vec<String> = case
+        .events
+        .iter()
+        .map(|entry| (*entry).to_owned())
+        .collect();
+    assert_eq!(expected, events.entries());
     assert!(database.rows().is_empty());
+    if let Some(cache) = cache {
+        assert!(cache.stores().is_empty());
+    }
 }
 
-async fn assert_bare_delete() {
-    let events = Events::default();
-    let database = FakeDatabase::new(vec![db_store("vs_c")]);
-    let setup = Setup {
-        database: Some(database.clone()),
-        cache: None,
-        registry: None,
-        world: World::default(),
-        privileges: false,
-        settings: FeatureSettings::default(),
-        events: events.clone(),
-    };
-    let state = build(setup);
-    let (status, _, _) = call_delete(
-        &state,
-        &internal("u1", None),
-        r#"{"vector_store_id":"vs_c"}"#,
-    )
-    .await;
-    assert_eq!(StatusCode::OK, status);
-    assert_eq!(
-        vec!["db:find".to_owned(), "db:delete".to_owned()],
-        events.entries()
-    );
-    assert!(database.rows().is_empty());
+// one delete case: the two stores, the body and the calls the fakes must record
+struct StoreCase {
+    database: Vec<LiteLlmManagedVectorStore>,
+    cache: Option<Vec<LiteLlmManagedVectorStore>>,
+    registry: Option<Vec<LiteLlmManagedVectorStore>>,
+    payload: &'static str,
+    events: &'static [&'static str],
 }
 
 #[tokio::test]

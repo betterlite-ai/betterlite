@@ -5,6 +5,8 @@ use std::sync::Arc;
 use axum::http::{HeaderMap, StatusCode};
 use betterlite_config::sections::management_rbac::Settings as FeatureSettings;
 use betterlite_models::decisions::Json;
+use betterlite_openai::api::vector_store_records::records::vector::LiteLlmManagedVectorStore;
+use rstest::rstest;
 use serde_json::Number;
 
 use super::support::{
@@ -279,115 +281,136 @@ async fn update_stores_empty_metadata_as_an_empty_object() {
     );
 }
 
+// the four refusals an update answers before it changes anything: what the table holds, what the body says and who asks
+#[rstest]
+#[case::config_owned(Refusal {
+    database: FakeDatabase::new(vec![db_store("vs_c")]),
+    cache: Some(FakeCache::new(vec![config_store("vs_c")])),
+    registry: vec![config_store("vs_c")],
+    id: "vs_c",
+    outcome: Outcome::ConfigOwned,
+})]
+#[case::missing_row(Refusal {
+    database: FakeDatabase::new(Vec::new()),
+    cache: Some(FakeCache::new(Vec::new())),
+    registry: Vec::new(),
+    id: "vs_a",
+    outcome: Outcome::Missing,
+})]
+#[case::denied_access(Refusal {
+    database: FakeDatabase::new(vec![team_store("vs_a", "t2")]),
+    cache: Some(FakeCache::new(Vec::new())),
+    registry: Vec::new(),
+    id: "vs_a",
+    outcome: Outcome::Denied,
+})]
+#[case::vanished_row(Refusal {
+    database: FakeDatabase::new(vec![db_store("vs_a")]).missing_update(),
+    cache: Some(FakeCache::new(Vec::new())),
+    registry: Vec::new(),
+    id: "vs_a",
+    outcome: Outcome::Vanished,
+})]
 #[tokio::test]
-async fn update_errors_before_mutation() {
-    assert_config_owned_is_400().await;
-    assert_missing_row_is_404().await;
-    assert_denied_access_is_403().await;
-    assert_vanished_row_is_404().await;
-}
-
-async fn assert_config_owned_is_400() {
+async fn update_errors_before_mutation(#[case] refusal: Refusal) {
     let events = Events::default();
     let setup = Setup {
-        database: Some(FakeDatabase::new(vec![db_store("vs_c")])),
-        cache: Some(FakeCache::new(vec![config_store("vs_c")])),
-        registry: Some(vec![config_store("vs_c")]),
+        database: Some(refusal.database),
+        cache: refusal.cache,
+        registry: Some(refusal.registry),
         world: World::default(),
         privileges: false,
         settings: FeatureSettings::default(),
         events: events.clone(),
     };
-    let state = build(setup);
+    let id = refusal.id;
+    let payload = format!(r#"{{"vector_store_id":"{id}","vector_store_description":"x"}}"#);
     let (status, _headers, body) = call_update(
-        &state,
-        &internal("u1", None),
-        r#"{"vector_store_id":"vs_c","vector_store_description":"x"}"#,
+        &build(setup),
+        &internal("u1", refusal.outcome.team()),
+        &payload,
     )
     .await;
-    assert_eq!(StatusCode::BAD_REQUEST, status);
-    assert_eq!("vs_c", text(at(at(&body, "detail"), "vector_store_id")));
-    assert!(events.entries().is_empty());
+    assert_eq!(refusal.outcome.status(), status);
+    refusal.outcome.detail().check(&body, id);
+    let expected: Vec<String> = refusal
+        .outcome
+        .events()
+        .iter()
+        .map(|entry| (*entry).to_owned())
+        .collect();
+    assert_eq!(expected, events.entries());
 }
 
-async fn assert_missing_row_is_404() {
-    let events = Events::default();
-    let setup = Setup {
-        database: Some(FakeDatabase::new(Vec::new())),
-        cache: Some(FakeCache::new(Vec::new())),
-        registry: Some(Vec::new()),
-        world: World::default(),
-        privileges: false,
-        settings: FeatureSettings::default(),
-        events: events.clone(),
-    };
-    let state = build(setup);
-    let (status, _headers, body) = call_update(
-        &state,
-        &internal("u1", None),
-        r#"{"vector_store_id":"vs_a","vector_store_description":"x"}"#,
-    )
-    .await;
-    assert_eq!(StatusCode::NOT_FOUND, status);
-    assert_eq!(
-        "Vector store with ID vs_a not found",
-        text(at(&body, "detail"))
-    );
-    assert_eq!(vec!["db:find".to_owned()], events.entries());
+// one refusal: the stores, the body's id and the outcome the fakes must produce
+struct Refusal {
+    database: FakeDatabase,
+    cache: Option<FakeCache>,
+    registry: Vec<LiteLlmManagedVectorStore>,
+    id: &'static str,
+    outcome: Outcome,
 }
 
-async fn assert_denied_access_is_403() {
-    let setup = Setup {
-        database: Some(FakeDatabase::new(vec![team_store("vs_a", "t2")])),
-        cache: Some(FakeCache::new(Vec::new())),
-        registry: Some(Vec::new()),
-        world: World::default(),
-        privileges: false,
-        settings: FeatureSettings::default(),
-        events: Events::default(),
-    };
-    let state = build(setup);
-    let (status, _headers, body) = call_update(
-        &state,
-        &internal("u1", Some("t1")),
-        r#"{"vector_store_id":"vs_a","vector_store_description":"x"}"#,
-    )
-    .await;
-    assert_eq!(StatusCode::FORBIDDEN, status);
-    assert_eq!(
-        "Access denied: You do not have permission to access this vector store",
-        text(at(&body, "detail"))
-    );
+enum Outcome {
+    ConfigOwned,
+    Missing,
+    Denied,
+    Vanished,
 }
 
-// a row that vanished between the fetch and the update answers the same 404
-async fn assert_vanished_row_is_404() {
-    let events = Events::default();
-    let setup = Setup {
-        database: Some(FakeDatabase::new(vec![db_store("vs_a")]).missing_update()),
-        cache: Some(FakeCache::new(Vec::new())),
-        registry: Some(Vec::new()),
-        world: World::default(),
-        privileges: false,
-        settings: FeatureSettings::default(),
-        events: events.clone(),
-    };
-    let state = build(setup);
-    let (status, _headers, body) = call_update(
-        &state,
-        &internal("u1", None),
-        r#"{"vector_store_id":"vs_a","vector_store_description":"x"}"#,
-    )
-    .await;
-    assert_eq!(StatusCode::NOT_FOUND, status);
-    assert_eq!(
-        "Vector store with ID vs_a not found",
-        text(at(&body, "detail"))
-    );
-    assert_eq!(
-        vec!["db:find".to_owned(), "db:update".to_owned()],
-        events.entries()
-    );
+impl Outcome {
+    fn status(&self) -> StatusCode {
+        match self {
+            Self::ConfigOwned => StatusCode::BAD_REQUEST,
+            Self::Missing | Self::Vanished => StatusCode::NOT_FOUND,
+            Self::Denied => StatusCode::FORBIDDEN,
+        }
+    }
+
+    fn detail(&self) -> Detail {
+        match self {
+            Self::ConfigOwned => Detail::ConfigOwned,
+            Self::Missing | Self::Vanished => Detail::NotFound,
+            Self::Denied => Detail::AccessDenied,
+        }
+    }
+
+    fn events(&self) -> &'static [&'static str] {
+        match self {
+            Self::ConfigOwned => &[],
+            Self::Missing | Self::Denied => &["db:find"],
+            Self::Vanished => &["db:find", "db:update"],
+        }
+    }
+
+    fn team(&self) -> Option<&'static str> {
+        match self {
+            Self::Denied => Some("t1"),
+            Self::ConfigOwned | Self::Missing | Self::Vanished => None,
+        }
+    }
+}
+
+enum Detail {
+    ConfigOwned,
+    NotFound,
+    AccessDenied,
+}
+
+impl Detail {
+    fn check(&self, body: &Json, id: &str) {
+        match self {
+            Self::ConfigOwned => assert_eq!(id, text(at(at(body, "detail"), "vector_store_id"))),
+            Self::NotFound => assert_eq!(
+                format!("Vector store with ID {id} not found"),
+                text(at(body, "detail"))
+            ),
+            Self::AccessDenied => assert_eq!(
+                "Access denied: You do not have permission to access this vector store",
+                text(at(body, "detail"))
+            ),
+        }
+    }
 }
 
 #[tokio::test]
