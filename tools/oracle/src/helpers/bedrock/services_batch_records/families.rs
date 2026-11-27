@@ -16,7 +16,8 @@ use betterlite_models::catalog::{BundledCatalog, ModelCatalog};
 use betterlite_models::decisions::Json;
 use betterlite_models::full_model_metadata::parameters::SupportedParameterSource;
 use betterlite_models::params::{
-    CallType, ChatParameters, ParameterError, ParameterPolicy, map_listed_parameters,
+    CallType, ChatParameters, ParameterError, ParameterMapping, ParameterPolicy,
+    map_listed_parameters,
 };
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_runner::helpers::{HelperCall, invoke};
@@ -63,6 +64,16 @@ where
     Box::new(FamilyFailure {
         message: error.to_string(),
         status: None,
+    })
+}
+
+// An unsupported parameter carries 500 when the encoding failed and 400 otherwise.
+fn parameter_failure(error: &ParameterError) -> Failure {
+    let encoded = matches!(error, ParameterError::Encode { .. });
+    let status = Some(if encoded { 500_u16 } else { 400_u16 });
+    Box::new(FamilyFailure {
+        message: error.to_string(),
+        status,
     })
 }
 
@@ -145,6 +156,24 @@ impl Families {
         let body = part("bedrock_converse_request", request_input, "/body")?;
         serde_json::from_value(body).map_err(failure)
     }
+
+    fn chat_mapping(
+        &self,
+        mapping_model: &str,
+        parameters: &ChatParameters,
+        policy: &ParameterPolicy,
+    ) -> Attempt<ParameterMapping> {
+        let supported = supported_openai_params(&self.model_cost, &self.packaged, mapping_model)
+            .map_err(|error| failure(error.message))?;
+        map_listed_parameters(
+            &supported,
+            mapping_model,
+            CallType::ChatCompletion,
+            parameters,
+            policy,
+        )
+        .map_err(|error| parameter_failure(&error))
+    }
 }
 
 #[async_trait::async_trait]
@@ -165,23 +194,7 @@ impl BatchFamilies for Families {
             additional_drop_params: Vec::new(),
             allowed_openai_params: allowed,
         };
-        let supported = supported_openai_params(&self.model_cost, &self.packaged, mapping_model)
-            .map_err(|error| failure(error.message))?;
-        let mapping = map_listed_parameters(
-            &supported,
-            mapping_model,
-            CallType::ChatCompletion,
-            &parameters,
-            &policy,
-        )
-        .map_err(|error| {
-            let encoded = matches!(&error, ParameterError::Encode { .. });
-            let status = Some(if encoded { 500_u16 } else { 400_u16 });
-            Box::new(FamilyFailure {
-                message: error.to_string(),
-                status,
-            })
-        })?;
+        let mapping = self.chat_mapping(mapping_model, &parameters, &policy)?;
         let mapped_value = self.claude("map_params", mapping_model, &[], &remaining)?;
         let mut mapped_params: Params = serde_json::from_value(mapped_value).map_err(failure)?;
         for (name, value) in mapping.provider_fields {
