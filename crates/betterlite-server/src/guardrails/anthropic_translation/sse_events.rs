@@ -12,7 +12,6 @@
 )]
 
 use crate::guardrails::responses_translation::block_events::guardrail_json::to_guardrail;
-use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::guardrail_message_scope::StreamItem;
 use betterlite_guardrails::guardrail_message_scope::fingerprint::stream_item_fingerprint;
 use betterlite_guardrails::guardrail_message_scope::stream_chunk_events::decode_replacing_invalid;
@@ -36,6 +35,7 @@ fn trim_sse(text: &str) -> &str {
 }
 
 // One stream item as the Anthropic handler reads it: a parsed event, a raw frame's bytes, or a value it leaves alone
+#[must_use]
 pub fn stream_item_chunk(item: &StreamItem) -> Result<SseChunk, serde_json::Error> {
     match item {
         StreamItem::Json(value) => match serde_json::to_value(value)? {

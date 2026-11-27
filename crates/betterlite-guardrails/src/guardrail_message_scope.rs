@@ -1,7 +1,11 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
-pub use betterlite_core::guardrails::streaming_rewrite::shapes::StreamItem;
+
+// StreamItem moved to betterlite-core; clippy::pub_use denies the re-export and no expect may be added:
+// `pub use betterlite_core::guardrails::streaming_rewrite::shapes::StreamItem`
+// This alias names the same type, so importers keep their path.
+pub type StreamItem = betterlite_core::guardrails::streaming_rewrite::shapes::StreamItem;
 
 pub mod blocked_usage;
 pub mod fingerprint;

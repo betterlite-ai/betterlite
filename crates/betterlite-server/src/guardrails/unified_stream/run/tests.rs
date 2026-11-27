@@ -7,6 +7,7 @@ use betterlite_guardrails::guardrail_message_scope::StreamItem;
 use futures_util::StreamExt as _;
 use futures_util::stream;
 
+use crate::guardrails::unified_stream::StreamOutput;
 use crate::guardrails::unified_stream::error::StreamLoopError;
 use crate::guardrails::unified_stream::run::incremental_transform_stream;
 use crate::guardrails::unified_stream::tests::support::{
@@ -415,12 +416,14 @@ async fn bytes_item_is_never_sent() {
         Ok(StreamItem::Bytes(frame.as_bytes().to_vec())),
         Ok(StreamItem::Json(metadata_chunk())),
     ];
-    let outputs = incremental_transform_stream(
-        params(&translation, &guardrail, &mut data, &keys),
-        stream::iter(source),
-    )
-    .collect()
-    .await;
+    // a source that mixes chunks and frames cannot use collect_results, so name the collected type
+    let outputs: Vec<Result<StreamOutput, StreamLoopError<SourceFailure>>> =
+        incremental_transform_stream(
+            params(&translation, &guardrail, &mut data, &keys),
+            stream::iter(source),
+        )
+        .collect()
+        .await;
     assert_eq!(
         outputs,
         vec![

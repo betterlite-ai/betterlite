@@ -23,6 +23,7 @@ pub fn stream_item_value(item: &StreamItem) -> GuardrailValue {
 }
 
 // Python's errors="replace": one U+FFFD per invalid sequence. String::from_utf8_lossy does the same but clippy.toml bans it.
+#[must_use]
 pub fn decode_replacing_invalid(bytes: &[u8]) -> String {
     let mut text = String::with_capacity(bytes.len());
     for chunk in bytes.utf8_chunks() {

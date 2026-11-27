@@ -274,7 +274,7 @@ pub(crate) fn lines(outputs: &Outputs) -> Vec<String> {
         .iter()
         .map(|output| match output {
             Ok(StreamOutput::Item(StreamItem::Json(GuardrailValue::Text(text)))) => text.clone(),
-            Ok(StreamOutput::Item(StreamItem::Json(item))) => content(&item),
+            Ok(StreamOutput::Item(StreamItem::Json(item))) => content(item),
             Ok(StreamOutput::Item(StreamItem::Bytes(bytes))) => {
                 format!("bytes {}", String::from_utf8(bytes.clone()).unwrap())
             }

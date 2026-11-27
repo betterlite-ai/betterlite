@@ -198,13 +198,13 @@ fn text_slot_texts(items: &[StreamItem]) -> impl Iterator<Item = &str> {
 }
 
 fn apply_text_rewrite(items: &mut [StreamItem], rewritten: Option<Vec<String>>, text_count: usize) {
-    let Some(rewritten) = rewritten.filter(|texts| texts.len() == text_count) else {
+    let Some(matching_texts) = rewritten.filter(|texts| texts.len() == text_count) else {
         return;
     };
     let text_slots = items
         .iter_mut()
         .filter(|item| matches!(item, StreamItem::Json(GuardrailValue::Text(_))));
-    for (item, text) in text_slots.zip(rewritten) {
+    for (item, text) in text_slots.zip(matching_texts) {
         *item = StreamItem::Json(GuardrailValue::Text(text));
     }
 }
