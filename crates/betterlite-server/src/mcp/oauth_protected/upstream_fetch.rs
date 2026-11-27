@@ -71,7 +71,7 @@ fn metadata_candidates(target: &UpstreamTarget) -> Vec<String> {
     candidates
 }
 
-fn payload_from(candidate: &str, reply: UpstreamReply) -> Option<JsonObject> {
+fn payload_from(candidate: &str, reply: &UpstreamReply) -> Option<JsonObject> {
     if reply.status != METADATA_STATUS_OK {
         return None;
     }
@@ -216,7 +216,7 @@ where
         generation: u64,
     ) -> Result<Option<JsonObject>, GetFailure> {
         let reply = self.upstream.get(candidate, METADATA_ACCEPT).await?;
-        let Some(document) = payload_from(candidate, reply) else {
+        let Some(document) = payload_from(candidate, &reply) else {
             return Ok(None);
         };
         let _stored = self.cache.store(

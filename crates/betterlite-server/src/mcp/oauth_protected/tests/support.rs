@@ -62,8 +62,11 @@ impl FakeUpstream {
         }
     }
 
-    pub(crate) fn invalidating(mut self, cache: OAuthMetadataCache, server_id: &str) -> Self {
-        self.invalidate = Some((cache, server_id.to_owned()));
+    pub(crate) fn invalidating(
+        mut self,
+        invalidation: Option<(OAuthMetadataCache, String)>,
+    ) -> Self {
+        self.invalidate = invalidation;
         self
     }
 
@@ -85,12 +88,11 @@ impl UpstreamGet for FakeUpstream {
         if let Some((cache, server_id)) = &self.invalidate {
             cache.invalidate(server_id);
         }
-        let reply = match self.replies.get(url) {
-            Some(reply) => reply.clone(),
-            None => Err(GetFailure::Other(format!(
+        let reply = self.replies.get(url).cloned().unwrap_or_else(|| {
+            Err(GetFailure::Other(format!(
                 "the fake has no reply for {url}"
-            ))),
-        };
+            )))
+        });
         async move {
             yield_now().await;
             reply
@@ -127,7 +129,7 @@ impl GatewayFacts for FakeGateway {
     }
 }
 
-pub(crate) fn exchange_available() -> TokenExchangePrerequisites {
+pub(crate) const fn exchange_available() -> TokenExchangePrerequisites {
     TokenExchangePrerequisites {
         jwt_auth_enabled: PrerequisiteSwitch(true),
         has_database: PrerequisiteSwitch(true),
@@ -135,7 +137,7 @@ pub(crate) fn exchange_available() -> TokenExchangePrerequisites {
     }
 }
 
-pub(crate) fn exchange_unavailable() -> TokenExchangePrerequisites {
+pub(crate) const fn exchange_unavailable() -> TokenExchangePrerequisites {
     TokenExchangePrerequisites {
         jwt_auth_enabled: PrerequisiteSwitch(false),
         has_database: PrerequisiteSwitch(true),
@@ -265,13 +267,16 @@ impl Harness {
         self
     }
 
-    pub(crate) fn token_exchange(mut self, prerequisites: TokenExchangePrerequisites) -> Self {
+    pub(crate) const fn token_exchange(
+        mut self,
+        prerequisites: TokenExchangePrerequisites,
+    ) -> Self {
         self.token_exchange = Some(prerequisites);
         self
     }
 
     pub(crate) fn suffix(mut self, suffix: &str) -> Self {
-        self.suffix = suffix.to_owned();
+        suffix.clone_into(&mut self.suffix);
         self
     }
 
@@ -286,11 +291,11 @@ impl Harness {
     }
 
     pub(crate) fn root(&self) -> ProtectedRoot<FakeUpstream, FakeRequest, FakeGateway> {
-        let base_upstream = FakeUpstream::new(self.replies.clone());
-        let upstream = match &self.invalidate_server {
-            Some(server_id) => base_upstream.invalidating(self.cache.clone(), server_id),
-            None => base_upstream,
-        };
+        let invalidation = self
+            .invalidate_server
+            .as_ref()
+            .map(|server_id| (self.cache.clone(), server_id.clone()));
+        let upstream = FakeUpstream::new(self.replies.clone()).invalidating(invalidation);
         ProtectedRoot {
             registry: registry(self.servers.clone()),
             cache: self.cache.clone(),

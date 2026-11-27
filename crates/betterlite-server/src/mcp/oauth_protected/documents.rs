@@ -220,10 +220,7 @@ fn origin(base_url: &str) -> String {
 }
 
 fn server_scopes(server: &MCPServer) -> Vec<String> {
-    match &server.fields.scopes {
-        Some(scopes) => scopes.clone(),
-        None => Vec::new(),
-    }
+    server.fields.scopes.clone().unwrap_or_default()
 }
 
 fn rewritten_resource(mut document: JsonObject, resource_url: &str) -> JsonObject {

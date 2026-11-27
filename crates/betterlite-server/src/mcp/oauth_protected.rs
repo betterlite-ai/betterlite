@@ -76,6 +76,7 @@ where
     R: RequestFacts + 'static,
     G: GatewayFacts + 'static,
 {
+    #[must_use]
     pub fn router(self) -> Router {
         let suffix = self.well_known_suffix.as_str();
         let aggregate_resource_path = format!("{PROTECTED_RESOURCE_PATH}{suffix}/mcp");

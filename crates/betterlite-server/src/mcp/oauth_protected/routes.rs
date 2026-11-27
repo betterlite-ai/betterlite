@@ -108,8 +108,8 @@ async fn resolve_server(
     client_ip: Option<&str>,
 ) -> Option<MCPServer> {
     let servers = registry.read().await;
-    match servers.server_by_name(name, client_ip) {
-        Some(server) => Some(server.clone()),
-        None => servers.server_by_id(name, client_ip).cloned(),
-    }
+    servers
+        .server_by_name(name, client_ip)
+        .or_else(|| servers.server_by_id(name, client_ip))
+        .cloned()
 }
