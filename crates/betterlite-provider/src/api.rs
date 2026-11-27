@@ -6,6 +6,7 @@ pub mod image_edit_http;
 pub mod image_generation_http;
 pub mod messages_native_prepare;
 pub mod realtime_http_transport;
+pub mod realtime_websocket_session;
 pub mod rerank_contracts;
 pub mod rerank_http;
 pub mod responses_provider_contract;

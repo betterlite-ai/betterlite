@@ -1,0 +1,13 @@
+id: B10212
+milestone: R2 bug fixes
+title: Python _arealtime runs a realtime session over the production dialer
+status: todo
+depends_on: [B7889, B10211, B10213]
+file: tasks/B10212-python-arealtime.yaml
+covers: []
+parent: null
+split_from: B7889
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

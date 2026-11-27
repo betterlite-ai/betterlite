@@ -16,3 +16,4 @@ pub mod tls;
 pub mod url_path;
 pub mod url_policy;
 pub mod user_url;
+pub mod websocket_client;
