@@ -4,6 +4,7 @@ use betterlite_core::api::riva::audio::ResampledAudio;
 use betterlite_core::api::riva::audio::error::RivaAudioError;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_pyhost::host::PythonHost;
+use pyo3::PyResult;
 use pyo3::types::PyAnyMethods as _;
 use rust_decimal::prelude::ToPrimitive as _;
 use serde_json::{Value, json};
@@ -21,7 +22,7 @@ struct StagingState<'staging> {
 }
 
 pub(super) fn read_probe(host: &PythonHost) -> Result<Probe, Box<HelperError>> {
-    host.attach(|py| {
+    host.attach(|py| -> PyResult<Probe> {
         let module = py.import("riva_audio_probe")?;
         let events: Vec<String> = module.getattr("events")?.extract()?;
         let staging: Vec<String> = module.getattr("staging")?.extract()?;
@@ -34,16 +35,16 @@ pub(super) fn failure_answer(error: &RivaAudioError, probe: Probe) -> Value {
     let response = error.response();
     answer(
         probe,
-        json!(response.status_code),
-        json!(error.to_string()),
+        &json!(response.status_code),
+        &json!(error.to_string()),
         None,
     )
 }
 
 pub(super) fn answer(
     probe: Probe,
-    status: Value,
-    message: Value,
+    status: &Value,
+    message: &Value,
     audio: Option<&ResampledAudio>,
 ) -> Value {
     let Probe { events, staging } = probe;

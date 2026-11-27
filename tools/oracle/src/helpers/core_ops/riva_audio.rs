@@ -108,7 +108,7 @@ fn run_call(host: &PythonHost, call: &PipelineCall) -> Result<Value, Box<HelperE
     let outcome = host.attach(|py| decode_riva_audio_attached(py, &file_bytes));
     let probe = read_probe(host)?;
     Ok(match outcome {
-        Ok(audio) => answer(probe, Value::Null, Value::Null, Some(&audio)),
+        Ok(audio) => answer(probe, &Value::Null, &Value::Null, Some(&audio)),
         Err(error) => failure_answer(&error, probe),
     })
 }
