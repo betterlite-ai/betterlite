@@ -16,6 +16,7 @@ pub(super) fn edit_signed_request(redactor: &Redactor) {
     signed_signature(redactor);
     signed_extra_headers(redactor);
     signed_bearer_token(redactor);
+    signed_authorization_precedence(redactor);
     signed_configured_endpoint(redactor);
     signed_api_base(redactor);
     signed_record_mismatch();
@@ -115,6 +116,54 @@ fn signed_bearer_token(redactor: &Redactor) {
     );
     assert_eq!(bearer.headers()["Authorization"], "Bearer br-token");
     assert!(!bearer.headers().contains_key("X-Amz-Date"));
+    // a configured bearer token from the environment signs the same way
+    let configured = secret("env-token");
+    let mut environment_call = call(STABILITY_MODEL, Some("edit it"), auth_params());
+    environment_call.images = &supplied;
+    environment_call.environment.bearer_token = Some(&configured);
+    let from_env = run(
+        environment_call,
+        "{}",
+        answered(Reply::ok(r#"{"images": ["aQ=="]}"#)),
+        redactor,
+    );
+    assert_eq!(from_env.headers()["Authorization"], "Bearer env-token");
+}
+
+fn signed_authorization_precedence(redactor: &Redactor) {
+    // an extra Authorization of an ordinary value replaces the SigV4 header, and the date stays
+    let supplied = image_list(&["aW1n"]);
+    let custom_headers = [("Authorization".to_owned(), "Custom tok".to_owned())];
+    let mut custom_call = call(STABILITY_MODEL, Some("edit it"), auth_params());
+    custom_call.images = &supplied;
+    custom_call.extra_headers = Some(&custom_headers);
+    let custom = run(
+        custom_call,
+        "{}",
+        answered(Reply::ok(r#"{"images": ["aQ=="]}"#)),
+        redactor,
+    );
+    let replaced = custom.headers();
+    assert_eq!(replaced["Authorization"], "Custom tok");
+    assert_eq!(replaced["X-Amz-Date"], "20231114T221320Z");
+    // an extra Authorization that already looks signed leaves the computed signature in place
+    let caller_headers = [(
+        "Authorization".to_owned(),
+        "AWS4-HMAC-SHA256 caller".to_owned(),
+    )];
+    let mut caller_call = call(STABILITY_MODEL, Some("edit it"), auth_params());
+    caller_call.images = &supplied;
+    caller_call.extra_headers = Some(&caller_headers);
+    let caller = run(
+        caller_call,
+        "{}",
+        answered(Reply::ok(r#"{"images": ["aQ=="]}"#)),
+        redactor,
+    );
+    assert!(
+        caller.headers()["Authorization"]
+            .starts_with("AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/")
+    );
 }
 
 fn signed_configured_endpoint(redactor: &Redactor) {

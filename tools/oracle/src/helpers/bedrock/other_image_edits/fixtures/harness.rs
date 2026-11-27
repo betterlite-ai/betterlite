@@ -6,6 +6,7 @@ use betterlite_openai::api::image_contracts::records::ImageParams;
 use secrecy::SecretString;
 
 use super::{Client, Factory, Source};
+use crate::other_image_edits::Failure;
 use crate::other_image_edits::input::{Probe, Supplied};
 
 // Every probe signs at one instant, so the transport headers stay the same from run to run.
@@ -39,7 +40,7 @@ fn environment<'probe>(
 }
 
 impl<'probe> Harness<'probe> {
-    pub(crate) fn new(probe: &'probe Probe) -> Self {
+    pub(crate) fn new(probe: &'probe Probe) -> Result<Self, Failure> {
         let params = probe.optional_params.clone();
         let images = probe.images.iter().cloned().map(EditImage::Text).collect();
         let api_key = probe
@@ -52,7 +53,7 @@ impl<'probe> Harness<'probe> {
             .map(|token| SecretString::from(token.clone()));
         let now = UNIX_EPOCH
             .checked_add(Duration::from_secs(NOW_EPOCH_SECONDS))
-            .unwrap_or(UNIX_EPOCH);
+            .ok_or(Failure::Shape)?;
         let extra_headers = probe.extra_headers.as_ref().map(|headers| {
             headers
                 .iter()
@@ -62,7 +63,7 @@ impl<'probe> Harness<'probe> {
         let source = Source::new(probe);
         let factory = Factory::new(&probe.reply);
         let supplied = (probe.supplied != Supplied::None).then(|| Client::new(&probe.reply));
-        Self {
+        Ok(Self {
             probe,
             params,
             images,
@@ -73,7 +74,7 @@ impl<'probe> Harness<'probe> {
             source,
             factory,
             supplied,
-        }
+        })
     }
 
     pub(crate) fn call(&self) -> EditCall<'_> {

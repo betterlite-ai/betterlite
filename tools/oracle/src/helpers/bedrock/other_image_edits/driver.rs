@@ -43,7 +43,7 @@ struct Run {
 type Outcome = Result<EditReply, Failure>;
 
 fn run(probe: &Probe, model_cost: &ParamMap) -> Result<(Run, Outcome), Failure> {
-    let harness = Harness::new(probe);
+    let harness = Harness::new(probe)?;
     let catalog = Catalog::new()?;
     let context = catalog.context();
     let plan = EditPlan {
