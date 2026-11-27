@@ -50,10 +50,7 @@ macro_rules! call_view {
 
 // both character operations declare the openai provider and no timeout of their own
 fn provider(arguments: &RequestMap) -> Result<String, ConvertError> {
-    match text(arguments, "custom_llm_provider")? {
-        Some(named) => Ok(named),
-        None => Ok(DEFAULT_PROVIDER.to_owned()),
-    }
+    Ok(text(arguments, "custom_llm_provider")?.unwrap_or_else(|| DEFAULT_PROVIDER.to_owned()))
 }
 
 fn header_map(arguments: &RequestMap) -> Result<Option<BTreeMap<String, String>>, ConvertError> {

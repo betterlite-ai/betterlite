@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use betterlite_core::api::bfl::edit::media::SuppliedMedia;
-use betterlite_core::api::video_character_calls::error::CharacterProviderFailure;
+use betterlite_core::api::video_character_calls::error::CharacterProviderFailure as _;
 use betterlite_core::api::video_character_calls::{CreateCharacterCall, GetCharacterCall};
 use betterlite_core::api::video_character_transport::config::{
     CharacterConfig, CharacterContext, CharacterEnvironment,
@@ -167,9 +167,9 @@ fn request_create_character_video_bytes_carry_the_payload_name() {
         r#"{"name": "hero", "video": {"$file": {"name": "clip.mov", "blob": 0, "content_type": null}}}"#,
         &mut blobs,
     );
-    let file = file.unwrap();
-    assert_eq!(file.name.as_deref(), Some("clip.mov"));
-    let request = CreateCharacterCall::build(&wire.arguments, Some(&file)).unwrap();
+    let media_file = file.unwrap();
+    assert_eq!(media_file.name.as_deref(), Some("clip.mov"));
+    let request = CreateCharacterCall::build(&wire.arguments, Some(&media_file)).unwrap();
     assert_eq!(
         request.video,
         SuppliedMedia::Bytes(b"\x00\x00\x00\x18ftypmp42".to_vec())
@@ -293,9 +293,9 @@ fn request_edit_video_file_is_carried_in_the_call() {
         r#"{"video_id": "vid-1", "prompt": "p", "video": {"$file": {"name": "clip.mp4", "blob": 0, "content_type": null}}}"#,
         &mut blobs,
     );
-    let file = file.unwrap();
-    assert_eq!(file.name.as_deref(), Some("clip.mp4"));
-    let request = OwnedEdit::build(&wire.arguments, Some(&file)).unwrap();
+    let media_file = file.unwrap();
+    assert_eq!(media_file.name.as_deref(), Some("clip.mp4"));
+    let request = OwnedEdit::build(&wire.arguments, Some(&media_file)).unwrap();
     assert_eq!(
         request.call().video,
         Some(&SuppliedMedia::Bytes(b"video bytes".to_vec()))
@@ -502,12 +502,12 @@ fn request_adapter_builds_the_edit_form_for_a_file() {
         body.get("watermark"),
         Some(&Json::Text(String::from("yes")))
     );
-    let files = files.unwrap();
-    assert_eq!(files.len(), 1);
-    assert_eq!(files[0].field, "video");
-    assert_eq!(files[0].filename.as_deref(), Some("clip.mp4"));
-    assert_eq!(files[0].content_type.as_deref(), Some("video/mp4"));
-    assert_eq!(files[0].content, b"video bytes".to_vec());
+    let request_files = files.unwrap();
+    assert_eq!(request_files.len(), 1);
+    assert_eq!(request_files[0].field, "video");
+    assert_eq!(request_files[0].filename.as_deref(), Some("clip.mp4"));
+    assert_eq!(request_files[0].content_type.as_deref(), Some("video/mp4"));
+    assert_eq!(request_files[0].content, b"video bytes".to_vec());
 }
 
 #[test]
@@ -703,7 +703,7 @@ fn request_adapter_character_headers_use_the_environment_key() {
     assert_eq!(
         headers
             .get("Authorization")
-            .map(|value| value.expose_secret()),
+            .map(secrecy::ExposeSecret::expose_secret),
         Some("Bearer sk-env")
     );
 }
@@ -728,7 +728,7 @@ fn request_adapter_character_headers_use_the_call_key() {
     assert_eq!(
         headers
             .get("Authorization")
-            .map(|value| value.expose_secret()),
+            .map(secrecy::ExposeSecret::expose_secret),
         Some("Bearer sk-params")
     );
 }

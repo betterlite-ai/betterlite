@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 use std::fmt::Display;
-use std::io::Read as _;
 
 use betterlite_core::api::bfl::edit::media::SuppliedMedia;
 use betterlite_core::api::video_edit_transport::config::{Headers, RequestFile, VideoEnvironment};
@@ -113,14 +112,14 @@ fn named_part(
     let MultipartPart {
         field,
         filename,
-        content_type: _,
         mut body,
+        ..
     } = part;
-    let filename = name.map_or_else(|| filename, ToOwned::to_owned);
-    let content_type = video_content_type(&mut body, &filename);
+    let chosen_filename = name.map_or_else(|| filename, ToOwned::to_owned);
+    let content_type = video_content_type(&mut body, &chosen_filename);
     Ok(RequestFile {
         field,
-        filename: Some(filename),
+        filename: Some(chosen_filename),
         content: body_bytes(body)?,
         content_type: Some(content_type.to_owned()),
     })
@@ -130,7 +129,7 @@ fn body_bytes(body: MediaBody<'_>) -> Result<Vec<u8>, CharacterProviderError> {
     match body {
         MediaBody::Bytes(bytes) => Ok(bytes.to_vec()),
         MediaBody::Text(text) => Ok(text.as_bytes().to_vec()),
-        MediaBody::Stream { mut reader, .. } => {
+        MediaBody::Stream { reader, .. } => {
             let mut read = Vec::new();
             reader
                 .read_to_end(&mut read)

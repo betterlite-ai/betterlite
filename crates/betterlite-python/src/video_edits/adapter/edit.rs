@@ -23,25 +23,17 @@ use super::{OpenAiEditConfig, media_body, named_part, record};
 
 impl VideoEditConfigLookup for OpenAiEditConfig {
     fn video_config(&self, tag: &VideoConfigTag) -> Option<&dyn BaseVideoConfig> {
-        if matches!(tag, VideoConfigTag::OpenAi) {
-            Some(self)
-        } else {
-            None
-        }
+        matches!(tag, VideoConfigTag::OpenAi).then_some(self)
     }
 }
 
 impl VideoExtensionConfigLookup for OpenAiEditConfig {
     fn video_config(&self, tag: &VideoConfigTag) -> Option<&dyn BaseVideoConfig> {
-        if matches!(tag, VideoConfigTag::OpenAi) {
-            Some(self)
-        } else {
-            None
-        }
+        matches!(tag, VideoConfigTag::OpenAi).then_some(self)
     }
 }
 
-fn edited_reply(reply: VideoReply<'_>) -> Result<VideoObject, BoxError> {
+fn edited_reply(reply: &VideoReply<'_>) -> Result<VideoObject, BoxError> {
     let reply_object = video_response(&OpenAiReply {
         body: &reply.raw_response.body,
         custom_llm_provider: reply.custom_llm_provider,
@@ -121,7 +113,7 @@ impl BaseVideoConfig for OpenAiEditConfig {
         reply: VideoReply<'_>,
         _request_data: Option<&Params>,
     ) -> Result<VideoObject, BoxError> {
-        edited_reply(reply)
+        edited_reply(&reply)
     }
 
     // ast-grep-ignore: no-long-names
@@ -138,7 +130,7 @@ impl BaseVideoConfig for OpenAiEditConfig {
         &self,
         reply: VideoReply<'_>,
     ) -> Result<VideoObject, BoxError> {
-        edited_reply(reply)
+        edited_reply(&reply)
     }
 
     fn get_error_class(

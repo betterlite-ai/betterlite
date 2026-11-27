@@ -23,9 +23,8 @@ use crate::video_edits::error::CharacterProviderError;
 use super::{OpenAiEditConfig, media_body, named_part, provider_fault, record};
 
 fn decoded_character(body: &[u8]) -> Result<CharacterObject, CharacterProviderError> {
-    decode_character_reply(body)
-        .map_err(|source| provider_fault(&source))
-        .and_then(|character| record(&character))
+    let character = decode_character_reply(body).map_err(|source| provider_fault(&source))?;
+    record(&character)
 }
 
 fn character_params_key(params: &HttpParams) -> Option<SecretString> {
@@ -50,8 +49,8 @@ fn character_part(
             content_type: None,
             data: text.as_bytes().to_vec(),
         }),
-        CharacterPart::File(part) => {
-            let file = named_part(part, name)?;
+        CharacterPart::File(file_part) => {
+            let file = named_part(file_part, name)?;
             Ok(HttpPart {
                 name: file.field,
                 file_name: file.filename,

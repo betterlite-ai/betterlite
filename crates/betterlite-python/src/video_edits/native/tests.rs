@@ -86,21 +86,20 @@ fn failure_message(method: &str, payload: &str) -> String {
 }
 
 // one roundtrip: the arguments and answer the call is expected to make of them
-struct Expectation<'a> {
-    arguments: &'a str,
-    response: &'a str,
-    blob: Option<&'a [u8]>,
-    request_start: &'a str,
-    head_fragments: &'a [&'a str],
-    body_fragments: &'a [&'a str],
-    answer_fragments: &'a [&'a str],
+struct Expectation<'text> {
+    arguments: &'text str,
+    response: &'text str,
+    blob: Option<&'text [u8]>,
+    request_start: &'text str,
+    head_fragments: &'text [&'text str],
+    body_fragments: &'text [&'text str],
+    answer_fragments: &'text [&'text str],
 }
 
 fn check(method: &str, expected: &Expectation<'_>) {
-    let blobs = match expected.blob {
-        Some(bytes) => vec![bytes.to_vec()],
-        None => Vec::new(),
-    };
+    let blobs = expected
+        .blob
+        .map_or_else(Vec::new, |bytes| vec![bytes.to_vec()]);
     let (answer, request) = call(method, expected.arguments, expected.response, blobs);
     assert!(
         request.line.starts_with(expected.request_start),

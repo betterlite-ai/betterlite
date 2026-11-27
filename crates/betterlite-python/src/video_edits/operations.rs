@@ -86,7 +86,7 @@ enum CharacterRequest {
 }
 
 impl CharacterRequest {
-    fn mock_response(&self) -> Option<&Json> {
+    const fn mock_response(&self) -> Option<&Json> {
         match self {
             Self::Create(call) => call.mock_response.as_ref(),
             Self::Get(call) => call.mock_response.as_ref(),
