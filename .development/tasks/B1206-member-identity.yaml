@@ -1,7 +1,7 @@
 id: B1206
 title: Team member identity and provisioning checks
 description: >-
-  Resolve member identities and execute the per-member writes requested by B807/B808. Missing both
+  Resolve member identities and execute the per-member writes requested by B10141/B808. Missing both
   user_id and user_email is HTTPException 400 with detail.error. With both supplied, B8397 get_data(user,
   find_all) queries the email, accepts no match, rejects multiple matches or a mismatched ID with 400,
   and preserves matching inputs. Email-only first uses B801's case-insensitive find_first; only a match
@@ -12,7 +12,7 @@ description: >-
   Union found IDs with IDs populated from emails. Only PROXY_ADMIN, including its string representation,
   may provision an unknown supplied ID; others get 403 detail.error listing the first 10 IDs in request
   order and the remaining count. Email invitations and existing IDs remain allowed. B807 checks caller
-  permissions before this task's writes, but it is a caller, not a dependency.
+  permissions before this task's writes, but it is not a dependency; B10141 and B808 are callers.
 
   _process_team_members accepts one member or a list and skips an existing roster ID OR exact email match.
   It passes metadata.team_member_budget_id, max_budget_in_team, budget_duration, caller and the same tx
@@ -158,9 +158,11 @@ out_of_scope:
   - 'litellm/proxy/management_endpoints/team_endpoints.py: B806 owns update_team (L2109-L2565).'
   - 'litellm/proxy/management_endpoints/team_endpoints.py: B807 owns _check_team_member_admin_add (L2690-L2703),
     team_call_validation_checks (L2706-L2726), team_member_add_duplication_check (L2729-L2780), _validate_team_member_add_permissions
-    (L2783-L2856), _update_team_members_list (L2956-L2972), _add_team_members_to_team (L2975-L3028), _update_team_member_role
-    (L3031-L3060), _emit_team_members_metric (L3063-L3075), _members_audit_value (L3156-L3167), _schedule_team_membership_audit_log
-    (L3170-L3197), _schedule_team_member_add_audit_logs (L3200-L3242).'
+    (L2783-L2856), _update_team_member_role (L3031-L3060), _schedule_team_member_add_audit_logs (L3200-L3242).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B10141 owns _update_team_members_list (L2956-L2972),
+    _add_team_members_to_team (L2975-L3028).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B10140 owns _emit_team_members_metric (L3063-L3075),
+    _members_audit_value (L3156-L3167), _schedule_team_membership_audit_log (L3170-L3197).'
   - 'litellm/proxy/management_endpoints/team_endpoints.py: B808 owns team_member_add (L3356-L3505), team_member_update
     (L3763-L3915).'
   - 'litellm/proxy/management_endpoints/team_endpoints.py: B809 owns _check_not_resetting_own_spend (L3918-L3928),

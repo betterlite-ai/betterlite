@@ -1,0 +1,14 @@
+kind: helper
+name: mcp-admin-credential-view-listed-server-explicit
+call:
+  b10134:
+    server:
+      server_id: test-srv-5
+      transport: http
+    config_servers: []
+    db_servers:
+      - {server_id: test-srv-5, name: Test Server, transport: http, available_on_public_internet: false}
+    public_mcp_servers: [test-srv-5]
+    public_hub_strict: true
+env: {}
+compare: {ignore: []}

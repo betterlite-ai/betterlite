@@ -1,0 +1,94 @@
+id: B10147
+title: MCP cached toolset lookup and invalidation
+description: >-
+  Several MCP paths look a toolset up by name: Responses MCP selection (B948), the /toolset/{toolset_name}/mcp routes (B8592), the REST acting identity (B4726, through B8626's adapter) and Responses discovery (B949, through B140's adapter). Every toolset write (B4725's routes, mounted by B8701) then clears the cached copies. In LiteLLM that is MCPServerManager.get_toolset_by_name_cached and invalidate_toolset_cache, about 40 lines in mcp_server_manager.py that B6592 used to own beside the health checks. They are a task of their own so B948 and B8592 no longer wait for the health probes.
+
+
+  Code goes in betterlite-mcp, module toolset_cache: crates/betterlite-mcp/src/toolset_cache.rs, with lookup.rs and invalidate.rs under toolset_cache/ and the tests in toolset_cache/tests.rs. The file is an empty stub that lib.rs already declares. No Cargo.toml changes. Import nothing from server_health, allowed_union, registry or rest_access, so B6592, B948 and the server routes can all call down into this module.
+
+
+  CachedToolset is Found(MCPToolset) or NotFound, where MCPToolset is the done B4681 record in betterlite_config::sections::mcp_toolset_storage. Its serde form is the cache's wire contract, because in a multi-worker deployment the value goes through Redis as JSON: Found is the toolset's own JSON object, the fields B4681's MCPToolset serializes (LiteLLM's model_dump(mode="json")), and NotFound is the bare JSON string "__not_found__". Any other JSON value fails to decode.
+
+
+  Two ports, both taken by reference so the callers hold them in their own constructors.
+
+  - ToolsetCache is the port to the shared user_api_key_cache. get(key) is async and returns Option<CachedToolset>; a read failure or a value that does not decode is None, the way DualCache.async_get_cache logs and returns None. set(key, value: &CachedToolset, ttl_secs: f64) is async and returns nothing; the implementation logs a write failure, as DualCache.async_set_cache does. remove_where(matches: &dyn Fn(&str) -> bool) -> Result<(), Self::Error> is sync and removes the matching keys from the in-memory layer only, leaving Redis entries to expire; Error is an associated type bounded by std::error::Error. management_object_ttl() -> f64 is LiteLLM's get_management_object_ttl: the in-memory default TTL when one is configured, else DEFAULT_MANAGEMENT_OBJECT_IN_MEMORY_CACHE_TTL (60). betterlite-auth's AuthCache::management_object_ttl already computes this value, so the production implementation forwards to it.
+
+  - ToolsetByName has one async method, by_name(name), returning B4681's ToolsetLookup (Result<Option<MCPToolset>, MCPToolsetStorageError>). Implement it here once for every B4681 ToolsetTable by calling its get_mcp_toolset_by_name, so no later task writes that adapter. Tests implement the port on a fake.
+
+
+  Functions to build.
+
+  1. toolset_by_name_cached(cache, store, toolset_name) -> ToolsetLookup (get_toolset_by_name_cached). The key is toolset_name:<toolset_name>, with the name as given. A cached NotFound gives Ok(None) and a cached Found gives Ok(Some(toolset)); neither calls the store. On a miss, call store.by_name once. An Err goes back to the caller unchanged and nothing is written. Ok(Some(toolset)) writes Found and Ok(None) writes NotFound, under the same key with the ttl from cache.management_object_ttl() read at that write, and the result is returned.
+
+  2. invalidate_toolset_cache(cache, toolset_id: Option<&str>) (invalidate_toolset_cache). None removes every key that starts with toolset_. Some(id) removes every key that starts with toolset_perms: and contains the id, plus every key that starts with toolset_name:, since an id can't be mapped to its old name without a database read. An Err from remove_where is logged at warn as "invalidate_toolset_cache: failed to evict in-memory entries: <error>" and the function returns normally. The toolset_perms: entries are written by B6591's resolve_toolset_tool_permissions through its own port, so this only reaches them when production backs both ports with the same in-memory store.
+
+
+  The callers check for a database before calling, as LiteLLM's callers check prisma_client, and none of them is built here. The production ToolsetCache over betterlite-auth's AuthCache isn't built here either: walking the in-memory keys needs betterlite-cache's MemoryCacheOps (AuthCache::in_memory_cache_for, then ttl_entries and delete_cache), and betterlite-mcp does not depend on betterlite-cache. It belongs to the betterlite-server wiring that builds McpState's shared cache.
+
+
+  Tests use a fake ToolsetCache over a BTreeMap that records every set with its ttl and can be told to fail remove_where, and a fake ToolsetByName that counts its calls and can return an error. Toolset names and ids start with test-. Lookup test names start with lookup_, invalidation tests with invalidate_ and serde form tests with wire_, so the three checks select them apart. The warning test captures tracing output with tracing-subscriber, as server_oauth/tests.rs does. No oracle cases: both functions read LiteLLM's proxy_server.user_api_key_cache global and a Prisma client, so a helper adapter can't drive them, and the HTTP cases come with B8592's toolset routes.
+scope:
+  paths:
+    - crates/betterlite-mcp/src/toolset_cache.rs
+    - crates/betterlite-mcp/src/toolset_cache/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L3660-L3736
+    why: Owned. invalidate_toolset_cache and get_toolset_by_name_cached.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/user_api_key_cache.py#L401-L413
+    why: get_management_object_ttl, the ttl every write uses.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L261-L297
+    why: async_get_cache logs a failure and answers None, so a failed read is a miss.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L505-L518
+    why: async_set_cache logs a failure and returns, so a failed write never reaches the caller.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp_server/mcp_toolset.py#L11-L20
+    why: MCPToolset, the fields of the Found JSON object.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/toolset_db.py#L124-L131
+    why: get_mcp_toolset_by_name, built by B4681 and called on a miss.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L100-L112
+    why: Call site in B948. _toolset_exists checks the database first and turns any error into false.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L3286-L3450
+    why: Call sites in B4725. POST invalidates with no id, PUT and DELETE pass the toolset id.
+dod:
+  - text: A cached toolset and a cached not-found sentinel answer without a store call, and a miss reads the store once and writes Found or NotFound under toolset_name:<name> with the cache's management object ttl.
+    proof: [lookup-tests]
+  - text: A store error reaches the caller and nothing is written to the cache.
+    proof: [lookup-tests]
+  - text: 'Invalidation with no id removes every toolset_ key; with an id it removes the toolset_perms: keys that contain the id and every toolset_name: key and keeps the rest; a failing eviction logs the warning and returns normally.'
+    proof: [invalidate-tests]
+  - text: Found serializes to the toolset's own JSON object and NotFound to the JSON string "__not_found__", both decode back from serde_json values, and any other JSON value fails to decode.
+    proof: [wire-tests]
+checks:
+  optional: []
+  commands:
+    - id: lookup-tests
+      why: the cached lookup misses its key, skips the sentinel, calls the store on a hit, or caches a store error
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^toolset_cache::tests::lookup_/)'
+    - id: invalidate-tests
+      why: invalidation removes the wrong keys or lets an eviction failure escape
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^toolset_cache::tests::invalidate_/)'
+    - id: wire-tests
+      why: the cached value does not keep LiteLLM's JSON shape across a Redis round trip
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^toolset_cache::tests::wire_/)'
+oracle_cases: []
+deviations:
+  - what: The cache and the toolset store are injected ports (ToolsetCache, ToolsetByName) instead of proxy_server's user_api_key_cache and prisma_client globals.
+    why: the repo wires dependencies through constructors and has no module-level state.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L3660-L3736
+out_of_scope:
+  - "litellm/proxy/_experimental/mcp_server/mcp_server_manager.py: resolve_toolset_tool_permissions and its toolset_perms: cache entries: B6591. The health checks, batch listings and initialize instructions cache: B6592. Every other function has the owner B139's, B4731's and B6592's out_of_scope name."
+  - "get_mcp_toolset_by_name and the MCPToolset record: B4681, done; this task calls them."
+  - "The production ToolsetCache over betterlite-auth's AuthCache: the betterlite-server wiring of McpState's shared cache, since the in-memory key walk needs betterlite-cache."
+  - "_toolset_exists: B948. The toolset routes in proxy_server.py: B8592. The acting identity's toolset lookup: B4726, with B8626's adapter. The toolset write routes: B4725, with B8701's invalidation port."
+pitfalls:
+  - "betterlite_config's mcp_toolset_storage already exports a type alias named ToolsetLookup for the store's Result, so the store port here is ToolsetByName; a trait named ToolsetLookup clashes with it in every module that imports both."
+  - "allowed_union (B6591) declares a different ToolsetCache port for the toolset_perms: entries, so never give this module a cache of its own; invalidation only clears those entries through the shared store."
+  - "Some(id) tests the whole key with contains, prefix included, as LiteLLM's `toolset_id in k` does: an id like perms matches every toolset_perms: key and an empty id matches them all."
+  - "toolset_name: keys go on every invalidation, with or without an id, since the name may have changed in the update."
+  - "The sentinel is the bare string \"__not_found__\", not a tagged variant, and decoding goes through serde_json::from_value: betterlite-mcp builds serde_json with arbitrary_precision, and from_str into an untagged enum breaks there."
+  - "Read the ttl from cache.management_object_ttl() at each write, not once at construction, since user_api_key_cache_ttl can change on a config reload."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

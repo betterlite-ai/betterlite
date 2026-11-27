@@ -1,0 +1,13 @@
+id: B10164
+milestone: R2 bug fixes
+title: The SDK pass-through call reads the provider environment
+status: todo
+depends_on: [B8690, B7890, B1079, B5970, B549, B7325, B10044]
+file: tasks/B10164-passthrough-environment.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

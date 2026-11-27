@@ -1,0 +1,13 @@
+id: B10157
+milestone: M5 api families
+title: GigaChat API base config section
+status: todo
+depends_on: [B002, B8500]
+file: tasks/B10157-gigachat-api-base-config.yaml
+covers: []
+parent: B102
+split_from: B3627
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
