@@ -77,9 +77,9 @@ impl<Configs: EvalLifecycleConfigLookup + ?Sized> EvalLifecycles<'_, '_, '_, Con
     pub async fn adelete_eval(&mut self, call: &EvalLifecycleCall<'_>) -> EvalDeleteResult {
         let mut kwargs = call.kwargs.clone();
         kwargs.insert(String::from(DELETE_ASYNC_FLAG), Json::Bool(true));
-        // every field is named, so a copy that drops one of them cannot compile
         #[rustfmt::skip]
-        self.delete_eval(&EvalLifecycleCall { eval_id: call.eval_id, extra_headers: call.extra_headers, extra_query: call.extra_query, timeout: call.timeout, custom_llm_provider: call.custom_llm_provider, kwargs: &kwargs }).await
+        let flagged = EvalLifecycleCall { eval_id: call.eval_id, extra_headers: call.extra_headers, extra_query: call.extra_query, timeout: call.timeout, custom_llm_provider: call.custom_llm_provider, kwargs: &kwargs };
+        self.delete_eval(&flagged).await
     }
 
     // LiteLLM's cancel_eval: the same steps with the cancel transform and handler
@@ -95,9 +95,9 @@ impl<Configs: EvalLifecycleConfigLookup + ?Sized> EvalLifecycles<'_, '_, '_, Con
     pub async fn acancel_eval(&mut self, call: &EvalLifecycleCall<'_>) -> EvalCancelResult {
         let mut kwargs = call.kwargs.clone();
         kwargs.insert(String::from(CANCEL_ASYNC_FLAG), Json::Bool(true));
-        // every field is named, so a copy that drops one of them cannot compile
         #[rustfmt::skip]
-        self.cancel_eval(&EvalLifecycleCall { eval_id: call.eval_id, extra_headers: call.extra_headers, extra_query: call.extra_query, timeout: call.timeout, custom_llm_provider: call.custom_llm_provider, kwargs: &kwargs }).await
+        let flagged = EvalLifecycleCall { eval_id: call.eval_id, extra_headers: call.extra_headers, extra_query: call.extra_query, timeout: call.timeout, custom_llm_provider: call.custom_llm_provider, kwargs: &kwargs };
+        self.cancel_eval(&flagged).await
     }
 }
 
