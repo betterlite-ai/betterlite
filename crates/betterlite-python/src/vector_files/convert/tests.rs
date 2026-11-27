@@ -163,6 +163,17 @@ fn request_delete_shares_the_write_without_attributes() {
 }
 
 #[test]
+fn request_update_sends_an_empty_attributes_map() {
+    let wire: WriteWire = parse(
+        r#"{"vector_store_id":"vs_a","file_id":"file_1","attributes":{},"kwargs":{}}"#,
+        0,
+    )
+    .unwrap();
+    let request = update_request(&wire);
+    assert_eq!(request.attributes.map(|values| values.len()), Some(0));
+}
+
+#[test]
 fn error_attached_files_are_refused() {
     let result: Result<CreateWire, ConvertError> = parse(r#"{}"#, 2);
     assert!(matches!(result, Err(ConvertError::Files { count: 2 })));
