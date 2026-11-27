@@ -155,8 +155,9 @@ def test_requires_match_lock() -> None:
         for name in ("pydantic", "python-dotenv", "typing-extensions")
     }
     httpx_name = canonicalize_name("httpx2")
-    expected.add(requirement_triple(f"httpx2=={HTTPX_PYTHON_310}; python_version < '3.11'"))
-    expected.add(requirement_triple(f"httpx2=={locked[httpx_name]}; python_version >= '3.11'"))
+    # maturin writes pyproject's python_version marker as python_full_version in Requires-Dist
+    expected.add(requirement_triple(f"httpx2=={HTTPX_PYTHON_310}; python_full_version < '3.11'"))
+    expected.add(requirement_triple(f"httpx2=={locked[httpx_name]}; python_full_version >= '3.11'"))
     assert declared == expected
 
 
