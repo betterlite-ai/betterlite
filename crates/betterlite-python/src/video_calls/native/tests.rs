@@ -144,7 +144,7 @@ fn failed_call(method: &str) {
         reply(
             "401 Unauthorized",
             &[("content-type", "application/json")],
-            r#"{"error":{"message":"invalid key","type":"invalid_request_error"}}"#,
+            r#"{"error":{"message":"Incorrect API key provided: bad-key","type":"invalid_request_error"}}"#,
         ),
         Duration::ZERO,
     )
@@ -167,7 +167,7 @@ fn failed_call(method: &str) {
             "{message}"
         );
         assert!(message.contains(r#""status_code":401"#), "{message}");
-        assert!(message.contains("invalid key"), "{message}");
+        assert!(message.contains("Incorrect API key provided"), "{message}");
     });
     serving.finish().unwrap();
 }
