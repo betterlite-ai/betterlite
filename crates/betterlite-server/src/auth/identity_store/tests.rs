@@ -97,10 +97,10 @@ fn stage_is_registered() {
         .install(port_set)
         .expect("the ports install");
     let installed = staged_request(&state);
-    let StageInput::AuthIdentity(stage) = lookup_stage_input(&installed) else {
+    let StageInput::AuthIdentity(identity_stage) = lookup_stage_input(&installed) else {
         panic!("the installed store takes the auth key lookup stage");
     };
-    let text = format!("{stage:?}");
+    let text = format!("{identity_stage:?}");
     assert!(text.contains("presented: true"));
     assert!(!text.contains(PRESENTED));
 }
@@ -174,9 +174,9 @@ async fn valid_key_reaches_handler() {
     assert_eq!(status, StatusCode::OK);
     assert!(reached);
     assert_eq!(body, "u1");
-    let writes = writer.writes();
-    assert_eq!(writes.len(), 1);
-    assert_ne!(writes.first().map(String::as_str), Some(PRESENTED));
+    let recorded = writer.writes();
+    assert_eq!(recorded.len(), 1);
+    assert_ne!(recorded.first().map(String::as_str), Some(PRESENTED));
 }
 
 async fn master_key_wins_before_the_store() {

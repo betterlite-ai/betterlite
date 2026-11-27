@@ -37,11 +37,11 @@ impl fmt::Debug for IdentityStageInput {
 
 // A state whose composition root installed the store's ports authenticates through it; otherwise B738's lookup stays.
 pub(crate) fn lookup_stage_input(request: &Request<Body>) -> StageInput {
-    let store = request
+    let Some(store) = request
         .extensions()
         .get::<Arc<ServerState>>()
-        .and_then(|state| state.identity_store.store());
-    let Some(store) = store else {
+        .and_then(|state| state.identity_store.store())
+    else {
         return auth_key_lookup::lookup_stage_input(request);
     };
     StageInput::AuthIdentity(Box::new(IdentityStageInput {
