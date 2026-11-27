@@ -262,6 +262,22 @@ fn gateway_challenge_prefers_the_configured_proxy_base_url() {
 }
 
 #[test]
+fn gateway_challenge_survives_an_unparsable_base_url() {
+    let registry = registry(&[]);
+    let ctx = context("http://[::1/", "/mcp");
+    let response = gateway_dcr_challenge(&ctx, &query(&registry, "/mcp"), false);
+    let url = "http://[::1/.well-known/oauth-protected-resource/mcp";
+    assert_eq!(response.status, 401);
+    assert_eq!(
+        response.headers,
+        vec![(
+            "WWW-Authenticate".to_owned(),
+            format!("Bearer resource_metadata=\"{url}\""),
+        )]
+    );
+}
+
+#[test]
 fn gateway_challenge_reads_a_forwarded_host_from_a_trusted_proxy() {
     let registry = registry(&[]);
     let mut ctx = context("http://internal/", "/mcp");
