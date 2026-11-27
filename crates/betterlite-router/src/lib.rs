@@ -22,6 +22,7 @@ pub mod classifier_message_text;
 pub mod classifier_verdict;
 pub mod compaction_executor;
 pub mod compaction_history;
+pub mod compaction_state;
 pub mod complexity_adaptive_placement;
 pub mod complexity_config;
 pub mod complexity_evaluation;

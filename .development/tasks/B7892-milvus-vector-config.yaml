@@ -22,14 +22,24 @@ description: >-
 
 
   `has_config(Milvus)` is true, and it stands for `ProviderConfigManager.get_provider_vector_stores_config` returning
-  `MilvusVectorStoreConfig()` for provider `milvus` (utils.py L9525-L9530). That Milvus branch and the wiring of
-  `MilvusProviderPorts` into B3624's route are all this task adds. The port's error type carries B7810's two messages, and
-  B3624 turns them into its HTTP 500. The rest of `MilvusVectorStoreConfig` is not called by the route and belongs to B7810
-  and the vector store provider tasks of B049.
+  `MilvusVectorStoreConfig()` for provider `milvus` (utils.py L9525-L9530). The port's error type carries B7810's two
+  messages, and B3624 turns them into its HTTP 500. The rest of `MilvusVectorStoreConfig` is not called by the route and
+  belongs to B7810 and the vector store provider tasks of B049.
+
+
+  Wiring. After B9998, replace the refusing VectorProvider::Milvus arms of
+  app::pass_through::ports::vector::VectorProviderAdapter (crates/betterlite-server/src/app/pass_through/ports/vector.rs,
+  written by B8641) with this task's MilvusProviderPorts: auth_headers forwards get_auth_credentials, complete_url forwards
+  get_complete_url through the injected reader, and has_config(Milvus) is true; preserve the AzureAi arm and existing
+  registry/access checks. The reader is Shared's `secrets` (B8610). Tests in ports/vector/tests.rs (names start with
+  `milvus_`) assert that the adapter answers has_config(Milvus) as true and returns MilvusProviderPorts' headers, URL and
+  errors unchanged. B8641's test that Milvus answers the missing provider error lives in the same file; change it to the configured answer.
 scope:
   paths:
   - crates/betterlite-server/src/milvus_vector_config.rs
   - crates/betterlite-server/src/milvus_vector_config/**
+  - crates/betterlite-server/src/app/pass_through/ports/vector.rs
+  - crates/betterlite-server/src/app/pass_through/ports/vector/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9525-L9530
@@ -41,6 +51,8 @@ dod:
   proof: [milvus-port]
 - text: The base URL port reads `MILVUS_API_BASE` through the injected reader and passes it to B7810's function.
   proof: [milvus-url]
+- text: The pass-through VectorProviderAdapter answers Milvus through `MilvusProviderPorts`, with `has_config(Milvus)` true.
+  proof: [milvus-arm]
 checks:
   optional: []
   commands:
@@ -50,6 +62,9 @@ checks:
   - id: milvus-port
     why: The port is not implemented for Milvus.
     run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^milvus_vector_config::.*port_/)'
+  - id: milvus-arm
+    why: The pass-through adapter still refuses Milvus or answers it without MilvusProviderPorts.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::pass_through::ports::vector::tests::milvus_/)'
 oracle_cases: []
 deviations:
 - what: The base is read through an injected environment reader and not from process globals.
@@ -59,6 +74,7 @@ deviations:
 out_of_scope:
 - "The Milvus route itself and `VectorProviderPort`'s definition: B3624."
 - "The Azure AI half of the port: B558."
+- "The rest of app::pass_through::ports, including the registry and access adapters in vector.rs: B8641 and B9998."
 - "`get_auth_credentials`, `get_complete_url`, the search transforms and the rest of `MilvusVectorStoreConfig`: B7810."
 pitfalls:
 - "The credential and URL logic lives in B7810. Call it and do not copy it here."

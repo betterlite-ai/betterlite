@@ -1,0 +1,105 @@
+id: B10164
+title: The SDK pass-through call reads the provider environment
+description: >-
+  B8690's `allm_passthrough_route` in crates/betterlite-core/src/api/passthrough_call reads no environment variable at all. `resolve_provider` (passthrough_call.rs L151) gives get_llm_provider an empty map, and the provider settings the call builds all come from `default()`: `AzurePassthroughConfig` in urls.rs L45 and auth/providers.rs L36, `WatsonxEnvironment` in urls.rs L80 and auth.rs L66, `GigachatSettings` in auth.rs L145, and another empty map for the Azure AI Entra check in auth/providers.rs L58. LiteLLM reads these variables in the same steps, so a deployment that relies on AZURE_API_KEY, WATSONX_APIKEY or GIGACHAT_CREDENTIALS works on LiteLLM and fails here. betterlite code never reads the process environment outside the config crate, so the caller hands the environment in, the same way the other SDK sessions hand a map to `ResolutionContext.environment`.
+
+
+  Signature. `allm_passthrough_route(args, logging, http, environment: &BTreeMap<String, String>)`; `PassthroughCallArgs` and the `PassthroughRouterCalls` trait stay as they are. The only caller on main is betterlite-python's passthrough_calls/session.rs (B7890): `SessionCore::build` already reads the wire `environment` or `process_environment()` for the proxy policy and then drops it, so it keeps the map in a field, as rerank/session.rs does, and `call` passes it. B8691's router executor and B8694's direct call will pass the map they were built with.
+
+
+  What the call reads, in LiteLLM's order. (1) get_llm_provider: both resolves, the main one and the second one in `map_fault`, pass the map as `ResolutionContext.environment`. B174's provider defaults tables then apply GIGACHAT_API_BASE (else https://gigachat.devices.sberbank.ru/api/v1) and GIGACHAT_API_KEY, NVIDIA_NIM_API_BASE (else https://integrate.api.nvidia.com/v1) and NVIDIA_NIM_API_KEY, AZURE_AI_API_BASE and AZURE_AI_API_KEY, and HOSTED_VLLM_API_BASE and HOSTED_VLLM_API_KEY, as get_llm_provider_logic.py L643-L646, L699-L704, L738-L745 and L926-L928 do. `GlobalCredentials::default()` stays. (2) `PassthroughCallConfig` gains `environment: Arc<BTreeMap<String, String>>`. The call copies the map into one Arc, and every PassthroughCallConfig it builds shares it: the request config in send.rs `run`, the relay's config in send.rs `send` and the error mapping's config in `map_fault`. (3) Azure: build `betterlite_config::sections::azure_provider_globals::Raw::default().convert(&*environment)` (B10044's reader of the AZURE_* variables) and use its `environment` part. `AzurePassthroughConfig` gets `api_base_env` from AZURE_API_BASE and `api_key_env` from AZURE_API_KEY, both in the URL arm and in the key branch of `azure_headers`, and `AzurePassthroughEnvironment.configured_key` is AZURE_OPENAI_API_KEY, else AZURE_API_KEY (azure/common_utils.py L760-L766). The key branch's `deployment_settings(params)` (auth/providers.rs L74-L84) is a params-only copy of B549's `EntraParams`, so it goes: the branch converts the params the way the Entra branch already does and calls `EntraParams::from_mapping(Some(&prompts))?.deployment_settings(&environment)` (betterlite-foundry credentials/params.rs). That reads AZURE_AD_TOKEN, AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET, AZURE_USERNAME, AZURE_PASSWORD and AZURE_SCOPE with LiteLLM's default scope, as get_azure_ad_token does (L328-L337). (4) Azure AI: `ValidateEnvironmentRequest.environment` is the call's map, so B566's Entra check reads the same AZURE_* variables. (5) GigaChat: the authenticator's settings come from `gigachat_auth::Raw::default().convert(&*environment)`, B7325's reader of GIGACHAT_ACCESS_TOKEN, GIGACHAT_CREDENTIALS or GIGACHAT_API_KEY, GIGACHAT_AUTH_URL and GIGACHAT_SCOPE with their defaults (gigachat/authenticator.py L44-L62 and L86-L96). Today `GigachatSettings::default()` gives an empty auth URL and an empty scope. (6) Watsonx: the URL arm and the auth arm build their `WatsonxEnvironment` with the moved builder below. (7) The GigaChat, NVIDIA NIM and Azure AI configs keep `api_base_env` and `api_key_env` empty, with a one-line comment saying why: step 1 already applied the same variables and default hosts, so their get_api_base and get_api_key fallbacks (gigachat/passthrough/transformation.py L194-L202, nvidia_nim/passthrough/transformation.py L115-L121, azure_ai/common_utils.py L228-L234) can never change the result. is_streaming_request reads no environment, so its arms stay.
+
+
+  One Watsonx builder. crates/betterlite-core/src/api/rerank_provider_plan/branches/watsonx.rs L77-L102 builds a `WatsonxEnvironment` from an `EnvironmentLookup`. It moves once, beside its type: `impl WatsonxEnvironment { #[must_use] pub fn from_lookup(lookup: &dyn EnvironmentLookup) -> Self }` in crates/betterlite-openai/src/watsonx_auth/environment.rs, with the same twenty names and the same rule that an empty value is unset. betterlite-openai already depends on betterlite-config, so this adds no crate edge. The rerank branch calls it and loses its own function, the pass-through calls it, and the pass-through tests' support helper `watsonx_environment(iam_url)` becomes a call to it over a one-entry map.
+
+
+  Tests. A new file passthrough_call/tests/environment.rs, declared with `mod environment;` in passthrough_call/tests.rs, runs the call against the local mock upstream the other call tests use (betterlite_http_fixture's serve and reply). Every test builds its own map and passes no api_base or api_key. GigaChat: with GIGACHAT_API_BASE set to the mock plus `/api/v1` and GIGACHAT_ACCESS_TOKEN set, model `gigachat/GigaChat`, endpoint `chat/completions`, the mock gets `POST /api/v1/chat/completions` with `authorization: Bearer <that token>`; with GIGACHAT_API_BASE still on the first mock and the access token replaced by GIGACHAT_CREDENTIALS and a GIGACHAT_AUTH_URL that points at a second mock, the token request goes to that mock with `scope=GIGACHAT_API_PERS` in its body and the upstream gets the token it answered (read betterlite-http's gigachat_tokens tests for the reply shape). NVIDIA NIM: NVIDIA_NIM_API_BASE set to the mock plus `/v1` and NVIDIA_NIM_API_KEY set, model `nvidia_nim/meta/llama3-8b-instruct`: `POST /v1/chat/completions` with that Bearer key. Azure: AZURE_API_BASE set to the mock and AZURE_API_KEY set, model `azure/my-deployment` with `api_version` in `extra`: the request reaches the mock with `api-key` set to that key. With an api_base argument and only AZURE_OPENAI_API_KEY set, `api-key` carries that key; with AZURE_API_KEY set too, AZURE_API_KEY wins; with no key at all and AZURE_AD_TOKEN set, the header is `Authorization: Bearer <token>`, and the same holds for tag AzureAI through `auth::validate`. Watsonx: WATSONX_URL, WATSONX_APIKEY and WATSONX_IAM_URL pointing at a mock IAM endpoint (copy auth_watsonx_mints_the_iam_token_from_the_key): the URL starts with WATSONX_URL and the header carries the minted token. The existing tests pass an empty map and keep their assertions. In betterlite-openai, watsonx_auth/tests/environment.rs, declared with `mod environment;` in watsonx_auth/tests.rs, checks that from_lookup fills each of the twenty fields from its variable and leaves a field None when its variable is missing or empty. In betterlite-python, passthrough_calls/session/tests.rs gains `call_uses_the_session_environment`: a session built with `{"environment": {"GIGACHAT_API_BASE": <mock>, "GIGACHAT_ACCESS_TOKEN": "session-token"}}` sends a GigaChat call to the mock with that token.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/passthrough_call.rs
+    - crates/betterlite-core/src/api/passthrough_call/**
+    - crates/betterlite-core/src/api/rerank_provider_plan/branches/watsonx.rs
+    - crates/betterlite-openai/src/watsonx_auth/environment.rs
+    - crates/betterlite-openai/src/watsonx_auth/tests.rs
+    - crates/betterlite-openai/src/watsonx_auth/tests/environment.rs
+    - crates/betterlite-python/src/passthrough_calls/session.rs
+    - crates/betterlite-python/src/passthrough_calls/session/tests.rs
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L267-L389
+    why: allm_passthrough_route; get_llm_provider runs at L294 and again in the except block at L361, and both read the provider environment.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L392-L509
+    why: llm_passthrough_route's get_complete_url, get_api_key and validate_environment, the three config steps that read the environment again.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_llm_provider_logic.py#L643-L646
+    why: nvidia_nim reads NVIDIA_NIM_API_BASE with its default host and NVIDIA_NIM_API_KEY; hosted_vllm (L699-L704), azure_ai (L738-L745) and gigachat (L926-L928) do the same with their own names.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/passthrough/transformation.py#L142-L167
+    why: Azure's validate_environment, get_api_base (AZURE_API_BASE) and get_api_key (AZURE_API_KEY).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L752-L778
+    why: _base_validate_azure_environment, the configured key chain ending in AZURE_OPENAI_API_KEY and AZURE_API_KEY, then the AD token.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L299-L337
+    why: get_azure_ad_token's explicit-or-environment reads of the seven AZURE_* Entra variables and the default scope.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/common_utils.py#L114-L140
+    why: get_azure_ai_auth_headers, which falls back to the Entra token when there is no key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/passthrough/transformation.py#L194-L202
+    why: GigaChat's get_api_base and get_api_key, the second read of GIGACHAT_API_BASE and GIGACHAT_API_KEY that get_llm_provider makes redundant.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/authenticator.py#L44-L96
+    why: The access token, credentials, auth URL and scope variables validate_environment reads through get_access_token.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/watsonx/passthrough/transformation.py#L45-L60
+    why: Watsonx's get_api_base and get_api_key, which go through IBMWatsonXMixin.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/watsonx/common_utils.py#L225-L305
+    why: IBMWatsonXMixin's validate_environment, _get_base_url and get_watsonx_credentials, the Watsonx names WatsonxEnvironment holds.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nvidia_nim/passthrough/transformation.py#L115-L121
+    why: NVIDIA NIM's get_api_base and get_api_key, the second read get_llm_provider makes redundant.
+dod:
+  - text: With the provider variables in the call's map and no api_base or api_key argument, GigaChat, NVIDIA NIM, Azure and Watsonx calls go to the base URL from the environment with the key or token from the environment, and GigaChat's OAuth request goes to GIGACHAT_AUTH_URL with the default scope.
+    proof: [env-tests]
+  - text: Azure takes AZURE_API_KEY first, then AZURE_OPENAI_API_KEY, then AZURE_AD_TOKEN, and the Azure AI Entra check reads AZURE_AD_TOKEN from the same map.
+    proof: [env-tests]
+  - text: WatsonxEnvironment::from_lookup in betterlite-openai is the only builder the rerank branch and the pass-through use, and the pass-through has no params-only Azure settings, no empty environment map and no default Watsonx or GigaChat settings left.
+    proof: [builder-tests, no-copies, rerank-tests]
+  - text: The Python session hands its environment to the call, and the existing pass-through tests pass with an empty map.
+    proof: [python-session-tests, passthrough-tests]
+checks:
+  optional: []
+  commands:
+    - id: env-tests
+      why: a provider variable never reaches the URL, the key, the token request or the auth header
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::passthrough_call::tests::environment::/)'
+    - id: passthrough-tests
+      why: the new parameter or the shared config broke a request, stream, params or error test of the call
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::passthrough_call::/)'
+    - id: rerank-tests
+      why: the rerank Watsonx branch changed what it reads after switching to the moved builder
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::rerank_provider_plan::tests::/) - test(/::replays_corpus$/)'
+    - id: builder-tests
+      why: the moved builder misses a name or keeps an empty value
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^watsonx_auth::tests::environment::/)'
+    - id: no-copies
+      why: the rerank builder, the params-only Azure settings, an empty map or a default Watsonx or GigaChat setting is still in place
+      run: test -z "$(grep -nE 'fn (watsonx_environment|deployment_settings)[(]|WatsonxEnvironment::default|GigachatSettings::default|BTreeMap::new' crates/betterlite-core/src/api/rerank_provider_plan/branches/watsonx.rs crates/betterlite-core/src/api/passthrough_call.rs crates/betterlite-core/src/api/passthrough_call/urls.rs crates/betterlite-core/src/api/passthrough_call/auth.rs crates/betterlite-core/src/api/passthrough_call/auth/providers.rs)"
+    - id: python-session-tests
+      why: the Python session still drops its environment before the call, or its tests broke
+      run: grep -q 'fn call_uses_the_session_environment' crates/betterlite-python/src/passthrough_calls/session/tests.rs && cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^passthrough_calls::session::tests::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "VLLM_API_BASE (vllm/common_utils.py L46-L53): its Rust reader is VllmModelInfo::get_api_base in betterlite-provider's vllm/model_info.rs, and betterlite-provider depends on betterlite-core, so the call cannot reach it. The VLLM arm keeps its argument-only base until that reader moves below betterlite-core."
+  - "Bedrock's AWS_REGION_NAME, AWS_REGION, boto3 session region and AWS_BEDROCK_RUNTIME_ENDPOINT (bedrock/base_aws_llm.py L759-L771 and L1478) and its SigV4 signing: the Rust readers live in betterlite-bedrock, which depends on betterlite-core, and the call's sign_request refuses every plain Bedrock request before the URL is used."
+  - "Bedrock Mantle's BEDROCK_MANTLE_API_BASE, BEDROCK_MANTLE_REGION, AWS_REGION_NAME, AWS_REGION, BEDROCK_MANTLE_API_KEY and AWS_BEARER_TOKEN_BEDROCK (bedrock_mantle/common_utils.py L37-L64, bedrock_mantle/chat/transformation.py L58-L84): the readers are betterlite-bedrock's mantle_inputs region and credentials modules, out of reach for the same reason."
+  - "litellm.api_key, litellm.api_base and litellm.azure_key: module settings the SDK call has no source for, so GlobalCredentials::default(), the Foundry plan's global_api_base and global_api_key and the first two operands of Azure's configured key stay empty."
+  - "Azure Entra token flows (client secret, username and password, OIDC, token refresh): the call passes NoSources, so these variables now reach the settings but no source mints a token."
+  - "A second read of GIGACHAT_API_BASE through B10157's gigachat_route section: get_llm_provider already applied it in step 1, so the config fallback never runs."
+  - "betterlite-provider's enterprise_ml_dispatch environment(), which builds a WatsonxEnvironment through SecretLookup and can fail: a different contract, so it stays."
+  - "Passing the map from the router executor and the proxy's direct call: B8691 and B8694."
+pitfalls:
+  - "Tests build their maps by hand and never call process_environment(), so a developer's AZURE_API_KEY or WATSONX_APIKEY cannot change a result."
+  - "map_fault resolves the provider a second time; that resolve gets the same map, or the error path maps against a provider resolved without the environment."
+  - "The relay keeps its PassthroughCallConfig until the stream ends, so the config owns the map through the Arc and never borrows it."
+  - "Use the readers as they are: gigachat_auth and azure_provider_globals treat an empty value as unset, while EntraParams::deployment_settings keeps an empty AZURE_* variable, as LiteLLM's `or` chain does."
+  - "Section::convert returns betterlite_config::loader::ConfigError, a different type from the call's own ConfigError; import it under another name and map a failure to ConfigError::ValueError."
+  - "AZURE_API_KEY beats AZURE_OPENAI_API_KEY because get_api_key puts it into the positional key first; configured_key is used only when the positional key is empty."
+  - "GIGACHAT_ACCESS_TOKEN skips the OAuth request entirely, so the OAuth test sets only GIGACHAT_CREDENTIALS and GIGACHAT_AUTH_URL."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

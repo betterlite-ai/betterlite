@@ -1,0 +1,99 @@
+id: B10159
+title: Vertex partner response-config selector and reply transforms
+description: >-
+  LiteLLM's `get_vertex_ai_partner_model_config` (vertex_ai_partner_models/__init__.py L4-L19) picks the partner config whose `transform_response` turns a Vertex partner reply into a chat response. Its one caller at the pin is the rawPredict branch of the Vertex pass-through logging handler, which B3642 builds. B032 used to own the selector for that caller alone, so B3642 waited on all of B032's partner dispatch. The selector and the reply transforms it hands out are this task now. B032 needs one of them too: `VertexAILlama3Config.transform_response` is the response step of its OpenAI-like completion path (llama, deepseek, qwen and the other models the Llama3 config serves), so that arm is a public function here and B032 calls it instead of composing its own.
+
+
+  Layout. The code goes in betterlite-vertex, module `partner_response_config` (crates/betterlite-vertex/src/partner_response_config.rs and its folder, tests in partner_response_config/tests.rs). The file is an empty stub that lib.rs already declares; leave lib.rs alone. It sits beside B1333's vertex_claude_chat and B1335's partner_openai and below betterlite-provider and betterlite-server, which both depend on betterlite-vertex. It needs no new dependency: betterlite-anthropic, betterlite-openai, betterlite-logging and betterlite-models are already in the crate's Cargo.toml. The module keeps no state and reads no config.
+
+
+  Selector. `pub enum PartnerResponseConfig { Claude, Ai21(Ai21Config), Llama3(Llama3Config) }`, holding B1335's `partner_openai::ai21::Ai21Config` and `partner_openai::llama::Llama3Config` at their default settings, since LiteLLM builds both with no arguments. `pub fn partner_response_config(publisher: VertexPublisher) -> PartnerResponseConfig` takes B3638's `vertex_relay_metadata::types::VertexPublisher`. Anthropic gives Claude, Ai21 gives Ai21, and OpenApi and MistralAi both give Llama3. VertexPublisher is closed and every variant has a config, so the selector has no error and takes no model; in LiteLLM the model only feeds the text of the unknown-publisher error (see out_of_scope).
+
+
+  Reply transforms. `PartnerResponseConfig::transform_response(&self, call: PartnerResponseCall<'_, Counter>) -> Result<Json, PartnerResponseError<Counter::Failure>>`, where Counter is betterlite-anthropic's `usage::ReasoningTokenCounter` and Json is `betterlite_models::decisions::Json`. PartnerResponseCall carries what LiteLLM's transform_response takes: the model, the raw reply (status, `http::HeaderMap`, body bytes), the id of the empty ModelResponse the caller starts from, messages, request_data, optional_params, litellm_params, json_mode, the clock value and the uuid source, the `LoggingState` and `PrePostEnv` the post_call log writes through, and the counter. The answer is the chat response in the shape LiteLLM's ModelResponse dumps to; B3642 stores it as `PassThroughResponse::ModelResponse` and reads its id, model and usage. Each arm calls code that is already on main and copies none of it.
+
+
+  1. Claude runs B1333's `vertex_claude_chat::response::transform_response` on a fresh `ResponseEnvelope` with the given id. That runs the Anthropic parent transform and then names the requested model. Serialize the envelope to Json.
+
+  2. Ai21: VertexAIAi21Config inherits `OpenAIGPTConfig.transform_response`, which is B504's `betterlite_openai::chat_choices::reply::transform_response`. Its projection is convert_to_model_response_object, which on main is B1425's `betterlite_openai::compatible_wire::decode_compatible_chat_reply`; crates/betterlite-azure/src/chat_call/response.rs shows that pairing.
+
+  3. Llama3 is `pub fn llama3_transform_response`, the same call without the counter, porting `VertexAILlama3Config.transform_response` (llama3/transformation.py L109-L151). It runs B504's transform_response for the post_call log and the JSON parse, with a projection that hands the parsed object to B1335's `partner_openai::llama::reply::decode_reply` (id defaults to "", created to 0, model to the requested one, choices through B504's transform_choices) and then sets usage as LiteLLM's `Usage(**reply.get("usage", {}))` does, so a reply without usage reports zero counts. Use betterlite-openai's `chat::response::ChatUsage` for that record. A body that is not JSON fails as LiteLLM's VertexAIError, not OpenAIError: map B504's Json error into `model_policy::error::VertexAiError` with the reply's status, message and headers.
+
+
+  `PartnerResponseError` is this module's thiserror enum: one variant per leaf error, with `#[from]` where the source is a single type, plus one for a failed Json conversion. Every variant keeps the leaf's status code.
+
+
+  Tests live in partner_response_config/tests.rs. Names start with `select_` for the selector and `transform_` for the arms. They cover each publisher's config; the Claude arm naming the requested model whatever the body says; the Ai21 arm keeping the reply's own id and model, and the starting id when the reply's id is missing, null or empty; the Llama arm filling id "", created 0, the requested model and zero usage when the reply lacks them; and a Llama body that is not JSON coming back as VertexAiError with the reply's status. A recording log sink, a fixed clock and a fixed uuid source stand in; nothing touches the network.
+
+
+  The helper operation b10159 compares the same calls with LiteLLM. Python calls `get_vertex_ai_partner_model_config(model, publisher)` and then the returned config's `transform_response` with a fake logging object and `ModelResponse(id=...)`, the way tools/oracle/helpers/vertex_claude_chat.py calls the Claude transform. The Rust side maps the publisher string to VertexPublisher and calls partner_response_config and transform_response. Both project the config class name (VertexAIAnthropicConfig, VertexAIAi21Config or VertexAILlama3Config) and the response's id, model, choices and usage; the Llama cases add created, since only that arm never reads the clock. A failure projects its status code.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/partner_response_config.rs
+    - crates/betterlite-vertex/src/partner_response_config/**
+    - tools/oracle/cases/helpers/vertex-partner-response-config/**
+    - tools/oracle/helpers/b10159.py
+    - tools/oracle/helpers/b10159/**
+    - tools/oracle/src/helpers/vertex/b10159.rs
+    - tools/oracle/src/helpers/vertex/b10159/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_ai_partner_models/__init__.py#L4-L19
+    why: Owned. The selector; the publisher picks the config and the model only reaches the ValueError text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_ai_partner_models/llama3/transformation.py#L109-L151
+    why: Owned composition. VertexAILlama3Config.transform_response with its VertexAIError, defaults and Usage(**usage).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_ai_partner_models/anthropic/transformation.py#L190-L219
+    why: The Claude arm, B1333's transform, which overwrites the model with the requested one.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L661-L708
+    why: The Ai21 arm, OpenAIGPTConfig.transform_response, which B504 ports.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py#L717-L736
+    why: The chat branch of convert_to_model_response_object; a falsy reply id keeps the starting id, and the reply model fills an empty one.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L236-L285
+    why: The one caller, B3642's rawPredict branch, and the dummy message, empty params and empty api key it passes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_ai_partner_models/main.py#L215-L232
+    why: B032's OpenAI-like branch, whose response step is the Llama3 transform for the models _get_vertex_ai_config gives the Llama3 config.
+dod:
+  - text: partner_response_config gives the Claude config for anthropic, the AI21 config for ai21 and the Llama3 config for openapi and mistralai, as LiteLLM's selector does.
+    proof: [select-tests, oracle, helper-python]
+  - text: transform_response runs the selected leaf. The Claude arm names the requested model, the Ai21 arm keeps the reply's id and model, and the Llama arm fills id "", created 0, the requested model and zero usage when the reply lacks them.
+    proof: [transform-tests, oracle, helper-python]
+  - text: A Llama reply body that is not JSON fails as VertexAiError with the reply's status and headers.
+    proof: [transform-tests, oracle]
+checks:
+  optional: []
+  commands:
+    - id: select-tests
+      why: a publisher picks the wrong config, or the selector has no tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^partner_response_config::tests::select_/)'
+    - id: transform-tests
+      why: an arm calls the wrong leaf, drops LiteLLM's defaults or zero usage, maps the JSON failure to the wrong error, or has no tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^partner_response_config::tests::transform_/)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b10159)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b10159 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b10159/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/vertex-partner-response-config/anthropic.yaml
+  - tools/oracle/cases/helpers/vertex-partner-response-config/ai21.yaml
+  - tools/oracle/cases/helpers/vertex-partner-response-config/openapi.yaml
+  - tools/oracle/cases/helpers/vertex-partner-response-config/mistralai.yaml
+  - tools/oracle/cases/helpers/vertex-partner-response-config/llama-missing-fields.yaml
+  - tools/oracle/cases/helpers/vertex-partner-response-config/llama-not-json.yaml
+deviations: []
+out_of_scope:
+  - "The ValueError branch of get_vertex_ai_partner_model_config (`Unsupported model: {model}`) has no way in at the pin: its one caller passes _get_vertex_publisher_or_api_spec_from_url's answer, always one of the four publishers B3638 types as VertexPublisher. Its case goes with it."
+  - "The rawPredict branch that calls the selector, its JSON pre-parse and the payload factory call: B3642."
+  - "Partner completion dispatch, Gemma, Model Garden, count_tokens and the operation bindings: B032, which calls llama3_transform_response as the response step of its OpenAI-like partners."
+  - "The leaf transforms: B1333 (Claude), B504 (OpenAIGPTConfig.transform_response and transform_choices), B1425 (the compatible reply decoder), B1335 (decode_reply, the partner parameter policies and the Llama stream repair). This task calls them, adds no byte decoder and so has no fuzz target."
+pitfalls:
+  - "mistralai and openapi both pick the Llama3 config, so nothing here selects B1335's Mistral or GPT-OSS classes."
+  - "The Claude arm always overwrites the response model with the model it was given; the Llama arm keeps the reply's own model and falls back to the given one only when the reply has none."
+  - "The Llama arm replaces the starting id with \"\" when the reply has no id, while the Ai21 arm keeps the starting chatcmpl id when the reply's id is missing, null or empty."
+  - "Llama's Usage(**reply.get(\"usage\", {})) reports zero counts for a reply without usage, but decode_reply leaves usage as None, so the arm has to fill it."
+  - "A non-JSON body raises VertexAIError in the Llama arm but OpenAIError in the Ai21 arm, though both come from the same B504 parse step."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

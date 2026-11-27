@@ -74,7 +74,7 @@ out_of_scope:
   - 'litellm/types/mcp_server/mcp_toolset.py: Q1 owns NewMCPToolsetRequest, UpdateMCPToolsetRequest, toolset list/detail response models.'
   - 'litellm/proxy/_experimental/mcp_server/server.py: Q2 owns get_mcp_gateway_sessions_report, terminate_mcp_gateway_sessions.'
   - 'litellm/proxy/_experimental/mcp_server/toolset_db.py: Q3 owns create_mcp_toolset, list_mcp_toolsets, get_mcp_toolset, update_mcp_toolset, delete_mcp_toolset.'
-  - 'litellm/proxy/_experimental/mcp_server/mcp_server_manager.py: Q5 owns manager.invalidate_toolset_cache (called after mutations).'
+  - 'litellm/proxy/_experimental/mcp_server/mcp_server_manager.py: B10147 owns manager.invalidate_toolset_cache (called after mutations).'
   - 'litellm/types/mcp_server/mcp_gateway_sessions.py: Q1 owns MCPGatewaySessionsResponse, MCPGatewaySessionsTerminateResponse.'
 
 pitfalls:
