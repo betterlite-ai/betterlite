@@ -96,6 +96,10 @@ impl BaseTranslation for ScriptedTranslation {
     }
 }
 
+fn json_items(values: &[GuardrailValue]) -> Vec<StreamItem> {
+    values.iter().cloned().map(StreamItem::Json).collect()
+}
+
 pub(super) fn emission(request: &EmissionRequest) -> HelperResult {
     let error = StreamHttpError {
         status_code: request.status_code,
@@ -105,24 +109,10 @@ pub(super) fn emission(request: &EmissionRequest) -> HelperResult {
         .translation
         .as_ref()
         .map(|script| ScriptedTranslation {
-            error_items: script
-                .error_items
-                .as_ref()
-                .map(|items| items.iter().cloned().map(StreamItem::Json).collect()),
+            error_items: script.error_items.as_deref().map(json_items),
         });
-    let responses_so_far: Vec<StreamItem> = request
-        .responses_so_far
-        .iter()
-        .cloned()
-        .map(StreamItem::Json)
-        .collect();
-    let responses_yielded = request.responses_yielded.as_ref().map(|items| {
-        items
-            .iter()
-            .cloned()
-            .map(StreamItem::Json)
-            .collect::<Vec<_>>()
-    });
+    let responses_so_far = json_items(&request.responses_so_far);
+    let responses_yielded = request.responses_yielded.as_deref().map(json_items);
     let outcome = emit_streaming_http_error(
         error,
         &StreamErrorEmission {

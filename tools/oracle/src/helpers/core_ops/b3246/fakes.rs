@@ -10,6 +10,7 @@ use betterlite_core::guardrails::streaming_rewrite::traits::{
     ApplySurface, GuardrailCall, GuardrailCallback, HookSurface, InputType, NamedGuardrail,
     PostCallHook, PostCallSurface, RewriteFailure, StreamCall, StreamGuardrail, StreamTranslation,
 };
+use betterlite_guardrails::guardrail_message_scope::stream_chunk_events::stream_item_value;
 use thiserror::Error;
 
 use super::input::{GuardrailScript, HookMode, Kind, TranslationScript};
@@ -123,13 +124,8 @@ fn texts_of(items: &[GuardrailValue]) -> Vec<String> {
 }
 
 fn texts_of_items(items: &[StreamItem]) -> Vec<String> {
-    let mut texts = Vec::with_capacity(items.len());
-    for item in items {
-        if let StreamItem::Json(GuardrailValue::Text(text)) = item {
-            texts.push(text.clone());
-        }
-    }
-    texts
+    let values: Vec<GuardrailValue> = items.iter().map(stream_item_value).collect();
+    texts_of(&values)
 }
 
 fn scanned_inputs(response: &GuardrailValue) -> Option<StreamInputs> {
@@ -194,10 +190,8 @@ impl<const DELIVERS: bool> StreamTranslation<()> for Translation<'_, DELIVERS> {
         let text_count = texts.len();
         let tool_calls = self.script.tool_calls.clone();
         let stored_tools = tool_calls.clone().unwrap_or_default();
-        request_data.insert(
-            "response".to_owned(),
-            assembled_value(&texts, &stored_tools),
-        );
+        let response = assembled_value(&texts, &stored_tools);
+        request_data.insert("response".to_owned(), response);
         let inputs = StreamInputs {
             texts: Some(texts),
             tool_calls,
@@ -213,14 +207,10 @@ impl<const DELIVERS: bool> StreamTranslation<()> for Translation<'_, DELIVERS> {
             && let Some(rewritten) = outputs.texts
             && rewritten.len() == text_count
         {
-            let mut pending_texts = rewritten.into_iter();
-            for item in responses_so_far.iter_mut() {
-                let StreamItem::Json(GuardrailValue::Text(_)) = item else {
-                    continue;
-                };
-                let Some(text) = pending_texts.next() else {
-                    break;
-                };
+            let text_slots = responses_so_far
+                .iter_mut()
+                .filter(|item| matches!(item, StreamItem::Json(GuardrailValue::Text(_))));
+            for (item, text) in text_slots.zip(rewritten) {
                 *item = StreamItem::Json(GuardrailValue::Text(text));
             }
         }

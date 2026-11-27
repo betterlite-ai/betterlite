@@ -190,14 +190,23 @@ fn texts_of(items: &[GuardrailValue]) -> Vec<String> {
     texts
 }
 
-fn texts_of_items(items: &[StreamItem]) -> Vec<String> {
-    let mut texts = Vec::new();
-    for item in items {
-        if let StreamItem::Json(GuardrailValue::Text(text)) = item {
-            texts.push(text.clone());
-        }
+fn text_slot_texts(items: &[StreamItem]) -> impl Iterator<Item = &str> {
+    items.iter().filter_map(|item| match item {
+        StreamItem::Json(GuardrailValue::Text(text)) => Some(text.as_str()),
+        StreamItem::Json(_) | StreamItem::Bytes(_) => None,
+    })
+}
+
+fn apply_text_rewrite(items: &mut [StreamItem], rewritten: Option<Vec<String>>, text_count: usize) {
+    let Some(rewritten) = rewritten.filter(|texts| texts.len() == text_count) else {
+        return;
+    };
+    let text_slots = items
+        .iter_mut()
+        .filter(|item| matches!(item, StreamItem::Json(GuardrailValue::Text(_))));
+    for (item, text) in text_slots.zip(rewritten) {
+        *item = StreamItem::Json(GuardrailValue::Text(text));
     }
-    texts
 }
 
 fn item_kinds(items: &[StreamItem]) -> GuardrailValue {
@@ -278,7 +287,9 @@ impl<const DELIVERS: bool> StreamTranslation<()> for Translation<DELIVERS> {
         Guardrail: StreamGuardrail<(), Failure = FakeError>,
     {
         let request_data = call.request_data.unwrap();
-        let texts = texts_of_items(responses_so_far);
+        let texts: Vec<String> = text_slot_texts(responses_so_far)
+            .map(str::to_owned)
+            .collect();
         let text_count = texts.len();
         request_data.insert("seen_kinds".to_owned(), item_kinds(responses_so_far));
         let text_refs: Vec<&str> = texts.iter().map(String::as_str).collect();
@@ -303,20 +314,7 @@ impl<const DELIVERS: bool> StreamTranslation<()> for Translation<DELIVERS> {
             logging_obj: call.logging_obj,
         };
         let outputs = guardrail.apply_guardrail(inputs, call_args).await?;
-        if let Some(rewritten) = outputs.texts
-            && rewritten.len() == text_count
-        {
-            let mut pending_texts = rewritten.into_iter();
-            for item in responses_so_far.iter_mut() {
-                let StreamItem::Json(GuardrailValue::Text(_)) = item else {
-                    continue;
-                };
-                let Some(text) = pending_texts.next() else {
-                    break;
-                };
-                *item = StreamItem::Json(GuardrailValue::Text(text));
-            }
-        }
+        apply_text_rewrite(responses_so_far, outputs.texts, text_count);
         request_data.insert(
             "delivered_tools".to_owned(),
             GuardrailValue::Array(outputs.tool_calls.unwrap_or_default()),

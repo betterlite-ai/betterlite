@@ -58,6 +58,10 @@ pub fn a2a_request_id(
             return id.clone();
         }
     }
+    request_body_id(request_data)
+}
+
+fn request_body_id(request_data: &BTreeMap<String, GuardrailValue>) -> GuardrailValue {
     let body = request_data.get("body").filter(|value| has_content(value));
     let chosen = body.or_else(|| request_data.get("data").filter(|value| has_content(value)));
     match chosen {

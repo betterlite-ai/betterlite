@@ -320,7 +320,7 @@ pub(crate) struct Harness {
     pub(crate) guarded: bool,
 }
 
-fn fake(key: KeyMode, plans: Vec<Result<(), GuardrailFailure>>) -> FakeTranslation {
+pub(super) fn fake(key: KeyMode, plans: Vec<Result<(), GuardrailFailure>>) -> FakeTranslation {
     FakeTranslation {
         plans: Mutex::new(VecDeque::from(plans)),
         calls: Mutex::new(Vec::new()),
@@ -346,11 +346,6 @@ impl Harness {
             },
             TranslationEntry {
                 call_type: CallType::Responses,
-                translation: fake(key, Vec::new()),
-                chat_completions: false,
-            },
-            TranslationEntry {
-                call_type: CallType::AnthropicMessages,
                 translation: fake(key, Vec::new()),
                 chat_completions: false,
             },
@@ -399,31 +394,10 @@ impl Harness {
         self.registry.get(call_type).unwrap().translation.calls()
     }
 
-    pub(crate) fn error_items(mut self, items: Vec<StreamItem>) -> Self {
+    pub(crate) fn error_items(&mut self, items: Vec<StreamItem>) {
         for entry in &mut self.registry.entries {
             entry.translation.error_items = Some(items.clone());
         }
-        self
-    }
-
-    pub(crate) fn plans(
-        mut self,
-        call_type: CallType,
-        plans: Vec<Result<(), GuardrailFailure>>,
-    ) -> Self {
-        if let Some(entry) = self
-            .registry
-            .entries
-            .iter_mut()
-            .find(|entry| entry.call_type == call_type)
-        {
-            *entry
-                .translation
-                .plans
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner) = VecDeque::from(plans);
-        }
-        self
     }
 
     pub(crate) async fn run(&mut self, items: Vec<GuardrailValue>) -> Outputs {

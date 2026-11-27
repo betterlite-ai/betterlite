@@ -10,6 +10,7 @@ use betterlite_core::routes::CallType;
 use betterlite_guardrails::guardrail_base::GuardrailBase;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 use betterlite_guardrails::guardrail_message_scope::StreamItem;
+use betterlite_guardrails::unified_dispatch::registry::TranslationEntry;
 use indexmap::IndexMap;
 use rstest::rstest;
 
@@ -18,7 +19,7 @@ use super::settings::{InvalidFlag, StreamSettings, TransformMode};
 use crate::guardrails::anthropic_translation::block_continuation;
 use crate::guardrails::unified_stream::StreamOutput;
 use support::{
-    Harness, KeyMode, NAME, ScanCall, SourceFailure, capture_logs, chunk, content, lines,
+    Harness, KeyMode, NAME, ScanCall, SourceFailure, capture_logs, chunk, content, fake, lines,
     modify_response, settings, texts,
 };
 
@@ -536,6 +537,11 @@ async fn frames_pass_through_in_order_without_a_translation() {
 #[tokio::test]
 async fn frames_bytes_scan_on_the_anthropic_route() {
     let mut harness = Harness::new(KeyMode::Texts, Vec::new()).rate(1);
+    harness.registry.entries.push(TranslationEntry {
+        call_type: CallType::AnthropicMessages,
+        translation: fake(KeyMode::Texts, Vec::new()),
+        chat_completions: false,
+    });
     harness.route = Some("/v1/messages");
     let frame = b"event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"hi\"}}\n\n".to_vec();
     let outputs = harness.run_frames(vec![StreamItem::Bytes(frame)]).await;
@@ -563,10 +569,13 @@ async fn frames_block_after_a_bytes_prefix_keeps_the_frames_in_the_original() {
 async fn frames_http_error_keeps_the_anthropic_bytes_frame() {
     let built = block_continuation::build_stream_error_items("blocked by policy").unwrap();
     let frames: Vec<StreamItem> = built.into_iter().map(StreamItem::Bytes).collect();
-    let mut harness = Harness::new(KeyMode::Texts, Vec::new())
-        .plans(CallType::AnthropicMessages, vec![Ok(()), http(405)])
-        .rate(1)
-        .error_items(frames.clone());
+    let mut harness = Harness::new(KeyMode::Texts, Vec::new()).rate(1);
+    harness.registry.entries.push(TranslationEntry {
+        call_type: CallType::AnthropicMessages,
+        translation: fake(KeyMode::Texts, vec![Ok(()), http(405)]),
+        chat_completions: false,
+    });
+    harness.error_items(frames.clone());
     harness.route = Some("/v1/messages");
     let outputs = harness
         .run_frames(vec![
