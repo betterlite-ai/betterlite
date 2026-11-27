@@ -13,6 +13,25 @@ call:
           message:
             role: assistant
             content: null
+            function_call:
+              name: get_weather
+              arguments: '{"city":"Paris"}'
+            images:
+              - image_url:
+                  url: https://example.com/cat.png
+                index: 0
+                type: image_url
+            reasoning_content: thinking about the weather
+            thinking_blocks:
+              - type: thinking
+                thinking: hmm
+                signature: sig
+            reasoning_items:
+              - type: reasoning
+                id: rs_1
+                encrypted_content: abc
+            provider_specific_fields:
+              region: eu
             annotations:
               - type: url_citation
                 url: https://example.com
@@ -40,6 +59,25 @@ calls:
             message:
               role: assistant
               content: hello
+              function_call:
+                name: get_weather
+                arguments: '{"city":"Paris"}'
+              images:
+                - image_url:
+                    url: https://example.com/cat.png
+                  index: 0
+                  type: image_url
+              reasoning_content: thinking about the weather
+              thinking_blocks:
+                - type: thinking
+                  thinking: hmm
+                  signature: sig
+              reasoning_items:
+                - type: reasoning
+                  id: rs_1
+                  encrypted_content: abc
+              provider_specific_fields:
+                region: eu
             finish_reason: stop
       tool_results: []
   - b10123:
@@ -54,6 +92,25 @@ calls:
             message:
               role: assistant
               content: hello
+              function_call:
+                name: get_weather
+                arguments: '{"city":"Paris"}'
+              images:
+                - image_url:
+                    url: https://example.com/cat.png
+                  index: 0
+                  type: image_url
+              reasoning_content: thinking about the weather
+              thinking_blocks:
+                - type: thinking
+                  thinking: hmm
+                  signature: sig
+              reasoning_items:
+                - type: reasoning
+                  id: rs_1
+                  encrypted_content: abc
+              provider_specific_fields:
+                region: eu
               tool_calls: []
             finish_reason: stop
       tool_results: []
@@ -69,6 +126,25 @@ calls:
             message:
               role: assistant
               content: ''
+              function_call:
+                name: get_weather
+                arguments: '{"city":"Paris"}'
+              images:
+                - image_url:
+                    url: https://example.com/cat.png
+                  index: 0
+                  type: image_url
+              reasoning_content: thinking about the weather
+              thinking_blocks:
+                - type: thinking
+                  thinking: hmm
+                  signature: sig
+              reasoning_items:
+                - type: reasoning
+                  id: rs_1
+                  encrypted_content: abc
+              provider_specific_fields:
+                region: eu
             finish_reason: stop
       tool_results: []
   - b10123:
@@ -83,6 +159,25 @@ calls:
             message:
               role: assistant
               content: null
+              function_call:
+                name: get_weather
+                arguments: '{"city":"Paris"}'
+              images:
+                - image_url:
+                    url: https://example.com/cat.png
+                  index: 0
+                  type: image_url
+              reasoning_content: thinking about the weather
+              thinking_blocks:
+                - type: thinking
+                  thinking: hmm
+                  signature: sig
+              reasoning_items:
+                - type: reasoning
+                  id: rs_1
+                  encrypted_content: abc
+              provider_specific_fields:
+                region: eu
               audio:
                 id: audio_1
                 data: ZGF0YQ==
@@ -103,8 +198,40 @@ calls:
             message:
               role: assistant
               content: cited
+              function_call:
+                name: get_weather
+                arguments: '{"city":"Paris"}'
+              images:
+                - image_url:
+                    url: https://example.com/cat.png
+                  index: 0
+                  type: image_url
+              reasoning_content: thinking about the weather
+              thinking_blocks:
+                - type: thinking
+                  thinking: hmm
+                  signature: sig
+              reasoning_items:
+                - type: reasoning
+                  id: rs_1
+                  encrypted_content: abc
+              provider_specific_fields:
+                region: eu
               annotations: []
             finish_reason: stop
       tool_results: []
 env: {}
-compare: {ignore: []}
+compare:
+  ignore:
+    - pointer: /value/messages/0/function_call
+      why: betterlite's shared chat reply type carries no function_call, so the dump leaves it out; see docs/deviations/B10123.yaml
+    - pointer: /value/messages/0/images
+      why: betterlite's shared chat reply type carries no images, so the dump leaves it out; see docs/deviations/B10123.yaml
+    - pointer: /value/messages/0/provider_specific_fields
+      why: betterlite skips provider_specific_fields when it decodes a reply, so the dump leaves it out; see docs/deviations/B10123.yaml
+    - pointer: /value/messages/0/reasoning_content
+      why: betterlite's shared chat reply type carries no reasoning_content, so the dump leaves it out; see docs/deviations/B10123.yaml
+    - pointer: /value/messages/0/reasoning_items
+      why: betterlite's shared chat reply type carries no reasoning_items, so the dump leaves it out; see docs/deviations/B10123.yaml
+    - pointer: /value/messages/0/thinking_blocks
+      why: betterlite's shared chat reply type carries no thinking_blocks, so the dump leaves it out; see docs/deviations/B10123.yaml
