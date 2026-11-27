@@ -35,6 +35,7 @@ pub(crate) enum StageFailure {
     Authentication(Box<AuthenticationFailure>),
     KeyLookup(Box<ProxyException>),
     ModelAccess(Box<ModelAccessRejection>),
+    AuthModelGrants(Box<ProxyException>),
     EntityModelAccess(Box<ProxyException>),
     AuthRequestPolicy(Box<ProxyException>),
     ResourceGrants(Box<ProxyException>),
@@ -199,7 +200,8 @@ impl FailureContext {
 
 fn raised_exception(failure: &StageFailure) -> Option<ProxyException> {
     match failure {
-        StageFailure::EntityModelAccess(exception)
+        StageFailure::AuthModelGrants(exception)
+        | StageFailure::EntityModelAccess(exception)
         | StageFailure::AuthRequestPolicy(exception)
         | StageFailure::ResourceGrants(exception)
         | StageFailure::TagBudgets(exception)

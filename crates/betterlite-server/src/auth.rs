@@ -148,8 +148,9 @@ fn stage_input(
         AuthBackend::AuthRequestModels | AuthBackend::AuthModelPatterns => {
             model_pattern_input(backend, request, authenticated, resolver)
         }
+        AuthBackend::AuthModelGrants => auth_model_grants::stage_input(request, authenticated),
         AuthBackend::EntityModelAccess => entity_model_access::stage_input(request, authenticated),
-        AuthBackend::AuthResourceGrants => Ok(resource_grant_stage_input(request, authenticated)?),
+        AuthBackend::AuthResourceGrants => resource_grant_stage_input(request, authenticated),
         AuthBackend::AuthTagBudgets => Ok(StageInput::AuthTagBudgets(Box::new(
             auth_tag_budgets::stage_input(request, authenticated)?,
         ))),
@@ -177,10 +178,11 @@ fn stage_input(
     }
 }
 
+// the resource grant stage reads the request's rule and database switch, so its input is built here
 fn resource_grant_stage_input(
     request: &Request<Body>,
     authenticated: Option<&AuthContext>,
-) -> Result<StageInput, AuthenticationFailure> {
+) -> Result<StageInput, StageFailure> {
     let stage = ResourceGrantStageInput {
         context: authenticated
             .cloned()
@@ -241,6 +243,7 @@ pub(crate) async fn prefetch_stage(input: StageInput) -> Result<StageInput, Stag
         StageInput::AuthOrgLookup(stage) => auth_org_lookup::prefetched(stage).await,
         StageInput::AuthEndUsers(stage) => auth_end_users::prefetched(stage).await,
         StageInput::ModelGrantIntersection(stage) => StageInput::prefetch_model_grants(stage).await,
+        StageInput::AuthModelGrants(stage) => auth_model_grants::prefetched(stage).await,
         StageInput::EntityModelAccess(stage) => entity_model_access::prefetched(stage).await,
         other @ (StageInput::Authenticated(_)
         | StageInput::MasterKey(_)
