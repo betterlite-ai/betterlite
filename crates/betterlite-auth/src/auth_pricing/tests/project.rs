@@ -143,7 +143,7 @@ fn cached_project(
     models: &[&str],
     budget: Option<(&str, &str)>,
 ) -> CachedProject {
-    let models = serde_json::to_string(models).expect("the model list encodes");
+    let models_json = serde_json::to_string(models).expect("the model list encodes");
     let budget_table = budget.map_or_else(
         || "null".to_owned(),
         |(max_budget, soft_budget)| {
@@ -151,7 +151,7 @@ fn cached_project(
         },
     );
     let row = format!(
-        r#"{{"project_id":"{project_id}","blocked":{blocked},"models":{models},"spend":6,"litellm_budget_table":{budget_table}}}"#
+        r#"{{"project_id":"{project_id}","blocked":{blocked},"models":{models_json},"spend":6,"litellm_budget_table":{budget_table}}}"#
     );
     serde_json::from_str(&row).expect("the project row decodes")
 }
@@ -270,8 +270,15 @@ async fn skip_keeps_model_check() {
     assert!(matches!(error, ProjectError::Grant(_)));
     assert_eq!(denying.calls(), 1);
     assert_eq!(reader.reads(), 0);
+}
 
+#[tokio::test]
+async fn skipped_budgets_allow() {
+    let reader = ScriptedSpend::new("6");
+    let alerts = AlertRecorder::default();
     let allowing = GrantRecorder::default();
+    let auth = token("sk-allow");
+    let project = cached_project("proj-1", false, &["allowed"], Some(("0", "0")));
     run_project_checks(
         Some(&project),
         &one("allowed"),
@@ -287,9 +294,15 @@ async fn skip_keeps_model_check() {
     assert_eq!(allowing.calls(), 1);
     assert_eq!(reader.reads(), 0);
     assert!(alerts.kinds().is_empty());
+}
 
-    // the model gate needs a nonempty project model list
+// the model gate needs a nonempty project model list
+#[tokio::test]
+async fn empty_model_list_skips_grant() {
+    let reader = ScriptedSpend::new("6");
+    let alerts = AlertRecorder::default();
     let quiet = GrantRecorder::denying();
+    let auth = token("sk-quiet");
     let unrestricted = cached_project("proj-2", false, &[], Some(("0", "0")));
     run_project_checks(
         Some(&unrestricted),
@@ -305,21 +318,30 @@ async fn skip_keeps_model_check() {
     .expect("a project without a model list skips the grant");
     assert_eq!(quiet.calls(), 0);
     assert_eq!(reader.reads(), 0);
+    assert!(alerts.kinds().is_empty());
+}
 
+#[tokio::test]
+async fn missing_project_skips_every_check() {
+    let reader = ScriptedSpend::new("6");
+    let alerts = AlertRecorder::default();
+    let grant = GrantRecorder::denying();
+    let auth = token("sk-missing");
     run_project_checks(
         None,
         &one("allowed"),
         false,
         Some(&auth),
         &ProjectCollaborators {
-            grant: &allowing,
+            grant: &grant,
             admission: admission(&reader, &alerts),
         },
     )
     .await
     .expect("a missing project skips every check");
-    assert_eq!(allowing.calls(), 1);
+    assert_eq!(grant.calls(), 0);
     assert_eq!(reader.reads(), 0);
+    assert!(alerts.kinds().is_empty());
 }
 
 #[rstest]

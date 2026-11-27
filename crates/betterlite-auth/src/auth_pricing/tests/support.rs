@@ -19,19 +19,19 @@ use crate::auth_pricing::catalog::{
 
 // the model catalog a test scripts: group costs, deployments, resolved model info and the raw cost map
 #[derive(Debug, Default)]
-pub struct FakeCatalog {
-    pub groups: BTreeMap<String, ModelGroupCosts>,
-    pub deployments: BTreeMap<String, Vec<PricingDeployment>>,
-    pub infos: BTreeMap<(String, String), JsonObject>,
-    pub costs: BTreeMap<String, JsonObject>,
-    pub cache: Option<ZeroCostCache>,
-    failing: AtomicBool,
-    lookups: Mutex<Vec<String>>,
+pub(crate) struct FakeCatalog {
+    pub(crate) groups: BTreeMap<String, ModelGroupCosts>,
+    pub(crate) deployments: BTreeMap<String, Vec<PricingDeployment>>,
+    pub(crate) infos: BTreeMap<(String, String), JsonObject>,
+    pub(crate) costs: BTreeMap<String, JsonObject>,
+    pub(crate) cache: Option<ZeroCostCache>,
+    pub(crate) failing: AtomicBool,
+    pub(crate) lookups: Mutex<Vec<String>>,
 }
 
 impl FakeCatalog {
     #[must_use]
-    pub fn with_cache() -> Self {
+    pub(crate) fn with_cache() -> Self {
         Self {
             groups: BTreeMap::new(),
             deployments: BTreeMap::new(),
@@ -43,12 +43,12 @@ impl FakeCatalog {
         }
     }
 
-    pub fn fail(&self) {
+    pub(crate) fn fail(&self) {
         self.failing.store(true, Ordering::Release);
     }
 
     #[must_use]
-    pub fn lookups(&self) -> Vec<String> {
+    pub(crate) fn lookups(&self) -> Vec<String> {
         self.lookups
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -56,17 +56,18 @@ impl FakeCatalog {
     }
 
     #[must_use]
-    pub fn cached(&self, model: &str) -> Option<bool> {
-        self.cache.as_ref().and_then(|cache| cache.get(model))
+    pub(crate) fn cached(&self, model: &str) -> Option<bool> {
+        let cache = self.cache.as_ref()?;
+        cache.get(model)
     }
 
-    pub fn clear_cache(&self) {
+    pub(crate) fn clear_cache(&self) {
         if let Some(cache) = &self.cache {
             cache.clear();
         }
     }
 
-    pub fn group(&mut self, model: &str, input: Option<Money>, output: Option<Money>) {
+    pub(crate) fn group(&mut self, model: &str, input: Option<Money>, output: Option<Money>) {
         self.groups.insert(
             model.to_owned(),
             ModelGroupCosts {
@@ -76,7 +77,7 @@ impl FakeCatalog {
         );
     }
 
-    pub fn deployed(&mut self, model: &str, params: JsonObject, info: JsonObject) {
+    pub(crate) fn deployed(&mut self, model: &str, params: JsonObject, info: JsonObject) {
         self.deployments
             .entry(model.to_owned())
             .or_default()
@@ -86,11 +87,11 @@ impl FakeCatalog {
             });
     }
 
-    pub fn raw(&mut self, model_id: &str, entry: JsonObject) {
+    pub(crate) fn raw(&mut self, model_id: &str, entry: JsonObject) {
         self.costs.insert(model_id.to_owned(), entry);
     }
 
-    pub fn resolved(&mut self, model_id: &str, model_name: &str, entry: JsonObject) {
+    pub(crate) fn resolved(&mut self, model_id: &str, model_name: &str, entry: JsonObject) {
         self.infos
             .insert((model_id.to_owned(), model_name.to_owned()), entry);
     }
@@ -146,7 +147,7 @@ impl PricingCatalog for FakeCatalog {
 }
 
 #[must_use]
-pub fn object(entries: &[(&str, Json)]) -> JsonObject {
+pub(crate) fn object(entries: &[(&str, Json)]) -> JsonObject {
     entries
         .iter()
         .map(|(key, value)| ((*key).to_owned(), value.clone()))
@@ -154,22 +155,22 @@ pub fn object(entries: &[(&str, Json)]) -> JsonObject {
 }
 
 #[must_use]
-pub fn text(value: &str) -> Json {
+pub(crate) fn text(value: &str) -> Json {
     Json::Text(value.to_owned())
 }
 
 #[must_use]
-pub fn number(value: &str) -> Json {
+pub(crate) fn number(value: &str) -> Json {
     serde_json::from_str(value).expect("the test number parses")
 }
 
 #[must_use]
-pub fn money(value: &str) -> Money {
+pub(crate) fn money(value: &str) -> Money {
     Money::from_text(value).expect("the test money parses")
 }
 
 #[derive(Clone, Default)]
-pub struct DebugLogs(Arc<Mutex<Vec<String>>>);
+pub(crate) struct DebugLogs(Arc<Mutex<Vec<String>>>);
 
 #[derive(Default)]
 struct Message(String);
@@ -196,7 +197,7 @@ impl<S: Subscriber> Layer<S> for DebugLogs {
     }
 }
 
-pub fn captured<T, F>(run: F) -> (T, Vec<String>)
+pub(crate) fn captured<T, F>(run: F) -> (T, Vec<String>)
 where
     F: FnOnce() -> T,
 {

@@ -9,7 +9,6 @@ use super::catalog::{PricingCatalog, PricingError, model_info_id};
 use super::zero_cost::is_cost_explicitly_configured;
 
 // model_has_no_cost_mapping: a falsey model or a missing router is never unpriced, and an unknown group is not either
-#[must_use]
 pub fn model_has_no_cost_mapping(
     model: Option<&str>,
     catalog: Option<&dyn PricingCatalog>,
@@ -27,7 +26,6 @@ pub fn model_has_no_cost_mapping(
 }
 
 // _unpriced_models_in_request: the model order and its duplicates survive the filter
-#[must_use]
 pub fn unpriced_models_in_request(
     model: &RequestedModels,
     catalog: Option<&dyn PricingCatalog>,

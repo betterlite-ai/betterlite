@@ -30,8 +30,8 @@ pub struct DeploymentProjectGrant<'context> {
 }
 
 impl fmt::Debug for DeploymentProjectGrant<'_> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("DeploymentProjectGrant")
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("DeploymentProjectGrant")
     }
 }
 

@@ -89,9 +89,7 @@ pub fn global_proxy_budget_check(
     skip_budget_checks: bool,
     route: &str,
 ) -> Option<Denial> {
-    let Some(spend) = global_spend else {
-        return None;
-    };
+    let spend = global_spend?;
     if skip_budget_checks
         || !is_llm_api_route(&RouteValue::Text(route))
         || route == "/v1/models"
