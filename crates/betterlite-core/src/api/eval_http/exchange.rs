@@ -41,6 +41,8 @@ pub struct EvalExchange<'call> {
     pub method: EvalMethod,
     pub body: Option<&'call Object>,
     pub query: Option<&'call Object>,
+    // The query the pre-call logs under `params`; only list_runs has one, and it is the same object it sends as query
+    pub params: Option<&'call Object>,
     pub timeout: Option<Duration>,
     pub input: &'call str,
     pub complete_input_dict: Option<&'call Object>,

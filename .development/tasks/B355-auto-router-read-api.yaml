@@ -1,7 +1,6 @@
 id: B355
 title: Benchmark and per-key session read APIs
-description: 'Implement benchmark and per-key session read endpoints over B387 aggregates and B344 rollup
-  repository. Use _require_admin_viewer (B345) and the canonical-user/key filters on the caller UserAPIKeyAuth (B2314) before data access. Keep query adapters
+description: 'Implement benchmark and per-key session read endpoints over B387 aggregates and B726''s existing betterlite-db::auxiliary_repository::session::AutoRouterSessionRepository, using B858''s managed_resource_rows::autorouter::AutoRouterSession (including baseline_model) and B1742''s autorouter_facts::session::bounded_session_id. Read seeded rollups through these existing APIs; this task does not require the asynchronous rollup writer. Use _require_admin_viewer (B345) and the canonical-user/key filters on the caller UserAPIKeyAuth (B2314) before data access. Keep query adapters
   in betterlite-server and call the public B051 repository API; raw spend-log scans and schema changes
   remain out of scope. Keep the integration adapter in betterlite-server in this task module; consume
   predecessor public interfaces without editing their implementation crates. Implement the owned native
