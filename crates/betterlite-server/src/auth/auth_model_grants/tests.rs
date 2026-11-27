@@ -16,15 +16,19 @@ use betterlite_auth::agent_caller::error::AgentCallerError;
 use betterlite_auth::agent_policy::AgentResponse;
 use betterlite_auth::auth_model_grants::access_source::AgentAccessSource;
 use betterlite_auth::auth_model_grants::error::AgentModelGrantsError;
-use betterlite_auth::auth_model_patterns::denial::model_denied_client_message;
+use betterlite_auth::auth_model_patterns::denial::{
+    model_access_denied, model_denied_client_message,
+};
 use betterlite_auth::auth_request_models::RequestedModels;
 use betterlite_auth::auth_team_lookup::error::{TeamFailure, TeamLookupError};
+use betterlite_auth::entity_model_access::error::EntityModelAccessError;
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::types::Config;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::identity_rows::user::LiteLLMUserTable;
 use betterlite_db::team_rows::archived::LiteLLMTeamTableCachedObj;
+use betterlite_error::proxy_error_types::ModelAccessObject;
 use secrecy::SecretString;
 use tower::ServiceExt as _;
 
@@ -32,6 +36,7 @@ use super::{AgentModelGrantsRule, stage_failure, stage_input};
 use crate::auth::auth_identity::{
     AuthBackend, AuthContext, INSTALLED_STAGES, StageFailure, StageInput, dispatch,
 };
+use crate::auth::auth_model_patterns::ModelAccessRejection;
 use crate::auth::prefetch_stage;
 use crate::auth::team_budget_admission::TeamBudgetRule;
 use crate::routes;
@@ -366,6 +371,34 @@ fn missing_caller_team_keeps_http_status() {
         panic!("missing caller teams preserve their HTTP status");
     };
     assert_eq!(exception.code, "404");
+}
+
+#[test]
+fn entity_failures_keep_their_translation() {
+    let denial = model_access_denied(ModelAccessObject::Team, &["claude".to_owned()], "gpt-4o");
+    let StageFailure::ModelAccess(denied_rejection) = stage_failure(AgentModelGrantsError::Entity(
+        Box::new(EntityModelAccessError::Denied(Box::new(denial))),
+    )) else {
+        panic!("entity denials keep the model access response");
+    };
+    let ModelAccessRejection::Denied(mapped) = *denied_rejection else {
+        panic!("entity denials keep the model denial");
+    };
+    assert_eq!(
+        mapped.as_proxy_exception().error_type,
+        "team_model_access_denied"
+    );
+    let StageFailure::ModelAccess(depth_rejection) = stage_failure(AgentModelGrantsError::Entity(
+        Box::new(EntityModelAccessError::RecurseDepth {
+            model: "claude".to_owned(),
+        }),
+    )) else {
+        panic!("entity depth failures keep the model access response");
+    };
+    let ModelAccessRejection::RecurseDepth { model } = *depth_rejection else {
+        panic!("entity depth failures keep the model denial");
+    };
+    assert_eq!(model, "claude");
 }
 
 #[test]
