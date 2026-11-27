@@ -135,15 +135,6 @@ class FakeRedis(RedisCache):
         return True
 
 
-def make_cache(spec: RedisInput | None, clock: Clock) -> RedisCache | None:
-    if spec is None:
-        return None
-    faults = spec.get("faults")
-    if faults is None:
-        faults = {}
-    return FakeRedis(RedisState(clock, faults))
-
-
 class Session:
     def __init__(self, spec: RedisInput | None) -> None:
         self.clock = Clock(0.0)
@@ -157,4 +148,9 @@ class Session:
             default_ttl=DEFAULT_BLOCK,
             clock=self.clock,
         )
-        self.cache = make_cache(spec, self.clock)
+        self.cache: RedisCache | None = None
+        if spec is not None:
+            faults: dict[str, str] | None = spec.get("faults")
+            if faults is None:
+                faults = {}
+            self.cache = FakeRedis(RedisState(self.clock, faults))

@@ -186,13 +186,6 @@ async def run_step(
     return pending, view
 
 
-def classify(message: str) -> str:
-    for needle, tag in WARNING_TOKENS:
-        if needle in message:
-            return tag
-    return f"other:{message}"
-
-
 async def finish_phase(
     session: Session, settings: dict[str, JsonValue], phase: PhaseInput, handler: CaptureHandler
 ) -> PhaseOutput:
@@ -215,7 +208,10 @@ async def finish_phase(
         "block_seconds": throttle.block_seconds,
         "enabled": throttle.enabled,
     }
-    warnings = [classify(message) for message in handler.drain()]
+    warnings = [
+        next((tag for needle, tag in WARNING_TOKENS if needle in message), f"other:{message}")
+        for message in handler.drain()
+    ]
     return {"throttle": throttle_view, "steps": steps, "warnings": warnings}
 
 
