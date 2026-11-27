@@ -1,0 +1,66 @@
+id: B10144
+title: MCP REST access error contract
+description: >-
+  B4726's MCP REST helpers and B6593's toolset scope fail with one error type, the native form of the HTTPException LiteLLM raises from those helpers. B6593 needs only that type, for a From impl on its own error, so the type is a task of its own and B6593 no longer waits for the rest of B4726. Build the type and nothing that raises it.
+
+
+  Code goes in betterlite-mcp, module rest_access::error: crates/betterlite-mcp/src/rest_access/error.rs, with its tests in rest_access/error/tests.rs. The file is an empty stub that rest_access.rs already declares with `pub mod error;`. rest_access.rs itself is B4726's, so leave it as it is. The module uses only std, serde, serde_json and thiserror, all already in the crate's Cargo.toml. It imports nothing else from betterlite-mcp, so B4726 and B6593 can both depend on it without a cycle.
+
+
+  RestDetail is the detail of a refusal, the value LiteLLM passes as HTTPException's detail. It derives Clone, Debug, Eq, PartialEq and Serialize with #[serde(untagged)], and has one variant per shape LiteLLM uses in these files:
+
+  1. Text(String) serializes to a JSON string. The 404 "Toolset '<name>' not found" of _resolve_acting_auth and the 403 refusals of _apply_toolset_scope carry it.
+
+  2. Error { error: String } serializes to {"error": ...} with no message key. get_prisma_client_or_throw's 500 carries it.
+
+  3. ErrorMessage { error: String, message: String } serializes to {"error": ..., "message": ...}, the keys in that order. The ip_filtering, server_not_found and access_denied refusals of _resolve_allowed_mcp_servers_with_ip_filter carry it, and so do the other REST refusals B4727 and B4728 raise.
+
+
+  RestAccessError derives Clone, Debug, Eq, PartialEq and thiserror's Error, and has two variants. Http { status: u16, detail: RestDetail } is a refusal that a route turns into the response FastAPI gives for an HTTPException: that status and the body {"detail": <detail>}. Port(String) holds the text of a failed port call, and a route never shows it to a client as is. The Display of Http is Starlette's str() of an HTTPException, "<status>: <detail>". RestDetail's own Display writes Text as the bare text and both objects as their compact JSON (serde_json::to_string, with its error mapped to fmt::Error). Port displays its text unchanged, since B4726 puts it inside its warning lines.
+
+
+  Tests build each variant with texts from the LiteLLM lines in the references and names that start with test-. Serialization tests have names that start with detail_ and Display tests names that start with display_, so the two checks select them apart. No oracle cases: there is no LiteLLM function to compare, and B4727 and B4728 check the bodies through their routes.
+scope:
+  paths:
+    - crates/betterlite-mcp/src/rest_access/error.rs
+    - crates/betterlite-mcp/src/rest_access/error/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L652-L687
+    why: The ip_filtering, server_not_found and access_denied refusals, each an object with error and message.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L912-L933
+    why: The toolset 404 with a plain text detail, next to the database 500.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8369-L8377
+    why: get_prisma_client_or_throw, whose detail is an object with the key error and no message.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L1547-L1571
+    why: The plain text 403 refusals of _apply_toolset_scope. B6593 converts them into this error.
+  - url: https://github.com/encode/starlette/blob/1.9.0/starlette/exceptions.py#L15-L16
+    why: "HTTPException.__str__ gives \"<status_code>: <detail>\", and the Display of Http follows it."
+dod:
+  - text: RestDetail serializes Text to a bare JSON string, Error to an object with only the key error, and ErrorMessage to an object with error and then message.
+    proof: [detail-tests]
+  - text: "RestAccessError::Http displays as \"<status>: <detail>\" with the plain text or the compact JSON of the object, and RestAccessError::Port displays its text unchanged."
+    proof: [display-tests]
+checks:
+  optional: []
+  commands:
+    - id: detail-tests
+      why: a detail shape serializes to the wrong JSON, or the key order or the missing message key differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^rest_access::error::tests::detail_/)'
+    - id: display-tests
+      why: the text of a refusal or a port failure is missing or differs from Starlette's string form
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^rest_access::error::tests::display_/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "Raising the refusals: B4726 (_resolve_allowed_mcp_servers_with_ip_filter, _resolve_acting_auth and the token reads), B6593 (the From impl for its ToolsetScopeError), B4727 and B4728 (their own route refusals)."
+  - "Turning RestAccessError into an HTTP response, including what a Port error answers: the routes of B4727 and B4728, mounted by B8626."
+  - "get_prisma_client_or_throw itself: the caller's port reports a missing database, see B4726."
+pitfalls:
+  - "The database 500 detail is {\"error\": ...} with no message key; an Option<String> message that serializes as null would add a key LiteLLM never sends."
+  - "untagged serde writes struct fields in declaration order, so ErrorMessage must declare error before message to keep LiteLLM's key order."
+  - "Text serializes to a bare string, not to an object with a text key; a tagged or externally tagged enum gets this wrong."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

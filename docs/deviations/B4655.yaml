@@ -1,0 +1,18 @@
+task: B4655
+deviations:
+  - what: Session identity extraction returns typed (user_id, session_key) tuples or None rather than raising exceptions, deferring validation to the FastAPI dependency layer for cleaner composition with async liveness checks.
+    why: Separating the decode step from policy enforcement allows unit testing the decoder independently and makes async key resolution optional rather than required.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L91-L132
+  - what: Redirect trust policies are organized as separate Rust functions for each policy (loopback, same-origin, trusted origins) rather than merged into a single large validator, matching domain separation from oauth_utils.py but structured for modular testing.
+    why: Allow independent unit testing of each policy and clearer composition in route handlers that may apply different policies to different OAuth flows.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L615-L646
+  - what: The trusted redirect origins and native callbacks arrive as a RedirectAllowlists argument instead of the validators reading MCP_TRUSTED_REDIRECT_ORIGINS and MCP_TRUSTED_NATIVE_REDIRECT_URIS from the process environment.
+    why: rules.yaml keeps environment reads in betterlite-config; B10094's mcp_redirect_trust section reads both variables and B8623 builds RedirectAllowlists once when it builds its state. No module in betterlite-mcp reads the environment, so a validator cannot pass on an env var the proxy never read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L309-L337
+  - what: The rejection warning logs the parsed trusted origins and native callback lists instead of the raw environment variable strings, and it has no Host header field because RequestOrigin carries only the resolved scheme, host and port.
+    why: The task text requires the parsed lists in that log line; the raw environment strings are what the config section read, and the request Host header is not part of B4654's RequestOrigin.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L589-L606
+  - what: A JWT header or payload that Python's json module accepts but standard JSON does not (a byte order mark, NaN or Infinity) is refused as an invalid header or payload.
+    why: Betterlite parses the cookie's JSON with serde_json, which reads standard JSON only; no session token LiteLLM issues carries a byte order mark or a non-finite number, and the compatibility rules keep input to standard JSON.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L91-L132
+kept_bugs: []

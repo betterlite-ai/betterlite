@@ -74,8 +74,9 @@ description: >-
   services, never FastAPI wrappers in native code or oracle adapters. Cases concurrency_ten,
   organizations_serial_stop and followup_failure_is_result.
 
-  Audit rereads sorted created IDs once (empty skips), then bounded B797 created audits with
-  caller.user_id changed-by, before=null, after=row JSON excluding nulls. Read failures propagate;
+  Audit rereads sorted created IDs once (empty skips), then bounded created audits, LiteLLM's
+  create_internal_user_audit_log, each awaiting B065's AuditService::create_object_audit_log with
+  B2330's AuditTable::User, action created, caller.user_id changed-by, before=null, after=row JSON excluding nulls. Read failures propagate;
   individual audit exceptions warn with class and continue. Cases audit_sorted_reread,
   audit_read_failure_after_writes and audit_row_warning. No background scheduling here.
   Return original input order. Created rows remain success=true even when teams/key/orgs fail:
@@ -248,7 +249,7 @@ deviations:
 out_of_scope:
   - B1222 owns bulk HTTP routes and problem serialization; B2334 owns public request/response contracts.
     B1201 owns shared pending/prepared/team records, row adapters, concurrency constant and user-row
-    metadata storage; B893 owns key generation/storage; B797 owns audits; B828 owns org-member writes.
+    metadata storage; B893 owns key generation/storage; B065 owns the audit sink create_object_audit_log; B828 owns org-member writes.
   - 'litellm/proxy/management_helpers/bulk_user_creation.py: B1201 owns _user_table (L260-L261), _user_create_payload
     (L375-L408), _bounded (L411-L418), _insert_users (L421-L469), _assignments_by_team (L472-L484), _default_member_budget_id
     (L501-L510), _team_tx_db (L513-L514), _membership_tx_db (L517-L518), _write_team_roster (L521-L581),

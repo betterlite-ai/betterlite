@@ -11,7 +11,7 @@ description: >-
 
   1. remove_tracking(id) drops the id from the six per session maps (not the admin set).
 
-  2. register(id, auth: B8720's SessionAuth, owner, client_info: Option<ClientInfo>) is what _wrap_send_with_stateful_session_auth_context does when the response head carries mcp-session-id: count the id as in flight for the current request (the caller passes a RequestGuard, see 5), store auth, last seen now, owner and the client info when present. ClientInfo is the name and version of the initialize clientInfo.
+  2. register(id, auth: B10120's SessionAuth, owner, client_info: Option<ClientInfo>) is what _wrap_send_with_stateful_session_auth_context does when the response head carries mcp-session-id: count the id as in flight for the current request (the caller passes a RequestGuard, see 5), store auth, last seen now, owner and the client info when present. ClientInfo is the name and version of the initialize clientInfo.
 
   3. session_auth(id), owner_of(id) and touch(id) read and stamp the maps for B8727.
 
