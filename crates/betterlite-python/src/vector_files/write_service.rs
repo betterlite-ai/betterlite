@@ -39,9 +39,9 @@ impl WriteService for SessionCore {
 // The prepared update or delete call: its pre-call runs under the session's logging guard, which ends before the send
 fn prepared_write<'call>(
     core: &'call SessionCore,
-    deps: &'call WriteDeps<'call, OpenAiFileWriteConfig, ProxiedSource>,
+    deps: &'call WriteDeps<'call, OpenAiFileWriteConfig<'call>, ProxiedSource>,
     call: &ServiceWriteCall<'_>,
-) -> Result<PreparedWrite<'call, OpenAiFileWriteConfig, ProxiedSource>, FileWriteError> {
+) -> Result<PreparedWrite<'call, OpenAiFileWriteConfig<'call>, ProxiedSource>, FileWriteError> {
     let transport = write_transport(call);
     let sink = SilentSink;
     let env = core.pre_post(&sink);

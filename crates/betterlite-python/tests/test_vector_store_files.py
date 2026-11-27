@@ -101,9 +101,9 @@ def parameter_rows(signature: inspect.Signature) -> list[tuple[str, str, str]]:
     return rows
 
 
-def compare(ours: ResultT, reference: dict[str, JsonValue]) -> None:
+def compare(ours: JsonValue, reference: dict[str, JsonValue]) -> None:
     expected = JSON.validate_python(reference)
-    assert JSON.validate_python(ours) == expected
+    assert ours == expected
 
 
 async def awaited_pair(
@@ -232,7 +232,7 @@ def test_calls_create() -> None:
     }
     for header, value in headers.items():
         assert header_of(ours_call, header) == header_of(reference_call, header) == value
-    compare(ours, reference)
+    compare(JSON.validate_python(ours), reference)
 
 
 def test_calls_list() -> None:
@@ -276,7 +276,7 @@ def test_calls_list() -> None:
     assert header_of(ours_call, "Authorization") == f"Bearer {GOOD_KEY}"
     assert header_of(ours_call, "OpenAI-Beta") == ASSISTANTS_HEADER
     assert header_of(ours_call, "X-Custom") == header_of(reference_call, "X-Custom") == "yes"
-    compare(ours, reference)
+    compare(JSON.validate_python(ours), reference)
 
 
 def test_calls_retrieve() -> None:
@@ -307,7 +307,7 @@ def test_calls_retrieve() -> None:
     }
     for header, value in expected_headers.items():
         assert header_of(ours_call, header) == header_of(reference_call, header) == value
-    compare(ours, reference)
+    compare(JSON.validate_python(ours), reference)
 
 
 def test_calls_retrieve_content() -> None:
@@ -333,7 +333,7 @@ def test_calls_retrieve_content() -> None:
     assert ours_call["query"] == reference_call["query"] == {}
     assert header_of(ours_call, "Authorization") == header_of(reference_call, "Authorization")
     assert header_of(ours_call, "Authorization") == f"Bearer {GOOD_KEY}"
-    compare(ours, reference)
+    compare(JSON.validate_python(ours), reference)
 
 
 def test_calls_update() -> None:
@@ -373,7 +373,7 @@ def test_calls_update() -> None:
     }
     for header, value in headers.items():
         assert header_of(ours_call, header) == header_of(reference_call, header) == value
-    compare(ours, reference)
+    compare(JSON.validate_python(ours), reference)
 
 
 def test_calls_delete() -> None:
@@ -400,7 +400,7 @@ def test_calls_delete() -> None:
     assert ours_call["query"] == reference_call["query"] == {}
     assert header_of(ours_call, "Authorization") == f"Bearer {GOOD_KEY}"
     assert header_of(ours_call, "X-Custom") == "yes"
-    compare(ours, reference)
+    compare(JSON.validate_python(ours), reference)
 
 
 def set_module_globals(
@@ -422,7 +422,7 @@ def test_calls_use_module_globals(monkeypatch: pytest.MonkeyPatch) -> None:
     assert ours_call["route"] == reference_call["route"] == FILE_PATH
     assert header_of(ours_call, "Authorization") == f"Bearer {GOOD_KEY}"
     assert header_of(reference_call, "Authorization") == f"Bearer {GOOD_KEY}"
-    compare(ours, reference)
+    compare(JSON.validate_python(ours), reference)
 
 
 def test_calls_refuse_provider() -> None:
@@ -538,12 +538,12 @@ def test_async_calls() -> None:
                 ),
             )
         )
-    compare(created, reference_created)
-    compare(page, reference_page)
-    compare(found, reference_found)
-    compare(content, reference_content)
-    compare(changed, reference_changed)
-    compare(removed, reference_removed)
+    compare(JSON.validate_python(created), reference_created)
+    compare(JSON.validate_python(page), reference_page)
+    compare(JSON.validate_python(found), reference_found)
+    compare(JSON.validate_python(content), reference_content)
+    compare(JSON.validate_python(changed), reference_changed)
+    compare(JSON.validate_python(removed), reference_removed)
 
 
 def test_async_flagged() -> None:
@@ -623,7 +623,7 @@ def test_async_flag_must_be_true() -> None:
         ours_call, reference_call = server.calls
     assert not inspect.isawaitable(ours)
     assert ours_call["body"] == reference_call["body"]
-    compare(ours, reference)
+    compare(JSON.validate_python(ours), reference)
 
 
 def test_error_keeps_class_cause() -> None:
@@ -680,4 +680,4 @@ def test_error_logger_fn_dropped(caplog: pytest.LogCaptureFixture) -> None:
         reference_call = server.calls[-1]
     assert LOGGER_FN_DROPPED in caplog.messages
     assert ours_call["body"] == reference_call["body"]
-    compare(ours, reference)
+    compare(JSON.validate_python(ours), reference)

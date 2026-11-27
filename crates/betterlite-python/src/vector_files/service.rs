@@ -86,9 +86,9 @@ impl FileService for SessionCore {
 // The prepared create or list call: its pre-call runs under the session's logging guard, which ends before the send
 fn prepared_file<'call>(
     core: &'call SessionCore,
-    deps: &'call FileDeps<'call, OpenAiFilesConfig, ProxiedSource>,
+    deps: &'call FileDeps<'call, OpenAiFilesConfig<'call>, ProxiedSource>,
     call: &ServiceFileCall<'_>,
-) -> Result<PreparedFile<'call, OpenAiFilesConfig, ProxiedSource>, FileTransportError> {
+) -> Result<PreparedFile<'call, OpenAiFilesConfig<'call>, ProxiedSource>, FileTransportError> {
     let transport = file_transport(call);
     let sink = SilentSink;
     let env = core.pre_post(&sink);
