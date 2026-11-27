@@ -29,7 +29,8 @@ JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 
 
 def _session() -> NativeEvalSession:
-    return NativeEvalSession(json.dumps({"settings": read_settings(SETTINGS)}))
+    settings: dict[str, JsonValue] = {"settings": read_settings(SETTINGS)}
+    return NativeEvalSession(json.dumps(settings))
 
 
 # LiteLLM's logging object belongs to its own runtime, so it never crosses into the payload
