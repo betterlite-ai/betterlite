@@ -21,7 +21,7 @@ use crate::auth::auth_resource_grants::{self, ResourceGrantStageInput};
 use crate::auth::auth_tag_budgets::TagBudgetStageInput;
 use crate::auth::auth_tenant_budgets::TenantBudgetStageInput;
 use crate::auth::entity_model_access::EntityModelStageInput;
-use crate::auth::model_grant_intersection::{self, GrantStageInput};
+use crate::auth::model_grant_intersection::GrantStageInput;
 use crate::auth::organization_route_policy::{self, OrganizationPolicyStageInput};
 use crate::auth::request_body_safety::{self, RequestBodySafetyStageInput};
 use crate::auth::team_budget_admission::TeamBudgetStageInput;
@@ -151,16 +151,6 @@ impl From<AuthenticationFailure> for StageFailure {
 }
 
 impl StageInput {
-    // the prefetch reads the cache, database and router, so the caller awaits it on the owned input
-    pub(crate) async fn prefetch_model_grants(
-        stage: Box<GrantStageInput>,
-    ) -> Result<Self, StageFailure> {
-        model_grant_intersection::prefetch(&stage)
-            .await
-            .map_err(StageFailure::ModelGrants)?;
-        Ok(Self::ModelGrantIntersection(stage))
-    }
-
     const fn backend(&self) -> AuthBackend {
         match self {
             Self::AuthKeyLookup(_) | Self::Authenticated(_) => AuthBackend::AuthKeyLookup,
@@ -188,9 +178,13 @@ impl StageInput {
 }
 
 // the master key stage forwards the identity key lookup already read; no other stage runs another stage's input
-fn backend_matches(backend: AuthBackend, input: &StageInput) -> bool {
-    backend == input.backend()
+fn require_backend(backend: AuthBackend, input: &StageInput) -> Result<(), StageFailure> {
+    if backend == input.backend()
         || (backend == AuthBackend::MasterKey && matches!(input, StageInput::Authenticated(_)))
+    {
+        return Ok(());
+    }
+    Err(StageFailure::from(AuthenticationFailure::Missing))
 }
 
 pub(crate) fn dispatch(
@@ -198,9 +192,7 @@ pub(crate) fn dispatch(
     input: &StageInput,
     master_key: &SecretString,
 ) -> Result<AuthContext, StageFailure> {
-    if !backend_matches(backend, input) {
-        return Err(StageFailure::from(AuthenticationFailure::Missing));
-    }
+    require_backend(backend, input)?;
     match input {
         StageInput::AuthKeyLookup(_) => Err(StageFailure::from(AuthenticationFailure::Missing)),
         StageInput::Authenticated(context) => Ok((**context).clone()),
