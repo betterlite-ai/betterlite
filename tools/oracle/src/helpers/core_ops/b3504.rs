@@ -6,17 +6,16 @@ use betterlite_core::api::agents::collection::{
     AgentAnswer, AgentCollectionHandled, AgentCreation, AgentListing,
 };
 use betterlite_models::decisions::Json;
+use betterlite_vertex::studio_agents::config::error::GeminiAgentError;
 use indexmap::IndexMap;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
-mod gemini;
-mod support;
+pub(crate) mod support;
 
-use gemini::AgentError;
 use support::Fixture;
 use support::server::Server;
 use tokio::runtime::{Builder, Runtime};
@@ -50,6 +49,9 @@ pub(crate) struct Input {
     extra_body: Option<IndexMap<String, Json>>,
     #[serde(default)]
     kwargs: IndexMap<String, Json>,
+    // the case's own environment, so a key set there reaches the settings instead of the process env
+    #[serde(default)]
+    environment: BTreeMap<String, String>,
     reply: support::Reply,
 }
 
@@ -61,7 +63,7 @@ impl Helper for Op {
     fn run(input: &Self::Input) -> HelperResult {
         let server = Server::start(&input.reply)?;
         let kwargs = injected(input, &server);
-        let mut fixture = Fixture::new()?;
+        let mut fixture = Fixture::new(support::settings(&input.environment))?;
         let result = answer(input, &kwargs, &mut fixture)?;
         Ok(support::answer_value(
             &server,
@@ -92,9 +94,9 @@ fn answer(
                 kwargs,
             };
             if matches!(input.function, Function::Acreate) {
-                return runtime()?
-                    .block_on(acreate(fixture.collection(), call))
-                    .map_err(|error| support::raised(&error));
+                let answered = runtime()?.block_on(acreate(fixture.collection(), call));
+                let record = answered.map_err(|error| support::raised(&error))?;
+                return record_value(&record);
             }
             let handled = create(fixture.collection(), &call);
             finished(handled, "the create was unexpectedly pending")
@@ -107,9 +109,9 @@ fn answer(
                 kwargs,
             };
             if matches!(input.function, Function::Alist) {
-                return runtime()?
-                    .block_on(alist(fixture.collection(), call))
-                    .map_err(|error| support::raised(&error));
+                let answered = runtime()?.block_on(alist(fixture.collection(), call));
+                let record = answered.map_err(|error| support::raised(&error))?;
+                return record_value(&record);
             }
             let handled = list(fixture.collection(), &call);
             finished(handled, "the list was unexpectedly pending")
@@ -117,15 +119,25 @@ fn answer(
     }
 }
 
-fn finished(
-    answered: AgentAnswer<'_, Value, AgentError>,
+fn finished<Record>(
+    answered: AgentAnswer<'_, Record, GeminiAgentError>,
     pending: &'static str,
-) -> Result<Value, Box<HelperError>> {
+) -> Result<Value, Box<HelperError>>
+where
+    Record: Serialize,
+{
     match answered {
-        Ok(AgentCollectionHandled::Done(value)) => Ok(value),
+        Ok(AgentCollectionHandled::Done(record)) => record_value(&record),
         Ok(AgentCollectionHandled::Pending(_pending)) => Err(support::helper_failure(pending)),
         Err(error) => Err(support::raised(&error)),
     }
+}
+
+fn record_value<Record>(record: &Record) -> Result<Value, Box<HelperError>>
+where
+    Record: Serialize,
+{
+    serde_json::to_value(record).map_err(support::helper_failure)
 }
 
 fn injected(input: &Input, server: &Server) -> IndexMap<String, Json> {

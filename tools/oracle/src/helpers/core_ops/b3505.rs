@@ -1,7 +1,5 @@
-mod fixture;
 mod harness;
 mod projection;
-mod records;
 
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
@@ -13,6 +11,8 @@ use betterlite_core::api::agents::item::{
     AgentItemDeps, AgentItemRequest, adelete, aget, alist_versions, delete, get, list_versions,
 };
 use betterlite_models::decisions::Json;
+use betterlite_vertex::studio_agents::config::GeminiAgentsConfig;
+use betterlite_vertex::studio_agents::config::error::GeminiAgentError;
 use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::{Map, Number, Value, json};
@@ -24,7 +24,7 @@ use betterlite_http_fixture::server::{Serving, serve};
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
-use fixture::{FixtureConfig, FixtureError};
+use super::b3504::support;
 use harness::Harness;
 use std::fmt::Display;
 
@@ -53,6 +53,9 @@ pub(crate) struct Input {
     extra_headers: BTreeMap<String, String>,
     page_size: Option<i64>,
     page_token: Option<String>,
+    // the case's own environment, so a key set there reaches the settings instead of the process env
+    #[serde(default)]
+    environment: BTreeMap<String, String>,
 }
 
 pub(crate) struct Op;
@@ -89,7 +92,9 @@ impl Helper for Op {
             http: &mut harness.record,
             redactor: &harness.redactor,
         };
-        let outcome = operate(input.operation, &FixtureConfig, deps, &request, &runtime);
+        let settings = support::settings(&input.environment);
+        let config = GeminiAgentsConfig { settings };
+        let outcome = operate(input.operation, &config, deps, &request, &runtime);
         let head = finish_head(serving)?;
         let mut answer = Map::new();
         let sent_report = projection::request(&head, &wanted(input));
@@ -113,11 +118,11 @@ fn finish_head(serving: Serving) -> Result<String, Box<HelperError>> {
 
 fn operate(
     operation: Operation,
-    config: &FixtureConfig,
+    config: &GeminiAgentsConfig,
     deps: AgentItemDeps<'_>,
     request: &AgentItemRequest<'_>,
     runtime: &Runtime,
-) -> Result<Value, AgentItemFailureError<FixtureError>> {
+) -> Result<Value, AgentItemFailureError<GeminiAgentError>> {
     match operation {
         Operation::Get => get(config, deps, request)
             .map(|value| json!({"id": &value.id, "name": &value.name})),

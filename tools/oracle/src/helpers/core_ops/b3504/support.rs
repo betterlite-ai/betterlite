@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::sections::studio_identity::{DEFAULT_API_BASE, Settings};
 use betterlite_config::tls::{TlsPolicy, Verification};
 use betterlite_config::types::ProxyTrust;
 use betterlite_core::api::agents::collection::{AgentCollection, AgentCollectionFailure};
@@ -20,12 +21,14 @@ use betterlite_logging::logging_state::types::{
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use betterlite_vertex::studio_agents::config::GeminiAgentsConfig;
+use betterlite_vertex::studio_agents::config::error::GeminiAgentError;
 use chrono::DateTime;
 use indexmap::IndexMap;
+use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::gemini::{AgentError, GeminiConfig};
 use betterlite_oracle_helper_api::error::HelperError;
 
 use server::Server;
@@ -38,7 +41,7 @@ pub(crate) struct Reply {
 }
 
 pub(crate) struct Fixture {
-    pub(crate) config: GeminiConfig,
+    pub(crate) config: GeminiAgentsConfig,
     pub(crate) clients: HttpClients,
     pub(crate) logging: LoggingState,
     pub(crate) records: Recorder,
@@ -46,9 +49,9 @@ pub(crate) struct Fixture {
 }
 
 impl Fixture {
-    pub(crate) fn new() -> Result<Self, Box<HelperError>> {
+    pub(crate) fn new(settings: Settings) -> Result<Self, Box<HelperError>> {
         Ok(Self {
-            config: GeminiConfig::default(),
+            config: GeminiAgentsConfig { settings },
             clients: HttpClients::new(policy(), proxy_policy()?),
             logging: logging_state()?,
             records: Recorder,
@@ -56,7 +59,7 @@ impl Fixture {
         })
     }
 
-    pub(crate) fn collection(&mut self) -> AgentCollection<'_, GeminiConfig> {
+    pub(crate) fn collection(&mut self) -> AgentCollection<'_, GeminiAgentsConfig> {
         AgentCollection {
             config: &self.config,
             clients: &mut self.clients,
@@ -66,6 +69,26 @@ impl Fixture {
             request_timeout: Duration::from_secs(600),
         }
     }
+}
+
+// the case env, read the way the studio_identity section reads it; a helper reads no process environment
+pub(crate) fn settings(environment: &BTreeMap<String, String>) -> Settings {
+    Settings {
+        environment_key: variable(environment, "GOOGLE_API_KEY")
+            .or_else(|| variable(environment, "GEMINI_API_KEY"))
+            .map(SecretString::from),
+        generic_api_key: None,
+        api_base: variable(environment, "GEMINI_API_BASE")
+            .unwrap_or(DEFAULT_API_BASE)
+            .to_owned(),
+    }
+}
+
+fn variable<'env>(environment: &'env BTreeMap<String, String>, name: &str) -> Option<&'env str> {
+    environment
+        .get(name)
+        .filter(|value| !value.is_empty())
+        .map(String::as_str)
 }
 
 // the pipeline requires a logger, and the compared answer holds the wire bytes instead of its callbacks
@@ -141,7 +164,7 @@ where
 }
 
 // the class carries the status LiteLLM's raised exception reports, and the compared type, param and code stay null
-pub(crate) fn raised(error: &AgentCollectionFailure<AgentError>) -> Box<HelperError> {
+pub(crate) fn raised(error: &AgentCollectionFailure<GeminiAgentError>) -> Box<HelperError> {
     Box::new(HelperError {
         class: "AgentCollectionError".to_owned(),
         status: Some(error.class.metadata().status_code),
