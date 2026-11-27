@@ -89,6 +89,7 @@ fn keeps_the_raw_router_settings_separate_from_the_typed_model() {
 #[case::fallbacks("fallbacks", r#"["g"]"#)]
 #[case::alias("model_group_alias", r#"{"a": 1}"#)]
 #[case::weights_negative("weights", r#"{"g": {"m": -1.0}}"#)]
+#[case::weights_negative_with_a_positive("weights", r#"{"g": {"m": -1.0, "n": 1.0}}"#)]
 #[case::weights_blank_group("weights", r#"{" ": {"m": 1.0}}"#)]
 #[case::weights_no_positive("weights", r#"{"g": {"m": 0.0}}"#)]
 #[case::pre_call("optional_pre_call_checks", r#"["nope"]"#)]
@@ -96,6 +97,16 @@ fn keeps_the_raw_router_settings_separate_from_the_typed_model() {
 fn rejects_a_wrongly_typed_router_setting(#[case] field: &str, #[case] value: &str) {
     let body = format!(r#"{{"router_settings": {{"{field}": {value}}}}}"#);
     drop(decode_config_update(body.as_bytes()).unwrap_err());
+}
+
+#[test]
+fn accepts_weights_with_a_zero_weight_and_an_empty_group() {
+    drop(
+        decode_config_update(
+            br#"{"router_settings": {"weights": {"empty": {}, "g": {"m": 0.0, "n": 1.0}}}}"#,
+        )
+        .unwrap(),
+    );
 }
 
 #[test]

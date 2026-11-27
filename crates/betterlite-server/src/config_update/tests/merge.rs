@@ -99,6 +99,21 @@ fn litellm_keeps_a_success_callback_that_is_not_a_list() {
 }
 
 #[test]
+fn litellm_callbacks_keep_one_entry_per_name_with_the_stored_names_first() {
+    let merged = merge::litellm_settings(
+        &object(r#"{"success_callback": ["S3"]}"#),
+        &object(r#"{"success_callback": ["s3", "New"]}"#),
+    );
+    assert_eq!(
+        merged.get("success_callback"),
+        Some(&JsonValue::Array(vec![
+            JsonValue::String("s3".to_owned()),
+            JsonValue::String("new".to_owned()),
+        ]))
+    );
+}
+
+#[test]
 fn environment_variables_overwrite_only_the_sent_keys() {
     assert_eq!(
         merge::environment_variables(&object(r#"{"A": "x", "B": "y"}"#), &object(r#"{"B": "z"}"#),),

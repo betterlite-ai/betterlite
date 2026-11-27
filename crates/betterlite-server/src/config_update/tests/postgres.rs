@@ -103,6 +103,11 @@ async fn the_postgres_store_reads_writes_and_seals_sections() {
     };
     let sent = settings(&[("OPENAI_API_KEY", JsonValue::String("sk-plain".to_owned()))]);
     let sealed = store.seal_environment(&sent).expect("the values seal");
+    assert_eq!(
+        sealed.keys().collect::<Vec<&String>>(),
+        sent.keys().collect::<Vec<&String>>(),
+        "the sealed map keeps every sent key"
+    );
     assert_ne!(
         sealed.get("OPENAI_API_KEY"),
         Some(&JsonValue::String("sk-plain".to_owned())),
