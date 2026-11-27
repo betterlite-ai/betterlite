@@ -1,8 +1,32 @@
 import sys
 from importlib import import_module
+from importlib.metadata import distribution
 
 import betterlite
 from betterlite import _native, _version
+
+DISTRIBUTION = "betterlite"
+PACKAGE_PREFIX = f"{DISTRIBUTION}/"
+PYTHON_SUFFIX = ".py"
+INIT_SUFFIX = ".__init__"
+USAGE = "usage: smoke_wheel.py <expected version>\n"
+
+
+def module_names(paths: list[str]) -> list[str]:
+    names: list[str] = []
+    for path in paths:
+        if not path.startswith(PACKAGE_PREFIX) or not path.endswith(PYTHON_SUFFIX):
+            continue
+        name = path[: -len(PYTHON_SUFFIX)].replace("/", ".")
+        names.append(name.removesuffix(INIT_SUFFIX))
+    return sorted(names)
+
+
+def installed_modules() -> list[str]:
+    files = distribution(DISTRIBUTION).files
+    if files is None:
+        raise LookupError(f"{DISTRIBUTION} has no installed file list")
+    return module_names([str(file) for file in files])
 
 
 def version_failures(expected: str) -> list[str]:
@@ -29,8 +53,10 @@ def litellm_failure() -> str | None:
 
 def main(argv: list[str]) -> int:
     if len(argv) != 1:
-        sys.stderr.write("usage: smoke_wheel.py <expected version>\n")
+        sys.stderr.write(USAGE)
         return 2
+    for name in installed_modules():
+        import_module(name)
     failures = version_failures(argv[0])
     litellm_problem = litellm_failure()
     if litellm_problem is not None:
