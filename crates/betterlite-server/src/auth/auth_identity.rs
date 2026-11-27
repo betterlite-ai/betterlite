@@ -161,16 +161,22 @@ impl StageInput {
     }
 }
 
+// the master key stage forwards the identity key lookup already read; no other stage runs another stage's input
+fn require_backend(backend: AuthBackend, input: &StageInput) -> Result<(), StageFailure> {
+    let key_pass_through =
+        backend == AuthBackend::MasterKey && matches!(input, StageInput::Authenticated(_));
+    if backend == input.backend() || key_pass_through {
+        return Ok(());
+    }
+    Err(StageFailure::from(AuthenticationFailure::Missing))
+}
+
 pub(crate) fn dispatch(
     backend: AuthBackend,
     input: &StageInput,
     master_key: &SecretString,
 ) -> Result<AuthContext, StageFailure> {
-    let key_pass_through =
-        backend == AuthBackend::MasterKey && matches!(input, StageInput::Authenticated(_));
-    if backend != input.backend() && !key_pass_through {
-        return Err(StageFailure::from(AuthenticationFailure::Missing));
-    }
+    require_backend(backend, input)?;
     match input {
         StageInput::AuthKeyLookup(_) => Err(StageFailure::from(AuthenticationFailure::Missing)),
         StageInput::Authenticated(context) => Ok((**context).clone()),
