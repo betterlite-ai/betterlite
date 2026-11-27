@@ -90,9 +90,12 @@ def read_wheel_name(path: Path, problems: list[str]) -> WheelFile | None:
 
 
 def check_platform(wheel: WheelFile, pattern: str, problems: list[str]) -> None:
-    for piece in wheel.platform.split("."):
-        if re.fullmatch(pattern, piece) is None:
-            problems.append(f"{wheel.path.name}: platform tag {piece} does not match {pattern}")
+    pieces = wheel.platform.split(".")
+    problems.extend(
+        f"{wheel.path.name}: platform tag {piece} does not match {pattern}"
+        for piece in pieces
+        if re.fullmatch(pattern, piece) is None
+    )
 
 
 def check_entries(wheel: WheelFile, archive: zipfile.ZipFile, problems: list[str]) -> None:

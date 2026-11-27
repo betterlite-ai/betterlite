@@ -9,6 +9,7 @@ import check_wheel
 VERSION = "0.1.0"
 PLATFORM = "manylinux_2_28_x86_64"
 MANYLINUX_X86 = r"^manylinux_2_28_x86_64$"
+EXIT_USAGE = 2
 SUMMARY = "LiteLLM's SDK and proxy with Rust inside"
 DESCRIPTION = "The wheel ships the SDK and the native core."
 LICENSE_TEXT = b"MIT License\n"
@@ -299,26 +300,27 @@ def test_rejects_wrong_tag(capsys: pytest.CaptureFixture[str], tmp_path: Path) -
 
 
 def test_reports_every_problem(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
+    expected = ("python tag is cp311", "abi tag is none")
     wheel = build_wheel(tmp_path, replace(BASE_WHEEL, python_tag="cp311", abi_tag="none"))
     code, lines = run_checker(capsys, wheel, MANYLINUX_X86)
     assert code == 1
-    assert len(lines) == 2
-    assert "python tag is cp311" in lines[0]
-    assert "abi tag is none" in lines[1]
+    assert len(lines) == len(expected)
+    assert expected[0] in lines[0]
+    assert expected[1] in lines[1]
 
 
 def test_usage_without_wheel(capsys: pytest.CaptureFixture[str]) -> None:
-    assert check_wheel.main([]) == 2
+    assert check_wheel.main([]) == EXIT_USAGE
     assert "usage: check_wheel.py" in capsys.readouterr().err
 
 
 def test_missing_option_value(capsys: pytest.CaptureFixture[str]) -> None:
-    assert check_wheel.main(["--platform"]) == 2
+    assert check_wheel.main(["--platform"]) == EXIT_USAGE
     assert "--platform needs a value" in capsys.readouterr().err
 
 
 def test_unknown_option(capsys: pytest.CaptureFixture[str]) -> None:
-    assert check_wheel.main(["--platform", "x", "--force"]) == 2
+    assert check_wheel.main(["--platform", "x", "--force"]) == EXIT_USAGE
     assert "unknown option --force" in capsys.readouterr().err
 
 
