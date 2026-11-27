@@ -54,10 +54,14 @@ class SpeechConfig(Protocol):
     def map_openai_params(self) -> Mapper: ...
 
     @property
-    def transform_text_to_speech_request(self) -> Requester: ...
+    def transform_text_to_speech_request(  # ast-grep-ignore: no-long-names
+        self,
+    ) -> Requester: ...
 
     @property
-    def transform_text_to_speech_response(self) -> Responder: ...
+    def transform_text_to_speech_response(  # ast-grep-ignore: no-long-names
+        self,
+    ) -> Responder: ...
 
     @property
     def dispatch_text_to_speech(self) -> Dispatcher: ...
@@ -180,7 +184,7 @@ class Recorder:
 
     def text_to_speech_handler(self, **kwargs: JsonValue) -> JsonValue:
         params = PARAMS.validate_python(kwargs["litellm_params"])
-        call: Object = {
+        self.call = {
             "model": kwargs["model"], "input": kwargs["input"], "voice": kwargs["voice"],
             "optional_params": kwargs["text_to_speech_optional_params"],
             "litellm_params": params, "api_base": params["api_base"],
@@ -188,8 +192,7 @@ class Recorder:
             "extra_headers": kwargs["extra_headers"], "aspeech": kwargs["_is_async"],
             "client": kwargs["client"],
         }
-        self.call = call
-        return call
+        return self.call
 
 
 def logging_object(model: str) -> Logging:
@@ -219,11 +222,10 @@ def response_value(finished: HttpxBinaryResponseContent) -> JsonValue:
     content_type: str | None = None
     if "content-type" in reply.headers:
         content_type = reply.headers["content-type"]
-    answer: Object = {
+    return JSON.validate_python({
         "status": reply.status_code, "content_type": content_type,
         "body_b64": base64.b64encode(reply.content).decode("ascii"),
-    }
-    return JSON.validate_python(answer)
+    })
 
 
 def mapping_value(input_value: MappingInput) -> JsonValue:
