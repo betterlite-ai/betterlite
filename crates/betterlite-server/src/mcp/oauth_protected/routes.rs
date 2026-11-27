@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use axum::Json;
 use axum::extract::{Extension, Path, Request, State};
+use axum::http::StatusCode;
 use axum::response::{IntoResponse as _, Response};
 use betterlite_mcp::registry::lookup::ServerLookups as _;
 use betterlite_mcp::registry::servers::SharedRegistry;
@@ -17,16 +18,12 @@ pub(crate) const PROTECTED_RESOURCE_PATH: &str = "/.well-known/oauth-protected-r
 pub(crate) const AUTHORIZATION_SERVER_PATH: &str = "/.well-known/oauth-authorization-server";
 
 #[derive(Clone, Copy)]
-pub(crate) enum NamedShape {
-    Standard,
-    Legacy,
-}
-
-#[derive(Clone, Copy)]
-pub(crate) enum WellKnownShape {
+pub(crate) enum DocumentShape {
     Root,
     AggregateResource,
     AggregateAuthorizationServer,
+    Standard,
+    Legacy,
 }
 
 #[derive(Serialize)]
@@ -34,9 +31,10 @@ struct DetailBody {
     detail: String,
 }
 
-pub(crate) async fn well_known_document<U, R, G>(
+pub(crate) async fn discovery_document<U, R, G>(
     State(root): State<Arc<ProtectedRoot<U, R, G>>>,
-    Extension(shape): Extension<WellKnownShape>,
+    Extension(shape): Extension<DocumentShape>,
+    page: Option<Path<String>>,
     request: Request,
 ) -> Response
 where
@@ -47,46 +45,36 @@ where
     let (parts, _body) = request.into_parts();
     let base_url = root.request.request_base_url(&parts);
     match shape {
-        WellKnownShape::Root => Json(root_resource(&base_url)).into_response(),
-        WellKnownShape::AggregateResource => {
+        DocumentShape::Root => Json(root_resource(&base_url)).into_response(),
+        DocumentShape::AggregateResource => {
             Json(aggregate_protected_resource(&base_url)).into_response()
         }
-        WellKnownShape::AggregateAuthorizationServer => Json(aggregate_auth_server(
+        DocumentShape::AggregateAuthorizationServer => Json(aggregate_auth_server(
             &base_url,
             root.gateway.token_exchange().refusal().is_none(),
         ))
         .into_response(),
-    }
-}
-
-pub(crate) async fn named_document<U, R, G>(
-    State(root): State<Arc<ProtectedRoot<U, R, G>>>,
-    Extension(shape): Extension<NamedShape>,
-    Path(name): Path<String>,
-    request: Request,
-) -> Response
-where
-    U: UpstreamGet + 'static,
-    R: RequestFacts + 'static,
-    G: GatewayFacts + 'static,
-{
-    let (parts, _body) = request.into_parts();
-    let base_url = root.request.request_base_url(&parts);
-    let client_ip = root.request.client_ip(&parts);
-    let server = resolve_server(&root.registry, &name, client_ip.as_deref()).await;
-    let standard = matches!(shape, NamedShape::Standard);
-    match root
-        .named_resource(&base_url, &name, standard, server.as_ref())
-        .await
-    {
-        Ok(document) => Json(document).into_response(),
-        Err(failure) => (
-            failure.status,
-            Json(DetailBody {
-                detail: failure.detail,
-            }),
-        )
-            .into_response(),
+        DocumentShape::Standard | DocumentShape::Legacy => {
+            let Some(Path(name)) = page else {
+                return StatusCode::NOT_FOUND.into_response();
+            };
+            let standard = matches!(shape, DocumentShape::Standard);
+            let client_ip = root.request.client_ip(&parts);
+            let server = resolve_server(&root.registry, &name, client_ip.as_deref()).await;
+            match root
+                .named_resource(&base_url, &name, standard, server.as_ref())
+                .await
+            {
+                Ok(document) => Json(document).into_response(),
+                Err(failure) => (
+                    failure.status,
+                    Json(DetailBody {
+                        detail: failure.detail,
+                    }),
+                )
+                    .into_response(),
+            }
+        }
     }
 }
 

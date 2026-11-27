@@ -19,8 +19,7 @@ use thiserror::Error;
 use tokio::time::Instant;
 
 use self::routes::{
-    AUTHORIZATION_SERVER_PATH, NamedShape, PROTECTED_RESOURCE_PATH, WellKnownShape, named_document,
-    well_known_document,
+    AUTHORIZATION_SERVER_PATH, DocumentShape, PROTECTED_RESOURCE_PATH, discovery_document,
 };
 
 pub type JsonObject = IndexMap<String, Json>;
@@ -85,25 +84,25 @@ where
         Router::new()
             .route(
                 PROTECTED_RESOURCE_PATH,
-                get(well_known_document::<U, R, G>).layer(Extension(WellKnownShape::Root)),
+                get(discovery_document::<U, R, G>).layer(Extension(DocumentShape::Root)),
             )
             .route(
                 &aggregate_resource_path,
-                get(well_known_document::<U, R, G>)
-                    .layer(Extension(WellKnownShape::AggregateResource)),
+                get(discovery_document::<U, R, G>)
+                    .layer(Extension(DocumentShape::AggregateResource)),
             )
             .route(
                 &aggregate_server_path,
-                get(well_known_document::<U, R, G>)
-                    .layer(Extension(WellKnownShape::AggregateAuthorizationServer)),
+                get(discovery_document::<U, R, G>)
+                    .layer(Extension(DocumentShape::AggregateAuthorizationServer)),
             )
             .route(
                 &standard_path,
-                get(named_document::<U, R, G>).layer(Extension(NamedShape::Standard)),
+                get(discovery_document::<U, R, G>).layer(Extension(DocumentShape::Standard)),
             )
             .route(
                 &legacy_path,
-                get(named_document::<U, R, G>).layer(Extension(NamedShape::Legacy)),
+                get(discovery_document::<U, R, G>).layer(Extension(DocumentShape::Legacy)),
             )
             .with_state(Arc::new(self))
     }
