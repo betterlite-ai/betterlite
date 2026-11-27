@@ -1,0 +1,14 @@
+id: B10149
+milestone: M4 keys, spend and management
+title: User search predicate and user filter SQL for the user list and UI user search
+status: todo
+depends_on: [B700, B716, B770, B897, B2334]
+file: tasks/B10149-user-search-predicate.yaml
+covers:
+  - "litellm/proxy/management_endpoints/internal_user_endpoints.py"
+parent: B056
+split_from: B1203
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

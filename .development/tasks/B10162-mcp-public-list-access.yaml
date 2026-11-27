@@ -1,0 +1,51 @@
+id: B10162
+title: A reader and a setter for the live public MCP server list
+description: >-
+  ServerRegistry keeps litellm.public_mcp_servers in its settings, and settings is a pub(crate) field of betterlite-mcp, so code in betterlite-server can neither read nor change the live list. B10134's redact_mcp_credentials takes that list as public_ids in the routes of B4718, B4720, B4721 and B4722, and B4721's make-public route replaces it through PublicServerSetting, which B8627 implements. LiteLLM keeps one module global: make_mcp_servers_public assigns it the request's ids as they are, and _redact_mcp_credentials reads it with `or ()`.
+
+
+  Layout. Module registry::public_list in betterlite-mcp: crates/betterlite-mcp/src/registry/public_list.rs, with its tests in registry/public_list/tests.rs. The file is an empty stub that registry.rs already declares. Write one `impl ServerRegistry` block over B10020's type (crates/betterlite-mcp/src/registry/servers.rs, on main) with two methods, and add no field and no second registry type:
+
+  1. `pub fn public_mcp_servers(&self) -> &[String]` returns settings.public_mcp_servers as stored, an empty slice when nothing is configured.
+
+  2. `pub fn set_public_mcp_servers(&mut self, ids: Vec<String>)` replaces settings.public_mcp_servers with ids, in the given order and with duplicates kept, since LiteLLM assigns the list as it is.
+
+  Callers hold SharedRegistry's lock: a reader passes the slice on under its read guard, and the setter runs under the write guard, so the next request on any route sees the new list.
+
+
+  Tests. registry::public_list::tests builds ServerRegistry::new with RegistrySettings the way registry/servers/tests.rs does: public_list_reads_empty_when_unset, public_list_reads_configured_order, public_list_set_replaces_and_keeps_order (duplicates included), public_list_set_empty_clears, and public_list_set_reaches_is_public, where is_server_public(id, None) from B10079 sees the new list on the next call.
+scope:
+  paths:
+    - crates/betterlite-mcp/src/registry/public_list.rs
+    - crates/betterlite-mcp/src/registry/public_list/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L3141-L3153
+    why: make_mcp_servers_public assigns litellm.public_mcp_servers the request's ids as they are.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L659
+    why: _redact_mcp_credentials reads the same global, None read as empty.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L506
+    why: The default, public_mcp_servers None.
+dod:
+  - text: public_mcp_servers returns the stored list in order, empty when unset.
+    proof: [public-list-tests]
+  - text: set_public_mcp_servers replaces the list as given, order and duplicates kept, an empty list clears it, and is_server_public with no explicit list sees the new list.
+    proof: [public-list-tests]
+checks:
+  optional: []
+  commands:
+    - id: public-list-tests
+      why: The reader or the setter is missing, reorders or dedupes the list, or the setter does not reach is_server_public.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^registry::public_list::tests::public_list_/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The make-public route and its PublicServerSetting port: B4721, implemented by B8627 over these two methods."
+  - "Reading the list for redaction in the routes: B4718, B4720, B4721 and B4722."
+  - "Filling the list from config at startup: B9997."
+pitfalls:
+  - "Don't dedupe or sort: LiteLLM stores the request's list as it is, and is_public_explicit checks membership in that list."
+review_level: standard
+budget:
+  max_changed_lines: 300
+  max_new_expects: 0
