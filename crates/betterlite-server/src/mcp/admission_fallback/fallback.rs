@@ -50,9 +50,8 @@ where
         && flags.error_is_401
     {
         let names = slice::from_ref(&name);
-        let passthrough = is_passthrough_cold_start(query.registry, names, query.client_ip);
-        let legacy = !flags.bearer_presented
-            && is_legacy_delegate_cold_start(query.registry, names, query.client_ip);
+        let passthrough = is_passthrough_cold_start(query, names);
+        let legacy = !flags.bearer_presented && is_legacy_delegate_cold_start(query, names);
         if passthrough || legacy {
             debug!("MCP pass-through cold start: deferring admission to route 401 emitter");
             return UserAPIKeyAuth::construct(AuthInput::Dict(BTreeMap::new()))

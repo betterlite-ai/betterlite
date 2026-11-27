@@ -28,12 +28,7 @@ pub fn is_true_passthrough(query: &TargetQuery<'_>) -> bool {
     if target_names.is_empty() {
         return false;
     }
-    target_names.iter().all(|name| {
-        query
-            .registry
-            .server_by_name(name, query.client_ip)
-            .is_some_and(MCPServer::is_true_passthrough)
-    })
+    every_resolved_server(query, &target_names, MCPServer::is_true_passthrough)
 }
 
 #[must_use]
@@ -64,40 +59,37 @@ pub fn single_bridge_target<'a>(query: &TargetQuery<'a>) -> Option<BridgeTarget<
 }
 
 #[must_use]
-pub fn is_passthrough_cold_start(
-    registry: &ServerRegistry,
-    names: &[String],
-    client_ip: Option<&str>,
-) -> bool {
-    !names.is_empty()
-        && names.iter().all(|name| {
-            registry
-                .server_by_name(name, client_ip)
-                .is_some_and(MCPServer::is_oauth_passthrough)
-        })
-}
-
-#[must_use]
-pub fn is_legacy_delegate_cold_start(
-    registry: &ServerRegistry,
-    names: &[String],
-    client_ip: Option<&str>,
-) -> bool {
+pub fn is_passthrough_cold_start(query: &TargetQuery<'_>, names: &[String]) -> bool {
     if names.is_empty() {
         return false;
     }
-    for name in names {
-        let Some(server) = registry.server_by_name(name, client_ip) else {
-            return false;
-        };
-        let is_oauth2_delegate = server.fields.auth_type == Some(MCPAuth::Oauth2)
-            && server.fields.delegate_auth_to_upstream;
-        if !is_oauth2_delegate {
-            return false;
-        }
-        if effective_oauth2_flow(server) == Some(OAuth2Flow::ClientCredentials) {
-            return false;
-        }
+    every_resolved_server(query, names, MCPServer::is_oauth_passthrough)
+}
+
+#[must_use]
+pub fn is_legacy_delegate_cold_start(query: &TargetQuery<'_>, names: &[String]) -> bool {
+    if names.is_empty() {
+        return false;
     }
-    true
+    every_resolved_server(query, names, is_legacy_delegate_server)
+}
+
+// Callers check the list is non-empty; an empty list would make the all() vacuously true.
+fn every_resolved_server(
+    query: &TargetQuery<'_>,
+    names: &[String],
+    predicate: fn(&MCPServer) -> bool,
+) -> bool {
+    names.iter().all(|name| {
+        query
+            .registry
+            .server_by_name(name, query.client_ip)
+            .is_some_and(predicate)
+    })
+}
+
+fn is_legacy_delegate_server(server: &MCPServer) -> bool {
+    server.fields.auth_type == Some(MCPAuth::Oauth2)
+        && server.fields.delegate_auth_to_upstream
+        && effective_oauth2_flow(server) != Some(OAuth2Flow::ClientCredentials)
 }

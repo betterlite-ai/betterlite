@@ -144,22 +144,25 @@ fn single_bridge_target_refuses_a_server_without_an_egress_name() {
 fn passthrough_cold_start_needs_every_name_passthrough() {
     let registry = registry(&[OAUTH_PASSTHROUGH, PLAIN, LEGACY_DELEGATE]);
     let one = names(&["op"]);
-    assert!(is_passthrough_cold_start(&registry, &one, None));
-    assert!(!is_passthrough_cold_start(&registry, &[], None));
-    assert!(!is_passthrough_cold_start(
-        &registry,
-        &names(&["missing"]),
-        None
+    assert!(is_passthrough_cold_start(
+        &query(&registry, "/mcp", None),
+        &one
     ));
     assert!(!is_passthrough_cold_start(
-        &registry,
-        &names(&["op", "plain"]),
-        None
+        &query(&registry, "/mcp", None),
+        &[]
     ));
     assert!(!is_passthrough_cold_start(
-        &registry,
-        &names(&["legacy"]),
-        None
+        &query(&registry, "/mcp", None),
+        &names(&["missing"])
+    ));
+    assert!(!is_passthrough_cold_start(
+        &query(&registry, "/mcp", None),
+        &names(&["op", "plain"])
+    ));
+    assert!(!is_passthrough_cold_start(
+        &query(&registry, "/mcp", None),
+        &names(&["legacy"])
     ));
 }
 
@@ -173,31 +176,32 @@ fn legacy_delegate_cold_start_follows_the_effective_flow() {
         PLAIN,
     ]);
     let delegate = names(&["legacy"]);
-    assert!(is_legacy_delegate_cold_start(&registry, &delegate, None));
-    assert!(!is_legacy_delegate_cold_start(&registry, &[], None));
-    assert!(!is_legacy_delegate_cold_start(
-        &registry,
-        &names(&["oauth2-plain"]),
-        None
+    assert!(is_legacy_delegate_cold_start(
+        &query(&registry, "/mcp", None),
+        &delegate
     ));
     assert!(!is_legacy_delegate_cold_start(
-        &registry,
-        &names(&["bearer-delegate"]),
-        None
+        &query(&registry, "/mcp", None),
+        &[]
     ));
     assert!(!is_legacy_delegate_cold_start(
-        &registry,
-        &names(&["missing"]),
-        None
+        &query(&registry, "/mcp", None),
+        &names(&["oauth2-plain"])
     ));
     assert!(!is_legacy_delegate_cold_start(
-        &registry,
-        &names(&["plain"]),
-        None
+        &query(&registry, "/mcp", None),
+        &names(&["bearer-delegate"])
     ));
     assert!(!is_legacy_delegate_cold_start(
-        &registry,
-        &names(&["legacy", "legacy-cc"]),
-        None
+        &query(&registry, "/mcp", None),
+        &names(&["missing"])
+    ));
+    assert!(!is_legacy_delegate_cold_start(
+        &query(&registry, "/mcp", None),
+        &names(&["plain"])
+    ));
+    assert!(!is_legacy_delegate_cold_start(
+        &query(&registry, "/mcp", None),
+        &names(&["legacy", "legacy-cc"])
     ));
 }
