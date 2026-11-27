@@ -21,7 +21,6 @@ SETTINGS: Final[tuple[str, ...]] = (
     "azure_key",
     "openai_key",
     "organization",
-    "ssl_verify",
     "vertex_location",
     "vertex_project",
 )

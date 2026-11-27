@@ -5,7 +5,7 @@ use pyo3::prelude::*;
 use pyo3_async_runtimes::tokio::future_into_py;
 
 use super::convert;
-use super::error::{CallFailure, SessionError};
+use super::error::CallFailure;
 use super::http;
 use super::session::RealtimeSession;
 
@@ -21,7 +21,7 @@ pub(crate) struct NativeRealtimeSession {
 impl NativeRealtimeSession {
     #[new]
     fn new(settings: &str) -> PyResult<Self> {
-        let session = RealtimeSession::build(settings).map_err(session_failure)?;
+        let session = RealtimeSession::build(settings).map_err(|error| error.failure().python())?;
         Ok(Self {
             session: Arc::new(session),
         })
@@ -92,8 +92,4 @@ fn body_text(response: UpstreamResponse) -> PyResult<String> {
         )
         .python()
     })
-}
-
-fn session_failure(error: SessionError) -> PyErr {
-    error.failure().python()
 }

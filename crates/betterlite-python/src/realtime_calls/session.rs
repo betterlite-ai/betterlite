@@ -2,14 +2,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::time::Duration;
 
-use betterlite_config::api::realtime_connect::{
-    RealtimeConnectionSettings, load_settings as load_connection_settings,
-};
 use betterlite_config::api::realtime_http_calls::{
     RealtimeHttpCallSettings, load_settings as load_http_settings,
 };
 use betterlite_config::loader::startup::process_environment;
-use betterlite_config::tls::Verification;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_logging::logging_pre_post::env::{
     DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
@@ -43,20 +39,17 @@ use super::error::SessionError;
 struct SessionWire {
     environment: Option<BTreeMap<String, String>>,
     litellm_settings: Option<Json>,
-    ssl_verify: Option<bool>,
 }
 
-// what every call of one session shares: the process environment, the two loaded settings sets and the pooled client
+// what every call of one session shares: the process environment, the loaded HTTP settings and the pooled client
 pub(crate) struct RealtimeSession {
     pub(crate) environment: BTreeMap<String, String>,
     pub(crate) http_settings: RealtimeHttpCallSettings,
-    pub(crate) connect_settings: RealtimeConnectionSettings,
     pub(crate) catalog: Arc<ModelCatalog>,
     pub(crate) known_model_names: BTreeSet<String>,
     pub(crate) custom_providers: BTreeSet<String>,
     pub(crate) registry: JSONProviderRegistry,
     pub(crate) client: ProxiedClient,
-    pub(crate) verification: Verification,
     pub(crate) redactor: Redactor,
     pub(crate) sink: SilentSink,
 }
@@ -72,14 +65,8 @@ impl RealtimeSession {
         )]))?;
         let http_settings = load_http_settings(&document, environment.clone())
             .map_err(SessionError::HttpSettings)?;
-        let connect_settings = load_connection_settings(&document, environment.clone())
-            .map_err(SessionError::ConnectionSettings)?;
         let client = outbound_client(&environment)
             .map_err(|error| SessionError::Client(error.to_string()))?;
-        let verification = match wire.ssl_verify {
-            Some(false) => Verification::Disabled,
-            None | Some(true) => Verification::Enabled,
-        };
         let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(SessionError::Redact)?;
         Ok(Self {
             catalog: BundledCatalog::default().get(),
@@ -87,10 +74,8 @@ impl RealtimeSession {
             custom_providers: BTreeSet::new(),
             registry: JSONProviderRegistry::load(),
             client,
-            verification,
             environment,
             http_settings,
-            connect_settings,
             redactor,
             sink: SilentSink,
         })

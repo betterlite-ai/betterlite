@@ -44,8 +44,6 @@ pub(crate) enum SessionError {
     Json(#[from] serde_json::Error),
     #[error("the realtime HTTP settings are invalid: {0}")]
     HttpSettings(#[source] betterlite_config::api::realtime_http_calls::SettingsError),
-    #[error("the realtime connection settings are invalid: {0}")]
-    ConnectionSettings(#[source] betterlite_config::loader::ConfigError),
     #[error("the outbound client could not be built: {0}")]
     Client(String),
     #[error(transparent)]
