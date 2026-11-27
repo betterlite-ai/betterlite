@@ -118,7 +118,11 @@ async fn post_multipart_sends_the_metadata_and_the_file() {
         .headers
         .get("content-type")
         .expect("the multipart content type");
-    assert!(content_type.starts_with("multipart/form-data; boundary="));
+    // the boundary is sha256 of the metadata and then the file, so it cannot repeat inside them
+    assert_eq!(
+        content_type,
+        "multipart/form-data; boundary=betterlite-486380f0ed1bbecc5989a8d5376d835079c599eada654533c6172055009da8d9"
+    );
     assert!(request.body.contains(
         "Content-Disposition: form-data; name=\"metadata\"\r\nContent-Type: application/json\r\n\r\n{\"rag_file\":{\"display_name\":\"notes.txt\"}}\r\n"
     ));

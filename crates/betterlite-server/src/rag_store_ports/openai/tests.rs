@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use betterlite_core::api::vector_store_http_write::error::BaseLlmException;
@@ -12,6 +13,7 @@ use betterlite_openai::files::error::FilesError;
 use secrecy::SecretString;
 use serde_json::value::RawValue;
 
+use super::wire::openai_headers;
 use super::{OpenAiFilePort, OpenAiStorePort, OpenAiUploadPort};
 use crate::rag_store_ports::test_support::{Reply, client, with_server};
 
@@ -38,6 +40,30 @@ fn upload_port() -> OpenAiUploadPort {
     OpenAiUploadPort {
         client: Arc::new(client()),
     }
+}
+
+#[tokio::test]
+async fn the_ports_debug_with_the_type_only() {
+    assert_eq!(format!("{:?}", store_port()), "OpenAiStorePort { .. }");
+    assert_eq!(format!("{:?}", file_port()), "OpenAiFilePort { .. }");
+    assert_eq!(format!("{:?}", upload_port()), "OpenAiUploadPort { .. }");
+}
+
+#[test]
+fn the_authorization_header_is_marked_sensitive() {
+    let mut headers = BTreeMap::new();
+    headers.insert("authorization".to_owned(), key());
+    headers.insert(
+        "openai-beta".to_owned(),
+        SecretString::from("assistants=v2"),
+    );
+    let mapped = openai_headers(headers).expect("the headers map");
+    let authorization = mapped
+        .get("authorization")
+        .expect("the authorization header");
+    assert!(!format!("{authorization:?}").contains("sk-test"));
+    let beta = mapped.get("openai-beta").expect("the beta header");
+    assert!(format!("{beta:?}").contains("assistants=v2"));
 }
 
 #[tokio::test]
