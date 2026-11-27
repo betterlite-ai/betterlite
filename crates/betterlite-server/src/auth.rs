@@ -68,6 +68,7 @@ use crate::auth::auth_request_models::{CoreDecoders, RequestModelStageInput, res
 use crate::auth::auth_resource_grants::ResourceGrantStageInput;
 use crate::auth::failures::request_model_failure;
 use crate::auth::route_match::PUBLIC_HEALTH_PATHS;
+use crate::auth::team_budget_admission::stage_input as team_budget_stage_input;
 use crate::auth::virtual_key_routes::stage_input as virtual_key_route_stage_input;
 use crate::error_body::AuthenticationFailure;
 use axum::body::{Body, Bytes};
@@ -129,9 +130,7 @@ fn stage_input(
         AuthBackend::AuthKeyBudgets => Ok(StageInput::AuthKeyBudgets(Box::new(
             auth_key_budgets::stage_input(request, authenticated)?,
         ))),
-        AuthBackend::TeamBudgetAdmission => {
-            team_budget_admission::stage_input(request, authenticated)
-        }
+        AuthBackend::TeamBudgetAdmission => team_budget_stage_input(request, authenticated),
         AuthBackend::AuthTenantBudgets => auth_tenant_budgets::stage(request, authenticated, body),
         AuthBackend::OrganizationRoutePolicy => {
             organization_route_policy::stage_input(request, authenticated, body)
@@ -177,7 +176,7 @@ fn model_pattern_input(
     if backend == AuthBackend::AuthRequestModels {
         return Ok(StageInput::AuthRequestModels(Box::new(stage)));
     }
-    let requested = resolve(&stage).map_err(request_model_failure)?;
+    let requested = resolve(&stage).map_err(|error| request_model_failure(&error))?;
     let rule = rule_for_request(request);
     let depth = max_recurse_depth_for_request(request);
     Ok(StageInput::AuthModelPatterns(Box::new(
@@ -246,7 +245,6 @@ fn model_stage_input(
         resolver: Arc::clone(resolver),
     }
 }
-
 pub fn parse_key_header(name: &str, header_bytes: &[u8]) -> Option<SecretString> {
     if header_bytes.is_empty() {
         return None;

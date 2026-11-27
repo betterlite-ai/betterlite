@@ -193,11 +193,7 @@ pub(crate) fn dispatch(
     input: &StageInput,
     master_key: &SecretString,
 ) -> Result<AuthContext, StageFailure> {
-    let key_pass_through =
-        backend == AuthBackend::MasterKey && matches!(input, StageInput::Authenticated(_));
-    if backend != input.backend() && !key_pass_through {
-        return Err(StageFailure::from(AuthenticationFailure::Missing));
-    }
+    ensure_backend_matches(backend, input)?;
     match input {
         StageInput::AuthKeyLookup(_) => Err(StageFailure::from(AuthenticationFailure::Missing)),
         StageInput::Authenticated(context) => Ok((**context).clone()),
@@ -213,7 +209,7 @@ pub(crate) fn dispatch(
         }
         StageInput::AuthRequestModels(stage) => resolve(stage)
             .map(|_| stage.context.clone())
-            .map_err(request_model_failure),
+            .map_err(|error| request_model_failure(&error)),
         StageInput::AuthModelPatterns(stage) => {
             run_stage(stage).map_err(|rejection| StageFailure::ModelAccess(Box::new(rejection)))
         }
@@ -236,6 +232,14 @@ pub(crate) fn dispatch(
         }
         StageInput::ModelGrantIntersection(stage) => Ok(stage.context.clone()),
     }
+}
+
+fn ensure_backend_matches(backend: AuthBackend, input: &StageInput) -> Result<(), StageFailure> {
+    let exempt = backend == AuthBackend::MasterKey && matches!(input, StageInput::Authenticated(_));
+    if backend == input.backend() || exempt {
+        return Ok(());
+    }
+    Err(StageFailure::from(AuthenticationFailure::Missing))
 }
 
 fn master_key_stage(

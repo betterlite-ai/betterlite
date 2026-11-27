@@ -36,7 +36,7 @@ pub(crate) fn stage_failure_response(failure: &StageFailure) -> Response {
 }
 
 // the request model stages share one failure: the caller is known but the request names no model
-pub(crate) fn request_model_failure(error: CatalogError) -> StageFailure {
+pub(crate) fn request_model_failure(error: &CatalogError) -> StageFailure {
     tracing::debug!(error = %error, "the request model stage failed");
     StageFailure::from(AuthenticationFailure::Missing)
 }
