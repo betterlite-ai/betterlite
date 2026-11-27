@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_core::api::realtime_http_calls::error::{RealtimeHttpCallsError, RecordError};
+use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_models::decisions::Json;
 use betterlite_models::resolution::ResolutionError;
 use betterlite_provider::api::realtime_http_transport::error::{
@@ -152,6 +153,15 @@ fn error_resolution_is_a_bad_request() {
     ));
     assert_eq!(failure.kind.as_str(), "BadRequestError");
     assert_eq!(failure.status_code, Some(400));
+}
+
+#[test]
+fn error_transport_is_a_connection_error() {
+    let failure = http_failure(&RealtimeHttpCallsError::Dispatch(
+        RealtimeHttpError::Transport(TransportError::BodyTooLarge { limit: 8 }),
+    ));
+    assert_eq!(failure.kind.as_str(), "APIConnectionError");
+    assert_eq!(failure.status_code, None);
 }
 
 #[test]
