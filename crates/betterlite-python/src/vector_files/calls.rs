@@ -7,17 +7,14 @@ use betterlite_core::api::vector_file_http_read::service::LogContext;
 use betterlite_core::api::vector_file_provider::ensure_provider;
 use betterlite_core::api::vector_file_read::error::VectorFileReadError;
 use betterlite_core::api::vector_file_read::service::{ReadSession, SdkDeps};
-use betterlite_core::api::vector_file_write::error::VectorFileWriteError;
-use betterlite_core::api::vector_file_write::error::failure as write_failure;
-use betterlite_core::api::vector_file_write::{VectorFileWriteDeps, VectorFileWrites};
 use betterlite_models::decisions::Json;
 
-use super::convert::{
-    CallError, CallFailure, CreateWire, ListWire, ReadWire, WriteWire, create_request,
-    list_request, read_call, update_request, write_request,
-};
+use super::convert::list::list_request;
+use super::convert::read::read_call;
+use super::convert::{CallError, CallFailure, CreateWire, ListWire, ReadWire, create_request};
 use super::session::{Pending, PendingOperation, SessionCore};
 use super::source::SilentSink;
+use super::write_calls::WriteSide;
 
 // Which read a Python call stands for: the file object, or its parsed content
 #[derive(Clone, Copy)]
@@ -53,22 +50,6 @@ impl FileSide<'_> {
         match self {
             Self::Create(wire) => wire.custom_llm_provider.as_deref(),
             Self::List(wire) => wire.custom_llm_provider.as_deref(),
-        }
-    }
-}
-
-// Which write a wire stands for: update carries a body, delete does not
-#[derive(Clone, Copy)]
-enum WriteSide {
-    Update,
-    Delete,
-}
-
-impl WriteSide {
-    const fn call_type(self) -> &'static str {
-        match self {
-            Self::Update => "update",
-            Self::Delete => "delete",
         }
     }
 }
@@ -192,60 +173,6 @@ impl SessionCore {
         answer.map_err(|source| CallError {
             provider,
             source: CallFailure::Read(source),
-        })
-    }
-
-    // B1074's update and delete: one prepared write session, and the flag picks the async handler
-    async fn write_call(
-        &self,
-        wire: &WriteWire,
-        side: WriteSide,
-        asynchronous: bool,
-    ) -> Result<Json, CallError> {
-        let provider = ensure_provider(wire.custom_llm_provider.as_deref()).to_owned();
-        let logging =
-            Mutex::new(
-                self.logging_state(side.call_type())
-                    .map_err(|source| CallError {
-                        provider: provider.clone(),
-                        source: CallFailure::Write(Box::new(write_failure(
-                            VectorFileWriteError::Logging(source),
-                            Some(&provider),
-                            &self.redactor,
-                        ))),
-                    })?,
-            );
-        let deps = VectorFileWriteDeps {
-            logging: &logging,
-            registry: None,
-            redactor: &self.redactor,
-            request_timeout_seconds: self.request_timeout_seconds,
-        };
-        let writes = VectorFileWrites {
-            service: self,
-            deps,
-        };
-        let answer = match side {
-            WriteSide::Update => {
-                let request = update_request(wire);
-                if asynchronous {
-                    writes.aupdate(&request).await
-                } else {
-                    writes.update(&request).await
-                }
-            }
-            WriteSide::Delete => {
-                let request = write_request(wire);
-                if asynchronous {
-                    writes.adelete(&request).await
-                } else {
-                    writes.delete(&request).await
-                }
-            }
-        };
-        answer.map_err(|source| CallError {
-            provider,
-            source: CallFailure::Write(Box::new(source)),
         })
     }
 }

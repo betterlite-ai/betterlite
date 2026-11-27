@@ -33,61 +33,55 @@ impl NativeVectorFileSession {
 
     // the synchronous create: the file joined to the store, blocking this thread with the GIL released
     fn create(&self, py: Python<'_>, text: &str, blobs: &Blobs<'_>) -> PyResult<String> {
-        settled(
+        block_on(
             py,
             &self.core,
             PendingOperation::Create(parse(text, blobs.len())?),
-            false,
         )
     }
 
     // the synchronous list: the store's files, read with the five query fields the handler takes
     fn list(&self, py: Python<'_>, text: &str, blobs: &Blobs<'_>) -> PyResult<String> {
-        settled(
+        block_on(
             py,
             &self.core,
             PendingOperation::List(parse(text, blobs.len())?),
-            false,
         )
     }
 
     // the synchronous retrieve: the file object, with no body or query of its own
     fn retrieve(&self, py: Python<'_>, text: &str, blobs: &Blobs<'_>) -> PyResult<String> {
-        settled(
+        block_on(
             py,
             &self.core,
             PendingOperation::Retrieve(parse(text, blobs.len())?),
-            false,
         )
     }
 
     // the synchronous content retrieve: the parsed text of the file, never its object
     fn retrieve_content(&self, py: Python<'_>, text: &str, blobs: &Blobs<'_>) -> PyResult<String> {
-        settled(
+        block_on(
             py,
             &self.core,
             PendingOperation::RetrieveContent(parse(text, blobs.len())?),
-            false,
         )
     }
 
     // the synchronous update: the attributes replace the file's own, and an empty dict is sent
     fn update(&self, py: Python<'_>, text: &str, blobs: &Blobs<'_>) -> PyResult<String> {
-        settled(
+        block_on(
             py,
             &self.core,
             PendingOperation::Update(parse(text, blobs.len())?),
-            false,
         )
     }
 
     // the synchronous delete: the store drops the file and answers with the deletion object
     fn delete(&self, py: Python<'_>, text: &str, blobs: &Blobs<'_>) -> PyResult<String> {
-        settled(
+        block_on(
             py,
             &self.core,
             PendingOperation::Delete(parse(text, blobs.len())?),
-            false,
         )
     }
 
@@ -152,15 +146,10 @@ impl NativeVectorFileSession {
 }
 
 // The synchronous path: one attempt on the runtime, with the GIL released for as long as the call runs
-fn settled(
-    py: Python<'_>,
-    core: &SessionCore,
-    operation: PendingOperation,
-    asynchronous: bool,
-) -> PyResult<String> {
+fn block_on(py: Python<'_>, core: &SessionCore, operation: PendingOperation) -> PyResult<String> {
     let pending = Pending {
         operation,
-        asynchronous,
+        asynchronous: false,
     };
     let outcome = py.detach(|| get_runtime().block_on(core.run(pending)));
     let body = outcome.map_err(|error| raise(py, &error, &core.redactor))?;

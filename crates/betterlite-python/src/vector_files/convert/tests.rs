@@ -10,9 +10,12 @@ use betterlite_error::envelope::WireField;
 use betterlite_error::error::{ErrorClass, ErrorContext};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 
+use super::list::list_request;
+use super::read::read_call;
+use super::write::{update_request, write_request};
 use super::{
     CallError, CallFailure, ConvertError, CreateWire, ListWire, ReadWire, WriteWire,
-    create_request, list_request, parse, payload_of, read_call, update_request, write_request,
+    create_request, parse, payload_of,
 };
 
 fn redactor() -> Redactor {

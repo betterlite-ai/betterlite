@@ -1,13 +1,9 @@
 use std::collections::BTreeMap;
 
-use betterlite_core::api::vector_file_create::{
-    CreateFileRequest, ListFileRequest, TransportRequest,
-};
+use betterlite_core::api::vector_file_create::{CreateFileRequest, TransportRequest};
 use betterlite_core::api::vector_file_read::error::VectorFileReadError;
 use betterlite_core::api::vector_file_read::error::failure as read_failure;
-use betterlite_core::api::vector_file_read::service::ReadCall;
 use betterlite_core::api::vector_file_write::error::VectorFileWriteFailure;
-use betterlite_core::api::vector_file_write::{FileUpdateRequest, FileWriteRequest};
 use betterlite_core::api::vector_store_search::error::SdkFailure as FileSdkFailure;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::vector_file_contracts::records::Attributes;
@@ -16,7 +12,10 @@ use indexmap::IndexMap;
 use serde::Deserialize;
 use serde::Serialize;
 
+mod list;
+mod read;
 mod tests;
+mod write;
 
 // vector_store_file_create's arguments: the two ids, the named optionals, the call's **kwargs and its HTTP extras
 #[derive(Debug, Deserialize)]
@@ -147,59 +146,6 @@ pub(crate) fn create_request(wire: &CreateWire) -> CreateFileRequest<'_> {
         file_id: &wire.file_id,
         attributes: wire.attributes.as_ref(),
         chunking_strategy: wire.chunking_strategy.as_ref(),
-    }
-}
-
-// the call B1072's list reads: a list handler takes no body, so its extra_body stays absent
-pub(crate) fn list_request(wire: &ListWire) -> ListFileRequest<'_> {
-    ListFileRequest {
-        transport: TransportRequest {
-            vector_store_id: &wire.vector_store_id,
-            extra_headers: wire.extra_headers.as_ref(),
-            extra_query: wire.extra_query.as_ref(),
-            extra_body: None,
-            timeout: wire.timeout,
-            custom_llm_provider: wire.custom_llm_provider.as_deref(),
-            kwargs: &wire.kwargs,
-        },
-        after: wire.after.as_deref(),
-        before: wire.before.as_deref(),
-        filter: wire.filter.as_deref(),
-        limit: wire.limit,
-        order: wire.order.as_deref(),
-    }
-}
-
-// the call B1073's read session takes
-pub(crate) fn read_call(wire: &ReadWire) -> ReadCall<'_> {
-    ReadCall {
-        vector_store_id: &wire.vector_store_id,
-        file_id: &wire.file_id,
-        extra_headers: wire.extra_headers.as_ref(),
-        timeout: wire.timeout,
-        custom_llm_provider: wire.custom_llm_provider.as_deref(),
-        kwargs: &wire.kwargs,
-    }
-}
-
-// the write both file writes share
-pub(crate) fn write_request(wire: &WriteWire) -> FileWriteRequest<'_> {
-    FileWriteRequest {
-        vector_store_id: &wire.vector_store_id,
-        file_id: &wire.file_id,
-        extra_headers: wire.extra_headers.as_ref(),
-        timeout: wire.timeout,
-        custom_llm_provider: wire.custom_llm_provider.as_deref(),
-        kwargs: &wire.kwargs,
-    }
-}
-
-// update's own arguments: the shared write plus the attributes and body its handler restores
-pub(crate) fn update_request(wire: &WriteWire) -> FileUpdateRequest<'_> {
-    FileUpdateRequest {
-        write: write_request(wire),
-        attributes: wire.attributes.as_ref(),
-        extra_body: wire.extra_body.as_ref(),
     }
 }
 

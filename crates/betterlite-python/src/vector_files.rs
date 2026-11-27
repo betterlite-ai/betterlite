@@ -5,6 +5,8 @@ mod native;
 mod service;
 mod session;
 mod source;
+mod write_calls;
+mod write_service;
 
 use pyo3::prelude::*;
 
