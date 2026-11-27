@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use betterlite_models::decisions::Json;
+use uuid::Uuid;
 
 use crate::exporter_options::failure_counter::CallbackFailureCounter;
 use crate::exporter_options::redaction::ResponseStamp;
@@ -39,7 +40,6 @@ pub struct LoggingLifecycleConfig {
     pub counters: Vec<Arc<dyn CallbackFailureCounter + Send + Sync>>,
     pub excluded_fields: Vec<String>,
     pub known_callback: Arc<dyn Fn(&str) -> bool + Send + Sync>,
-    pub stamp: ResponseStamp,
     pub emitter: Arc<dyn PayloadEmitter>,
 }
 
@@ -57,7 +57,6 @@ pub struct LoggingLifecycle {
     counters: Vec<Arc<dyn CallbackFailureCounter + Send + Sync>>,
     excluded_fields: Vec<String>,
     known_callback: Arc<dyn Fn(&str) -> bool + Send + Sync>,
-    stamp: ResponseStamp,
     emitter: Arc<dyn PayloadEmitter>,
 }
 
@@ -77,7 +76,6 @@ impl LoggingLifecycle {
             counters: config.counters,
             excluded_fields: config.excluded_fields,
             known_callback: config.known_callback,
-            stamp: config.stamp,
             emitter: config.emitter,
         }
     }
@@ -97,10 +95,8 @@ impl LoggingLifecycle {
             payload_builder: &self.payload,
             stream_assembler: self.stream_assembler.as_ref(),
             clock: self.success_clock.as_ref(),
-            failure_counters: &self.counters,
             excluded_fields: &self.excluded_fields,
             known_callback: self.known_callback.as_ref(),
-            stamp: &self.stamp,
             privacy: self.payload.privacy,
         };
         dispatch_success_handlers(&handler, state, correlation, request).await;
@@ -124,6 +120,11 @@ impl LoggingLifecycle {
             .insert(FAILED_LOG_MARKER.to_owned(), Json::Bool(true));
         let counters: Vec<&(dyn CallbackFailureCounter + Send + Sync)> =
             self.counters.iter().map(Arc::as_ref).collect();
+        // the failure side stamps its redacted response at dispatch, as LiteLLM builds one per redacted payload
+        let stamp = ResponseStamp {
+            id: format!("chatcmpl-{}", Uuid::new_v4()),
+            created: self.failure_clock.now().timestamp(),
+        };
         let deps = FailureDeps {
             redactor: self.payload.redactor.as_ref(),
             payloads: &self.payload,
@@ -134,7 +135,7 @@ impl LoggingLifecycle {
             special_listeners: &self.special_listeners,
             counters,
             excluded_fields: &self.excluded_fields,
-            stamp: self.stamp.clone(),
+            stamp,
             privacy: self.payload.privacy,
         };
         dispatch_failure_handlers(call, report, callbacks, &deps, prefer_async).await;

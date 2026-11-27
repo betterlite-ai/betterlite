@@ -9,8 +9,6 @@ use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
 use thiserror::Error;
 
-use crate::exporter_options::failure_counter::CallbackFailureCounter;
-use crate::exporter_options::redaction::ResponseStamp;
 use crate::fields::payload::StandardLoggingPayload;
 use crate::fields::usage::Usage;
 use crate::logging_state::correlation::{
@@ -22,6 +20,7 @@ use crate::logging_streams::assembly::{PromptCounter, StreamAssembly, StreamAsse
 use crate::logging_streams::cache_assembly::StreamChunks;
 use crate::logging_streams::flush::StreamCollector;
 use crate::logging_success::handler::SuccessHandler;
+use crate::logging_success::owned::OwnedSuccessHandler;
 use crate::logging_success::ports::{StandardPayloadBuilder, StreamAssembler, SuccessClock};
 use crate::logging_success::types::{SuccessMode, SuccessResult};
 use crate::registry::CallbackRegistry;
@@ -129,47 +128,34 @@ impl SuccessClock for FixedClock {
 }
 
 pub(super) struct HandlerFixture {
-    pub(super) registry: CallbackRegistry,
-    pub(super) builder: RecordingBuilder,
-    pub(super) assembler: SwitchedAssembler,
-    pub(super) clock: FixedClock,
-    counters: Vec<Arc<dyn CallbackFailureCounter + Send + Sync>>,
-    excluded_fields: Vec<String>,
-    known: Box<dyn Fn(&str) -> bool + Send + Sync>,
-    stamp: ResponseStamp,
+    pub(super) builder: Arc<RecordingBuilder>,
+    handler: OwnedSuccessHandler,
 }
 
 impl HandlerFixture {
     pub(super) fn new(complete: Option<Json>) -> Self {
+        let builder = Arc::new(RecordingBuilder::default());
+        let payload_builder: Arc<dyn StandardPayloadBuilder> = Arc::clone(&builder);
+        let stream_assembler: Arc<dyn StreamAssembler> = Arc::new(SwitchedAssembler { complete });
+        let clock: Arc<dyn SuccessClock> = Arc::new(FixedClock {
+            now: time("2024-01-01T00:00:02+00:00"),
+        });
         Self {
-            registry: CallbackRegistry::new(10),
-            builder: RecordingBuilder::default(),
-            assembler: SwitchedAssembler { complete },
-            clock: FixedClock {
-                now: time("2024-01-01T00:00:02+00:00"),
-            },
-            counters: Vec::new(),
-            excluded_fields: Vec::new(),
-            known: Box::new(|_name: &str| false),
-            stamp: ResponseStamp {
-                id: "chatcmpl-placeholder".to_owned(),
-                created: 1_704_067_200,
+            builder,
+            handler: OwnedSuccessHandler {
+                registry: Arc::new(CallbackRegistry::new(10)),
+                payload_builder,
+                stream_assembler,
+                clock,
+                excluded_fields: Vec::new(),
+                known_callback: Arc::new(|_name: &str| false),
+                privacy: Settings::default(),
             },
         }
     }
 
     pub(super) fn handler(&self) -> SuccessHandler<'_> {
-        SuccessHandler {
-            registry: &self.registry,
-            payload_builder: &self.builder,
-            stream_assembler: &self.assembler,
-            clock: &self.clock,
-            failure_counters: &self.counters,
-            excluded_fields: &self.excluded_fields,
-            known_callback: self.known.as_ref(),
-            stamp: &self.stamp,
-            privacy: Settings::default(),
-        }
+        SuccessHandler::from(&self.handler)
     }
 }
 

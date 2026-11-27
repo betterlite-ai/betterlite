@@ -12,7 +12,6 @@ use crate::callback_logger::CallbackLogger;
 use crate::callback_logger::error::LoggerError;
 use crate::callback_logger::event::LoggerEvent;
 use crate::exporter_options::failure_counter::CallbackFailureCounter;
-use crate::exporter_options::redaction::ResponseStamp;
 use crate::fields::payload::StandardLoggingPayload;
 use crate::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup, SecretRedaction,
@@ -26,6 +25,7 @@ use crate::registry::phases::CallbackList;
 use crate::registry::sink::CallbackSink;
 
 use super::super::handler::{SuccessHandler, async_success_handler, success_handler};
+use super::super::owned::OwnedSuccessHandler;
 use super::super::ports::{StandardPayloadBuilder, StreamAssembler, SuccessClock};
 use super::super::types::{SuccessMode, SuccessRequest, SuccessResult};
 
@@ -99,6 +99,7 @@ pub(super) struct FakeLogger {
     pub flags: MessageFlags,
     pub message_logging: bool,
     pub fail: bool,
+    pub counter: Option<Arc<RecordingCounter>>,
 }
 
 impl FakeLogger {
@@ -109,6 +110,7 @@ impl FakeLogger {
             flags: MessageFlags::default(),
             message_logging: true,
             fail: false,
+            counter: None,
         }
     }
 
@@ -157,6 +159,11 @@ impl CallbackLogger for FakeLogger {
         self.record("log_stream_event", event)
     }
 
+    fn failure_counter(&self) -> Option<&dyn CallbackFailureCounter> {
+        let counter = self.counter.as_deref()?;
+        Some(counter)
+    }
+
     async fn async_log_success_event(&self, event: Arc<LoggerEvent>) -> Result<(), LoggerError> {
         self.record("async_log_success_event", &event)
     }
@@ -167,16 +174,20 @@ impl CallbackLogger for FakeLogger {
 }
 
 pub(super) struct FakeBuilder {
-    pub payload: Option<StandardLoggingPayload>,
+    pub payload: Mutex<Option<StandardLoggingPayload>>,
     pub builds: Mutex<usize>,
 }
 
 impl FakeBuilder {
     pub(super) fn returning(payload: Option<StandardLoggingPayload>) -> Self {
         Self {
-            payload,
+            payload: Mutex::new(payload),
             builds: Mutex::new(0),
         }
+    }
+
+    pub(super) fn set_payload(&self, payload: StandardLoggingPayload) {
+        *self.payload.lock().unwrap() = Some(payload);
     }
 
     pub(super) fn builds(&self) -> usize {
@@ -195,7 +206,7 @@ impl StandardPayloadBuilder for FakeBuilder {
         let mut builds = self.builds.lock().unwrap();
         *builds = builds.saturating_add(1);
         drop(builds);
-        self.payload.clone()
+        self.payload.lock().unwrap().clone()
     }
 }
 
@@ -247,33 +258,8 @@ impl CallbackFailureCounter for RecordingCounter {
     }
 }
 
-pub(super) fn stamp() -> ResponseStamp {
-    ResponseStamp {
-        id: "chatcmpl-placeholder".to_owned(),
-        created: 1_704_067_200,
-    }
-}
-
 fn logger_handle(logger: Arc<FakeLogger>) -> Arc<dyn CallbackLogger> {
     logger
-}
-
-fn counter_handle(counter: Arc<RecordingCounter>) -> Arc<dyn CallbackFailureCounter + Send + Sync> {
-    counter
-}
-
-pub(super) fn register_logger(
-    registry: &mut CallbackRegistry,
-    logger: &Arc<FakeLogger>,
-    list: CallbackList,
-) {
-    let identity = CallbackIdentity {
-        class_name: logger.name.clone(),
-        attributes: IndexMap::new(),
-    };
-    let sink = CallbackSink::Logger(logger_handle(Arc::clone(logger)));
-    let registration = registry.register(identity, sink, list);
-    assert_ne!(registration, Registration::SkippedCapacity);
 }
 
 pub(super) fn time(text: &str) -> DateTime<FixedOffset> {
@@ -351,57 +337,67 @@ pub(super) fn new_state(
 }
 
 pub(super) struct Fixture {
-    pub registry: CallbackRegistry,
-    pub builder: FakeBuilder,
-    pub assembler: FakeAssembler,
-    pub clock: FixedClock,
-    pub counters: Vec<Arc<dyn CallbackFailureCounter + Send + Sync>>,
-    pub counter_calls: Vec<Arc<RecordingCounter>>,
-    pub excluded_fields: Vec<String>,
-    pub known: Box<dyn Fn(&str) -> bool + Send + Sync>,
-    pub stamp: ResponseStamp,
-    pub privacy: Settings,
+    handler: OwnedSuccessHandler,
+    pub builder: Arc<FakeBuilder>,
 }
 
 impl Fixture {
     pub(super) fn new() -> Self {
-        let (counters, counter_calls) = recording_counters();
+        let builder = Arc::new(FakeBuilder::returning(Some(payload())));
+        let payload_builder: Arc<dyn StandardPayloadBuilder> = Arc::clone(&builder);
+        let stream_assembler: Arc<dyn StreamAssembler> = Arc::new(FakeAssembler { complete: None });
+        let clock: Arc<dyn SuccessClock> = Arc::new(FixedClock {
+            now: time("2024-01-01T00:00:02+00:00"),
+        });
         Self {
-            registry: CallbackRegistry::new(10),
-            builder: FakeBuilder::returning(Some(payload())),
-            assembler: FakeAssembler { complete: None },
-            clock: FixedClock {
-                now: time("2024-01-01T00:00:02+00:00"),
+            handler: OwnedSuccessHandler {
+                registry: Arc::new(CallbackRegistry::new(10)),
+                payload_builder,
+                stream_assembler,
+                clock,
+                excluded_fields: Vec::new(),
+                known_callback: Arc::new(|_name: &str| false),
+                privacy: Settings::default(),
             },
-            counters,
-            counter_calls,
-            excluded_fields: Vec::new(),
-            known: Box::new(|_name: &str| false),
-            stamp: stamp(),
-            privacy: Settings::default(),
+            builder,
         }
     }
 
     pub(super) fn add(&mut self, logger: &Arc<FakeLogger>) {
-        register_logger(&mut self.registry, logger, CallbackList::Callbacks);
+        let identity = CallbackIdentity {
+            class_name: logger.name.clone(),
+            attributes: IndexMap::new(),
+        };
+        let sink = CallbackSink::Logger(logger_handle(Arc::clone(logger)));
+        let registration = self.register(identity, sink, CallbackList::Callbacks);
+        assert_ne!(registration, Registration::SkippedCapacity);
+    }
+
+    pub(super) fn register(
+        &mut self,
+        identity: CallbackIdentity,
+        sink: CallbackSink,
+        list: CallbackList,
+    ) -> Registration {
+        let registry = Arc::get_mut(&mut self.handler.registry).unwrap();
+        registry.register(identity, sink, list)
     }
 
     pub(super) fn set_known(&mut self, names: Vec<String>) {
-        self.known = Box::new(move |name: &str| names.iter().any(|known| known == name));
+        self.handler.known_callback =
+            Arc::new(move |name: &str| names.iter().any(|known| known == name));
+    }
+
+    pub(super) fn set_excluded_fields(&mut self, fields: Vec<String>) {
+        self.handler.excluded_fields = fields;
+    }
+
+    pub(super) fn set_privacy(&mut self, privacy: Settings) {
+        self.handler.privacy = privacy;
     }
 
     pub(super) fn handler(&self) -> SuccessHandler<'_> {
-        SuccessHandler {
-            registry: &self.registry,
-            payload_builder: &self.builder,
-            stream_assembler: &self.assembler,
-            clock: &self.clock,
-            failure_counters: &self.counters,
-            excluded_fields: &self.excluded_fields,
-            known_callback: self.known.as_ref(),
-            stamp: &self.stamp,
-            privacy: self.privacy,
-        }
+        SuccessHandler::from(&self.handler)
     }
 }
 
@@ -409,21 +405,6 @@ impl Default for Fixture {
     fn default() -> Self {
         Self::new()
     }
-}
-
-fn recording_counters() -> (
-    Vec<Arc<dyn CallbackFailureCounter + Send + Sync>>,
-    Vec<Arc<RecordingCounter>>,
-) {
-    let first = Arc::new(RecordingCounter::default());
-    let second = Arc::new(RecordingCounter::default());
-    (
-        vec![
-            counter_handle(Arc::clone(&first)),
-            counter_handle(Arc::clone(&second)),
-        ],
-        vec![first, second],
-    )
 }
 
 pub(super) fn json_object(fields: &[(&str, Json)]) -> Json {

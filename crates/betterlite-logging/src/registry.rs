@@ -18,6 +18,7 @@ use sink::{CallbackEvent, CallbackSink};
 use crate::callback_config::{CallbackVars, FeatureFlags};
 use crate::callback_logger::CallbackLogger;
 use crate::callback_logger::resolver::LoggerResolver;
+use crate::exporter_options::failure_counter::CallbackFailureCounter;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Registration {
@@ -235,6 +236,31 @@ impl CallbackRegistry {
                 );
             }
         }
+    }
+
+    // LiteLLM's _handle_callback_failure counts through the first callback that has a failure counter
+    #[must_use]
+    pub fn failure_counter(&self) -> Option<&dyn CallbackFailureCounter> {
+        let lists = [
+            CallbackList::Callbacks,
+            CallbackList::Success,
+            CallbackList::Failure,
+        ];
+        for identity in lists.iter().flat_map(|list| self.list_identities(*list)) {
+            let key = identity.key();
+            let logger = self
+                .entries
+                .iter()
+                .find(|entry| entry.identity.key() == key)
+                .and_then(|entry| match &entry.sink {
+                    CallbackSink::Logger(logger) => Some(logger),
+                    CallbackSink::Tracing | CallbackSink::Channel(_) => None,
+                });
+            if let Some(counter) = logger.and_then(|logger| logger.failure_counter()) {
+                return Some(counter);
+            }
+        }
+        None
     }
 
     #[must_use]
