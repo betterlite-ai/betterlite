@@ -1,0 +1,12 @@
+task: B7171
+deviations:
+  - what: "URL downloads go through B5082's SSRF-checked fetch, so B3451's note that the ingest endpoint rejects a file URL at the HTTP boundary no longer holds."
+    why: B5082 added the checked fetch and B3462 passes file_url through, so the port downloads the file instead of refusing it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/base_ingestion.py#L123-L129
+  - what: "A native OCR failure reaches the ingestion pipeline as OcrError::Failed with the provider's message; the HTTP status and error type the provider error carried are not kept."
+    why: B3451's port error has a single message variant, so the port maps the native OCR error into it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/base_ingestion.py#L167-L177
+  - what: "An embedding reply whose vector count differs from the chunk count fails with EmbedError::Failed instead of storing the shorter list LiteLLM's zip produces."
+    why: LiteLLM zips chunks with embeddings, so a short reply silently drops the chunks it has no vector for.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/s3_vectors_ingestion.py#L480-L490
+kept_bugs: []
