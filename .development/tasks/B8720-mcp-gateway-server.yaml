@@ -4,7 +4,7 @@ description: >-
   LiteLLM answers MCP traffic with the Python SDK's low level Server, which server.py builds once and gives eight request handlers. This task builds the Rust side of that Server: the handler that answers initialize and the eight methods. The HTTP transports that feed it are B8721 (streamable HTTP), B8722 (single exchange) and B8726 (legacy SSE); B8727 composes them. Code goes in betterlite-server, module mcp::gateway_server (crates/betterlite-server/src/mcp/gateway_server.rs) with the submodules init_options and handler, each with a tests.rs beside it.
 
 
-  Library. Use the rmcp crate 3.4.1 from crates.io (Apache-2.0) with default-features = false and features = ["server"]. It gives the JSON-RPC model types, the ServerHandler trait, the Peer for notifications and server to client requests, and serve_server and serve_directly, which the transports run over in-memory channels. Add it to crates/betterlite-server/Cargo.toml. Do not turn on any rmcp transport feature: the HTTP transports are ported by hand so the wire matches the Python SDK. If cargo deny refuses a second version of a crate that rmcp pulls in, report it as a blocker instead of working around it.
+  Library. Use rmcp 3.9.0 (Apache-2.0), the version main already pins in crates/betterlite-server/Cargo.toml (default-features = false, features = ["server"]) and in betterlite-core and betterlite-mcp. It gives the JSON-RPC model types, the ServerHandler trait, the Peer for notifications and server to client requests, and serve_server and serve_directly, which the transports run over in-memory channels. Do not turn on any rmcp transport feature: the HTTP transports are ported by hand so the wire matches the Python SDK.
 
 
   Session auth. The auth each request runs under is B10120's SessionAuth (crates/betterlite-server/src/mcp/session_auth.rs), the shared handle that B8727 updates with set_or_update before it builds the handler. This task holds one and reads it with B10120's snapshot; it does not build SessionAuth, set_or_update or snapshot. get_or_extract_auth_context, _cache_auth_context_lazily, _recover_auth_from_session, _get_current_session, get_active_mcp_session and get_active_auth_context all collapse into the handler holding its SessionAuth and the request's rmcp Peer. No static, thread local or task local holds either.
@@ -48,7 +48,7 @@ references:
     why: The auth recovery functions that collapse into the handler holding its SessionAuth.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/capabilities.py#L114-L145
     why: GatewayVersionPolicy, the -32022 refusal and the discovery capabilities on initialize.
-  - url: https://docs.rs/rmcp/3.4.1/rmcp/handler/server/trait.ServerHandler.html
+  - url: https://docs.rs/rmcp/3.9.0/rmcp/handler/server/trait.ServerHandler.html
     why: The rmcp handler trait, on_custom_request and the request context.
 dod:
   - text: initialize answers LiteLLM's server name and version, drops prompts and resources in proxy mode, applies the instruction and server name overrides, negotiates the revision and refuses one outside the configured list with -32022 and the supported list.
