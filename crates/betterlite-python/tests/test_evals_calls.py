@@ -472,7 +472,8 @@ def test_calls_list() -> None:
         "order": "asc",
         "order_by": "updated_at",
     }
-    assert query_of(our_call) == query_of(their_call) == expected
+    assert query_of(our_call) == expected
+    assert request_shape(our_call) == request_shape(their_call)
     assert header_of(our_call, CUSTOM_HEADER) == CUSTOM_VALUE
 
 
