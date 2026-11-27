@@ -14,9 +14,11 @@ description: >-
   authorization from organization IDs supplied alongside the request. This handler has no except
   block: B003 maps its HTTPException and database failures, and B865 preserves handler errors.
 
-  For each validated target, when B065 audit logging is enabled, schedule a deleted USER_TABLE_NAME
-  audit row with UUID, UTC timestamp, updated_values="{}", before_value excluding nulls, caller API
-  key and B065.get_audit_log_changed_by (authorized litellm-changed-by, caller ID, then proxy name).
+  For each validated target, when B065 audit logging is enabled, schedule B065's
+  create_object_audit_log with AuditTable::User, action deleted, object_id the target,
+  after_value "{}" and before_value the row excluding nulls (internal_user_endpoints.py L2510-L2532
+  builds the same row inline); it adds the UUID, UTC timestamp, caller API key and
+  get_audit_log_changed_by (authorized litellm-changed-by, caller ID, then proxy name).
   Load teams from user.teams and run B1207._cleanup_members_with_roles; write only changed rosters.
   After the loop, fetch all target keys and JWT mapping cache keys, delete keys, schedule B784 key
   audits only for a nonempty selection, run B734.delete_cache_key_objects, then B878.evict_and_broadcast
@@ -37,9 +39,9 @@ description: >-
   with setup guidance BEFORE audit scheduling. B4023 supplies the email logic, with B8891 bindings and B8400 SMTP as the actual sink; schedule its
   send_key_created_or_user_invited_email, never log the token. In the audit try, missing database,
   missing response.user_id or missing user row warns Unable to create audit log for user on /user/new
-  and returns successfully. Otherwise schedule create_internal_user_audit_log with action created,
-  before_value=None and the stored row excluding nulls. That helper first checks B065's enabled flag
-  and writes the supplied action/before/after using the same changed-by selection.
+  and returns successfully. Otherwise schedule B065's create_object_audit_log with AuditTable::User,
+  action created, before_value=None and the stored row excluding nulls; it first checks B065's
+  enabled flag and uses the same changed-by selection.
 
   B065 owns litellm.store_audit_logs=None and LITELLM_STORE_AUDIT_LOGS=None resolution (explicit setting,
   then environment, then premium_user); use its policy here and test enabled/disabled branches.
@@ -50,8 +52,10 @@ description: >-
   delete_user (L2397-L2604; 163 source lines). litellm/proxy/hooks/user_management_event_hooks.py: UserManagementEventHooks.async_user_created_hook
   (L32-L78; 38 source lines), UserManagementEventHooks.async_send_user_invitation_email (L81-L115; 30
   source lines), UserManagementEventHooks._send_v2_user_invitation_emails (L118-L161; 39 source lines),
-  UserManagementEventHooks.send_legacy_v1_user_invitation_email (L164-L186; 19 source lines), UserManagementEventHooks.create_internal_user_audit_log
-  (L189-L232; 41 source lines).
+  UserManagementEventHooks.send_legacy_v1_user_invitation_email (L164-L186; 19 source lines).
+  UserManagementEventHooks.create_internal_user_audit_log (L189-L232) is audit_logs.py
+  create_object_audit_log (L162-L204) with table_name fixed to USER_TABLE_NAME, so build no wrapper:
+  this task, B792 and B793 each call B065's AuditService::create_object_audit_log with AuditTable::User.
 
 
   Resolve general_settings.alerting through B002 and pass its typed list to the email fallback.
@@ -69,9 +73,9 @@ description: >-
   Add alerting seeds to the existing config_yaml corpus; B002 retains decoder/fuzz ownership.
 
 
-  Sizing: 330 nonblank, noncomment lines before excluding the unreachable enterprise-only delivery
-  body; allow 305 production, 305 behavior/Postgres tests, 65 route wiring and 50 config lines,
-  725 within an 800-line gate.
+  Sizing: 289 nonblank, noncomment lines before excluding the unreachable enterprise-only delivery
+  body; allow 264 production, 305 behavior/Postgres tests, 65 route wiring and 50 config lines,
+  684 within an 800-line gate.
 
 
   Wire user_delete behind B052 bearer authentication and the source's B865 management decorator.
@@ -119,8 +123,10 @@ references:
     why: Own UserManagementEventHooks.send_legacy_v1_user_invitation_email; preserve caller-visible values
       and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/user_management_event_hooks.py#L189-L232
-    why: Own UserManagementEventHooks.create_internal_user_audit_log; preserve caller-visible values and
-      failure ordering.
+    why: UserManagementEventHooks.create_internal_user_audit_log, served by B065's create_object_audit_log
+      with AuditTable::User.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/audit_logs.py#L162-L204
+    why: create_object_audit_log, the same body with the table as a parameter; B065 built it.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/user_management_event_hooks.py#L176-L181
     why: general_settings.alerting default and read site.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/audit_logs.py#L27-L65
