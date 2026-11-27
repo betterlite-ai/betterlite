@@ -1,20 +1,19 @@
 kind: helper
 name: failure-metadata-anonymous-call-types-and-disable-flag
 call:
-  failure_metadata:
-    calls:
-      - {function: eligibility, disable_spend_updates: true, user_api_key: hash, user_id: null, team_id: null, end_user_id: null, agent_id: null, call_type: pass_through_endpoint}
-      - {function: eligibility, disable_spend_updates: false, user_api_key: "", user_id: null, team_id: null, end_user_id: null, agent_id: null, call_type: null}
-      - {function: eligibility, disable_spend_updates: false, user_api_key: null, user_id: user, team_id: null, end_user_id: null, agent_id: null, call_type: null}
-      - {function: eligibility, disable_spend_updates: false, user_api_key: null, user_id: null, team_id: team, end_user_id: null, agent_id: null, call_type: null}
-      - {function: eligibility, disable_spend_updates: false, user_api_key: null, user_id: null, team_id: null, end_user_id: end-user, agent_id: null, call_type: null}
-      - {function: eligibility, disable_spend_updates: false, user_api_key: null, user_id: null, team_id: null, end_user_id: null, agent_id: agent, call_type: null}
-      - {function: eligibility, disable_spend_updates: false, user_api_key: null, user_id: null, team_id: null, end_user_id: null, agent_id: null, call_type: pass_through_endpoint}
-      - {function: eligibility, disable_spend_updates: false, user_api_key: null, user_id: null, team_id: null, end_user_id: null, agent_id: null, call_type: llm_passthrough_route}
-      - {function: eligibility, disable_spend_updates: false, user_api_key: null, user_id: null, team_id: null, end_user_id: null, agent_id: null, call_type: allm_passthrough_route}
-      - {function: eligibility, disable_spend_updates: false, user_api_key: null, user_id: null, team_id: null, end_user_id: null, agent_id: null, call_type: call_mcp_tool}
-      - {function: eligibility, disable_spend_updates: false, user_api_key: null, user_id: null, team_id: null, end_user_id: null, agent_id: null, call_type: aretrieve_batch}
-      - {function: eligibility, disable_spend_updates: false, user_api_key: null, user_id: null, team_id: null, end_user_id: null, agent_id: null, call_type: acompletion}
-      - {function: eligibility, disable_spend_updates: false, user_api_key: null, user_id: null, team_id: null, end_user_id: null, agent_id: null, call_type: null}
+  failure_metadata: {function: eligibility, disable_spend_updates: true, user_api_key: hash, user_id: null, team_id: null, end_user_id: null, agent_id: null, call_type: pass_through_endpoint}
+calls:
+  - failure_metadata: {function: eligibility, disable_spend_updates: false, user_api_key: "", user_id: null, team_id: null, end_user_id: null, agent_id: null, call_type: null}
+  - failure_metadata: {function: eligibility, disable_spend_updates: false, user_api_key: null, user_id: user, team_id: null, end_user_id: null, agent_id: null, call_type: null}
+  - failure_metadata: {function: eligibility, disable_spend_updates: false, user_api_key: null, user_id: null, team_id: team, end_user_id: null, agent_id: null, call_type: null}
+  - failure_metadata: {function: eligibility, disable_spend_updates: false, user_api_key: null, user_id: null, team_id: null, end_user_id: end-user, agent_id: null, call_type: null}
+  - failure_metadata: {function: eligibility, disable_spend_updates: false, user_api_key: null, user_id: null, team_id: null, end_user_id: null, agent_id: agent, call_type: null}
+  - failure_metadata: {function: eligibility, disable_spend_updates: false, user_api_key: null, user_id: null, team_id: null, end_user_id: null, agent_id: null, call_type: pass_through_endpoint}
+  - failure_metadata: {function: eligibility, disable_spend_updates: false, user_api_key: null, user_id: null, team_id: null, end_user_id: null, agent_id: null, call_type: llm_passthrough_route}
+  - failure_metadata: {function: eligibility, disable_spend_updates: false, user_api_key: null, user_id: null, team_id: null, end_user_id: null, agent_id: null, call_type: allm_passthrough_route}
+  - failure_metadata: {function: eligibility, disable_spend_updates: false, user_api_key: null, user_id: null, team_id: null, end_user_id: null, agent_id: null, call_type: call_mcp_tool}
+  - failure_metadata: {function: eligibility, disable_spend_updates: false, user_api_key: null, user_id: null, team_id: null, end_user_id: null, agent_id: null, call_type: aretrieve_batch}
+  - failure_metadata: {function: eligibility, disable_spend_updates: false, user_api_key: null, user_id: null, team_id: null, end_user_id: null, agent_id: null, call_type: acompletion}
+  - failure_metadata: {function: eligibility, disable_spend_updates: false, user_api_key: null, user_id: null, team_id: null, end_user_id: null, agent_id: null, call_type: null}
 env: {}
 compare: {ignore: []}
