@@ -23,7 +23,6 @@ use self::error::{FileCallError, failure};
 use self::prepare::{call_timeout, create_locals, files_params, list_locals, log_call};
 use self::service::{FileCall, FileService, Operation, mode};
 use crate::api::vector_file_contracts::{FileParamsKind, filter_file_params};
-use crate::api::vector_file_http_create_list::config::FilesParams;
 use crate::api::vector_file_provider::{
     CredentialLookup, OperationKwargs, ensure_provider, prepare_registry_credentials,
 };
