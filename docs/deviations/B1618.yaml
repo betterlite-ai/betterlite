@@ -1,0 +1,14 @@
+task: B1618
+deviations:
+  - what: >-
+      A return_to or control_plane_url whose port is not an integer, or is outside 0-65535, surfaces as a
+      typed parse failure and answers 400, where LiteLLM's urllib.parse ValueError escapes the SSO redirect
+      as an unhandled 500.
+    why: The value came from the caller, so a malformed port is a bad request and not a server fault.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2910-L2916
+  - what: >-
+      _persist_return_to_cookie leaves out a safe absolute return_to whose cookie value carries an ASCII
+      control character, where LiteLLM's SimpleCookie raises CookieError and the login page answers 500.
+    why: The cookie is best effort, and its documented contract is that an unusable return_to never blocks sign-in.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2879-L2887
+kept_bugs: []
