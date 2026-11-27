@@ -123,69 +123,71 @@ fn date_tokens(header: &str) -> Option<Vec<&str>> {
 #[must_use]
 pub fn parsedate_tz(text: &str) -> Option<ParsedDate> {
     let tokens = date_tokens(text)?;
-    let [
-        day_field,
-        month_field,
-        year_field,
-        time_field,
-        zone_field,
-        ..,
-    ] = *tokens.as_slice()
-    else {
+    let [day, month, year, clock, zone, ..] = *tokens.as_slice() else {
         return None;
     };
-    let month_lower = month_field.to_lowercase();
+    let month_lower = month.to_lowercase();
     let (day_token, month_name) = if MONTHS
         .iter()
         .any(|names| names.0 == month_lower || names.1 == month_lower)
     {
-        (day_field, month_lower)
+        (day, month_lower)
     } else {
-        (month_field, day_field.to_lowercase())
+        (month, day.to_lowercase())
     };
     let month_index = MONTHS
         .iter()
         .position(|names| names.0 == month_name || names.1 == month_name)?;
     let day_text = day_token.strip_suffix(',').unwrap_or(day_token);
-    let (year_order, clock_order) = if year_field.find(':').is_some_and(|index| index > 0) {
-        (time_field, year_field)
+    let (year_order, clock_order) = if year.find(':').is_some_and(|index| index > 0) {
+        (clock, year)
     } else {
-        (year_field, time_field)
+        (year, clock)
     };
-    let year_with_comma = year_order.strip_suffix(',').unwrap_or(year_order);
-    if year_with_comma.is_empty() {
+    let year_without_comma = year_order.strip_suffix(',').unwrap_or(year_order);
+    if year_without_comma.is_empty() {
         return None;
     }
     let (year_text, zone_text) =
-        if year_with_comma.starts_with(|first: char| first.is_ascii_digit()) {
-            (year_with_comma, zone_field)
+        if year_without_comma.starts_with(|first: char| first.is_ascii_digit()) {
+            (year_without_comma, zone)
         } else {
-            (zone_field, year_with_comma)
+            (zone, year_without_comma)
         };
     let clock_text = clock_order.strip_suffix(',').unwrap_or(clock_order);
-    // parsedate_tz falls back to dots only when the time has no colon at all
-    let separator = if clock_text.contains(':') { ':' } else { '.' };
-    let clock: Vec<&str> = clock_text.split(separator).collect();
+    parsed_fields(year_text, month_index, day_text, clock_text, zone_text)
+}
+
+// parsedate_tz divides the time on colons, or on dots when it has no colon, and a two-part time holds no seconds
+fn parsed_fields(
+    year: &str,
+    month_index: usize,
+    day: &str,
+    time: &str,
+    zone: &str,
+) -> Option<ParsedDate> {
+    let separator = if time.contains(':') { ':' } else { '.' };
+    let clock: Vec<&str> = time.split(separator).collect();
     let (hour_text, minute_text, second_text) = match *clock.as_slice() {
         [hour_text, minute_text] => (hour_text, minute_text, "0"),
         [hour_text, minute_text, second_text] => (hour_text, minute_text, second_text),
         _ => return None,
     };
-    let written_year = python_int(year_text)?;
+    let written_year = python_int(year)?;
     // RFC 822 calls for a two-digit year and RFC 2822 mandates four digits, as POSIX reads the short form
-    let year = if written_year < 100 {
+    let year_value = if written_year < 100 {
         written_year.saturating_add(if written_year > 68 { 1900 } else { 2000 })
     } else {
         written_year
     };
     Some(ParsedDate {
-        year,
+        year: year_value,
         month: u32::try_from(month_index).ok()?.checked_add(1)?,
-        day: python_int(day_text)?,
+        day: python_int(day)?,
         hour: python_int(hour_text)?,
         minute: python_int(minute_text)?,
         second: python_int(second_text)?,
-        zone_offset: zone_offset(zone_text),
+        zone_offset: zone_offset(zone),
     })
 }
 
